@@ -1,0 +1,178 @@
+package daemon
+
+import (
+	"crypto/sha256"
+	"encoding/json"
+	"fmt"
+	"os"
+	"path/filepath"
+	"time"
+)
+
+const (
+	DefaultLogMaxSize = 10 * 1024 * 1024 // 10 MB
+	ServiceName       = "multigent"
+)
+
+type Config struct {
+	BinaryPath string
+	WorkDir    string
+	LogFile    string
+	LogMaxSize int64
+	Addr       string // --addr for "multigent start"
+	EnvPATH    string
+}
+
+type Status struct {
+	Installed bool
+	Running   bool
+	PID       int
+	Platform  string // "systemd", "launchd", "schtasks"
+}
+
+type Manager interface {
+	Install(cfg Config) error
+	Uninstall() error
+	Start() error
+	Stop() error
+	Restart() error
+	Status() (*Status, error)
+	Platform() string
+}
+
+func NewManager() (Manager, error) {
+	return newPlatformManager()
+}
+
+func DefaultLogFile() string {
+	home, _ := os.UserHomeDir()
+	return filepath.Join(home, ".multigent", "logs", "multigent.log")
+}
+
+func DefaultDataDir() string {
+	home, _ := os.UserHomeDir()
+	return filepath.Join(home, ".multigent")
+}
+
+// ── Metadata ────────────────────────────────────────────────
+
+type Meta struct {
+	LogFile     string `json:"log_file"`
+	LogMaxSize  int64  `json:"log_max_size"`
+	WorkDir     string `json:"work_dir"`
+	BinaryPath  string `json:"binary_path"`
+	Addr        string `json:"addr,omitempty"`
+	InstalledAt string `json:"installed_at"`
+}
+
+type WebRuntimeMeta struct {
+	WorkDir   string `json:"work_dir"`
+	Addr      string `json:"addr"`
+	PID       int    `json:"pid"`
+	StartedAt string `json:"started_at"`
+}
+
+func metaPath() string {
+	return filepath.Join(DefaultDataDir(), "daemon.json")
+}
+
+func SaveMeta(m *Meta) error {
+	if err := os.MkdirAll(filepath.Dir(metaPath()), 0755); err != nil {
+		return err
+	}
+	data, err := json.MarshalIndent(m, "", "  ")
+	if err != nil {
+		return err
+	}
+	return os.WriteFile(metaPath(), data, 0644)
+}
+
+func LoadMeta() (*Meta, error) {
+	data, err := os.ReadFile(metaPath())
+	if err != nil {
+		return nil, err
+	}
+	var m Meta
+	if err := json.Unmarshal(data, &m); err != nil {
+		return nil, err
+	}
+	return &m, nil
+}
+
+func RemoveMeta() {
+	os.Remove(metaPath())
+}
+
+func webRuntimeMetaPath(workDir string) string {
+	sum := sha256.Sum256([]byte(filepath.Clean(workDir)))
+	return filepath.Join(DefaultDataDir(), "web-runtimes", fmt.Sprintf("%x.json", sum[:8]))
+}
+
+func SaveWebRuntimeMeta(m *WebRuntimeMeta) error {
+	if m == nil || m.WorkDir == "" {
+		return fmt.Errorf("web runtime metadata requires work dir")
+	}
+	path := webRuntimeMetaPath(m.WorkDir)
+	if err := os.MkdirAll(filepath.Dir(path), 0755); err != nil {
+		return err
+	}
+	data, err := json.MarshalIndent(m, "", "  ")
+	if err != nil {
+		return err
+	}
+	return os.WriteFile(path, data, 0644)
+}
+
+func LoadWebRuntimeMeta(workDir string) (*WebRuntimeMeta, error) {
+	data, err := os.ReadFile(webRuntimeMetaPath(workDir))
+	if err != nil {
+		return nil, err
+	}
+	var m WebRuntimeMeta
+	if err := json.Unmarshal(data, &m); err != nil {
+		return nil, err
+	}
+	return &m, nil
+}
+
+func RemoveWebRuntimeMeta(workDir string) {
+	os.Remove(webRuntimeMetaPath(workDir))
+}
+
+func NowISO() string {
+	return time.Now().Format(time.RFC3339)
+}
+
+func Resolve(cfg *Config) error {
+	if cfg.BinaryPath == "" {
+		exe, err := os.Executable()
+		if err != nil {
+			return fmt.Errorf("cannot detect binary path: %w", err)
+		}
+		real, err := filepath.EvalSymlinks(exe)
+		if err == nil {
+			exe = real
+		}
+		cfg.BinaryPath = exe
+	}
+	if cfg.WorkDir == "" {
+		wd, err := os.Getwd()
+		if err != nil {
+			return fmt.Errorf("cannot detect working directory: %w", err)
+		}
+		cfg.WorkDir = wd
+	}
+	if cfg.LogFile == "" {
+		cfg.LogFile = DefaultLogFile()
+	}
+	if cfg.LogMaxSize <= 0 {
+		cfg.LogMaxSize = DefaultLogMaxSize
+	}
+	if cfg.Addr == "" {
+		cfg.Addr = "127.0.0.1:27892"
+	}
+	if cfg.EnvPATH == "" {
+		cfg.EnvPATH = os.Getenv("PATH")
+	}
+	return nil
+}

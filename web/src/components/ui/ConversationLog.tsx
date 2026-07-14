@@ -1,0 +1,845 @@
+import { useMemo } from 'react'
+import { useTranslation } from 'react-i18next'
+import Markdown from 'react-markdown'
+import remarkGfm from 'remark-gfm'
+import { Bot, User, Wrench, Terminal, AlertTriangle, CheckCircle2, Info, BrainCircuit, FileDiff } from 'lucide-react'
+import { cn } from '../../lib/cn'
+
+type ContentBlock =
+  | { type: 'text'; text: string }
+  | { type: 'tool_use'; id?: string; name: string; input?: unknown }
+  | { type: 'tool_result'; tool_use_id?: string; content?: string; is_error?: boolean; output?: string }
+
+/* eslint-disable @typescript-eslint/no-explicit-any */
+type StreamEvent = {
+  type: string
+  subtype?: string
+  session_id?: string
+  text?: string
+  attempt?: number
+  max_retries?: number
+  error_status?: string
+  error?: string
+  message?: {
+    role?: string
+    content?: ContentBlock[] | string
+    model?: string
+    stop_reason?: string
+    usage?: { input_tokens?: number; output_tokens?: number }
+  }
+  call_id?: string
+  tool_call?: Record<string, any>
+  result?: string
+  total_cost_usd?: number
+  cost_usd?: number
+  is_error?: boolean
+  duration_ms?: number
+  num_turns?: number
+  usage?: { input_tokens?: number; output_tokens?: number }
+  content?: ContentBlock[] | string
+  role?: string
+  // claude -p stream-json content block events
+  index?: number
+  content_block?: Record<string, any>
+}
+/* eslint-enable @typescript-eslint/no-explicit-any */
+
+type ConversationItem =
+  | { kind: 'header'; text: string }
+  | { kind: 'system'; text: string }
+  | { kind: 'thinking'; text: string }
+  | { kind: 'human'; text: string }
+  | { kind: 'assistant'; blocks: ContentBlock[] }
+  | { kind: 'tool_result'; name?: string; content: string; isError: boolean }
+  | { kind: 'result'; text: string; cost?: number; turns?: number; isError: boolean }
+  | { kind: 'usage'; text: string }
+
+function pushAssistantText(items: ConversationItem[], text: string) {
+  if (!text.trim()) return
+  const last = items[items.length - 1]
+  if (last?.kind === 'assistant') {
+    const lastBlock = last.blocks[last.blocks.length - 1]
+    if (lastBlock?.type === 'text') {
+      lastBlock.text = lastBlock.text ? `${lastBlock.text}\n${text}` : text
+      return
+    }
+  }
+  items.push({ kind: 'assistant', blocks: [{ type: 'text', text }] })
+}
+
+function pushAssistantBlocks(items: ConversationItem[], blocks: ContentBlock[]) {
+  const textParts = blocks
+    .filter((b): b is { type: 'text'; text: string } => b.type === 'text')
+    .map((b) => b.text)
+    .filter((text) => text.trim())
+  const toolUseBlocks = blocks.filter((b) => b.type === 'tool_use')
+
+  if (textParts.length > 0 && toolUseBlocks.length === 0) {
+    pushAssistantText(items, textParts.join('\n'))
+    return
+  }
+  if (textParts.length > 0 || toolUseBlocks.length > 0) {
+    items.push({ kind: 'assistant', blocks: [...textParts.map((text) => ({ type: 'text' as const, text })), ...toolUseBlocks] })
+  }
+}
+
+function extractCursorToolInfo(tc: Record<string, unknown>): { name: string; desc: string; input: unknown } | null {
+  const toolNames: Record<string, (inner: Record<string, unknown>) => { name: string; desc: string; input: unknown }> = {
+    shellToolCall: (inner) => {
+      const args = (inner.args || {}) as Record<string, unknown>
+      return {
+        name: 'Shell',
+        desc: (inner.description as string) || (args.command as string) || '',
+        input: { command: args.command, ...(args.workingDirectory ? { workingDirectory: args.workingDirectory } : {}) },
+      }
+    },
+    readToolCall: (inner) => {
+      const args = (inner.args || {}) as Record<string, unknown>
+      return { name: 'Read', desc: (args.filePath as string) || '', input: args }
+    },
+    editToolCall: (inner) => {
+      const args = (inner.args || {}) as Record<string, unknown>
+      return { name: 'Edit', desc: (args.filePath as string) || '', input: args }
+    },
+    writeToolCall: (inner) => {
+      const args = (inner.args || {}) as Record<string, unknown>
+      return { name: 'Write', desc: (args.filePath as string) || '', input: args }
+    },
+    grepToolCall: (inner) => {
+      const args = (inner.args || {}) as Record<string, unknown>
+      return { name: 'Grep', desc: (args.pattern as string) || '', input: args }
+    },
+    globToolCall: (inner) => {
+      const args = (inner.args || {}) as Record<string, unknown>
+      return { name: 'Glob', desc: (args.pattern as string) || '', input: args }
+    },
+    taskToolCall: (inner) => {
+      const args = (inner.args || {}) as Record<string, unknown>
+      return { name: 'Task', desc: (args.description as string) || '', input: args }
+    },
+    updateTodosToolCall: (inner) => {
+      const args = (inner.args || {}) as Record<string, unknown>
+      const todos = args.todos as Array<{ content?: string }> | undefined
+      const summary = todos?.slice(0, 3).map((t) => t.content).join(', ') || ''
+      return { name: 'TodoList', desc: summary, input: args }
+    },
+  }
+  for (const [key, extract] of Object.entries(toolNames)) {
+    if (tc[key]) return extract(tc[key] as Record<string, unknown>)
+  }
+  const firstKey = Object.keys(tc)[0]
+  if (firstKey) return { name: firstKey.replace(/ToolCall$/, ''), desc: '', input: (tc[firstKey] as Record<string, unknown>)?.args }
+  return null
+}
+
+function extractCursorToolResult(tc: Record<string, unknown>): { content: string; isError: boolean } | null {
+  for (const key of Object.keys(tc)) {
+    const inner = tc[key] as Record<string, unknown> | undefined
+    if (!inner?.result) continue
+    const result = inner.result as Record<string, unknown>
+    if (result.success) {
+      const s = result.success as Record<string, unknown>
+      if (key === 'shellToolCall') {
+        const parts: string[] = []
+        if (s.stdout) parts.push(String(s.stdout))
+        if (s.stderr) parts.push(String(s.stderr))
+        return { content: parts.join('\n') || `exit ${s.exitCode ?? 0}`, isError: false }
+      }
+      if (key === 'readToolCall') {
+        const text = (s.content as string) || (s.text as string) || ''
+        return { content: text ? truncateStr(text, 8000) : '(read ok)', isError: false }
+      }
+      return { content: JSON.stringify(s, null, 2), isError: false }
+    }
+    if (result.error) {
+      const e = result.error as Record<string, unknown>
+      return { content: (e.message as string) || JSON.stringify(e), isError: true }
+    }
+  }
+  return null
+}
+
+function isCodexLog(lines: string[]): boolean {
+  // multigent prepends its own run headers before the Codex transcript, so do
+  // not reject logs just because they contain "=== multigent exec".
+  // However, if the log contains stream-json output (lines starting with '{'),
+  // it is NOT a Codex log — it is claude-cli stream-json or similar.
+  const trimmed = lines.map((l) => l.trim())
+
+  // If there are JSON event lines, this is a stream-json log, not Codex.
+  const hasJsonLines = trimmed.some(l => l.startsWith('{') && l.includes('"type"'))
+  if (hasJsonLines) return false
+
+  return trimmed.some(l => l.includes('OpenAI Codex') || /^model:\s/.test(l)) ||
+    (trimmed.includes('user') && trimmed.includes('codex'))
+}
+
+function parseCodexLog(lines: string[]): ConversationItem[] {
+  const items: ConversationItem[] = []
+  type Section = 'none' | 'header' | 'user' | 'thinking' | 'exec' | 'exec_output' | 'response' | 'tokens'
+  let section: Section = 'none'
+  let buf: string[] = []
+  let execCmd = ''
+  let execExitCode = -1
+  let tokensTotal = 0
+
+  const isNoise = (l: string) =>
+    /^\d{4}-\d{2}-\d{2}T.*\s(ERROR|WARN)\s/.test(l) ||
+    l.startsWith('warning:') ||
+    l.startsWith('WARNING:')
+
+  const flush = () => {
+    const text = buf.join('\n').trim()
+    buf = []
+    if (!text) return
+    switch (section) {
+      case 'user':
+        items.push({ kind: 'human', text })
+        break
+      case 'thinking':
+        items.push({ kind: 'thinking', text })
+        break
+      case 'exec_output':
+        items.push({
+          kind: 'tool_result',
+          content: text,
+          isError: execExitCode !== 0,
+        })
+        break
+      case 'response':
+        pushAssistantText(items, text)
+        break
+    }
+  }
+
+  for (let i = 0; i < lines.length; i++) {
+    const raw = lines[i]
+    const line = raw.trim()
+
+    if (!line || isNoise(line)) continue
+
+    if (line.startsWith('===')) {
+      flush()
+      section = 'none'
+      const headerText = line.replace(/^=+\s*/, '').replace(/\s*=+$/, '')
+      if (headerText) items.push({ kind: 'header', text: headerText })
+      continue
+    }
+
+    if (line.startsWith('Command:') || line.startsWith('Started:')) {
+      flush()
+      section = 'none'
+      items.push({ kind: 'header', text: line })
+      continue
+    }
+
+    if (line === '--------') {
+      flush()
+      section = section === 'header' ? 'none' : 'header'
+      continue
+    }
+
+    if (section === 'header') {
+      if (line.startsWith('model:') || line.startsWith('provider:') || line.startsWith('session id:')) {
+        items.push({ kind: 'system', text: line })
+      }
+      continue
+    }
+
+    if (line === 'user') {
+      flush()
+      section = 'user'
+      continue
+    }
+
+    if (line === 'exec') {
+      flush()
+      section = 'exec'
+      continue
+    }
+
+    if (line === 'codex') {
+      flush()
+      section = 'response'
+      continue
+    }
+
+    if (/^tokens used$/i.test(line)) {
+      flush()
+      section = 'tokens'
+      continue
+    }
+
+    if (section === 'tokens') {
+      const n = parseInt(line.replace(/,/g, ''), 10)
+      if (!isNaN(n)) tokensTotal = n
+      section = 'none'
+      continue
+    }
+
+    if (/^\*\*.*\*\*$/.test(line)) {
+      flush()
+      section = 'thinking'
+      buf.push(line)
+      continue
+    }
+
+    if (section === 'exec') {
+      const exitMatch = line.match(/^\s*exited\s+(\d+)\s+in\s+/)
+      if (exitMatch) {
+        execExitCode = parseInt(exitMatch[1], 10)
+        items.push({
+          kind: 'assistant',
+          blocks: [{ type: 'tool_use', name: 'Shell', input: { command: execCmd } }],
+        })
+        section = 'exec_output'
+        continue
+      }
+      execCmd = line
+      continue
+    }
+
+    buf.push(raw)
+  }
+
+  flush()
+
+  if (tokensTotal > 0) {
+    const lastResult = items.findIndex(it => it.kind === 'result')
+    if (lastResult === -1) {
+      items.push({ kind: 'usage', text: `${tokensTotal.toLocaleString()} tokens used` })
+    }
+  }
+
+  return items
+}
+
+function parseLog(content: string): ConversationItem[] {
+  const lines = content.split('\n')
+
+  const codex = isCodexLog(lines)
+  if (codex) {
+    return parseCodexLog(lines)
+  }
+
+  const items: ConversationItem[] = []
+  let thinkingBuf = ''
+
+  const flushThinking = () => {
+    if (thinkingBuf.trim()) {
+      items.push({ kind: 'thinking', text: thinkingBuf.trim() })
+    }
+    thinkingBuf = ''
+  }
+
+  for (const raw of lines) {
+    const line = raw.trim()
+    if (!line) continue
+
+    if (line.startsWith('===')) {
+      flushThinking()
+      items.push({ kind: 'header', text: line.replace(/^=+\s*/, '').replace(/\s*=+$/, '') })
+      continue
+    }
+
+    if (line.startsWith('Command:') || line.startsWith('Started:')) {
+      items.push({ kind: 'header', text: line })
+      continue
+    }
+
+    if (!line.startsWith('{')) {
+      // Treat any non-empty non-JSON line as a debug header so we don't silently drop things like api_retry.
+      if (line) items.push({ kind: 'header', text: `[raw] ${line.slice(0, 120)}` })
+      continue
+    }
+
+    let ev: StreamEvent
+    try {
+      ev = JSON.parse(line)
+    } catch {
+      // Malformed JSON — show as debug header.
+      items.push({ kind: 'header', text: `[raw:json-err] ${line.slice(0, 120)}` })
+      continue
+    }
+
+    // --- Thinking deltas (Cursor) ---
+    if (ev.type === 'thinking') {
+      if (ev.subtype === 'delta' && ev.text) {
+        thinkingBuf += ev.text
+      } else if (ev.subtype === 'completed') {
+        flushThinking()
+      }
+      continue
+    }
+
+    if (thinkingBuf) flushThinking()
+
+    if (ev.type === 'system') {
+      // thinking_tokens events are internal token-counting pings — skip entirely.
+      if (ev.subtype === 'thinking_tokens') continue
+      if (ev.subtype === 'api_retry') {
+        items.push({
+          kind: 'system',
+          text: `api_retry (attempt ${ev.attempt}/${ev.max_retries}) — ${ev.error_status} ${ev.error}`,
+        })
+      } else if (ev.subtype === 'init') {
+        if (ev.session_id) items.push({ kind: 'system', text: `Session: ${ev.session_id}` })
+      } else if (ev.subtype) {
+        // Only surface subtypes that are meaningful to users; silently drop others.
+        const verbose = ['tool_init', 'tool_execution', 'tool_result', 'compact']
+        if (!verbose.includes(ev.subtype)) {
+          items.push({ kind: 'system', text: ev.subtype })
+        }
+      }
+      continue
+    }
+
+    if (ev.type === 'human' || ev.type === 'user' || ev.role === 'human') {
+      const text = typeof ev.content === 'string'
+        ? ev.content
+        : typeof ev.message?.content === 'string'
+          ? ev.message.content
+          : Array.isArray(ev.message?.content)
+            ? ev.message!.content.filter((b): b is { type: 'text'; text: string } => b.type === 'text').map((b) => b.text).join('\n')
+            : Array.isArray(ev.content)
+              ? (ev.content as ContentBlock[]).filter((b): b is { type: 'text'; text: string } => b.type === 'text').map((b) => b.text).join('\n')
+              : ''
+      if (text) items.push({ kind: 'human', text })
+      continue
+    }
+
+    // --- Tool calls (Cursor format) ---
+    if (ev.type === 'tool_call' && ev.tool_call) {
+      if (ev.subtype === 'started') {
+        const info = extractCursorToolInfo(ev.tool_call)
+        if (info) {
+          items.push({
+            kind: 'assistant',
+            blocks: [{
+              type: 'tool_use',
+              id: ev.call_id,
+              name: info.name + (info.desc ? `: ${truncateStr(info.desc, 120)}` : ''),
+              input: info.input,
+            }],
+          })
+        }
+      } else if (ev.subtype === 'completed') {
+        const res = extractCursorToolResult(ev.tool_call)
+        if (res && res.content) {
+          items.push({
+            kind: 'tool_result',
+            content: res.content,
+            isError: res.isError,
+          })
+        }
+      }
+      continue
+    }
+
+    // --- claude -p stream-json content block events ---
+    if (ev.type === 'content' && ev.content_block) {
+      const blk = ev.content_block as Record<string, unknown>
+      if (blk.type === 'text' && typeof blk.text === 'string' && blk.text) {
+        pushAssistantText(items, blk.text)
+      } else if (blk.type === 'tool_use' && typeof blk.name === 'string') {
+        const name = blk.name as string
+        const input = blk.input
+        items.push({
+          kind: 'assistant',
+          blocks: [{
+            type: 'tool_use',
+            name,
+            input,
+          }],
+        })
+      } else if (blk.type === 'tool_result' && typeof blk.content === 'string' && blk.content) {
+        items.push({
+          kind: 'tool_result',
+          content: blk.content,
+          isError: Boolean(blk.is_error),
+        })
+      }
+      continue
+    }
+
+    if (ev.type === 'assistant') {
+      const c = ev.message?.content
+      if (Array.isArray(c)) {
+        // eslint-disable-next-line @typescript-eslint/no-explicit-any
+        const blocks = c as Array<ContentBlock & { type: string; thinking?: string; signature?: string }>
+        const textBlocks = blocks.filter((b) => b.type === 'text') as Array<{ type: 'text'; text: string }>
+        const toolUseBlocks = blocks.filter((b) => b.type === 'tool_use') as ContentBlock[]
+        const toolResultBlocks = blocks.filter((b) => b.type === 'tool_result') as ContentBlock[]
+        // thinking blocks (extended thinking) — show as collapsible
+        const thinkingBlocks = blocks.filter((b) => (b as { type: string }).type === 'thinking' && (b as { thinking?: string }).thinking) as Array<{ type: 'thinking'; thinking: string }>
+
+        for (const tb of thinkingBlocks) {
+          if (tb.thinking) items.push({ kind: 'thinking', text: tb.thinking })
+        }
+        if (textBlocks.length > 0 || toolUseBlocks.length > 0) {
+          pushAssistantBlocks(items, [...textBlocks, ...toolUseBlocks])
+        }
+        for (const tr of toolResultBlocks) {
+          if (tr.type === 'tool_result') {
+            items.push({
+              kind: 'tool_result',
+              content: tr.content || tr.output || '',
+              isError: tr.is_error ?? false,
+            })
+          }
+        }
+      } else if (typeof c === 'string' && c) {
+        pushAssistantText(items, c)
+      }
+      continue
+    }
+
+    if (ev.type === 'result') {
+      flushThinking()
+      items.push({
+        kind: 'result',
+        text: ev.result || (ev.is_error ? 'Error' : 'Completed'),
+        cost: ev.total_cost_usd ?? ev.cost_usd,
+        turns: ev.num_turns,
+        isError: ev.is_error ?? false,
+      })
+      continue
+    }
+
+    // Fallback: completely unrecognized event types — show as raw header so we can debug.
+    // (content/type events with unrecognized block types also land here)
+    const knownTypes = ['thinking', 'system', 'human', 'user', 'tool_call', 'assistant', 'content', 'result']
+    if (!knownTypes.includes(ev.type)) {
+      items.push({ kind: 'header', text: `[raw:${ev.type}] ${line.slice(0, 120)}` })
+    }
+  }
+
+  flushThinking()
+  return items
+}
+
+function truncateStr(s: string, max: number): string {
+  return s.length > max ? s.slice(0, max) + '…' : s
+}
+
+function isDiffLike(text: string): boolean {
+  const lines = text.split('\n').map((line) => line.trimEnd()).filter(Boolean)
+  if (lines.length < 4) return false
+  if (lines[0]?.startsWith('diff --git ') || lines[0]?.startsWith('Index: ')) return true
+  const hasHunk = lines.some((line) => /^@@ .* @@/.test(line))
+  const hasFileMarkers = lines.some((line) => line.startsWith('--- ')) && lines.some((line) => line.startsWith('+++ '))
+  const changed = lines.filter((line) =>
+    (/^[+-]/.test(line) && !line.startsWith('+++') && !line.startsWith('---')) ||
+    line.startsWith('@@ '),
+  ).length
+  return (hasHunk || hasFileMarkers) && changed >= 3
+}
+
+function findDiffStart(text: string): number {
+  const lines = text.split('\n')
+  return lines.findIndex((line) => line.startsWith('diff --git ') || line.startsWith('Index: '))
+}
+
+function DiffBlock({ text, defaultOpen = false }: { text: string; defaultOpen?: boolean }) {
+  const lineCount = text.split('\n').length
+  const lines = text.split('\n')
+  return (
+    <details open={defaultOpen} className="group rounded-md border border-neutral-200/70 bg-neutral-50/70 dark:border-zinc-700/50 dark:bg-zinc-900/40">
+      <summary className="flex min-w-0 items-center gap-2 px-3 py-2 text-xs font-medium text-neutral-600 transition-colors hover:bg-neutral-100/70 dark:text-zinc-400 dark:hover:bg-zinc-800/70">
+        <FileDiff className="size-3.5 shrink-0 text-sky-600 dark:text-sky-400" strokeWidth={1.8} />
+        <span className="truncate">Diff</span>
+        <span className="shrink-0 font-normal text-neutral-400 dark:text-zinc-500">{lineCount.toLocaleString()} lines</span>
+        <span className="ml-auto shrink-0 text-[11px] font-normal text-neutral-400 group-open:hidden dark:text-zinc-500">Expand</span>
+        <span className="ml-auto hidden shrink-0 text-[11px] font-normal text-neutral-400 group-open:inline dark:text-zinc-500">Collapse</span>
+      </summary>
+      <pre className="max-h-72 overflow-auto border-t border-neutral-200/70 bg-white/70 p-0 text-xs leading-relaxed whitespace-pre dark:border-zinc-700/50 dark:bg-zinc-950/50">
+        <code className="block min-w-max py-3 font-mono">
+          {lines.map((line, i) => (
+            <span key={i} className={cn('block px-3', diffLineClass(line))}>
+              {line || ' '}
+            </span>
+          ))}
+        </code>
+      </pre>
+    </details>
+  )
+}
+
+function diffLineClass(line: string): string {
+  if (line.startsWith('diff --git ') || line.startsWith('Index: ')) {
+    return 'bg-sky-50 text-sky-700 dark:bg-sky-950/30 dark:text-sky-300'
+  }
+  if (line.startsWith('@@ ')) {
+    return 'bg-violet-50 text-violet-700 dark:bg-violet-950/30 dark:text-violet-300'
+  }
+  if (line.startsWith('+++') || line.startsWith('---')) {
+    return 'bg-neutral-100 text-neutral-600 dark:bg-zinc-900 dark:text-zinc-400'
+  }
+  if (line.startsWith('+')) {
+    return 'bg-emerald-50 text-emerald-700 dark:bg-emerald-950/30 dark:text-emerald-300'
+  }
+  if (line.startsWith('-')) {
+    return 'bg-red-50 text-red-700 dark:bg-red-950/30 dark:text-red-300'
+  }
+  return 'text-neutral-700 dark:text-zinc-300'
+}
+
+const mdComponents = {
+  pre({ children, ...props }: React.ComponentProps<'pre'>) {
+    return (
+      <pre className="my-2 overflow-auto rounded-md border border-neutral-200/60 bg-neutral-100/80 p-3 text-xs dark:border-zinc-700/40 dark:bg-zinc-900/60" {...props}>
+        {children}
+      </pre>
+    )
+  },
+  code({ children, className, ...props }: React.ComponentProps<'code'>) {
+    const isInline = !className
+    if (isInline) {
+      return (
+        <code className="rounded bg-neutral-100 px-1 py-0.5 text-[0.85em] dark:bg-zinc-800" {...props}>
+          {children}
+        </code>
+      )
+    }
+    return <code className={className} {...props}>{children}</code>
+  },
+  p({ children, ...props }: React.ComponentProps<'p'>) {
+    return <p className="my-1.5 leading-relaxed" {...props}>{children}</p>
+  },
+  ul({ children, ...props }: React.ComponentProps<'ul'>) {
+    return <ul className="my-1.5 ml-4 list-disc space-y-0.5" {...props}>{children}</ul>
+  },
+  ol({ children, ...props }: React.ComponentProps<'ol'>) {
+    return <ol className="my-1.5 ml-4 list-decimal space-y-0.5" {...props}>{children}</ol>
+  },
+  li({ children, ...props }: React.ComponentProps<'li'>) {
+    return <li className="leading-relaxed" {...props}>{children}</li>
+  },
+  h1({ children, ...props }: React.ComponentProps<'h1'>) {
+    return <h1 className="mt-3 mb-1 text-base font-bold" {...props}>{children}</h1>
+  },
+  h2({ children, ...props }: React.ComponentProps<'h2'>) {
+    return <h2 className="mt-2.5 mb-1 text-sm font-bold" {...props}>{children}</h2>
+  },
+  h3({ children, ...props }: React.ComponentProps<'h3'>) {
+    return <h3 className="mt-2 mb-1 text-sm font-semibold" {...props}>{children}</h3>
+  },
+  a({ children, ...props }: React.ComponentProps<'a'>) {
+    return <a className="text-sky-600 underline decoration-sky-300 hover:decoration-sky-500 dark:text-sky-400 dark:decoration-sky-700 dark:hover:decoration-sky-500" target="_blank" rel="noopener noreferrer" {...props}>{children}</a>
+  },
+  blockquote({ children, ...props }: React.ComponentProps<'blockquote'>) {
+    return <blockquote className="my-1.5 border-l-2 border-neutral-300 pl-3 text-neutral-500 dark:border-zinc-600 dark:text-zinc-400" {...props}>{children}</blockquote>
+  },
+  table({ children, ...props }: React.ComponentProps<'table'>) {
+    return <table className="my-2 w-full text-xs" {...props}>{children}</table>
+  },
+  th({ children, ...props }: React.ComponentProps<'th'>) {
+    return <th className="border border-neutral-200 bg-neutral-50 px-2 py-1 text-left font-semibold dark:border-zinc-700 dark:bg-zinc-800" {...props}>{children}</th>
+  },
+  td({ children, ...props }: React.ComponentProps<'td'>) {
+    return <td className="border border-neutral-200 px-2 py-1 dark:border-zinc-700" {...props}>{children}</td>
+  },
+} as import('react-markdown').Components
+
+function MdBlock({ text, className }: { text: string; className?: string }) {
+  const diffStart = findDiffStart(text)
+  if (diffStart >= 0) {
+    const lines = text.split('\n')
+    const before = lines.slice(0, diffStart).join('\n').trim()
+    const diff = lines.slice(diffStart).join('\n').trim()
+    if (isDiffLike(diff)) {
+      return (
+        <div className={cn('space-y-2', className)}>
+          {before && <MarkdownBlock text={before} />}
+          <DiffBlock text={diff} />
+        </div>
+      )
+    }
+  }
+  if (isDiffLike(text.trim())) {
+    return <DiffBlock text={text.trim()} />
+  }
+  return <MarkdownBlock text={text} className={className} />
+}
+
+function MarkdownBlock({ text, className }: { text: string; className?: string }) {
+  return (
+    <div className={cn('prose-none overflow-x-auto text-sm leading-relaxed text-neutral-800 dark:text-zinc-200', className)}>
+      <Markdown remarkPlugins={[remarkGfm]} components={mdComponents}>
+        {text}
+      </Markdown>
+    </div>
+  )
+}
+
+function ToolInputDisplay({ input }: { input: unknown }) {
+  if (input == null) return null
+  const str = typeof input === 'string' ? input : JSON.stringify(input, null, 2)
+  if (str.length <= 200) {
+    return <pre className="mt-1 overflow-auto whitespace-pre-wrap break-words text-[11px] leading-relaxed text-neutral-500 dark:text-zinc-500">{str}</pre>
+  }
+  return (
+    <details className="mt-1">
+      <summary className="text-[11px] text-neutral-400 hover:text-neutral-600 dark:text-zinc-500 dark:hover:text-zinc-400">
+        展开参数
+      </summary>
+      <pre className="mt-1 max-h-40 overflow-auto whitespace-pre-wrap break-words text-[11px] leading-relaxed text-neutral-500 dark:text-zinc-500">{str}</pre>
+    </details>
+  )
+}
+
+export function ConversationLog({ content }: { content: string }) {
+  const { t } = useTranslation()
+  const items = useMemo(() => parseLog(content), [content])
+
+  if (items.length === 0) {
+    return <p className="py-4 text-center text-sm text-neutral-400 dark:text-zinc-500">{t('runs.logEmpty')}</p>
+  }
+
+  return (
+    <div className="space-y-3 overflow-x-hidden">
+      {items.map((item, i) => {
+        switch (item.kind) {
+          case 'header':
+            return (
+              <div key={i} className="flex min-w-0 items-center gap-2 overflow-x-hidden text-[11px] text-neutral-400 dark:text-zinc-500">
+                <Terminal className="size-3 shrink-0" strokeWidth={1.5} />
+                <span className="truncate font-mono">{item.text}</span>
+              </div>
+            )
+
+          case 'system':
+            return (
+              <div key={i} className="flex items-center gap-2 rounded-md bg-neutral-50 px-3 py-1.5 dark:bg-zinc-800/40">
+                <Info className="size-3.5 shrink-0 text-neutral-400 dark:text-zinc-500" strokeWidth={1.8} />
+                <span className="text-xs text-neutral-500 dark:text-zinc-500">{item.text}</span>
+              </div>
+            )
+
+          case 'thinking':
+            return (
+              <details key={i} className="group">
+                <summary className="flex cursor-pointer items-center gap-2 text-xs text-neutral-400 hover:text-neutral-600 dark:text-zinc-500 dark:hover:text-zinc-400">
+                  <BrainCircuit className="size-3.5 shrink-0" strokeWidth={1.5} />
+                  <span>Thinking</span>
+                  <span className="text-[10px] opacity-60">({item.text.length} chars)</span>
+                </summary>
+                <div className="ml-5 mt-1 max-h-48 overflow-auto rounded-md border border-neutral-200/60 bg-neutral-50/50 px-3 py-2 text-xs leading-relaxed whitespace-pre-wrap break-words text-neutral-500 dark:border-zinc-700/40 dark:bg-zinc-800/20 dark:text-zinc-500">
+                  {truncateStr(item.text, 4000)}
+                </div>
+              </details>
+            )
+
+          case 'human':
+            return (
+              <div key={i} className="flex gap-2.5">
+                <div className="flex size-6 shrink-0 items-center justify-center rounded-full bg-sky-100 dark:bg-sky-900/30">
+                  <User className="size-3.5 text-sky-700 dark:text-sky-400" strokeWidth={2} />
+                </div>
+                <div className="min-w-0 flex-1 rounded-lg bg-sky-50 px-3.5 py-2.5 dark:bg-sky-900/15">
+                  <p className="mb-1 text-xs font-medium text-sky-800 dark:text-sky-300">User</p>
+                  <MdBlock text={item.text} />
+                </div>
+              </div>
+            )
+
+          case 'assistant':
+            return (
+              <div key={i} className="flex gap-2.5">
+                <div className="flex size-6 shrink-0 items-center justify-center rounded-full bg-sky-100 dark:bg-sky-900/30">
+                  <Bot className="size-3.5 text-sky-700 dark:text-sky-400" strokeWidth={2} />
+                </div>
+                <div className="min-w-0 flex-1 space-y-2">
+                  <p className="text-xs font-medium text-sky-700 dark:text-sky-400">Assistant</p>
+                  {item.blocks.map((block, bi) => {
+                    if (block.type === 'text') {
+                      return <MdBlock key={bi} text={block.text} />
+                    }
+                    if (block.type === 'tool_use') {
+                      return (
+                        <div
+                          key={bi}
+                          className="rounded-md border border-amber-200/60 bg-amber-50/50 px-3 py-2 dark:border-amber-800/30 dark:bg-amber-900/10"
+                        >
+                          <div className="flex items-center gap-1.5">
+                            <Wrench className="size-3.5 text-amber-600 dark:text-amber-500" strokeWidth={1.8} />
+                            <span className="font-mono text-xs font-semibold text-amber-700 dark:text-amber-400">
+                              {block.name}
+                            </span>
+                          </div>
+                          <ToolInputDisplay input={block.input} />
+                        </div>
+                      )
+                    }
+                    return null
+                  })}
+                </div>
+              </div>
+            )
+
+          case 'tool_result':
+            return (
+              <div key={i} className="ml-8 flex gap-2">
+                <div className={cn(
+                  'size-1.5 mt-2 shrink-0 rounded-full',
+                  item.isError ? 'bg-red-400' : 'bg-emerald-400',
+                )} />
+                <div className={cn(
+                  'min-w-0 flex-1 rounded-md border px-3 py-2',
+                  item.isError
+                    ? 'border-red-200/60 bg-red-50/50 dark:border-red-800/30 dark:bg-red-900/10'
+                    : 'border-neutral-200/60 bg-neutral-50/50 dark:border-zinc-700/40 dark:bg-zinc-800/20',
+                )}>
+                  {isDiffLike(item.content) ? (
+                    <DiffBlock text={item.content} />
+                  ) : (
+                    <pre className="max-h-32 overflow-auto whitespace-pre-wrap break-words text-xs leading-relaxed text-neutral-600 dark:text-zinc-400">
+                      {truncateStr(item.content, 2000)}
+                    </pre>
+                  )}
+                </div>
+              </div>
+            )
+
+          case 'result':
+            return (
+              <div key={i} className={cn(
+                'flex items-start gap-2 rounded-lg border px-3.5 py-2.5',
+                item.isError
+                  ? 'border-red-200/80 bg-red-50 dark:border-red-800/40 dark:bg-red-900/20'
+                  : 'border-emerald-200/80 bg-emerald-50 dark:border-emerald-800/40 dark:bg-emerald-900/20',
+              )}>
+                {item.isError
+                  ? <AlertTriangle className="mt-0.5 size-4 shrink-0 text-red-500" strokeWidth={1.8} />
+                  : <CheckCircle2 className="mt-0.5 size-4 shrink-0 text-emerald-600 dark:text-emerald-400" strokeWidth={1.8} />
+                }
+                <div className="min-w-0 flex-1">
+                  <p className="text-xs font-semibold text-neutral-700 dark:text-zinc-300">
+                    {item.isError ? 'Error' : 'Result'}
+                    {item.turns != null && (
+                      <span className="ml-2 font-normal text-neutral-400 dark:text-zinc-500">{item.turns} turns</span>
+                    )}
+                    {item.cost != null && (
+                      <span className="ml-2 font-normal text-neutral-400 dark:text-zinc-500">${item.cost.toFixed(4)}</span>
+                    )}
+                  </p>
+                  <MdBlock text={item.text} className="mt-1" />
+                </div>
+              </div>
+            )
+
+          case 'usage':
+            return (
+              <div key={i} className="flex items-center gap-2 rounded-md bg-neutral-50 px-3 py-1.5 dark:bg-zinc-800/40">
+                <Info className="size-3.5 shrink-0 text-neutral-400 dark:text-zinc-500" strokeWidth={1.8} />
+                <span className="text-xs text-neutral-500 dark:text-zinc-500">{item.text}</span>
+              </div>
+            )
+
+          default:
+            return null
+        }
+      })}
+    </div>
+  )
+}

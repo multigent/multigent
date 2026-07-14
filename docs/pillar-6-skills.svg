@@ -1,0 +1,28 @@
+<svg width="900" height="225" xmlns="http://www.w3.org/2000/svg" fill="none">
+
+ <!-- file tree -->
+ <!-- horizontal divider -->
+ <!-- SKILL.md label -->
+ <!-- frontmatter -->
+ <!-- heading -->
+ <g>
+  <title>Layer 1</title>
+  <rect id="svg_1" rx="10" fill="#0d1117" height="225" width="900"/>
+  <rect id="svg_2" rx="10" stroke="#30363d" fill="none" height="224" width="899" y="0.5" x="0.5"/>
+  <rect id="svg_3" rx="2" fill="#4ade80" height="225" width="4" y="0" x="0"/>
+  <text id="svg_4" fill="#c9d1d9" font-size="11.5" font-family="'SF Mono',Menlo,monospace" y="36" x="24">skills/github-pr-review/</text>
+  <text id="svg_5" fill="#8b949e" font-size="11.5" font-family="'SF Mono',Menlo,monospace" y="56" x="24">+-- SKILL.md</text>
+  <text id="svg_6" fill="#4b5563" font-size="11" font-family="'SF Mono',Menlo,monospace" y="56" x="163">prompt + metadata (YAML frontmatter)</text>
+  <text id="svg_7" fill="#8b949e" font-size="11.5" font-family="'SF Mono',Menlo,monospace" y="76" x="24">\-- review.sh</text>
+  <text id="svg_8" fill="#4b5563" font-size="11" font-family="'SF Mono',Menlo,monospace" y="76" x="163">helper script (chmod+x preserved, ref: $SKILL_DIR)</text>
+  <line id="svg_9" stroke="#21262d" y2="90" x2="876" y1="90" x1="24"/>
+  <text id="svg_10" fill="#4b5563" font-size="10.5" font-family="'SF Mono',Menlo,monospace" y="108" x="24">--- SKILL.md -------------------------------------------------------------------</text>
+  <text id="svg_11" fill="#f59e0b" font-size="12" font-family="'SF Mono',Menlo,monospace" y="128" x="24">---</text>
+  <text id="svg_12" fill="#60a5fa" font-size="12" font-family="'SF Mono',Menlo,monospace" y="148" x="24">name</text>
+  <text id="svg_13" fill="#c9d1d9" font-size="12" font-family="'SF Mono',Menlo,monospace" y="148" x="57">: github-pr-review</text>
+  <text id="svg_14" fill="#60a5fa" font-size="12" font-family="'SF Mono',Menlo,monospace" y="168" x="24">description</text>
+  <text id="svg_15" fill="#c9d1d9" font-size="12" font-family="'SF Mono',Menlo,monospace" y="168" x="108">: Review GitHub PRs and post inline comments</text>
+  <text id="svg_16" fill="#f59e0b" font-size="12" font-family="'SF Mono',Menlo,monospace" y="188" x="24">---</text>
+  <text id="svg_17" fill="#4ade80" font-size="12" font-family="'SF Mono',Menlo,monospace" y="210" x="24">## Skill: GitHub PR Review</text>
+ </g>
+</svg>
