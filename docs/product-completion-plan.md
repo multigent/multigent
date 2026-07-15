@@ -19,6 +19,20 @@ As of the current development line, Multigent already has the first version of s
 
 The remaining work is not compatibility migration. This is a new product, so when an old local-first concept conflicts with the target SaaS shape, remove or replace it instead of adding fallback behavior.
 
+## Development Principles
+
+Because Multigent is still before real external production usage, we should optimize for the correct product architecture instead of preserving historical behavior.
+
+Rules:
+
+- Prefer deleting incorrect legacy concepts over wrapping them in compatibility layers.
+- Public UI/API should expose SaaS product concepts, not local-first implementation details.
+- Storage, runtime, scheduler, and sandbox internals can remain configurable for deployment, but normal users should not need to understand paths, mounted folders, database files, or process flags.
+- RBAC must be enforced by API first. The Web UI may hide unavailable actions, but it is never the security boundary.
+- Agents are principals, not trusted internal scripts. They authenticate, receive scoped tokens, and call Multigent APIs like users do.
+- Every sensitive operation should be auditable before the product is considered team-ready.
+- Each phase should leave the product in a coherent state. Avoid adding temporary migration commands or transitional UX that users will later need to unlearn.
+
 ## Product North Star
 
 The product goal is to let a team operate cloud agent coworkers with less human blocking and less repeated context transmission.
@@ -159,6 +173,101 @@ Member home should be personal:
 - Pending approvals assigned to me.
 
 The same workspace can support both views, but the default landing page must depend on the user role and permission grants.
+
+## Journey Gap Checklist
+
+This checklist is the main acceptance frame for the next development cycles.
+
+### Admin Setup Path
+
+Current target:
+
+```text
+register -> verify/login -> create workspace -> invite members -> configure teams/roles/skills/connections -> create project -> hire agents -> grant tools -> schedule/run -> review/audit
+```
+
+Must be true:
+
+- A first admin can create a workspace without seeing filesystem paths.
+- Workspace creator automatically becomes owner/admin.
+- Admin can invite members by email, set their workspace role, and optionally pre-grant project or agent access.
+- Admin can create teams and roles as reusable agent context primitives, but is not forced through that step before creating a project.
+- Admin can create external connections and grant them to projects or agents.
+- Admin can see workspace-level health, blocked runs, sensitive audit events, and setup progress.
+
+Known gaps:
+
+- Email verification/delivery and invite acceptance still need production-ready UX.
+- Bulk invite and invite revoke/expiry management need polish.
+- Admin home is still not fully role-aware and operational enough.
+- Teams/roles/skills setup needs clearer first-run empty states and templates.
+
+### Invited Member Path
+
+Current target:
+
+```text
+open invite -> register if needed -> accept/reject -> enter workspace -> see only accessible projects/agents/tasks/messages -> operate or tune assigned agents
+```
+
+Must be true:
+
+- Invite token survives registration and returns the user to the accept/reject screen.
+- Rejecting an invite does not grant access.
+- A member cannot see projects they are not assigned to.
+- A member sees personal workbench data first: my tasks, my messages, agents I own/operate, runs needing my review.
+- A member can create personal connections and grant them only to agents they are allowed to operate.
+
+Known gaps:
+
+- Member landing page still needs to diverge from admin overview.
+- Some task/message/run/scheduler endpoints still need endpoint-by-endpoint RBAC verification.
+- Personal connection grants exist, but the UX should make the owner/operator boundary obvious.
+
+### Project Manager Path
+
+Current target:
+
+```text
+create project -> add members -> hire agents -> bind runtime/sandbox/toolchain/provider -> grant skills/connections -> assign tasks -> monitor runs -> tune agents
+```
+
+Must be true:
+
+- Project membership is explicit.
+- Project manager can manage project members, agents, scheduler, and tool grants inside that project.
+- Project operator can execute work and interact with assigned agents without changing high-risk configuration by default.
+- Viewer can read state but cannot mutate tasks, scheduler, agents, or credentials.
+- Agent detail page is centered on product concepts: role, owner, runtime profile, sandbox profile, toolchain, skills, connections, schedule, runs.
+
+Known gaps:
+
+- Runtime/sandbox/toolchain profiles are not yet fully first-class product records.
+- Some UI pages still need permission-aware action hiding.
+- Agent performance/tuning view is still early.
+
+### Agent Runtime Path
+
+Current target:
+
+```text
+scheduled/task/event trigger -> isolated sandbox -> scoped runtime token -> fetch manifest -> call Multigent API/proxies -> produce result -> write audit/run telemetry -> human reviews/tunes
+```
+
+Must be true:
+
+- Agent does not directly receive broad workspace secrets.
+- Agent does not directly access the control database.
+- Agent receives only granted connections, tools, skills, and environment variables.
+- Runtime proxy endpoints re-check grants on each call.
+- Run logs, token/cost, connection usage, and important side effects are traceable.
+
+Known gaps:
+
+- Per-run workspace materialization and strict production mount policy still need completion.
+- Runtime profile and sandbox profile are still too close to implementation flags.
+- Resource limits and network policies need product-level configuration.
+- Agent-runtime credential/tool usage needs richer audit coverage.
 
 ## Target Data Model
 
@@ -492,7 +601,8 @@ Done when:
 Status:
 
 - First implementation exists for provider registry, connection ownership, grants, encrypted secrets, runtime connection manifests, custom MCP proxy, custom HTTP action proxy, GitHub/Linear action proxy, and connection test calls.
-- Remaining work: OAuth flow abstraction, Feishu/Lark provider, DingTalk provider, GitHub app installation flow, richer profile/scopes display, connection health checks, and per-provider action executor hardening.
+- Connection test results now persist the latest validation status in connection profile metadata and surface it in the Web connection list.
+- Remaining work: OAuth flow abstraction, DingTalk provider, GitHub app installation flow, richer profile/scopes display, scheduled/background connection health checks, and per-provider action executor hardening.
 
 ### Phase 5: Agent Runtime Productization
 
@@ -595,7 +705,33 @@ Recommended implementation order:
 4. Replace remaining path-facing UI with workspace/project/agent/profile concepts.
 5. Productize runtime profiles: sandbox, toolchain, CLI version, dependency setup, resource policy, and network policy.
 6. Add the agent operations view for performance, run review, and prompt/skill/policy tuning.
-7. Expand connector providers: Feishu/Lark first, then GitHub app and Linear/Jira/Plane style project tools.
+7. Expand connector providers: DingTalk, GitHub app, and Linear/Jira/Plane style project tools after Feishu/Lark stabilizes.
 8. Add memory candidate approval so completed projects and sub-tasks leave reusable context for future agents.
+
+## Next Coding Slices
+
+The next slices should be small enough to ship and verify one by one:
+
+1. Role-aware home routing:
+   - Admin/owner enters workspace operations overview.
+   - Member/operator enters personal workbench.
+   - No-workspace user enters create-workspace onboarding.
+2. RBAC audit pass:
+   - Audit project, task, message, run, scheduler, agent config, provider binding, connection grant, and runtime manifest endpoints.
+   - Add tests for forbidden list/read/write behavior.
+3. Invite flow completion:
+   - Add invite list/revoke/expiry UI.
+   - Add bulk invite.
+   - Preserve invite token across registration.
+4. Runtime profile productization:
+   - Introduce explicit sandbox/toolchain/runtime profile records.
+   - Move Docker/runtime flags out of normal agent detail UI.
+   - Materialize per-run workspace directories by UUID.
+5. Agent operations page:
+   - Show run history, success/failure, blocked reasons, token/cost, connection usage, and review actions.
+   - Let responsible humans tune prompts, skills, grants, model/provider, and scheduler from one place.
+6. Audit log UI hardening:
+   - Add admin filters by actor, resource, action, project, agent, and time.
+   - Add resource-level audit views where it helps debugging.
 
 Near-term coding rule: prefer removing local-first or compatibility-oriented commands from the public surface. Internal maintenance commands can stay hidden or developer-only, but normal users should see a SaaS agent-operations product, not a migration toolkit.
