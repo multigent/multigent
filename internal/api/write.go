@@ -74,6 +74,10 @@ func (s *Server) handlePostProjectTask(w http.ResponseWriter, r *http.Request) {
 		s.jsonError(w, http.StatusBadRequest, "agent not found in this project")
 		return
 	}
+	if !s.canOperateAgent(r, name, agentName) {
+		s.jsonError(w, http.StatusForbidden, "agent operator access required")
+		return
+	}
 
 	taskType := strings.TrimSpace(body.Type)
 	if taskType == "" {
@@ -188,6 +192,10 @@ func (s *Server) handlePostCancelTask(w http.ResponseWriter, r *http.Request) {
 	if !s.checkProjectAccess(w, r, project) {
 		return
 	}
+	if !s.canOperateAgent(r, project, agent) {
+		s.jsonError(w, http.StatusForbidden, "agent operator access required")
+		return
+	}
 	t, err := s.ts.GetTask(project, agent, id)
 	if err != nil {
 		if strings.Contains(err.Error(), "not found") {
@@ -227,6 +235,10 @@ func (s *Server) handlePostArchiveTask(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	if !s.checkProjectAccess(w, r, project) {
+		return
+	}
+	if !s.canOperateAgent(r, project, agent) {
+		s.jsonError(w, http.StatusForbidden, "agent operator access required")
 		return
 	}
 	t, err := s.ts.GetTask(project, agent, id)
@@ -278,6 +290,10 @@ func (s *Server) handlePutUpdateTask(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	if !s.checkProjectAccess(w, r, project) {
+		return
+	}
+	if !s.canOperateAgent(r, project, agent) {
+		s.jsonError(w, http.StatusForbidden, "agent operator access required")
 		return
 	}
 	hasUpdate := body.Status != nil || body.Priority != nil || body.Type != nil || body.Summary != nil ||
@@ -458,6 +474,16 @@ func (s *Server) handlePostMessage(w http.ResponseWriter, r *http.Request) {
 			return
 		}
 	}
+	if !s.canSendMessageAs(r, from) {
+		s.jsonError(w, http.StatusForbidden, "sender access required")
+		return
+	}
+	for _, rec := range recipients {
+		if !s.canSendMessageTo(r, rec) {
+			s.jsonError(w, http.StatusForbidden, "recipient access required")
+			return
+		}
+	}
 
 	sentAt := time.Now().UTC()
 	ids := make([]string, 0, len(recipients))
@@ -495,6 +521,53 @@ type markReadBody struct {
 	ID      string `json:"id"`
 }
 
+func (s *Server) canSendMessageAs(r *http.Request, sender string) bool {
+	cur := s.currentUser(r)
+	if cur.Role == RoleAdmin || s.canAdminCurrentWorkspace(r) {
+		return true
+	}
+	if sender == cur.Username || sender == "human" {
+		return true
+	}
+	project, agent, ok := splitAgentMailbox(sender)
+	return ok && s.canOperateAgent(r, project, agent)
+}
+
+func (s *Server) canSendMessageTo(r *http.Request, recipient string) bool {
+	if recipient == "human" {
+		return true
+	}
+	cur := s.currentUser(r)
+	if recipient == cur.Username {
+		return true
+	}
+	project, agent, ok := splitAgentMailbox(recipient)
+	if !ok {
+		return true
+	}
+	return s.canOperateAgent(r, project, agent)
+}
+
+func splitAgentMailbox(mailbox string) (string, string, bool) {
+	parts := strings.SplitN(mailbox, "/", 2)
+	if len(parts) != 2 || strings.TrimSpace(parts[0]) == "" || strings.TrimSpace(parts[1]) == "" {
+		return "", "", false
+	}
+	return parts[0], parts[1], true
+}
+
+func (s *Server) canOperateMailbox(r *http.Request, mailbox string) bool {
+	cur := s.currentUser(r)
+	if cur.Role == RoleAdmin || s.canAdminCurrentWorkspace(r) {
+		return true
+	}
+	if mailbox == cur.Username {
+		return true
+	}
+	project, agent, ok := splitAgentMailbox(mailbox)
+	return ok && s.canOperateAgent(r, project, agent)
+}
+
 func (s *Server) handlePostMarkMessageRead(w http.ResponseWriter, r *http.Request) {
 	var body markReadBody
 	if err := s.readJSON(w, r, &body); err != nil {
@@ -509,6 +582,10 @@ func (s *Server) handlePostMarkMessageRead(w http.ResponseWriter, r *http.Reques
 	}
 	if err := s.validateIdentity(mailbox, "mailbox"); err != nil {
 		s.jsonError(w, http.StatusBadRequest, err.Error())
+		return
+	}
+	if !s.canOperateMailbox(r, mailbox) {
+		s.jsonError(w, http.StatusForbidden, "mailbox operator access required")
 		return
 	}
 	if err := s.ts.MarkMessageRead(mailbox, id); err != nil {
@@ -538,6 +615,10 @@ func (s *Server) handlePostArchiveMessage(w http.ResponseWriter, r *http.Request
 		s.jsonError(w, http.StatusBadRequest, err.Error())
 		return
 	}
+	if !s.canOperateMailbox(r, mailbox) {
+		s.jsonError(w, http.StatusForbidden, "mailbox operator access required")
+		return
+	}
 	if err := s.ts.ArchiveMessage(mailbox, id); err != nil {
 		if strings.Contains(err.Error(), "not found") {
 			s.jsonError(w, http.StatusNotFound, "message not found")
@@ -563,6 +644,10 @@ func (s *Server) handlePostDeleteMessage(w http.ResponseWriter, r *http.Request)
 	}
 	if err := s.validateIdentity(mailbox, "mailbox"); err != nil {
 		s.jsonError(w, http.StatusBadRequest, err.Error())
+		return
+	}
+	if !s.canOperateMailbox(r, mailbox) {
+		s.jsonError(w, http.StatusForbidden, "mailbox operator access required")
 		return
 	}
 	if err := s.ts.DeleteMessage(mailbox, id); err != nil {
@@ -595,6 +680,10 @@ func (s *Server) handlePostMarkAllMessagesRead(w http.ResponseWriter, r *http.Re
 		s.jsonError(w, http.StatusBadRequest, err.Error())
 		return
 	}
+	if !s.canOperateMailbox(r, mailbox) {
+		s.jsonError(w, http.StatusForbidden, "mailbox operator access required")
+		return
+	}
 	if err := s.ts.MarkMessagesRead(mailbox); err != nil {
 		s.serverError(w, err)
 		return
@@ -609,6 +698,9 @@ type markAllProjectBody struct {
 
 func (s *Server) handlePostProjectMarkAllMessagesRead(w http.ResponseWriter, r *http.Request) {
 	name := r.PathValue("name")
+	if !s.checkProjectAccess(w, r, name) {
+		return
+	}
 	if _, err := s.st.Project(name); err != nil {
 		if isNotFoundErr(err) {
 			s.jsonError(w, http.StatusNotFound, "project not found")
@@ -640,6 +732,10 @@ func (s *Server) handlePostProjectMarkAllMessagesRead(w http.ResponseWriter, r *
 			s.jsonError(w, http.StatusBadRequest, "agent not found in this project")
 			return
 		}
+		if !s.canOperateAgent(r, name, parts[1]) {
+			s.jsonError(w, http.StatusForbidden, "agent operator access required")
+			return
+		}
 		if err := s.ts.MarkMessagesRead(mailbox); err != nil {
 			s.serverError(w, err)
 			return
@@ -655,6 +751,9 @@ func (s *Server) handlePostProjectMarkAllMessagesRead(w http.ResponseWriter, r *
 	}
 	mailboxes := make([]string, 0, len(agents))
 	for _, ag := range agents {
+		if !s.canOperateAgent(r, name, ag.Name) {
+			continue
+		}
 		mb := name + "/" + ag.Name
 		mailboxes = append(mailboxes, mb)
 		if err := s.ts.MarkMessagesRead(mb); err != nil {
@@ -704,6 +803,9 @@ func (s *Server) handleGetComments(w http.ResponseWriter, r *http.Request) {
 	project := r.PathValue("project")
 	agent := r.PathValue("agent")
 	taskID := r.PathValue("taskId")
+	if !s.checkProjectAccess(w, r, project) {
+		return
+	}
 	comments, err := s.ts.ListComments(project, agent, taskID)
 	if err != nil {
 		s.serverError(w, err)
@@ -719,6 +821,10 @@ func (s *Server) handlePostComment(w http.ResponseWriter, r *http.Request) {
 	project := r.PathValue("project")
 	agent := r.PathValue("agent")
 	taskID := r.PathValue("taskId")
+	if !s.canOperateAgent(r, project, agent) {
+		s.jsonError(w, http.StatusForbidden, "agent operator access required")
+		return
+	}
 	var body struct {
 		Author string `json:"author"`
 		Body   string `json:"body"`
@@ -756,6 +862,10 @@ func (s *Server) handleDeleteComment(w http.ResponseWriter, r *http.Request) {
 	project := r.PathValue("project")
 	agent := r.PathValue("agent")
 	commentID := r.PathValue("commentId")
+	if !s.canOperateAgent(r, project, agent) {
+		s.jsonError(w, http.StatusForbidden, "agent operator access required")
+		return
+	}
 	if err := s.ts.DeleteComment(project, agent, commentID); err != nil {
 		if strings.Contains(err.Error(), "not found") {
 			s.jsonError(w, http.StatusNotFound, err.Error())
@@ -774,7 +884,7 @@ func (s *Server) handleFireAgent(w http.ResponseWriter, r *http.Request) {
 		s.jsonError(w, http.StatusBadRequest, "project and agent are required")
 		return
 	}
-	if !s.checkProjectAccess(w, r, project) {
+	if !s.checkProjectManager(w, r, project) {
 		return
 	}
 	if _, err := s.st.AgentMeta(project, agent); err != nil {

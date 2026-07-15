@@ -127,6 +127,9 @@ func (s *Server) handlePutRolePrompt(w http.ResponseWriter, r *http.Request) {
 
 func (s *Server) handleGetProjectPrompt(w http.ResponseWriter, r *http.Request) {
 	name := r.PathValue("name")
+	if !s.checkProjectAccess(w, r, name) {
+		return
+	}
 	content, err := s.st.ProjectPrompt(name)
 	if err != nil {
 		if isNotFoundErr(err) {
@@ -141,6 +144,9 @@ func (s *Server) handleGetProjectPrompt(w http.ResponseWriter, r *http.Request) 
 
 func (s *Server) handlePutProjectPrompt(w http.ResponseWriter, r *http.Request) {
 	name := r.PathValue("name")
+	if !s.checkProjectManager(w, r, name) {
+		return
+	}
 	if _, err := s.st.Project(name); err != nil {
 		if isNotFoundErr(err) {
 			s.jsonError(w, http.StatusNotFound, "project not found")
@@ -166,6 +172,9 @@ func (s *Server) handlePutProjectPrompt(w http.ResponseWriter, r *http.Request) 
 func (s *Server) handleGetAgentContext(w http.ResponseWriter, r *http.Request) {
 	project := r.PathValue("name")
 	agent := r.PathValue("agent")
+	if !s.checkProjectAccess(w, r, project) {
+		return
+	}
 	agentDir := s.st.AgentDir(project, agent)
 
 	meta, err := s.st.AgentMeta(project, agent)
@@ -274,6 +283,10 @@ func contextFileName(model string) string {
 func (s *Server) handlePutAgentWakeup(w http.ResponseWriter, r *http.Request) {
 	project := r.PathValue("name")
 	agent := r.PathValue("agent")
+	if !s.canManageAgentConfig(r, project, agent) {
+		s.jsonError(w, http.StatusForbidden, "agent management access required")
+		return
+	}
 
 	if _, err := s.st.AgentMeta(project, agent); err != nil {
 		if isNotFoundErr(err) {
@@ -342,6 +355,14 @@ func (s *Server) handlePostProjectSync(w http.ResponseWriter, r *http.Request) {
 		}
 	}
 	agentName := strings.TrimSpace(body.Agent)
+	if agentName == "" {
+		if !s.checkProjectManager(w, r, project) {
+			return
+		}
+	} else if !s.canManageAgentConfig(r, project, agentName) {
+		s.jsonError(w, http.StatusForbidden, "agent management access required")
+		return
+	}
 
 	bin, err := exec.LookPath("multigent")
 	if err != nil {
@@ -373,6 +394,10 @@ func (s *Server) handlePostProjectSync(w http.ResponseWriter, r *http.Request) {
 func (s *Server) handlePutAgentSandbox(w http.ResponseWriter, r *http.Request) {
 	project := r.PathValue("name")
 	agent := r.PathValue("agent")
+	if !s.canManageAgentConfig(r, project, agent) {
+		s.jsonError(w, http.StatusForbidden, "agent management access required")
+		return
+	}
 
 	meta, err := s.st.AgentMeta(project, agent)
 	if err != nil {

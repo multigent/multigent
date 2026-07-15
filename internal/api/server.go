@@ -558,9 +558,11 @@ func (s *Server) handleProjects(w http.ResponseWriter, r *http.Request) {
 	cur := s.currentUser(r)
 	out := make([]map[string]any, 0, len(projects))
 	for _, p := range projects {
-		if cur.Role != RoleAdmin {
+		if cur.Role != RoleAdmin && !s.canAdminCurrentWorkspace(r) {
 			if _, ok := s.users.HasProjectAccess(cur.Username, p.Name); !ok {
-				continue
+				if !currentUserLinkedProject(cur, p.Name) {
+					continue
+				}
 			}
 		}
 		out = append(out, map[string]any{
@@ -603,7 +605,7 @@ func (s *Server) handleProject(w http.ResponseWriter, r *http.Request) {
 
 func (s *Server) handlePutProject(w http.ResponseWriter, r *http.Request) {
 	name := r.PathValue("name")
-	if !s.checkProjectAccess(w, r, name) {
+	if !s.checkProjectManager(w, r, name) {
 		return
 	}
 	p, err := s.st.Project(name)
@@ -671,7 +673,7 @@ func (s *Server) handleProjectAgents(w http.ResponseWriter, r *http.Request) {
 func (s *Server) handlePatchAgent(w http.ResponseWriter, r *http.Request) {
 	project := r.PathValue("name")
 	agent := r.PathValue("agent")
-	if !s.checkProjectAccess(w, r, project) {
+	if !s.checkProjectManager(w, r, project) {
 		return
 	}
 	meta, err := s.st.AgentMeta(project, agent)

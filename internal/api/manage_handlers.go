@@ -88,6 +88,9 @@ func (s *Server) handleHireAgent(w http.ResponseWriter, r *http.Request) {
 		s.jsonError(w, http.StatusBadRequest, "missing project name")
 		return
 	}
+	if !s.checkProjectManager(w, r, project) {
+		return
+	}
 
 	var body hireAgentBody
 	if err := s.readJSON(w, r, &body); err != nil {
@@ -181,6 +184,10 @@ func (s *Server) handleRunAgent(w http.ResponseWriter, r *http.Request) {
 	agent := strings.TrimSpace(body.Agent)
 	if project == "" || agent == "" {
 		s.jsonError(w, http.StatusBadRequest, "project and agent are required")
+		return
+	}
+	if !s.canOperateAgent(r, project, agent) {
+		s.jsonError(w, http.StatusForbidden, "agent operator access required")
 		return
 	}
 
@@ -426,6 +433,13 @@ func (s *Server) handlePutAgentEnv(w http.ResponseWriter, r *http.Request) {
 
 func (s *Server) canManageAgentConfig(r *http.Request, project, agent string) bool {
 	if s.canManageProject(r, project) {
+		return true
+	}
+	return currentUserLinkedAgent(s.currentUser(r), project+"/"+agent)
+}
+
+func (s *Server) canOperateAgent(r *http.Request, project, agent string) bool {
+	if s.canOperateProject(r, project) {
 		return true
 	}
 	return currentUserLinkedAgent(s.currentUser(r), project+"/"+agent)

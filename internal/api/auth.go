@@ -414,12 +414,6 @@ func (s *UserStore) HasProjectAccess(username, project string) (string, bool) {
 			return pa.Role, true
 		}
 	}
-	for _, la := range u.LinkedAgents {
-		parts := strings.SplitN(la, "/", 2)
-		if len(parts) == 2 && parts[0] == project {
-			return ProjectRoleOperator, true
-		}
-	}
 	return "", false
 }
 
@@ -789,24 +783,50 @@ func (s *Server) requireAdmin(w http.ResponseWriter, r *http.Request) bool {
 
 func (s *Server) canAccessProject(r *http.Request, project string) bool {
 	u := s.currentUser(r)
-	if u.Role == RoleAdmin {
+	if u.Role == RoleAdmin || s.canAdminCurrentWorkspace(r) {
 		return true
 	}
 	_, ok := s.users.HasProjectAccess(u.Username, project)
-	return ok
+	return ok || currentUserLinkedProject(u, project)
+}
+
+func currentUserLinkedProject(cur *userRecord, project string) bool {
+	if cur == nil {
+		return false
+	}
+	prefix := project + "/"
+	for _, linked := range cur.LinkedAgents {
+		if strings.HasPrefix(linked, prefix) {
+			return true
+		}
+	}
+	return false
 }
 
 func (s *Server) projectRole(r *http.Request, project string) (string, bool) {
 	u := s.currentUser(r)
-	if u.Role == RoleAdmin {
+	if u.Role == RoleAdmin || s.canAdminCurrentWorkspace(r) {
 		return ProjectRoleManager, true
 	}
 	return s.users.HasProjectAccess(u.Username, project)
 }
 
+func (s *Server) canOperateProject(r *http.Request, project string) bool {
+	role, ok := s.projectRole(r, project)
+	return ok && projectRoleLevel(role) >= projectRoleLevel(ProjectRoleOperator)
+}
+
 func (s *Server) canManageProject(r *http.Request, project string) bool {
 	role, ok := s.projectRole(r, project)
 	return ok && projectRoleLevel(role) >= projectRoleLevel(ProjectRoleManager)
+}
+
+func (s *Server) checkProjectOperator(w http.ResponseWriter, r *http.Request, project string) bool {
+	if !s.canOperateProject(r, project) {
+		s.jsonError(w, http.StatusForbidden, "project operator access required")
+		return false
+	}
+	return true
 }
 
 func (s *Server) checkProjectManager(w http.ResponseWriter, r *http.Request, project string) bool {

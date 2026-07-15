@@ -191,6 +191,10 @@ func (s *Server) handleAgentChat(w http.ResponseWriter, r *http.Request) {
 	if !s.checkProjectAccess(w, r, project) {
 		return
 	}
+	if !s.canOperateAgent(r, project, agent) {
+		s.jsonError(w, http.StatusForbidden, "agent operator access required")
+		return
+	}
 
 	var body agentChatBody
 	if err := s.readJSON(w, r, &body); err != nil {
@@ -347,7 +351,8 @@ func (s *Server) handleAgentChatStop(w http.ResponseWriter, r *http.Request) {
 	if !ok {
 		return
 	}
-	if !s.checkProjectAccess(w, r, project) {
+	if !s.canOperateAgent(r, project, agent) {
+		s.jsonError(w, http.StatusForbidden, "agent operator access required")
 		return
 	}
 
