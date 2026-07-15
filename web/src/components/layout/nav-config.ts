@@ -58,8 +58,6 @@ export type ProjectNavItem = {
 export const workspaceNav: NavItem[] = [
   { to: '/', navKey: 'overview', icon: LayoutDashboard, activePrefix: undefined, adminOnly: true },
   { to: '/workbench', navKey: 'workbench', icon: Briefcase, activePrefix: '/workbench' },
-  { to: '/connections', navKey: 'connections', icon: Cable, activePrefix: '/connections' },
-  { to: '/audit', navKey: 'audit', icon: ShieldCheck, activePrefix: '/audit', adminOnly: true },
   {
     to: '/projects',
     navKey: 'projects',
@@ -69,9 +67,11 @@ export const workspaceNav: NavItem[] = [
   { to: '/goals', navKey: 'goals', icon: Target, activePrefix: '/goals' },
   { to: '/people', navKey: 'people', icon: User, activePrefix: '/people' },
   { to: '/teams', navKey: 'teams', icon: Users, activePrefix: '/teams', adminOnly: true },
+  { to: '/connections', navKey: 'connections', icon: Cable, activePrefix: '/connections' },
   { to: '/skills', navKey: 'skills', icon: Puzzle, activePrefix: '/skills', adminOnly: true },
   { to: '/docs', navKey: 'docs', icon: BookOpen, activePrefix: '/docs', adminOnly: true },
   { to: '/files', navKey: 'files', icon: FolderOpen, activePrefix: '/files' },
+  { to: '/audit', navKey: 'audit', icon: ShieldCheck, activePrefix: '/audit', adminOnly: true },
   { to: '/settings', navKey: 'settings', icon: Settings, activePrefix: '/settings' },
 ]
 

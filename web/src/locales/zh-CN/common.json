@@ -149,11 +149,16 @@
     "ja": "日本語"
   },
   "settings": {
-    "title": "设置",
-    "intro": "语言与主题偏好保存在本浏览器。",
+    "title": "工作区设置",
+    "intro": "工作区管理、权限控制、模型提供方与运行环境配置。",
     "appearanceSection": "外观",
     "languageSection": "语言",
     "themeHint": "提示：顶部栏太阳 / 月亮 / 显示器图标可循环切换浅色 → 深色 → 跟随系统。"
+  },
+  "account": {
+    "title": "账号设置",
+    "intro": "当前浏览器会话的个人偏好与密码设置。",
+    "menu": "账号设置"
   },
   "overview": {
     "eyebrow": "工作台",

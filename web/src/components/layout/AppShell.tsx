@@ -82,6 +82,10 @@ function useBreadcrumbs(): BreadcrumbSegment[] {
     ]
   }
 
+  if (pathname === '/account') {
+    return [{ label: t('account.title') }]
+  }
+
   const key = navKeyFromPath(pathname)
   return [{ label: t(`nav.${key}`) }]
 }

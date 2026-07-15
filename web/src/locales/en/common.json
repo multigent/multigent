@@ -149,11 +149,16 @@
     "ja": "日本語"
   },
   "settings": {
-    "title": "Settings",
-    "intro": "Locale and theme preferences are stored in this browser.",
+    "title": "Workspace Settings",
+    "intro": "Workspace administration, access control, providers, and runtime environment configuration.",
     "appearanceSection": "Appearance",
     "languageSection": "Language",
     "themeHint": "Tip: use the sun / moon / monitor icon in the top bar to cycle light → dark → system."
+  },
+  "account": {
+    "title": "Account Settings",
+    "intro": "Personal preferences and password for your current browser session.",
+    "menu": "Account settings"
   },
   "overview": {
     "eyebrow": "Workspace",

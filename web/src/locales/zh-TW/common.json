@@ -149,11 +149,16 @@
     "ja": "日本語"
   },
   "settings": {
-    "title": "設定",
-    "intro": "語言與主題偏好儲存在本瀏覽器。",
+    "title": "工作區設定",
+    "intro": "工作區管理、權限控制、模型提供方與執行環境設定。",
     "appearanceSection": "外觀",
     "languageSection": "語言",
     "themeHint": "提示：頂部列太陽／月亮／顯示器圖示可迴圈切換淺色 → 深色 → 跟隨系統。"
+  },
+  "account": {
+    "title": "帳號設定",
+    "intro": "目前瀏覽器工作階段的個人偏好與密碼設定。",
+    "menu": "帳號設定"
   },
   "overview": {
     "eyebrow": "工作臺",

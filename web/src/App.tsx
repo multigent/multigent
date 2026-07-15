@@ -10,6 +10,7 @@ import WorkspacePage from './pages/WorkspacePage'
 import WorkbenchPage from './pages/WorkbenchPage'
 import OverviewPage from './pages/OverviewPage'
 import SettingsPage from './pages/SettingsPage'
+import AccountPage from './pages/AccountPage'
 import SkillsPage from './pages/SkillsPage'
 import ConnectionsPage from './pages/ConnectionsPage'
 import AuditPage from './pages/AuditPage'
@@ -123,6 +124,7 @@ function AuthenticatedRoutes() {
         {canAdmin && <Route path="docs/*" element={<DocsPage />} />}
         <Route path="files" element={<FilesPage />} />
         <Route path="settings" element={<SettingsPage />} />
+        <Route path="account" element={<AccountPage />} />
         <Route path="*" element={<Navigate to="/" replace />} />
       </Route>
     </Routes>

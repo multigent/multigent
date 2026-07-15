@@ -95,8 +95,8 @@ export function CommandPalette({
       { id: 'nav-projects', label: t('nav.projects'), group: t('search.groupNav'), icon: FolderKanban, to: '/projects' },
       { id: 'nav-workbench', label: t('nav.workbench'), group: t('search.groupNav'), icon: Briefcase, to: '/workbench' },
       { id: 'nav-connections', label: t('nav.connections'), group: t('search.groupNav'), icon: Cable, to: '/connections' },
-      { id: 'nav-audit', label: t('nav.audit'), group: t('search.groupNav'), icon: ShieldCheck, to: '/audit' },
       { id: 'nav-skills', label: t('nav.skills'), group: t('search.groupNav'), icon: Puzzle, to: '/skills' },
+      { id: 'nav-audit', label: t('nav.audit'), group: t('search.groupNav'), icon: ShieldCheck, to: '/audit' },
       { id: 'nav-settings', label: t('nav.settings'), group: t('search.groupNav'), icon: Settings, to: '/settings' },
     ].filter(item => canAdmin || !['nav-overview', 'nav-teams', 'nav-audit', 'nav-skills'].includes(item.id))
 

@@ -109,12 +109,12 @@ function UserMenu() {
             <p className="text-xs text-neutral-400 dark:text-zinc-500">{user?.role}</p>
           </div>
           <Link
-            to="/settings"
+            to="/account"
             onClick={() => setOpen(false)}
             className="flex w-full items-center gap-2 px-3 py-1.5 text-left text-sm text-neutral-700 transition-colors hover:bg-neutral-50 dark:text-zinc-300 dark:hover:bg-zinc-700"
           >
             <Settings className="size-3.5" strokeWidth={1.8} />
-            {t('nav.settings')}
+            {t('account.menu')}
           </Link>
           <button
             type="button"
