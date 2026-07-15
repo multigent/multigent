@@ -33,10 +33,13 @@ func (b providerBody) toEntity() entity.APIProvider {
 }
 
 func (s *Server) providerStore() *store.ProviderStore {
-	return store.NewProviderStore(s.root)
+	return store.NewProviderStoreWithDB(s.root, s.controlDB)
 }
 
 func (s *Server) handleListProviders(w http.ResponseWriter, r *http.Request) {
+	if !s.checkCurrentWorkspaceAccess(w, r) {
+		return
+	}
 	items, err := s.providerStore().List()
 	if err != nil {
 		s.serverError(w, err)
@@ -50,6 +53,10 @@ func (s *Server) handleListProviders(w http.ResponseWriter, r *http.Request) {
 }
 
 func (s *Server) handleAddProvider(w http.ResponseWriter, r *http.Request) {
+	workspaceID, ok := s.modelProviderWorkspaceAdmin(w, r)
+	if !ok {
+		return
+	}
 	var body providerBody
 	if err := s.readJSON(w, r, &body); err != nil {
 		s.jsonError(w, http.StatusBadRequest, "invalid JSON body")
@@ -65,10 +72,23 @@ func (s *Server) handleAddProvider(w http.ResponseWriter, r *http.Request) {
 		s.serverError(w, err)
 		return
 	}
+	s.auditLog(auditLogInput{
+		WorkspaceID:  workspaceID,
+		Action:       "model_provider.create",
+		ResourceType: "model_provider",
+		ResourceID:   p.ID,
+		Summary:      "Model provider created",
+		After:        modelProviderAuditPayload(*p),
+		Request:      r,
+	})
 	_ = json.NewEncoder(w).Encode(providerToJSON(*p))
 }
 
 func (s *Server) handleUpdateProvider(w http.ResponseWriter, r *http.Request) {
+	workspaceID, ok := s.modelProviderWorkspaceAdmin(w, r)
+	if !ok {
+		return
+	}
 	id := r.PathValue("id")
 	var body providerBody
 	if err := s.readJSON(w, r, &body); err != nil {
@@ -95,12 +115,28 @@ func (s *Server) handleUpdateProvider(w http.ResponseWriter, r *http.Request) {
 		s.serverError(w, err)
 		return
 	}
+	s.auditLog(auditLogInput{
+		WorkspaceID:  workspaceID,
+		Action:       "model_provider.update",
+		ResourceType: "model_provider",
+		ResourceID:   p.ID,
+		Summary:      "Model provider updated",
+		Before:       modelProviderAuditPayload(*existing),
+		After:        modelProviderAuditPayload(*p),
+		Request:      r,
+	})
 	_ = json.NewEncoder(w).Encode(providerToJSON(*p))
 }
 
 func (s *Server) handleDeleteProvider(w http.ResponseWriter, r *http.Request) {
+	workspaceID, ok := s.modelProviderWorkspaceAdmin(w, r)
+	if !ok {
+		return
+	}
 	id := r.PathValue("id")
-	if err := s.providerStore().Remove(id); err != nil {
+	ps := s.providerStore()
+	existing, err := ps.Get(id)
+	if err != nil {
 		if strings.Contains(err.Error(), "not found") {
 			s.jsonError(w, http.StatusNotFound, err.Error())
 			return
@@ -108,7 +144,40 @@ func (s *Server) handleDeleteProvider(w http.ResponseWriter, r *http.Request) {
 		s.serverError(w, err)
 		return
 	}
+	if err := ps.Remove(id); err != nil {
+		if strings.Contains(err.Error(), "not found") {
+			s.jsonError(w, http.StatusNotFound, err.Error())
+			return
+		}
+		s.serverError(w, err)
+		return
+	}
+	s.auditLog(auditLogInput{
+		WorkspaceID:  workspaceID,
+		Action:       "model_provider.delete",
+		ResourceType: "model_provider",
+		ResourceID:   id,
+		Summary:      "Model provider deleted",
+		Before:       modelProviderAuditPayload(*existing),
+		Request:      r,
+	})
 	_ = json.NewEncoder(w).Encode(map[string]any{"ok": true})
+}
+
+func (s *Server) modelProviderWorkspaceAdmin(w http.ResponseWriter, r *http.Request) (string, bool) {
+	if !s.checkCurrentWorkspaceAccess(w, r) {
+		return "", false
+	}
+	workspaceID, err := s.currentWorkspaceID()
+	if err != nil {
+		s.serverError(w, err)
+		return "", false
+	}
+	if !s.canAdminWorkspace(r, workspaceID) {
+		s.jsonError(w, http.StatusForbidden, "workspace admin access required")
+		return "", false
+	}
+	return workspaceID, true
 }
 
 func providerToJSON(p entity.APIProvider) map[string]any {
@@ -124,4 +193,15 @@ func providerToJSON(p entity.APIProvider) map[string]any {
 		out["env"] = p.Env
 	}
 	return out
+}
+
+func modelProviderAuditPayload(p entity.APIProvider) map[string]any {
+	return map[string]any{
+		"id":      p.ID,
+		"name":    p.Name,
+		"type":    p.Type,
+		"baseUrl": p.BaseURL,
+		"model":   p.Model,
+		"hasKey":  p.APIKey != "",
+	}
 }

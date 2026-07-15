@@ -14,10 +14,15 @@ import (
 
 type ProviderStore struct {
 	root string
+	db   controldb.Store
 }
 
 func NewProviderStore(root string) *ProviderStore {
 	return &ProviderStore{root: root}
+}
+
+func NewProviderStoreWithDB(root string, db controldb.Store) *ProviderStore {
+	return &ProviderStore{root: root, db: db}
 }
 
 func newProviderID() string {
@@ -31,11 +36,11 @@ func newProviderID() string {
 }
 
 func (ps *ProviderStore) List() ([]entity.APIProvider, error) {
-	db, workspaceID, err := ps.openWorkspaceDB()
+	db, workspaceID, cleanup, err := ps.openWorkspaceDB()
 	if err != nil {
 		return nil, err
 	}
-	defer db.Close()
+	defer cleanup()
 	rows, err := db.ListModelProviders(workspaceID)
 	if err != nil {
 		return nil, err
@@ -52,11 +57,11 @@ func (ps *ProviderStore) List() ([]entity.APIProvider, error) {
 }
 
 func (ps *ProviderStore) Get(id string) (*entity.APIProvider, error) {
-	db, workspaceID, err := ps.openWorkspaceDB()
+	db, workspaceID, cleanup, err := ps.openWorkspaceDB()
 	if err != nil {
 		return nil, err
 	}
-	defer db.Close()
+	defer cleanup()
 	row, ok, err := db.ModelProviderByID(workspaceID, id)
 	if err != nil {
 		return nil, err
@@ -72,11 +77,11 @@ func (ps *ProviderStore) Get(id string) (*entity.APIProvider, error) {
 }
 
 func (ps *ProviderStore) Add(p entity.APIProvider) (*entity.APIProvider, error) {
-	db, workspaceID, err := ps.openWorkspaceDB()
+	db, workspaceID, cleanup, err := ps.openWorkspaceDB()
 	if err != nil {
 		return nil, err
 	}
-	defer db.Close()
+	defer cleanup()
 	p.ID = newProviderID()
 	p.Name = strings.TrimSpace(p.Name)
 	if p.Name == "" {
@@ -93,11 +98,11 @@ func (ps *ProviderStore) Add(p entity.APIProvider) (*entity.APIProvider, error) 
 }
 
 func (ps *ProviderStore) Update(id string, p entity.APIProvider) (*entity.APIProvider, error) {
-	db, workspaceID, err := ps.openWorkspaceDB()
+	db, workspaceID, cleanup, err := ps.openWorkspaceDB()
 	if err != nil {
 		return nil, err
 	}
-	defer db.Close()
+	defer cleanup()
 	existing, ok, err := db.ModelProviderByID(workspaceID, id)
 	if err != nil {
 		return nil, err
@@ -118,11 +123,11 @@ func (ps *ProviderStore) Update(id string, p entity.APIProvider) (*entity.APIPro
 }
 
 func (ps *ProviderStore) Remove(id string) error {
-	db, workspaceID, err := ps.openWorkspaceDB()
+	db, workspaceID, cleanup, err := ps.openWorkspaceDB()
 	if err != nil {
 		return err
 	}
-	defer db.Close()
+	defer cleanup()
 	if _, ok, err := db.ModelProviderByID(workspaceID, id); err != nil {
 		return err
 	} else if !ok {
@@ -182,17 +187,21 @@ func (ps *ProviderStore) ResolveEnv(id string) (map[string]string, error) {
 	return env, nil
 }
 
-func (ps *ProviderStore) openWorkspaceDB() (*controldb.SQLiteStore, string, error) {
+func (ps *ProviderStore) openWorkspaceDB() (controldb.Store, string, func(), error) {
+	if ps.db != nil {
+		workspaceID, err := ps.resolveWorkspaceID(ps.db)
+		return ps.db, workspaceID, func() {}, err
+	}
 	db, err := controldb.OpenDefault()
 	if err != nil {
-		return nil, "", err
+		return nil, "", func() {}, err
 	}
 	workspaceID, err := ps.resolveWorkspaceID(db)
 	if err != nil {
 		_ = db.Close()
-		return nil, "", err
+		return nil, "", func() {}, err
 	}
-	return db, workspaceID, nil
+	return db, workspaceID, func() { _ = db.Close() }, nil
 }
 
 func (ps *ProviderStore) resolveWorkspaceID(db controldb.Store) (string, error) {
