@@ -1120,6 +1120,13 @@ type RuntimeConnection = {
   ownerId: string
   authType: string
   profile?: Record<string, unknown>
+  profileSummary?: {
+    accountId?: string
+    accountName?: string
+    accountEmail?: string
+    scopes?: string[]
+    providerPermissions?: string[]
+  }
   matchedGrants?: RuntimeConnectionGrant[]
   runtime?: {
     alias?: string
@@ -1200,6 +1207,11 @@ function AgentRuntimeConnectionsPanel({ project, agentName }: { project: string;
                         <p className="mt-1 text-xs text-neutral-400 dark:text-zinc-500">
                           {connection.connectionName} · {connection.authType} · owner {connection.ownerId}
                         </p>
+                        {runtimeConnectionAccountLabel(connection) && (
+                          <p className="mt-1 truncate text-xs text-neutral-500 dark:text-zinc-400" title={runtimeConnectionAccountLabel(connection)}>
+                            {runtimeConnectionAccountLabel(connection)}
+                          </p>
+                        )}
                       </div>
                       <div className="flex flex-wrap gap-1.5 text-[10px] text-neutral-500 dark:text-zinc-400">
                         {connection.runtime?.mcpProxy?.path && <span className="rounded-md border border-neutral-200 px-1.5 py-0.5 dark:border-zinc-700">MCP {connection.runtime.mcpProxy.path}</span>}
@@ -1215,6 +1227,20 @@ function AgentRuntimeConnectionsPanel({ project, agentName }: { project: string;
                         ))}
                       </div>
                     )}
+                    {((connection.profileSummary?.scopes?.length ?? 0) > 0 || (connection.profileSummary?.providerPermissions?.length ?? 0) > 0) && (
+                      <div className="mt-2 flex flex-wrap gap-1.5">
+                        {(connection.profileSummary?.scopes ?? []).slice(0, 6).map(scope => (
+                          <span key={`scope-${scope}`} className="rounded-md border border-teal-200 bg-teal-50 px-2 py-0.5 text-[11px] text-teal-700 dark:border-teal-900/50 dark:bg-teal-950/30 dark:text-teal-300">
+                            scope: {scope}
+                          </span>
+                        ))}
+                        {(connection.profileSummary?.providerPermissions ?? []).slice(0, 6).map(permission => (
+                          <span key={`permission-${permission}`} className="rounded-md border border-violet-200 bg-violet-50 px-2 py-0.5 text-[11px] text-violet-700 dark:border-violet-900/50 dark:bg-violet-950/30 dark:text-violet-300">
+                            permission: {permission}
+                          </span>
+                        ))}
+                      </div>
+                    )}
                   </div>
                 ))}
               </div>
@@ -1224,6 +1250,11 @@ function AgentRuntimeConnectionsPanel({ project, agentName }: { project: string;
       </div>
     </section>
   )
+}
+
+function runtimeConnectionAccountLabel(connection: RuntimeConnection): string {
+  const summary = connection.profileSummary
+  return [summary?.accountId, summary?.accountName, summary?.accountEmail].filter(Boolean).join(' · ')
 }
 
 function EnvEditor({ project, agentName, model, initialEnv, initialProvider, onChanged }: {

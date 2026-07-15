@@ -835,19 +835,20 @@ func openConnectionSecret(secret controldb.ConnectionSecret) (map[string]string,
 }
 
 type connectionResponse struct {
-	ID             string                 `json:"id"`
-	Provider       string                 `json:"provider"`
-	ConnectionName string                 `json:"connectionName"`
-	OwnerType      string                 `json:"ownerType"`
-	OwnerID        string                 `json:"ownerId"`
-	AuthType       string                 `json:"authType"`
-	Status         string                 `json:"status"`
-	Profile        map[string]any         `json:"profile"`
-	Grants         []connectionGrantModel `json:"grants,omitempty"`
-	CreatedBy      string                 `json:"createdBy,omitempty"`
-	CreatedAt      string                 `json:"createdAt"`
-	UpdatedAt      string                 `json:"updatedAt,omitempty"`
-	LastUsedAt     string                 `json:"lastUsedAt,omitempty"`
+	ID             string                   `json:"id"`
+	Provider       string                   `json:"provider"`
+	ConnectionName string                   `json:"connectionName"`
+	OwnerType      string                   `json:"ownerType"`
+	OwnerID        string                   `json:"ownerId"`
+	AuthType       string                   `json:"authType"`
+	Status         string                   `json:"status"`
+	Profile        map[string]any           `json:"profile"`
+	ProfileSummary connectionProfileSummary `json:"profileSummary"`
+	Grants         []connectionGrantModel   `json:"grants,omitempty"`
+	CreatedBy      string                   `json:"createdBy,omitempty"`
+	CreatedAt      string                   `json:"createdAt"`
+	UpdatedAt      string                   `json:"updatedAt,omitempty"`
+	LastUsedAt     string                   `json:"lastUsedAt,omitempty"`
 }
 
 type connectionGrantModel struct {
@@ -871,6 +872,7 @@ func connectionToResponse(connection controldb.Connection, grants []controldb.Co
 		AuthType:       connection.AuthType,
 		Status:         connection.Status,
 		Profile:        sanitizeConnectionProfile(connection.Provider, profile),
+		ProfileSummary: summarizeConnectionProfile(connection, profile),
 		Grants:         grantsToResponse(grants),
 		CreatedBy:      connection.CreatedBy,
 		CreatedAt:      connection.CreatedAt,
@@ -908,7 +910,64 @@ func connectionAuditPayload(connection controldb.Connection) map[string]any {
 		"authType":       connection.AuthType,
 		"status":         connection.Status,
 		"profile":        sanitizeConnectionProfile(connection.Provider, profile),
+		"profileSummary": summarizeConnectionProfile(connection, profile),
 	}
+}
+
+type connectionProfileSummary struct {
+	DisplayName         string                   `json:"displayName,omitempty"`
+	AccountID           string                   `json:"accountId,omitempty"`
+	AccountName         string                   `json:"accountName,omitempty"`
+	AccountEmail        string                   `json:"accountEmail,omitempty"`
+	Scopes              []string                 `json:"scopes,omitempty"`
+	ProviderPermissions []string                 `json:"providerPermissions,omitempty"`
+	ActionPolicy        runtimeActionPolicyModel `json:"actionPolicy,omitempty"`
+}
+
+type runtimeActionPolicyModel struct {
+	AllowedMethods   []string `json:"allowedMethods,omitempty"`
+	BlockedMethods   []string `json:"blockedMethods,omitempty"`
+	AllowedEndpoints []string `json:"allowedEndpoints,omitempty"`
+	BlockedEndpoints []string `json:"blockedEndpoints,omitempty"`
+}
+
+func summarizeConnectionProfile(connection controldb.Connection, profile map[string]any) connectionProfileSummary {
+	policy := runtimeActionPolicyFromProfile(profile)
+	return connectionProfileSummary{
+		DisplayName:         firstProfileString(profile, "displayName", "name", "label"),
+		AccountID:           firstProfileString(profile, "accountId", "accountID", "userId", "userID", "teamId", "teamID", "tenantId", "tenantID", "botId", "botID"),
+		AccountName:         firstProfileString(profile, "accountName", "username", "login", "teamName", "tenantName"),
+		AccountEmail:        firstProfileString(profile, "accountEmail", "email"),
+		Scopes:              firstProfileStringList(profile, "scopes", "grantedScopes", "granted_scopes", "requiredScopes"),
+		ProviderPermissions: firstProfileStringList(profile, "providerPermissions", "permissions", "grantedPermissions", "granted_permissions"),
+		ActionPolicy: runtimeActionPolicyModel{
+			AllowedMethods:   policy.AllowedMethods,
+			BlockedMethods:   policy.BlockedMethods,
+			AllowedEndpoints: policy.AllowedEndpoints,
+			BlockedEndpoints: policy.BlockedEndpoints,
+		},
+	}
+}
+
+func firstProfileString(profile map[string]any, keys ...string) string {
+	for _, key := range keys {
+		if value, ok := profile[key].(string); ok {
+			if value = strings.TrimSpace(value); value != "" {
+				return value
+			}
+		}
+	}
+	return ""
+}
+
+func firstProfileStringList(profile map[string]any, keys ...string) []string {
+	for _, key := range keys {
+		items := runtimeActionPolicyList(profile, key)
+		if len(items) > 0 {
+			return items
+		}
+	}
+	return nil
 }
 
 func sanitizeConnectionProfile(providerID string, profile map[string]any) map[string]any {

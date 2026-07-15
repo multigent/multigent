@@ -10,15 +10,16 @@ import (
 )
 
 type agentRuntimeConnectionResponse struct {
-	ID             string                 `json:"id"`
-	Provider       string                 `json:"provider"`
-	ConnectionName string                 `json:"connectionName"`
-	OwnerType      string                 `json:"ownerType"`
-	OwnerID        string                 `json:"ownerId"`
-	AuthType       string                 `json:"authType"`
-	Profile        map[string]any         `json:"profile"`
-	MatchedGrants  []connectionGrantModel `json:"matchedGrants"`
-	Runtime        connectionRuntimeSpec  `json:"runtime"`
+	ID             string                   `json:"id"`
+	Provider       string                   `json:"provider"`
+	ConnectionName string                   `json:"connectionName"`
+	OwnerType      string                   `json:"ownerType"`
+	OwnerID        string                   `json:"ownerId"`
+	AuthType       string                   `json:"authType"`
+	Profile        map[string]any           `json:"profile"`
+	ProfileSummary connectionProfileSummary `json:"profileSummary"`
+	MatchedGrants  []connectionGrantModel   `json:"matchedGrants"`
+	Runtime        connectionRuntimeSpec    `json:"runtime"`
 }
 
 type agentRuntimeConnectionManifest struct {
@@ -207,6 +208,7 @@ func agentRuntimeConnectionToResponse(connection controldb.Connection, grants []
 		OwnerID:        connection.OwnerID,
 		AuthType:       connection.AuthType,
 		Profile:        sanitizeConnectionProfile(connection.Provider, profile),
+		ProfileSummary: summarizeConnectionProfile(connection, profile),
 		MatchedGrants:  grantsToResponse(grants),
 		Runtime:        runtimeSpecForConnection(connection, alias),
 	}

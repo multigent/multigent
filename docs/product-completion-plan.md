@@ -614,7 +614,8 @@ Status:
 - DingTalk Bot is now a first-class connector provider with webhook token/signing-secret credentials, scoped `/robot/send` runtime action proxy, and connection test support.
 - Connections now support explicit automatic health-check policy in the connection profile. The server runs a background checker for enabled due connections, workspace admins can trigger checks manually, results persist into validation metadata, and checks are audited.
 - Connections now support runtime action policies for HTTP action proxy calls. Connection owners can configure method and endpoint allow/block rules; runtime proxy calls and connection tests enforce the same policy before upstream credentials are used.
-- Remaining work: OAuth flow abstraction, DingTalk enterprise app/OAuth provider, GitHub app installation flow, richer profile/scopes display, action catalog/schema support, and deeper per-provider executor hardening.
+- Connection responses and runtime manifests now include a safe profile summary for account identity, scopes, provider permissions, and action policy. The Web connections page can capture and display this metadata without exposing provider secrets.
+- Remaining work: OAuth flow abstraction, DingTalk enterprise app/OAuth provider, GitHub app installation flow, action catalog/schema support, and deeper per-provider executor hardening.
 
 ### Phase 5: Agent Runtime Productization
 

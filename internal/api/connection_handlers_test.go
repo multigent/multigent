@@ -44,6 +44,40 @@ func TestConnectionResponseSanitizesProfileSecrets(t *testing.T) {
 	}
 }
 
+func TestConnectionResponseIncludesSafeProfileSummary(t *testing.T) {
+	connection := controldb.Connection{
+		ID:             "conn-one",
+		Provider:       "github",
+		ConnectionName: "default",
+		OwnerType:      ConnectionOwnerWorkspace,
+		OwnerID:        "ws-one",
+		AuthType:       ConnectionAuthAPIKey,
+		Status:         "active",
+		ProfileJSON:    `{"displayName":"GitHub Main","accountId":"42","accountName":"octo","accountEmail":"octo@example.test","scopes":["repo","read:user"],"providerPermissions":"Issues:write\nWiki:read","apiKey":"ghp_secret","allowedActionMethods":["GET"],"allowedActionEndpoints":["/user","/repos/*"]}`,
+		CreatedBy:      "admin",
+	}
+	resp := connectionToResponse(connection, nil)
+	if resp.ProfileSummary.DisplayName != "GitHub Main" || resp.ProfileSummary.AccountID != "42" || resp.ProfileSummary.AccountName != "octo" || resp.ProfileSummary.AccountEmail != "octo@example.test" {
+		t.Fatalf("summary identity=%#v", resp.ProfileSummary)
+	}
+	if strings.Join(resp.ProfileSummary.Scopes, ",") != "repo,read:user" {
+		t.Fatalf("summary scopes=%#v", resp.ProfileSummary.Scopes)
+	}
+	if strings.Join(resp.ProfileSummary.ProviderPermissions, ",") != "Issues:write,Wiki:read" {
+		t.Fatalf("summary permissions=%#v", resp.ProfileSummary.ProviderPermissions)
+	}
+	if strings.Join(resp.ProfileSummary.ActionPolicy.AllowedMethods, ",") != "GET" || strings.Join(resp.ProfileSummary.ActionPolicy.AllowedEndpoints, ",") != "/user,/repos/*" {
+		t.Fatalf("summary action policy=%#v", resp.ProfileSummary.ActionPolicy)
+	}
+	raw, err := json.Marshal(resp)
+	if err != nil {
+		t.Fatalf("marshal response: %v", err)
+	}
+	if strings.Contains(string(raw), "ghp_secret") || strings.Contains(string(raw), "apiKey") {
+		t.Fatalf("summary response leaked secret: %s", string(raw))
+	}
+}
+
 func TestConnectionAuditPayloadSanitizesProfileSecrets(t *testing.T) {
 	connection := controldb.Connection{
 		ID:             "conn-one",

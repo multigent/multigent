@@ -79,7 +79,7 @@ func TestAgentRuntimeConnectionResponseDoesNotExposeSecretValues(t *testing.T) {
 		OwnerType:      ConnectionOwnerWorkspace,
 		OwnerID:        "ws-one",
 		AuthType:       ConnectionAuthAPIKey,
-		ProfileJSON:    `{"provider":"github","connectionName":"ci","visible":"ok","apiKey":"ghp_secret","token":"secret"}`,
+		ProfileJSON:    `{"provider":"github","connectionName":"ci","visible":"ok","apiKey":"ghp_secret","token":"secret","accountName":"octo","accountEmail":"octo@example.test","scopes":["repo"],"providerPermissions":["Issues:write"]}`,
 	}
 	resp := agentRuntimeConnectionToResponse(connection, []controldb.ConnectionGrant{
 		{ID: "grant-one", TargetType: ConnectionTargetAgent, TargetID: "tapnow/dev"},
@@ -108,6 +108,12 @@ func TestAgentRuntimeConnectionResponseDoesNotExposeSecretValues(t *testing.T) {
 	}
 	if _, ok := resp.Profile["apiKey"]; ok {
 		t.Fatalf("apiKey was not removed from profile: %#v", resp.Profile)
+	}
+	if resp.ProfileSummary.AccountName != "octo" || resp.ProfileSummary.AccountEmail != "octo@example.test" {
+		t.Fatalf("profile summary identity=%#v", resp.ProfileSummary)
+	}
+	if strings.Join(resp.ProfileSummary.Scopes, ",") != "repo" || strings.Join(resp.ProfileSummary.ProviderPermissions, ",") != "Issues:write" {
+		t.Fatalf("profile summary grants=%#v", resp.ProfileSummary)
 	}
 	if len(resp.MatchedGrants) != 1 || resp.MatchedGrants[0].ID != "grant-one" {
 		t.Fatalf("matched grants not preserved: %#v", resp.MatchedGrants)

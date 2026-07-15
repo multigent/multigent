@@ -468,6 +468,10 @@ type runtimeActionPolicy struct {
 
 func runtimeActionPolicyFromConnection(connection controldb.Connection) runtimeActionPolicy {
 	profile := connectionProfileMap(connection)
+	return runtimeActionPolicyFromProfile(profile)
+}
+
+func runtimeActionPolicyFromProfile(profile map[string]any) runtimeActionPolicy {
 	return runtimeActionPolicy{
 		AllowedMethods:   runtimeActionPolicyList(profile, "allowedActionMethods"),
 		BlockedMethods:   runtimeActionPolicyList(profile, "blockedActionMethods"),

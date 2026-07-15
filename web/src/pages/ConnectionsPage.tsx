@@ -16,10 +16,25 @@ type Connection = {
   authType: string
   status: string
   profile?: Record<string, unknown>
+  profileSummary?: ConnectionProfileSummary
   grants?: ConnectionGrant[]
   createdBy?: string
   createdAt: string
   updatedAt?: string
+}
+type ConnectionProfileSummary = {
+  displayName?: string
+  accountId?: string
+  accountName?: string
+  accountEmail?: string
+  scopes?: string[]
+  providerPermissions?: string[]
+  actionPolicy?: {
+    allowedMethods?: string[]
+    blockedMethods?: string[]
+    allowedEndpoints?: string[]
+    blockedEndpoints?: string[]
+  }
 }
 type ConnectionTestResult = { ok: boolean; status: number; message: string }
 type ConnectionHealthCheckRunResult = { checked: number; skipped: number; results: Array<{ connectionId: string; ok: boolean; status: number; message: string; error?: string }> }
@@ -216,6 +231,8 @@ function ConnectionCard({ connection, provider, canGrant, canEdit, canDelete, te
   const validation = connectionValidation(connection)
   const health = connectionHealthPolicy(connection)
   const hasActionPolicy = connectionHasActionPolicy(connection)
+  const summary = connection.profileSummary
+  const accountLabel = [summary?.accountName, summary?.accountEmail].filter(Boolean).join(' · ')
   return (
     <section className="rounded-xl border border-neutral-200/80 bg-white p-5 dark:border-zinc-700/60 dark:bg-zinc-900/40">
       <div className="flex items-start justify-between gap-3">
@@ -247,6 +264,11 @@ function ConnectionCard({ connection, provider, canGrant, canEdit, canDelete, te
               )}
             </div>
             <p className="mt-1 text-xs text-neutral-400 dark:text-zinc-500">{connection.authType} · owner {connection.ownerId}</p>
+            {(summary?.accountId || accountLabel) && (
+              <p className="mt-1 truncate text-xs text-neutral-500 dark:text-zinc-400" title={[summary?.accountId, accountLabel].filter(Boolean).join(' · ')}>
+                {[summary?.accountId, accountLabel].filter(Boolean).join(' · ')}
+              </p>
+            )}
             {validation && (
               <p className="mt-1 truncate text-xs text-neutral-400 dark:text-zinc-500" title={validation.message || undefined}>
                 Validated {validation.atLabel}{validation.message ? ` · ${validation.message}` : ''}
@@ -293,6 +315,12 @@ function ConnectionCard({ connection, provider, canGrant, canEdit, canDelete, te
           <p className="mt-2 text-xs text-neutral-400 dark:text-zinc-500">No grants yet</p>
         )}
       </div>
+      {((summary?.scopes?.length ?? 0) > 0 || (summary?.providerPermissions?.length ?? 0) > 0) && (
+        <div className="mt-4 grid gap-3 sm:grid-cols-2">
+          <ProfileChips title="Scopes" items={summary?.scopes ?? []} />
+          <ProfileChips title="Permissions" items={summary?.providerPermissions ?? []} />
+        </div>
+      )}
       {testState?.message && (
         <div className={cn('mt-4 rounded-lg border px-3 py-2 text-xs',
           testState.ok
@@ -303,6 +331,21 @@ function ConnectionCard({ connection, provider, canGrant, canEdit, canDelete, te
         </div>
       )}
     </section>
+  )
+}
+
+function ProfileChips({ title, items }: { title: string; items: string[] }) {
+  if (items.length === 0) return null
+  return (
+    <div>
+      <p className="text-xs font-medium text-neutral-400 dark:text-zinc-500">{title}</p>
+      <div className="mt-2 flex flex-wrap gap-1.5">
+        {items.slice(0, 8).map(item => (
+          <span key={item} className="rounded-md border border-neutral-200 px-2 py-1 text-xs text-neutral-600 dark:border-zinc-700 dark:text-zinc-300">{item}</span>
+        ))}
+        {items.length > 8 && <span className="rounded-md border border-neutral-200 px-2 py-1 text-xs text-neutral-400 dark:border-zinc-700">+{items.length - 8}</span>}
+      </div>
+    </div>
   )
 }
 
@@ -353,6 +396,11 @@ function ConnectionDialog({ providers, isWorkspaceAdmin, connection, onClose, on
   const [authType, setAuthType] = useState(connection?.authType ?? provider?.authTypes[0] ?? 'api_key')
   const [connectionName, setConnectionName] = useState(connection?.connectionName ?? 'default')
   const [displayName, setDisplayName] = useState(String(connection?.profile?.displayName ?? ''))
+  const [accountId, setAccountId] = useState(String(connection?.profileSummary?.accountId ?? connection?.profile?.accountId ?? ''))
+  const [accountName, setAccountName] = useState(String(connection?.profileSummary?.accountName ?? connection?.profile?.accountName ?? ''))
+  const [accountEmail, setAccountEmail] = useState(String(connection?.profileSummary?.accountEmail ?? connection?.profile?.accountEmail ?? ''))
+  const [scopes, setScopes] = useState((connection?.profileSummary?.scopes ?? profileStringList(connection?.profile, 'scopes')).join('\n'))
+  const [providerPermissions, setProviderPermissions] = useState((connection?.profileSummary?.providerPermissions ?? profileStringList(connection?.profile, 'providerPermissions')).join('\n'))
   const [healthCheckEnabled, setHealthCheckEnabled] = useState(connection?.profile?.healthCheckEnabled === true)
   const [healthCheckIntervalMinutes, setHealthCheckIntervalMinutes] = useState(String(connectionHealthPolicy(connection ?? {} as Connection).intervalMinutes))
   const [allowedActionMethods, setAllowedActionMethods] = useState(profileStringList(connection?.profile, 'allowedActionMethods').join('\n'))
@@ -387,6 +435,11 @@ function ConnectionDialog({ providers, isWorkspaceAdmin, connection, onClose, on
         values: cleanValues,
         profile: {
           displayName: displayName.trim() || provider.displayName,
+          accountId: accountId.trim(),
+          accountName: accountName.trim(),
+          accountEmail: accountEmail.trim(),
+          scopes: parsePolicyList(scopes),
+          providerPermissions: parsePolicyList(providerPermissions),
           healthCheckEnabled,
           healthCheckIntervalMinutes: Math.max(5, Math.min(43200, Number(healthCheckIntervalMinutes) || 360)),
           allowedActionMethods: parsePolicyList(allowedActionMethods),
@@ -457,6 +510,36 @@ function ConnectionDialog({ providers, isWorkspaceAdmin, connection, onClose, on
             Existing credential values are hidden. Fill only the fields you want to replace; leave all credential fields blank to keep the current secret.
           </p>
         )}
+        <div className="rounded-lg border border-neutral-200 p-3 dark:border-zinc-700">
+          <div>
+            <p className="text-sm font-medium text-neutral-700 dark:text-zinc-200">Account profile</p>
+            <p className="mt-0.5 text-xs text-neutral-400 dark:text-zinc-500">Safe identity and authorization metadata shown to humans and agent runtimes. Do not place secrets here.</p>
+          </div>
+          <div className="mt-3 grid gap-3 sm:grid-cols-3">
+            <label className="block">
+              <span className="text-xs font-medium text-neutral-500 dark:text-zinc-400">Account ID</span>
+              <input className={inputCls} value={accountId} onChange={e => setAccountId(e.target.value)} />
+            </label>
+            <label className="block">
+              <span className="text-xs font-medium text-neutral-500 dark:text-zinc-400">Account name</span>
+              <input className={inputCls} value={accountName} onChange={e => setAccountName(e.target.value)} />
+            </label>
+            <label className="block">
+              <span className="text-xs font-medium text-neutral-500 dark:text-zinc-400">Account email</span>
+              <input className={inputCls} value={accountEmail} onChange={e => setAccountEmail(e.target.value)} />
+            </label>
+          </div>
+          <div className="mt-3 grid gap-3 sm:grid-cols-2">
+            <label className="block">
+              <span className="text-xs font-medium text-neutral-500 dark:text-zinc-400">Granted scopes</span>
+              <textarea className={`${inputCls} min-h-20 resize-y`} value={scopes} onChange={e => setScopes(e.target.value)} placeholder={'repo\nread:user'} />
+            </label>
+            <label className="block">
+              <span className="text-xs font-medium text-neutral-500 dark:text-zinc-400">Provider permissions</span>
+              <textarea className={`${inputCls} min-h-20 resize-y`} value={providerPermissions} onChange={e => setProviderPermissions(e.target.value)} placeholder={'Issues: read/write\nWiki: read'} />
+            </label>
+          </div>
+        </div>
         <div className="rounded-lg border border-neutral-200 p-3 dark:border-zinc-700">
           <label className="flex items-center justify-between gap-3">
             <span>
