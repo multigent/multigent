@@ -167,6 +167,7 @@ func TestOAuthAuthorizationStartAndCallbackCreateConnection(t *testing.T) {
 		Profile:        map[string]any{"accountName": "octo"},
 	})
 	startReq.Host = "multigent.example.test"
+	startReq.Header.Set("Origin", "http://multigent.example.test:27894")
 	startRec := httptest.NewRecorder()
 	s.handleStartOAuthAuthorization(startRec, startReq)
 	if startRec.Code != http.StatusOK {
@@ -184,14 +185,18 @@ func TestOAuthAuthorizationStartAndCallbackCreateConnection(t *testing.T) {
 	callbackReq.Host = "multigent.example.test"
 	callbackRec := httptest.NewRecorder()
 	s.handleCompleteOAuthAuthorization(callbackRec, callbackReq)
-	if callbackRec.Code != http.StatusOK {
+	if callbackRec.Code != http.StatusSeeOther {
 		t.Fatalf("callback status=%d body=%s", callbackRec.Code, callbackRec.Body.String())
+	}
+	location := callbackRec.Header().Get("Location")
+	if !strings.HasPrefix(location, "http://multigent.example.test:27894/connections?") || !strings.Contains(location, "oauth=success") || !strings.Contains(location, "oauthProvider=github") {
+		t.Fatalf("callback location=%q", location)
 	}
 	if !strings.Contains(tokenRequestBody, "client_id=gh-client") || !strings.Contains(tokenRequestBody, "client_secret=gh-secret") || !strings.Contains(tokenRequestBody, "code=code-one") {
 		t.Fatalf("token request body=%s", tokenRequestBody)
 	}
-	if strings.Contains(callbackRec.Body.String(), "oauth-access") || strings.Contains(callbackRec.Body.String(), "oauth-refresh") {
-		t.Fatalf("callback leaked token: %s", callbackRec.Body.String())
+	if strings.Contains(location, "oauth-access") || strings.Contains(location, "oauth-refresh") || strings.Contains(callbackRec.Body.String(), "oauth-access") || strings.Contains(callbackRec.Body.String(), "oauth-refresh") {
+		t.Fatalf("callback leaked token: location=%s body=%s", location, callbackRec.Body.String())
 	}
 	connections, err := s.controlDB.ListConnections(controldb.ConnectionFilter{WorkspaceID: workspaceID, Provider: "github", OwnerType: ConnectionOwnerUser, OwnerID: "owner"})
 	if err != nil {
@@ -213,6 +218,22 @@ func TestOAuthAuthorizationStartAndCallbackCreateConnection(t *testing.T) {
 	}
 	if values["accessToken"] != "oauth-access" || values["refreshToken"] != "oauth-refresh" {
 		t.Fatalf("secret values=%#v", values)
+	}
+}
+
+func TestOAuthWebOriginOnlyAllowsSameHostname(t *testing.T) {
+	same := httptest.NewRequest(http.MethodPost, "/api/v1/oauth/authorizations", nil)
+	same.Host = "127.0.0.1:27893"
+	same.Header.Set("Origin", "http://127.0.0.1:27894")
+	if got := oauthWebOrigin(same); got != "http://127.0.0.1:27894" {
+		t.Fatalf("same host origin=%q", got)
+	}
+
+	cross := httptest.NewRequest(http.MethodPost, "/api/v1/oauth/authorizations", nil)
+	cross.Host = "127.0.0.1:27893"
+	cross.Header.Set("Origin", "https://evil.example.test")
+	if got := oauthWebOrigin(cross); got != "" {
+		t.Fatalf("cross host origin should be rejected: %q", got)
 	}
 }
 

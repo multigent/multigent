@@ -63,6 +63,7 @@ type oauthAuthorizationState struct {
 	OwnerID        string         `json:"ownerId"`
 	CreatedBy      string         `json:"createdBy"`
 	CreatedAt      string         `json:"createdAt"`
+	WebOrigin      string         `json:"webOrigin,omitempty"`
 	Profile        map[string]any `json:"profile"`
 }
 
@@ -293,6 +294,7 @@ func (s *Server) handleStartOAuthAuthorization(w http.ResponseWriter, r *http.Re
 		OwnerID:        ownerID,
 		CreatedBy:      cur.Username,
 		CreatedAt:      time.Now().UTC().Format(time.RFC3339),
+		WebOrigin:      oauthWebOrigin(r),
 		Profile:        body.Profile,
 	}
 	rawState, _ := json.Marshal(state)
@@ -373,12 +375,12 @@ func (s *Server) handleCompleteOAuthAuthorization(w http.ResponseWriter, r *http
 			Summary:      err.Error(),
 			Request:      r,
 		})
-		s.jsonError(w, http.StatusBadGateway, err.Error())
+		s.redirectOAuthCallback(w, r, state, nil, err)
 		return
 	}
 	connection, err := s.upsertOAuthConnection(state, token)
 	if err != nil {
-		s.serverError(w, err)
+		s.redirectOAuthCallback(w, r, state, nil, err)
 		return
 	}
 	s.auditLog(auditLogInput{
@@ -392,7 +394,7 @@ func (s *Server) handleCompleteOAuthAuthorization(w http.ResponseWriter, r *http
 		After:        connectionAuditPayload(connection),
 		Request:      r,
 	})
-	_ = json.NewEncoder(w).Encode(connectionToResponse(connection, nil))
+	s.redirectOAuthCallback(w, r, state, &connection, nil)
 }
 
 func (s *Server) oauthProviders() ([]connector.Provider, error) {
@@ -455,6 +457,71 @@ func expectedOAuthRedirectURI(r *http.Request) string {
 		host = r.Host
 	}
 	return scheme + "://" + host + oauthCallbackPath
+}
+
+func oauthWebOrigin(r *http.Request) string {
+	origin := strings.TrimSpace(r.Header.Get("Origin"))
+	if origin == "" {
+		return ""
+	}
+	parsed, err := url.Parse(origin)
+	if err != nil || parsed.Scheme == "" || parsed.Host == "" || parsed.User != nil || parsed.RawQuery != "" || parsed.Fragment != "" {
+		return ""
+	}
+	if parsed.Scheme != "http" && parsed.Scheme != "https" {
+		return ""
+	}
+	if parsed.Path != "" && parsed.Path != "/" {
+		return ""
+	}
+	if !sameHostname(parsed.Host, r.Host) {
+		return ""
+	}
+	parsed.Path = ""
+	return strings.TrimRight(parsed.String(), "/")
+}
+
+func sameHostname(a, b string) bool {
+	hostA := strings.ToLower(strings.TrimSpace(a))
+	hostB := strings.ToLower(strings.TrimSpace(b))
+	if parsedA, err := url.Parse("//" + hostA); err == nil && parsedA.Hostname() != "" {
+		hostA = parsedA.Hostname()
+	}
+	if parsedB, err := url.Parse("//" + hostB); err == nil && parsedB.Hostname() != "" {
+		hostB = parsedB.Hostname()
+	}
+	return hostA != "" && hostA == hostB
+}
+
+func (s *Server) redirectOAuthCallback(w http.ResponseWriter, r *http.Request, state oauthAuthorizationState, connection *controldb.Connection, callbackErr error) {
+	http.Redirect(w, r, oauthCallbackReturnURL(state, connection, callbackErr), http.StatusSeeOther)
+}
+
+func oauthCallbackReturnURL(state oauthAuthorizationState, connection *controldb.Connection, callbackErr error) string {
+	u := &url.URL{Path: "/connections"}
+	base := strings.TrimRight(strings.TrimSpace(state.WebOrigin), "/")
+	if base != "" {
+		if parsed, err := url.Parse(base); err == nil {
+			u = parsed
+			u.Path = "/connections"
+			u.RawQuery = ""
+			u.Fragment = ""
+		}
+	}
+	q := u.Query()
+	q.Set("oauthProvider", state.Provider)
+	q.Set("oauthConnection", state.ConnectionName)
+	if callbackErr != nil {
+		q.Set("oauth", "error")
+		q.Set("message", callbackErr.Error())
+	} else {
+		q.Set("oauth", "success")
+		if connection != nil {
+			q.Set("connectionId", connection.ID)
+		}
+	}
+	u.RawQuery = q.Encode()
+	return u.String()
 }
 
 func safeOAuthClientExtra(input map[string]any) (map[string]any, error) {

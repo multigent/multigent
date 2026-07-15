@@ -1,5 +1,6 @@
 import { useEffect, useMemo, useState, type ReactNode } from 'react'
 import { Cable, KeyRound, Link2, Pencil, Plus, RefreshCw, ShieldCheck, Trash2, X } from 'lucide-react'
+import { useSearchParams } from 'react-router-dom'
 import { apiDelete, apiFetch, apiPost, apiPut } from '../lib/api'
 import { useAuth } from '../lib/auth'
 import { cn } from '../lib/cn'
@@ -72,7 +73,28 @@ export default function ConnectionsPage() {
   const [testResults, setTestResults] = useState<Record<string, { loading?: boolean; ok?: boolean; message?: string }>>({})
   const [healthCheckLoading, setHealthCheckLoading] = useState(false)
   const [healthCheckMessage, setHealthCheckMessage] = useState('')
+  const [oauthMessage, setOauthMessage] = useState<{ kind: 'success' | 'error'; text: string } | null>(null)
   const [reloadKey, setReloadKey] = useState(0)
+  const [searchParams, setSearchParams] = useSearchParams()
+
+  useEffect(() => {
+    const status = searchParams.get('oauth')
+    if (status !== 'success' && status !== 'error') return
+    const provider = searchParams.get('oauthProvider') || 'OAuth provider'
+    const connectionName = searchParams.get('oauthConnection') || 'connection'
+    if (status === 'success') {
+      setOauthMessage({ kind: 'success', text: `${provider}/${connectionName} connected.` })
+      setReloadKey(k => k + 1)
+    } else {
+      const message = searchParams.get('message') || 'OAuth authorization failed.'
+      setOauthMessage({ kind: 'error', text: `${provider}/${connectionName}: ${message}` })
+    }
+    const next = new URLSearchParams(searchParams)
+    for (const key of ['oauth', 'oauthProvider', 'oauthConnection', 'connectionId', 'message']) {
+      next.delete(key)
+    }
+    setSearchParams(next, { replace: true })
+  }, [searchParams, setSearchParams])
 
   useEffect(() => {
     let cancelled = false
@@ -176,6 +198,16 @@ export default function ConnectionsPage() {
       {healthCheckMessage && (
         <div className="mb-4 rounded-lg border border-neutral-200 bg-white px-3 py-2 text-xs text-neutral-600 dark:border-zinc-700 dark:bg-zinc-900/50 dark:text-zinc-300">
           {healthCheckMessage}
+        </div>
+      )}
+      {oauthMessage && (
+        <div className={cn(
+          'mb-4 rounded-lg border px-3 py-2 text-xs',
+          oauthMessage.kind === 'success'
+            ? 'border-emerald-200 bg-emerald-50 text-emerald-700 dark:border-emerald-900/50 dark:bg-emerald-950/30 dark:text-emerald-300'
+            : 'border-rose-200 bg-rose-50 text-rose-700 dark:border-rose-900/50 dark:bg-rose-950/30 dark:text-rose-300',
+        )}>
+          {oauthMessage.text}
         </div>
       )}
 
