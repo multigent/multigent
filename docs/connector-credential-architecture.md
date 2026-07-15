@@ -181,6 +181,30 @@ Agent runtime:
 
 The runtime endpoint should return connection references and injected environment/MCP config, not raw DB rows.
 
+Current implementation uses the project/name route while the data model is still moving toward durable IDs:
+
+- `GET /api/v1/projects/{project}/agents/{agent}/runtime/connections`
+
+Response contract:
+
+- `manifest.version`: `multigent.connections.v1`
+- `manifest.apiBaseUrlEnv`: environment variable that points to the Multigent control API.
+- `manifest.agentTokenEnv`: environment variable that contains the scoped agent/run token.
+- `manifest.connectionsFileEnv`: environment variable that can point to a materialized JSON copy of this manifest inside a sandbox.
+- `manifest.mcpProxyPath`: Multigent-hosted MCP proxy path.
+- `manifest.actionProxyPath`: Multigent-hosted action proxy path.
+- `connections[].runtime.alias`: stable provider/connection alias for agent prompts and MCP client config.
+- `connections[].runtime.mcpProxy`: how the sandbox should call the MCP proxy.
+- `connections[].runtime.actionProxy`: how the sandbox should call the action proxy.
+
+Rules:
+
+- Runtime response may include provider, connection name, owner scope, profile metadata, matched grants, and proxy call instructions.
+- Runtime response must not include raw provider secrets, encrypted ciphertext, nonce, or submitted credential values.
+- User grants do not automatically become agent runtime access. Agent runtime only receives workspace, project, or agent grants that match the current agent.
+- The sandbox should receive this data as a manifest file or fetch it with a scoped agent token.
+- The agent should call Multigent proxy endpoints with the scoped token; Multigent applies provider credentials server-side.
+
 ## Permission Rules
 
 Workspace admin:
@@ -235,4 +259,3 @@ Audit payload should include provider, connection name, owner scope, target scop
 8. Add MCP/action proxy integration.
 
 Do not implement OAuth before ownership, grants, and audit exist.
-

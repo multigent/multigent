@@ -91,6 +91,15 @@ func TestAgentRuntimeConnectionResponseDoesNotExposeSecretValues(t *testing.T) {
 			t.Fatalf("runtime response leaked %q: %s", forbidden, body)
 		}
 	}
+	if resp.Runtime.Alias != "github-ci" {
+		t.Fatalf("runtime alias=%q", resp.Runtime.Alias)
+	}
+	if resp.Runtime.MCPProxy.Path != agentConnectionManifest().MCPProxyPath {
+		t.Fatalf("mcp proxy path=%q", resp.Runtime.MCPProxy.Path)
+	}
+	if len(resp.Runtime.MCPProxy.Headers) == 0 {
+		t.Fatalf("mcp proxy headers missing")
+	}
 	if resp.Profile["visible"] != "ok" {
 		t.Fatalf("profile not preserved: %#v", resp.Profile)
 	}
@@ -99,5 +108,24 @@ func TestAgentRuntimeConnectionResponseDoesNotExposeSecretValues(t *testing.T) {
 	}
 	if len(resp.MatchedGrants) != 1 || resp.MatchedGrants[0].ID != "grant-one" {
 		t.Fatalf("matched grants not preserved: %#v", resp.MatchedGrants)
+	}
+}
+
+func TestRuntimeConnectionAlias(t *testing.T) {
+	tests := map[string]struct {
+		provider string
+		name     string
+		want     string
+	}{
+		"default connection": {provider: "github", name: "default", want: "github"},
+		"named connection":   {provider: "custom-mcp", name: "Team Tools", want: "custom-mcp-team-tools"},
+		"empty fallback":     {provider: " ", name: " ", want: "connection"},
+	}
+	for name, tt := range tests {
+		t.Run(name, func(t *testing.T) {
+			if got := runtimeConnectionAlias(tt.provider, tt.name); got != tt.want {
+				t.Fatalf("runtimeConnectionAlias()=%q, want %q", got, tt.want)
+			}
+		})
 	}
 }
