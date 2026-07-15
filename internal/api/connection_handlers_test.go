@@ -1,7 +1,11 @@
 package api
 
 import (
+	"context"
 	"encoding/json"
+	"net/http"
+	"net/http/httptest"
+	"path/filepath"
 	"strings"
 	"testing"
 
@@ -104,5 +108,60 @@ func TestConnectorProviderFromDBDrivesCredentialValidation(t *testing.T) {
 	}
 	if err := validateConnectionValues(provider, ConnectionAuthCustomCredential, map[string]string{"serverUrl": "http://localhost:3000/mcp", "token": "t"}); err != nil {
 		t.Fatalf("valid values should pass: %v", err)
+	}
+}
+
+func TestConnectionByIDRequiresCurrentWorkspace(t *testing.T) {
+	db, err := controldb.Open(filepath.Join(t.TempDir(), "multigent.db"))
+	if err != nil {
+		t.Fatalf("open db: %v", err)
+	}
+	defer db.Close()
+
+	currentRoot := filepath.Join(t.TempDir(), "current")
+	otherRoot := filepath.Join(t.TempDir(), "other")
+	for _, workspace := range []controldb.Workspace{
+		{ID: "ws-current", Name: "Current", Slug: "current", Root: currentRoot, CreatedAt: "2026-07-15T00:00:00Z"},
+		{ID: "ws-other", Name: "Other", Slug: "other", Root: otherRoot, CreatedAt: "2026-07-15T00:00:00Z"},
+	} {
+		if err := db.UpsertWorkspace(workspace); err != nil {
+			t.Fatalf("workspace %s: %v", workspace.ID, err)
+		}
+	}
+	if err := db.UpsertUser(controldb.User{Username: "owner", CreatedAt: "2026-07-15T00:00:00Z"}); err != nil {
+		t.Fatalf("user: %v", err)
+	}
+	if err := db.UpsertWorkspaceMember("ws-current", "owner", WorkspaceRoleMember); err != nil {
+		t.Fatalf("current member: %v", err)
+	}
+	if err := db.UpsertWorkspaceMember("ws-other", "owner", WorkspaceRoleMember); err != nil {
+		t.Fatalf("other member: %v", err)
+	}
+	if err := db.UpsertConnection(controldb.Connection{
+		ID:             "conn-other",
+		WorkspaceID:    "ws-other",
+		Provider:       "github",
+		ConnectionName: "default",
+		OwnerType:      ConnectionOwnerUser,
+		OwnerID:        "owner",
+		AuthType:       ConnectionAuthAPIKey,
+		Status:         "active",
+		ProfileJSON:    `{}`,
+		CreatedAt:      "2026-07-15T00:00:00Z",
+		UpdatedAt:      "2026-07-15T00:00:00Z",
+	}); err != nil {
+		t.Fatalf("connection: %v", err)
+	}
+
+	s := &Server{root: currentRoot, controlDB: db, users: newUserStore(db)}
+	req := httptest.NewRequest(http.MethodGet, "/api/v1/connections/conn-other", nil)
+	req.SetPathValue("id", "conn-other")
+	req = req.WithContext(context.WithValue(req.Context(), ctxUserKey, "owner"))
+	rec := httptest.NewRecorder()
+
+	s.handleGetConnection(rec, req)
+
+	if rec.Code != http.StatusNotFound {
+		t.Fatalf("status=%d body=%s", rec.Code, rec.Body.String())
 	}
 }

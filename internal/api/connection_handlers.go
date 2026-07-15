@@ -427,7 +427,8 @@ func (s *Server) connectionWorkspace(w http.ResponseWriter, r *http.Request) (st
 }
 
 func (s *Server) connectionByIDWithAccess(w http.ResponseWriter, r *http.Request) (controldb.Connection, bool) {
-	if _, ok := s.connectionWorkspace(w, r); !ok {
+	workspaceID, ok := s.connectionWorkspace(w, r)
+	if !ok {
 		return controldb.Connection{}, false
 	}
 	id := strings.TrimSpace(r.PathValue("id"))
@@ -437,6 +438,10 @@ func (s *Server) connectionByIDWithAccess(w http.ResponseWriter, r *http.Request
 		return controldb.Connection{}, false
 	}
 	if !ok {
+		s.jsonError(w, http.StatusNotFound, "connection not found")
+		return controldb.Connection{}, false
+	}
+	if connection.WorkspaceID != workspaceID {
 		s.jsonError(w, http.StatusNotFound, "connection not found")
 		return controldb.Connection{}, false
 	}
