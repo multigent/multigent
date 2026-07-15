@@ -96,7 +96,7 @@ func IsValidModel(m AgentModel) bool {
 }
 
 // APIProvider defines a reusable API provider configuration.
-// Stored in <root>/.multigent/providers.yaml.
+// Stored in the control-plane database, scoped by workspace.
 type APIProvider struct {
 	ID      string            `yaml:"id"      json:"id"`
 	Name    string            `yaml:"name"    json:"name"`

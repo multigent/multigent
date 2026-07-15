@@ -130,6 +130,20 @@ func (db *SQLiteStore) migrate() error {
 	UNIQUE(connection_id, target_type, target_id)
 )`,
 		`CREATE INDEX IF NOT EXISTS idx_connection_grants_target ON connection_grants(workspace_id, target_type, target_id)`,
+		`CREATE TABLE IF NOT EXISTS model_providers (
+	id TEXT NOT NULL,
+	workspace_id TEXT NOT NULL REFERENCES workspaces(id) ON DELETE CASCADE,
+	name TEXT NOT NULL,
+	type TEXT NOT NULL,
+	base_url TEXT NOT NULL DEFAULT '',
+	api_key TEXT NOT NULL DEFAULT '',
+	model TEXT NOT NULL DEFAULT '',
+	env_json TEXT NOT NULL DEFAULT '{}',
+	created_at TEXT NOT NULL,
+	updated_at TEXT NOT NULL DEFAULT '',
+	PRIMARY KEY (workspace_id, id)
+)`,
+		`CREATE INDEX IF NOT EXISTS idx_model_providers_workspace ON model_providers(workspace_id, name)`,
 	}
 	for _, stmt := range stmts {
 		if _, err := db.sql.Exec(stmt); err != nil {

@@ -1,15 +1,15 @@
 package store
 
 import (
+	"encoding/json"
 	"fmt"
 	"math/rand"
-	"os"
 	"path/filepath"
 	"strings"
 	"time"
 
+	controldb "github.com/multigent/multigent/internal/db"
 	"github.com/multigent/multigent/internal/entity"
-	"gopkg.in/yaml.v3"
 )
 
 type ProviderStore struct {
@@ -18,10 +18,6 @@ type ProviderStore struct {
 
 func NewProviderStore(root string) *ProviderStore {
 	return &ProviderStore{root: root}
-}
-
-func (ps *ProviderStore) filePath() string {
-	return filepath.Join(ps.root, ".multigent", "providers.yaml")
 }
 
 func newProviderID() string {
@@ -34,104 +30,105 @@ func newProviderID() string {
 	return "prov-" + string(b)
 }
 
-func (ps *ProviderStore) load() ([]entity.APIProvider, error) {
-	data, err := os.ReadFile(ps.filePath())
+func (ps *ProviderStore) List() ([]entity.APIProvider, error) {
+	db, workspaceID, err := ps.openWorkspaceDB()
 	if err != nil {
-		if os.IsNotExist(err) {
-			return nil, nil
-		}
 		return nil, err
 	}
-	var out []entity.APIProvider
-	if err := yaml.Unmarshal(data, &out); err != nil {
+	defer db.Close()
+	rows, err := db.ListModelProviders(workspaceID)
+	if err != nil {
 		return nil, err
+	}
+	out := make([]entity.APIProvider, 0, len(rows))
+	for _, row := range rows {
+		provider, err := modelProviderFromDB(row)
+		if err != nil {
+			return nil, err
+		}
+		out = append(out, provider)
 	}
 	return out, nil
 }
 
-func (ps *ProviderStore) save(items []entity.APIProvider) error {
-	data, err := yaml.Marshal(items)
-	if err != nil {
-		return err
-	}
-	dir := filepath.Dir(ps.filePath())
-	if err := os.MkdirAll(dir, 0o755); err != nil {
-		return err
-	}
-	return os.WriteFile(ps.filePath(), data, 0o644)
-}
-
-func (ps *ProviderStore) List() ([]entity.APIProvider, error) {
-	items, err := ps.load()
-	if err != nil {
-		return nil, err
-	}
-	if items == nil {
-		items = []entity.APIProvider{}
-	}
-	return items, nil
-}
-
 func (ps *ProviderStore) Get(id string) (*entity.APIProvider, error) {
-	items, err := ps.load()
+	db, workspaceID, err := ps.openWorkspaceDB()
 	if err != nil {
 		return nil, err
 	}
-	for i := range items {
-		if items[i].ID == id {
-			return &items[i], nil
-		}
+	defer db.Close()
+	row, ok, err := db.ModelProviderByID(workspaceID, id)
+	if err != nil {
+		return nil, err
 	}
-	return nil, fmt.Errorf("provider %q not found", id)
+	if !ok {
+		return nil, fmt.Errorf("provider %q not found", id)
+	}
+	provider, err := modelProviderFromDB(row)
+	if err != nil {
+		return nil, err
+	}
+	return &provider, nil
 }
 
 func (ps *ProviderStore) Add(p entity.APIProvider) (*entity.APIProvider, error) {
-	items, err := ps.load()
+	db, workspaceID, err := ps.openWorkspaceDB()
 	if err != nil {
 		return nil, err
 	}
+	defer db.Close()
 	p.ID = newProviderID()
 	p.Name = strings.TrimSpace(p.Name)
 	if p.Name == "" {
 		return nil, fmt.Errorf("provider name is required")
 	}
-	items = append(items, p)
-	if err := ps.save(items); err != nil {
+	row, err := modelProviderToDB(workspaceID, p)
+	if err != nil {
+		return nil, err
+	}
+	if err := db.UpsertModelProvider(workspaceID, row); err != nil {
 		return nil, err
 	}
 	return &p, nil
 }
 
 func (ps *ProviderStore) Update(id string, p entity.APIProvider) (*entity.APIProvider, error) {
-	items, err := ps.load()
+	db, workspaceID, err := ps.openWorkspaceDB()
 	if err != nil {
 		return nil, err
 	}
-	for i := range items {
-		if items[i].ID == id {
-			p.ID = id
-			items[i] = p
-			if err := ps.save(items); err != nil {
-				return nil, err
-			}
-			return &items[i], nil
-		}
+	defer db.Close()
+	existing, ok, err := db.ModelProviderByID(workspaceID, id)
+	if err != nil {
+		return nil, err
 	}
-	return nil, fmt.Errorf("provider %q not found", id)
+	if !ok {
+		return nil, fmt.Errorf("provider %q not found", id)
+	}
+	p.ID = id
+	row, err := modelProviderToDB(workspaceID, p)
+	if err != nil {
+		return nil, err
+	}
+	row.CreatedAt = existing.CreatedAt
+	if err := db.UpsertModelProvider(workspaceID, row); err != nil {
+		return nil, err
+	}
+	return &p, nil
 }
 
 func (ps *ProviderStore) Remove(id string) error {
-	items, err := ps.load()
+	db, workspaceID, err := ps.openWorkspaceDB()
 	if err != nil {
 		return err
 	}
-	for i := range items {
-		if items[i].ID == id {
-			items = append(items[:i], items[i+1:]...)
-			return ps.save(items)
-		}
+	defer db.Close()
+	if _, ok, err := db.ModelProviderByID(workspaceID, id); err != nil {
+		return err
+	} else if !ok {
+		return fmt.Errorf("provider %q not found", id)
 	}
-	return fmt.Errorf("provider %q not found", id)
+	return db.DeleteModelProvider(workspaceID, id)
 }
 
 // ResolveEnv returns merged environment variables for a provider.
@@ -183,4 +180,80 @@ func (ps *ProviderStore) ResolveEnv(id string) (map[string]string, error) {
 		}
 	}
 	return env, nil
+}
+
+func (ps *ProviderStore) openWorkspaceDB() (*controldb.SQLiteStore, string, error) {
+	db, err := controldb.OpenDefault()
+	if err != nil {
+		return nil, "", err
+	}
+	workspaceID, err := ps.resolveWorkspaceID(db)
+	if err != nil {
+		_ = db.Close()
+		return nil, "", err
+	}
+	return db, workspaceID, nil
+}
+
+func (ps *ProviderStore) resolveWorkspaceID(db controldb.Store) (string, error) {
+	root, err := filepath.Abs(ps.root)
+	if err != nil {
+		root = ps.root
+	}
+	workspaces, err := db.ListWorkspaces()
+	if err != nil {
+		return "", err
+	}
+	for _, workspace := range workspaces {
+		wsRoot, err := filepath.Abs(workspace.Root)
+		if err != nil {
+			wsRoot = workspace.Root
+		}
+		if filepath.Clean(wsRoot) == filepath.Clean(root) {
+			return workspace.ID, nil
+		}
+	}
+	return "", fmt.Errorf("workspace for root %q not found", ps.root)
+}
+
+func modelProviderFromDB(row controldb.ModelProvider) (entity.APIProvider, error) {
+	env := map[string]string{}
+	if strings.TrimSpace(row.EnvJSON) != "" {
+		if err := json.Unmarshal([]byte(row.EnvJSON), &env); err != nil {
+			return entity.APIProvider{}, err
+		}
+	}
+	return entity.APIProvider{
+		ID:      row.ID,
+		Name:    row.Name,
+		Type:    row.Type,
+		BaseURL: row.BaseURL,
+		APIKey:  row.APIKey,
+		Model:   row.Model,
+		Env:     env,
+	}, nil
+}
+
+func modelProviderToDB(workspaceID string, p entity.APIProvider) (controldb.ModelProvider, error) {
+	env := p.Env
+	if env == nil {
+		env = map[string]string{}
+	}
+	envJSON, err := json.Marshal(env)
+	if err != nil {
+		return controldb.ModelProvider{}, err
+	}
+	now := time.Now().UTC().Format(time.RFC3339)
+	return controldb.ModelProvider{
+		ID:          strings.TrimSpace(p.ID),
+		WorkspaceID: workspaceID,
+		Name:        strings.TrimSpace(p.Name),
+		Type:        strings.TrimSpace(p.Type),
+		BaseURL:     strings.TrimSpace(p.BaseURL),
+		APIKey:      strings.TrimSpace(p.APIKey),
+		Model:       strings.TrimSpace(p.Model),
+		EnvJSON:     string(envJSON),
+		CreatedAt:   now,
+		UpdatedAt:   now,
+	}, nil
 }

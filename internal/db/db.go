@@ -47,6 +47,11 @@ type Store interface {
 	ConnectorProviderByID(provider string) (ConnectorProvider, bool, error)
 	ListConnectorProviders(includeDisabled bool) ([]ConnectorProvider, error)
 
+	UpsertModelProvider(workspaceID string, provider ModelProvider) error
+	ModelProviderByID(workspaceID, id string) (ModelProvider, bool, error)
+	ListModelProviders(workspaceID string) ([]ModelProvider, error)
+	DeleteModelProvider(workspaceID, id string) error
+
 	UpsertConnection(connection Connection) error
 	ConnectionByID(id string) (Connection, bool, error)
 	ListConnections(filter ConnectionFilter) ([]Connection, error)
@@ -164,6 +169,19 @@ type ConnectorProvider struct {
 	Enabled       bool
 	CreatedAt     string
 	UpdatedAt     string
+}
+
+type ModelProvider struct {
+	ID          string
+	WorkspaceID string
+	Name        string
+	Type        string
+	BaseURL     string
+	APIKey      string
+	Model       string
+	EnvJSON     string
+	CreatedAt   string
+	UpdatedAt   string
 }
 
 type ConnectionFilter struct {
