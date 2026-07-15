@@ -361,8 +361,7 @@ func (s *Server) withTokenAuth(next http.Handler) http.Handler {
 			token = t
 		}
 		if token == "" {
-			w.WriteHeader(http.StatusUnauthorized)
-			_ = json.NewEncoder(w).Encode(map[string]string{"error": "unauthorized"})
+			s.jsonErrorCode(w, http.StatusUnauthorized, ErrCodeUnauthorized, "unauthorized")
 			return
 		}
 
@@ -375,13 +374,11 @@ func (s *Server) withTokenAuth(next http.Handler) http.Handler {
 
 		username, ok := s.users.ValidateToken(token)
 		if !ok {
-			w.WriteHeader(http.StatusUnauthorized)
-			_ = json.NewEncoder(w).Encode(map[string]string{"error": "invalid or expired token"})
+			s.jsonErrorCode(w, http.StatusUnauthorized, ErrCodeUnauthorized, "invalid or expired token")
 			return
 		}
 		if u := s.users.GetUser(username); u != nil && u.Disabled {
-			w.WriteHeader(http.StatusForbidden)
-			_ = json.NewEncoder(w).Encode(map[string]string{"error": "account disabled"})
+			s.jsonErrorCode(w, http.StatusForbidden, ErrCodeForbidden, "account disabled")
 			return
 		}
 		ctx := context.WithValue(r.Context(), ctxUserKey, username)
@@ -1142,15 +1139,9 @@ func (s *Server) handleInbox(w http.ResponseWriter, _ *http.Request) {
 	_ = json.NewEncoder(w).Encode(out)
 }
 
-func (s *Server) jsonError(w http.ResponseWriter, code int, msg string) {
-	w.WriteHeader(code)
-	_ = json.NewEncoder(w).Encode(map[string]string{"error": msg})
-}
-
 func (s *Server) serverError(w http.ResponseWriter, err error) {
 	log.Printf("api: %v", err)
-	w.WriteHeader(http.StatusInternalServerError)
-	_ = json.NewEncoder(w).Encode(map[string]string{"error": "internal error"})
+	s.writeAPIError(w, http.StatusInternalServerError, ErrCodeInternal, "internal error", nil)
 }
 
 func isNotFoundErr(err error) bool {

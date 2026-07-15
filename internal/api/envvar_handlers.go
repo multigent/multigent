@@ -53,12 +53,12 @@ func (s *Server) handleCreateEnvVar(w http.ResponseWriter, r *http.Request) {
 		Description string             `json:"description"`
 	}
 	if err := json.NewDecoder(r.Body).Decode(&req); err != nil {
-		http.Error(w, err.Error(), http.StatusBadRequest)
+		s.jsonError(w, http.StatusBadRequest, err.Error())
 		return
 	}
 	req.Key = strings.TrimSpace(req.Key)
 	if req.Key == "" {
-		http.Error(w, "key is required", http.StatusBadRequest)
+		s.jsonError(w, http.StatusBadRequest, "key is required")
 		return
 	}
 	ev := entity.EnvVar{
@@ -81,7 +81,7 @@ func (s *Server) handleCreateEnvVar(w http.ResponseWriter, r *http.Request) {
 func (s *Server) handleUpdateEnvVar(w http.ResponseWriter, r *http.Request) {
 	id := r.PathValue("id")
 	if id == "" {
-		http.Error(w, "envvar id required", http.StatusBadRequest)
+		s.jsonError(w, http.StatusBadRequest, "envvar id required")
 		return
 	}
 	var req struct {
@@ -92,13 +92,13 @@ func (s *Server) handleUpdateEnvVar(w http.ResponseWriter, r *http.Request) {
 		Description string             `json:"description"`
 	}
 	if err := json.NewDecoder(r.Body).Decode(&req); err != nil {
-		http.Error(w, err.Error(), http.StatusBadRequest)
+		s.jsonError(w, http.StatusBadRequest, err.Error())
 		return
 	}
 	es := store.NewEnvVarStore(s.root)
 	existing, err := es.Get(id)
 	if err != nil {
-		http.Error(w, err.Error(), http.StatusNotFound)
+		s.jsonError(w, http.StatusNotFound, err.Error())
 		return
 	}
 	if req.Key != "" {
@@ -123,12 +123,12 @@ func (s *Server) handleUpdateEnvVar(w http.ResponseWriter, r *http.Request) {
 func (s *Server) handleDeleteEnvVar(w http.ResponseWriter, r *http.Request) {
 	id := r.PathValue("id")
 	if id == "" {
-		http.Error(w, "envvar id required", http.StatusBadRequest)
+		s.jsonError(w, http.StatusBadRequest, "envvar id required")
 		return
 	}
 	es := store.NewEnvVarStore(s.root)
 	if err := es.Remove(id); err != nil {
-		http.Error(w, err.Error(), http.StatusNotFound)
+		s.jsonError(w, http.StatusNotFound, err.Error())
 		return
 	}
 	w.WriteHeader(http.StatusNoContent)
@@ -140,7 +140,7 @@ func (s *Server) handleGetAgentEnv(w http.ResponseWriter, r *http.Request) {
 	project := r.PathValue("name")
 	agent := r.PathValue("agent")
 	if project == "" || agent == "" {
-		http.Error(w, "invalid path", http.StatusBadRequest)
+		s.jsonError(w, http.StatusBadRequest, "invalid path")
 		return
 	}
 	if !s.canManageAgentConfig(r, project, agent) {
@@ -149,7 +149,7 @@ func (s *Server) handleGetAgentEnv(w http.ResponseWriter, r *http.Request) {
 	}
 	meta, err := s.st.AgentMeta(project, agent)
 	if err != nil {
-		http.Error(w, err.Error(), http.StatusNotFound)
+		s.jsonError(w, http.StatusNotFound, err.Error())
 		return
 	}
 	env := meta.Env
@@ -171,7 +171,7 @@ func (s *Server) handleSetAgentEnv(w http.ResponseWriter, r *http.Request) {
 	project := r.PathValue("name")
 	agent := r.PathValue("agent")
 	if project == "" || agent == "" {
-		http.Error(w, "invalid path", http.StatusBadRequest)
+		s.jsonError(w, http.StatusBadRequest, "invalid path")
 		return
 	}
 	if !s.canManageAgentConfig(r, project, agent) {
@@ -183,17 +183,17 @@ func (s *Server) handleSetAgentEnv(w http.ResponseWriter, r *http.Request) {
 		Value string `json:"value"`
 	}
 	if err := json.NewDecoder(r.Body).Decode(&req); err != nil {
-		http.Error(w, err.Error(), http.StatusBadRequest)
+		s.jsonError(w, http.StatusBadRequest, err.Error())
 		return
 	}
 	req.Key = strings.TrimSpace(req.Key)
 	if req.Key == "" {
-		http.Error(w, "key is required", http.StatusBadRequest)
+		s.jsonError(w, http.StatusBadRequest, "key is required")
 		return
 	}
 	meta, err := s.st.AgentMeta(project, agent)
 	if err != nil {
-		http.Error(w, err.Error(), http.StatusNotFound)
+		s.jsonError(w, http.StatusNotFound, err.Error())
 		return
 	}
 	if meta.Env == nil {
@@ -223,7 +223,7 @@ func (s *Server) handleDeleteAgentEnv(w http.ResponseWriter, r *http.Request) {
 	project := r.PathValue("name")
 	agent := r.PathValue("agent")
 	if project == "" || agent == "" {
-		http.Error(w, "invalid path", http.StatusBadRequest)
+		s.jsonError(w, http.StatusBadRequest, "invalid path")
 		return
 	}
 	if !s.canManageAgentConfig(r, project, agent) {
@@ -232,12 +232,12 @@ func (s *Server) handleDeleteAgentEnv(w http.ResponseWriter, r *http.Request) {
 	}
 	key := strings.TrimSpace(r.URL.Query().Get("key"))
 	if key == "" {
-		http.Error(w, "key query param is required", http.StatusBadRequest)
+		s.jsonError(w, http.StatusBadRequest, "key query param is required")
 		return
 	}
 	meta, err := s.st.AgentMeta(project, agent)
 	if err != nil {
-		http.Error(w, err.Error(), http.StatusNotFound)
+		s.jsonError(w, http.StatusNotFound, err.Error())
 		return
 	}
 	if meta.Env != nil {

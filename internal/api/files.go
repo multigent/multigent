@@ -146,7 +146,7 @@ func (s *Server) handleFileContent(w http.ResponseWriter, r *http.Request) {
 	sub := r.PathValue("path")
 	fp, ok := s.resolveFilesPath(sub)
 	if !ok {
-		http.Error(w, "invalid path", http.StatusBadRequest)
+		s.jsonError(w, http.StatusBadRequest, "invalid path")
 		return
 	}
 	http.ServeFile(w, r, fp)

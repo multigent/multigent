@@ -8,6 +8,19 @@
     "confirm": "確認",
     "add": "新增"
   },
+  "apiErrors": {
+    "bad_request": "請求無法處理。",
+    "invalid_json": "請求資料格式不正確，請重新整理後再試。",
+    "validation_failed": "有必填資訊缺失或格式不正確。",
+    "unauthorized": "請重新登入。",
+    "forbidden": "你沒有權限執行此操作。",
+    "not_found": "找不到請求的資源。",
+    "conflict": "目前狀態與操作衝突，請重新整理後再試。",
+    "service_unavailable": "服務暫時不可用，請稍後再試。",
+    "upstream_error": "外部服務回傳錯誤，請檢查連線後再試。",
+    "internal_error": "伺服器發生異常，請稍後再試。",
+    "unknown": "操作失敗，請稍後再試。"
+  },
   "aria": {
     "mainNavigation": "主導航"
   },

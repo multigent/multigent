@@ -8,6 +8,19 @@
     "confirm": "Confirm",
     "add": "Add"
   },
+  "apiErrors": {
+    "bad_request": "The request could not be processed.",
+    "invalid_json": "The request data is invalid. Please refresh and try again.",
+    "validation_failed": "Some required information is missing or invalid.",
+    "unauthorized": "Please sign in again.",
+    "forbidden": "You do not have permission to perform this action.",
+    "not_found": "The requested resource was not found.",
+    "conflict": "This action conflicts with the current state. Please refresh and try again.",
+    "service_unavailable": "The service is temporarily unavailable. Please try again later.",
+    "upstream_error": "The external service returned an error. Please check the connection and try again.",
+    "internal_error": "Something went wrong on the server. Please try again later.",
+    "unknown": "Something went wrong. Please try again."
+  },
   "aria": {
     "mainNavigation": "Main navigation"
   },

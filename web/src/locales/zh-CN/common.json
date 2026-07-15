@@ -8,6 +8,19 @@
     "confirm": "确认",
     "add": "添加"
   },
+  "apiErrors": {
+    "bad_request": "请求无法处理。",
+    "invalid_json": "请求数据格式不正确，请刷新后重试。",
+    "validation_failed": "有必填信息缺失或格式不正确。",
+    "unauthorized": "请重新登录。",
+    "forbidden": "你没有权限执行此操作。",
+    "not_found": "没有找到请求的资源。",
+    "conflict": "当前状态与操作冲突，请刷新后重试。",
+    "service_unavailable": "服务暂时不可用，请稍后重试。",
+    "upstream_error": "外部服务返回错误，请检查连接后重试。",
+    "internal_error": "服务器出现异常，请稍后重试。",
+    "unknown": "操作失败，请稍后重试。"
+  },
   "aria": {
     "mainNavigation": "主导航"
   },
