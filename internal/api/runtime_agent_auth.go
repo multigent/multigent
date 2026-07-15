@@ -2,38 +2,19 @@ package api
 
 import (
 	"context"
-	"crypto/hmac"
-	"crypto/sha256"
 	"encoding/json"
 	"net/http"
 	"strings"
 	"time"
 
 	controldb "github.com/multigent/multigent/internal/db"
+	"github.com/multigent/multigent/internal/runtimeauth"
 )
 
 const ctxRuntimeAgentKey contextKey = "runtime-agent"
 
-type runtimeAgentPrincipal struct {
-	WorkspaceID  string   `json:"workspaceId"`
-	Project      string   `json:"project"`
-	Agent        string   `json:"agent"`
-	RunID        string   `json:"runId,omitempty"`
-	Capabilities []string `json:"capabilities,omitempty"`
-	Exp          int64    `json:"exp"`
-	Iat          int64    `json:"iat"`
-}
-
-type runtimeAgentTokenPayload struct {
-	Type         string   `json:"typ"`
-	WorkspaceID  string   `json:"workspaceId"`
-	Project      string   `json:"project"`
-	Agent        string   `json:"agent"`
-	RunID        string   `json:"runId,omitempty"`
-	Capabilities []string `json:"capabilities,omitempty"`
-	Exp          int64    `json:"exp"`
-	Iat          int64    `json:"iat"`
-}
+type runtimeAgentPrincipal = runtimeauth.Principal
+type runtimeAgentTokenPayload = runtimeauth.Payload
 
 type issueAgentRuntimeTokenRequest struct {
 	RunID        string   `json:"runId"`
@@ -134,67 +115,21 @@ func normalizeRuntimeCapabilities(caps []string) []string {
 }
 
 func (s *Server) issueAgentRuntimeToken(payload runtimeAgentTokenPayload, ttl time.Duration) string {
-	now := time.Now().UTC()
-	payload.Type = "agent_runtime"
-	payload.Iat = now.Unix()
-	payload.Exp = now.Add(ttl).Unix()
-	header := base64Encode([]byte(`{"alg":"HS256","typ":"JWT"}`))
-	raw, _ := json.Marshal(payload)
-	body := base64Encode(raw)
-	sig := s.runtimeHMACSign(header + "." + body)
-	return header + "." + body + "." + sig
+	return runtimeauth.Issue(s.runtimeSecret(), payload, ttl)
 }
 
 func (s *Server) validateAgentRuntimeToken(token string) (runtimeAgentPrincipal, bool) {
-	parts := strings.SplitN(strings.TrimSpace(token), ".", 3)
-	if len(parts) != 3 {
-		return runtimeAgentPrincipal{}, false
-	}
-	if !hmac.Equal([]byte(parts[2]), []byte(s.runtimeHMACSign(parts[0]+"."+parts[1]))) {
-		return runtimeAgentPrincipal{}, false
-	}
-	raw, err := base64Decode(parts[1])
-	if err != nil {
-		return runtimeAgentPrincipal{}, false
-	}
-	var payload runtimeAgentTokenPayload
-	if err := json.Unmarshal(raw, &payload); err != nil {
-		return runtimeAgentPrincipal{}, false
-	}
-	if payload.Type != "agent_runtime" || payload.WorkspaceID == "" || payload.Project == "" || payload.Agent == "" {
-		return runtimeAgentPrincipal{}, false
-	}
-	if time.Now().Unix() > payload.Exp {
-		return runtimeAgentPrincipal{}, false
-	}
-	return runtimeAgentPrincipal{
-		WorkspaceID:  payload.WorkspaceID,
-		Project:      payload.Project,
-		Agent:        payload.Agent,
-		RunID:        payload.RunID,
-		Capabilities: payload.Capabilities,
-		Exp:          payload.Exp,
-		Iat:          payload.Iat,
-	}, true
+	return runtimeauth.Validate(s.runtimeSecret(), token)
 }
 
-func (s *Server) runtimeHMACSign(msg string) string {
-	secret := ""
+func (s *Server) runtimeSecret() string {
 	if s != nil && s.controlDB != nil {
-		if value, ok, err := s.controlDB.GetSetting("agent_runtime_secret"); err == nil && ok && value != "" {
-			secret = value
-		}
-		if secret == "" {
-			secret = generateSecret()
-			_ = s.controlDB.SetSetting("agent_runtime_secret", secret)
-		}
+		return runtimeauth.EnsureSecret(s.controlDB)
 	}
-	if secret == "" && s != nil && s.users != nil {
-		secret = s.users.Secret()
+	if s != nil && s.users != nil {
+		return s.users.Secret()
 	}
-	mac := hmac.New(sha256.New, []byte(secret))
-	mac.Write([]byte(msg))
-	return base64Encode(mac.Sum(nil))
+	return runtimeauth.GenerateSecret()
 }
 
 func (s *Server) withRuntimeAgentAuth(next http.Handler) http.Handler {

@@ -10,9 +10,12 @@ package runner
 import (
 	"bufio"
 	"bytes"
+	"crypto/sha1"
 	"database/sql"
+	"encoding/hex"
 	"fmt"
 	"io"
+	"net"
 	"os"
 	"os/exec"
 	"path/filepath"
@@ -20,8 +23,11 @@ import (
 	"time"
 
 	"github.com/multigent/multigent/internal/agentcli"
+	"github.com/multigent/multigent/internal/daemon"
+	controldb "github.com/multigent/multigent/internal/db"
 	"github.com/multigent/multigent/internal/entity"
 	"github.com/multigent/multigent/internal/runenv"
+	"github.com/multigent/multigent/internal/runtimeauth"
 	"github.com/multigent/multigent/internal/sandbox"
 	"github.com/multigent/multigent/internal/store"
 	"github.com/multigent/multigent/internal/taskstore"
@@ -113,7 +119,9 @@ func (r *Runner) ExecPrompt(project, agentName, prompt, sessionID string) (*RunR
 
 	model := entity.NormaliseModel(meta.Model)
 	agentEnv := resolveProviderEnv(r.root, meta)
+	runtimeEnv := r.resolveRuntimeControlEnv(project, agentName, "exec-"+time.Now().UTC().Format("20060102-150405"))
 	effectiveEnv := mergeEnv(os.Environ(), agentEnv)
+	effectiveEnv = mergeEnv(effectiveEnv, runtimeEnv)
 	apiModel, apiBaseURL := resolveAPIModelFromEnv(model, effectiveEnv)
 	invoker := InvokerFor(model, meta.RunCommand, meta.AddDirs)
 	innerArgs := invoker.Args(promptFile, sessionID)
@@ -135,6 +143,7 @@ func (r *Runner) ExecPrompt(project, agentName, prompt, sessionID string) (*RunR
 		runtimeCfg := cloneRuntimeCfg(meta.Sandbox)
 		agentCLI := agentcli.Effective(model, runtimeCfg.AgentCLI)
 		injectProviderEnvIntoRuntime(runtimeCfg, agentEnv)
+		injectRuntimeControlEnvIntoRuntime(runtimeCfg, runtimeEnv)
 		mounts := append([]entity.RuntimeMount(nil), runtimeCfg.Mounts...)
 		for _, addDir := range meta.AddDirs {
 			mounts = runenv.AddPathMount(mounts, addDir, "repo", runenv.MountModeReadWrite)
@@ -304,7 +313,9 @@ func (r *Runner) RunTask(project, agentName string, task *entity.Task, sessionID
 
 	model := entity.NormaliseModel(meta.Model)
 	agentEnv := resolveProviderEnv(r.root, meta)
+	runtimeEnv := r.resolveRuntimeControlEnv(project, agentName, task.ID)
 	effectiveEnv := mergeEnv(os.Environ(), agentEnv)
+	effectiveEnv = mergeEnv(effectiveEnv, runtimeEnv)
 	apiModel, apiBaseURL := resolveAPIModelFromEnv(model, effectiveEnv)
 	invoker := InvokerFor(model, meta.RunCommand, meta.AddDirs)
 
@@ -332,6 +343,7 @@ func (r *Runner) RunTask(project, agentName string, task *entity.Task, sessionID
 		runtimeCfg := cloneRuntimeCfg(meta.Sandbox)
 		agentCLI := agentcli.Effective(model, runtimeCfg.AgentCLI)
 		injectProviderEnvIntoRuntime(runtimeCfg, agentEnv)
+		injectRuntimeControlEnvIntoRuntime(runtimeCfg, runtimeEnv)
 		mounts := append([]entity.RuntimeMount(nil), runtimeCfg.Mounts...)
 
 		// Auto-mount the project's code repository at the same absolute path
@@ -1037,6 +1049,98 @@ func resolveProviderEnv(root string, meta *entity.AgentMeta) map[string]string {
 	return merged
 }
 
+func (r *Runner) resolveRuntimeControlEnv(project, agentName, runID string) map[string]string {
+	apiURL := resolveRuntimeAPIURL(r.root)
+	if apiURL == "" {
+		return nil
+	}
+	controlDB, err := controldb.OpenDefault()
+	if err != nil {
+		return nil
+	}
+	defer controlDB.Close()
+	workspaceID := resolveRuntimeWorkspaceID(r.root, controlDB)
+	secret := runtimeauth.EnsureSecret(controlDB)
+	token := runtimeauth.Issue(secret, runtimeauth.Payload{
+		WorkspaceID:  workspaceID,
+		Project:      project,
+		Agent:        agentName,
+		RunID:        runID,
+		Capabilities: []string{"connection.use"},
+	}, 6*time.Hour)
+	return map[string]string{
+		"MULTIGENT_API_URL":      apiURL,
+		"MULTIGENT_AGENT_TOKEN":  token,
+		"MULTIGENT_RUN_ID":       runID,
+		"MULTIGENT_WORKSPACE_ID": workspaceID,
+	}
+}
+
+func resolveRuntimeAPIURL(root string) string {
+	if value := strings.TrimSpace(os.Getenv("MULTIGENT_API_URL")); value != "" {
+		return normalizeRuntimeAPIURL(value)
+	}
+	meta, err := daemon.LoadWebRuntimeMeta(root)
+	if err != nil || meta == nil || strings.TrimSpace(meta.Addr) == "" {
+		return ""
+	}
+	return normalizeRuntimeAPIURL(meta.Addr)
+}
+
+func normalizeRuntimeAPIURL(value string) string {
+	value = strings.TrimSpace(value)
+	if value == "" {
+		return ""
+	}
+	if strings.HasPrefix(value, "http://") || strings.HasPrefix(value, "https://") {
+		return strings.TrimRight(value, "/")
+	}
+	if strings.HasPrefix(value, ":") {
+		return "http://127.0.0.1" + value
+	}
+	host, port, err := net.SplitHostPort(value)
+	if err == nil {
+		if host == "" || host == "0.0.0.0" || host == "::" || host == "[::]" {
+			host = "127.0.0.1"
+		}
+		return "http://" + net.JoinHostPort(host, port)
+	}
+	return "http://" + strings.TrimRight(value, "/")
+}
+
+func resolveRuntimeWorkspaceID(root string, controlDB controldb.Store) string {
+	absRoot, err := filepath.Abs(root)
+	if err != nil {
+		absRoot = root
+	}
+	workspaces, err := controlDB.ListWorkspaces()
+	if err == nil {
+		for _, workspace := range workspaces {
+			if sameRuntimePath(workspace.Root, absRoot) && workspace.ID != "" {
+				return workspace.ID
+			}
+		}
+	}
+	return runtimeWorkspaceID(absRoot)
+}
+
+func sameRuntimePath(a, b string) bool {
+	aa, err := filepath.Abs(a)
+	if err != nil {
+		aa = a
+	}
+	bb, err := filepath.Abs(b)
+	if err != nil {
+		bb = b
+	}
+	return filepath.Clean(aa) == filepath.Clean(bb)
+}
+
+func runtimeWorkspaceID(root string) string {
+	sum := sha1.Sum([]byte(root))
+	return hex.EncodeToString(sum[:])[:12]
+}
+
 // injectProviderEnvIntoDocker adds agent/provider env vars as explicit
 // KEY=VALUE entries into the Docker config's ExtraEnv. This is necessary
 // because Docker's `-e KEY` (inherit) mode only copies vars from the host
@@ -1055,7 +1159,31 @@ func injectProviderEnvIntoRuntime(cfg *entity.SandboxConfig, env map[string]stri
 		if k == "" {
 			continue
 		}
+		if isRuntimeControlEnvKey(k) {
+			continue
+		}
 		cfg.Env = append(cfg.Env, entity.RuntimeEnvVar{Name: k, Value: v})
+	}
+}
+
+func injectRuntimeControlEnvIntoRuntime(cfg *entity.SandboxConfig, env map[string]string) {
+	if cfg == nil {
+		return
+	}
+	for k := range env {
+		if k == "" {
+			continue
+		}
+		cfg.Env = append(cfg.Env, entity.RuntimeEnvVar{Name: k, Inherit: true})
+	}
+}
+
+func isRuntimeControlEnvKey(key string) bool {
+	switch key {
+	case "MULTIGENT_API_URL", "MULTIGENT_AGENT_TOKEN", "MULTIGENT_RUN_ID", "MULTIGENT_WORKSPACE_ID":
+		return true
+	default:
+		return false
 	}
 }
 

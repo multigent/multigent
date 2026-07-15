@@ -10,6 +10,7 @@ import (
 	"syscall"
 
 	"github.com/multigent/multigent/internal/api"
+	"github.com/multigent/multigent/internal/daemon"
 	"github.com/spf13/cobra"
 )
 
@@ -55,6 +56,15 @@ Authorization: Bearer <key>.`,
 			srv.SetUpdateChecker(GetCachedUpdateInfo)
 			srv.SetDaemonStatus(daemonStatusJSON)
 			log.Printf("multigent api listening on http://%s (workspace %s)", addr, root)
+			if err := daemon.SaveWebRuntimeMeta(&daemon.WebRuntimeMeta{
+				WorkDir:   root,
+				Addr:      addr,
+				PID:       os.Getpid(),
+				StartedAt: daemon.NowISO(),
+			}); err != nil {
+				log.Printf("warning: failed to save API runtime metadata: %v", err)
+			}
+			defer daemon.RemoveWebRuntimeMeta(root)
 			if key != "" {
 				log.Printf("API key auth enabled (set MULTIGENT_WEB_API_KEY or --api-key)")
 			}

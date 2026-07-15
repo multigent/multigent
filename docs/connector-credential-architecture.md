@@ -213,6 +213,7 @@ Rules:
 - User JWTs and workspace admin API keys are not runtime credentials. Runtime proxy endpoints accept only scoped agent runtime tokens.
 - A runtime token contains workspace, project, agent, optional run ID, capabilities, and expiry.
 - Agents fetch their own runtime connection manifest through `GET /api/v1/runtime/connections` with the scoped runtime token.
+- Agent runs receive `MULTIGENT_API_URL`, `MULTIGENT_AGENT_TOKEN`, `MULTIGENT_RUN_ID`, and `MULTIGENT_WORKSPACE_ID` automatically when the API server address is known. Docker runtimes inherit these variables by name so the token value does not appear in the `docker run` argv.
 - Runtime proxy endpoints re-check connection grants on every request instead of trusting the connection manifest.
 - `custom-mcp` runtime MCP proxy is implemented first. The agent posts JSON-RPC to Multigent; Multigent forwards it to the configured MCP server and applies the stored connection token server-side.
 - Other provider action/MCP executors should follow the same boundary: agent token in, grant check, server-side credential application, no raw credential response.
