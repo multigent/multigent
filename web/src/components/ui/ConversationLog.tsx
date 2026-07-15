@@ -15,6 +15,7 @@ type StreamEvent = {
   type: string
   subtype?: string
   session_id?: string
+  thread_id?: string
   text?: string
   attempt?: number
   max_retries?: number
@@ -35,7 +36,14 @@ type StreamEvent = {
   is_error?: boolean
   duration_ms?: number
   num_turns?: number
-  usage?: { input_tokens?: number; output_tokens?: number }
+  usage?: { input_tokens?: number; output_tokens?: number; cached_input_tokens?: number; cache_read_input_tokens?: number }
+  item?: {
+    type?: string
+    text?: string
+    name?: string
+    input?: unknown
+    output?: string
+  }
   content?: ContentBlock[] | string
   role?: string
   // claude -p stream-json content block events
@@ -392,6 +400,38 @@ function parseLog(content: string): ConversationItem[] {
 
     if (thinkingBuf) flushThinking()
 
+    // --- Codex exec --json events ---
+    if (ev.type === 'thread.started') {
+      if (ev.thread_id) items.push({ kind: 'system', text: `Session: ${ev.thread_id}` })
+      continue
+    }
+
+    if (ev.type === 'turn.started') {
+      continue
+    }
+
+    if (ev.type === 'item.completed' && ev.item) {
+      if (ev.item.type === 'agent_message' && ev.item.text) {
+        pushAssistantText(items, ev.item.text)
+      } else if (ev.item.type === 'tool_call' && ev.item.name) {
+        items.push({
+          kind: 'assistant',
+          blocks: [{ type: 'tool_use', name: ev.item.name, input: ev.item.input }],
+        })
+      } else if (ev.item.output) {
+        items.push({ kind: 'tool_result', content: ev.item.output, isError: false })
+      }
+      continue
+    }
+
+    if (ev.type === 'turn.completed') {
+      const input = ev.usage?.input_tokens ?? 0
+      const output = ev.usage?.output_tokens ?? 0
+      const total = input + output
+      if (total > 0) items.push({ kind: 'usage', text: `${total.toLocaleString()} tokens used` })
+      continue
+    }
+
     if (ev.type === 'system') {
       // thinking_tokens events are internal token-counting pings — skip entirely.
       if (ev.subtype === 'thinking_tokens') continue
@@ -526,7 +566,7 @@ function parseLog(content: string): ConversationItem[] {
 
     // Fallback: completely unrecognized event types — show as raw header so we can debug.
     // (content/type events with unrecognized block types also land here)
-    const knownTypes = ['thinking', 'system', 'human', 'user', 'tool_call', 'assistant', 'content', 'result']
+    const knownTypes = ['thinking', 'system', 'human', 'user', 'tool_call', 'assistant', 'content', 'result', 'thread.started', 'turn.started', 'item.completed', 'turn.completed']
     if (!knownTypes.includes(ev.type)) {
       items.push({ kind: 'header', text: `[raw:${ev.type}] ${line.slice(0, 120)}` })
     }

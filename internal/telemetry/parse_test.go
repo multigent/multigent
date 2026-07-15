@@ -70,3 +70,24 @@ tokens used
 		t.Fatal("codex text usage should not imply cost data")
 	}
 }
+
+func TestParseStreamJSONUsage_CodexJSON(t *testing.T) {
+	data := []byte(`{"type":"thread.started","thread_id":"019f6786-2e90-7b02-9b30-7f4e78c4f64a"}
+{"type":"turn.started"}
+{"type":"item.completed","item":{"id":"item_0","type":"agent_message","text":"ok"}}
+{"type":"turn.completed","usage":{"input_tokens":20506,"cached_input_tokens":14208,"output_tokens":5,"reasoning_output_tokens":0}}
+`)
+	u := ParseStreamJSONUsage(data)
+	if !u.SawResult {
+		t.Fatal("expected SawResult")
+	}
+	if u.InputTokens != 20506 {
+		t.Fatalf("InputTokens: got %d, want 20506", u.InputTokens)
+	}
+	if u.OutputTokens != 5 {
+		t.Fatalf("OutputTokens: got %d, want 5", u.OutputTokens)
+	}
+	if u.CacheReadTokens != 0 {
+		t.Fatalf("CacheReadTokens: got %d, want 0 because codex cached_input_tokens is a subset", u.CacheReadTokens)
+	}
+}

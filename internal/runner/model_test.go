@@ -1,6 +1,7 @@
 package runner
 
 import (
+	"slices"
 	"testing"
 
 	"github.com/multigent/multigent/internal/entity"
@@ -11,6 +12,22 @@ func TestCodexInvokerParseSessionID(t *testing.T) {
 	got := invoker.ParseSessionID("OpenAI Codex\nSession ID: sess-123\n")
 	if got != "sess-123" {
 		t.Fatalf("ParseSessionID() = %q, want %q", got, "sess-123")
+	}
+}
+
+func TestCodexInvokerUsesJSONOutput(t *testing.T) {
+	invoker := &codexInvoker{addDirs: []string{"/repo"}}
+	args := invoker.Args("/tmp/prompt.txt", "")
+	if !slices.Contains(args, "--json") {
+		t.Fatalf("codex args missing --json: %#v", args)
+	}
+}
+
+func TestCodexInvokerParseJSONSessionID(t *testing.T) {
+	invoker := &codexInvoker{}
+	got := invoker.ParseSessionID(`{"type":"thread.started","thread_id":"019f6786-2e90-7b02-9b30-7f4e78c4f64a"}`)
+	if got != "019f6786-2e90-7b02-9b30-7f4e78c4f64a" {
+		t.Fatalf("ParseSessionID() = %q", got)
 	}
 }
 

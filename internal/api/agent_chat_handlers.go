@@ -405,8 +405,11 @@ func extractAgentChatSessionID(line string) string {
 		return ""
 	}
 	var raw map[string]any
-	if strings.Contains(line, `"session_id"`) && json.Unmarshal([]byte(line), &raw) == nil {
+	if (strings.Contains(line, `"session_id"`) || strings.Contains(line, `"thread_id"`)) && json.Unmarshal([]byte(line), &raw) == nil {
 		if sid, ok := raw["session_id"].(string); ok && sid != "" {
+			return sid
+		}
+		if sid, ok := raw["thread_id"].(string); ok && sid != "" {
 			return sid
 		}
 	}

@@ -1,6 +1,7 @@
 package runner
 
 import (
+	"encoding/json"
 	"strings"
 
 	"github.com/multigent/multigent/internal/entity"
@@ -113,13 +114,13 @@ func (c *codexInvoker) Args(promptFile, sessionID string) []string {
 	var args []string
 	if sessionID != "" {
 		// --add-dir must appear between "exec" and "resume"
-		args = []string{"codex", "exec"}
+		args = []string{"codex", "exec", "--json"}
 		for _, dir := range c.addDirs {
 			args = append(args, "--add-dir", dir)
 		}
 		args = append(args, "resume", sessionID)
 	} else {
-		args = []string{"codex", "exec", "--skip-git-repo-check"}
+		args = []string{"codex", "exec", "--json", "--skip-git-repo-check"}
 		for _, dir := range c.addDirs {
 			args = append(args, "--add-dir", dir)
 		}
@@ -133,6 +134,14 @@ func (c *codexInvoker) UseStdinPrompt() bool { return true }
 func (c *codexInvoker) ParseSessionID(output string) string {
 	for _, line := range strings.Split(output, "\n") {
 		line = strings.TrimSpace(line)
+		var ev struct {
+			Type     string `json:"type"`
+			ThreadID string `json:"thread_id"`
+		}
+		if strings.HasPrefix(line, "{") && json.Unmarshal([]byte(line), &ev) == nil &&
+			ev.Type == "thread.started" && ev.ThreadID != "" {
+			return ev.ThreadID
+		}
 		lower := strings.ToLower(line)
 		for _, prefix := range []string{"session id:", "session:", "session :"} {
 			if after, ok := strings.CutPrefix(lower, prefix); ok {

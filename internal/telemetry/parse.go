@@ -21,9 +21,11 @@ type StreamUsage struct {
 // streamResultUsage handles both Claude (snake_case) and Cursor (camelCase) field names.
 type streamResultUsage struct {
 	// Claude Code format
-	InputTokens          int64 `json:"input_tokens"`
-	OutputTokens         int64 `json:"output_tokens"`
-	CacheReadInputTokens int64 `json:"cache_read_input_tokens"`
+	InputTokens           int64 `json:"input_tokens"`
+	OutputTokens          int64 `json:"output_tokens"`
+	CacheReadInputTokens  int64 `json:"cache_read_input_tokens"`
+	CachedInputTokens     int64 `json:"cached_input_tokens"`
+	ReasoningOutputTokens int64 `json:"reasoning_output_tokens"`
 	// Cursor format
 	InputTokensCC  int64 `json:"inputTokens"`
 	OutputTokensCC int64 `json:"outputTokens"`
@@ -32,7 +34,9 @@ type streamResultUsage struct {
 
 func (u streamResultUsage) input() int64  { return coalesce(u.InputTokens, u.InputTokensCC) }
 func (u streamResultUsage) output() int64 { return coalesce(u.OutputTokens, u.OutputTokensCC) }
-func (u streamResultUsage) cache() int64  { return coalesce(u.CacheReadInputTokens, u.CacheReadCC) }
+func (u streamResultUsage) cache() int64 {
+	return coalesce(coalesce(u.CacheReadInputTokens, u.CachedInputTokens), u.CacheReadCC)
+}
 
 func coalesce(a, b int64) int64 {
 	if a != 0 {
@@ -58,6 +62,13 @@ func ParseStreamJSONUsage(data []byte) StreamUsage {
 		}
 		var rl streamResultLine
 		if json.Unmarshal(line, &rl) != nil {
+			continue
+		}
+		if rl.Type == "turn.completed" {
+			out.SawResult = true
+			out.InputTokens = rl.Usage.input()
+			out.OutputTokens = rl.Usage.output()
+			out.CacheReadTokens = 0
 			continue
 		}
 		if rl.Type == "result" {
