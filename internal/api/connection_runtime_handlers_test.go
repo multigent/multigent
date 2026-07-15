@@ -198,3 +198,37 @@ func TestRuntimeConnectionsRequiresConnectionCapability(t *testing.T) {
 		t.Fatalf("status=%d body=%s", rec.Code, rec.Body.String())
 	}
 }
+
+func TestAgentRuntimeConnectionsRequireAgentOperatorAccess(t *testing.T) {
+	s, workspaceID := newConnectionGrantPolicyServer(t)
+	if err := s.users.CreateUser("viewer", "pass123", RoleMember, "", "", "", "", ""); err != nil {
+		t.Fatalf("create viewer: %v", err)
+	}
+	if err := s.controlDB.UpsertWorkspaceMember(workspaceID, "viewer", WorkspaceRoleMember); err != nil {
+		t.Fatalf("viewer workspace member: %v", err)
+	}
+	if err := s.users.UpdateUser("viewer", nil, nil, nil, nil, nil, nil, nil, []projectAccess{{Project: "tapnow", Role: ProjectRoleViewer}}, nil, nil); err != nil {
+		t.Fatalf("viewer project access: %v", err)
+	}
+
+	viewerReq := agentRuntimeConnectionsRequest("viewer", "tapnow", "pm")
+	viewerRec := httptest.NewRecorder()
+	s.handleAgentRuntimeConnections(viewerRec, viewerReq)
+	if viewerRec.Code != http.StatusForbidden {
+		t.Fatalf("viewer status=%d body=%s", viewerRec.Code, viewerRec.Body.String())
+	}
+
+	ownerReq := agentRuntimeConnectionsRequest("owner", "tapnow", "pm")
+	ownerRec := httptest.NewRecorder()
+	s.handleAgentRuntimeConnections(ownerRec, ownerReq)
+	if ownerRec.Code != http.StatusOK {
+		t.Fatalf("linked owner status=%d body=%s", ownerRec.Code, ownerRec.Body.String())
+	}
+}
+
+func agentRuntimeConnectionsRequest(username, project, agent string) *http.Request {
+	req := httptest.NewRequest(http.MethodGet, "/api/v1/projects/"+project+"/agents/"+agent+"/runtime/connections", nil)
+	req.SetPathValue("name", project)
+	req.SetPathValue("agent", agent)
+	return req.WithContext(context.WithValue(req.Context(), ctxUserKey, username))
+}
