@@ -15,6 +15,7 @@ import (
 	"strings"
 	"time"
 
+	"github.com/multigent/multigent/internal/connector"
 	controldb "github.com/multigent/multigent/internal/db"
 )
 
@@ -27,75 +28,37 @@ const (
 	ConnectionTargetAgent     = "agent"
 	ConnectionTargetUser      = "user"
 
-	ConnectionAuthNoAuth           = "no_auth"
-	ConnectionAuthAPIKey           = "api_key"
-	ConnectionAuthCustomCredential = "custom_credential"
+	ConnectionAuthNoAuth           = connector.AuthNoAuth
+	ConnectionAuthAPIKey           = connector.AuthAPIKey
+	ConnectionAuthCustomCredential = connector.AuthCustomCredential
 )
 
-type connectorProvider struct {
-	Provider    string                   `json:"provider"`
-	DisplayName string                   `json:"displayName"`
-	AuthTypes   []string                 `json:"authTypes"`
-	Fields      []connectorProviderField `json:"fields,omitempty"`
-	Enabled     bool                     `json:"enabled"`
-}
-
-type connectorProviderField struct {
-	Key       string `json:"key"`
-	Label     string `json:"label"`
-	InputType string `json:"inputType"`
-	Required  bool   `json:"required"`
-	Secret    bool   `json:"secret"`
-}
-
-var connectorProviders = []connectorProvider{
-	{
-		Provider:    "github",
-		DisplayName: "GitHub",
-		AuthTypes:   []string{ConnectionAuthAPIKey},
-		Fields: []connectorProviderField{
-			{Key: "apiKey", Label: "Personal access token", InputType: "password", Required: true, Secret: true},
-		},
-		Enabled: true,
-	},
-	{
-		Provider:    "feishu",
-		DisplayName: "Feishu / Lark",
-		AuthTypes:   []string{ConnectionAuthCustomCredential},
-		Fields: []connectorProviderField{
-			{Key: "appId", Label: "App ID", InputType: "text", Required: true, Secret: false},
-			{Key: "appSecret", Label: "App Secret", InputType: "password", Required: true, Secret: true},
-		},
-		Enabled: true,
-	},
-	{
-		Provider:    "linear",
-		DisplayName: "Linear",
-		AuthTypes:   []string{ConnectionAuthAPIKey},
-		Fields: []connectorProviderField{
-			{Key: "apiKey", Label: "API key", InputType: "password", Required: true, Secret: true},
-		},
-		Enabled: true,
-	},
-	{
-		Provider:    "custom-mcp",
-		DisplayName: "Custom MCP Server",
-		AuthTypes:   []string{ConnectionAuthCustomCredential, ConnectionAuthNoAuth},
-		Fields: []connectorProviderField{
-			{Key: "serverUrl", Label: "Server URL", InputType: "text", Required: true, Secret: false},
-			{Key: "token", Label: "Token", InputType: "password", Required: false, Secret: true},
-		},
-		Enabled: true,
-	},
-}
-
-func (s *Server) handleConnectorProviders(w http.ResponseWriter, _ *http.Request) {
-	_ = json.NewEncoder(w).Encode(map[string]any{"providers": connectorProviders})
+func (s *Server) handleConnectorProviders(w http.ResponseWriter, r *http.Request) {
+	includeDisabled := s.canAdminCurrentWorkspace(r) && strings.TrimSpace(r.URL.Query().Get("includeDisabled")) == "true"
+	providers, err := s.controlDB.ListConnectorProviders(includeDisabled)
+	if err != nil {
+		s.serverError(w, err)
+		return
+	}
+	out := make([]connector.Provider, 0, len(providers))
+	for _, row := range providers {
+		provider, err := connectorProviderFromDB(row)
+		if err != nil {
+			s.serverError(w, err)
+			return
+		}
+		out = append(out, provider)
+	}
+	_ = json.NewEncoder(w).Encode(map[string]any{"providers": out})
 }
 
 func (s *Server) handleConnectorProvider(w http.ResponseWriter, r *http.Request) {
 	providerID := strings.TrimSpace(r.PathValue("provider"))
-	provider, ok := findConnectorProvider(providerID)
+	provider, ok, err := s.findConnectorProvider(providerID)
+	if err != nil {
+		s.serverError(w, err)
+		return
+	}
 	if !ok {
 		s.jsonError(w, http.StatusNotFound, "provider not found")
 		return
@@ -103,13 +66,30 @@ func (s *Server) handleConnectorProvider(w http.ResponseWriter, r *http.Request)
 	_ = json.NewEncoder(w).Encode(provider)
 }
 
-func findConnectorProvider(providerID string) (connectorProvider, bool) {
-	for _, provider := range connectorProviders {
-		if provider.Provider == providerID && provider.Enabled {
-			return provider, true
-		}
+func (s *Server) findConnectorProvider(providerID string) (connector.Provider, bool, error) {
+	row, ok, err := s.controlDB.ConnectorProviderByID(providerID)
+	if err != nil || !ok || !row.Enabled {
+		return connector.Provider{}, false, err
 	}
-	return connectorProvider{}, false
+	provider, err := connectorProviderFromDB(row)
+	if err != nil {
+		return connector.Provider{}, false, err
+	}
+	return provider, true, nil
+}
+
+func connectorProviderFromDB(row controldb.ConnectorProvider) (connector.Provider, error) {
+	var provider connector.Provider
+	if err := json.Unmarshal([]byte(row.CatalogJSON), &provider); err != nil {
+		return connector.Provider{}, err
+	}
+	provider.Provider = row.Provider
+	provider.DisplayName = row.DisplayName
+	provider.Enabled = row.Enabled
+	if len(provider.AuthTypes) == 0 {
+		_ = json.Unmarshal([]byte(row.AuthTypesJSON), &provider.AuthTypes)
+	}
+	return provider, nil
 }
 
 func (s *Server) handleListConnections(w http.ResponseWriter, r *http.Request) {
@@ -163,7 +143,11 @@ func (s *Server) handleCreateConnection(w http.ResponseWriter, r *http.Request) 
 		return
 	}
 	body.Provider = strings.TrimSpace(body.Provider)
-	provider, exists := findConnectorProvider(body.Provider)
+	provider, exists, err := s.findConnectorProvider(body.Provider)
+	if err != nil {
+		s.serverError(w, err)
+		return
+	}
 	if !exists {
 		s.jsonError(w, http.StatusBadRequest, "unsupported provider")
 		return
@@ -562,16 +546,11 @@ func (s *Server) canAdminWorkspace(r *http.Request, workspaceID string) bool {
 	return member.Role == WorkspaceRoleOwner || member.Role == WorkspaceRoleAdmin
 }
 
-func providerSupportsAuth(provider connectorProvider, authType string) bool {
-	for _, typ := range provider.AuthTypes {
-		if typ == authType {
-			return true
-		}
-	}
-	return false
+func providerSupportsAuth(provider connector.Provider, authType string) bool {
+	return connector.SupportsAuth(provider, authType)
 }
 
-func validateConnectionValues(provider connectorProvider, authType string, values map[string]string) error {
+func validateConnectionValues(provider connector.Provider, authType string, values map[string]string) error {
 	if authType == ConnectionAuthNoAuth {
 		return nil
 	}
@@ -782,7 +761,7 @@ func sanitizeConnectionProfile(providerID string, profile map[string]any) map[st
 		"token":      true,
 		"credential": true,
 	}
-	if provider, ok := findConnectorProvider(providerID); ok {
+	if provider, ok := defaultConnectorProvider(providerID); ok {
 		for _, field := range provider.Fields {
 			if field.Secret {
 				secretKeys[field.Key] = true
@@ -797,6 +776,15 @@ func sanitizeConnectionProfile(providerID string, profile map[string]any) map[st
 		out[key] = value
 	}
 	return out
+}
+
+func defaultConnectorProvider(providerID string) (connector.Provider, bool) {
+	for _, provider := range connector.Defaults() {
+		if provider.Provider == providerID {
+			return provider, true
+		}
+	}
+	return connector.Provider{}, false
 }
 
 func newConnectionID(prefix string) string {

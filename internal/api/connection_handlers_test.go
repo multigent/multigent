@@ -5,6 +5,7 @@ import (
 	"strings"
 	"testing"
 
+	"github.com/multigent/multigent/internal/connector"
 	controldb "github.com/multigent/multigent/internal/db"
 )
 
@@ -65,5 +66,43 @@ func TestConnectionAuditPayloadSanitizesProfileSecrets(t *testing.T) {
 	profile, ok := payload["profile"].(map[string]any)
 	if !ok || profile["displayName"] != "GitHub" {
 		t.Fatalf("safe audit profile not preserved: %#v", payload["profile"])
+	}
+}
+
+func TestConnectorProviderFromDBDrivesCredentialValidation(t *testing.T) {
+	catalog, err := json.Marshal(connector.Provider{
+		Provider:    "custom-test",
+		DisplayName: "Custom Test",
+		AuthTypes:   []string{ConnectionAuthCustomCredential},
+		Fields: []connector.ProviderField{
+			{Key: "serverUrl", Label: "Server URL", Required: true},
+			{Key: "token", Label: "Token", Secret: true},
+		},
+		Enabled: true,
+	})
+	if err != nil {
+		t.Fatalf("marshal catalog: %v", err)
+	}
+	provider, err := connectorProviderFromDB(controldb.ConnectorProvider{
+		Provider:      "custom-test",
+		DisplayName:   "Custom Test",
+		AuthTypesJSON: `["custom_credential"]`,
+		CatalogJSON:   string(catalog),
+		Enabled:       true,
+	})
+	if err != nil {
+		t.Fatalf("decode provider: %v", err)
+	}
+	if !providerSupportsAuth(provider, ConnectionAuthCustomCredential) {
+		t.Fatalf("custom auth should be supported")
+	}
+	if err := validateConnectionValues(provider, ConnectionAuthCustomCredential, map[string]string{"token": "t"}); err == nil {
+		t.Fatalf("missing required serverUrl should fail")
+	}
+	if err := validateConnectionValues(provider, ConnectionAuthCustomCredential, map[string]string{"serverUrl": "http://localhost:3000/mcp", "extra": "x"}); err == nil {
+		t.Fatalf("unknown credential field should fail")
+	}
+	if err := validateConnectionValues(provider, ConnectionAuthCustomCredential, map[string]string{"serverUrl": "http://localhost:3000/mcp", "token": "t"}); err != nil {
+		t.Fatalf("valid values should pass: %v", err)
 	}
 }

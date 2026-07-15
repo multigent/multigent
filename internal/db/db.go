@@ -43,6 +43,10 @@ type Store interface {
 	CreateAuditEvent(event AuditEvent) error
 	ListAuditEvents(filter AuditEventFilter) ([]AuditEvent, error)
 
+	UpsertConnectorProvider(provider ConnectorProvider) error
+	ConnectorProviderByID(provider string) (ConnectorProvider, bool, error)
+	ListConnectorProviders(includeDisabled bool) ([]ConnectorProvider, error)
+
 	UpsertConnection(connection Connection) error
 	ConnectionByID(id string) (Connection, bool, error)
 	ListConnections(filter ConnectionFilter) ([]Connection, error)
@@ -152,6 +156,16 @@ type Connection struct {
 	LastUsedAt     string
 }
 
+type ConnectorProvider struct {
+	Provider      string
+	DisplayName   string
+	AuthTypesJSON string
+	CatalogJSON   string
+	Enabled       bool
+	CreatedAt     string
+	UpdatedAt     string
+}
+
 type ConnectionFilter struct {
 	WorkspaceID string
 	Provider    string
@@ -198,6 +212,10 @@ func Open(path string) (*SQLiteStore, error) {
 	sqlDB.SetMaxOpenConns(1)
 	db := &SQLiteStore{sql: sqlDB}
 	if err := db.migrate(); err != nil {
+		_ = sqlDB.Close()
+		return nil, err
+	}
+	if err := db.SeedDefaultConnectorProviders(); err != nil {
 		_ = sqlDB.Close()
 		return nil, err
 	}

@@ -84,6 +84,16 @@ func (db *SQLiteStore) migrate() error {
 )`,
 		`CREATE INDEX IF NOT EXISTS idx_audit_events_workspace_time ON audit_events(workspace_id, created_at DESC)`,
 		`CREATE INDEX IF NOT EXISTS idx_audit_events_resource ON audit_events(resource_type, resource_id, created_at DESC)`,
+		`CREATE TABLE IF NOT EXISTS connector_providers (
+	provider TEXT PRIMARY KEY,
+	display_name TEXT NOT NULL,
+	auth_types_json TEXT NOT NULL DEFAULT '[]',
+	catalog_json TEXT NOT NULL DEFAULT '{}',
+	enabled INTEGER NOT NULL DEFAULT 1,
+	created_at TEXT NOT NULL,
+	updated_at TEXT NOT NULL DEFAULT ''
+)`,
+		`CREATE INDEX IF NOT EXISTS idx_connector_providers_enabled ON connector_providers(enabled, provider)`,
 		`CREATE TABLE IF NOT EXISTS connections (
 	id TEXT PRIMARY KEY,
 	workspace_id TEXT NOT NULL REFERENCES workspaces(id) ON DELETE CASCADE,
