@@ -258,7 +258,7 @@ func (s *Server) handleCreateConnection(w http.ResponseWriter, r *http.Request) 
 			"ownerType":      connection.OwnerType,
 			"ownerId":        connection.OwnerID,
 			"authType":       connection.AuthType,
-			"profile":        profile,
+			"profile":        sanitizeConnectionProfile(connection.Provider, profile),
 		},
 		Request: r,
 	})
@@ -730,7 +730,7 @@ func connectionToResponse(connection controldb.Connection, grants []controldb.Co
 		OwnerID:        connection.OwnerID,
 		AuthType:       connection.AuthType,
 		Status:         connection.Status,
-		Profile:        profile,
+		Profile:        sanitizeConnectionProfile(connection.Provider, profile),
 		Grants:         grantsToResponse(grants),
 		CreatedBy:      connection.CreatedBy,
 		CreatedAt:      connection.CreatedAt,
@@ -758,6 +758,8 @@ func grantToResponse(grant controldb.ConnectionGrant) connectionGrantModel {
 }
 
 func connectionAuditPayload(connection controldb.Connection) map[string]any {
+	profile := map[string]any{}
+	_ = json.Unmarshal([]byte(connection.ProfileJSON), &profile)
 	return map[string]any{
 		"provider":       connection.Provider,
 		"connectionName": connection.ConnectionName,
@@ -765,7 +767,36 @@ func connectionAuditPayload(connection controldb.Connection) map[string]any {
 		"ownerId":        connection.OwnerID,
 		"authType":       connection.AuthType,
 		"status":         connection.Status,
+		"profile":        sanitizeConnectionProfile(connection.Provider, profile),
 	}
+}
+
+func sanitizeConnectionProfile(providerID string, profile map[string]any) map[string]any {
+	secretKeys := map[string]bool{
+		"apiKey":     true,
+		"api_key":    true,
+		"appSecret":  true,
+		"app_secret": true,
+		"password":   true,
+		"secret":     true,
+		"token":      true,
+		"credential": true,
+	}
+	if provider, ok := findConnectorProvider(providerID); ok {
+		for _, field := range provider.Fields {
+			if field.Secret {
+				secretKeys[field.Key] = true
+			}
+		}
+	}
+	out := make(map[string]any, len(profile))
+	for key, value := range profile {
+		if secretKeys[key] {
+			continue
+		}
+		out[key] = value
+	}
+	return out
 }
 
 func newConnectionID(prefix string) string {

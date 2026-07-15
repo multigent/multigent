@@ -86,6 +86,8 @@ Store profile metadata separately from encrypted secret payload:
 
 This lets humans and agents understand which external account will be used without exposing credentials.
 
+Profile data is not a credential store. If a client accidentally submits secret-like profile keys such as `token`, `apiKey`, `appSecret`, `password`, `secret`, or `credential`, API responses and audit events must redact those keys before returning profile data.
+
 ## Target Tables
 
 ### connector_providers

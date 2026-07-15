@@ -157,7 +157,7 @@ func agentRuntimeConnectionToResponse(connection controldb.Connection, grants []
 		OwnerType:      connection.OwnerType,
 		OwnerID:        connection.OwnerID,
 		AuthType:       connection.AuthType,
-		Profile:        sanitizeRuntimeConnectionProfile(connection.Provider, profile),
+		Profile:        sanitizeConnectionProfile(connection.Provider, profile),
 		MatchedGrants:  grantsToResponse(grants),
 		Runtime:        runtimeSpecForConnection(connection, alias),
 	}
@@ -214,31 +214,6 @@ func runtimeSpecForConnection(connection controldb.Connection, alias string) con
 			Description: "Use this action proxy for provider actions. The agent token must authorize the current run.",
 		},
 	}
-}
-
-func sanitizeRuntimeConnectionProfile(providerID string, profile map[string]any) map[string]any {
-	secretKeys := map[string]bool{
-		"apiKey":    true,
-		"appSecret": true,
-		"password":  true,
-		"secret":    true,
-		"token":     true,
-	}
-	if provider, ok := findConnectorProvider(providerID); ok {
-		for _, field := range provider.Fields {
-			if field.Secret {
-				secretKeys[field.Key] = true
-			}
-		}
-	}
-	out := make(map[string]any, len(profile))
-	for key, value := range profile {
-		if secretKeys[key] {
-			continue
-		}
-		out[key] = value
-	}
-	return out
 }
 
 func runtimeConnectionIDs(connections []agentRuntimeConnectionResponse) []string {
