@@ -86,7 +86,6 @@ When you run `hire` (or `project apply`), multigent merges the context chain:
 ```
 agency-prompt.md
   + teams/<team>/prompt.md
-  + teams/<team>/sub-team/prompt.md  (if nested)
   + teams/<team>/roles/<role>/prompt.md
   + projects/<project>/prompt.md
   + skills (all skills bound to team + role)

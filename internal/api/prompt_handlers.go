@@ -9,6 +9,7 @@ import (
 	"path/filepath"
 	"strings"
 
+	"github.com/multigent/multigent/internal/agentcli"
 	"github.com/multigent/multigent/internal/entity"
 )
 
@@ -235,7 +236,11 @@ func (s *Server) handleGetAgentContext(w http.ResponseWriter, r *http.Request) {
 		resp["provider"] = meta.Provider
 	}
 	if meta.Sandbox != nil {
-		resp["sandbox"] = meta.Sandbox
+		sandboxCfg := *meta.Sandbox
+		if sandboxCfg.AgentCLI == nil {
+			sandboxCfg.AgentCLI = agentcli.DefaultForModel(meta.Model)
+		}
+		resp["sandbox"] = &sandboxCfg
 	}
 
 	goalSummary := s.buildGoalSummary(project)
@@ -380,11 +385,15 @@ func (s *Server) handlePutAgentSandbox(w http.ResponseWriter, r *http.Request) {
 	}
 
 	var body struct {
-		Provider string   `json:"provider"`
-		Image    string   `json:"image"`
-		Network  string   `json:"network"`
-		MemoryMB int      `json:"memoryMb"`
-		AddDirs  []string `json:"addDirs"`
+		Provider   string                 `json:"provider"`
+		Image      string                 `json:"image"`
+		Template   string                 `json:"template"`
+		Network    string                 `json:"network"`
+		MemoryMB   int                    `json:"memoryMb"`
+		CPUs       float64                `json:"cpus"`
+		TimeoutSec int                    `json:"timeoutSec"`
+		AgentCLI   *entity.AgentCLIConfig `json:"agentCli"`
+		AddDirs    []string               `json:"addDirs"`
 	}
 	if err := s.readJSON(w, r, &body); err != nil {
 		s.jsonError(w, http.StatusBadRequest, "invalid JSON body")
@@ -395,20 +404,32 @@ func (s *Server) handlePutAgentSandbox(w http.ResponseWriter, r *http.Request) {
 		meta.Sandbox = nil
 	} else {
 		meta.Sandbox = &entity.SandboxConfig{
-			Provider: entity.SandboxProvider(body.Provider),
+			Provider:    entity.SandboxProvider(body.Provider),
+			Image:       body.Image,
+			NetworkMode: body.Network,
+			AgentCLI:    body.AgentCLI,
+			Resources: entity.RuntimeResourceLimits{
+				MemoryMB:   body.MemoryMB,
+				CPUs:       body.CPUs,
+				TimeoutSec: body.TimeoutSec,
+			},
+		}
+		if meta.Sandbox.AgentCLI == nil {
+			meta.Sandbox.AgentCLI = agentcli.DefaultForModel(meta.Model)
 		}
 		if body.Provider == "docker" {
-			dc := &entity.DockerSandboxConfig{}
-			if body.Image != "" {
-				dc.Image = body.Image
-			}
-			if body.Network != "" {
-				dc.NetworkMode = body.Network
-			}
-			if body.MemoryMB > 0 {
-				dc.MemoryMB = body.MemoryMB
+			dc := &entity.DockerSandboxConfig{
+				Image:       body.Image,
+				NetworkMode: body.Network,
+				MemoryMB:    body.MemoryMB,
+				CPUs:        body.CPUs,
 			}
 			meta.Sandbox.Docker = dc
+		} else if body.Provider == "e2b" {
+			meta.Sandbox.E2B = &entity.E2BSandboxConfig{
+				Template:   body.Template,
+				TimeoutSec: body.TimeoutSec,
+			}
 		}
 	}
 

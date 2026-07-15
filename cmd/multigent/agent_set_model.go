@@ -10,7 +10,6 @@ import (
 	"github.com/multigent/multigent/internal/ctxbuild"
 	"github.com/multigent/multigent/internal/entity"
 	"github.com/multigent/multigent/internal/formatter"
-	"github.com/multigent/multigent/internal/store"
 	"github.com/spf13/cobra"
 )
 
@@ -58,7 +57,7 @@ Examples:
 			if err != nil {
 				return err
 			}
-			s := store.NewFS(root)
+			s := mustStore(root)
 
 			meta, err := s.AgentMeta(project, agentName)
 			if err != nil {

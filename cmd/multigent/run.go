@@ -6,7 +6,6 @@ import (
 
 	"github.com/multigent/multigent/internal/entity"
 	"github.com/multigent/multigent/internal/runner"
-	"github.com/multigent/multigent/internal/store"
 	"github.com/multigent/multigent/internal/taskstore"
 	"github.com/spf13/cobra"
 )
@@ -49,8 +48,8 @@ This is a one-shot manual trigger. For recurring automated runs, use
 				return fmt.Errorf("--project and --agent are required")
 			}
 
-			ts := taskstore.New(root)
-			s := store.NewFS(root)
+			ts := mustTaskStore(root)
+			s := mustStore(root)
 
 			var task *entity.Task
 			if taskID != "" {

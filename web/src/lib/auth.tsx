@@ -12,6 +12,7 @@ export type AuthUser = {
   username: string
   role: string // admin | member
   displayName?: string
+  email?: string
   projects?: ProjectAccess[]
   linkedAgents?: string[]
 }

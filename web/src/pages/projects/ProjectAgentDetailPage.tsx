@@ -5,7 +5,7 @@ import Markdown from 'react-markdown'
 import remarkGfm from 'remark-gfm'
 import {
   RefreshCw, Save, ChevronRight, Bot, BookOpen, Puzzle, Check, Plus, Trash2, X,
-  Settings2, Users, UserCog, FileCode, Clock, Activity, User, Mail, ListTodo, Reply, Send, KeyRound, Pencil, Eye, EyeOff, Container, AlertTriangle, ShieldCheck, CircleX, MessageSquareText,
+  Settings2, Users, UserCog, FileCode, Clock, Activity, User, Mail, ListTodo, Reply, Send, KeyRound, Pencil, Eye, EyeOff, Container, MessageSquareText,
 } from 'lucide-react'
 import type { LucideIcon } from 'lucide-react'
 import { cn } from '../../lib/cn'
@@ -66,18 +66,29 @@ type HTTPAgentConfig = {
 
 type SandboxConfig = {
   provider: string
+  image?: string
+  networkMode?: string
+  agentCli?: AgentCLIConfig
+  resources?: { memoryMb?: number; cpus?: number; timeoutSec?: number }
   docker?: {
     image?: string
     network_mode?: string
     memory_mb?: number
+    cpus?: number
+  }
+  e2b?: {
+    template?: string
+    timeoutSec?: number
   }
 }
 
-type SetupCheck = {
-  key: string
-  label: string
-  status: 'ok' | 'warning' | 'error'
-  detail?: string
+type AgentCLIConfig = {
+  vendor?: string
+  version?: string
+  channel?: string
+  binary?: string
+  packageManager?: string
+  package?: string
 }
 
 type AgentContext = {
@@ -95,7 +106,6 @@ type AgentContext = {
   provider?: string
   workDir?: string
   sandbox?: SandboxConfig
-  setupChecks?: SetupCheck[]
   addDirs?: string[]
 }
 
@@ -687,35 +697,6 @@ export default function ProjectAgentDetailPage() {
                 {ctx.syncedAt && <InfoCard icon={Clock} label={t('prompt.lastSync')} value={fmt(ctx.syncedAt)} />}
               </div>
 
-              {/* Setup Checklist */}
-              {ctx.setupChecks && ctx.setupChecks.length > 0 && (
-                <section>
-                  <SectionHeader icon={ShieldCheck} title={t('members.setupChecklist')} />
-                  <div className="mt-3 rounded-lg border border-neutral-200/80 bg-white p-4 dark:border-zinc-700/60 dark:bg-zinc-900/40">
-                    <div className="space-y-2">
-                      {ctx.setupChecks.map((c) => (
-                        <div key={c.key} className="flex items-start gap-2.5 text-sm">
-                          {c.status === 'ok' && <Check className="mt-0.5 size-4 shrink-0 text-green-500" />}
-                          {c.status === 'warning' && <AlertTriangle className="mt-0.5 size-4 shrink-0 text-amber-500" />}
-                          {c.status === 'error' && <CircleX className="mt-0.5 size-4 shrink-0 text-red-500" />}
-                          <div className="min-w-0">
-                            <span className={cn(
-                              'font-medium',
-                              c.status === 'ok' && 'text-neutral-700 dark:text-zinc-300',
-                              c.status === 'warning' && 'text-amber-700 dark:text-amber-400',
-                              c.status === 'error' && 'text-red-700 dark:text-red-400',
-                            )}>{c.label}</span>
-                            {c.detail && (
-                              <p className="mt-0.5 text-xs text-neutral-500 dark:text-zinc-500">{c.detail}</p>
-                            )}
-                          </div>
-                        </div>
-                      ))}
-                    </div>
-                  </div>
-                </section>
-              )}
-
               {/* Configuration: model + env */}
               <section>
                 <SectionHeader icon={Settings2} title={t('members.configuration')} />
@@ -840,30 +821,100 @@ function InfoCard({ icon: Icon, label, value, mono }: { icon?: LucideIcon; label
   )
 }
 
+const CLI_DEFAULTS: Record<string, { packageManager: string; package: string; binary: string; channel: string; versions: string[] }> = {
+  codex: {
+    packageManager: 'npm',
+    package: '@openai/codex',
+    binary: 'codex',
+    channel: 'stable',
+    versions: ['latest', '0.18.0', '0.17.0', '0.16.0'],
+  },
+  'claude-code': {
+    packageManager: 'npm',
+    package: '@anthropic-ai/claude-code',
+    binary: 'claude',
+    channel: 'stable',
+    versions: ['latest'],
+  },
+  gemini: {
+    packageManager: 'npm',
+    package: '@google/gemini-cli',
+    binary: 'gemini',
+    channel: 'stable',
+    versions: ['latest'],
+  },
+  qoder: {
+    packageManager: 'npm',
+    package: '@openai/codex',
+    binary: 'codex',
+    channel: 'stable',
+    versions: ['latest', '0.18.0', '0.17.0', '0.16.0'],
+  },
+}
+
+function completeAgentCli(input: { vendor: string; version: string }): AgentCLIConfig | null {
+  const vendor = input.vendor.trim()
+  const version = input.version.trim()
+  if (!vendor && !version) return null
+  const defaults = CLI_DEFAULTS[vendor]
+  return {
+    vendor,
+    version,
+    channel: defaults?.channel ?? 'stable',
+    packageManager: defaults?.packageManager ?? 'npm',
+    package: defaults?.package ?? '',
+    binary: defaults?.binary ?? vendor,
+  }
+}
+
 function SandboxEditor({ project, agentName, initial, initialAddDirs, onChanged }: {
   project: string; agentName: string; initial?: SandboxConfig; initialAddDirs: string[]; onChanged: () => void
 }) {
   const { t } = useTranslation()
   const [provider, setProvider] = useState(initial?.provider ?? '')
-  const [image, setImage] = useState(initial?.docker?.image ?? '')
-  const [network, setNetwork] = useState(initial?.docker?.network_mode ?? '')
-  const [memoryMb, setMemoryMb] = useState(initial?.docker?.memory_mb ?? 0)
+  const [image, setImage] = useState(initial?.image ?? initial?.docker?.image ?? '')
+  const [template, setTemplate] = useState(initial?.e2b?.template ?? '')
+  const [network, setNetwork] = useState(initial?.networkMode ?? initial?.docker?.network_mode ?? '')
+  const [memoryMb, setMemoryMb] = useState(initial?.resources?.memoryMb ?? initial?.docker?.memory_mb ?? 0)
+  const [cpus, setCpus] = useState(initial?.resources?.cpus ?? initial?.docker?.cpus ?? 0)
+  const [timeoutSec, setTimeoutSec] = useState(initial?.resources?.timeoutSec ?? initial?.e2b?.timeoutSec ?? 0)
+  const [cliVendor, setCliVendor] = useState(initial?.agentCli?.vendor ?? '')
+  const [cliVersion, setCliVersion] = useState(initial?.agentCli?.version ?? '')
   const [addDirs, setAddDirs] = useState<string[]>(initialAddDirs)
   const [newDir, setNewDir] = useState('')
   const [saving, setSaving] = useState(false)
   const [dirty, setDirty] = useState(false)
 
+  useEffect(() => {
+    setProvider(initial?.provider ?? '')
+    setImage(initial?.image ?? initial?.docker?.image ?? '')
+    setTemplate(initial?.e2b?.template ?? '')
+    setNetwork(initial?.networkMode ?? initial?.docker?.network_mode ?? '')
+    setMemoryMb(initial?.resources?.memoryMb ?? initial?.docker?.memory_mb ?? 0)
+    setCpus(initial?.resources?.cpus ?? initial?.docker?.cpus ?? 0)
+    setTimeoutSec(initial?.resources?.timeoutSec ?? initial?.e2b?.timeoutSec ?? 0)
+    setCliVendor(initial?.agentCli?.vendor ?? '')
+    setCliVersion(initial?.agentCli?.version ?? '')
+    setAddDirs(initialAddDirs)
+    setDirty(false)
+  }, [initial, initialAddDirs])
+
   const inputCls = 'w-full rounded-md border border-neutral-200/80 bg-white px-3 py-1.5 text-sm text-neutral-800 outline-none transition-colors focus:border-sky-400 focus:ring-1 focus:ring-sky-400/30 dark:border-zinc-700/60 dark:bg-zinc-800/50 dark:text-zinc-200 dark:focus:border-sky-500'
   const labelCls = 'block text-xs font-medium text-neutral-500 dark:text-zinc-400 mb-1'
 
   async function save() {
+    const agentCli = completeAgentCli({ vendor: cliVendor, version: cliVersion })
     setSaving(true)
     try {
       await apiPut(`/api/v1/projects/${encodeURIComponent(project)}/agents/${encodeURIComponent(agentName)}/sandbox`, {
         provider: provider || 'none',
         image,
+        template,
         network,
         memoryMb,
+        cpus,
+        timeoutSec,
+        agentCli,
         addDirs,
       })
       setDirty(false)
@@ -905,14 +956,58 @@ function SandboxEditor({ project, agentName, initial, initialAddDirs, onChanged 
           <select value={provider} onChange={(e) => { setProvider(e.target.value); setDirty(true) }} className={inputCls}>
             <option value="">{t('sandbox.providerNone')}</option>
             <option value="docker">Docker</option>
+            <option value="e2b" disabled={provider !== 'e2b'}>E2B (planned)</option>
           </select>
         </div>
-        {provider === 'docker' && (
+        {provider && provider !== 'none' && (
           <>
             <div>
-              <label className={labelCls}>{t('sandbox.image')}</label>
+              <label className={labelCls}>{provider === 'e2b' ? t('sandbox.template') : t('sandbox.image')}</label>
               <input type="text" value={image} onChange={(e) => { setImage(e.target.value); setDirty(true) }} placeholder={t('sandbox.imagePlaceholder')} className={inputCls} />
             </div>
+            <div className="rounded-lg border border-neutral-200/70 bg-neutral-50/60 p-3 dark:border-zinc-700/50 dark:bg-zinc-800/25">
+              <div className="mb-2 flex items-center justify-between">
+                <span className="text-xs font-semibold uppercase tracking-wider text-neutral-500 dark:text-zinc-400">{t('sandbox.agentCli')}</span>
+                <span className="text-[11px] text-neutral-400 dark:text-zinc-500">{t('sandbox.agentCliHint')}</span>
+              </div>
+              <div className="grid grid-cols-2 gap-3">
+                <div>
+                  <label className={labelCls}>{t('sandbox.cliVendor')}</label>
+                  <select value={cliVendor} onChange={(e) => { setCliVendor(e.target.value); setDirty(true) }} className={inputCls}>
+                    <option value="">{t('sandbox.cliAuto')}</option>
+                    <option value="codex">codex</option>
+                    <option value="claude-code">claude-code</option>
+                    <option value="gemini">gemini</option>
+                    <option value="cursor">cursor</option>
+                    <option value="opencode">opencode</option>
+                    <option value="qoder">qoder</option>
+                    <option value="custom">custom</option>
+                  </select>
+                </div>
+                <div>
+                  <label className={labelCls}>{t('sandbox.cliVersion')}</label>
+                  <input
+                    type="text"
+                    list={`cli-version-options-${agentName}`}
+                    value={cliVersion}
+                    onChange={(e) => { setCliVersion(e.target.value); setDirty(true) }}
+                    placeholder="latest"
+                    className={inputCls}
+                  />
+                  <datalist id={`cli-version-options-${agentName}`}>
+                    {(CLI_DEFAULTS[cliVendor]?.versions ?? ['latest']).map((version) => (
+                      <option key={version} value={version} />
+                    ))}
+                  </datalist>
+                </div>
+              </div>
+            </div>
+            {provider === 'e2b' && (
+              <div>
+                <label className={labelCls}>{t('sandbox.e2bTemplate')}</label>
+                <input type="text" value={template} onChange={(e) => { setTemplate(e.target.value); setDirty(true) }} placeholder="multigent-codex" className={inputCls} />
+              </div>
+            )}
             <div className="grid grid-cols-2 gap-3">
               <div>
                 <label className={labelCls}>{t('sandbox.network')}</label>
@@ -927,10 +1022,20 @@ function SandboxEditor({ project, agentName, initial, initialAddDirs, onChanged 
                 <input type="number" value={memoryMb || ''} onChange={(e) => { setMemoryMb(Number(e.target.value)); setDirty(true) }} placeholder={t('sandbox.memoryPlaceholder')} className={inputCls} />
               </div>
             </div>
+            <div className="grid grid-cols-2 gap-3">
+              <div>
+                <label className={labelCls}>{t('sandbox.cpus')}</label>
+                <input type="number" step="0.25" value={cpus || ''} onChange={(e) => { setCpus(Number(e.target.value)); setDirty(true) }} placeholder="0 = default" className={inputCls} />
+              </div>
+              <div>
+                <label className={labelCls}>{t('sandbox.timeout')}</label>
+                <input type="number" value={timeoutSec || ''} onChange={(e) => { setTimeoutSec(Number(e.target.value)); setDirty(true) }} placeholder="0 = default" className={inputCls} />
+              </div>
+            </div>
           </>
         )}
 
-        {/* Add Dirs — always visible, works with both docker and host mode */}
+        {/* Add Dirs — provider-neutral materialized or mounted paths */}
         <div>
           <label className={labelCls}>{t('sandbox.addDirs')}</label>
           <p className="mb-1.5 text-[11px] text-neutral-400 dark:text-zinc-500">{t('sandbox.addDirsHint')}</p>

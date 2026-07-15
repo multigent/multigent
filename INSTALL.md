@@ -15,7 +15,7 @@ An agency's structure — teams, roles, and workflows — directly shapes how ev
 Before creating any team, role, or project, have a conversation with the user to understand:
 
 1. **What is the user trying to build or operate?**
-   What is the product/codebase/business? What are the main workstreams?
+   What is the product/codebase/business? What are the main projects, task types, and recurring workflows?
 
 2. **Who are the "people" in this team?**
    What functions do they need — engineering, QA, product, writing, ops, research, other?
@@ -192,12 +192,8 @@ multigent create team --name "qa"             --desc "Quality assurance"
 multigent create team --name "product"        --desc "Product management"
 ```
 
-You can nest teams (sub-teams inherit parent context):
-
-```bash
-multigent create team --name "engineering/backend"   --desc "Go/API services"
-multigent create team --name "engineering/frontend"  --desc "React/TypeScript"
-```
+Teams are flat. Use projects, task parents, labels, milestones, roles, and owners
+to express delivery decomposition instead of nesting teams.
 
 **Edit `teams/<name>/prompt.md`** — every agent on this team inherits this context. It defines team-level standards, norms, and tooling that all roles within the team share.
 

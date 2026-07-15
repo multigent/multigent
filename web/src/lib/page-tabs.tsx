@@ -41,26 +41,37 @@ const Ctx = createContext<PageTabsContextValue>({
 const STORAGE_KEY = 'page-tabs'
 const MAX_TABS = 12
 
-function loadTabs(): PageTab[] {
+function storageKey(scope: string): string {
+  return `${STORAGE_KEY}:${scope || 'default'}`
+}
+
+function loadTabs(scope: string): PageTab[] {
   try {
-    const raw = sessionStorage.getItem(STORAGE_KEY)
+    const raw = sessionStorage.getItem(storageKey(scope))
     if (raw) return JSON.parse(raw) as PageTab[]
   } catch { /* ignore */ }
   return []
 }
 
-function saveTabs(tabs: PageTab[]) {
-  sessionStorage.setItem(STORAGE_KEY, JSON.stringify(tabs))
+function saveTabs(scope: string, tabs: PageTab[]) {
+  sessionStorage.setItem(storageKey(scope), JSON.stringify(tabs))
 }
 
-export function PageTabsProvider({ children, pageTitle }: { children: ReactNode; pageTitle?: string }) {
+export function PageTabsProvider({ children, pageTitle, scope = 'default' }: { children: ReactNode; pageTitle?: string; scope?: string }) {
   const { pathname } = useLocation()
   const navigate = useNavigate()
-  const [tabs, setTabs] = useState<PageTab[]>(loadTabs)
+  const [tabs, setTabs] = useState<PageTab[]>(() => loadTabs(scope))
+  const [loadedScope, setLoadedScope] = useState(scope)
 
   useEffect(() => {
-    saveTabs(tabs)
-  }, [tabs])
+    setTabs(loadTabs(scope))
+    setLoadedScope(scope)
+  }, [scope])
+
+  useEffect(() => {
+    if (loadedScope !== scope) return
+    saveTabs(scope, tabs)
+  }, [loadedScope, scope, tabs])
 
   const addOrActivate = useCallback(
     (path: string, title: string) => {
@@ -89,7 +100,7 @@ export function PageTabsProvider({ children, pageTitle }: { children: ReactNode;
 
   useEffect(() => {
     if (pageTitle) addOrActivate(pathname, pageTitle)
-  }, [pathname, pageTitle, addOrActivate])
+  }, [scope, pathname, pageTitle, addOrActivate])
 
   const close = useCallback(
     (path: string) => {

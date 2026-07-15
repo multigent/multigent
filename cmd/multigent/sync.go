@@ -38,7 +38,7 @@ Use --project to limit to one project, --project + --name for a single agent.`,
 			if err != nil {
 				return err
 			}
-			s := store.NewFS(root)
+			s := mustStore(root)
 
 			// Collect the list of (project, agentName) pairs to sync
 			type target struct{ project, name string }

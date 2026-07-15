@@ -158,7 +158,7 @@ func (m *systemdManager) unitPath() string {
 func (m *systemdManager) buildUnit(cfg Config) string {
 	var sb strings.Builder
 	sb.WriteString("[Unit]\n")
-	sb.WriteString("Description=AgencyCli - AI Agent Organisation & Management\n")
+	sb.WriteString("Description=Multigent - AI Agent Organisation & Management\n")
 	sb.WriteString("After=network-online.target\n")
 	sb.WriteString("Wants=network-online.target\n\n")
 

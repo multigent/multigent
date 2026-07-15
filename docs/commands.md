@@ -13,7 +13,6 @@ multigent --dir /path/to/MyAgency inbox list
 ```bash
 multigent create agency  --name "MyAgency" [--desc "..."] [--template file.tar.gz|dir|URL]
 multigent create team    --name "engineering" [--desc "..."]
-multigent create team    --name "engineering/backend"        # nested sub-team
 multigent create role    --team "engineering" --name "developer" [--desc "..."]
 multigent create project --name "my-api" [--desc "..."] [--repo "/path/to/repo"]
 multigent create project --name "my-api" --blueprint default  # from a project blueprint

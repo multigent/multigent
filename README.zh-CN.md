@@ -9,6 +9,14 @@ Multigent 是一个面向 Agent 时代的协作与执行平台。它的目标不
 - 通过 Local Worker 在客户本地机器执行任务，贴近 repo、凭据、sandbox 和本地 Agent runtime。
 - 让人从同步阻塞流程的人，变成角色 Agent 的 owner、reviewer 和流程设计者。
 
+产品模型保持简单：
+
+```text
+Workspace -> Team -> Project -> Agent + Task
+```
+
+Workspace 是公司 / 客户 / 租户边界；Project 是 Agent 协作上下文边界；Task 是需求、Bug、测试、联调、发版、调研和评审的执行边界。Multigent 不再引入独立的 workstream 层，复杂需求通过任务父子关系、依赖、标签、里程碑、负责人、执行者和 reviewer 来表达。
+
 ## 当前状态
 
 这是 Multigent 从 multigent 启动后的第一版代码基线。

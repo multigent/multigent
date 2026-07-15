@@ -19,7 +19,9 @@ import (
 	"strings"
 	"time"
 
+	"github.com/multigent/multigent/internal/agentcli"
 	"github.com/multigent/multigent/internal/entity"
+	"github.com/multigent/multigent/internal/runenv"
 	"github.com/multigent/multigent/internal/sandbox"
 	"github.com/multigent/multigent/internal/store"
 	"github.com/multigent/multigent/internal/taskstore"
@@ -122,34 +124,45 @@ func (r *Runner) ExecPrompt(project, agentName, prompt, sessionID string) (*RunR
 		execDir    string
 	)
 
-	if meta.Sandbox != nil && meta.Sandbox.Provider == entity.SandboxDocker {
-		if err := sandbox.CheckDocker(); err != nil {
+	if meta.Sandbox != nil && meta.Sandbox.Provider != entity.SandboxNone {
+		provider, ok := runenv.ProviderFor(meta.Sandbox.Provider)
+		if !ok {
+			return nil, fmt.Errorf("runtime provider %q is not implemented", meta.Sandbox.Provider)
+		}
+		if err := provider.Available(); err != nil {
 			return nil, err
 		}
-		dockerCfg := cloneDockerCfg(meta.Sandbox.Docker)
-		injectProviderEnvIntoDocker(dockerCfg, agentEnv)
+		runtimeCfg := cloneRuntimeCfg(meta.Sandbox)
+		agentCLI := agentcli.Effective(model, runtimeCfg.AgentCLI)
+		injectProviderEnvIntoRuntime(runtimeCfg, agentEnv)
+		mounts := append([]entity.RuntimeMount(nil), runtimeCfg.Mounts...)
 		for _, addDir := range meta.AddDirs {
-			absDir, err := filepath.Abs(addDir)
-			if err != nil {
-				continue
-			}
-			if _, err := os.Stat(absDir); err != nil {
-				continue
-			}
-			dockerCfg.ExtraVolumes = append(dockerCfg.ExtraVolumes, absDir+":"+absDir)
+			mounts = runenv.AddPathMount(mounts, addDir, "repo", runenv.MountModeReadWrite)
 		}
 		if wsMount := r.root + ":" + r.root; r.root != "" {
-			dockerCfg.ExtraVolumes = append(dockerCfg.ExtraVolumes, wsMount)
+			runtimeCfg.Docker.ExtraVolumes = append(runtimeCfg.Docker.ExtraVolumes, wsMount)
 		}
 		if binMount := resolveAgencycliBinaryMount(); binMount != "" {
-			dockerCfg.ExtraVolumes = append(dockerCfg.ExtraVolumes, binMount)
+			runtimeCfg.Docker.ExtraVolumes = append(runtimeCfg.Docker.ExtraVolumes, binMount)
 		}
 		containerPromptFile := agentDir + "/" + filepath.Base(promptFile)
 		remappedInner := remapPromptFile(innerArgs, promptFile, containerPromptFile)
 		var err error
-		executable, args, err = sandbox.RunArgs(agentDir, model, dockerCfg, remappedInner)
+		executable, args, err = provider.Command(runenv.ProcessSpec{
+			WorkspaceRoot: r.root,
+			Project:       project,
+			Agent:         agentName,
+			AgentDir:      agentDir,
+			Model:         model,
+			Command:       remappedInner,
+			Env:           agentEnv,
+			Runtime:       runtimeCfg,
+			AgentCLI:      agentCLI,
+			Mounts:        mounts,
+			Limits:        runtimeCfg.Resources,
+		})
 		if err != nil {
-			return nil, fmt.Errorf("sandbox: build docker args: %w", err)
+			return nil, fmt.Errorf("runtime %s: build command: %w", meta.Sandbox.Provider, err)
 		}
 	} else {
 		executable = innerArgs[0]
@@ -307,30 +320,26 @@ func (r *Runner) RunTask(project, agentName string, task *entity.Task, sessionID
 		execDir    string // working directory for the host process
 	)
 
-	if meta.Sandbox != nil && meta.Sandbox.Provider == entity.SandboxDocker {
-		// Validate docker is available once before the first run.
-		if err := sandbox.CheckDocker(); err != nil {
+	if meta.Sandbox != nil && meta.Sandbox.Provider != entity.SandboxNone {
+		provider, ok := runenv.ProviderFor(meta.Sandbox.Provider)
+		if !ok {
+			return nil, fmt.Errorf("runtime provider %q is not implemented", meta.Sandbox.Provider)
+		}
+		if err := provider.Available(); err != nil {
 			return nil, err
 		}
 
-		// Clone the docker config so we can inject extra mounts without
-		// mutating the original AgentMeta.
-		dockerCfg := cloneDockerCfg(meta.Sandbox.Docker)
-		injectProviderEnvIntoDocker(dockerCfg, agentEnv)
+		runtimeCfg := cloneRuntimeCfg(meta.Sandbox)
+		agentCLI := agentcli.Effective(model, runtimeCfg.AgentCLI)
+		injectProviderEnvIntoRuntime(runtimeCfg, agentEnv)
+		mounts := append([]entity.RuntimeMount(nil), runtimeCfg.Mounts...)
 
 		// Auto-mount the project's code repository at the same absolute path
 		// inside the container. This lets the agent read/write/commit code at
 		// the exact path it expects (e.g. /root/code/cc-connect), matching
 		// what is written in CLAUDE.md / the project prompt.
 		for _, addDir := range meta.AddDirs {
-			absDir, err := filepath.Abs(addDir)
-			if err != nil {
-				continue
-			}
-			if _, err := os.Stat(absDir); err != nil {
-				continue
-			}
-			dockerCfg.ExtraVolumes = append(dockerCfg.ExtraVolumes, absDir+":"+absDir)
+			mounts = runenv.AddPathMount(mounts, addDir, "repo", runenv.MountModeReadWrite)
 		}
 
 		// Auto-mount the workspace root at the same path so agents can use
@@ -338,13 +347,13 @@ func (r *Runner) RunTask(project, agentName string, task *entity.Task, sessionID
 		// This enables PM agents to coordinate dev/qa agents without human
 		// intervention.
 		if wsMount := r.root + ":" + r.root; r.root != "" {
-			dockerCfg.ExtraVolumes = append(dockerCfg.ExtraVolumes, wsMount)
+			runtimeCfg.Docker.ExtraVolumes = append(runtimeCfg.Docker.ExtraVolumes, wsMount)
 		}
 
 		// Auto-mount the multigent binary itself (read-only) so agents can
 		// invoke `multigent` inside the container.
 		if binMount := resolveAgencycliBinaryMount(); binMount != "" {
-			dockerCfg.ExtraVolumes = append(dockerCfg.ExtraVolumes, binMount)
+			runtimeCfg.Docker.ExtraVolumes = append(runtimeCfg.Docker.ExtraVolumes, binMount)
 		}
 
 		// The prompt file path inside the container.
@@ -353,9 +362,21 @@ func (r *Runner) RunTask(project, agentName string, task *entity.Task, sessionID
 		remappedInner := remapPromptFile(innerArgs, promptFile, containerPromptFile)
 
 		var err error
-		executable, args, err = sandbox.RunArgs(agentDir, model, dockerCfg, remappedInner)
+		executable, args, err = provider.Command(runenv.ProcessSpec{
+			WorkspaceRoot: r.root,
+			Project:       project,
+			Agent:         agentName,
+			AgentDir:      agentDir,
+			Model:         model,
+			Command:       remappedInner,
+			Env:           agentEnv,
+			Runtime:       runtimeCfg,
+			AgentCLI:      agentCLI,
+			Mounts:        mounts,
+			Limits:        runtimeCfg.Resources,
+		})
 		if err != nil {
-			return nil, fmt.Errorf("sandbox: build docker args: %w", err)
+			return nil, fmt.Errorf("runtime %s: build command: %w", meta.Sandbox.Provider, err)
 		}
 		// docker run executes from wherever; cwd doesn't matter for container.
 		execDir = ""
@@ -804,6 +825,31 @@ func cloneDockerCfg(cfg *entity.DockerSandboxConfig) *entity.DockerSandboxConfig
 	return &cp
 }
 
+func cloneRuntimeCfg(cfg *entity.SandboxConfig) *entity.SandboxConfig {
+	if cfg == nil {
+		return &entity.SandboxConfig{Docker: &entity.DockerSandboxConfig{}}
+	}
+	cp := *cfg
+	cp.Mounts = append([]entity.RuntimeMount(nil), cfg.Mounts...)
+	cp.Env = append([]entity.RuntimeEnvVar(nil), cfg.Env...)
+	if cfg.AgentCLI != nil {
+		agentCLI := *cfg.AgentCLI
+		agentCLI.Install = append([]string(nil), cfg.AgentCLI.Install...)
+		agentCLI.Check = append([]string(nil), cfg.AgentCLI.Check...)
+		cp.AgentCLI = &agentCLI
+	}
+	if cfg.Docker != nil {
+		cp.Docker = cloneDockerCfg(cfg.Docker)
+	} else {
+		cp.Docker = &entity.DockerSandboxConfig{}
+	}
+	if cfg.E2B != nil {
+		e2b := *cfg.E2B
+		cp.E2B = &e2b
+	}
+	return &cp
+}
+
 // ── HTTP agent task/exec methods ───────────────────────────────────────────────
 
 // runTaskHTTP runs a task by posting the full prompt to the agent's HTTP
@@ -998,6 +1044,18 @@ func resolveProviderEnv(root string, meta *entity.AgentMeta) map[string]string {
 func injectProviderEnvIntoDocker(cfg *entity.DockerSandboxConfig, env map[string]string) {
 	for k, v := range env {
 		cfg.ExtraEnv = append(cfg.ExtraEnv, k+"="+v)
+	}
+}
+
+func injectProviderEnvIntoRuntime(cfg *entity.SandboxConfig, env map[string]string) {
+	if cfg == nil {
+		return
+	}
+	for k, v := range env {
+		if k == "" {
+			continue
+		}
+		cfg.Env = append(cfg.Env, entity.RuntimeEnvVar{Name: k, Value: v})
 	}
 }
 

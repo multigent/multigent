@@ -182,7 +182,7 @@ worker_selector:
 
 ## 8. 与人员管理的关系
 
-分布式架构下，`users.json` 需迁移到共享存储（PostgreSQL），确保多节点一致性。P0 的 Store interface 自然覆盖这一点。
+分布式架构下，用户、workspace membership 和授权关系必须来自共享数据库，确保多节点一致性。SQLite 是本地默认实现，生产环境可替换为 MySQL/Postgres。
 
 ## 9. 待决策
 

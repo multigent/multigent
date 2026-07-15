@@ -46,7 +46,7 @@ func newSandboxShowCmd() *cobra.Command {
 				return fmt.Errorf("--project and --agent are required")
 			}
 
-			s := store.NewFS(root)
+			s := mustStore(root)
 			meta, err := s.AgentMeta(project, agentName)
 			if err != nil {
 				return err
@@ -187,7 +187,7 @@ func newSandboxTestCmd() *cobra.Command {
 				return fmt.Errorf("--project and --agent are required")
 			}
 
-			s := store.NewFS(root)
+			s := mustStore(root)
 			meta, err := s.AgentMeta(project, agentName)
 			if err != nil {
 				return err

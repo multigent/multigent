@@ -138,7 +138,7 @@ func buildSkillMD(sk ctxbuild.SkillDef) string {
 }
 
 // sourceToFilename converts a layer source key to a safe filename prefix.
-// e.g. "department:engineering/backend" → "department-engineering-backend"
+// e.g. "role:<team>/<role>" → "role-team-role"
 func sourceToFilename(source string) string {
 	s := strings.ReplaceAll(source, ":", "-")
 	s = strings.ReplaceAll(s, "/", "-")

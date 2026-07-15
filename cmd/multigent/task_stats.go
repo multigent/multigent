@@ -80,7 +80,7 @@ func runTaskStats(since, until string, allTime bool, project, agent, assignee, l
 		return err
 	}
 
-	ts := taskstore.New(root)
+	ts := mustTaskStore(root)
 	records, err := ts.ListAllTaskRecords(project)
 	if err != nil {
 		return err

@@ -20,6 +20,7 @@ import type { LucideIcon } from 'lucide-react'
 /** 一级导航 i18n：`nav.*` */
 export type NavKey =
   | 'overview'
+  | 'workspace'
   | 'teams'
   | 'projects'
   | 'people'
@@ -83,6 +84,7 @@ export function navKeyFromPath(pathname: string): NavKey {
   if (pathname === '/') return 'overview'
   const seg = pathname.split('/').filter(Boolean)[0]
   const map: Record<string, NavKey> = {
+    workspace: 'workspace',
     teams: 'teams',
     projects: 'projects',
     people: 'people',

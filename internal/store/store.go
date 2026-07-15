@@ -10,7 +10,7 @@ import "github.com/multigent/multigent/internal/entity"
 
 // TeamEntry is a team together with its slash-separated path.
 type TeamEntry struct {
-	// Path is the slash-separated team path, e.g. "engineering/backend".
+	// Path is the team name, e.g. "engineering".
 	Path string
 	Team *entity.Team
 }
@@ -27,13 +27,6 @@ type AgentEntry struct {
 	Project string
 	Name    string
 	Meta    *entity.AgentMeta
-}
-
-// WorkstreamEntry is a workstream together with its project and name.
-type WorkstreamEntry struct {
-	Project    string
-	Name       string
-	Workstream *entity.Workstream
 }
 
 // FiredAgentEntry is a soft-deleted agent together with its archived location.
@@ -58,7 +51,7 @@ type Store interface {
 	SaveAgencyPrompt(content string) error
 
 	// ── Teams ─────────────────────────────────────────────────────────────
-	// path is a slash-separated team path, e.g. "engineering/backend".
+	// path is a flat team name, e.g. "engineering".
 
 	Team(path string) (*entity.Team, error)
 	SaveTeam(path string, t *entity.Team) error
@@ -75,19 +68,12 @@ type Store interface {
 	SaveProjectPrompt(name string, content string) error
 	ListProjects() ([]*entity.Project, error)
 
-	// ── Workstreams ───────────────────────────────────────────────────────
-	// Workstreams live under projects/<project>/workstreams/<name>/.
-
-	Workstream(project, name string) (*entity.Workstream, error)
-	SaveWorkstream(project, name string, ws *entity.Workstream) error
-	ListWorkstreams(project string) ([]*WorkstreamEntry, error)
-
 	// ProjectConfig reads the declarative project.yaml (agents, playbooks, etc.).
 	// Returns nil, nil when the file does not exist.
 	ProjectConfig(name string) (*entity.ProjectConfig, error)
 
 	// ── Roles ─────────────────────────────────────────────────────────────
-	// teamPath is a slash-separated team path, e.g. "engineering".
+	// teamPath is a flat team name, e.g. "engineering".
 	// roleName is the role directory name, e.g. "backend-dev".
 
 	Role(teamPath, roleName string) (*entity.Role, error)

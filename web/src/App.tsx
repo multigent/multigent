@@ -3,6 +3,7 @@ import { Navigate, Route, Routes } from 'react-router-dom'
 import { AppShell } from './components/layout/AppShell'
 import { useAuth } from './lib/auth'
 import LoginPage from './pages/LoginPage'
+import WorkspacePage from './pages/WorkspacePage'
 import WorkbenchPage from './pages/WorkbenchPage'
 import OverviewPage from './pages/OverviewPage'
 import SettingsPage from './pages/SettingsPage'
@@ -45,6 +46,7 @@ export default function App() {
     <Routes>
       <Route element={<AppShell />}>
         <Route index element={<OverviewPage />} />
+        <Route path="workspace" element={<WorkspacePage />} />
         {isAdmin && <Route path="teams/:teamId" element={<TeamDetailPage />} />}
         {isAdmin && <Route path="teams" element={<TeamsPage />} />}
         <Route path="projects" element={<ProjectsListPage />} />

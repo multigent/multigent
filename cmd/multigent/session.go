@@ -4,7 +4,6 @@ import (
 	"fmt"
 	"time"
 
-	"github.com/multigent/multigent/internal/taskstore"
 	"github.com/spf13/cobra"
 )
 
@@ -42,7 +41,7 @@ func newSessionShowCmd() *cobra.Command {
 			if project == "" || agentName == "" {
 				return fmt.Errorf("--project and --agent are required")
 			}
-			ts := taskstore.New(root)
+			ts := mustTaskStore(root)
 			hb, err := ts.GetHeartbeat(project, agentName)
 			if err != nil {
 				return err
@@ -81,7 +80,7 @@ func newSessionSetCmd() *cobra.Command {
 			if project == "" || agentName == "" || sessionID == "" {
 				return fmt.Errorf("--project, --agent, and --id are required")
 			}
-			ts := taskstore.New(root)
+			ts := mustTaskStore(root)
 			hb, err := ts.GetHeartbeat(project, agentName)
 			if err != nil {
 				return err
@@ -118,7 +117,7 @@ func newSessionResetCmd() *cobra.Command {
 			if project == "" || agentName == "" {
 				return fmt.Errorf("--project and --agent are required")
 			}
-			ts := taskstore.New(root)
+			ts := mustTaskStore(root)
 			hb, err := ts.GetHeartbeat(project, agentName)
 			if err != nil {
 				return err

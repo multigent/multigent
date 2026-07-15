@@ -11,7 +11,7 @@ import (
 	"github.com/multigent/multigent/internal/store"
 )
 
-// Builder constructs a MergedContext for a given (project, team) pair
+// Builder constructs a MergedContext for a given (project, team, role) pair
 // by reading prompt files from the store in the correct inheritance order.
 type Builder struct {
 	store store.Store
@@ -28,12 +28,12 @@ func NewBuilder(s store.Store) *Builder {
 // Layer order:
 //
 //  1. Agency
-//  2. Each team in the chain (top-level → teamPath)
+//  2. Team
 //  3. Role (when roleName != "")
 //  4. Project
 //
-// Skills are deduplicated and collected from team chain → role (role skills
-// take precedence / are appended). Empty prompt files are silently skipped.
+// Skills are deduplicated and collected from team → role. Empty prompt files
+// are silently skipped.
 func (b *Builder) Build(projectName, teamPath, roleName string) (*MergedContext, error) {
 	mc := &MergedContext{}
 
@@ -49,8 +49,7 @@ func (b *Builder) Build(projectName, teamPath, roleName string) (*MergedContext,
 		})
 	}
 
-	// 2. Team chain layers + skill collection
-	chain := ResolveChain(teamPath)
+	// 2. Team layer + skill collection
 	seenSkills := make(map[string]bool)
 
 	addSkill := func(skillName string) {
@@ -72,24 +71,19 @@ func (b *Builder) Build(projectName, teamPath, roleName string) (*MergedContext,
 		})
 	}
 
-	for _, tp := range chain {
-		team, err := b.store.Team(tp)
+	if teamPath != "" {
+		team, err := b.store.Team(teamPath)
 		if err != nil {
-			return nil, fmt.Errorf(
-				"ctxbuild: team %q not found — "+
-					"every level in the chain must exist; "+
-					"run: multigent create team --name %q",
-				tp, tp,
-			)
+			return nil, fmt.Errorf("ctxbuild: team %q not found; run: multigent create team --name %q", teamPath, teamPath)
 		}
 
-		prompt, err := b.store.TeamPrompt(tp)
+		prompt, err := b.store.TeamPrompt(teamPath)
 		if err != nil {
-			return nil, fmt.Errorf("ctxbuild: team prompt %q: %w", tp, err)
+			return nil, fmt.Errorf("ctxbuild: team prompt %q: %w", teamPath, err)
 		}
 		if strings.TrimSpace(prompt) != "" {
 			mc.Layers = append(mc.Layers, ContextLayer{
-				Source:  "team:" + tp,
+				Source:  "team:" + teamPath,
 				Content: prompt,
 			})
 		}
@@ -100,19 +94,17 @@ func (b *Builder) Build(projectName, teamPath, roleName string) (*MergedContext,
 
 	// 3. Role layer (optional)
 	if roleName != "" {
-		// The role lives under the leaf team of the chain.
-		leafTeam := teamPath
-		role, err := b.store.Role(leafTeam, roleName)
+		role, err := b.store.Role(teamPath, roleName)
 		if err != nil {
-			return nil, fmt.Errorf("ctxbuild: role %q/%q: %w", leafTeam, roleName, err)
+			return nil, fmt.Errorf("ctxbuild: role %q/%q: %w", teamPath, roleName, err)
 		}
-		rolePrompt, err := b.store.RolePrompt(leafTeam, roleName)
+		rolePrompt, err := b.store.RolePrompt(teamPath, roleName)
 		if err != nil {
-			return nil, fmt.Errorf("ctxbuild: role prompt %q/%q: %w", leafTeam, roleName, err)
+			return nil, fmt.Errorf("ctxbuild: role prompt %q/%q: %w", teamPath, roleName, err)
 		}
 		if strings.TrimSpace(rolePrompt) != "" {
 			mc.Layers = append(mc.Layers, ContextLayer{
-				Source:  "role:" + leafTeam + "/" + roleName,
+				Source:  "role:" + teamPath + "/" + roleName,
 				Content: rolePrompt,
 			})
 		}

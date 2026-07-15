@@ -9,30 +9,44 @@ import (
 	"fmt"
 	"net/http"
 	"os"
-	"path/filepath"
 	"strings"
-	"sync"
 	"time"
 
+	controldb "github.com/multigent/multigent/internal/db"
+	"github.com/multigent/multigent/internal/rbac"
 	"golang.org/x/crypto/bcrypt"
 )
 
 // System roles.
 const (
-	RoleAdmin  = "admin"
-	RoleMember = "member"
+	RoleAdmin  = string(rbac.OrgRoleAdmin)
+	RoleMember = string(rbac.OrgRoleMember)
 )
 
 // Project-level roles (ascending privilege).
 const (
-	ProjectRoleViewer   = "viewer"
-	ProjectRoleOperator = "operator"
-	ProjectRoleManager  = "manager"
+	ProjectRoleViewer   = string(rbac.ProjectRoleViewer)
+	ProjectRoleOperator = string(rbac.ProjectRoleOperator)
+	ProjectRoleManager  = string(rbac.ProjectRoleManager)
 )
 
 type projectAccess struct {
 	Project string `json:"project"`
 	Role    string `json:"role"` // viewer | operator | manager
+}
+
+type invitationRecord struct {
+	Token        string          `json:"token"`
+	Email        string          `json:"email"`
+	Role         string          `json:"role"`
+	DisplayName  string          `json:"displayName,omitempty"`
+	Projects     []projectAccess `json:"projects,omitempty"`
+	LinkedAgents []string        `json:"linkedAgents,omitempty"`
+	InvitedBy    string          `json:"invitedBy,omitempty"`
+	Status       string          `json:"status"` // pending | accepted | revoked
+	CreatedAt    string          `json:"createdAt"`
+	ExpiresAt    string          `json:"expiresAt"`
+	AcceptedAt   string          `json:"acceptedAt,omitempty"`
 }
 
 type userRecord struct {
@@ -51,54 +65,46 @@ type userRecord struct {
 }
 
 type usersFile struct {
-	Users     []userRecord `json:"users"`
-	JWTSecret string       `json:"jwtSecret"`
+	Users       []userRecord       `json:"users"`
+	Invitations []invitationRecord `json:"invitations,omitempty"`
+	JWTSecret   string             `json:"jwtSecret"`
 }
 
 type UserStore struct {
-	mu   sync.RWMutex
-	path string
-	data usersFile
+	db controldb.Store
 }
 
-func newUserStore(workspaceRoot string) *UserStore {
-	dir := filepath.Join(workspaceRoot, ".multigent")
-	_ = os.MkdirAll(dir, 0o755)
-	s := &UserStore{path: filepath.Join(dir, "users.json")}
-	s.load()
+func newUserStore(db controldb.Store) *UserStore {
+	s := &UserStore{db: db}
+	_ = s.ensureInitialized()
 	return s
 }
 
-func (s *UserStore) load() {
-	raw, err := os.ReadFile(s.path)
+func (s *UserStore) ensureInitialized() error {
+	if s.db == nil {
+		return fmt.Errorf("control database unavailable")
+	}
+	if secret, ok, err := s.db.GetSetting("jwt_secret"); err != nil {
+		return err
+	} else if !ok || secret == "" {
+		if err := s.db.SetSetting("jwt_secret", generateSecret()); err != nil {
+			return err
+		}
+	}
+	users, err := s.db.ListUsers()
 	if err != nil {
-		s.initDefault()
-		return
+		return err
 	}
-	if err := json.Unmarshal(raw, &s.data); err != nil || len(s.data.Users) == 0 {
-		s.initDefault()
-		return
+	if len(users) > 0 {
+		return nil
 	}
-	if s.data.JWTSecret == "" {
-		s.data.JWTSecret = generateSecret()
-		s.save()
-	}
-}
-
-func (s *UserStore) initDefault() {
 	hash, _ := bcrypt.GenerateFromPassword([]byte("admin123"), bcrypt.DefaultCost)
-	s.data = usersFile{
-		Users: []userRecord{
-			{Username: "admin", Hash: string(hash), Role: "admin"},
-		},
-		JWTSecret: generateSecret(),
-	}
-	s.save()
-}
-
-func (s *UserStore) save() {
-	raw, _ := json.MarshalIndent(s.data, "", "  ")
-	_ = os.WriteFile(s.path, raw, 0o600)
+	return s.db.UpsertUser(controldb.User{
+		Username:     "admin",
+		Role:         RoleAdmin,
+		PasswordHash: string(hash),
+		CreatedAt:    time.Now().UTC().Format(time.RFC3339),
+	})
 }
 
 func generateSecret() string {
@@ -107,38 +113,92 @@ func generateSecret() string {
 	return hex.EncodeToString(b)
 }
 
-func (s *UserStore) Authenticate(username, password string) *userRecord {
-	s.mu.RLock()
-	defer s.mu.RUnlock()
-	for i := range s.data.Users {
-		u := &s.data.Users[i]
-		if u.Username == username {
-			if u.Disabled {
-				return nil
-			}
-			if bcrypt.CompareHashAndPassword([]byte(u.Hash), []byte(password)) == nil {
-				return u
-			}
-			return nil
+func normalizeEmail(email string) string {
+	return strings.ToLower(strings.TrimSpace(email))
+}
+
+func validEmail(email string) bool {
+	email = normalizeEmail(email)
+	at := strings.Index(email, "@")
+	return at > 0 && at < len(email)-1 && strings.Contains(email[at+1:], ".")
+}
+
+func usernameFromEmail(email string) string {
+	local := strings.SplitN(normalizeEmail(email), "@", 2)[0]
+	var b strings.Builder
+	for _, r := range local {
+		switch {
+		case r >= 'a' && r <= 'z', r >= '0' && r <= '9':
+			b.WriteRune(r)
+		case r == '.', r == '-', r == '_':
+			b.WriteRune('-')
 		}
 	}
-	return nil
+	name := strings.Trim(b.String(), "-")
+	if name == "" {
+		name = "user"
+	}
+	return name
+}
+
+func (s *UserStore) uniqueUsernameLocked(base string) string {
+	base = strings.TrimSpace(base)
+	if base == "" {
+		base = "user"
+	}
+	candidate := base
+	for i := 2; ; i++ {
+		if _, ok, _ := s.db.UserByUsername(candidate); !ok {
+			return candidate
+		}
+		candidate = fmt.Sprintf("%s-%d", base, i)
+	}
+}
+
+func (s *UserStore) Authenticate(login, password string) *userRecord {
+	login = strings.TrimSpace(login)
+	u, ok, err := s.db.UserByLogin(login)
+	if err != nil || !ok || u.Disabled {
+		return nil
+	}
+	if bcrypt.CompareHashAndPassword([]byte(u.PasswordHash), []byte(password)) != nil {
+		return nil
+	}
+	rec := dbUserToRecord(u)
+	return &rec
+}
+
+func (s *UserStore) userByEmailLocked(email string) *userRecord {
+	u, ok, err := s.db.UserByLogin(normalizeEmail(email))
+	if err != nil || !ok || normalizeEmail(u.Email) != normalizeEmail(email) {
+		return nil
+	}
+	rec := dbUserToRecord(u)
+	return &rec
 }
 
 func (s *UserStore) ListUsers() []userRecord {
-	s.mu.RLock()
-	defer s.mu.RUnlock()
-	out := make([]userRecord, len(s.data.Users))
-	copy(out, s.data.Users)
+	users, err := s.db.ListUsers()
+	if err != nil {
+		return nil
+	}
+	out := make([]userRecord, 0, len(users))
+	for _, u := range users {
+		out = append(out, dbUserToRecord(u))
+	}
 	return out
 }
 
 func (s *UserStore) CreateUser(username, password, role, displayName, email, avatar, phone, bio string) error {
-	s.mu.Lock()
-	defer s.mu.Unlock()
-	for _, u := range s.data.Users {
-		if u.Username == username {
-			return fmt.Errorf("user %q already exists", username)
+	email = normalizeEmail(email)
+	if _, ok, err := s.db.UserByUsername(username); err != nil {
+		return err
+	} else if ok {
+		return fmt.Errorf("user %q already exists", username)
+	}
+	if email != "" {
+		if u := s.userByEmailLocked(email); u != nil {
+			return fmt.Errorf("email %q already exists", email)
 		}
 	}
 	if role != RoleAdmin && role != RoleMember {
@@ -148,7 +208,7 @@ func (s *UserStore) CreateUser(username, password, role, displayName, email, ava
 	if err != nil {
 		return err
 	}
-	s.data.Users = append(s.data.Users, userRecord{
+	return s.db.UpsertUser(recordToDBUser(userRecord{
 		Username:    username,
 		Hash:        string(hash),
 		Role:        role,
@@ -158,148 +218,352 @@ func (s *UserStore) CreateUser(username, password, role, displayName, email, ava
 		Phone:       phone,
 		Bio:         bio,
 		CreatedAt:   time.Now().UTC().Format(time.RFC3339),
-	})
-	s.save()
-	return nil
+	}))
+}
+
+func (s *UserStore) RegisterByEmail(email, password, displayName string) (*userRecord, error) {
+	email = normalizeEmail(email)
+	if !validEmail(email) {
+		return nil, fmt.Errorf("valid email required")
+	}
+	if len(password) < 6 {
+		return nil, fmt.Errorf("password must be at least 6 characters")
+	}
+	if s.userByEmailLocked(email) != nil {
+		return nil, fmt.Errorf("email %q already exists", email)
+	}
+	username := s.uniqueUsernameLocked(usernameFromEmail(email))
+	hash, err := bcrypt.GenerateFromPassword([]byte(password), bcrypt.DefaultCost)
+	if err != nil {
+		return nil, err
+	}
+	u := userRecord{
+		Username:    username,
+		Hash:        string(hash),
+		Role:        RoleMember,
+		DisplayName: displayName,
+		Email:       email,
+		CreatedAt:   time.Now().UTC().Format(time.RFC3339),
+	}
+	if err := s.db.UpsertUser(recordToDBUser(u)); err != nil {
+		return nil, err
+	}
+	return &u, nil
+}
+
+func (s *UserStore) CreateInvitation(email, role, displayName, invitedBy string, projects []projectAccess, linkedAgents []string) (*invitationRecord, error) {
+	email = normalizeEmail(email)
+	if !validEmail(email) {
+		return nil, fmt.Errorf("valid email required")
+	}
+	if role != RoleAdmin && role != RoleMember {
+		role = RoleMember
+	}
+	now := time.Now().UTC()
+	inv := invitationRecord{
+		Token:        generateToken(24),
+		Email:        email,
+		Role:         role,
+		DisplayName:  displayName,
+		Projects:     projects,
+		LinkedAgents: linkedAgents,
+		InvitedBy:    invitedBy,
+		Status:       "pending",
+		CreatedAt:    now.Format(time.RFC3339),
+		ExpiresAt:    now.Add(7 * 24 * time.Hour).Format(time.RFC3339),
+	}
+	if err := s.db.CreateInvitation(recordToDBInvitation(inv)); err != nil {
+		return nil, err
+	}
+	return &inv, nil
+}
+
+func generateToken(n int) string {
+	b := make([]byte, n)
+	_, _ = rand.Read(b)
+	return hex.EncodeToString(b)
+}
+
+func (s *UserStore) Invitation(token string) (*invitationRecord, bool) {
+	inv, ok, err := s.db.InvitationByToken(token)
+	if err != nil || !ok {
+		return nil, false
+	}
+	rec := dbInvitationToRecord(inv)
+	return &rec, true
+}
+
+func (s *UserStore) AcceptInvitation(token, password, displayName string) (*userRecord, error) {
+	now := time.Now().UTC()
+	dbInv, ok, err := s.db.InvitationByToken(token)
+	if err != nil {
+		return nil, err
+	}
+	if !ok {
+		return nil, fmt.Errorf("invitation not found")
+	}
+	inv := dbInvitationToRecord(dbInv)
+	if inv.Status != "pending" {
+		return nil, fmt.Errorf("invitation is not active")
+	}
+	if exp, err := time.Parse(time.RFC3339, inv.ExpiresAt); err == nil && exp.Before(now) {
+		inv.Status = "revoked"
+		_ = s.db.UpdateInvitation(recordToDBInvitation(inv))
+		return nil, fmt.Errorf("invitation expired")
+	}
+	if len(password) < 6 {
+		return nil, fmt.Errorf("password must be at least 6 characters")
+	}
+	if existing := s.userByEmailLocked(inv.Email); existing != nil {
+		return nil, fmt.Errorf("email %q already exists", inv.Email)
+	}
+	if displayName == "" {
+		displayName = inv.DisplayName
+	}
+	username := s.uniqueUsernameLocked(usernameFromEmail(inv.Email))
+	hash, err := bcrypt.GenerateFromPassword([]byte(password), bcrypt.DefaultCost)
+	if err != nil {
+		return nil, err
+	}
+	u := userRecord{
+		Username:     username,
+		Hash:         string(hash),
+		Role:         inv.Role,
+		DisplayName:  displayName,
+		Email:        inv.Email,
+		Projects:     inv.Projects,
+		LinkedAgents: inv.LinkedAgents,
+		CreatedAt:    now.Format(time.RFC3339),
+	}
+	if err := s.db.UpsertUser(recordToDBUser(u)); err != nil {
+		return nil, err
+	}
+	inv.Status = "accepted"
+	inv.AcceptedAt = now.Format(time.RFC3339)
+	if err := s.db.UpdateInvitation(recordToDBInvitation(inv)); err != nil {
+		return nil, err
+	}
+	return &u, nil
 }
 
 func (s *UserStore) UpdateUser(username string, role, displayName, email, avatar, phone, bio *string, disabled *bool, projects []projectAccess, linkedAgents []string, newPassword *string) error {
-	s.mu.Lock()
-	defer s.mu.Unlock()
-	for i := range s.data.Users {
-		u := &s.data.Users[i]
-		if u.Username != username {
-			continue
-		}
-		if role != nil {
-			u.Role = *role
-		}
-		if displayName != nil {
-			u.DisplayName = *displayName
-		}
-		if email != nil {
-			u.Email = *email
-		}
-		if avatar != nil {
-			u.Avatar = *avatar
-		}
-		if phone != nil {
-			u.Phone = *phone
-		}
-		if bio != nil {
-			u.Bio = *bio
-		}
-		if disabled != nil {
-			u.Disabled = *disabled
-		}
-		if projects != nil {
-			u.Projects = projects
-		}
-		if linkedAgents != nil {
-			u.LinkedAgents = linkedAgents
-		}
-		if newPassword != nil && *newPassword != "" {
-			hash, err := bcrypt.GenerateFromPassword([]byte(*newPassword), bcrypt.DefaultCost)
-			if err != nil {
-				return err
-			}
-			u.Hash = string(hash)
-		}
-		s.save()
-		return nil
+	dbUser, ok, err := s.db.UserByUsername(username)
+	if err != nil {
+		return err
 	}
-	return fmt.Errorf("user not found")
+	if !ok {
+		return fmt.Errorf("user not found")
+	}
+	u := dbUserToRecord(dbUser)
+	if role != nil {
+		u.Role = *role
+	}
+	if displayName != nil {
+		u.DisplayName = *displayName
+	}
+	if email != nil {
+		u.Email = *email
+	}
+	if avatar != nil {
+		u.Avatar = *avatar
+	}
+	if phone != nil {
+		u.Phone = *phone
+	}
+	if bio != nil {
+		u.Bio = *bio
+	}
+	if disabled != nil {
+		u.Disabled = *disabled
+	}
+	if projects != nil {
+		u.Projects = projects
+	}
+	if linkedAgents != nil {
+		u.LinkedAgents = linkedAgents
+	}
+	if newPassword != nil && *newPassword != "" {
+		hash, err := bcrypt.GenerateFromPassword([]byte(*newPassword), bcrypt.DefaultCost)
+		if err != nil {
+			return err
+		}
+		u.Hash = string(hash)
+	}
+	return s.db.UpsertUser(recordToDBUser(u))
 }
 
 func (s *UserStore) DeleteUser(username string) error {
-	s.mu.Lock()
-	defer s.mu.Unlock()
-	for i := range s.data.Users {
-		if s.data.Users[i].Username == username {
-			s.data.Users = append(s.data.Users[:i], s.data.Users[i+1:]...)
-			s.save()
-			return nil
-		}
+	if _, ok, err := s.db.UserByUsername(username); err != nil {
+		return err
+	} else if !ok {
+		return fmt.Errorf("user not found")
 	}
-	return fmt.Errorf("user not found")
+	return s.db.DeleteUser(username)
 }
 
 func (s *UserStore) HasProjectAccess(username, project string) (string, bool) {
-	s.mu.RLock()
-	defer s.mu.RUnlock()
-	for _, u := range s.data.Users {
-		if u.Username != username {
-			continue
-		}
-		if u.Role == RoleAdmin {
-			return ProjectRoleManager, true
-		}
-		for _, pa := range u.Projects {
-			if pa.Project == project {
-				return pa.Role, true
-			}
-		}
-		for _, la := range u.LinkedAgents {
-			parts := strings.SplitN(la, "/", 2)
-			if len(parts) == 2 && parts[0] == project {
-				return ProjectRoleOperator, true
-			}
-		}
+	u := s.GetUser(username)
+	if u == nil {
 		return "", false
+	}
+	if u.Role == RoleAdmin {
+		return ProjectRoleManager, true
+	}
+	for _, pa := range u.Projects {
+		if pa.Project == project {
+			return pa.Role, true
+		}
+	}
+	for _, la := range u.LinkedAgents {
+		parts := strings.SplitN(la, "/", 2)
+		if len(parts) == 2 && parts[0] == project {
+			return ProjectRoleOperator, true
+		}
 	}
 	return "", false
 }
 
+func (s *UserStore) Principal(username string) (rbac.Principal, bool) {
+	u := s.GetUser(username)
+	if u == nil || u.Disabled {
+		return rbac.Principal{}, false
+	}
+	p := rbac.Principal{
+		ID:           u.Username,
+		OrgRole:      rbac.Role(u.Role),
+		ProjectRoles: make(map[string]rbac.Role, len(u.Projects)),
+		AgentRoles:   make(map[string]rbac.Role, len(u.LinkedAgents)),
+		TaskRoles:    make(map[string]rbac.Role),
+		ContextRoles: make(map[string]rbac.Role),
+		WorkerRoles:  make(map[string]rbac.Role),
+	}
+	for _, pa := range u.Projects {
+		p.ProjectRoles[rbac.ProjectKey(pa.Project)] = rbac.Role(pa.Role)
+	}
+	for _, linkedAgent := range u.LinkedAgents {
+		parts := strings.SplitN(linkedAgent, "/", 2)
+		if len(parts) == 2 && parts[0] != "" && parts[1] != "" {
+			p.AgentRoles[rbac.AgentKey(parts[0], parts[1])] = rbac.AgentRoleOperator
+		}
+	}
+	return p, true
+}
+
 func projectRoleLevel(role string) int {
-	switch role {
-	case ProjectRoleViewer:
-		return 1
-	case ProjectRoleOperator:
-		return 2
-	case ProjectRoleManager:
-		return 3
-	default:
-		return 0
+	return rbac.ProjectRolePower(rbac.Role(role))
+}
+
+func dbUserToRecord(u controldb.User) userRecord {
+	var projects []projectAccess
+	var linked []string
+	_ = json.Unmarshal([]byte(u.ProjectsJSON), &projects)
+	_ = json.Unmarshal([]byte(u.LinkedJSON), &linked)
+	return userRecord{
+		Username:     u.Username,
+		Hash:         u.PasswordHash,
+		Role:         u.Role,
+		DisplayName:  u.DisplayName,
+		Email:        u.Email,
+		Avatar:       u.Avatar,
+		Phone:        u.Phone,
+		Bio:          u.Bio,
+		Projects:     projects,
+		LinkedAgents: linked,
+		Disabled:     u.Disabled,
+		CreatedAt:    u.CreatedAt,
+	}
+}
+
+func recordToDBUser(u userRecord) controldb.User {
+	projects, _ := json.Marshal(u.Projects)
+	linked, _ := json.Marshal(u.LinkedAgents)
+	return controldb.User{
+		Username:     u.Username,
+		Email:        normalizeEmail(u.Email),
+		DisplayName:  u.DisplayName,
+		Role:         u.Role,
+		Avatar:       u.Avatar,
+		Phone:        u.Phone,
+		Bio:          u.Bio,
+		PasswordHash: u.Hash,
+		Disabled:     u.Disabled,
+		CreatedAt:    u.CreatedAt,
+		ProjectsJSON: string(projects),
+		LinkedJSON:   string(linked),
+	}
+}
+
+func dbInvitationToRecord(inv controldb.Invitation) invitationRecord {
+	var projects []projectAccess
+	var linked []string
+	_ = json.Unmarshal([]byte(inv.ProjectsJSON), &projects)
+	_ = json.Unmarshal([]byte(inv.LinkedJSON), &linked)
+	return invitationRecord{
+		Token:        inv.Token,
+		Email:        inv.Email,
+		Role:         inv.Role,
+		DisplayName:  inv.DisplayName,
+		Projects:     projects,
+		LinkedAgents: linked,
+		InvitedBy:    inv.InvitedBy,
+		Status:       inv.Status,
+		CreatedAt:    inv.CreatedAt,
+		ExpiresAt:    inv.ExpiresAt,
+		AcceptedAt:   inv.AcceptedAt,
+	}
+}
+
+func recordToDBInvitation(inv invitationRecord) controldb.Invitation {
+	projects, _ := json.Marshal(inv.Projects)
+	linked, _ := json.Marshal(inv.LinkedAgents)
+	return controldb.Invitation{
+		Token:        inv.Token,
+		Email:        normalizeEmail(inv.Email),
+		Role:         inv.Role,
+		DisplayName:  inv.DisplayName,
+		ProjectsJSON: string(projects),
+		LinkedJSON:   string(linked),
+		InvitedBy:    inv.InvitedBy,
+		Status:       inv.Status,
+		CreatedAt:    inv.CreatedAt,
+		ExpiresAt:    inv.ExpiresAt,
+		AcceptedAt:   inv.AcceptedAt,
 	}
 }
 
 func (s *UserStore) ChangePassword(username, oldPass, newPass string) error {
-	s.mu.Lock()
-	defer s.mu.Unlock()
-	for i := range s.data.Users {
-		u := &s.data.Users[i]
-		if u.Username == username {
-			if bcrypt.CompareHashAndPassword([]byte(u.Hash), []byte(oldPass)) != nil {
-				return fmt.Errorf("wrong old password")
-			}
-			hash, err := bcrypt.GenerateFromPassword([]byte(newPass), bcrypt.DefaultCost)
-			if err != nil {
-				return err
-			}
-			u.Hash = string(hash)
-			s.save()
-			return nil
-		}
+	u := s.GetUser(username)
+	if u == nil {
+		return fmt.Errorf("user not found")
 	}
-	return fmt.Errorf("user not found")
+	if bcrypt.CompareHashAndPassword([]byte(u.Hash), []byte(oldPass)) != nil {
+		return fmt.Errorf("wrong old password")
+	}
+	hash, err := bcrypt.GenerateFromPassword([]byte(newPass), bcrypt.DefaultCost)
+	if err != nil {
+		return err
+	}
+	u.Hash = string(hash)
+	return s.db.UpsertUser(recordToDBUser(*u))
 }
 
 func (s *UserStore) GetUser(username string) *userRecord {
-	s.mu.RLock()
-	defer s.mu.RUnlock()
-	for i := range s.data.Users {
-		if s.data.Users[i].Username == username {
-			u := s.data.Users[i]
-			return &u
-		}
+	u, ok, err := s.db.UserByUsername(username)
+	if err != nil || !ok {
+		return nil
 	}
-	return nil
+	rec := dbUserToRecord(u)
+	return &rec
 }
 
 func (s *UserStore) Secret() string {
-	s.mu.RLock()
-	defer s.mu.RUnlock()
-	return s.data.JWTSecret
+	secret, ok, err := s.db.GetSetting("jwt_secret")
+	if err == nil && ok && secret != "" {
+		return secret
+	}
+	secret = generateSecret()
+	_ = s.db.SetSetting("jwt_secret", secret)
+	return secret
 }
 
 // Simple JWT: header.payload.signature with HMAC-SHA256.
@@ -416,6 +680,7 @@ func base64Decode(s string) ([]byte, error) {
 func (s *Server) handleLogin(w http.ResponseWriter, r *http.Request) {
 	var body struct {
 		Username string `json:"username"`
+		Email    string `json:"email"`
 		Password string `json:"password"`
 	}
 	if err := s.readJSON(w, r, &body); err != nil {
@@ -423,6 +688,9 @@ func (s *Server) handleLogin(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	body.Username = strings.TrimSpace(body.Username)
+	if body.Username == "" {
+		body.Username = strings.TrimSpace(body.Email)
+	}
 	body.Password = strings.TrimSpace(body.Password)
 	if body.Username == "" || body.Password == "" {
 		s.jsonError(w, http.StatusBadRequest, "username and password required")
@@ -435,6 +703,10 @@ func (s *Server) handleLogin(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
+	s.issueLoginResponse(w, user)
+}
+
+func (s *Server) issueLoginResponse(w http.ResponseWriter, user *userRecord) {
 	token := s.users.IssueToken(user.Username, 7*24*time.Hour)
 	_ = json.NewEncoder(w).Encode(map[string]any{
 		"token":        token,
@@ -446,6 +718,32 @@ func (s *Server) handleLogin(w http.ResponseWriter, r *http.Request) {
 		"projects":     user.Projects,
 		"linkedAgents": user.LinkedAgents,
 	})
+}
+
+func (s *Server) handleRegister(w http.ResponseWriter, r *http.Request) {
+	if strings.EqualFold(os.Getenv("MULTIGENT_ALLOW_SIGNUP"), "false") {
+		s.jsonError(w, http.StatusForbidden, "signup is disabled")
+		return
+	}
+	var body struct {
+		Email       string `json:"email"`
+		Password    string `json:"password"`
+		DisplayName string `json:"displayName"`
+	}
+	if err := s.readJSON(w, r, &body); err != nil {
+		s.jsonError(w, http.StatusBadRequest, "invalid request body")
+		return
+	}
+	user, err := s.users.RegisterByEmail(body.Email, strings.TrimSpace(body.Password), strings.TrimSpace(body.DisplayName))
+	if err != nil {
+		if strings.Contains(err.Error(), "exists") {
+			s.jsonError(w, http.StatusConflict, err.Error())
+			return
+		}
+		s.jsonError(w, http.StatusBadRequest, err.Error())
+		return
+	}
+	s.issueLoginResponse(w, user)
 }
 
 func (s *Server) handleAuthMe(w http.ResponseWriter, r *http.Request) {
@@ -575,6 +873,91 @@ func (s *Server) handleCreateUser(w http.ResponseWriter, r *http.Request) {
 	}
 	w.WriteHeader(http.StatusCreated)
 	_ = json.NewEncoder(w).Encode(map[string]bool{"ok": true})
+}
+
+func (s *Server) invitationURL(r *http.Request, token string) string {
+	if origin := strings.TrimRight(r.Header.Get("Origin"), "/"); origin != "" {
+		return fmt.Sprintf("%s/invite/%s", origin, token)
+	}
+	proto := r.Header.Get("X-Forwarded-Proto")
+	if proto == "" {
+		proto = "http"
+		if r.TLS != nil {
+			proto = "https"
+		}
+	}
+	host := r.Host
+	if forwardedHost := r.Header.Get("X-Forwarded-Host"); forwardedHost != "" {
+		host = forwardedHost
+	}
+	return fmt.Sprintf("%s://%s/invite/%s", proto, host, token)
+}
+
+func (s *Server) handleCreateInvitation(w http.ResponseWriter, r *http.Request) {
+	if !s.requireAdmin(w, r) {
+		return
+	}
+	var body struct {
+		Email        string          `json:"email"`
+		Role         string          `json:"role"`
+		DisplayName  string          `json:"displayName"`
+		Projects     []projectAccess `json:"projects"`
+		LinkedAgents []string        `json:"linkedAgents"`
+	}
+	if err := s.readJSON(w, r, &body); err != nil {
+		s.jsonError(w, http.StatusBadRequest, "invalid request body")
+		return
+	}
+	cur := s.currentUser(r)
+	inv, err := s.users.CreateInvitation(body.Email, body.Role, strings.TrimSpace(body.DisplayName), cur.Username, body.Projects, body.LinkedAgents)
+	if err != nil {
+		s.jsonError(w, http.StatusBadRequest, err.Error())
+		return
+	}
+	_ = json.NewEncoder(w).Encode(map[string]any{
+		"ok":         true,
+		"invitation": inv,
+		"inviteUrl":  s.invitationURL(r, inv.Token),
+		"delivery":   "local-link",
+	})
+}
+
+func (s *Server) handlePublicInvitation(w http.ResponseWriter, r *http.Request) {
+	token := r.PathValue("token")
+	inv, ok := s.users.Invitation(token)
+	if !ok {
+		s.jsonError(w, http.StatusNotFound, "invitation not found")
+		return
+	}
+	_ = json.NewEncoder(w).Encode(map[string]any{
+		"email":       inv.Email,
+		"role":        inv.Role,
+		"displayName": inv.DisplayName,
+		"status":      inv.Status,
+		"expiresAt":   inv.ExpiresAt,
+	})
+}
+
+func (s *Server) handleAcceptInvitation(w http.ResponseWriter, r *http.Request) {
+	token := r.PathValue("token")
+	var body struct {
+		Password    string `json:"password"`
+		DisplayName string `json:"displayName"`
+	}
+	if err := s.readJSON(w, r, &body); err != nil {
+		s.jsonError(w, http.StatusBadRequest, "invalid request body")
+		return
+	}
+	user, err := s.users.AcceptInvitation(token, strings.TrimSpace(body.Password), strings.TrimSpace(body.DisplayName))
+	if err != nil {
+		if strings.Contains(err.Error(), "not found") {
+			s.jsonError(w, http.StatusNotFound, err.Error())
+			return
+		}
+		s.jsonError(w, http.StatusBadRequest, err.Error())
+		return
+	}
+	s.issueLoginResponse(w, user)
 }
 
 func (s *Server) handleGetUser(w http.ResponseWriter, r *http.Request) {

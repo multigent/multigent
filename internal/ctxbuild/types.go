@@ -1,26 +1,26 @@
-// Package ctxbuild builds a MergedContext by walking the department chain
-// and collecting prompt layers and skills. It is the core business logic
-// of multigent and has no dependency on any agent-specific format.
+// Package ctxbuild builds a MergedContext by collecting workspace, team, role,
+// project, and skill context. It is the core business logic of multigent and
+// has no dependency on any agent-specific format.
 package ctxbuild
 
 // MergedContext is the agent-agnostic representation of a fully assembled
-// context for one (project, department) pair. The formatter layer consumes
+// context for one (project, team, role) tuple. The formatter layer consumes
 // this and translates it into whatever format a specific agent requires.
 type MergedContext struct {
 	// Layers holds the ordered prompt sections, from most general to most
-	// specific. The order is: company → dept chain … → project.
+	// specific. The order is: workspace → team → role → project.
 	Layers []ContextLayer
 
-	// Skills holds deduplicated skills collected from the department chain.
+	// Skills holds deduplicated skills collected from the team and role.
 	Skills []SkillDef
 }
 
 // ContextLayer is one prompt section with a human-readable source label.
 type ContextLayer struct {
 	// Source identifies where this content came from, e.g.:
-	//   "company"
-	//   "department:engineering"
-	//   "department:engineering/backend"
+	//   "agency"
+	//   "team:engineering"
+	//   "role:<team>/<role>"
 	//   "project:cc-connect"
 	Source string
 

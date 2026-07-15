@@ -167,7 +167,7 @@ func newTaskAddCmd() *cobra.Command {
 				t.EstimateDuration = est
 			}
 
-			ts := taskstore.New(root)
+			ts := mustTaskStore(root)
 
 			// If assignee is "human", create the task under the source agent
 			// but also route it directly to the inbox.
@@ -255,7 +255,7 @@ func newTaskListCmd() *cobra.Command {
 				return fmt.Errorf("--project and --agent are required")
 			}
 
-			ts := taskstore.New(root)
+			ts := mustTaskStore(root)
 			var tasks []*entity.Task
 
 			if archived {
@@ -346,7 +346,7 @@ func newTaskShowCmd() *cobra.Command {
 				return fmt.Errorf("--project and --agent are required")
 			}
 
-			ts := taskstore.New(root)
+			ts := mustTaskStore(root)
 			t, err := ts.GetTask(project, agentName, args[0])
 			if err != nil {
 				return err
@@ -439,7 +439,7 @@ Example:
 				return err
 			}
 
-			ts := taskstore.New(root)
+			ts := mustTaskStore(root)
 			proj, ag, t, err := ts.FindTaskByID(taskID)
 			if err != nil {
 				return err
@@ -554,7 +554,7 @@ Clear optional fields with an empty value:
 				}
 			}
 
-			ts := taskstore.New(root)
+			ts := mustTaskStore(root)
 			t, err := ts.GetTask(proj, ag, taskID)
 			if err != nil {
 				return err
@@ -704,7 +704,7 @@ The --summary value is passed to the next step via workflow routing ({{task.summ
 				return err
 			}
 
-			ts := taskstore.New(root)
+			ts := mustTaskStore(root)
 			t, err := ts.GetTask(project, agentName, taskID)
 			if err != nil {
 				return err
@@ -786,7 +786,7 @@ Use --to to route to a specific agent instead of the default human inbox:
 				return err
 			}
 
-			ts := taskstore.New(root)
+			ts := mustTaskStore(root)
 			t, err := ts.GetTask(project, agentName, taskID)
 			if err != nil {
 				return err
@@ -862,7 +862,7 @@ func newTaskRetryCmd() *cobra.Command {
 				return err
 			}
 
-			ts := taskstore.New(root)
+			ts := mustTaskStore(root)
 			archived, err := ts.ListArchivedTasks(project, agentName)
 			if err != nil {
 				return err
@@ -929,7 +929,7 @@ func newTaskCancelCmd() *cobra.Command {
 				return err
 			}
 
-			ts := taskstore.New(root)
+			ts := mustTaskStore(root)
 			t, err := ts.GetTask(project, agentName, taskID)
 			if err != nil {
 				return err
@@ -968,7 +968,7 @@ func newTaskCancelCmd() *cobra.Command {
 // This allows callers (agents) to omit --project/--agent when using task done/
 // confirm-request from within their working directory.
 func resolveTaskOwner(root, taskID string) (project, agent string, err error) {
-	ts := taskstore.New(root)
+	ts := mustTaskStore(root)
 	projects, err := ts.ListProjects()
 	if err != nil {
 		return "", "", err
@@ -990,7 +990,7 @@ func resolveTaskOwner(root, taskID string) (project, agent string, err error) {
 
 // fireOnSuccessTriggers creates follow-up tasks defined in t.OnSuccess.
 func fireOnSuccessTriggers(root, project, agentName string, t *entity.Task) error {
-	ts := taskstore.New(root)
+	ts := mustTaskStore(root)
 	var errs []string
 	for _, trigger := range t.OnSuccess {
 		// Parse assignee: "<project>/<agent>" or "human"
@@ -1051,12 +1051,12 @@ func parseAssignee(assignee, fallbackProject string) (project, agent string, err
 }
 
 func rewriteArchive(root, project, agentName string, tasks []*entity.Task) error {
-	return taskstore.New(root).OverwriteArchive(project, agentName, tasks)
+	return mustTaskStore(root).OverwriteArchive(project, agentName, tasks)
 }
 
 // resolveStores returns a taskstore.Store and an org store.Store for the workspace.
 func resolveStores(root string) (taskstore.Store, store.Store) {
-	return taskstore.New(root), store.NewFS(root)
+	return mustTaskStore(root), mustStore(root)
 }
 
 // ── task stop-all ─────────────────────────────────────────────────────────────
@@ -1095,8 +1095,8 @@ Use --no-pending to skip pending tasks and only cancel in-progress ones.`,
 			}
 			includeRunning, _ := cmd.Flags().GetBool("include-running")
 
-			ts := taskstore.New(root)
-			s := store.NewFS(root)
+			ts := mustTaskStore(root)
+			s := mustStore(root)
 
 			// Collect agents to process.
 			var agents []string
@@ -1210,7 +1210,7 @@ Cost is estimated using Anthropic's Claude pricing (configurable via env):
 
 			allAgentsFlag, _ := cmd.Flags().GetBool("all-agents")
 
-			ts := taskstore.New(root)
+			ts := mustTaskStore(root)
 
 			inputPrice := getEnvFloat("ANTHROPIC_INPUT_PRICE_PER_M", 3.0)
 			outputPrice := getEnvFloat("ANTHROPIC_OUTPUT_PRICE_PER_M", 15.0)
@@ -1418,7 +1418,7 @@ func newTaskCommentAddCmd() *cobra.Command {
 			if err != nil {
 				return err
 			}
-			ts := taskstore.New(root)
+			ts := mustTaskStore(root)
 			taskID := args[0]
 
 			project, agent, _, findErr := ts.FindTaskByID(taskID)
@@ -1466,7 +1466,7 @@ func newTaskCommentListCmd() *cobra.Command {
 			if err != nil {
 				return err
 			}
-			ts := taskstore.New(root)
+			ts := mustTaskStore(root)
 			taskID := args[0]
 
 			project, agent, _, findErr := ts.FindTaskByID(taskID)
@@ -1511,7 +1511,7 @@ func newTaskCommentDeleteCmd() *cobra.Command {
 			if err != nil {
 				return err
 			}
-			ts := taskstore.New(root)
+			ts := mustTaskStore(root)
 			taskID := args[0]
 			commentID := args[1]
 

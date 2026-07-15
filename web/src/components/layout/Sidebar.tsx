@@ -1,6 +1,7 @@
-import { NavLink, useLocation } from 'react-router-dom'
+import { Link, NavLink, useLocation, useNavigate } from 'react-router-dom'
 import { useTranslation } from 'react-i18next'
-import { ChevronRight, PanelLeftClose, PanelLeft } from 'lucide-react'
+import { useEffect, useRef, useState } from 'react'
+import { Check, ChevronDown, ChevronRight, Loader2, PanelLeftClose, PanelLeft, Plus, Settings } from 'lucide-react'
 import {
   projectIdFromPath,
   projectSubNav,
@@ -9,6 +10,25 @@ import {
 } from './nav-config'
 import { cn } from '../../lib/cn'
 import { useAuth } from '../../lib/auth'
+import { apiFetch, apiPost } from '../../lib/api'
+
+type WorkspaceSummary = {
+  name: string
+  description?: string
+  root: string
+  teams: number
+  projects: number
+  agents: number
+  tasks: number
+}
+
+type WorkspaceRef = {
+  id: string
+  name: string
+  description?: string
+  root: string
+  active?: boolean
+}
 
 const linkBase =
   'group relative flex items-center gap-2.5 rounded-lg px-2.5 py-[7px] text-[13px] font-medium transition-all duration-150 outline-none select-none'
@@ -30,9 +50,78 @@ const subActive =
 export function Sidebar({ collapsed, onToggle }: { collapsed: boolean; onToggle: () => void }) {
   const { t } = useTranslation()
   const { pathname } = useLocation()
+  const navigate = useNavigate()
   const { user } = useAuth()
   const isAdmin = !user || user.role === 'admin'
   const projectId = projectIdFromPath(pathname)
+  const [workspace, setWorkspace] = useState<WorkspaceSummary | null>(null)
+  const [workspaces, setWorkspaces] = useState<WorkspaceRef[]>([])
+  const [workspaceMenuOpen, setWorkspaceMenuOpen] = useState(false)
+  const [creatingWorkspace, setCreatingWorkspace] = useState(false)
+  const [newWorkspaceName, setNewWorkspaceName] = useState('')
+  const [switchingId, setSwitchingId] = useState<string | null>(null)
+  const workspaceMenuRef = useRef<HTMLDivElement | null>(null)
+
+  function refreshWorkspaceData() {
+    let cancelled = false
+    apiFetch<WorkspaceSummary>('/api/v1/workspace')
+      .then(data => { if (!cancelled) setWorkspace(data) })
+      .catch(() => { if (!cancelled) setWorkspace(null) })
+    apiFetch<{ workspaces: WorkspaceRef[] }>('/api/v1/workspaces')
+      .then(data => { if (!cancelled) setWorkspaces(data.workspaces ?? []) })
+      .catch(() => { if (!cancelled) setWorkspaces([]) })
+    return () => { cancelled = true }
+  }
+
+  useEffect(() => {
+    return refreshWorkspaceData()
+  }, [])
+
+  useEffect(() => {
+    setWorkspaceMenuOpen(false)
+  }, [pathname])
+
+  useEffect(() => {
+    function onPointerDown(e: PointerEvent) {
+      if (!workspaceMenuRef.current?.contains(e.target as Node)) {
+        setWorkspaceMenuOpen(false)
+      }
+    }
+    document.addEventListener('pointerdown', onPointerDown)
+    return () => document.removeEventListener('pointerdown', onPointerDown)
+  }, [])
+
+  const workspaceName = workspace?.name ?? 'Multigent'
+  const workspaceInitial = workspaceName.trim().charAt(0).toUpperCase() || 'M'
+
+  async function switchWorkspace(id: string) {
+    setSwitchingId(id)
+    try {
+      await apiPost(`/api/v1/workspaces/${encodeURIComponent(id)}/switch`, {})
+      refreshWorkspaceData()
+      setWorkspaceMenuOpen(false)
+      window.dispatchEvent(new Event('workspace-changed'))
+      navigate('/')
+    } finally {
+      setSwitchingId(null)
+    }
+  }
+
+  async function createWorkspace() {
+    const name = newWorkspaceName.trim()
+    if (!name) return
+    setCreatingWorkspace(true)
+    try {
+      await apiPost('/api/v1/workspaces', { name, switch: true })
+      setNewWorkspaceName('')
+      refreshWorkspaceData()
+      setWorkspaceMenuOpen(false)
+      window.dispatchEvent(new Event('workspace-changed'))
+      navigate('/')
+    } finally {
+      setCreatingWorkspace(false)
+    }
+  }
 
   return (
     <aside
@@ -41,22 +130,109 @@ export function Sidebar({ collapsed, onToggle }: { collapsed: boolean; onToggle:
         collapsed ? 'w-[3.5rem]' : 'w-[14.5rem]',
       )}
     >
-      {/* Brand */}
-      <div className={cn('flex h-11 items-center border-b border-neutral-200/80 dark:border-zinc-700/60', collapsed ? 'justify-center px-2' : 'px-4')}>
-        {collapsed ? (
-          <span
-            className="text-lg font-bold tracking-tight text-sky-600 dark:text-sky-400"
-            style={{ fontFamily: "'Space Grotesk', sans-serif" }}
-          >
-            A
+      <div ref={workspaceMenuRef} className="relative flex h-11 items-center border-b border-neutral-200/80 px-2 dark:border-zinc-700/60">
+        <button
+          type="button"
+          onClick={() => setWorkspaceMenuOpen(v => !v)}
+          className={cn(
+            'group flex h-7 w-full items-center rounded-md text-left transition-colors hover:bg-neutral-100 dark:hover:bg-zinc-800/70',
+            collapsed ? 'justify-center px-1' : 'gap-2 px-2',
+            workspaceMenuOpen && 'bg-neutral-100 dark:bg-zinc-800/70',
+          )}
+          title={workspaceName}
+        >
+          <span className="flex size-6 shrink-0 items-center justify-center rounded-md border border-neutral-200 bg-white text-[12px] font-semibold text-sky-700 dark:border-zinc-700 dark:bg-zinc-900 dark:text-sky-300">
+            {workspaceInitial}
           </span>
-        ) : (
-          <span
-            className="text-[17px] font-bold tracking-tight text-neutral-900 dark:text-zinc-100"
-            style={{ fontFamily: "'Space Grotesk', sans-serif" }}
-          >
-            Agency<span className="text-sky-600 dark:text-sky-400">Cli</span>
-          </span>
+          {!collapsed && (
+            <>
+              <span className="min-w-0 flex-1 truncate text-[13px] font-semibold text-neutral-900 dark:text-zinc-100">{workspaceName}</span>
+              <ChevronDown className={cn('size-3.5 shrink-0 text-neutral-400 transition-transform dark:text-zinc-500', workspaceMenuOpen && 'rotate-180')} strokeWidth={1.8} />
+            </>
+          )}
+        </button>
+
+        {workspaceMenuOpen && (
+          <div className={cn(
+            'absolute top-12 z-30 w-[19rem] overflow-hidden rounded-lg border border-neutral-200 bg-white shadow-xl dark:border-zinc-700 dark:bg-zinc-900',
+            collapsed ? 'left-2' : 'left-2',
+          )}>
+            <div className="max-h-72 overflow-y-auto border-b border-neutral-200/70 p-2 dark:border-zinc-700/60">
+              <p className="px-2 pb-1.5 text-xs font-medium text-neutral-400 dark:text-zinc-500">{t('workspace.currentWorkspace')}</p>
+              <div className="space-y-1">
+                {(workspaces.length > 0 ? workspaces : [{ id: 'current', name: workspaceName, root: workspace?.root ?? '', active: true }]).map((item) => {
+                  const initial = item.name.trim().charAt(0).toUpperCase() || 'M'
+                  return (
+                    <button
+                      key={item.id}
+                      type="button"
+                      disabled={item.active || switchingId !== null}
+                      onClick={() => switchWorkspace(item.id)}
+                      className={cn(
+                        'flex w-full items-center gap-2 rounded-md px-2 py-2 text-left transition-colors',
+                        item.active
+                          ? 'bg-neutral-50 dark:bg-zinc-800/60'
+                          : 'hover:bg-neutral-100 dark:hover:bg-zinc-800/70',
+                      )}
+                    >
+                      <span className="flex size-7 shrink-0 items-center justify-center rounded-md bg-sky-100 text-[13px] font-semibold text-sky-700 dark:bg-sky-900/30 dark:text-sky-300">
+                        {initial}
+                      </span>
+                      <div className="min-w-0 flex-1">
+                        <p className="truncate text-sm font-semibold text-neutral-900 dark:text-zinc-100">{item.name}</p>
+                        <p className="truncate text-xs text-neutral-400 dark:text-zinc-500">{item.root}</p>
+                      </div>
+                      {switchingId === item.id ? (
+                        <Loader2 className="size-4 shrink-0 animate-spin text-neutral-400 dark:text-zinc-500" strokeWidth={1.8} />
+                      ) : item.active ? (
+                        <Check className="size-4 shrink-0 text-sky-600 dark:text-sky-400" strokeWidth={1.8} />
+                      ) : null}
+                    </button>
+                  )
+                })}
+              </div>
+            </div>
+
+            <div className="p-2">
+              <Link
+                to="/workspace"
+                className="flex items-center gap-2 rounded-md px-2 py-2 text-sm font-medium text-neutral-700 transition-colors hover:bg-neutral-100 dark:text-zinc-300 dark:hover:bg-zinc-800/70"
+              >
+                <Settings className="size-4 text-neutral-400 dark:text-zinc-500" strokeWidth={1.8} />
+                {t('workspace.viewDetails')}
+              </Link>
+              <div className="mt-1 rounded-md border border-neutral-200 p-2 dark:border-zinc-700">
+                <label className="text-xs font-medium text-neutral-500 dark:text-zinc-400">{t('workspace.newWorkspaceName')}</label>
+                <div className="mt-1.5 flex gap-1.5">
+                  <input
+                    value={newWorkspaceName}
+                    onChange={e => setNewWorkspaceName(e.target.value)}
+                    onKeyDown={e => {
+                      if (e.key === 'Enter') {
+                        e.preventDefault()
+                        createWorkspace()
+                      }
+                    }}
+                    placeholder={t('workspace.name')}
+                    className="min-w-0 flex-1 rounded-md border border-neutral-200 bg-white px-2 py-1.5 text-sm text-neutral-900 outline-none focus:border-sky-400 dark:border-zinc-700 dark:bg-zinc-950 dark:text-zinc-100"
+                  />
+                  <button
+                    type="button"
+                    disabled={creatingWorkspace || newWorkspaceName.trim() === ''}
+                    onClick={createWorkspace}
+                    className="inline-flex items-center justify-center rounded-md bg-sky-600 px-2.5 text-sm font-medium text-white transition-colors hover:bg-sky-700 disabled:cursor-not-allowed disabled:opacity-50"
+                    title={t('workspace.createWorkspace')}
+                  >
+                    {creatingWorkspace ? <Loader2 className="size-4 animate-spin" strokeWidth={1.8} /> : <Plus className="size-4" strokeWidth={1.8} />}
+                  </button>
+                </div>
+              </div>
+            </div>
+
+            <div className="border-t border-neutral-200/70 px-4 py-3 dark:border-zinc-700/60">
+              <p className="text-xs leading-relaxed text-neutral-400 dark:text-zinc-500">{t('workspace.switchHint')}</p>
+            </div>
+          </div>
         )}
       </div>
 

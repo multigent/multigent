@@ -68,7 +68,7 @@ func newProjectShowCmd() *cobra.Command {
 			if project == "" {
 				return fmt.Errorf("--project is required")
 			}
-			ts := taskstore.New(root)
+			ts := mustTaskStore(root)
 			cfg, err := ts.GetProjectConfig(project)
 			if err != nil {
 				return err
@@ -123,8 +123,8 @@ After apply, start the scheduler to let agents work autonomously:
 				return fmt.Errorf("--project is required")
 			}
 
-			ts := taskstore.New(root)
-			s := store.NewFS(root)
+			ts := mustTaskStore(root)
+			s := mustStore(root)
 
 			cfg, err := ts.GetProjectConfig(project)
 			if err != nil {
@@ -171,7 +171,7 @@ func newProjectBlueprintsCmd() *cobra.Command {
 			if err != nil {
 				return err
 			}
-			ts := taskstore.New(root)
+			ts := mustTaskStore(root)
 			names, err := ts.ListProjectBlueprints()
 			if err != nil {
 				return err

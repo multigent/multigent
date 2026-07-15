@@ -6,7 +6,6 @@ import (
 	"os"
 	"strings"
 
-	"github.com/multigent/multigent/internal/taskstore"
 	"github.com/spf13/cobra"
 )
 
@@ -35,7 +34,7 @@ Use --project to limit to one project, --tasks/--inbox for partial clearing.`,
 			if err != nil {
 				return err
 			}
-			ts := taskstore.New(root)
+			ts := mustTaskStore(root)
 
 			clearTasks := !inboxOnly
 			clearInbox := !taskOnly

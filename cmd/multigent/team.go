@@ -7,14 +7,13 @@ import (
 	"strings"
 	"text/tabwriter"
 
-	"github.com/multigent/multigent/internal/store"
 	"github.com/spf13/cobra"
 )
 
 func newTeamCmd() *cobra.Command {
 	cmd := &cobra.Command{
 		Use:   "team",
-		Short: "Manage hierarchical team definitions",
+		Short: "Manage team definitions",
 	}
 	cmd.AddCommand(
 		newTeamTreeCmd(),
@@ -27,13 +26,13 @@ func newTeamCmd() *cobra.Command {
 func newTeamTreeCmd() *cobra.Command {
 	cmd := &cobra.Command{
 		Use:   "tree",
-		Short: "Show the team hierarchy",
+		Short: "List teams",
 		RunE: func(cmd *cobra.Command, args []string) error {
 			root, err := resolveRoot()
 			if err != nil {
 				return err
 			}
-			s := store.NewFS(root)
+			s := mustStore(root)
 			teams, err := s.ListTeams()
 			if err != nil {
 				return err
@@ -44,9 +43,7 @@ func newTeamTreeCmd() *cobra.Command {
 			}
 			sort.Slice(teams, func(i, j int) bool { return teams[i].Path < teams[j].Path })
 			for _, entry := range teams {
-				depth := strings.Count(entry.Path, "/")
-				prefix := strings.Repeat("  ", depth)
-				fmt.Printf("%s- %s", prefix, entry.Path[strings.LastIndex(entry.Path, "/")+1:])
+				fmt.Printf("- %s", entry.Path)
 				if len(entry.Team.Owners) > 0 {
 					fmt.Printf("  owners=%s", strings.Join(entry.Team.Owners, ","))
 				}
@@ -65,7 +62,7 @@ func newTeamShowCmd() *cobra.Command {
 	var teamPath string
 	cmd := &cobra.Command{
 		Use:   "show",
-		Short: "Show team ownership, parent, and inherited path information",
+		Short: "Show team ownership and context information",
 		RunE: func(cmd *cobra.Command, args []string) error {
 			if teamPath == "" {
 				return fmt.Errorf("--team is required")
@@ -74,7 +71,7 @@ func newTeamShowCmd() *cobra.Command {
 			if err != nil {
 				return err
 			}
-			s := store.NewFS(root)
+			s := mustStore(root)
 			t, err := s.Team(teamPath)
 			if err != nil {
 				return err
@@ -82,7 +79,6 @@ func newTeamShowCmd() *cobra.Command {
 			w := tabwriter.NewWriter(os.Stdout, 0, 0, 2, ' ', 0)
 			fmt.Fprintf(w, "Path:\t%s\n", teamPath)
 			fmt.Fprintf(w, "Name:\t%s\n", t.Name)
-			fmt.Fprintf(w, "Parent:\t%s\n", emptyDash(t.Parent))
 			fmt.Fprintf(w, "Owners:\t%s\n", joinOrDash(t.Owners))
 			fmt.Fprintf(w, "Skills:\t%s\n", joinOrDash(t.Skills))
 			fmt.Fprintf(w, "Default context:\t%s\n", emptyDash(t.DefaultContextPack))
@@ -91,7 +87,7 @@ func newTeamShowCmd() *cobra.Command {
 			return nil
 		},
 	}
-	cmd.Flags().StringVar(&teamPath, "team", "", "team path, e.g. engineering/backend")
+	cmd.Flags().StringVar(&teamPath, "team", "", "team name, e.g. engineering")
 	_ = cmd.MarkFlagRequired("team")
 	return cmd
 }
@@ -127,7 +123,7 @@ func newTeamSkillAddCmd() *cobra.Command {
 			if err != nil {
 				return err
 			}
-			s := store.NewFS(root)
+			s := mustStore(root)
 
 			t, err := s.Team(teamPath)
 			if err != nil {
@@ -165,7 +161,7 @@ func newTeamSkillAddCmd() *cobra.Command {
 		},
 	}
 
-	cmd.Flags().StringVar(&teamPath, "team", "", "Team path, e.g. \"growth\" or \"engineering/backend\"")
+	cmd.Flags().StringVar(&teamPath, "team", "", "Team name, e.g. \"growth\" or \"engineering\"")
 	cmd.Flags().StringSliceVar(&skills, "skill", nil, "Skill name(s) to add (comma-separated or repeated flag)")
 	_ = cmd.MarkFlagRequired("team")
 	_ = cmd.MarkFlagRequired("skill")
@@ -188,7 +184,7 @@ func newTeamSkillRemoveCmd() *cobra.Command {
 			if err != nil {
 				return err
 			}
-			s := store.NewFS(root)
+			s := mustStore(root)
 
 			t, err := s.Team(teamPath)
 			if err != nil {
@@ -230,7 +226,7 @@ func newTeamSkillRemoveCmd() *cobra.Command {
 		},
 	}
 
-	cmd.Flags().StringVar(&teamPath, "team", "", "Team path, e.g. \"growth\" or \"engineering/backend\"")
+	cmd.Flags().StringVar(&teamPath, "team", "", "Team name, e.g. \"growth\" or \"engineering\"")
 	cmd.Flags().StringSliceVar(&skills, "skill", nil, "Skill name(s) to remove (comma-separated or repeated flag)")
 	_ = cmd.MarkFlagRequired("team")
 	_ = cmd.MarkFlagRequired("skill")

@@ -4,7 +4,6 @@ import (
 	"fmt"
 	"strings"
 
-	"github.com/multigent/multigent/internal/store"
 	"github.com/spf13/cobra"
 )
 
@@ -32,7 +31,7 @@ secrets and API provider settings.`,
 			}
 			key = strings.TrimSpace(key)
 
-			st := store.NewFS(root)
+			st := mustStore(root)
 			meta, err := st.AgentMeta(project, agentName)
 			if err != nil {
 				return fmt.Errorf("agent %s/%s: %w", project, agentName, err)
@@ -75,7 +74,7 @@ func newAgentUnsetEnvCmd() *cobra.Command {
 				return fmt.Errorf("key is required")
 			}
 
-			st := store.NewFS(root)
+			st := mustStore(root)
 			meta, err := st.AgentMeta(project, agentName)
 			if err != nil {
 				return fmt.Errorf("agent %s/%s: %w", project, agentName, err)
@@ -112,7 +111,7 @@ func newAgentListEnvCmd() *cobra.Command {
 			if err != nil {
 				return err
 			}
-			st := store.NewFS(root)
+			st := mustStore(root)
 			meta, err := st.AgentMeta(project, agentName)
 			if err != nil {
 				return fmt.Errorf("agent %s/%s: %w", project, agentName, err)

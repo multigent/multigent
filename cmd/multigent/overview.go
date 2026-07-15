@@ -7,7 +7,6 @@ import (
 	"time"
 
 	"github.com/multigent/multigent/internal/entity"
-	"github.com/multigent/multigent/internal/store"
 	"github.com/multigent/multigent/internal/taskstore"
 	"github.com/spf13/cobra"
 )
@@ -440,8 +439,8 @@ func runOverview(_ *cobra.Command, _ []string) error {
 		return err
 	}
 
-	s := store.NewFS(root)
-	ts := taskstore.New(root)
+	s := mustStore(root)
+	ts := mustTaskStore(root)
 
 	agency, err := s.Agency()
 	if err != nil {

@@ -15,6 +15,7 @@ import (
 	"sync"
 	"time"
 
+	controldb "github.com/multigent/multigent/internal/db"
 	"github.com/multigent/multigent/internal/entity"
 	"github.com/multigent/multigent/internal/store"
 	"github.com/multigent/multigent/internal/taskstore"
@@ -39,6 +40,8 @@ type execProcess struct {
 
 // Server serves JSON for one workspace root.
 type Server struct {
+	workspaceMu       sync.Mutex
+	controlDB         controldb.Store
 	root              string
 	apiKey            string
 	version           string
@@ -61,16 +64,21 @@ type Server struct {
 // NewServer builds an API server for the given workspace root.
 // If apiKey is non-empty, requests must send Authorization: Bearer <apiKey>.
 func NewServer(root, apiKey string) *Server {
+	controlDB, err := controldb.OpenDefault()
+	if err != nil {
+		log.Fatalf("control DB unavailable: %v", err)
+	}
 	sched := newSchedulerManager(root)
-	ts := taskstore.New(root)
+	ts := taskstore.NewDB(root, controlDB)
 	tm := newTriggerManager(root, sched.binPath, ts)
 	tm.StartPoller()
 	return &Server{
 		root:      root,
 		apiKey:    strings.TrimSpace(apiKey),
-		st:        store.NewFS(root),
+		controlDB: controlDB,
+		st:        store.NewDB(root, controlDB),
 		ts:        ts,
-		users:     newUserStore(root),
+		users:     newUserStore(controlDB),
 		sched:     sched,
 		triggers:  tm,
 		ccStore:   store.NewCCConnectStore(root),
@@ -93,16 +101,23 @@ func (s *Server) SetDaemonStatus(fn DaemonStatusFunc) { s.daemonStatus = fn }
 func (s *Server) Shutdown() {
 	s.triggers.StopPoller()
 	s.sched.Cleanup()
+	_ = s.controlDB.Close()
 }
 
 // Handler returns the root HTTP handler (includes optional auth).
 func (s *Server) Handler() http.Handler {
 	mux := http.NewServeMux()
+	mux.HandleFunc("GET /api/v1/workspace", s.handleWorkspace)
+	mux.HandleFunc("PUT /api/v1/workspace", s.handlePutWorkspace)
+	mux.HandleFunc("GET /api/v1/workspaces", s.handleListWorkspaces)
+	mux.HandleFunc("POST /api/v1/workspaces", s.handleCreateWorkspace)
+	mux.HandleFunc("POST /api/v1/workspaces/{id}/switch", s.handleSwitchWorkspace)
 	mux.HandleFunc("GET /api/v1/agency", s.handleAgency)
 	mux.HandleFunc("GET /api/v1/stats", s.handleStats)
 	mux.HandleFunc("GET /api/v1/teams", s.handleTeams)
 	mux.HandleFunc("GET /api/v1/teams/{teamPath...}", s.handleTeamDetail)
 	mux.HandleFunc("GET /api/v1/projects", s.handleProjects)
+	mux.HandleFunc("GET /api/v1/rbac/model", s.handleRBACModel)
 	mux.HandleFunc("POST /api/v1/projects/{name}/tasks", s.handlePostProjectTask)
 	mux.HandleFunc("POST /api/v1/projects/{name}/agents/{agent}/crons/{cronId}/pause", s.handlePostCronPause)
 	mux.HandleFunc("POST /api/v1/projects/{name}/agents/{agent}/crons/{cronId}/resume", s.handlePostCronResume)
@@ -205,6 +220,7 @@ func (s *Server) Handler() http.Handler {
 
 	mux.HandleFunc("GET /api/v1/users", s.handleListUsers)
 	mux.HandleFunc("POST /api/v1/users", s.handleCreateUser)
+	mux.HandleFunc("POST /api/v1/invitations", s.handleCreateInvitation)
 	mux.HandleFunc("GET /api/v1/users/{username}", s.handleGetUser)
 	mux.HandleFunc("PUT /api/v1/users/{username}", s.handleUpdateUser)
 	mux.HandleFunc("DELETE /api/v1/users/{username}", s.handleDeleteUser)
@@ -255,10 +271,36 @@ func (s *Server) Handler() http.Handler {
 
 	publicMux := http.NewServeMux()
 	publicMux.HandleFunc("POST /api/v1/auth/login", s.handleLogin)
+	publicMux.HandleFunc("POST /api/v1/auth/register", s.handleRegister)
+	publicMux.HandleFunc("GET /api/v1/invitations/{token}", s.handlePublicInvitation)
+	publicMux.HandleFunc("POST /api/v1/invitations/{token}/accept", s.handleAcceptInvitation)
 	publicMux.HandleFunc("GET /api/v1/health", s.handleHealth)
 	publicMux.Handle("/", s.withTokenAuth(mux))
 
-	return withJSONHeaders(publicMux)
+	return withCORS(withJSONHeaders(publicMux))
+}
+
+func withCORS(next http.Handler) http.Handler {
+	return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		origin := r.Header.Get("Origin")
+		if origin != "" {
+			w.Header().Set("Access-Control-Allow-Origin", origin)
+			w.Header().Set("Vary", "Origin")
+		} else {
+			w.Header().Set("Access-Control-Allow-Origin", "*")
+		}
+		w.Header().Set("Access-Control-Allow-Methods", "GET, POST, PUT, PATCH, DELETE, OPTIONS")
+		if reqHeaders := r.Header.Get("Access-Control-Request-Headers"); reqHeaders != "" {
+			w.Header().Set("Access-Control-Allow-Headers", reqHeaders)
+		} else {
+			w.Header().Set("Access-Control-Allow-Headers", "Authorization, Content-Type, Accept")
+		}
+		if r.Method == http.MethodOptions {
+			w.WriteHeader(http.StatusNoContent)
+			return
+		}
+		next.ServeHTTP(w, r)
+	})
 }
 
 func withJSONHeaders(next http.Handler) http.Handler {
@@ -355,6 +397,9 @@ func (s *Server) handleAgency(w http.ResponseWriter, _ *http.Request) {
 		"name":        a.Name,
 		"description": a.Description,
 		"lang":        a.Lang,
+		"createdBy":   a.CreatedBy,
+		"createdAt":   a.CreatedAt,
+		"updatedAt":   a.UpdatedAt,
 	})
 }
 
@@ -422,12 +467,13 @@ func (s *Server) handleTeams(w http.ResponseWriter, _ *http.Request) {
 			continue
 		}
 		out = append(out, map[string]any{
-			"path":        e.Path,
-			"name":        e.Team.Name,
-			"description": e.Team.Description,
-			"parent":      e.Team.Parent,
-			"skills":      e.Team.Skills,
-			"goals":       e.Team.Goals,
+			"path":               e.Path,
+			"name":               e.Team.Name,
+			"description":        e.Team.Description,
+			"owners":             e.Team.Owners,
+			"defaultContextPack": e.Team.DefaultContextPack,
+			"skills":             e.Team.Skills,
+			"goals":              e.Team.Goals,
 		})
 	}
 	_ = json.NewEncoder(w).Encode(out)
@@ -470,13 +516,14 @@ func (s *Server) handleTeamDetail(w http.ResponseWriter, r *http.Request) {
 		})
 	}
 	_ = json.NewEncoder(w).Encode(map[string]any{
-		"path":        path,
-		"name":        t.Name,
-		"description": t.Description,
-		"parent":      t.Parent,
-		"skills":      t.Skills,
-		"goals":       t.Goals,
-		"roles":       roleOut,
+		"path":               path,
+		"name":               t.Name,
+		"description":        t.Description,
+		"owners":             t.Owners,
+		"defaultContextPack": t.DefaultContextPack,
+		"skills":             t.Skills,
+		"goals":              t.Goals,
+		"roles":              roleOut,
 	})
 }
 

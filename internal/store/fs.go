@@ -104,8 +104,7 @@ func (s *fsStore) SaveAgencyPrompt(content string) error {
 // ── Teams ─────────────────────────────────────────────────────────────────────
 
 func (s *fsStore) teamDir(path string) string {
-	// path is slash-separated, e.g. "engineering/backend"
-	return s.abs(append([]string{"teams"}, strings.Split(path, "/")...)...)
+	return s.abs("teams", path)
 }
 
 func (s *fsStore) Team(path string) (*entity.Team, error) {
@@ -143,39 +142,33 @@ func (s *fsStore) SaveTeamPrompt(path string, content string) error {
 	return nil
 }
 
-// ListTeams walks teams/ recursively and returns every directory
-// that contains a team.yaml.
+// ListTeams returns direct children under teams/. Teams are intentionally flat;
+// roles and projects carry execution decomposition.
 func (s *fsStore) ListTeams() ([]*TeamEntry, error) {
 	base := s.abs("teams")
 	var entries []*TeamEntry
 
-	err := filepath.WalkDir(base, func(path string, d os.DirEntry, err error) error {
-		if err != nil {
-			return err
-		}
-		if d.Name() != "team.yaml" {
-			return nil
-		}
-		dir := filepath.Dir(path)
-		// Convert absolute dir to relative team path (slash-separated)
-		rel, err := filepath.Rel(base, dir)
-		if err != nil {
-			return err
-		}
-		teamPath := filepath.ToSlash(rel)
-
-		var team entity.Team
-		if err := readYAML(path, &team); err != nil {
-			return fmt.Errorf("store: read team %q: %w", teamPath, err)
-		}
-		entries = append(entries, &TeamEntry{Path: teamPath, Team: &team})
-		return nil
-	})
+	dirEntries, err := os.ReadDir(base)
 	if errors.Is(err, os.ErrNotExist) {
 		return nil, nil
 	}
 	if err != nil {
 		return nil, fmt.Errorf("store: list teams: %w", err)
+	}
+	for _, entry := range dirEntries {
+		if !entry.IsDir() {
+			continue
+		}
+		teamPath := entry.Name()
+		path := filepath.Join(base, teamPath, "team.yaml")
+		var team entity.Team
+		if err := readYAML(path, &team); err != nil {
+			if errors.Is(err, os.ErrNotExist) {
+				continue
+			}
+			return nil, fmt.Errorf("store: read team %q: %w", teamPath, err)
+		}
+		entries = append(entries, &TeamEntry{Path: teamPath, Team: &team})
 	}
 	return entries, nil
 }
@@ -319,67 +312,6 @@ func (s *fsStore) ProjectConfig(name string) (*entity.ProjectConfig, error) {
 		return nil, fmt.Errorf("store: read project config %q: %w", name, err)
 	}
 	return &cfg, nil
-}
-
-// ── Workstreams ───────────────────────────────────────────────────────────────
-
-func (s *fsStore) workstreamDir(project, name string) string {
-	return filepath.Join(s.projectDir(project), "workstreams", name)
-}
-
-func (s *fsStore) Workstream(project, name string) (*entity.Workstream, error) {
-	path := filepath.Join(s.workstreamDir(project, name), "workstream.yaml")
-	var ws entity.Workstream
-	if err := readYAML(path, &ws); err != nil {
-		if errors.Is(err, os.ErrNotExist) {
-			return nil, errs.NotFound("workstream", project+"/"+name)
-		}
-		return nil, fmt.Errorf("store: read workstream %q/%q: %w", project, name, err)
-	}
-	if ws.Project == "" {
-		ws.Project = project
-	}
-	if ws.Name == "" {
-		ws.Name = name
-	}
-	return &ws, nil
-}
-
-func (s *fsStore) SaveWorkstream(project, name string, ws *entity.Workstream) error {
-	if ws.Name == "" {
-		ws.Name = name
-	}
-	if ws.Project == "" {
-		ws.Project = project
-	}
-	path := filepath.Join(s.workstreamDir(project, name), "workstream.yaml")
-	if err := writeYAML(path, ws); err != nil {
-		return fmt.Errorf("store: save workstream %q/%q: %w", project, name, err)
-	}
-	return nil
-}
-
-func (s *fsStore) ListWorkstreams(project string) ([]*WorkstreamEntry, error) {
-	base := filepath.Join(s.projectDir(project), "workstreams")
-	entries, err := os.ReadDir(base)
-	if errors.Is(err, os.ErrNotExist) {
-		return nil, nil
-	}
-	if err != nil {
-		return nil, fmt.Errorf("store: list workstreams for project %q: %w", project, err)
-	}
-	var out []*WorkstreamEntry
-	for _, e := range entries {
-		if !e.IsDir() {
-			continue
-		}
-		ws, err := s.Workstream(project, e.Name())
-		if err != nil {
-			continue
-		}
-		out = append(out, &WorkstreamEntry{Project: project, Name: e.Name(), Workstream: ws})
-	}
-	return out, nil
 }
 
 // ── Skills ────────────────────────────────────────────────────────────────────

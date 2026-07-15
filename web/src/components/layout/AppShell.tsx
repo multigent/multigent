@@ -131,6 +131,7 @@ export function AppShell() {
   const [assistantHidden, setAssistantHidden] = useState(() => localStorage.getItem(ASSISTANT_HIDDEN_KEY) === '1')
   const [appVersion, setAppVersion] = useState('…')
   const [updateInfo, setUpdateInfo] = useState<{ hasUpdate: boolean; latestVersion?: string } | null>(null)
+  const [workspaceScope, setWorkspaceScope] = useState('default')
   const autoCollapsedSidebar = useRef(false)
 
   useEffect(() => {
@@ -142,6 +143,25 @@ export function AppShell() {
       .then((d) => setUpdateInfo(d))
       .catch(() => {})
   }, [])
+
+  useEffect(() => {
+    let cancelled = false
+    const loadWorkspaceScope = () => {
+      apiFetch<{ root?: string; name?: string }>('/api/v1/workspace')
+      .then((d) => {
+        if (!cancelled) setWorkspaceScope(d.root || d.name || 'default')
+      })
+      .catch(() => {
+        if (!cancelled) setWorkspaceScope('default')
+      })
+    }
+    loadWorkspaceScope()
+    window.addEventListener('workspace-changed', loadWorkspaceScope)
+    return () => {
+      cancelled = true
+      window.removeEventListener('workspace-changed', loadWorkspaceScope)
+    }
+  }, [pathname])
 
   function toggleSidebar() {
     setCollapsed((v) => {
@@ -186,7 +206,7 @@ export function AppShell() {
   const pageTitle = crumbs.length > 0 ? crumbs[crumbs.length - 1].label : ''
 
   return (
-    <PageTabsProvider pageTitle={pageTitle}>
+    <PageTabsProvider pageTitle={pageTitle} scope={workspaceScope}>
       <>
           <div className="flex h-dvh bg-neutral-50 text-neutral-900 dark:bg-zinc-950 dark:text-zinc-200">
           <Sidebar collapsed={collapsed} onToggle={toggleSidebar} />

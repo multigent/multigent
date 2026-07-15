@@ -39,7 +39,7 @@ func newListTeamsCmd() *cobra.Command {
 			if err != nil {
 				return err
 			}
-			s := store.NewFS(root)
+			s := mustStore(root)
 			entries, err := s.ListTeams()
 			if err != nil {
 				return err
@@ -83,7 +83,7 @@ func newListProjectsCmd() *cobra.Command {
 			if err != nil {
 				return err
 			}
-			s := store.NewFS(root)
+			s := mustStore(root)
 			projects, err := s.ListProjects()
 			if err != nil {
 				return err
@@ -129,7 +129,7 @@ func newListAgentsCmd() *cobra.Command {
 			if err != nil {
 				return err
 			}
-			s := store.NewFS(root)
+			s := mustStore(root)
 
 			projectNames := []string{}
 			if project != "" {
@@ -208,7 +208,7 @@ func newListSkillsCmd() *cobra.Command {
 			if err != nil {
 				return err
 			}
-			s := store.NewFS(root)
+			s := mustStore(root)
 			skills, err := s.ListSkills()
 			if err != nil {
 				return err

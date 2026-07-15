@@ -8,11 +8,8 @@ import (
 	"path/filepath"
 	"strings"
 
-	"github.com/multigent/multigent/internal/ctxbuild"
 	"github.com/multigent/multigent/internal/entity"
 	"github.com/multigent/multigent/internal/scaffold"
-	"github.com/multigent/multigent/internal/store"
-	"github.com/multigent/multigent/internal/taskstore"
 	tmpl "github.com/multigent/multigent/internal/template"
 	"github.com/spf13/cobra"
 )
@@ -73,7 +70,11 @@ func newCreateAgencyCmd() *cobra.Command {
 				if err := os.MkdirAll(root, 0o755); err != nil {
 					return fmt.Errorf("create agency dir: %w", err)
 				}
-				a := &entity.Agency{Name: name, Description: desc}
+				displayName := name
+				if filepath.IsAbs(name) || strings.ContainsAny(name, `/\`) {
+					displayName = filepath.Base(filepath.Clean(name))
+				}
+				a := &entity.Agency{Name: displayName, Description: desc}
 				if err := scaffold.InitAgency(root, a); err != nil {
 					return err
 				}
@@ -112,47 +113,26 @@ func newCreateTeamCmd() *cobra.Command {
 
 	cmd := &cobra.Command{
 		Use:   "team",
-		Short: "Create a team (supports nested paths)",
+		Short: "Create a team",
 		Example: `  multigent create team --name "engineering"
-  multigent create team --name "engineering/backend" --desc "Go/gRPC" --skills "git,bash"`,
+  multigent create team --name "backend" --desc "Go/gRPC" --skills "git,bash"`,
 		RunE: func(cmd *cobra.Command, args []string) error {
 			if name == "" {
 				return fmt.Errorf("--name is required")
+			}
+			if strings.Contains(name, "/") {
+				return fmt.Errorf("team names are flat and cannot contain '/'; use project tasks, labels, roles, or separate teams instead")
 			}
 
 			root, err := resolveRoot()
 			if err != nil {
 				return err
 			}
-			s := store.NewFS(root)
+			s := mustStore(root)
 			sc := scaffold.New(s)
 
-			// Determine parent from path
-			parent := ""
-			if idx := strings.LastIndex(name, "/"); idx != -1 {
-				parent = name[:idx]
-			}
-
-			// Every level in the chain must already exist before we can
-			// create a child team. This ensures each level has its own
-			// team.yaml and prompt.md so the context chain is complete.
-			if parent != "" {
-				chain := ctxbuild.ResolveChain(parent)
-				for _, ancestor := range chain {
-					if _, err := s.Team(ancestor); err != nil {
-						return fmt.Errorf(
-							"parent team %q does not exist\n"+
-								"Create it first with:\n"+
-								"  multigent create team --name %q",
-							ancestor, ancestor,
-						)
-					}
-				}
-			}
-
 			t := &entity.Team{
-				Name:               filepath.Base(name),
-				Parent:             parent,
+				Name:               name,
 				Description:        desc,
 				Owners:             owners,
 				DefaultContextPack: defaultContextPack,
@@ -169,7 +149,7 @@ func newCreateTeamCmd() *cobra.Command {
 		},
 	}
 
-	cmd.Flags().StringVar(&name, "name", "", "Team path, e.g. \"engineering\" or \"engineering/backend\"")
+	cmd.Flags().StringVar(&name, "name", "", "Team name, e.g. \"engineering\"")
 	cmd.Flags().StringVar(&desc, "desc", "", "Short description")
 	cmd.Flags().StringSliceVar(&owners, "owner", nil, "Human owner(s) responsible for this team")
 	cmd.Flags().StringVar(&defaultContextPack, "context-pack", "", "Default context pack for agents in this team")
@@ -216,7 +196,7 @@ Roles are referenced at hire time with --role.`,
 			if err != nil {
 				return err
 			}
-			s := store.NewFS(root)
+			s := mustStore(root)
 
 			// Verify the team exists.
 			if _, err := s.Team(teamPath); err != nil {
@@ -264,7 +244,7 @@ Roles are referenced at hire time with --role.`,
 		},
 	}
 
-	cmd.Flags().StringVar(&teamPath, "team", "", "Team path the role belongs to, e.g. \"growth\" or \"engineering/backend\"")
+	cmd.Flags().StringVar(&teamPath, "team", "", "Team name the role belongs to, e.g. \"growth\" or \"engineering\"")
 	cmd.Flags().StringVar(&name, "name", "", "Role name, e.g. \"content-writer\"")
 	cmd.Flags().StringVar(&desc, "desc", "", "Short description of the role")
 	cmd.Flags().StringSliceVar(&skills, "skills", nil, "Comma-separated skill names to bind to this role")
@@ -312,9 +292,9 @@ hire the agents and wire up their schedules.`,
 			if err != nil {
 				return err
 			}
-			s := store.NewFS(root)
+			s := mustStore(root)
 			sc := scaffold.New(s)
-			ts := taskstore.New(root)
+			ts := mustTaskStore(root)
 
 			p := &entity.Project{Name: name, Description: desc, Repo: repo, Owners: owners, ContextPack: contextPack}
 			if err := sc.CreateProject(name, p); err != nil {

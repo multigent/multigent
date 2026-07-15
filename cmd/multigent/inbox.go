@@ -120,7 +120,7 @@ Use --all to show all messages including read ones.`,
 			if err != nil {
 				return err
 			}
-			ts := taskstore.New(root)
+			ts := mustTaskStore(root)
 
 			recip := recipient
 			if recip == "" {
@@ -202,7 +202,7 @@ func newInboxShowCmd() *cobra.Command {
 				return err
 			}
 			taskID := args[0]
-			ts := taskstore.New(root)
+			ts := mustTaskStore(root)
 			items, err := ts.ListInbox()
 			if err != nil {
 				return err
@@ -222,7 +222,7 @@ func newInboxShowCmd() *cobra.Command {
 			project, agentName, _ := resolveTaskOwner(root, taskID)
 			var taskPrompt string
 			if project != "" {
-				if t, err2 := taskstore.New(root).GetTask(project, agentName, taskID); err2 == nil {
+				if t, err2 := mustTaskStore(root).GetTask(project, agentName, taskID); err2 == nil {
 					taskPrompt = t.Prompt
 				}
 			}
@@ -341,7 +341,7 @@ func newInboxRejectCmd() *cobra.Command {
 				return err
 			}
 
-			ts := taskstore.New(root)
+			ts := mustTaskStore(root)
 			t, err := ts.GetTask(project, agentName, taskID)
 			if err != nil {
 				return err
@@ -403,7 +403,7 @@ result back to your inbox so you can make the final decision.
 			if err != nil {
 				return err
 			}
-			ts := taskstore.New(root)
+			ts := mustTaskStore(root)
 			t, err := ts.GetTask(project, agentName, taskID)
 			if err != nil {
 				return err
@@ -538,7 +538,7 @@ Examples:
 				return fmt.Errorf("--from is required")
 			}
 			sender := from
-			ts := taskstore.New(root)
+			ts := mustTaskStore(root)
 
 			// Validate from and to identities exist
 			if err := validateIdentity(ts, sender, "from"); err != nil {
@@ -615,7 +615,7 @@ Use --archived to show archived messages.`,
 			if recipient == "" {
 				recipient = "human"
 			}
-			ts := taskstore.New(root)
+			ts := mustTaskStore(root)
 			if err := validateRecipient(ts, recipient); err != nil {
 				return err
 			}
@@ -723,7 +723,7 @@ func newInboxReplyCmd() *cobra.Command {
 			if body == "" {
 				return fmt.Errorf("--body is required")
 			}
-			ts := taskstore.New(root)
+			ts := mustTaskStore(root)
 
 			// Validate --from if provided (empty means "human" which is always valid)
 			if from != "" {
@@ -827,7 +827,7 @@ Supports group forward by repeating --to.
 			}
 
 			// Find the original message across all mailboxes.
-			ts := taskstore.New(root)
+			ts := mustTaskStore(root)
 
 			// Validate identities if provided
 			if from != "" {
@@ -932,7 +932,7 @@ func newInboxReadCmd() *cobra.Command {
 			if recipient == "" {
 				recipient = "human"
 			}
-			ts := taskstore.New(root)
+			ts := mustTaskStore(root)
 			if err := validateRecipient(ts, recipient); err != nil {
 				return err
 			}
@@ -964,7 +964,7 @@ func newInboxArchiveCmd() *cobra.Command {
 			if recipient == "" {
 				recipient = "human"
 			}
-			ts := taskstore.New(root)
+			ts := mustTaskStore(root)
 			if err := validateRecipient(ts, recipient); err != nil {
 				return err
 			}
@@ -998,7 +998,7 @@ func newInboxDeleteCmd() *cobra.Command {
 			if recipient == "" {
 				recipient = "human"
 			}
-			ts := taskstore.New(root)
+			ts := mustTaskStore(root)
 			if err := validateRecipient(ts, recipient); err != nil {
 				return err
 			}

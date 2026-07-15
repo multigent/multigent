@@ -11,7 +11,6 @@ import (
 	"time"
 	"unicode/utf8"
 
-	"github.com/multigent/multigent/internal/taskstore"
 	"github.com/spf13/cobra"
 )
 
@@ -53,7 +52,7 @@ Examples:
 				return fmt.Errorf("--project and --agent are required")
 			}
 
-			ts := taskstore.New(root)
+			ts := mustTaskStore(root)
 			logDir, err := ts.RunLogDir(project, agentName)
 			if err != nil {
 				return fmt.Errorf("run log dir: %w", err)

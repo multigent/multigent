@@ -5,7 +5,6 @@ import (
 	"strings"
 
 	"github.com/multigent/multigent/internal/ctxbuild"
-	"github.com/multigent/multigent/internal/store"
 	"github.com/spf13/cobra"
 )
 
@@ -30,7 +29,7 @@ func newShowTeamCmd() *cobra.Command {
 	cmd := &cobra.Command{
 		Use:   "team <path>",
 		Short: "Show team details and its prompt",
-		Example: `  multigent show team engineering/backend
+		Example: `  multigent show team engineering
   multigent show team engineering --format json`,
 		Args: cobra.ExactArgs(1),
 		RunE: func(cmd *cobra.Command, args []string) error {
@@ -39,7 +38,7 @@ func newShowTeamCmd() *cobra.Command {
 			if err != nil {
 				return err
 			}
-			s := store.NewFS(root)
+			s := mustStore(root)
 			t, err := s.Team(teamPath)
 			if err != nil {
 				return err
@@ -50,7 +49,6 @@ func newShowTeamCmd() *cobra.Command {
 				type teamOut struct {
 					Path        string   `json:"path"`
 					Description string   `json:"description"`
-					Parent      string   `json:"parent,omitempty"`
 					Goals       []string `json:"goals,omitempty"`
 					Skills      []string `json:"skills,omitempty"`
 					Prompt      string   `json:"prompt,omitempty"`
@@ -58,7 +56,6 @@ func newShowTeamCmd() *cobra.Command {
 				return printJSON(teamOut{
 					Path:        teamPath,
 					Description: t.Description,
-					Parent:      t.Parent,
 					Goals:       t.Goals,
 					Skills:      t.Skills,
 					Prompt:      prompt,
@@ -68,9 +65,6 @@ func newShowTeamCmd() *cobra.Command {
 			fmt.Printf("Team: %s\n", teamPath)
 			if t.Description != "" {
 				fmt.Printf("  Description: %s\n", t.Description)
-			}
-			if t.Parent != "" {
-				fmt.Printf("  Parent:      %s\n", t.Parent)
 			}
 			if len(t.Goals) > 0 {
 				fmt.Printf("  Goals:\n")
@@ -108,7 +102,7 @@ func newShowProjectCmd() *cobra.Command {
 			if err != nil {
 				return err
 			}
-			s := store.NewFS(root)
+			s := mustStore(root)
 			p, err := s.Project(name)
 			if err != nil {
 				return err
@@ -189,7 +183,7 @@ func newShowAgentCmd() *cobra.Command {
 			if err != nil {
 				return err
 			}
-			s := store.NewFS(root)
+			s := mustStore(root)
 
 			meta, err := s.AgentMeta(project, agentName)
 			if err != nil {

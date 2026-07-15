@@ -4,7 +4,6 @@ import (
 	"fmt"
 	"strings"
 
-	"github.com/multigent/multigent/internal/store"
 	"github.com/spf13/cobra"
 )
 
@@ -51,7 +50,7 @@ func newRoleSkillAddCmd() *cobra.Command {
 			if err != nil {
 				return err
 			}
-			s := store.NewFS(root)
+			s := mustStore(root)
 
 			r, err := s.Role(team, roleName)
 			if err != nil {
@@ -114,7 +113,7 @@ func newRoleSkillRemoveCmd() *cobra.Command {
 			if err != nil {
 				return err
 			}
-			s := store.NewFS(root)
+			s := mustStore(root)
 
 			r, err := s.Role(team, roleName)
 			if err != nil {
@@ -183,7 +182,7 @@ func newRoleListCmd() *cobra.Command {
 			if err != nil {
 				return err
 			}
-			s := store.NewFS(root)
+			s := mustStore(root)
 
 			roles, err := s.ListRoles(team)
 			if err != nil {

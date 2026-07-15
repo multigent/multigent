@@ -7,12 +7,12 @@ import (
 	"strings"
 	"time"
 
+	"github.com/multigent/multigent/internal/agentcli"
 	"github.com/multigent/multigent/internal/avatar"
 	"github.com/multigent/multigent/internal/ctxbuild"
 	"github.com/multigent/multigent/internal/entity"
 	"github.com/multigent/multigent/internal/formatter"
 	"github.com/multigent/multigent/internal/sandbox"
-	"github.com/multigent/multigent/internal/store"
 	"github.com/spf13/cobra"
 )
 
@@ -93,7 +93,7 @@ To switch an existing agent to another runtime (e.g. claudecode → codex), use
                --model "claudecode" --name "writer"
 
   # Hire without a role (role is optional)
-  multigent hire --project "my-api" --team "engineering/backend" \
+  multigent hire --project "my-api" --team "engineering" \
                --model "claudecode" --name "dev"
 
   # Hire with Docker sandbox isolation
@@ -118,7 +118,7 @@ To switch an existing agent to another runtime (e.g. claudecode → codex), use
 			if err != nil {
 				return err
 			}
-			s := store.NewFS(root)
+			s := mustStore(root)
 
 			if _, err := s.Project(project); err != nil {
 				return err
@@ -206,12 +206,15 @@ To switch an existing agent to another runtime (e.g. claudecode → codex), use
 						CPUs:              sandboxCPUs,
 						NoAutoCredentials: sandboxNoAutoCreds,
 					}
-					sandboxCfg = &entity.SandboxConfig{
-						Provider: entity.SandboxDocker,
-						Docker:   dockerCfg,
-					}
 					if sandboxImage == "" {
 						sandboxImage = sandbox.ImageForModel(agentModel)
+						dockerCfg.Image = sandboxImage
+					}
+					sandboxCfg = &entity.SandboxConfig{
+						Provider: entity.SandboxDocker,
+						Image:    sandboxImage,
+						AgentCLI: agentcli.DefaultForModel(agentModel),
+						Docker:   dockerCfg,
 					}
 				default:
 					return fmt.Errorf("unknown sandbox provider %q (supported: docker)", sandboxProvider)
@@ -288,7 +291,7 @@ To switch an existing agent to another runtime (e.g. claudecode → codex), use
 	}
 
 	cmd.Flags().StringVar(&project, "project", "", "Project name")
-	cmd.Flags().StringVar(&team, "team", "", "Team path, e.g. \"engineering/backend\"")
+	cmd.Flags().StringVar(&team, "team", "", "Team name, e.g. \"engineering\"")
 	cmd.Flags().StringVar(&role, "role", "", "Role name within the team (optional, e.g. \"content-writer\")")
 	cmd.Flags().StringVar(&model, "model", "", fmt.Sprintf("Agent model (%s)", joinModels(entity.KnownModels)))
 	cmd.Flags().StringVar(&agentName, "name", "", "Name for this agent (used as directory name)")
@@ -297,7 +300,7 @@ To switch an existing agent to another runtime (e.g. claudecode → codex), use
 	cmd.Flags().BoolVar(&ifNotExists, "if-not-exists", false, "skip silently if the agent already exists (idempotent)")
 
 	cmd.Flags().StringVar(&sandboxProvider, "sandbox", "", "Sandbox provider: docker (default: none, runs on host)")
-	cmd.Flags().StringVar(&sandboxImage, "sandbox-image", "", "Docker image override (default: ghcr.io/multigent/sandbox-<model>:latest)")
+	cmd.Flags().StringVar(&sandboxImage, "sandbox-image", "", "Runtime image override (default: ghcr.io/multigent/multigent/runtime-base:latest for managed CLIs)")
 	cmd.Flags().StringVar(&sandboxNetwork, "sandbox-network", "bridge", "Docker network mode: bridge|none|host")
 	cmd.Flags().IntVar(&sandboxMemoryMB, "sandbox-memory", 0, "Container memory limit in MiB (0 = no limit)")
 	cmd.Flags().Float64Var(&sandboxCPUs, "sandbox-cpus", 0, "Container CPU quota (0 = no limit)")

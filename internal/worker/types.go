@@ -12,7 +12,7 @@ type Job struct {
 	ID          string            `json:"id"`
 	TenantID    string            `json:"tenant_id,omitempty"`
 	ProjectID   string            `json:"project_id,omitempty"`
-	Workstream  string            `json:"workstream,omitempty"`
+	TaskID      string            `json:"task_id,omitempty"`
 	AgentName   string            `json:"agent_name,omitempty"`
 	Runtime     string            `json:"runtime,omitempty"`
 	Prompt      string            `json:"prompt,omitempty"`

@@ -1,6 +1,6 @@
 import { useCallback, useEffect, useState } from 'react'
 import { useTranslation } from 'react-i18next'
-import { KeyRound, Plus, Server, Trash2, Pencil, X, Eye, EyeOff, Users, Shield, ShieldCheck, UserPlus, Link2, CheckCircle2, XCircle, Loader2 } from 'lucide-react'
+import { KeyRound, Plus, Server, Trash2, Pencil, X, Eye, EyeOff, Users, Shield, ShieldCheck, UserPlus, Link2, CheckCircle2, XCircle, Loader2, LockKeyhole } from 'lucide-react'
 import { i18n } from '../i18n'
 import type { ThemeMode } from '../theme/ThemeProvider'
 import { useTheme } from '../theme/ThemeProvider'
@@ -95,6 +95,59 @@ type ProjectItem = { name: string }
 
 const PROJECT_ROLES = ['viewer', 'operator', 'manager'] as const
 const USER_ROLES = ['admin', 'member'] as const
+
+type RBACModel = {
+  scopes: { name: string; roles: string[] }[]
+  capabilities: { id: string; scope: string; label: string }[]
+}
+
+function RBACSection() {
+  const { t } = useTranslation()
+  const [model, setModel] = useState<RBACModel | null>(null)
+  useEffect(() => {
+    apiFetch<RBACModel>('/api/v1/rbac/model').then(setModel).catch(() => {})
+  }, [])
+  const capsByScope = new Map<string, { id: string; scope: string; label: string }[]>()
+  for (const cap of model?.capabilities ?? []) {
+    const list = capsByScope.get(cap.scope) ?? []
+    list.push(cap)
+    capsByScope.set(cap.scope, list)
+  }
+  return (
+    <section className="rounded-xl border border-neutral-200/80 bg-white p-5 dark:border-zinc-700/60 dark:bg-zinc-900/40">
+      <div className="flex items-center gap-2 pb-3">
+        <LockKeyhole className="size-4 text-neutral-500 dark:text-zinc-500" strokeWidth={1.8} />
+        <h3 className="text-base font-semibold text-neutral-900 dark:text-zinc-100">RBAC / Agent permissions</h3>
+      </div>
+      <p className="mb-4 text-xs text-neutral-400 dark:text-zinc-500">
+        Workspace controls people and billing; Project scopes collaboration; Task controls execution; Agent and Context Pack are explicit responsibility and knowledge boundaries.
+      </p>
+      {!model ? (
+        <p className="py-3 text-sm text-neutral-400">{t('forms.loading')}</p>
+      ) : (
+        <div className="grid gap-3 lg:grid-cols-2">
+          {model.scopes.map(scope => (
+            <div key={scope.name} className="rounded-lg border border-neutral-200/80 bg-neutral-50/40 p-3 dark:border-zinc-700/60 dark:bg-zinc-800/30">
+              <div className="flex items-center justify-between gap-3">
+                <h4 className="font-mono text-sm font-semibold text-neutral-900 dark:text-zinc-100">{scope.name}</h4>
+                <div className="flex flex-wrap justify-end gap-1">
+                  {scope.roles.map(role => (
+                    <span key={role} className="rounded-md bg-white px-2 py-0.5 text-[11px] font-medium text-neutral-600 dark:bg-zinc-900 dark:text-zinc-400">{role}</span>
+                  ))}
+                </div>
+              </div>
+              <div className="mt-3 flex flex-wrap gap-1.5">
+                {(capsByScope.get(scope.name) ?? []).map(cap => (
+                  <span key={cap.id} title={cap.label} className="rounded-md bg-sky-50 px-2 py-0.5 font-mono text-[11px] text-sky-700 dark:bg-sky-900/20 dark:text-sky-300">{cap.id}</span>
+                ))}
+              </div>
+            </div>
+          ))}
+        </div>
+      )}
+    </section>
+  )
+}
 
 function UsersSection() {
   const { t } = useTranslation()
@@ -998,6 +1051,9 @@ export default function SettingsPage() {
 
         {/* User Management (admin only) */}
         {user?.role === 'admin' && <UsersSection />}
+
+        {/* RBAC Model (admin only) */}
+        {user?.role === 'admin' && <RBACSection />}
 
         {/* API Providers (admin only) */}
         {user?.role === 'admin' && <ProvidersSection />}

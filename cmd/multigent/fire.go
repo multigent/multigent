@@ -6,7 +6,6 @@ import (
 	"path/filepath"
 	"time"
 
-	"github.com/multigent/multigent/internal/store"
 	"github.com/spf13/cobra"
 )
 
@@ -42,7 +41,7 @@ Pass --force to permanently delete the directory (irreversible).`,
 			if err != nil {
 				return err
 			}
-			s := store.NewFS(root)
+			s := mustStore(root)
 
 			// Confirm the agent actually exists before doing anything.
 			if _, err := s.AgentMeta(project, agentName); err != nil {

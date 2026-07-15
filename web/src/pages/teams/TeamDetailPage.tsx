@@ -22,7 +22,8 @@ type TeamDetail = {
   path: string
   name: string
   description?: string
-  parent?: string
+  owners?: string[]
+  defaultContextPack?: string
   skills?: string[]
   goals?: string[]
   roles: RoleRow[]
@@ -344,11 +345,16 @@ export default function TeamDetailPage() {
               {state.data.description && (
                 <p className="mt-1.5 text-sm text-neutral-500 dark:text-zinc-500">{state.data.description}</p>
               )}
-              {state.data.parent && (
-                <p className="mt-1.5 text-[11px] text-neutral-400 dark:text-zinc-500">
-                  parent: <span className="font-mono">{state.data.parent}</span>
-                </p>
-              )}
+              <div className="mt-3 flex flex-wrap gap-1.5">
+                {(state.data.owners ?? []).map(owner => (
+                  <span key={owner} className="rounded-md bg-violet-50 px-2 py-0.5 text-xs font-medium text-violet-700 dark:bg-violet-900/20 dark:text-violet-300">{owner}</span>
+                ))}
+                {state.data.defaultContextPack && (
+                  <span className="rounded-md bg-emerald-50 px-2 py-0.5 text-xs font-medium text-emerald-700 dark:bg-emerald-900/20 dark:text-emerald-300">
+                    context: {state.data.defaultContextPack}
+                  </span>
+                )}
+              </div>
             </div>
 
             {/* Team skills */}

@@ -7,7 +7,6 @@ import (
 	"time"
 
 	"github.com/multigent/multigent/internal/entity"
-	"github.com/multigent/multigent/internal/taskstore"
 	"github.com/robfig/cron/v3"
 	"github.com/spf13/cobra"
 )
@@ -93,7 +92,7 @@ func newCronAddCmd() *cobra.Command {
 				return err
 			}
 
-			ts := taskstore.New(root)
+			ts := mustTaskStore(root)
 			crons, err := ts.ListCrons(project, agentName)
 			if err != nil {
 				return err
@@ -155,7 +154,7 @@ func newCronListCmd() *cobra.Command {
 			if project == "" || agentName == "" {
 				return fmt.Errorf("--project and --agent are required")
 			}
-			ts := taskstore.New(root)
+			ts := mustTaskStore(root)
 			crons, err := ts.ListCrons(project, agentName)
 			if err != nil {
 				return err
@@ -215,7 +214,7 @@ func newCronDeleteCmd() *cobra.Command {
 				return fmt.Errorf("--project and --agent are required")
 			}
 			id := args[0]
-			ts := taskstore.New(root)
+			ts := mustTaskStore(root)
 			crons, err := ts.ListCrons(project, agentName)
 			if err != nil {
 				return err
@@ -274,7 +273,7 @@ func newCronToggleCmd(enable bool) *cobra.Command {
 				return fmt.Errorf("--project and --agent are required")
 			}
 			id := args[0]
-			ts := taskstore.New(root)
+			ts := mustTaskStore(root)
 			crons, err := ts.ListCrons(project, agentName)
 			if err != nil {
 				return err

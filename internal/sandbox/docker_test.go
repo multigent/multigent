@@ -35,6 +35,14 @@ func TestBuildArgsBinPATHKeepsToolchainPaths(t *testing.T) {
 	}
 }
 
+func TestImageForManagedModelsUsesRuntimeBase(t *testing.T) {
+	for _, model := range []entity.AgentModel{entity.ModelCodex, entity.ModelClaudeCode, entity.ModelGemini, entity.ModelQoder} {
+		if got := ImageForModel(model); got != BaseImage {
+			t.Fatalf("ImageForModel(%s) = %q, want %q", model, got, BaseImage)
+		}
+	}
+}
+
 func findEnvArg(args []string, prefix string) string {
 	for i := 0; i < len(args)-1; i++ {
 		if args[i] == "-e" && strings.HasPrefix(args[i+1], prefix) {

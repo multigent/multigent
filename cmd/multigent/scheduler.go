@@ -152,8 +152,8 @@ func newSchedulerStartCmd() *cobra.Command {
 				return err
 			}
 
-			ts := taskstore.New(root)
-			s := store.NewFS(root)
+			ts := mustTaskStore(root)
+			s := mustStore(root)
 
 			type agentKey struct{ project, agent string }
 
@@ -1558,8 +1558,8 @@ useful for testing and for agent-to-agent wakeup from inside a task.`,
 				return err
 			}
 
-			ts := taskstore.New(root)
-			s := store.NewFS(root)
+			ts := mustTaskStore(root)
+			s := mustStore(root)
 
 			hb, err := ts.GetHeartbeat(project, agentName)
 			if err != nil {
@@ -1698,7 +1698,7 @@ func newSchedulerHeartbeatConfigureCmd() *cobra.Command {
 				return fmt.Errorf("--project and --agent are required")
 			}
 
-			ts := taskstore.New(root)
+			ts := mustTaskStore(root)
 			hb, err := ts.GetHeartbeat(project, agentName)
 			if err != nil {
 				return err
@@ -1922,7 +1922,7 @@ func newSchedulerHeartbeatPauseCmd() *cobra.Command {
 			if err != nil {
 				return err
 			}
-			ts := taskstore.New(root)
+			ts := mustTaskStore(root)
 			if err := ts.PauseHeartbeat(project, agent); err != nil {
 				return err
 			}
@@ -1948,7 +1948,7 @@ func newSchedulerHeartbeatResumeCmd() *cobra.Command {
 			if err != nil {
 				return err
 			}
-			ts := taskstore.New(root)
+			ts := mustTaskStore(root)
 			if err := ts.ResumeHeartbeat(project, agent); err != nil {
 				return err
 			}
@@ -1990,7 +1990,7 @@ func newSchedulerCronListCmd() *cobra.Command {
 			if err != nil {
 				return err
 			}
-			ts := taskstore.New(root)
+			ts := mustTaskStore(root)
 			crons, err := ts.ListCrons(project, agent)
 			if err != nil {
 				return err
@@ -2044,7 +2044,7 @@ func newSchedulerCronPauseCmd() *cobra.Command {
 				return err
 			}
 			cronID := args[1]
-			ts := taskstore.New(root)
+			ts := mustTaskStore(root)
 			if err := ts.PauseCron(project, agent, cronID); err != nil {
 				return err
 			}
@@ -2069,7 +2069,7 @@ func newSchedulerCronResumeCmd() *cobra.Command {
 				return err
 			}
 			cronID := args[1]
-			ts := taskstore.New(root)
+			ts := mustTaskStore(root)
 			if err := ts.ResumeCron(project, agent, cronID); err != nil {
 				return err
 			}
@@ -2094,7 +2094,7 @@ func newSchedulerCronDeleteCmd() *cobra.Command {
 				return err
 			}
 			cronID := args[1]
-			ts := taskstore.New(root)
+			ts := mustTaskStore(root)
 			if err := ts.DeleteCron(project, agent, cronID); err != nil {
 				return err
 			}

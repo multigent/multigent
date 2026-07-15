@@ -1,6 +1,6 @@
 # Multigent
 
-Multigent is an Agent Workstream Platform for teams that want to keep using their existing tools while making their agent workforce easier to coordinate, observe, and improve.
+Multigent is an Agent Collaboration and Execution Platform for teams that want to keep using their existing tools while making their agent workforce easier to coordinate, observe, and improve.
 
 It started from `multigent`, but the product direction is different:
 
@@ -8,6 +8,14 @@ It started from `multigent`, but the product direction is different:
 - Centralize agent-friendly context, roles, tasks, reviews, run history, and cost signals.
 - Use local workers to execute jobs close to repos, credentials, sandboxes, and existing CLI agents.
 - Move humans from synchronous drivers to role owners, reviewers, and process designers.
+
+The product model is intentionally simple:
+
+```text
+Workspace -> Team -> Project -> Agent + Task
+```
+
+Workspace is the company/tenant boundary. Project is the agent collaboration context. Task is the execution unit for features, bugs, QA, release, research, and reviews. Multigent does not add a separate workstream layer; complex initiatives should be represented with task graphs, labels, milestones, owners, assignees, and reviewers.
 
 ## Current Status
 

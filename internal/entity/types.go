@@ -112,6 +112,9 @@ type APIProvider struct {
 type Agency struct {
 	Name        string `yaml:"name"`
 	Description string `yaml:"description,omitempty"`
+	CreatedBy   string `yaml:"created_by,omitempty" json:"createdBy,omitempty"`
+	CreatedAt   string `yaml:"created_at,omitempty" json:"createdAt,omitempty"`
+	UpdatedAt   string `yaml:"updated_at,omitempty" json:"updatedAt,omitempty"`
 
 	// Lang controls the language used for auto-generated scheduler messages
 	// (inbox notifications, wakeup triggers, etc.).
@@ -122,13 +125,12 @@ type Agency struct {
 	Mission string `yaml:"mission,omitempty"`
 }
 
-// Team represents a functional group inside the agency.
-// Teams can be nested; the Parent field holds the slash-separated
-// path of the parent team (empty = direct child of agency).
-// Stored at <root>/teams/<path>/team.yaml.
+// Team represents a functional group inside the workspace.
+// Teams are flat: use projects, tasks, labels, and roles for execution
+// decomposition instead of nested team paths.
+// Stored at <root>/teams/<name>/team.yaml.
 type Team struct {
 	Name        string   `yaml:"name"`
-	Parent      string   `yaml:"parent,omitempty"`
 	Description string   `yaml:"description,omitempty"`
 	Goals       []string `yaml:"goals,omitempty"`
 	// Owners are human members responsible for this team and its defaults.
@@ -136,7 +138,6 @@ type Team struct {
 	// DefaultContextPack is a future SaaS-facing hook for versioned context.
 	DefaultContextPack string `yaml:"default_context_pack,omitempty"`
 	// Skills lists skill names this team uses.
-	// Skills are inherited by all sub-teams.
 	Skills []string `yaml:"skills,omitempty"`
 }
 
@@ -151,39 +152,6 @@ type Project struct {
 	Owners []string `yaml:"owners,omitempty"`
 	// ContextPack is a future SaaS-facing hook for versioned project context.
 	ContextPack string `yaml:"context_pack,omitempty"`
-}
-
-// Workstream is a concrete execution stream inside a project.
-// It is coarser than a task and narrower than a project: a feature, customer
-// delivery, release, technical initiative, or module migration.
-// Stored at <root>/projects/<project>/workstreams/<name>/workstream.yaml.
-type Workstream struct {
-	Name               string                      `yaml:"name" json:"name"`
-	Project            string                      `yaml:"project,omitempty" json:"project,omitempty"`
-	Title              string                      `yaml:"title,omitempty" json:"title,omitempty"`
-	Goal               string                      `yaml:"goal,omitempty" json:"goal,omitempty"`
-	Scope              string                      `yaml:"scope,omitempty" json:"scope,omitempty"`
-	NonGoals           []string                    `yaml:"non_goals,omitempty" json:"nonGoals,omitempty"`
-	AcceptanceCriteria []string                    `yaml:"acceptance_criteria,omitempty" json:"acceptanceCriteria,omitempty"`
-	Owners             []string                    `yaml:"owners,omitempty" json:"owners,omitempty"`
-	Phase              string                      `yaml:"phase,omitempty" json:"phase,omitempty"`
-	Status             string                      `yaml:"status,omitempty" json:"status,omitempty"`
-	SourceRefs         []string                    `yaml:"source_refs,omitempty" json:"sourceRefs,omitempty"`
-	ContextRefs        []string                    `yaml:"context_refs,omitempty" json:"contextRefs,omitempty"`
-	Agents             []WorkstreamAgentAssignment `yaml:"agents,omitempty" json:"agents,omitempty"`
-	CreatedAt          *time.Time                  `yaml:"created_at,omitempty" json:"createdAt,omitempty"`
-	UpdatedAt          *time.Time                  `yaml:"updated_at,omitempty" json:"updatedAt,omitempty"`
-}
-
-// WorkstreamAgentAssignment records which role or agent participates in a
-// workstream and who owns its performance.
-type WorkstreamAgentAssignment struct {
-	Name           string `yaml:"name,omitempty" json:"name,omitempty"`
-	Team           string `yaml:"team,omitempty" json:"team,omitempty"`
-	Role           string `yaml:"role,omitempty" json:"role,omitempty"`
-	Agent          string `yaml:"agent,omitempty" json:"agent,omitempty"`
-	Owner          string `yaml:"owner,omitempty" json:"owner,omitempty"`
-	Responsibility string `yaml:"responsibility,omitempty" json:"responsibility,omitempty"`
 }
 
 // Skill is a reusable capability definition.
@@ -341,7 +309,7 @@ type HTTPAgentConfig struct {
 // Sandbox
 // ─────────────────────────────────────────────
 
-// SandboxProvider identifies the sandbox backend.
+// SandboxProvider identifies the runtime isolation backend.
 type SandboxProvider string
 
 const (
@@ -350,15 +318,86 @@ const (
 	// SandboxDocker runs the agent inside a plain Docker container.
 	// Works on any OS with Docker installed; no Docker Desktop required.
 	SandboxDocker SandboxProvider = "docker"
+	// SandboxE2B runs the agent inside an E2B-compatible cloud sandbox.
+	// This provider is part of the product model but not implemented by the
+	// local runner yet.
+	SandboxE2B SandboxProvider = "e2b"
 )
+
+// RuntimeMount describes a file or directory made visible to a run.
+// Production runtimes should prefer per-run materialized paths and read-only
+// mounts over direct host workspace mounts.
+type RuntimeMount struct {
+	Source string `yaml:"source" json:"source"`
+	Target string `yaml:"target,omitempty" json:"target,omitempty"`
+	Mode   string `yaml:"mode,omitempty" json:"mode,omitempty"` // ro | rw
+	Kind   string `yaml:"kind,omitempty" json:"kind,omitempty"` // repo | skill | context | artifact | custom
+}
+
+// RuntimeEnvVar describes one environment variable available to a run.
+// Value is for non-secret local config. SecretRef is the production shape.
+type RuntimeEnvVar struct {
+	Name      string `yaml:"name" json:"name"`
+	Value     string `yaml:"value,omitempty" json:"value,omitempty"`
+	SecretRef string `yaml:"secret_ref,omitempty" json:"secretRef,omitempty"`
+	Inherit   bool   `yaml:"inherit,omitempty" json:"inherit,omitempty"`
+}
+
+// RuntimeResourceLimits are provider-independent run quotas.
+type RuntimeResourceLimits struct {
+	MemoryMB       int     `yaml:"memory_mb,omitempty" json:"memoryMb,omitempty"`
+	CPUs           float64 `yaml:"cpus,omitempty" json:"cpus,omitempty"`
+	TimeoutSec     int     `yaml:"timeout_sec,omitempty" json:"timeoutSec,omitempty"`
+	MaxOutputBytes int64   `yaml:"max_output_bytes,omitempty" json:"maxOutputBytes,omitempty"`
+}
+
+// AgentCLIConfig describes the agent CLI toolchain installed inside a runtime.
+// It is intentionally separate from the sandbox provider so the same Codex,
+// Claude Code, Gemini, or custom CLI version can run on Docker, gVisor, or K8s.
+type AgentCLIConfig struct {
+	Vendor         string   `yaml:"vendor" json:"vendor"` // codex | claude-code | gemini | custom
+	Version        string   `yaml:"version,omitempty" json:"version,omitempty"`
+	Channel        string   `yaml:"channel,omitempty" json:"channel,omitempty"` // stable | beta | nightly | custom
+	Binary         string   `yaml:"binary,omitempty" json:"binary,omitempty"`
+	PackageManager string   `yaml:"package_manager,omitempty" json:"packageManager,omitempty"` // npm | script | none
+	Package        string   `yaml:"package,omitempty" json:"package,omitempty"`
+	Install        []string `yaml:"install,omitempty" json:"install,omitempty"`
+	Check          []string `yaml:"check,omitempty" json:"check,omitempty"`
+}
+
+// E2BSandboxConfig holds E2B-specific runtime options.
+type E2BSandboxConfig struct {
+	Template     string `yaml:"template,omitempty" json:"template,omitempty"`
+	TimeoutSec   int    `yaml:"timeout_sec,omitempty" json:"timeoutSec,omitempty"`
+	KeepAliveSec int    `yaml:"keep_alive_sec,omitempty" json:"keepAliveSec,omitempty"`
+	WorkingDir   string `yaml:"working_dir,omitempty" json:"workingDir,omitempty"`
+}
 
 // SandboxConfig describes how to isolate an agent execution.
 // Resolved at hire/run time with agency → team → agent override priority.
 type SandboxConfig struct {
 	Provider SandboxProvider `yaml:"provider" json:"provider"`
 
+	// Image is the provider-neutral base environment identifier. Docker maps it
+	// to an image; E2B maps it to a template when Template is empty.
+	Image string `yaml:"image,omitempty" json:"image,omitempty"`
+
+	// NetworkMode is provider-neutral network policy: default, none, bridge,
+	// allowlist, or a provider-specific value.
+	NetworkMode string `yaml:"network_mode,omitempty" json:"networkMode,omitempty"`
+
+	// Mounts, Env, and Resources describe runtime behavior independent of the
+	// concrete provider.
+	Mounts    []RuntimeMount        `yaml:"mounts,omitempty" json:"mounts,omitempty"`
+	Env       []RuntimeEnvVar       `yaml:"env,omitempty" json:"env,omitempty"`
+	Resources RuntimeResourceLimits `yaml:"resources,omitempty" json:"resources,omitempty"`
+	AgentCLI  *AgentCLIConfig       `yaml:"agent_cli,omitempty" json:"agentCli,omitempty"`
+
 	// Docker holds Docker-specific options. Used when Provider == "docker".
 	Docker *DockerSandboxConfig `yaml:"docker,omitempty" json:"docker,omitempty"`
+
+	// E2B holds E2B-specific options. Used when Provider == "e2b".
+	E2B *E2BSandboxConfig `yaml:"e2b,omitempty" json:"e2b,omitempty"`
 }
 
 // DockerSandboxConfig holds options for Docker-based sandbox execution.
@@ -389,7 +428,7 @@ type DockerSandboxConfig struct {
 	// ExtraEnv passes additional environment variables as "KEY=VALUE" pairs.
 	ExtraEnv []string `yaml:"extra_env,omitempty" json:"extra_env,omitempty"`
 
-	// MemoryMB limits container memory (0 = no limit).
+	// MemoryMB limits container memory (0 = runtime default).
 	MemoryMB int `yaml:"memory_mb,omitempty" json:"memory_mb,omitempty"`
 
 	// CPUs limits CPU quota, e.g. 2.0 (0 = no limit).

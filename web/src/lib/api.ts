@@ -86,6 +86,13 @@ export async function apiDelete(path: string): Promise<void> {
 }
 
 /** No-auth POST for login */
+export async function apiPublicFetch<T>(path: string): Promise<T> {
+  const headers = new Headers()
+  headers.set('Accept', 'application/json')
+  const res = await fetch(apiUrl(path), { headers })
+  return handleResponse<T>(res)
+}
+
 export async function apiLoginPost<T>(path: string, body: unknown): Promise<T> {
   const headers = new Headers()
   headers.set('Content-Type', 'application/json')

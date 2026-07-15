@@ -1,6 +1,6 @@
 import { Link } from 'react-router-dom'
 import { useTranslation } from 'react-i18next'
-import { Users, Puzzle, ArrowRight } from 'lucide-react'
+import { Users, Puzzle, ArrowRight, User, Database } from 'lucide-react'
 import { PlaceholderCard } from '../../components/ui/PlaceholderCard'
 import { useApiJson } from '../../lib/use-api'
 
@@ -8,7 +8,8 @@ type TeamRow = {
   path: string
   name: string
   description?: string
-  parent?: string
+  owners?: string[]
+  defaultContextPack?: string
   skills?: string[]
 }
 
@@ -65,11 +66,20 @@ export default function TeamsPage() {
                 {row.description && (
                   <p className="mt-2.5 text-sm leading-relaxed text-neutral-500 dark:text-zinc-500 line-clamp-2">{row.description}</p>
                 )}
-                {row.parent && (
-                  <p className="mt-1.5 text-xs text-neutral-400 dark:text-zinc-500">
-                    parent: <span className="font-mono">{row.parent}</span>
-                  </p>
-                )}
+                <div className="mt-2.5 flex flex-wrap gap-1.5">
+                  {row.owners?.map((owner) => (
+                    <span key={owner} className="inline-flex items-center gap-1 rounded-md bg-violet-50 px-2 py-0.5 text-[11px] font-medium text-violet-700 dark:bg-violet-900/20 dark:text-violet-300">
+                      <User className="size-3" strokeWidth={2} />
+                      {owner}
+                    </span>
+                  ))}
+                  {row.defaultContextPack && (
+                    <span className="inline-flex items-center gap-1 rounded-md bg-emerald-50 px-2 py-0.5 text-[11px] font-medium text-emerald-700 dark:bg-emerald-900/20 dark:text-emerald-300">
+                      <Database className="size-3" strokeWidth={2} />
+                      {row.defaultContextPack}
+                    </span>
+                  )}
+                </div>
                 {row.skills && row.skills.length > 0 && (
                   <div className="mt-2.5 flex flex-wrap gap-1.5">
                     {row.skills.map((sk) => (

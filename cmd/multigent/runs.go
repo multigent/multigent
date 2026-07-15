@@ -7,8 +7,6 @@ import (
 	"text/tabwriter"
 	"time"
 
-	"github.com/multigent/multigent/internal/store"
-	"github.com/multigent/multigent/internal/taskstore"
 	"github.com/multigent/multigent/internal/telemetry"
 	"github.com/spf13/cobra"
 )
@@ -99,7 +97,7 @@ func runRunsSummary(since, until string, allTime bool, project string) error {
 	}
 	sum := telemetry.Summarize(rows)
 
-	s := store.NewFS(root)
+	s := mustStore(root)
 	ag, err := s.Agency()
 	if err != nil {
 		return err
@@ -184,8 +182,8 @@ func runRunsAgents(since, until string, allTime bool, project string) error {
 		stats[a.Project+"/"+a.Agent] = a
 	}
 
-	ts := taskstore.New(root)
-	s := store.NewFS(root)
+	ts := mustTaskStore(root)
+	s := mustStore(root)
 	ag, err := s.Agency()
 	if err != nil {
 		return err

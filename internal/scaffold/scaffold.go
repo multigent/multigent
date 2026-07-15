@@ -11,6 +11,7 @@ import (
 	"os"
 	"path/filepath"
 	"text/template"
+	"time"
 
 	"github.com/multigent/multigent/internal/entity"
 	"github.com/multigent/multigent/internal/store"
@@ -34,6 +35,12 @@ func New(s store.Store) *Scaffolder {
 // root must already exist on disk.
 func InitAgency(root string, a *entity.Agency) error {
 	s := store.NewFS(root)
+	if a.CreatedBy == "" {
+		a.CreatedBy = "system"
+	}
+	if a.CreatedAt == "" {
+		a.CreatedAt = time.Now().UTC().Format(time.RFC3339)
+	}
 
 	if err := s.SaveAgency(a); err != nil {
 		return fmt.Errorf("scaffold: init agency: %w", err)
@@ -65,7 +72,7 @@ func InitAgency(root string, a *entity.Agency) error {
 // ── Team ──────────────────────────────────────────────────────────────────────
 
 // CreateTeam writes team.yaml and an initial prompt.md for a team.
-// path is a slash-separated team path, e.g. "engineering/backend".
+// path is a flat team name, e.g. "engineering".
 func (sc *Scaffolder) CreateTeam(path string, t *entity.Team) error {
 	if err := sc.store.SaveTeam(path, t); err != nil {
 		return fmt.Errorf("scaffold: save team %q: %w", path, err)

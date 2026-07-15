@@ -79,7 +79,6 @@ func init() {
 		newCronCmd(),
 		newTemplateCmd(),
 		newProjectCmd(),
-		newWorkstreamCmd(),
 		newSandboxCmd(),
 		newOverviewCmd(),
 		newRunsCmd(),

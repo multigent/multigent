@@ -33,6 +33,11 @@ const (
 	// Image registry prefix for multigent-provided sandbox images.
 	imagePrefix = "ghcr.io/multigent/multigent"
 
+	// BaseImage is the stable runtime image. Agent CLI binaries are installed
+	// at runtime into a persistent toolchain cache, so CLI version bumps do not
+	// require rebuilding this image.
+	BaseImage = imagePrefix + "/runtime-base:latest"
+
 	// AgencycliMount is where the multigent binary is mounted inside the
 	// container so that agents can run `multigent task add` etc.
 	AgencycliMount = "/usr/local/bin/multigent"
@@ -48,15 +53,15 @@ const (
 	ContainerDefaultPATH = "/usr/local/go/bin:/root/go/bin:/usr/local/sbin:/usr/local/bin:/usr/sbin:/usr/bin:/sbin:/bin"
 )
 
-// defaultImage returns the default Docker image for a given agent model.
-// Users can override this via DockerSandboxConfig.Image.
+// defaultImages keeps temporary compatibility for CLIs that do not yet have a
+// managed installer. Models with managed installers use BaseImage.
 var defaultImages = map[entity.AgentModel]string{
-	entity.ModelClaudeCode: imagePrefix + "/sandbox-claudecode:latest",
-	entity.ModelCodex:      imagePrefix + "/sandbox-codex:latest",
-	entity.ModelGemini:     imagePrefix + "/sandbox-gemini:latest",
+	entity.ModelClaudeCode: BaseImage,
+	entity.ModelCodex:      BaseImage,
+	entity.ModelGemini:     BaseImage,
 	entity.ModelOpenCode:   imagePrefix + "/sandbox-opencode:latest",
 	entity.ModelCursor:     imagePrefix + "/sandbox-claudecode:latest",
-	entity.ModelQoder:      imagePrefix + "/sandbox-codex:latest", // Qoder uses same base as Codex
+	entity.ModelQoder:      BaseImage,
 }
 
 // defaultCredentialMounts returns the credential paths that should be mounted
@@ -292,7 +297,7 @@ func resolveImage(model entity.AgentModel, cfg *entity.DockerSandboxConfig) stri
 	if img, ok := defaultImages[model]; ok {
 		return img
 	}
-	return imagePrefix + "/sandbox-generic:latest"
+	return BaseImage
 }
 
 // ResolveCredentialMounts is the exported form for use by CLI commands.

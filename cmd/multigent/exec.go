@@ -8,8 +8,6 @@ import (
 
 	"github.com/multigent/multigent/internal/entity"
 	"github.com/multigent/multigent/internal/runner"
-	"github.com/multigent/multigent/internal/store"
-	"github.com/multigent/multigent/internal/taskstore"
 	"github.com/spf13/cobra"
 )
 
@@ -75,7 +73,7 @@ Examples:
 				return fmt.Errorf("prompt is empty — use --prompt TEXT, --file PATH, or pipe via stdin")
 			}
 
-			ts := taskstore.New(root)
+			ts := mustTaskStore(root)
 
 			// Resolve session: --session flag > saved heartbeat session > "".
 			sid := sessionID
@@ -86,7 +84,7 @@ Examples:
 				}
 			}
 
-			as := store.NewFS(root)
+			as := mustStore(root)
 			r := runner.New(root, ts, as)
 
 			fmt.Fprintf(os.Stderr, "▶  exec %s/%s\n\n", project, agentName)
