@@ -4,6 +4,7 @@ import (
 	"encoding/json"
 	"net/http"
 	"os"
+	"path/filepath"
 	"strconv"
 	"strings"
 	"time"
@@ -17,6 +18,9 @@ func (s *Server) handleTelemetrySummary(w http.ResponseWriter, r *http.Request) 
 	until := strings.TrimSpace(q.Get("until"))
 	allTime := q.Get("allTime") == "1" || strings.EqualFold(q.Get("allTime"), "true")
 	project := strings.TrimSpace(q.Get("project"))
+	if project != "" && !s.checkProjectAccess(w, r, project) {
+		return
+	}
 
 	from, to, err := telemetry.ParseWindow(since, until, allTime, time.Now(), time.Local)
 	if err != nil {
@@ -45,6 +49,7 @@ func (s *Server) handleTelemetrySummary(w http.ResponseWriter, r *http.Request) 
 		s.serverError(w, err)
 		return
 	}
+	rows = s.filterTelemetryRunsForRequest(r, rows)
 	sum := telemetry.Summarize(rows)
 	byAgent := telemetry.SummarizeByAgent(rows)
 
@@ -115,6 +120,9 @@ func (s *Server) handleTelemetryRuns(w http.ResponseWriter, r *http.Request) {
 	until := strings.TrimSpace(q.Get("until"))
 	allTime := q.Get("allTime") == "1" || strings.EqualFold(q.Get("allTime"), "true")
 	project := strings.TrimSpace(q.Get("project"))
+	if project != "" && !s.checkProjectAccess(w, r, project) {
+		return
+	}
 	limit := 200
 	if v := strings.TrimSpace(q.Get("limit")); v != "" {
 		if n, err := strconv.Atoi(v); err == nil && n > 0 && n <= 2000 {
@@ -148,6 +156,7 @@ func (s *Server) handleTelemetryRuns(w http.ResponseWriter, r *http.Request) {
 		s.serverError(w, err)
 		return
 	}
+	rows = s.filterTelemetryRunsForRequest(r, rows)
 	// Newest first
 	for i, j := 0, len(rows)-1; i < j; i, j = i+1, j-1 {
 		rows[i], rows[j] = rows[j], rows[i]
@@ -215,6 +224,10 @@ func (s *Server) handleTelemetryLog(w http.ResponseWriter, r *http.Request) {
 		s.jsonError(w, http.StatusBadRequest, "path is required")
 		return
 	}
+	if !s.canReadTelemetryLog(r, logPath) {
+		s.jsonError(w, http.StatusForbidden, "run log access required")
+		return
+	}
 	data, err := os.ReadFile(logPath)
 	if err != nil {
 		if os.IsNotExist(err) {
@@ -236,4 +249,36 @@ func (s *Server) handleTelemetryLog(w http.ResponseWriter, r *http.Request) {
 		"content":   content,
 		"truncated": truncated,
 	})
+}
+
+func (s *Server) filterTelemetryRunsForRequest(r *http.Request, rows []telemetry.RunRow) []telemetry.RunRow {
+	if len(rows) == 0 {
+		return rows
+	}
+	out := rows[:0]
+	for _, row := range rows {
+		if s.canAccessAgent(r, row.Project, row.Agent) {
+			out = append(out, row)
+		}
+	}
+	return out
+}
+
+func (s *Server) canReadTelemetryLog(r *http.Request, logPath string) bool {
+	db, err := telemetry.OpenReadOnly(s.root)
+	if err != nil {
+		return false
+	}
+	defer db.Close()
+	rows, err := telemetry.ReadRuns(db, nil, nil, "")
+	if err != nil {
+		return false
+	}
+	cleanWant := filepath.Clean(logPath)
+	for _, row := range rows {
+		if filepath.Clean(row.LogPath) == cleanWant && s.canAccessAgent(r, row.Project, row.Agent) {
+			return true
+		}
+	}
+	return false
 }

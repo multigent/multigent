@@ -571,6 +571,7 @@ Done when:
 Status:
 
 - Partially implemented.
+- Workbench aggregate endpoints and telemetry run/log endpoints now use workspace/project/agent access helpers instead of global login role checks. Linked-agent users only see telemetry for their linked agents; run logs require access to the corresponding run.
 - Current priority: finish endpoint-by-endpoint RBAC audit for tasks, messages, runs, scheduler, agent config, provider binding, connection grants, and runtime manifest access.
 - UI must hide unavailable actions, but API checks remain authoritative.
 

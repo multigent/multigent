@@ -32,7 +32,7 @@ func (s *Server) handleWorkbenchMessages(w http.ResponseWriter, r *http.Request)
 	}
 
 	cur := s.currentUser(r)
-	isAdmin := cur.Role == RoleAdmin
+	isAdmin := cur.Role == RoleAdmin || s.canAdminCurrentWorkspace(r)
 	useAll := archivedMode == "all" || archivedMode == "yes"
 	seen := map[string]bool{}
 	var msgs []*msgWithMailbox
@@ -166,10 +166,8 @@ func (s *Server) handleWorkbenchTasks(w http.ResponseWriter, r *http.Request) {
 		if projectFilter != "" && proj != projectFilter {
 			continue
 		}
-		if cur.Role != RoleAdmin {
-			if _, ok := s.users.HasProjectAccess(cur.Username, proj); !ok {
-				continue
-			}
+		if !s.canAccessProject(r, proj) {
+			continue
 		}
 		agents, err := s.ts.ListAgents(proj)
 		if err != nil {
@@ -188,7 +186,7 @@ func (s *Server) handleWorkbenchTasks(w http.ResponseWriter, r *http.Request) {
 					continue
 				}
 				seenTask[t.ID] = true
-				if cur.Role == RoleAdmin {
+				if cur.Role == RoleAdmin || s.canAdminCurrentWorkspace(r) {
 					if ag != "human" && t.Assignee != "human" {
 						continue
 					}
@@ -242,8 +240,6 @@ func (s *Server) handleWorkbenchOverview(w http.ResponseWriter, r *http.Request)
 		return
 	}
 
-	cur := s.currentUser(r)
-
 	schedStatuses := s.sched.Status()
 	schedRunning := map[string]bool{}
 	for _, ss := range schedStatuses {
@@ -254,10 +250,8 @@ func (s *Server) handleWorkbenchOverview(w http.ResponseWriter, r *http.Request)
 
 	rows := make([]projectOverview, 0, len(projects))
 	for _, proj := range projects {
-		if cur.Role != RoleAdmin {
-			if _, ok := s.users.HasProjectAccess(cur.Username, proj); !ok {
-				continue
-			}
+		if !s.canAccessProject(r, proj) {
+			continue
 		}
 		agentNames, err := s.ts.ListAgents(proj)
 		if err != nil {
