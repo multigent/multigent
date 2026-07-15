@@ -1,8 +1,10 @@
+import { useState } from 'react'
 import { Link } from 'react-router-dom'
 import { useTranslation } from 'react-i18next'
-import { Users, Puzzle, ArrowRight, User, Database } from 'lucide-react'
+import { Users, Puzzle, ArrowRight, User, Database, Layers3, Plus } from 'lucide-react'
 import { PlaceholderCard } from '../../components/ui/PlaceholderCard'
 import { useApiJson } from '../../lib/use-api'
+import { apiPost } from '../../lib/api'
 
 type TeamRow = {
   path: string
@@ -13,16 +15,92 @@ type TeamRow = {
   skills?: string[]
 }
 
+type TeamTemplate = {
+  id: string
+  name: string
+  description: string
+  teamName: string
+  roles: Array<{ name: string; description: string }>
+}
+
 export default function TeamsPage() {
   const { t } = useTranslation()
-  const state = useApiJson<TeamRow[]>('/api/v1/teams')
+  const [reloadKey, setReloadKey] = useState(0)
+  const [applying, setApplying] = useState<string | null>(null)
+  const state = useApiJson<TeamRow[]>('/api/v1/teams', reloadKey)
+  const templateState = useApiJson<TeamTemplate[]>('/api/v1/team-templates', reloadKey)
+
+  async function applyTemplate(template: TeamTemplate) {
+    setApplying(template.id)
+    try {
+      await apiPost(`/api/v1/team-templates/${encodeURIComponent(template.id)}/apply`, {
+        teamName: template.teamName,
+      })
+      setReloadKey((k) => k + 1)
+    } catch (e) {
+      alert(String(e))
+    } finally {
+      setApplying(null)
+    }
+  }
 
   return (
     <div className="animate-fade-in px-8 py-6">
       <div className="pb-5">
-        <h1 className="text-xl font-semibold text-neutral-900 dark:text-zinc-100">{t('nav.teams')}</h1>
-        <p className="mt-0.5 text-sm text-neutral-500 dark:text-zinc-500">{t('teams.subtitle')}</p>
+        <div className="flex flex-col gap-2 sm:flex-row sm:items-end sm:justify-between">
+          <div>
+            <h1 className="text-xl font-semibold text-neutral-900 dark:text-zinc-100">{t('nav.teams')}</h1>
+            <p className="mt-0.5 text-sm text-neutral-500 dark:text-zinc-500">{t('teams.subtitle')}</p>
+          </div>
+        </div>
       </div>
+
+      {templateState.status === 'ok' && templateState.data.length > 0 && (
+        <section className="mb-6">
+          <div className="mb-2 flex items-center gap-2">
+            <Layers3 className="size-4 text-neutral-400 dark:text-zinc-500" strokeWidth={1.8} />
+            <h2 className="text-sm font-semibold text-neutral-700 dark:text-zinc-300">{t('teams.templatesTitle')}</h2>
+          </div>
+          <div className="grid gap-3 lg:grid-cols-2">
+            {templateState.data.map((template) => {
+              const exists = state.status === 'ok' && state.data.some((team) => team.path === template.teamName)
+              return (
+                <div key={template.id} className="rounded-lg border border-neutral-200/80 bg-white p-4 dark:border-zinc-700/60 dark:bg-zinc-900/40">
+                  <div className="flex gap-3">
+                    <div className="flex size-9 shrink-0 items-center justify-center rounded-lg bg-sky-100 dark:bg-sky-900/30">
+                      <Layers3 className="size-4.5 text-sky-600 dark:text-sky-400" strokeWidth={1.8} />
+                    </div>
+                    <div className="min-w-0 flex-1">
+                      <div className="flex min-w-0 items-start justify-between gap-3">
+                        <div className="min-w-0">
+                          <h3 className="text-sm font-semibold text-neutral-900 dark:text-zinc-100">{template.name}</h3>
+                          <p className="mt-0.5 text-xs leading-relaxed text-neutral-500 dark:text-zinc-500">{template.description}</p>
+                        </div>
+                        <button
+                          type="button"
+                          onClick={() => void applyTemplate(template)}
+                          disabled={exists || applying === template.id}
+                          className="inline-flex shrink-0 items-center gap-1.5 rounded-md bg-sky-600 px-2.5 py-1.5 text-xs font-medium text-white transition-colors hover:bg-sky-700 disabled:bg-neutral-200 disabled:text-neutral-500 dark:disabled:bg-zinc-800 dark:disabled:text-zinc-500"
+                        >
+                          <Plus className="size-3" strokeWidth={2} />
+                          {exists ? t('teams.templateApplied') : applying === template.id ? t('forms.saving') : t('teams.applyTemplate')}
+                        </button>
+                      </div>
+                      <div className="mt-3 flex flex-wrap gap-1.5">
+                        {template.roles.map((role) => (
+                          <span key={role.name} title={role.description} className="rounded-md bg-neutral-100 px-2 py-0.5 font-mono text-[11px] text-neutral-600 dark:bg-zinc-800 dark:text-zinc-400">
+                            {role.name}
+                          </span>
+                        ))}
+                      </div>
+                    </div>
+                  </div>
+                </div>
+              )
+            })}
+          </div>
+        </section>
+      )}
 
       {state.status === 'loading' && (
         <div className="flex items-center gap-2 py-16 justify-center">

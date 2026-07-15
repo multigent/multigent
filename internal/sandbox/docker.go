@@ -33,16 +33,10 @@ const (
 	// Image registry prefix for multigent-provided sandbox images.
 	imagePrefix = "ghcr.io/multigent/multigent"
 
-	// PublishedBaseImage is the public registry name used by release builds.
-	PublishedBaseImage = imagePrefix + "/runtime-base:latest"
-
-	// BaseImage is the stable local runtime image. Agent CLI binaries are installed
-	// at runtime into a persistent toolchain cache, so CLI version bumps do not
-	// require rebuilding this image.
-	//
-	// Keep the default local-first. Development and self-hosted installs should
-	// not fail just because a registry package is private, unpublished, or slow.
-	BaseImage = "multigent/runtime-base:latest"
+	// BaseImage is the published runtime image used by default. Agent CLI binaries
+	// are installed at runtime into a persistent toolchain cache, so CLI version
+	// bumps do not require rebuilding this image.
+	BaseImage = imagePrefix + "/runtime-base:latest"
 
 	// AgencycliMount is where the multigent binary is mounted inside the
 	// container so that agents can run `multigent task add` etc.
@@ -316,7 +310,7 @@ func resolveImage(model entity.AgentModel, cfg *entity.DockerSandboxConfig) stri
 }
 
 func normalizeDefaultImage(image string) string {
-	if image == PublishedBaseImage {
+	if image == "multigent/runtime-base:latest" {
 		return BaseImage
 	}
 	return image

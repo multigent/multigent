@@ -44,7 +44,7 @@ func TestImageForManagedModelsUsesRuntimeBase(t *testing.T) {
 }
 
 func TestEffectiveImageNormalizesPublishedDefault(t *testing.T) {
-	cfg := &entity.DockerSandboxConfig{Image: PublishedBaseImage}
+	cfg := &entity.DockerSandboxConfig{Image: "multigent/runtime-base:latest"}
 	if got := EffectiveImage(entity.ModelCodex, cfg); got != BaseImage {
 		t.Fatalf("EffectiveImage() = %q, want %q", got, BaseImage)
 	}

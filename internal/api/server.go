@@ -144,6 +144,8 @@ func (s *Server) Handler() http.Handler {
 	mux.HandleFunc("DELETE /api/v1/connections/{id}/grants/{grantId}", s.handleDeleteConnectionGrant)
 	mux.HandleFunc("GET /api/v1/agency", s.handleAgency)
 	mux.HandleFunc("GET /api/v1/stats", s.handleStats)
+	mux.HandleFunc("GET /api/v1/team-templates", s.handleTeamTemplates)
+	mux.HandleFunc("POST /api/v1/team-templates/{id}/apply", s.handleApplyTeamTemplate)
 	mux.HandleFunc("GET /api/v1/teams", s.handleTeams)
 	mux.HandleFunc("GET /api/v1/teams/{teamPath...}", s.handleTeamDetail)
 	mux.HandleFunc("GET /api/v1/projects", s.handleProjects)

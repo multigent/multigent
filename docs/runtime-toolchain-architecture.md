@@ -16,7 +16,7 @@ Default shape:
 
 ```yaml
 runtime:
-  image: multigent/runtime-base:latest
+  image: ghcr.io/multigent/multigent/runtime-base:latest
   agent_cli:
     vendor: codex
     version: 0.18.0
@@ -80,7 +80,7 @@ runtime isolation    -> docker run --runtime=runsc when available
 
 Current implementation direction:
 
-- default managed image: `multigent/runtime-base:latest`
+- default managed image: `ghcr.io/multigent/multigent/runtime-base:latest`
 - persistent Docker volume: `multigent-toolchains:/opt/multigent/toolchains`
 - npm CLI bin path: `/opt/multigent/toolchains/npm/bin`
 - command wrapper: install/check CLI, then `exec "$@"`
@@ -142,7 +142,7 @@ Rules:
 
 1. Add `agent_cli` to runtime config.
 2. Add default installer specs for Codex, Claude Code, and Gemini.
-3. Change Docker default image to `runtime-base`.
+3. Publish the default Docker runtime image to GHCR and use it by default.
 4. Mount persistent toolchain cache into Docker runs.
 5. Bootstrap CLI install/check before command execution.
 6. Add Web controls for CLI vendor/version/channel.
