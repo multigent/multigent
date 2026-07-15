@@ -248,6 +248,8 @@ func (s *Server) handleGetAgentContext(w http.ResponseWriter, r *http.Request) {
 		sandboxCfg := *meta.Sandbox
 		if sandboxCfg.AgentCLI == nil {
 			sandboxCfg.AgentCLI = agentcli.DefaultForModel(meta.Model)
+		} else {
+			sandboxCfg.AgentCLI = agentcli.Normalize(sandboxCfg.AgentCLI)
 		}
 		resp["sandbox"] = &sandboxCfg
 	}
@@ -441,6 +443,8 @@ func (s *Server) handlePutAgentSandbox(w http.ResponseWriter, r *http.Request) {
 		}
 		if meta.Sandbox.AgentCLI == nil {
 			meta.Sandbox.AgentCLI = agentcli.DefaultForModel(meta.Model)
+		} else {
+			meta.Sandbox.AgentCLI = agentcli.Normalize(meta.Sandbox.AgentCLI)
 		}
 		if body.Provider == "docker" {
 			dc := &entity.DockerSandboxConfig{

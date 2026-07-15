@@ -1160,6 +1160,7 @@
     "agentCliHint": "獨立於基礎映像安裝和升級",
     "cliVendor": "CLI 廠商",
     "cliVersion": "CLI 版本",
+    "cliVersionCustom": "自訂版本...",
     "cliChannel": "發佈通道",
     "cliPackageManager": "安裝方式",
     "cliPackage": "套件名稱",

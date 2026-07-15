@@ -1160,6 +1160,7 @@
     "agentCliHint": "ベースイメージとは別にインストール・更新",
     "cliVendor": "CLI ベンダー",
     "cliVersion": "CLI バージョン",
+    "cliVersionCustom": "カスタムバージョン...",
     "cliChannel": "リリースチャネル",
     "cliPackageManager": "インストーラ",
     "cliPackage": "パッケージ",

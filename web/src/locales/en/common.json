@@ -1160,6 +1160,7 @@
     "agentCliHint": "Installed and upgraded outside the base image",
     "cliVendor": "CLI Vendor",
     "cliVersion": "CLI Version",
+    "cliVersionCustom": "Custom version...",
     "cliChannel": "Release Channel",
     "cliPackageManager": "Installer",
     "cliPackage": "Package",

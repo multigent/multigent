@@ -1160,6 +1160,7 @@
     "agentCliHint": "基础镜像外独立安装和升级",
     "cliVendor": "CLI 厂商",
     "cliVersion": "CLI 版本",
+    "cliVersionCustom": "自定义版本...",
     "cliChannel": "发布通道",
     "cliPackageManager": "安装方式",
     "cliPackage": "包名",

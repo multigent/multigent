@@ -62,9 +62,9 @@ func DefaultForModel(model entity.AgentModel) *entity.AgentCLIConfig {
 func Effective(model entity.AgentModel, cfg *entity.AgentCLIConfig) *entity.AgentCLIConfig {
 	if cfg != nil {
 		copy := *cfg
-		return &copy
+		return Normalize(&copy)
 	}
-	return DefaultForModel(model)
+	return Normalize(DefaultForModel(model))
 }
 
 // WrapCommand prepends a runtime bootstrap script that installs or verifies the
@@ -89,6 +89,7 @@ func BootstrapScript(cfg *entity.AgentCLIConfig) string {
 	if cfg == nil {
 		return ""
 	}
+	cfg = Normalize(cfg)
 	if len(cfg.Install) > 0 {
 		return scriptInstaller(cfg)
 	}
@@ -102,6 +103,36 @@ func BootstrapScript(cfg *entity.AgentCLIConfig) string {
 		return scriptInstaller(cfg)
 	default:
 		return ""
+	}
+}
+
+// Normalize returns a copy of cfg with product-safe defaults. It also cleans up
+// early Multigent UI presets that referenced Codex versions never published to
+// npm, which would otherwise fail every runtime bootstrap with npm ETARGET.
+func Normalize(cfg *entity.AgentCLIConfig) *entity.AgentCLIConfig {
+	if cfg == nil {
+		return nil
+	}
+	out := *cfg
+	vendor := strings.TrimSpace(out.Vendor)
+	pkg := strings.TrimSpace(out.Package)
+	version := strings.TrimSpace(out.Version)
+	if version == "" {
+		version = "latest"
+	}
+	if (vendor == "codex" || vendor == "qoder" || pkg == "@openai/codex") && isRemovedCodexPreset(version) {
+		version = "latest"
+	}
+	out.Version = version
+	return &out
+}
+
+func isRemovedCodexPreset(version string) bool {
+	switch version {
+	case "0.18.0", "0.17.0", "0.16.0":
+		return true
+	default:
+		return false
 	}
 }
 

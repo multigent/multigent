@@ -852,7 +852,7 @@ const CLI_DEFAULTS: Record<string, { packageManager: string; package: string; bi
     package: '@openai/codex',
     binary: 'codex',
     channel: 'stable',
-    versions: ['latest', '0.18.0', '0.17.0', '0.16.0'],
+    versions: ['latest', '0.144.4', '0.144.3', '0.144.2', '0.143.0'],
   },
   'claude-code': {
     packageManager: 'npm',
@@ -873,13 +873,22 @@ const CLI_DEFAULTS: Record<string, { packageManager: string; package: string; bi
     package: '@openai/codex',
     binary: 'codex',
     channel: 'stable',
-    versions: ['latest', '0.18.0', '0.17.0', '0.16.0'],
+    versions: ['latest', '0.144.4', '0.144.3', '0.144.2', '0.143.0'],
   },
+}
+
+function normalizeCliVersion(vendor: string, version: string): string {
+  const value = version.trim()
+  if (!value) return ''
+  if ((vendor === 'codex' || vendor === 'qoder') && ['0.18.0', '0.17.0', '0.16.0'].includes(value)) {
+    return 'latest'
+  }
+  return value
 }
 
 function completeAgentCli(input: { vendor: string; version: string }): AgentCLIConfig | null {
   const vendor = input.vendor.trim()
-  const version = input.version.trim()
+  const version = normalizeCliVersion(vendor, input.version)
   if (!vendor && !version) return null
   const defaults = CLI_DEFAULTS[vendor]
   return {
@@ -904,7 +913,8 @@ function SandboxEditor({ project, agentName, initial, initialAddDirs, onChanged 
   const [cpus, setCpus] = useState(initial?.resources?.cpus ?? initial?.docker?.cpus ?? 0)
   const [timeoutSec, setTimeoutSec] = useState(initial?.resources?.timeoutSec ?? initial?.e2b?.timeoutSec ?? 0)
   const [cliVendor, setCliVendor] = useState(initial?.agentCli?.vendor ?? '')
-  const [cliVersion, setCliVersion] = useState(initial?.agentCli?.version ?? '')
+  const [cliVersion, setCliVersion] = useState(normalizeCliVersion(initial?.agentCli?.vendor ?? '', initial?.agentCli?.version ?? ''))
+  const [customCliVersion, setCustomCliVersion] = useState(false)
   const [addDirs, setAddDirs] = useState<string[]>(initialAddDirs)
   const [newDir, setNewDir] = useState('')
   const [saving, setSaving] = useState(false)
@@ -918,8 +928,11 @@ function SandboxEditor({ project, agentName, initial, initialAddDirs, onChanged 
     setMemoryMb(initial?.resources?.memoryMb ?? initial?.docker?.memory_mb ?? 0)
     setCpus(initial?.resources?.cpus ?? initial?.docker?.cpus ?? 0)
     setTimeoutSec(initial?.resources?.timeoutSec ?? initial?.e2b?.timeoutSec ?? 0)
-    setCliVendor(initial?.agentCli?.vendor ?? '')
-    setCliVersion(initial?.agentCli?.version ?? '')
+    const nextVendor = initial?.agentCli?.vendor ?? ''
+    const nextVersion = normalizeCliVersion(nextVendor, initial?.agentCli?.version ?? '')
+    setCliVendor(nextVendor)
+    setCliVersion(nextVersion)
+    setCustomCliVersion(Boolean(nextVersion && !(CLI_DEFAULTS[nextVendor]?.versions ?? ['latest']).includes(nextVersion)))
     setAddDirs(initialAddDirs)
     setDirty(false)
   }, [initial, initialAddDirs])
@@ -957,6 +970,24 @@ function SandboxEditor({ project, agentName, initial, initialAddDirs, onChanged 
 
   function removeDir(dir: string) {
     setAddDirs(prev => prev.filter(d => d !== dir))
+    setDirty(true)
+  }
+
+  function versionOptions(vendor: string): string[] {
+    return CLI_DEFAULTS[vendor]?.versions ?? ['latest']
+  }
+
+  function handleVendorChange(vendor: string) {
+    setCliVendor(vendor)
+    const options = versionOptions(vendor)
+    const nextVersion = normalizeCliVersion(vendor, cliVersion)
+    if (!nextVersion || !options.includes(nextVersion)) {
+      setCliVersion(options[0] ?? 'latest')
+      setCustomCliVersion(false)
+    } else {
+      setCliVersion(nextVersion)
+      setCustomCliVersion(false)
+    }
     setDirty(true)
   }
 
@@ -998,7 +1029,7 @@ function SandboxEditor({ project, agentName, initial, initialAddDirs, onChanged 
               <div className="grid grid-cols-2 gap-3">
                 <div>
                   <label className={labelCls}>{t('sandbox.cliVendor')}</label>
-                  <select value={cliVendor} onChange={(e) => { setCliVendor(e.target.value); setDirty(true) }} className={inputCls}>
+                  <select value={cliVendor} onChange={(e) => handleVendorChange(e.target.value)} className={inputCls}>
                     <option value="">{t('sandbox.cliAuto')}</option>
                     <option value="codex">codex</option>
                     <option value="claude-code">claude-code</option>
@@ -1011,19 +1042,43 @@ function SandboxEditor({ project, agentName, initial, initialAddDirs, onChanged 
                 </div>
                 <div>
                   <label className={labelCls}>{t('sandbox.cliVersion')}</label>
-                  <input
-                    type="text"
-                    list={`cli-version-options-${agentName}`}
-                    value={cliVersion}
-                    onChange={(e) => { setCliVersion(e.target.value); setDirty(true) }}
-                    placeholder="latest"
-                    className={inputCls}
-                  />
-                  <datalist id={`cli-version-options-${agentName}`}>
-                    {(CLI_DEFAULTS[cliVendor]?.versions ?? ['latest']).map((version) => (
-                      <option key={version} value={version} />
-                    ))}
-                  </datalist>
+                  {!customCliVersion ? (
+                    <select
+                      value={versionOptions(cliVendor).includes(cliVersion || 'latest') ? (cliVersion || 'latest') : '__custom__'}
+                      onChange={(e) => {
+                        if (e.target.value === '__custom__') {
+                          setCustomCliVersion(true)
+                        } else {
+                          setCliVersion(e.target.value)
+                          setCustomCliVersion(false)
+                        }
+                        setDirty(true)
+                      }}
+                      className={inputCls}
+                    >
+                      {versionOptions(cliVendor).map((version) => (
+                        <option key={version} value={version}>{version}</option>
+                      ))}
+                      <option value="__custom__">{t('sandbox.cliVersionCustom')}</option>
+                    </select>
+                  ) : (
+                    <div className="flex gap-2">
+                      <input
+                        type="text"
+                        value={cliVersion}
+                        onChange={(e) => { setCliVersion(e.target.value); setDirty(true) }}
+                        placeholder="0.144.4"
+                        className={inputCls}
+                      />
+                      <button
+                        type="button"
+                        onClick={() => { setCustomCliVersion(false); setCliVersion(versionOptions(cliVendor)[0] ?? 'latest'); setDirty(true) }}
+                        className="shrink-0 rounded-md border border-neutral-200 px-2 text-xs font-medium text-neutral-500 hover:bg-neutral-50 dark:border-zinc-700 dark:text-zinc-400 dark:hover:bg-zinc-800"
+                      >
+                        {t('common.cancel')}
+                      </button>
+                    </div>
+                  )}
                 </div>
               </div>
             </div>

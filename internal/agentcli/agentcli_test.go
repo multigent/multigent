@@ -45,3 +45,16 @@ func TestWrapCommandAddsBootstrapAndExecsOriginalCommand(t *testing.T) {
 		t.Fatalf("original command not preserved at tail: %#v", got)
 	}
 }
+
+func TestNormalizeRewritesRemovedCodexPresetToLatest(t *testing.T) {
+	cfg := Normalize(&entity.AgentCLIConfig{
+		Vendor:         "codex",
+		Version:        "0.18.0",
+		Binary:         "codex",
+		PackageManager: "npm",
+		Package:        "@openai/codex",
+	})
+	if cfg.Version != "latest" {
+		t.Fatalf("Version = %q, want latest", cfg.Version)
+	}
+}
