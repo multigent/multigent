@@ -147,9 +147,9 @@ export function AppShell() {
   useEffect(() => {
     let cancelled = false
     const loadWorkspaceScope = () => {
-      apiFetch<{ root?: string; name?: string }>('/api/v1/workspace')
+      apiFetch<{ id?: string; name?: string }>('/api/v1/workspace')
       .then((d) => {
-        if (!cancelled) setWorkspaceScope(d.root || d.name || 'default')
+        if (!cancelled) setWorkspaceScope(d.id || d.name || 'default')
       })
       .catch(() => {
         if (!cancelled) setWorkspaceScope('default')

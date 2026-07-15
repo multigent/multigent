@@ -1,19 +1,19 @@
 import { useEffect, useState } from 'react'
 import type { FormEvent } from 'react'
 import { useTranslation } from 'react-i18next'
-import { Building2, CalendarDays, FolderOpen, Lock, Plus, RefreshCw, Save, UserRound } from 'lucide-react'
+import { Building2, CalendarDays, Hash, Lock, Plus, RefreshCw, Save, UserRound } from 'lucide-react'
 import type { LucideIcon } from 'lucide-react'
 import { PlaceholderCard } from '../components/ui/PlaceholderCard'
 import { apiPut } from '../lib/api'
 import { useApiJson } from '../lib/use-api'
 
 type WorkspaceSummary = {
+  id: string
   name: string
   description?: string
   createdBy: string
   createdAt: string
   updatedAt?: string
-  root: string
   teams: number
   projects: number
   agents: number
@@ -92,7 +92,7 @@ export default function WorkspacePage() {
               <Info icon={UserRound} label={t('workspace.createdBy')} value={state.data.createdBy || '-'} />
               <Info icon={CalendarDays} label={t('workspace.createdAt')} value={formatDate(state.data.createdAt)} />
               <Info icon={RefreshCw} label={t('workspace.updatedAt')} value={formatDate(state.data.updatedAt)} />
-              <Info icon={FolderOpen} label={t('workspace.root')} value={state.data.root} mono />
+              <Info icon={Hash} label="Workspace ID" value={state.data.id} mono />
             </div>
 
             <div className="mt-5 grid grid-cols-2 gap-3 sm:grid-cols-4">

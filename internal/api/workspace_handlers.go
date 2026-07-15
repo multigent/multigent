@@ -1,6 +1,7 @@
 package api
 
 import (
+	"crypto/rand"
 	"crypto/sha1"
 	"encoding/hex"
 	"encoding/json"
@@ -20,12 +21,12 @@ import (
 )
 
 type workspaceSummary struct {
+	ID          string `json:"id"`
 	Name        string `json:"name"`
 	Description string `json:"description,omitempty"`
 	CreatedBy   string `json:"createdBy"`
 	CreatedAt   string `json:"createdAt"`
 	UpdatedAt   string `json:"updatedAt,omitempty"`
-	Root        string `json:"root"`
 	Teams       int    `json:"teams"`
 	Projects    int    `json:"projects"`
 	Agents      int    `json:"agents"`
@@ -41,7 +42,7 @@ type workspaceRef struct {
 	ID           string `json:"id"`
 	Name         string `json:"name"`
 	Description  string `json:"description,omitempty"`
-	Root         string `json:"root"`
+	Root         string `json:"-"`
 	CreatedBy    string `json:"createdBy,omitempty"`
 	CreatedAt    string `json:"createdAt,omitempty"`
 	UpdatedAt    string `json:"updatedAt,omitempty"`
@@ -52,7 +53,6 @@ type workspaceRef struct {
 type createWorkspaceRequest struct {
 	Name        string `json:"name"`
 	Description string `json:"description"`
-	Root        string `json:"root"`
 	Switch      bool   `json:"switch"`
 }
 
@@ -90,14 +90,18 @@ func (s *Server) handleWorkspace(w http.ResponseWriter, _ *http.Request) {
 	if createdAt == "" {
 		createdAt = workspaceFileTime(s.root)
 	}
+	id := workspaceID(s.root)
+	if existing, ok, err := s.workspaceRefForRoot(s.root); err == nil && ok && existing.ID != "" {
+		id = existing.ID
+	}
 
 	_ = json.NewEncoder(w).Encode(workspaceSummary{
+		ID:          id,
 		Name:        name,
 		Description: agency.Description,
 		CreatedBy:   createdBy,
 		CreatedAt:   createdAt,
 		UpdatedAt:   agency.UpdatedAt,
-		Root:        s.root,
 		Teams:       len(teams),
 		Projects:    len(projects),
 		Agents:      agentCount,
@@ -129,11 +133,8 @@ func (s *Server) handleCreateWorkspace(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	root := strings.TrimSpace(req.Root)
-	if root == "" {
-		root = filepath.Join(filepath.Dir(s.root), slugifyWorkspaceName(name))
-	}
-	absRoot, err := filepath.Abs(root)
+	id := newWorkspaceID()
+	absRoot, err := filepath.Abs(filepath.Join(defaultWorkspaceDataDir(), "workspaces", id))
 	if err != nil {
 		s.jsonError(w, http.StatusBadRequest, err.Error())
 		return
@@ -164,7 +165,7 @@ func (s *Server) handleCreateWorkspace(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	ref := workspaceRef{
-		ID:          workspaceID(absRoot),
+		ID:          id,
 		Name:        name,
 		Description: agency.Description,
 		Root:        absRoot,
@@ -312,8 +313,12 @@ func (s *Server) ensureCurrentWorkspaceRegistered() error {
 		return err
 	}
 	root, _ := filepath.Abs(s.root)
+	id := workspaceID(root)
+	if existing, ok, err := s.workspaceRefForRoot(root); err == nil && ok && existing.ID != "" {
+		id = existing.ID
+	}
 	ref := workspaceRef{
-		ID:          workspaceID(root),
+		ID:          id,
 		Name:        workspaceDisplayName(agency.Name, root),
 		Description: agency.Description,
 		Root:        root,
@@ -337,7 +342,9 @@ func (s *Server) upsertWorkspaceRef(ref workspaceRef) error {
 		return fmt.Errorf("control database unavailable")
 	}
 	ref.Root, _ = filepath.Abs(ref.Root)
-	ref.ID = workspaceID(ref.Root)
+	if strings.TrimSpace(ref.ID) == "" {
+		ref.ID = workspaceID(ref.Root)
+	}
 	return s.controlDB.UpsertWorkspace(controldb.Workspace{
 		ID:           ref.ID,
 		Name:         ref.Name,
@@ -389,13 +396,57 @@ func (s *Server) markWorkspaceOpened(root string) error {
 	if s.controlDB == nil {
 		return nil
 	}
+	ref, ok, err := s.workspaceRefForRoot(root)
+	if err != nil {
+		return err
+	}
+	if ok {
+		return s.controlDB.MarkWorkspaceOpened(ref.ID)
+	}
 	return s.controlDB.MarkWorkspaceOpened(workspaceID(root))
+}
+
+func (s *Server) workspaceRefForRoot(root string) (workspaceRef, bool, error) {
+	if s.controlDB == nil {
+		return workspaceRef{}, false, nil
+	}
+	rows, err := s.controlDB.ListWorkspaces()
+	if err != nil {
+		return workspaceRef{}, false, err
+	}
+	for _, row := range rows {
+		if samePath(row.Root, root) {
+			return workspaceRefFromDB(row, s.root), true, nil
+		}
+	}
+	return workspaceRef{}, false, nil
 }
 
 func workspaceID(root string) string {
 	absRoot, _ := filepath.Abs(root)
 	sum := sha1.Sum([]byte(absRoot))
 	return hex.EncodeToString(sum[:])[:12]
+}
+
+func newWorkspaceID() string {
+	var b [16]byte
+	if _, err := rand.Read(b[:]); err != nil {
+		return fmt.Sprintf("ws-%d", time.Now().UnixNano())
+	}
+	b[6] = (b[6] & 0x0f) | 0x40
+	b[8] = (b[8] & 0x3f) | 0x80
+	return fmt.Sprintf("%x-%x-%x-%x-%x", b[0:4], b[4:6], b[6:8], b[8:10], b[10:16])
+}
+
+func defaultWorkspaceDataDir() string {
+	if v := strings.TrimSpace(os.Getenv("MULTIGENT_DATA_DIR")); v != "" {
+		return v
+	}
+	home, err := os.UserHomeDir()
+	if err != nil || home == "" {
+		return ".multigent"
+	}
+	return filepath.Join(home, ".multigent")
 }
 
 func workspaceRefFromDB(row controldb.Workspace, currentRoot string) workspaceRef {

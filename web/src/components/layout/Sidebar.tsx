@@ -13,9 +13,9 @@ import { useAuth } from '../../lib/auth'
 import { apiFetch, apiPost } from '../../lib/api'
 
 type WorkspaceSummary = {
+  id: string
   name: string
   description?: string
-  root: string
   teams: number
   projects: number
   agents: number
@@ -26,7 +26,6 @@ type WorkspaceRef = {
   id: string
   name: string
   description?: string
-  root: string
   active?: boolean
 }
 
@@ -160,7 +159,7 @@ export function Sidebar({ collapsed, onToggle }: { collapsed: boolean; onToggle:
             <div className="max-h-72 overflow-y-auto border-b border-neutral-200/70 p-2 dark:border-zinc-700/60">
               <p className="px-2 pb-1.5 text-xs font-medium text-neutral-400 dark:text-zinc-500">{t('workspace.currentWorkspace')}</p>
               <div className="space-y-1">
-                {(workspaces.length > 0 ? workspaces : [{ id: 'current', name: workspaceName, root: workspace?.root ?? '', active: true }]).map((item) => {
+                {(workspaces.length > 0 ? workspaces : [{ id: workspace?.id ?? 'current', name: workspaceName, active: true }]).map((item) => {
                   const initial = item.name.trim().charAt(0).toUpperCase() || 'M'
                   return (
                     <button
@@ -180,7 +179,7 @@ export function Sidebar({ collapsed, onToggle }: { collapsed: boolean; onToggle:
                       </span>
                       <div className="min-w-0 flex-1">
                         <p className="truncate text-sm font-semibold text-neutral-900 dark:text-zinc-100">{item.name}</p>
-                        <p className="truncate text-xs text-neutral-400 dark:text-zinc-500">{item.root}</p>
+                        {item.description && <p className="truncate text-xs text-neutral-400 dark:text-zinc-500">{item.description}</p>}
                       </div>
                       {switchingId === item.id ? (
                         <Loader2 className="size-4 shrink-0 animate-spin text-neutral-400 dark:text-zinc-500" strokeWidth={1.8} />
