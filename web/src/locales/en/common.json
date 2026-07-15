@@ -55,6 +55,15 @@
     "runtime_capability_required": "The runtime token does not allow this action.",
     "unsupported_auth_type": "This authentication type is not supported.",
     "unsupported_provider": "This connector provider is not supported.",
+    "agent_not_running": "The agent is not currently running.",
+    "cron_not_found": "The cron job was not found.",
+    "heartbeat_not_found": "The heartbeat configuration was not found.",
+    "invalid_cron_schedule": "The cron schedule is invalid.",
+    "invalid_duration": "The duration format is invalid.",
+    "process_not_found": "The agent process could not be found.",
+    "scheduler_conflict": "The scheduler is already running or conflicts with the current state.",
+    "scheduler_not_found": "The scheduler is not running.",
+    "scheduler_wakeup_failed": "Failed to wake up the agent.",
     "unknown": "Something went wrong. Please try again."
   },
   "aria": {

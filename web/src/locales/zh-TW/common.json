@@ -55,6 +55,15 @@
     "runtime_capability_required": "執行階段 Token 沒有執行該操作的權限。",
     "unsupported_auth_type": "不支援該認證方式。",
     "unsupported_provider": "不支援該連線器提供方。",
+    "agent_not_running": "Agent 目前沒有執行。",
+    "cron_not_found": "找不到該定時任務。",
+    "heartbeat_not_found": "找不到心跳設定。",
+    "invalid_cron_schedule": "Cron 表達式不合法。",
+    "invalid_duration": "時間間隔格式不合法。",
+    "process_not_found": "找不到 Agent 進程。",
+    "scheduler_conflict": "調度器已執行或與目前狀態衝突。",
+    "scheduler_not_found": "調度器目前沒有執行。",
+    "scheduler_wakeup_failed": "喚醒 Agent 失敗。",
     "unknown": "操作失敗，請稍後再試。"
   },
   "aria": {

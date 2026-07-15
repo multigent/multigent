@@ -304,7 +304,7 @@ func (s *Server) handleSchedulerStart(w http.ResponseWriter, r *http.Request) {
 	var body schedActionBody
 	if r.ContentLength > 0 {
 		if err := s.readJSON(w, r, &body); err != nil {
-			s.jsonError(w, http.StatusBadRequest, "invalid JSON body")
+			s.jsonErrorCode(w, http.StatusBadRequest, ErrCodeInvalidJSON, "invalid JSON body")
 			return
 		}
 	}
@@ -312,7 +312,7 @@ func (s *Server) handleSchedulerStart(w http.ResponseWriter, r *http.Request) {
 	agent := strings.TrimSpace(body.Agent)
 
 	if agent != "" && project == "" {
-		s.jsonError(w, http.StatusBadRequest, "agent requires project")
+		s.jsonErrorCode(w, http.StatusBadRequest, ErrCodeValidationFailed, "agent requires project")
 		return
 	}
 	if project == "" {
@@ -324,7 +324,7 @@ func (s *Server) handleSchedulerStart(w http.ResponseWriter, r *http.Request) {
 	}
 
 	if err := s.sched.Start(project, agent); err != nil {
-		s.jsonError(w, http.StatusConflict, err.Error())
+		s.jsonErrorCode(w, http.StatusConflict, ErrCodeSchedulerConflict, err.Error())
 		return
 	}
 	s.setSchedulerDesired(project, agent, true)
@@ -351,13 +351,13 @@ func (s *Server) handleSchedulerStart(w http.ResponseWriter, r *http.Request) {
 func (s *Server) handleSchedulerWakeup(w http.ResponseWriter, r *http.Request) {
 	var body schedActionBody
 	if err := s.readJSON(w, r, &body); err != nil {
-		s.jsonError(w, http.StatusBadRequest, "invalid JSON body")
+		s.jsonErrorCode(w, http.StatusBadRequest, ErrCodeInvalidJSON, "invalid JSON body")
 		return
 	}
 	project := strings.TrimSpace(body.Project)
 	agent := strings.TrimSpace(body.Agent)
 	if project == "" || agent == "" {
-		s.jsonError(w, http.StatusBadRequest, "project and agent are required")
+		s.jsonErrorCode(w, http.StatusBadRequest, ErrCodeValidationFailed, "project and agent are required")
 		return
 	}
 	if !s.checkProjectManager(w, r, project) {
@@ -368,7 +368,7 @@ func (s *Server) handleSchedulerWakeup(w http.ResponseWriter, r *http.Request) {
 	cmd := exec.Command(s.sched.binPath, args...)
 	out, err := cmd.CombinedOutput()
 	if err != nil {
-		s.jsonError(w, http.StatusInternalServerError, fmt.Sprintf("wakeup failed: %v\n%s", err, string(out)))
+		s.jsonErrorCode(w, http.StatusInternalServerError, ErrCodeSchedulerWakeupFailed, fmt.Sprintf("wakeup failed: %v\n%s", err, string(out)))
 		return
 	}
 	s.auditLog(auditLogInput{
@@ -389,14 +389,14 @@ func (s *Server) handleSchedulerStop(w http.ResponseWriter, r *http.Request) {
 	var body schedActionBody
 	if r.ContentLength > 0 {
 		if err := s.readJSON(w, r, &body); err != nil {
-			s.jsonError(w, http.StatusBadRequest, "invalid JSON body")
+			s.jsonErrorCode(w, http.StatusBadRequest, ErrCodeInvalidJSON, "invalid JSON body")
 			return
 		}
 	}
 	project := strings.TrimSpace(body.Project)
 	agent := strings.TrimSpace(body.Agent)
 	if agent != "" && project == "" {
-		s.jsonError(w, http.StatusBadRequest, "agent requires project")
+		s.jsonErrorCode(w, http.StatusBadRequest, ErrCodeValidationFailed, "agent requires project")
 		return
 	}
 	if project == "" {
@@ -408,7 +408,7 @@ func (s *Server) handleSchedulerStop(w http.ResponseWriter, r *http.Request) {
 	}
 
 	if err := s.sched.Stop(project, agent); err != nil {
-		s.jsonError(w, http.StatusNotFound, err.Error())
+		s.jsonErrorCode(w, http.StatusNotFound, ErrCodeSchedulerNotFound, err.Error())
 		return
 	}
 	s.setSchedulerDesired(project, agent, false)
@@ -460,13 +460,13 @@ func (s *Server) clearSchedulerRuntimeFields(project, agent string) {
 func (s *Server) handleSchedulerAbort(w http.ResponseWriter, r *http.Request) {
 	var body schedActionBody
 	if err := s.readJSON(w, r, &body); err != nil {
-		s.jsonError(w, http.StatusBadRequest, "invalid JSON body")
+		s.jsonErrorCode(w, http.StatusBadRequest, ErrCodeInvalidJSON, "invalid JSON body")
 		return
 	}
 	project := strings.TrimSpace(body.Project)
 	agent := strings.TrimSpace(body.Agent)
 	if project == "" || agent == "" {
-		s.jsonError(w, http.StatusBadRequest, "project and agent are required")
+		s.jsonErrorCode(w, http.StatusBadRequest, ErrCodeValidationFailed, "project and agent are required")
 		return
 	}
 	if !s.checkProjectManager(w, r, project) {
@@ -475,12 +475,12 @@ func (s *Server) handleSchedulerAbort(w http.ResponseWriter, r *http.Request) {
 
 	hb, err := s.ts.GetHeartbeat(project, agent)
 	if err != nil || hb == nil {
-		s.jsonError(w, http.StatusNotFound, "heartbeat config not found")
+		s.jsonErrorCode(w, http.StatusNotFound, ErrCodeHeartbeatNotFound, "heartbeat config not found")
 		return
 	}
 
 	if hb.PID <= 0 || hb.LastWakeupStatus != "running" {
-		s.jsonError(w, http.StatusConflict, "agent is not currently running")
+		s.jsonErrorCode(w, http.StatusConflict, ErrCodeAgentNotRunning, "agent is not currently running")
 		return
 	}
 
@@ -488,7 +488,7 @@ func (s *Server) handleSchedulerAbort(w http.ResponseWriter, r *http.Request) {
 
 	proc, err := os.FindProcess(pid)
 	if err != nil {
-		s.jsonError(w, http.StatusInternalServerError, fmt.Sprintf("cannot find process %d: %v", pid, err))
+		s.jsonErrorCode(w, http.StatusInternalServerError, ErrCodeProcessNotFound, fmt.Sprintf("cannot find process %d: %v", pid, err))
 		return
 	}
 

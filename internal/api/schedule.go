@@ -34,7 +34,7 @@ func (s *Server) handleGetProjectSchedule(w http.ResponseWriter, r *http.Request
 	}
 	if _, err := s.st.Project(name); err != nil {
 		if isNotFoundErr(err) {
-			s.jsonError(w, http.StatusNotFound, "project not found")
+			s.jsonErrorCode(w, http.StatusNotFound, ErrCodeProjectNotFound, "project not found")
 			return
 		}
 		s.serverError(w, err)
@@ -229,14 +229,14 @@ func (s *Server) parseProjectAgent(w http.ResponseWriter, r *http.Request) (proj
 	}
 	if _, err := s.st.Project(project); err != nil {
 		if isNotFoundErr(err) {
-			s.jsonError(w, http.StatusNotFound, "project not found")
+			s.jsonErrorCode(w, http.StatusNotFound, ErrCodeProjectNotFound, "project not found")
 			return "", "", false
 		}
 		s.serverError(w, err)
 		return "", "", false
 	}
 	if !s.agentExistsInProject(project, agent) {
-		s.jsonError(w, http.StatusNotFound, "agent not found")
+		s.jsonErrorCode(w, http.StatusNotFound, ErrCodeAgentNotFound, "agent not found")
 		return "", "", false
 	}
 	if !s.checkAgentAccess(w, r, project, agent) {
@@ -287,7 +287,7 @@ func (s *Server) handlePatchHeartbeat(w http.ResponseWriter, r *http.Request) {
 	}
 	var body patchHeartbeatBody
 	if err := s.readJSON(w, r, &body); err != nil {
-		s.jsonError(w, http.StatusBadRequest, "invalid JSON body")
+		s.jsonErrorCode(w, http.StatusBadRequest, ErrCodeInvalidJSON, "invalid JSON body")
 		return
 	}
 	hb, err := s.ts.GetHeartbeat(name, agent)
@@ -301,7 +301,7 @@ func (s *Server) handlePatchHeartbeat(w http.ResponseWriter, r *http.Request) {
 	if body.Interval != nil {
 		if strings.TrimSpace(*body.Interval) != "" {
 			if _, err := time.ParseDuration(strings.TrimSpace(*body.Interval)); err != nil {
-				s.jsonError(w, http.StatusBadRequest, "invalid interval duration")
+				s.jsonErrorCode(w, http.StatusBadRequest, ErrCodeInvalidDuration, "invalid interval duration")
 				return
 			}
 		}
@@ -310,7 +310,7 @@ func (s *Server) handlePatchHeartbeat(w http.ResponseWriter, r *http.Request) {
 	if body.Jitter != nil {
 		if t := strings.TrimSpace(*body.Jitter); t != "" {
 			if _, err := time.ParseDuration(t); err != nil {
-				s.jsonError(w, http.StatusBadRequest, "invalid jitter duration")
+				s.jsonErrorCode(w, http.StatusBadRequest, ErrCodeInvalidDuration, "invalid jitter duration")
 				return
 			}
 		}
@@ -349,7 +349,7 @@ func (s *Server) handlePatchHeartbeat(w http.ResponseWriter, r *http.Request) {
 	if body.WakeupCondition != nil {
 		cond := strings.TrimSpace(*body.WakeupCondition)
 		if err := validateAPIWakeupCondition(cond); err != nil {
-			s.jsonError(w, http.StatusBadRequest, "invalid wakeupCondition: "+err.Error())
+			s.jsonErrorCode(w, http.StatusBadRequest, ErrCodeValidationFailed, "invalid wakeupCondition: "+err.Error())
 			return
 		}
 		hb.WakeupCondition = cond
@@ -370,7 +370,7 @@ func (s *Server) handlePatchHeartbeat(w http.ResponseWriter, r *http.Request) {
 	if body.TriggerDebounce != nil {
 		if t := strings.TrimSpace(*body.TriggerDebounce); t != "" {
 			if _, err := time.ParseDuration(t); err != nil {
-				s.jsonError(w, http.StatusBadRequest, "invalid triggerDebounce duration")
+				s.jsonErrorCode(w, http.StatusBadRequest, ErrCodeInvalidDuration, "invalid triggerDebounce duration")
 				return
 			}
 		}
@@ -382,7 +382,7 @@ func (s *Server) handlePatchHeartbeat(w http.ResponseWriter, r *http.Request) {
 	if body.MaxCycleDuration != nil {
 		if t := strings.TrimSpace(*body.MaxCycleDuration); t != "" {
 			if _, err := time.ParseDuration(t); err != nil {
-				s.jsonError(w, http.StatusBadRequest, "invalid maxCycleDuration")
+				s.jsonErrorCode(w, http.StatusBadRequest, ErrCodeInvalidDuration, "invalid maxCycleDuration")
 				return
 			}
 		}
@@ -523,7 +523,7 @@ func (s *Server) handlePostCronPause(w http.ResponseWriter, r *http.Request) {
 	id := r.PathValue("cronId")
 	if err := s.ts.PauseCron(name, agent, id); err != nil {
 		if strings.Contains(err.Error(), "not found") {
-			s.jsonError(w, http.StatusNotFound, "cron not found")
+			s.jsonErrorCode(w, http.StatusNotFound, ErrCodeCronNotFound, "cron not found")
 			return
 		}
 		s.serverError(w, err)
@@ -543,7 +543,7 @@ func (s *Server) handlePostCronResume(w http.ResponseWriter, r *http.Request) {
 	id := r.PathValue("cronId")
 	if err := s.ts.ResumeCron(name, agent, id); err != nil {
 		if strings.Contains(err.Error(), "not found") {
-			s.jsonError(w, http.StatusNotFound, "cron not found")
+			s.jsonErrorCode(w, http.StatusNotFound, ErrCodeCronNotFound, "cron not found")
 			return
 		}
 		s.serverError(w, err)
@@ -563,7 +563,7 @@ func (s *Server) handleDeleteCron(w http.ResponseWriter, r *http.Request) {
 	id := r.PathValue("cronId")
 	if err := s.ts.DeleteCron(name, agent, id); err != nil {
 		if strings.Contains(err.Error(), "not found") {
-			s.jsonError(w, http.StatusNotFound, "cron not found")
+			s.jsonErrorCode(w, http.StatusNotFound, ErrCodeCronNotFound, "cron not found")
 			return
 		}
 		s.serverError(w, err)
@@ -592,18 +592,18 @@ func (s *Server) handlePostCron(w http.ResponseWriter, r *http.Request) {
 	}
 	var body postCronBody
 	if err := s.readJSON(w, r, &body); err != nil {
-		s.jsonError(w, http.StatusBadRequest, "invalid JSON body")
+		s.jsonErrorCode(w, http.StatusBadRequest, ErrCodeInvalidJSON, "invalid JSON body")
 		return
 	}
 	title := strings.TrimSpace(body.Title)
 	schedule := strings.TrimSpace(body.Schedule)
 	prompt := strings.TrimSpace(body.Prompt)
 	if title == "" || schedule == "" || prompt == "" {
-		s.jsonError(w, http.StatusBadRequest, "title, schedule, and prompt are required")
+		s.jsonErrorCode(w, http.StatusBadRequest, ErrCodeValidationFailed, "title, schedule, and prompt are required")
 		return
 	}
 	if err := validateCronSchedule(schedule); err != nil {
-		s.jsonError(w, http.StatusBadRequest, err.Error())
+		s.jsonErrorCode(w, http.StatusBadRequest, ErrCodeInvalidCronSchedule, err.Error())
 		return
 	}
 	crons, err := s.ts.ListCrons(name, agent)
@@ -627,7 +627,7 @@ func (s *Server) handlePostCron(w http.ResponseWriter, r *http.Request) {
 	if body.Jitter != nil {
 		if t := strings.TrimSpace(*body.Jitter); t != "" {
 			if _, err := time.ParseDuration(t); err != nil {
-				s.jsonError(w, http.StatusBadRequest, "invalid jitter duration")
+				s.jsonErrorCode(w, http.StatusBadRequest, ErrCodeInvalidDuration, "invalid jitter duration")
 				return
 			}
 			jitter = t
@@ -662,7 +662,7 @@ func (s *Server) handlePutCron(w http.ResponseWriter, r *http.Request) {
 	cronID := r.PathValue("cronId")
 	var body postCronBody
 	if err := s.readJSON(w, r, &body); err != nil {
-		s.jsonError(w, http.StatusBadRequest, "invalid JSON body")
+		s.jsonErrorCode(w, http.StatusBadRequest, ErrCodeInvalidJSON, "invalid JSON body")
 		return
 	}
 	crons, err := s.ts.ListCrons(name, agent)
@@ -678,7 +678,7 @@ func (s *Server) handlePutCron(w http.ResponseWriter, r *http.Request) {
 		}
 	}
 	if target == nil {
-		s.jsonError(w, http.StatusNotFound, "cron not found")
+		s.jsonErrorCode(w, http.StatusNotFound, ErrCodeCronNotFound, "cron not found")
 		return
 	}
 	if t := strings.TrimSpace(body.Title); t != "" {
@@ -689,7 +689,7 @@ func (s *Server) handlePutCron(w http.ResponseWriter, r *http.Request) {
 	}
 	if sc := strings.TrimSpace(body.Schedule); sc != "" {
 		if err := validateCronSchedule(sc); err != nil {
-			s.jsonError(w, http.StatusBadRequest, err.Error())
+			s.jsonErrorCode(w, http.StatusBadRequest, ErrCodeInvalidCronSchedule, err.Error())
 			return
 		}
 		target.Schedule = sc
@@ -707,7 +707,7 @@ func (s *Server) handlePutCron(w http.ResponseWriter, r *http.Request) {
 	if body.Jitter != nil {
 		if t := strings.TrimSpace(*body.Jitter); t != "" {
 			if _, err := time.ParseDuration(t); err != nil {
-				s.jsonError(w, http.StatusBadRequest, "invalid jitter duration")
+				s.jsonErrorCode(w, http.StatusBadRequest, ErrCodeInvalidDuration, "invalid jitter duration")
 				return
 			}
 			target.Jitter = t

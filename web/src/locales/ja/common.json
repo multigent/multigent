@@ -55,6 +55,15 @@
     "runtime_capability_required": "ランタイムトークンにこの操作の権限がありません。",
     "unsupported_auth_type": "この認証方式はサポートされていません。",
     "unsupported_provider": "このコネクタープロバイダーはサポートされていません。",
+    "agent_not_running": "エージェントは現在実行されていません。",
+    "cron_not_found": "Cron ジョブが見つかりません。",
+    "heartbeat_not_found": "ハートビート設定が見つかりません。",
+    "invalid_cron_schedule": "Cron スケジュールが正しくありません。",
+    "invalid_duration": "期間の形式が正しくありません。",
+    "process_not_found": "エージェントプロセスが見つかりません。",
+    "scheduler_conflict": "スケジューラーは既に実行中か、現在の状態と競合しています。",
+    "scheduler_not_found": "スケジューラーは実行されていません。",
+    "scheduler_wakeup_failed": "エージェントの起動に失敗しました。",
     "unknown": "操作に失敗しました。しばらくしてからお試しください。"
   },
   "aria": {

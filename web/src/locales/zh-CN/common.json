@@ -55,6 +55,15 @@
     "runtime_capability_required": "运行时 Token 没有执行该操作的权限。",
     "unsupported_auth_type": "不支持该认证方式。",
     "unsupported_provider": "不支持该连接器提供方。",
+    "agent_not_running": "Agent 当前没有运行。",
+    "cron_not_found": "没有找到该定时任务。",
+    "heartbeat_not_found": "没有找到心跳配置。",
+    "invalid_cron_schedule": "Cron 表达式不合法。",
+    "invalid_duration": "时间间隔格式不合法。",
+    "process_not_found": "没有找到 Agent 进程。",
+    "scheduler_conflict": "调度器已运行或与当前状态冲突。",
+    "scheduler_not_found": "调度器当前没有运行。",
+    "scheduler_wakeup_failed": "唤醒 Agent 失败。",
     "unknown": "操作失败，请稍后重试。"
   },
   "aria": {

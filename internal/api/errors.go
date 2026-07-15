@@ -58,6 +58,16 @@ const (
 	ErrCodeRuntimeCapabilityRequired    = "runtime_capability_required"
 	ErrCodeUnsupportedAuthType          = "unsupported_auth_type"
 	ErrCodeUnsupportedProvider          = "unsupported_provider"
+
+	ErrCodeAgentNotRunning       = "agent_not_running"
+	ErrCodeCronNotFound          = "cron_not_found"
+	ErrCodeHeartbeatNotFound     = "heartbeat_not_found"
+	ErrCodeInvalidCronSchedule   = "invalid_cron_schedule"
+	ErrCodeInvalidDuration       = "invalid_duration"
+	ErrCodeProcessNotFound       = "process_not_found"
+	ErrCodeSchedulerConflict     = "scheduler_conflict"
+	ErrCodeSchedulerNotFound     = "scheduler_not_found"
+	ErrCodeSchedulerWakeupFailed = "scheduler_wakeup_failed"
 )
 
 type apiErrorResponse struct {
