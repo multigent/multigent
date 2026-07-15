@@ -226,6 +226,65 @@ func TestConnectionTestPersistsFailedHTTPValidation(t *testing.T) {
 	}
 }
 
+func TestConnectionTestEnforcesConnectionActionPolicy(t *testing.T) {
+	s, workspaceID := newConnectionTestServer(t)
+	var upstreamHits int
+	upstream := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		upstreamHits++
+		_ = json.NewEncoder(w).Encode(map[string]bool{"ok": true})
+	}))
+	defer upstream.Close()
+
+	connection := controldb.Connection{
+		ID:             "conn-policy-test",
+		WorkspaceID:    workspaceID,
+		Provider:       "custom-http",
+		ConnectionName: "api",
+		OwnerType:      ConnectionOwnerUser,
+		OwnerID:        "owner",
+		AuthType:       ConnectionAuthCustomCredential,
+		Status:         "active",
+		ProfileJSON:    `{"allowedActionMethods":["GET"],"allowedActionEndpoints":["/safe/*"]}`,
+		CreatedBy:      "owner",
+		CreatedAt:      "2026-07-15T00:00:00Z",
+		UpdatedAt:      "2026-07-15T00:00:00Z",
+	}
+	if err := s.controlDB.UpsertConnection(connection); err != nil {
+		t.Fatalf("connection: %v", err)
+	}
+	secret, err := sealConnectionSecret(map[string]string{"baseUrl": upstream.URL, "apiKey": "test-token"})
+	if err != nil {
+		t.Fatalf("seal secret: %v", err)
+	}
+	secret.ConnectionID = connection.ID
+	if err := s.controlDB.UpsertConnectionSecret(secret); err != nil {
+		t.Fatalf("secret: %v", err)
+	}
+
+	blockedReq := httptest.NewRequest(http.MethodPost, "/api/v1/connections/conn-policy-test/test", strings.NewReader(`{"method":"POST","endpoint":"/safe/items","body":{"ok":true}}`))
+	blockedReq.SetPathValue("id", connection.ID)
+	blockedReq.Header.Set("Content-Type", "application/json")
+	blockedReq = blockedReq.WithContext(context.WithValue(blockedReq.Context(), ctxUserKey, "owner"))
+	blockedRec := httptest.NewRecorder()
+	s.handleTestConnection(blockedRec, blockedReq)
+	if blockedRec.Code != http.StatusBadRequest {
+		t.Fatalf("blocked status=%d body=%s", blockedRec.Code, blockedRec.Body.String())
+	}
+
+	allowedReq := httptest.NewRequest(http.MethodPost, "/api/v1/connections/conn-policy-test/test", strings.NewReader(`{"method":"GET","endpoint":"/safe/items"}`))
+	allowedReq.SetPathValue("id", connection.ID)
+	allowedReq.Header.Set("Content-Type", "application/json")
+	allowedReq = allowedReq.WithContext(context.WithValue(allowedReq.Context(), ctxUserKey, "owner"))
+	allowedRec := httptest.NewRecorder()
+	s.handleTestConnection(allowedRec, allowedReq)
+	if allowedRec.Code != http.StatusOK {
+		t.Fatalf("allowed status=%d body=%s", allowedRec.Code, allowedRec.Body.String())
+	}
+	if upstreamHits != 1 {
+		t.Fatalf("upstream hits=%d", upstreamHits)
+	}
+}
+
 func TestConnectionHealthCheckRunsOnlyEnabledDueConnections(t *testing.T) {
 	s, workspaceID := newConnectionTestServer(t)
 	var hits int

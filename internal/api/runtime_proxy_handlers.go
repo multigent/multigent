@@ -162,6 +162,9 @@ func (s *Server) proxyRuntimeAction(w http.ResponseWriter, r *http.Request, prin
 			return err
 		}
 	}
+	if err := enforceRuntimeActionPolicy(connection, reqBody.Method, endpoint); err != nil {
+		return err
+	}
 	target, err := buildRuntimeActionURL(cfg.BaseURL, endpoint, query)
 	if err != nil {
 		return err
@@ -435,6 +438,101 @@ func runtimeActionMethodAllowed(method string) bool {
 	default:
 		return false
 	}
+}
+
+func enforceRuntimeActionPolicy(connection controldb.Connection, method, endpoint string) error {
+	policy := runtimeActionPolicyFromConnection(connection)
+	method = strings.ToUpper(strings.TrimSpace(method))
+	endpoint = strings.TrimSpace(endpoint)
+	if matchesRuntimeActionPolicy(method, policy.BlockedMethods, true) {
+		return runtimeActionInputError{message: fmt.Sprintf("%s is blocked by this connection's action policy", method)}
+	}
+	if len(policy.AllowedMethods) > 0 && !matchesRuntimeActionPolicy(method, policy.AllowedMethods, true) {
+		return runtimeActionInputError{message: fmt.Sprintf("%s is not included in this connection's action method allowlist", method)}
+	}
+	if matchesRuntimeActionPolicy(endpoint, policy.BlockedEndpoints, false) {
+		return runtimeActionInputError{message: fmt.Sprintf("%s is blocked by this connection's action policy", endpoint)}
+	}
+	if len(policy.AllowedEndpoints) > 0 && !matchesRuntimeActionPolicy(endpoint, policy.AllowedEndpoints, false) {
+		return runtimeActionInputError{message: fmt.Sprintf("%s is not included in this connection's action endpoint allowlist", endpoint)}
+	}
+	return nil
+}
+
+type runtimeActionPolicy struct {
+	AllowedMethods   []string
+	BlockedMethods   []string
+	AllowedEndpoints []string
+	BlockedEndpoints []string
+}
+
+func runtimeActionPolicyFromConnection(connection controldb.Connection) runtimeActionPolicy {
+	profile := connectionProfileMap(connection)
+	return runtimeActionPolicy{
+		AllowedMethods:   runtimeActionPolicyList(profile, "allowedActionMethods"),
+		BlockedMethods:   runtimeActionPolicyList(profile, "blockedActionMethods"),
+		AllowedEndpoints: runtimeActionPolicyList(profile, "allowedActionEndpoints"),
+		BlockedEndpoints: runtimeActionPolicyList(profile, "blockedActionEndpoints"),
+	}
+}
+
+func runtimeActionPolicyList(profile map[string]any, key string) []string {
+	raw, ok := profile[key]
+	if !ok {
+		return nil
+	}
+	out := []string{}
+	switch v := raw.(type) {
+	case string:
+		for _, item := range strings.FieldsFunc(v, func(r rune) bool { return r == ',' || r == '\n' || r == '\r' || r == '\t' }) {
+			if item = strings.TrimSpace(item); item != "" {
+				out = append(out, item)
+			}
+		}
+	case []any:
+		for _, item := range v {
+			if s, ok := item.(string); ok {
+				if s = strings.TrimSpace(s); s != "" {
+					out = append(out, s)
+				}
+			}
+		}
+	case []string:
+		for _, item := range v {
+			if item = strings.TrimSpace(item); item != "" {
+				out = append(out, item)
+			}
+		}
+	}
+	return out
+}
+
+func matchesRuntimeActionPolicy(value string, patterns []string, exactOnly bool) bool {
+	for _, pattern := range patterns {
+		pattern = strings.TrimSpace(pattern)
+		if pattern == "" {
+			continue
+		}
+		if exactOnly {
+			if strings.EqualFold(value, pattern) {
+				return true
+			}
+			continue
+		}
+		if pattern == "*" {
+			return true
+		}
+		if strings.HasSuffix(pattern, "*") {
+			if strings.HasPrefix(value, strings.TrimSuffix(pattern, "*")) {
+				return true
+			}
+			continue
+		}
+		if value == pattern {
+			return true
+		}
+	}
+	return false
 }
 
 func validateRuntimeRelativeEndpoint(endpoint string) error {

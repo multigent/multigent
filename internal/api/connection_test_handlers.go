@@ -408,6 +408,9 @@ func (s *Server) testHTTPConnection(r *http.Request, connection controldb.Connec
 			return testConnectionResult{}, err
 		}
 	}
+	if err := enforceRuntimeActionPolicy(connection, actionReq.Method, endpoint); err != nil {
+		return testConnectionResult{}, err
+	}
 	target, err := buildRuntimeActionURL(cfg.BaseURL, endpoint, query)
 	if err != nil {
 		return testConnectionResult{}, err

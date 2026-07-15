@@ -215,6 +215,7 @@ export default function ConnectionsPage() {
 function ConnectionCard({ connection, provider, canGrant, canEdit, canDelete, testState, onEdit, onGrant, onTest, onDelete }: { connection: Connection; provider?: Provider; canGrant: boolean; canEdit: boolean; canDelete: boolean; testState?: { loading?: boolean; ok?: boolean; message?: string }; onEdit: () => void; onGrant: () => void; onTest: () => void; onDelete: () => void }) {
   const validation = connectionValidation(connection)
   const health = connectionHealthPolicy(connection)
+  const hasActionPolicy = connectionHasActionPolicy(connection)
   return (
     <section className="rounded-xl border border-neutral-200/80 bg-white p-5 dark:border-zinc-700/60 dark:bg-zinc-900/40">
       <div className="flex items-start justify-between gap-3">
@@ -237,6 +238,11 @@ function ConnectionCard({ connection, provider, canGrant, canEdit, canDelete, te
               {health.enabled && (
                 <span className="rounded-full bg-amber-100 px-2 py-0.5 text-[11px] font-medium text-amber-700 dark:bg-amber-900/30 dark:text-amber-300">
                   Auto-check · {health.intervalMinutes}m
+                </span>
+              )}
+              {hasActionPolicy && (
+                <span className="rounded-full bg-violet-100 px-2 py-0.5 text-[11px] font-medium text-violet-700 dark:bg-violet-900/30 dark:text-violet-300">
+                  Action policy
                 </span>
               )}
             </div>
@@ -323,6 +329,22 @@ function connectionHealthPolicy(connection: Connection): { enabled: boolean; int
   return { enabled, intervalMinutes, nextLabel }
 }
 
+function profileStringList(profile: Record<string, unknown> | undefined, key: string): string[] {
+  const raw = profile?.[key]
+  if (Array.isArray(raw)) return raw.filter((item): item is string => typeof item === 'string').map(item => item.trim()).filter(Boolean)
+  if (typeof raw === 'string') return raw.split(/[\n,]+/).map(item => item.trim()).filter(Boolean)
+  return []
+}
+
+function connectionHasActionPolicy(connection: Connection): boolean {
+  return ['allowedActionMethods', 'blockedActionMethods', 'allowedActionEndpoints', 'blockedActionEndpoints']
+    .some(key => profileStringList(connection.profile, key).length > 0)
+}
+
+function parsePolicyList(value: string): string[] {
+  return value.split(/[\n,]+/).map(item => item.trim()).filter(Boolean)
+}
+
 function ConnectionDialog({ providers, isWorkspaceAdmin, connection, onClose, onCreated }: { providers: Provider[]; isWorkspaceAdmin: boolean; connection?: Connection; onClose: () => void; onCreated: () => void }) {
   const isEditing = Boolean(connection)
   const [providerId, setProviderId] = useState(connection?.provider ?? providers[0]?.provider ?? '')
@@ -333,6 +355,10 @@ function ConnectionDialog({ providers, isWorkspaceAdmin, connection, onClose, on
   const [displayName, setDisplayName] = useState(String(connection?.profile?.displayName ?? ''))
   const [healthCheckEnabled, setHealthCheckEnabled] = useState(connection?.profile?.healthCheckEnabled === true)
   const [healthCheckIntervalMinutes, setHealthCheckIntervalMinutes] = useState(String(connectionHealthPolicy(connection ?? {} as Connection).intervalMinutes))
+  const [allowedActionMethods, setAllowedActionMethods] = useState(profileStringList(connection?.profile, 'allowedActionMethods').join('\n'))
+  const [blockedActionMethods, setBlockedActionMethods] = useState(profileStringList(connection?.profile, 'blockedActionMethods').join('\n'))
+  const [allowedActionEndpoints, setAllowedActionEndpoints] = useState(profileStringList(connection?.profile, 'allowedActionEndpoints').join('\n'))
+  const [blockedActionEndpoints, setBlockedActionEndpoints] = useState(profileStringList(connection?.profile, 'blockedActionEndpoints').join('\n'))
   const [values, setValues] = useState<Record<string, string>>({})
   const [saving, setSaving] = useState(false)
 
@@ -363,6 +389,10 @@ function ConnectionDialog({ providers, isWorkspaceAdmin, connection, onClose, on
           displayName: displayName.trim() || provider.displayName,
           healthCheckEnabled,
           healthCheckIntervalMinutes: Math.max(5, Math.min(43200, Number(healthCheckIntervalMinutes) || 360)),
+          allowedActionMethods: parsePolicyList(allowedActionMethods),
+          blockedActionMethods: parsePolicyList(blockedActionMethods),
+          allowedActionEndpoints: parsePolicyList(allowedActionEndpoints),
+          blockedActionEndpoints: parsePolicyList(blockedActionEndpoints),
         },
       }
       if (connection) {
@@ -441,6 +471,30 @@ function ConnectionDialog({ providers, isWorkspaceAdmin, connection, onClose, on
               <input type="number" min={5} max={43200} className={inputCls} value={healthCheckIntervalMinutes} onChange={e => setHealthCheckIntervalMinutes(e.target.value)} />
             </label>
           )}
+        </div>
+        <div className="rounded-lg border border-neutral-200 p-3 dark:border-zinc-700">
+          <div>
+            <p className="text-sm font-medium text-neutral-700 dark:text-zinc-200">Runtime action policy</p>
+            <p className="mt-0.5 text-xs text-neutral-400 dark:text-zinc-500">Optional allow/block rules for agent HTTP action proxy calls. Endpoint patterns support exact paths, <code>/prefix/*</code>, or <code>*</code>.</p>
+          </div>
+          <div className="mt-3 grid gap-3 sm:grid-cols-2">
+            <label className="block">
+              <span className="text-xs font-medium text-neutral-500 dark:text-zinc-400">Allowed methods</span>
+              <textarea className={`${inputCls} min-h-20 resize-y`} value={allowedActionMethods} onChange={e => setAllowedActionMethods(e.target.value)} placeholder={'GET\nPOST'} />
+            </label>
+            <label className="block">
+              <span className="text-xs font-medium text-neutral-500 dark:text-zinc-400">Blocked methods</span>
+              <textarea className={`${inputCls} min-h-20 resize-y`} value={blockedActionMethods} onChange={e => setBlockedActionMethods(e.target.value)} placeholder={'DELETE'} />
+            </label>
+            <label className="block">
+              <span className="text-xs font-medium text-neutral-500 dark:text-zinc-400">Allowed endpoints</span>
+              <textarea className={`${inputCls} min-h-24 resize-y`} value={allowedActionEndpoints} onChange={e => setAllowedActionEndpoints(e.target.value)} placeholder={'/open-apis/wiki/*\n/repos/*'} />
+            </label>
+            <label className="block">
+              <span className="text-xs font-medium text-neutral-500 dark:text-zinc-400">Blocked endpoints</span>
+              <textarea className={`${inputCls} min-h-24 resize-y`} value={blockedActionEndpoints} onChange={e => setBlockedActionEndpoints(e.target.value)} placeholder={'/admin/*\n/private'} />
+            </label>
+          </div>
         </div>
         <div className="flex justify-end gap-2 pt-2">
           <button type="button" onClick={onClose} disabled={saving} className="rounded-lg border border-neutral-300 px-3 py-2 text-sm dark:border-zinc-600">Cancel</button>

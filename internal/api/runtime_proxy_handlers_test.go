@@ -454,6 +454,96 @@ func TestRuntimeActionProxyRejectsUnsafeEndpoint(t *testing.T) {
 	}
 }
 
+func TestRuntimeActionProxyEnforcesConnectionActionPolicy(t *testing.T) {
+	users := newTestUserStore(t)
+	s := &Server{controlDB: users.db, users: users}
+	workspaceID := "ws-one"
+	var upstreamHits int
+	upstream := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		upstreamHits++
+		_ = json.NewEncoder(w).Encode(map[string]bool{"ok": true})
+	}))
+	defer upstream.Close()
+	connection := controldb.Connection{
+		ID:             "conn-policy",
+		WorkspaceID:    workspaceID,
+		Provider:       "custom-http",
+		ConnectionName: "api",
+		OwnerType:      ConnectionOwnerWorkspace,
+		OwnerID:        workspaceID,
+		AuthType:       ConnectionAuthCustomCredential,
+		Status:         "active",
+		ProfileJSON:    `{"allowedActionMethods":["GET"],"allowedActionEndpoints":["/v1/read/*"],"blockedActionEndpoints":["/v1/read/private"]}`,
+	}
+	if err := users.db.UpsertWorkspace(controldb.Workspace{ID: workspaceID, Name: "One", Slug: "one"}); err != nil {
+		t.Fatalf("workspace: %v", err)
+	}
+	if err := users.db.UpsertConnection(connection); err != nil {
+		t.Fatalf("connection: %v", err)
+	}
+	secret, err := sealConnectionSecret(map[string]string{"baseUrl": upstream.URL, "apiKey": "http-token"})
+	if err != nil {
+		t.Fatalf("seal secret: %v", err)
+	}
+	secret.ConnectionID = connection.ID
+	if err := users.db.UpsertConnectionSecret(secret); err != nil {
+		t.Fatalf("secret: %v", err)
+	}
+	if err := users.db.CreateConnectionGrant(controldb.ConnectionGrant{
+		ID:           "grant-policy",
+		WorkspaceID:  workspaceID,
+		ConnectionID: connection.ID,
+		TargetType:   ConnectionTargetAgent,
+		TargetID:     "tapnow/pm",
+	}); err != nil {
+		t.Fatalf("grant: %v", err)
+	}
+	principal := runtimeAgentPrincipal{
+		WorkspaceID:  workspaceID,
+		Project:      "tapnow",
+		Agent:        "pm",
+		RunID:        "run-one",
+		Capabilities: []string{"connection.use"},
+	}
+	for _, tc := range []struct {
+		name     string
+		body     string
+		wantCode int
+	}{
+		{name: "allowed", body: `{"method":"GET","endpoint":"/v1/read/items"}`, wantCode: http.StatusOK},
+		{name: "method blocked by allowlist", body: `{"method":"POST","endpoint":"/v1/read/items","body":{"ok":true}}`, wantCode: http.StatusBadRequest},
+		{name: "endpoint not allowed", body: `{"method":"GET","endpoint":"/v1/write/items"}`, wantCode: http.StatusBadRequest},
+		{name: "endpoint blocked", body: `{"method":"GET","endpoint":"/v1/read/private"}`, wantCode: http.StatusBadRequest},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			req := httptest.NewRequest(http.MethodPost, "/api/v1/runtime/actions", stringsReader(tc.body))
+			req.Header.Set(agentConnectionManifest().ConnectionIDHeader, connection.ID)
+			req = req.WithContext(context.WithValue(req.Context(), ctxRuntimeAgentKey, principal))
+			rec := httptest.NewRecorder()
+			s.handleRuntimeActionProxy(rec, req)
+			if rec.Code != tc.wantCode {
+				t.Fatalf("status=%d body=%s", rec.Code, rec.Body.String())
+			}
+		})
+	}
+	if upstreamHits != 1 {
+		t.Fatalf("upstream hits=%d", upstreamHits)
+	}
+}
+
+func TestRuntimeActionPolicyParsesStringLists(t *testing.T) {
+	connection := controldb.Connection{
+		ProfileJSON: `{"allowedActionMethods":"GET, POST","blockedActionEndpoints":"/admin/*\n/private"}`,
+	}
+	policy := runtimeActionPolicyFromConnection(connection)
+	if !matchesRuntimeActionPolicy("GET", policy.AllowedMethods, true) || !matchesRuntimeActionPolicy("POST", policy.AllowedMethods, true) {
+		t.Fatalf("methods=%#v", policy.AllowedMethods)
+	}
+	if !matchesRuntimeActionPolicy("/admin/users", policy.BlockedEndpoints, false) || !matchesRuntimeActionPolicy("/private", policy.BlockedEndpoints, false) {
+		t.Fatalf("endpoints=%#v", policy.BlockedEndpoints)
+	}
+}
+
 func stringsReader(s string) *strings.Reader {
 	return strings.NewReader(s)
 }
