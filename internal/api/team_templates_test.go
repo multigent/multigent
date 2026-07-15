@@ -78,3 +78,44 @@ func TestApplyTeamTemplateRequiresWorkspaceAdminAndCreatesRoles(t *testing.T) {
 		}
 	}
 }
+
+func TestCreateTeamAllowsBlankTeamAndMultipleInstancesFromSameTemplate(t *testing.T) {
+	s, _ := newConnectionGrantPolicyServer(t)
+
+	blankRec := httptest.NewRecorder()
+	blankReq := providerTestRequest(http.MethodPost, "/api/v1/teams", "admin", createTeamBody{
+		Name:        "research",
+		Description: "Research and discovery",
+	})
+	s.handleCreateTeam(blankRec, blankReq)
+	if blankRec.Code != http.StatusOK {
+		t.Fatalf("blank create status=%d body=%s", blankRec.Code, blankRec.Body.String())
+	}
+	blank, err := s.st.Team("research")
+	if err != nil {
+		t.Fatalf("load blank team: %v", err)
+	}
+	if blank.Description != "Research and discovery" {
+		t.Fatalf("blank description=%q", blank.Description)
+	}
+
+	for _, name := range []string{"delivery-a", "delivery-b"} {
+		rec := httptest.NewRecorder()
+		req := providerTestRequest(http.MethodPost, "/api/v1/teams", "admin", createTeamBody{
+			Name:       name,
+			TemplateID: "software-delivery",
+			Locale:     "zh-CN",
+		})
+		s.handleCreateTeam(rec, req)
+		if rec.Code != http.StatusOK {
+			t.Fatalf("template create %s status=%d body=%s", name, rec.Code, rec.Body.String())
+		}
+		role, err := s.st.Role(name, "backend-developer")
+		if err != nil {
+			t.Fatalf("load templated role for %s: %v", name, err)
+		}
+		if role.Description == "" || role.Description == "Owns APIs, data model, integrations, permissions, reliability, and backend tests." {
+			t.Fatalf("expected localized role description for %s, got %q", name, role.Description)
+		}
+	}
+}

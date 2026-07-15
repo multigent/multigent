@@ -368,12 +368,53 @@
     "templatesTitle": "Team templates",
     "applyTemplate": "Use template",
     "templateApplied": "Created",
+    "createTeam": "New Team",
+    "createTeamDesc": "Create a blank functional team or start from a reusable role template.",
+    "createMode": "Creation mode",
+    "blankTeam": "Blank team",
+    "blankTeamDesc": "Create a team with no predefined roles. You can add roles later.",
+    "teamName": "Team name",
+    "teamDescription": "Description",
+    "teamDescPlaceholder": "Short description of what this team is responsible for",
+    "templateRoles": "Roles included in this template",
     "createRole": "New Role",
     "createRoleDesc": "Create a new role under team \"{{team}}\".",
     "roleName": "Role name",
     "roleDescription": "Description",
     "roleDescPlaceholder": "Short description of this role's responsibilities",
     "roleSkills": "Bind skills"
+  },
+  "teamTemplates": {
+    "software-delivery": {
+      "name": "Software Delivery Team",
+      "description": "Cross-functional product engineering team for shipping web/SaaS features with product, design, frontend, backend, QA, and review coverage."
+    },
+    "roles": {
+      "product-manager": {
+        "name": "Product Manager",
+        "description": "Owns problem framing, scope, acceptance criteria, rollout, and stakeholder alignment."
+      },
+      "ui-designer": {
+        "name": "UI Designer",
+        "description": "Owns user flows, interface structure, visual consistency, and design QA."
+      },
+      "frontend-developer": {
+        "name": "Frontend Developer",
+        "description": "Owns client implementation, state, accessibility, responsiveness, and frontend integration."
+      },
+      "backend-developer": {
+        "name": "Backend Developer",
+        "description": "Owns APIs, data model, integrations, permissions, reliability, and backend tests."
+      },
+      "qa-engineer": {
+        "name": "QA Engineer",
+        "description": "Owns test strategy, acceptance validation, regression risk, and release confidence."
+      },
+      "code-reviewer": {
+        "name": "Code Reviewer",
+        "description": "Reviews changes for correctness, maintainability, security, performance, and test gaps."
+      }
+    }
   },
   "workbench": {
     "title": "Workbench",

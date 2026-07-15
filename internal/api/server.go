@@ -147,6 +147,7 @@ func (s *Server) Handler() http.Handler {
 	mux.HandleFunc("GET /api/v1/team-templates", s.handleTeamTemplates)
 	mux.HandleFunc("POST /api/v1/team-templates/{id}/apply", s.handleApplyTeamTemplate)
 	mux.HandleFunc("GET /api/v1/teams", s.handleTeams)
+	mux.HandleFunc("POST /api/v1/teams", s.handleCreateTeam)
 	mux.HandleFunc("GET /api/v1/teams/{teamPath...}", s.handleTeamDetail)
 	mux.HandleFunc("GET /api/v1/projects", s.handleProjects)
 	mux.HandleFunc("GET /api/v1/rbac/model", s.handleRBACModel)

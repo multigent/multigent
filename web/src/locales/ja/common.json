@@ -368,12 +368,53 @@
     "templatesTitle": "チームテンプレート",
     "applyTemplate": "テンプレートを使用",
     "templateApplied": "作成済み",
+    "createTeam": "新規チーム",
+    "createTeamDesc": "空の機能チームを作成するか、再利用可能なロールテンプレートから開始します。",
+    "createMode": "作成方法",
+    "blankTeam": "空のチーム",
+    "blankTeamDesc": "事前定義ロールなしでチームを作成します。ロールは後で追加できます。",
+    "teamName": "チーム名",
+    "teamDescription": "説明",
+    "teamDescPlaceholder": "このチームの責任範囲を簡潔に記述",
+    "templateRoles": "このテンプレートに含まれるロール",
     "createRole": "新規ロール",
     "createRoleDesc": "チーム「{{team}}」の下に新しいロールを作成します。",
     "roleName": "ロール名",
     "roleDescription": "説明",
     "roleDescPlaceholder": "このロールの責務を簡潔に記述",
     "roleSkills": "スキルを紐付け"
+  },
+  "teamTemplates": {
+    "software-delivery": {
+      "name": "ソフトウェアデリバリーチーム",
+      "description": "Web/SaaS 機能を出荷するためのクロスファンクショナルなプロダクトエンジニアリングチーム。PM、デザイン、フロントエンド、バックエンド、QA、コードレビューを含みます。"
+    },
+    "roles": {
+      "product-manager": {
+        "name": "プロダクトマネージャー",
+        "description": "問題定義、スコープ、受け入れ基準、ロールアウト、ステークホルダー調整を担当します。"
+      },
+      "ui-designer": {
+        "name": "UI デザイナー",
+        "description": "ユーザーフロー、画面構造、視覚的一貫性、デザイン QA を担当します。"
+      },
+      "frontend-developer": {
+        "name": "フロントエンド開発者",
+        "description": "クライアント実装、状態管理、アクセシビリティ、レスポンシブ対応、フロントエンド連携を担当します。"
+      },
+      "backend-developer": {
+        "name": "バックエンド開発者",
+        "description": "API、データモデル、連携、権限、信頼性、バックエンドテストを担当します。"
+      },
+      "qa-engineer": {
+        "name": "QA エンジニア",
+        "description": "テスト戦略、受け入れ検証、回帰リスク、リリース信頼性を担当します。"
+      },
+      "code-reviewer": {
+        "name": "コードレビュアー",
+        "description": "正確性、保守性、セキュリティ、性能、テスト不足の観点で変更をレビューします。"
+      }
+    }
   },
   "workbench": {
     "title": "ワークベンチ",

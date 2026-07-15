@@ -368,12 +368,53 @@
     "templatesTitle": "團隊模板",
     "applyTemplate": "使用模板",
     "templateApplied": "已建立",
+    "createTeam": "新增團隊",
+    "createTeamDesc": "建立空白職能團隊，或從可複用角色模板開始。",
+    "createMode": "建立方式",
+    "blankTeam": "空白團隊",
+    "blankTeamDesc": "建立一個不含預設角色的團隊，後續可自行新增角色。",
+    "teamName": "團隊名稱",
+    "teamDescription": "描述",
+    "teamDescPlaceholder": "簡要描述這個團隊負責什麼",
+    "templateRoles": "此模板包含的角色",
     "createRole": "新建角色",
     "createRoleDesc": "在團隊「{{team}}」下建立新角色。",
     "roleName": "角色名稱",
     "roleDescription": "描述",
     "roleDescPlaceholder": "簡要描述該角色的職責",
     "roleSkills": "綁定技能"
+  },
+  "teamTemplates": {
+    "software-delivery": {
+      "name": "軟體交付團隊",
+      "description": "適合 Web/SaaS 功能交付的跨職能產品工程團隊，涵蓋產品、設計、前端、後端、QA 和程式碼評審。"
+    },
+    "roles": {
+      "product-manager": {
+        "name": "產品經理",
+        "description": "負責問題定義、範圍控制、驗收標準、發布節奏和利害關係人對齊。"
+      },
+      "ui-designer": {
+        "name": "UI 設計師",
+        "description": "負責使用者流程、介面結構、視覺一致性、互動狀態和設計驗收。"
+      },
+      "frontend-developer": {
+        "name": "前端開發",
+        "description": "負責前端實作、狀態管理、可訪問性、響應式表現和介面聯調。"
+      },
+      "backend-developer": {
+        "name": "後端開發",
+        "description": "負責 API、資料模型、整合、權限、可靠性和後端測試。"
+      },
+      "qa-engineer": {
+        "name": "測試工程師",
+        "description": "負責測試策略、驗收驗證、回歸風險和發布信心。"
+      },
+      "code-reviewer": {
+        "name": "程式碼評審",
+        "description": "從正確性、可維護性、安全性、效能和測試缺口角度評審程式碼。"
+      }
+    }
   },
   "workbench": {
     "title": "工作臺",

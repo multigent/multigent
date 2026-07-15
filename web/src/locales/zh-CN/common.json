@@ -368,12 +368,53 @@
     "templatesTitle": "团队模板",
     "applyTemplate": "使用模板",
     "templateApplied": "已创建",
+    "createTeam": "新建团队",
+    "createTeamDesc": "创建空白职能团队，或从可复用角色模板开始。",
+    "createMode": "创建方式",
+    "blankTeam": "空白团队",
+    "blankTeamDesc": "创建一个不带预设角色的团队，后续可自行添加角色。",
+    "teamName": "团队名称",
+    "teamDescription": "描述",
+    "teamDescPlaceholder": "简要描述这个团队负责什么",
+    "templateRoles": "该模板包含的角色",
     "createRole": "新建角色",
     "createRoleDesc": "在团队 \"{{team}}\" 下创建新角色。",
     "roleName": "角色名称",
     "roleDescription": "描述",
     "roleDescPlaceholder": "简要描述该角色的职责",
     "roleSkills": "绑定技能"
+  },
+  "teamTemplates": {
+    "software-delivery": {
+      "name": "软件交付团队",
+      "description": "适合 Web/SaaS 功能交付的跨职能产品工程团队，覆盖产品、设计、前端、后端、QA 和代码评审。"
+    },
+    "roles": {
+      "product-manager": {
+        "name": "产品经理",
+        "description": "负责问题定义、范围控制、验收标准、发布节奏和干系人对齐。"
+      },
+      "ui-designer": {
+        "name": "UI 设计师",
+        "description": "负责用户流程、界面结构、视觉一致性、交互状态和设计验收。"
+      },
+      "frontend-developer": {
+        "name": "前端开发",
+        "description": "负责前端实现、状态管理、可访问性、响应式表现和接口联调。"
+      },
+      "backend-developer": {
+        "name": "后端开发",
+        "description": "负责 API、数据模型、集成、权限、可靠性和后端测试。"
+      },
+      "qa-engineer": {
+        "name": "测试工程师",
+        "description": "负责测试策略、验收验证、回归风险和发布信心。"
+      },
+      "code-reviewer": {
+        "name": "代码评审",
+        "description": "从正确性、可维护性、安全性、性能和测试缺口角度评审代码。"
+      }
+    }
   },
   "workbench": {
     "title": "工作台",
