@@ -15,10 +15,14 @@ import (
 
 func seedTelemetryRun(t *testing.T, s *Server, project, agent, logBody string) string {
 	t.Helper()
-	logPath := filepath.Join(t.TempDir(), project+"-"+agent+".log")
+	logPath := filepath.Join(s.root, ".multigent", "test-logs", project+"-"+agent+".log")
+	if err := os.MkdirAll(filepath.Dir(logPath), 0o755); err != nil {
+		t.Fatalf("mkdir log dir: %v", err)
+	}
 	if err := os.WriteFile(logPath, []byte(logBody), 0o600); err != nil {
 		t.Fatalf("write log: %v", err)
 	}
+	logPathRel := telemetry.RelLogPath(s.root, logPath)
 	now := time.Now().UTC()
 	if err := telemetry.Insert(s.root, telemetry.Record{
 		Kind:           telemetry.KindTask,
@@ -30,14 +34,14 @@ func seedTelemetryRun(t *testing.T, s *Server, project, agent, logBody string) s
 		TaskTitle:      "Task " + agent,
 		Model:          "codex",
 		Status:         "done_success",
-		LogPathRel:     logPath,
+		LogPathRel:     logPathRel,
 		CommandSummary: "run " + agent,
 		InputTokens:    sql.NullInt64{Int64: 10, Valid: true},
 		OutputTokens:   sql.NullInt64{Int64: 5, Valid: true},
 	}); err != nil {
 		t.Fatalf("insert telemetry: %v", err)
 	}
-	return logPath
+	return logPathRel
 }
 
 func TestTelemetryRunsAreFilteredByAgentAccess(t *testing.T) {

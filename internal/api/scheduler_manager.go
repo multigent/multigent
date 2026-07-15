@@ -316,7 +316,7 @@ func (s *Server) handleSchedulerStart(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	if project == "" {
-		if !s.requireAdmin(w, r) {
+		if !s.checkCurrentWorkspaceAdmin(w, r) {
 			return
 		}
 	} else if !s.checkProjectManager(w, r, project) {
@@ -400,7 +400,7 @@ func (s *Server) handleSchedulerStop(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	if project == "" {
-		if !s.requireAdmin(w, r) {
+		if !s.checkCurrentWorkspaceAdmin(w, r) {
 			return
 		}
 	} else if !s.checkProjectManager(w, r, project) {

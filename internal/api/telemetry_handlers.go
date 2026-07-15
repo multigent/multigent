@@ -224,11 +224,12 @@ func (s *Server) handleTelemetryLog(w http.ResponseWriter, r *http.Request) {
 		s.jsonError(w, http.StatusBadRequest, "path is required")
 		return
 	}
-	if !s.canReadTelemetryLog(r, logPath) {
+	readPath, ok := s.resolveReadableTelemetryLogPath(r, logPath)
+	if !ok {
 		s.jsonError(w, http.StatusForbidden, "run log access required")
 		return
 	}
-	data, err := os.ReadFile(logPath)
+	data, err := os.ReadFile(readPath)
 	if err != nil {
 		if os.IsNotExist(err) {
 			s.jsonError(w, http.StatusNotFound, "log file not found")
@@ -264,21 +265,32 @@ func (s *Server) filterTelemetryRunsForRequest(r *http.Request, rows []telemetry
 	return out
 }
 
-func (s *Server) canReadTelemetryLog(r *http.Request, logPath string) bool {
+func (s *Server) resolveReadableTelemetryLogPath(r *http.Request, logPath string) (string, bool) {
 	db, err := telemetry.OpenReadOnly(s.root)
 	if err != nil {
-		return false
+		return "", false
 	}
 	defer db.Close()
 	rows, err := telemetry.ReadRuns(db, nil, nil, "")
 	if err != nil {
-		return false
+		return "", false
 	}
 	cleanWant := filepath.Clean(logPath)
 	for _, row := range rows {
-		if filepath.Clean(row.LogPath) == cleanWant && s.canAccessAgent(r, row.Project, row.Agent) {
-			return true
+		if !s.canAccessAgent(r, row.Project, row.Agent) {
+			continue
+		}
+		rowPath := telemetryLogReadPath(s.root, row.LogPath)
+		if filepath.Clean(row.LogPath) == cleanWant || filepath.Clean(rowPath) == cleanWant {
+			return rowPath, true
 		}
 	}
-	return false
+	return "", false
+}
+
+func telemetryLogReadPath(root, logPath string) string {
+	if filepath.IsAbs(logPath) {
+		return filepath.Clean(logPath)
+	}
+	return filepath.Clean(filepath.Join(root, logPath))
 }
