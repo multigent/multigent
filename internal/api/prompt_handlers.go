@@ -172,7 +172,7 @@ func (s *Server) handlePutProjectPrompt(w http.ResponseWriter, r *http.Request) 
 func (s *Server) handleGetAgentContext(w http.ResponseWriter, r *http.Request) {
 	project := r.PathValue("name")
 	agent := r.PathValue("agent")
-	if !s.checkProjectAccess(w, r, project) {
+	if !s.checkAgentAccess(w, r, project, agent) {
 		return
 	}
 	agentDir := s.st.AgentDir(project, agent)

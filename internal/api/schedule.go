@@ -50,6 +50,9 @@ func (s *Server) handleGetProjectSchedule(w http.ResponseWriter, r *http.Request
 		if ag == nil {
 			continue
 		}
+		if !s.canAccessAgent(r, name, ag.Name) {
+			continue
+		}
 		hb, err := s.ts.GetHeartbeat(name, ag.Name)
 		if err != nil {
 			s.serverError(w, err)
@@ -234,6 +237,9 @@ func (s *Server) parseProjectAgent(w http.ResponseWriter, r *http.Request) (proj
 	}
 	if !s.agentExistsInProject(project, agent) {
 		s.jsonError(w, http.StatusNotFound, "agent not found")
+		return "", "", false
+	}
+	if !s.checkAgentAccess(w, r, project, agent) {
 		return "", "", false
 	}
 	return project, agent, true

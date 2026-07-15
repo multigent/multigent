@@ -782,12 +782,19 @@ func (s *Server) requireAdmin(w http.ResponseWriter, r *http.Request) bool {
 }
 
 func (s *Server) canAccessProject(r *http.Request, project string) bool {
+	if s.canAccessWholeProject(r, project) {
+		return true
+	}
+	return currentUserLinkedProject(s.currentUser(r), project)
+}
+
+func (s *Server) canAccessWholeProject(r *http.Request, project string) bool {
 	u := s.currentUser(r)
 	if u.Role == RoleAdmin || s.canAdminCurrentWorkspace(r) {
 		return true
 	}
 	_, ok := s.users.HasProjectAccess(u.Username, project)
-	return ok || currentUserLinkedProject(u, project)
+	return ok
 }
 
 func currentUserLinkedProject(cur *userRecord, project string) bool {
@@ -824,6 +831,21 @@ func (s *Server) canManageProject(r *http.Request, project string) bool {
 func (s *Server) checkProjectOperator(w http.ResponseWriter, r *http.Request, project string) bool {
 	if !s.canOperateProject(r, project) {
 		s.jsonError(w, http.StatusForbidden, "project operator access required")
+		return false
+	}
+	return true
+}
+
+func (s *Server) canAccessAgent(r *http.Request, project, agent string) bool {
+	if s.canAccessWholeProject(r, project) {
+		return true
+	}
+	return currentUserLinkedAgent(s.currentUser(r), project+"/"+agent)
+}
+
+func (s *Server) checkAgentAccess(w http.ResponseWriter, r *http.Request, project, agent string) bool {
+	if !s.canAccessAgent(r, project, agent) {
+		s.jsonError(w, http.StatusForbidden, "agent access required")
 		return false
 	}
 	return true

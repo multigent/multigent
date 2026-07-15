@@ -658,6 +658,9 @@ func (s *Server) handleProjectAgents(w http.ResponseWriter, r *http.Request) {
 		if a.Meta == nil {
 			continue
 		}
+		if !s.canAccessAgent(r, name, a.Name) {
+			continue
+		}
 		out = append(out, map[string]any{
 			"name":    a.Name,
 			"model":   string(a.Meta.Model),
@@ -889,6 +892,9 @@ func (s *Server) handleProjectTasks(w http.ResponseWriter, r *http.Request) {
 		if qAgent != "" && ag.Name != qAgent {
 			continue
 		}
+		if !s.canAccessAgent(r, name, ag.Name) {
+			continue
+		}
 		if qScope == "active" || qScope == "all" {
 			tasks, err := s.ts.ListTasks(name, ag.Name)
 			if err == nil {
@@ -986,6 +992,10 @@ func (s *Server) handleProjectMessages(w http.ResponseWriter, r *http.Request) {
 			s.jsonError(w, http.StatusBadRequest, "mailbox must be project/agent for an agent in this project")
 			return
 		}
+		if !s.canAccessAgent(r, name, parts[1]) {
+			s.jsonError(w, http.StatusForbidden, "agent access required")
+			return
+		}
 	}
 
 	rows := make([]msgRow, 0)
@@ -1043,6 +1053,9 @@ func (s *Server) handleProjectMessages(w http.ResponseWriter, r *http.Request) {
 		add(mailboxFilter)
 	} else {
 		for _, ag := range agents {
+			if !s.canAccessAgent(r, name, ag.Name) {
+				continue
+			}
 			add(name + "/" + ag.Name)
 		}
 	}

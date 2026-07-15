@@ -1,9 +1,14 @@
 package api
 
 import (
+	"encoding/json"
 	"net/http"
 	"net/http/httptest"
+	"strings"
 	"testing"
+	"time"
+
+	"github.com/multigent/multigent/internal/entity"
 )
 
 func grantProjectRoleForTest(t *testing.T, s *Server, workspaceID, username, role string) {
@@ -118,4 +123,90 @@ func TestMessageMailboxRBAC(t *testing.T) {
 	if viewerRec.Code != http.StatusForbidden {
 		t.Fatalf("viewer mark mailbox status=%d body=%s", viewerRec.Code, viewerRec.Body.String())
 	}
+}
+
+func TestLinkedAgentProjectViewsAreFilteredToLinkedAgents(t *testing.T) {
+	s, _ := newConnectionGrantPolicyServer(t)
+	now := time.Now().UTC()
+	for _, tc := range []struct {
+		agent string
+		title string
+	}{
+		{agent: "pm", title: "PM task"},
+		{agent: "backend", title: "Backend task"},
+	} {
+		if err := s.ts.AddTask("tapnow", tc.agent, &entity.Task{
+			ID:        entity.NewTaskID(),
+			Title:     tc.title,
+			Prompt:    tc.title,
+			Status:    entity.TaskStatusPending,
+			Priority:  2,
+			CreatedAt: now,
+			UpdatedAt: now,
+		}); err != nil {
+			t.Fatalf("add task %s: %v", tc.agent, err)
+		}
+		if err := s.ts.SendMessage(&entity.Message{
+			ID:     entity.NewMessageID(),
+			From:   "human",
+			To:     "tapnow/" + tc.agent,
+			Body:   tc.title,
+			SentAt: now,
+		}); err != nil {
+			t.Fatalf("send message %s: %v", tc.agent, err)
+		}
+	}
+
+	agentsReq := providerTestRequest(http.MethodGet, "/api/v1/projects/tapnow/agents", "owner", nil)
+	agentsReq.SetPathValue("name", "tapnow")
+	agentsRec := httptest.NewRecorder()
+	s.handleProjectAgents(agentsRec, agentsReq)
+	if agentsRec.Code != http.StatusOK {
+		t.Fatalf("linked agents list status=%d body=%s", agentsRec.Code, agentsRec.Body.String())
+	}
+	if body := agentsRec.Body.String(); !containsAll(body, "pm") || containsAll(body, "backend") {
+		t.Fatalf("linked agents list not filtered: %s", body)
+	}
+
+	tasksReq := providerTestRequest(http.MethodGet, "/api/v1/projects/tapnow/tasks?scope=all", "owner", nil)
+	tasksReq.SetPathValue("name", "tapnow")
+	tasksRec := httptest.NewRecorder()
+	s.handleProjectTasks(tasksRec, tasksReq)
+	if tasksRec.Code != http.StatusOK {
+		t.Fatalf("linked task list status=%d body=%s", tasksRec.Code, tasksRec.Body.String())
+	}
+	var tasks []taskRow
+	if err := json.Unmarshal(tasksRec.Body.Bytes(), &tasks); err != nil {
+		t.Fatalf("decode tasks: %v", err)
+	}
+	if len(tasks) != 1 || tasks[0].Agent != "pm" {
+		t.Fatalf("linked task list=%#v", tasks)
+	}
+
+	messagesReq := providerTestRequest(http.MethodGet, "/api/v1/projects/tapnow/messages?archived=all", "owner", nil)
+	messagesReq.SetPathValue("name", "tapnow")
+	messagesRec := httptest.NewRecorder()
+	s.handleProjectMessages(messagesRec, messagesReq)
+	if messagesRec.Code != http.StatusOK {
+		t.Fatalf("linked message list status=%d body=%s", messagesRec.Code, messagesRec.Body.String())
+	}
+	var messages []msgRow
+	if err := json.Unmarshal(messagesRec.Body.Bytes(), &messages); err != nil {
+		t.Fatalf("decode messages: %v", err)
+	}
+	if len(messages) != 1 || messages[0].Mailbox != "tapnow/pm" {
+		t.Fatalf("linked message list=%#v", messages)
+	}
+
+	backendMailboxReq := providerTestRequest(http.MethodGet, "/api/v1/projects/tapnow/messages?mailbox=tapnow/backend", "owner", nil)
+	backendMailboxReq.SetPathValue("name", "tapnow")
+	backendMailboxRec := httptest.NewRecorder()
+	s.handleProjectMessages(backendMailboxRec, backendMailboxReq)
+	if backendMailboxRec.Code != http.StatusForbidden {
+		t.Fatalf("linked backend mailbox status=%d body=%s", backendMailboxRec.Code, backendMailboxRec.Body.String())
+	}
+}
+
+func containsAll(s string, substr string) bool {
+	return strings.Contains(s, substr)
 }
