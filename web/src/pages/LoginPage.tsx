@@ -85,6 +85,21 @@ export default function LoginPage() {
     }
   }
 
+  async function handleRejectInvite() {
+    if (!inviteToken) return
+    setError('')
+    setLoading(true)
+    try {
+      await apiLoginPost(`/api/v1/invitations/${encodeURIComponent(inviteToken)}/reject`, {})
+      setInvite(prev => prev ? { ...prev, status: 'rejected' } : prev)
+      setError('Invitation rejected.')
+    } catch (err) {
+      setError(err instanceof Error ? err.message : String(err))
+    } finally {
+      setLoading(false)
+    }
+  }
+
   return (
     <div className="flex min-h-dvh items-center justify-center bg-neutral-50 px-4 dark:bg-zinc-950">
       <div className="w-full max-w-sm">
@@ -186,6 +201,17 @@ export default function LoginPage() {
             )}
             {mode === 'register' ? t('auth.registerButton') : mode === 'invite' ? t('auth.acceptInvite') : t('auth.loginButton')}
           </button>
+
+          {mode === 'invite' && (
+            <button
+              type="button"
+              disabled={loading || !inviteToken || invite?.status !== 'pending'}
+              onClick={() => void handleRejectInvite()}
+              className="mt-2 flex w-full items-center justify-center rounded-lg border border-neutral-200 px-4 py-2.5 text-sm font-semibold text-neutral-600 transition-colors hover:bg-neutral-50 disabled:opacity-50 dark:border-zinc-700 dark:text-zinc-300 dark:hover:bg-zinc-800"
+            >
+              Reject invite
+            </button>
+          )}
 
           <div className="mt-4 flex items-start gap-2 rounded-lg bg-amber-50/80 px-3 py-2.5 dark:bg-amber-900/10">
             {mode === 'login' ? <Lock className="mt-0.5 size-3.5 shrink-0 text-amber-500" strokeWidth={2} /> : <Mail className="mt-0.5 size-3.5 shrink-0 text-amber-500" strokeWidth={2} />}

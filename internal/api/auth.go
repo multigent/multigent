@@ -256,8 +256,10 @@ func (s *UserStore) CreateInvitation(email, role, displayName, invitedBy string,
 	if !validEmail(email) {
 		return nil, fmt.Errorf("valid email required")
 	}
-	if role != RoleAdmin && role != RoleMember {
-		role = RoleMember
+	switch role {
+	case WorkspaceRoleOwner, WorkspaceRoleAdmin, WorkspaceRoleMember, WorkspaceRoleGuest:
+	default:
+		role = WorkspaceRoleMember
 	}
 	now := time.Now().UTC()
 	inv := invitationRecord{
@@ -291,6 +293,42 @@ func (s *UserStore) Invitation(token string) (*invitationRecord, bool) {
 	}
 	rec := dbInvitationToRecord(inv)
 	return &rec, true
+}
+
+func (s *UserStore) ListInvitations() ([]invitationRecord, error) {
+	rows, err := s.db.ListInvitations()
+	if err != nil {
+		return nil, err
+	}
+	out := make([]invitationRecord, 0, len(rows))
+	for _, row := range rows {
+		out = append(out, dbInvitationToRecord(row))
+	}
+	return out, nil
+}
+
+func (s *UserStore) SetInvitationStatus(token, status string) (*invitationRecord, error) {
+	dbInv, ok, err := s.db.InvitationByToken(token)
+	if err != nil {
+		return nil, err
+	}
+	if !ok {
+		return nil, fmt.Errorf("invitation not found")
+	}
+	inv := dbInvitationToRecord(dbInv)
+	if inv.Status == "accepted" {
+		return nil, fmt.Errorf("accepted invitation cannot be changed")
+	}
+	switch status {
+	case "revoked", "rejected":
+		inv.Status = status
+	default:
+		return nil, fmt.Errorf("unsupported invitation status")
+	}
+	if err := s.db.UpdateInvitation(recordToDBInvitation(inv)); err != nil {
+		return nil, err
+	}
+	return &inv, nil
 }
 
 func (s *UserStore) AcceptInvitation(token, password, displayName string) (*userRecord, error) {
@@ -328,7 +366,7 @@ func (s *UserStore) AcceptInvitation(token, password, displayName string) (*user
 	u := userRecord{
 		Username:     username,
 		Hash:         string(hash),
-		Role:         inv.Role,
+		Role:         RoleMember,
 		DisplayName:  displayName,
 		Email:        inv.Email,
 		Projects:     inv.Projects,
@@ -862,7 +900,7 @@ func (s *Server) checkProjectManager(w http.ResponseWriter, r *http.Request, pro
 // User management handlers
 
 func (s *Server) handleListUsers(w http.ResponseWriter, r *http.Request) {
-	if !s.requireAdmin(w, r) {
+	if !s.checkCurrentWorkspaceAdmin(w, r) {
 		return
 	}
 	users := s.users.ListUsers()
@@ -899,7 +937,7 @@ func (s *Server) handleListUsers(w http.ResponseWriter, r *http.Request) {
 }
 
 func (s *Server) handleCreateUser(w http.ResponseWriter, r *http.Request) {
-	if !s.requireAdmin(w, r) {
+	if !s.checkCurrentWorkspaceAdmin(w, r) {
 		return
 	}
 	var body struct {
@@ -934,6 +972,16 @@ func (s *Server) handleCreateUser(w http.ResponseWriter, r *http.Request) {
 		s.serverError(w, err)
 		return
 	}
+	if workspaceID, err := s.currentWorkspaceID(); err == nil && workspaceID != "" {
+		role := WorkspaceRoleMember
+		if body.Role == WorkspaceRoleAdmin || body.Role == RoleAdmin {
+			role = WorkspaceRoleAdmin
+		}
+		if err := s.controlDB.UpsertWorkspaceMember(workspaceID, body.Username, role); err != nil {
+			s.serverError(w, err)
+			return
+		}
+	}
 	w.WriteHeader(http.StatusCreated)
 	_ = json.NewEncoder(w).Encode(map[string]bool{"ok": true})
 }
@@ -957,7 +1005,7 @@ func (s *Server) invitationURL(r *http.Request, token string) string {
 }
 
 func (s *Server) handleCreateInvitation(w http.ResponseWriter, r *http.Request) {
-	if !s.requireAdmin(w, r) {
+	if !s.checkCurrentWorkspaceAdmin(w, r) {
 		return
 	}
 	var body struct {
@@ -985,6 +1033,34 @@ func (s *Server) handleCreateInvitation(w http.ResponseWriter, r *http.Request) 
 	})
 }
 
+func (s *Server) handleListInvitations(w http.ResponseWriter, r *http.Request) {
+	if !s.checkCurrentWorkspaceAdmin(w, r) {
+		return
+	}
+	invitations, err := s.users.ListInvitations()
+	if err != nil {
+		s.serverError(w, err)
+		return
+	}
+	_ = json.NewEncoder(w).Encode(map[string]any{"invitations": invitations})
+}
+
+func (s *Server) handleRevokeInvitation(w http.ResponseWriter, r *http.Request) {
+	if !s.checkCurrentWorkspaceAdmin(w, r) {
+		return
+	}
+	inv, err := s.users.SetInvitationStatus(r.PathValue("token"), "revoked")
+	if err != nil {
+		if strings.Contains(err.Error(), "not found") {
+			s.jsonError(w, http.StatusNotFound, err.Error())
+			return
+		}
+		s.jsonError(w, http.StatusBadRequest, err.Error())
+		return
+	}
+	_ = json.NewEncoder(w).Encode(map[string]any{"ok": true, "invitation": inv})
+}
+
 func (s *Server) handlePublicInvitation(w http.ResponseWriter, r *http.Request) {
 	token := r.PathValue("token")
 	inv, ok := s.users.Invitation(token)
@@ -999,6 +1075,19 @@ func (s *Server) handlePublicInvitation(w http.ResponseWriter, r *http.Request) 
 		"status":      inv.Status,
 		"expiresAt":   inv.ExpiresAt,
 	})
+}
+
+func (s *Server) handleRejectInvitation(w http.ResponseWriter, r *http.Request) {
+	inv, err := s.users.SetInvitationStatus(r.PathValue("token"), "rejected")
+	if err != nil {
+		if strings.Contains(err.Error(), "not found") {
+			s.jsonError(w, http.StatusNotFound, err.Error())
+			return
+		}
+		s.jsonError(w, http.StatusBadRequest, err.Error())
+		return
+	}
+	_ = json.NewEncoder(w).Encode(map[string]any{"ok": true, "invitation": inv})
 }
 
 func (s *Server) handleAcceptInvitation(w http.ResponseWriter, r *http.Request) {
@@ -1020,7 +1109,28 @@ func (s *Server) handleAcceptInvitation(w http.ResponseWriter, r *http.Request) 
 		s.jsonError(w, http.StatusBadRequest, err.Error())
 		return
 	}
+	if workspaceID, err := s.currentWorkspaceID(); err == nil && workspaceID != "" {
+		if err := s.controlDB.UpsertWorkspaceMember(workspaceID, user.Username, invitationWorkspaceRole(user, token, s.users)); err != nil {
+			s.serverError(w, err)
+			return
+		}
+	}
 	s.issueLoginResponse(w, user)
+}
+
+func invitationWorkspaceRole(user *userRecord, token string, users *UserStore) string {
+	if users != nil {
+		if inv, ok := users.Invitation(token); ok {
+			switch inv.Role {
+			case WorkspaceRoleOwner, WorkspaceRoleAdmin, WorkspaceRoleMember, WorkspaceRoleGuest:
+				return inv.Role
+			}
+		}
+	}
+	if user != nil && user.Role == RoleAdmin {
+		return WorkspaceRoleAdmin
+	}
+	return WorkspaceRoleMember
 }
 
 func (s *Server) handleGetUser(w http.ResponseWriter, r *http.Request) {

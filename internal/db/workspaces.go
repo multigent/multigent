@@ -210,6 +210,23 @@ func (db *SQLiteStore) InvitationByToken(token string) (Invitation, bool, error)
 	return inv, true, nil
 }
 
+func (db *SQLiteStore) ListInvitations() ([]Invitation, error) {
+	rows, err := db.sql.Query(`SELECT token, email, role, display_name, projects_json, linked_agents_json, invited_by, status, created_at, expires_at, accepted_at FROM invitations ORDER BY created_at DESC`)
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+	out := make([]Invitation, 0)
+	for rows.Next() {
+		inv, err := scanInvitation(rows)
+		if err != nil {
+			return nil, err
+		}
+		out = append(out, inv)
+	}
+	return out, rows.Err()
+}
+
 func (db *SQLiteStore) UpdateInvitation(inv Invitation) error {
 	_, err := db.sql.Exec(`UPDATE invitations SET email = ?, role = ?, display_name = ?, projects_json = ?, linked_agents_json = ?, invited_by = ?, status = ?, created_at = ?, expires_at = ?, accepted_at = ? WHERE token = ?`,
 		inv.Email, inv.Role, inv.DisplayName, defaultJSON(inv.ProjectsJSON), defaultJSON(inv.LinkedJSON), inv.InvitedBy, inv.Status, inv.CreatedAt, inv.ExpiresAt, inv.AcceptedAt, inv.Token)

@@ -237,7 +237,9 @@ func (s *Server) Handler() http.Handler {
 
 	mux.HandleFunc("GET /api/v1/users", s.handleListUsers)
 	mux.HandleFunc("POST /api/v1/users", s.handleCreateUser)
+	mux.HandleFunc("GET /api/v1/invitations", s.handleListInvitations)
 	mux.HandleFunc("POST /api/v1/invitations", s.handleCreateInvitation)
+	mux.HandleFunc("POST /api/v1/invitations/{token}/revoke", s.handleRevokeInvitation)
 	mux.HandleFunc("GET /api/v1/users/{username}", s.handleGetUser)
 	mux.HandleFunc("PUT /api/v1/users/{username}", s.handleUpdateUser)
 	mux.HandleFunc("DELETE /api/v1/users/{username}", s.handleDeleteUser)
@@ -291,6 +293,7 @@ func (s *Server) Handler() http.Handler {
 	publicMux.HandleFunc("POST /api/v1/auth/register", s.handleRegister)
 	publicMux.HandleFunc("GET /api/v1/invitations/{token}", s.handlePublicInvitation)
 	publicMux.HandleFunc("POST /api/v1/invitations/{token}/accept", s.handleAcceptInvitation)
+	publicMux.HandleFunc("POST /api/v1/invitations/{token}/reject", s.handleRejectInvitation)
 	publicMux.HandleFunc("GET /api/v1/health", s.handleHealth)
 	runtimeMux := http.NewServeMux()
 	runtimeMux.HandleFunc("GET /api/v1/runtime/connections", s.handleRuntimeConnections)

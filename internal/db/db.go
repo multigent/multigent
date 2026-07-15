@@ -38,6 +38,7 @@ type Store interface {
 
 	CreateInvitation(inv Invitation) error
 	InvitationByToken(token string) (Invitation, bool, error)
+	ListInvitations() ([]Invitation, error)
 	UpdateInvitation(inv Invitation) error
 
 	CreateAuditEvent(event AuditEvent) error
