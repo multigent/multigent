@@ -660,7 +660,8 @@ Done when:
 Status:
 
 - Partially implemented.
-- Remaining work: centralize audit coverage expectations by endpoint group, add admin audit UI filters, and make agent-runtime credential/tool usage auditable.
+- Admin audit UI now exists with filters for actor, action, resource type, resource ID, and result limit.
+- Remaining work: centralize audit coverage expectations by endpoint group, add resource-level audit entry points, and make agent-runtime credential/tool usage coverage more complete.
 
 ### Phase 7: Onboarding Checklist And Home Pages
 

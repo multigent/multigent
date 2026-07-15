@@ -12,6 +12,7 @@ import {
   MessageSquare,
   Puzzle,
   Settings,
+  ShieldCheck,
   Target,
   User,
   Users,
@@ -27,6 +28,7 @@ export type NavKey =
   | 'people'
   | 'workbench'
   | 'connections'
+  | 'audit'
   | 'goals'
   | 'skills'
   | 'docs'
@@ -57,6 +59,7 @@ export const workspaceNav: NavItem[] = [
   { to: '/', navKey: 'overview', icon: LayoutDashboard, activePrefix: undefined, adminOnly: true },
   { to: '/workbench', navKey: 'workbench', icon: Briefcase, activePrefix: '/workbench' },
   { to: '/connections', navKey: 'connections', icon: Cable, activePrefix: '/connections' },
+  { to: '/audit', navKey: 'audit', icon: ShieldCheck, activePrefix: '/audit', adminOnly: true },
   {
     to: '/projects',
     navKey: 'projects',
@@ -94,6 +97,7 @@ export function navKeyFromPath(pathname: string): NavKey {
     goals: 'goals',
     workbench: 'workbench',
     connections: 'connections',
+    audit: 'audit',
     skills: 'skills',
     docs: 'docs',
     files: 'files',
