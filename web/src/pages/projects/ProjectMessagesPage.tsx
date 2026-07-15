@@ -1,4 +1,4 @@
-import { useEffect, useMemo, useState } from 'react'
+import { useCallback, useEffect, useMemo, useState } from 'react'
 import { useParams } from 'react-router-dom'
 import { useTranslation } from 'react-i18next'
 import { ListFilter, RefreshCw, X } from 'lucide-react'
@@ -10,6 +10,7 @@ import { CreateMessageDialog } from '../../components/project/CreateMessageDialo
 import { Pagination } from '../../components/ui/Pagination'
 import { PlaceholderCard } from '../../components/ui/PlaceholderCard'
 import { apiPost } from '../../lib/api'
+import { canOperateAgent, isSystemAdmin, useAuth } from '../../lib/auth'
 import { cn } from '../../lib/cn'
 import { useFormatDateTime } from '../../lib/format-datetime'
 import { useApiJson } from '../../lib/use-api'
@@ -47,6 +48,7 @@ const selectCls =
 export default function ProjectMessagesPage() {
   const { t } = useTranslation()
   const fmt = useFormatDateTime()
+  const { user } = useAuth()
   const { projectId } = useParams<{ projectId: string }>()
   const base =
     projectId != null && projectId !== ''
@@ -69,6 +71,15 @@ export default function ProjectMessagesPage() {
   const agentsState = useApiJson<AgentRow[]>(agentsPath, reloadKey)
   const messages = state.status === 'ok' ? (state.data ?? []) : []
   const agents = agentsState.status === 'ok' ? (agentsState.data ?? []) : []
+  const operableAgents = useMemo(
+    () => agents.filter((agent) => projectId != null && projectId !== '' && canOperateAgent(user, projectId, agent.name)),
+    [agents, projectId, user],
+  )
+  const canMutateMailbox = useCallback((mailbox: string) => {
+    if (mailbox === 'human') return isSystemAdmin(user)
+    const [project, agent] = mailbox.split('/', 2)
+    return Boolean(project && agent && canOperateAgent(user, project, agent))
+  }, [user])
 
   const totalMsgPages = Math.ceil(messages.length / msgsPerPage)
   const pagedMessages = useMemo(() => {
@@ -90,12 +101,15 @@ export default function ProjectMessagesPage() {
   }
   const hasFilters = filters.read !== 'all' || filters.archived !== 'no' || filters.from !== '' || filters.mailbox !== ''
 
-  const allChecked = messages.length > 0 && checked.size === messages.length
+  const actionableMessages = useMemo(() => messages.filter((m) => canMutateMailbox(m.mailbox)), [messages, canMutateMailbox])
+  const allChecked = actionableMessages.length > 0 && checked.size === actionableMessages.length
   const someChecked = checked.size > 0
   function toggleAll() {
-    setChecked(allChecked ? new Set() : new Set(messages.map((m) => m.id)))
+    setChecked(allChecked ? new Set() : new Set(actionableMessages.map((m) => m.id)))
   }
   function toggleOne(id: string) {
+    const row = messages.find((m) => m.id === id)
+    if (row && !canMutateMailbox(row.mailbox)) return
     setChecked((prev) => {
       const next = new Set(prev)
       if (next.has(id)) next.delete(id); else next.add(id)
@@ -109,16 +123,20 @@ export default function ProjectMessagesPage() {
   async function batchMarkRead() {
     setBatchBusy(true)
     try {
-      for (const row of getCheckedRows().filter((r) => !r.readAt))
+      for (const row of getCheckedRows().filter((r) => !r.readAt)) {
+        if (!canMutateMailbox(row.mailbox)) continue
         await apiPost('/api/v1/messages/mark-read', { mailbox: row.mailbox, id: row.id })
+      }
       setChecked(new Set()); setReloadKey((k) => k + 1)
     } finally { setBatchBusy(false) }
   }
   async function batchArchive() {
     setBatchBusy(true)
     try {
-      for (const row of getCheckedRows().filter((r) => !r.archivedAt))
+      for (const row of getCheckedRows().filter((r) => !r.archivedAt)) {
+        if (!canMutateMailbox(row.mailbox)) continue
         await apiPost('/api/v1/messages/archive', { mailbox: row.mailbox, id: row.id })
+      }
       setChecked(new Set()); setReloadKey((k) => k + 1)
     } finally { setBatchBusy(false) }
   }
@@ -127,24 +145,28 @@ export default function ProjectMessagesPage() {
     if (!window.confirm(t('messages.confirmBatchDelete', { count: String(count) }))) return
     setBatchBusy(true)
     try {
-      for (const row of getCheckedRows())
+      for (const row of getCheckedRows().filter((r) => canMutateMailbox(r.mailbox))) {
         await apiPost('/api/v1/messages/delete', { mailbox: row.mailbox, id: row.id })
+      }
       setChecked(new Set()); setReloadKey((k) => k + 1)
     } finally { setBatchBusy(false) }
   }
 
   async function quickMarkRead(row: MessageRow, e: React.MouseEvent) {
     e.stopPropagation()
+    if (!canMutateMailbox(row.mailbox)) return
     await apiPost('/api/v1/messages/mark-read', { mailbox: row.mailbox, id: row.id })
     setReloadKey((k) => k + 1)
   }
   async function quickArchive(row: MessageRow, e: React.MouseEvent) {
     e.stopPropagation()
+    if (!canMutateMailbox(row.mailbox)) return
     await apiPost('/api/v1/messages/archive', { mailbox: row.mailbox, id: row.id })
     setReloadKey((k) => k + 1)
   }
   async function quickDelete(row: MessageRow, e: React.MouseEvent) {
     e.stopPropagation()
+    if (!canMutateMailbox(row.mailbox)) return
     if (!window.confirm(t('messages.confirmDelete'))) return
     await apiPost('/api/v1/messages/delete', { mailbox: row.mailbox, id: row.id })
     setReloadKey((k) => k + 1)
@@ -159,8 +181,8 @@ export default function ProjectMessagesPage() {
             <h1 className="text-xl font-semibold text-neutral-900 dark:text-zinc-100">{t('projectNav.messages')}</h1>
             <p className="mt-0.5 text-sm text-neutral-500 dark:text-zinc-500">{t('inbox.subtitle')}</p>
           </div>
-          {projectId != null && projectId !== '' && (
-            <CreateMessageDialog projectId={projectId} agents={agents} onSent={() => { setReloadKey((k) => k + 1); setChecked(new Set()) }} />
+          {projectId != null && projectId !== '' && operableAgents.length > 0 && (
+            <CreateMessageDialog projectId={projectId} agents={operableAgents} onSent={() => { setReloadKey((k) => k + 1); setChecked(new Set()) }} />
           )}
         </div>
       </div>
@@ -227,7 +249,7 @@ export default function ProjectMessagesPage() {
         </div>
       )}
 
-      <MessageDetailModal open={selected != null} message={selected} onClose={() => setSelected(null)} onMutated={() => setReloadKey((k) => k + 1)} />
+      <MessageDetailModal open={selected != null} message={selected} canMutate={selected ? canMutateMailbox(selected.mailbox) : false} onClose={() => setSelected(null)} onMutated={() => setReloadKey((k) => k + 1)} />
 
       {/* Content area */}
       <div className="flex-1 overflow-y-auto px-6 py-3">
@@ -277,6 +299,7 @@ export default function ProjectMessagesPage() {
                   const unread = !row.readAt
                   const archived = Boolean(row.archivedAt)
                   const isChecked = checked.has(row.id)
+                  const canMutate = canMutateMailbox(row.mailbox)
                   return (
                     <tr
                       key={row.id}
@@ -291,7 +314,9 @@ export default function ProjectMessagesPage() {
                       )}
                     >
                       <td className="w-10 px-3 py-3 text-center" onClick={(e) => e.stopPropagation()}>
-                        <input type="checkbox" checked={isChecked} onChange={() => toggleOne(row.id)} className="size-3.5 rounded border-neutral-300 accent-sky-600 dark:border-zinc-600" />
+                        {canMutate && (
+                          <input type="checkbox" checked={isChecked} onChange={() => toggleOne(row.id)} className="size-3.5 rounded border-neutral-300 accent-sky-600 dark:border-zinc-600" />
+                        )}
                       </td>
                       <td className="whitespace-nowrap px-4 py-3 align-middle text-[13px] text-neutral-600 dark:text-zinc-400">{fmt(row.sentAt)}</td>
                       <td className="whitespace-nowrap px-4 py-3 align-middle font-mono text-[13px] text-neutral-700 dark:text-zinc-400">{row.from}</td>
@@ -324,13 +349,15 @@ export default function ProjectMessagesPage() {
                         onClick={(e) => e.stopPropagation()}
                       >
                         <div className="flex items-center justify-end gap-2 whitespace-nowrap opacity-0 transition-opacity duration-100 group-hover:opacity-100">
-                          {unread && (
+                          {canMutate && unread && (
                             <button type="button" onClick={(e) => void quickMarkRead(row, e)} className="rounded px-1.5 py-0.5 text-[12px] font-medium text-sky-700 transition-colors hover:bg-sky-100 dark:text-sky-400 dark:hover:bg-sky-900/30">{t('forms.markAsRead')}</button>
                           )}
-                          {!archived && (
+                          {canMutate && !archived && (
                             <button type="button" onClick={(e) => void quickArchive(row, e)} className="rounded px-1.5 py-0.5 text-[12px] font-medium text-neutral-500 transition-colors hover:bg-neutral-100 dark:text-zinc-500 dark:hover:bg-zinc-800">{t('forms.archiveMessage')}</button>
                           )}
-                          <button type="button" onClick={(e) => void quickDelete(row, e)} className="rounded px-1.5 py-0.5 text-[12px] font-medium text-red-600/80 transition-colors hover:bg-red-50 dark:text-red-400/80 dark:hover:bg-red-900/20">{t('messages.delete')}</button>
+                          {canMutate && (
+                            <button type="button" onClick={(e) => void quickDelete(row, e)} className="rounded px-1.5 py-0.5 text-[12px] font-medium text-red-600/80 transition-colors hover:bg-red-50 dark:text-red-400/80 dark:hover:bg-red-900/20">{t('messages.delete')}</button>
+                          )}
                         </div>
                       </td>
                     </tr>

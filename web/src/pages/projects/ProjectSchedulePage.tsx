@@ -9,6 +9,7 @@ import { PlaceholderCard } from '../../components/ui/PlaceholderCard'
 import { ConversationLog } from '../../components/ui/ConversationLog'
 import { cn } from '../../lib/cn'
 import { apiFetch, apiDelete, apiPatch, apiPost, apiPut } from '../../lib/api'
+import { canManageProject, useAuth } from '../../lib/auth'
 import { useFormatDateTime } from '../../lib/format-datetime'
 import { useApiJson } from '../../lib/use-api'
 
@@ -61,6 +62,7 @@ type Tab = 'runtime' | 'heartbeat' | 'cron'
 
 export default function ProjectSchedulePage() {
   const { t } = useTranslation()
+  const { user } = useAuth()
   const { projectId } = useParams<{ projectId: string }>()
   const path = projectId ? `/api/v1/projects/${encodeURIComponent(projectId)}/schedule` : null
   const [reloadKey, setReloadKey] = useState(0)
@@ -68,6 +70,7 @@ export default function ProjectSchedulePage() {
   const state = useApiJson<ScheduleResp>(path, reloadKey)
   const reload = useCallback(() => setReloadKey((k) => k + 1), [])
   const agents = state.status === 'ok' ? state.data.agents : []
+  const canManage = projectId ? canManageProject(user, projectId) : false
 
   useEffect(() => {
     if (tab !== 'runtime') return
@@ -84,7 +87,7 @@ export default function ProjectSchedulePage() {
             <h1 className="text-xl font-semibold text-neutral-900 dark:text-zinc-100">{t('projectNav.schedule')}</h1>
             <p className="mt-0.5 text-sm text-neutral-500 dark:text-zinc-500">{t('schedule.subtitle')}</p>
           </div>
-          {projectId && <SchedulerControl projectId={projectId} onAction={reload} />}
+          {projectId && canManage && <SchedulerControl projectId={projectId} onAction={reload} />}
         </div>
       </div>
 
@@ -106,9 +109,9 @@ export default function ProjectSchedulePage() {
       <div className="flex-1 overflow-y-auto px-6 py-4">
         {state.status === 'loading' && <Spinner label={t('api.loading')} />}
         {state.status === 'error' && <PlaceholderCard title={t('api.loadError')}><p>{state.error.message}</p></PlaceholderCard>}
-        {state.status === 'ok' && tab === 'heartbeat' && <HeartbeatTab agents={agents} projectId={projectId!} onChanged={reload} />}
-        {state.status === 'ok' && tab === 'cron' && <CronTab agents={agents} projectId={projectId!} onChanged={reload} />}
-        {state.status === 'ok' && tab === 'runtime' && <RuntimeTab agents={agents} projectId={projectId!} />}
+        {state.status === 'ok' && tab === 'heartbeat' && <HeartbeatTab agents={agents} projectId={projectId!} canManage={canManage} onChanged={reload} />}
+        {state.status === 'ok' && tab === 'cron' && <CronTab agents={agents} projectId={projectId!} canManage={canManage} onChanged={reload} />}
+        {state.status === 'ok' && tab === 'runtime' && <RuntimeTab agents={agents} projectId={projectId!} canManage={canManage} />}
       </div>
     </div>
   )
@@ -192,7 +195,7 @@ function SchedulerControl({ projectId, onAction }: { projectId: string; onAction
    Heartbeat tab
    ═══════════════════════════════════════════════════════════════ */
 
-function HeartbeatTab({ agents, projectId, onChanged }: { agents: AgentSchedule[]; projectId: string; onChanged: () => void }) {
+function HeartbeatTab({ agents, projectId, canManage, onChanged }: { agents: AgentSchedule[]; projectId: string; canManage: boolean; onChanged: () => void }) {
   const { t } = useTranslation()
   const fmt = useFormatDateTime()
   const [editing, setEditing] = useState<{ name: string; hb: HeartbeatRow } | null>(null)
@@ -253,17 +256,21 @@ function HeartbeatTab({ agents, projectId, onChanged }: { agents: AgentSchedule[
                   </td>
                   <td className={cn(tdCls, tdSticky)}>
                     <div className="flex items-center justify-center gap-1 opacity-0 transition-opacity group-hover:opacity-100">
-                      <button type="button" onClick={() => setEditing({ name: ag.name, hb })} className={cn(smallBtn, 'text-neutral-500 hover:bg-neutral-100 hover:text-neutral-700 dark:text-zinc-500 dark:hover:bg-zinc-800')} title={t('tasks.edit')}>
-                        <Pencil className="size-3.5" strokeWidth={1.8} />
-                      </button>
-                      {hb.enabled && (
+                      {canManage && (
+                        <button type="button" onClick={() => setEditing({ name: ag.name, hb })} className={cn(smallBtn, 'text-neutral-500 hover:bg-neutral-100 hover:text-neutral-700 dark:text-zinc-500 dark:hover:bg-zinc-800')} title={t('tasks.edit')}>
+                          <Pencil className="size-3.5" strokeWidth={1.8} />
+                        </button>
+                      )}
+                      {canManage && hb.enabled && (
                         <button type="button" onClick={() => void togglePause(ag.name, !hb.paused)} className={cn(smallBtn, 'text-neutral-500 hover:bg-neutral-100 dark:text-zinc-500 dark:hover:bg-zinc-800')} title={hb.paused ? t('schedule.resumeHb') : t('schedule.pauseHb')}>
                           {hb.paused ? <Play className="size-3.5" strokeWidth={1.8} /> : <Pause className="size-3.5" strokeWidth={1.8} />}
                         </button>
                       )}
-                      <button type="button" onClick={() => void toggle(ag.name, !hb.enabled)} className={cn(smallBtn, hb.enabled ? 'text-amber-600 hover:bg-amber-50 dark:text-amber-400' : 'text-emerald-600 hover:bg-emerald-50 dark:text-emerald-400')} title={hb.enabled ? t('schedule.disableHb') : t('schedule.enableHb')}>
-                        <Power className="size-3.5" strokeWidth={1.8} />
-                      </button>
+                      {canManage && (
+                        <button type="button" onClick={() => void toggle(ag.name, !hb.enabled)} className={cn(smallBtn, hb.enabled ? 'text-amber-600 hover:bg-amber-50 dark:text-amber-400' : 'text-emerald-600 hover:bg-emerald-50 dark:text-emerald-400')} title={hb.enabled ? t('schedule.disableHb') : t('schedule.enableHb')}>
+                          <Power className="size-3.5" strokeWidth={1.8} />
+                        </button>
+                      )}
                     </div>
                   </td>
                 </tr>
@@ -577,7 +584,7 @@ function EditHeartbeatModal({ projectId, agentName, hb, onClose, onSaved }: { pr
    Cron tab
    ═══════════════════════════════════════════════════════════════ */
 
-function CronTab({ agents, projectId, onChanged }: { agents: AgentSchedule[]; projectId: string; onChanged: () => void }) {
+function CronTab({ agents, projectId, canManage, onChanged }: { agents: AgentSchedule[]; projectId: string; canManage: boolean; onChanged: () => void }) {
   const { t } = useTranslation()
   const fmt = useFormatDateTime()
   const [adding, setAdding] = useState<string | null>(null)
@@ -608,7 +615,7 @@ function CronTab({ agents, projectId, onChanged }: { agents: AgentSchedule[]; pr
         <span className="text-sm font-medium text-neutral-700 dark:text-zinc-300">
           {allCrons.length} {t('schedule.cronJobs')}
         </span>
-        {!adding && agentOptions.length > 0 && (
+        {canManage && !adding && agentOptions.length > 0 && (
           <button type="button" onClick={() => setAdding(agentOptions[0])} className="inline-flex items-center gap-1 rounded-lg border border-sky-600 bg-white px-3 py-2 text-sm font-medium text-sky-700 hover:bg-sky-50 dark:border-sky-500 dark:bg-zinc-900 dark:text-sky-400 dark:hover:bg-zinc-800">
             <Plus className="size-3.5" strokeWidth={2} />{t('schedule.addCron')}
           </button>
@@ -671,17 +678,19 @@ function CronTab({ agents, projectId, onChanged }: { agents: AgentSchedule[]; pr
                   <td className={tdCls}>{c.lastRun ? fmt(c.lastRun) : '—'}</td>
                   <td className={cn(tdCls, 'tabular-nums')}>{c.runCount ?? 0}</td>
                   <td className={cn(tdCls, tdSticky)}>
-                    <div className="flex items-center justify-center gap-1 opacity-0 transition-opacity group-hover:opacity-100">
-                      <button type="button" onClick={() => setEditing({ agent, cron: c })} className={cn(smallBtn, 'text-sky-600 hover:bg-sky-50 dark:text-sky-400 dark:hover:bg-sky-900/30')} title={t('schedule.editCron')}>
-                        <Pencil className="size-3.5" strokeWidth={1.8} />
-                      </button>
-                      <button type="button" onClick={() => void toggleCron(agent, c.id, !c.enabled)} className={cn(smallBtn, 'text-neutral-500 hover:bg-neutral-100 dark:text-zinc-500 dark:hover:bg-zinc-800')} title={c.enabled ? t('schedule.pauseCron') : t('schedule.resumeCron')}>
-                        {c.enabled ? <Pause className="size-3.5" strokeWidth={1.8} /> : <Play className="size-3.5" strokeWidth={1.8} />}
-                      </button>
-                      <button type="button" onClick={() => void deleteCron(agent, c.id)} className={cn(smallBtn, 'text-red-500 hover:bg-red-50 dark:text-red-400 dark:hover:bg-red-900/30')} title={t('schedule.deleteCron')}>
-                        <Trash2 className="size-3.5" strokeWidth={1.8} />
-                      </button>
-                    </div>
+                    {canManage && (
+                      <div className="flex items-center justify-center gap-1 opacity-0 transition-opacity group-hover:opacity-100">
+                        <button type="button" onClick={() => setEditing({ agent, cron: c })} className={cn(smallBtn, 'text-sky-600 hover:bg-sky-50 dark:text-sky-400 dark:hover:bg-sky-900/30')} title={t('schedule.editCron')}>
+                          <Pencil className="size-3.5" strokeWidth={1.8} />
+                        </button>
+                        <button type="button" onClick={() => void toggleCron(agent, c.id, !c.enabled)} className={cn(smallBtn, 'text-neutral-500 hover:bg-neutral-100 dark:text-zinc-500 dark:hover:bg-zinc-800')} title={c.enabled ? t('schedule.pauseCron') : t('schedule.resumeCron')}>
+                          {c.enabled ? <Pause className="size-3.5" strokeWidth={1.8} /> : <Play className="size-3.5" strokeWidth={1.8} />}
+                        </button>
+                        <button type="button" onClick={() => void deleteCron(agent, c.id)} className={cn(smallBtn, 'text-red-500 hover:bg-red-50 dark:text-red-400 dark:hover:bg-red-900/30')} title={t('schedule.deleteCron')}>
+                          <Trash2 className="size-3.5" strokeWidth={1.8} />
+                        </button>
+                      </div>
+                    )}
                   </td>
                 </tr>
               ))}
@@ -691,7 +700,7 @@ function CronTab({ agents, projectId, onChanged }: { agents: AgentSchedule[]; pr
       )}
       <p className="mt-3 text-xs text-neutral-400 dark:text-zinc-500">{t('schedule.restartHint')}</p>
 
-      {editing && (
+      {canManage && editing && (
         <EditCronModal projectId={projectId} agent={editing.agent} cron={editing.cron} onClose={() => setEditing(null)} onSaved={() => { setEditing(null); onChanged() }} />
       )}
     </>
@@ -960,7 +969,7 @@ function ContextUsageBar({ usage }: { usage: SessionUsage }) {
   )
 }
 
-function RuntimeTab({ agents, projectId }: { agents: AgentSchedule[]; projectId: string }) {
+function RuntimeTab({ agents, projectId, canManage }: { agents: AgentSchedule[]; projectId: string; canManage: boolean }) {
   const { t } = useTranslation()
   const fmt = useFormatDateTime()
   const [waking, setWaking] = useState<string | null>(null)
@@ -1101,15 +1110,19 @@ function RuntimeTab({ agents, projectId }: { agents: AgentSchedule[]; projectId:
                     )}
                   </td>
                   <td className={tdCls}>
-                    <select
-                      value={hb.sessionScope || 'cycle'}
-                      onChange={(e) => void doScopeChange(ag.name, e.target.value)}
-                      disabled={scopeUpdating === ag.name}
-                      className="h-7 cursor-pointer rounded border border-neutral-200 bg-white px-1.5 text-xs outline-none hover:border-neutral-300 focus:border-sky-400 disabled:opacity-50 dark:border-zinc-700 dark:bg-zinc-800 dark:text-zinc-300 dark:[color-scheme:dark] [&>option]:dark:bg-zinc-800 [&>option]:dark:text-zinc-300"
-                    >
-                      <option value="cycle">{t('session.scopeCycle')}</option>
-                      <option value="task">{t('session.scopeTask')}</option>
-                    </select>
+                    {canManage ? (
+                      <select
+                        value={hb.sessionScope || 'cycle'}
+                        onChange={(e) => void doScopeChange(ag.name, e.target.value)}
+                        disabled={scopeUpdating === ag.name}
+                        className="h-7 cursor-pointer rounded border border-neutral-200 bg-white px-1.5 text-xs outline-none hover:border-neutral-300 focus:border-sky-400 disabled:opacity-50 dark:border-zinc-700 dark:bg-zinc-800 dark:text-zinc-300 dark:[color-scheme:dark] [&>option]:dark:bg-zinc-800 [&>option]:dark:text-zinc-300"
+                      >
+                        <option value="cycle">{t('session.scopeCycle')}</option>
+                        <option value="task">{t('session.scopeTask')}</option>
+                      </select>
+                    ) : (
+                      <StatusBadge color="neutral">{hb.sessionScope === 'task' ? t('session.scopeTask') : t('session.scopeCycle')}</StatusBadge>
+                    )}
                   </td>
                   <td className={tdCls}>
                     <WakeupRuntimeCondition hb={hb} />
@@ -1119,11 +1132,13 @@ function RuntimeTab({ agents, projectId }: { agents: AgentSchedule[]; projectId:
                   </td>
                   <td className={cn(tdCls, tdSticky)}>
                     <div className="flex items-center justify-center gap-1">
-                      <button type="button" disabled={isRunningNow || waking === ag.name} onClick={() => void doWakeup(ag.name)}
-                        className="cursor-pointer rounded-md px-2 py-1 text-xs font-medium text-sky-700 opacity-0 transition-all hover:bg-sky-50 disabled:opacity-40 group-hover:opacity-100 dark:text-sky-400 dark:hover:bg-sky-900/20">
-                        {waking === ag.name ? t('schedule.wakingUp') : t('schedule.wakeupNow')}
-                      </button>
-                      {hasSession && (
+                      {canManage && (
+                        <button type="button" disabled={isRunningNow || waking === ag.name} onClick={() => void doWakeup(ag.name)}
+                          className="cursor-pointer rounded-md px-2 py-1 text-xs font-medium text-sky-700 opacity-0 transition-all hover:bg-sky-50 disabled:opacity-40 group-hover:opacity-100 dark:text-sky-400 dark:hover:bg-sky-900/20">
+                          {waking === ag.name ? t('schedule.wakingUp') : t('schedule.wakeupNow')}
+                        </button>
+                      )}
+                      {canManage && hasSession && (
                         <button type="button" disabled={resetting === ag.name} onClick={() => void doSessionReset(ag.name)}
                           className="cursor-pointer rounded-md px-2 py-1 text-xs font-medium text-amber-600 opacity-0 transition-all hover:bg-amber-50 disabled:opacity-40 group-hover:opacity-100 dark:text-amber-400 dark:hover:bg-amber-900/20">
                           {resetting === ag.name ? t('session.resettingSession') : t('session.resetSession')}
@@ -1131,10 +1146,12 @@ function RuntimeTab({ agents, projectId }: { agents: AgentSchedule[]; projectId:
                       )}
                       {isRunningNow && (
                         <>
-                          <button type="button" disabled={aborting === ag.name} onClick={() => void doAbort(ag.name)}
-                            className="cursor-pointer rounded-md px-2 py-1 text-xs font-medium text-red-600 opacity-0 transition-all hover:bg-red-50 disabled:opacity-40 group-hover:opacity-100 dark:text-red-400 dark:hover:bg-red-900/20">
-                            {aborting === ag.name ? t('schedule.aborting') : t('schedule.abort')}
-                          </button>
+                          {canManage && (
+                            <button type="button" disabled={aborting === ag.name} onClick={() => void doAbort(ag.name)}
+                              className="cursor-pointer rounded-md px-2 py-1 text-xs font-medium text-red-600 opacity-0 transition-all hover:bg-red-50 disabled:opacity-40 group-hover:opacity-100 dark:text-red-400 dark:hover:bg-red-900/20">
+                              {aborting === ag.name ? t('schedule.aborting') : t('schedule.abort')}
+                            </button>
+                          )}
                           <button type="button" onClick={() => setViewingLog(ag.name)}
                             className="cursor-pointer rounded-md px-2 py-1 text-xs font-medium text-emerald-700 opacity-0 transition-all hover:bg-emerald-50 group-hover:opacity-100 dark:text-emerald-400 dark:hover:bg-emerald-900/20">
                             {t('schedule.viewLog')}

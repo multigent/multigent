@@ -23,9 +23,10 @@ type Props = {
   message: MessageDetailModel | null
   onClose: () => void
   onMutated?: () => void
+  canMutate?: boolean
 }
 
-export function MessageDetailModal({ open, message, onClose, onMutated }: Props) {
+export function MessageDetailModal({ open, message, onClose, onMutated, canMutate = true }: Props) {
   const { t } = useTranslation()
   const fmt = useFormatDateTime()
   const [localReadAt, setLocalReadAt] = useState<string | null>(null)
@@ -242,7 +243,7 @@ export function MessageDetailModal({ open, message, onClose, onMutated }: Props)
 
         {/* Footer actions */}
         <div className="shrink-0 flex flex-wrap items-center gap-2 border-t border-neutral-100 px-4 py-2.5 dark:border-zinc-700/60">
-          {!isSent && !replyOpen && (
+          {canMutate && !isSent && !replyOpen && (
             <button
               type="button"
               onClick={() => setReplyOpen(true)}
@@ -261,19 +262,21 @@ export function MessageDetailModal({ open, message, onClose, onMutated }: Props)
               )}
             </button>
           )}
-          {isUnread && (
+          {canMutate && isUnread && (
             <button type="button" disabled={busy != null} onClick={() => void markRead()} className={`${actionBtn} border-sky-200 bg-sky-50 text-sky-700 hover:bg-sky-100 dark:border-sky-800 dark:bg-sky-900/30 dark:text-sky-300`}>
               {busy === 'read' ? t('forms.working') : t('forms.markAsRead')}
             </button>
           )}
-          {!isArchived && (
+          {canMutate && !isArchived && (
             <button type="button" disabled={busy != null} onClick={() => void archive()} className={`${actionBtn} border-neutral-200 text-neutral-600 hover:bg-neutral-50 dark:border-zinc-700 dark:text-zinc-400 dark:hover:bg-zinc-800`}>
               {busy === 'archive' ? t('forms.working') : t('forms.archiveMessage')}
             </button>
           )}
-          <button type="button" disabled={busy != null} onClick={() => void remove()} className={`${actionBtn} border-red-200 text-red-600 hover:bg-red-50 dark:border-red-900 dark:text-red-400 dark:hover:bg-red-950/30`}>
-            {busy === 'delete' ? t('forms.working') : t('messages.delete')}
-          </button>
+          {canMutate && (
+            <button type="button" disabled={busy != null} onClick={() => void remove()} className={`${actionBtn} border-red-200 text-red-600 hover:bg-red-50 dark:border-red-900 dark:text-red-400 dark:hover:bg-red-950/30`}>
+              {busy === 'delete' ? t('forms.working') : t('messages.delete')}
+            </button>
+          )}
         </div>
       </div>
     </div>

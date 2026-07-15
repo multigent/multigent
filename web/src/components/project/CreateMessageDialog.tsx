@@ -1,11 +1,10 @@
-import { useEffect, useMemo, useState, type FormEvent } from 'react'
+import { useMemo, useState, type FormEvent } from 'react'
 import { useTranslation } from 'react-i18next'
 import { X } from 'lucide-react'
-import { apiFetch, apiPost } from '../../lib/api'
+import { apiPost } from '../../lib/api'
 import { cn } from '../../lib/cn'
 
 type AgentOpt = { name: string }
-type ProjectRow = { name: string }
 
 type Props = {
   projectId: string
@@ -23,36 +22,11 @@ export function CreateMessageDialog({ projectId, agents, onSent }: Props) {
   const [busy, setBusy] = useState(false)
   const [err, setErr] = useState<string | null>(null)
 
-  const [allMailboxes, setAllMailboxes] = useState<string[]>([])
-
-  useEffect(() => {
-    if (!open) return
-    let cancelled = false
-    ;(async () => {
-      try {
-        const projects = await apiFetch<ProjectRow[]>('/api/v1/projects')
-        const boxes: string[] = []
-        for (const p of projects) {
-          try {
-            const ag = await apiFetch<AgentOpt[]>(`/api/v1/projects/${encodeURIComponent(p.name)}/agents`)
-            for (const a of ag) boxes.push(`${p.name}/${a.name}`)
-          } catch { /* skip */ }
-        }
-        if (!cancelled) setAllMailboxes(boxes.sort())
-      } catch { /* ignore */ }
-    })()
-    return () => { cancelled = true }
-  }, [open])
-
   const allOpts = useMemo(() => {
     const opts: string[] = ['human']
-    if (allMailboxes.length > 0) {
-      for (const mb of allMailboxes) opts.push(mb)
-    } else {
-      for (const a of agents) opts.push(`${projectId}/${a.name}`)
-    }
+    for (const a of agents) opts.push(`${projectId}/${a.name}`)
     return opts
-  }, [allMailboxes, agents, projectId])
+  }, [agents, projectId])
 
   const toOptions = allOpts
   const fromOptions = allOpts
@@ -79,7 +53,7 @@ export function CreateMessageDialog({ projectId, agents, onSent }: Props) {
   }
 
   function selectAllAgents() {
-    const all = allMailboxes.length > 0 ? allMailboxes : agents.map((a) => `${projectId}/${a.name}`)
+    const all = agents.map((a) => `${projectId}/${a.name}`)
     setToList((prev) => {
       const set = new Set(prev)
       for (const mb of all) set.add(mb)
@@ -156,7 +130,7 @@ export function CreateMessageDialog({ projectId, agents, onSent }: Props) {
               <div className="text-sm">
                 <div className="mb-1 flex items-center justify-between">
                   <span className="text-neutral-600 dark:text-zinc-400">{t('forms.to')}</span>
-                  {(allMailboxes.length > 0 || agents.length > 0) && (
+                  {agents.length > 0 && (
                     <button type="button" onClick={selectAllAgents} className="text-[11px] font-medium text-sky-600 hover:text-sky-700 dark:text-sky-400">
                       {t('forms.selectAllAgents')}
                     </button>

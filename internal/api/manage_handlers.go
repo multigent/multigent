@@ -327,6 +327,10 @@ func (s *Server) handleSessionReset(w http.ResponseWriter, r *http.Request) {
 		s.jsonError(w, http.StatusBadRequest, "project and agent are required")
 		return
 	}
+	if !s.canManageAgentConfig(r, project, agent) {
+		s.jsonError(w, http.StatusForbidden, "agent management access required")
+		return
+	}
 
 	hb, err := s.ts.GetHeartbeat(project, agent)
 	if err != nil {
