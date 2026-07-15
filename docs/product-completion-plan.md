@@ -4,6 +4,41 @@ This document defines the target product journey and the implementation plan for
 
 Multigent is still in active development. We do not need to preserve legacy behavior. When the current model conflicts with the target product shape, prefer correcting the model directly over adding compatibility layers.
 
+## Current Build Baseline
+
+As of the current development line, Multigent already has the first version of several core SaaS primitives:
+
+- Workspace and membership records are in the control database.
+- Project visibility and project-level roles are enforced in the main project APIs.
+- Users can be linked to specific agents they operate.
+- Model providers support workspace-owned and user-owned scopes.
+- Connector connections support workspace/user ownership, grants, encrypted secret records, runtime manifests, MCP proxying, action proxying, and test calls.
+- Agent runtime tokens exist and are scoped to workspace/project/agent/run capabilities.
+- Agent provider binding is filtered by the concrete agent, so an agent config page only lists providers that the current user can actually bind.
+- Audit events exist for many sensitive operations, including model provider and connection changes.
+
+The remaining work is not compatibility migration. This is a new product, so when an old local-first concept conflicts with the target SaaS shape, remove or replace it instead of adding fallback behavior.
+
+## Product North Star
+
+The product goal is to let a team operate cloud agent coworkers with less human blocking and less repeated context transmission.
+
+Multigent should help a company answer:
+
+- Which agents exist in this workspace?
+- Who is responsible for each agent's behavior?
+- Which projects, tasks, context, skills, credentials, and tools can each agent access?
+- What did each agent do, with which permissions, using which external connections?
+- Where does a human need to review or tune the process instead of synchronously driving every step?
+
+The core loop is:
+
+```text
+human expertise -> role/agent configuration -> authorized run -> observable result -> prompt/skill/policy improvement
+```
+
+Humans remain accountable for expertise, review, and policy. They should not be the synchronous transport layer between scattered documents, tools, and agents.
+
 ## Product Direction
 
 Multigent should feel like a SaaS product for operating an agent workforce, not like a local folder manager.
@@ -374,6 +409,11 @@ Done when:
 - Created workspace has owner membership.
 - Web no longer shows local root path in normal pages.
 
+Status:
+
+- Mostly implemented.
+- Remaining work: polish no-workspace onboarding, workspace switch edge cases, and route users to role-appropriate home pages after workspace creation or switch.
+
 ### Phase 2: Invite And Member Onboarding
 
 Goal: make team entry smooth.
@@ -394,6 +434,11 @@ Done when:
 - Accepted user enters the workspace with correct permissions.
 - Rejected invite does not grant access.
 
+Status:
+
+- Partially implemented.
+- Remaining work: email delivery abstraction, invite acceptance UX polish, bulk invite UI, invite expiry/revoke screens, and clearer post-accept routing.
+
 ### Phase 3: Project And Agent Permission Tightening
 
 Goal: ensure all project and agent APIs enforce permissions.
@@ -413,6 +458,12 @@ Done when:
 - A viewer cannot mutate tasks or scheduler.
 - A project manager can manage project scheduler.
 - UI and API agree on available actions.
+
+Status:
+
+- Partially implemented.
+- Current priority: finish endpoint-by-endpoint RBAC audit for tasks, messages, runs, scheduler, agent config, provider binding, connection grants, and runtime manifest access.
+- UI must hide unavailable actions, but API checks remain authoritative.
 
 ### Phase 4: Connector And Credential Foundation
 
@@ -438,6 +489,11 @@ Done when:
 - Agent runtime receives only the authorized credential/tool config.
 - Credential usage is audited.
 
+Status:
+
+- First implementation exists for provider registry, connection ownership, grants, encrypted secrets, runtime connection manifests, custom MCP proxy, custom HTTP action proxy, GitHub/Linear action proxy, and connection test calls.
+- Remaining work: OAuth flow abstraction, Feishu/Lark provider, DingTalk provider, GitHub app installation flow, richer profile/scopes display, connection health checks, and per-provider action executor hardening.
+
 ### Phase 5: Agent Runtime Productization
 
 Goal: make agent execution configurable without exposing infrastructure internals.
@@ -459,6 +515,12 @@ Done when:
 - Admin can configure runtime/sandbox/toolchain through profiles.
 - Agent runs with isolated and authorized resources.
 
+Status:
+
+- Partially implemented.
+- Docker remains the first sandbox backend, but the product model should expose runtime/sandbox/toolchain profiles instead of Docker flags.
+- Current priority: materialize per-run workspaces, inject scoped runtime tokens, stop mounting broad workspace directories in production profiles, and make CLI/toolchain installation profile-driven.
+
 ### Phase 6: Audit Log
 
 Goal: make operations traceable.
@@ -475,6 +537,11 @@ Done when:
 
 - Admin can answer who changed what, when, and on which resource.
 - Sensitive actions are captured consistently.
+
+Status:
+
+- Partially implemented.
+- Remaining work: centralize audit coverage expectations by endpoint group, add admin audit UI filters, and make agent-runtime credential/tool usage auditable.
 
 ### Phase 7: Onboarding Checklist And Home Pages
 
@@ -493,16 +560,42 @@ Done when:
 - New admin can reach first agent run without reading docs.
 - Invited member sees relevant work immediately.
 
+Status:
+
+- Early implementation.
+- Current priority: replace the generic overview with role-aware home pages:
+  - Admin/owner: workspace health, setup checklist, active projects, agent health, blocked runs, audit highlights.
+  - Member/operator: my messages, my assigned tasks, agents I operate, projects I can access, runs needing review.
+
+### Phase 8: Agent Operations And Human Tuning Loop
+
+Goal: make each human an agent owner/operator who improves agent behavior instead of manually relaying every step.
+
+Tasks:
+
+- Add agent performance view: recent runs, success/failure rate, blocked reasons, token/cost, response quality notes.
+- Add tuning actions: edit wakeup prompt, propose skill, adjust tool grants, adjust model/provider, adjust runtime profile.
+- Add review workflow: approve output, request rerun, create follow-up task, convert repeated intervention into policy/skill/prompt.
+- Add memory candidate flow: agent proposes reusable memory; responsible human approves, edits, or rejects.
+- Add human intervention ledger: track repeated human decisions and recommend automation.
+
+Done when:
+
+- A responsible human can see why their agent underperformed and change the configuration in one place.
+- Repeated manual interventions are visible and can become rules, skills, prompts, or grants.
+- Project completion produces reusable agent/team/project memory instead of only raw run logs.
+
 ## Immediate Next Steps
 
 Recommended implementation order:
 
-1. Implement workspace ID + membership foundation.
-2. Remove normal UI exposure of filesystem paths.
-3. Add create-workspace onboarding for users without workspace.
-4. Add invite acceptance flow.
-5. Add audit log table and instrument workspace/member/project/agent changes.
-6. Add connector/credential model document before coding providers.
+1. Finish the RBAC endpoint audit and fix any API that still returns unfiltered project, task, message, run, provider, connection, or scheduler data.
+2. Build role-aware home pages so admin and member users land in different operational views.
+3. Finish invite UX: bulk invite, accept/reject screen, expiry/revoke, and post-accept workspace routing.
+4. Replace remaining path-facing UI with workspace/project/agent/profile concepts.
+5. Productize runtime profiles: sandbox, toolchain, CLI version, dependency setup, resource policy, and network policy.
+6. Add the agent operations view for performance, run review, and prompt/skill/policy tuning.
+7. Expand connector providers: Feishu/Lark first, then GitHub app and Linear/Jira/Plane style project tools.
+8. Add memory candidate approval so completed projects and sub-tasks leave reusable context for future agents.
 
-Do not start connector implementation before workspace membership and audit basics exist. Credentials without strong ownership and audit will create security debt.
-
+Near-term coding rule: prefer removing local-first or compatibility-oriented commands from the public surface. Internal maintenance commands can stay hidden or developer-only, but normal users should see a SaaS agent-operations product, not a migration toolkit.
