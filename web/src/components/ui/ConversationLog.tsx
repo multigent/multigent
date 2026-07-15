@@ -83,6 +83,15 @@ function pushAssistantBlocks(items: ConversationItem[], blocks: ContentBlock[]) 
   }
 }
 
+function normalizeRawLogLine(line: string): string {
+  return line.replace(/^\[raw\]\s?/, '')
+}
+
+function collapseConsecutiveDuplicateLines(text: string): string {
+  const lines = text.split('\n')
+  return lines.filter((line, index) => index === 0 || line !== lines[index - 1]).join('\n')
+}
+
 function extractCursorToolInfo(tc: Record<string, unknown>): { name: string; desc: string; input: unknown } | null {
   const toolNames: Record<string, (inner: Record<string, unknown>) => { name: string; desc: string; input: unknown }> = {
     shellToolCall: (inner) => {
@@ -162,16 +171,19 @@ function extractCursorToolResult(tc: Record<string, unknown>): { content: string
 function isCodexLog(lines: string[]): boolean {
   // multigent prepends its own run headers before the Codex transcript, so do
   // not reject logs just because they contain "=== multigent exec".
-  // However, if the log contains stream-json output (lines starting with '{'),
-  // it is NOT a Codex log — it is claude-cli stream-json or similar.
-  const trimmed = lines.map((l) => l.trim())
+  // Agent chat can also prepend a JSON user message before raw Codex output.
+  // Prefer concrete Codex markers over the presence of JSON lines.
+  const trimmed = lines.map((l) => normalizeRawLogLine(l).trim())
+
+  const hasCodexMarkers = trimmed.some(l => l.includes('OpenAI Codex') || /^model:\s/.test(l)) ||
+    (trimmed.includes('user') && trimmed.includes('codex'))
+  if (hasCodexMarkers) return true
 
   // If there are JSON event lines, this is a stream-json log, not Codex.
   const hasJsonLines = trimmed.some(l => l.startsWith('{') && l.includes('"type"'))
   if (hasJsonLines) return false
 
-  return trimmed.some(l => l.includes('OpenAI Codex') || /^model:\s/.test(l)) ||
-    (trimmed.includes('user') && trimmed.includes('codex'))
+  return false
 }
 
 function parseCodexLog(lines: string[]): ConversationItem[] {
@@ -189,7 +201,7 @@ function parseCodexLog(lines: string[]): ConversationItem[] {
     l.startsWith('WARNING:')
 
   const flush = () => {
-    const text = buf.join('\n').trim()
+    let text = buf.join('\n').trim()
     buf = []
     if (!text) return
     switch (section) {
@@ -207,16 +219,22 @@ function parseCodexLog(lines: string[]): ConversationItem[] {
         })
         break
       case 'response':
+        text = collapseConsecutiveDuplicateLines(text)
         pushAssistantText(items, text)
         break
     }
   }
 
   for (let i = 0; i < lines.length; i++) {
-    const raw = lines[i]
+    const raw = normalizeRawLogLine(lines[i])
     const line = raw.trim()
 
     if (!line || isNoise(line)) continue
+
+    // Chat streaming writes the submitted user prompt as a JSON event before
+    // the raw Codex transcript arrives. The transcript itself contains the
+    // user section, so skip this line here to avoid duplicate user bubbles.
+    if (line.startsWith('{')) continue
 
     if (line.startsWith('===')) {
       flush()
