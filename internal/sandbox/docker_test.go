@@ -43,6 +43,13 @@ func TestImageForManagedModelsUsesRuntimeBase(t *testing.T) {
 	}
 }
 
+func TestEffectiveImageNormalizesPublishedDefault(t *testing.T) {
+	cfg := &entity.DockerSandboxConfig{Image: PublishedBaseImage}
+	if got := EffectiveImage(entity.ModelCodex, cfg); got != BaseImage {
+		t.Fatalf("EffectiveImage() = %q, want %q", got, BaseImage)
+	}
+}
+
 func findEnvArg(args []string, prefix string) string {
 	for i := 0; i < len(args)-1; i++ {
 		if args[i] == "-e" && strings.HasPrefix(args[i+1], prefix) {

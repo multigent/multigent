@@ -300,7 +300,7 @@ To switch an existing agent to another runtime (e.g. claudecode → codex), use
 	cmd.Flags().BoolVar(&ifNotExists, "if-not-exists", false, "skip silently if the agent already exists (idempotent)")
 
 	cmd.Flags().StringVar(&sandboxProvider, "sandbox", "", "Sandbox provider: docker (default: none, runs on host)")
-	cmd.Flags().StringVar(&sandboxImage, "sandbox-image", "", "Runtime image override (default: ghcr.io/multigent/multigent/runtime-base:latest for managed CLIs)")
+	cmd.Flags().StringVar(&sandboxImage, "sandbox-image", "", "Runtime image override (default: multigent/runtime-base:latest for managed CLIs)")
 	cmd.Flags().StringVar(&sandboxNetwork, "sandbox-network", "bridge", "Docker network mode: bridge|none|host")
 	cmd.Flags().IntVar(&sandboxMemoryMB, "sandbox-memory", 0, "Container memory limit in MiB (0 = no limit)")
 	cmd.Flags().Float64Var(&sandboxCPUs, "sandbox-cpus", 0, "Container CPU quota (0 = no limit)")

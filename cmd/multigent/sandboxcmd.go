@@ -72,10 +72,7 @@ func newSandboxShowCmd() *cobra.Command {
 
 			dockerCfg := meta.Sandbox.Docker
 
-			image := sandbox.ImageForModel(meta.Model)
-			if dockerCfg != nil && dockerCfg.Image != "" {
-				image = dockerCfg.Image
-			}
+			image := sandbox.EffectiveImage(meta.Model, dockerCfg)
 			network := "bridge"
 			if dockerCfg != nil && dockerCfg.NetworkMode != "" {
 				network = dockerCfg.NetworkMode
@@ -205,10 +202,7 @@ func newSandboxTestCmd() *cobra.Command {
 			agentDir := s.AgentDir(project, agentName)
 			dockerCfg := meta.Sandbox.Docker
 
-			image := sandbox.ImageForModel(meta.Model)
-			if dockerCfg != nil && dockerCfg.Image != "" {
-				image = dockerCfg.Image
-			}
+			image := sandbox.EffectiveImage(meta.Model, dockerCfg)
 
 			fmt.Printf("Testing sandbox for %s/%s ...\n", project, agentName)
 			fmt.Printf("Image: %s\n\n", image)

@@ -33,10 +33,16 @@ const (
 	// Image registry prefix for multigent-provided sandbox images.
 	imagePrefix = "ghcr.io/multigent/multigent"
 
-	// BaseImage is the stable runtime image. Agent CLI binaries are installed
+	// PublishedBaseImage is the public registry name used by release builds.
+	PublishedBaseImage = imagePrefix + "/runtime-base:latest"
+
+	// BaseImage is the stable local runtime image. Agent CLI binaries are installed
 	// at runtime into a persistent toolchain cache, so CLI version bumps do not
 	// require rebuilding this image.
-	BaseImage = imagePrefix + "/runtime-base:latest"
+	//
+	// Keep the default local-first. Development and self-hosted installs should
+	// not fail just because a registry package is private, unpublished, or slow.
+	BaseImage = "multigent/runtime-base:latest"
 
 	// AgencycliMount is where the multigent binary is mounted inside the
 	// container so that agents can run `multigent task add` etc.
@@ -276,6 +282,9 @@ func CheckDocker() error {
 // PullImage pulls a Docker image if it is not already present locally.
 // This is a best-effort call; errors are non-fatal.
 func PullImage(image string) error {
+	if imageExists(image) {
+		return nil
+	}
 	cmd := exec.Command("docker", "pull", image)
 	cmd.Stdout = os.Stdout
 	cmd.Stderr = os.Stderr
@@ -287,17 +296,40 @@ func ImageForModel(model entity.AgentModel) string {
 	return resolveImage(model, nil)
 }
 
+// EffectiveImage returns the Docker image after applying model defaults,
+// docker-specific overrides, and compatibility normalization for older configs.
+func EffectiveImage(model entity.AgentModel, cfg *entity.DockerSandboxConfig) string {
+	return resolveImage(model, cfg)
+}
+
 // ── internal helpers ──────────────────────────────────────────────────────────
 
 func resolveImage(model entity.AgentModel, cfg *entity.DockerSandboxConfig) string {
 	if cfg != nil && cfg.Image != "" {
-		return cfg.Image
+		return normalizeDefaultImage(cfg.Image)
 	}
 	model = entity.NormaliseModel(model)
 	if img, ok := defaultImages[model]; ok {
-		return img
+		return normalizeDefaultImage(img)
 	}
 	return BaseImage
+}
+
+func normalizeDefaultImage(image string) string {
+	if image == PublishedBaseImage {
+		return BaseImage
+	}
+	return image
+}
+
+func imageExists(image string) bool {
+	if strings.TrimSpace(image) == "" {
+		return false
+	}
+	cmd := exec.Command("docker", "image", "inspect", image)
+	cmd.Stdout = nil
+	cmd.Stderr = nil
+	return cmd.Run() == nil
 }
 
 // ResolveCredentialMounts is the exported form for use by CLI commands.

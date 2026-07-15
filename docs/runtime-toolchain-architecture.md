@@ -16,7 +16,7 @@ Default shape:
 
 ```yaml
 runtime:
-  image: ghcr.io/multigent/multigent/runtime-base:latest
+  image: multigent/runtime-base:latest
   agent_cli:
     vendor: codex
     version: 0.18.0
@@ -80,7 +80,7 @@ runtime isolation    -> docker run --runtime=runsc when available
 
 Current implementation direction:
 
-- default managed image: `ghcr.io/multigent/multigent/runtime-base:latest`
+- default managed image: `multigent/runtime-base:latest`
 - persistent Docker volume: `multigent-toolchains:/opt/multigent/toolchains`
 - npm CLI bin path: `/opt/multigent/toolchains/npm/bin`
 - command wrapper: install/check CLI, then `exec "$@"`

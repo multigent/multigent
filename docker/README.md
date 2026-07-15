@@ -14,7 +14,7 @@ The base image contains system dependencies. Codex, Claude Code, Gemini, and oth
 
 | Image | Agent | Base |
 |-------|-------|------|
-| `ghcr.io/multigent/multigent/runtime-base:latest` | Managed CLI toolchains | ubuntu:24.04 + Node 22 + Go + Python |
+| `multigent/runtime-base:latest` | Managed CLI toolchains | ubuntu:24.04 + Node 22 + Go + Python |
 | `ghcr.io/multigent/sandbox-claudecode:latest` | Legacy Claude Code image | ubuntu:24.04 + Node 22 + Go + Claude Code |
 | `ghcr.io/multigent/sandbox-codex:latest` | Legacy Codex image | ubuntu:24.04 + Node 22 + Go + Codex + pnpm |
 | `ghcr.io/multigent/sandbox-gemini:latest` | Legacy Gemini image | ubuntu:24.04 + Node 22 + Gemini |
@@ -30,12 +30,12 @@ All images include: `git`, `gh` (GitHub CLI), `curl`, `jq`, `ripgrep`, `make`, `
 
 ```bash
 # Default base image (international mirrors)
-docker build -t ghcr.io/multigent/multigent/runtime-base:latest \
+docker build -t multigent/runtime-base:latest \
              -f docker/runtime-base/Dockerfile .
 
 # Faster inside China (Aliyun apt + npmmirror)
 docker build --build-arg CN_MIRROR=1 \
-             -t ghcr.io/multigent/multigent/runtime-base:latest \
+             -t multigent/runtime-base:latest \
              -f docker/runtime-base/Dockerfile .
 ```
 
@@ -57,7 +57,7 @@ Example runtime config:
 ```yaml
 sandbox:
   provider: docker
-  image: ghcr.io/multigent/multigent/runtime-base:latest
+  image: multigent/runtime-base:latest
   agent_cli:
     vendor: codex
     version: 0.18.0
@@ -100,7 +100,7 @@ docker run --rm -i \
   -w /workspace \
   -e IS_SANDBOX=1 \                           ← claudecode: allow root run
   -e ANTHROPIC_API_KEY \                      ← inherited from host (value hidden)
-  ghcr.io/multigent/multigent/runtime-base:latest \
+  multigent/runtime-base:latest \
   claude --dangerously-skip-permissions \
          --output-format stream-json \
          --resume <session-id> \
@@ -114,7 +114,7 @@ The agent working directory (`CLAUDE.md`, tasks, skills, etc.) is bind-mounted a
 Extend any base image to add project-specific tools:
 
 ```dockerfile
-FROM ghcr.io/multigent/multigent/runtime-base:latest
+FROM multigent/runtime-base:latest
 
 # Add your project's toolchain
 RUN apt-get update && apt-get install -y golang-go python3-pip \

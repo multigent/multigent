@@ -5,12 +5,12 @@
 # Multigent runtime toolchain bootstrap into /opt/multigent/toolchains.
 #
 # Build:
-#   docker build -t ghcr.io/multigent/multigent/runtime-base:latest \
+#   docker build -t multigent/runtime-base:latest \
 #                -f docker/runtime-base/Dockerfile .
 #
 # Build with Chinese mirrors:
 #   docker build --build-arg CN_MIRROR=1 \
-#                -t ghcr.io/multigent/multigent/runtime-base:latest \
+#                -t multigent/runtime-base:latest \
 #                -f docker/runtime-base/Dockerfile .
 
 FROM ubuntu:24.04
