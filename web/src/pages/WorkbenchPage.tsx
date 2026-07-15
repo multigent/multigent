@@ -37,7 +37,7 @@ import { Pagination } from '../components/ui/Pagination'
 import { TaskKanban } from '../components/task/TaskKanban'
 import { TaskTable } from '../components/task/TaskTable'
 import { getQuickLinks, removeQuickLink, type QuickLink } from '../lib/quick-links'
-import { useAuth } from '../lib/auth'
+import { useWorkspaceAccess } from '../lib/workspace-access'
 import {
   EditTaskModal,
   TaskDetailModal,
@@ -1116,9 +1116,8 @@ function TabButton({
 
 export default function WorkbenchPage() {
   const { t } = useTranslation()
-  const { user } = useAuth()
-  const isAdmin = !user || user.role === 'admin'
-  const [tab, setTab] = useState<Tab>(isAdmin ? 'overview' : 'messages')
+  const { canAdmin } = useWorkspaceAccess()
+  const [tab, setTab] = useState<Tab>('messages')
   const projectsAgents = useProjectsAgents()
   const [badgeKey, setBadgeKey] = useState(0)
   const [, setQuickLinksVersion] = useState(0)
@@ -1140,10 +1139,10 @@ export default function WorkbenchPage() {
   }, [refreshQuickLinks])
 
   useEffect(() => {
-    if (!isAdmin && tab === 'overview') {
+    if (!canAdmin && tab === 'overview') {
       setTab('messages')
     }
-  }, [isAdmin, tab])
+  }, [canAdmin, tab])
 
   return (
     <div className="flex h-full flex-col overflow-hidden">
@@ -1160,7 +1159,7 @@ export default function WorkbenchPage() {
       {/* Tabs — Plane-style border-b-2 underline */}
       <div className="shrink-0 border-b border-neutral-200/80 px-8 dark:border-zinc-700/50">
         <div className="-mb-px flex gap-1">
-          {isAdmin && (
+          {canAdmin && (
             <TabButton active={tab === 'overview'} onClick={() => setTab('overview')}>
               <LayoutGrid className="size-4" strokeWidth={1.8} />
               {t('workbench.tabOverview')}
@@ -1182,7 +1181,7 @@ export default function WorkbenchPage() {
       </div>
 
       {/* Panel */}
-      {isAdmin && tab === 'overview' && <OverviewPanel />}
+      {canAdmin && tab === 'overview' && <OverviewPanel />}
       {tab === 'quickLinks' && <QuickLinksPanel onChanged={refreshQuickLinks} />}
       {tab === 'messages' && <MessagesPanel projectsAgents={projectsAgents} onMutated={refreshBadge} />}
       {tab === 'tasks' && <TasksPanel projectsAgents={projectsAgents} onMutated={refreshBadge} />}

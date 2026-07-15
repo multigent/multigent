@@ -3,6 +3,7 @@ import { Navigate, Route, Routes } from 'react-router-dom'
 import { AppShell } from './components/layout/AppShell'
 import { useAuth } from './lib/auth'
 import { apiFetch } from './lib/api'
+import { WorkspaceAccessProvider, useWorkspaceAccess } from './lib/workspace-access'
 import LoginPage from './pages/LoginPage'
 import WorkspaceOnboardingPage from './pages/WorkspaceOnboardingPage'
 import WorkspacePage from './pages/WorkspacePage'
@@ -34,8 +35,7 @@ import ProjectOKRPage from './pages/projects/ProjectOKRPage'
 type WorkspaceRef = { id: string; name: string; active?: boolean }
 
 export default function App() {
-  const { token, user, logout } = useAuth()
-  const isAdmin = !user || user.role === 'admin'
+  const { token, logout } = useAuth()
 
   useEffect(() => {
     const onExpired = () => logout()
@@ -47,7 +47,7 @@ export default function App() {
     return <LoginPage />
   }
 
-  return <WorkspaceGate><AuthenticatedRoutes isAdmin={isAdmin} /></WorkspaceGate>
+  return <WorkspaceGate><WorkspaceAccessProvider><AuthenticatedRoutes /></WorkspaceAccessProvider></WorkspaceGate>
 }
 
 function WorkspaceGate({ children }: { children: ReactNode }) {
@@ -80,14 +80,24 @@ function WorkspaceGate({ children }: { children: ReactNode }) {
   return children
 }
 
-function AuthenticatedRoutes({ isAdmin }: { isAdmin: boolean }) {
+function AuthenticatedRoutes() {
+  const { loading, canAdmin } = useWorkspaceAccess()
+
+  if (loading) {
+    return (
+      <div className="flex min-h-screen items-center justify-center bg-white text-sm text-neutral-500 dark:bg-zinc-950 dark:text-zinc-400">
+        Loading workspace access…
+      </div>
+    )
+  }
+
   return (
     <Routes>
       <Route element={<AppShell />}>
-        <Route index element={isAdmin ? <OverviewPage /> : <Navigate to="workbench" replace />} />
+        <Route index element={canAdmin ? <OverviewPage /> : <Navigate to="workbench" replace />} />
         <Route path="workspace" element={<WorkspacePage />} />
-        {isAdmin && <Route path="teams/:teamId" element={<TeamDetailPage />} />}
-        {isAdmin && <Route path="teams" element={<TeamsPage />} />}
+        {canAdmin && <Route path="teams/:teamId" element={<TeamDetailPage />} />}
+        {canAdmin && <Route path="teams" element={<TeamsPage />} />}
         <Route path="projects" element={<ProjectsListPage />} />
         <Route path="projects/:projectId" element={<ProjectBranch />}>
           <Route index element={<Navigate to="tasks" replace />} />
@@ -98,17 +108,17 @@ function AuthenticatedRoutes({ isAdmin }: { isAdmin: boolean }) {
           <Route path="members" element={<ProjectMembersPage />} />
           <Route path="members/:agentName/chat" element={<ProjectAgentChatPage />} />
           <Route path="members/:agentName" element={<ProjectAgentDetailPage />} />
-          {isAdmin && <Route path="schedule" element={<ProjectSchedulePage />} />}
+          {canAdmin && <Route path="schedule" element={<ProjectSchedulePage />} />}
           <Route path="runs" element={<ProjectRunsPage />} />
-          {isAdmin && <Route path="settings" element={<ProjectSettingsPage />} />}
+          {canAdmin && <Route path="settings" element={<ProjectSettingsPage />} />}
         </Route>
         <Route path="goals" element={<OKRPage />} />
         <Route path="people" element={<PeoplePage />} />
         <Route path="people/:username" element={<PersonDetailPage />} />
         <Route path="workbench" element={<WorkbenchPage />} />
         <Route path="connections" element={<ConnectionsPage />} />
-        {isAdmin && <Route path="skills" element={<SkillsPage />} />}
-        {isAdmin && <Route path="docs/*" element={<DocsPage />} />}
+        {canAdmin && <Route path="skills" element={<SkillsPage />} />}
+        {canAdmin && <Route path="docs/*" element={<DocsPage />} />}
         <Route path="files" element={<FilesPage />} />
         <Route path="settings" element={<SettingsPage />} />
         <Route path="*" element={<Navigate to="/" replace />} />

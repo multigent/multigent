@@ -673,6 +673,7 @@ Done when:
 Status:
 
 - Early implementation.
+- Root route, Sidebar admin-only navigation, project admin sub-navigation, command palette admin entries, and Workbench overview tab now use the current workspace admin permission instead of the global login role.
 - Current priority: replace the generic overview with role-aware home pages:
   - Admin/owner: workspace health, setup checklist, active projects, agent health, blocked runs, audit highlights.
   - Member/operator: my messages, my assigned tasks, agents I operate, projects I can access, runs needing review.

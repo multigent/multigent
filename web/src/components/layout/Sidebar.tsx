@@ -9,7 +9,7 @@ import {
   isNavActive,
 } from './nav-config'
 import { cn } from '../../lib/cn'
-import { useAuth } from '../../lib/auth'
+import { useWorkspaceAccess } from '../../lib/workspace-access'
 import { apiFetch, apiPost } from '../../lib/api'
 
 type WorkspaceSummary = {
@@ -50,8 +50,7 @@ export function Sidebar({ collapsed, onToggle }: { collapsed: boolean; onToggle:
   const { t } = useTranslation()
   const { pathname } = useLocation()
   const navigate = useNavigate()
-  const { user } = useAuth()
-  const isAdmin = !user || user.role === 'admin'
+  const { canAdmin } = useWorkspaceAccess()
   const projectId = projectIdFromPath(pathname)
   const [workspace, setWorkspace] = useState<WorkspaceSummary | null>(null)
   const [workspaces, setWorkspaces] = useState<WorkspaceRef[]>([])
@@ -239,7 +238,7 @@ export function Sidebar({ collapsed, onToggle }: { collapsed: boolean; onToggle:
         className={cn('flex flex-1 flex-col gap-0.5 overflow-y-auto py-3', collapsed ? 'px-1.5' : 'px-2')}
         aria-label={t('aria.mainNavigation')}
       >
-        {workspaceNav.filter(item => !item.adminOnly || isAdmin).map(({ to, navKey, icon: Icon, activePrefix }) => {
+        {workspaceNav.filter(item => !item.adminOnly || canAdmin).map(({ to, navKey, icon: Icon, activePrefix }) => {
           const end = to === '/'
           let active = isNavActive(pathname, to, end, activePrefix)
           if (navKey === 'projects' && projectId) {
@@ -287,7 +286,7 @@ export function Sidebar({ collapsed, onToggle }: { collapsed: boolean; onToggle:
                     {projectId}
                   </p>
                   <div className="space-y-px">
-                    {projectSubNav.filter(item => !item.adminOnly || isAdmin).map(({ segment, icon: SubIcon }) => {
+                    {projectSubNav.filter(item => !item.adminOnly || canAdmin).map(({ segment, icon: SubIcon }) => {
                       const subTo = `/projects/${encodeURIComponent(projectId)}/${segment}`
                       const subActiveState =
                         pathname === subTo || pathname.startsWith(`${subTo}/`)
