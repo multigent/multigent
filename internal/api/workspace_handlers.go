@@ -195,6 +195,20 @@ func (s *Server) handleCreateWorkspace(w http.ResponseWriter, r *http.Request) {
 		}
 		ref.Active = true
 	}
+	s.auditLog(auditLogInput{
+		WorkspaceID:  ref.ID,
+		Action:       "workspace.create",
+		ResourceType: "workspace",
+		ResourceID:   ref.ID,
+		Summary:      "Workspace created",
+		After: map[string]any{
+			"id":          ref.ID,
+			"name":        ref.Name,
+			"description": ref.Description,
+			"createdBy":   ref.CreatedBy,
+		},
+		Request: r,
+	})
 	_ = json.NewEncoder(w).Encode(ref)
 }
 
@@ -224,6 +238,18 @@ func (s *Server) handleSwitchWorkspace(w http.ResponseWriter, r *http.Request) {
 		s.jsonError(w, http.StatusInternalServerError, err.Error())
 		return
 	}
+	s.auditLog(auditLogInput{
+		WorkspaceID:  row.ID,
+		Action:       "workspace.switch",
+		ResourceType: "workspace",
+		ResourceID:   row.ID,
+		Summary:      "Workspace switched",
+		After: map[string]any{
+			"id":   row.ID,
+			"name": row.Name,
+		},
+		Request: r,
+	})
 	_ = json.NewEncoder(w).Encode(workspaceRefFromDB(row, s.root))
 }
 
@@ -247,6 +273,10 @@ func (s *Server) handlePutWorkspace(w http.ResponseWriter, r *http.Request) {
 	if err != nil {
 		s.jsonError(w, http.StatusInternalServerError, err.Error())
 		return
+	}
+	before := map[string]any{
+		"name":        workspaceDisplayName(agency.Name, s.root),
+		"description": agency.Description,
 	}
 
 	now := time.Now().UTC().Format(time.RFC3339)
@@ -281,6 +311,19 @@ func (s *Server) handlePutWorkspace(w http.ResponseWriter, r *http.Request) {
 		CreatedBy:   agency.CreatedBy,
 		CreatedAt:   agency.CreatedAt,
 		UpdatedAt:   agency.UpdatedAt,
+	})
+	s.auditLog(auditLogInput{
+		WorkspaceID:  id,
+		Action:       "workspace.update",
+		ResourceType: "workspace",
+		ResourceID:   id,
+		Summary:      "Workspace updated",
+		Before:       before,
+		After: map[string]any{
+			"name":        workspaceDisplayName(agency.Name, s.root),
+			"description": agency.Description,
+		},
+		Request: r,
 	})
 	s.handleWorkspace(w, r)
 }

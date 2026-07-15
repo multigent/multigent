@@ -67,6 +67,23 @@ func (db *SQLiteStore) migrate() error {
 	PRIMARY KEY (table_name, workspace_id, k1, k2, k3)
 )`,
 		`CREATE INDEX IF NOT EXISTS idx_kv_records_lookup ON kv_records(table_name, workspace_id, k1, k2)`,
+		`CREATE TABLE IF NOT EXISTS audit_events (
+	id TEXT PRIMARY KEY,
+	workspace_id TEXT NOT NULL DEFAULT '',
+	actor_type TEXT NOT NULL,
+	actor_id TEXT NOT NULL,
+	action TEXT NOT NULL,
+	resource_type TEXT NOT NULL,
+	resource_id TEXT NOT NULL,
+	summary TEXT NOT NULL DEFAULT '',
+	before_json TEXT NOT NULL DEFAULT '',
+	after_json TEXT NOT NULL DEFAULT '',
+	ip TEXT NOT NULL DEFAULT '',
+	user_agent TEXT NOT NULL DEFAULT '',
+	created_at TEXT NOT NULL
+)`,
+		`CREATE INDEX IF NOT EXISTS idx_audit_events_workspace_time ON audit_events(workspace_id, created_at DESC)`,
+		`CREATE INDEX IF NOT EXISTS idx_audit_events_resource ON audit_events(resource_type, resource_id, created_at DESC)`,
 	}
 	for _, stmt := range stmts {
 		if _, err := db.sql.Exec(stmt); err != nil {

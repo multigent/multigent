@@ -328,6 +328,18 @@ func (s *Server) handleSchedulerStart(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	s.setSchedulerDesired(project, agent, true)
+	s.auditLog(auditLogInput{
+		Action:       "scheduler.start",
+		ResourceType: "scheduler",
+		ResourceID:   schedKey(project, agent),
+		Summary:      "Scheduler started",
+		After: map[string]any{
+			"project": project,
+			"agent":   agent,
+			"key":     schedKey(project, agent),
+		},
+		Request: r,
+	})
 
 	key := schedKey(project, agent)
 	_ = json.NewEncoder(w).Encode(map[string]any{
@@ -359,6 +371,17 @@ func (s *Server) handleSchedulerWakeup(w http.ResponseWriter, r *http.Request) {
 		s.jsonError(w, http.StatusInternalServerError, fmt.Sprintf("wakeup failed: %v\n%s", err, string(out)))
 		return
 	}
+	s.auditLog(auditLogInput{
+		Action:       "scheduler.wakeup",
+		ResourceType: "agent",
+		ResourceID:   project + "/" + agent,
+		Summary:      "Agent wakeup requested",
+		After: map[string]any{
+			"project": project,
+			"agent":   agent,
+		},
+		Request: r,
+	})
 	_ = json.NewEncoder(w).Encode(map[string]any{"ok": true, "output": string(out)})
 }
 
@@ -391,6 +414,18 @@ func (s *Server) handleSchedulerStop(w http.ResponseWriter, r *http.Request) {
 	s.setSchedulerDesired(project, agent, false)
 
 	s.clearSchedulerRuntimeFields(project, agent)
+	s.auditLog(auditLogInput{
+		Action:       "scheduler.stop",
+		ResourceType: "scheduler",
+		ResourceID:   schedKey(project, agent),
+		Summary:      "Scheduler stopped",
+		After: map[string]any{
+			"project": project,
+			"agent":   agent,
+			"key":     schedKey(project, agent),
+		},
+		Request: r,
+	})
 
 	_ = json.NewEncoder(w).Encode(map[string]bool{"ok": true})
 }
@@ -478,6 +513,18 @@ func (s *Server) handleSchedulerAbort(w http.ResponseWriter, r *http.Request) {
 	hb.PID = 0
 	hb.LastWakeupStatus = "aborted"
 	_ = s.ts.SaveHeartbeat(project, agent, hb)
+	s.auditLog(auditLogInput{
+		Action:       "scheduler.abort",
+		ResourceType: "agent",
+		ResourceID:   project + "/" + agent,
+		Summary:      "Agent run aborted",
+		After: map[string]any{
+			"project": project,
+			"agent":   agent,
+			"pid":     pid,
+		},
+		Request: r,
+	})
 
 	_ = json.NewEncoder(w).Encode(map[string]any{"ok": true, "pid": pid})
 }

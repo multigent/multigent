@@ -39,6 +39,9 @@ type Store interface {
 	CreateInvitation(inv Invitation) error
 	InvitationByToken(token string) (Invitation, bool, error)
 	UpdateInvitation(inv Invitation) error
+
+	CreateAuditEvent(event AuditEvent) error
+	ListAuditEvents(filter AuditEventFilter) ([]AuditEvent, error)
 }
 
 type SQLiteStore struct {
@@ -96,6 +99,31 @@ type Invitation struct {
 type Record struct {
 	Key     []string
 	Payload string
+}
+
+type AuditEvent struct {
+	ID           string
+	WorkspaceID  string
+	ActorType    string
+	ActorID      string
+	Action       string
+	ResourceType string
+	ResourceID   string
+	Summary      string
+	BeforeJSON   string
+	AfterJSON    string
+	IP           string
+	UserAgent    string
+	CreatedAt    string
+}
+
+type AuditEventFilter struct {
+	WorkspaceID  string
+	ActorID      string
+	Action       string
+	ResourceType string
+	ResourceID   string
+	Limit        int
 }
 
 func OpenDefault() (*SQLiteStore, error) {

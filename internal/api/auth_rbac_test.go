@@ -177,3 +177,47 @@ func TestWorkspaceMembershipQueriesByUser(t *testing.T) {
 		t.Fatalf("memberships=%#v", memberships)
 	}
 }
+
+func TestAuditEventsCanBeCreatedAndFiltered(t *testing.T) {
+	users := newTestUserStore(t)
+	event := controldb.AuditEvent{
+		ID:           "aud-test",
+		WorkspaceID:  "ws-one",
+		ActorType:    "user",
+		ActorID:      "admin",
+		Action:       "workspace.create",
+		ResourceType: "workspace",
+		ResourceID:   "ws-one",
+		Summary:      "created",
+		AfterJSON:    `{"name":"One"}`,
+		CreatedAt:    "2026-07-15T00:00:00Z",
+	}
+	if err := users.db.CreateAuditEvent(event); err != nil {
+		t.Fatalf("create audit event: %v", err)
+	}
+	events, err := users.db.ListAuditEvents(controldb.AuditEventFilter{
+		WorkspaceID: "ws-one",
+		Action:      "workspace.create",
+		Limit:       10,
+	})
+	if err != nil {
+		t.Fatalf("list audit events: %v", err)
+	}
+	if len(events) != 1 {
+		t.Fatalf("events=%#v", events)
+	}
+	if events[0].ID != event.ID || events[0].AfterJSON != event.AfterJSON {
+		t.Fatalf("event mismatch: %#v", events[0])
+	}
+	none, err := users.db.ListAuditEvents(controldb.AuditEventFilter{
+		WorkspaceID: "ws-two",
+		Action:      "workspace.create",
+		Limit:       10,
+	})
+	if err != nil {
+		t.Fatalf("list filtered audit events: %v", err)
+	}
+	if len(none) != 0 {
+		t.Fatalf("expected no events, got %#v", none)
+	}
+}
