@@ -4,6 +4,8 @@ This document defines the target product journey and the implementation plan for
 
 Multigent is still in active development. We do not need to preserve legacy behavior. When the current model conflicts with the target product shape, prefer correcting the model directly over adding compatibility layers.
 
+For the next product-development cycle, use [`user-journey-improvement-plan.md`](user-journey-improvement-plan.md) as the focused implementation guide. It narrows the immediate priority from adding more providers to completing the first-admin setup loop, member workbench, agent operations view, invite flow, and memory-candidate review.
+
 ## Current Build Baseline
 
 As of the current development line, Multigent already has the first version of several core SaaS primitives:
