@@ -67,6 +67,11 @@ func (f *claudeCodeFormatter) Format(mc *ctxbuild.MergedContext, outDir string) 
 	if _, err := os.Stat(wakeupMD); err == nil {
 		importLines = append(importLines, "@.multigent/context/wakeup.md")
 	}
+	if filename, err := writeRuntimeConnectionsGuide(contextDir); err != nil {
+		return fmt.Errorf("claudecode: write runtime connections guide: %w", err)
+	} else {
+		importLines = append(importLines, fmt.Sprintf("@.multigent/context/%s", filename))
+	}
 
 	// Write CLAUDE.md with @import directives
 	claudeMD := buildClaudeMD(importLines)

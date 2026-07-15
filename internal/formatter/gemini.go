@@ -60,6 +60,11 @@ func (f *geminiFormatter) Format(mc *ctxbuild.MergedContext, outDir string) erro
 	if _, err := os.Stat(filepath.Join(contextDir, "wakeup.md")); err == nil {
 		importLines = append(importLines, "@.multigent/context/wakeup.md")
 	}
+	if filename, err := writeRuntimeConnectionsGuide(contextDir); err != nil {
+		return fmt.Errorf("gemini: write runtime connections guide: %w", err)
+	} else {
+		importLines = append(importLines, fmt.Sprintf("@.multigent/context/%s", filename))
+	}
 
 	// GEMINI.md supports the same @import syntax as CLAUDE.md
 	geminiMD := buildGeminiMD(importLines)

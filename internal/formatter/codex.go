@@ -72,5 +72,6 @@ func buildAgentsMD(layers []ctxbuild.ContextLayer, skills []ctxbuild.SkillDef) s
 		}
 	}
 
+	appendRuntimeConnectionsGuide(&sb)
 	return sb.String()
 }

@@ -65,6 +65,7 @@ func buildSingleFileMD(mc *ctxbuild.MergedContext, filename string) string {
 		}
 	}
 
+	appendRuntimeConnectionsGuide(&sb)
 	_ = filename // referenced in error messages via the struct field
 	return sb.String()
 }

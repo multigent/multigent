@@ -84,6 +84,7 @@ func buildCursorRules(mc *ctxbuild.MergedContext) string {
 		}
 	}
 
+	appendRuntimeConnectionsGuide(&sb)
 	return sb.String()
 }
 

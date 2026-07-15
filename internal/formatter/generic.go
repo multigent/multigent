@@ -59,5 +59,6 @@ func buildContextMD(mc *ctxbuild.MergedContext) string {
 		}
 	}
 
+	appendRuntimeConnectionsGuide(&sb)
 	return sb.String()
 }
