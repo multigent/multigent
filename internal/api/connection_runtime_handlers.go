@@ -63,7 +63,7 @@ func (s *Server) handleAgentRuntimeConnections(w http.ResponseWriter, r *http.Re
 		s.jsonError(w, http.StatusNotFound, "agent not found")
 		return
 	}
-	if !s.canManageAgentConfig(r, project, agent) {
+	if !s.canOperateAgent(r, project, agent) {
 		s.jsonError(w, http.StatusForbidden, "agent operator access required")
 		return
 	}

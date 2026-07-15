@@ -446,7 +446,7 @@ function GrantDialog({ connection, workspaceId, projects, agentsByProject, isWor
         <div className="rounded-lg bg-neutral-50 p-3 text-sm text-neutral-600 dark:bg-zinc-800/50 dark:text-zinc-300">
           <p className="font-medium text-neutral-900 dark:text-zinc-100">{connection.provider} / {connection.connectionName}</p>
           <p className="mt-1 text-xs text-neutral-400 dark:text-zinc-500">
-            {isUserOwned ? 'Personal connections can only be granted by their owner to that owner or linked agents.' : 'Grant this workspace connection to a workspace, project, agent, or user.'}
+            {isUserOwned ? 'Personal connections can only be granted by their owner to that owner or agents they can operate.' : 'Grant this workspace connection to a workspace, project, agent, or user.'}
           </p>
         </div>
         {canEditGrants && (

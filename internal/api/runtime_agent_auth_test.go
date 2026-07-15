@@ -1,6 +1,9 @@
 package api
 
 import (
+	"encoding/json"
+	"net/http"
+	"net/http/httptest"
 	"testing"
 	"time"
 
@@ -49,6 +52,57 @@ func TestNormalizeRuntimeCapabilitiesFiltersUnsupportedValues(t *testing.T) {
 	if len(got) != 1 || got[0] != "connection.use" {
 		t.Fatalf("fallback capabilities=%#v", got)
 	}
+}
+
+func TestIssueAgentRuntimeTokenRequiresAgentOperatorAccess(t *testing.T) {
+	s, workspaceID := newConnectionGrantPolicyServer(t)
+	grantProjectRoleForTest(t, s, workspaceID, "viewer", ProjectRoleViewer)
+	grantProjectRoleForTest(t, s, workspaceID, "operator", ProjectRoleOperator)
+
+	viewerReq := issueAgentRuntimeTokenRequestForTest("viewer", "tapnow", "pm")
+	viewerRec := httptest.NewRecorder()
+	s.handleIssueAgentRuntimeToken(viewerRec, viewerReq)
+	if viewerRec.Code != http.StatusForbidden {
+		t.Fatalf("viewer status=%d body=%s", viewerRec.Code, viewerRec.Body.String())
+	}
+
+	operatorReq := issueAgentRuntimeTokenRequestForTest("operator", "tapnow", "backend")
+	operatorRec := httptest.NewRecorder()
+	s.handleIssueAgentRuntimeToken(operatorRec, operatorReq)
+	if operatorRec.Code != http.StatusOK {
+		t.Fatalf("operator status=%d body=%s", operatorRec.Code, operatorRec.Body.String())
+	}
+	var body struct {
+		Token        string   `json:"token"`
+		Capabilities []string `json:"capabilities"`
+		Project      string   `json:"project"`
+		Agent        string   `json:"agent"`
+	}
+	if err := json.Unmarshal(operatorRec.Body.Bytes(), &body); err != nil {
+		t.Fatalf("decode token response: %v", err)
+	}
+	if body.Token == "" || body.Project != "tapnow" || body.Agent != "backend" {
+		t.Fatalf("bad token response=%#v", body)
+	}
+	if len(body.Capabilities) != 1 || body.Capabilities[0] != "connection.use" {
+		t.Fatalf("capabilities=%#v", body.Capabilities)
+	}
+
+	ownerReq := issueAgentRuntimeTokenRequestForTest("owner", "tapnow", "pm")
+	ownerRec := httptest.NewRecorder()
+	s.handleIssueAgentRuntimeToken(ownerRec, ownerReq)
+	if ownerRec.Code != http.StatusOK {
+		t.Fatalf("linked owner status=%d body=%s", ownerRec.Code, ownerRec.Body.String())
+	}
+}
+
+func issueAgentRuntimeTokenRequestForTest(username, project, agent string) *http.Request {
+	req := providerTestRequest(http.MethodPost, "/api/v1/projects/"+project+"/agents/"+agent+"/runtime/token", username, issueAgentRuntimeTokenRequest{
+		Capabilities: []string{"connection.use", "agent.admin"},
+	})
+	req.SetPathValue("name", project)
+	req.SetPathValue("agent", agent)
+	return req
 }
 
 func TestFindRuntimeConnectionRequiresMatchingGrant(t *testing.T) {

@@ -32,8 +32,7 @@ func (s *Server) handleIssueAgentRuntimeToken(w http.ResponseWriter, r *http.Req
 		s.jsonError(w, http.StatusNotFound, "agent not found")
 		return
 	}
-	cur := s.currentUser(r)
-	if !s.canManageProject(r, project) && !currentUserLinkedAgent(cur, project+"/"+agent) {
+	if !s.canOperateAgent(r, project, agent) {
 		s.jsonError(w, http.StatusForbidden, "agent operator access required")
 		return
 	}
