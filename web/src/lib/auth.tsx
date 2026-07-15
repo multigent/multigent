@@ -79,3 +79,43 @@ export function useAuth() {
 export function getStoredToken(): string | null {
   return localStorage.getItem(TOKEN_KEY)
 }
+
+const projectRolePower: Record<string, number> = {
+  viewer: 1,
+  operator: 2,
+  manager: 3,
+}
+
+export function isSystemAdmin(user: AuthUser | null | undefined): boolean {
+  return !user || user.role === 'admin'
+}
+
+export function projectRole(user: AuthUser | null | undefined, project: string): string | null {
+  if (isSystemAdmin(user)) return 'manager'
+  return user?.projects?.find((p) => p.project === project)?.role ?? null
+}
+
+export function hasLinkedAgent(user: AuthUser | null | undefined, project: string, agent: string): boolean {
+  return Boolean(user?.linkedAgents?.includes(`${project}/${agent}`))
+}
+
+export function canAccessProject(user: AuthUser | null | undefined, project: string): boolean {
+  if (isSystemAdmin(user)) return true
+  if (projectRole(user, project) != null) return true
+  return Boolean(user?.linkedAgents?.some((agent) => agent.startsWith(`${project}/`)))
+}
+
+export function canOperateProject(user: AuthUser | null | undefined, project: string): boolean {
+  const role = projectRole(user, project)
+  return (projectRolePower[role ?? ''] ?? 0) >= projectRolePower.operator
+}
+
+export function canManageProject(user: AuthUser | null | undefined, project: string): boolean {
+  const role = projectRole(user, project)
+  return (projectRolePower[role ?? ''] ?? 0) >= projectRolePower.manager
+}
+
+export function canOperateAgent(user: AuthUser | null | undefined, project: string, agent: string): boolean {
+  if (canOperateProject(user, project)) return true
+  return hasLinkedAgent(user, project, agent)
+}

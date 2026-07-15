@@ -15,6 +15,7 @@ type Props = {
   onTaskClick: (task: TaskRow) => void
   onStatusChange?: (task: TaskRow, newStatus: string) => void
   showProject?: boolean
+  canUpdateTask?: (task: TaskRow) => boolean
 }
 
 const STATUS_ORDER = STATUS_KEYS
@@ -39,7 +40,7 @@ const dotColor: Record<string, string> = {
   cancelled: 'bg-neutral-400 dark:bg-zinc-600',
 }
 
-export function TaskKanban({ tasks, onTaskClick, onStatusChange, showProject }: Props) {
+export function TaskKanban({ tasks, onTaskClick, onStatusChange, showProject, canUpdateTask = () => true }: Props) {
   const { t } = useTranslation()
   const draggable = !!onStatusChange
   const [dragId, setDragId] = useState<string | null>(null)
@@ -87,7 +88,7 @@ export function TaskKanban({ tasks, onTaskClick, onStatusChange, showProject }: 
     counters.current = {}
     const id = e.dataTransfer.getData('text/plain')
     const task = tasks.find(t => t.id === id)
-    if (task && task.status !== colKey && onStatusChange) {
+    if (task && task.status !== colKey && onStatusChange && canUpdateTask(task)) {
       onStatusChange(task, colKey)
     }
   }
@@ -122,22 +123,23 @@ export function TaskKanban({ tasks, onTaskClick, onStatusChange, showProject }: 
             ) : col.tasks.map(task => {
               const prio = priorityLabel[task.priority] ?? priorityLabel[2]
               const isDragging = dragId === task.id
+              const taskDraggable = draggable && canUpdateTask(task)
               return (
                 <div
                   key={task.id}
-                  draggable={draggable}
-                  onDragStart={draggable ? e => handleDragStart(e, task) : undefined}
-                  onDragEnd={draggable ? handleDragEnd : undefined}
+                  draggable={taskDraggable}
+                  onDragStart={taskDraggable ? e => handleDragStart(e, task) : undefined}
+                  onDragEnd={taskDraggable ? handleDragEnd : undefined}
                   onClick={() => onTaskClick(task)}
                   className={cn(
                     'cursor-pointer rounded-lg border border-neutral-200/80 bg-white p-3 shadow-sm transition-all dark:border-zinc-700/60 dark:bg-zinc-900/60',
                     isDragging ? 'opacity-40 scale-[0.97]' : 'hover:shadow-md hover:border-neutral-300 dark:hover:border-zinc-600',
-                    draggable && 'cursor-grab active:cursor-grabbing',
+                    taskDraggable && 'cursor-grab active:cursor-grabbing',
                   )}
                 >
                   <div className="flex items-start justify-between gap-2">
                     <div className="flex items-start gap-1.5 min-w-0">
-                      {draggable && (
+                      {taskDraggable && (
                         <GripVertical className="mt-0.5 size-3.5 shrink-0 text-neutral-300 dark:text-zinc-600" strokeWidth={1.5} />
                       )}
                       <span className="text-[13px] font-medium leading-snug text-neutral-800 dark:text-zinc-200 line-clamp-2">{task.title}</span>

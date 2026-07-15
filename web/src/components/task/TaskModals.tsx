@@ -227,7 +227,7 @@ export function EditTaskModal({ task, taskOptions = [], onClose, onSaved }: { ta
 
 /* ── Detail modal ─── */
 
-export function TaskDetailModal({ task, onClose, onEdit }: { task: TaskRow; onClose: () => void; onEdit: (r: TaskRow) => void }) {
+export function TaskDetailModal({ task, onClose, onEdit, canEdit = true }: { task: TaskRow; onClose: () => void; onEdit: (r: TaskRow) => void; canEdit?: boolean }) {
   const { t } = useTranslation()
   const fmt = useFormatDateTime()
 
@@ -256,9 +256,11 @@ export function TaskDetailModal({ task, onClose, onEdit }: { task: TaskRow; onCl
             <span className="truncate text-sm font-medium text-neutral-900 dark:text-zinc-100">{task.title}</span>
           </div>
           <div className="flex items-center gap-1 shrink-0">
-            <button type="button" onClick={() => onEdit(task)} className="rounded-md p-1 text-neutral-400 transition-colors hover:bg-neutral-100 hover:text-neutral-700 dark:text-zinc-500 dark:hover:bg-zinc-800" title={t('tasks.edit')}>
-              <Pencil className="size-4" strokeWidth={1.8} />
-            </button>
+            {canEdit && (
+              <button type="button" onClick={() => onEdit(task)} className="rounded-md p-1 text-neutral-400 transition-colors hover:bg-neutral-100 hover:text-neutral-700 dark:text-zinc-500 dark:hover:bg-zinc-800" title={t('tasks.edit')}>
+                <Pencil className="size-4" strokeWidth={1.8} />
+              </button>
+            )}
             <button type="button" onClick={onClose} className="rounded-md p-1 text-neutral-400 transition-colors hover:bg-neutral-100 hover:text-neutral-700 dark:text-zinc-500 dark:hover:bg-zinc-800">
               <X className="size-4" strokeWidth={2} />
             </button>

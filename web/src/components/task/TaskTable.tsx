@@ -25,6 +25,8 @@ type Props = {
   onArchive: (task: TaskRow, e: React.MouseEvent) => void
   onDelete: (task: TaskRow, e: React.MouseEvent) => void
   showProject?: boolean
+  canMutateTask?: (task: TaskRow) => boolean
+  canDeleteTask?: (task: TaskRow) => boolean
 }
 
 export function TaskTable({
@@ -40,6 +42,8 @@ export function TaskTable({
   onArchive,
   onDelete,
   showProject = false,
+  canMutateTask = () => true,
+  canDeleteTask = () => true,
 }: Props) {
   const { t } = useTranslation()
   const fmt = useFormatDateTime()
@@ -95,6 +99,8 @@ export function TaskTable({
             const sCls = statusColor[row.status] ?? statusColor.pending
             const terminal = isTerminal(row.status)
             const isChecked = checked.has(row.id)
+            const canMutate = canMutateTask(row)
+            const canDelete = canDeleteTask(row)
             return (
               <tr
                 key={row.id}
@@ -107,12 +113,14 @@ export function TaskTable({
                 )}
               >
                 <td className="w-10 px-3 py-3 text-center align-middle" onClick={(e) => e.stopPropagation()}>
-                  <input
-                    type="checkbox"
-                    checked={isChecked}
-                    onChange={() => onToggleOne(row.id)}
-                    className="size-3.5 rounded border-neutral-300 accent-sky-600 dark:border-zinc-600"
-                  />
+                  {(canMutate || canDelete) && (
+                    <input
+                      type="checkbox"
+                      checked={isChecked}
+                      onChange={() => onToggleOne(row.id)}
+                      className="size-3.5 rounded border-neutral-300 accent-sky-600 dark:border-zinc-600"
+                    />
+                  )}
                 </td>
                 <td className="px-4 py-3 align-middle">
                   <div className="flex flex-wrap items-center gap-2">
@@ -177,15 +185,17 @@ export function TaskTable({
                   onClick={(e) => e.stopPropagation()}
                 >
                   <div className="flex items-center justify-end gap-1 whitespace-nowrap opacity-0 transition-opacity duration-100 group-hover:opacity-100">
-                    <button
-                      type="button"
-                      onClick={(e) => { e.stopPropagation(); onEdit(row) }}
-                      className="rounded p-1 text-neutral-500 transition-colors hover:bg-neutral-100 hover:text-neutral-700 dark:text-zinc-500 dark:hover:bg-zinc-800 dark:hover:text-zinc-300"
-                      title={t('tasks.edit')}
-                    >
-                      <Pencil className="size-3.5" strokeWidth={1.8} />
-                    </button>
-                    {!terminal && !row.archived && (
+                    {canMutate && (
+                      <button
+                        type="button"
+                        onClick={(e) => { e.stopPropagation(); onEdit(row) }}
+                        className="rounded p-1 text-neutral-500 transition-colors hover:bg-neutral-100 hover:text-neutral-700 dark:text-zinc-500 dark:hover:bg-zinc-800 dark:hover:text-zinc-300"
+                        title={t('tasks.edit')}
+                      >
+                        <Pencil className="size-3.5" strokeWidth={1.8} />
+                      </button>
+                    )}
+                    {canMutate && !terminal && !row.archived && (
                       <button
                         type="button"
                         onClick={(e) => onCancel(row, e)}
@@ -195,7 +205,7 @@ export function TaskTable({
                         <X className="size-3.5" strokeWidth={1.8} />
                       </button>
                     )}
-                    {!row.archived && (
+                    {canMutate && !row.archived && (
                       <button
                         type="button"
                         onClick={(e) => onArchive(row, e)}
@@ -205,14 +215,16 @@ export function TaskTable({
                         <Archive className="size-3.5" strokeWidth={1.8} />
                       </button>
                     )}
-                    <button
-                      type="button"
-                      onClick={(e) => onDelete(row, e)}
-                      className="rounded p-1 text-red-500 transition-colors hover:bg-red-50 dark:text-red-400 dark:hover:bg-red-900/30"
-                      title={t('tasks.delete')}
-                    >
-                      <Trash2 className="size-3.5" strokeWidth={1.8} />
-                    </button>
+                    {canDelete && (
+                      <button
+                        type="button"
+                        onClick={(e) => onDelete(row, e)}
+                        className="rounded p-1 text-red-500 transition-colors hover:bg-red-50 dark:text-red-400 dark:hover:bg-red-900/30"
+                        title={t('tasks.delete')}
+                      >
+                        <Trash2 className="size-3.5" strokeWidth={1.8} />
+                      </button>
+                    )}
                   </div>
                 </td>
               </tr>

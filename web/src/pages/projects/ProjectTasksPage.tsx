@@ -8,6 +8,7 @@ import { TaskTable } from '../../components/task/TaskTable'
 import { Pagination } from '../../components/ui/Pagination'
 import { PlaceholderCard } from '../../components/ui/PlaceholderCard'
 import { apiPost, apiPut } from '../../lib/api'
+import { canManageProject, canOperateAgent, useAuth } from '../../lib/auth'
 import { cn } from '../../lib/cn'
 import { useApiJson } from '../../lib/use-api'
 import {
@@ -38,6 +39,7 @@ const selectCls =
 
 export default function ProjectTasksPage() {
   const { t } = useTranslation()
+  const { user } = useAuth()
   const { projectId } = useParams<{ projectId: string }>()
   const base =
     projectId != null && projectId !== ''
@@ -62,6 +64,12 @@ export default function ProjectTasksPage() {
   const agentsState = useApiJson<AgentRow[]>(agentsPath, reloadKey)
   const tasks = state.status === 'ok' ? (state.data ?? []) : []
   const agents = agentsState.status === 'ok' ? (agentsState.data ?? []) : []
+  const canMutateTask = useCallback((row: TaskRow) => canOperateAgent(user, row.project, row.agent), [user])
+  const canDeleteTask = useCallback((row: TaskRow) => canManageProject(user, row.project), [user])
+  const operableAgents = useMemo(
+    () => agents.filter((agent) => projectId != null && projectId !== '' && canOperateAgent(user, projectId, agent.name)),
+    [agents, projectId, user],
+  )
   const taskOptions = useMemo(
     () => tasks.map((r) => ({ id: r.id, title: r.title, project: r.project })),
     [tasks],
@@ -87,10 +95,13 @@ export default function ProjectTasksPage() {
   }
   const hasFilters = filters.status !== '' || filters.agent !== '' || filters.priority !== '' || filters.scope !== 'all'
 
-  const allChecked = tasks.length > 0 && checked.size === tasks.length
+  const actionableTasks = useMemo(() => tasks.filter((r) => canMutateTask(r) || canDeleteTask(r)), [tasks, canMutateTask, canDeleteTask])
+  const allChecked = actionableTasks.length > 0 && checked.size === actionableTasks.length
   const someChecked = checked.size > 0
-  function toggleAll() { setChecked(allChecked ? new Set() : new Set(tasks.map((r) => r.id))) }
+  function toggleAll() { setChecked(allChecked ? new Set() : new Set(actionableTasks.map((r) => r.id))) }
   function toggleOne(id: string) {
+    const row = tasks.find((r) => r.id === id)
+    if (row && !canMutateTask(row) && !canDeleteTask(row)) return
     setChecked((prev) => { const n = new Set(prev); if (n.has(id)) n.delete(id); else n.add(id); return n })
   }
   function getCheckedRows() { return tasks.filter((r) => checked.has(r.id)) }
@@ -98,7 +109,7 @@ export default function ProjectTasksPage() {
   const reload = useCallback(() => { setReloadKey((k) => k + 1); setChecked(new Set()) }, [])
 
   async function batchCancel() {
-    const rows = getCheckedRows().filter((r) => !isTerminal(r.status))
+    const rows = getCheckedRows().filter((r) => canMutateTask(r) && !isTerminal(r.status))
     if (rows.length === 0) return
     if (!window.confirm(t('tasks.confirmBatchCancel', { count: String(rows.length) }))) return
     setBatchBusy(true)
@@ -107,11 +118,11 @@ export default function ProjectTasksPage() {
   }
   async function batchArchive() {
     setBatchBusy(true)
-    try { for (const r of getCheckedRows()) await apiPost('/api/v1/tasks/archive', { project: r.project, agent: r.agent, id: r.id }); reload() }
+    try { for (const r of getCheckedRows().filter(canMutateTask)) await apiPost('/api/v1/tasks/archive', { project: r.project, agent: r.agent, id: r.id }); reload() }
     finally { setBatchBusy(false) }
   }
   async function batchDelete() {
-    const rows = getCheckedRows()
+    const rows = getCheckedRows().filter(canDeleteTask)
     if (!window.confirm(t('tasks.confirmBatchDelete', { count: String(rows.length) }))) return
     setBatchBusy(true)
     try { for (const r of rows) await apiPost('/api/v1/tasks/delete', { project: r.project, agent: r.agent, id: r.id }); reload() }
@@ -119,18 +130,25 @@ export default function ProjectTasksPage() {
   }
   async function quickCancel(row: TaskRow, e: React.MouseEvent) {
     e.stopPropagation()
+    if (!canMutateTask(row)) return
     if (!window.confirm(t('tasks.confirmCancel'))) return
     await apiPost('/api/v1/tasks/cancel', { project: row.project, agent: row.agent, id: row.id }); reload()
   }
   async function quickArchive(row: TaskRow, e: React.MouseEvent) {
     e.stopPropagation()
+    if (!canMutateTask(row)) return
     await apiPost('/api/v1/tasks/archive', { project: row.project, agent: row.agent, id: row.id }); reload()
   }
   async function quickDelete(row: TaskRow, e: React.MouseEvent) {
     e.stopPropagation()
+    if (!canDeleteTask(row)) return
     if (!window.confirm(t('tasks.confirmDelete'))) return
     await apiPost('/api/v1/tasks/delete', { project: row.project, agent: row.agent, id: row.id }); reload()
   }
+
+  const selectedRows = getCheckedRows()
+  const hasSelectedMutatable = selectedRows.some((row) => canMutateTask(row))
+  const hasSelectedDeletable = selectedRows.some((row) => canDeleteTask(row))
 
   return (
     <div className="flex h-full flex-col overflow-hidden">
@@ -160,8 +178,8 @@ export default function ProjectTasksPage() {
                 </button>
               ))}
             </div>
-            {projectId != null && projectId !== '' && (
-              <CreateTaskDialog projectId={projectId} agents={agents} taskOptions={taskOptions} onCreated={reload} />
+            {projectId != null && projectId !== '' && operableAgents.length > 0 && (
+              <CreateTaskDialog projectId={projectId} agents={operableAgents} taskOptions={taskOptions} onCreated={reload} />
             )}
           </div>
         </div>
@@ -206,9 +224,15 @@ export default function ProjectTasksPage() {
         <div className="shrink-0 flex items-center gap-3 border-b border-sky-200 bg-sky-50/60 px-6 py-2 animate-slide-down dark:border-sky-900/40 dark:bg-sky-950/30">
           <span className="text-[13px] font-medium text-sky-800 dark:text-sky-300">{t('messages.selected', { count: String(checked.size) })}</span>
           <div className="flex items-center gap-1.5">
-            <button type="button" disabled={batchBusy} onClick={() => void batchCancel()} className="whitespace-nowrap rounded-md border border-amber-200 bg-white px-2.5 py-1 text-[12px] font-medium text-amber-700 transition-colors hover:bg-amber-50 disabled:opacity-40 dark:border-amber-800 dark:bg-amber-900/40 dark:text-amber-300 dark:hover:bg-amber-900/50">{t('tasks.batchCancel')}</button>
-            <button type="button" disabled={batchBusy} onClick={() => void batchArchive()} className="whitespace-nowrap rounded-md border border-neutral-200 bg-white px-2.5 py-1 text-[12px] font-medium text-neutral-600 transition-colors hover:bg-neutral-50 disabled:opacity-40 dark:border-zinc-700 dark:bg-zinc-900 dark:text-zinc-400 dark:hover:bg-zinc-800">{t('tasks.batchArchive')}</button>
-            <button type="button" disabled={batchBusy} onClick={() => void batchDelete()} className="whitespace-nowrap rounded-md border border-red-200 bg-white px-2.5 py-1 text-[12px] font-medium text-red-600 transition-colors hover:bg-red-50 disabled:opacity-40 dark:border-red-900 dark:bg-red-950/30 dark:text-red-400 dark:hover:bg-red-900/50">{t('tasks.batchDelete')}</button>
+            {hasSelectedMutatable && (
+              <>
+                <button type="button" disabled={batchBusy} onClick={() => void batchCancel()} className="whitespace-nowrap rounded-md border border-amber-200 bg-white px-2.5 py-1 text-[12px] font-medium text-amber-700 transition-colors hover:bg-amber-50 disabled:opacity-40 dark:border-amber-800 dark:bg-amber-900/40 dark:text-amber-300 dark:hover:bg-amber-900/50">{t('tasks.batchCancel')}</button>
+                <button type="button" disabled={batchBusy} onClick={() => void batchArchive()} className="whitespace-nowrap rounded-md border border-neutral-200 bg-white px-2.5 py-1 text-[12px] font-medium text-neutral-600 transition-colors hover:bg-neutral-50 disabled:opacity-40 dark:border-zinc-700 dark:bg-zinc-900 dark:text-zinc-400 dark:hover:bg-zinc-800">{t('tasks.batchArchive')}</button>
+              </>
+            )}
+            {hasSelectedDeletable && (
+              <button type="button" disabled={batchBusy} onClick={() => void batchDelete()} className="whitespace-nowrap rounded-md border border-red-200 bg-white px-2.5 py-1 text-[12px] font-medium text-red-600 transition-colors hover:bg-red-50 disabled:opacity-40 dark:border-red-900 dark:bg-red-950/30 dark:text-red-400 dark:hover:bg-red-900/50">{t('tasks.batchDelete')}</button>
+            )}
           </div>
           <button type="button" onClick={() => setChecked(new Set())} className="ml-auto text-[12px] text-sky-600 hover:text-sky-800 dark:text-sky-400">{t('forms.cancel')}</button>
         </div>
@@ -242,7 +266,7 @@ export default function ProjectTasksPage() {
           <TaskKanban tasks={tasks} onTaskClick={setDetailRow} onStatusChange={async (task, status) => {
             await apiPut('/api/v1/tasks/update', { project: task.project, agent: task.agent, id: task.id, status })
             reload()
-          }} />
+          }} canUpdateTask={canMutateTask} />
         )}
 
         {state.status === 'ok' && tasks.length > 0 && viewMode === 'table' && (
@@ -259,15 +283,16 @@ export default function ProjectTasksPage() {
               onCancel={(row, e) => void quickCancel(row, e)}
               onArchive={(row, e) => void quickArchive(row, e)}
               onDelete={(row, e) => void quickDelete(row, e)}
+              canMutateTask={canMutateTask}
+              canDeleteTask={canDeleteTask}
             />
             <Pagination page={taskPage} totalPages={totalTaskPages} onPageChange={setTaskPage} />
           </>
         )}
       </div>
 
-      {editRow && <EditTaskModal task={editRow} taskOptions={taskOptions} onClose={() => setEditRow(null)} onSaved={reload} />}
-      {detailRow && <TaskDetailModal task={detailRow} onClose={() => setDetailRow(null)} onEdit={(r) => { setDetailRow(null); setEditRow(r) }} />}
+      {editRow && canMutateTask(editRow) && <EditTaskModal task={editRow} taskOptions={taskOptions} onClose={() => setEditRow(null)} onSaved={reload} />}
+      {detailRow && <TaskDetailModal task={detailRow} canEdit={canMutateTask(detailRow)} onClose={() => setDetailRow(null)} onEdit={(r) => { if (!canMutateTask(r)) return; setDetailRow(null); setEditRow(r) }} />}
     </div>
   )
 }
-
