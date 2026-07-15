@@ -42,6 +42,16 @@ type Store interface {
 
 	CreateAuditEvent(event AuditEvent) error
 	ListAuditEvents(filter AuditEventFilter) ([]AuditEvent, error)
+
+	UpsertConnection(connection Connection) error
+	ConnectionByID(id string) (Connection, bool, error)
+	ListConnections(filter ConnectionFilter) ([]Connection, error)
+	DeleteConnection(id string) error
+	UpsertConnectionSecret(secret ConnectionSecret) error
+	ConnectionSecret(connectionID string) (ConnectionSecret, bool, error)
+	CreateConnectionGrant(grant ConnectionGrant) error
+	DeleteConnectionGrant(id string) error
+	ListConnectionGrants(connectionID string) ([]ConnectionGrant, error)
 }
 
 type SQLiteStore struct {
@@ -124,6 +134,48 @@ type AuditEventFilter struct {
 	ResourceType string
 	ResourceID   string
 	Limit        int
+}
+
+type Connection struct {
+	ID             string
+	WorkspaceID    string
+	Provider       string
+	ConnectionName string
+	OwnerType      string
+	OwnerID        string
+	AuthType       string
+	Status         string
+	ProfileJSON    string
+	CreatedBy      string
+	CreatedAt      string
+	UpdatedAt      string
+	LastUsedAt     string
+}
+
+type ConnectionFilter struct {
+	WorkspaceID string
+	Provider    string
+	OwnerType   string
+	OwnerID     string
+	Status      string
+}
+
+type ConnectionSecret struct {
+	ConnectionID string
+	Ciphertext   string
+	Nonce        string
+	KeyVersion   string
+	UpdatedAt    string
+}
+
+type ConnectionGrant struct {
+	ID           string
+	WorkspaceID  string
+	ConnectionID string
+	TargetType   string
+	TargetID     string
+	CreatedBy    string
+	CreatedAt    string
 }
 
 func OpenDefault() (*SQLiteStore, error) {

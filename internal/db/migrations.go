@@ -84,6 +84,42 @@ func (db *SQLiteStore) migrate() error {
 )`,
 		`CREATE INDEX IF NOT EXISTS idx_audit_events_workspace_time ON audit_events(workspace_id, created_at DESC)`,
 		`CREATE INDEX IF NOT EXISTS idx_audit_events_resource ON audit_events(resource_type, resource_id, created_at DESC)`,
+		`CREATE TABLE IF NOT EXISTS connections (
+	id TEXT PRIMARY KEY,
+	workspace_id TEXT NOT NULL REFERENCES workspaces(id) ON DELETE CASCADE,
+	provider TEXT NOT NULL,
+	connection_name TEXT NOT NULL DEFAULT 'default',
+	owner_type TEXT NOT NULL,
+	owner_id TEXT NOT NULL,
+	auth_type TEXT NOT NULL,
+	status TEXT NOT NULL DEFAULT 'active',
+	profile_json TEXT NOT NULL DEFAULT '{}',
+	created_by TEXT NOT NULL DEFAULT '',
+	created_at TEXT NOT NULL,
+	updated_at TEXT NOT NULL DEFAULT '',
+	last_used_at TEXT NOT NULL DEFAULT '',
+	UNIQUE(workspace_id, provider, owner_type, owner_id, connection_name)
+)`,
+		`CREATE INDEX IF NOT EXISTS idx_connections_workspace_provider ON connections(workspace_id, provider)`,
+		`CREATE INDEX IF NOT EXISTS idx_connections_owner ON connections(workspace_id, owner_type, owner_id)`,
+		`CREATE TABLE IF NOT EXISTS connection_secrets (
+	connection_id TEXT PRIMARY KEY REFERENCES connections(id) ON DELETE CASCADE,
+	ciphertext TEXT NOT NULL,
+	nonce TEXT NOT NULL DEFAULT '',
+	key_version TEXT NOT NULL DEFAULT '',
+	updated_at TEXT NOT NULL
+)`,
+		`CREATE TABLE IF NOT EXISTS connection_grants (
+	id TEXT PRIMARY KEY,
+	workspace_id TEXT NOT NULL REFERENCES workspaces(id) ON DELETE CASCADE,
+	connection_id TEXT NOT NULL REFERENCES connections(id) ON DELETE CASCADE,
+	target_type TEXT NOT NULL,
+	target_id TEXT NOT NULL,
+	created_by TEXT NOT NULL DEFAULT '',
+	created_at TEXT NOT NULL,
+	UNIQUE(connection_id, target_type, target_id)
+)`,
+		`CREATE INDEX IF NOT EXISTS idx_connection_grants_target ON connection_grants(workspace_id, target_type, target_id)`,
 	}
 	for _, stmt := range stmts {
 		if _, err := db.sql.Exec(stmt); err != nil {

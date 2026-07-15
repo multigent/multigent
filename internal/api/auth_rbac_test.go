@@ -221,3 +221,77 @@ func TestAuditEventsCanBeCreatedAndFiltered(t *testing.T) {
 		t.Fatalf("expected no events, got %#v", none)
 	}
 }
+
+func TestConnectionStorePersistsConnectionSecretAndGrant(t *testing.T) {
+	users := newTestUserStore(t)
+	now := "2026-07-15T00:00:00Z"
+	if err := users.db.UpsertWorkspace(controldb.Workspace{
+		ID:        "ws-one",
+		Name:      "One",
+		Slug:      "one",
+		Root:      filepath.Join(t.TempDir(), "one"),
+		CreatedBy: "admin",
+		CreatedAt: now,
+	}); err != nil {
+		t.Fatalf("workspace: %v", err)
+	}
+	conn := controldb.Connection{
+		ID:             "conn-one",
+		WorkspaceID:    "ws-one",
+		Provider:       "github",
+		ConnectionName: "default",
+		OwnerType:      ConnectionOwnerWorkspace,
+		OwnerID:        "ws-one",
+		AuthType:       ConnectionAuthAPIKey,
+		Status:         "active",
+		ProfileJSON:    `{"displayName":"GitHub"}`,
+		CreatedBy:      "admin",
+		CreatedAt:      now,
+		UpdatedAt:      now,
+	}
+	if err := users.db.UpsertConnection(conn); err != nil {
+		t.Fatalf("connection: %v", err)
+	}
+	if err := users.db.UpsertConnectionSecret(controldb.ConnectionSecret{
+		ConnectionID: conn.ID,
+		Ciphertext:   "secret-ciphertext",
+		KeyVersion:   "test",
+		UpdatedAt:    now,
+	}); err != nil {
+		t.Fatalf("secret: %v", err)
+	}
+	grant := controldb.ConnectionGrant{
+		ID:           "grant-one",
+		WorkspaceID:  "ws-one",
+		ConnectionID: conn.ID,
+		TargetType:   ConnectionTargetWorkspace,
+		TargetID:     "ws-one",
+		CreatedBy:    "admin",
+		CreatedAt:    now,
+	}
+	if err := users.db.CreateConnectionGrant(grant); err != nil {
+		t.Fatalf("grant: %v", err)
+	}
+
+	connections, err := users.db.ListConnections(controldb.ConnectionFilter{WorkspaceID: "ws-one"})
+	if err != nil {
+		t.Fatalf("list connections: %v", err)
+	}
+	if len(connections) != 1 || connections[0].ID != conn.ID {
+		t.Fatalf("connections=%#v", connections)
+	}
+	secret, ok, err := users.db.ConnectionSecret(conn.ID)
+	if err != nil || !ok {
+		t.Fatalf("connection secret ok=%v err=%v", ok, err)
+	}
+	if secret.Ciphertext != "secret-ciphertext" {
+		t.Fatalf("secret=%#v", secret)
+	}
+	grants, err := users.db.ListConnectionGrants(conn.ID)
+	if err != nil {
+		t.Fatalf("list grants: %v", err)
+	}
+	if len(grants) != 1 || grants[0].ID != grant.ID {
+		t.Fatalf("grants=%#v", grants)
+	}
+}
