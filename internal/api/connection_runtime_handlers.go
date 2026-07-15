@@ -68,21 +68,76 @@ func (s *Server) handleAgentRuntimeConnections(w http.ResponseWriter, r *http.Re
 		s.serverError(w, err)
 		return
 	}
+	out, err := s.resolveAgentRuntimeConnections(workspaceID, project, agent)
+	if err != nil {
+		s.serverError(w, err)
+		return
+	}
+	s.auditLog(auditLogInput{
+		WorkspaceID:  workspaceID,
+		Action:       "connection.use",
+		ResourceType: "agent",
+		ResourceID:   project + "/" + agent,
+		Summary:      "Agent runtime connections resolved",
+		After: map[string]any{
+			"project":       project,
+			"agent":         agent,
+			"connectionIds": runtimeConnectionIDs(out),
+			"count":         len(out),
+		},
+		Request: r,
+	})
+	s.writeAgentRuntimeConnections(w, project, agent, out)
+}
+
+func (s *Server) handleRuntimeConnections(w http.ResponseWriter, r *http.Request) {
+	principal, ok := runtimeAgentFromRequest(r)
+	if !ok {
+		s.jsonError(w, http.StatusUnauthorized, "runtime agent token required")
+		return
+	}
+	if !runtimeHasCapability(principal, "connection.use") {
+		s.jsonError(w, http.StatusForbidden, "runtime token lacks connection.use capability")
+		return
+	}
+	out, err := s.resolveAgentRuntimeConnections(principal.WorkspaceID, principal.Project, principal.Agent)
+	if err != nil {
+		s.serverError(w, err)
+		return
+	}
+	s.auditLog(auditLogInput{
+		WorkspaceID:  principal.WorkspaceID,
+		ActorType:    "agent",
+		ActorID:      principal.Project + "/" + principal.Agent,
+		Action:       "connection.use",
+		ResourceType: "agent",
+		ResourceID:   principal.Project + "/" + principal.Agent,
+		Summary:      "Agent runtime connections resolved",
+		After: map[string]any{
+			"project":       principal.Project,
+			"agent":         principal.Agent,
+			"runId":         principal.RunID,
+			"connectionIds": runtimeConnectionIDs(out),
+			"count":         len(out),
+		},
+		Request: r,
+	})
+	s.writeAgentRuntimeConnections(w, principal.Project, principal.Agent, out)
+}
+
+func (s *Server) resolveAgentRuntimeConnections(workspaceID, project, agent string) ([]agentRuntimeConnectionResponse, error) {
 	connections, err := s.controlDB.ListConnections(controldb.ConnectionFilter{
 		WorkspaceID: workspaceID,
 		Status:      "active",
 	})
 	if err != nil {
-		s.serverError(w, err)
-		return
+		return nil, err
 	}
-
 	out := make([]agentRuntimeConnectionResponse, 0)
 	for _, connection := range connections {
 		grants, err := s.controlDB.ListConnectionGrants(connection.ID)
 		if err != nil {
-			s.serverError(w, err)
-			return
+			return nil, err
 		}
 		matched := matchingAgentConnectionGrants(grants, workspaceID, project, agent)
 		if len(matched) == 0 {
@@ -99,25 +154,15 @@ func (s *Server) handleAgentRuntimeConnections(w http.ResponseWriter, r *http.Re
 		}
 		return out[i].ID < out[j].ID
 	})
-	s.auditLog(auditLogInput{
-		WorkspaceID:  workspaceID,
-		Action:       "connection.use",
-		ResourceType: "agent",
-		ResourceID:   project + "/" + agent,
-		Summary:      "Agent runtime connections resolved",
-		After: map[string]any{
-			"project":       project,
-			"agent":         agent,
-			"connectionIds": runtimeConnectionIDs(out),
-			"count":         len(out),
-		},
-		Request: r,
-	})
+	return out, nil
+}
+
+func (s *Server) writeAgentRuntimeConnections(w http.ResponseWriter, project, agent string, connections []agentRuntimeConnectionResponse) {
 	_ = json.NewEncoder(w).Encode(map[string]any{
 		"project":     project,
 		"agent":       agent,
 		"manifest":    agentConnectionManifest(),
-		"connections": out,
+		"connections": connections,
 	})
 }
 

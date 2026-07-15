@@ -1,7 +1,10 @@
 package api
 
 import (
+	"context"
 	"encoding/json"
+	"net/http"
+	"net/http/httptest"
 	"strings"
 	"testing"
 
@@ -127,5 +130,71 @@ func TestRuntimeConnectionAlias(t *testing.T) {
 				t.Fatalf("runtimeConnectionAlias()=%q, want %q", got, tt.want)
 			}
 		})
+	}
+}
+
+func TestResolveAgentRuntimeConnectionsUsesGrantRules(t *testing.T) {
+	users := newTestUserStore(t)
+	s := &Server{controlDB: users.db, users: users}
+	workspaceID := "ws-one"
+	if err := users.db.UpsertWorkspace(controldb.Workspace{ID: workspaceID, Name: "One", Slug: "one"}); err != nil {
+		t.Fatalf("workspace: %v", err)
+	}
+	granted := controldb.Connection{
+		ID:             "conn-granted",
+		WorkspaceID:    workspaceID,
+		Provider:       "custom-mcp",
+		ConnectionName: "tools",
+		OwnerType:      ConnectionOwnerWorkspace,
+		OwnerID:        workspaceID,
+		AuthType:       ConnectionAuthNoAuth,
+		Status:         "active",
+		ProfileJSON:    `{"displayName":"Tools","token":"must-not-leak"}`,
+	}
+	ungranted := granted
+	ungranted.ID = "conn-ungranted"
+	ungranted.ConnectionName = "other"
+	if err := users.db.UpsertConnection(granted); err != nil {
+		t.Fatalf("granted connection: %v", err)
+	}
+	if err := users.db.UpsertConnection(ungranted); err != nil {
+		t.Fatalf("ungranted connection: %v", err)
+	}
+	if err := users.db.CreateConnectionGrant(controldb.ConnectionGrant{
+		ID:           "grant-project",
+		WorkspaceID:  workspaceID,
+		ConnectionID: granted.ID,
+		TargetType:   ConnectionTargetProject,
+		TargetID:     "tapnow",
+	}); err != nil {
+		t.Fatalf("grant: %v", err)
+	}
+	connections, err := s.resolveAgentRuntimeConnections(workspaceID, "tapnow", "pm")
+	if err != nil {
+		t.Fatalf("resolve: %v", err)
+	}
+	if len(connections) != 1 || connections[0].ID != granted.ID {
+		t.Fatalf("connections=%#v", connections)
+	}
+	if _, ok := connections[0].Profile["token"]; ok {
+		t.Fatalf("runtime profile leaked token: %#v", connections[0].Profile)
+	}
+}
+
+func TestRuntimeConnectionsRequiresConnectionCapability(t *testing.T) {
+	s := &Server{}
+	req := httptest.NewRequest(http.MethodGet, "/api/v1/runtime/connections", nil)
+	req = req.WithContext(context.WithValue(req.Context(), ctxRuntimeAgentKey, runtimeAgentPrincipal{
+		WorkspaceID:  "ws-one",
+		Project:      "tapnow",
+		Agent:        "pm",
+		Capabilities: []string{"task.read"},
+	}))
+	rec := httptest.NewRecorder()
+
+	s.handleRuntimeConnections(rec, req)
+
+	if rec.Code != http.StatusForbidden {
+		t.Fatalf("status=%d body=%s", rec.Code, rec.Body.String())
 	}
 }

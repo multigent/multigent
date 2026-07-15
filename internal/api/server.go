@@ -291,6 +291,7 @@ func (s *Server) Handler() http.Handler {
 	publicMux.HandleFunc("POST /api/v1/invitations/{token}/accept", s.handleAcceptInvitation)
 	publicMux.HandleFunc("GET /api/v1/health", s.handleHealth)
 	runtimeMux := http.NewServeMux()
+	runtimeMux.HandleFunc("GET /api/v1/runtime/connections", s.handleRuntimeConnections)
 	runtimeMux.HandleFunc("POST /api/v1/runtime/mcp", s.handleRuntimeMCPProxy)
 	runtimeMux.HandleFunc("POST /api/v1/runtime/actions", s.handleRuntimeActionProxy)
 	publicMux.Handle("/api/v1/runtime/", s.withRuntimeAgentAuth(runtimeMux))
