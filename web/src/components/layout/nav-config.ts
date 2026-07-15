@@ -52,7 +52,7 @@ export type ProjectNavItem = {
 
 /** 工作区一级导航（团队 = 编制，项目 = 干活入口） */
 export const workspaceNav: NavItem[] = [
-  { to: '/', navKey: 'overview', icon: LayoutDashboard, activePrefix: undefined },
+  { to: '/', navKey: 'overview', icon: LayoutDashboard, activePrefix: undefined, adminOnly: true },
   { to: '/workbench', navKey: 'workbench', icon: Briefcase, activePrefix: '/workbench' },
   {
     to: '/projects',
@@ -64,7 +64,7 @@ export const workspaceNav: NavItem[] = [
   { to: '/people', navKey: 'people', icon: User, activePrefix: '/people' },
   { to: '/teams', navKey: 'teams', icon: Users, activePrefix: '/teams', adminOnly: true },
   { to: '/skills', navKey: 'skills', icon: Puzzle, activePrefix: '/skills', adminOnly: true },
-  { to: '/docs', navKey: 'docs', icon: BookOpen, activePrefix: '/docs' },
+  { to: '/docs', navKey: 'docs', icon: BookOpen, activePrefix: '/docs', adminOnly: true },
   { to: '/files', navKey: 'files', icon: FolderOpen, activePrefix: '/files' },
   { to: '/settings', navKey: 'settings', icon: Settings, activePrefix: '/settings' },
 ]

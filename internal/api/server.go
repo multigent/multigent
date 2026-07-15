@@ -40,25 +40,26 @@ type execProcess struct {
 
 // Server serves JSON for one workspace root.
 type Server struct {
-	workspaceMu       sync.Mutex
-	controlDB         controldb.Store
-	root              string
-	apiKey            string
-	version           string
-	st                store.Store
-	ts                taskstore.Store
-	users             *UserStore
-	sched             *SchedulerManager
-	triggers          *triggerManager
-	ccStore           *store.CCConnectStore
-	okrStore          *store.OKRStore
-	msStore           *store.MilestoneStore
-	updateCheck       UpdateChecker
-	daemonStatus      DaemonStatusFunc
-	assistantMu       sync.Mutex
-	assistantSessions map[string]*assistantSession
-	execMu            sync.Mutex
-	execProcs         map[string]*execProcess // key = "project/agent"
+	workspaceMu        sync.Mutex
+	controlDB          controldb.Store
+	root               string
+	apiKey             string
+	version            string
+	st                 store.Store
+	ts                 taskstore.Store
+	users              *UserStore
+	sched              *SchedulerManager
+	schedulerDesiredMu sync.Mutex
+	triggers           *triggerManager
+	ccStore            *store.CCConnectStore
+	okrStore           *store.OKRStore
+	msStore            *store.MilestoneStore
+	updateCheck        UpdateChecker
+	daemonStatus       DaemonStatusFunc
+	assistantMu        sync.Mutex
+	assistantSessions  map[string]*assistantSession
+	execMu             sync.Mutex
+	execProcs          map[string]*execProcess // key = "project/agent"
 }
 
 // NewServer builds an API server for the given workspace root.
@@ -72,7 +73,7 @@ func NewServer(root, apiKey string) *Server {
 	ts := taskstore.NewDB(root, controlDB)
 	tm := newTriggerManager(root, sched.binPath, ts)
 	tm.StartPoller()
-	return &Server{
+	s := &Server{
 		root:      root,
 		apiKey:    strings.TrimSpace(apiKey),
 		controlDB: controlDB,
@@ -86,6 +87,8 @@ func NewServer(root, apiKey string) *Server {
 		msStore:   store.NewMilestoneStore(root),
 		execProcs: make(map[string]*execProcess),
 	}
+	go s.restoreDesiredSchedulers()
+	return s
 }
 
 // SetVersion sets the build version string exposed via /api/v1/health.

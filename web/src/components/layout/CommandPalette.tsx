@@ -19,6 +19,7 @@ import {
 import type { LucideIcon } from 'lucide-react'
 import { apiFetch } from '../../lib/api'
 import { useApiJson } from '../../lib/use-api'
+import { useAuth } from '../../lib/auth'
 
 type ProjectRow = { name: string }
 type ProjectAgent = { name: string; model?: string; team?: string; project?: string }
@@ -42,6 +43,8 @@ export function CommandPalette({
 }) {
   const { t } = useTranslation()
   const navigate = useNavigate()
+  const { user } = useAuth()
+  const isAdmin = !user || user.role === 'admin'
 
   useEffect(() => {
     function onKeyDown(e: KeyboardEvent) {
@@ -92,7 +95,7 @@ export function CommandPalette({
       { id: 'nav-workbench', label: t('nav.workbench'), group: t('search.groupNav'), icon: Briefcase, to: '/workbench' },
       { id: 'nav-skills', label: t('nav.skills'), group: t('search.groupNav'), icon: Puzzle, to: '/skills' },
       { id: 'nav-settings', label: t('nav.settings'), group: t('search.groupNav'), icon: Settings, to: '/settings' },
-    ]
+    ].filter(item => isAdmin || !['nav-overview', 'nav-teams', 'nav-skills'].includes(item.id))
 
     const proj: SearchItem[] = projects.flatMap((p) => {
       const base = `/projects/${encodeURIComponent(p.name)}`
@@ -101,7 +104,7 @@ export function CommandPalette({
         { id: `p-${p.name}-tasks`, label: `${p.name} / ${t('projectNav.tasks')}`, group: t('search.groupProjects'), icon: ListTodo, to: `${base}/tasks` },
         { id: `p-${p.name}-messages`, label: `${p.name} / ${t('projectNav.messages')}`, group: t('search.groupProjects'), icon: MessageSquare, to: `${base}/messages` },
         { id: `p-${p.name}-members`, label: `${p.name} / ${t('projectNav.members')}`, group: t('search.groupProjects'), icon: Users, to: `${base}/members` },
-        { id: `p-${p.name}-schedule`, label: `${p.name} / ${t('projectNav.schedule')}`, group: t('search.groupProjects'), icon: CalendarClock, to: `${base}/schedule` },
+        ...(isAdmin ? [{ id: `p-${p.name}-schedule`, label: `${p.name} / ${t('projectNav.schedule')}`, group: t('search.groupProjects'), icon: CalendarClock, to: `${base}/schedule` }] : []),
         { id: `p-${p.name}-runs`, label: `${p.name} / ${t('projectNav.runs')}`, group: t('search.groupProjects'), icon: BarChart3, to: `${base}/runs` },
       ]
     })
@@ -133,7 +136,7 @@ export function CommandPalette({
     })
 
     return [...nav, ...proj, ...members]
-  }, [t, projects, projectAgents])
+  }, [t, projects, projectAgents, isAdmin])
 
   const groups = useMemo(() => {
     const map = new Map<string, SearchItem[]>()

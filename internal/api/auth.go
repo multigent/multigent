@@ -796,6 +796,27 @@ func (s *Server) canAccessProject(r *http.Request, project string) bool {
 	return ok
 }
 
+func (s *Server) projectRole(r *http.Request, project string) (string, bool) {
+	u := s.currentUser(r)
+	if u.Role == RoleAdmin {
+		return ProjectRoleManager, true
+	}
+	return s.users.HasProjectAccess(u.Username, project)
+}
+
+func (s *Server) canManageProject(r *http.Request, project string) bool {
+	role, ok := s.projectRole(r, project)
+	return ok && projectRoleLevel(role) >= projectRoleLevel(ProjectRoleManager)
+}
+
+func (s *Server) checkProjectManager(w http.ResponseWriter, r *http.Request, project string) bool {
+	if !s.canManageProject(r, project) {
+		s.jsonError(w, http.StatusForbidden, "project manager access required")
+		return false
+	}
+	return true
+}
+
 // User management handlers
 
 func (s *Server) handleListUsers(w http.ResponseWriter, r *http.Request) {

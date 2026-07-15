@@ -45,7 +45,7 @@ export default function App() {
   return (
     <Routes>
       <Route element={<AppShell />}>
-        <Route index element={<OverviewPage />} />
+        <Route index element={isAdmin ? <OverviewPage /> : <Navigate to="workbench" replace />} />
         <Route path="workspace" element={<WorkspacePage />} />
         {isAdmin && <Route path="teams/:teamId" element={<TeamDetailPage />} />}
         {isAdmin && <Route path="teams" element={<TeamsPage />} />}

@@ -46,6 +46,9 @@ type postTaskBody struct {
 
 func (s *Server) handlePostProjectTask(w http.ResponseWriter, r *http.Request) {
 	name := r.PathValue("name")
+	if !s.checkProjectAccess(w, r, name) {
+		return
+	}
 	if _, err := s.st.Project(name); err != nil {
 		if isNotFoundErr(err) {
 			s.jsonError(w, http.StatusNotFound, "project not found")
@@ -182,6 +185,9 @@ func (s *Server) handlePostCancelTask(w http.ResponseWriter, r *http.Request) {
 		s.jsonError(w, http.StatusBadRequest, "project, agent, and id are required")
 		return
 	}
+	if !s.checkProjectAccess(w, r, project) {
+		return
+	}
 	t, err := s.ts.GetTask(project, agent, id)
 	if err != nil {
 		if strings.Contains(err.Error(), "not found") {
@@ -218,6 +224,9 @@ func (s *Server) handlePostArchiveTask(w http.ResponseWriter, r *http.Request) {
 	id := strings.TrimSpace(body.ID)
 	if project == "" || agent == "" || id == "" {
 		s.jsonError(w, http.StatusBadRequest, "project, agent, and id are required")
+		return
+	}
+	if !s.checkProjectAccess(w, r, project) {
 		return
 	}
 	t, err := s.ts.GetTask(project, agent, id)
@@ -266,6 +275,9 @@ func (s *Server) handlePutUpdateTask(w http.ResponseWriter, r *http.Request) {
 	id := strings.TrimSpace(body.ID)
 	if project == "" || agent == "" || id == "" {
 		s.jsonError(w, http.StatusBadRequest, "project, agent, and id are required")
+		return
+	}
+	if !s.checkProjectAccess(w, r, project) {
 		return
 	}
 	hasUpdate := body.Status != nil || body.Priority != nil || body.Type != nil || body.Summary != nil ||
@@ -359,6 +371,9 @@ func (s *Server) handlePostDeleteTask(w http.ResponseWriter, r *http.Request) {
 	id := strings.TrimSpace(body.ID)
 	if project == "" || agent == "" || id == "" {
 		s.jsonError(w, http.StatusBadRequest, "project, agent, and id are required")
+		return
+	}
+	if !s.checkProjectManager(w, r, project) {
 		return
 	}
 	if err := s.ts.DeleteTask(project, agent, id); err != nil {

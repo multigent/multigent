@@ -29,6 +29,9 @@ func processAlive(pid int) bool {
 
 func (s *Server) handleGetProjectSchedule(w http.ResponseWriter, r *http.Request) {
 	name := r.PathValue("name")
+	if !s.checkProjectAccess(w, r, name) {
+		return
+	}
 	if _, err := s.st.Project(name); err != nil {
 		if isNotFoundErr(err) {
 			s.jsonError(w, http.StatusNotFound, "project not found")
@@ -198,6 +201,9 @@ func (s *Server) toggleHeartbeatPause(w http.ResponseWriter, r *http.Request, pa
 	if !ok {
 		return
 	}
+	if !s.checkProjectManager(w, r, name) {
+		return
+	}
 	if pause {
 		if err := s.ts.PauseHeartbeat(name, agent); err != nil {
 			s.serverError(w, err)
@@ -215,6 +221,9 @@ func (s *Server) toggleHeartbeatPause(w http.ResponseWriter, r *http.Request, pa
 func (s *Server) parseProjectAgent(w http.ResponseWriter, r *http.Request) (project, agent string, ok bool) {
 	project = r.PathValue("name")
 	agent = r.PathValue("agent")
+	if !s.checkProjectAccess(w, r, project) {
+		return "", "", false
+	}
 	if _, err := s.st.Project(project); err != nil {
 		if isNotFoundErr(err) {
 			s.jsonError(w, http.StatusNotFound, "project not found")
@@ -265,6 +274,9 @@ func (s *Server) handleGetHeartbeat(w http.ResponseWriter, r *http.Request) {
 func (s *Server) handlePatchHeartbeat(w http.ResponseWriter, r *http.Request) {
 	name, agent, ok := s.parseProjectAgent(w, r)
 	if !ok {
+		return
+	}
+	if !s.checkProjectManager(w, r, name) {
 		return
 	}
 	var body patchHeartbeatBody
@@ -499,6 +511,9 @@ func (s *Server) handlePostCronPause(w http.ResponseWriter, r *http.Request) {
 	if !ok {
 		return
 	}
+	if !s.checkProjectManager(w, r, name) {
+		return
+	}
 	id := r.PathValue("cronId")
 	if err := s.ts.PauseCron(name, agent, id); err != nil {
 		if strings.Contains(err.Error(), "not found") {
@@ -516,6 +531,9 @@ func (s *Server) handlePostCronResume(w http.ResponseWriter, r *http.Request) {
 	if !ok {
 		return
 	}
+	if !s.checkProjectManager(w, r, name) {
+		return
+	}
 	id := r.PathValue("cronId")
 	if err := s.ts.ResumeCron(name, agent, id); err != nil {
 		if strings.Contains(err.Error(), "not found") {
@@ -531,6 +549,9 @@ func (s *Server) handlePostCronResume(w http.ResponseWriter, r *http.Request) {
 func (s *Server) handleDeleteCron(w http.ResponseWriter, r *http.Request) {
 	name, agent, ok := s.parseProjectAgent(w, r)
 	if !ok {
+		return
+	}
+	if !s.checkProjectManager(w, r, name) {
 		return
 	}
 	id := r.PathValue("cronId")
@@ -558,6 +579,9 @@ type postCronBody struct {
 func (s *Server) handlePostCron(w http.ResponseWriter, r *http.Request) {
 	name, agent, ok := s.parseProjectAgent(w, r)
 	if !ok {
+		return
+	}
+	if !s.checkProjectManager(w, r, name) {
 		return
 	}
 	var body postCronBody
@@ -624,6 +648,9 @@ func (s *Server) handlePostCron(w http.ResponseWriter, r *http.Request) {
 func (s *Server) handlePutCron(w http.ResponseWriter, r *http.Request) {
 	name, agent, ok := s.parseProjectAgent(w, r)
 	if !ok {
+		return
+	}
+	if !s.checkProjectManager(w, r, name) {
 		return
 	}
 	cronID := r.PathValue("cronId")

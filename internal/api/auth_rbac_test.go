@@ -1,6 +1,8 @@
 package api
 
 import (
+	"context"
+	"net/http/httptest"
 	"path/filepath"
 	"testing"
 
@@ -88,5 +90,45 @@ func TestUserStoreAcceptInvitationCreatesMemberWithGrants(t *testing.T) {
 	}
 	if got := p.AgentRoles[rbac.AgentKey("tapnow", "frontend")]; got != rbac.AgentRoleOperator {
 		t.Fatalf("agent role=%q", got)
+	}
+}
+
+func TestServerCanManageProjectRequiresManagerRole(t *testing.T) {
+	users := newTestUserStore(t)
+	if err := users.CreateUser("viewer", "pass123", RoleMember, "", "", "", "", ""); err != nil {
+		t.Fatalf("create viewer: %v", err)
+	}
+	if err := users.UpdateUser("viewer", nil, nil, nil, nil, nil, nil, nil, []projectAccess{{Project: "tapnow", Role: ProjectRoleViewer}}, nil, nil); err != nil {
+		t.Fatalf("grant viewer: %v", err)
+	}
+	if err := users.CreateUser("operator", "pass123", RoleMember, "", "", "", "", ""); err != nil {
+		t.Fatalf("create operator: %v", err)
+	}
+	if err := users.UpdateUser("operator", nil, nil, nil, nil, nil, nil, nil, []projectAccess{{Project: "tapnow", Role: ProjectRoleOperator}}, nil, nil); err != nil {
+		t.Fatalf("grant operator: %v", err)
+	}
+	if err := users.CreateUser("manager", "pass123", RoleMember, "", "", "", "", ""); err != nil {
+		t.Fatalf("create manager: %v", err)
+	}
+	if err := users.UpdateUser("manager", nil, nil, nil, nil, nil, nil, nil, []projectAccess{{Project: "tapnow", Role: ProjectRoleManager}}, nil, nil); err != nil {
+		t.Fatalf("grant manager: %v", err)
+	}
+
+	s := &Server{users: users}
+	cases := []struct {
+		user string
+		want bool
+	}{
+		{user: "viewer", want: false},
+		{user: "operator", want: false},
+		{user: "manager", want: true},
+		{user: "admin", want: true},
+	}
+	for _, tc := range cases {
+		req := httptest.NewRequest("GET", "/", nil)
+		req = req.WithContext(context.WithValue(req.Context(), ctxUserKey, tc.user))
+		if got := s.canManageProject(req, "tapnow"); got != tc.want {
+			t.Fatalf("canManageProject(%s)=%v, want %v", tc.user, got, tc.want)
+		}
 	}
 }

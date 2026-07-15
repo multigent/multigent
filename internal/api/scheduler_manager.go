@@ -1,6 +1,8 @@
 package api
 
 import (
+	"crypto/sha256"
+	"encoding/hex"
 	"encoding/json"
 	"fmt"
 	"net/http"
@@ -176,6 +178,79 @@ func (m *SchedulerManager) Status() []schedStatus {
 	return out
 }
 
+type desiredSchedulerSpec struct {
+	Project string `json:"project,omitempty"`
+	Agent   string `json:"agent,omitempty"`
+}
+
+func schedulerDesiredSettingKey(root string) string {
+	sum := sha256.Sum256([]byte(root))
+	return "scheduler.desired." + hex.EncodeToString(sum[:8])
+}
+
+func (s *Server) loadDesiredSchedulers() ([]desiredSchedulerSpec, error) {
+	raw, ok, err := s.controlDB.GetSetting(schedulerDesiredSettingKey(s.root))
+	if err != nil || !ok || strings.TrimSpace(raw) == "" {
+		return nil, err
+	}
+	var specs []desiredSchedulerSpec
+	if err := json.Unmarshal([]byte(raw), &specs); err != nil {
+		return nil, err
+	}
+	return specs, nil
+}
+
+func (s *Server) saveDesiredSchedulers(specs []desiredSchedulerSpec) error {
+	b, err := json.Marshal(specs)
+	if err != nil {
+		return err
+	}
+	return s.controlDB.SetSetting(schedulerDesiredSettingKey(s.root), string(b))
+}
+
+func (s *Server) setSchedulerDesired(project, agent string, running bool) {
+	s.schedulerDesiredMu.Lock()
+	defer s.schedulerDesiredMu.Unlock()
+
+	specs, err := s.loadDesiredSchedulers()
+	if err != nil {
+		return
+	}
+	key := schedKey(project, agent)
+	next := make([]desiredSchedulerSpec, 0, len(specs)+1)
+	found := false
+	for _, spec := range specs {
+		if schedKey(spec.Project, spec.Agent) == key {
+			found = true
+			if running {
+				next = append(next, desiredSchedulerSpec{Project: project, Agent: agent})
+			}
+			continue
+		}
+		next = append(next, spec)
+	}
+	if running && !found {
+		next = append(next, desiredSchedulerSpec{Project: project, Agent: agent})
+	}
+	_ = s.saveDesiredSchedulers(next)
+}
+
+func (s *Server) restoreDesiredSchedulers() {
+	time.Sleep(300 * time.Millisecond)
+	specs, err := s.loadDesiredSchedulers()
+	if err != nil || len(specs) == 0 {
+		return
+	}
+	for _, spec := range specs {
+		if spec.Agent != "" && spec.Project == "" {
+			continue
+		}
+		if err := s.sched.Start(spec.Project, spec.Agent); err != nil {
+			continue
+		}
+	}
+}
+
 func (m *SchedulerManager) Cleanup() {
 	m.mu.Lock()
 	keys := make([]string, 0, len(m.procs))
@@ -202,6 +277,19 @@ func (m *SchedulerManager) Cleanup() {
 
 func (s *Server) handleSchedulerStatus(w http.ResponseWriter, r *http.Request) {
 	statuses := s.sched.Status()
+	cur := s.currentUser(r)
+	if cur.Role != RoleAdmin {
+		filtered := make([]schedStatus, 0, len(statuses))
+		for _, st := range statuses {
+			if st.Project == "" {
+				continue
+			}
+			if _, ok := s.users.HasProjectAccess(cur.Username, st.Project); ok {
+				filtered = append(filtered, st)
+			}
+		}
+		statuses = filtered
+	}
 	_ = json.NewEncoder(w).Encode(map[string]any{
 		"schedulers": statuses,
 	})
@@ -227,11 +315,19 @@ func (s *Server) handleSchedulerStart(w http.ResponseWriter, r *http.Request) {
 		s.jsonError(w, http.StatusBadRequest, "agent requires project")
 		return
 	}
+	if project == "" {
+		if !s.requireAdmin(w, r) {
+			return
+		}
+	} else if !s.checkProjectManager(w, r, project) {
+		return
+	}
 
 	if err := s.sched.Start(project, agent); err != nil {
 		s.jsonError(w, http.StatusConflict, err.Error())
 		return
 	}
+	s.setSchedulerDesired(project, agent, true)
 
 	key := schedKey(project, agent)
 	_ = json.NewEncoder(w).Encode(map[string]any{
@@ -250,6 +346,9 @@ func (s *Server) handleSchedulerWakeup(w http.ResponseWriter, r *http.Request) {
 	agent := strings.TrimSpace(body.Agent)
 	if project == "" || agent == "" {
 		s.jsonError(w, http.StatusBadRequest, "project and agent are required")
+		return
+	}
+	if !s.checkProjectManager(w, r, project) {
 		return
 	}
 
@@ -273,11 +372,23 @@ func (s *Server) handleSchedulerStop(w http.ResponseWriter, r *http.Request) {
 	}
 	project := strings.TrimSpace(body.Project)
 	agent := strings.TrimSpace(body.Agent)
+	if agent != "" && project == "" {
+		s.jsonError(w, http.StatusBadRequest, "agent requires project")
+		return
+	}
+	if project == "" {
+		if !s.requireAdmin(w, r) {
+			return
+		}
+	} else if !s.checkProjectManager(w, r, project) {
+		return
+	}
 
 	if err := s.sched.Stop(project, agent); err != nil {
 		s.jsonError(w, http.StatusNotFound, err.Error())
 		return
 	}
+	s.setSchedulerDesired(project, agent, false)
 
 	s.clearSchedulerRuntimeFields(project, agent)
 
@@ -321,6 +432,9 @@ func (s *Server) handleSchedulerAbort(w http.ResponseWriter, r *http.Request) {
 	agent := strings.TrimSpace(body.Agent)
 	if project == "" || agent == "" {
 		s.jsonError(w, http.StatusBadRequest, "project and agent are required")
+		return
+	}
+	if !s.checkProjectManager(w, r, project) {
 		return
 	}
 
