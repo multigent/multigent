@@ -102,7 +102,7 @@ func normalizeRuntimeCapabilities(caps []string) []string {
 	out := make([]string, 0, len(caps))
 	for _, cap := range caps {
 		cap = strings.TrimSpace(cap)
-		if cap == "" || seen[cap] {
+		if cap == "" || seen[cap] || !runtimeCapabilityAllowed(cap) {
 			continue
 		}
 		seen[cap] = true
@@ -112,6 +112,15 @@ func normalizeRuntimeCapabilities(caps []string) []string {
 		return []string{"connection.use"}
 	}
 	return out
+}
+
+func runtimeCapabilityAllowed(capability string) bool {
+	switch capability {
+	case "connection.use":
+		return true
+	default:
+		return false
+	}
 }
 
 func (s *Server) issueAgentRuntimeToken(payload runtimeAgentTokenPayload, ttl time.Duration) string {

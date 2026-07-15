@@ -40,6 +40,17 @@ func TestAgentRuntimeTokenValidateAndExpire(t *testing.T) {
 	}
 }
 
+func TestNormalizeRuntimeCapabilitiesFiltersUnsupportedValues(t *testing.T) {
+	got := normalizeRuntimeCapabilities([]string{"connection.use", "task.read", "connection.use", "", "agent.admin"})
+	if len(got) != 1 || got[0] != "connection.use" {
+		t.Fatalf("capabilities=%#v", got)
+	}
+	got = normalizeRuntimeCapabilities([]string{"task.read"})
+	if len(got) != 1 || got[0] != "connection.use" {
+		t.Fatalf("fallback capabilities=%#v", got)
+	}
+}
+
 func TestFindRuntimeConnectionRequiresMatchingGrant(t *testing.T) {
 	users := newTestUserStore(t)
 	s := &Server{controlDB: users.db, users: users}

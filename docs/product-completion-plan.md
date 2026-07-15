@@ -573,6 +573,7 @@ Status:
 - Partially implemented.
 - Workbench aggregate endpoints and telemetry run/log endpoints now use workspace/project/agent access helpers instead of global login role checks. Linked-agent users only see telemetry for their linked agents; run logs require access to the corresponding run.
 - Global scheduler start/stop now require current workspace admin access instead of platform-global admin role. Telemetry log reads resolve through authorized run records, including relative log paths.
+- Runtime token issuing now filters requested capabilities through an explicit allowlist instead of signing arbitrary caller-provided capability strings.
 - Current priority: finish endpoint-by-endpoint RBAC audit for tasks, messages, runs, scheduler, agent config, provider binding, connection grants, and runtime manifest access.
 - UI must hide unavailable actions, but API checks remain authoritative.
 
