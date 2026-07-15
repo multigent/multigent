@@ -648,9 +648,8 @@ func (s *Server) validateUserOwnedConnectionGrantTarget(r *http.Request, connect
 		if len(parts) != 2 || parts[0] == "" || parts[1] == "" || !s.agentExistsInProject(parts[0], parts[1]) {
 			return fmt.Errorf("agent target must be project/agent")
 		}
-		owner, ok := s.userRecordByUsername(connection.OwnerID)
-		if !ok || !currentUserLinkedAgent(owner, targetID) {
-			return fmt.Errorf("user-owned connection can only be granted to the owner's linked agents")
+		if !s.canOperateAgent(r, parts[0], parts[1]) {
+			return fmt.Errorf("user-owned connection can only be granted to agents the owner can operate")
 		}
 	case ConnectionTargetUser:
 		if targetID != connection.OwnerID {

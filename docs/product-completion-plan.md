@@ -609,6 +609,7 @@ Status:
 
 - First implementation exists for provider registry, connection ownership, grants, encrypted secrets, runtime connection manifests, custom MCP proxy, custom HTTP action proxy, GitHub/Linear action proxy, and connection test calls.
 - Connection test results now persist the latest validation status in connection profile metadata and surface it in the Web connection list.
+- User-owned connection grants now use the same agent operation permission semantics as tasks and agent chat: linked-agent owners and project operators/managers can grant personal credentials to agents they operate, while viewers cannot.
 - Remaining work: OAuth flow abstraction, DingTalk provider, GitHub app installation flow, richer profile/scopes display, scheduled/background connection health checks, and per-provider action executor hardening.
 
 ### Phase 5: Agent Runtime Productization

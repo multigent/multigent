@@ -136,3 +136,48 @@ func TestUserOwnedConnectionGrantMustBeCreatedByOwner(t *testing.T) {
 		t.Fatalf("owner grant status=%d body=%s", ownerRec.Code, ownerRec.Body.String())
 	}
 }
+
+func TestUserOwnedConnectionCanGrantToOperatedProjectAgents(t *testing.T) {
+	s, workspaceID := newConnectionGrantPolicyServer(t)
+	grantProjectRoleForTest(t, s, workspaceID, "operator", ProjectRoleOperator)
+	grantProjectRoleForTest(t, s, workspaceID, "viewer", ProjectRoleViewer)
+	for _, username := range []string{"operator", "viewer"} {
+		connection := controldb.Connection{
+			ID:             "conn-" + username,
+			WorkspaceID:    workspaceID,
+			Provider:       "github",
+			ConnectionName: "default",
+			OwnerType:      ConnectionOwnerUser,
+			OwnerID:        username,
+			AuthType:       ConnectionAuthAPIKey,
+			Status:         "active",
+			ProfileJSON:    `{}`,
+			CreatedBy:      username,
+		}
+		if err := s.controlDB.UpsertConnection(connection); err != nil {
+			t.Fatalf("connection %s: %v", username, err)
+		}
+	}
+
+	operatorRec := httptest.NewRecorder()
+	operatorReq := providerTestRequest(http.MethodPost, "/api/v1/connections/conn-operator/grants", "operator", createConnectionGrantRequest{
+		TargetType: ConnectionTargetAgent,
+		TargetID:   "tapnow/backend",
+	})
+	operatorReq.SetPathValue("id", "conn-operator")
+	s.handleCreateConnectionGrant(operatorRec, operatorReq)
+	if operatorRec.Code != http.StatusCreated {
+		t.Fatalf("operator grant status=%d body=%s", operatorRec.Code, operatorRec.Body.String())
+	}
+
+	viewerRec := httptest.NewRecorder()
+	viewerReq := providerTestRequest(http.MethodPost, "/api/v1/connections/conn-viewer/grants", "viewer", createConnectionGrantRequest{
+		TargetType: ConnectionTargetAgent,
+		TargetID:   "tapnow/backend",
+	})
+	viewerReq.SetPathValue("id", "conn-viewer")
+	s.handleCreateConnectionGrant(viewerRec, viewerReq)
+	if viewerRec.Code != http.StatusBadRequest {
+		t.Fatalf("viewer grant status=%d body=%s", viewerRec.Code, viewerRec.Body.String())
+	}
+}

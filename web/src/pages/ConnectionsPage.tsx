@@ -386,7 +386,7 @@ function GrantDialog({ connection, workspaceId, projects, agentsByProject, isWor
   const isUserOwned = connection.ownerType === 'user'
   const isCurrentUserOwner = isUserOwned && connection.ownerId === currentUsername
   const canEditGrants = !isUserOwned || isCurrentUserOwner
-  const initialTargetType = isUserOwned ? (isCurrentUserOwner && linkedAgents.length > 0 ? 'agent' : 'user') : (isWorkspaceAdmin ? 'workspace' : 'user')
+  const initialTargetType = isUserOwned ? (isCurrentUserOwner && projects.length > 0 ? 'agent' : 'user') : (isWorkspaceAdmin ? 'workspace' : 'user')
   const [targetType, setTargetType] = useState(initialTargetType)
   const [project, setProject] = useState(projects[0]?.name ?? '')
   const [agent, setAgent] = useState('')
@@ -403,10 +403,10 @@ function GrantDialog({ connection, workspaceId, projects, agentsByProject, isWor
     }
     return out
   }, [linkedAgentRefs])
-  const agentOptions = project ? (isUserOwned || !isWorkspaceAdmin ? (linkedAgentsByProject[project] ?? []) : (agentsByProject[project] ?? [])) : []
-  const projectOptions = isUserOwned || !isWorkspaceAdmin
-    ? Object.keys(linkedAgentsByProject).map(name => ({ name }))
-    : projects
+  const agentOptions = project ? (agentsByProject[project] ?? []) : []
+  const projectOptions = projects.length > 0
+    ? projects
+    : Object.keys(linkedAgentsByProject).map(name => ({ name }))
 
   useEffect(() => {
     if (targetType === 'workspace') setTargetId(workspaceId)
