@@ -21,6 +21,7 @@ type Connection = {
   createdAt: string
   updatedAt?: string
 }
+type ConnectionTestResult = { ok: boolean; status: number; message: string }
 type ProjectRow = { name: string }
 type ProjectAgent = { name: string }
 type WorkspaceSummary = { id: string; name: string }
@@ -39,6 +40,7 @@ export default function ConnectionsPage() {
   const [loading, setLoading] = useState(true)
   const [creating, setCreating] = useState(false)
   const [granting, setGranting] = useState<Connection | null>(null)
+  const [testResults, setTestResults] = useState<Record<string, { loading?: boolean; ok?: boolean; message?: string }>>({})
   const [reloadKey, setReloadKey] = useState(0)
 
   useEffect(() => {
@@ -74,6 +76,25 @@ export default function ConnectionsPage() {
     if (!window.confirm(`Remove ${connection.provider}/${connection.connectionName}?`)) return
     await apiDelete(`/api/v1/connections/${encodeURIComponent(connection.id)}`)
     setReloadKey(k => k + 1)
+  }
+
+  async function testConnection(connection: Connection) {
+    setTestResults(prev => ({ ...prev, [connection.id]: { loading: true } }))
+    try {
+      const result = await apiPost<ConnectionTestResult>(`/api/v1/connections/${encodeURIComponent(connection.id)}/test`, {})
+      setTestResults(prev => ({
+        ...prev,
+        [connection.id]: {
+          ok: result.ok,
+          message: result.ok ? `OK · HTTP ${result.status}` : `${result.message || 'Failed'} · HTTP ${result.status}`,
+        },
+      }))
+    } catch (e) {
+      setTestResults(prev => ({
+        ...prev,
+        [connection.id]: { ok: false, message: e instanceof Error ? e.message : String(e) },
+      }))
+    }
   }
 
   return (
@@ -114,7 +135,9 @@ export default function ConnectionsPage() {
               connection={connection}
               provider={providers.find(p => p.provider === connection.provider)}
               canDelete={isWorkspaceAdmin || connection.ownerId === user?.username}
+              testState={testResults[connection.id]}
               onGrant={() => setGranting(connection)}
+              onTest={() => void testConnection(connection)}
               onDelete={() => void removeConnection(connection)}
             />
           ))}
@@ -146,7 +169,7 @@ export default function ConnectionsPage() {
   )
 }
 
-function ConnectionCard({ connection, provider, canDelete, onGrant, onDelete }: { connection: Connection; provider?: Provider; canDelete: boolean; onGrant: () => void; onDelete: () => void }) {
+function ConnectionCard({ connection, provider, canDelete, testState, onGrant, onTest, onDelete }: { connection: Connection; provider?: Provider; canDelete: boolean; testState?: { loading?: boolean; ok?: boolean; message?: string }; onGrant: () => void; onTest: () => void; onDelete: () => void }) {
   return (
     <section className="rounded-xl border border-neutral-200/80 bg-white p-5 dark:border-zinc-700/60 dark:bg-zinc-900/40">
       <div className="flex items-start justify-between gap-3">
@@ -166,6 +189,10 @@ function ConnectionCard({ connection, provider, canDelete, onGrant, onDelete }: 
           </div>
         </div>
         <div className="flex shrink-0 items-center gap-1">
+          <button type="button" onClick={onTest} disabled={testState?.loading}
+            className="rounded-md p-2 text-neutral-500 hover:bg-neutral-100 hover:text-neutral-800 disabled:opacity-50 dark:text-zinc-400 dark:hover:bg-zinc-800 dark:hover:text-zinc-100" title="Test connection">
+            <RefreshCw className={cn('size-4', testState?.loading && 'animate-spin')} strokeWidth={1.8} />
+          </button>
           <button type="button" onClick={onGrant} className="rounded-md p-2 text-neutral-500 hover:bg-neutral-100 hover:text-neutral-800 dark:text-zinc-400 dark:hover:bg-zinc-800 dark:hover:text-zinc-100" title="Manage grants">
             <ShieldCheck className="size-4" strokeWidth={1.8} />
           </button>
@@ -190,6 +217,15 @@ function ConnectionCard({ connection, provider, canDelete, onGrant, onDelete }: 
           <p className="mt-2 text-xs text-neutral-400 dark:text-zinc-500">No grants yet</p>
         )}
       </div>
+      {testState?.message && (
+        <div className={cn('mt-4 rounded-lg border px-3 py-2 text-xs',
+          testState.ok
+            ? 'border-emerald-200 bg-emerald-50 text-emerald-700 dark:border-emerald-900/60 dark:bg-emerald-950/30 dark:text-emerald-300'
+            : 'border-red-200 bg-red-50 text-red-700 dark:border-red-900/60 dark:bg-red-950/30 dark:text-red-300'
+        )}>
+          {testState.message}
+        </div>
+      )}
     </section>
   )
 }
