@@ -166,6 +166,7 @@ func (s *Server) Handler() http.Handler {
 	mux.HandleFunc("GET /api/v1/projects/{name}/messages", s.handleProjectMessages)
 	mux.HandleFunc("GET /api/v1/projects/{name}/agents", s.handleProjectAgents)
 	mux.HandleFunc("PATCH /api/v1/projects/{name}/agents/{agent}", s.handlePatchAgent)
+	mux.HandleFunc("POST /api/v1/projects/{name}/agents/{agent}/runtime/token", s.handleIssueAgentRuntimeToken)
 	mux.HandleFunc("GET /api/v1/projects/{name}/agents/{agent}/runtime/connections", s.handleAgentRuntimeConnections)
 	mux.HandleFunc("GET /api/v1/projects/{name}/agents/{agent}/context", s.handleGetAgentContext)
 	mux.HandleFunc("GET /api/v1/projects/{name}/agents/{agent}/chat/history", s.handleAgentChatHistory)
@@ -289,6 +290,10 @@ func (s *Server) Handler() http.Handler {
 	publicMux.HandleFunc("GET /api/v1/invitations/{token}", s.handlePublicInvitation)
 	publicMux.HandleFunc("POST /api/v1/invitations/{token}/accept", s.handleAcceptInvitation)
 	publicMux.HandleFunc("GET /api/v1/health", s.handleHealth)
+	runtimeMux := http.NewServeMux()
+	runtimeMux.HandleFunc("POST /api/v1/runtime/mcp", s.handleRuntimeMCPProxy)
+	runtimeMux.HandleFunc("POST /api/v1/runtime/actions", s.handleRuntimeActionProxy)
+	publicMux.Handle("/api/v1/runtime/", s.withRuntimeAgentAuth(runtimeMux))
 	publicMux.Handle("/", s.withTokenAuth(mux))
 
 	return withCORS(withJSONHeaders(publicMux))

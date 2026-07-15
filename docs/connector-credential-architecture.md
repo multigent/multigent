@@ -184,6 +184,9 @@ The runtime endpoint should return connection references and injected environmen
 Current implementation uses the project/name route while the data model is still moving toward durable IDs:
 
 - `GET /api/v1/projects/{project}/agents/{agent}/runtime/connections`
+- `POST /api/v1/projects/{project}/agents/{agent}/runtime/token`
+- `POST /api/v1/runtime/mcp`
+- `POST /api/v1/runtime/actions`
 
 Response contract:
 
@@ -204,6 +207,9 @@ Rules:
 - User grants do not automatically become agent runtime access. Agent runtime only receives workspace, project, or agent grants that match the current agent.
 - The sandbox should receive this data as a manifest file or fetch it with a scoped agent token.
 - The agent should call Multigent proxy endpoints with the scoped token; Multigent applies provider credentials server-side.
+- User JWTs and workspace admin API keys are not runtime credentials. Runtime proxy endpoints accept only scoped agent runtime tokens.
+- A runtime token contains workspace, project, agent, optional run ID, capabilities, and expiry.
+- Runtime proxy endpoints re-check connection grants on every request instead of trusting the connection manifest.
 
 ## Permission Rules
 
