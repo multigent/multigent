@@ -61,6 +61,9 @@ export default function LoginPage() {
       linkedAgents: res.linkedAgents,
     }
     login(res.token, user)
+    if (inviteToken) {
+      window.history.replaceState(null, '', '/')
+    }
   }
 
   async function handleSubmit(e: React.FormEvent) {

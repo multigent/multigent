@@ -548,8 +548,9 @@ Status:
 - Partially implemented.
 - Invitation management now has list/revoke/reject APIs. Workspace admins can create and manage invites without needing platform-global admin role.
 - Accepted invitations now create a normal user and add that user to the current workspace with the invited workspace role. Rejected/revoked invitations cannot be accepted.
-- People page shows invitation status, supports workspace role selection, invite link copy, and invite revoke.
-- Remaining work: email delivery abstraction, invite acceptance UX polish, bulk invite UI, invite expiry/revoke screens, and clearer post-accept routing.
+- People page shows invitation status, supports workspace role selection, bulk email input, invite link copy, and invite revoke.
+- Accepted invites route the browser back to the workspace home instead of leaving the user on the invite URL.
+- Remaining work: email delivery abstraction, invite acceptance UX polish, project/agent pre-grant UI, invite expiry screens, and no-workspace onboarding after invite rejection.
 
 ### Phase 3: Project And Agent Permission Tightening
 

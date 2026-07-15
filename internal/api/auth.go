@@ -1010,6 +1010,7 @@ func (s *Server) handleCreateInvitation(w http.ResponseWriter, r *http.Request) 
 	}
 	var body struct {
 		Email        string          `json:"email"`
+		Emails       []string        `json:"emails"`
 		Role         string          `json:"role"`
 		DisplayName  string          `json:"displayName"`
 		Projects     []projectAccess `json:"projects"`
@@ -1020,17 +1021,73 @@ func (s *Server) handleCreateInvitation(w http.ResponseWriter, r *http.Request) 
 		return
 	}
 	cur := s.currentUser(r)
-	inv, err := s.users.CreateInvitation(body.Email, body.Role, strings.TrimSpace(body.DisplayName), cur.Username, body.Projects, body.LinkedAgents)
-	if err != nil {
-		s.jsonError(w, http.StatusBadRequest, err.Error())
+	emails := invitationEmails(body.Email, body.Emails)
+	if len(emails) == 0 {
+		s.jsonError(w, http.StatusBadRequest, "email is required")
 		return
 	}
-	_ = json.NewEncoder(w).Encode(map[string]any{
-		"ok":         true,
-		"invitation": inv,
-		"inviteUrl":  s.invitationURL(r, inv.Token),
-		"delivery":   "local-link",
-	})
+
+	type invitationResult struct {
+		Invitation *invitationRecord `json:"invitation"`
+		InviteURL  string            `json:"inviteUrl"`
+	}
+	type invitationError struct {
+		Email string `json:"email"`
+		Error string `json:"error"`
+	}
+	results := make([]invitationResult, 0, len(emails))
+	errors := make([]invitationError, 0)
+	for _, email := range emails {
+		inv, err := s.users.CreateInvitation(email, body.Role, strings.TrimSpace(body.DisplayName), cur.Username, body.Projects, body.LinkedAgents)
+		if err != nil {
+			errors = append(errors, invitationError{Email: email, Error: err.Error()})
+			continue
+		}
+		results = append(results, invitationResult{Invitation: inv, InviteURL: s.invitationURL(r, inv.Token)})
+	}
+	if len(results) == 0 {
+		w.WriteHeader(http.StatusBadRequest)
+		_ = json.NewEncoder(w).Encode(map[string]any{"ok": false, "delivery": "local-link", "invitations": results, "errors": errors})
+		return
+	}
+	response := map[string]any{
+		"ok":          true,
+		"invitations": results,
+		"errors":      errors,
+		"delivery":    "local-link",
+	}
+	if len(results) == 1 {
+		response["invitation"] = results[0].Invitation
+		response["inviteUrl"] = results[0].InviteURL
+	}
+	_ = json.NewEncoder(w).Encode(response)
+}
+
+func invitationEmails(email string, emails []string) []string {
+	seen := make(map[string]bool)
+	out := make([]string, 0, len(emails)+1)
+	add := func(value string) {
+		for _, part := range strings.FieldsFunc(value, func(r rune) bool {
+			switch r {
+			case ',', ';', '\n', '\r', '\t', ' ':
+				return true
+			default:
+				return false
+			}
+		}) {
+			normalized := strings.ToLower(strings.TrimSpace(part))
+			if normalized == "" || seen[normalized] {
+				continue
+			}
+			seen[normalized] = true
+			out = append(out, normalized)
+		}
+	}
+	add(email)
+	for _, value := range emails {
+		add(value)
+	}
+	return out
 }
 
 func (s *Server) handleListInvitations(w http.ResponseWriter, r *http.Request) {

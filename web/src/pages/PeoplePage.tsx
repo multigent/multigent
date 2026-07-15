@@ -24,8 +24,25 @@ type InvitationRow = {
   acceptedAt?: string
 }
 
+type InvitationCreateResponse = {
+  invitation?: InvitationRow
+  inviteUrl?: string
+  invitations?: {
+    invitation: InvitationRow
+    inviteUrl: string
+  }[]
+  errors?: {
+    email: string
+    error: string
+  }[]
+}
+
 const fieldCls =
   'w-full rounded-md border border-neutral-200/80 bg-neutral-50/50 px-3 py-2 text-sm outline-none transition-colors focus:border-sky-400 dark:border-zinc-700/60 dark:bg-zinc-800/50 dark:text-zinc-200 dark:[color-scheme:dark]'
+
+function inviteLink(token: string): string {
+  return `${window.location.origin}/invite/${encodeURIComponent(token)}`
+}
 
 export default function PeoplePage() {
   const { t } = useTranslation()
@@ -35,6 +52,7 @@ export default function PeoplePage() {
   const [creating, setCreating] = useState(false)
   const [form, setForm] = useState({ displayName: '', email: '', phone: '', role: 'member' })
   const [inviteUrl, setInviteUrl] = useState('')
+  const [inviteResults, setInviteResults] = useState<{ email: string; inviteUrl?: string; error?: string }[]>([])
   const [saving, setSaving] = useState(false)
   const [err, setErr] = useState<string | null>(null)
 
@@ -56,12 +74,23 @@ export default function PeoplePage() {
     if (!form.email.trim()) return
     setSaving(true); setErr(null)
     try {
-      const res = await apiPost<{ inviteUrl: string }>('/api/v1/invitations', {
-        email: form.email.trim(),
+      const emails = form.email.split(/[\s,;]+/).map(v => v.trim()).filter(Boolean)
+      const res = await apiPost<InvitationCreateResponse>('/api/v1/invitations', {
+        emails,
         role: form.role,
         displayName: form.displayName.trim(),
       })
-      setInviteUrl(res.inviteUrl)
+      setInviteUrl(res.invitation?.token ? inviteLink(res.invitation.token) : (res.inviteUrl ?? ''))
+      setInviteResults([
+        ...(res.invitations ?? []).map(item => ({
+          email: item.invitation.email,
+          inviteUrl: inviteLink(item.invitation.token),
+        })),
+        ...(res.errors ?? []).map(item => ({
+          email: item.email,
+          error: item.error,
+        })),
+      ])
       setForm({ displayName: '', email: '', phone: '', role: 'member' })
       await refresh()
     } catch (e) { setErr(e instanceof Error ? e.message : String(e)) }
@@ -85,7 +114,7 @@ export default function PeoplePage() {
           <h1 className="text-xl font-semibold text-neutral-900 dark:text-zinc-100">{t('people.title')}</h1>
           <p className="mt-0.5 text-sm text-neutral-500 dark:text-zinc-500">{t('people.subtitle')}</p>
         </div>
-        <button type="button" onClick={() => { setCreating(true); setErr(null); setInviteUrl('') }}
+        <button type="button" onClick={() => { setCreating(true); setErr(null); setInviteUrl(''); setInviteResults([]) }}
           className="rounded-lg border border-sky-600 bg-white px-3 py-2 text-sm font-medium text-sky-700 hover:bg-sky-50 dark:border-sky-500 dark:bg-zinc-900 dark:text-sky-400 dark:hover:bg-zinc-800">
           {t('people.add')}
         </button>
@@ -152,7 +181,7 @@ export default function PeoplePage() {
           </div>
           <div className="divide-y divide-neutral-100 dark:divide-zinc-800">
             {invitations.map(inv => {
-              const inviteLink = `${window.location.origin}/invite/${encodeURIComponent(inv.token)}`
+              const link = inviteLink(inv.token)
               return (
                 <div key={inv.token} className="flex items-center justify-between gap-3 py-3">
                   <div className="min-w-0">
@@ -166,7 +195,7 @@ export default function PeoplePage() {
                     <p className="mt-1 truncate text-xs text-neutral-400 dark:text-zinc-500">{inv.email} · expires {new Date(inv.expiresAt).toLocaleString()}</p>
                   </div>
                   <div className="flex shrink-0 items-center gap-1.5">
-                    <button type="button" onClick={() => navigator.clipboard?.writeText(inviteLink)} className="rounded p-2 text-neutral-500 hover:bg-neutral-100 dark:text-zinc-400 dark:hover:bg-zinc-800" title="Copy invite link">
+                    <button type="button" onClick={() => navigator.clipboard?.writeText(link)} className="rounded p-2 text-neutral-500 hover:bg-neutral-100 dark:text-zinc-400 dark:hover:bg-zinc-800" title="Copy invite link">
                       <Copy className="size-4" />
                     </button>
                     {inv.status === 'pending' && (
@@ -197,7 +226,8 @@ export default function PeoplePage() {
               </label>
               <label className="flex flex-col gap-1">
                 <span className="text-sm font-medium text-neutral-600 dark:text-zinc-400">{t('users.email')} *</span>
-                <input type="email" value={form.email} onChange={e => setForm({ ...form, email: e.target.value })} className={fieldCls} placeholder="alice@example.com" autoFocus />
+                <textarea value={form.email} onChange={e => setForm({ ...form, email: e.target.value })} className={cn(fieldCls, 'min-h-24 resize-y')} placeholder={'alice@example.com\nbob@example.com'} autoFocus />
+                <span className="text-xs text-neutral-400 dark:text-zinc-500">One or more emails, separated by spaces, commas, or new lines.</span>
               </label>
               <label className="flex flex-col gap-1">
                 <span className="text-sm font-medium text-neutral-600 dark:text-zinc-400">{t('users.phone')}</span>
@@ -221,6 +251,26 @@ export default function PeoplePage() {
                       <Copy className="size-4" />
                     </button>
                   </div>
+                </div>
+              )}
+              {inviteResults.length > 0 && (
+                <div className="max-h-56 space-y-2 overflow-auto rounded-lg border border-neutral-200 bg-neutral-50 p-3 dark:border-zinc-700 dark:bg-zinc-800/40">
+                  <p className="text-xs font-medium text-neutral-500 dark:text-zinc-400">Invite results</p>
+                  {inviteResults.map((item, idx) => (
+                    <div key={`${item.email}-${idx}`} className="rounded-md bg-white p-2 dark:bg-zinc-900/60">
+                      <p className="truncate text-xs font-medium text-neutral-700 dark:text-zinc-300">{item.email}</p>
+                      {item.error ? (
+                        <p className="mt-1 text-xs text-red-600 dark:text-red-400">{item.error}</p>
+                      ) : (
+                        <div className="mt-1 flex items-center gap-2">
+                          <input readOnly value={item.inviteUrl ?? ''} className={cn(fieldCls, 'flex-1 py-1.5 font-mono text-xs')} />
+                          <button type="button" onClick={() => navigator.clipboard?.writeText(item.inviteUrl ?? '')} className="rounded p-1.5 text-sky-700 hover:bg-sky-100 dark:text-sky-300 dark:hover:bg-sky-900/30">
+                            <Copy className="size-4" />
+                          </button>
+                        </div>
+                      )}
+                    </div>
+                  ))}
                 </div>
               )}
               <div className="flex justify-end gap-2 pt-1">

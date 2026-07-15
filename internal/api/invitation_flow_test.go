@@ -74,6 +74,62 @@ func TestInvitationManagementUsesWorkspaceAdmin(t *testing.T) {
 	}
 }
 
+func TestBulkInvitations(t *testing.T) {
+	s, _ := newConnectionGrantPolicyServer(t)
+
+	rec := httptest.NewRecorder()
+	s.handleCreateInvitation(rec, providerTestRequest(http.MethodPost, "/api/v1/invitations", "admin", map[string]any{
+		"emails": []string{
+			"alpha@example.com",
+			"beta@example.com, alpha@example.com",
+		},
+		"role":        WorkspaceRoleMember,
+		"displayName": "Batch User",
+	}))
+	if rec.Code != http.StatusOK {
+		t.Fatalf("bulk create invitations status=%d body=%s", rec.Code, rec.Body.String())
+	}
+	var created struct {
+		Invitations []struct {
+			Invitation invitationRecord `json:"invitation"`
+			InviteURL  string           `json:"inviteUrl"`
+		} `json:"invitations"`
+		Errors []struct {
+			Email string `json:"email"`
+			Error string `json:"error"`
+		} `json:"errors"`
+	}
+	if err := json.Unmarshal(rec.Body.Bytes(), &created); err != nil {
+		t.Fatalf("decode bulk create invitations: %v", err)
+	}
+	if len(created.Invitations) != 2 {
+		t.Fatalf("created invitations len=%d body=%s", len(created.Invitations), rec.Body.String())
+	}
+	if len(created.Errors) != 0 {
+		t.Fatalf("unexpected invitation errors=%#v", created.Errors)
+	}
+	for _, item := range created.Invitations {
+		if item.Invitation.Token == "" || item.InviteURL == "" || item.Invitation.Role != WorkspaceRoleMember {
+			t.Fatalf("bad invitation item=%#v", item)
+		}
+	}
+
+	listRec := httptest.NewRecorder()
+	s.handleListInvitations(listRec, providerTestRequest(http.MethodGet, "/api/v1/invitations", "admin", nil))
+	if listRec.Code != http.StatusOK {
+		t.Fatalf("list invitations status=%d body=%s", listRec.Code, listRec.Body.String())
+	}
+	var list struct {
+		Invitations []invitationRecord `json:"invitations"`
+	}
+	if err := json.Unmarshal(listRec.Body.Bytes(), &list); err != nil {
+		t.Fatalf("decode list invitations: %v", err)
+	}
+	if len(list.Invitations) != 2 {
+		t.Fatalf("listed invitations len=%d body=%s", len(list.Invitations), listRec.Body.String())
+	}
+}
+
 func TestAcceptInvitationJoinsCurrentWorkspaceAndRejectBlocksAccept(t *testing.T) {
 	s, workspaceID := newConnectionGrantPolicyServer(t)
 	inv, err := s.users.CreateInvitation("accepted@example.com", WorkspaceRoleAdmin, "Accepted", "admin", nil, nil)
