@@ -2,6 +2,7 @@ package api
 
 import (
 	"bytes"
+	"context"
 	"encoding/json"
 	"errors"
 	"fmt"
@@ -11,6 +12,14 @@ import (
 	"time"
 
 	controldb "github.com/multigent/multigent/internal/db"
+)
+
+const (
+	connectionHealthCheckTick                = time.Minute
+	defaultConnectionHealthCheckInterval     = 6 * time.Hour
+	minConnectionHealthCheckInterval         = 5 * time.Minute
+	maxConnectionHealthCheckInterval         = 30 * 24 * time.Hour
+	connectionHealthCheckMaxPerBackgroundRun = 20
 )
 
 type testConnectionRequest struct {
@@ -44,11 +53,11 @@ func (s *Server) handleTestConnection(w http.ResponseWriter, r *http.Request) {
 			s.jsonError(w, http.StatusBadRequest, inputErr.Error())
 			return
 		}
-		s.recordConnectionValidation(r, connection, false, 0, err.Error())
+		s.recordConnectionValidation(r, connection, false, 0, err.Error(), false)
 		s.jsonError(w, http.StatusBadGateway, err.Error())
 		return
 	}
-	s.recordConnectionValidation(r, connection, result.OK, result.Status, result.Message)
+	s.recordConnectionValidation(r, connection, result.OK, result.Status, result.Message, false)
 	s.auditLog(auditLogInput{
 		WorkspaceID:  connection.WorkspaceID,
 		Action:       "connection.test",
@@ -66,7 +75,72 @@ func (s *Server) handleTestConnection(w http.ResponseWriter, r *http.Request) {
 	_ = json.NewEncoder(w).Encode(result)
 }
 
-func (s *Server) recordConnectionValidation(r *http.Request, connection controldb.Connection, ok bool, status int, message string) {
+type runConnectionHealthChecksRequest struct {
+	ConnectionID string `json:"connectionId"`
+	Force        bool   `json:"force"`
+	Limit        int    `json:"limit"`
+}
+
+type connectionHealthCheckRunResponse struct {
+	Checked int                              `json:"checked"`
+	Skipped int                              `json:"skipped"`
+	Results []connectionHealthCheckRunResult `json:"results"`
+}
+
+type connectionHealthCheckRunResult struct {
+	ConnectionID   string `json:"connectionId"`
+	Provider       string `json:"provider"`
+	ConnectionName string `json:"connectionName"`
+	OK             bool   `json:"ok"`
+	Status         int    `json:"status"`
+	Message        string `json:"message"`
+	Error          string `json:"error,omitempty"`
+}
+
+func (s *Server) handleRunConnectionHealthChecks(w http.ResponseWriter, r *http.Request) {
+	if !s.checkCurrentWorkspaceAdmin(w, r) {
+		return
+	}
+	workspaceID, err := s.currentWorkspaceID()
+	if err != nil {
+		s.serverError(w, err)
+		return
+	}
+	var body runConnectionHealthChecksRequest
+	if r.Body != nil && r.ContentLength != 0 {
+		if err := s.readJSON(w, r, &body); err != nil {
+			s.jsonError(w, http.StatusBadRequest, "invalid JSON body")
+			return
+		}
+	}
+	if body.Limit <= 0 || body.Limit > 100 {
+		body.Limit = 100
+	}
+	resp := s.runConnectionHealthChecks(r.Context(), connectionHealthCheckOptions{
+		WorkspaceID:  workspaceID,
+		ConnectionID: strings.TrimSpace(body.ConnectionID),
+		Force:        body.Force,
+		Limit:        body.Limit,
+		AuditRequest: r,
+	})
+	s.auditLog(auditLogInput{
+		WorkspaceID:  workspaceID,
+		Action:       "connection.health_check.run",
+		ResourceType: "connection",
+		ResourceID:   strings.TrimSpace(body.ConnectionID),
+		Summary:      "Connection health checks run",
+		After: map[string]any{
+			"checked": resp.Checked,
+			"skipped": resp.Skipped,
+			"force":   body.Force,
+			"limit":   body.Limit,
+		},
+		Request: r,
+	})
+	_ = json.NewEncoder(w).Encode(resp)
+}
+
+func (s *Server) recordConnectionValidation(r *http.Request, connection controldb.Connection, ok bool, status int, message string, healthCheck bool) {
 	now := time.Now().UTC().Format(time.RFC3339)
 	updated := connection
 	updated.UpdatedAt = now
@@ -75,6 +149,12 @@ func (s *Server) recordConnectionValidation(r *http.Request, connection controld
 	profile["lastValidationOK"] = ok
 	profile["lastValidationStatus"] = status
 	profile["lastValidationMessage"] = strings.TrimSpace(message)
+	if healthCheck {
+		profile["lastHealthCheckAt"] = now
+	}
+	if healthCheck && healthConnectionEnabled(profile) {
+		profile["nextHealthCheckAt"] = time.Now().UTC().Add(healthConnectionInterval(profile)).Format(time.RFC3339)
+	}
 	profileJSON, _ := json.Marshal(profile)
 	updated.ProfileJSON = string(profileJSON)
 	if err := s.controlDB.UpdateConnection(updated); err != nil {
@@ -95,6 +175,161 @@ func (s *Server) recordConnectionValidation(r *http.Request, connection controld
 		},
 		Request: r,
 	})
+}
+
+type connectionHealthCheckOptions struct {
+	WorkspaceID  string
+	ConnectionID string
+	Force        bool
+	Limit        int
+	AuditRequest *http.Request
+}
+
+func (s *Server) startConnectionHealthChecker() {
+	if s == nil || s.controlDB == nil {
+		return
+	}
+	ctx, cancel := context.WithCancel(context.Background())
+	s.connectionHealthCancel = cancel
+	done := make(chan struct{})
+	s.connectionHealthDone = done
+	go func() {
+		defer close(done)
+		ticker := time.NewTicker(connectionHealthCheckTick)
+		defer ticker.Stop()
+		for {
+			select {
+			case <-ctx.Done():
+				return
+			case <-ticker.C:
+				s.runConnectionHealthChecks(ctx, connectionHealthCheckOptions{
+					Force: false,
+					Limit: connectionHealthCheckMaxPerBackgroundRun,
+				})
+			}
+		}
+	}()
+}
+
+func (s *Server) runConnectionHealthChecks(ctx context.Context, opts connectionHealthCheckOptions) connectionHealthCheckRunResponse {
+	limit := opts.Limit
+	if limit <= 0 {
+		limit = connectionHealthCheckMaxPerBackgroundRun
+	}
+	connections, err := s.controlDB.ListConnections(controldb.ConnectionFilter{
+		WorkspaceID: strings.TrimSpace(opts.WorkspaceID),
+		Status:      "active",
+	})
+	if err != nil {
+		return connectionHealthCheckRunResponse{Results: []connectionHealthCheckRunResult{{Error: err.Error()}}}
+	}
+	resp := connectionHealthCheckRunResponse{Results: []connectionHealthCheckRunResult{}}
+	now := time.Now().UTC()
+	req, _ := http.NewRequestWithContext(ctx, http.MethodPost, "/internal/connection-health-check", nil)
+	for _, connection := range connections {
+		if opts.ConnectionID != "" && connection.ID != opts.ConnectionID {
+			continue
+		}
+		profile := connectionProfileMap(connection)
+		if !opts.Force && !connectionHealthCheckDue(profile, now) {
+			resp.Skipped++
+			continue
+		}
+		if resp.Checked >= limit {
+			resp.Skipped++
+			continue
+		}
+		result, err := s.testConnection(req, connection, testConnectionRequest{})
+		runResult := connectionHealthCheckRunResult{
+			ConnectionID:   connection.ID,
+			Provider:       connection.Provider,
+			ConnectionName: connection.ConnectionName,
+			OK:             result.OK,
+			Status:         result.Status,
+			Message:        result.Message,
+		}
+		if err != nil {
+			runResult.OK = false
+			runResult.Error = err.Error()
+			runResult.Message = err.Error()
+			s.recordConnectionValidation(opts.AuditRequest, connection, false, 0, err.Error(), true)
+		} else {
+			s.recordConnectionValidation(opts.AuditRequest, connection, result.OK, result.Status, result.Message, true)
+		}
+		s.auditLog(auditLogInput{
+			WorkspaceID:  connection.WorkspaceID,
+			ActorType:    "system",
+			ActorID:      "connection-health-checker",
+			Action:       "connection.health_check",
+			ResourceType: "connection",
+			ResourceID:   connection.ID,
+			Summary:      "Connection health check completed",
+			After: map[string]any{
+				"provider":       connection.Provider,
+				"connectionName": connection.ConnectionName,
+				"ok":             runResult.OK,
+				"status":         runResult.Status,
+				"message":        runResult.Message,
+				"error":          runResult.Error,
+			},
+		})
+		resp.Checked++
+		resp.Results = append(resp.Results, runResult)
+	}
+	return resp
+}
+
+func connectionHealthCheckDue(profile map[string]any, now time.Time) bool {
+	if !healthConnectionEnabled(profile) {
+		return false
+	}
+	if raw, ok := profile["nextHealthCheckAt"].(string); ok && strings.TrimSpace(raw) != "" {
+		if t, err := time.Parse(time.RFC3339, raw); err == nil {
+			return !t.After(now)
+		}
+	}
+	if raw, ok := profile["lastHealthCheckAt"].(string); ok && strings.TrimSpace(raw) != "" {
+		if t, err := time.Parse(time.RFC3339, raw); err == nil {
+			return !t.Add(healthConnectionInterval(profile)).After(now)
+		}
+	}
+	if raw, ok := profile["lastValidatedAt"].(string); ok && strings.TrimSpace(raw) != "" {
+		if t, err := time.Parse(time.RFC3339, raw); err == nil {
+			return !t.Add(healthConnectionInterval(profile)).After(now)
+		}
+	}
+	return true
+}
+
+func healthConnectionEnabled(profile map[string]any) bool {
+	enabled, _ := profile["healthCheckEnabled"].(bool)
+	return enabled
+}
+
+func healthConnectionInterval(profile map[string]any) time.Duration {
+	minutes := float64(defaultConnectionHealthCheckInterval / time.Minute)
+	switch v := profile["healthCheckIntervalMinutes"].(type) {
+	case float64:
+		if v > 0 {
+			minutes = v
+		}
+	case int:
+		if v > 0 {
+			minutes = float64(v)
+		}
+	case json.Number:
+		if n, err := v.Float64(); err == nil && n > 0 {
+			minutes = n
+		}
+	}
+	interval := time.Duration(minutes) * time.Minute
+	if interval < minConnectionHealthCheckInterval {
+		return minConnectionHealthCheckInterval
+	}
+	if interval > maxConnectionHealthCheckInterval {
+		return maxConnectionHealthCheckInterval
+	}
+	return interval
 }
 
 type testConnectionResult struct {

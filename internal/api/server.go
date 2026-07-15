@@ -40,26 +40,28 @@ type execProcess struct {
 
 // Server serves JSON for one workspace root.
 type Server struct {
-	workspaceMu        sync.Mutex
-	controlDB          controldb.Store
-	root               string
-	apiKey             string
-	version            string
-	st                 store.Store
-	ts                 taskstore.Store
-	users              *UserStore
-	sched              *SchedulerManager
-	schedulerDesiredMu sync.Mutex
-	triggers           *triggerManager
-	ccStore            *store.CCConnectStore
-	okrStore           *store.OKRStore
-	msStore            *store.MilestoneStore
-	updateCheck        UpdateChecker
-	daemonStatus       DaemonStatusFunc
-	assistantMu        sync.Mutex
-	assistantSessions  map[string]*assistantSession
-	execMu             sync.Mutex
-	execProcs          map[string]*execProcess // key = "project/agent"
+	workspaceMu            sync.Mutex
+	controlDB              controldb.Store
+	root                   string
+	apiKey                 string
+	version                string
+	st                     store.Store
+	ts                     taskstore.Store
+	users                  *UserStore
+	sched                  *SchedulerManager
+	schedulerDesiredMu     sync.Mutex
+	triggers               *triggerManager
+	ccStore                *store.CCConnectStore
+	okrStore               *store.OKRStore
+	msStore                *store.MilestoneStore
+	updateCheck            UpdateChecker
+	daemonStatus           DaemonStatusFunc
+	assistantMu            sync.Mutex
+	assistantSessions      map[string]*assistantSession
+	execMu                 sync.Mutex
+	execProcs              map[string]*execProcess // key = "project/agent"
+	connectionHealthCancel func()
+	connectionHealthDone   chan struct{}
 }
 
 // NewServer builds an API server for the given workspace root.
@@ -88,6 +90,7 @@ func NewServer(root, apiKey string) *Server {
 		execProcs: make(map[string]*execProcess),
 	}
 	go s.restoreDesiredSchedulers()
+	s.startConnectionHealthChecker()
 	return s
 }
 
@@ -102,6 +105,12 @@ func (s *Server) SetDaemonStatus(fn DaemonStatusFunc) { s.daemonStatus = fn }
 
 // Shutdown stops all managed scheduler processes and the trigger poller.
 func (s *Server) Shutdown() {
+	if s.connectionHealthCancel != nil {
+		s.connectionHealthCancel()
+	}
+	if s.connectionHealthDone != nil {
+		<-s.connectionHealthDone
+	}
 	s.triggers.StopPoller()
 	s.sched.Cleanup()
 	_ = s.controlDB.Close()
@@ -124,6 +133,7 @@ func (s *Server) Handler() http.Handler {
 	mux.HandleFunc("PUT /api/v1/connections/{id}", s.handleUpdateConnection)
 	mux.HandleFunc("DELETE /api/v1/connections/{id}", s.handleDeleteConnection)
 	mux.HandleFunc("POST /api/v1/connections/{id}/test", s.handleTestConnection)
+	mux.HandleFunc("POST /api/v1/connections/health-check", s.handleRunConnectionHealthChecks)
 	mux.HandleFunc("GET /api/v1/connections/{id}/grants", s.handleListConnectionGrants)
 	mux.HandleFunc("POST /api/v1/connections/{id}/grants", s.handleCreateConnectionGrant)
 	mux.HandleFunc("DELETE /api/v1/connections/{id}/grants/{grantId}", s.handleDeleteConnectionGrant)

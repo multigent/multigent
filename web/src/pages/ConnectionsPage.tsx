@@ -22,6 +22,7 @@ type Connection = {
   updatedAt?: string
 }
 type ConnectionTestResult = { ok: boolean; status: number; message: string }
+type ConnectionHealthCheckRunResult = { checked: number; skipped: number; results: Array<{ connectionId: string; ok: boolean; status: number; message: string; error?: string }> }
 type ProjectRow = { name: string }
 type ProjectAgent = { name: string }
 type WorkspaceSummary = { id: string; name: string; currentUserRole?: string; currentUserCanAdmin?: boolean }
@@ -42,6 +43,8 @@ export default function ConnectionsPage() {
   const [editing, setEditing] = useState<Connection | null>(null)
   const [granting, setGranting] = useState<Connection | null>(null)
   const [testResults, setTestResults] = useState<Record<string, { loading?: boolean; ok?: boolean; message?: string }>>({})
+  const [healthCheckLoading, setHealthCheckLoading] = useState(false)
+  const [healthCheckMessage, setHealthCheckMessage] = useState('')
   const [reloadKey, setReloadKey] = useState(0)
 
   useEffect(() => {
@@ -100,6 +103,20 @@ export default function ConnectionsPage() {
     }
   }
 
+  async function runHealthChecks() {
+    setHealthCheckLoading(true)
+    setHealthCheckMessage('')
+    try {
+      const result = await apiPost<ConnectionHealthCheckRunResult>('/api/v1/connections/health-check', { force: true, limit: 100 })
+      setHealthCheckMessage(`Checked ${result.checked}; skipped ${result.skipped}.`)
+    } catch (e) {
+      setHealthCheckMessage(e instanceof Error ? e.message : String(e))
+    } finally {
+      setHealthCheckLoading(false)
+      setReloadKey(k => k + 1)
+    }
+  }
+
   return (
     <div className="animate-fade-in px-8 py-6">
       <div className="flex items-center justify-between pb-5">
@@ -112,12 +129,23 @@ export default function ConnectionsPage() {
             <RefreshCw className="size-4" strokeWidth={1.8} />
             Refresh
           </button>
+          {isWorkspaceAdmin && (
+            <button type="button" onClick={() => void runHealthChecks()} disabled={healthCheckLoading} className="inline-flex items-center gap-2 rounded-lg border border-neutral-200 px-3 py-2 text-sm font-medium text-neutral-600 hover:bg-neutral-50 disabled:opacity-50 dark:border-zinc-700 dark:text-zinc-300 dark:hover:bg-zinc-800">
+              <RefreshCw className={cn('size-4', healthCheckLoading && 'animate-spin')} strokeWidth={1.8} />
+              Run checks
+            </button>
+          )}
           <button type="button" onClick={() => setCreating(true)} className="inline-flex items-center gap-2 rounded-lg bg-sky-600 px-3 py-2 text-sm font-medium text-white hover:bg-sky-700">
             <Plus className="size-4" strokeWidth={1.8} />
             New connection
           </button>
         </div>
       </div>
+      {healthCheckMessage && (
+        <div className="mb-4 rounded-lg border border-neutral-200 bg-white px-3 py-2 text-xs text-neutral-600 dark:border-zinc-700 dark:bg-zinc-900/50 dark:text-zinc-300">
+          {healthCheckMessage}
+        </div>
+      )}
 
       {loading ? (
         <div className="flex items-center justify-center gap-2 py-16 text-sm text-neutral-500">
@@ -186,6 +214,7 @@ export default function ConnectionsPage() {
 
 function ConnectionCard({ connection, provider, canGrant, canEdit, canDelete, testState, onEdit, onGrant, onTest, onDelete }: { connection: Connection; provider?: Provider; canGrant: boolean; canEdit: boolean; canDelete: boolean; testState?: { loading?: boolean; ok?: boolean; message?: string }; onEdit: () => void; onGrant: () => void; onTest: () => void; onDelete: () => void }) {
   const validation = connectionValidation(connection)
+  const health = connectionHealthPolicy(connection)
   return (
     <section className="rounded-xl border border-neutral-200/80 bg-white p-5 dark:border-zinc-700/60 dark:bg-zinc-900/40">
       <div className="flex items-start justify-between gap-3">
@@ -205,12 +234,20 @@ function ConnectionCard({ connection, provider, canGrant, canEdit, canDelete, te
                   {validation.ok ? 'Healthy' : 'Failed'}{validation.status ? ` · ${validation.status}` : ''}
                 </span>
               )}
+              {health.enabled && (
+                <span className="rounded-full bg-amber-100 px-2 py-0.5 text-[11px] font-medium text-amber-700 dark:bg-amber-900/30 dark:text-amber-300">
+                  Auto-check · {health.intervalMinutes}m
+                </span>
+              )}
             </div>
             <p className="mt-1 text-xs text-neutral-400 dark:text-zinc-500">{connection.authType} · owner {connection.ownerId}</p>
             {validation && (
               <p className="mt-1 truncate text-xs text-neutral-400 dark:text-zinc-500" title={validation.message || undefined}>
                 Validated {validation.atLabel}{validation.message ? ` · ${validation.message}` : ''}
               </p>
+            )}
+            {health.enabled && health.nextLabel && (
+              <p className="mt-1 text-xs text-neutral-400 dark:text-zinc-500">Next check {health.nextLabel}</p>
             )}
           </div>
         </div>
@@ -275,6 +312,17 @@ function connectionValidation(connection: Connection): { ok: boolean; status?: n
   return { ok, status, message, atLabel }
 }
 
+function connectionHealthPolicy(connection: Connection): { enabled: boolean; intervalMinutes: number; nextLabel: string } {
+  const profile = connection.profile ?? {}
+  const enabled = profile.healthCheckEnabled === true
+  const rawInterval = typeof profile.healthCheckIntervalMinutes === 'number' ? profile.healthCheckIntervalMinutes : 360
+  const intervalMinutes = Math.max(5, Math.min(43200, Math.round(rawInterval || 360)))
+  const next = typeof profile.nextHealthCheckAt === 'string' ? profile.nextHealthCheckAt : ''
+  const timestamp = next ? new Date(next) : null
+  const nextLabel = timestamp && !Number.isNaN(timestamp.getTime()) ? timestamp.toLocaleString() : next
+  return { enabled, intervalMinutes, nextLabel }
+}
+
 function ConnectionDialog({ providers, isWorkspaceAdmin, connection, onClose, onCreated }: { providers: Provider[]; isWorkspaceAdmin: boolean; connection?: Connection; onClose: () => void; onCreated: () => void }) {
   const isEditing = Boolean(connection)
   const [providerId, setProviderId] = useState(connection?.provider ?? providers[0]?.provider ?? '')
@@ -283,6 +331,8 @@ function ConnectionDialog({ providers, isWorkspaceAdmin, connection, onClose, on
   const [authType, setAuthType] = useState(connection?.authType ?? provider?.authTypes[0] ?? 'api_key')
   const [connectionName, setConnectionName] = useState(connection?.connectionName ?? 'default')
   const [displayName, setDisplayName] = useState(String(connection?.profile?.displayName ?? ''))
+  const [healthCheckEnabled, setHealthCheckEnabled] = useState(connection?.profile?.healthCheckEnabled === true)
+  const [healthCheckIntervalMinutes, setHealthCheckIntervalMinutes] = useState(String(connectionHealthPolicy(connection ?? {} as Connection).intervalMinutes))
   const [values, setValues] = useState<Record<string, string>>({})
   const [saving, setSaving] = useState(false)
 
@@ -309,7 +359,11 @@ function ConnectionDialog({ providers, isWorkspaceAdmin, connection, onClose, on
         authType,
         connectionName: connectionName.trim() || 'default',
         values: cleanValues,
-        profile: { displayName: displayName.trim() || provider.displayName },
+        profile: {
+          displayName: displayName.trim() || provider.displayName,
+          healthCheckEnabled,
+          healthCheckIntervalMinutes: Math.max(5, Math.min(43200, Number(healthCheckIntervalMinutes) || 360)),
+        },
       }
       if (connection) {
         await apiPut(`/api/v1/connections/${encodeURIComponent(connection.id)}`, body)
@@ -373,6 +427,21 @@ function ConnectionDialog({ providers, isWorkspaceAdmin, connection, onClose, on
             Existing credential values are hidden. Fill only the fields you want to replace; leave all credential fields blank to keep the current secret.
           </p>
         )}
+        <div className="rounded-lg border border-neutral-200 p-3 dark:border-zinc-700">
+          <label className="flex items-center justify-between gap-3">
+            <span>
+              <span className="block text-sm font-medium text-neutral-700 dark:text-zinc-200">Automatic health checks</span>
+              <span className="block text-xs text-neutral-400 dark:text-zinc-500">Multigent periodically validates this connection without exposing secrets to agents.</span>
+            </span>
+            <input type="checkbox" checked={healthCheckEnabled} onChange={e => setHealthCheckEnabled(e.target.checked)} className="size-4 accent-sky-600" />
+          </label>
+          {healthCheckEnabled && (
+            <label className="mt-3 block">
+              <span className="text-xs font-medium text-neutral-500 dark:text-zinc-400">Interval minutes</span>
+              <input type="number" min={5} max={43200} className={inputCls} value={healthCheckIntervalMinutes} onChange={e => setHealthCheckIntervalMinutes(e.target.value)} />
+            </label>
+          )}
+        </div>
         <div className="flex justify-end gap-2 pt-2">
           <button type="button" onClick={onClose} disabled={saving} className="rounded-lg border border-neutral-300 px-3 py-2 text-sm dark:border-zinc-600">Cancel</button>
           <button type="button" onClick={() => void submit()} disabled={saving || !provider} className="rounded-lg bg-sky-600 px-3 py-2 text-sm font-medium text-white disabled:opacity-50">{isEditing ? 'Save' : 'Create'}</button>

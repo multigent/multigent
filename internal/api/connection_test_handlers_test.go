@@ -8,6 +8,7 @@ import (
 	"path/filepath"
 	"strings"
 	"testing"
+	"time"
 
 	controldb "github.com/multigent/multigent/internal/db"
 )
@@ -222,6 +223,125 @@ func TestConnectionTestPersistsFailedHTTPValidation(t *testing.T) {
 	}
 	if !strings.Contains(profile["lastValidationMessage"].(string), "HTTP 503") {
 		t.Fatalf("lastValidationMessage=%#v profile=%#v", profile["lastValidationMessage"], profile)
+	}
+}
+
+func TestConnectionHealthCheckRunsOnlyEnabledDueConnections(t *testing.T) {
+	s, workspaceID := newConnectionTestServer(t)
+	var hits int
+	upstream := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		hits++
+		_ = json.NewEncoder(w).Encode(map[string]bool{"ok": true})
+	}))
+	defer upstream.Close()
+
+	dueProfile := `{"healthCheckEnabled":true,"healthCheckIntervalMinutes":5,"nextHealthCheckAt":"2026-07-14T00:00:00Z"}`
+	disabledProfile := `{"healthCheckEnabled":false,"nextHealthCheckAt":"2026-07-14T00:00:00Z"}`
+	futureProfile := `{"healthCheckEnabled":true,"healthCheckIntervalMinutes":5,"nextHealthCheckAt":"2999-01-01T00:00:00Z"}`
+	for _, tc := range []struct {
+		id      string
+		profile string
+	}{
+		{"conn-due", dueProfile},
+		{"conn-disabled", disabledProfile},
+		{"conn-future", futureProfile},
+	} {
+		connection := controldb.Connection{
+			ID:             tc.id,
+			WorkspaceID:    workspaceID,
+			Provider:       "custom-http",
+			ConnectionName: tc.id,
+			OwnerType:      ConnectionOwnerUser,
+			OwnerID:        "owner",
+			AuthType:       ConnectionAuthCustomCredential,
+			Status:         "active",
+			ProfileJSON:    tc.profile,
+			CreatedBy:      "owner",
+			CreatedAt:      "2026-07-15T00:00:00Z",
+			UpdatedAt:      "2026-07-15T00:00:00Z",
+		}
+		if err := s.controlDB.UpsertConnection(connection); err != nil {
+			t.Fatalf("connection %s: %v", tc.id, err)
+		}
+		secret, err := sealConnectionSecret(map[string]string{"baseUrl": upstream.URL, "apiKey": "token-" + tc.id})
+		if err != nil {
+			t.Fatalf("seal secret %s: %v", tc.id, err)
+		}
+		secret.ConnectionID = tc.id
+		if err := s.controlDB.UpsertConnectionSecret(secret); err != nil {
+			t.Fatalf("secret %s: %v", tc.id, err)
+		}
+	}
+
+	resp := s.runConnectionHealthChecks(context.Background(), connectionHealthCheckOptions{WorkspaceID: workspaceID, Limit: 10})
+	if resp.Checked != 1 || resp.Skipped != 2 {
+		t.Fatalf("health response=%#v", resp)
+	}
+	if hits != 1 {
+		t.Fatalf("upstream hits=%d", hits)
+	}
+	updated, found, err := s.controlDB.ConnectionByID("conn-due")
+	if err != nil || !found {
+		t.Fatalf("updated connection found=%v err=%v", found, err)
+	}
+	var profile map[string]any
+	if err := json.Unmarshal([]byte(updated.ProfileJSON), &profile); err != nil {
+		t.Fatalf("profile json: %v", err)
+	}
+	if profile["lastHealthCheckAt"] == "" || profile["nextHealthCheckAt"] == "" {
+		t.Fatalf("health timestamps missing: %#v", profile)
+	}
+	if profile["lastValidationOK"] != true {
+		t.Fatalf("lastValidationOK=%#v profile=%#v", profile["lastValidationOK"], profile)
+	}
+}
+
+func TestRunConnectionHealthChecksRequiresWorkspaceAdmin(t *testing.T) {
+	s, workspaceID := newConnectionTestServer(t)
+	if err := s.controlDB.UpsertWorkspaceMember(workspaceID, "owner", WorkspaceRoleAdmin); err != nil {
+		t.Fatalf("promote owner: %v", err)
+	}
+	if err := s.controlDB.UpsertConnection(controldb.Connection{
+		ID:             "conn-health",
+		WorkspaceID:    workspaceID,
+		Provider:       "custom-http",
+		ConnectionName: "api",
+		OwnerType:      ConnectionOwnerUser,
+		OwnerID:        "owner",
+		AuthType:       ConnectionAuthCustomCredential,
+		Status:         "active",
+		ProfileJSON:    `{"healthCheckEnabled":true}`,
+		CreatedBy:      "owner",
+		CreatedAt:      "2026-07-15T00:00:00Z",
+		UpdatedAt:      "2026-07-15T00:00:00Z",
+	}); err != nil {
+		t.Fatalf("connection: %v", err)
+	}
+
+	memberReq := providerTestRequest(http.MethodPost, "/api/v1/connections/health-check", "other", runConnectionHealthChecksRequest{Force: true})
+	memberRec := httptest.NewRecorder()
+	s.handleRunConnectionHealthChecks(memberRec, memberReq)
+	if memberRec.Code != http.StatusForbidden {
+		t.Fatalf("member status=%d body=%s", memberRec.Code, memberRec.Body.String())
+	}
+
+	adminReq := providerTestRequest(http.MethodPost, "/api/v1/connections/health-check", "owner", runConnectionHealthChecksRequest{Force: true, Limit: 5})
+	adminRec := httptest.NewRecorder()
+	s.handleRunConnectionHealthChecks(adminRec, adminReq)
+	if adminRec.Code != http.StatusOK {
+		t.Fatalf("admin status=%d body=%s", adminRec.Code, adminRec.Body.String())
+	}
+}
+
+func TestConnectionHealthIntervalIsClamped(t *testing.T) {
+	if got := healthConnectionInterval(map[string]any{"healthCheckIntervalMinutes": float64(1)}); got != minConnectionHealthCheckInterval {
+		t.Fatalf("min clamp=%s", got)
+	}
+	if got := healthConnectionInterval(map[string]any{"healthCheckIntervalMinutes": float64(60 * 24 * 40)}); got != maxConnectionHealthCheckInterval {
+		t.Fatalf("max clamp=%s", got)
+	}
+	if got := healthConnectionInterval(map[string]any{"healthCheckIntervalMinutes": float64(30)}); got != 30*time.Minute {
+		t.Fatalf("interval=%s", got)
 	}
 }
 
