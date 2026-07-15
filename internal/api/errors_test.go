@@ -29,6 +29,27 @@ func TestJSONErrorUsesStructuredEnvelope(t *testing.T) {
 	}
 }
 
+func TestJSONErrorCodeUsesExplicitCode(t *testing.T) {
+	s := &Server{}
+	rec := httptest.NewRecorder()
+
+	s.jsonErrorCode(rec, http.StatusUnauthorized, ErrCodeInvalidCredentials, "invalid credentials")
+
+	if rec.Code != http.StatusUnauthorized {
+		t.Fatalf("status=%d", rec.Code)
+	}
+	if rec.Header().Get("X-Multigent-Error-Code") != ErrCodeInvalidCredentials {
+		t.Fatalf("error code header=%q", rec.Header().Get("X-Multigent-Error-Code"))
+	}
+	var body apiErrorResponse
+	if err := json.Unmarshal(rec.Body.Bytes(), &body); err != nil {
+		t.Fatalf("decode error response: %v", err)
+	}
+	if body.Error.Code != ErrCodeInvalidCredentials || body.Error.Message != "invalid credentials" {
+		t.Fatalf("unexpected body=%#v", body)
+	}
+}
+
 func TestServerErrorDoesNotExposeInternalDetails(t *testing.T) {
 	s := &Server{}
 	rec := httptest.NewRecorder()

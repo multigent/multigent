@@ -424,7 +424,7 @@ func (s *Server) handleAgency(w http.ResponseWriter, _ *http.Request) {
 	a, err := s.st.Agency()
 	if err != nil {
 		if isNotFoundErr(err) {
-			s.jsonError(w, http.StatusNotFound, "agency not found")
+			s.jsonErrorCode(w, http.StatusNotFound, ErrCodeNotFound, "agency not found")
 			return
 		}
 		s.serverError(w, err)
@@ -519,13 +519,13 @@ func (s *Server) handleTeams(w http.ResponseWriter, _ *http.Request) {
 func (s *Server) handleTeamDetail(w http.ResponseWriter, r *http.Request) {
 	path := strings.TrimPrefix(r.PathValue("teamPath"), "/")
 	if path == "" {
-		s.jsonError(w, http.StatusBadRequest, "missing team path")
+		s.jsonErrorCode(w, http.StatusBadRequest, ErrCodeValidationFailed, "missing team path")
 		return
 	}
 	t, err := s.st.Team(path)
 	if err != nil {
 		if isNotFoundErr(err) {
-			s.jsonError(w, http.StatusNotFound, "team not found")
+			s.jsonErrorCode(w, http.StatusNotFound, ErrCodeTeamNotFound, "team not found")
 			return
 		}
 		s.serverError(w, err)
@@ -592,7 +592,7 @@ func (s *Server) handleProjects(w http.ResponseWriter, r *http.Request) {
 
 func (s *Server) checkProjectAccess(w http.ResponseWriter, r *http.Request, project string) bool {
 	if !s.canAccessProject(r, project) {
-		s.jsonError(w, http.StatusForbidden, "no access to this project")
+		s.jsonErrorCode(w, http.StatusForbidden, ErrCodeProjectAccessRequired, "no access to this project")
 		return false
 	}
 	return true
@@ -606,7 +606,7 @@ func (s *Server) handleProject(w http.ResponseWriter, r *http.Request) {
 	p, err := s.st.Project(name)
 	if err != nil {
 		if isNotFoundErr(err) {
-			s.jsonError(w, http.StatusNotFound, "project not found")
+			s.jsonErrorCode(w, http.StatusNotFound, ErrCodeProjectNotFound, "project not found")
 			return
 		}
 		s.serverError(w, err)
@@ -627,7 +627,7 @@ func (s *Server) handlePutProject(w http.ResponseWriter, r *http.Request) {
 	p, err := s.st.Project(name)
 	if err != nil {
 		if isNotFoundErr(err) {
-			s.jsonError(w, http.StatusNotFound, "project not found")
+			s.jsonErrorCode(w, http.StatusNotFound, ErrCodeProjectNotFound, "project not found")
 			return
 		}
 		s.serverError(w, err)
@@ -638,7 +638,7 @@ func (s *Server) handlePutProject(w http.ResponseWriter, r *http.Request) {
 		Repo        string `json:"repo"`
 	}
 	if err := s.readJSON(w, r, &body); err != nil {
-		s.jsonError(w, http.StatusBadRequest, "invalid JSON body")
+		s.jsonErrorCode(w, http.StatusBadRequest, ErrCodeInvalidJSON, "invalid JSON body")
 		return
 	}
 	p.Description = body.Description
@@ -657,7 +657,7 @@ func (s *Server) handleProjectAgents(w http.ResponseWriter, r *http.Request) {
 	}
 	if _, err := s.st.Project(name); err != nil {
 		if isNotFoundErr(err) {
-			s.jsonError(w, http.StatusNotFound, "project not found")
+			s.jsonErrorCode(w, http.StatusNotFound, ErrCodeProjectNotFound, "project not found")
 			return
 		}
 		s.serverError(w, err)
@@ -698,7 +698,7 @@ func (s *Server) handlePatchAgent(w http.ResponseWriter, r *http.Request) {
 	meta, err := s.st.AgentMeta(project, agent)
 	if err != nil {
 		if isNotFoundErr(err) {
-			s.jsonError(w, http.StatusNotFound, "agent not found")
+			s.jsonErrorCode(w, http.StatusNotFound, ErrCodeAgentNotFound, "agent not found")
 			return
 		}
 		s.serverError(w, err)
@@ -709,7 +709,7 @@ func (s *Server) handlePatchAgent(w http.ResponseWriter, r *http.Request) {
 		Avatar string `json:"avatar"`
 	}
 	if err := s.readJSON(w, r, &body); err != nil {
-		s.jsonError(w, http.StatusBadRequest, "invalid JSON body")
+		s.jsonErrorCode(w, http.StatusBadRequest, ErrCodeInvalidJSON, "invalid JSON body")
 		return
 	}
 	newName := strings.TrimSpace(body.Name)
@@ -717,7 +717,7 @@ func (s *Server) handlePatchAgent(w http.ResponseWriter, r *http.Request) {
 		newName = agent
 	}
 	if !validAgentName(newName) {
-		s.jsonError(w, http.StatusBadRequest, "invalid agent name")
+		s.jsonErrorCode(w, http.StatusBadRequest, ErrCodeInvalidAgentName, "invalid agent name")
 		return
 	}
 
@@ -730,7 +730,7 @@ func (s *Server) handlePatchAgent(w http.ResponseWriter, r *http.Request) {
 		oldDir := s.st.AgentDir(project, agent)
 		newDir := s.st.AgentDir(project, newName)
 		if _, err := os.Stat(newDir); err == nil {
-			s.jsonError(w, http.StatusConflict, "target agent already exists")
+			s.jsonErrorCode(w, http.StatusConflict, ErrCodeAgentAlreadyExists, "target agent already exists")
 			return
 		} else if !os.IsNotExist(err) {
 			s.serverError(w, err)

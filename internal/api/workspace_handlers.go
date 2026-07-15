@@ -127,7 +127,7 @@ func (s *Server) handleWorkspace(w http.ResponseWriter, r *http.Request) {
 func (s *Server) handleListWorkspaces(w http.ResponseWriter, r *http.Request) {
 	refs, err := s.listWorkspaceRefs(r)
 	if err != nil {
-		s.jsonError(w, http.StatusInternalServerError, err.Error())
+		s.serverError(w, err)
 		return
 	}
 	_ = json.NewEncoder(w).Encode(workspaceListResponse{Workspaces: refs})
@@ -136,17 +136,17 @@ func (s *Server) handleListWorkspaces(w http.ResponseWriter, r *http.Request) {
 func (s *Server) handleCreateWorkspace(w http.ResponseWriter, r *http.Request) {
 	cur := s.currentUser(r)
 	if cur == nil || cur.Username == "" || cur.Username == "apikey" {
-		s.jsonError(w, http.StatusForbidden, "authenticated user required")
+		s.jsonErrorCode(w, http.StatusForbidden, ErrCodeAuthenticatedUserRequired, "authenticated user required")
 		return
 	}
 	var req createWorkspaceRequest
 	if err := json.NewDecoder(r.Body).Decode(&req); err != nil {
-		s.jsonError(w, http.StatusBadRequest, "invalid JSON body")
+		s.jsonErrorCode(w, http.StatusBadRequest, ErrCodeInvalidJSON, "invalid JSON body")
 		return
 	}
 	name := strings.TrimSpace(req.Name)
 	if name == "" {
-		s.jsonError(w, http.StatusBadRequest, "workspace name is required")
+		s.jsonErrorCode(w, http.StatusBadRequest, ErrCodeWorkspaceNameRequired, "workspace name is required")
 		return
 	}
 
@@ -157,11 +157,11 @@ func (s *Server) handleCreateWorkspace(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	if _, err := os.Stat(filepath.Join(absRoot, ".multigent", "agency.yaml")); err == nil {
-		s.jsonError(w, http.StatusConflict, "workspace already exists at root")
+		s.jsonErrorCode(w, http.StatusConflict, ErrCodeWorkspaceAlreadyExists, "workspace already exists at root")
 		return
 	}
 	if err := os.MkdirAll(absRoot, 0o755); err != nil {
-		s.jsonError(w, http.StatusInternalServerError, err.Error())
+		s.serverError(w, err)
 		return
 	}
 
@@ -174,7 +174,7 @@ func (s *Server) handleCreateWorkspace(w http.ResponseWriter, r *http.Request) {
 		CreatedAt:   now,
 	}
 	if err := scaffold.InitAgency(absRoot, agency); err != nil {
-		s.jsonError(w, http.StatusInternalServerError, err.Error())
+		s.serverError(w, err)
 		return
 	}
 	ref := workspaceRef{
@@ -186,16 +186,20 @@ func (s *Server) handleCreateWorkspace(w http.ResponseWriter, r *http.Request) {
 		CreatedAt:   agency.CreatedAt,
 	}
 	if err := s.upsertWorkspaceRef(ref); err != nil {
-		s.jsonError(w, http.StatusInternalServerError, err.Error())
+		s.serverError(w, err)
+		return
+	}
+	if s.controlDB == nil {
+		s.jsonErrorCode(w, http.StatusServiceUnavailable, ErrCodeWorkspaceDatabaseUnavailable, "control database unavailable")
 		return
 	}
 	if err := s.controlDB.UpsertWorkspaceMember(ref.ID, createdBy, WorkspaceRoleOwner); err != nil {
-		s.jsonError(w, http.StatusInternalServerError, err.Error())
+		s.serverError(w, err)
 		return
 	}
 	if req.Switch {
 		if err := s.switchWorkspaceRoot(absRoot); err != nil {
-			s.jsonError(w, http.StatusInternalServerError, err.Error())
+			s.serverError(w, err)
 			return
 		}
 		ref.Active = true
@@ -220,27 +224,27 @@ func (s *Server) handleCreateWorkspace(w http.ResponseWriter, r *http.Request) {
 func (s *Server) handleSwitchWorkspace(w http.ResponseWriter, r *http.Request) {
 	id := strings.TrimSpace(r.PathValue("id"))
 	if id == "" {
-		s.jsonError(w, http.StatusBadRequest, "workspace id is required")
+		s.jsonErrorCode(w, http.StatusBadRequest, ErrCodeValidationFailed, "workspace id is required")
 		return
 	}
 	if s.controlDB == nil {
-		s.jsonError(w, http.StatusServiceUnavailable, "control database unavailable")
+		s.jsonErrorCode(w, http.StatusServiceUnavailable, ErrCodeWorkspaceDatabaseUnavailable, "control database unavailable")
 		return
 	}
 	row, ok, err := s.controlDB.WorkspaceByID(id)
 	if err != nil {
-		s.jsonError(w, http.StatusInternalServerError, err.Error())
+		s.serverError(w, err)
 		return
 	}
 	if !ok {
-		s.jsonError(w, http.StatusNotFound, "workspace not found")
+		s.jsonErrorCode(w, http.StatusNotFound, ErrCodeWorkspaceNotFound, "workspace not found")
 		return
 	}
 	if !s.checkWorkspaceAccess(w, r, row.ID) {
 		return
 	}
 	if err := s.switchWorkspaceRoot(row.Root); err != nil {
-		s.jsonError(w, http.StatusInternalServerError, err.Error())
+		s.serverError(w, err)
 		return
 	}
 	s.auditLog(auditLogInput{
@@ -265,18 +269,18 @@ func (s *Server) handlePutWorkspace(w http.ResponseWriter, r *http.Request) {
 
 	var req updateWorkspaceRequest
 	if err := json.NewDecoder(r.Body).Decode(&req); err != nil {
-		s.jsonError(w, http.StatusBadRequest, "invalid JSON body")
+		s.jsonErrorCode(w, http.StatusBadRequest, ErrCodeInvalidJSON, "invalid JSON body")
 		return
 	}
 	name := strings.TrimSpace(req.Name)
 	if name == "" {
-		s.jsonError(w, http.StatusBadRequest, "workspace name is required")
+		s.jsonErrorCode(w, http.StatusBadRequest, ErrCodeWorkspaceNameRequired, "workspace name is required")
 		return
 	}
 
 	agency, err := s.st.Agency()
 	if err != nil {
-		s.jsonError(w, http.StatusInternalServerError, err.Error())
+		s.serverError(w, err)
 		return
 	}
 	before := map[string]any{
@@ -300,12 +304,12 @@ func (s *Server) handlePutWorkspace(w http.ResponseWriter, r *http.Request) {
 	agency.UpdatedAt = now
 
 	if err := s.st.SaveAgency(agency); err != nil {
-		s.jsonError(w, http.StatusInternalServerError, err.Error())
+		s.serverError(w, err)
 		return
 	}
 	id, err := s.currentWorkspaceID()
 	if err != nil {
-		s.jsonError(w, http.StatusInternalServerError, err.Error())
+		s.serverError(w, err)
 		return
 	}
 	_ = s.upsertWorkspaceRef(workspaceRef{
@@ -521,7 +525,7 @@ func (s *Server) currentWorkspaceID() (string, error) {
 func (s *Server) checkCurrentWorkspaceAccess(w http.ResponseWriter, r *http.Request) bool {
 	id, err := s.currentWorkspaceID()
 	if err != nil {
-		s.jsonError(w, http.StatusInternalServerError, err.Error())
+		s.serverError(w, err)
 		return false
 	}
 	return s.checkWorkspaceAccess(w, r, id)
@@ -533,27 +537,27 @@ func (s *Server) checkWorkspaceAccess(w http.ResponseWriter, r *http.Request, wo
 		return true
 	}
 	if cur == nil || cur.Username == "" {
-		s.jsonError(w, http.StatusForbidden, "workspace access required")
+		s.jsonErrorCode(w, http.StatusForbidden, ErrCodeWorkspaceAccessRequired, "workspace access required")
 		return false
 	}
 	if s.controlDB == nil {
-		s.jsonError(w, http.StatusServiceUnavailable, "control database unavailable")
+		s.jsonErrorCode(w, http.StatusServiceUnavailable, ErrCodeWorkspaceDatabaseUnavailable, "control database unavailable")
 		return false
 	}
 	if _, ok, err := s.controlDB.WorkspaceMember(workspaceID, cur.Username); err != nil {
-		s.jsonError(w, http.StatusInternalServerError, err.Error())
+		s.serverError(w, err)
 		return false
 	} else if ok {
 		return true
 	}
-	s.jsonError(w, http.StatusForbidden, "workspace access required")
+	s.jsonErrorCode(w, http.StatusForbidden, ErrCodeWorkspaceAccessRequired, "workspace access required")
 	return false
 }
 
 func (s *Server) checkCurrentWorkspaceAdmin(w http.ResponseWriter, r *http.Request) bool {
 	id, err := s.currentWorkspaceID()
 	if err != nil {
-		s.jsonError(w, http.StatusInternalServerError, err.Error())
+		s.serverError(w, err)
 		return false
 	}
 	cur := s.currentUser(r)
@@ -561,18 +565,22 @@ func (s *Server) checkCurrentWorkspaceAdmin(w http.ResponseWriter, r *http.Reque
 		return true
 	}
 	if cur == nil || cur.Username == "" {
-		s.jsonError(w, http.StatusForbidden, "workspace admin access required")
+		s.jsonErrorCode(w, http.StatusForbidden, ErrCodeWorkspaceAdminRequired, "workspace admin access required")
+		return false
+	}
+	if s.controlDB == nil {
+		s.jsonErrorCode(w, http.StatusServiceUnavailable, ErrCodeWorkspaceDatabaseUnavailable, "control database unavailable")
 		return false
 	}
 	member, ok, err := s.controlDB.WorkspaceMember(id, cur.Username)
 	if err != nil {
-		s.jsonError(w, http.StatusInternalServerError, err.Error())
+		s.serverError(w, err)
 		return false
 	}
 	if ok && (member.Role == WorkspaceRoleOwner || member.Role == WorkspaceRoleAdmin) {
 		return true
 	}
-	s.jsonError(w, http.StatusForbidden, "workspace admin access required")
+	s.jsonErrorCode(w, http.StatusForbidden, ErrCodeWorkspaceAdminRequired, "workspace admin access required")
 	return false
 }
 

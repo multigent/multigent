@@ -716,7 +716,7 @@ func (s *Server) handleLogin(w http.ResponseWriter, r *http.Request) {
 		Password string `json:"password"`
 	}
 	if err := s.readJSON(w, r, &body); err != nil {
-		s.jsonError(w, http.StatusBadRequest, "invalid request body")
+		s.jsonErrorCode(w, http.StatusBadRequest, ErrCodeInvalidRequestBody, "invalid request body")
 		return
 	}
 	body.Username = strings.TrimSpace(body.Username)
@@ -725,13 +725,13 @@ func (s *Server) handleLogin(w http.ResponseWriter, r *http.Request) {
 	}
 	body.Password = strings.TrimSpace(body.Password)
 	if body.Username == "" || body.Password == "" {
-		s.jsonError(w, http.StatusBadRequest, "username and password required")
+		s.jsonErrorCode(w, http.StatusBadRequest, ErrCodeValidationFailed, "username and password required")
 		return
 	}
 
 	user := s.users.Authenticate(body.Username, body.Password)
 	if user == nil {
-		s.jsonError(w, http.StatusUnauthorized, "invalid credentials")
+		s.jsonErrorCode(w, http.StatusUnauthorized, ErrCodeInvalidCredentials, "invalid credentials")
 		return
 	}
 
@@ -754,7 +754,7 @@ func (s *Server) issueLoginResponse(w http.ResponseWriter, user *userRecord) {
 
 func (s *Server) handleRegister(w http.ResponseWriter, r *http.Request) {
 	if strings.EqualFold(os.Getenv("MULTIGENT_ALLOW_SIGNUP"), "false") {
-		s.jsonError(w, http.StatusForbidden, "signup is disabled")
+		s.jsonErrorCode(w, http.StatusForbidden, ErrCodeSignupDisabled, "signup is disabled")
 		return
 	}
 	var body struct {
@@ -763,13 +763,13 @@ func (s *Server) handleRegister(w http.ResponseWriter, r *http.Request) {
 		DisplayName string `json:"displayName"`
 	}
 	if err := s.readJSON(w, r, &body); err != nil {
-		s.jsonError(w, http.StatusBadRequest, "invalid request body")
+		s.jsonErrorCode(w, http.StatusBadRequest, ErrCodeInvalidRequestBody, "invalid request body")
 		return
 	}
 	user, err := s.users.RegisterByEmail(body.Email, strings.TrimSpace(body.Password), strings.TrimSpace(body.DisplayName))
 	if err != nil {
 		if strings.Contains(err.Error(), "exists") {
-			s.jsonError(w, http.StatusConflict, err.Error())
+			s.jsonErrorCode(w, http.StatusConflict, ErrCodeUserAlreadyExists, err.Error())
 			return
 		}
 		s.jsonError(w, http.StatusBadRequest, err.Error())
@@ -782,7 +782,7 @@ func (s *Server) handleAuthMe(w http.ResponseWriter, r *http.Request) {
 	username := r.Context().Value(ctxUserKey).(string)
 	user := s.users.GetUser(username)
 	if user == nil {
-		s.jsonError(w, http.StatusNotFound, "user not found")
+		s.jsonErrorCode(w, http.StatusNotFound, ErrCodeUserNotFound, "user not found")
 		return
 	}
 	_ = json.NewEncoder(w).Encode(map[string]any{
@@ -813,7 +813,7 @@ func (s *Server) currentUser(r *http.Request) *userRecord {
 func (s *Server) requireAdmin(w http.ResponseWriter, r *http.Request) bool {
 	u := s.currentUser(r)
 	if u.Role != RoleAdmin {
-		s.jsonError(w, http.StatusForbidden, "admin access required")
+		s.jsonErrorCode(w, http.StatusForbidden, ErrCodeAdminRequired, "admin access required")
 		return false
 	}
 	return true
@@ -868,7 +868,7 @@ func (s *Server) canManageProject(r *http.Request, project string) bool {
 
 func (s *Server) checkProjectOperator(w http.ResponseWriter, r *http.Request, project string) bool {
 	if !s.canOperateProject(r, project) {
-		s.jsonError(w, http.StatusForbidden, "project operator access required")
+		s.jsonErrorCode(w, http.StatusForbidden, ErrCodeProjectOperatorRequired, "project operator access required")
 		return false
 	}
 	return true
@@ -883,7 +883,7 @@ func (s *Server) canAccessAgent(r *http.Request, project, agent string) bool {
 
 func (s *Server) checkAgentAccess(w http.ResponseWriter, r *http.Request, project, agent string) bool {
 	if !s.canAccessAgent(r, project, agent) {
-		s.jsonError(w, http.StatusForbidden, "agent access required")
+		s.jsonErrorCode(w, http.StatusForbidden, ErrCodeAgentAccessRequired, "agent access required")
 		return false
 	}
 	return true
@@ -891,7 +891,7 @@ func (s *Server) checkAgentAccess(w http.ResponseWriter, r *http.Request, projec
 
 func (s *Server) checkProjectManager(w http.ResponseWriter, r *http.Request, project string) bool {
 	if !s.canManageProject(r, project) {
-		s.jsonError(w, http.StatusForbidden, "project manager access required")
+		s.jsonErrorCode(w, http.StatusForbidden, ErrCodeProjectManagerRequired, "project manager access required")
 		return false
 	}
 	return true
@@ -951,22 +951,22 @@ func (s *Server) handleCreateUser(w http.ResponseWriter, r *http.Request) {
 		Bio         string `json:"bio"`
 	}
 	if err := s.readJSON(w, r, &body); err != nil {
-		s.jsonError(w, http.StatusBadRequest, "invalid request body")
+		s.jsonErrorCode(w, http.StatusBadRequest, ErrCodeInvalidRequestBody, "invalid request body")
 		return
 	}
 	body.Username = strings.TrimSpace(body.Username)
 	body.Password = strings.TrimSpace(body.Password)
 	if body.Username == "" || body.Password == "" {
-		s.jsonError(w, http.StatusBadRequest, "username and password required")
+		s.jsonErrorCode(w, http.StatusBadRequest, ErrCodeValidationFailed, "username and password required")
 		return
 	}
 	if len(body.Password) < 6 {
-		s.jsonError(w, http.StatusBadRequest, "password must be at least 6 characters")
+		s.jsonErrorCode(w, http.StatusBadRequest, ErrCodeValidationFailed, "password must be at least 6 characters")
 		return
 	}
 	if err := s.users.CreateUser(body.Username, body.Password, body.Role, body.DisplayName, body.Email, body.Avatar, body.Phone, body.Bio); err != nil {
 		if strings.Contains(err.Error(), "already exists") {
-			s.jsonError(w, http.StatusConflict, err.Error())
+			s.jsonErrorCode(w, http.StatusConflict, ErrCodeUserAlreadyExists, err.Error())
 			return
 		}
 		s.serverError(w, err)
@@ -1017,13 +1017,13 @@ func (s *Server) handleCreateInvitation(w http.ResponseWriter, r *http.Request) 
 		LinkedAgents []string        `json:"linkedAgents"`
 	}
 	if err := s.readJSON(w, r, &body); err != nil {
-		s.jsonError(w, http.StatusBadRequest, "invalid request body")
+		s.jsonErrorCode(w, http.StatusBadRequest, ErrCodeInvalidRequestBody, "invalid request body")
 		return
 	}
 	cur := s.currentUser(r)
 	emails := invitationEmails(body.Email, body.Emails)
 	if len(emails) == 0 {
-		s.jsonError(w, http.StatusBadRequest, "email is required")
+		s.jsonErrorCode(w, http.StatusBadRequest, ErrCodeValidationFailed, "email is required")
 		return
 	}
 
@@ -1109,7 +1109,7 @@ func (s *Server) handleRevokeInvitation(w http.ResponseWriter, r *http.Request) 
 	inv, err := s.users.SetInvitationStatus(r.PathValue("token"), "revoked")
 	if err != nil {
 		if strings.Contains(err.Error(), "not found") {
-			s.jsonError(w, http.StatusNotFound, err.Error())
+			s.jsonErrorCode(w, http.StatusNotFound, ErrCodeInvitationNotFound, err.Error())
 			return
 		}
 		s.jsonError(w, http.StatusBadRequest, err.Error())
@@ -1122,7 +1122,7 @@ func (s *Server) handlePublicInvitation(w http.ResponseWriter, r *http.Request) 
 	token := r.PathValue("token")
 	inv, ok := s.users.Invitation(token)
 	if !ok {
-		s.jsonError(w, http.StatusNotFound, "invitation not found")
+		s.jsonErrorCode(w, http.StatusNotFound, ErrCodeInvitationNotFound, "invitation not found")
 		return
 	}
 	_ = json.NewEncoder(w).Encode(map[string]any{
@@ -1138,7 +1138,7 @@ func (s *Server) handleRejectInvitation(w http.ResponseWriter, r *http.Request) 
 	inv, err := s.users.SetInvitationStatus(r.PathValue("token"), "rejected")
 	if err != nil {
 		if strings.Contains(err.Error(), "not found") {
-			s.jsonError(w, http.StatusNotFound, err.Error())
+			s.jsonErrorCode(w, http.StatusNotFound, ErrCodeInvitationNotFound, err.Error())
 			return
 		}
 		s.jsonError(w, http.StatusBadRequest, err.Error())
@@ -1154,13 +1154,13 @@ func (s *Server) handleAcceptInvitation(w http.ResponseWriter, r *http.Request) 
 		DisplayName string `json:"displayName"`
 	}
 	if err := s.readJSON(w, r, &body); err != nil {
-		s.jsonError(w, http.StatusBadRequest, "invalid request body")
+		s.jsonErrorCode(w, http.StatusBadRequest, ErrCodeInvalidRequestBody, "invalid request body")
 		return
 	}
 	user, err := s.users.AcceptInvitation(token, strings.TrimSpace(body.Password), strings.TrimSpace(body.DisplayName))
 	if err != nil {
 		if strings.Contains(err.Error(), "not found") {
-			s.jsonError(w, http.StatusNotFound, err.Error())
+			s.jsonErrorCode(w, http.StatusNotFound, ErrCodeInvitationNotFound, err.Error())
 			return
 		}
 		s.jsonError(w, http.StatusBadRequest, err.Error())
@@ -1194,12 +1194,12 @@ func (s *Server) handleGetUser(w http.ResponseWriter, r *http.Request) {
 	target := r.PathValue("username")
 	cur := s.currentUser(r)
 	if cur.Role != RoleAdmin && cur.Username != target {
-		s.jsonError(w, http.StatusForbidden, "access denied")
+		s.jsonErrorCode(w, http.StatusForbidden, ErrCodeForbidden, "access denied")
 		return
 	}
 	u := s.users.GetUser(target)
 	if u == nil {
-		s.jsonError(w, http.StatusNotFound, "user not found")
+		s.jsonErrorCode(w, http.StatusNotFound, ErrCodeUserNotFound, "user not found")
 		return
 	}
 	_ = json.NewEncoder(w).Encode(map[string]any{
@@ -1235,16 +1235,16 @@ func (s *Server) handleUpdateUser(w http.ResponseWriter, r *http.Request) {
 		LinkedAgents []string        `json:"linkedAgents"`
 	}
 	if err := s.readJSON(w, r, &body); err != nil {
-		s.jsonError(w, http.StatusBadRequest, "invalid request body")
+		s.jsonErrorCode(w, http.StatusBadRequest, ErrCodeInvalidRequestBody, "invalid request body")
 		return
 	}
 	if body.Password != nil && len(*body.Password) > 0 && len(*body.Password) < 6 {
-		s.jsonError(w, http.StatusBadRequest, "password must be at least 6 characters")
+		s.jsonErrorCode(w, http.StatusBadRequest, ErrCodeValidationFailed, "password must be at least 6 characters")
 		return
 	}
 	if err := s.users.UpdateUser(target, body.Role, body.DisplayName, body.Email, body.Avatar, body.Phone, body.Bio, body.Disabled, body.Projects, body.LinkedAgents, body.Password); err != nil {
 		if strings.Contains(err.Error(), "not found") {
-			s.jsonError(w, http.StatusNotFound, err.Error())
+			s.jsonErrorCode(w, http.StatusNotFound, ErrCodeUserNotFound, err.Error())
 			return
 		}
 		s.serverError(w, err)
@@ -1260,12 +1260,12 @@ func (s *Server) handleDeleteUser(w http.ResponseWriter, r *http.Request) {
 	target := r.PathValue("username")
 	cur := s.currentUser(r)
 	if target == cur.Username {
-		s.jsonError(w, http.StatusBadRequest, "cannot delete yourself")
+		s.jsonErrorCode(w, http.StatusBadRequest, ErrCodeValidationFailed, "cannot delete yourself")
 		return
 	}
 	if err := s.users.DeleteUser(target); err != nil {
 		if strings.Contains(err.Error(), "not found") {
-			s.jsonError(w, http.StatusNotFound, err.Error())
+			s.jsonErrorCode(w, http.StatusNotFound, ErrCodeUserNotFound, err.Error())
 			return
 		}
 		s.serverError(w, err)
@@ -1281,16 +1281,16 @@ func (s *Server) handleChangePassword(w http.ResponseWriter, r *http.Request) {
 		NewPassword string `json:"newPassword"`
 	}
 	if err := s.readJSON(w, r, &body); err != nil {
-		s.jsonError(w, http.StatusBadRequest, "invalid request body")
+		s.jsonErrorCode(w, http.StatusBadRequest, ErrCodeInvalidRequestBody, "invalid request body")
 		return
 	}
 	if len(body.NewPassword) < 6 {
-		s.jsonError(w, http.StatusBadRequest, "password must be at least 6 characters")
+		s.jsonErrorCode(w, http.StatusBadRequest, ErrCodeValidationFailed, "password must be at least 6 characters")
 		return
 	}
 	if err := s.users.ChangePassword(username, body.OldPassword, body.NewPassword); err != nil {
 		if strings.Contains(err.Error(), "wrong old password") {
-			s.jsonError(w, http.StatusForbidden, "wrong old password")
+			s.jsonErrorCode(w, http.StatusForbidden, ErrCodeInvalidCredentials, "wrong old password")
 			return
 		}
 		s.serverError(w, err)
