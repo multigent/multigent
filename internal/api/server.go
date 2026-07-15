@@ -166,6 +166,7 @@ func (s *Server) Handler() http.Handler {
 	mux.HandleFunc("GET /api/v1/projects/{name}/messages", s.handleProjectMessages)
 	mux.HandleFunc("GET /api/v1/projects/{name}/agents", s.handleProjectAgents)
 	mux.HandleFunc("PATCH /api/v1/projects/{name}/agents/{agent}", s.handlePatchAgent)
+	mux.HandleFunc("GET /api/v1/projects/{name}/agents/{agent}/runtime/connections", s.handleAgentRuntimeConnections)
 	mux.HandleFunc("GET /api/v1/projects/{name}/agents/{agent}/context", s.handleGetAgentContext)
 	mux.HandleFunc("GET /api/v1/projects/{name}/agents/{agent}/chat/history", s.handleAgentChatHistory)
 	mux.HandleFunc("POST /api/v1/projects/{name}/agents/{agent}/chat", s.handleAgentChat)
