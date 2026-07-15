@@ -13,9 +13,11 @@ import (
 	"crypto/sha1"
 	"database/sql"
 	"encoding/hex"
+	"encoding/json"
 	"fmt"
 	"io"
 	"net"
+	"net/http"
 	"os"
 	"os/exec"
 	"path/filepath"
@@ -41,6 +43,9 @@ const (
 
 	// SessionSentinel lets agents explicitly report a new session ID.
 	SessionSentinel = "MULTIGENT_SESSION_ID:"
+
+	runtimeConnectionsFileEnv = "MULTIGENT_CONNECTIONS_FILE"
+	maxRuntimeConnectionsFile = 1 << 20
 )
 
 // systemMetaFooter is appended to every task prompt so agents know how to
@@ -120,6 +125,9 @@ func (r *Runner) ExecPrompt(project, agentName, prompt, sessionID string) (*RunR
 	model := entity.NormaliseModel(meta.Model)
 	agentEnv := resolveProviderEnv(r.root, meta)
 	runtimeEnv := r.resolveRuntimeControlEnv(project, agentName, "exec-"+time.Now().UTC().Format("20060102-150405"))
+	if cleanup := r.materializeRuntimeConnectionsFile(agentDir, runtimeEnv); cleanup != nil {
+		defer cleanup()
+	}
 	effectiveEnv := mergeEnv(os.Environ(), agentEnv)
 	effectiveEnv = mergeEnv(effectiveEnv, runtimeEnv)
 	apiModel, apiBaseURL := resolveAPIModelFromEnv(model, effectiveEnv)
@@ -314,6 +322,9 @@ func (r *Runner) RunTask(project, agentName string, task *entity.Task, sessionID
 	model := entity.NormaliseModel(meta.Model)
 	agentEnv := resolveProviderEnv(r.root, meta)
 	runtimeEnv := r.resolveRuntimeControlEnv(project, agentName, task.ID)
+	if cleanup := r.materializeRuntimeConnectionsFile(agentDir, runtimeEnv); cleanup != nil {
+		defer cleanup()
+	}
 	effectiveEnv := mergeEnv(os.Environ(), agentEnv)
 	effectiveEnv = mergeEnv(effectiveEnv, runtimeEnv)
 	apiModel, apiBaseURL := resolveAPIModelFromEnv(model, effectiveEnv)
@@ -1076,6 +1087,78 @@ func (r *Runner) resolveRuntimeControlEnv(project, agentName, runID string) map[
 	}
 }
 
+func (r *Runner) materializeRuntimeConnectionsFile(agentDir string, env map[string]string) func() {
+	if len(env) == 0 {
+		return nil
+	}
+	apiURL := strings.TrimSpace(env["MULTIGENT_API_URL"])
+	token := strings.TrimSpace(env["MULTIGENT_AGENT_TOKEN"])
+	if apiURL == "" || token == "" {
+		return nil
+	}
+	body, err := fetchRuntimeConnectionsManifest(apiURL, token)
+	if err != nil {
+		return nil
+	}
+	path, err := writeRuntimeConnectionsFile(agentDir, body)
+	if err != nil {
+		return nil
+	}
+	env[runtimeConnectionsFileEnv] = path
+	return func() { _ = os.Remove(path) }
+}
+
+func fetchRuntimeConnectionsManifest(apiURL, token string) ([]byte, error) {
+	apiURL = strings.TrimRight(strings.TrimSpace(apiURL), "/")
+	token = strings.TrimSpace(token)
+	if apiURL == "" || token == "" {
+		return nil, fmt.Errorf("runtime API URL and token are required")
+	}
+	req, err := http.NewRequest(http.MethodGet, apiURL+"/api/v1/runtime/connections", nil)
+	if err != nil {
+		return nil, err
+	}
+	req.Header.Set("Authorization", "Bearer "+token)
+	client := http.Client{Timeout: 5 * time.Second}
+	resp, err := client.Do(req)
+	if err != nil {
+		return nil, err
+	}
+	defer resp.Body.Close()
+	if resp.StatusCode != http.StatusOK {
+		io.Copy(io.Discard, io.LimitReader(resp.Body, 4096))
+		return nil, fmt.Errorf("runtime connections returned %s", resp.Status)
+	}
+	body, err := io.ReadAll(io.LimitReader(resp.Body, maxRuntimeConnectionsFile+1))
+	if err != nil {
+		return nil, err
+	}
+	if len(body) > maxRuntimeConnectionsFile {
+		return nil, fmt.Errorf("runtime connections manifest too large")
+	}
+	if !json.Valid(body) {
+		return nil, fmt.Errorf("runtime connections manifest is not valid JSON")
+	}
+	return body, nil
+}
+
+func writeRuntimeConnectionsFile(agentDir string, body []byte) (string, error) {
+	dir := filepath.Join(agentDir, ".multigent")
+	if err := os.MkdirAll(dir, 0o755); err != nil {
+		return "", err
+	}
+	f, err := os.CreateTemp(dir, ".connections-*.json")
+	if err != nil {
+		return "", err
+	}
+	defer f.Close()
+	if _, err := f.Write(body); err != nil {
+		os.Remove(f.Name())
+		return "", err
+	}
+	return f.Name(), nil
+}
+
 func resolveRuntimeAPIURL(root string) string {
 	if value := strings.TrimSpace(os.Getenv("MULTIGENT_API_URL")); value != "" {
 		return normalizeRuntimeAPIURL(value)
@@ -1180,7 +1263,7 @@ func injectRuntimeControlEnvIntoRuntime(cfg *entity.SandboxConfig, env map[strin
 
 func isRuntimeControlEnvKey(key string) bool {
 	switch key {
-	case "MULTIGENT_API_URL", "MULTIGENT_AGENT_TOKEN", "MULTIGENT_RUN_ID", "MULTIGENT_WORKSPACE_ID":
+	case "MULTIGENT_API_URL", "MULTIGENT_AGENT_TOKEN", "MULTIGENT_RUN_ID", "MULTIGENT_WORKSPACE_ID", runtimeConnectionsFileEnv:
 		return true
 	default:
 		return false
