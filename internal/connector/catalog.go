@@ -39,6 +39,18 @@ func Defaults() []Provider {
 			DisplayName: "Feishu / Lark",
 			AuthTypes:   []string{AuthCustomCredential},
 			Fields: []ProviderField{
+				{Key: "baseUrl", Label: "OpenAPI base URL", InputType: "text"},
+				{Key: "appId", Label: "App ID", InputType: "text", Required: true},
+				{Key: "appSecret", Label: "App Secret", InputType: "password", Required: true, Secret: true},
+			},
+			Enabled: true,
+		},
+		{
+			Provider:    "lark",
+			DisplayName: "Lark",
+			AuthTypes:   []string{AuthCustomCredential},
+			Fields: []ProviderField{
+				{Key: "baseUrl", Label: "OpenAPI base URL", InputType: "text"},
 				{Key: "appId", Label: "App ID", InputType: "text", Required: true},
 				{Key: "appSecret", Label: "App Secret", InputType: "password", Required: true, Secret: true},
 			},

@@ -76,7 +76,7 @@ func (s *Server) testConnection(r *http.Request, connection controldb.Connection
 	switch connection.Provider {
 	case "custom-mcp":
 		return s.testCustomMCPConnection(r, connection)
-	case "custom-http", "github", "linear":
+	case "custom-http", "github", "linear", "feishu", "lark":
 		return s.testHTTPConnection(r, connection, body)
 	default:
 		return testConnectionResult{}, fmt.Errorf("connection test is not supported for provider %q", connection.Provider)
@@ -179,6 +179,13 @@ func applyDefaultConnectionTestRequest(provider string, req *runtimeActionProxyR
 			req.Body = json.RawMessage(`{"query":"query { viewer { id name } }"}`)
 		}
 	case "custom-http":
+		if req.Endpoint == "" {
+			req.Endpoint = "/"
+		}
+		if req.Method == "" {
+			req.Method = http.MethodGet
+		}
+	case "feishu", "lark":
 		if req.Endpoint == "" {
 			req.Endpoint = "/"
 		}

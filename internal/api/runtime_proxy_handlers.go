@@ -271,6 +271,20 @@ func (s *Server) runtimeHTTPActionConfig(connection controldb.Connection) (runti
 			cfg.AuthValue = apiKey
 			cfg.RedactValues = append(cfg.RedactValues, apiKey)
 		}
+	case "feishu", "lark":
+		if cfg.BaseURL == "" {
+			cfg.BaseURL = defaultFeishuBaseURL(connection.Provider)
+		}
+		if err := validateRuntimeActionBaseURL(cfg.BaseURL); err != nil {
+			return runtimeHTTPActionConfig{}, err
+		}
+		token, err := fetchFeishuTenantAccessToken(cfg.BaseURL, strings.TrimSpace(values["appId"]), strings.TrimSpace(values["appSecret"]))
+		if err != nil {
+			return runtimeHTTPActionConfig{}, err
+		}
+		cfg.AuthHeader = "Authorization"
+		cfg.AuthValue = "Bearer " + token
+		cfg.RedactValues = append(cfg.RedactValues, token, cfg.AuthValue, strings.TrimSpace(values["appSecret"]))
 	default:
 		return runtimeHTTPActionConfig{}, fmt.Errorf("runtime action proxy is not supported for provider %q", connection.Provider)
 	}
@@ -281,6 +295,66 @@ func (s *Server) runtimeHTTPActionConfig(connection controldb.Connection) (runti
 		return runtimeHTTPActionConfig{}, err
 	}
 	return cfg, nil
+}
+
+func defaultFeishuBaseURL(provider string) string {
+	if provider == "lark" {
+		return "https://open.larksuite.com"
+	}
+	return "https://open.feishu.cn"
+}
+
+type feishuTenantTokenResponse struct {
+	Code              int    `json:"code"`
+	Msg               string `json:"msg"`
+	TenantAccessToken string `json:"tenant_access_token"`
+}
+
+func fetchFeishuTenantAccessToken(baseURL, appID, appSecret string) (string, error) {
+	if appID == "" || appSecret == "" {
+		return "", fmt.Errorf("feishu/lark connection requires appId and appSecret")
+	}
+	baseURL = strings.TrimRight(strings.TrimSpace(baseURL), "/")
+	if baseURL == "" {
+		return "", fmt.Errorf("feishu/lark baseUrl is required")
+	}
+	reqBody, err := json.Marshal(map[string]string{
+		"app_id":     appID,
+		"app_secret": appSecret,
+	})
+	if err != nil {
+		return "", err
+	}
+	req, err := http.NewRequest(http.MethodPost, baseURL+"/open-apis/auth/v3/tenant_access_token/internal", bytes.NewReader(reqBody))
+	if err != nil {
+		return "", err
+	}
+	req.Header.Set("Content-Type", "application/json")
+	client := &http.Client{Timeout: 30 * time.Second}
+	resp, err := client.Do(req)
+	if err != nil {
+		return "", fmt.Errorf("request feishu/lark tenant token: %w", err)
+	}
+	defer resp.Body.Close()
+	body, err := io.ReadAll(io.LimitReader(resp.Body, maxJSONBody+1))
+	if err != nil {
+		return "", fmt.Errorf("read feishu/lark token response: %w", err)
+	}
+	if len(body) > maxJSONBody {
+		return "", fmt.Errorf("feishu/lark token response too large")
+	}
+	var parsed feishuTenantTokenResponse
+	if err := json.Unmarshal(body, &parsed); err != nil {
+		return "", fmt.Errorf("decode feishu/lark token response: %w", err)
+	}
+	if resp.StatusCode < 200 || resp.StatusCode >= 300 || parsed.Code != 0 || parsed.TenantAccessToken == "" {
+		msg := strings.TrimSpace(parsed.Msg)
+		if msg == "" {
+			msg = resp.Status
+		}
+		return "", fmt.Errorf("feishu/lark tenant token request failed: %s", msg)
+	}
+	return parsed.TenantAccessToken, nil
 }
 
 func runtimeActionMethodAllowed(method string) bool {

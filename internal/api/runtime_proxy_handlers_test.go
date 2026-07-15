@@ -226,6 +226,108 @@ func TestRuntimeActionProxyForwardsCustomHTTPWithServerSideCredential(t *testing
 	}
 }
 
+func TestRuntimeActionProxyForwardsFeishuWithTenantToken(t *testing.T) {
+	users := newTestUserStore(t)
+	s := &Server{controlDB: users.db, users: users}
+	workspaceID := "ws-one"
+	var tokenRequest map[string]string
+	var upstreamAuth string
+	upstream := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		switch r.URL.Path {
+		case "/open-apis/auth/v3/tenant_access_token/internal":
+			if err := json.NewDecoder(r.Body).Decode(&tokenRequest); err != nil {
+				t.Fatalf("decode token request: %v", err)
+			}
+			_ = json.NewEncoder(w).Encode(map[string]any{
+				"code":                0,
+				"msg":                 "ok",
+				"tenant_access_token": "tenant-token",
+			})
+		case "/open-apis/wiki/v2/spaces":
+			upstreamAuth = r.Header.Get("Authorization")
+			_ = json.NewEncoder(w).Encode(map[string]any{
+				"code": 0,
+				"data": map[string]any{"items": []any{}},
+				"auth": upstreamAuth,
+			})
+		default:
+			t.Fatalf("unexpected upstream path: %s", r.URL.Path)
+		}
+	}))
+	defer upstream.Close()
+
+	connection := controldb.Connection{
+		ID:             "conn-feishu",
+		WorkspaceID:    workspaceID,
+		Provider:       "feishu",
+		ConnectionName: "default",
+		OwnerType:      ConnectionOwnerWorkspace,
+		OwnerID:        workspaceID,
+		AuthType:       ConnectionAuthCustomCredential,
+		Status:         "active",
+		ProfileJSON:    "{}",
+		CreatedBy:      "admin",
+	}
+	if err := users.db.UpsertWorkspace(controldb.Workspace{ID: workspaceID, Name: "One", Slug: "one"}); err != nil {
+		t.Fatalf("workspace: %v", err)
+	}
+	if err := users.db.UpsertConnection(connection); err != nil {
+		t.Fatalf("connection: %v", err)
+	}
+	secret, err := sealConnectionSecret(map[string]string{"baseUrl": upstream.URL, "appId": "cli_app", "appSecret": "app-secret"})
+	if err != nil {
+		t.Fatalf("seal secret: %v", err)
+	}
+	secret.ConnectionID = connection.ID
+	if err := users.db.UpsertConnectionSecret(secret); err != nil {
+		t.Fatalf("secret: %v", err)
+	}
+	if err := users.db.CreateConnectionGrant(controldb.ConnectionGrant{
+		ID:           "grant-feishu",
+		WorkspaceID:  workspaceID,
+		ConnectionID: connection.ID,
+		TargetType:   ConnectionTargetAgent,
+		TargetID:     "tapnow/pm",
+	}); err != nil {
+		t.Fatalf("grant: %v", err)
+	}
+
+	principal := runtimeAgentPrincipal{
+		WorkspaceID:  workspaceID,
+		Project:      "tapnow",
+		Agent:        "pm",
+		RunID:        "run-one",
+		Capabilities: []string{"connection.use"},
+	}
+	req := httptest.NewRequest(http.MethodPost, "/api/v1/runtime/actions", stringsReader(`{
+		"method":"GET",
+		"endpoint":"/open-apis/wiki/v2/spaces",
+		"headers":{"Authorization":"Bearer attacker"}
+	}`))
+	req.Header.Set(agentConnectionManifest().ConnectionIDHeader, connection.ID)
+	req = req.WithContext(context.WithValue(req.Context(), ctxRuntimeAgentKey, principal))
+	rec := httptest.NewRecorder()
+
+	s.handleRuntimeActionProxy(rec, req)
+
+	if rec.Code != http.StatusOK {
+		t.Fatalf("status=%d body=%s", rec.Code, rec.Body.String())
+	}
+	if tokenRequest["app_id"] != "cli_app" || tokenRequest["app_secret"] != "app-secret" {
+		t.Fatalf("token request=%#v", tokenRequest)
+	}
+	if upstreamAuth != "Bearer tenant-token" {
+		t.Fatalf("upstream auth=%q", upstreamAuth)
+	}
+	body := rec.Body.String()
+	if containsAny(body, []string{"tenant-token", "app-secret"}) {
+		t.Fatalf("feishu proxy response leaked sensitive value: %s", body)
+	}
+	if !strings.Contains(body, "Bearer [redacted]") {
+		t.Fatalf("redacted auth marker missing: %s", body)
+	}
+}
+
 func TestRuntimeActionProxyRejectsUnsafeEndpoint(t *testing.T) {
 	users := newTestUserStore(t)
 	s := &Server{controlDB: users.db, users: users}
