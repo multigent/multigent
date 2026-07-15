@@ -281,6 +281,115 @@ func (s *Server) handleGetConnection(w http.ResponseWriter, r *http.Request) {
 	_ = json.NewEncoder(w).Encode(connectionToResponse(connection, grants))
 }
 
+func (s *Server) handleUpdateConnection(w http.ResponseWriter, r *http.Request) {
+	connection, ok := s.connectionByIDWithAccess(w, r)
+	if !ok {
+		return
+	}
+	cur := s.currentUser(r)
+	if !s.canManageConnection(r, connection, cur) {
+		s.jsonError(w, http.StatusForbidden, "connection management access required")
+		return
+	}
+	var body createConnectionRequest
+	if err := s.readJSON(w, r, &body); err != nil {
+		s.jsonError(w, http.StatusBadRequest, "invalid JSON body")
+		return
+	}
+	provider, exists, err := s.findConnectorProvider(connection.Provider)
+	if err != nil {
+		s.serverError(w, err)
+		return
+	}
+	if !exists {
+		s.jsonError(w, http.StatusBadRequest, "unsupported provider")
+		return
+	}
+	authType := strings.TrimSpace(body.AuthType)
+	if authType == "" {
+		authType = connection.AuthType
+	}
+	if !providerSupportsAuth(provider, authType) {
+		s.jsonError(w, http.StatusBadRequest, "unsupported auth type")
+		return
+	}
+	existingSecret, hasExistingSecret, err := s.controlDB.ConnectionSecret(connection.ID)
+	if err != nil {
+		s.serverError(w, err)
+		return
+	}
+	shouldUpdateSecret := authType != ConnectionAuthNoAuth && len(body.Values) > 0
+	if authType != ConnectionAuthNoAuth && !hasExistingSecret && !shouldUpdateSecret {
+		s.jsonError(w, http.StatusBadRequest, "credential values are required")
+		return
+	}
+	if authType != ConnectionAuthNoAuth && authType != connection.AuthType && !shouldUpdateSecret {
+		s.jsonError(w, http.StatusBadRequest, "credential values are required when changing auth type")
+		return
+	}
+	secretValues := body.Values
+	if shouldUpdateSecret {
+		if hasExistingSecret {
+			opened, err := openConnectionSecret(existingSecret)
+			if err != nil {
+				s.serverError(w, err)
+				return
+			}
+			secretValues = opened
+			for key, value := range body.Values {
+				secretValues[key] = value
+			}
+		}
+		if err := validateConnectionValues(provider, authType, secretValues); err != nil {
+			s.jsonError(w, http.StatusBadRequest, err.Error())
+			return
+		}
+	}
+	updated := connection
+	if name := strings.TrimSpace(body.ConnectionName); name != "" {
+		updated.ConnectionName = name
+	}
+	updated.AuthType = authType
+	updated.UpdatedAt = time.Now().UTC().Format(time.RFC3339)
+	profile := connectionProfileMap(connection)
+	for k, v := range body.Profile {
+		profile[k] = v
+	}
+	profile["provider"] = updated.Provider
+	profile["connectionName"] = updated.ConnectionName
+	profileJSON, _ := json.Marshal(profile)
+	updated.ProfileJSON = string(profileJSON)
+
+	if err := s.controlDB.UpdateConnection(updated); err != nil {
+		s.serverError(w, err)
+		return
+	}
+	if shouldUpdateSecret {
+		secret, err := sealConnectionSecret(secretValues)
+		if err != nil {
+			s.serverError(w, err)
+			return
+		}
+		secret.ConnectionID = updated.ID
+		if err := s.controlDB.UpsertConnectionSecret(secret); err != nil {
+			s.serverError(w, err)
+			return
+		}
+	}
+	s.auditLog(auditLogInput{
+		WorkspaceID:  updated.WorkspaceID,
+		Action:       "connection.update",
+		ResourceType: "connection",
+		ResourceID:   updated.ID,
+		Summary:      "Connection updated",
+		Before:       connectionAuditPayload(connection),
+		After:        connectionAuditPayload(updated),
+		Request:      r,
+	})
+	grants, _ := s.controlDB.ListConnectionGrants(updated.ID)
+	_ = json.NewEncoder(w).Encode(connectionToResponse(updated, grants))
+}
+
 func (s *Server) handleDeleteConnection(w http.ResponseWriter, r *http.Request) {
 	connection, ok := s.connectionByIDWithAccess(w, r)
 	if !ok {
@@ -304,6 +413,12 @@ func (s *Server) handleDeleteConnection(w http.ResponseWriter, r *http.Request) 
 		Request:      r,
 	})
 	_ = json.NewEncoder(w).Encode(map[string]bool{"ok": true})
+}
+
+func connectionProfileMap(connection controldb.Connection) map[string]any {
+	profile := map[string]any{}
+	_ = json.Unmarshal([]byte(connection.ProfileJSON), &profile)
+	return profile
 }
 
 type createConnectionGrantRequest struct {
@@ -466,13 +581,14 @@ func (s *Server) canReadConnection(r *http.Request, connection controldb.Connect
 }
 
 func (s *Server) canManageConnection(r *http.Request, connection controldb.Connection, cur *userRecord) bool {
-	if s.canAdminWorkspace(r, connection.WorkspaceID) {
-		return true
-	}
-	if cur == nil || cur.Username == "" {
+	switch connection.OwnerType {
+	case ConnectionOwnerWorkspace:
+		return s.canAdminWorkspace(r, connection.WorkspaceID)
+	case ConnectionOwnerUser:
+		return cur != nil && cur.Username != "" && connection.OwnerID == cur.Username
+	default:
 		return false
 	}
-	return connection.OwnerType == ConnectionOwnerUser && connection.OwnerID == cur.Username
 }
 
 func (s *Server) validateConnectionGrantTarget(r *http.Request, connection controldb.Connection, targetType, targetID string) error {

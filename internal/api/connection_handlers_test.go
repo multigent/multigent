@@ -165,3 +165,77 @@ func TestConnectionByIDRequiresCurrentWorkspace(t *testing.T) {
 		t.Fatalf("status=%d body=%s", rec.Code, rec.Body.String())
 	}
 }
+
+func TestUpdateConnectionKeepsOrReplacesSecretsByOwner(t *testing.T) {
+	s, workspaceID := newConnectionGrantPolicyServer(t)
+	connection := controldb.Connection{
+		ID:             "conn-owner",
+		WorkspaceID:    workspaceID,
+		Provider:       "custom-http",
+		ConnectionName: "api",
+		OwnerType:      ConnectionOwnerUser,
+		OwnerID:        "owner",
+		AuthType:       ConnectionAuthCustomCredential,
+		Status:         "active",
+		ProfileJSON:    `{"displayName":"Old API","provider":"custom-http","connectionName":"api"}`,
+		CreatedBy:      "owner",
+		CreatedAt:      "2026-07-15T00:00:00Z",
+		UpdatedAt:      "2026-07-15T00:00:00Z",
+	}
+	if err := s.controlDB.UpsertConnection(connection); err != nil {
+		t.Fatalf("connection: %v", err)
+	}
+	secret, err := sealConnectionSecret(map[string]string{"baseUrl": "https://old.example.test", "apiKey": "old-key"})
+	if err != nil {
+		t.Fatalf("seal secret: %v", err)
+	}
+	secret.ConnectionID = connection.ID
+	if err := s.controlDB.UpsertConnectionSecret(secret); err != nil {
+		t.Fatalf("secret: %v", err)
+	}
+
+	adminRec := httptest.NewRecorder()
+	adminReq := providerTestRequest(http.MethodPut, "/api/v1/connections/conn-owner", "admin", createConnectionRequest{
+		ConnectionName: "admin-edit",
+	})
+	adminReq.SetPathValue("id", "conn-owner")
+	s.handleUpdateConnection(adminRec, adminReq)
+	if adminRec.Code != http.StatusForbidden {
+		t.Fatalf("admin update status=%d body=%s", adminRec.Code, adminRec.Body.String())
+	}
+
+	ownerRec := httptest.NewRecorder()
+	ownerReq := providerTestRequest(http.MethodPut, "/api/v1/connections/conn-owner", "owner", createConnectionRequest{
+		ConnectionName: "api-v2",
+		AuthType:       ConnectionAuthCustomCredential,
+		Values:         map[string]string{"apiKey": "new-key"},
+		Profile:        map[string]any{"displayName": "New API", "apiKey": "should-not-leak"},
+	})
+	ownerReq.SetPathValue("id", "conn-owner")
+	s.handleUpdateConnection(ownerRec, ownerReq)
+	if ownerRec.Code != http.StatusOK {
+		t.Fatalf("owner update status=%d body=%s", ownerRec.Code, ownerRec.Body.String())
+	}
+	body := ownerRec.Body.String()
+	if strings.Contains(body, "new-key") || strings.Contains(body, "should-not-leak") {
+		t.Fatalf("update response leaked secret: %s", body)
+	}
+	updated, ok, err := s.controlDB.ConnectionByID("conn-owner")
+	if err != nil || !ok {
+		t.Fatalf("updated connection ok=%v err=%v", ok, err)
+	}
+	if updated.ConnectionName != "api-v2" {
+		t.Fatalf("connection name=%q", updated.ConnectionName)
+	}
+	updatedSecret, ok, err := s.controlDB.ConnectionSecret("conn-owner")
+	if err != nil || !ok {
+		t.Fatalf("updated secret ok=%v err=%v", ok, err)
+	}
+	values, err := openConnectionSecret(updatedSecret)
+	if err != nil {
+		t.Fatalf("open secret: %v", err)
+	}
+	if values["apiKey"] != "new-key" || values["baseUrl"] != "https://old.example.test" {
+		t.Fatalf("secret values=%#v", values)
+	}
+}

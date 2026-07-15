@@ -50,6 +50,41 @@ FROM connections WHERE id = ?`, id)
 	return c, true, nil
 }
 
+func (db *SQLiteStore) UpdateConnection(c Connection) error {
+	if c.UpdatedAt == "" {
+		c.UpdatedAt = nowUTC()
+	}
+	if c.ConnectionName == "" {
+		c.ConnectionName = "default"
+	}
+	if c.Status == "" {
+		c.Status = "active"
+	}
+	if c.ProfileJSON == "" {
+		c.ProfileJSON = "{}"
+	}
+	res, err := db.sql.Exec(`UPDATE connections SET
+	provider = ?,
+	connection_name = ?,
+	owner_type = ?,
+	owner_id = ?,
+	auth_type = ?,
+	status = ?,
+	profile_json = ?,
+	updated_at = ?,
+	last_used_at = ?
+WHERE id = ? AND workspace_id = ?`,
+		c.Provider, c.ConnectionName, c.OwnerType, c.OwnerID, c.AuthType, c.Status,
+		c.ProfileJSON, c.UpdatedAt, c.LastUsedAt, c.ID, c.WorkspaceID)
+	if err != nil {
+		return err
+	}
+	if n, err := res.RowsAffected(); err == nil && n == 0 {
+		return errors.New("connection not found")
+	}
+	return nil
+}
+
 func (db *SQLiteStore) ListConnections(filter ConnectionFilter) ([]Connection, error) {
 	query := `SELECT id, workspace_id, provider, connection_name, owner_type, owner_id,
 auth_type, status, profile_json, created_by, created_at, updated_at, last_used_at

@@ -1,6 +1,6 @@
 import { useEffect, useMemo, useState, type ReactNode } from 'react'
-import { Cable, KeyRound, Link2, Plus, RefreshCw, ShieldCheck, Trash2, X } from 'lucide-react'
-import { apiDelete, apiFetch, apiPost } from '../lib/api'
+import { Cable, KeyRound, Link2, Pencil, Plus, RefreshCw, ShieldCheck, Trash2, X } from 'lucide-react'
+import { apiDelete, apiFetch, apiPost, apiPut } from '../lib/api'
 import { useAuth } from '../lib/auth'
 import { cn } from '../lib/cn'
 
@@ -39,6 +39,7 @@ export default function ConnectionsPage() {
   const [agentsByProject, setAgentsByProject] = useState<Record<string, ProjectAgent[]>>({})
   const [loading, setLoading] = useState(true)
   const [creating, setCreating] = useState(false)
+  const [editing, setEditing] = useState<Connection | null>(null)
   const [granting, setGranting] = useState<Connection | null>(null)
   const [testResults, setTestResults] = useState<Record<string, { loading?: boolean; ok?: boolean; message?: string }>>({})
   const [reloadKey, setReloadKey] = useState(0)
@@ -135,8 +136,10 @@ export default function ConnectionsPage() {
               connection={connection}
               provider={providers.find(p => p.provider === connection.provider)}
               canGrant={connection.ownerType === 'workspace' ? isWorkspaceAdmin : connection.ownerId === user?.username}
-              canDelete={isWorkspaceAdmin || connection.ownerId === user?.username}
+              canDelete={connection.ownerType === 'workspace' ? isWorkspaceAdmin : connection.ownerId === user?.username}
+              canEdit={connection.ownerType === 'workspace' ? isWorkspaceAdmin : connection.ownerId === user?.username}
               testState={testResults[connection.id]}
+              onEdit={() => setEditing(connection)}
               onGrant={() => setGranting(connection)}
               onTest={() => void testConnection(connection)}
               onDelete={() => void removeConnection(connection)}
@@ -151,6 +154,15 @@ export default function ConnectionsPage() {
           isWorkspaceAdmin={isWorkspaceAdmin}
           onClose={() => setCreating(false)}
           onCreated={() => { setCreating(false); setReloadKey(k => k + 1) }}
+        />
+      )}
+      {editing && (
+        <ConnectionDialog
+          providers={providers}
+          isWorkspaceAdmin={isWorkspaceAdmin}
+          connection={editing}
+          onClose={() => setEditing(null)}
+          onCreated={() => { setEditing(null); setReloadKey(k => k + 1) }}
         />
       )}
       {granting && (
@@ -170,7 +182,7 @@ export default function ConnectionsPage() {
   )
 }
 
-function ConnectionCard({ connection, provider, canGrant, canDelete, testState, onGrant, onTest, onDelete }: { connection: Connection; provider?: Provider; canGrant: boolean; canDelete: boolean; testState?: { loading?: boolean; ok?: boolean; message?: string }; onGrant: () => void; onTest: () => void; onDelete: () => void }) {
+function ConnectionCard({ connection, provider, canGrant, canEdit, canDelete, testState, onEdit, onGrant, onTest, onDelete }: { connection: Connection; provider?: Provider; canGrant: boolean; canEdit: boolean; canDelete: boolean; testState?: { loading?: boolean; ok?: boolean; message?: string }; onEdit: () => void; onGrant: () => void; onTest: () => void; onDelete: () => void }) {
   return (
     <section className="rounded-xl border border-neutral-200/80 bg-white p-5 dark:border-zinc-700/60 dark:bg-zinc-900/40">
       <div className="flex items-start justify-between gap-3">
@@ -197,6 +209,11 @@ function ConnectionCard({ connection, provider, canGrant, canDelete, testState, 
           {canGrant && (
             <button type="button" onClick={onGrant} className="rounded-md p-2 text-neutral-500 hover:bg-neutral-100 hover:text-neutral-800 dark:text-zinc-400 dark:hover:bg-zinc-800 dark:hover:text-zinc-100" title="Manage grants">
               <ShieldCheck className="size-4" strokeWidth={1.8} />
+            </button>
+          )}
+          {canEdit && (
+            <button type="button" onClick={onEdit} className="rounded-md p-2 text-neutral-500 hover:bg-neutral-100 hover:text-neutral-800 dark:text-zinc-400 dark:hover:bg-zinc-800 dark:hover:text-zinc-100" title="Edit connection">
+              <Pencil className="size-4" strokeWidth={1.8} />
             </button>
           )}
           {canDelete && (
@@ -233,21 +250,23 @@ function ConnectionCard({ connection, provider, canGrant, canDelete, testState, 
   )
 }
 
-function ConnectionDialog({ providers, isWorkspaceAdmin, onClose, onCreated }: { providers: Provider[]; isWorkspaceAdmin: boolean; onClose: () => void; onCreated: () => void }) {
-  const [providerId, setProviderId] = useState(providers[0]?.provider ?? '')
+function ConnectionDialog({ providers, isWorkspaceAdmin, connection, onClose, onCreated }: { providers: Provider[]; isWorkspaceAdmin: boolean; connection?: Connection; onClose: () => void; onCreated: () => void }) {
+  const isEditing = Boolean(connection)
+  const [providerId, setProviderId] = useState(connection?.provider ?? providers[0]?.provider ?? '')
   const provider = providers.find(p => p.provider === providerId)
-  const [ownerType, setOwnerType] = useState(isWorkspaceAdmin ? 'workspace' : 'user')
-  const [authType, setAuthType] = useState(provider?.authTypes[0] ?? 'api_key')
-  const [connectionName, setConnectionName] = useState('default')
-  const [displayName, setDisplayName] = useState('')
+  const [ownerType, setOwnerType] = useState(connection?.ownerType ?? (isWorkspaceAdmin ? 'workspace' : 'user'))
+  const [authType, setAuthType] = useState(connection?.authType ?? provider?.authTypes[0] ?? 'api_key')
+  const [connectionName, setConnectionName] = useState(connection?.connectionName ?? 'default')
+  const [displayName, setDisplayName] = useState(String(connection?.profile?.displayName ?? ''))
   const [values, setValues] = useState<Record<string, string>>({})
   const [saving, setSaving] = useState(false)
 
   useEffect(() => {
+    if (isEditing) return
     const p = providers.find(x => x.provider === providerId)
     setAuthType(p?.authTypes[0] ?? 'api_key')
     setValues({})
-  }, [providerId, providers])
+  }, [providerId, providers, isEditing])
 
   const fields = useMemo(() => {
     if (!provider || authType === 'no_auth') return []
@@ -258,14 +277,20 @@ function ConnectionDialog({ providers, isWorkspaceAdmin, onClose, onCreated }: {
     if (!provider) return
     setSaving(true)
     try {
-      await apiPost('/api/v1/connections', {
+      const cleanValues = Object.fromEntries(Object.entries(values).filter(([, value]) => value.trim() !== ''))
+      const body = {
         provider: provider.provider,
         ownerType,
         authType,
         connectionName: connectionName.trim() || 'default',
-        values,
+        values: cleanValues,
         profile: { displayName: displayName.trim() || provider.displayName },
-      })
+      }
+      if (connection) {
+        await apiPut(`/api/v1/connections/${encodeURIComponent(connection.id)}`, body)
+      } else {
+        await apiPost('/api/v1/connections', body)
+      }
       onCreated()
     } finally {
       setSaving(false)
@@ -273,18 +298,18 @@ function ConnectionDialog({ providers, isWorkspaceAdmin, onClose, onCreated }: {
   }
 
   return (
-    <Modal title="New connection" onClose={onClose}>
+    <Modal title={isEditing ? 'Edit connection' : 'New connection'} onClose={onClose}>
       <div className="space-y-4">
         <label className="block">
           <span className="text-xs font-medium text-neutral-500 dark:text-zinc-400">Provider</span>
-          <select className={selectCls} value={providerId} onChange={e => setProviderId(e.target.value)}>
+          <select className={selectCls} value={providerId} onChange={e => setProviderId(e.target.value)} disabled={isEditing}>
             {providers.map(p => <option key={p.provider} value={p.provider}>{p.displayName}</option>)}
           </select>
         </label>
         <div className="grid gap-3 sm:grid-cols-2">
           <label className="block">
             <span className="text-xs font-medium text-neutral-500 dark:text-zinc-400">Owner</span>
-            <select className={selectCls} value={ownerType} onChange={e => setOwnerType(e.target.value)}>
+            <select className={selectCls} value={ownerType} onChange={e => setOwnerType(e.target.value)} disabled={isEditing}>
               {isWorkspaceAdmin && <option value="workspace">Workspace</option>}
               <option value="user">Me</option>
             </select>
@@ -314,12 +339,18 @@ function ConnectionDialog({ providers, isWorkspaceAdmin, onClose, onCreated }: {
               className={inputCls}
               value={values[field.key] ?? ''}
               onChange={e => setValues(v => ({ ...v, [field.key]: e.target.value }))}
+              placeholder={isEditing ? 'Leave blank to keep current value' : ''}
             />
           </label>
         ))}
+        {isEditing && authType !== 'no_auth' && (
+          <p className="rounded-lg bg-neutral-50 px-3 py-2 text-xs text-neutral-500 dark:bg-zinc-800/50 dark:text-zinc-400">
+            Existing credential values are hidden. Fill only the fields you want to replace; leave all credential fields blank to keep the current secret.
+          </p>
+        )}
         <div className="flex justify-end gap-2 pt-2">
           <button type="button" onClick={onClose} disabled={saving} className="rounded-lg border border-neutral-300 px-3 py-2 text-sm dark:border-zinc-600">Cancel</button>
-          <button type="button" onClick={() => void submit()} disabled={saving || !provider} className="rounded-lg bg-sky-600 px-3 py-2 text-sm font-medium text-white disabled:opacity-50">Create</button>
+          <button type="button" onClick={() => void submit()} disabled={saving || !provider} className="rounded-lg bg-sky-600 px-3 py-2 text-sm font-medium text-white disabled:opacity-50">{isEditing ? 'Save' : 'Create'}</button>
         </div>
       </div>
     </Modal>

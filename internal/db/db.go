@@ -53,6 +53,7 @@ type Store interface {
 	DeleteModelProvider(workspaceID, id string) error
 
 	UpsertConnection(connection Connection) error
+	UpdateConnection(connection Connection) error
 	ConnectionByID(id string) (Connection, bool, error)
 	ListConnections(filter ConnectionFilter) ([]Connection, error)
 	DeleteConnection(id string) error

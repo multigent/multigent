@@ -121,7 +121,7 @@ func TestUserOwnedConnectionGrantMustBeCreatedByOwner(t *testing.T) {
 	})
 	adminReq.SetPathValue("id", "conn-owner")
 	s.handleCreateConnectionGrant(adminRec, adminReq)
-	if adminRec.Code != http.StatusBadRequest {
+	if adminRec.Code != http.StatusForbidden {
 		t.Fatalf("admin grant status=%d body=%s", adminRec.Code, adminRec.Body.String())
 	}
 
