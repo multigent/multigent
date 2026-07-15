@@ -93,6 +93,7 @@ func init() {
 		newMilestoneCmd(),
 		newEnvVarCmd(),
 		newProviderCmd(),
+		newRuntimeCmd(),
 		newWorkerCmd(),
 		newSchemaCmd(),
 	)
