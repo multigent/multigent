@@ -6,6 +6,7 @@ import remarkGfm from 'remark-gfm'
 import {
   RefreshCw, Save, ChevronRight, Bot, BookOpen, Puzzle, Check, Plus, Trash2, X,
   Settings2, Users, UserCog, FileCode, Clock, Activity, User, Mail, ListTodo, Reply, Send, KeyRound, Pencil, Eye, EyeOff, Container, MessageSquareText,
+  Cable,
 } from 'lucide-react'
 import type { LucideIcon } from 'lucide-react'
 import { cn } from '../../lib/cn'
@@ -793,6 +794,8 @@ export default function ProjectAgentDetailPage() {
                     workDir={ctx.workDir}
                   />
 
+                  <AgentRuntimeConnectionsPanel project={projectId} agentName={agentName} />
+
                   {/* Environment Variables */}
                   <AgentEnvPanel project={projectId} agent={agentName} />
                 </>
@@ -1107,6 +1110,121 @@ function SectionHeader({ icon: Icon, title }: { icon: LucideIcon; title: string 
 }
 
 type ProviderOption = { id: string; ownerType?: 'workspace' | 'user'; name: string; type: string; model?: string }
+
+type RuntimeConnectionGrant = { id: string; targetType: string; targetId: string }
+type RuntimeConnection = {
+  id: string
+  provider: string
+  connectionName: string
+  ownerType: string
+  ownerId: string
+  authType: string
+  profile?: Record<string, unknown>
+  matchedGrants?: RuntimeConnectionGrant[]
+  runtime?: {
+    alias?: string
+    mcpProxy?: { path?: string }
+    actionProxy?: { path?: string }
+  }
+}
+type RuntimeConnectionsResponse = {
+  manifest?: {
+    version?: string
+    agentTokenEnv?: string
+    apiBaseUrlEnv?: string
+    mcpProxyPath?: string
+    actionProxyPath?: string
+  }
+  connections?: RuntimeConnection[]
+}
+
+function AgentRuntimeConnectionsPanel({ project, agentName }: { project: string; agentName: string }) {
+  const [reloadKey, setReloadKey] = useState(0)
+  const path = `/api/v1/projects/${encodeURIComponent(project)}/agents/${encodeURIComponent(agentName)}/runtime/connections`
+  const state = useApiJson<RuntimeConnectionsResponse>(path, reloadKey)
+
+  return (
+    <section>
+      <div className="flex items-center justify-between">
+        <SectionHeader icon={Cable} title="Runtime connections" />
+        <button
+          type="button"
+          onClick={() => setReloadKey(k => k + 1)}
+          className="inline-flex items-center gap-1 rounded-md border border-neutral-200 bg-white px-2.5 py-1 text-xs font-medium text-neutral-600 transition-colors hover:border-neutral-300 hover:bg-neutral-50 dark:border-zinc-700 dark:bg-zinc-800 dark:text-zinc-300 dark:hover:border-zinc-600 dark:hover:bg-zinc-700"
+        >
+          <RefreshCw className="size-3.5" strokeWidth={1.8} />
+          Refresh
+        </button>
+      </div>
+      <div className="mt-3 rounded-lg border border-neutral-200/80 bg-white p-4 dark:border-zinc-700/60 dark:bg-zinc-900/40">
+        {state.status === 'loading' && (
+          <p className="text-sm text-neutral-400 dark:text-zinc-500">Loading runtime connections...</p>
+        )}
+        {state.status === 'error' && (
+          <p className="text-sm text-red-500">{state.error.message}</p>
+        )}
+        {state.status === 'ok' && (
+          <div className="space-y-3">
+            <div className="flex flex-wrap gap-2 text-[11px] text-neutral-500 dark:text-zinc-500">
+              <span className="rounded-md bg-neutral-100 px-2 py-1 dark:bg-zinc-800">
+                {state.data.manifest?.version ?? 'multigent.connections.v1'}
+              </span>
+              <span className="rounded-md bg-neutral-100 px-2 py-1 font-mono dark:bg-zinc-800">
+                {state.data.manifest?.apiBaseUrlEnv ?? 'MULTIGENT_API_URL'}
+              </span>
+              <span className="rounded-md bg-neutral-100 px-2 py-1 font-mono dark:bg-zinc-800">
+                {state.data.manifest?.agentTokenEnv ?? 'MULTIGENT_AGENT_TOKEN'}
+              </span>
+            </div>
+            {(state.data.connections ?? []).length === 0 ? (
+              <p className="text-sm text-neutral-400 dark:text-zinc-500">
+                No granted external tool connections. Create a connection, then grant it to this agent, project, or workspace.
+              </p>
+            ) : (
+              <div className="space-y-2">
+                {(state.data.connections ?? []).map(connection => (
+                  <div key={connection.id} className="rounded-lg border border-neutral-200/70 bg-neutral-50/60 px-3 py-2.5 dark:border-zinc-700/60 dark:bg-zinc-800/30">
+                    <div className="flex flex-wrap items-center justify-between gap-2">
+                      <div className="min-w-0">
+                        <div className="flex flex-wrap items-center gap-2">
+                          <span className="font-mono text-sm font-semibold text-neutral-800 dark:text-zinc-100">
+                            {connection.runtime?.alias ?? `${connection.provider}_${connection.connectionName}`}
+                          </span>
+                          <span className="rounded-full bg-neutral-200 px-2 py-0.5 text-[10px] font-medium text-neutral-600 dark:bg-zinc-700 dark:text-zinc-300">
+                            {connection.provider}
+                          </span>
+                          <span className="rounded-full bg-sky-50 px-2 py-0.5 text-[10px] font-medium text-sky-700 dark:bg-sky-900/20 dark:text-sky-300">
+                            {connection.ownerType}
+                          </span>
+                        </div>
+                        <p className="mt-1 text-xs text-neutral-400 dark:text-zinc-500">
+                          {connection.connectionName} · {connection.authType} · owner {connection.ownerId}
+                        </p>
+                      </div>
+                      <div className="flex flex-wrap gap-1.5 text-[10px] text-neutral-500 dark:text-zinc-400">
+                        {connection.runtime?.mcpProxy?.path && <span className="rounded-md border border-neutral-200 px-1.5 py-0.5 dark:border-zinc-700">MCP {connection.runtime.mcpProxy.path}</span>}
+                        {connection.runtime?.actionProxy?.path && <span className="rounded-md border border-neutral-200 px-1.5 py-0.5 dark:border-zinc-700">Action {connection.runtime.actionProxy.path}</span>}
+                      </div>
+                    </div>
+                    {connection.matchedGrants && connection.matchedGrants.length > 0 && (
+                      <div className="mt-2 flex flex-wrap gap-1.5">
+                        {connection.matchedGrants.map(grant => (
+                          <span key={grant.id} className="rounded-md bg-white px-2 py-0.5 text-[11px] text-neutral-500 dark:bg-zinc-900 dark:text-zinc-400">
+                            {grant.targetType}: {grant.targetId}
+                          </span>
+                        ))}
+                      </div>
+                    )}
+                  </div>
+                ))}
+              </div>
+            )}
+          </div>
+        )}
+      </div>
+    </section>
+  )
+}
 
 function EnvEditor({ project, agentName, model, initialEnv, initialProvider, onChanged }: {
   project: string; agentName: string; model: string; initialEnv: Record<string, string>; initialProvider?: string; onChanged: () => void
