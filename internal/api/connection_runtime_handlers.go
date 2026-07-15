@@ -63,11 +63,11 @@ func (s *Server) handleAgentRuntimeConnections(w http.ResponseWriter, r *http.Re
 		return
 	}
 	if !s.agentExistsInProject(project, agent) {
-		s.jsonError(w, http.StatusNotFound, "agent not found")
+		s.jsonErrorCode(w, http.StatusNotFound, ErrCodeAgentNotFound, "agent not found")
 		return
 	}
 	if !s.canOperateAgent(r, project, agent) {
-		s.jsonError(w, http.StatusForbidden, "agent operator access required")
+		s.jsonErrorCode(w, http.StatusForbidden, ErrCodeAgentOperatorRequired, "agent operator access required")
 		return
 	}
 	workspaceID, err := s.currentWorkspaceID()
@@ -100,11 +100,11 @@ func (s *Server) handleAgentRuntimeConnections(w http.ResponseWriter, r *http.Re
 func (s *Server) handleRuntimeConnections(w http.ResponseWriter, r *http.Request) {
 	principal, ok := runtimeAgentFromRequest(r)
 	if !ok {
-		s.jsonError(w, http.StatusUnauthorized, "runtime agent token required")
+		s.jsonErrorCode(w, http.StatusUnauthorized, ErrCodeRuntimeAgentTokenRequired, "runtime agent token required")
 		return
 	}
 	if !runtimeHasCapability(principal, "connection.use") {
-		s.jsonError(w, http.StatusForbidden, "runtime token lacks connection.use capability")
+		s.jsonErrorCode(w, http.StatusForbidden, ErrCodeRuntimeCapabilityRequired, "runtime token lacks connection.use capability")
 		return
 	}
 	out, err := s.resolveAgentRuntimeConnections(principal.WorkspaceID, principal.Project, principal.Agent)

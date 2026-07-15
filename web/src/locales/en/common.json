@@ -44,6 +44,17 @@
     "workspace_database_unavailable": "The workspace database is unavailable. Please try again later.",
     "workspace_name_required": "Workspace name is required.",
     "workspace_not_found": "The workspace was not found.",
+    "connection_access_required": "You do not have access to this connection.",
+    "connection_management_required": "Connection management permission is required.",
+    "connection_not_found": "The connection was not found.",
+    "connection_grant_not_found": "The connection grant was not found.",
+    "credential_values_required": "Credential values are required.",
+    "provider_not_found": "The connector provider was not found.",
+    "runtime_agent_token_required": "A valid runtime agent token is required.",
+    "runtime_connection_not_granted": "This connection is not granted to the agent.",
+    "runtime_capability_required": "The runtime token does not allow this action.",
+    "unsupported_auth_type": "This authentication type is not supported.",
+    "unsupported_provider": "This connector provider is not supported.",
     "unknown": "Something went wrong. Please try again."
   },
   "aria": {

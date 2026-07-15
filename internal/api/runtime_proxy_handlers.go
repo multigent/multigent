@@ -31,7 +31,7 @@ func (s *Server) handleRuntimeMCPProxy(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	if err := s.proxyCustomMCP(w, r, principal, connection); err != nil {
-		s.jsonError(w, http.StatusBadGateway, err.Error())
+		s.jsonErrorCode(w, http.StatusBadGateway, ErrCodeUpstreamError, err.Error())
 		return
 	}
 }
@@ -44,10 +44,10 @@ func (s *Server) handleRuntimeActionProxy(w http.ResponseWriter, r *http.Request
 	if err := s.proxyRuntimeAction(w, r, principal, connection); err != nil {
 		var inputErr runtimeActionInputError
 		if errors.As(err, &inputErr) {
-			s.jsonError(w, http.StatusBadRequest, inputErr.Error())
+			s.jsonErrorCode(w, http.StatusBadRequest, ErrCodeValidationFailed, inputErr.Error())
 			return
 		}
-		s.jsonError(w, http.StatusBadGateway, err.Error())
+		s.jsonErrorCode(w, http.StatusBadGateway, ErrCodeUpstreamError, err.Error())
 		return
 	}
 }

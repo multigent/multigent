@@ -44,6 +44,17 @@
     "workspace_database_unavailable": "工作区数据库暂时不可用，请稍后重试。",
     "workspace_name_required": "请输入工作区名称。",
     "workspace_not_found": "没有找到该工作区。",
+    "connection_access_required": "你没有访问该连接的权限。",
+    "connection_management_required": "需要连接管理权限。",
+    "connection_not_found": "没有找到该连接。",
+    "connection_grant_not_found": "没有找到该连接授权。",
+    "credential_values_required": "请填写认证凭证。",
+    "provider_not_found": "没有找到该连接器提供方。",
+    "runtime_agent_token_required": "需要有效的运行时 Agent Token。",
+    "runtime_connection_not_granted": "该连接尚未授权给这个 Agent。",
+    "runtime_capability_required": "运行时 Token 没有执行该操作的权限。",
+    "unsupported_auth_type": "不支持该认证方式。",
+    "unsupported_provider": "不支持该连接器提供方。",
     "unknown": "操作失败，请稍后重试。"
   },
   "aria": {

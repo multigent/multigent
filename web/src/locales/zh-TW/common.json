@@ -44,6 +44,17 @@
     "workspace_database_unavailable": "工作區資料庫暫時不可用，請稍後再試。",
     "workspace_name_required": "請輸入工作區名稱。",
     "workspace_not_found": "找不到該工作區。",
+    "connection_access_required": "你沒有存取該連線的權限。",
+    "connection_management_required": "需要連線管理權限。",
+    "connection_not_found": "找不到該連線。",
+    "connection_grant_not_found": "找不到該連線授權。",
+    "credential_values_required": "請填寫認證憑證。",
+    "provider_not_found": "找不到該連線器提供方。",
+    "runtime_agent_token_required": "需要有效的執行階段 Agent Token。",
+    "runtime_connection_not_granted": "該連線尚未授權給這個 Agent。",
+    "runtime_capability_required": "執行階段 Token 沒有執行該操作的權限。",
+    "unsupported_auth_type": "不支援該認證方式。",
+    "unsupported_provider": "不支援該連線器提供方。",
     "unknown": "操作失敗，請稍後再試。"
   },
   "aria": {

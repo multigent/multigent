@@ -46,6 +46,18 @@ const (
 	ErrCodeWorkspaceNameRequired        = "workspace_name_required"
 	ErrCodeWorkspaceNotFound            = "workspace_not_found"
 	ErrCodeWorkspaceDatabaseUnavailable = "workspace_database_unavailable"
+
+	ErrCodeConnectionAccessRequired     = "connection_access_required"
+	ErrCodeConnectionManagementRequired = "connection_management_required"
+	ErrCodeConnectionNotFound           = "connection_not_found"
+	ErrCodeConnectionGrantNotFound      = "connection_grant_not_found"
+	ErrCodeCredentialValuesRequired     = "credential_values_required"
+	ErrCodeProviderNotFound             = "provider_not_found"
+	ErrCodeRuntimeAgentTokenRequired    = "runtime_agent_token_required"
+	ErrCodeRuntimeConnectionNotGranted  = "runtime_connection_not_granted"
+	ErrCodeRuntimeCapabilityRequired    = "runtime_capability_required"
+	ErrCodeUnsupportedAuthType          = "unsupported_auth_type"
+	ErrCodeUnsupportedProvider          = "unsupported_provider"
 )
 
 type apiErrorResponse struct {

@@ -36,13 +36,13 @@ func (s *Server) handleTestConnection(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	if !s.canManageConnection(r, connection, s.currentUser(r)) {
-		s.jsonError(w, http.StatusForbidden, "connection management access required")
+		s.jsonErrorCode(w, http.StatusForbidden, ErrCodeConnectionManagementRequired, "connection management access required")
 		return
 	}
 	var body testConnectionRequest
 	if r.Body != nil && r.ContentLength != 0 {
 		if err := s.readJSON(w, r, &body); err != nil {
-			s.jsonError(w, http.StatusBadRequest, "invalid JSON body")
+			s.jsonErrorCode(w, http.StatusBadRequest, ErrCodeInvalidJSON, "invalid JSON body")
 			return
 		}
 	}
@@ -50,11 +50,11 @@ func (s *Server) handleTestConnection(w http.ResponseWriter, r *http.Request) {
 	if err != nil {
 		var inputErr runtimeActionInputError
 		if errors.As(err, &inputErr) {
-			s.jsonError(w, http.StatusBadRequest, inputErr.Error())
+			s.jsonErrorCode(w, http.StatusBadRequest, ErrCodeValidationFailed, inputErr.Error())
 			return
 		}
 		s.recordConnectionValidation(r, connection, false, 0, err.Error(), false)
-		s.jsonError(w, http.StatusBadGateway, err.Error())
+		s.jsonErrorCode(w, http.StatusBadGateway, ErrCodeUpstreamError, err.Error())
 		return
 	}
 	s.recordConnectionValidation(r, connection, result.OK, result.Status, result.Message, false)
@@ -109,7 +109,7 @@ func (s *Server) handleRunConnectionHealthChecks(w http.ResponseWriter, r *http.
 	var body runConnectionHealthChecksRequest
 	if r.Body != nil && r.ContentLength != 0 {
 		if err := s.readJSON(w, r, &body); err != nil {
-			s.jsonError(w, http.StatusBadRequest, "invalid JSON body")
+			s.jsonErrorCode(w, http.StatusBadRequest, ErrCodeInvalidJSON, "invalid JSON body")
 			return
 		}
 	}

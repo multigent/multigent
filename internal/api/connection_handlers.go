@@ -61,7 +61,7 @@ func (s *Server) handleConnectorProvider(w http.ResponseWriter, r *http.Request)
 		return
 	}
 	if !ok {
-		s.jsonError(w, http.StatusNotFound, "provider not found")
+		s.jsonErrorCode(w, http.StatusNotFound, ErrCodeProviderNotFound, "provider not found")
 		return
 	}
 	_ = json.NewEncoder(w).Encode(provider)
@@ -135,12 +135,12 @@ func (s *Server) handleCreateConnection(w http.ResponseWriter, r *http.Request) 
 	}
 	cur := s.currentUser(r)
 	if cur == nil || cur.Username == "" || cur.Username == "apikey" {
-		s.jsonError(w, http.StatusForbidden, "authenticated user required")
+		s.jsonErrorCode(w, http.StatusForbidden, ErrCodeAuthenticatedUserRequired, "authenticated user required")
 		return
 	}
 	var body createConnectionRequest
 	if err := s.readJSON(w, r, &body); err != nil {
-		s.jsonError(w, http.StatusBadRequest, "invalid JSON body")
+		s.jsonErrorCode(w, http.StatusBadRequest, ErrCodeInvalidJSON, "invalid JSON body")
 		return
 	}
 	body.Provider = strings.TrimSpace(body.Provider)
@@ -150,7 +150,7 @@ func (s *Server) handleCreateConnection(w http.ResponseWriter, r *http.Request) 
 		return
 	}
 	if !exists {
-		s.jsonError(w, http.StatusBadRequest, "unsupported provider")
+		s.jsonErrorCode(w, http.StatusBadRequest, ErrCodeUnsupportedProvider, "unsupported provider")
 		return
 	}
 	authType := strings.TrimSpace(body.AuthType)
@@ -158,11 +158,11 @@ func (s *Server) handleCreateConnection(w http.ResponseWriter, r *http.Request) 
 		authType = provider.AuthTypes[0]
 	}
 	if !providerSupportsAuth(provider, authType) {
-		s.jsonError(w, http.StatusBadRequest, "unsupported auth type")
+		s.jsonErrorCode(w, http.StatusBadRequest, ErrCodeUnsupportedAuthType, "unsupported auth type")
 		return
 	}
 	if err := validateConnectionValues(provider, authType, body.Values); err != nil {
-		s.jsonError(w, http.StatusBadRequest, err.Error())
+		s.jsonErrorCode(w, http.StatusBadRequest, ErrCodeValidationFailed, err.Error())
 		return
 	}
 	ownerType := strings.TrimSpace(body.OwnerType)
@@ -170,11 +170,11 @@ func (s *Server) handleCreateConnection(w http.ResponseWriter, r *http.Request) 
 		ownerType = ConnectionOwnerUser
 	}
 	if ownerType != ConnectionOwnerWorkspace && ownerType != ConnectionOwnerUser {
-		s.jsonError(w, http.StatusBadRequest, "ownerType must be workspace or user")
+		s.jsonErrorCode(w, http.StatusBadRequest, ErrCodeValidationFailed, "ownerType must be workspace or user")
 		return
 	}
 	if ownerType == ConnectionOwnerWorkspace && !s.canAdminCurrentWorkspace(r) {
-		s.jsonError(w, http.StatusForbidden, "workspace admin access required")
+		s.jsonErrorCode(w, http.StatusForbidden, ErrCodeWorkspaceAdminRequired, "workspace admin access required")
 		return
 	}
 	ownerID := cur.Username
@@ -289,12 +289,12 @@ func (s *Server) handleUpdateConnection(w http.ResponseWriter, r *http.Request) 
 	}
 	cur := s.currentUser(r)
 	if !s.canManageConnection(r, connection, cur) {
-		s.jsonError(w, http.StatusForbidden, "connection management access required")
+		s.jsonErrorCode(w, http.StatusForbidden, ErrCodeConnectionManagementRequired, "connection management access required")
 		return
 	}
 	var body createConnectionRequest
 	if err := s.readJSON(w, r, &body); err != nil {
-		s.jsonError(w, http.StatusBadRequest, "invalid JSON body")
+		s.jsonErrorCode(w, http.StatusBadRequest, ErrCodeInvalidJSON, "invalid JSON body")
 		return
 	}
 	provider, exists, err := s.findConnectorProvider(connection.Provider)
@@ -303,7 +303,7 @@ func (s *Server) handleUpdateConnection(w http.ResponseWriter, r *http.Request) 
 		return
 	}
 	if !exists {
-		s.jsonError(w, http.StatusBadRequest, "unsupported provider")
+		s.jsonErrorCode(w, http.StatusBadRequest, ErrCodeUnsupportedProvider, "unsupported provider")
 		return
 	}
 	authType := strings.TrimSpace(body.AuthType)
@@ -311,7 +311,7 @@ func (s *Server) handleUpdateConnection(w http.ResponseWriter, r *http.Request) 
 		authType = connection.AuthType
 	}
 	if !providerSupportsAuth(provider, authType) {
-		s.jsonError(w, http.StatusBadRequest, "unsupported auth type")
+		s.jsonErrorCode(w, http.StatusBadRequest, ErrCodeUnsupportedAuthType, "unsupported auth type")
 		return
 	}
 	existingSecret, hasExistingSecret, err := s.controlDB.ConnectionSecret(connection.ID)
@@ -321,11 +321,11 @@ func (s *Server) handleUpdateConnection(w http.ResponseWriter, r *http.Request) 
 	}
 	shouldUpdateSecret := authType != ConnectionAuthNoAuth && len(body.Values) > 0
 	if authType != ConnectionAuthNoAuth && !hasExistingSecret && !shouldUpdateSecret {
-		s.jsonError(w, http.StatusBadRequest, "credential values are required")
+		s.jsonErrorCode(w, http.StatusBadRequest, ErrCodeCredentialValuesRequired, "credential values are required")
 		return
 	}
 	if authType != ConnectionAuthNoAuth && authType != connection.AuthType && !shouldUpdateSecret {
-		s.jsonError(w, http.StatusBadRequest, "credential values are required when changing auth type")
+		s.jsonErrorCode(w, http.StatusBadRequest, ErrCodeCredentialValuesRequired, "credential values are required when changing auth type")
 		return
 	}
 	secretValues := body.Values
@@ -342,7 +342,7 @@ func (s *Server) handleUpdateConnection(w http.ResponseWriter, r *http.Request) 
 			}
 		}
 		if err := validateConnectionValues(provider, authType, secretValues); err != nil {
-			s.jsonError(w, http.StatusBadRequest, err.Error())
+			s.jsonErrorCode(w, http.StatusBadRequest, ErrCodeValidationFailed, err.Error())
 			return
 		}
 	}
@@ -397,7 +397,7 @@ func (s *Server) handleDeleteConnection(w http.ResponseWriter, r *http.Request) 
 		return
 	}
 	if !s.canManageConnection(r, connection, s.currentUser(r)) {
-		s.jsonError(w, http.StatusForbidden, "connection management access required")
+		s.jsonErrorCode(w, http.StatusForbidden, ErrCodeConnectionManagementRequired, "connection management access required")
 		return
 	}
 	if err := s.controlDB.DeleteConnection(connection.ID); err != nil {
@@ -447,18 +447,18 @@ func (s *Server) handleCreateConnectionGrant(w http.ResponseWriter, r *http.Requ
 	}
 	cur := s.currentUser(r)
 	if !s.canManageConnection(r, connection, cur) {
-		s.jsonError(w, http.StatusForbidden, "connection management access required")
+		s.jsonErrorCode(w, http.StatusForbidden, ErrCodeConnectionManagementRequired, "connection management access required")
 		return
 	}
 	var body createConnectionGrantRequest
 	if err := s.readJSON(w, r, &body); err != nil {
-		s.jsonError(w, http.StatusBadRequest, "invalid JSON body")
+		s.jsonErrorCode(w, http.StatusBadRequest, ErrCodeInvalidJSON, "invalid JSON body")
 		return
 	}
 	body.TargetType = strings.TrimSpace(body.TargetType)
 	body.TargetID = strings.TrimSpace(body.TargetID)
 	if err := s.validateConnectionGrantTarget(r, connection, body.TargetType, body.TargetID); err != nil {
-		s.jsonError(w, http.StatusBadRequest, err.Error())
+		s.jsonErrorCode(w, http.StatusBadRequest, ErrCodeValidationFailed, err.Error())
 		return
 	}
 	grant := controldb.ConnectionGrant{
@@ -493,7 +493,7 @@ func (s *Server) handleDeleteConnectionGrant(w http.ResponseWriter, r *http.Requ
 		return
 	}
 	if !s.canManageConnection(r, connection, s.currentUser(r)) {
-		s.jsonError(w, http.StatusForbidden, "connection management access required")
+		s.jsonErrorCode(w, http.StatusForbidden, ErrCodeConnectionManagementRequired, "connection management access required")
 		return
 	}
 	grantID := strings.TrimSpace(r.PathValue("grantId"))
@@ -511,7 +511,7 @@ func (s *Server) handleDeleteConnectionGrant(w http.ResponseWriter, r *http.Requ
 		}
 	}
 	if target == nil {
-		s.jsonError(w, http.StatusNotFound, "grant not found")
+		s.jsonErrorCode(w, http.StatusNotFound, ErrCodeConnectionGrantNotFound, "grant not found")
 		return
 	}
 	if err := s.controlDB.DeleteConnectionGrant(grantID); err != nil {
@@ -554,15 +554,15 @@ func (s *Server) connectionByIDWithAccess(w http.ResponseWriter, r *http.Request
 		return controldb.Connection{}, false
 	}
 	if !ok {
-		s.jsonError(w, http.StatusNotFound, "connection not found")
+		s.jsonErrorCode(w, http.StatusNotFound, ErrCodeConnectionNotFound, "connection not found")
 		return controldb.Connection{}, false
 	}
 	if connection.WorkspaceID != workspaceID {
-		s.jsonError(w, http.StatusNotFound, "connection not found")
+		s.jsonErrorCode(w, http.StatusNotFound, ErrCodeConnectionNotFound, "connection not found")
 		return controldb.Connection{}, false
 	}
 	if !s.canReadConnection(r, connection, s.currentUser(r)) {
-		s.jsonError(w, http.StatusForbidden, "connection access required")
+		s.jsonErrorCode(w, http.StatusForbidden, ErrCodeConnectionAccessRequired, "connection access required")
 		return controldb.Connection{}, false
 	}
 	return connection, true

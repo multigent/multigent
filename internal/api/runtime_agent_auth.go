@@ -29,11 +29,11 @@ func (s *Server) handleIssueAgentRuntimeToken(w http.ResponseWriter, r *http.Req
 		return
 	}
 	if !s.agentExistsInProject(project, agent) {
-		s.jsonError(w, http.StatusNotFound, "agent not found")
+		s.jsonErrorCode(w, http.StatusNotFound, ErrCodeAgentNotFound, "agent not found")
 		return
 	}
 	if !s.canOperateAgent(r, project, agent) {
-		s.jsonError(w, http.StatusForbidden, "agent operator access required")
+		s.jsonErrorCode(w, http.StatusForbidden, ErrCodeAgentOperatorRequired, "agent operator access required")
 		return
 	}
 	workspaceID, err := s.currentWorkspaceID()
@@ -44,7 +44,7 @@ func (s *Server) handleIssueAgentRuntimeToken(w http.ResponseWriter, r *http.Req
 	var body issueAgentRuntimeTokenRequest
 	if r.Body != nil && r.ContentLength != 0 {
 		if err := s.readJSON(w, r, &body); err != nil {
-			s.jsonError(w, http.StatusBadRequest, "invalid JSON body")
+			s.jsonErrorCode(w, http.StatusBadRequest, ErrCodeInvalidJSON, "invalid JSON body")
 			return
 		}
 	}
@@ -144,12 +144,12 @@ func (s *Server) withRuntimeAgentAuth(next http.Handler) http.Handler {
 	return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		token := bearerToken(r)
 		if token == "" {
-			s.jsonError(w, http.StatusUnauthorized, "runtime agent token required")
+			s.jsonErrorCode(w, http.StatusUnauthorized, ErrCodeRuntimeAgentTokenRequired, "runtime agent token required")
 			return
 		}
 		principal, ok := s.validateAgentRuntimeToken(token)
 		if !ok {
-			s.jsonError(w, http.StatusUnauthorized, "invalid or expired runtime agent token")
+			s.jsonErrorCode(w, http.StatusUnauthorized, ErrCodeRuntimeAgentTokenRequired, "invalid or expired runtime agent token")
 			return
 		}
 		ctx := context.WithValue(r.Context(), ctxRuntimeAgentKey, principal)
@@ -184,11 +184,11 @@ func runtimeHasCapability(principal runtimeAgentPrincipal, capability string) bo
 func (s *Server) runtimeConnectionForRequest(w http.ResponseWriter, r *http.Request) (runtimeAgentPrincipal, controldb.Connection, bool) {
 	principal, ok := runtimeAgentFromRequest(r)
 	if !ok {
-		s.jsonError(w, http.StatusUnauthorized, "runtime agent token required")
+		s.jsonErrorCode(w, http.StatusUnauthorized, ErrCodeRuntimeAgentTokenRequired, "runtime agent token required")
 		return runtimeAgentPrincipal{}, controldb.Connection{}, false
 	}
 	if !runtimeHasCapability(principal, "connection.use") {
-		s.jsonError(w, http.StatusForbidden, "runtime token lacks connection.use capability")
+		s.jsonErrorCode(w, http.StatusForbidden, ErrCodeRuntimeCapabilityRequired, "runtime token lacks connection.use capability")
 		return runtimeAgentPrincipal{}, controldb.Connection{}, false
 	}
 	connectionID := strings.TrimSpace(r.Header.Get(agentConnectionManifest().ConnectionIDHeader))
@@ -205,7 +205,7 @@ func (s *Server) runtimeConnectionForRequest(w http.ResponseWriter, r *http.Requ
 		return runtimeAgentPrincipal{}, controldb.Connection{}, false
 	}
 	if !ok {
-		s.jsonError(w, http.StatusForbidden, "connection is not granted to this agent")
+		s.jsonErrorCode(w, http.StatusForbidden, ErrCodeRuntimeConnectionNotGranted, "connection is not granted to this agent")
 		return runtimeAgentPrincipal{}, controldb.Connection{}, false
 	}
 	return principal, connection, true
