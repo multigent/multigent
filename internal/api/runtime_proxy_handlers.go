@@ -256,6 +256,9 @@ func (s *Server) runtimeHTTPActionConfig(connection controldb.Connection) (runti
 	}
 	authScheme := strings.TrimSpace(values["authScheme"])
 	apiKey := strings.TrimSpace(values["apiKey"])
+	if apiKey == "" && connection.AuthType == ConnectionAuthOAuth2 {
+		apiKey = strings.TrimSpace(values["accessToken"])
+	}
 	switch connection.Provider {
 	case "custom-http":
 		if cfg.AuthHeader == "" {

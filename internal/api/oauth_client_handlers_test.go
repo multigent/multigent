@@ -2,10 +2,14 @@ package api
 
 import (
 	"encoding/json"
+	"io"
 	"net/http"
 	"net/http/httptest"
 	"strings"
 	"testing"
+
+	"github.com/multigent/multigent/internal/connector"
+	controldb "github.com/multigent/multigent/internal/db"
 )
 
 func TestOAuthClientConfigHandlersAreAdminScopedAndDoNotLeakSecret(t *testing.T) {
@@ -121,5 +125,126 @@ func TestOAuthClientConfigRejectsUnsupportedProviderAndSecretLikeExtra(t *testin
 	s.handleUpsertOAuthClientConfig(extraRec, extraReq)
 	if extraRec.Code != http.StatusBadRequest {
 		t.Fatalf("secret-like extra status=%d body=%s", extraRec.Code, extraRec.Body.String())
+	}
+}
+
+func TestOAuthAuthorizationStartAndCallbackCreateConnection(t *testing.T) {
+	s, workspaceID := newConnectionGrantPolicyServer(t)
+	var tokenRequestBody string
+	tokenServer := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		if r.URL.Path != "/login/oauth/access_token" {
+			t.Fatalf("unexpected token path: %s", r.URL.Path)
+		}
+		raw, _ := io.ReadAll(r.Body)
+		tokenRequestBody = string(raw)
+		w.Header().Set("Content-Type", "application/json")
+		_ = json.NewEncoder(w).Encode(map[string]any{
+			"access_token":  "oauth-access",
+			"token_type":    "bearer",
+			"refresh_token": "oauth-refresh",
+			"expires_in":    3600,
+			"scope":         "repo read:user",
+		})
+	}))
+	defer tokenServer.Close()
+	upsertOAuthProviderForTest(t, s, tokenServer.URL+"/login/oauth/access_token")
+
+	saveReq := providerTestRequest(http.MethodPut, "/api/v1/oauth/client-configs/github", "admin", oauthClientConfigRequest{
+		ClientID:     "gh-client",
+		ClientSecret: "gh-secret",
+	})
+	saveReq.SetPathValue("provider", "github")
+	saveRec := httptest.NewRecorder()
+	s.handleUpsertOAuthClientConfig(saveRec, saveReq)
+	if saveRec.Code != http.StatusOK {
+		t.Fatalf("save config status=%d body=%s", saveRec.Code, saveRec.Body.String())
+	}
+
+	startReq := providerTestRequest(http.MethodPost, "/api/v1/oauth/authorizations", "owner", oauthAuthorizationStartRequest{
+		Provider:       "github",
+		ConnectionName: "personal",
+		OwnerType:      ConnectionOwnerUser,
+		Profile:        map[string]any{"accountName": "octo"},
+	})
+	startReq.Host = "multigent.example.test"
+	startRec := httptest.NewRecorder()
+	s.handleStartOAuthAuthorization(startRec, startReq)
+	if startRec.Code != http.StatusOK {
+		t.Fatalf("start status=%d body=%s", startRec.Code, startRec.Body.String())
+	}
+	var started oauthAuthorizationStartResponse
+	if err := json.Unmarshal(startRec.Body.Bytes(), &started); err != nil {
+		t.Fatalf("decode start: %v", err)
+	}
+	if started.State == "" || !strings.Contains(started.AuthorizationURL, "client_id=gh-client") || !strings.Contains(started.AuthorizationURL, "state="+started.State) {
+		t.Fatalf("authorization response=%#v", started)
+	}
+
+	callbackReq := httptest.NewRequest(http.MethodGet, "/api/v1/oauth/callback?state="+started.State+"&code=code-one", nil)
+	callbackReq.Host = "multigent.example.test"
+	callbackRec := httptest.NewRecorder()
+	s.handleCompleteOAuthAuthorization(callbackRec, callbackReq)
+	if callbackRec.Code != http.StatusOK {
+		t.Fatalf("callback status=%d body=%s", callbackRec.Code, callbackRec.Body.String())
+	}
+	if !strings.Contains(tokenRequestBody, "client_id=gh-client") || !strings.Contains(tokenRequestBody, "client_secret=gh-secret") || !strings.Contains(tokenRequestBody, "code=code-one") {
+		t.Fatalf("token request body=%s", tokenRequestBody)
+	}
+	if strings.Contains(callbackRec.Body.String(), "oauth-access") || strings.Contains(callbackRec.Body.String(), "oauth-refresh") {
+		t.Fatalf("callback leaked token: %s", callbackRec.Body.String())
+	}
+	connections, err := s.controlDB.ListConnections(controldb.ConnectionFilter{WorkspaceID: workspaceID, Provider: "github", OwnerType: ConnectionOwnerUser, OwnerID: "owner"})
+	if err != nil {
+		t.Fatalf("list connections: %v", err)
+	}
+	if len(connections) != 1 {
+		t.Fatalf("connections=%#v", connections)
+	}
+	if connections[0].AuthType != ConnectionAuthOAuth2 || connections[0].ConnectionName != "personal" {
+		t.Fatalf("connection=%#v", connections[0])
+	}
+	secret, ok, err := s.controlDB.ConnectionSecret(connections[0].ID)
+	if err != nil || !ok {
+		t.Fatalf("secret ok=%v err=%v", ok, err)
+	}
+	values, err := openConnectionSecret(secret)
+	if err != nil {
+		t.Fatalf("open connection secret: %v", err)
+	}
+	if values["accessToken"] != "oauth-access" || values["refreshToken"] != "oauth-refresh" {
+		t.Fatalf("secret values=%#v", values)
+	}
+}
+
+func TestOAuthAuthorizationWorkspaceOwnerRequiresAdmin(t *testing.T) {
+	s, _ := newConnectionGrantPolicyServer(t)
+	startReq := providerTestRequest(http.MethodPost, "/api/v1/oauth/authorizations", "owner", oauthAuthorizationStartRequest{
+		Provider:  "github",
+		OwnerType: ConnectionOwnerWorkspace,
+	})
+	startRec := httptest.NewRecorder()
+	s.handleStartOAuthAuthorization(startRec, startReq)
+	if startRec.Code != http.StatusBadRequest && startRec.Code != http.StatusForbidden {
+		t.Fatalf("workspace owner start status=%d body=%s", startRec.Code, startRec.Body.String())
+	}
+}
+
+func upsertOAuthProviderForTest(t *testing.T, s *Server, tokenURL string) {
+	t.Helper()
+	provider := connector.Defaults()[0]
+	if provider.Provider != "github" {
+		t.Fatalf("expected github default first")
+	}
+	provider.OAuth.TokenURL = tokenURL
+	authTypes, _ := json.Marshal(provider.AuthTypes)
+	catalog, _ := json.Marshal(provider)
+	if err := s.controlDB.UpsertConnectorProvider(controldb.ConnectorProvider{
+		Provider:      provider.Provider,
+		DisplayName:   provider.DisplayName,
+		AuthTypesJSON: string(authTypes),
+		CatalogJSON:   string(catalog),
+		Enabled:       true,
+	}); err != nil {
+		t.Fatalf("upsert provider: %v", err)
 	}
 }

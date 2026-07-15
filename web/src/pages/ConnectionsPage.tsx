@@ -38,6 +38,7 @@ type ConnectionProfileSummary = {
 }
 type ConnectionTestResult = { ok: boolean; status: number; message: string }
 type ConnectionHealthCheckRunResult = { checked: number; skipped: number; results: Array<{ connectionId: string; ok: boolean; status: number; message: string; error?: string }> }
+type OAuthAuthorizationStart = { authorizationUrl: string; state: string }
 type ProjectRow = { name: string }
 type ProjectAgent = { name: string }
 type WorkspaceSummary = { id: string; name: string; currentUserRole?: string; currentUserCanAdmin?: boolean }
@@ -545,26 +546,37 @@ function ConnectionDialog({ providers, isWorkspaceAdmin, connection, onClose, on
     setSaving(true)
     try {
       const cleanValues = Object.fromEntries(Object.entries(values).filter(([, value]) => value.trim() !== ''))
+      const profile = {
+        displayName: displayName.trim() || provider.displayName,
+        accountId: accountId.trim(),
+        accountName: accountName.trim(),
+        accountEmail: accountEmail.trim(),
+        scopes: parsePolicyList(scopes),
+        providerPermissions: parsePolicyList(providerPermissions),
+        healthCheckEnabled,
+        healthCheckIntervalMinutes: Math.max(5, Math.min(43200, Number(healthCheckIntervalMinutes) || 360)),
+        allowedActionMethods: parsePolicyList(allowedActionMethods),
+        blockedActionMethods: parsePolicyList(blockedActionMethods),
+        allowedActionEndpoints: parsePolicyList(allowedActionEndpoints),
+        blockedActionEndpoints: parsePolicyList(blockedActionEndpoints),
+      }
+      if (!connection && authType === 'oauth2') {
+        const started = await apiPost<OAuthAuthorizationStart>('/api/v1/oauth/authorizations', {
+          provider: provider.provider,
+          ownerType,
+          connectionName: connectionName.trim() || 'default',
+          profile,
+        })
+        window.location.assign(started.authorizationUrl)
+        return
+      }
       const body = {
         provider: provider.provider,
         ownerType,
         authType,
         connectionName: connectionName.trim() || 'default',
         values: cleanValues,
-        profile: {
-          displayName: displayName.trim() || provider.displayName,
-          accountId: accountId.trim(),
-          accountName: accountName.trim(),
-          accountEmail: accountEmail.trim(),
-          scopes: parsePolicyList(scopes),
-          providerPermissions: parsePolicyList(providerPermissions),
-          healthCheckEnabled,
-          healthCheckIntervalMinutes: Math.max(5, Math.min(43200, Number(healthCheckIntervalMinutes) || 360)),
-          allowedActionMethods: parsePolicyList(allowedActionMethods),
-          blockedActionMethods: parsePolicyList(blockedActionMethods),
-          allowedActionEndpoints: parsePolicyList(allowedActionEndpoints),
-          blockedActionEndpoints: parsePolicyList(blockedActionEndpoints),
-        },
+        profile,
       }
       if (connection) {
         await apiPut(`/api/v1/connections/${encodeURIComponent(connection.id)}`, body)
@@ -611,6 +623,11 @@ function ConnectionDialog({ providers, isWorkspaceAdmin, connection, onClose, on
             <input className={inputCls} value={displayName} onChange={e => setDisplayName(e.target.value)} placeholder={provider?.displayName} />
           </label>
         </div>
+        {authType === 'oauth2' && (
+          <p className="rounded-lg bg-sky-50 px-3 py-2 text-xs text-sky-700 dark:bg-sky-950/30 dark:text-sky-300">
+            Saving will start the provider OAuth flow. The callback creates this connection without exposing tokens to the browser.
+          </p>
+        )}
         {fields.map(field => (
           <label key={field.key} className="block">
             <span className="text-xs font-medium text-neutral-500 dark:text-zinc-400">{field.label}{field.required ? ' *' : ''}</span>
@@ -699,7 +716,7 @@ function ConnectionDialog({ providers, isWorkspaceAdmin, connection, onClose, on
         </div>
         <div className="flex justify-end gap-2 pt-2">
           <button type="button" onClick={onClose} disabled={saving} className="rounded-lg border border-neutral-300 px-3 py-2 text-sm dark:border-zinc-600">Cancel</button>
-          <button type="button" onClick={() => void submit()} disabled={saving || !provider} className="rounded-lg bg-sky-600 px-3 py-2 text-sm font-medium text-white disabled:opacity-50">{isEditing ? 'Save' : 'Create'}</button>
+          <button type="button" onClick={() => void submit()} disabled={saving || !provider} className="rounded-lg bg-sky-600 px-3 py-2 text-sm font-medium text-white disabled:opacity-50">{authType === 'oauth2' && !isEditing ? 'Start OAuth' : isEditing ? 'Save' : 'Create'}</button>
         </div>
       </div>
     </Modal>
