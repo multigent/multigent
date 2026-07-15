@@ -6,6 +6,7 @@ import (
 	"net/http"
 	"os"
 	"os/exec"
+	"sort"
 	"strings"
 
 	"github.com/multigent/multigent/internal/entity"
@@ -345,6 +346,10 @@ type agentEnvBody struct {
 func (s *Server) handlePutAgentEnv(w http.ResponseWriter, r *http.Request) {
 	project := r.PathValue("name")
 	agent := r.PathValue("agent")
+	if !s.canManageAgentConfig(r, project, agent) {
+		s.jsonError(w, http.StatusForbidden, "agent management access required")
+		return
+	}
 
 	var body agentEnvBody
 	if err := s.readJSON(w, r, &body); err != nil {
@@ -377,12 +382,55 @@ func (s *Server) handlePutAgentEnv(w http.ResponseWriter, r *http.Request) {
 		meta.Env = cleaned
 	}
 	if body.Provider != nil {
-		meta.Provider = strings.TrimSpace(*body.Provider)
+		providerID := strings.TrimSpace(*body.Provider)
+		if providerID == "none" {
+			providerID = ""
+		}
+		if providerID != "" {
+			if _, err := s.providerStore().Get(providerID); err != nil {
+				if strings.Contains(err.Error(), "not found") {
+					s.jsonError(w, http.StatusBadRequest, "provider not found")
+					return
+				}
+				s.serverError(w, err)
+				return
+			}
+		}
+		meta.Provider = providerID
 	}
 
 	if err := s.st.SaveAgentMeta(project, agent, meta); err != nil {
 		s.serverError(w, err)
 		return
 	}
+	s.auditLog(auditLogInput{
+		Action:       "agent.env.update",
+		ResourceType: "agent",
+		ResourceID:   project + "/" + agent,
+		Summary:      "Agent environment updated",
+		After: map[string]any{
+			"project":  project,
+			"agent":    agent,
+			"provider": meta.Provider,
+			"envKeys":  sortedEnvKeys(meta.Env),
+		},
+		Request: r,
+	})
 	_ = json.NewEncoder(w).Encode(map[string]any{"ok": true, "env": meta.Env, "provider": meta.Provider})
+}
+
+func (s *Server) canManageAgentConfig(r *http.Request, project, agent string) bool {
+	if s.canManageProject(r, project) {
+		return true
+	}
+	return currentUserLinkedAgent(s.currentUser(r), project+"/"+agent)
+}
+
+func sortedEnvKeys(env map[string]string) []string {
+	keys := make([]string, 0, len(env))
+	for key := range env {
+		keys = append(keys, key)
+	}
+	sort.Strings(keys)
+	return keys
 }

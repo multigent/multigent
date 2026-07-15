@@ -143,6 +143,10 @@ func (s *Server) handleGetAgentEnv(w http.ResponseWriter, r *http.Request) {
 		http.Error(w, "invalid path", http.StatusBadRequest)
 		return
 	}
+	if !s.canManageAgentConfig(r, project, agent) {
+		s.jsonError(w, http.StatusForbidden, "agent management access required")
+		return
+	}
 	meta, err := s.st.AgentMeta(project, agent)
 	if err != nil {
 		http.Error(w, err.Error(), http.StatusNotFound)
@@ -168,6 +172,10 @@ func (s *Server) handleSetAgentEnv(w http.ResponseWriter, r *http.Request) {
 	agent := r.PathValue("agent")
 	if project == "" || agent == "" {
 		http.Error(w, "invalid path", http.StatusBadRequest)
+		return
+	}
+	if !s.canManageAgentConfig(r, project, agent) {
+		s.jsonError(w, http.StatusForbidden, "agent management access required")
 		return
 	}
 	var req struct {
@@ -196,6 +204,18 @@ func (s *Server) handleSetAgentEnv(w http.ResponseWriter, r *http.Request) {
 		s.serverError(w, err)
 		return
 	}
+	s.auditLog(auditLogInput{
+		Action:       "agent.env.set",
+		ResourceType: "agent",
+		ResourceID:   project + "/" + agent,
+		Summary:      "Agent environment variable set",
+		After: map[string]any{
+			"project": project,
+			"agent":   agent,
+			"envKey":  req.Key,
+		},
+		Request: r,
+	})
 	w.WriteHeader(http.StatusNoContent)
 }
 
@@ -204,6 +224,10 @@ func (s *Server) handleDeleteAgentEnv(w http.ResponseWriter, r *http.Request) {
 	agent := r.PathValue("agent")
 	if project == "" || agent == "" {
 		http.Error(w, "invalid path", http.StatusBadRequest)
+		return
+	}
+	if !s.canManageAgentConfig(r, project, agent) {
+		s.jsonError(w, http.StatusForbidden, "agent management access required")
 		return
 	}
 	key := strings.TrimSpace(r.URL.Query().Get("key"))
@@ -223,5 +247,17 @@ func (s *Server) handleDeleteAgentEnv(w http.ResponseWriter, r *http.Request) {
 		s.serverError(w, err)
 		return
 	}
+	s.auditLog(auditLogInput{
+		Action:       "agent.env.delete",
+		ResourceType: "agent",
+		ResourceID:   project + "/" + agent,
+		Summary:      "Agent environment variable deleted",
+		Before: map[string]any{
+			"project": project,
+			"agent":   agent,
+			"envKey":  key,
+		},
+		Request: r,
+	})
 	w.WriteHeader(http.StatusNoContent)
 }
