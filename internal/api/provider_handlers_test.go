@@ -9,6 +9,7 @@ import (
 	"path/filepath"
 	"strings"
 	"testing"
+	"time"
 
 	controldb "github.com/multigent/multigent/internal/db"
 )
@@ -204,5 +205,100 @@ func TestModelProviderListFiltersPersonalProviders(t *testing.T) {
 	}
 	if strings.Contains(body, "Owner Personal") {
 		t.Fatalf("member list included another user's provider: %s", body)
+	}
+}
+
+func TestModelProviderAgentScopedListFiltersUsableProviders(t *testing.T) {
+	s, workspaceID := newConnectionGrantPolicyServer(t)
+	insertProvider := func(p controldb.ModelProvider) {
+		t.Helper()
+		now := time.Now().UTC().Format(time.RFC3339)
+		p.WorkspaceID = workspaceID
+		p.Type = "openai"
+		p.EnvJSON = "{}"
+		p.CreatedAt = now
+		p.UpdatedAt = now
+		if err := s.controlDB.UpsertModelProvider(workspaceID, p); err != nil {
+			t.Fatalf("upsert provider %s: %v", p.ID, err)
+		}
+	}
+	insertProvider(controldb.ModelProvider{
+		ID:        "prov-workspace",
+		OwnerType: ConnectionOwnerWorkspace,
+		OwnerID:   workspaceID,
+		Name:      "Workspace Provider",
+	})
+	insertProvider(controldb.ModelProvider{
+		ID:        "prov-owner",
+		OwnerType: ConnectionOwnerUser,
+		OwnerID:   "owner",
+		Name:      "Owner Personal Provider",
+	})
+	insertProvider(controldb.ModelProvider{
+		ID:        "prov-other",
+		OwnerType: ConnectionOwnerUser,
+		OwnerID:   "other",
+		Name:      "Other Personal Provider",
+	})
+
+	adminGlobalRec := httptest.NewRecorder()
+	s.handleListProviders(adminGlobalRec, providerTestRequest(http.MethodGet, "/api/v1/providers", "admin", nil))
+	if adminGlobalRec.Code != http.StatusOK {
+		t.Fatalf("admin global list status=%d body=%s", adminGlobalRec.Code, adminGlobalRec.Body.String())
+	}
+	adminGlobalBody := adminGlobalRec.Body.String()
+	for _, want := range []string{"Workspace Provider", "Owner Personal Provider", "Other Personal Provider"} {
+		if !strings.Contains(adminGlobalBody, want) {
+			t.Fatalf("admin global list missing %q: %s", want, adminGlobalBody)
+		}
+	}
+
+	adminAgentRec := httptest.NewRecorder()
+	s.handleListProviders(adminAgentRec, providerTestRequest(http.MethodGet, "/api/v1/providers?project=tapnow&agent=pm", "admin", nil))
+	if adminAgentRec.Code != http.StatusOK {
+		t.Fatalf("admin agent-scoped list status=%d body=%s", adminAgentRec.Code, adminAgentRec.Body.String())
+	}
+	adminAgentBody := adminAgentRec.Body.String()
+	if !strings.Contains(adminAgentBody, "Workspace Provider") {
+		t.Fatalf("admin agent-scoped list missing workspace provider: %s", adminAgentBody)
+	}
+	for _, blocked := range []string{"Owner Personal Provider", "Other Personal Provider"} {
+		if strings.Contains(adminAgentBody, blocked) {
+			t.Fatalf("admin agent-scoped list included unusable personal provider %q: %s", blocked, adminAgentBody)
+		}
+	}
+
+	ownerAgentRec := httptest.NewRecorder()
+	s.handleListProviders(ownerAgentRec, providerTestRequest(http.MethodGet, "/api/v1/providers?project=tapnow&agent=pm", "owner", nil))
+	if ownerAgentRec.Code != http.StatusOK {
+		t.Fatalf("owner agent-scoped list status=%d body=%s", ownerAgentRec.Code, ownerAgentRec.Body.String())
+	}
+	ownerAgentBody := ownerAgentRec.Body.String()
+	for _, want := range []string{"Workspace Provider", "Owner Personal Provider"} {
+		if !strings.Contains(ownerAgentBody, want) {
+			t.Fatalf("owner agent-scoped list missing %q: %s", want, ownerAgentBody)
+		}
+	}
+	if strings.Contains(ownerAgentBody, "Other Personal Provider") {
+		t.Fatalf("owner agent-scoped list included another user's provider: %s", ownerAgentBody)
+	}
+}
+
+func TestModelProviderAgentScopedListRequiresAgentManagementAccess(t *testing.T) {
+	s, workspaceID := newConnectionGrantPolicyServer(t)
+	if err := s.users.CreateUser("viewer", "pass123", RoleMember, "", "", "", "", ""); err != nil {
+		t.Fatalf("create viewer: %v", err)
+	}
+	if err := s.controlDB.UpsertWorkspaceMember(workspaceID, "viewer", WorkspaceRoleMember); err != nil {
+		t.Fatalf("viewer workspace member: %v", err)
+	}
+	if err := s.users.UpdateUser("viewer", nil, nil, nil, nil, nil, nil, nil, []projectAccess{{Project: "tapnow", Role: ProjectRoleViewer}}, nil, nil); err != nil {
+		t.Fatalf("grant viewer project role: %v", err)
+	}
+
+	rec := httptest.NewRecorder()
+	s.handleListProviders(rec, providerTestRequest(http.MethodGet, "/api/v1/providers?project=tapnow&agent=pm", "viewer", nil))
+	if rec.Code != http.StatusForbidden {
+		t.Fatalf("viewer agent-scoped list status=%d body=%s", rec.Code, rec.Body.String())
 	}
 }

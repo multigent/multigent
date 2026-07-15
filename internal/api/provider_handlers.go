@@ -49,6 +49,23 @@ func (s *Server) handleListProviders(w http.ResponseWriter, r *http.Request) {
 	}
 	cur := s.currentUser(r)
 	isAdmin := s.canAdminWorkspace(r, workspaceID)
+	project := strings.TrimSpace(r.URL.Query().Get("project"))
+	agent := strings.TrimSpace(r.URL.Query().Get("agent"))
+	agentScoped := project != "" || agent != ""
+	if agentScoped {
+		if project == "" || agent == "" {
+			s.jsonError(w, http.StatusBadRequest, "project and agent are required together")
+			return
+		}
+		if !s.agentExistsInProject(project, agent) {
+			s.jsonError(w, http.StatusNotFound, "agent not found")
+			return
+		}
+		if !s.canManageAgentConfig(r, project, agent) {
+			s.jsonError(w, http.StatusForbidden, "agent management access required")
+			return
+		}
+	}
 	items, err := s.providerStore().List()
 	if err != nil {
 		s.serverError(w, err)
@@ -56,7 +73,11 @@ func (s *Server) handleListProviders(w http.ResponseWriter, r *http.Request) {
 	}
 	out := make([]map[string]any, 0, len(items))
 	for _, p := range items {
-		if !canViewModelProvider(cur, isAdmin, p) {
+		if agentScoped {
+			if !s.canUseModelProviderForAgent(r, p, project, agent) {
+				continue
+			}
+		} else if !canViewModelProvider(cur, isAdmin, p) {
 			continue
 		}
 		out = append(out, providerToJSON(p))

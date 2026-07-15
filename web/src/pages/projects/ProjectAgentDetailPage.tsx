@@ -1100,8 +1100,9 @@ function EnvEditor({ project, agentName, model, initialEnv, initialProvider, onC
   const [selectedProvider, setSelectedProvider] = useState(initialProvider ?? '')
 
   useEffect(() => {
-    void apiFetch<ProviderOption[]>('/api/v1/providers').then(data => setProviderOptions(data ?? [])).catch(() => {})
-  }, [])
+    const path = `/api/v1/providers?project=${encodeURIComponent(project)}&agent=${encodeURIComponent(agentName)}`
+    void apiFetch<ProviderOption[]>(path).then(data => setProviderOptions(data ?? [])).catch(() => {})
+  }, [project, agentName])
 
   const wellKnown = WELL_KNOWN_ENV[model]
   const usedKeys = new Set(entries.map((e) => e.key))
