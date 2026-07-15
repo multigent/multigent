@@ -12,6 +12,7 @@ type Provider struct {
 	DisplayName string          `json:"displayName"`
 	AuthTypes   []string        `json:"authTypes"`
 	Fields      []ProviderField `json:"fields,omitempty"`
+	OAuth       *OAuth2Config   `json:"oauth,omitempty"`
 	Enabled     bool            `json:"enabled"`
 }
 
@@ -23,14 +24,29 @@ type ProviderField struct {
 	Secret    bool   `json:"secret"`
 }
 
+type OAuth2Config struct {
+	AuthorizationURL string          `json:"authorizationUrl"`
+	TokenURL         string          `json:"tokenUrl"`
+	Scopes           []string        `json:"scopes,omitempty"`
+	ScopeSeparator   string          `json:"scopeSeparator,omitempty"`
+	PKCE             bool            `json:"pkce,omitempty"`
+	ClientFields     []ProviderField `json:"clientFields,omitempty"`
+}
+
 func Defaults() []Provider {
 	return []Provider{
 		{
 			Provider:    "github",
 			DisplayName: "GitHub",
-			AuthTypes:   []string{AuthAPIKey},
+			AuthTypes:   []string{AuthAPIKey, AuthOAuth2},
 			Fields: []ProviderField{
 				{Key: "apiKey", Label: "Personal access token", InputType: "password", Required: true, Secret: true},
+			},
+			OAuth: &OAuth2Config{
+				AuthorizationURL: "https://github.com/login/oauth/authorize",
+				TokenURL:         "https://github.com/login/oauth/access_token",
+				Scopes:           []string{"repo", "read:user", "user:email"},
+				ScopeSeparator:   " ",
 			},
 			Enabled: true,
 		},

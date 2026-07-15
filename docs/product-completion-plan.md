@@ -615,7 +615,8 @@ Status:
 - Connections now support explicit automatic health-check policy in the connection profile. The server runs a background checker for enabled due connections, workspace admins can trigger checks manually, results persist into validation metadata, and checks are audited.
 - Connections now support runtime action policies for HTTP action proxy calls. Connection owners can configure method and endpoint allow/block rules; runtime proxy calls and connection tests enforce the same policy before upstream credentials are used.
 - Connection responses and runtime manifests now include a safe profile summary for account identity, scopes, provider permissions, and action policy. The Web connections page can capture and display this metadata without exposing provider secrets.
-- Remaining work: OAuth flow abstraction, DingTalk enterprise app/OAuth provider, GitHub app installation flow, action catalog/schema support, and deeper per-provider executor hardening.
+- OAuth client configuration now has a workspace-scoped foundation. OAuth-capable providers can declare authorization/token metadata, workspace admins can store provider client IDs/secrets server-side, and the UI shows the expected redirect URI without returning client secrets.
+- Remaining work: OAuth authorization start/callback/token exchange, DingTalk enterprise app/OAuth provider, GitHub app installation flow, action catalog/schema support, and deeper per-provider executor hardening.
 
 ### Phase 5: Agent Runtime Productization
 

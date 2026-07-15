@@ -41,6 +41,16 @@ type ConnectionHealthCheckRunResult = { checked: number; skipped: number; result
 type ProjectRow = { name: string }
 type ProjectAgent = { name: string }
 type WorkspaceSummary = { id: string; name: string; currentUserRole?: string; currentUserCanAdmin?: boolean }
+type OAuthClientConfig = {
+  provider: string
+  displayName: string
+  configured: boolean
+  clientId?: string
+  expectedRedirectUri: string
+  oauth?: { authorizationUrl?: string; tokenUrl?: string; scopes?: string[] }
+  extra?: Record<string, unknown>
+  updatedAt?: string
+}
 
 const inputCls = 'w-full rounded-lg border border-neutral-200 bg-white px-3 py-2 text-sm outline-none focus:border-sky-400 dark:border-zinc-700 dark:bg-zinc-950 dark:text-zinc-100'
 const selectCls = 'w-full rounded-lg border border-neutral-200 bg-white px-3 py-2 text-sm outline-none focus:border-sky-400 dark:border-zinc-700 dark:bg-zinc-950 dark:text-zinc-100 dark:[color-scheme:dark]'
@@ -50,6 +60,7 @@ export default function ConnectionsPage() {
   const [workspace, setWorkspace] = useState<WorkspaceSummary | null>(null)
   const isWorkspaceAdmin = workspace?.currentUserCanAdmin ?? (!user || user.role === 'admin')
   const [providers, setProviders] = useState<Provider[]>([])
+  const [oauthConfigs, setOAuthConfigs] = useState<OAuthClientConfig[]>([])
   const [connections, setConnections] = useState<Connection[]>([])
   const [projects, setProjects] = useState<ProjectRow[]>([])
   const [agentsByProject, setAgentsByProject] = useState<Record<string, ProjectAgent[]>>({})
@@ -67,15 +78,20 @@ export default function ConnectionsPage() {
     async function load() {
       setLoading(true)
       try {
-        const [providerData, connectionData, projectData] = await Promise.all([
+        const [providerData, connectionData, projectData, workspaceData] = await Promise.all([
           apiFetch<{ providers: Provider[] }>('/api/v1/connectors/providers'),
           apiFetch<{ connections: Connection[] }>('/api/v1/connections'),
           apiFetch<ProjectRow[]>('/api/v1/projects').catch(() => []),
+          apiFetch<WorkspaceSummary>('/api/v1/workspace').catch(() => null),
         ])
-        const workspaceData = await apiFetch<WorkspaceSummary>('/api/v1/workspace').catch(() => null)
+        const canAdminWorkspace = workspaceData?.currentUserCanAdmin ?? (!user || user.role === 'admin')
+        const oauthData = canAdminWorkspace
+          ? await apiFetch<{ configs: OAuthClientConfig[] }>('/api/v1/oauth/client-configs').catch(() => ({ configs: [] }))
+          : { configs: [] }
         if (cancelled) return
         setWorkspace(workspaceData)
         setProviders(providerData.providers ?? [])
+        setOAuthConfigs(oauthData.configs ?? [])
         setConnections(connectionData.connections ?? [])
         setProjects(projectData ?? [])
         const nextAgents: Record<string, ProjectAgent[]> = {}
@@ -162,6 +178,10 @@ export default function ConnectionsPage() {
         </div>
       )}
 
+      {isWorkspaceAdmin && oauthConfigs.length > 0 && (
+        <OAuthClientConfigsPanel configs={oauthConfigs} onChanged={() => setReloadKey(k => k + 1)} />
+      )}
+
       {loading ? (
         <div className="flex items-center justify-center gap-2 py-16 text-sm text-neutral-500">
           <div className="size-5 animate-spin rounded-full border-2 border-neutral-300 border-t-sky-600 dark:border-zinc-600 dark:border-t-sky-400" />
@@ -224,6 +244,104 @@ export default function ConnectionsPage() {
         />
       )}
     </div>
+  )
+}
+
+function OAuthClientConfigsPanel({ configs, onChanged }: { configs: OAuthClientConfig[]; onChanged: () => void }) {
+  const [editing, setEditing] = useState<OAuthClientConfig | null>(null)
+  return (
+    <section className="mb-5 rounded-xl border border-neutral-200/80 bg-white p-4 dark:border-zinc-700/60 dark:bg-zinc-900/40">
+      <div className="flex items-center justify-between gap-3">
+        <div>
+          <h2 className="text-sm font-semibold text-neutral-900 dark:text-zinc-100">OAuth client configs</h2>
+          <p className="mt-0.5 text-xs text-neutral-400 dark:text-zinc-500">Configure provider OAuth apps once per workspace. Client secrets stay server-side.</p>
+        </div>
+      </div>
+      <div className="mt-3 grid gap-3 lg:grid-cols-2">
+        {configs.map(config => (
+          <div key={config.provider} className="rounded-lg border border-neutral-200 px-3 py-3 dark:border-zinc-700">
+            <div className="flex items-start justify-between gap-3">
+              <div className="min-w-0">
+                <div className="flex flex-wrap items-center gap-2">
+                  <p className="text-sm font-medium text-neutral-800 dark:text-zinc-100">{config.displayName}</p>
+                  <span className={cn('rounded-full px-2 py-0.5 text-[11px] font-medium', config.configured ? 'bg-emerald-100 text-emerald-700 dark:bg-emerald-900/30 dark:text-emerald-300' : 'bg-neutral-100 text-neutral-500 dark:bg-zinc-800 dark:text-zinc-400')}>
+                    {config.configured ? 'Configured' : 'Not configured'}
+                  </span>
+                </div>
+                {config.clientId && <p className="mt-1 text-xs text-neutral-500 dark:text-zinc-400">Client ID: {config.clientId}</p>}
+                <p className="mt-1 break-all font-mono text-[11px] text-neutral-400 dark:text-zinc-500">{config.expectedRedirectUri}</p>
+                {(config.oauth?.scopes?.length ?? 0) > 0 && (
+                  <div className="mt-2 flex flex-wrap gap-1.5">
+                    {(config.oauth?.scopes ?? []).map(scope => (
+                      <span key={scope} className="rounded-md bg-neutral-100 px-2 py-0.5 text-[11px] text-neutral-500 dark:bg-zinc-800 dark:text-zinc-400">{scope}</span>
+                    ))}
+                  </div>
+                )}
+              </div>
+              <button type="button" onClick={() => setEditing(config)} className="rounded-md p-2 text-neutral-500 hover:bg-neutral-100 hover:text-neutral-800 dark:text-zinc-400 dark:hover:bg-zinc-800 dark:hover:text-zinc-100" title="Configure OAuth client">
+                <Pencil className="size-4" strokeWidth={1.8} />
+              </button>
+            </div>
+          </div>
+        ))}
+      </div>
+      {editing && (
+        <OAuthClientConfigDialog
+          config={editing}
+          onClose={() => setEditing(null)}
+          onSaved={() => { setEditing(null); onChanged() }}
+        />
+      )}
+    </section>
+  )
+}
+
+function OAuthClientConfigDialog({ config, onClose, onSaved }: { config: OAuthClientConfig; onClose: () => void; onSaved: () => void }) {
+  const [clientId, setClientId] = useState(config.clientId ?? '')
+  const [clientSecret, setClientSecret] = useState('')
+  const [saving, setSaving] = useState(false)
+  async function submit() {
+    setSaving(true)
+    try {
+      await apiPut(`/api/v1/oauth/client-configs/${encodeURIComponent(config.provider)}`, {
+        clientId: clientId.trim(),
+        clientSecret: clientSecret.trim(),
+        extra: config.extra ?? {},
+      })
+      onSaved()
+    } finally {
+      setSaving(false)
+    }
+  }
+  async function remove() {
+    if (!window.confirm(`Remove OAuth client config for ${config.displayName}?`)) return
+    await apiDelete(`/api/v1/oauth/client-configs/${encodeURIComponent(config.provider)}`)
+    onSaved()
+  }
+  return (
+    <Modal title={`OAuth client: ${config.displayName}`} onClose={onClose}>
+      <div className="space-y-4">
+        <label className="block">
+          <span className="text-xs font-medium text-neutral-500 dark:text-zinc-400">Client ID</span>
+          <input className={inputCls} value={clientId} onChange={e => setClientId(e.target.value)} />
+        </label>
+        <label className="block">
+          <span className="text-xs font-medium text-neutral-500 dark:text-zinc-400">Client secret</span>
+          <input className={inputCls} type="password" value={clientSecret} onChange={e => setClientSecret(e.target.value)} placeholder={config.configured ? 'Leave blank to keep current secret' : ''} />
+        </label>
+        <div className="rounded-lg bg-neutral-50 px-3 py-2 dark:bg-zinc-800/50">
+          <p className="text-xs font-medium text-neutral-500 dark:text-zinc-400">Redirect URI</p>
+          <p className="mt-1 break-all font-mono text-xs text-neutral-600 dark:text-zinc-300">{config.expectedRedirectUri}</p>
+        </div>
+        <div className="flex justify-between gap-2 pt-2">
+          <button type="button" onClick={() => void remove()} disabled={saving || !config.configured} className="rounded-lg border border-red-200 px-3 py-2 text-sm text-red-600 disabled:opacity-50 dark:border-red-900/60 dark:text-red-300">Remove</button>
+          <div className="flex gap-2">
+            <button type="button" onClick={onClose} disabled={saving} className="rounded-lg border border-neutral-300 px-3 py-2 text-sm dark:border-zinc-600">Cancel</button>
+            <button type="button" onClick={() => void submit()} disabled={saving || clientId.trim() === '' || (!config.configured && clientSecret.trim() === '')} className="rounded-lg bg-sky-600 px-3 py-2 text-sm font-medium text-white disabled:opacity-50">Save</button>
+          </div>
+        </div>
+      </div>
+    </Modal>
   )
 }
 

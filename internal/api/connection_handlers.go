@@ -31,6 +31,7 @@ const (
 	ConnectionAuthNoAuth           = connector.AuthNoAuth
 	ConnectionAuthAPIKey           = connector.AuthAPIKey
 	ConnectionAuthCustomCredential = connector.AuthCustomCredential
+	ConnectionAuthOAuth2           = connector.AuthOAuth2
 )
 
 func (s *Server) handleConnectorProviders(w http.ResponseWriter, r *http.Request) {

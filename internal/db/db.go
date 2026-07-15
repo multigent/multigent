@@ -47,6 +47,10 @@ type Store interface {
 	UpsertConnectorProvider(provider ConnectorProvider) error
 	ConnectorProviderByID(provider string) (ConnectorProvider, bool, error)
 	ListConnectorProviders(includeDisabled bool) ([]ConnectorProvider, error)
+	UpsertOAuthClientConfig(config OAuthClientConfig) error
+	OAuthClientConfigByProvider(workspaceID, provider string) (OAuthClientConfig, bool, error)
+	ListOAuthClientConfigs(workspaceID string) ([]OAuthClientConfig, error)
+	DeleteOAuthClientConfig(workspaceID, provider string) error
 
 	UpsertModelProvider(workspaceID string, provider ModelProvider) error
 	ModelProviderByID(workspaceID, id string) (ModelProvider, bool, error)
@@ -171,6 +175,19 @@ type ConnectorProvider struct {
 	Enabled       bool
 	CreatedAt     string
 	UpdatedAt     string
+}
+
+type OAuthClientConfig struct {
+	WorkspaceID      string
+	Provider         string
+	ClientID         string
+	SecretCiphertext string
+	Nonce            string
+	KeyVersion       string
+	ExtraJSON        string
+	CreatedBy        string
+	CreatedAt        string
+	UpdatedAt        string
 }
 
 type ModelProvider struct {

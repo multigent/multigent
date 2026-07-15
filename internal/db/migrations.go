@@ -94,6 +94,20 @@ func (db *SQLiteStore) migrate() error {
 	updated_at TEXT NOT NULL DEFAULT ''
 )`,
 		`CREATE INDEX IF NOT EXISTS idx_connector_providers_enabled ON connector_providers(enabled, provider)`,
+		`CREATE TABLE IF NOT EXISTS oauth_client_configs (
+	workspace_id TEXT NOT NULL REFERENCES workspaces(id) ON DELETE CASCADE,
+	provider TEXT NOT NULL,
+	client_id TEXT NOT NULL,
+	secret_ciphertext TEXT NOT NULL DEFAULT '',
+	nonce TEXT NOT NULL DEFAULT '',
+	key_version TEXT NOT NULL DEFAULT '',
+	extra_json TEXT NOT NULL DEFAULT '{}',
+	created_by TEXT NOT NULL DEFAULT '',
+	created_at TEXT NOT NULL,
+	updated_at TEXT NOT NULL DEFAULT '',
+	PRIMARY KEY (workspace_id, provider)
+)`,
+		`CREATE INDEX IF NOT EXISTS idx_oauth_client_configs_workspace ON oauth_client_configs(workspace_id, provider)`,
 		`CREATE TABLE IF NOT EXISTS connections (
 	id TEXT PRIMARY KEY,
 	workspace_id TEXT NOT NULL REFERENCES workspaces(id) ON DELETE CASCADE,
