@@ -119,3 +119,8 @@ export function canOperateAgent(user: AuthUser | null | undefined, project: stri
   if (canOperateProject(user, project)) return true
   return hasLinkedAgent(user, project, agent)
 }
+
+export function canConfigureAgent(user: AuthUser | null | undefined, project: string, agent: string): boolean {
+  if (canManageProject(user, project)) return true
+  return hasLinkedAgent(user, project, agent)
+}

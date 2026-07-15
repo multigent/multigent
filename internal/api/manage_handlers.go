@@ -253,6 +253,10 @@ func (s *Server) handleSetModel(w http.ResponseWriter, r *http.Request) {
 		s.jsonError(w, http.StatusBadRequest, "missing project or agent")
 		return
 	}
+	if !s.canManageAgentConfig(r, project, agent) {
+		s.jsonError(w, http.StatusForbidden, "agent management access required")
+		return
+	}
 
 	var body setModelBody
 	if err := s.readJSON(w, r, &body); err != nil {

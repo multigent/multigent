@@ -12,6 +12,7 @@ import { cn } from '../../lib/cn'
 import { useFormatDateTime } from '../../lib/format-datetime'
 import { useApiJson } from '../../lib/use-api'
 import { apiFetch, apiPost, apiPut, apiDelete, apiPatch } from '../../lib/api'
+import { canConfigureAgent, canManageProject, canOperateAgent, useAuth } from '../../lib/auth'
 import { Pagination } from '../../components/ui/Pagination'
 import { IMConnectionPanel } from '../../components/project/IMConnectionPanel'
 
@@ -264,7 +265,7 @@ function AgentEnvPanel({ project, agent }: { project: string; agent: string }) {
   )
 }
 
-function PromptEditor({ label, icon: Icon, apiPath, initialContent }: { label: string; icon: LucideIcon; apiPath: string; initialContent: string }) {
+function PromptEditor({ label, icon: Icon, apiPath, initialContent, canEdit = true }: { label: string; icon: LucideIcon; apiPath: string; initialContent: string; canEdit?: boolean }) {
   const { t } = useTranslation()
   const [value, setValue] = useState(initialContent)
   const [dirty, setDirty] = useState(false)
@@ -289,9 +290,11 @@ function PromptEditor({ label, icon: Icon, apiPath, initialContent }: { label: s
           <button type="button" onClick={() => setPreview((p) => !p)} className={cn('rounded-md px-2 py-1 text-[11px] font-medium transition-colors', preview ? 'bg-sky-100 text-sky-700 dark:bg-sky-900/30 dark:text-sky-400' : 'text-neutral-400 hover:text-neutral-600 dark:text-zinc-500 dark:hover:text-zinc-400')}>
             {preview ? t('prompt.edit') : t('prompt.preview')}
           </button>
-          <button type="button" onClick={save} disabled={saving} className="flex items-center gap-1 rounded-md bg-sky-600 px-2.5 py-1 text-[11px] font-medium text-white transition-colors hover:bg-sky-700 disabled:opacity-50">
-            <Save className="size-3" strokeWidth={2} />{saving ? t('prompt.saving') : t('prompt.save')}
-          </button>
+          {canEdit && (
+            <button type="button" onClick={save} disabled={saving} className="flex items-center gap-1 rounded-md bg-sky-600 px-2.5 py-1 text-[11px] font-medium text-white transition-colors hover:bg-sky-700 disabled:opacity-50">
+              <Save className="size-3" strokeWidth={2} />{saving ? t('prompt.saving') : t('prompt.save')}
+            </button>
+          )}
         </div>
       </div>
       {preview ? (
@@ -299,7 +302,7 @@ function PromptEditor({ label, icon: Icon, apiPath, initialContent }: { label: s
           <Markdown remarkPlugins={[remarkGfm]}>{value || '*（空）*'}</Markdown>
         </div>
       ) : (
-        <textarea value={value} onChange={(e) => { setValue(e.target.value); setDirty(true); setSaved(false) }}
+        <textarea value={value} readOnly={!canEdit} onChange={(e) => { if (!canEdit) return; setValue(e.target.value); setDirty(true); setSaved(false) }}
           className="block w-full resize-y bg-transparent p-4 font-mono text-[13px] leading-relaxed text-neutral-800 outline-none placeholder:text-neutral-300 dark:text-zinc-200 dark:placeholder:text-zinc-700"
           rows={Math.max(6, Math.min(20, value.split('\n').length + 1))} placeholder="Markdown prompt..." />
       )}
@@ -307,7 +310,7 @@ function PromptEditor({ label, icon: Icon, apiPath, initialContent }: { label: s
   )
 }
 
-function SessionPanel({ project, agentName }: { project: string; agentName: string }) {
+function SessionPanel({ project, agentName, canConfigure, canRun }: { project: string; agentName: string; canConfigure: boolean; canRun: boolean }) {
   const { t } = useTranslation()
   const fmt = useFormatDateTime()
   const hbPath = `/api/v1/projects/${encodeURIComponent(project)}/agents/${encodeURIComponent(agentName)}/heartbeat`
@@ -359,16 +362,18 @@ function SessionPanel({ project, agentName }: { project: string; agentName: stri
             <MessageSquareText className="size-3.5" strokeWidth={2} />
             {t('agentChat.openChat')}
           </Link>
-          {hasSession && (
+          {canConfigure && hasSession && (
             <button type="button" onClick={() => void doReset()} disabled={resetting}
               className="cursor-pointer rounded-md border border-amber-200 bg-white px-2.5 py-1 text-xs font-medium text-amber-700 transition-colors hover:bg-amber-50 disabled:opacity-50 dark:border-amber-800 dark:bg-amber-900/30 dark:text-amber-400 dark:hover:bg-amber-900/50">
               {resetting ? t('session.resettingSession') : t('session.resetSession')}
             </button>
           )}
-          <button type="button" onClick={() => void doRun()} disabled={running}
-            className="cursor-pointer rounded-md border border-sky-200 bg-white px-2.5 py-1 text-xs font-medium text-sky-700 transition-colors hover:bg-sky-50 disabled:opacity-50 dark:border-sky-800 dark:bg-sky-900/30 dark:text-sky-400 dark:hover:bg-sky-900/50">
-            {running ? t('session.running') : t('session.run')}
-          </button>
+          {canRun && (
+            <button type="button" onClick={() => void doRun()} disabled={running}
+              className="cursor-pointer rounded-md border border-sky-200 bg-white px-2.5 py-1 text-xs font-medium text-sky-700 transition-colors hover:bg-sky-50 disabled:opacity-50 dark:border-sky-800 dark:bg-sky-900/30 dark:text-sky-400 dark:hover:bg-sky-900/50">
+              {running ? t('session.running') : t('session.run')}
+            </button>
+          )}
         </div>
       </div>
       {runResult && (
@@ -486,6 +491,7 @@ function ModelSelector({ project, agentName, currentModel, currentHttpAgent, onC
 export default function ProjectAgentDetailPage() {
   const { t } = useTranslation()
   const fmt = useFormatDateTime()
+  const { user } = useAuth()
   const navigate = useNavigate()
   const { projectId, agentName } = useParams<{ projectId: string; agentName: string }>()
 
@@ -555,6 +561,9 @@ export default function ProjectAgentDetailPage() {
 
   if (!projectId || !agentName) return null
 
+  const canManageThisProject = canManageProject(user, projectId)
+  const canConfigureThisAgent = canConfigureAgent(user, projectId, agentName)
+  const canRunThisAgent = canOperateAgent(user, projectId, agentName)
   const isHuman = ctxState.status === 'ok' && ctxState.data.model === 'human'
   const modelCls = MODEL_COLORS[ctxState.status === 'ok' ? ctxState.data.model : ''] ?? ''
   const HeaderIcon = isHuman ? User : Bot
@@ -638,7 +647,7 @@ export default function ProjectAgentDetailPage() {
             ) : (
               <div className="flex items-center gap-2">
                 <h1 className="truncate text-xl font-semibold text-neutral-900 dark:text-zinc-100">{agentName}</h1>
-                {ctxState.status === 'ok' && (
+                {ctxState.status === 'ok' && canManageThisProject && (
                   <button type="button" onClick={() => setEditingIdentity(true)} className="rounded-md p-1 text-neutral-400 hover:bg-neutral-100 hover:text-neutral-700 dark:text-zinc-500 dark:hover:bg-zinc-800 dark:hover:text-zinc-300" title="Edit name/avatar">
                     <Pencil className="size-3.5" strokeWidth={1.8} />
                   </button>
@@ -697,36 +706,37 @@ export default function ProjectAgentDetailPage() {
                 {ctx.syncedAt && <InfoCard icon={Clock} label={t('prompt.lastSync')} value={fmt(ctx.syncedAt)} />}
               </div>
 
-              {/* Configuration: model + env */}
-              <section>
-                <SectionHeader icon={Settings2} title={t('members.configuration')} />
-                <div className="mt-3 space-y-4">
-                  <div className="rounded-lg border border-neutral-200/80 bg-white p-4 dark:border-zinc-700/60 dark:bg-zinc-900/40">
-                    <ModelSelector
+              {canConfigureThisAgent && (
+                <section>
+                  <SectionHeader icon={Settings2} title={t('members.configuration')} />
+                  <div className="mt-3 space-y-4">
+                    <div className="rounded-lg border border-neutral-200/80 bg-white p-4 dark:border-zinc-700/60 dark:bg-zinc-900/40">
+                      <ModelSelector
+                        project={projectId}
+                        agentName={agentName}
+                        currentModel={ctx.model}
+                        currentHttpAgent={ctx.httpAgent}
+                        onChanged={() => setCtxReload((k) => k + 1)}
+                      />
+                    </div>
+                    <EnvEditor
                       project={projectId}
                       agentName={agentName}
-                      currentModel={ctx.model}
-                      currentHttpAgent={ctx.httpAgent}
+                      model={ctx.model}
+                      initialEnv={ctx.env ?? {}}
+                      initialProvider={ctx.provider}
+                      onChanged={() => setCtxReload((k) => k + 1)}
+                    />
+                    <SandboxEditor
+                      project={projectId}
+                      agentName={agentName}
+                      initial={ctx.sandbox}
+                      initialAddDirs={ctx.addDirs ?? []}
                       onChanged={() => setCtxReload((k) => k + 1)}
                     />
                   </div>
-                  <EnvEditor
-                    project={projectId}
-                    agentName={agentName}
-                    model={ctx.model}
-                    initialEnv={ctx.env ?? {}}
-                    initialProvider={ctx.provider}
-                    onChanged={() => setCtxReload((k) => k + 1)}
-                  />
-                  <SandboxEditor
-                    project={projectId}
-                    agentName={agentName}
-                    initial={ctx.sandbox}
-                    initialAddDirs={ctx.addDirs ?? []}
-                    onChanged={() => setCtxReload((k) => k + 1)}
-                  />
-                </div>
-              </section>
+                </section>
+              )}
 
               {/* Skills */}
               {ctx.skills && ctx.skills.length > 0 && (
@@ -748,34 +758,45 @@ export default function ProjectAgentDetailPage() {
               <section>
                 <SectionHeader icon={Activity} title={t('session.sessionLabel')} />
                 <div className="mt-3 space-y-3">
-                  <SessionPanel project={projectId} agentName={agentName} />
-                  <div className="flex items-center gap-3">
-                    <button
-                      type="button"
-                      onClick={doSync}
-                      disabled={syncing}
-                      className="flex items-center gap-1.5 rounded-md border border-neutral-200 bg-white px-3 py-1.5 text-sm font-medium text-neutral-700 transition-colors hover:border-neutral-300 hover:bg-neutral-50 disabled:opacity-50 dark:border-zinc-700 dark:bg-zinc-800 dark:text-zinc-300 dark:hover:border-zinc-600 dark:hover:bg-zinc-700"
-                    >
-                      <RefreshCw className={cn('size-4', syncing && 'animate-spin')} strokeWidth={2} />
-                      {syncing ? t('prompt.syncing') : t('prompt.sync')}
-                    </button>
-                    {syncOutput && (
-                      <span className="text-sm text-neutral-500 dark:text-zinc-500">{syncOutput}</span>
-                    )}
-                  </div>
+                  <SessionPanel
+                    project={projectId}
+                    agentName={agentName}
+                    canConfigure={canConfigureThisAgent}
+                    canRun={canRunThisAgent}
+                  />
+                  {canConfigureThisAgent && (
+                    <div className="flex items-center gap-3">
+                      <button
+                        type="button"
+                        onClick={doSync}
+                        disabled={syncing}
+                        className="flex items-center gap-1.5 rounded-md border border-neutral-200 bg-white px-3 py-1.5 text-sm font-medium text-neutral-700 transition-colors hover:border-neutral-300 hover:bg-neutral-50 disabled:opacity-50 dark:border-zinc-700 dark:bg-zinc-800 dark:text-zinc-300 dark:hover:border-zinc-600 dark:hover:bg-zinc-700"
+                      >
+                        <RefreshCw className={cn('size-4', syncing && 'animate-spin')} strokeWidth={2} />
+                        {syncing ? t('prompt.syncing') : t('prompt.sync')}
+                      </button>
+                      {syncOutput && (
+                        <span className="text-sm text-neutral-500 dark:text-zinc-500">{syncOutput}</span>
+                      )}
+                    </div>
+                  )}
                 </div>
               </section>
 
-              {/* IM Connections */}
-              <IMConnectionPanel
-                project={projectId}
-                agentName={agentName}
-                model={ctx.model}
-                workDir={ctx.workDir}
-              />
+              {canConfigureThisAgent && (
+                <>
+                  {/* IM Connections */}
+                  <IMConnectionPanel
+                    project={projectId}
+                    agentName={agentName}
+                    model={ctx.model}
+                    workDir={ctx.workDir}
+                  />
 
-              {/* Environment Variables */}
-              <AgentEnvPanel project={projectId} agent={agentName} />
+                  {/* Environment Variables */}
+                  <AgentEnvPanel project={projectId} agent={agentName} />
+                </>
+              )}
 
               {/* Wakeup prompt */}
               <PromptEditor
@@ -783,6 +804,7 @@ export default function ProjectAgentDetailPage() {
                 icon={BookOpen}
                 apiPath={`/api/v1/projects/${encodeURIComponent(projectId)}/agents/${encodeURIComponent(agentName)}/wakeup`}
                 initialContent={ctx.wakeup}
+                canEdit={canConfigureThisAgent}
               />
 
               {/* Merged context */}

@@ -123,6 +123,25 @@ func TestSessionResetRequiresAgentManagementAccess(t *testing.T) {
 	}
 }
 
+func TestSetModelRequiresAgentManagementAccess(t *testing.T) {
+	s, workspaceID := newConnectionGrantPolicyServer(t)
+	grantProjectRoleForTest(t, s, workspaceID, "viewer", ProjectRoleViewer)
+	grantProjectRoleForTest(t, s, workspaceID, "operator", ProjectRoleOperator)
+
+	for _, username := range []string{"viewer", "operator"} {
+		rec := httptest.NewRecorder()
+		req := providerTestRequest(http.MethodPost, "/api/v1/projects/tapnow/agents/pm/set-model", username, setModelBody{
+			Model: "codex",
+		})
+		req.SetPathValue("name", "tapnow")
+		req.SetPathValue("agent", "pm")
+		s.handleSetModel(rec, req)
+		if rec.Code != http.StatusForbidden {
+			t.Fatalf("%s set model status=%d body=%s", username, rec.Code, rec.Body.String())
+		}
+	}
+}
+
 func TestMessageMailboxRBAC(t *testing.T) {
 	s, workspaceID := newConnectionGrantPolicyServer(t)
 	grantProjectRoleForTest(t, s, workspaceID, "viewer", ProjectRoleViewer)
