@@ -223,17 +223,18 @@ func (s *Server) handleGetAgentContext(w http.ResponseWriter, r *http.Request) {
 		addDirs = []string{}
 	}
 	resp := map[string]any{
-		"contextFile": contextFile,
-		"context":     string(merged),
-		"wakeup":      string(wakeup),
-		"model":       string(meta.Model),
-		"team":        meta.Team,
-		"role":        meta.Role,
-		"avatar":      meta.Avatar,
-		"syncedAt":    meta.SyncedAt,
-		"skills":      skills,
-		"workDir":     agentDir,
-		"addDirs":     addDirs,
+		"contextFile":  contextFile,
+		"context":      string(merged),
+		"wakeup":       string(wakeup),
+		"model":        string(meta.Model),
+		"runtimeModel": meta.RuntimeModel,
+		"team":         meta.Team,
+		"role":         meta.Role,
+		"avatar":       meta.Avatar,
+		"syncedAt":     meta.SyncedAt,
+		"skills":       skills,
+		"workDir":      agentDir,
+		"addDirs":      addDirs,
 	}
 	if meta.HTTPAgent != nil {
 		resp["httpAgent"] = meta.HTTPAgent

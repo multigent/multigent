@@ -354,8 +354,9 @@ func (s *Server) handleSessionReset(w http.ResponseWriter, r *http.Request) {
 // ── Agent Environment Variables ──────────────────────────────────────────────
 
 type agentEnvBody struct {
-	Env      map[string]string `json:"env"`
-	Provider *string           `json:"provider,omitempty"`
+	Env          map[string]string `json:"env"`
+	Provider     *string           `json:"provider,omitempty"`
+	RuntimeModel *string           `json:"runtimeModel,omitempty"`
 }
 
 func (s *Server) handlePutAgentEnv(w http.ResponseWriter, r *http.Request) {
@@ -418,6 +419,9 @@ func (s *Server) handlePutAgentEnv(w http.ResponseWriter, r *http.Request) {
 		}
 		meta.Provider = providerID
 	}
+	if body.RuntimeModel != nil {
+		meta.RuntimeModel = strings.TrimSpace(*body.RuntimeModel)
+	}
 
 	if err := s.st.SaveAgentMeta(project, agent, meta); err != nil {
 		s.serverError(w, err)
@@ -429,14 +433,15 @@ func (s *Server) handlePutAgentEnv(w http.ResponseWriter, r *http.Request) {
 		ResourceID:   project + "/" + agent,
 		Summary:      "Agent environment updated",
 		After: map[string]any{
-			"project":  project,
-			"agent":    agent,
-			"provider": meta.Provider,
-			"envKeys":  sortedEnvKeys(meta.Env),
+			"project":      project,
+			"agent":        agent,
+			"provider":     meta.Provider,
+			"runtimeModel": meta.RuntimeModel,
+			"envKeys":      sortedEnvKeys(meta.Env),
 		},
 		Request: r,
 	})
-	_ = json.NewEncoder(w).Encode(map[string]any{"ok": true, "env": meta.Env, "provider": meta.Provider})
+	_ = json.NewEncoder(w).Encode(map[string]any{"ok": true, "env": meta.Env, "provider": meta.Provider, "runtimeModel": meta.RuntimeModel})
 }
 
 func (s *Server) canManageAgentConfig(r *http.Request, project, agent string) bool {

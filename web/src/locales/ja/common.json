@@ -758,6 +758,8 @@
     "scopeWorkspace": "ワークスペース",
     "scopePersonal": "個人",
     "modelLabel": "モデル",
+    "runtimeModelLabel": "実行モデル",
+    "runtimeModelPlaceholder": "例: gpt-5.6-sol",
     "selectLabel": "プロバイダー",
     "none": "なし（環境変数を使用）",
     "overrideHint": "プロバイダー設定が先に適用され、エージェント固有の環境変数で上書きできます。",

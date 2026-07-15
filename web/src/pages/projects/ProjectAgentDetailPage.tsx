@@ -98,6 +98,7 @@ type AgentContext = {
   context: string
   wakeup: string
   model: string
+  runtimeModel?: string
   team: string
   role: string
   avatar?: string
@@ -135,6 +136,14 @@ const WELL_KNOWN_ENV: Record<string, { keys: string[]; hint: string }> = {
     keys: ['ANTHROPIC_AUTH_TOKEN', 'ANTHROPIC_BASE_URL', 'OPENAI_API_KEY', 'OPENAI_BASE_URL'],
     hint: 'OpenCode supports multiple providers',
   },
+}
+
+const RUNTIME_MODEL_PRESETS: Record<string, string[]> = {
+  codex: ['gpt-5.6-sol', 'gpt-5.1-codex-max', 'gpt-5.1-codex', 'gpt-5.1'],
+  claudecode: ['claude-sonnet-4-20250514', 'claude-opus-4-20250514', 'claude-3-7-sonnet-latest'],
+  gemini: ['gemini-2.5-pro', 'gemini-2.5-flash', 'gemini-2.0-flash'],
+  cursor: ['auto', 'gpt-5.1', 'claude-sonnet-4-20250514'],
+  opencode: ['gpt-5.1', 'claude-sonnet-4-20250514'],
 }
 
 // ── Agent Env Panel ─────────────────────────────────────────────────────────
@@ -724,6 +733,7 @@ export default function ProjectAgentDetailPage() {
                       project={projectId}
                       agentName={agentName}
                       model={ctx.model}
+                      initialRuntimeModel={ctx.runtimeModel}
                       initialEnv={ctx.env ?? {}}
                       initialProvider={ctx.provider}
                       onChanged={() => setCtxReload((k) => k + 1)}
@@ -1312,8 +1322,8 @@ function runtimeConnectionAccountLabel(connection: RuntimeConnection): string {
   return [summary?.accountId, summary?.accountName, summary?.accountEmail].filter(Boolean).join(' · ')
 }
 
-function EnvEditor({ project, agentName, model, initialEnv, initialProvider, onChanged }: {
-  project: string; agentName: string; model: string; initialEnv: Record<string, string>; initialProvider?: string; onChanged: () => void
+function EnvEditor({ project, agentName, model, initialEnv, initialProvider, initialRuntimeModel, onChanged }: {
+  project: string; agentName: string; model: string; initialEnv: Record<string, string>; initialProvider?: string; initialRuntimeModel?: string; onChanged: () => void
 }) {
   const { t } = useTranslation()
   const [entries, setEntries] = useState<{ key: string; value: string }[]>(() => {
@@ -1324,13 +1334,23 @@ function EnvEditor({ project, agentName, model, initialEnv, initialProvider, onC
   const [saved, setSaved] = useState(false)
   const [providerOptions, setProviderOptions] = useState<ProviderOption[]>([])
   const [selectedProvider, setSelectedProvider] = useState(initialProvider ?? '')
+  const [runtimeModel, setRuntimeModel] = useState(initialRuntimeModel ?? '')
 
   useEffect(() => {
     const path = `/api/v1/providers?project=${encodeURIComponent(project)}&agent=${encodeURIComponent(agentName)}`
     void apiFetch<ProviderOption[]>(path).then(data => setProviderOptions(data ?? [])).catch(() => {})
   }, [project, agentName])
 
+  useEffect(() => {
+    const items = Object.entries(initialEnv).map(([key, value]) => ({ key, value }))
+    setEntries(items)
+    setSelectedProvider(initialProvider ?? '')
+    setRuntimeModel(initialRuntimeModel ?? '')
+    setSaved(false)
+  }, [initialEnv, initialProvider, initialRuntimeModel])
+
   const wellKnown = WELL_KNOWN_ENV[model]
+  const runtimeModelOptions = RUNTIME_MODEL_PRESETS[model] ?? []
   const usedKeys = new Set(entries.map((e) => e.key))
 
   function addEntry(key = '') {
@@ -1356,7 +1376,7 @@ function EnvEditor({ project, agentName, model, initialEnv, initialProvider, onC
         const k = e.key.trim()
         if (k) env[k] = e.value
       }
-      await apiPut(`/api/v1/projects/${encodeURIComponent(project)}/agents/${encodeURIComponent(agentName)}/env`, { env, provider: selectedProvider })
+      await apiPut(`/api/v1/projects/${encodeURIComponent(project)}/agents/${encodeURIComponent(agentName)}/env`, { env, provider: selectedProvider, runtimeModel })
       setSaved(true)
       setTimeout(() => setSaved(false), 2500)
       onChanged()
@@ -1382,13 +1402,12 @@ function EnvEditor({ project, agentName, model, initialEnv, initialProvider, onC
         </div>
       </div>
 
-      {/* Provider selector */}
-      {providerOptions.length > 0 && (
-        <div className="mb-3">
-          <label className="flex items-center gap-2">
-            <span className="text-xs font-medium text-neutral-600 dark:text-zinc-400">{t('provider.selectLabel')}</span>
+      <div className="mb-3 grid gap-3 md:grid-cols-2">
+        {providerOptions.length > 0 && (
+          <label className="block">
+            <span className="mb-1 block text-xs font-medium text-neutral-600 dark:text-zinc-400">{t('provider.selectLabel')}</span>
             <select value={selectedProvider} onChange={e => { setSelectedProvider(e.target.value); setSaved(false) }}
-              className={cn(inputCls, 'w-56 text-xs')}>
+              className={cn(inputCls, 'w-full text-xs')}>
               <option value="">{t('provider.none')}</option>
               {providerOptions.map(p => (
                 <option key={p.id} value={p.id}>
@@ -1397,11 +1416,26 @@ function EnvEditor({ project, agentName, model, initialEnv, initialProvider, onC
               ))}
             </select>
           </label>
-          {selectedProvider && (
-            <p className="mt-1 text-[11px] text-neutral-400 dark:text-zinc-500">{t('provider.overrideHint')}</p>
+        )}
+        <label className="block">
+          <span className="mb-1 block text-xs font-medium text-neutral-600 dark:text-zinc-400">{t('provider.runtimeModelLabel')}</span>
+          <input
+            list={`runtime-model-${project}-${agentName}`}
+            value={runtimeModel}
+            onChange={e => { setRuntimeModel(e.target.value); setSaved(false) }}
+            className={cn(inputCls, 'w-full font-mono text-xs')}
+            placeholder={t('provider.runtimeModelPlaceholder')}
+          />
+          {runtimeModelOptions.length > 0 && (
+            <datalist id={`runtime-model-${project}-${agentName}`}>
+              {runtimeModelOptions.map(option => <option key={option} value={option} />)}
+            </datalist>
           )}
-        </div>
-      )}
+        </label>
+        {selectedProvider && (
+          <p className="md:col-span-2 text-[11px] text-neutral-400 dark:text-zinc-500">{t('provider.overrideHint')}</p>
+        )}
+      </div>
 
       {wellKnown && (
         <p className="mb-3 text-xs text-neutral-400 dark:text-zinc-500">

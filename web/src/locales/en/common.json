@@ -758,6 +758,8 @@
     "scopeWorkspace": "Workspace",
     "scopePersonal": "Personal",
     "modelLabel": "Model",
+    "runtimeModelLabel": "Runtime Model",
+    "runtimeModelPlaceholder": "e.g. gpt-5.6-sol",
     "selectLabel": "Provider",
     "none": "None (use env vars)",
     "overrideHint": "Provider settings are applied first; per-agent env vars override them.",

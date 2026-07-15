@@ -1023,6 +1023,7 @@ func remapPromptFile(args []string, hostPath, containerPath string) []string {
 //  2. Workspace agent-scoped secrets
 //  3. API provider env
 //  4. Per-agent env (AgentMeta.Env)
+//  5. Explicit runtime model (AgentMeta.RuntimeModel)
 func resolveProviderEnv(root string, meta *entity.AgentMeta) map[string]string {
 	merged := make(map[string]string)
 
@@ -1057,7 +1058,46 @@ func resolveProviderEnv(root string, meta *entity.AgentMeta) map[string]string {
 	for k, v := range meta.Env {
 		merged[k] = v
 	}
+	for k, v := range runtimeModelEnv(meta.Model, meta.RuntimeModel) {
+		merged[k] = v
+	}
 	return merged
+}
+
+func runtimeModelEnv(model entity.AgentModel, runtimeModel string) map[string]string {
+	runtimeModel = strings.TrimSpace(runtimeModel)
+	if runtimeModel == "" {
+		return nil
+	}
+	switch entity.NormaliseModel(model) {
+	case entity.ModelClaudeCode:
+		return map[string]string{
+			"ANTHROPIC_MODEL": runtimeModel,
+			"CLAUDE_MODEL":    runtimeModel,
+		}
+	case entity.ModelCodex:
+		return map[string]string{
+			"OPENAI_MODEL": runtimeModel,
+			"CODEX_MODEL":  runtimeModel,
+		}
+	case entity.ModelGemini:
+		return map[string]string{
+			"GEMINI_MODEL": runtimeModel,
+			"GOOGLE_MODEL": runtimeModel,
+		}
+	case entity.ModelCursor:
+		return map[string]string{
+			"CURSOR_MODEL": runtimeModel,
+		}
+	case entity.ModelOpenCode:
+		return map[string]string{
+			"OPENAI_MODEL": runtimeModel,
+		}
+	default:
+		return map[string]string{
+			"MULTIGENT_RUNTIME_MODEL": runtimeModel,
+		}
+	}
 }
 
 func (r *Runner) resolveRuntimeControlEnv(project, agentName, runID string) map[string]string {

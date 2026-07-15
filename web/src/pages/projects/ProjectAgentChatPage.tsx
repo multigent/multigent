@@ -16,6 +16,7 @@ type HistoryResp = {
 
 type AgentContext = {
   model: string
+  runtimeModel?: string
   provider?: string
   env?: Record<string, string>
   httpAgent?: {
@@ -343,6 +344,7 @@ export default function ProjectAgentChatPage() {
   const providerModel = providers.find((p) => p.id === agentContext?.provider)?.model
   const env = agentContext?.env ?? {}
   const concreteModel =
+    agentContext?.runtimeModel ||
     agentContext?.httpAgent?.model ||
     env.ANTHROPIC_MODEL ||
     env.CLAUDE_MODEL ||

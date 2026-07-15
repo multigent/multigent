@@ -265,6 +265,11 @@ type AgentMeta struct {
 	// overriding the per-agent Env for matching keys.
 	Provider string `yaml:"provider,omitempty"`
 
+	// RuntimeModel is the concrete LLM model passed to the selected agent CLI,
+	// such as "gpt-5.6-sol" for Codex or "claude-sonnet-4-20250514" for Claude Code.
+	// Model identifies the CLI/runtime family; RuntimeModel identifies the API model.
+	RuntimeModel string `yaml:"runtime_model,omitempty"`
+
 	// Env holds per-agent environment variable overrides that are set on the
 	// agent subprocess (e.g. ANTHROPIC_MODEL, ANTHROPIC_BASE_URL, OPENAI_API_KEY).
 	// These are merged with the host environment at runtime, with agent values

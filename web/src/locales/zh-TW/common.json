@@ -758,6 +758,8 @@
     "scopeWorkspace": "工作區",
     "scopePersonal": "個人",
     "modelLabel": "模型",
+    "runtimeModelLabel": "運行模型",
+    "runtimeModelPlaceholder": "例如 gpt-5.6-sol",
     "selectLabel": "供應商",
     "none": "無（使用環境變數）",
     "overrideHint": "供應商設定優先套用，Agent 級環境變數可覆蓋。",
