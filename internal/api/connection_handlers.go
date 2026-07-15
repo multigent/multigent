@@ -645,6 +645,55 @@ func sealConnectionSecret(values map[string]string) (controldb.ConnectionSecret,
 	}, nil
 }
 
+func openConnectionSecret(secret controldb.ConnectionSecret) (map[string]string, error) {
+	if secret.Ciphertext == "" {
+		return map[string]string{}, nil
+	}
+	var raw []byte
+	switch secret.KeyVersion {
+	case "", "plain-dev":
+		decoded, err := base64.StdEncoding.DecodeString(secret.Ciphertext)
+		if err != nil {
+			return nil, err
+		}
+		raw = decoded
+	case "env-v1":
+		key := strings.TrimSpace(os.Getenv("MULTIGENT_CONNECTION_ENCRYPTION_KEY"))
+		if key == "" {
+			return nil, fmt.Errorf("MULTIGENT_CONNECTION_ENCRYPTION_KEY is required to decrypt connection secret")
+		}
+		ciphertext, err := base64.StdEncoding.DecodeString(secret.Ciphertext)
+		if err != nil {
+			return nil, err
+		}
+		nonce, err := base64.StdEncoding.DecodeString(secret.Nonce)
+		if err != nil {
+			return nil, err
+		}
+		sum := sha256.Sum256([]byte(key))
+		block, err := aes.NewCipher(sum[:])
+		if err != nil {
+			return nil, err
+		}
+		gcm, err := cipher.NewGCM(block)
+		if err != nil {
+			return nil, err
+		}
+		opened, err := gcm.Open(nil, nonce, ciphertext, nil)
+		if err != nil {
+			return nil, err
+		}
+		raw = opened
+	default:
+		return nil, fmt.Errorf("unsupported connection secret key version %q", secret.KeyVersion)
+	}
+	out := map[string]string{}
+	if err := json.Unmarshal(raw, &out); err != nil {
+		return nil, err
+	}
+	return out, nil
+}
+
 type connectionResponse struct {
 	ID             string                 `json:"id"`
 	Provider       string                 `json:"provider"`
