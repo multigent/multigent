@@ -26,7 +26,7 @@ func TestOpenSeedsDefaultConnectorProviders(t *testing.T) {
 	if !github.Enabled || github.AuthTypesJSON == "" || github.CatalogJSON == "" {
 		t.Fatalf("github provider not seeded correctly: %#v", github)
 	}
-	for _, id := range []string{"feishu", "lark"} {
+	for _, id := range []string{"feishu", "lark", "dingtalk_bot"} {
 		provider, ok, err := db.ConnectorProviderByID(id)
 		if err != nil || !ok {
 			t.Fatalf("%s provider ok=%v err=%v", id, ok, err)

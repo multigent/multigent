@@ -2,6 +2,9 @@ package api
 
 import (
 	"bytes"
+	"crypto/hmac"
+	"crypto/sha256"
+	"encoding/base64"
 	"encoding/json"
 	"errors"
 	"fmt"
@@ -151,7 +154,15 @@ func (s *Server) proxyRuntimeAction(w http.ResponseWriter, r *http.Request, prin
 	if err != nil {
 		return err
 	}
-	target, err := buildRuntimeActionURL(cfg.BaseURL, reqBody.Endpoint, reqBody.Query)
+	endpoint := reqBody.Endpoint
+	query := reqBody.Query
+	if cfg.EndpointRewrite != nil {
+		endpoint, query, err = cfg.EndpointRewrite(endpoint, query)
+		if err != nil {
+			return err
+		}
+	}
+	target, err := buildRuntimeActionURL(cfg.BaseURL, endpoint, query)
 	if err != nil {
 		return err
 	}
@@ -203,10 +214,11 @@ func (s *Server) proxyRuntimeAction(w http.ResponseWriter, r *http.Request, prin
 }
 
 type runtimeHTTPActionConfig struct {
-	BaseURL      string
-	AuthHeader   string
-	AuthValue    string
-	RedactValues []string
+	BaseURL         string
+	AuthHeader      string
+	AuthValue       string
+	RedactValues    []string
+	EndpointRewrite func(endpoint string, query map[string]string) (string, map[string]string, error)
 }
 
 func (s *Server) runtimeHTTPActionConfig(connection controldb.Connection) (runtimeHTTPActionConfig, error) {
@@ -271,6 +283,26 @@ func (s *Server) runtimeHTTPActionConfig(connection controldb.Connection) (runti
 			cfg.AuthValue = apiKey
 			cfg.RedactValues = append(cfg.RedactValues, apiKey)
 		}
+	case "dingtalk_bot":
+		accessToken, err := normalizeDingTalkBotAccessToken(apiKey)
+		if err != nil {
+			return runtimeHTTPActionConfig{}, err
+		}
+		cfg.BaseURL = "https://oapi.dingtalk.com"
+		cfg.RedactValues = append(cfg.RedactValues, accessToken, apiKey, strings.TrimSpace(values["signingSecret"]))
+		cfg.EndpointRewrite = func(endpoint string, query map[string]string) (string, map[string]string, error) {
+			if strings.TrimSpace(endpoint) != "/robot/send" {
+				return "", nil, runtimeActionInputError{message: "DingTalk Bot action proxy only supports /robot/send"}
+			}
+			nextQuery := copyStringMap(query)
+			nextQuery["access_token"] = accessToken
+			if signingSecret := strings.TrimSpace(values["signingSecret"]); signingSecret != "" {
+				timestamp := fmt.Sprintf("%d", time.Now().UnixMilli())
+				nextQuery["timestamp"] = timestamp
+				nextQuery["sign"] = signDingTalkBotRequest(timestamp, signingSecret)
+			}
+			return endpoint, nextQuery, nil
+		}
 	case "feishu", "lark":
 		if cfg.BaseURL == "" {
 			cfg.BaseURL = defaultFeishuBaseURL(connection.Provider)
@@ -295,6 +327,45 @@ func (s *Server) runtimeHTTPActionConfig(connection controldb.Connection) (runti
 		return runtimeHTTPActionConfig{}, err
 	}
 	return cfg, nil
+}
+
+func normalizeDingTalkBotAccessToken(value string) (string, error) {
+	trimmed := strings.TrimSpace(value)
+	if trimmed == "" {
+		return "", fmt.Errorf("DingTalk Bot apiKey is required")
+	}
+	if !strings.Contains(trimmed, "://") {
+		return trimmed, nil
+	}
+	parsed, err := url.Parse(trimmed)
+	if err != nil {
+		return "", fmt.Errorf("DingTalk Bot apiKey must be an access token or webhook URL")
+	}
+	if parsed.Scheme != "https" || parsed.User != nil {
+		return "", fmt.Errorf("DingTalk Bot webhook URL must use https and must not include credentials")
+	}
+	if parsed.Host != "oapi.dingtalk.com" || parsed.Path != "/robot/send" {
+		return "", fmt.Errorf("DingTalk Bot webhook URL must be https://oapi.dingtalk.com/robot/send")
+	}
+	accessToken := strings.TrimSpace(parsed.Query().Get("access_token"))
+	if accessToken == "" {
+		return "", fmt.Errorf("DingTalk Bot webhook URL must include access_token")
+	}
+	return accessToken, nil
+}
+
+func signDingTalkBotRequest(timestamp, signingSecret string) string {
+	mac := hmac.New(sha256.New, []byte(signingSecret))
+	_, _ = mac.Write([]byte(timestamp + "\n" + signingSecret))
+	return base64.StdEncoding.EncodeToString(mac.Sum(nil))
+}
+
+func copyStringMap(in map[string]string) map[string]string {
+	out := make(map[string]string, len(in)+2)
+	for key, value := range in {
+		out[key] = value
+	}
+	return out
 }
 
 func defaultFeishuBaseURL(provider string) string {

@@ -226,6 +226,84 @@ func TestRuntimeActionProxyForwardsCustomHTTPWithServerSideCredential(t *testing
 	}
 }
 
+func TestDingTalkBotRuntimeActionConfigAddsWebhookAuth(t *testing.T) {
+	users := newTestUserStore(t)
+	s := &Server{controlDB: users.db, users: users}
+	if err := users.db.UpsertWorkspace(controldb.Workspace{ID: "ws-one", Name: "One", Slug: "one"}); err != nil {
+		t.Fatalf("workspace: %v", err)
+	}
+	connection := controldb.Connection{
+		ID:             "conn-dingtalk",
+		WorkspaceID:    "ws-one",
+		Provider:       "dingtalk_bot",
+		ConnectionName: "alerts",
+		OwnerType:      ConnectionOwnerWorkspace,
+		OwnerID:        "ws-one",
+		AuthType:       ConnectionAuthAPIKey,
+		Status:         "active",
+		ProfileJSON:    "{}",
+		CreatedBy:      "admin",
+	}
+	if err := users.db.UpsertConnection(connection); err != nil {
+		t.Fatalf("connection: %v", err)
+	}
+	secret, err := sealConnectionSecret(map[string]string{
+		"apiKey":        "https://oapi.dingtalk.com/robot/send?access_token=ding-token",
+		"signingSecret": "SEC-secret",
+	})
+	if err != nil {
+		t.Fatalf("seal secret: %v", err)
+	}
+	secret.ConnectionID = connection.ID
+	if err := users.db.UpsertConnectionSecret(secret); err != nil {
+		t.Fatalf("secret: %v", err)
+	}
+
+	cfg, err := s.runtimeHTTPActionConfig(connection)
+	if err != nil {
+		t.Fatalf("runtime action config: %v", err)
+	}
+	if cfg.BaseURL != "https://oapi.dingtalk.com" {
+		t.Fatalf("baseURL=%q", cfg.BaseURL)
+	}
+	endpoint, query, err := cfg.EndpointRewrite("/robot/send", map[string]string{"ignored": "kept"})
+	if err != nil {
+		t.Fatalf("rewrite endpoint: %v", err)
+	}
+	if endpoint != "/robot/send" || query["access_token"] != "ding-token" || query["timestamp"] == "" || query["sign"] == "" || query["ignored"] != "kept" {
+		t.Fatalf("rewrite endpoint=%q query=%#v", endpoint, query)
+	}
+	redactJoined := strings.Join(cfg.RedactValues, "\n")
+	if !strings.Contains(redactJoined, "ding-token") || !strings.Contains(redactJoined, "SEC-secret") {
+		t.Fatalf("redact values missing secrets: %#v", cfg.RedactValues)
+	}
+	if _, _, err := cfg.EndpointRewrite("/v1/users", nil); err == nil {
+		t.Fatalf("non-DingTalk endpoint should fail")
+	}
+}
+
+func TestNormalizeDingTalkBotAccessToken(t *testing.T) {
+	token, err := normalizeDingTalkBotAccessToken("https://oapi.dingtalk.com/robot/send?access_token=abc")
+	if err != nil {
+		t.Fatalf("normalize webhook: %v", err)
+	}
+	if token != "abc" {
+		t.Fatalf("token=%q", token)
+	}
+	if token, err := normalizeDingTalkBotAccessToken("plain-token"); err != nil || token != "plain-token" {
+		t.Fatalf("normalize plain token=%q err=%v", token, err)
+	}
+	for _, invalid := range []string{
+		"http://oapi.dingtalk.com/robot/send?access_token=abc",
+		"https://example.com/robot/send?access_token=abc",
+		"https://oapi.dingtalk.com/robot/send",
+	} {
+		if _, err := normalizeDingTalkBotAccessToken(invalid); err == nil {
+			t.Fatalf("expected invalid webhook to fail: %s", invalid)
+		}
+	}
+}
+
 func TestRuntimeActionProxyForwardsFeishuWithTenantToken(t *testing.T) {
 	users := newTestUserStore(t)
 	s := &Server{controlDB: users.db, users: users}

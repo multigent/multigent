@@ -611,7 +611,8 @@ Status:
 - Connection test results now persist the latest validation status in connection profile metadata and surface it in the Web connection list.
 - User-owned connection grants now use the same agent operation permission semantics as tasks and agent chat: linked-agent owners and project operators/managers can grant personal credentials to agents they operate, while viewers cannot.
 - Runtime token issuance and agent runtime connection manifests now use the same agent operation permission boundary, so operators can run the agents they are responsible for without requiring broader project manager rights.
-- Remaining work: OAuth flow abstraction, DingTalk provider, GitHub app installation flow, richer profile/scopes display, scheduled/background connection health checks, and per-provider action executor hardening.
+- DingTalk Bot is now a first-class connector provider with webhook token/signing-secret credentials and a scoped `/robot/send` runtime action proxy.
+- Remaining work: OAuth flow abstraction, DingTalk enterprise app/OAuth provider, GitHub app installation flow, richer profile/scopes display, scheduled/background connection health checks, and per-provider action executor hardening.
 
 ### Phase 5: Agent Runtime Productization
 

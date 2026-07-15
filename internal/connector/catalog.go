@@ -66,6 +66,16 @@ func Defaults() []Provider {
 			Enabled: true,
 		},
 		{
+			Provider:    "dingtalk_bot",
+			DisplayName: "DingTalk Bot",
+			AuthTypes:   []string{AuthAPIKey},
+			Fields: []ProviderField{
+				{Key: "apiKey", Label: "Webhook access token or URL", InputType: "password", Required: true, Secret: true},
+				{Key: "signingSecret", Label: "Signing secret", InputType: "password", Secret: true},
+			},
+			Enabled: true,
+		},
+		{
 			Provider:    "custom-mcp",
 			DisplayName: "Custom MCP Server",
 			AuthTypes:   []string{AuthCustomCredential, AuthNoAuth},
