@@ -224,3 +224,47 @@ func TestConnectionTestPersistsFailedHTTPValidation(t *testing.T) {
 		t.Fatalf("lastValidationMessage=%#v profile=%#v", profile["lastValidationMessage"], profile)
 	}
 }
+
+func TestDingTalkBotConnectionTestUsesScopedWebhookEndpoint(t *testing.T) {
+	s, workspaceID := newConnectionTestServer(t)
+	connection := controldb.Connection{
+		ID:             "conn-dingtalk",
+		WorkspaceID:    workspaceID,
+		Provider:       "dingtalk_bot",
+		ConnectionName: "alerts",
+		OwnerType:      ConnectionOwnerUser,
+		OwnerID:        "owner",
+		AuthType:       ConnectionAuthAPIKey,
+		Status:         "active",
+		ProfileJSON:    `{}`,
+		CreatedBy:      "owner",
+		CreatedAt:      "2026-07-15T00:00:00Z",
+		UpdatedAt:      "2026-07-15T00:00:00Z",
+	}
+	if err := s.controlDB.UpsertConnection(connection); err != nil {
+		t.Fatalf("connection: %v", err)
+	}
+	secret, err := sealConnectionSecret(map[string]string{"apiKey": "ding-token"})
+	if err != nil {
+		t.Fatalf("seal secret: %v", err)
+	}
+	secret.ConnectionID = connection.ID
+	if err := s.controlDB.UpsertConnectionSecret(secret); err != nil {
+		t.Fatalf("secret: %v", err)
+	}
+
+	actionReq := runtimeActionProxyRequest{}
+	applyDefaultConnectionTestRequest(connection.Provider, &actionReq)
+	if actionReq.Endpoint != "/robot/send" || actionReq.Method != http.MethodPost || !strings.Contains(string(actionReq.Body), "Multigent connection test") {
+		t.Fatalf("default DingTalk test request=%#v body=%s", actionReq, string(actionReq.Body))
+	}
+
+	_, err = s.testHTTPConnection(httptest.NewRequest(http.MethodPost, "/", nil), connection, testConnectionRequest{
+		Endpoint: "/not-supported",
+		Method:   http.MethodPost,
+		Body:     json.RawMessage(`{"msgtype":"text","text":{"content":"test"}}`),
+	})
+	if err == nil || !strings.Contains(err.Error(), "only supports /robot/send") {
+		t.Fatalf("expected unsupported endpoint error, got %v", err)
+	}
+}

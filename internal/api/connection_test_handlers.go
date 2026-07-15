@@ -109,7 +109,7 @@ func (s *Server) testConnection(r *http.Request, connection controldb.Connection
 	switch connection.Provider {
 	case "custom-mcp":
 		return s.testCustomMCPConnection(r, connection)
-	case "custom-http", "github", "linear", "feishu", "lark":
+	case "custom-http", "github", "linear", "feishu", "lark", "dingtalk_bot":
 		return s.testHTTPConnection(r, connection, body)
 	default:
 		return testConnectionResult{}, fmt.Errorf("connection test is not supported for provider %q", connection.Provider)
@@ -165,7 +165,15 @@ func (s *Server) testHTTPConnection(r *http.Request, connection controldb.Connec
 	if err != nil {
 		return testConnectionResult{}, err
 	}
-	target, err := buildRuntimeActionURL(cfg.BaseURL, actionReq.Endpoint, actionReq.Query)
+	endpoint := actionReq.Endpoint
+	query := actionReq.Query
+	if cfg.EndpointRewrite != nil {
+		endpoint, query, err = cfg.EndpointRewrite(endpoint, query)
+		if err != nil {
+			return testConnectionResult{}, err
+		}
+	}
+	target, err := buildRuntimeActionURL(cfg.BaseURL, endpoint, query)
 	if err != nil {
 		return testConnectionResult{}, err
 	}
@@ -224,6 +232,16 @@ func applyDefaultConnectionTestRequest(provider string, req *runtimeActionProxyR
 		}
 		if req.Method == "" {
 			req.Method = http.MethodGet
+		}
+	case "dingtalk_bot":
+		if req.Endpoint == "" {
+			req.Endpoint = "/robot/send"
+		}
+		if req.Method == "" {
+			req.Method = http.MethodPost
+		}
+		if len(req.Body) == 0 {
+			req.Body = json.RawMessage(`{"msgtype":"text","text":{"content":"Multigent connection test"}}`)
 		}
 	}
 }
