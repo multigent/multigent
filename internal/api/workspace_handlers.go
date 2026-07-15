@@ -21,16 +21,18 @@ import (
 )
 
 type workspaceSummary struct {
-	ID          string `json:"id"`
-	Name        string `json:"name"`
-	Description string `json:"description,omitempty"`
-	CreatedBy   string `json:"createdBy"`
-	CreatedAt   string `json:"createdAt"`
-	UpdatedAt   string `json:"updatedAt,omitempty"`
-	Teams       int    `json:"teams"`
-	Projects    int    `json:"projects"`
-	Agents      int    `json:"agents"`
-	Tasks       int    `json:"tasks"`
+	ID                  string `json:"id"`
+	Name                string `json:"name"`
+	Description         string `json:"description,omitempty"`
+	CreatedBy           string `json:"createdBy"`
+	CreatedAt           string `json:"createdAt"`
+	UpdatedAt           string `json:"updatedAt,omitempty"`
+	CurrentUserRole     string `json:"currentUserRole,omitempty"`
+	CurrentUserCanAdmin bool   `json:"currentUserCanAdmin"`
+	Teams               int    `json:"teams"`
+	Projects            int    `json:"projects"`
+	Agents              int    `json:"agents"`
+	Tasks               int    `json:"tasks"`
 }
 
 type updateWorkspaceRequest struct {
@@ -104,18 +106,21 @@ func (s *Server) handleWorkspace(w http.ResponseWriter, r *http.Request) {
 	if existing, ok, err := s.workspaceRefForRoot(s.root); err == nil && ok && existing.ID != "" {
 		id = existing.ID
 	}
+	currentUserRole, currentUserCanAdmin := s.currentWorkspaceRole(r, id)
 
 	_ = json.NewEncoder(w).Encode(workspaceSummary{
-		ID:          id,
-		Name:        name,
-		Description: agency.Description,
-		CreatedBy:   createdBy,
-		CreatedAt:   createdAt,
-		UpdatedAt:   agency.UpdatedAt,
-		Teams:       len(teams),
-		Projects:    len(projects),
-		Agents:      agentCount,
-		Tasks:       len(tasks),
+		ID:                  id,
+		Name:                name,
+		Description:         agency.Description,
+		CreatedBy:           createdBy,
+		CreatedAt:           createdAt,
+		UpdatedAt:           agency.UpdatedAt,
+		CurrentUserRole:     currentUserRole,
+		CurrentUserCanAdmin: currentUserCanAdmin,
+		Teams:               len(teams),
+		Projects:            len(projects),
+		Agents:              agentCount,
+		Tasks:               len(tasks),
 	})
 }
 
@@ -569,6 +574,21 @@ func (s *Server) checkCurrentWorkspaceAdmin(w http.ResponseWriter, r *http.Reque
 	}
 	s.jsonError(w, http.StatusForbidden, "workspace admin access required")
 	return false
+}
+
+func (s *Server) currentWorkspaceRole(r *http.Request, workspaceID string) (string, bool) {
+	cur := s.currentUser(r)
+	if cur != nil && cur.Username == "apikey" {
+		return WorkspaceRoleOwner, true
+	}
+	if cur == nil || cur.Username == "" || s.controlDB == nil {
+		return "", false
+	}
+	member, ok, err := s.controlDB.WorkspaceMember(workspaceID, cur.Username)
+	if err != nil || !ok {
+		return "", false
+	}
+	return member.Role, member.Role == WorkspaceRoleOwner || member.Role == WorkspaceRoleAdmin
 }
 
 func workspaceID(root string) string {

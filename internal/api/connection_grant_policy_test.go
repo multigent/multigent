@@ -2,6 +2,7 @@ package api
 
 import (
 	"context"
+	"net/http"
 	"net/http/httptest"
 	"path/filepath"
 	"testing"
@@ -64,7 +65,7 @@ func TestUserOwnedConnectionGrantTargetsAreLimitedToOwnerAndLinkedAgents(t *test
 		Status:         "active",
 	}
 	req := httptest.NewRequest("POST", "/", nil)
-	req = req.WithContext(context.WithValue(req.Context(), ctxUserKey, "admin"))
+	req = req.WithContext(context.WithValue(req.Context(), ctxUserKey, "owner"))
 
 	allowed := []struct {
 		targetType string
@@ -92,5 +93,46 @@ func TestUserOwnedConnectionGrantTargetsAreLimitedToOwnerAndLinkedAgents(t *test
 		if err := s.validateConnectionGrantTarget(req, connection, tc.targetType, tc.targetID); err == nil {
 			t.Fatalf("expected %s/%s to be blocked", tc.targetType, tc.targetID)
 		}
+	}
+}
+
+func TestUserOwnedConnectionGrantMustBeCreatedByOwner(t *testing.T) {
+	s, workspaceID := newConnectionGrantPolicyServer(t)
+	connection := controldb.Connection{
+		ID:             "conn-owner",
+		WorkspaceID:    workspaceID,
+		Provider:       "github",
+		ConnectionName: "default",
+		OwnerType:      ConnectionOwnerUser,
+		OwnerID:        "owner",
+		AuthType:       ConnectionAuthAPIKey,
+		Status:         "active",
+		ProfileJSON:    `{}`,
+		CreatedBy:      "owner",
+	}
+	if err := s.controlDB.UpsertConnection(connection); err != nil {
+		t.Fatalf("connection: %v", err)
+	}
+
+	adminRec := httptest.NewRecorder()
+	adminReq := providerTestRequest(http.MethodPost, "/api/v1/connections/conn-owner/grants", "admin", createConnectionGrantRequest{
+		TargetType: ConnectionTargetAgent,
+		TargetID:   "tapnow/pm",
+	})
+	adminReq.SetPathValue("id", "conn-owner")
+	s.handleCreateConnectionGrant(adminRec, adminReq)
+	if adminRec.Code != http.StatusBadRequest {
+		t.Fatalf("admin grant status=%d body=%s", adminRec.Code, adminRec.Body.String())
+	}
+
+	ownerRec := httptest.NewRecorder()
+	ownerReq := providerTestRequest(http.MethodPost, "/api/v1/connections/conn-owner/grants", "owner", createConnectionGrantRequest{
+		TargetType: ConnectionTargetAgent,
+		TargetID:   "tapnow/pm",
+	})
+	ownerReq.SetPathValue("id", "conn-owner")
+	s.handleCreateConnectionGrant(ownerRec, ownerReq)
+	if ownerRec.Code != http.StatusCreated {
+		t.Fatalf("owner grant status=%d body=%s", ownerRec.Code, ownerRec.Body.String())
 	}
 }

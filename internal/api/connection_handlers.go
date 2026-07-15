@@ -520,6 +520,10 @@ func (s *Server) validateConnectionGrantTarget(r *http.Request, connection contr
 }
 
 func (s *Server) validateUserOwnedConnectionGrantTarget(r *http.Request, connection controldb.Connection, targetType, targetID string) error {
+	cur := s.currentUser(r)
+	if cur == nil || cur.Username == "" || cur.Username != connection.OwnerID {
+		return fmt.Errorf("user-owned connection grants must be managed by the connection owner")
+	}
 	switch targetType {
 	case ConnectionTargetWorkspace, ConnectionTargetProject:
 		return fmt.Errorf("user-owned connections can only be granted to the owner or the owner's linked agents")

@@ -24,18 +24,18 @@ type Connection = {
 type ConnectionTestResult = { ok: boolean; status: number; message: string }
 type ProjectRow = { name: string }
 type ProjectAgent = { name: string }
-type WorkspaceSummary = { id: string; name: string }
+type WorkspaceSummary = { id: string; name: string; currentUserRole?: string; currentUserCanAdmin?: boolean }
 
 const inputCls = 'w-full rounded-lg border border-neutral-200 bg-white px-3 py-2 text-sm outline-none focus:border-sky-400 dark:border-zinc-700 dark:bg-zinc-950 dark:text-zinc-100'
 const selectCls = 'w-full rounded-lg border border-neutral-200 bg-white px-3 py-2 text-sm outline-none focus:border-sky-400 dark:border-zinc-700 dark:bg-zinc-950 dark:text-zinc-100 dark:[color-scheme:dark]'
 
 export default function ConnectionsPage() {
   const { user } = useAuth()
-  const isWorkspaceAdmin = !user || user.role === 'admin'
+  const [workspace, setWorkspace] = useState<WorkspaceSummary | null>(null)
+  const isWorkspaceAdmin = workspace?.currentUserCanAdmin ?? (!user || user.role === 'admin')
   const [providers, setProviders] = useState<Provider[]>([])
   const [connections, setConnections] = useState<Connection[]>([])
   const [projects, setProjects] = useState<ProjectRow[]>([])
-  const [workspace, setWorkspace] = useState<WorkspaceSummary | null>(null)
   const [agentsByProject, setAgentsByProject] = useState<Record<string, ProjectAgent[]>>({})
   const [loading, setLoading] = useState(true)
   const [creating, setCreating] = useState(false)
@@ -134,6 +134,7 @@ export default function ConnectionsPage() {
               key={connection.id}
               connection={connection}
               provider={providers.find(p => p.provider === connection.provider)}
+              canGrant={connection.ownerType === 'workspace' ? isWorkspaceAdmin : connection.ownerId === user?.username}
               canDelete={isWorkspaceAdmin || connection.ownerId === user?.username}
               testState={testResults[connection.id]}
               onGrant={() => setGranting(connection)}
@@ -169,7 +170,7 @@ export default function ConnectionsPage() {
   )
 }
 
-function ConnectionCard({ connection, provider, canDelete, testState, onGrant, onTest, onDelete }: { connection: Connection; provider?: Provider; canDelete: boolean; testState?: { loading?: boolean; ok?: boolean; message?: string }; onGrant: () => void; onTest: () => void; onDelete: () => void }) {
+function ConnectionCard({ connection, provider, canGrant, canDelete, testState, onGrant, onTest, onDelete }: { connection: Connection; provider?: Provider; canGrant: boolean; canDelete: boolean; testState?: { loading?: boolean; ok?: boolean; message?: string }; onGrant: () => void; onTest: () => void; onDelete: () => void }) {
   return (
     <section className="rounded-xl border border-neutral-200/80 bg-white p-5 dark:border-zinc-700/60 dark:bg-zinc-900/40">
       <div className="flex items-start justify-between gap-3">
@@ -193,9 +194,11 @@ function ConnectionCard({ connection, provider, canDelete, testState, onGrant, o
             className="rounded-md p-2 text-neutral-500 hover:bg-neutral-100 hover:text-neutral-800 disabled:opacity-50 dark:text-zinc-400 dark:hover:bg-zinc-800 dark:hover:text-zinc-100" title="Test connection">
             <RefreshCw className={cn('size-4', testState?.loading && 'animate-spin')} strokeWidth={1.8} />
           </button>
-          <button type="button" onClick={onGrant} className="rounded-md p-2 text-neutral-500 hover:bg-neutral-100 hover:text-neutral-800 dark:text-zinc-400 dark:hover:bg-zinc-800 dark:hover:text-zinc-100" title="Manage grants">
-            <ShieldCheck className="size-4" strokeWidth={1.8} />
-          </button>
+          {canGrant && (
+            <button type="button" onClick={onGrant} className="rounded-md p-2 text-neutral-500 hover:bg-neutral-100 hover:text-neutral-800 dark:text-zinc-400 dark:hover:bg-zinc-800 dark:hover:text-zinc-100" title="Manage grants">
+              <ShieldCheck className="size-4" strokeWidth={1.8} />
+            </button>
+          )}
           {canDelete && (
             <button type="button" onClick={onDelete} className="rounded-md p-2 text-neutral-500 hover:bg-red-50 hover:text-red-600 dark:text-zinc-400 dark:hover:bg-red-900/20 dark:hover:text-red-300" title="Remove">
               <Trash2 className="size-4" strokeWidth={1.8} />
@@ -326,6 +329,7 @@ function ConnectionDialog({ providers, isWorkspaceAdmin, onClose, onCreated }: {
 function GrantDialog({ connection, workspaceId, projects, agentsByProject, isWorkspaceAdmin, currentUsername, linkedAgents, onClose, onChanged }: { connection: Connection; workspaceId: string; projects: ProjectRow[]; agentsByProject: Record<string, ProjectAgent[]>; isWorkspaceAdmin: boolean; currentUsername: string; linkedAgents: string[]; onClose: () => void; onChanged: () => void }) {
   const isUserOwned = connection.ownerType === 'user'
   const isCurrentUserOwner = isUserOwned && connection.ownerId === currentUsername
+  const canEditGrants = !isUserOwned || isCurrentUserOwner
   const initialTargetType = isUserOwned ? (isCurrentUserOwner && linkedAgents.length > 0 ? 'agent' : 'user') : (isWorkspaceAdmin ? 'workspace' : 'user')
   const [targetType, setTargetType] = useState(initialTargetType)
   const [project, setProject] = useState(projects[0]?.name ?? '')
@@ -385,8 +389,11 @@ function GrantDialog({ connection, workspaceId, projects, agentsByProject, isWor
       <div className="space-y-4">
         <div className="rounded-lg bg-neutral-50 p-3 text-sm text-neutral-600 dark:bg-zinc-800/50 dark:text-zinc-300">
           <p className="font-medium text-neutral-900 dark:text-zinc-100">{connection.provider} / {connection.connectionName}</p>
-          <p className="mt-1 text-xs text-neutral-400 dark:text-zinc-500">Grant this connection to a workspace, project, agent, or user.</p>
+          <p className="mt-1 text-xs text-neutral-400 dark:text-zinc-500">
+            {isUserOwned ? 'Personal connections can only be granted by their owner to that owner or linked agents.' : 'Grant this workspace connection to a workspace, project, agent, or user.'}
+          </p>
         </div>
+        {canEditGrants && (
         <div className="grid gap-3 sm:grid-cols-[160px_minmax(0,1fr)]">
           <label className="block">
             <span className="text-xs font-medium text-neutral-500 dark:text-zinc-400">Target type</span>
@@ -432,21 +439,26 @@ function GrantDialog({ connection, workspaceId, projects, agentsByProject, isWor
             </label>
           )}
         </div>
+        )}
+        {canEditGrants && (
         <div className="flex justify-end">
           <button type="button" disabled={saving || targetId.trim() === ''} onClick={() => void addGrant()} className="inline-flex items-center gap-2 rounded-lg bg-sky-600 px-3 py-2 text-sm font-medium text-white disabled:opacity-50">
             <Link2 className="size-4" strokeWidth={1.8} />
             Add grant
           </button>
         </div>
+        )}
         <div className="border-t border-neutral-200 pt-4 dark:border-zinc-700">
           {connection.grants && connection.grants.length > 0 ? (
             <div className="space-y-2">
               {connection.grants.map(grant => (
                 <div key={grant.id} className="flex items-center justify-between rounded-lg border border-neutral-200 px-3 py-2 dark:border-zinc-700">
                   <span className="text-sm text-neutral-700 dark:text-zinc-300">{grant.targetType}: {grant.targetId}</span>
-                  <button type="button" onClick={() => void removeGrant(grant)} className="rounded-md p-1.5 text-neutral-400 hover:bg-red-50 hover:text-red-600 dark:hover:bg-red-900/20">
-                    <Trash2 className="size-4" />
-                  </button>
+                  {canEditGrants && (
+                    <button type="button" onClick={() => void removeGrant(grant)} className="rounded-md p-1.5 text-neutral-400 hover:bg-red-50 hover:text-red-600 dark:hover:bg-red-900/20">
+                      <Trash2 className="size-4" />
+                    </button>
+                  )}
                 </div>
               ))}
             </div>
