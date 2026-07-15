@@ -43,7 +43,7 @@ type RunRow = {
   startedAt: string; finishedAt: string; model?: string
   taskId?: string; taskTitle?: string; logPath?: string
   inputTokens?: number; outputTokens?: number; cacheReadTokens?: number
-  costUSD?: number; errorMsg?: string; command?: string
+  errorMsg?: string; command?: string
   sessionId?: string
 }
 
@@ -300,12 +300,9 @@ export function TaskDetailModal({ task, onClose, onEdit, canEdit = true }: { tas
           {matchingRun && (
             <>
               <InfoCell label={t('runs.model')}><span className="font-mono">{matchingRun.model ?? '—'}</span></InfoCell>
-              {matchingRun.costUSD != null && (
-                <InfoCell label={t('runs.colTok')}>
-                  <span className="tabular-nums">{fmtNum((matchingRun.inputTokens ?? 0) + (matchingRun.outputTokens ?? 0))} tok</span>
-                  <span className="ml-1 text-neutral-400">(${matchingRun.costUSD.toFixed(4)})</span>
-                </InfoCell>
-              )}
+              <InfoCell label={t('runs.colTok')}>
+                <span className="tabular-nums">{fmtNum((matchingRun.inputTokens ?? 0) + (matchingRun.outputTokens ?? 0) + (matchingRun.cacheReadTokens ?? 0))} tok</span>
+              </InfoCell>
               {matchingRun.sessionId && (
                 <InfoCell label={t('runs.sessionLabel')}>
                   <div className="flex items-center gap-1">

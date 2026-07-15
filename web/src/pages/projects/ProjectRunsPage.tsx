@@ -17,7 +17,6 @@ type Summary = {
   inputTokens: number
   outputTokens: number
   cacheReadTokens: number
-  costUSD: number
   success: number
   failed: number
   awaiting: number
@@ -32,9 +31,9 @@ type AgentSum = {
   inputTokens: number
   outputTokens: number
   cacheReadTokens: number
-  costUSD: number
   success: number
   failed: number
+  wallDurationMs: number
 }
 
 type TelemetrySummary = {
@@ -54,7 +53,6 @@ type RunRow = {
   inputTokens?: number
   outputTokens?: number
   cacheReadTokens?: number
-  costUSD?: number
   model?: string
   apiModel?: string
   apiBaseUrl?: string
@@ -84,6 +82,30 @@ function fmtNum(n: number) {
   if (n >= 1_000_000) return `${(n / 1_000_000).toFixed(1)}M`
   if (n >= 1_000) return `${(n / 1_000).toFixed(1)}K`
   return String(n)
+}
+
+function totalTokens(input = 0, output = 0, cache = 0) {
+  return input + output + cache
+}
+
+function successRate(success: number, runs: number) {
+  return runs > 0 ? success / runs : 0
+}
+
+function fmtPct(n: number) {
+  return `${Math.round(n * 100)}%`
+}
+
+function fmtDurationMs(ms: number) {
+  if (!Number.isFinite(ms) || ms <= 0) return '0s'
+  const sec = Math.round(ms / 1000)
+  if (sec < 60) return `${sec}s`
+  const min = Math.floor(sec / 60)
+  const remSec = sec % 60
+  if (min < 60) return remSec > 0 ? `${min}m ${remSec}s` : `${min}m`
+  const hours = Math.floor(min / 60)
+  const remMin = min % 60
+  return remMin > 0 ? `${hours}h ${remMin}m` : `${hours}h`
 }
 
 const statusCls: Record<string, string> = {
@@ -262,9 +284,9 @@ export default function ProjectRunsPage() {
             {(
               [
                 ['runs', sumState.data.summary.runs, false],
-                ['inputTokens', sumState.data.summary.inputTokens, true],
-                ['outputTokens', sumState.data.summary.outputTokens, true],
-                ['costUSD', sumState.data.summary.costUSD, false],
+                ['totalTokens', totalTokens(sumState.data.summary.inputTokens, sumState.data.summary.outputTokens, sumState.data.summary.cacheReadTokens), true],
+                ['successRate', successRate(sumState.data.summary.success, sumState.data.summary.runs), false],
+                ['avgDuration', sumState.data.summary.runs > 0 ? sumState.data.summary.wallDurationMs / sumState.data.summary.runs : 0, false],
               ] as const
             ).map(([key, val, shouldFmt]) => (
               <div
@@ -275,7 +297,7 @@ export default function ProjectRunsPage() {
                   {t(`runs.metric.${key}`)}
                 </p>
                 <p className="mt-1 text-2xl font-bold tabular-nums text-neutral-900 dark:text-zinc-100">
-                  {key === 'costUSD' ? `$${(val as number).toFixed(4)}` : shouldFmt ? fmtNum(val as number) : val}
+                  {key === 'successRate' ? fmtPct(val as number) : key === 'avgDuration' ? fmtDurationMs(val as number) : shouldFmt ? fmtNum(val as number) : val}
                 </p>
               </div>
             ))}
@@ -288,7 +310,7 @@ export default function ProjectRunsPage() {
             <table className="min-w-full w-full">
               <thead>
                 <tr className="border-b border-neutral-200/80 bg-neutral-50/80 dark:border-zinc-700/60 dark:bg-zinc-900/40">
-                  {[t('runs.colAgent'), t('runs.colRuns'), t('runs.colInTok'), t('runs.colOutTok'), t('runs.colCost')].map((h) => (
+                  {[t('runs.colAgent'), t('runs.colRuns'), t('runs.colTok'), t('runs.colSuccessRate'), t('runs.colAvgDuration')].map((h) => (
                     <th key={h} className="px-4 py-2.5 text-center text-xs font-semibold uppercase tracking-wider text-neutral-400 dark:text-zinc-500">{h}</th>
                   ))}
                 </tr>
@@ -298,9 +320,9 @@ export default function ProjectRunsPage() {
                   <tr key={`${a.project}/${a.agent}`} className="bg-white transition-colors duration-100 hover:bg-neutral-50/80 dark:bg-zinc-900/20 dark:hover:bg-zinc-800/30">
                     <td className="whitespace-nowrap px-4 py-3 text-center font-mono text-sm text-neutral-800 dark:text-zinc-300">{a.project}/{a.agent}</td>
                     <td className="px-4 py-3 text-center text-sm tabular-nums text-neutral-700 dark:text-zinc-400">{a.runs}</td>
-                    <td className="px-4 py-3 text-center text-sm tabular-nums text-neutral-700 dark:text-zinc-400">{fmtNum(a.inputTokens)}</td>
-                    <td className="px-4 py-3 text-center text-sm tabular-nums text-neutral-700 dark:text-zinc-400">{fmtNum(a.outputTokens)}</td>
-                    <td className="px-4 py-3 text-center text-sm tabular-nums text-neutral-700 dark:text-zinc-400">${a.costUSD.toFixed(4)}</td>
+                    <td className="px-4 py-3 text-center text-sm tabular-nums text-neutral-700 dark:text-zinc-400">{fmtNum(totalTokens(a.inputTokens, a.outputTokens, a.cacheReadTokens))}</td>
+                    <td className="px-4 py-3 text-center text-sm tabular-nums text-neutral-700 dark:text-zinc-400">{fmtPct(successRate(a.success, a.runs))}</td>
+                    <td className="px-4 py-3 text-center text-sm tabular-nums text-neutral-700 dark:text-zinc-400">{fmtDurationMs(a.runs > 0 ? a.wallDurationMs / a.runs : 0)}</td>
                   </tr>
                 ))}
               </tbody>
@@ -393,7 +415,7 @@ export default function ProjectRunsPage() {
                         )}
                       </td>
                       <td className="whitespace-nowrap px-4 py-3 text-center text-[13px] tabular-nums text-neutral-500 dark:text-zinc-500">
-                        {fmtNum((r.inputTokens ?? 0) + (r.outputTokens ?? 0) + (r.cacheReadTokens ?? 0))}
+                        {fmtNum(totalTokens(r.inputTokens, r.outputTokens, r.cacheReadTokens))}
                       </td>
                     </tr>
                   )
@@ -480,8 +502,7 @@ function RunDetailModal({ run, onClose }: { run: RunRow; onClose: () => void }) 
           <div>
             <span className="text-xs font-medium text-neutral-400 dark:text-zinc-500">{t('runs.colTok')}</span>
             <p className="tabular-nums text-neutral-800 dark:text-zinc-200">
-              {fmtNum((run.inputTokens ?? 0) + (run.outputTokens ?? 0) + (run.cacheReadTokens ?? 0))}
-              {run.costUSD != null && <span className="ml-1.5 text-neutral-400 dark:text-zinc-500">(${run.costUSD.toFixed(4)})</span>}
+              {fmtNum(totalTokens(run.inputTokens, run.outputTokens, run.cacheReadTokens))}
             </p>
           </div>
           {run.taskTitle && (

@@ -20,7 +20,7 @@ type TelemetrySummaryBlock = {
   runs: number
   inputTokens: number
   outputTokens: number
-  costUSD: number
+  cacheReadTokens: number
 }
 
 type TelemetrySummaryResponse = {
@@ -115,9 +115,9 @@ export default function OverviewPage() {
               {(
                 [
                   ['telemetryRuns', telemetryState.data.summary.runs, false],
+                  ['telemetryTokens', telemetryState.data.summary.inputTokens + telemetryState.data.summary.outputTokens + telemetryState.data.summary.cacheReadTokens, true],
                   ['telemetryInTok', telemetryState.data.summary.inputTokens, true],
                   ['telemetryOutTok', telemetryState.data.summary.outputTokens, true],
-                  ['telemetryCost', telemetryState.data.summary.costUSD, false],
                 ] as const
               ).map(([labelKey, val, shouldFmt]) => (
                 <div key={labelKey} className="rounded-md border border-neutral-100 bg-neutral-50/60 px-4 py-3 dark:border-zinc-700/40 dark:bg-zinc-800/30">
@@ -125,7 +125,7 @@ export default function OverviewPage() {
                     {t(`overview.${labelKey}`)}
                   </p>
                   <p className="mt-1 text-xl font-bold tabular-nums text-neutral-900 dark:text-zinc-100">
-                    {labelKey === 'telemetryCost' ? `$${(val as number).toFixed(4)}` : shouldFmt ? fmtNum(val as number) : val}
+                    {shouldFmt ? fmtNum(val as number) : val}
                   </p>
                 </div>
               ))}
