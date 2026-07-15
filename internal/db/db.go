@@ -174,6 +174,8 @@ type ConnectorProvider struct {
 type ModelProvider struct {
 	ID          string
 	WorkspaceID string
+	OwnerType   string
+	OwnerID     string
 	Name        string
 	Type        string
 	BaseURL     string

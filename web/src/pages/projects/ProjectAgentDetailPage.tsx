@@ -1084,7 +1084,7 @@ function SectionHeader({ icon: Icon, title }: { icon: LucideIcon; title: string 
   )
 }
 
-type ProviderOption = { id: string; name: string; type: string; model?: string }
+type ProviderOption = { id: string; ownerType?: 'workspace' | 'user'; name: string; type: string; model?: string }
 
 function EnvEditor({ project, agentName, model, initialEnv, initialProvider, onChanged }: {
   project: string; agentName: string; model: string; initialEnv: Record<string, string>; initialProvider?: string; onChanged: () => void
@@ -1164,7 +1164,9 @@ function EnvEditor({ project, agentName, model, initialEnv, initialProvider, onC
               className={cn(inputCls, 'w-56 text-xs')}>
               <option value="">{t('provider.none')}</option>
               {providerOptions.map(p => (
-                <option key={p.id} value={p.id}>{p.name} ({p.type}{p.model ? ` · ${p.model}` : ''})</option>
+                <option key={p.id} value={p.id}>
+                  {p.name} ({p.type}{p.model ? ` · ${p.model}` : ''} · {p.ownerType === 'user' ? t('provider.scopePersonal') : t('provider.scopeWorkspace')})
+                </option>
               ))}
             </select>
           </label>

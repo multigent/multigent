@@ -111,6 +111,8 @@ func (ps *ProviderStore) Update(id string, p entity.APIProvider) (*entity.APIPro
 		return nil, fmt.Errorf("provider %q not found", id)
 	}
 	p.ID = id
+	p.OwnerType = existing.OwnerType
+	p.OwnerID = existing.OwnerID
 	row, err := modelProviderToDB(workspaceID, p)
 	if err != nil {
 		return nil, err
@@ -233,13 +235,15 @@ func modelProviderFromDB(row controldb.ModelProvider) (entity.APIProvider, error
 		}
 	}
 	return entity.APIProvider{
-		ID:      row.ID,
-		Name:    row.Name,
-		Type:    row.Type,
-		BaseURL: row.BaseURL,
-		APIKey:  row.APIKey,
-		Model:   row.Model,
-		Env:     env,
+		ID:        row.ID,
+		OwnerType: row.OwnerType,
+		OwnerID:   row.OwnerID,
+		Name:      row.Name,
+		Type:      row.Type,
+		BaseURL:   row.BaseURL,
+		APIKey:    row.APIKey,
+		Model:     row.Model,
+		Env:       env,
 	}, nil
 }
 
@@ -253,9 +257,19 @@ func modelProviderToDB(workspaceID string, p entity.APIProvider) (controldb.Mode
 		return controldb.ModelProvider{}, err
 	}
 	now := time.Now().UTC().Format(time.RFC3339)
+	ownerType := strings.TrimSpace(p.OwnerType)
+	ownerID := strings.TrimSpace(p.OwnerID)
+	if ownerType == "" {
+		ownerType = "workspace"
+	}
+	if ownerID == "" {
+		ownerID = workspaceID
+	}
 	return controldb.ModelProvider{
 		ID:          strings.TrimSpace(p.ID),
 		WorkspaceID: workspaceID,
+		OwnerType:   ownerType,
+		OwnerID:     ownerID,
 		Name:        strings.TrimSpace(p.Name),
 		Type:        strings.TrimSpace(p.Type),
 		BaseURL:     strings.TrimSpace(p.BaseURL),

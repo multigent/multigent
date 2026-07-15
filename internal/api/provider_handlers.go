@@ -13,22 +13,24 @@ import (
 // Separate from entity.APIProvider because APIKey uses json:"-" on the entity
 // to prevent leaking in responses, but we need to accept it in requests.
 type providerBody struct {
-	Name    string            `json:"name"`
-	Type    string            `json:"type"`
-	BaseURL string            `json:"baseUrl"`
-	APIKey  string            `json:"apiKey"`
-	Model   string            `json:"model"`
-	Env     map[string]string `json:"env,omitempty"`
+	OwnerType string            `json:"ownerType"`
+	Name      string            `json:"name"`
+	Type      string            `json:"type"`
+	BaseURL   string            `json:"baseUrl"`
+	APIKey    string            `json:"apiKey"`
+	Model     string            `json:"model"`
+	Env       map[string]string `json:"env,omitempty"`
 }
 
 func (b providerBody) toEntity() entity.APIProvider {
 	return entity.APIProvider{
-		Name:    strings.TrimSpace(b.Name),
-		Type:    strings.TrimSpace(b.Type),
-		BaseURL: strings.TrimSpace(b.BaseURL),
-		APIKey:  strings.TrimSpace(b.APIKey),
-		Model:   strings.TrimSpace(b.Model),
-		Env:     b.Env,
+		OwnerType: strings.TrimSpace(b.OwnerType),
+		Name:      strings.TrimSpace(b.Name),
+		Type:      strings.TrimSpace(b.Type),
+		BaseURL:   strings.TrimSpace(b.BaseURL),
+		APIKey:    strings.TrimSpace(b.APIKey),
+		Model:     strings.TrimSpace(b.Model),
+		Env:       b.Env,
 	}
 }
 
@@ -40,6 +42,13 @@ func (s *Server) handleListProviders(w http.ResponseWriter, r *http.Request) {
 	if !s.checkCurrentWorkspaceAccess(w, r) {
 		return
 	}
+	workspaceID, err := s.currentWorkspaceID()
+	if err != nil {
+		s.serverError(w, err)
+		return
+	}
+	cur := s.currentUser(r)
+	isAdmin := s.canAdminWorkspace(r, workspaceID)
 	items, err := s.providerStore().List()
 	if err != nil {
 		s.serverError(w, err)
@@ -47,14 +56,17 @@ func (s *Server) handleListProviders(w http.ResponseWriter, r *http.Request) {
 	}
 	out := make([]map[string]any, 0, len(items))
 	for _, p := range items {
+		if !canViewModelProvider(cur, isAdmin, p) {
+			continue
+		}
 		out = append(out, providerToJSON(p))
 	}
 	_ = json.NewEncoder(w).Encode(out)
 }
 
 func (s *Server) handleAddProvider(w http.ResponseWriter, r *http.Request) {
-	workspaceID, ok := s.modelProviderWorkspaceAdmin(w, r)
-	if !ok {
+	workspaceID, err := s.modelProviderWorkspaceMember(w, r)
+	if err != nil {
 		return
 	}
 	var body providerBody
@@ -63,6 +75,9 @@ func (s *Server) handleAddProvider(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	prov := body.toEntity()
+	if !s.prepareNewModelProvider(w, r, workspaceID, &prov) {
+		return
+	}
 	if prov.Name == "" {
 		s.jsonError(w, http.StatusBadRequest, "name is required")
 		return
@@ -85,8 +100,8 @@ func (s *Server) handleAddProvider(w http.ResponseWriter, r *http.Request) {
 }
 
 func (s *Server) handleUpdateProvider(w http.ResponseWriter, r *http.Request) {
-	workspaceID, ok := s.modelProviderWorkspaceAdmin(w, r)
-	if !ok {
+	workspaceID, err := s.modelProviderWorkspaceMember(w, r)
+	if err != nil {
 		return
 	}
 	id := r.PathValue("id")
@@ -103,6 +118,10 @@ func (s *Server) handleUpdateProvider(w http.ResponseWriter, r *http.Request) {
 			return
 		}
 		s.serverError(w, err)
+		return
+	}
+	if !s.canManageModelProvider(r, *existing) {
+		s.jsonError(w, http.StatusForbidden, "model provider management access required")
 		return
 	}
 	prov := body.toEntity()
@@ -129,8 +148,8 @@ func (s *Server) handleUpdateProvider(w http.ResponseWriter, r *http.Request) {
 }
 
 func (s *Server) handleDeleteProvider(w http.ResponseWriter, r *http.Request) {
-	workspaceID, ok := s.modelProviderWorkspaceAdmin(w, r)
-	if !ok {
+	workspaceID, err := s.modelProviderWorkspaceMember(w, r)
+	if err != nil {
 		return
 	}
 	id := r.PathValue("id")
@@ -142,6 +161,10 @@ func (s *Server) handleDeleteProvider(w http.ResponseWriter, r *http.Request) {
 			return
 		}
 		s.serverError(w, err)
+		return
+	}
+	if !s.canManageModelProvider(r, *existing) {
+		s.jsonError(w, http.StatusForbidden, "model provider management access required")
 		return
 	}
 	if err := ps.Remove(id); err != nil {
@@ -164,30 +187,84 @@ func (s *Server) handleDeleteProvider(w http.ResponseWriter, r *http.Request) {
 	_ = json.NewEncoder(w).Encode(map[string]any{"ok": true})
 }
 
-func (s *Server) modelProviderWorkspaceAdmin(w http.ResponseWriter, r *http.Request) (string, bool) {
+func (s *Server) modelProviderWorkspaceMember(w http.ResponseWriter, r *http.Request) (string, error) {
 	if !s.checkCurrentWorkspaceAccess(w, r) {
-		return "", false
+		return "", http.ErrAbortHandler
 	}
 	workspaceID, err := s.currentWorkspaceID()
 	if err != nil {
 		s.serverError(w, err)
-		return "", false
+		return "", err
 	}
-	if !s.canAdminWorkspace(r, workspaceID) {
-		s.jsonError(w, http.StatusForbidden, "workspace admin access required")
-		return "", false
+	return workspaceID, nil
+}
+
+func (s *Server) prepareNewModelProvider(w http.ResponseWriter, r *http.Request, workspaceID string, p *entity.APIProvider) bool {
+	ownerType := strings.TrimSpace(p.OwnerType)
+	if ownerType == "" {
+		if s.canAdminWorkspace(r, workspaceID) {
+			ownerType = ConnectionOwnerWorkspace
+		} else {
+			ownerType = ConnectionOwnerUser
+		}
 	}
-	return workspaceID, true
+	cur := s.currentUser(r)
+	switch ownerType {
+	case ConnectionOwnerWorkspace:
+		if !s.canAdminWorkspace(r, workspaceID) {
+			s.jsonError(w, http.StatusForbidden, "workspace admin access required")
+			return false
+		}
+		p.OwnerType = ConnectionOwnerWorkspace
+		p.OwnerID = workspaceID
+		return true
+	case ConnectionOwnerUser:
+		if cur == nil || cur.Username == "" {
+			s.jsonError(w, http.StatusForbidden, "authenticated user required")
+			return false
+		}
+		p.OwnerType = ConnectionOwnerUser
+		p.OwnerID = cur.Username
+		return true
+	default:
+		s.jsonError(w, http.StatusBadRequest, "ownerType must be workspace or user")
+		return false
+	}
+}
+
+func canViewModelProvider(cur *userRecord, isAdmin bool, p entity.APIProvider) bool {
+	switch p.OwnerType {
+	case "", ConnectionOwnerWorkspace:
+		return true
+	case ConnectionOwnerUser:
+		return isAdmin || (cur != nil && p.OwnerID == cur.Username)
+	default:
+		return false
+	}
+}
+
+func (s *Server) canManageModelProvider(r *http.Request, p entity.APIProvider) bool {
+	switch p.OwnerType {
+	case "", ConnectionOwnerWorkspace:
+		return s.canAdminWorkspace(r, p.OwnerID)
+	case ConnectionOwnerUser:
+		cur := s.currentUser(r)
+		return cur != nil && cur.Username != "" && p.OwnerID == cur.Username
+	default:
+		return false
+	}
 }
 
 func providerToJSON(p entity.APIProvider) map[string]any {
 	out := map[string]any{
-		"id":      p.ID,
-		"name":    p.Name,
-		"type":    p.Type,
-		"baseUrl": p.BaseURL,
-		"model":   p.Model,
-		"hasKey":  p.APIKey != "",
+		"id":        p.ID,
+		"ownerType": p.OwnerType,
+		"ownerId":   p.OwnerID,
+		"name":      p.Name,
+		"type":      p.Type,
+		"baseUrl":   p.BaseURL,
+		"model":     p.Model,
+		"hasKey":    p.APIKey != "",
 	}
 	if len(p.Env) > 0 {
 		out["env"] = p.Env
@@ -197,11 +274,13 @@ func providerToJSON(p entity.APIProvider) map[string]any {
 
 func modelProviderAuditPayload(p entity.APIProvider) map[string]any {
 	return map[string]any{
-		"id":      p.ID,
-		"name":    p.Name,
-		"type":    p.Type,
-		"baseUrl": p.BaseURL,
-		"model":   p.Model,
-		"hasKey":  p.APIKey != "",
+		"id":        p.ID,
+		"ownerType": p.OwnerType,
+		"ownerId":   p.OwnerID,
+		"name":      p.Name,
+		"type":      p.Type,
+		"baseUrl":   p.BaseURL,
+		"model":     p.Model,
+		"hasKey":    p.APIKey != "",
 	}
 }

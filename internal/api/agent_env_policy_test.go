@@ -61,6 +61,8 @@ func TestPutAgentEnvValidatesProviderAndAuditsWithoutValues(t *testing.T) {
 	s, workspaceID := newConnectionGrantPolicyServer(t)
 	if err := s.controlDB.UpsertModelProvider(workspaceID, controldb.ModelProvider{
 		ID:        "prov-main",
+		OwnerType: ConnectionOwnerWorkspace,
+		OwnerID:   workspaceID,
 		Name:      "Main",
 		Type:      "openai",
 		APIKey:    "sk-secret",
@@ -119,5 +121,54 @@ func TestPutAgentEnvValidatesProviderAndAuditsWithoutValues(t *testing.T) {
 	}
 	if !strings.Contains(raw, "OPENAI_API_KEY") || !strings.Contains(raw, "prov-main") {
 		t.Fatalf("audit missing metadata: %#v", events[0])
+	}
+}
+
+func TestPutAgentEnvRestrictsPersonalModelProviders(t *testing.T) {
+	s, workspaceID := newConnectionGrantPolicyServer(t)
+	if err := s.controlDB.UpsertModelProvider(workspaceID, controldb.ModelProvider{
+		ID:        "prov-owner",
+		OwnerType: ConnectionOwnerUser,
+		OwnerID:   "owner",
+		Name:      "Owner Personal",
+		Type:      "openai",
+		APIKey:    "sk-owner",
+		Model:     "gpt-test",
+		EnvJSON:   `{}`,
+		CreatedAt: "2026-07-15T00:00:00Z",
+		UpdatedAt: "2026-07-15T00:00:00Z",
+	}); err != nil {
+		t.Fatalf("model provider: %v", err)
+	}
+
+	provider := "prov-owner"
+	req := agentEnvPolicyRequest(http.MethodPut, "/api/v1/projects/tapnow/agents/pm/env", "admin", "tapnow", "pm", agentEnvBody{
+		Env:      map[string]string{},
+		Provider: &provider,
+	})
+	rec := httptest.NewRecorder()
+	s.handlePutAgentEnv(rec, req)
+	if rec.Code != http.StatusForbidden {
+		t.Fatalf("admin should not bind another user's provider status=%d body=%s", rec.Code, rec.Body.String())
+	}
+
+	req = agentEnvPolicyRequest(http.MethodPut, "/api/v1/projects/tapnow/agents/pm/env", "owner", "tapnow", "pm", agentEnvBody{
+		Env:      map[string]string{},
+		Provider: &provider,
+	})
+	rec = httptest.NewRecorder()
+	s.handlePutAgentEnv(rec, req)
+	if rec.Code != http.StatusOK {
+		t.Fatalf("owner linked agent bind status=%d body=%s", rec.Code, rec.Body.String())
+	}
+
+	req = agentEnvPolicyRequest(http.MethodPut, "/api/v1/projects/tapnow/agents/backend/env", "owner", "tapnow", "backend", agentEnvBody{
+		Env:      map[string]string{},
+		Provider: &provider,
+	})
+	rec = httptest.NewRecorder()
+	s.handlePutAgentEnv(rec, req)
+	if rec.Code != http.StatusForbidden {
+		t.Fatalf("owner unlinked agent bind status=%d body=%s", rec.Code, rec.Body.String())
 	}
 }

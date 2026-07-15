@@ -65,15 +65,33 @@ func providerTestRequest(method, path, username string, body any) *http.Request 
 	return req.WithContext(context.WithValue(req.Context(), ctxUserKey, username))
 }
 
-func TestModelProviderHandlersRequireWorkspaceAdminForWrites(t *testing.T) {
+func TestModelProviderHandlersScopeWritesByOwner(t *testing.T) {
 	s, _ := newProviderHandlerTestServer(t)
 	body := providerBody{Name: "Main", Type: "openai", APIKey: "sk-secret", Model: "gpt-test"}
 
 	memberReq := providerTestRequest(http.MethodPost, "/api/v1/providers", "member", body)
 	memberRec := httptest.NewRecorder()
 	s.handleAddProvider(memberRec, memberReq)
-	if memberRec.Code != http.StatusForbidden {
-		t.Fatalf("member create status=%d body=%s", memberRec.Code, memberRec.Body.String())
+	if memberRec.Code != http.StatusOK {
+		t.Fatalf("member personal create status=%d body=%s", memberRec.Code, memberRec.Body.String())
+	}
+	var memberCreated map[string]any
+	if err := json.Unmarshal(memberRec.Body.Bytes(), &memberCreated); err != nil {
+		t.Fatalf("decode member provider: %v", err)
+	}
+	if memberCreated["ownerType"] != ConnectionOwnerUser || memberCreated["ownerId"] != "member" {
+		t.Fatalf("member provider should be personal: %#v", memberCreated)
+	}
+
+	memberWorkspaceReq := providerTestRequest(http.MethodPost, "/api/v1/providers", "member", providerBody{
+		OwnerType: ConnectionOwnerWorkspace,
+		Name:      "Workspace",
+		Type:      "openai",
+	})
+	memberWorkspaceRec := httptest.NewRecorder()
+	s.handleAddProvider(memberWorkspaceRec, memberWorkspaceReq)
+	if memberWorkspaceRec.Code != http.StatusForbidden {
+		t.Fatalf("member workspace create status=%d body=%s", memberWorkspaceRec.Code, memberWorkspaceRec.Body.String())
 	}
 
 	ownerReq := providerTestRequest(http.MethodPost, "/api/v1/providers", "owner", body)
@@ -93,13 +111,25 @@ func TestModelProviderHandlersRequireWorkspaceAdminForWrites(t *testing.T) {
 	if id == "" || created["hasKey"] != true {
 		t.Fatalf("unexpected created response: %#v", created)
 	}
+	if created["ownerType"] != ConnectionOwnerWorkspace || created["ownerId"] != "ws-one" {
+		t.Fatalf("owner provider should default to workspace scope: %#v", created)
+	}
 
-	deleteReq := providerTestRequest(http.MethodDelete, "/api/v1/providers/"+id, "member", nil)
-	deleteReq.SetPathValue("id", id)
-	deleteRec := httptest.NewRecorder()
-	s.handleDeleteProvider(deleteRec, deleteReq)
-	if deleteRec.Code != http.StatusForbidden {
-		t.Fatalf("member delete status=%d body=%s", deleteRec.Code, deleteRec.Body.String())
+	deleteWorkspaceReq := providerTestRequest(http.MethodDelete, "/api/v1/providers/"+id, "member", nil)
+	deleteWorkspaceReq.SetPathValue("id", id)
+	deleteWorkspaceRec := httptest.NewRecorder()
+	s.handleDeleteProvider(deleteWorkspaceRec, deleteWorkspaceReq)
+	if deleteWorkspaceRec.Code != http.StatusForbidden {
+		t.Fatalf("member delete workspace status=%d body=%s", deleteWorkspaceRec.Code, deleteWorkspaceRec.Body.String())
+	}
+
+	memberID, _ := memberCreated["id"].(string)
+	deletePersonalReq := providerTestRequest(http.MethodDelete, "/api/v1/providers/"+memberID, "member", nil)
+	deletePersonalReq.SetPathValue("id", memberID)
+	deletePersonalRec := httptest.NewRecorder()
+	s.handleDeleteProvider(deletePersonalRec, deletePersonalReq)
+	if deletePersonalRec.Code != http.StatusOK {
+		t.Fatalf("member delete personal status=%d body=%s", deletePersonalRec.Code, deletePersonalRec.Body.String())
 	}
 }
 
@@ -143,5 +173,36 @@ func TestModelProviderListRequiresWorkspaceMembership(t *testing.T) {
 	s.handleListProviders(rec, req)
 	if rec.Code != http.StatusForbidden {
 		t.Fatalf("outsider list status=%d body=%s", rec.Code, rec.Body.String())
+	}
+}
+
+func TestModelProviderListFiltersPersonalProviders(t *testing.T) {
+	s, _ := newProviderHandlerTestServer(t)
+	for _, req := range []struct {
+		user string
+		body providerBody
+	}{
+		{"owner", providerBody{Name: "Workspace", Type: "openai"}},
+		{"member", providerBody{Name: "Member Personal", Type: "openai", OwnerType: ConnectionOwnerUser}},
+		{"owner", providerBody{Name: "Owner Personal", Type: "anthropic", OwnerType: ConnectionOwnerUser}},
+	} {
+		rec := httptest.NewRecorder()
+		s.handleAddProvider(rec, providerTestRequest(http.MethodPost, "/api/v1/providers", req.user, req.body))
+		if rec.Code != http.StatusOK {
+			t.Fatalf("create provider for %s status=%d body=%s", req.user, rec.Code, rec.Body.String())
+		}
+	}
+
+	memberRec := httptest.NewRecorder()
+	s.handleListProviders(memberRec, providerTestRequest(http.MethodGet, "/api/v1/providers", "member", nil))
+	if memberRec.Code != http.StatusOK {
+		t.Fatalf("member list status=%d body=%s", memberRec.Code, memberRec.Body.String())
+	}
+	body := memberRec.Body.String()
+	if !strings.Contains(body, "Workspace") || !strings.Contains(body, "Member Personal") {
+		t.Fatalf("member list missing visible providers: %s", body)
+	}
+	if strings.Contains(body, "Owner Personal") {
+		t.Fatalf("member list included another user's provider: %s", body)
 	}
 }

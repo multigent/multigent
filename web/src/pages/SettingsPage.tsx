@@ -486,7 +486,7 @@ function UsersSection() {
 }
 
 type ProviderRow = {
-  id: string; name: string; type: string; baseUrl?: string; model?: string
+  id: string; ownerType?: 'workspace' | 'user'; ownerId?: string; name: string; type: string; baseUrl?: string; model?: string
   hasKey: boolean; env?: Record<string, string>
 }
 
@@ -494,6 +494,8 @@ const PROVIDER_TYPES = ['anthropic', 'openai', 'gemini', 'custom'] as const
 
 function ProvidersSection() {
   const { t } = useTranslation()
+  const { user } = useAuth()
+  const canCreateWorkspaceProvider = !user || user.role === 'admin'
   const [providers, setProviders] = useState<ProviderRow[]>([])
   const [loading, setLoading] = useState(true)
   const [editing, setEditing] = useState<Partial<ProviderRow> & { apiKey?: string } | null>(null)
@@ -512,7 +514,7 @@ function ProvidersSection() {
   useEffect(() => { void refresh() }, [refresh])
 
   function openNew() {
-    setEditing({ name: '', type: 'anthropic', baseUrl: '', model: '', apiKey: '' })
+    setEditing({ ownerType: canCreateWorkspaceProvider ? 'workspace' : 'user', name: '', type: 'anthropic', baseUrl: '', model: '', apiKey: '' })
     setShowKey(false)
     setErr(null)
   }
@@ -528,6 +530,7 @@ function ProvidersSection() {
     setSaving(true); setErr(null)
     try {
       const body: any = {
+        ownerType: editing.ownerType || (canCreateWorkspaceProvider ? 'workspace' : 'user'),
         name: editing.name,
         type: editing.type || 'anthropic',
         baseUrl: editing.baseUrl || '',
@@ -579,10 +582,17 @@ function ProvidersSection() {
               <div className="flex flex-col">
                 <span className="text-sm font-medium text-neutral-800 dark:text-zinc-200">{p.name}</span>
                 <span className="text-xs text-neutral-400 dark:text-zinc-500">
-                  {p.type}{p.model ? ` · ${p.model}` : ''}{p.baseUrl ? ` · ${p.baseUrl}` : ''}{p.hasKey ? ' · 🔑' : ''}
+                  {p.type}{p.model ? ` · ${p.model}` : ''}{p.baseUrl ? ` · ${p.baseUrl}` : ''}{p.hasKey ? ' · key' : ''}
                 </span>
               </div>
-              <div className="flex gap-1">
+              <div className="flex items-center gap-2">
+                <span className={cn('rounded-full px-2 py-0.5 text-[10px] font-medium',
+                  p.ownerType === 'user'
+                    ? 'bg-violet-50 text-violet-700 dark:bg-violet-900/20 dark:text-violet-300'
+                    : 'bg-sky-50 text-sky-700 dark:bg-sky-900/20 dark:text-sky-300'
+                )}>
+                  {p.ownerType === 'user' ? t('provider.scopePersonal') : t('provider.scopeWorkspace')}
+                </span>
                 <button type="button" onClick={() => openEdit(p)}
                   className="rounded p-1 text-neutral-400 hover:bg-neutral-100 hover:text-neutral-600 dark:hover:bg-zinc-800 dark:hover:text-zinc-300">
                   <Pencil className="size-3.5" />
@@ -607,6 +617,23 @@ function ProvidersSection() {
               <button type="button" onClick={() => setEditing(null)} className="rounded-md p-1 text-neutral-400 hover:bg-neutral-100 dark:text-zinc-500 dark:hover:bg-zinc-800"><X className="size-4" /></button>
             </div>
             <div className="space-y-3 px-5 py-4">
+              {!editing.id && (
+                <label className="flex flex-col gap-1">
+                  <span className="text-sm font-medium text-neutral-600 dark:text-zinc-400">{t('provider.scopeLabel')}</span>
+                  <select value={editing.ownerType ?? (canCreateWorkspaceProvider ? 'workspace' : 'user')} onChange={e => setEditing({ ...editing, ownerType: e.target.value as 'workspace' | 'user' })} className={fieldCls}>
+                    {canCreateWorkspaceProvider && <option value="workspace">{t('provider.scopeWorkspace')}</option>}
+                    <option value="user">{t('provider.scopePersonal')}</option>
+                  </select>
+                </label>
+              )}
+              {editing.id && (
+                <div className="flex items-center justify-between rounded-lg border border-neutral-200/80 bg-neutral-50/50 px-3 py-2 dark:border-zinc-700/60 dark:bg-zinc-800/40">
+                  <span className="text-sm font-medium text-neutral-600 dark:text-zinc-400">{t('provider.scopeLabel')}</span>
+                  <span className="text-xs text-neutral-500 dark:text-zinc-400">
+                    {editing.ownerType === 'user' ? t('provider.scopePersonal') : t('provider.scopeWorkspace')}
+                  </span>
+                </div>
+              )}
               <label className="flex flex-col gap-1">
                 <span className="text-sm font-medium text-neutral-600 dark:text-zinc-400">{t('provider.nameLabel')}</span>
                 <input value={editing.name ?? ''} onChange={e => setEditing({ ...editing, name: e.target.value })} className={fieldCls} placeholder="My Anthropic" />

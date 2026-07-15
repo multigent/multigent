@@ -53,4 +53,7 @@ func TestModelProvidersAreWorkspaceScoped(t *testing.T) {
 	if one.Type != "openai" || one.APIKey != "sk-one" || two.Type != "anthropic" || two.APIKey != "sk-two" {
 		t.Fatalf("workspace isolation failed: one=%#v two=%#v", one, two)
 	}
+	if one.OwnerType != "workspace" || one.OwnerID != "ws-one" || two.OwnerType != "workspace" || two.OwnerID != "ws-two" {
+		t.Fatalf("default owner scope not set: one=%#v two=%#v", one, two)
+	}
 }

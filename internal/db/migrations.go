@@ -133,6 +133,8 @@ func (db *SQLiteStore) migrate() error {
 		`CREATE TABLE IF NOT EXISTS model_providers (
 	id TEXT NOT NULL,
 	workspace_id TEXT NOT NULL REFERENCES workspaces(id) ON DELETE CASCADE,
+	owner_type TEXT NOT NULL DEFAULT 'workspace',
+	owner_id TEXT NOT NULL DEFAULT '',
 	name TEXT NOT NULL,
 	type TEXT NOT NULL,
 	base_url TEXT NOT NULL DEFAULT '',
@@ -143,7 +145,11 @@ func (db *SQLiteStore) migrate() error {
 	updated_at TEXT NOT NULL DEFAULT '',
 	PRIMARY KEY (workspace_id, id)
 )`,
+		`ALTER TABLE model_providers ADD COLUMN owner_type TEXT NOT NULL DEFAULT 'workspace'`,
+		`ALTER TABLE model_providers ADD COLUMN owner_id TEXT NOT NULL DEFAULT ''`,
+		`UPDATE model_providers SET owner_id = workspace_id WHERE owner_type = 'workspace' AND owner_id = ''`,
 		`CREATE INDEX IF NOT EXISTS idx_model_providers_workspace ON model_providers(workspace_id, name)`,
+		`CREATE INDEX IF NOT EXISTS idx_model_providers_owner ON model_providers(workspace_id, owner_type, owner_id)`,
 	}
 	for _, stmt := range stmts {
 		if _, err := db.sql.Exec(stmt); err != nil {

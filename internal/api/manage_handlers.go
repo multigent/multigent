@@ -387,12 +387,17 @@ func (s *Server) handlePutAgentEnv(w http.ResponseWriter, r *http.Request) {
 			providerID = ""
 		}
 		if providerID != "" {
-			if _, err := s.providerStore().Get(providerID); err != nil {
+			provider, err := s.providerStore().Get(providerID)
+			if err != nil {
 				if strings.Contains(err.Error(), "not found") {
 					s.jsonError(w, http.StatusBadRequest, "provider not found")
 					return
 				}
 				s.serverError(w, err)
+				return
+			}
+			if !s.canUseModelProviderForAgent(r, *provider, project, agent) {
+				s.jsonError(w, http.StatusForbidden, "model provider is not available for this agent")
 				return
 			}
 		}
@@ -424,6 +429,18 @@ func (s *Server) canManageAgentConfig(r *http.Request, project, agent string) bo
 		return true
 	}
 	return currentUserLinkedAgent(s.currentUser(r), project+"/"+agent)
+}
+
+func (s *Server) canUseModelProviderForAgent(r *http.Request, provider entity.APIProvider, project, agent string) bool {
+	switch provider.OwnerType {
+	case "", ConnectionOwnerWorkspace:
+		return s.canManageAgentConfig(r, project, agent)
+	case ConnectionOwnerUser:
+		cur := s.currentUser(r)
+		return cur != nil && cur.Username == provider.OwnerID && s.canManageAgentConfig(r, project, agent)
+	default:
+		return false
+	}
 }
 
 func sortedEnvKeys(env map[string]string) []string {

@@ -98,13 +98,15 @@ func IsValidModel(m AgentModel) bool {
 // APIProvider defines a reusable API provider configuration.
 // Stored in the control-plane database, scoped by workspace.
 type APIProvider struct {
-	ID      string            `yaml:"id"      json:"id"`
-	Name    string            `yaml:"name"    json:"name"`
-	Type    string            `yaml:"type"    json:"type"` // anthropic, openai, gemini, custom
-	BaseURL string            `yaml:"base_url,omitempty" json:"baseUrl,omitempty"`
-	APIKey  string            `yaml:"api_key,omitempty"  json:"-"`
-	Model   string            `yaml:"model,omitempty"    json:"model,omitempty"`
-	Env     map[string]string `yaml:"env,omitempty"      json:"env,omitempty"`
+	ID        string            `yaml:"id"      json:"id"`
+	OwnerType string            `yaml:"owner_type,omitempty" json:"ownerType,omitempty"` // workspace or user
+	OwnerID   string            `yaml:"owner_id,omitempty"   json:"ownerId,omitempty"`
+	Name      string            `yaml:"name"    json:"name"`
+	Type      string            `yaml:"type"    json:"type"` // anthropic, openai, gemini, custom
+	BaseURL   string            `yaml:"base_url,omitempty" json:"baseUrl,omitempty"`
+	APIKey    string            `yaml:"api_key,omitempty"  json:"-"`
+	Model     string            `yaml:"model,omitempty"    json:"model,omitempty"`
+	Env       map[string]string `yaml:"env,omitempty"      json:"env,omitempty"`
 }
 
 // Agency is the top-level organisational unit (the "company").
