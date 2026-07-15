@@ -474,6 +474,9 @@ func (s *Server) validateConnectionGrantTarget(r *http.Request, connection contr
 	if targetType == "" || targetID == "" {
 		return fmt.Errorf("targetType and targetId are required")
 	}
+	if connection.OwnerType == ConnectionOwnerUser {
+		return s.validateUserOwnedConnectionGrantTarget(r, connection, targetType, targetID)
+	}
 	switch targetType {
 	case ConnectionTargetWorkspace:
 		if !s.canAdminWorkspace(r, connection.WorkspaceID) {
@@ -509,6 +512,40 @@ func (s *Server) validateConnectionGrantTarget(r *http.Request, connection contr
 		return fmt.Errorf("unsupported targetType")
 	}
 	return nil
+}
+
+func (s *Server) validateUserOwnedConnectionGrantTarget(r *http.Request, connection controldb.Connection, targetType, targetID string) error {
+	switch targetType {
+	case ConnectionTargetWorkspace, ConnectionTargetProject:
+		return fmt.Errorf("user-owned connections can only be granted to the owner or the owner's linked agents")
+	case ConnectionTargetAgent:
+		parts := strings.SplitN(targetID, "/", 2)
+		if len(parts) != 2 || parts[0] == "" || parts[1] == "" || !s.agentExistsInProject(parts[0], parts[1]) {
+			return fmt.Errorf("agent target must be project/agent")
+		}
+		owner, ok := s.userRecordByUsername(connection.OwnerID)
+		if !ok || !currentUserLinkedAgent(owner, targetID) {
+			return fmt.Errorf("user-owned connection can only be granted to the owner's linked agents")
+		}
+	case ConnectionTargetUser:
+		if targetID != connection.OwnerID {
+			return fmt.Errorf("user-owned connection can only be granted to its owner")
+		}
+	default:
+		return fmt.Errorf("unsupported targetType")
+	}
+	return nil
+}
+
+func (s *Server) userRecordByUsername(username string) (*userRecord, bool) {
+	if s == nil || s.users == nil {
+		return nil, false
+	}
+	u := s.users.GetUser(username)
+	if u == nil {
+		return nil, false
+	}
+	return u, true
 }
 
 func currentUserLinkedAgent(cur *userRecord, agentRef string) bool {

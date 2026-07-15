@@ -136,6 +136,8 @@ export default function ConnectionsPage() {
           projects={projects}
           agentsByProject={agentsByProject}
           isWorkspaceAdmin={isWorkspaceAdmin}
+          currentUsername={user?.username ?? ''}
+          linkedAgents={user?.linkedAgents ?? []}
           onClose={() => setGranting(null)}
           onChanged={() => { setGranting(null); setReloadKey(k => k + 1) }}
         />
@@ -285,19 +287,44 @@ function ConnectionDialog({ providers, isWorkspaceAdmin, onClose, onCreated }: {
   )
 }
 
-function GrantDialog({ connection, workspaceId, projects, agentsByProject, isWorkspaceAdmin, onClose, onChanged }: { connection: Connection; workspaceId: string; projects: ProjectRow[]; agentsByProject: Record<string, ProjectAgent[]>; isWorkspaceAdmin: boolean; onClose: () => void; onChanged: () => void }) {
-  const [targetType, setTargetType] = useState(isWorkspaceAdmin ? 'workspace' : 'user')
+function GrantDialog({ connection, workspaceId, projects, agentsByProject, isWorkspaceAdmin, currentUsername, linkedAgents, onClose, onChanged }: { connection: Connection; workspaceId: string; projects: ProjectRow[]; agentsByProject: Record<string, ProjectAgent[]>; isWorkspaceAdmin: boolean; currentUsername: string; linkedAgents: string[]; onClose: () => void; onChanged: () => void }) {
+  const isUserOwned = connection.ownerType === 'user'
+  const isCurrentUserOwner = isUserOwned && connection.ownerId === currentUsername
+  const initialTargetType = isUserOwned ? (isCurrentUserOwner && linkedAgents.length > 0 ? 'agent' : 'user') : (isWorkspaceAdmin ? 'workspace' : 'user')
+  const [targetType, setTargetType] = useState(initialTargetType)
   const [project, setProject] = useState(projects[0]?.name ?? '')
   const [agent, setAgent] = useState('')
-  const [targetId, setTargetId] = useState(isWorkspaceAdmin ? workspaceId : '')
+  const [targetId, setTargetId] = useState(initialTargetType === 'workspace' ? workspaceId : initialTargetType === 'user' ? (isUserOwned ? connection.ownerId : currentUsername) : '')
   const [saving, setSaving] = useState(false)
 
-  const agentOptions = project ? (agentsByProject[project] ?? []) : []
+  const linkedAgentRefs = useMemo(() => linkedAgents.filter(ref => ref.includes('/')), [linkedAgents])
+  const linkedAgentsByProject = useMemo(() => {
+    const out: Record<string, ProjectAgent[]> = {}
+    for (const ref of linkedAgentRefs) {
+      const [proj, name] = ref.split('/', 2)
+      if (!proj || !name) continue
+      out[proj] = [...(out[proj] ?? []), { name }]
+    }
+    return out
+  }, [linkedAgentRefs])
+  const agentOptions = project ? (isUserOwned || !isWorkspaceAdmin ? (linkedAgentsByProject[project] ?? []) : (agentsByProject[project] ?? [])) : []
+  const projectOptions = isUserOwned || !isWorkspaceAdmin
+    ? Object.keys(linkedAgentsByProject).map(name => ({ name }))
+    : projects
+
   useEffect(() => {
     if (targetType === 'workspace') setTargetId(workspaceId)
     if (targetType === 'project') setTargetId(project)
     if (targetType === 'agent') setTargetId(project && agent ? `${project}/${agent}` : '')
-  }, [targetType, project, agent, workspaceId])
+    if (targetType === 'user') setTargetId(isUserOwned ? connection.ownerId : currentUsername)
+  }, [targetType, project, agent, workspaceId, isUserOwned, connection.ownerId, currentUsername])
+
+  useEffect(() => {
+    if ((isUserOwned || !isWorkspaceAdmin) && projectOptions.length > 0 && !projectOptions.some(p => p.name === project)) {
+      setProject(projectOptions[0].name)
+      setAgent('')
+    }
+  }, [isUserOwned, isWorkspaceAdmin, projectOptions, project])
 
   async function addGrant() {
     setSaving(true)
@@ -328,9 +355,9 @@ function GrantDialog({ connection, workspaceId, projects, agentsByProject, isWor
           <label className="block">
             <span className="text-xs font-medium text-neutral-500 dark:text-zinc-400">Target type</span>
             <select className={selectCls} value={targetType} onChange={e => setTargetType(e.target.value)}>
-              {isWorkspaceAdmin && <option value="workspace">Workspace</option>}
-              {isWorkspaceAdmin && <option value="project">Project</option>}
-              <option value="agent">Agent</option>
+              {isWorkspaceAdmin && !isUserOwned && <option value="workspace">Workspace</option>}
+              {isWorkspaceAdmin && !isUserOwned && <option value="project">Project</option>}
+              {(isWorkspaceAdmin && !isUserOwned) || isCurrentUserOwner ? <option value="agent">Agent</option> : null}
               <option value="user">User</option>
             </select>
           </label>
@@ -351,7 +378,7 @@ function GrantDialog({ connection, workspaceId, projects, agentsByProject, isWor
               <label className="block">
                 <span className="text-xs font-medium text-neutral-500 dark:text-zinc-400">Project</span>
                 <select className={selectCls} value={project} onChange={e => { setProject(e.target.value); setAgent('') }}>
-                  {projects.map(p => <option key={p.name} value={p.name}>{p.name}</option>)}
+                  {projectOptions.map(p => <option key={p.name} value={p.name}>{p.name}</option>)}
                 </select>
               </label>
               <label className="block">
@@ -365,7 +392,7 @@ function GrantDialog({ connection, workspaceId, projects, agentsByProject, isWor
           ) : (
             <label className="block">
               <span className="text-xs font-medium text-neutral-500 dark:text-zinc-400">Username</span>
-              <input className={inputCls} value={targetId} onChange={e => setTargetId(e.target.value)} placeholder="username" />
+              <input className={inputCls} value={targetId} readOnly placeholder="username" />
             </label>
           )}
         </div>
