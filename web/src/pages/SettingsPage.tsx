@@ -489,13 +489,15 @@ type ProviderRow = {
   id: string; ownerType?: 'workspace' | 'user'; ownerId?: string; name: string; type: string; baseUrl?: string; model?: string
   hasKey: boolean; env?: Record<string, string>
 }
+type WorkspaceAccessSummary = { currentUserCanAdmin?: boolean }
 
 const PROVIDER_TYPES = ['anthropic', 'openai', 'gemini', 'custom'] as const
 
 function ProvidersSection() {
   const { t } = useTranslation()
   const { user } = useAuth()
-  const canCreateWorkspaceProvider = !user || user.role === 'admin'
+  const [workspace, setWorkspace] = useState<WorkspaceAccessSummary | null>(null)
+  const canCreateWorkspaceProvider = workspace?.currentUserCanAdmin ?? (!user || user.role === 'admin')
   const [providers, setProviders] = useState<ProviderRow[]>([])
   const [loading, setLoading] = useState(true)
   const [editing, setEditing] = useState<Partial<ProviderRow> & { apiKey?: string } | null>(null)
@@ -505,7 +507,11 @@ function ProvidersSection() {
 
   const refresh = useCallback(async () => {
     try {
-      const data = await apiFetch<ProviderRow[]>('/api/v1/providers')
+      const [workspaceData, data] = await Promise.all([
+        apiFetch<WorkspaceAccessSummary>('/api/v1/workspace').catch(() => null),
+        apiFetch<ProviderRow[]>('/api/v1/providers'),
+      ])
+      setWorkspace(workspaceData)
       setProviders(data ?? [])
     } catch { /* ignore */ }
     finally { setLoading(false) }
@@ -593,14 +599,18 @@ function ProvidersSection() {
                 )}>
                   {p.ownerType === 'user' ? t('provider.scopePersonal') : t('provider.scopeWorkspace')}
                 </span>
-                <button type="button" onClick={() => openEdit(p)}
-                  className="rounded p-1 text-neutral-400 hover:bg-neutral-100 hover:text-neutral-600 dark:hover:bg-zinc-800 dark:hover:text-zinc-300">
-                  <Pencil className="size-3.5" />
-                </button>
-                <button type="button" onClick={() => void handleDelete(p.id)}
-                  className="rounded p-1 text-neutral-400 hover:bg-red-50 hover:text-red-600 dark:hover:bg-red-900/20 dark:hover:text-red-400">
-                  <Trash2 className="size-3.5" />
-                </button>
+                {canManageProviderRow(p, canCreateWorkspaceProvider, user?.username) && (
+                  <>
+                    <button type="button" onClick={() => openEdit(p)}
+                      className="rounded p-1 text-neutral-400 hover:bg-neutral-100 hover:text-neutral-600 dark:hover:bg-zinc-800 dark:hover:text-zinc-300">
+                      <Pencil className="size-3.5" />
+                    </button>
+                    <button type="button" onClick={() => void handleDelete(p.id)}
+                      className="rounded p-1 text-neutral-400 hover:bg-red-50 hover:text-red-600 dark:hover:bg-red-900/20 dark:hover:text-red-400">
+                      <Trash2 className="size-3.5" />
+                    </button>
+                  </>
+                )}
               </div>
             </div>
           ))}
@@ -679,6 +689,13 @@ function ProvidersSection() {
       )}
     </section>
   )
+}
+
+function canManageProviderRow(provider: ProviderRow, canManageWorkspace: boolean, username?: string): boolean {
+  if (provider.ownerType === 'user') {
+    return Boolean(username && provider.ownerId === username)
+  }
+  return canManageWorkspace
 }
 
 function CCConnectSection() {
@@ -1082,8 +1099,8 @@ export default function SettingsPage() {
         {/* RBAC Model (admin only) */}
         {user?.role === 'admin' && <RBACSection />}
 
-        {/* API Providers (admin only) */}
-        {user?.role === 'admin' && <ProvidersSection />}
+        {/* API Providers */}
+        <ProvidersSection />
 
         {/* cc-connect (admin only) */}
         {user?.role === 'admin' && <CCConnectSection />}
