@@ -1,6 +1,7 @@
 package api
 
 import (
+	"context"
 	"crypto/aes"
 	"crypto/cipher"
 	"crypto/rand"
@@ -533,7 +534,23 @@ func exchangeOAuthAuthorizationCode(r *http.Request, provider connector.Provider
 	form.Set("client_id", config.ClientID)
 	form.Set("client_secret", clientSecret)
 	form.Set("redirect_uri", expectedOAuthRedirectURI(r))
-	req, err := http.NewRequestWithContext(r.Context(), http.MethodPost, provider.OAuth.TokenURL, strings.NewReader(form.Encode()))
+	return exchangeOAuthToken(r.Context(), provider, form)
+}
+
+func exchangeOAuthRefreshToken(ctx context.Context, provider connector.Provider, config controldb.OAuthClientConfig, clientSecret, refreshToken string) (oauthTokenResponse, error) {
+	if provider.OAuth == nil {
+		return oauthTokenResponse{}, fmt.Errorf("provider does not support oauth2")
+	}
+	form := url.Values{}
+	form.Set("grant_type", "refresh_token")
+	form.Set("refresh_token", refreshToken)
+	form.Set("client_id", config.ClientID)
+	form.Set("client_secret", clientSecret)
+	return exchangeOAuthToken(ctx, provider, form)
+}
+
+func exchangeOAuthToken(ctx context.Context, provider connector.Provider, form url.Values) (oauthTokenResponse, error) {
+	req, err := http.NewRequestWithContext(ctx, http.MethodPost, provider.OAuth.TokenURL, strings.NewReader(form.Encode()))
 	if err != nil {
 		return oauthTokenResponse{}, fmt.Errorf("build OAuth token request: %w", err)
 	}

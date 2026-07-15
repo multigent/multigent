@@ -7,6 +7,7 @@ import (
 	"net/http/httptest"
 	"strings"
 	"testing"
+	"time"
 
 	controldb "github.com/multigent/multigent/internal/db"
 )
@@ -119,6 +120,165 @@ func TestCustomMCPRuntimeConfigSupportsNoAuthProfileURL(t *testing.T) {
 	}
 	if cfg.Token != "" {
 		t.Fatalf("no_auth profile token should not be used: %q", cfg.Token)
+	}
+}
+
+func TestRuntimeActionConfigRefreshesExpiredOAuthToken(t *testing.T) {
+	users := newTestUserStore(t)
+	s := &Server{controlDB: users.db, users: users}
+	workspaceID := "ws-one"
+	var tokenGrantType string
+	var tokenRefreshToken string
+	tokenServer := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		if err := r.ParseForm(); err != nil {
+			t.Fatalf("parse token request: %v", err)
+		}
+		tokenGrantType = r.Form.Get("grant_type")
+		tokenRefreshToken = r.Form.Get("refresh_token")
+		if r.Form.Get("client_id") != "client-id" || r.Form.Get("client_secret") != "client-secret" {
+			t.Fatalf("unexpected client credentials: %#v", r.Form)
+		}
+		w.Header().Set("Content-Type", "application/json")
+		_ = json.NewEncoder(w).Encode(map[string]any{
+			"access_token":  "new-access",
+			"refresh_token": "new-refresh",
+			"token_type":    "Bearer",
+			"expires_in":    3600,
+			"scope":         "repo read:user",
+		})
+	}))
+	defer tokenServer.Close()
+	upsertOAuthProviderForTest(t, s, tokenServer.URL+"/token")
+	if err := users.db.UpsertWorkspace(controldb.Workspace{ID: workspaceID, Name: "One", Slug: "one"}); err != nil {
+		t.Fatalf("workspace: %v", err)
+	}
+	clientSecret, err := sealOAuthClientSecret("client-secret")
+	if err != nil {
+		t.Fatalf("seal client secret: %v", err)
+	}
+	if err := users.db.UpsertOAuthClientConfig(controldb.OAuthClientConfig{
+		WorkspaceID:      workspaceID,
+		Provider:         "github",
+		ClientID:         "client-id",
+		SecretCiphertext: clientSecret.Ciphertext,
+		Nonce:            clientSecret.Nonce,
+		KeyVersion:       clientSecret.KeyVersion,
+		ExtraJSON:        "{}",
+		CreatedBy:        "admin",
+	}); err != nil {
+		t.Fatalf("oauth client config: %v", err)
+	}
+	expiresAt := time.Now().UTC().Add(-time.Minute).Format(time.RFC3339)
+	connection := controldb.Connection{
+		ID:             "conn-oauth",
+		WorkspaceID:    workspaceID,
+		Provider:       "github",
+		ConnectionName: "personal",
+		OwnerType:      ConnectionOwnerUser,
+		OwnerID:        "user-1",
+		AuthType:       ConnectionAuthOAuth2,
+		Status:         "active",
+		ProfileJSON:    `{"displayName":"GitHub OAuth","expiresAt":"` + expiresAt + `"}`,
+		CreatedBy:      "user-1",
+	}
+	if err := users.db.UpsertConnection(connection); err != nil {
+		t.Fatalf("connection: %v", err)
+	}
+	secret, err := sealConnectionSecret(map[string]string{
+		"accessToken":  "old-access",
+		"refreshToken": "old-refresh",
+		"tokenType":    "Bearer",
+		"expiresAt":    expiresAt,
+	})
+	if err != nil {
+		t.Fatalf("seal connection secret: %v", err)
+	}
+	secret.ConnectionID = connection.ID
+	if err := users.db.UpsertConnectionSecret(secret); err != nil {
+		t.Fatalf("connection secret: %v", err)
+	}
+
+	cfg, err := s.runtimeHTTPActionConfig(connection)
+	if err != nil {
+		t.Fatalf("runtime action config: %v", err)
+	}
+	if tokenGrantType != "refresh_token" || tokenRefreshToken != "old-refresh" {
+		t.Fatalf("unexpected refresh request grant=%q refresh=%q", tokenGrantType, tokenRefreshToken)
+	}
+	if cfg.AuthValue != "Bearer new-access" {
+		t.Fatalf("auth value=%q", cfg.AuthValue)
+	}
+	refreshedSecret, ok, err := users.db.ConnectionSecret(connection.ID)
+	if err != nil || !ok {
+		t.Fatalf("refreshed secret ok=%v err=%v", ok, err)
+	}
+	values, err := openConnectionSecret(refreshedSecret)
+	if err != nil {
+		t.Fatalf("open refreshed secret: %v", err)
+	}
+	if values["accessToken"] != "new-access" || values["refreshToken"] != "new-refresh" || values["expiresAt"] == "" {
+		t.Fatalf("unexpected refreshed values: %#v", values)
+	}
+	updated, ok, err := users.db.ConnectionByID(connection.ID)
+	if err != nil || !ok {
+		t.Fatalf("updated connection ok=%v err=%v", ok, err)
+	}
+	if !strings.Contains(updated.ProfileJSON, "repo") || !strings.Contains(updated.ProfileJSON, "expiresAt") {
+		t.Fatalf("profile not updated: %s", updated.ProfileJSON)
+	}
+	events, err := users.db.ListAuditEvents(controldb.AuditEventFilter{
+		WorkspaceID:  workspaceID,
+		Action:       "connection.oauth.refresh",
+		ResourceType: "connection",
+		ResourceID:   connection.ID,
+		Limit:        1,
+	})
+	if err != nil {
+		t.Fatalf("audit events: %v", err)
+	}
+	if len(events) != 1 {
+		t.Fatalf("expected refresh audit event, got %d", len(events))
+	}
+}
+
+func TestRuntimeActionConfigExpiredOAuthTokenRequiresRefreshToken(t *testing.T) {
+	users := newTestUserStore(t)
+	s := &Server{controlDB: users.db, users: users}
+	workspaceID := "ws-one"
+	if err := users.db.UpsertWorkspace(controldb.Workspace{ID: workspaceID, Name: "One", Slug: "one"}); err != nil {
+		t.Fatalf("workspace: %v", err)
+	}
+	expiresAt := time.Now().UTC().Add(-time.Minute).Format(time.RFC3339)
+	connection := controldb.Connection{
+		ID:             "conn-oauth-no-refresh",
+		WorkspaceID:    workspaceID,
+		Provider:       "github",
+		ConnectionName: "personal",
+		OwnerType:      ConnectionOwnerUser,
+		OwnerID:        "user-1",
+		AuthType:       ConnectionAuthOAuth2,
+		Status:         "active",
+		ProfileJSON:    "{}",
+		CreatedBy:      "user-1",
+	}
+	if err := users.db.UpsertConnection(connection); err != nil {
+		t.Fatalf("connection: %v", err)
+	}
+	secret, err := sealConnectionSecret(map[string]string{
+		"accessToken": "old-access",
+		"expiresAt":   expiresAt,
+	})
+	if err != nil {
+		t.Fatalf("seal connection secret: %v", err)
+	}
+	secret.ConnectionID = connection.ID
+	if err := users.db.UpsertConnectionSecret(secret); err != nil {
+		t.Fatalf("connection secret: %v", err)
+	}
+
+	_, err = s.runtimeHTTPActionConfig(connection)
+	if err == nil || !strings.Contains(err.Error(), "refresh token is missing") {
+		t.Fatalf("expected missing refresh token error, got %v", err)
 	}
 }
 

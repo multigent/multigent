@@ -2,6 +2,7 @@ package api
 
 import (
 	"bytes"
+	"context"
 	"crypto/hmac"
 	"crypto/sha256"
 	"encoding/base64"
@@ -17,6 +18,8 @@ import (
 
 	controldb "github.com/multigent/multigent/internal/db"
 )
+
+const oauthTokenRefreshSkew = 5 * time.Minute
 
 func (s *Server) handleRuntimeMCPProxy(w http.ResponseWriter, r *http.Request) {
 	principal, connection, ok := s.runtimeConnectionForRequest(w, r)
@@ -257,7 +260,11 @@ func (s *Server) runtimeHTTPActionConfig(connection controldb.Connection) (runti
 	authScheme := strings.TrimSpace(values["authScheme"])
 	apiKey := strings.TrimSpace(values["apiKey"])
 	if apiKey == "" && connection.AuthType == ConnectionAuthOAuth2 {
-		apiKey = strings.TrimSpace(values["accessToken"])
+		token, err := s.oauthAccessTokenForConnection(connection, values)
+		if err != nil {
+			return runtimeHTTPActionConfig{}, err
+		}
+		apiKey = token
 	}
 	switch connection.Provider {
 	case "custom-http":
@@ -333,6 +340,143 @@ func (s *Server) runtimeHTTPActionConfig(connection controldb.Connection) (runti
 		return runtimeHTTPActionConfig{}, err
 	}
 	return cfg, nil
+}
+
+func (s *Server) oauthAccessTokenForConnection(connection controldb.Connection, values map[string]string) (string, error) {
+	accessToken := strings.TrimSpace(values["accessToken"])
+	if accessToken == "" {
+		return "", nil
+	}
+	needsRefresh, expired, err := oauthTokenNeedsRefresh(values["expiresAt"])
+	if err != nil {
+		return "", err
+	}
+	if !needsRefresh {
+		return accessToken, nil
+	}
+	refreshToken := strings.TrimSpace(values["refreshToken"])
+	if refreshToken == "" {
+		if expired {
+			return "", fmt.Errorf("OAuth access token expired and refresh token is missing")
+		}
+		return accessToken, nil
+	}
+	refreshed, err := s.refreshOAuthConnectionToken(context.Background(), connection, values, refreshToken)
+	if err != nil {
+		if expired {
+			return "", err
+		}
+		return accessToken, nil
+	}
+	return refreshed, nil
+}
+
+func oauthTokenNeedsRefresh(expiresAtRaw string) (needsRefresh bool, expired bool, err error) {
+	expiresAtRaw = strings.TrimSpace(expiresAtRaw)
+	if expiresAtRaw == "" {
+		return false, false, nil
+	}
+	expiresAt, err := time.Parse(time.RFC3339, expiresAtRaw)
+	if err != nil {
+		return false, false, fmt.Errorf("invalid OAuth expiresAt value")
+	}
+	now := time.Now().UTC()
+	expired = !expiresAt.After(now)
+	needsRefresh = expired || expiresAt.Before(now.Add(oauthTokenRefreshSkew))
+	return needsRefresh, expired, nil
+}
+
+func (s *Server) refreshOAuthConnectionToken(ctx context.Context, connection controldb.Connection, values map[string]string, refreshToken string) (string, error) {
+	provider, ok, err := s.findOAuthProvider(connection.Provider)
+	if err != nil {
+		return "", err
+	}
+	if !ok {
+		return "", fmt.Errorf("OAuth provider %q is not configured", connection.Provider)
+	}
+	clientConfig, configured, err := s.controlDB.OAuthClientConfigByProvider(connection.WorkspaceID, connection.Provider)
+	if err != nil {
+		return "", err
+	}
+	if !configured {
+		return "", fmt.Errorf("OAuth client config is required")
+	}
+	clientSecret, err := openOAuthClientSecret(clientConfig)
+	if err != nil {
+		return "", err
+	}
+	token, err := exchangeOAuthRefreshToken(ctx, provider, clientConfig, clientSecret, refreshToken)
+	if err != nil {
+		s.auditLog(auditLogInput{
+			WorkspaceID:  connection.WorkspaceID,
+			ActorType:    "system",
+			ActorID:      "runtime",
+			Action:       "connection.oauth.refresh_failed",
+			ResourceType: "connection",
+			ResourceID:   connection.ID,
+			Summary:      err.Error(),
+			After: map[string]any{
+				"provider":       connection.Provider,
+				"connectionName": connection.ConnectionName,
+			},
+		})
+		return "", err
+	}
+	if token.AccessToken == "" {
+		return "", fmt.Errorf("OAuth refresh response missing access_token")
+	}
+	nextValues := make(map[string]string, len(values)+2)
+	for key, value := range values {
+		nextValues[key] = value
+	}
+	nextValues["accessToken"] = token.AccessToken
+	if token.TokenType != "" {
+		nextValues["tokenType"] = token.TokenType
+	}
+	if token.RefreshToken != "" {
+		nextValues["refreshToken"] = token.RefreshToken
+	}
+	if token.ExpiresIn > 0 {
+		nextValues["expiresAt"] = time.Now().UTC().Add(time.Duration(token.ExpiresIn) * time.Second).Format(time.RFC3339)
+	}
+	secret, err := sealConnectionSecret(nextValues)
+	if err != nil {
+		return "", err
+	}
+	secret.ConnectionID = connection.ID
+	if err := s.controlDB.UpsertConnectionSecret(secret); err != nil {
+		return "", err
+	}
+	updated := connection
+	profile := map[string]any{}
+	_ = json.Unmarshal([]byte(connection.ProfileJSON), &profile)
+	if nextValues["expiresAt"] != "" {
+		profile["expiresAt"] = nextValues["expiresAt"]
+	}
+	if token.Scope != "" {
+		profile["scopes"] = strings.Fields(token.Scope)
+	}
+	profileJSON, _ := json.Marshal(profile)
+	updated.ProfileJSON = string(profileJSON)
+	updated.UpdatedAt = time.Now().UTC().Format(time.RFC3339)
+	if err := s.controlDB.UpdateConnection(updated); err != nil {
+		return "", err
+	}
+	s.auditLog(auditLogInput{
+		WorkspaceID:  connection.WorkspaceID,
+		ActorType:    "system",
+		ActorID:      "runtime",
+		Action:       "connection.oauth.refresh",
+		ResourceType: "connection",
+		ResourceID:   connection.ID,
+		Summary:      "OAuth access token refreshed",
+		After: map[string]any{
+			"provider":       connection.Provider,
+			"connectionName": connection.ConnectionName,
+			"expiresAt":      nextValues["expiresAt"],
+		},
+	})
+	return token.AccessToken, nil
 }
 
 func normalizeDingTalkBotAccessToken(value string) (string, error) {

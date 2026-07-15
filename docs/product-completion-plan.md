@@ -616,8 +616,8 @@ Status:
 - Connections now support runtime action policies for HTTP action proxy calls. Connection owners can configure method and endpoint allow/block rules; runtime proxy calls and connection tests enforce the same policy before upstream credentials are used.
 - Connection responses and runtime manifests now include a safe profile summary for account identity, scopes, provider permissions, and action policy. The Web connections page can capture and display this metadata without exposing provider secrets.
 - OAuth client configuration now has a workspace-scoped foundation. OAuth-capable providers can declare authorization/token metadata, workspace admins can store provider client IDs/secrets server-side, and the UI shows the expected redirect URI without returning client secrets.
-- OAuth authorization start/callback/token exchange now exists for OAuth-capable providers. The flow stores short-lived state server-side, exchanges authorization codes server-side, creates OAuth connections with encrypted tokens, and the Web connection dialog can start the OAuth flow.
-- Remaining work: OAuth callback UX polish, token refresh, DingTalk enterprise app/OAuth provider, GitHub app installation flow, action catalog/schema support, and deeper per-provider executor hardening.
+- OAuth authorization start/callback/token exchange now exists for OAuth-capable providers. The flow stores short-lived state server-side, exchanges authorization codes server-side, creates OAuth connections with encrypted tokens, refreshes expired access tokens at runtime when a refresh token is available, and the Web connection dialog can start the OAuth flow.
+- Remaining work: OAuth callback UX polish, DingTalk enterprise app/OAuth provider, GitHub app installation flow, action catalog/schema support, and deeper per-provider executor hardening.
 
 ### Phase 5: Agent Runtime Productization
 
