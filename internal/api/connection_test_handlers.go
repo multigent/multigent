@@ -44,9 +44,11 @@ func (s *Server) handleTestConnection(w http.ResponseWriter, r *http.Request) {
 			s.jsonError(w, http.StatusBadRequest, inputErr.Error())
 			return
 		}
+		s.recordConnectionValidation(r, connection, false, 0, err.Error())
 		s.jsonError(w, http.StatusBadGateway, err.Error())
 		return
 	}
+	s.recordConnectionValidation(r, connection, result.OK, result.Status, result.Message)
 	s.auditLog(auditLogInput{
 		WorkspaceID:  connection.WorkspaceID,
 		Action:       "connection.test",
@@ -62,6 +64,37 @@ func (s *Server) handleTestConnection(w http.ResponseWriter, r *http.Request) {
 		Request: r,
 	})
 	_ = json.NewEncoder(w).Encode(result)
+}
+
+func (s *Server) recordConnectionValidation(r *http.Request, connection controldb.Connection, ok bool, status int, message string) {
+	now := time.Now().UTC().Format(time.RFC3339)
+	updated := connection
+	updated.UpdatedAt = now
+	profile := connectionProfileMap(connection)
+	profile["lastValidatedAt"] = now
+	profile["lastValidationOK"] = ok
+	profile["lastValidationStatus"] = status
+	profile["lastValidationMessage"] = strings.TrimSpace(message)
+	profileJSON, _ := json.Marshal(profile)
+	updated.ProfileJSON = string(profileJSON)
+	if err := s.controlDB.UpdateConnection(updated); err != nil {
+		return
+	}
+	s.auditLog(auditLogInput{
+		WorkspaceID:  connection.WorkspaceID,
+		Action:       "connection.validate",
+		ResourceType: "connection",
+		ResourceID:   connection.ID,
+		Summary:      "Connection validation result recorded",
+		After: map[string]any{
+			"provider":       connection.Provider,
+			"connectionName": connection.ConnectionName,
+			"ok":             ok,
+			"status":         status,
+			"message":        strings.TrimSpace(message),
+		},
+		Request: r,
+	})
 }
 
 type testConnectionResult struct {

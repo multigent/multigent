@@ -98,6 +98,27 @@ func TestConnectionTestCustomHTTPUsesServerSideCredential(t *testing.T) {
 	if !strings.Contains(body, "Bearer [redacted]") {
 		t.Fatalf("redacted marker missing: %s", body)
 	}
+
+	updated, found, err := s.controlDB.ConnectionByID(connection.ID)
+	if err != nil || !found {
+		t.Fatalf("get updated connection: found=%v err=%v", found, err)
+	}
+	var profile map[string]any
+	if err := json.Unmarshal([]byte(updated.ProfileJSON), &profile); err != nil {
+		t.Fatalf("profile json: %v", err)
+	}
+	if profile["lastValidatedAt"] == "" {
+		t.Fatalf("lastValidatedAt missing in profile: %#v", profile)
+	}
+	if profile["lastValidationOK"] != true {
+		t.Fatalf("lastValidationOK=%#v profile=%#v", profile["lastValidationOK"], profile)
+	}
+	if profile["lastValidationStatus"] != float64(http.StatusOK) {
+		t.Fatalf("lastValidationStatus=%#v profile=%#v", profile["lastValidationStatus"], profile)
+	}
+	if profile["lastValidationMessage"] != "Connection test succeeded" {
+		t.Fatalf("lastValidationMessage=%#v profile=%#v", profile["lastValidationMessage"], profile)
+	}
 }
 
 func TestConnectionTestRequiresManagementAccess(t *testing.T) {
@@ -128,5 +149,78 @@ func TestConnectionTestRequiresManagementAccess(t *testing.T) {
 
 	if rec.Code != http.StatusForbidden {
 		t.Fatalf("status=%d body=%s", rec.Code, rec.Body.String())
+	}
+}
+
+func TestConnectionTestPersistsFailedHTTPValidation(t *testing.T) {
+	s, workspaceID := newConnectionTestServer(t)
+	upstream := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		http.Error(w, "temporary unavailable", http.StatusServiceUnavailable)
+	}))
+	defer upstream.Close()
+
+	connection := controldb.Connection{
+		ID:             "conn-http-fail",
+		WorkspaceID:    workspaceID,
+		Provider:       "custom-http",
+		ConnectionName: "api",
+		OwnerType:      ConnectionOwnerUser,
+		OwnerID:        "owner",
+		AuthType:       ConnectionAuthCustomCredential,
+		Status:         "active",
+		ProfileJSON:    `{}`,
+		CreatedBy:      "owner",
+		CreatedAt:      "2026-07-15T00:00:00Z",
+		UpdatedAt:      "2026-07-15T00:00:00Z",
+	}
+	if err := s.controlDB.UpsertConnection(connection); err != nil {
+		t.Fatalf("connection: %v", err)
+	}
+	secret, err := sealConnectionSecret(map[string]string{"baseUrl": upstream.URL, "apiKey": "test-token"})
+	if err != nil {
+		t.Fatalf("seal secret: %v", err)
+	}
+	secret.ConnectionID = connection.ID
+	if err := s.controlDB.UpsertConnectionSecret(secret); err != nil {
+		t.Fatalf("secret: %v", err)
+	}
+
+	req := httptest.NewRequest(http.MethodPost, "/api/v1/connections/conn-http-fail/test", nil)
+	req.SetPathValue("id", connection.ID)
+	req = req.WithContext(context.WithValue(req.Context(), ctxUserKey, "owner"))
+	rec := httptest.NewRecorder()
+
+	s.handleTestConnection(rec, req)
+
+	if rec.Code != http.StatusOK {
+		t.Fatalf("status=%d body=%s", rec.Code, rec.Body.String())
+	}
+	var result testConnectionResult
+	if err := json.Unmarshal(rec.Body.Bytes(), &result); err != nil {
+		t.Fatalf("result json: %v", err)
+	}
+	if result.OK || result.Status != http.StatusServiceUnavailable {
+		t.Fatalf("unexpected result: %#v", result)
+	}
+
+	updated, found, err := s.controlDB.ConnectionByID(connection.ID)
+	if err != nil || !found {
+		t.Fatalf("get updated connection: found=%v err=%v", found, err)
+	}
+	var profile map[string]any
+	if err := json.Unmarshal([]byte(updated.ProfileJSON), &profile); err != nil {
+		t.Fatalf("profile json: %v", err)
+	}
+	if profile["lastValidatedAt"] == "" {
+		t.Fatalf("lastValidatedAt missing in profile: %#v", profile)
+	}
+	if profile["lastValidationOK"] != false {
+		t.Fatalf("lastValidationOK=%#v profile=%#v", profile["lastValidationOK"], profile)
+	}
+	if profile["lastValidationStatus"] != float64(http.StatusServiceUnavailable) {
+		t.Fatalf("lastValidationStatus=%#v profile=%#v", profile["lastValidationStatus"], profile)
+	}
+	if !strings.Contains(profile["lastValidationMessage"].(string), "HTTP 503") {
+		t.Fatalf("lastValidationMessage=%#v profile=%#v", profile["lastValidationMessage"], profile)
 	}
 }

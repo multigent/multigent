@@ -95,6 +95,8 @@ export default function ConnectionsPage() {
         ...prev,
         [connection.id]: { ok: false, message: e instanceof Error ? e.message : String(e) },
       }))
+    } finally {
+      setReloadKey(k => k + 1)
     }
   }
 
@@ -183,6 +185,7 @@ export default function ConnectionsPage() {
 }
 
 function ConnectionCard({ connection, provider, canGrant, canEdit, canDelete, testState, onEdit, onGrant, onTest, onDelete }: { connection: Connection; provider?: Provider; canGrant: boolean; canEdit: boolean; canDelete: boolean; testState?: { loading?: boolean; ok?: boolean; message?: string }; onEdit: () => void; onGrant: () => void; onTest: () => void; onDelete: () => void }) {
+  const validation = connectionValidation(connection)
   return (
     <section className="rounded-xl border border-neutral-200/80 bg-white p-5 dark:border-zinc-700/60 dark:bg-zinc-900/40">
       <div className="flex items-start justify-between gap-3">
@@ -197,8 +200,18 @@ function ConnectionCard({ connection, provider, canGrant, canEdit, canDelete, te
               <span className={cn('rounded-full px-2 py-0.5 text-[11px] font-medium', connection.ownerType === 'workspace' ? 'bg-emerald-100 text-emerald-700 dark:bg-emerald-900/30 dark:text-emerald-300' : 'bg-indigo-100 text-indigo-700 dark:bg-indigo-900/30 dark:text-indigo-300')}>
                 {connection.ownerType}
               </span>
+              {validation && (
+                <span className={cn('rounded-full px-2 py-0.5 text-[11px] font-medium', validation.ok ? 'bg-teal-100 text-teal-700 dark:bg-teal-900/30 dark:text-teal-300' : 'bg-red-100 text-red-700 dark:bg-red-900/30 dark:text-red-300')}>
+                  {validation.ok ? 'Healthy' : 'Failed'}{validation.status ? ` · ${validation.status}` : ''}
+                </span>
+              )}
             </div>
             <p className="mt-1 text-xs text-neutral-400 dark:text-zinc-500">{connection.authType} · owner {connection.ownerId}</p>
+            {validation && (
+              <p className="mt-1 truncate text-xs text-neutral-400 dark:text-zinc-500" title={validation.message || undefined}>
+                Validated {validation.atLabel}{validation.message ? ` · ${validation.message}` : ''}
+              </p>
+            )}
           </div>
         </div>
         <div className="flex shrink-0 items-center gap-1">
@@ -248,6 +261,18 @@ function ConnectionCard({ connection, provider, canGrant, canEdit, canDelete, te
       )}
     </section>
   )
+}
+
+function connectionValidation(connection: Connection): { ok: boolean; status?: number; message: string; atLabel: string } | null {
+  const profile = connection.profile ?? {}
+  const at = typeof profile.lastValidatedAt === 'string' ? profile.lastValidatedAt : ''
+  if (!at) return null
+  const ok = profile.lastValidationOK === true
+  const status = typeof profile.lastValidationStatus === 'number' ? profile.lastValidationStatus : undefined
+  const message = typeof profile.lastValidationMessage === 'string' ? profile.lastValidationMessage : ''
+  const timestamp = new Date(at)
+  const atLabel = Number.isNaN(timestamp.getTime()) ? at : timestamp.toLocaleString()
+  return { ok, status, message, atLabel }
 }
 
 function ConnectionDialog({ providers, isWorkspaceAdmin, connection, onClose, onCreated }: { providers: Provider[]; isWorkspaceAdmin: boolean; connection?: Connection; onClose: () => void; onCreated: () => void }) {
