@@ -158,7 +158,10 @@
   "account": {
     "title": "Account Settings",
     "intro": "Personal preferences and password for your current browser session.",
-    "menu": "Account settings"
+    "menu": "Account settings",
+    "languageDescription": "Choose the display language for this browser.",
+    "appearanceDescription": "Set the interface theme used on this device.",
+    "passwordDescription": "Update your password for the current Multigent account."
   },
   "overview": {
     "eyebrow": "Workspace",

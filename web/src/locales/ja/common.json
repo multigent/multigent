@@ -158,7 +158,10 @@
   "account": {
     "title": "アカウント設定",
     "intro": "現在のブラウザセッションの個人設定とパスワード。",
-    "menu": "アカウント設定"
+    "menu": "アカウント設定",
+    "languageDescription": "このブラウザで使う表示言語を選択します。",
+    "appearanceDescription": "このデバイスで使うインターフェーステーマを設定します。",
+    "passwordDescription": "現在の Multigent アカウントのログインパスワードを更新します。"
   },
   "overview": {
     "eyebrow": "ワークベンチ",

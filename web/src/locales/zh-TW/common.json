@@ -158,7 +158,10 @@
   "account": {
     "title": "帳號設定",
     "intro": "目前瀏覽器工作階段的個人偏好與密碼設定。",
-    "menu": "帳號設定"
+    "menu": "帳號設定",
+    "languageDescription": "選擇目前瀏覽器使用的介面語言。",
+    "appearanceDescription": "設定目前裝置上的介面主題。",
+    "passwordDescription": "更新目前 Multigent 帳號的登入密碼。"
   },
   "overview": {
     "eyebrow": "工作臺",
