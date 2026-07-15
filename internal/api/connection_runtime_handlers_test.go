@@ -8,6 +8,7 @@ import (
 	"strings"
 	"testing"
 
+	"github.com/multigent/multigent/internal/connector"
 	controldb "github.com/multigent/multigent/internal/db"
 )
 
@@ -83,7 +84,7 @@ func TestAgentRuntimeConnectionResponseDoesNotExposeSecretValues(t *testing.T) {
 	}
 	resp := agentRuntimeConnectionToResponse(connection, []controldb.ConnectionGrant{
 		{ID: "grant-one", TargetType: ConnectionTargetAgent, TargetID: "tapnow/dev"},
-	})
+	}, []connector.ProviderAction{{Name: "get_authenticated_user", Method: "GET", Endpoint: "/user"}})
 	raw, err := json.Marshal(resp)
 	if err != nil {
 		t.Fatalf("marshal response: %v", err)
@@ -103,6 +104,9 @@ func TestAgentRuntimeConnectionResponseDoesNotExposeSecretValues(t *testing.T) {
 	if len(resp.Runtime.MCPProxy.Headers) == 0 {
 		t.Fatalf("mcp proxy headers missing")
 	}
+	if len(resp.Runtime.Actions) != 1 || resp.Runtime.Actions[0].Name != "get_authenticated_user" {
+		t.Fatalf("runtime actions missing: %#v", resp.Runtime.Actions)
+	}
 	if resp.Profile["visible"] != "ok" {
 		t.Fatalf("profile not preserved: %#v", resp.Profile)
 	}
@@ -117,6 +121,55 @@ func TestAgentRuntimeConnectionResponseDoesNotExposeSecretValues(t *testing.T) {
 	}
 	if len(resp.MatchedGrants) != 1 || resp.MatchedGrants[0].ID != "grant-one" {
 		t.Fatalf("matched grants not preserved: %#v", resp.MatchedGrants)
+	}
+}
+
+func TestRuntimeActionsForConnectionUsesProviderCatalogAndActionPolicy(t *testing.T) {
+	users := newTestUserStore(t)
+	s := &Server{controlDB: users.db, users: users}
+	if err := users.db.UpsertWorkspace(controldb.Workspace{ID: "ws-one", Name: "One", Slug: "one"}); err != nil {
+		t.Fatalf("workspace: %v", err)
+	}
+	provider := connector.Provider{
+		Provider:    "catalog-test",
+		DisplayName: "Catalog Test",
+		AuthTypes:   []string{ConnectionAuthNoAuth},
+		Actions: []connector.ProviderAction{
+			{Name: "allowed", DisplayName: "Allowed", Method: "GET", Endpoint: "/v1/items"},
+			{Name: "blocked", DisplayName: "Blocked", Method: "DELETE", Endpoint: "/v1/items/1"},
+			{Name: "outside_endpoint", DisplayName: "Outside", Method: "GET", Endpoint: "/admin/items"},
+		},
+		Enabled: true,
+	}
+	authTypes, _ := json.Marshal(provider.AuthTypes)
+	catalog, _ := json.Marshal(provider)
+	if err := users.db.UpsertConnectorProvider(controldb.ConnectorProvider{
+		Provider:      provider.Provider,
+		DisplayName:   provider.DisplayName,
+		AuthTypesJSON: string(authTypes),
+		CatalogJSON:   string(catalog),
+		Enabled:       true,
+	}); err != nil {
+		t.Fatalf("provider: %v", err)
+	}
+	connection := controldb.Connection{
+		ID:             "conn-catalog",
+		WorkspaceID:    "ws-one",
+		Provider:       "catalog-test",
+		ConnectionName: "default",
+		OwnerType:      ConnectionOwnerWorkspace,
+		OwnerID:        "ws-one",
+		AuthType:       ConnectionAuthNoAuth,
+		Status:         "active",
+		ProfileJSON:    `{"allowedActionMethods":["GET"],"allowedActionEndpoints":["/v1/*"]}`,
+		CreatedBy:      "owner",
+	}
+	actions, err := s.runtimeActionsForConnection(connection)
+	if err != nil {
+		t.Fatalf("runtime actions: %v", err)
+	}
+	if len(actions) != 1 || actions[0].Name != "allowed" {
+		t.Fatalf("unexpected runtime actions: %#v", actions)
 	}
 }
 

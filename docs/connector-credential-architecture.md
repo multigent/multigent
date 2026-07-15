@@ -202,6 +202,7 @@ Response contract:
 - `connections[].runtime.alias`: stable provider/connection alias for agent prompts and MCP client config.
 - `connections[].runtime.mcpProxy`: how the sandbox should call the MCP proxy.
 - `connections[].runtime.actionProxy`: how the sandbox should call the action proxy.
+- `connections[].runtime.actions`: provider-defined action catalog entries still allowed by this connection's action policy. Each entry includes action name, method, endpoint, description, and input schema. It does not include credentials.
 
 Rules:
 
@@ -215,6 +216,7 @@ Rules:
 - Agents fetch their own runtime connection manifest through `GET /api/v1/runtime/connections` with the scoped runtime token.
 - Agent runs receive `MULTIGENT_API_URL`, `MULTIGENT_AGENT_TOKEN`, `MULTIGENT_RUN_ID`, and `MULTIGENT_WORKSPACE_ID` automatically when the API server address is known. Docker runtimes inherit these variables by name so the token value does not appear in the `docker run` argv.
 - Runtime proxy endpoints re-check connection grants on every request instead of trusting the connection manifest.
+- Provider catalogs can declare standard action schemas. Runtime manifests expose only actions allowed by the connection's method/endpoint action policy; proxy calls still re-check the same policy before upstream credentials are used.
 - `custom-mcp` runtime MCP proxy is implemented first. The agent posts JSON-RPC to Multigent; Multigent forwards it to the configured MCP server and applies the stored connection token server-side.
 - `custom-http`, `github`, and `linear` can use the runtime action proxy. The agent posts a JSON proxy request to Multigent; Multigent validates the relative endpoint, applies the stored credential server-side, and returns a sanitized response envelope.
 - Other provider action/MCP executors should follow the same boundary: agent token in, grant check, server-side credential application, no raw credential response.

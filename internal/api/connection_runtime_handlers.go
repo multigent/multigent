@@ -6,6 +6,7 @@ import (
 	"sort"
 	"strings"
 
+	"github.com/multigent/multigent/internal/connector"
 	controldb "github.com/multigent/multigent/internal/db"
 )
 
@@ -38,6 +39,7 @@ type connectionRuntimeSpec struct {
 	Env         map[string]string          `json:"env"`
 	MCPProxy    connectionRuntimeProxySpec `json:"mcpProxy"`
 	ActionProxy connectionRuntimeProxySpec `json:"actionProxy"`
+	Actions     []connector.ProviderAction `json:"actions,omitempty"`
 }
 
 type connectionRuntimeProxySpec struct {
@@ -148,7 +150,11 @@ func (s *Server) resolveAgentRuntimeConnections(workspaceID, project, agent stri
 		if len(matched) == 0 {
 			continue
 		}
-		out = append(out, agentRuntimeConnectionToResponse(connection, matched))
+		actions, err := s.runtimeActionsForConnection(connection)
+		if err != nil {
+			return nil, err
+		}
+		out = append(out, agentRuntimeConnectionToResponse(connection, matched, actions))
 	}
 	sort.Slice(out, func(i, j int) bool {
 		if out[i].Provider != out[j].Provider {
@@ -196,7 +202,7 @@ func connectionGrantMatchesAgent(grant controldb.ConnectionGrant, workspaceID, p
 	}
 }
 
-func agentRuntimeConnectionToResponse(connection controldb.Connection, grants []controldb.ConnectionGrant) agentRuntimeConnectionResponse {
+func agentRuntimeConnectionToResponse(connection controldb.Connection, grants []controldb.ConnectionGrant, actions []connector.ProviderAction) agentRuntimeConnectionResponse {
 	profile := map[string]any{}
 	_ = json.Unmarshal([]byte(connection.ProfileJSON), &profile)
 	alias := runtimeConnectionAlias(connection.Provider, connection.ConnectionName)
@@ -210,7 +216,7 @@ func agentRuntimeConnectionToResponse(connection controldb.Connection, grants []
 		Profile:        sanitizeConnectionProfile(connection.Provider, profile),
 		ProfileSummary: summarizeConnectionProfile(connection, profile),
 		MatchedGrants:  grantsToResponse(grants),
-		Runtime:        runtimeSpecForConnection(connection, alias),
+		Runtime:        runtimeSpecForConnection(connection, alias, actions),
 	}
 }
 
@@ -227,7 +233,7 @@ func agentConnectionManifest() agentRuntimeConnectionManifest {
 	}
 }
 
-func runtimeSpecForConnection(connection controldb.Connection, alias string) connectionRuntimeSpec {
+func runtimeSpecForConnection(connection controldb.Connection, alias string, actions []connector.ProviderAction) connectionRuntimeSpec {
 	manifest := agentConnectionManifest()
 	return connectionRuntimeSpec{
 		Alias: alias,
@@ -264,7 +270,34 @@ func runtimeSpecForConnection(connection controldb.Connection, alias string) con
 			},
 			Description: "Use this action proxy for provider actions. The agent token must authorize the current run.",
 		},
+		Actions: actions,
 	}
+}
+
+func (s *Server) runtimeActionsForConnection(connection controldb.Connection) ([]connector.ProviderAction, error) {
+	provider, ok, err := s.findConnectorProvider(connection.Provider)
+	if err != nil {
+		return nil, err
+	}
+	if !ok || len(provider.Actions) == 0 {
+		return nil, nil
+	}
+	out := make([]connector.ProviderAction, 0, len(provider.Actions))
+	for _, action := range provider.Actions {
+		if runtimeProviderActionAllowed(connection, action) {
+			out = append(out, action)
+		}
+	}
+	return out, nil
+}
+
+func runtimeProviderActionAllowed(connection controldb.Connection, action connector.ProviderAction) bool {
+	method := strings.ToUpper(strings.TrimSpace(action.Method))
+	endpoint := strings.TrimSpace(action.Endpoint)
+	if method == "" || endpoint == "" {
+		return false
+	}
+	return enforceRuntimeActionPolicy(connection, method, endpoint) == nil
 }
 
 func runtimeConnectionIDs(connections []agentRuntimeConnectionResponse) []string {
