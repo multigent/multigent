@@ -3,6 +3,7 @@ import {
   BookOpen,
   Briefcase,
   CalendarClock,
+  Cable,
   FolderKanban,
   FolderOpen,
   LayoutDashboard,
@@ -25,6 +26,7 @@ export type NavKey =
   | 'projects'
   | 'people'
   | 'workbench'
+  | 'connections'
   | 'goals'
   | 'skills'
   | 'docs'
@@ -54,6 +56,7 @@ export type ProjectNavItem = {
 export const workspaceNav: NavItem[] = [
   { to: '/', navKey: 'overview', icon: LayoutDashboard, activePrefix: undefined, adminOnly: true },
   { to: '/workbench', navKey: 'workbench', icon: Briefcase, activePrefix: '/workbench' },
+  { to: '/connections', navKey: 'connections', icon: Cable, activePrefix: '/connections' },
   {
     to: '/projects',
     navKey: 'projects',
@@ -90,6 +93,7 @@ export function navKeyFromPath(pathname: string): NavKey {
     people: 'people',
     goals: 'goals',
     workbench: 'workbench',
+    connections: 'connections',
     skills: 'skills',
     docs: 'docs',
     files: 'files',

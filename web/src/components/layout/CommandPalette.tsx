@@ -5,6 +5,7 @@ import { Command } from 'cmdk'
 import {
   BarChart3,
   Briefcase,
+  Cable,
   CalendarClock,
   MessageSquareText,
   FolderKanban,
@@ -93,6 +94,7 @@ export function CommandPalette({
       { id: 'nav-teams', label: t('nav.teams'), group: t('search.groupNav'), icon: Users, to: '/teams' },
       { id: 'nav-projects', label: t('nav.projects'), group: t('search.groupNav'), icon: FolderKanban, to: '/projects' },
       { id: 'nav-workbench', label: t('nav.workbench'), group: t('search.groupNav'), icon: Briefcase, to: '/workbench' },
+      { id: 'nav-connections', label: t('nav.connections'), group: t('search.groupNav'), icon: Cable, to: '/connections' },
       { id: 'nav-skills', label: t('nav.skills'), group: t('search.groupNav'), icon: Puzzle, to: '/skills' },
       { id: 'nav-settings', label: t('nav.settings'), group: t('search.groupNav'), icon: Settings, to: '/settings' },
     ].filter(item => isAdmin || !['nav-overview', 'nav-teams', 'nav-skills'].includes(item.id))

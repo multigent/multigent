@@ -10,6 +10,7 @@ import WorkbenchPage from './pages/WorkbenchPage'
 import OverviewPage from './pages/OverviewPage'
 import SettingsPage from './pages/SettingsPage'
 import SkillsPage from './pages/SkillsPage'
+import ConnectionsPage from './pages/ConnectionsPage'
 import { ProjectBranch } from './pages/projects/ProjectBranch'
 import ProjectAgentDetailPage from './pages/projects/ProjectAgentDetailPage'
 import ProjectAgentChatPage from './pages/projects/ProjectAgentChatPage'
@@ -105,6 +106,7 @@ function AuthenticatedRoutes({ isAdmin }: { isAdmin: boolean }) {
         <Route path="people" element={<PeoplePage />} />
         <Route path="people/:username" element={<PersonDetailPage />} />
         <Route path="workbench" element={<WorkbenchPage />} />
+        <Route path="connections" element={<ConnectionsPage />} />
         {isAdmin && <Route path="skills" element={<SkillsPage />} />}
         {isAdmin && <Route path="docs/*" element={<DocsPage />} />}
         <Route path="files" element={<FilesPage />} />
