@@ -1218,10 +1218,14 @@ func (s *Server) handleGetUser(w http.ResponseWriter, r *http.Request) {
 }
 
 func (s *Server) handleUpdateUser(w http.ResponseWriter, r *http.Request) {
-	if !s.requireAdmin(w, r) {
+	target := r.PathValue("username")
+	cur := s.currentUser(r)
+	isAdmin := cur.Role == RoleAdmin
+	isSelf := cur.Username == target
+	if !isAdmin && !isSelf {
+		s.jsonErrorCode(w, http.StatusForbidden, ErrCodeForbidden, "access denied")
 		return
 	}
-	target := r.PathValue("username")
 	var body struct {
 		Role         *string         `json:"role"`
 		DisplayName  *string         `json:"displayName"`
@@ -1242,6 +1246,16 @@ func (s *Server) handleUpdateUser(w http.ResponseWriter, r *http.Request) {
 		s.jsonErrorCode(w, http.StatusBadRequest, ErrCodeValidationFailed, "password must be at least 6 characters")
 		return
 	}
+	if !isAdmin {
+		body.Role = nil
+		body.Email = nil
+		body.Phone = nil
+		body.Bio = nil
+		body.Disabled = nil
+		body.Password = nil
+		body.Projects = nil
+		body.LinkedAgents = nil
+	}
 	if err := s.users.UpdateUser(target, body.Role, body.DisplayName, body.Email, body.Avatar, body.Phone, body.Bio, body.Disabled, body.Projects, body.LinkedAgents, body.Password); err != nil {
 		if strings.Contains(err.Error(), "not found") {
 			s.jsonErrorCode(w, http.StatusNotFound, ErrCodeUserNotFound, err.Error())
@@ -1250,7 +1264,17 @@ func (s *Server) handleUpdateUser(w http.ResponseWriter, r *http.Request) {
 		s.serverError(w, err)
 		return
 	}
-	_ = json.NewEncoder(w).Encode(map[string]bool{"ok": true})
+	u := s.users.GetUser(target)
+	_ = json.NewEncoder(w).Encode(map[string]any{
+		"ok":           true,
+		"username":     u.Username,
+		"role":         u.Role,
+		"displayName":  u.DisplayName,
+		"email":        u.Email,
+		"avatar":       u.Avatar,
+		"projects":     u.Projects,
+		"linkedAgents": u.LinkedAgents,
+	})
 }
 
 func (s *Server) handleDeleteUser(w http.ResponseWriter, r *http.Request) {

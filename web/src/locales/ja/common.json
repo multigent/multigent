@@ -159,9 +159,17 @@
     "title": "アカウント設定",
     "intro": "現在のブラウザセッションの個人設定とパスワード。",
     "menu": "アカウント設定",
+    "profileTitle": "プロフィール",
+    "profileDescription": "Multigent でチームメンバーと Agent に表示される名前とアバターを設定します。",
+    "profileSaved": "プロフィールを保存しました",
+    "preferencesTitle": "環境設定",
+    "preferencesDescription": "これらの設定は、現在のユーザーとデバイスにのみ適用されます。",
     "languageDescription": "このブラウザで使う表示言語を選択します。",
     "appearanceDescription": "このデバイスで使うインターフェーステーマを設定します。",
-    "passwordDescription": "現在の Multigent アカウントのログインパスワードを更新します。"
+    "passwordDescription": "現在の Multigent アカウントのログインパスワードを更新します。",
+    "currentPasswordDescription": "本人確認のため、現在のパスワードを入力します。",
+    "newPasswordDescription": "6 文字以上の新しいパスワードを設定します。",
+    "confirmPasswordDescription": "入力ミスを避けるため、新しいパスワードをもう一度入力します。"
   },
   "overview": {
     "eyebrow": "ワークベンチ",

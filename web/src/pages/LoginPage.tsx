@@ -10,6 +10,7 @@ type LoginResponse = {
   role: string
   displayName?: string
   email?: string
+  avatar?: string
   projects?: { project: string; role: string }[]
   linkedAgents?: string[]
 }
@@ -57,6 +58,7 @@ export default function LoginPage() {
       role: res.role,
       displayName: res.displayName,
       email: res.email,
+      avatar: res.avatar,
       projects: res.projects,
       linkedAgents: res.linkedAgents,
     }

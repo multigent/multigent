@@ -159,9 +159,17 @@
     "title": "Account Settings",
     "intro": "Personal preferences and password for your current browser session.",
     "menu": "Account settings",
+    "profileTitle": "Profile",
+    "profileDescription": "Set the name and avatar shown to teammates and agents in Multigent.",
+    "profileSaved": "Profile saved",
+    "preferencesTitle": "Preferences",
+    "preferencesDescription": "These preferences only affect the current user and device.",
     "languageDescription": "Choose the display language for this browser.",
     "appearanceDescription": "Set the interface theme used on this device.",
-    "passwordDescription": "Update your password for the current Multigent account."
+    "passwordDescription": "Update your password for the current Multigent account.",
+    "currentPasswordDescription": "Enter your current password to confirm it is you.",
+    "newPasswordDescription": "Use a new password with at least 6 characters.",
+    "confirmPasswordDescription": "Enter the new password again to avoid typos."
   },
   "overview": {
     "eyebrow": "Workspace",

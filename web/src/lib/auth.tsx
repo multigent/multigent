@@ -13,6 +13,7 @@ export type AuthUser = {
   role: string // admin | member
   displayName?: string
   email?: string
+  avatar?: string
   projects?: ProjectAccess[]
   linkedAgents?: string[]
 }

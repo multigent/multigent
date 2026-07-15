@@ -159,9 +159,17 @@
     "title": "帳號設定",
     "intro": "目前瀏覽器工作階段的個人偏好與密碼設定。",
     "menu": "帳號設定",
+    "profileTitle": "個人資料",
+    "profileDescription": "設定你在 Multigent 中顯示給團隊成員和 Agent 的名稱與頭像。",
+    "profileSaved": "個人資料已儲存",
+    "preferencesTitle": "偏好設定",
+    "preferencesDescription": "這些偏好只影響目前登入使用者與目前裝置。",
     "languageDescription": "選擇目前瀏覽器使用的介面語言。",
     "appearanceDescription": "設定目前裝置上的介面主題。",
-    "passwordDescription": "更新目前 Multigent 帳號的登入密碼。"
+    "passwordDescription": "更新目前 Multigent 帳號的登入密碼。",
+    "currentPasswordDescription": "輸入目前密碼以確認這是你本人操作。",
+    "newPasswordDescription": "設定一個不少於 6 個字元的新密碼。",
+    "confirmPasswordDescription": "再次輸入新密碼，避免輸錯。"
   },
   "overview": {
     "eyebrow": "工作臺",

@@ -159,9 +159,17 @@
     "title": "账号设置",
     "intro": "当前浏览器会话的个人偏好与密码设置。",
     "menu": "账号设置",
+    "profileTitle": "个人资料",
+    "profileDescription": "设置你在 Multigent 中展示给团队成员和 Agent 的名称与头像。",
+    "profileSaved": "个人资料已保存",
+    "preferencesTitle": "偏好设置",
+    "preferencesDescription": "这些偏好只影响当前登录用户与当前设备。",
     "languageDescription": "选择当前浏览器使用的界面语言。",
     "appearanceDescription": "设置当前设备上的界面主题。",
-    "passwordDescription": "更新当前 Multigent 账号的登录密码。"
+    "passwordDescription": "更新当前 Multigent 账号的登录密码。",
+    "currentPasswordDescription": "输入当前密码以确认这是你本人操作。",
+    "newPasswordDescription": "设置一个不少于 6 位的新密码。",
+    "confirmPasswordDescription": "再次输入新密码，避免输错。"
   },
   "overview": {
     "eyebrow": "工作台",
