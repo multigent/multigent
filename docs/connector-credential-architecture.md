@@ -216,7 +216,35 @@ Rules:
 - Agent runs receive `MULTIGENT_API_URL`, `MULTIGENT_AGENT_TOKEN`, `MULTIGENT_RUN_ID`, and `MULTIGENT_WORKSPACE_ID` automatically when the API server address is known. Docker runtimes inherit these variables by name so the token value does not appear in the `docker run` argv.
 - Runtime proxy endpoints re-check connection grants on every request instead of trusting the connection manifest.
 - `custom-mcp` runtime MCP proxy is implemented first. The agent posts JSON-RPC to Multigent; Multigent forwards it to the configured MCP server and applies the stored connection token server-side.
+- `custom-http`, `github`, and `linear` can use the runtime action proxy. The agent posts a JSON proxy request to Multigent; Multigent validates the relative endpoint, applies the stored credential server-side, and returns a sanitized response envelope.
 - Other provider action/MCP executors should follow the same boundary: agent token in, grant check, server-side credential application, no raw credential response.
+
+Runtime action proxy request:
+
+```json
+{
+  "method": "GET",
+  "endpoint": "/repos/org/repo/issues",
+  "query": { "state": "open" },
+  "headers": { "Accept": "application/json" }
+}
+```
+
+Rules:
+
+- `endpoint` must be a relative path beginning with `/`; absolute URLs, `//host`, backslashes, and `..` traversal segments are rejected.
+- Allowed methods: `GET`, `HEAD`, `POST`, `PUT`, `PATCH`, `DELETE`.
+- `GET` and `HEAD` requests cannot include a body.
+- Agent-supplied `Authorization`, `Cookie`, host, connection, and Multigent connection headers are ignored. Multigent injects provider credentials from the stored connection.
+- Large responses are rejected and known credential values are redacted from the response body.
+
+Runtime CLI helpers:
+
+```bash
+multigent runtime connections --format table
+multigent runtime mcp --connection custom-mcp_docs --data '{"jsonrpc":"2.0","id":1,"method":"tools/list"}'
+multigent runtime action --connection github_default --data '{"method":"GET","endpoint":"/user"}'
+```
 
 ## Permission Rules
 

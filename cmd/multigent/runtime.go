@@ -49,6 +49,7 @@ all authorization is checked by the runtime agent token.`,
 	}
 	cmd.AddCommand(
 		newRuntimeConnectionsCmd(),
+		newRuntimeActionCmd(),
 		newRuntimeMCPCmd(),
 	)
 	return cmd
@@ -109,6 +110,49 @@ func newRuntimeMCPCmd() *cobra.Command {
 	cmd.Flags().StringVar(&connection, "connection", "", "connection id or runtime alias")
 	cmd.Flags().StringVar(&data, "data", "", "JSON request body")
 	cmd.Flags().StringVar(&file, "file", "", "read JSON request body from file, or '-' for stdin")
+	_ = cmd.MarkFlagRequired("connection")
+	return cmd
+}
+
+func newRuntimeActionCmd() *cobra.Command {
+	var connection string
+	var data string
+	var file string
+	cmd := &cobra.Command{
+		Use:   "action",
+		Short: "Send an HTTP action proxy request through a granted runtime connection",
+		Long: `Send an HTTP action proxy request through a granted runtime connection.
+
+The request body must be JSON:
+{"method":"GET","endpoint":"/path","query":{"k":"v"}}
+
+The endpoint must be a relative path. Multigent injects the connection's
+server-side credentials; do not include Authorization headers in the request.`,
+		RunE: func(cmd *cobra.Command, args []string) error {
+			body, err := readRuntimeRequestBody(data, file)
+			if err != nil {
+				return err
+			}
+			target, err := resolveRuntimeConnectionTarget(connection)
+			if err != nil {
+				return err
+			}
+			respBody, status, err := runtimePostJSON("/api/v1/runtime/actions", target.query(), body)
+			if err != nil {
+				return err
+			}
+			if _, err := os.Stdout.Write(append(bytes.TrimSpace(respBody), '\n')); err != nil {
+				return err
+			}
+			if status < 200 || status >= 300 {
+				return fmt.Errorf("runtime action proxy returned HTTP %d", status)
+			}
+			return nil
+		},
+	}
+	cmd.Flags().StringVar(&connection, "connection", "", "connection id or runtime alias")
+	cmd.Flags().StringVar(&data, "data", "", "JSON proxy request body")
+	cmd.Flags().StringVar(&file, "file", "", "read JSON proxy request body from file, or '-' for stdin")
 	_ = cmd.MarkFlagRequired("connection")
 	return cmd
 }

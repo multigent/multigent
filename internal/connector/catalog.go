@@ -63,6 +63,18 @@ func Defaults() []Provider {
 			},
 			Enabled: true,
 		},
+		{
+			Provider:    "custom-http",
+			DisplayName: "Custom HTTP API",
+			AuthTypes:   []string{AuthCustomCredential},
+			Fields: []ProviderField{
+				{Key: "baseUrl", Label: "Base URL", InputType: "text", Required: true},
+				{Key: "apiKey", Label: "API key", InputType: "password", Secret: true},
+				{Key: "authHeader", Label: "Auth header", InputType: "text"},
+				{Key: "authScheme", Label: "Auth scheme", InputType: "text"},
+			},
+			Enabled: true,
+		},
 	}
 }
 
