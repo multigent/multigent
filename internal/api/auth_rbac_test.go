@@ -132,3 +132,48 @@ func TestServerCanManageProjectRequiresManagerRole(t *testing.T) {
 		}
 	}
 }
+
+func TestWorkspaceMembershipQueriesByUser(t *testing.T) {
+	users := newTestUserStore(t)
+	if err := users.CreateUser("owner", "pass123", RoleMember, "", "", "", "", ""); err != nil {
+		t.Fatalf("create user: %v", err)
+	}
+	if err := users.db.UpsertWorkspace(controldb.Workspace{
+		ID:        "ws-one",
+		Name:      "One",
+		Slug:      "one",
+		Root:      filepath.Join(t.TempDir(), "one"),
+		CreatedBy: "owner",
+		CreatedAt: "2026-07-15T00:00:00Z",
+	}); err != nil {
+		t.Fatalf("workspace one: %v", err)
+	}
+	if err := users.db.UpsertWorkspace(controldb.Workspace{
+		ID:        "ws-two",
+		Name:      "Two",
+		Slug:      "two",
+		Root:      filepath.Join(t.TempDir(), "two"),
+		CreatedBy: "someone",
+		CreatedAt: "2026-07-15T00:00:00Z",
+	}); err != nil {
+		t.Fatalf("workspace two: %v", err)
+	}
+	if err := users.db.UpsertWorkspaceMember("ws-one", "owner", WorkspaceRoleOwner); err != nil {
+		t.Fatalf("member: %v", err)
+	}
+
+	member, ok, err := users.db.WorkspaceMember("ws-one", "owner")
+	if err != nil || !ok {
+		t.Fatalf("workspace member ok=%v err=%v", ok, err)
+	}
+	if member.Role != WorkspaceRoleOwner {
+		t.Fatalf("role=%q", member.Role)
+	}
+	memberships, err := users.db.ListWorkspaceMembersForUser("owner")
+	if err != nil {
+		t.Fatalf("memberships: %v", err)
+	}
+	if len(memberships) != 1 || memberships[0].WorkspaceID != "ws-one" {
+		t.Fatalf("memberships=%#v", memberships)
+	}
+}

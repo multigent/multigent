@@ -60,7 +60,17 @@ type workspaceListResponse struct {
 	Workspaces []workspaceRef `json:"workspaces"`
 }
 
-func (s *Server) handleWorkspace(w http.ResponseWriter, _ *http.Request) {
+const (
+	WorkspaceRoleOwner  = "owner"
+	WorkspaceRoleAdmin  = "admin"
+	WorkspaceRoleMember = "member"
+	WorkspaceRoleGuest  = "guest"
+)
+
+func (s *Server) handleWorkspace(w http.ResponseWriter, r *http.Request) {
+	if !s.checkCurrentWorkspaceAccess(w, r) {
+		return
+	}
 	agency, err := s.st.Agency()
 	if err != nil {
 		s.jsonError(w, http.StatusInternalServerError, err.Error())
@@ -109,8 +119,8 @@ func (s *Server) handleWorkspace(w http.ResponseWriter, _ *http.Request) {
 	})
 }
 
-func (s *Server) handleListWorkspaces(w http.ResponseWriter, _ *http.Request) {
-	refs, err := s.listWorkspaceRefs()
+func (s *Server) handleListWorkspaces(w http.ResponseWriter, r *http.Request) {
+	refs, err := s.listWorkspaceRefs(r)
 	if err != nil {
 		s.jsonError(w, http.StatusInternalServerError, err.Error())
 		return
@@ -119,7 +129,9 @@ func (s *Server) handleListWorkspaces(w http.ResponseWriter, _ *http.Request) {
 }
 
 func (s *Server) handleCreateWorkspace(w http.ResponseWriter, r *http.Request) {
-	if !s.requireAdmin(w, r) {
+	cur := s.currentUser(r)
+	if cur == nil || cur.Username == "" || cur.Username == "apikey" {
+		s.jsonError(w, http.StatusForbidden, "authenticated user required")
 		return
 	}
 	var req createWorkspaceRequest
@@ -148,11 +160,7 @@ func (s *Server) handleCreateWorkspace(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	cur := s.currentUser(r)
-	createdBy := "system"
-	if cur != nil && cur.Username != "" && cur.Username != "apikey" {
-		createdBy = cur.Username
-	}
+	createdBy := cur.Username
 	now := time.Now().UTC().Format(time.RFC3339)
 	agency := &entity.Agency{
 		Name:        name,
@@ -176,7 +184,10 @@ func (s *Server) handleCreateWorkspace(w http.ResponseWriter, r *http.Request) {
 		s.jsonError(w, http.StatusInternalServerError, err.Error())
 		return
 	}
-	_ = s.ensureCurrentUserMembership(ref.ID, createdBy)
+	if err := s.controlDB.UpsertWorkspaceMember(ref.ID, createdBy, WorkspaceRoleOwner); err != nil {
+		s.jsonError(w, http.StatusInternalServerError, err.Error())
+		return
+	}
 	if req.Switch {
 		if err := s.switchWorkspaceRoot(absRoot); err != nil {
 			s.jsonError(w, http.StatusInternalServerError, err.Error())
@@ -206,6 +217,9 @@ func (s *Server) handleSwitchWorkspace(w http.ResponseWriter, r *http.Request) {
 		s.jsonError(w, http.StatusNotFound, "workspace not found")
 		return
 	}
+	if !s.checkWorkspaceAccess(w, r, row.ID) {
+		return
+	}
 	if err := s.switchWorkspaceRoot(row.Root); err != nil {
 		s.jsonError(w, http.StatusInternalServerError, err.Error())
 		return
@@ -214,7 +228,7 @@ func (s *Server) handleSwitchWorkspace(w http.ResponseWriter, r *http.Request) {
 }
 
 func (s *Server) handlePutWorkspace(w http.ResponseWriter, r *http.Request) {
-	if !s.requireAdmin(w, r) {
+	if !s.checkCurrentWorkspaceAdmin(w, r) {
 		return
 	}
 
@@ -254,8 +268,13 @@ func (s *Server) handlePutWorkspace(w http.ResponseWriter, r *http.Request) {
 		s.jsonError(w, http.StatusInternalServerError, err.Error())
 		return
 	}
+	id, err := s.currentWorkspaceID()
+	if err != nil {
+		s.jsonError(w, http.StatusInternalServerError, err.Error())
+		return
+	}
 	_ = s.upsertWorkspaceRef(workspaceRef{
-		ID:          workspaceID(s.root),
+		ID:          id,
 		Name:        workspaceDisplayName(agency.Name, s.root),
 		Description: agency.Description,
 		Root:        s.root,
@@ -286,7 +305,7 @@ func workspaceFileTime(root string) string {
 	return info.ModTime().UTC().Format(time.RFC3339)
 }
 
-func (s *Server) listWorkspaceRefs() ([]workspaceRef, error) {
+func (s *Server) listWorkspaceRefs(r *http.Request) ([]workspaceRef, error) {
 	if err := s.ensureCurrentWorkspaceRegistered(); err != nil {
 		return nil, err
 	}
@@ -297,8 +316,26 @@ func (s *Server) listWorkspaceRefs() ([]workspaceRef, error) {
 	if err != nil {
 		return nil, err
 	}
+	allowed := map[string]bool{}
+	cur := s.currentUser(r)
+	if cur != nil && cur.Username != "" && cur.Username != "apikey" {
+		memberships, err := s.controlDB.ListWorkspaceMembersForUser(cur.Username)
+		if err != nil {
+			return nil, err
+		}
+		for _, m := range memberships {
+			allowed[m.WorkspaceID] = true
+		}
+	} else if cur != nil && cur.Username == "apikey" {
+		for _, row := range rows {
+			allowed[row.ID] = true
+		}
+	}
 	out := make([]workspaceRef, 0, len(rows))
 	for _, row := range rows {
+		if !allowed[row.ID] {
+			continue
+		}
 		out = append(out, workspaceRefFromDB(row, s.root))
 	}
 	return out, nil
@@ -422,6 +459,75 @@ func (s *Server) workspaceRefForRoot(root string) (workspaceRef, bool, error) {
 	return workspaceRef{}, false, nil
 }
 
+func (s *Server) currentWorkspaceID() (string, error) {
+	ref, ok, err := s.workspaceRefForRoot(s.root)
+	if err != nil {
+		return "", err
+	}
+	if ok && ref.ID != "" {
+		return ref.ID, nil
+	}
+	return workspaceID(s.root), nil
+}
+
+func (s *Server) checkCurrentWorkspaceAccess(w http.ResponseWriter, r *http.Request) bool {
+	id, err := s.currentWorkspaceID()
+	if err != nil {
+		s.jsonError(w, http.StatusInternalServerError, err.Error())
+		return false
+	}
+	return s.checkWorkspaceAccess(w, r, id)
+}
+
+func (s *Server) checkWorkspaceAccess(w http.ResponseWriter, r *http.Request, workspaceID string) bool {
+	cur := s.currentUser(r)
+	if cur != nil && cur.Username == "apikey" {
+		return true
+	}
+	if cur == nil || cur.Username == "" {
+		s.jsonError(w, http.StatusForbidden, "workspace access required")
+		return false
+	}
+	if s.controlDB == nil {
+		s.jsonError(w, http.StatusServiceUnavailable, "control database unavailable")
+		return false
+	}
+	if _, ok, err := s.controlDB.WorkspaceMember(workspaceID, cur.Username); err != nil {
+		s.jsonError(w, http.StatusInternalServerError, err.Error())
+		return false
+	} else if ok {
+		return true
+	}
+	s.jsonError(w, http.StatusForbidden, "workspace access required")
+	return false
+}
+
+func (s *Server) checkCurrentWorkspaceAdmin(w http.ResponseWriter, r *http.Request) bool {
+	id, err := s.currentWorkspaceID()
+	if err != nil {
+		s.jsonError(w, http.StatusInternalServerError, err.Error())
+		return false
+	}
+	cur := s.currentUser(r)
+	if cur != nil && cur.Username == "apikey" {
+		return true
+	}
+	if cur == nil || cur.Username == "" {
+		s.jsonError(w, http.StatusForbidden, "workspace admin access required")
+		return false
+	}
+	member, ok, err := s.controlDB.WorkspaceMember(id, cur.Username)
+	if err != nil {
+		s.jsonError(w, http.StatusInternalServerError, err.Error())
+		return false
+	}
+	if ok && (member.Role == WorkspaceRoleOwner || member.Role == WorkspaceRoleAdmin) {
+		return true
+	}
+	s.jsonError(w, http.StatusForbidden, "workspace admin access required")
+	return false
+}
+
 func workspaceID(root string) string {
 	absRoot, _ := filepath.Abs(root)
 	sum := sha1.Sum([]byte(absRoot))
@@ -475,7 +581,11 @@ func (s *Server) ensureCurrentUserMembership(workspaceID, username string) error
 	if u == nil {
 		return nil
 	}
-	return s.controlDB.UpsertWorkspaceMember(workspaceID, username, u.Role)
+	role := WorkspaceRoleMember
+	if u.Role == RoleAdmin || username == "admin" {
+		role = WorkspaceRoleOwner
+	}
+	return s.controlDB.UpsertWorkspaceMember(workspaceID, username, role)
 }
 
 var workspaceSlugInvalid = regexp.MustCompile(`[^a-z0-9-]+`)

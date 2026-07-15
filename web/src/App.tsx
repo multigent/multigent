@@ -1,8 +1,10 @@
-import { useEffect } from 'react'
+import { useEffect, useState, type ReactNode } from 'react'
 import { Navigate, Route, Routes } from 'react-router-dom'
 import { AppShell } from './components/layout/AppShell'
 import { useAuth } from './lib/auth'
+import { apiFetch } from './lib/api'
 import LoginPage from './pages/LoginPage'
+import WorkspaceOnboardingPage from './pages/WorkspaceOnboardingPage'
 import WorkspacePage from './pages/WorkspacePage'
 import WorkbenchPage from './pages/WorkbenchPage'
 import OverviewPage from './pages/OverviewPage'
@@ -28,6 +30,8 @@ import OKRPage from './pages/OKRPage'
 import ProjectMilestonePage from './pages/projects/ProjectMilestonePage'
 import ProjectOKRPage from './pages/projects/ProjectOKRPage'
 
+type WorkspaceRef = { id: string; name: string; active?: boolean }
+
 export default function App() {
   const { token, user, logout } = useAuth()
   const isAdmin = !user || user.role === 'admin'
@@ -42,6 +46,40 @@ export default function App() {
     return <LoginPage />
   }
 
+  return <WorkspaceGate><AuthenticatedRoutes isAdmin={isAdmin} /></WorkspaceGate>
+}
+
+function WorkspaceGate({ children }: { children: ReactNode }) {
+  const [state, setState] = useState<'loading' | 'ready' | 'empty'>('loading')
+  const [reloadKey, setReloadKey] = useState(0)
+
+  useEffect(() => {
+    let cancelled = false
+    apiFetch<{ workspaces: WorkspaceRef[] }>('/api/v1/workspaces')
+      .then((data) => {
+        if (cancelled) return
+        setState((data.workspaces ?? []).length > 0 ? 'ready' : 'empty')
+      })
+      .catch(() => {
+        if (!cancelled) setState('empty')
+      })
+    return () => { cancelled = true }
+  }, [reloadKey])
+
+  if (state === 'loading') {
+    return (
+      <div className="flex min-h-screen items-center justify-center bg-white text-sm text-neutral-500 dark:bg-zinc-950 dark:text-zinc-400">
+        Loading workspace…
+      </div>
+    )
+  }
+  if (state === 'empty') {
+    return <WorkspaceOnboardingPage onCreated={() => setReloadKey(k => k + 1)} />
+  }
+  return children
+}
+
+function AuthenticatedRoutes({ isAdmin }: { isAdmin: boolean }) {
   return (
     <Routes>
       <Route element={<AppShell />}>

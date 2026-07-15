@@ -143,6 +143,38 @@ ON CONFLICT(workspace_id, username) DO UPDATE SET role = excluded.role`,
 	return err
 }
 
+func (db *SQLiteStore) WorkspaceMember(workspaceID, username string) (WorkspaceMember, bool, error) {
+	var m WorkspaceMember
+	err := db.sql.QueryRow(`SELECT workspace_id, username, role, created_at
+FROM workspace_members WHERE workspace_id = ? AND username = ?`, workspaceID, username).
+		Scan(&m.WorkspaceID, &m.Username, &m.Role, &m.CreatedAt)
+	if errors.Is(err, sql.ErrNoRows) {
+		return WorkspaceMember{}, false, nil
+	}
+	if err != nil {
+		return WorkspaceMember{}, false, err
+	}
+	return m, true, nil
+}
+
+func (db *SQLiteStore) ListWorkspaceMembersForUser(username string) ([]WorkspaceMember, error) {
+	rows, err := db.sql.Query(`SELECT workspace_id, username, role, created_at
+FROM workspace_members WHERE username = ? ORDER BY created_at ASC`, username)
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+	out := make([]WorkspaceMember, 0)
+	for rows.Next() {
+		var m WorkspaceMember
+		if err := rows.Scan(&m.WorkspaceID, &m.Username, &m.Role, &m.CreatedAt); err != nil {
+			return nil, err
+		}
+		out = append(out, m)
+	}
+	return out, rows.Err()
+}
+
 func (db *SQLiteStore) GetSetting(key string) (string, bool, error) {
 	var value string
 	err := db.sql.QueryRow(`SELECT value FROM settings WHERE key = ?`, key).Scan(&value)

@@ -28,6 +28,8 @@ type Store interface {
 	DeleteUser(username string) error
 
 	UpsertWorkspaceMember(workspaceID, username, role string) error
+	WorkspaceMember(workspaceID, username string) (WorkspaceMember, bool, error)
+	ListWorkspaceMembersForUser(username string) ([]WorkspaceMember, error)
 
 	UpsertRecord(table string, workspaceID string, key []string, payload string) error
 	GetRecord(table string, workspaceID string, key []string) (string, bool, error)
@@ -53,6 +55,13 @@ type Workspace struct {
 	CreatedAt    string
 	UpdatedAt    string
 	LastOpenedAt string
+}
+
+type WorkspaceMember struct {
+	WorkspaceID string
+	Username    string
+	Role        string
+	CreatedAt   string
 }
 
 type User struct {
