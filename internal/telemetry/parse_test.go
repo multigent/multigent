@@ -18,6 +18,9 @@ func TestParseStreamJSONUsage_Claude(t *testing.T) {
 	if u.TotalCostUSD != 0.0123 {
 		t.Fatalf("cost: %v", u.TotalCostUSD)
 	}
+	if !u.HasCost {
+		t.Fatal("expected HasCost")
+	}
 }
 
 func TestParseStreamJSONUsage_Cursor(t *testing.T) {
@@ -38,5 +41,32 @@ func TestParseStreamJSONUsage_Cursor(t *testing.T) {
 	}
 	if u.CacheReadTokens != 16000 {
 		t.Fatalf("CacheReadTokens: got %d, want 16000", u.CacheReadTokens)
+	}
+}
+
+func TestParseStreamJSONUsage_CodexText(t *testing.T) {
+	data := []byte(`OpenAI Codex v0.144.4
+--------
+model: gpt-5.6-sol
+--------
+user
+你好
+codex
+你好！今天想一起做点什么？
+tokens used
+3,510
+`)
+	u := ParseStreamJSONUsage(data)
+	if !u.SawResult {
+		t.Fatal("expected SawResult")
+	}
+	if u.InputTokens != 3510 {
+		t.Fatalf("InputTokens: got %d, want 3510", u.InputTokens)
+	}
+	if u.OutputTokens != 0 || u.CacheReadTokens != 0 {
+		t.Fatalf("unexpected split tokens: %+v", u)
+	}
+	if u.HasCost {
+		t.Fatal("codex text usage should not imply cost data")
 	}
 }

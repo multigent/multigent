@@ -37,8 +37,10 @@ func ApplyStreamUsage(rec *Record, u StreamUsage) {
 	rec.InputTokens = sql.NullInt64{Int64: u.InputTokens, Valid: true}
 	rec.OutputTokens = sql.NullInt64{Int64: u.OutputTokens, Valid: true}
 	rec.CacheReadTokens = sql.NullInt64{Int64: u.CacheReadTokens, Valid: true}
-	rec.TotalCostUSD = sql.NullFloat64{Float64: u.TotalCostUSD, Valid: true}
-	rec.HasCost = true
+	if u.HasCost {
+		rec.TotalCostUSD = sql.NullFloat64{Float64: u.TotalCostUSD, Valid: true}
+		rec.HasCost = true
+	}
 }
 
 const (
@@ -74,8 +76,8 @@ type Record struct {
 	APIModel   string
 	APIBaseURL string
 
-	PromptBytes int64
-	PromptSHA256  string
+	PromptBytes  int64
+	PromptSHA256 string
 
 	InputTokens     sql.NullInt64
 	OutputTokens    sql.NullInt64

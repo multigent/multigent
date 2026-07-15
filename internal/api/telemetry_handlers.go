@@ -1,6 +1,7 @@
 package api
 
 import (
+	"database/sql"
 	"encoding/json"
 	"net/http"
 	"os"
@@ -50,6 +51,7 @@ func (s *Server) handleTelemetrySummary(w http.ResponseWriter, r *http.Request) 
 		return
 	}
 	rows = s.filterTelemetryRunsForRequest(r, rows)
+	rows = s.enrichTelemetryUsageFromLogs(rows)
 	sum := telemetry.Summarize(rows)
 	byAgent := telemetry.SummarizeByAgent(rows)
 
@@ -157,6 +159,7 @@ func (s *Server) handleTelemetryRuns(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	rows = s.filterTelemetryRunsForRequest(r, rows)
+	rows = s.enrichTelemetryUsageFromLogs(rows)
 	// Newest first
 	for i, j := 0, len(rows)-1; i < j; i, j = i+1, j-1 {
 		rows[i], rows[j] = rows[j], rows[i]
@@ -293,4 +296,32 @@ func telemetryLogReadPath(root, logPath string) string {
 		return filepath.Clean(logPath)
 	}
 	return filepath.Clean(filepath.Join(root, logPath))
+}
+
+func (s *Server) enrichTelemetryUsageFromLogs(rows []telemetry.RunRow) []telemetry.RunRow {
+	for i := range rows {
+		row := &rows[i]
+		if row.InputTokens.Valid || row.OutputTokens.Valid || row.CacheReadTokens.Valid {
+			continue
+		}
+		if strings.TrimSpace(row.LogPath) == "" {
+			continue
+		}
+		data, err := os.ReadFile(telemetryLogReadPath(s.root, row.LogPath))
+		if err != nil {
+			continue
+		}
+		usage := telemetry.ParseStreamJSONUsage(data)
+		if !usage.SawResult {
+			continue
+		}
+		row.InputTokens = sql.NullInt64{Int64: usage.InputTokens, Valid: true}
+		row.OutputTokens = sql.NullInt64{Int64: usage.OutputTokens, Valid: true}
+		row.CacheReadTokens = sql.NullInt64{Int64: usage.CacheReadTokens, Valid: true}
+		if usage.HasCost {
+			row.TotalCostUSD = sql.NullFloat64{Float64: usage.TotalCostUSD, Valid: true}
+			row.HasCost = true
+		}
+	}
+	return rows
 }
