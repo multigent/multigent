@@ -1,6 +1,5 @@
 import { useCallback, useEffect, useState } from 'react'
 import { useTranslation } from 'react-i18next'
-import { Link } from 'react-router-dom'
 import { User, X, Copy } from 'lucide-react'
 import { apiFetch, apiPost } from '../lib/api'
 import { cn } from '../lib/cn'
@@ -213,9 +212,9 @@ export default function PeoplePage() {
               {people.map(p => (
                 <tr key={p.username} className={cn('hover:bg-neutral-50 dark:hover:bg-zinc-800/50', p.disabled && 'opacity-60')}>
                   <td className="px-4 py-3">
-                    <Link to={`/people/${encodeURIComponent(p.username)}`} className="font-medium text-neutral-900 hover:text-sky-700 dark:text-zinc-100 dark:hover:text-sky-300">
+                    <span className="font-medium text-neutral-900 dark:text-zinc-100">
                       {p.displayName || p.username}
-                    </Link>
+                    </span>
                     {p.displayName && <p className="mt-0.5 text-xs text-neutral-400 dark:text-zinc-500">{p.username}</p>}
                   </td>
                   <td className="px-4 py-3 text-neutral-600 dark:text-zinc-400">{p.email || '-'}</td>

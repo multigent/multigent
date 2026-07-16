@@ -29,7 +29,6 @@ import TeamsPage from './pages/teams/TeamsPage'
 import DocsPage from './pages/docs/DocsPage'
 import FilesPage from './pages/FilesPage'
 import PeoplePage from './pages/PeoplePage'
-import PersonDetailPage from './pages/PersonDetailPage'
 import OKRPage from './pages/OKRPage'
 import ProjectMilestonePage from './pages/projects/ProjectMilestonePage'
 import ProjectOKRPage from './pages/projects/ProjectOKRPage'
@@ -116,7 +115,6 @@ function AuthenticatedRoutes() {
         </Route>
         <Route path="goals" element={<OKRPage />} />
         {canAdmin && <Route path="people" element={<PeoplePage />} />}
-        {canAdmin && <Route path="people/:username" element={<PersonDetailPage />} />}
         <Route path="workbench" element={<WorkbenchPage />} />
         <Route path="connections" element={<ConnectionsPage />} />
         {canAdmin && <Route path="audit" element={<AuditPage />} />}
