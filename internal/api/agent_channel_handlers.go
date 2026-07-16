@@ -35,7 +35,7 @@ type agentChannelResponse struct {
 	LastActivityAt string `json:"lastActivityAt,omitempty"`
 }
 
-type larkSetupPollRequest struct {
+type channelSetupPollRequest struct {
 	DeviceCode string `json:"deviceCode"`
 	BaseURL    string `json:"baseUrl"`
 }
@@ -254,7 +254,7 @@ func (s *Server) handleAgentChannelSetupPoll(w http.ResponseWriter, r *http.Requ
 	if !ok {
 		return
 	}
-	var req larkSetupPollRequest
+	var req channelSetupPollRequest
 	if err := s.readJSON(w, r, &req); err != nil {
 		s.jsonError(w, http.StatusBadRequest, "invalid JSON body")
 		return
@@ -279,7 +279,7 @@ func (s *Server) handleAgentChannelSetupPoll(w http.ResponseWriter, r *http.Requ
 	if actualProvider == "" {
 		actualProvider = provider
 	}
-	binding, err := s.saveLarkFamilyAgentChannel(r, workspaceID, project, agent, actualProvider, poll)
+	binding, err := s.saveAgentIMChannel(r, workspaceID, project, agent, actualProvider, poll)
 	if err != nil {
 		s.serverError(w, err)
 		return
@@ -292,7 +292,7 @@ func (s *Server) handleAgentChannelSetupPoll(w http.ResponseWriter, r *http.Requ
 	_ = json.NewEncoder(w).Encode(resp)
 }
 
-func (s *Server) saveLarkFamilyAgentChannel(r *http.Request, workspaceID, project, agent, provider string, poll imbridge.SetupPollResponse) (controldb.AgentChannelBinding, error) {
+func (s *Server) saveAgentIMChannel(r *http.Request, workspaceID, project, agent, provider string, poll imbridge.SetupPollResponse) (controldb.AgentChannelBinding, error) {
 	now := time.Now().UTC().Format(time.RFC3339)
 	openBaseURL, err := imbridge.MustOpenBaseURL(provider)
 	if err != nil {

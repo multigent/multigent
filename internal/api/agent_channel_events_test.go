@@ -12,7 +12,7 @@ import (
 	"testing"
 
 	controldb "github.com/multigent/multigent/internal/db"
-	larkbridge "github.com/multigent/multigent/internal/imbridge/lark"
+	"github.com/multigent/multigent/internal/imbridge"
 	"github.com/multigent/multigent/internal/interaction"
 )
 
@@ -92,23 +92,22 @@ func TestChannelEventUserPermissionUsesAgentRBAC(t *testing.T) {
 	}
 }
 
-func TestLarkFamilyEventTokenVerification(t *testing.T) {
-	env := larkbridge.EventEnvelope{Token: "token-one"}
-	if !verifyLarkFamilyEventToken(env, map[string]string{}) {
+func TestIMEventTokenVerification(t *testing.T) {
+	if !verifyIMEventToken("token-one", map[string]string{}) {
 		t.Fatalf("empty configured token should allow event")
 	}
-	if !verifyLarkFamilyEventToken(env, map[string]string{"verificationToken": "token-one"}) {
+	if !verifyIMEventToken("token-one", map[string]string{"verificationToken": "token-one"}) {
 		t.Fatalf("matching token should allow event")
 	}
-	if verifyLarkFamilyEventToken(env, map[string]string{"verificationToken": "token-two"}) {
+	if verifyIMEventToken("token-one", map[string]string{"verificationToken": "token-two"}) {
 		t.Fatalf("mismatched token should reject event")
 	}
-	if verifyLarkFamilyEventToken(larkbridge.EventEnvelope{}, map[string]string{"verificationToken": "token-one"}) {
+	if verifyIMEventToken("", map[string]string{"verificationToken": "token-one"}) {
 		t.Fatalf("missing event token should reject when configured")
 	}
 }
 
-func TestDecryptLarkFamilyEventUsesConfiguredProviderKey(t *testing.T) {
+func TestDecryptIMEventUsesConfiguredProviderKey(t *testing.T) {
 	s, workspaceID := newConnectionGrantPolicyServer(t)
 	if err := s.controlDB.UpsertConnection(controldb.Connection{
 		ID:             "conn-feishu",
@@ -146,37 +145,38 @@ func TestDecryptLarkFamilyEventUsesConfiguredProviderKey(t *testing.T) {
 
 	plaintext := []byte(`{"schema":"2.0","header":{"event_type":"url_verification"},"challenge":"ok"}`)
 	encrypted := encryptLarkEventForAPITest(t, plaintext, "encrypt-one")
-	decrypted, ok, err := s.decryptLarkFamilyEvent(workspaceID, "feishu", encrypted)
+	feishu, _ := imbridge.LookupProvider("feishu")
+	decrypted, ok, err := s.decryptIMEvent(workspaceID, feishu, encrypted)
 	if err != nil || !ok {
 		t.Fatalf("decrypt ok=%v err=%v", ok, err)
 	}
 	if string(decrypted) != string(plaintext) {
 		t.Fatalf("decrypted=%s", decrypted)
 	}
-	if _, ok, err := s.decryptLarkFamilyEvent(workspaceID, "lark", encrypted); err != nil || ok {
+	lark, _ := imbridge.LookupProvider("lark")
+	if _, ok, err := s.decryptIMEvent(workspaceID, lark, encrypted); err != nil || ok {
 		t.Fatalf("wrong provider should not decrypt ok=%v err=%v", ok, err)
 	}
 }
 
-func TestShouldHandleLarkFamilyMessageRequiresGroupAddressing(t *testing.T) {
-	binding := controldb.AgentChannelBinding{ExternalChatID: ""}
-	if !shouldHandleLarkFamilyMessage(binding, larkbridge.EventMessage{ChatType: "p2p", ChatID: "oc_direct"}) {
+func TestShouldHandleIMMessageRequiresGroupAddressing(t *testing.T) {
+	provider, _ := imbridge.LookupProvider("feishu")
+	if !provider.ShouldHandleMessage("", imbridge.IncomingMessage{ChatType: "p2p", ChatID: "oc_direct"}) {
 		t.Fatalf("direct chat should be handled")
 	}
-	if shouldHandleLarkFamilyMessage(binding, larkbridge.EventMessage{ChatType: "group", ChatID: "oc_group", Content: `{"text":"hello"}`}) {
+	if provider.ShouldHandleMessage("", imbridge.IncomingMessage{ChatType: "group", ChatID: "oc_group", RawContent: `{"text":"hello"}`}) {
 		t.Fatalf("unbound group without mention should be ignored")
 	}
-	if !shouldHandleLarkFamilyMessage(binding, larkbridge.EventMessage{ChatType: "group", ChatID: "oc_group", Content: `{"text":"@bot hello","mentions":[{"key":"@bot"}]}`}) {
+	if !provider.ShouldHandleMessage("", imbridge.IncomingMessage{ChatType: "group", ChatID: "oc_group", RawContent: `{"text":"@bot hello","mentions":[{"key":"@bot"}]}`}) {
 		t.Fatalf("unbound group mention should be handled")
 	}
-	if !shouldHandleLarkFamilyMessage(binding, larkbridge.EventMessage{ChatType: "group", ChatID: "oc_group", ParentID: "om_parent", Content: `{"text":"continue"}`}) {
+	if !provider.ShouldHandleMessage("", imbridge.IncomingMessage{ChatType: "group", ChatID: "oc_group", ParentID: "om_parent", RawContent: `{"text":"continue"}`}) {
 		t.Fatalf("unbound group reply should be handled")
 	}
-	binding.ExternalChatID = "oc_group"
-	if !shouldHandleLarkFamilyMessage(binding, larkbridge.EventMessage{ChatType: "group", ChatID: "oc_group", Content: `{"text":"hello"}`}) {
+	if !provider.ShouldHandleMessage("oc_group", imbridge.IncomingMessage{ChatType: "group", ChatID: "oc_group", RawContent: `{"text":"hello"}`}) {
 		t.Fatalf("bound group should be handled")
 	}
-	if shouldHandleLarkFamilyMessage(binding, larkbridge.EventMessage{ChatType: "group", ChatID: "oc_other", Content: `{"text":"hello"}`}) {
+	if provider.ShouldHandleMessage("oc_group", imbridge.IncomingMessage{ChatType: "group", ChatID: "oc_other", RawContent: `{"text":"hello"}`}) {
 		t.Fatalf("different unmentioned group should be ignored")
 	}
 }

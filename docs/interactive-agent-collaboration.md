@@ -41,19 +41,19 @@ Feishu is not a separate agent runtime. It is only a channel. The authority rema
 Multigent currently has two related but incomplete pieces:
 
 - Web Chat calls `multigent exec --project ... --agent ... --prompt ...` and streams the run output back to the browser.
-- The existing `ccconnect` API and `IMConnectionPanel` proxy to an external cc-connect service and ask that service to create projects/platforms.
+- The old IM product path proxied to an external cc-connect service and asked that service to create projects/platforms.
 
 This is not enough for the SaaS product direction because the external cc-connect service owns too much of the execution shape. It assumes a work directory and an agent type, while Multigent needs to own workspace isolation, agent credentials, RBAC, audit, model accounts, runtime connections, and sandbox lifecycle.
 
-cc-connect itself is still valuable. Its platform layer, especially Feishu/Lark message handling, card rendering, QR setup, retry logic, and event handling, is mature enough to reuse. The part we should not reuse as-is is the external agent execution ownership.
+cc-connect can be treated only as historical reference. Multigent should not depend on a running cc-connect service, should not expose a cc-connect URL/token setting, and should not preserve a compatibility path that delegates agent interaction to cc-connect.
 
-The existing external cc-connect integration should be removed from the product path. This is a new project and we do not need to preserve a compatibility layer that asks users to configure a cc-connect API URL. The old code can be used as a reference while implementing the native Lark bridge, but the final Web product should expose Multigent-native connection settings only.
+The existing external cc-connect integration should be removed from the product path. This is a new project and we do not need to preserve a compatibility layer that asks users to configure a cc-connect API URL. The final Web product should expose Multigent-native Feishu/Lark connection settings only.
 
 ## Recommended Direction
 
 Build a first-class Multigent interaction layer and initially support only Feishu/Lark.
 
-The first implementation should not depend on running a separate cc-connect process. We should copy or vendor the minimum Feishu/Lark platform logic from cc-connect into Multigent, then adapt it to call Multigent's own session APIs.
+The first implementation should not depend on running a separate cc-connect process. Feishu and Lark should be implemented as native Multigent channel providers. The provider abstraction should hide platform-specific QR setup, event decryption, message parsing, group addressing rules, and reply sending from the API/session layer.
 
 Recommended module shape:
 
@@ -77,22 +77,22 @@ internal/runtime/session/
   claudecode.go       # long-running or resume-based implementation
 ```
 
-Later we can add Slack, DingTalk, WeCom, Telegram, or other platforms using the same bridge interface. We should not expose "cc-connect instance URL" as a primary product setting in the final product.
+Later we can add Slack, DingTalk, WeCom, Telegram, or other platforms using the same bridge interface.
 
 ## MVP Target Experience
 
 The first shippable version should deliver this exact user experience:
 
 1. A user opens an agent detail page in Multigent.
-2. The page shows a "Connect Feishu/Lark" action when the agent is not connected.
-3. The user clicks the action and sees a QR-code based connection flow.
-4. After scanning and approving in Feishu/Lark, Multigent creates or binds the Feishu/Lark app bot connection.
-5. The agent detail page changes to "Connected to Feishu/Lark" and shows the connected bot/chat status.
-6. The user can open Feishu/Lark and directly message the created/bound app bot.
-7. The message enters the same Multigent agent session system as Web Chat.
-8. The agent replies in Feishu/Lark.
-9. The Web agent page shows the active session, latest connection status, and transcript/run state.
-10. If the agent is already running a task, the Feishu/Lark message joins or intervenes in that active session instead of creating a conflicting run.
+2. The page shows separate `Connect Feishu` and `Connect Lark` actions when the agent is not connected.
+3. The user clicks one action and sees a QR-code setup flow.
+4. The user scans the QR code in Feishu/Lark and approves the created application bot.
+5. Multigent stores the app/bot credential securely, binds the provider connection to this agent, and maps the scanning IM user to the current Multigent user.
+6. The agent detail page changes to `Connected to Feishu` or `Connected to Lark`, with provider, app/bot status, callback URL, security status, and last activity.
+7. The user opens the created Feishu/Lark application bot and sends a message directly to the agent.
+8. Multigent receives the callback, verifies the event, authenticates the external user, checks RBAC, acquires the agent session lock, resumes or starts the agent runtime session, and sends the reply back through the same bot.
+9. The Web agent page shows the connected provider status plus the same transcript/session/run state that Web Chat would show.
+10. If the agent is already busy, Multigent does not start a conflicting run. It records the event and replies with a clear busy message.
 
 The MVP does not need multiple IM providers. It only needs Feishu/Lark to work well.
 
@@ -106,7 +106,7 @@ Keeping cc-connect as an external service is fast for a prototype, but it create
 - It risks bypassing Multigent RBAC, audit, sandbox policy, model account selection, and credential injection.
 - It makes deployment harder for SaaS users because they now need Multigent plus cc-connect.
 
-The acceptable short-term use of cc-connect is source reuse: copy or vendor the Feishu/Lark bridge code and adapt it to Multigent's interfaces.
+The acceptable short-term use of cc-connect is reading it as reference while implementing native Multigent modules. It should not remain in runtime dependencies, user settings, API contracts, or product copy.
 
 ## Session Model
 
@@ -191,10 +191,10 @@ Future versions may support forked sessions for experiments, but the first produ
 4. Admin chooses whether the bot is workspace-wide or limited to selected projects.
 5. Multigent stores the connection as a workspace connection, with audit and encrypted secrets.
 
-### Bind Agent To Feishu
+### Bind Agent To Feishu/Lark
 
 1. User opens an agent detail page.
-2. User clicks "Connect Feishu".
+2. User clicks `Connect Feishu` or `Connect Lark`.
 3. User chooses personal chat, group chat, or both.
 4. Multigent creates a binding:
 
@@ -202,7 +202,7 @@ Future versions may support forked sessions for experiments, but the first produ
 workspace_id
 project_id
 agent_id
-platform: lark
+provider: feishu | lark
 chat_id
 allowed_user_ids
 created_by
@@ -218,7 +218,7 @@ For a direct message:
 ```text
 User messages agent in Feishu
   ↓
-Lark bridge receives event
+Multigent IM provider receives event
   ↓
 Map Feishu user to Multigent user
   ↓
@@ -301,8 +301,8 @@ Agent actions triggered from Feishu should use the same audit principal:
 ```text
 principal_type: user
 principal_id: <multigent_user_id>
-channel: lark
-external_actor_id: <feishu_open_id>
+channel: feishu | lark
+external_actor_id: <feishu_or_lark_open_id>
 ```
 
 The agent itself remains a separate principal when it calls `mga` or other runtime APIs:
@@ -345,24 +345,26 @@ Provider naming:
 - They may share the same implementation package because their OpenAPI/event model is similar.
 - User-facing text should say Feishu or Lark, never cc-connect.
 
-### Phase 0: Remove cc-connect From The Product Path
+### Phase 0: Remove External IM Dependency From The Product Path
 
-Goal: Multigent owns the whole Feishu/Lark connection and message execution path. cc-connect can be used as reference code, but it must not appear as a runtime dependency, user setting, or external service requirement.
+Goal: Multigent owns the whole Feishu/Lark connection and message execution path. No external cc-connect service should be required or visible.
 
 Code changes:
 
 - Remove the user-facing cc-connect API URL/token settings from the Web settings flow.
 - Remove or hide `IMConnectionPanel` behavior that creates projects in an external cc-connect instance.
 - Remove backend routes whose only job is proxying to an external cc-connect service.
-- Copy selected Feishu/Lark setup and event-handling ideas into Multigent-native modules when useful.
 - Do not keep a compatibility layer that calls a cc-connect server.
 - Replace UI wording from "cc-connect" to "Feishu/Lark connection".
+- Keep platform-specific behavior behind `internal/imbridge.Provider` so the API layer does not know Feishu/Lark envelope details.
 
 Acceptance:
 
 - Users are never asked to configure a cc-connect endpoint.
 - Agent pages do not expose work directories, external cc-connect projects, or agent runtime types as IM setup concepts.
 - The only visible setup concept is connecting an agent to Feishu/Lark.
+- There is no backend request path that requires a cc-connect process to be running.
+- Feishu and Lark are separate provider IDs in UI, API, persisted data, and audit logs.
 
 ### Phase 1: Native Agent Channel Connection
 
@@ -387,6 +389,9 @@ User flow:
 Backend modules:
 
 ```text
+internal/imbridge/
+  providers.go      # provider registry and channel-neutral interface
+
 internal/imbridge/lark/
   setup.go          # Feishu/Lark QR setup and setup polling
   events.go         # provider event envelope parsing
@@ -455,6 +460,7 @@ Acceptance:
 - A user can complete QR scan from the agent detail page.
 - The agent page displays connected Feishu/Lark status after setup.
 - The connection survives page refresh and server restart.
+- The scanning Feishu/Lark user is mapped to the current Multigent user.
 - Disconnect removes the binding and writes an audit event.
 - No cc-connect endpoint, token, project, or external runtime setting is visible in this flow.
 
@@ -479,121 +485,98 @@ Multigent resolves agent_channel_binding by workspace + provider + app/chat meta
   ↓
 Multigent maps external sender to a Multigent user
   ↓
-Multigent checks workspace/project/agent RBAC
+Multigent checks whether the user can operate this agent
   ↓
-Multigent sends the message into the agent execution path
+Multigent checks whether the message should be handled
+  - direct chat: handle
+  - bound group chat: handle
+  - unbound group mention/reply: handle and bind when appropriate
+  - unrelated group message: ignore
   ↓
-Agent reply is sent back through Feishu/Lark OpenAPI
+Multigent acquires the agent interaction lock
   ↓
-Inbound message, run result, outbound reply, and denied requests are audited
-```
-
-Security requirements:
-
-- Events must be scoped by provider and app id.
-- The event sender must map to a Multigent user before the agent is run.
-- The mapped user must have permission to operate/message the target agent.
-- Permission-denied messages must not run the agent.
-- Callback verification token and encrypt key are secret values, not public metadata.
-- The public event route must not expose internal errors or secret values.
-
-Reply behavior:
-
-- Direct message: reply to the incoming message.
-- Group chat: respond only when explicitly mentioned or when the chat is bound for this agent.
-- Empty or unsupported message types should be acknowledged and ignored.
-- Long agent replies should be truncated or summarized to fit IM limits.
-
-Acceptance:
-
-- User can message the connected Feishu/Lark bot.
-- The correct Multigent agent receives the message.
-- The agent replies in Feishu/Lark.
-- Unauthorized Feishu/Lark users cannot trigger the agent.
-- Every accepted, ignored, denied, failed, and replied event has an audit trail.
-
-### Phase 3: Internal Session API And Locking
-
-Goal: Feishu/Lark, Web Chat, task, cron, and wakeup all enter the same session system instead of spawning unrelated runs.
-
-This is the core product boundary. IM channels should not own execution. They only submit messages into Multigent's interaction layer.
-
-Work:
-
-- Create `interactive_sessions` and `session_events` storage.
-- Create a `SessionManager` that can acquire, send to, release, and force-unlock an agent session.
-- Refactor Web Chat and Feishu/Lark event handling to use `SessionManager` instead of directly spawning `multigent exec`.
-- Add strict per-agent active session lock.
-- Define lock reasons: `running_task`, `interactive`, `stopping`.
-- Persist transcript events separately from raw run logs.
-- Add scheduler skip behavior for locked agents.
-- Add audit events for session acquire, message send, run start, run stop, release, and force unlock.
-- Persist the runtime session ID returned by Codex/Claude/etc. onto `interactive_sessions.current_runtime_session_id`.
-- Reuse the latest runtime session ID when a user sends another Web/Feishu/Lark message to the same agent.
-
-```text
-Web Chat
-Feishu/Lark
-Task
-Cron
-Wakeup
-  → SessionManager.Acquire
-  → append session event
-  → runtime adapter
-  → append output events
-  → release or keep locked
+Multigent records the incoming message in the transcript
+  ↓
+Multigent resumes or starts the runtime session
+  ↓
+Multigent replies through the same Feishu/Lark bot
 ```
 
 Acceptance:
 
-- Web Chat still works after the refactor.
-- Feishu/Lark messages and Web Chat messages can join the same active agent session.
-- Starting an interactive session locks the agent.
-- Scheduler does not assign a new task to a locked agent.
-- A running task can be observed and joined by a permitted human instead of being killed by a new chat request.
-- Repeated IM messages resume the same runtime context instead of starting unrelated conversations.
-- Force unlock requires manager/admin permission and writes an audit log.
+- Feishu/Lark URL verification succeeds.
+- Encrypted callbacks work when an encrypt key is configured.
+- Verification token mismatch is rejected and audited.
+- Unknown external users are ignored instead of running the agent.
+- Users without agent operator permission cannot trigger the agent.
+- Group messages are ignored unless the bot is addressed or the group has already been bound.
+- Direct bot messages can trigger the agent.
+- Agent replies are sent back to Feishu/Lark and recorded in the Web transcript.
+- Busy agents return a clear busy reply instead of launching a second conflicting run.
 
-### Phase 4: Human Intervention UX
+### Phase 3: Web Agent Status And Transcript Convergence
 
-Goal: make it obvious to users whether they are talking to an idle agent, joining a current run, or correcting a failed/low-quality run.
+Goal: the agent page becomes the control center for both browser chat and Feishu/Lark intervention.
 
-- Show active session and lock status on agent detail.
-- Let users join the current running task session from Web.
-- Add "release session", "stop run", and "force unlock" actions with permissions.
-- Add transcript review and "distill into prompt/skill/doc/task template" actions.
-- Add Feishu shortcut cards for stop, continue, create task, and summarize.
+Frontend requirements:
 
-Acceptance:
-
-- A user can see whether an agent is idle, running a task, or currently in an interactive conversation.
-- If a task is running, a permitted user can enter the same session and add context.
-- Users can stop or release a session without corrupting the next run.
-- After a conversation, users can save useful context into docs, skills, prompt notes, or task templates.
-
-### Phase 5: Runtime Improvements
-
-Goal: make interactive agent conversations reliable enough for daily company use.
-
-- Add persistent session runtime support where needed.
-- Keep per-agent runtime homes and credentials isolated.
-- Add idle timeout and cleanup for long-running containers/processes.
-- Add resource limits per active session.
-- Normalize streaming events across Codex, Claude Code, Gemini, and future runtimes.
+- Agent channel panel shows one row per provider: provider name, disconnected/connecting/connected/error state, last activity, callback URL, and security status.
+- Connected state shows `Connected to Feishu` or `Connected to Lark`.
+- The user can disconnect with confirmation.
+- The user can update callback security fields, such as verification token and encrypt key, without re-scanning.
+- The chat/transcript panel shows Web Chat and Feishu/Lark messages in the same session timeline.
+- If a Feishu/Lark-triggered run is active, the Web page shows the active run status and prevents conflicting manual actions.
 
 Acceptance:
 
-- Codex sessions can resume reliably across Lark/Web turns.
-- Claude Code has a clear path for long-running interactive sessions or a documented resume-based first version.
+- After QR setup, refreshing the agent page still shows the connected provider.
+- Sending a message in Feishu/Lark updates last activity on the Web page.
+- Web transcript clearly distinguishes user, agent, and system events with source metadata.
+- UI copy never mentions cc-connect.
+
+### Phase 4: Runtime Session Quality
+
+Goal: IM intervention should feel like talking to the same working agent, not like starting a brand-new one-off command each time.
+
+Runtime requirements:
+
+- Persist runtime session IDs per agent/session so Codex or other CLIs can resume context.
+- Store provider/channel source metadata with each transcript event.
+- Enforce one mutable run per agent session with an interaction lock.
+- Keep agent credentials and CLI session files isolated per agent sandbox.
+- Reuse the same execution path for Web Chat and Feishu/Lark messages.
+- Add timeout and cleanup for long-running interactive sessions.
+
+Acceptance:
+
+- A Feishu/Lark reply can continue the prior agent context when the runtime supports resume.
 - One agent cannot read another agent's CLI session files or credentials.
-- Idle sessions are cleaned up without losing durable transcript/run history.
+- A task run and an IM run cannot concurrently mutate the same agent session.
+- Runtime failures are visible in both audit logs and transcript/system events.
+
+### Phase 5: Production Hardening
+
+Goal: make the channel usable by a real customer workspace, not only by local demos.
+
+Hardening requirements:
+
+- Add structured logs for setup, callback, binding resolution, permission denial, run start, reply success, and reply failure.
+- Add retry policy for transient Feishu/Lark API failures.
+- Add audit events for connect, disconnect, security update, message received, permission denied, busy, run completed, and reply failure.
+- Add admin-visible diagnostics for callback URL, latest callback time, latest callback error, and missing security configuration.
+- Add tests for provider registry, setup persistence, encrypted callbacks, token verification, group addressing, RBAC denial, and busy-session behavior.
+
+Acceptance:
+
+- A support engineer can diagnose why a Feishu/Lark message did not trigger an agent from Web status, audit logs, and server logs.
+- Provider-specific code remains behind `internal/imbridge`, so adding another IM provider does not require rewriting API/session code.
 
 ## Open Questions
 
 - Should a Feishu group binding target exactly one agent, or allow commands to route to multiple agents in the same project?
 - Should users be able to create a task directly from a Feishu thread before running the agent?
 - For Claude Code, do we require persistent containers for interactive sessions, or start with resume-based one-turn execution?
-- How much of cc-connect's rich card rendering should be copied in the first version?
+- Do we need rich Feishu/Lark card rendering in the first version, or is plain text enough?
 - Should every human intervention produce a required review prompt, or only sessions above a certain duration/token threshold?
 
 ## Decision
@@ -601,7 +584,7 @@ Acceptance:
 The recommended first product path is:
 
 1. Do not keep cc-connect as a separate required service.
-2. Reuse cc-connect's Feishu/Lark bridge logic by copying or vendoring selected code.
+2. Implement Feishu/Lark as native Multigent channel providers, using external code only as reference when useful.
 3. Make Multigent own interaction sessions, locks, runtime execution, permissions, credentials, and audit.
 4. Treat Feishu/Lark as a first-class interaction channel, not a separate agent runtime.
 5. Make human intervention a normal part of agent collaboration, then help teams distill repeated intervention into durable agent capability.
