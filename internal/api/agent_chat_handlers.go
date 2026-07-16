@@ -15,6 +15,7 @@ import (
 	"time"
 
 	"github.com/multigent/multigent/internal/entity"
+	"github.com/multigent/multigent/internal/interaction"
 	"github.com/multigent/multigent/internal/telemetry"
 )
 
@@ -195,6 +196,10 @@ func (s *Server) handleAgentChat(w http.ResponseWriter, r *http.Request) {
 		s.jsonError(w, http.StatusForbidden, "agent operator access required")
 		return
 	}
+	workspaceID, ok := s.currentWorkspaceForRequest(w, r)
+	if !ok {
+		return
+	}
 
 	var body agentChatBody
 	if err := s.readJSON(w, r, &body); err != nil {
@@ -213,13 +218,22 @@ func (s *Server) handleAgentChat(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	// If a process is already running for this project/agent, kill it first.
+	lease, ok := s.acquireAgentInteraction(w, s.interactionAgentRef(workspaceID, project, agent), interaction.Source{
+		Kind:    "web_chat",
+		ActorID: requestUsername(r),
+		Channel: "web",
+	}, "interactive")
+	if !ok {
+		return
+	}
+	defer lease.Release()
+
 	key := project + "/" + agent
 	s.execMu.Lock()
-	if existing, ok := s.execProcs[key]; ok {
-		if existing.cmd.Process != nil {
-			killProcessGroup(existing.cmd.Process.Pid)
-		}
+	if _, ok := s.execProcs[key]; ok {
+		s.execMu.Unlock()
+		s.jsonError(w, http.StatusConflict, "agent is already running")
+		return
 	}
 	s.execProcs[key] = nil // placeholder; will be replaced after cmd.Start
 	s.execMu.Unlock()
@@ -242,15 +256,24 @@ func (s *Server) handleAgentChat(w http.ResponseWriter, r *http.Request) {
 
 	stdout, err := cmd.StdoutPipe()
 	if err != nil {
+		s.execMu.Lock()
+		delete(s.execProcs, key)
+		s.execMu.Unlock()
 		s.serverError(w, err)
 		return
 	}
 	stderr, err := cmd.StderrPipe()
 	if err != nil {
+		s.execMu.Lock()
+		delete(s.execProcs, key)
+		s.execMu.Unlock()
 		s.serverError(w, err)
 		return
 	}
 	if err := cmd.Start(); err != nil {
+		s.execMu.Lock()
+		delete(s.execProcs, key)
+		s.execMu.Unlock()
 		s.serverError(w, err)
 		return
 	}

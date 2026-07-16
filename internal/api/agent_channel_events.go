@@ -4,6 +4,7 @@ import (
 	"bytes"
 	"context"
 	"encoding/json"
+	"errors"
 	"fmt"
 	"io"
 	"log"
@@ -14,6 +15,7 @@ import (
 
 	controldb "github.com/multigent/multigent/internal/db"
 	larkbridge "github.com/multigent/multigent/internal/imbridge/lark"
+	"github.com/multigent/multigent/internal/interaction"
 )
 
 type resolvedChannelEventBinding struct {
@@ -156,6 +158,35 @@ func (s *Server) runAgentForIMEvent(provider string, resolved resolvedChannelEve
 	ctx, cancel := context.WithTimeout(context.Background(), 30*time.Minute)
 	defer cancel()
 	binding := resolved.Binding
+	source := interaction.Source{
+		Kind:    provider,
+		ActorID: resolved.Identity.UserID,
+		Channel: event.Message.ChatID,
+	}
+	_, lease, err := s.interactions.Acquire(s.interactionAgentRef(binding.WorkspaceID, binding.ProjectID, binding.AgentID), source, "interactive")
+	if err != nil {
+		if errors.Is(err, interaction.ErrAgentLocked) {
+			s.auditLog(auditLogInput{
+				WorkspaceID:  binding.WorkspaceID,
+				ActorType:    "user",
+				ActorID:      resolved.Identity.UserID,
+				Action:       "agent_channel.busy",
+				ResourceType: "agent_channel",
+				ResourceID:   binding.ID,
+				Summary:      fmt.Sprintf("Ignored %s message for %s/%s because the agent is busy", provider, binding.ProjectID, binding.AgentID),
+				After: map[string]any{
+					"provider":  provider,
+					"messageId": event.Message.MessageID,
+					"chatId":    event.Message.ChatID,
+				},
+			})
+			s.replyToLarkFamilyEvent(ctx, provider, resolved, event, "Agent is currently busy in another session. Please wait for the current run to finish, or stop it from Multigent and try again.")
+			return
+		}
+		log.Printf("[im:%s] acquire session failed for %s/%s: %v", provider, binding.ProjectID, binding.AgentID, err)
+		return
+	}
+	defer lease.Release()
 	if binding.ExternalChatID == "" && event.Message.ChatID != "" {
 		binding.ExternalChatID = event.Message.ChatID
 		binding.LastActivityAt = time.Now().UTC().Format(time.RFC3339)
@@ -185,14 +216,7 @@ func (s *Server) runAgentForIMEvent(provider string, resolved resolvedChannelEve
 		}
 	}
 	reply = trimForIM(reply, 3500)
-	client := larkbridge.OpenAPIClient{
-		BaseURL:   resolved.SecretValues["baseUrl"],
-		AppID:     resolved.SecretValues["appId"],
-		AppSecret: resolved.SecretValues["appSecret"],
-	}
-	if err := client.ReplyText(ctx, event.Message.MessageID, reply); err != nil {
-		log.Printf("[im:%s] reply failed for %s/%s: %v", provider, binding.ProjectID, binding.AgentID, err)
-	}
+	replyErr := s.replyToLarkFamilyEvent(ctx, provider, resolved, event, reply)
 	s.auditLog(auditLogInput{
 		WorkspaceID:  binding.WorkspaceID,
 		ActorType:    "agent",
@@ -204,9 +228,23 @@ func (s *Server) runAgentForIMEvent(provider string, resolved resolvedChannelEve
 		After: map[string]any{
 			"provider":  provider,
 			"messageId": event.Message.MessageID,
-			"error":     errString(err),
+			"error":     errString(replyErr),
 		},
 	})
+}
+
+func (s *Server) replyToLarkFamilyEvent(ctx context.Context, provider string, resolved resolvedChannelEventBinding, event larkbridge.MessageEvent, reply string) error {
+	binding := resolved.Binding
+	client := larkbridge.OpenAPIClient{
+		BaseURL:   resolved.SecretValues["baseUrl"],
+		AppID:     resolved.SecretValues["appId"],
+		AppSecret: resolved.SecretValues["appSecret"],
+	}
+	if err := client.ReplyText(ctx, event.Message.MessageID, reply); err != nil {
+		log.Printf("[im:%s] reply failed for %s/%s: %v", provider, binding.ProjectID, binding.AgentID, err)
+		return err
+	}
+	return nil
 }
 
 func (s *Server) userCanOperateAgent(username, project, agent string) bool {

@@ -18,6 +18,7 @@ import (
 	"github.com/multigent/multigent/internal/builtins"
 	controldb "github.com/multigent/multigent/internal/db"
 	"github.com/multigent/multigent/internal/entity"
+	"github.com/multigent/multigent/internal/interaction"
 	"github.com/multigent/multigent/internal/store"
 	"github.com/multigent/multigent/internal/taskstore"
 	"github.com/multigent/multigent/internal/telemetry"
@@ -60,6 +61,7 @@ type Server struct {
 	assistantSessions      map[string]*assistantSession
 	execMu                 sync.Mutex
 	execProcs              map[string]*execProcess // key = "project/agent"
+	interactions           *interaction.Manager
 	connectionHealthCancel func()
 	connectionHealthDone   chan struct{}
 }
@@ -79,17 +81,18 @@ func NewServer(root, apiKey string) *Server {
 	tm := newTriggerManager(root, sched.binPath, ts)
 	tm.StartPoller()
 	s := &Server{
-		root:      root,
-		apiKey:    strings.TrimSpace(apiKey),
-		controlDB: controlDB,
-		st:        store.NewDB(root, controlDB),
-		ts:        ts,
-		users:     newUserStore(controlDB),
-		sched:     sched,
-		triggers:  tm,
-		okrStore:  store.NewOKRStore(root),
-		msStore:   store.NewMilestoneStore(root),
-		execProcs: make(map[string]*execProcess),
+		root:         root,
+		apiKey:       strings.TrimSpace(apiKey),
+		controlDB:    controlDB,
+		st:           store.NewDB(root, controlDB),
+		ts:           ts,
+		users:        newUserStore(controlDB),
+		sched:        sched,
+		triggers:     tm,
+		okrStore:     store.NewOKRStore(root),
+		msStore:      store.NewMilestoneStore(root),
+		execProcs:    make(map[string]*execProcess),
+		interactions: interaction.NewManager(),
 	}
 	go s.restoreDesiredSchedulers()
 	s.startConnectionHealthChecker()
