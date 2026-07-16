@@ -202,12 +202,18 @@ func (c RegistrationClient) registrationCall(ctx context.Context, client *http.C
 	if err != nil {
 		return nil, err
 	}
-	if resp.StatusCode < 200 || resp.StatusCode >= 300 {
-		return nil, fmt.Errorf("http %d: %s", resp.StatusCode, string(body))
-	}
 	var result map[string]any
 	if err := json.Unmarshal(body, &result); err != nil {
+		if resp.StatusCode < 200 || resp.StatusCode >= 300 {
+			return nil, fmt.Errorf("http %d: %s", resp.StatusCode, string(body))
+		}
 		return nil, fmt.Errorf("decode: %w", err)
+	}
+	if resp.StatusCode < 200 || resp.StatusCode >= 300 {
+		if errMsg, _ := result["error"].(string); errMsg != "" {
+			return result, nil
+		}
+		return nil, fmt.Errorf("http %d: %s", resp.StatusCode, string(body))
 	}
 	return result, nil
 }
