@@ -163,7 +163,7 @@ func (s *Server) runAgentForIMEvent(provider string, resolved resolvedChannelEve
 		ActorID: resolved.Identity.UserID,
 		Channel: event.Message.ChatID,
 	}
-	_, lease, err := s.interactions.Acquire(s.interactionAgentRef(binding.WorkspaceID, binding.ProjectID, binding.AgentID), source, "interactive")
+	lease, err := s.acquireAgentInteractionLease(s.interactionAgentRef(binding.WorkspaceID, binding.ProjectID, binding.AgentID), source, "interactive")
 	if err != nil {
 		if errors.Is(err, interaction.ErrAgentLocked) {
 			s.auditLog(auditLogInput{
@@ -187,6 +187,10 @@ func (s *Server) runAgentForIMEvent(provider string, resolved resolvedChannelEve
 		return
 	}
 	defer lease.Release()
+	_ = s.createInteractionEvent(lease.session, "user", resolved.Identity.UserID, provider, "message", text, map[string]any{
+		"messageId": event.Message.MessageID,
+		"chatId":    event.Message.ChatID,
+	})
 	if binding.ExternalChatID == "" && event.Message.ChatID != "" {
 		binding.ExternalChatID = event.Message.ChatID
 		binding.LastActivityAt = time.Now().UTC().Format(time.RFC3339)
@@ -207,9 +211,13 @@ func (s *Server) runAgentForIMEvent(provider string, resolved resolvedChannelEve
 			"chatId":    event.Message.ChatID,
 		},
 	})
+	_ = s.createInteractionEvent(lease.session, "system", "", provider, "run_started", "", map[string]any{
+		"messageId": event.Message.MessageID,
+	})
 	output, err := s.execAgentPrompt(ctx, binding.ProjectID, binding.AgentID, text)
 	reply := strings.TrimSpace(output)
 	if err != nil {
+		lease.Fail(err.Error())
 		reply = "Agent run failed: " + err.Error()
 		if output != "" {
 			reply += "\n\n" + output
@@ -217,6 +225,17 @@ func (s *Server) runAgentForIMEvent(provider string, resolved resolvedChannelEve
 	}
 	reply = trimForIM(reply, 3500)
 	replyErr := s.replyToLarkFamilyEvent(ctx, provider, resolved, event, reply)
+	if err != nil {
+		_ = s.createInteractionEvent(lease.session, "system", "", provider, "run_failed", output, map[string]any{
+			"messageId": event.Message.MessageID,
+			"error":     err.Error(),
+		})
+	} else {
+		_ = s.createInteractionEvent(lease.session, "agent", binding.ProjectID+"/"+binding.AgentID, provider, "run_completed", reply, map[string]any{
+			"messageId": event.Message.MessageID,
+			"replyErr":  errString(replyErr),
+		})
+	}
 	s.auditLog(auditLogInput{
 		WorkspaceID:  binding.WorkspaceID,
 		ActorType:    "agent",

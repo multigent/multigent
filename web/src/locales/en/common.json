@@ -1393,7 +1393,10 @@
     "securityNotConfigured": "Verification Token not configured",
     "verificationToken": "Verification Token",
     "encryptKey": "Encrypt Key",
-    "keepExisting": "Leave empty to keep unchanged; enter a new value to update"
+    "keepExisting": "Leave empty to keep unchanged; enter a new value to update",
+    "sessionStatus": "Session status",
+    "sessionIdle": "Idle. Collaboration can start from Web or Feishu/Lark.",
+    "sessionActive": "Locked by {{source}} session. Actor: {{actor}}"
   },
   "sandbox": {
     "title": "Runtime Environment",

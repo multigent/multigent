@@ -32,6 +32,28 @@ type ChannelsResponse = {
   channels: AgentChannel[]
 }
 
+type InteractionStatus = {
+  active: boolean
+  session?: {
+    id: string
+    sourceKind: string
+    sourceChannel?: string
+    actorId?: string
+    status: string
+    lockReason: string
+    lastActivityAt?: string
+  }
+  events?: Array<{
+    id: string
+    actorType: string
+    actorId?: string
+    channel?: string
+    eventType: string
+    content?: string
+    createdAt?: string
+  }>
+}
+
 type SetupState =
   | { step: 'idle' }
   | { step: 'beginning'; provider: ChannelProvider }
@@ -47,6 +69,7 @@ export function AgentChannelPanel({ project, agentName }: { project: string; age
   const { t } = useTranslation()
   const [loading, setLoading] = useState(true)
   const [channels, setChannels] = useState<AgentChannel[]>([])
+  const [interaction, setInteraction] = useState<InteractionStatus | null>(null)
   const [providers, setProviders] = useState<ChannelProvider[]>([
     { id: 'feishu', label: 'Feishu' },
     { id: 'lark', label: 'Lark' },
@@ -63,6 +86,8 @@ export function AgentChannelPanel({ project, agentName }: { project: string; age
       const res = await apiFetch<ChannelsResponse>(basePath)
       setChannels(res.channels ?? [])
       if (res.providers?.length) setProviders(res.providers)
+      const active = await apiFetch<InteractionStatus>(`/api/v1/projects/${encodeURIComponent(project)}/agents/${encodeURIComponent(agentName)}/interactions/active`)
+      setInteraction(active)
     } finally {
       setLoading(false)
     }
@@ -165,6 +190,34 @@ export function AgentChannelPanel({ project, agentName }: { project: string; age
         </button>
       </div>
       <p className="mt-1 text-xs text-neutral-400 dark:text-zinc-500">{t('agentChannels.subtitle')}</p>
+
+      <div className="mt-3 rounded-lg border border-neutral-200/80 bg-neutral-50 px-3 py-2 dark:border-zinc-700/60 dark:bg-zinc-900/40">
+        <div className="flex items-center justify-between gap-3">
+          <div>
+            <p className="text-xs font-medium text-neutral-600 dark:text-zinc-300">{t('agentChannels.sessionStatus')}</p>
+            <p className="mt-0.5 text-xs text-neutral-400 dark:text-zinc-500">
+              {interaction?.active && interaction.session
+                ? t('agentChannels.sessionActive', { source: interaction.session.sourceKind, actor: interaction.session.actorId || '-' })
+                : t('agentChannels.sessionIdle')}
+            </p>
+          </div>
+          {interaction?.active && (
+            <span className="rounded-md bg-amber-50 px-2 py-1 text-xs font-medium text-amber-700 dark:bg-amber-900/20 dark:text-amber-300">
+              {interaction.session?.lockReason || 'active'}
+            </span>
+          )}
+        </div>
+        {interaction?.events?.length ? (
+          <div className="mt-2 space-y-1">
+            {interaction.events.slice(-3).map(event => (
+              <div key={event.id} className="truncate text-xs text-neutral-500 dark:text-zinc-400">
+                <span className="font-medium text-neutral-600 dark:text-zinc-300">{event.eventType}</span>
+                {event.content ? <span> · {event.content}</span> : null}
+              </div>
+            ))}
+          </div>
+        ) : null}
+      </div>
 
       <div className="mt-3 grid gap-3 md:grid-cols-2">
         {providers.map(provider => {

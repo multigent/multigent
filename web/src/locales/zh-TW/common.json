@@ -1393,7 +1393,10 @@
     "securityNotConfigured": "未設定 Verification Token",
     "verificationToken": "Verification Token",
     "encryptKey": "Encrypt Key",
-    "keepExisting": "留空保持不變；輸入新值可更新"
+    "keepExisting": "留空保持不變；輸入新值可更新",
+    "sessionStatus": "會話狀態",
+    "sessionIdle": "目前空閒，可以從 Web 或飛書/Lark 發起協作。",
+    "sessionActive": "目前由 {{source}} 會話占用，發起人：{{actor}}"
   },
   "sandbox": {
     "title": "執行環境",

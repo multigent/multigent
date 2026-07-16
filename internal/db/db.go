@@ -76,6 +76,14 @@ type Store interface {
 	UpsertExternalIdentity(identity ExternalIdentity) error
 	ExternalIdentityByExternalID(workspaceID, provider, externalUserID string) (ExternalIdentity, bool, error)
 	ListExternalIdentities(filter ExternalIdentityFilter) ([]ExternalIdentity, error)
+
+	CreateInteractionSession(session InteractionSession) error
+	UpdateInteractionSession(session InteractionSession) error
+	ActiveInteractionSession(workspaceID, projectID, agentID string) (InteractionSession, bool, error)
+	InteractionSessionByID(id string) (InteractionSession, bool, error)
+	ListInteractionSessions(filter InteractionSessionFilter) ([]InteractionSession, error)
+	CreateInteractionEvent(event InteractionEvent) error
+	ListInteractionEvents(filter InteractionEventFilter) ([]InteractionEvent, error)
 }
 
 type SQLiteStore struct {
@@ -284,6 +292,54 @@ type ExternalIdentityFilter struct {
 	Provider       string
 	ExternalUserID string
 	UserID         string
+}
+
+type InteractionSession struct {
+	ID               string
+	WorkspaceID      string
+	ProjectID        string
+	AgentID          string
+	SourceKind       string
+	SourceChannel    string
+	ActorType        string
+	ActorID          string
+	Status           string
+	LockReason       string
+	RuntimeSessionID string
+	CurrentRunID     string
+	HumanIntervened  bool
+	MetadataJSON     string
+	CreatedAt        string
+	UpdatedAt        string
+	LastActivityAt   string
+	CompletedAt      string
+}
+
+type InteractionSessionFilter struct {
+	WorkspaceID string
+	ProjectID   string
+	AgentID     string
+	Status      string
+	Limit       int
+}
+
+type InteractionEvent struct {
+	ID           string
+	SessionID    string
+	WorkspaceID  string
+	ActorType    string
+	ActorID      string
+	Channel      string
+	EventType    string
+	Content      string
+	MetadataJSON string
+	CreatedAt    string
+}
+
+type InteractionEventFilter struct {
+	WorkspaceID string
+	SessionID   string
+	Limit       int
 }
 
 func OpenDefault() (*SQLiteStore, error) {

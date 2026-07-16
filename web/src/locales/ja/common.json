@@ -1393,7 +1393,10 @@
     "securityNotConfigured": "Verification Token 未設定",
     "verificationToken": "Verification Token",
     "encryptKey": "Encrypt Key",
-    "keepExisting": "空のままなら変更しません。新しい値を入力すると更新されます"
+    "keepExisting": "空のままなら変更しません。新しい値を入力すると更新されます",
+    "sessionStatus": "セッション状態",
+    "sessionIdle": "現在アイドルです。Web または Feishu/Lark から協作を開始できます。",
+    "sessionActive": "{{source}} セッションによりロック中。実行者: {{actor}}"
   },
   "sandbox": {
     "title": "実行環境",

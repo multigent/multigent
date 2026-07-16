@@ -227,6 +227,9 @@ func (s *Server) handleAgentChat(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	defer lease.Release()
+	_ = s.createInteractionEvent(lease.session, "user", requestUsername(r), "web", "message", msg, map[string]any{
+		"source": "web_chat",
+	})
 
 	key := project + "/" + agent
 	s.execMu.Lock()
@@ -282,6 +285,9 @@ func (s *Server) handleAgentChat(w http.ResponseWriter, r *http.Request) {
 	s.execMu.Lock()
 	s.execProcs[key] = &execProcess{cmd: cmd, started: time.Now()}
 	s.execMu.Unlock()
+	_ = s.createInteractionEvent(lease.session, "system", "", "web", "run_started", "", map[string]any{
+		"sessionId": sessionID,
+	})
 
 	w.Header().Set("Content-Type", "text/event-stream")
 	w.Header().Set("Cache-Control", "no-cache")
@@ -344,6 +350,18 @@ func (s *Server) handleAgentChat(w http.ResponseWriter, r *http.Request) {
 	delete(s.execProcs, key)
 	s.execMu.Unlock()
 
+	if waitErr != nil {
+		lease.Fail(waitErr.Error())
+		detectedSessionID = ""
+		_ = s.createInteractionEvent(lease.session, "system", "", "web", "run_failed", "", map[string]any{
+			"error": waitErr.Error(),
+		})
+	} else {
+		_ = s.createInteractionEvent(lease.session, "agent", project+"/"+agent, "web", "run_completed", "", map[string]any{
+			"runtimeSessionId": detectedSessionID,
+		})
+	}
+
 	if waitErr != nil && !clientGone {
 		evt, _ := json.Marshal(map[string]any{
 			"type":  "chat_error",
@@ -355,9 +373,6 @@ func (s *Server) handleAgentChat(w http.ResponseWriter, r *http.Request) {
 
 	if clientGone {
 		return
-	}
-	if waitErr != nil {
-		detectedSessionID = ""
 	}
 
 	done, _ := json.Marshal(map[string]any{
