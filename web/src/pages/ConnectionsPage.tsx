@@ -6,6 +6,7 @@ import { apiDelete, apiFetch, apiPost, apiPut } from '../lib/api'
 import { useAuth } from '../lib/auth'
 import { cn } from '../lib/cn'
 import { confirmDialog } from '../components/ui/ConfirmDialog'
+import { primaryOutlineButton } from '../lib/button-styles'
 
 type ProviderField = { key: string; label: string; inputType: string; required: boolean; secret: boolean }
 type Provider = { provider: string; displayName: string; authTypes: string[]; fields?: ProviderField[]; enabled: boolean }
@@ -198,7 +199,7 @@ export default function ConnectionsPage() {
               {t('connections.runChecks')}
             </button>
           )}
-          <button type="button" onClick={() => setCreating(true)} className="inline-flex items-center gap-2 rounded-lg bg-sky-600 px-3 py-2 text-sm font-medium text-white hover:bg-sky-700">
+          <button type="button" onClick={() => setCreating(true)} className={primaryOutlineButton}>
             <Plus className="size-4" strokeWidth={1.8} />
             {t('connections.newConnection')}
           </button>

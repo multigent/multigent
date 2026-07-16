@@ -7,6 +7,7 @@ import {
 import { apiFetch, apiPost, apiUrl } from '../lib/api'
 import { getStoredToken } from '../lib/auth'
 import { confirmDialog } from '../components/ui/ConfirmDialog'
+import { primaryOutlineButton } from '../lib/button-styles'
 
 type FileEntry = {
   name: string; path: string; isDir: boolean
@@ -215,7 +216,7 @@ export default function FilesPage() {
         <div className="flex items-center gap-1.5 shrink-0">
           <input ref={fileInputRef} type="file" multiple className="hidden"
             onChange={e => { if (e.target.files?.length) { uploadFiles(e.target.files); e.target.value = '' } }} />
-          <button onClick={() => fileInputRef.current?.click()} className={btnPrimary}>
+          <button onClick={() => fileInputRef.current?.click()} className={primaryOutlineButton}>
             <Upload className="size-4" /> {t('files.upload')}
           </button>
           <button onClick={() => setShowMkdir(true)} className={btnGhost}>

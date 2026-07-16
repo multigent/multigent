@@ -7,6 +7,7 @@ import { BookOpen, Plus, Puzzle, Save, Upload, X } from 'lucide-react'
 import { cn } from '../lib/cn'
 import { useApiJson } from '../lib/use-api'
 import { apiPost, apiPut } from '../lib/api'
+import { primaryOutlineButton } from '../lib/button-styles'
 
 type SkillRow = { name: string; description?: string }
 type SkillDetail = { name: string; description?: string; prompt: string }
@@ -173,7 +174,7 @@ export default function SkillsPage() {
         <button
           type="button"
           onClick={() => setCreateOpen(true)}
-          className="inline-flex items-center gap-2 rounded-lg bg-sky-600 px-3 py-2 text-sm font-medium text-white shadow-sm transition-colors hover:bg-sky-700"
+          className={primaryOutlineButton}
         >
           <Plus className="size-4" strokeWidth={2} />
           {t('skill.create')}

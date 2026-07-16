@@ -13,6 +13,7 @@ import {
 import { apiFetch, apiPost, apiUrl } from '../../lib/api'
 import { getStoredToken } from '../../lib/auth'
 import { confirmDialog } from '../../components/ui/ConfirmDialog'
+import { primaryOutlineButton } from '../../lib/button-styles'
 
 function stripFrontmatter(md: string): string {
   const trimmed = md.trimStart()
@@ -354,7 +355,7 @@ export default function DocsPage() {
                   </button>
                 )}
               </div>
-              <button onClick={() => setShowAdd(true)} className={btnPrimary}>
+              <button onClick={() => setShowAdd(true)} className={primaryOutlineButton}>
                 <Plus className="size-4" /> {t('docs.addDoc')}
               </button>
             </div>
