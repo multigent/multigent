@@ -4,7 +4,7 @@ import { useTranslation } from 'react-i18next'
 import Markdown from 'react-markdown'
 import remarkGfm from 'remark-gfm'
 import {
-  ChevronRight, Bot, BookOpen, Puzzle, Check,
+  ChevronRight, Bot, BookOpen, Check,
   Settings2, Users, UserCog, Activity, User, Mail, ListTodo, Reply, Send, Container,
   Cable,
 } from 'lucide-react'
@@ -947,6 +947,18 @@ function SectionHeader({ icon: Icon, title }: { icon: LucideIcon; title: string 
   )
 }
 
+function SubsectionHeader({ title, description, action }: { title: string; description?: string; action?: React.ReactNode }) {
+  return (
+    <div className="flex items-start justify-between gap-3">
+      <div className="min-w-0">
+        <h4 className="text-xs font-semibold uppercase tracking-wider text-neutral-500 dark:text-zinc-400">{title}</h4>
+        {description && <p className="mt-1 text-xs text-neutral-400 dark:text-zinc-500">{description}</p>}
+      </div>
+      {action}
+    </div>
+  )
+}
+
 type ProviderOption = { id: string; ownerType?: 'workspace' | 'user'; name: string; type: string; model?: string }
 
 function ModelCredentialsPanel({ project, agentName, ctx, onChanged }: {
@@ -1077,19 +1089,19 @@ function AgentRuntimeConnectionsPanel({ project, agentName }: { project: string;
 
   return (
     <section>
-      <div className="flex items-center justify-between">
-        <div>
-          <SectionHeader icon={Cable} title={t('agentDetail.externalTools')} />
-          <p className="mt-1 text-xs text-neutral-400 dark:text-zinc-500">{t('members.runtimeConnectionsHelp')}</p>
-        </div>
-        <button
-          type="button"
-          onClick={() => setReloadKey(k => k + 1)}
-          className={secondaryButtonCls}
-        >
-          {t('common.refresh')}
-        </button>
-      </div>
+      <SubsectionHeader
+        title={t('agentDetail.externalTools')}
+        description={t('members.runtimeConnectionsHelp')}
+        action={(
+          <button
+            type="button"
+            onClick={() => setReloadKey(k => k + 1)}
+            className={secondaryButtonCls}
+          >
+            {t('common.refresh')}
+          </button>
+        )}
+      />
       <div className="mt-3 rounded-lg border border-neutral-200/80 bg-white p-4 dark:border-zinc-700/60 dark:bg-zinc-900/40">
         {state.status === 'loading' && (
           <p className="text-sm text-neutral-400 dark:text-zinc-500">{t('members.loadingRuntimeConnections')}</p>
@@ -1177,10 +1189,7 @@ function AgentSkillsPanel({ skills }: { skills: string[] }) {
   const { t } = useTranslation()
   return (
     <section>
-      <div>
-        <SectionHeader icon={Puzzle} title={t('agentDetail.inheritedSkills')} />
-        <p className="mt-1 text-xs text-neutral-400 dark:text-zinc-500">{t('agentDetail.skillsHint')}</p>
-      </div>
+      <SubsectionHeader title={t('agentDetail.inheritedSkills')} description={t('agentDetail.skillsHint')} />
       <div className="mt-3 rounded-lg border border-neutral-200/80 bg-white p-4 dark:border-zinc-700/60 dark:bg-zinc-900/40">
         {skills.length > 0 ? (
           <div className="flex flex-wrap gap-2">
