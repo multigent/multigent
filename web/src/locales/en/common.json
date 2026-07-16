@@ -410,8 +410,10 @@
     "apiProvider": "Model Account",
     "configuration": "Configuration",
     "setupChecklist": "Setup Checklist",
-    "runtimeConnections": "Runtime Connections",
-    "loadingRuntimeConnections": "Loading runtime connections…",
+    "runtimeConnections": "Tool Connections",
+    "runtimeConnectionsHelp": "External tool accounts and credentials this agent can use at runtime after they are granted to the agent, project, or workspace.",
+    "loadingRuntimeConnections": "Loading tool connections…",
+    "noRuntimeConnections": "No granted tool connections. Create a connection, then grant it to this agent, project, or workspace.",
     "addEnvVar": "Add variable",
     "hiring": "Hiring…",
     "hire": "Hire"
@@ -1314,8 +1316,8 @@
     "empty": "No environment variables set"
   },
   "agentChannels": {
-    "title": "Feishu / Lark",
-    "subtitle": "Connect this agent to workplace chat so people can intervene from the tools they already use.",
+    "title": "Collaboration Channels",
+    "subtitle": "Connect this agent to workplace communication tools so people can intervene from their existing workflow.",
     "connect": "Connect",
     "connected": "Connected",
     "notConnected": "Not connected",

@@ -410,8 +410,10 @@
     "apiProvider": "モデルアカウント",
     "configuration": "設定",
     "setupChecklist": "環境チェック",
-    "runtimeConnections": "ランタイム接続",
-    "loadingRuntimeConnections": "ランタイム接続を読み込み中…",
+    "runtimeConnections": "ツール接続",
+    "runtimeConnectionsHelp": "このエージェントが実行時に利用できる外部ツールのアカウントと認証情報です。接続ページで作成し、エージェント、プロジェクト、またはワークスペースに付与します。",
+    "loadingRuntimeConnections": "ツール接続を読み込み中…",
+    "noRuntimeConnections": "利用可能なツール接続はありません。接続ページで作成し、このエージェント、プロジェクト、またはワークスペースに付与してください。",
     "addEnvVar": "変数を追加",
     "hiring": "採用中…",
     "hire": "採用"
@@ -1314,8 +1316,8 @@
     "empty": "環境変数は設定されていません"
   },
   "agentChannels": {
-    "title": "Feishu / Lark",
-    "subtitle": "このエージェントを日常のIMに接続し、既存のワークフローから介入できるようにします。",
+    "title": "コラボレーションチャネル",
+    "subtitle": "このエージェントを日常のコミュニケーションツールに接続し、既存のワークフローから介入できるようにします。",
     "connect": "接続",
     "connected": "接続済み",
     "notConnected": "未接続",

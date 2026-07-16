@@ -107,8 +107,20 @@ export function AgentChannelPanel({ project, agentName }: { project: string; age
     if (pollRef.current) clearInterval(pollRef.current)
   }, [])
 
+  function stopPoll() {
+    if (pollRef.current) {
+      clearInterval(pollRef.current)
+      pollRef.current = null
+    }
+  }
+
+  function closeSetup() {
+    stopPoll()
+    setSetup({ step: 'idle' })
+  }
+
   async function begin(provider: ChannelProvider) {
-    if (pollRef.current) clearInterval(pollRef.current)
+    stopPoll()
     setSetup({ step: 'beginning', provider })
     try {
       const res = await apiPost<{ deviceCode: string; qrUrl: string; interval?: number; baseUrl?: string }>(
@@ -131,7 +143,7 @@ export function AgentChannelPanel({ project, agentName }: { project: string; age
   }
 
   function startPoll(state: Extract<SetupState, { step: 'scanning' }>) {
-    if (pollRef.current) clearInterval(pollRef.current)
+    stopPoll()
     let interval = Math.max(3, state.interval)
     const tick = async () => {
       try {
@@ -141,11 +153,11 @@ export function AgentChannelPanel({ project, agentName }: { project: string; age
         )
         if (res.slowDown) interval += 5
         if (res.status === 'connected' && res.channel) {
-          if (pollRef.current) clearInterval(pollRef.current)
+          stopPoll()
           setSetup({ step: 'connected', provider: state.provider })
           await load()
         } else if (res.status === 'denied' || res.status === 'expired' || res.status === 'error') {
-          if (pollRef.current) clearInterval(pollRef.current)
+          stopPoll()
           setSetup({ step: 'error', provider: state.provider, message: res.error || t(`agentChannels.${res.status}`) })
         }
       } catch {
@@ -326,7 +338,7 @@ export function AgentChannelPanel({ project, agentName }: { project: string; age
               <h3 className="text-base font-semibold text-neutral-900 dark:text-zinc-100">
                 {setup.step === 'error' ? t('agentChannels.setupFailed') : t('agentChannels.scanToConnect', { provider: setup.provider.label })}
               </h3>
-              <button type="button" onClick={() => setSetup({ step: 'idle' })} className="rounded-md p-1.5 text-neutral-400 hover:bg-neutral-100 hover:text-neutral-700 dark:hover:bg-zinc-800 dark:hover:text-zinc-200">
+              <button type="button" onClick={closeSetup} className="rounded-md p-1.5 text-neutral-400 hover:bg-neutral-100 hover:text-neutral-700 dark:hover:bg-zinc-800 dark:hover:text-zinc-200">
                 <X className="size-4" />
               </button>
             </div>

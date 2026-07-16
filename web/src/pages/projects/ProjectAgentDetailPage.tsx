@@ -1230,7 +1230,10 @@ function AgentRuntimeConnectionsPanel({ project, agentName }: { project: string;
   return (
     <section>
       <div className="flex items-center justify-between">
-        <SectionHeader icon={Cable} title={t('members.runtimeConnections')} />
+        <div>
+          <SectionHeader icon={Cable} title={t('members.runtimeConnections')} />
+          <p className="mt-1 text-xs text-neutral-400 dark:text-zinc-500">{t('members.runtimeConnectionsHelp')}</p>
+        </div>
         <button
           type="button"
           onClick={() => setReloadKey(k => k + 1)}
@@ -1262,7 +1265,7 @@ function AgentRuntimeConnectionsPanel({ project, agentName }: { project: string;
             </div>
             {(state.data.connections ?? []).length === 0 ? (
               <p className="text-sm text-neutral-400 dark:text-zinc-500">
-                No granted external tool connections. Create a connection, then grant it to this agent, project, or workspace.
+                {t('members.noRuntimeConnections')}
               </p>
             ) : (
               <div className="space-y-2">

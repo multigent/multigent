@@ -410,8 +410,10 @@
     "apiProvider": "模型账号",
     "configuration": "配置",
     "setupChecklist": "环境检查",
-    "runtimeConnections": "运行时连接",
-    "loadingRuntimeConnections": "正在加载运行时连接…",
+    "runtimeConnections": "工具连接",
+    "runtimeConnectionsHelp": "这个 Agent 运行时可使用的外部工具账号和凭证，需先在连接页创建并授权给 Agent、项目或工作区。",
+    "loadingRuntimeConnections": "正在加载工具连接…",
+    "noRuntimeConnections": "暂无可用工具连接。先在连接页创建连接，再授权给这个 Agent、项目或工作区。",
     "addEnvVar": "添加变量",
     "hiring": "雇佣中…",
     "hire": "雇佣"
@@ -1314,8 +1316,8 @@
     "empty": "暂未设置环境变量"
   },
   "agentChannels": {
-    "title": "飞书 / Lark",
-    "subtitle": "把这个 Agent 接入日常 IM，让成员可以在已有工作流里介入协作。",
+    "title": "协作渠道",
+    "subtitle": "把这个 Agent 接入日常沟通平台，让成员可以在已有工作流里介入协作。",
     "connect": "连接",
     "connected": "已连接",
     "notConnected": "未连接",

@@ -410,8 +410,10 @@
     "apiProvider": "模型帳號",
     "configuration": "設定",
     "setupChecklist": "環境檢查",
-    "runtimeConnections": "執行時連線",
-    "loadingRuntimeConnections": "正在載入執行時連線…",
+    "runtimeConnections": "工具連線",
+    "runtimeConnectionsHelp": "這個 Agent 執行時可使用的外部工具帳號與憑證，需先在連線頁建立並授權給 Agent、專案或工作區。",
+    "loadingRuntimeConnections": "正在載入工具連線…",
+    "noRuntimeConnections": "暫無可用工具連線。先在連線頁建立連線，再授權給這個 Agent、專案或工作區。",
     "addEnvVar": "新增變數",
     "hiring": "僱用中…",
     "hire": "僱用"
@@ -1314,8 +1316,8 @@
     "empty": "尚未設定環境變數"
   },
   "agentChannels": {
-    "title": "飛書 / Lark",
-    "subtitle": "把這個 Agent 接入日常 IM，讓成員可以在既有工作流裡介入協作。",
+    "title": "協作渠道",
+    "subtitle": "把這個 Agent 接入日常溝通平台，讓成員可以在既有工作流裡介入協作。",
     "connect": "連接",
     "connected": "已連接",
     "notConnected": "未連接",
