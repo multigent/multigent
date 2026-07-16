@@ -373,6 +373,7 @@
     "createMode": "Creation mode",
     "blankTeam": "Blank team",
     "blankTeamDesc": "Create a team with no predefined roles. You can add roles later.",
+    "template": "Template",
     "teamName": "Team name",
     "teamDescription": "Description",
     "teamDescPlaceholder": "Short description of what this team is responsible for",
@@ -385,11 +386,35 @@
     "roleSkills": "Bind skills"
   },
   "teamTemplates": {
+    "product-discovery": {
+      "name": "Product Discovery Team",
+      "description": "Turns market signals, user problems, and business goals into validated roadmap scope."
+    },
     "software-delivery": {
       "name": "Software Delivery Team",
       "description": "Cross-functional product engineering team for shipping web/SaaS features with product, design, frontend, backend, QA, and review coverage."
     },
+    "growth-business": {
+      "name": "Growth & Business Team",
+      "description": "Commercial team for pipeline, partnerships, pricing, campaigns, CRM hygiene, and revenue experiments."
+    },
+    "customer-operations": {
+      "name": "Customer Operations Team",
+      "description": "Support, onboarding, feedback loops, incident communication, and knowledge base maintenance."
+    },
+    "agent-enablement": {
+      "name": "Agent Enablement Team",
+      "description": "Internal platform team for agent context, skills, prompts, tool access, evaluation, and workflow improvement."
+    },
+    "data-insights": {
+      "name": "Data & Insights Team",
+      "description": "Analytics team for metrics, dashboards, experiment analysis, research synthesis, and decision support."
+    },
     "roles": {
+      "product-strategist": { "name": "Product Strategist", "description": "Owns product direction, opportunity framing, roadmap trade-offs, and strategic alignment." },
+      "user-researcher": { "name": "User Researcher", "description": "Owns customer interviews, usability findings, evidence quality, and insight synthesis." },
+      "product-analyst": { "name": "Product Analyst", "description": "Owns product metrics, funnel analysis, cohort trends, and experiment readouts." },
+      "prd-writer": { "name": "PRD Writer", "description": "Turns product decisions into clear PRDs, acceptance criteria, non-goals, and launch notes." },
       "product-manager": {
         "name": "Product Manager",
         "description": "Owns problem framing, scope, acceptance criteria, rollout, and stakeholder alignment."
@@ -413,7 +438,23 @@
       "code-reviewer": {
         "name": "Code Reviewer",
         "description": "Reviews changes for correctness, maintainability, security, performance, and test gaps."
-      }
+      },
+      "growth-marketer": { "name": "Growth Marketer", "description": "Owns acquisition experiments, campaign planning, messaging tests, and channel performance." },
+      "sales-operator": { "name": "Sales Operator", "description": "Owns CRM hygiene, lead qualification, follow-ups, pipeline reporting, and sales handoffs." },
+      "partnership-manager": { "name": "Partnership Manager", "description": "Owns partner research, outreach plans, collaboration proposals, and relationship tracking." },
+      "revenue-analyst": { "name": "Revenue Analyst", "description": "Owns pricing analysis, revenue metrics, conversion tracking, and business experiment readouts." },
+      "support-specialist": { "name": "Support Specialist", "description": "Owns support triage, customer replies, issue classification, and escalation quality." },
+      "onboarding-specialist": { "name": "Onboarding Specialist", "description": "Owns customer onboarding flows, setup checklists, adoption blockers, and early success signals." },
+      "knowledge-manager": { "name": "Knowledge Manager", "description": "Owns help center content, internal runbooks, FAQ quality, and documentation freshness." },
+      "incident-communicator": { "name": "Incident Communicator", "description": "Owns customer-facing incident updates, status notes, postmortem summaries, and communication timing." },
+      "agent-ops-manager": { "name": "Agent Ops Manager", "description": "Owns agent staffing, responsibilities, wakeup routines, escalation rules, and operating cadence." },
+      "prompt-engineer": { "name": "Prompt Engineer", "description": "Owns role prompts, workflow prompts, prompt tests, and prompt versioning." },
+      "skill-builder": { "name": "Skill Builder", "description": "Owns reusable skills, tool wrappers, MCP integrations, and agent-facing documentation." },
+      "eval-engineer": { "name": "Eval Engineer", "description": "Owns agent evaluation cases, output review rubrics, regression checks, and quality metrics." },
+      "data-analyst": { "name": "Data Analyst", "description": "Owns metric definitions, SQL analysis, dashboard interpretation, and decision notes." },
+      "analytics-engineer": { "name": "Analytics Engineer", "description": "Owns data modeling, transformation quality, metric pipelines, and data reliability checks." },
+      "experiment-analyst": { "name": "Experiment Analyst", "description": "Owns experiment design review, result analysis, statistical caveats, and recommendation quality." },
+      "research-synthesizer": { "name": "Research Synthesizer", "description": "Owns synthesis across qualitative notes, market research, support signals, and product data." }
     }
   },
   "workbench": {

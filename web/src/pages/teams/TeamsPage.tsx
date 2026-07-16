@@ -1,7 +1,7 @@
 import { useState, type FormEvent } from 'react'
 import { Link } from 'react-router-dom'
 import { useTranslation } from 'react-i18next'
-import { Users, Puzzle, ArrowRight, User, Database, Layers3, Plus, X } from 'lucide-react'
+import { Users, Puzzle, ArrowRight, User, Database, Plus, X } from 'lucide-react'
 import { PlaceholderCard } from '../../components/ui/PlaceholderCard'
 import { useApiJson } from '../../lib/use-api'
 import { apiPost } from '../../lib/api'
@@ -223,39 +223,28 @@ function CreateTeamDialog({ templates, locale, onCreated }: { templates: TeamTem
               </button>
             </div>
             <form onSubmit={onSubmit} className="space-y-4 px-4 py-4">
-              <div>
-                <div className="mb-2 text-sm font-medium text-neutral-700 dark:text-zinc-300">{t('teams.createMode')}</div>
-                <div className="grid gap-2 sm:grid-cols-2">
-                  <button
-                    type="button"
-                    onClick={() => setTemplateId('')}
-                    className={`rounded-lg border p-3 text-left transition-colors ${
-                      templateId === ''
-                        ? 'border-sky-400 bg-sky-50 dark:border-sky-700 dark:bg-sky-950/30'
-                        : 'border-neutral-200 bg-white hover:bg-neutral-50 dark:border-zinc-700 dark:bg-zinc-900 dark:hover:bg-zinc-800'
-                    }`}
-                  >
-                    <div className="text-sm font-semibold text-neutral-900 dark:text-zinc-100">{t('teams.blankTeam')}</div>
-                    <div className="mt-1 text-xs leading-relaxed text-neutral-500 dark:text-zinc-500">{t('teams.blankTeamDesc')}</div>
-                  </button>
+              <label className="block text-sm">
+                <span className="text-neutral-600 dark:text-zinc-400">{t('teams.template')}</span>
+                <select
+                  value={templateId}
+                  onChange={(e) => chooseTemplate(e.target.value)}
+                  className={fieldCls}
+                >
+                  <option value="">{t('teams.blankTeam')}</option>
                   {templates.map((template) => (
-                    <button
-                      key={template.id}
-                      type="button"
-                      onClick={() => chooseTemplate(template.id)}
-                      className={`rounded-lg border p-3 text-left transition-colors ${
-                        templateId === template.id
-                          ? 'border-sky-400 bg-sky-50 dark:border-sky-700 dark:bg-sky-950/30'
-                          : 'border-neutral-200 bg-white hover:bg-neutral-50 dark:border-zinc-700 dark:bg-zinc-900 dark:hover:bg-zinc-800'
-                      }`}
-                    >
-                      <div className="flex items-center gap-2">
-                        <Layers3 className="size-4 text-sky-600 dark:text-sky-400" strokeWidth={1.8} />
-                        <div className="text-sm font-semibold text-neutral-900 dark:text-zinc-100">{templateTitle(template, t)}</div>
-                      </div>
-                      <div className="mt-1 text-xs leading-relaxed text-neutral-500 dark:text-zinc-500">{templateDescription(template, t)}</div>
-                    </button>
+                    <option key={template.id} value={template.id}>
+                      {templateTitle(template, t)}
+                    </option>
                   ))}
+                </select>
+              </label>
+
+              <div className="rounded-lg border border-neutral-200 bg-neutral-50 p-3 dark:border-zinc-700 dark:bg-zinc-950/40">
+                <div className="text-sm font-semibold text-neutral-900 dark:text-zinc-100">
+                  {selectedTemplate ? templateTitle(selectedTemplate, t) : t('teams.blankTeam')}
+                </div>
+                <div className="mt-1 text-xs leading-relaxed text-neutral-500 dark:text-zinc-500">
+                  {selectedTemplate ? templateDescription(selectedTemplate, t) : t('teams.blankTeamDesc')}
                 </div>
               </div>
 

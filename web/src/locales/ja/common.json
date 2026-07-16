@@ -373,6 +373,7 @@
     "createMode": "作成方法",
     "blankTeam": "空のチーム",
     "blankTeamDesc": "事前定義ロールなしでチームを作成します。ロールは後で追加できます。",
+    "template": "テンプレート",
     "teamName": "チーム名",
     "teamDescription": "説明",
     "teamDescPlaceholder": "このチームの責任範囲を簡潔に記述",
@@ -385,11 +386,35 @@
     "roleSkills": "スキルを紐付け"
   },
   "teamTemplates": {
+    "product-discovery": {
+      "name": "プロダクトディスカバリーチーム",
+      "description": "市場シグナル、ユーザー課題、事業目標を検証済みのロードマップ範囲に変換します。"
+    },
     "software-delivery": {
       "name": "ソフトウェアデリバリーチーム",
       "description": "Web/SaaS 機能を出荷するためのクロスファンクショナルなプロダクトエンジニアリングチーム。PM、デザイン、フロントエンド、バックエンド、QA、コードレビューを含みます。"
     },
+    "growth-business": {
+      "name": "グロース・ビジネスチーム",
+      "description": "パイプライン、提携、価格、キャンペーン、CRM、収益実験を担当します。"
+    },
+    "customer-operations": {
+      "name": "カスタマーオペレーションチーム",
+      "description": "サポート、オンボーディング、顧客フィードバック、障害コミュニケーション、ナレッジベースを担当します。"
+    },
+    "agent-enablement": {
+      "name": "Agent イネーブルメントチーム",
+      "description": "Agent のコンテキスト、スキル、プロンプト、ツールアクセス、評価、ワークフロー改善を担当します。"
+    },
+    "data-insights": {
+      "name": "データ・インサイトチーム",
+      "description": "指標定義、ダッシュボード、実験分析、リサーチ統合、意思決定支援を担当します。"
+    },
     "roles": {
+      "product-strategist": { "name": "プロダクトストラテジスト", "description": "プロダクト方向性、機会定義、ロードマップ判断、戦略整合を担当します。" },
+      "user-researcher": { "name": "ユーザーリサーチャー", "description": "顧客インタビュー、ユーザビリティ知見、証拠品質、洞察統合を担当します。" },
+      "product-analyst": { "name": "プロダクトアナリスト", "description": "プロダクト指標、ファネル分析、コホート傾向、実験結果を担当します。" },
+      "prd-writer": { "name": "PRD ライター", "description": "プロダクト決定を PRD、受け入れ基準、非目標、ローンチノートに落とし込みます。" },
       "product-manager": {
         "name": "プロダクトマネージャー",
         "description": "問題定義、スコープ、受け入れ基準、ロールアウト、ステークホルダー調整を担当します。"
@@ -413,7 +438,23 @@
       "code-reviewer": {
         "name": "コードレビュアー",
         "description": "正確性、保守性、セキュリティ、性能、テスト不足の観点で変更をレビューします。"
-      }
+      },
+      "growth-marketer": { "name": "グロースマーケター", "description": "獲得実験、キャンペーン計画、メッセージテスト、チャネル成果を担当します。" },
+      "sales-operator": { "name": "セールスオペレーター", "description": "CRM 整備、リード選別、フォローアップ、パイプライン報告、営業引き継ぎを担当します。" },
+      "partnership-manager": { "name": "パートナーシップマネージャー", "description": "パートナー調査、アウトリーチ計画、協業提案、関係管理を担当します。" },
+      "revenue-analyst": { "name": "レベニューアナリスト", "description": "価格分析、収益指標、転換率追跡、事業実験の読み解きを担当します。" },
+      "support-specialist": { "name": "サポートスペシャリスト", "description": "サポート一次対応、顧客返信、問題分類、エスカレーション品質を担当します。" },
+      "onboarding-specialist": { "name": "オンボーディング担当", "description": "顧客オンボーディング、設定チェックリスト、利用開始の阻害要因、初期成功指標を担当します。" },
+      "knowledge-manager": { "name": "ナレッジマネージャー", "description": "ヘルプセンター、内部 runbook、FAQ 品質、ドキュメント鮮度を担当します。" },
+      "incident-communicator": { "name": "障害コミュニケーター", "description": "顧客向け障害更新、ステータスノート、事後報告、連絡タイミングを担当します。" },
+      "agent-ops-manager": { "name": "Agent Ops マネージャー", "description": "Agent 編成、責務、起動ルーチン、エスカレーションルール、運用リズムを担当します。" },
+      "prompt-engineer": { "name": "プロンプトエンジニア", "description": "ロールプロンプト、ワークフロープロンプト、プロンプトテスト、バージョン管理を担当します。" },
+      "skill-builder": { "name": "スキルビルダー", "description": "再利用可能なスキル、ツールラッパー、MCP 連携、Agent 向けドキュメントを担当します。" },
+      "eval-engineer": { "name": "評価エンジニア", "description": "Agent 評価ケース、出力レビュー基準、回帰チェック、品質指標を担当します。" },
+      "data-analyst": { "name": "データアナリスト", "description": "指標定義、SQL 分析、ダッシュボード解釈、意思決定メモを担当します。" },
+      "analytics-engineer": { "name": "アナリティクスエンジニア", "description": "データモデリング、変換品質、指標パイプライン、データ信頼性を担当します。" },
+      "experiment-analyst": { "name": "実験アナリスト", "description": "実験設計レビュー、結果分析、統計上の注意点、推奨事項を担当します。" },
+      "research-synthesizer": { "name": "リサーチ統合担当", "description": "定性メモ、市場調査、サポート信号、プロダクトデータを統合します。" }
     }
   },
   "workbench": {

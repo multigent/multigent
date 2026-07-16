@@ -373,6 +373,7 @@
     "createMode": "建立方式",
     "blankTeam": "空白團隊",
     "blankTeamDesc": "建立一個不含預設角色的團隊，後續可自行新增角色。",
+    "template": "模板",
     "teamName": "團隊名稱",
     "teamDescription": "描述",
     "teamDescPlaceholder": "簡要描述這個團隊負責什麼",
@@ -385,11 +386,35 @@
     "roleSkills": "綁定技能"
   },
   "teamTemplates": {
+    "product-discovery": {
+      "name": "產品發現團隊",
+      "description": "把市場訊號、使用者問題和業務目標轉化為經過驗證的路線圖範圍。"
+    },
     "software-delivery": {
       "name": "軟體交付團隊",
       "description": "適合 Web/SaaS 功能交付的跨職能產品工程團隊，涵蓋產品、設計、前端、後端、QA 和程式碼評審。"
     },
+    "growth-business": {
+      "name": "成長與商業團隊",
+      "description": "負責線索、合作、定價、活動、CRM 維護和收入實驗。"
+    },
+    "customer-operations": {
+      "name": "客戶營運團隊",
+      "description": "負責支援、onboarding、客戶回饋閉環、事故溝通和知識庫維護。"
+    },
+    "agent-enablement": {
+      "name": "Agent 賦能團隊",
+      "description": "負責 Agent 上下文、技能、提示詞、工具存取、評估和流程改進。"
+    },
+    "data-insights": {
+      "name": "資料洞察團隊",
+      "description": "負責指標定義、儀表板、實驗分析、研究綜合和決策支援。"
+    },
     "roles": {
+      "product-strategist": { "name": "產品策略", "description": "負責產品方向、機會定義、路線圖取捨和戰略對齊。" },
+      "user-researcher": { "name": "使用者研究", "description": "負責使用者訪談、可用性發現、證據品質和洞察綜合。" },
+      "product-analyst": { "name": "產品分析", "description": "負責產品指標、漏斗分析、分群趨勢和實驗解讀。" },
+      "prd-writer": { "name": "PRD 撰寫", "description": "把產品決策轉化為清晰的 PRD、驗收標準、非目標和發布說明。" },
       "product-manager": {
         "name": "產品經理",
         "description": "負責問題定義、範圍控制、驗收標準、發布節奏和利害關係人對齊。"
@@ -413,7 +438,23 @@
       "code-reviewer": {
         "name": "程式碼評審",
         "description": "從正確性、可維護性、安全性、效能和測試缺口角度評審程式碼。"
-      }
+      },
+      "growth-marketer": { "name": "成長行銷", "description": "負責獲客實驗、活動計畫、訊息測試和渠道表現。" },
+      "sales-operator": { "name": "銷售營運", "description": "負責 CRM 維護、線索篩選、跟進、pipeline 報告和銷售交接。" },
+      "partnership-manager": { "name": "合作經理", "description": "負責合作方研究、觸達計畫、合作方案和關係追蹤。" },
+      "revenue-analyst": { "name": "收入分析", "description": "負責定價分析、收入指標、轉化追蹤和商業實驗解讀。" },
+      "support-specialist": { "name": "支援專員", "description": "負責支援分流、客戶回覆、問題分類和升級品質。" },
+      "onboarding-specialist": { "name": "客戶 onboarding", "description": "負責客戶 onboarding 流程、設定清單、採用阻塞和早期成功訊號。" },
+      "knowledge-manager": { "name": "知識庫管理", "description": "負責說明中心內容、內部 runbook、FAQ 品質和文件新鮮度。" },
+      "incident-communicator": { "name": "事故溝通", "description": "負責客戶側事故更新、狀態說明、復盤摘要和溝通節奏。" },
+      "agent-ops-manager": { "name": "Agent 營運", "description": "負責 Agent 編制、職責、喚醒例程、升級規則和運行節奏。" },
+      "prompt-engineer": { "name": "提示詞工程", "description": "負責角色提示詞、流程提示詞、提示詞測試和版本管理。" },
+      "skill-builder": { "name": "技能構建", "description": "負責可複用技能、工具封裝、MCP 整合和面向 Agent 的文件。" },
+      "eval-engineer": { "name": "評估工程", "description": "負責 Agent 評估案例、輸出評審標準、回歸檢查和品質指標。" },
+      "data-analyst": { "name": "資料分析", "description": "負責指標定義、SQL 分析、儀表板解讀和決策說明。" },
+      "analytics-engineer": { "name": "分析工程", "description": "負責資料建模、轉換品質、指標管線和資料可靠性檢查。" },
+      "experiment-analyst": { "name": "實驗分析", "description": "負責實驗設計評審、結果分析、統計 caveat 和建議品質。" },
+      "research-synthesizer": { "name": "研究綜合", "description": "負責綜合定性記錄、市場研究、支援訊號和產品資料。" }
     }
   },
   "workbench": {
