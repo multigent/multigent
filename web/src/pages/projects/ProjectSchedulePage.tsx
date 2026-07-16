@@ -7,6 +7,7 @@ import {
 } from 'lucide-react'
 import { PlaceholderCard } from '../../components/ui/PlaceholderCard'
 import { ConversationLog } from '../../components/ui/ConversationLog'
+import { confirmDialog } from '../../components/ui/ConfirmDialog'
 import { cn } from '../../lib/cn'
 import { apiFetch, apiDelete, apiPatch, apiPost, apiPut } from '../../lib/api'
 import { canManageProject, useAuth } from '../../lib/auth'
@@ -604,7 +605,13 @@ function CronTab({ agents, projectId, canManage, onChanged }: { agents: AgentSch
     onChanged()
   }
   async function deleteCron(agent: string, cronId: string) {
-    if (!window.confirm(t('schedule.confirmDeleteCron'))) return
+    const ok = await confirmDialog({
+      title: t('common.delete'),
+      description: t('schedule.confirmDeleteCron'),
+      confirmLabel: t('common.delete'),
+      cancelLabel: t('common.cancel'),
+    })
+    if (!ok) return
     await apiDelete(`/api/v1/projects/${encodeURIComponent(projectId)}/agents/${encodeURIComponent(agent)}/crons/${encodeURIComponent(cronId)}`)
     onChanged()
   }
@@ -992,7 +999,13 @@ function RuntimeTab({ agents, projectId, canManage }: { agents: AgentSchedule[];
   }
 
   async function doAbort(agentName: string) {
-    if (!window.confirm(t('schedule.confirmAbort'))) return
+    const ok = await confirmDialog({
+      title: t('common.confirm'),
+      description: t('schedule.confirmAbort'),
+      confirmLabel: t('common.confirm'),
+      cancelLabel: t('common.cancel'),
+    })
+    if (!ok) return
     setAborting(agentName)
     try {
       await apiPost('/api/v1/scheduler/abort', { project: projectId, agent: agentName })

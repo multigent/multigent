@@ -12,6 +12,7 @@ import {
 } from 'lucide-react'
 import { apiFetch, apiPost, apiUrl } from '../../lib/api'
 import { getStoredToken } from '../../lib/auth'
+import { confirmDialog } from '../../components/ui/ConfirmDialog'
 
 function stripFrontmatter(md: string): string {
   const trimmed = md.trimStart()
@@ -196,7 +197,13 @@ export default function DocsPage() {
   }
 
   async function removeDoc(id: string) {
-    if (!confirm(t('docs.removeConfirm'))) return
+    const ok = await confirmDialog({
+      title: t('common.delete'),
+      description: t('docs.removeConfirm'),
+      confirmLabel: t('common.delete'),
+      cancelLabel: t('common.cancel'),
+    })
+    if (!ok) return
     await apiFetch(`/api/v1/docs/${id}`, { method: 'DELETE' })
     setSelectedDoc(null)
     load()

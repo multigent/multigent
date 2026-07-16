@@ -7,6 +7,7 @@ import { FileText, Save, Trash2 } from 'lucide-react'
 import { cn } from '../../lib/cn'
 import { useApiJson } from '../../lib/use-api'
 import { apiDelete, apiPut } from '../../lib/api'
+import { ConfirmDialog } from '../../components/ui/ConfirmDialog'
 
 type ProjectDetail = { name: string; description: string; repo: string }
 type PromptData = { content: string }
@@ -67,12 +68,13 @@ export default function ProjectSettingsPage() {
 function DangerZone({ projectId, onDeleted }: { projectId: string; onDeleted: () => void }) {
   const { t } = useTranslation()
   const [busy, setBusy] = useState(false)
+  const [confirmOpen, setConfirmOpen] = useState(false)
 
   async function deleteProject() {
-    if (!window.confirm(t('projectSettings.confirmDeleteProject', { name: projectId }))) return
     setBusy(true)
     try {
       await apiDelete(`/api/v1/projects/${encodeURIComponent(projectId)}`)
+      setConfirmOpen(false)
       onDeleted()
     } catch (e) {
       alert(String(e))
@@ -94,13 +96,23 @@ function DangerZone({ projectId, onDeleted }: { projectId: string; onDeleted: ()
         <button
           type="button"
           disabled={busy}
-          onClick={() => void deleteProject()}
+          onClick={() => setConfirmOpen(true)}
           className="inline-flex shrink-0 items-center gap-1.5 rounded-lg border border-red-200 bg-white px-3 py-2 text-sm font-medium text-red-600 transition-colors hover:bg-red-50 disabled:opacity-50 dark:border-red-900/60 dark:bg-zinc-900 dark:text-red-400 dark:hover:bg-red-900/20"
         >
           <Trash2 className="size-4" strokeWidth={1.8} />
           {t('projectSettings.deleteProject')}
         </button>
       </div>
+      <ConfirmDialog
+        open={confirmOpen}
+        title={t('projectSettings.deleteProject')}
+        description={t('projectSettings.confirmDeleteProject', { name: projectId })}
+        confirmLabel={t('common.delete')}
+        cancelLabel={t('common.cancel')}
+        busy={busy}
+        onCancel={() => setConfirmOpen(false)}
+        onConfirm={() => void deleteProject()}
+      />
     </section>
   )
 }

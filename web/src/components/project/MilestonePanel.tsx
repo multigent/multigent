@@ -3,6 +3,7 @@ import { useTranslation } from 'react-i18next'
 import { Milestone as MsIcon, Trash2, X, Calendar, User, CheckCircle2, Tag, Pencil } from 'lucide-react'
 import { apiFetch, apiPost, apiPut, apiDelete } from '../../lib/api'
 import { cn } from '../../lib/cn'
+import { confirmDialog } from '../ui/ConfirmDialog'
 
 type Milestone = {
   id: string; title: string; description: string; status: string
@@ -58,7 +59,13 @@ export function MilestonePanel({ project }: { project: string }) {
   useEffect(() => { void load() }, [load])
 
   async function deleteMilestone(id: string) {
-    if (!confirm(t('milestone.confirmDelete'))) return
+    const ok = await confirmDialog({
+      title: t('common.delete'),
+      description: t('milestone.confirmDelete'),
+      confirmLabel: t('common.delete'),
+      cancelLabel: t('common.cancel'),
+    })
+    if (!ok) return
     await apiDelete(`/api/v1/projects/${encodeURIComponent(project)}/milestones/${id}`)
     void load()
   }

@@ -7,6 +7,7 @@ import { TaskKanban } from '../../components/task/TaskKanban'
 import { TaskTable } from '../../components/task/TaskTable'
 import { Pagination } from '../../components/ui/Pagination'
 import { PlaceholderCard } from '../../components/ui/PlaceholderCard'
+import { confirmDialog } from '../../components/ui/ConfirmDialog'
 import { apiPost, apiPut } from '../../lib/api'
 import { canManageProject, canOperateAgent, useAuth } from '../../lib/auth'
 import { cn } from '../../lib/cn'
@@ -111,7 +112,13 @@ export default function ProjectTasksPage() {
   async function batchCancel() {
     const rows = getCheckedRows().filter((r) => canMutateTask(r) && !isTerminal(r.status))
     if (rows.length === 0) return
-    if (!window.confirm(t('tasks.confirmBatchCancel', { count: String(rows.length) }))) return
+    const ok = await confirmDialog({
+      title: t('tasks.cancel'),
+      description: t('tasks.confirmBatchCancel', { count: String(rows.length) }),
+      confirmLabel: t('common.confirm'),
+      cancelLabel: t('common.cancel'),
+    })
+    if (!ok) return
     setBatchBusy(true)
     try { for (const r of rows) await apiPost('/api/v1/tasks/cancel', { project: r.project, agent: r.agent, id: r.id }); reload() }
     finally { setBatchBusy(false) }
@@ -123,7 +130,13 @@ export default function ProjectTasksPage() {
   }
   async function batchDelete() {
     const rows = getCheckedRows().filter(canDeleteTask)
-    if (!window.confirm(t('tasks.confirmBatchDelete', { count: String(rows.length) }))) return
+    const ok = await confirmDialog({
+      title: t('tasks.batchDelete'),
+      description: t('tasks.confirmBatchDelete', { count: String(rows.length) }),
+      confirmLabel: t('common.delete'),
+      cancelLabel: t('common.cancel'),
+    })
+    if (!ok) return
     setBatchBusy(true)
     try { for (const r of rows) await apiPost('/api/v1/tasks/delete', { project: r.project, agent: r.agent, id: r.id }); reload() }
     finally { setBatchBusy(false) }
@@ -131,7 +144,13 @@ export default function ProjectTasksPage() {
   async function quickCancel(row: TaskRow, e: React.MouseEvent) {
     e.stopPropagation()
     if (!canMutateTask(row)) return
-    if (!window.confirm(t('tasks.confirmCancel'))) return
+    const ok = await confirmDialog({
+      title: t('tasks.cancel'),
+      description: t('tasks.confirmCancel'),
+      confirmLabel: t('common.confirm'),
+      cancelLabel: t('common.cancel'),
+    })
+    if (!ok) return
     await apiPost('/api/v1/tasks/cancel', { project: row.project, agent: row.agent, id: row.id }); reload()
   }
   async function quickArchive(row: TaskRow, e: React.MouseEvent) {
@@ -142,7 +161,13 @@ export default function ProjectTasksPage() {
   async function quickDelete(row: TaskRow, e: React.MouseEvent) {
     e.stopPropagation()
     if (!canDeleteTask(row)) return
-    if (!window.confirm(t('tasks.confirmDelete'))) return
+    const ok = await confirmDialog({
+      title: t('tasks.delete'),
+      description: t('tasks.confirmDelete'),
+      confirmLabel: t('common.delete'),
+      cancelLabel: t('common.cancel'),
+    })
+    if (!ok) return
     await apiPost('/api/v1/tasks/delete', { project: row.project, agent: row.agent, id: row.id }); reload()
   }
 

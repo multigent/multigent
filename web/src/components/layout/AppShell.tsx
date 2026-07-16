@@ -15,6 +15,7 @@ import {
 } from './nav-config'
 import AssistantWidget from '../assistant/AssistantWidget'
 import { ToastContainer } from '../ui/Toast'
+import { ConfirmDialogHost } from '../ui/ConfirmDialog'
 
 export type BreadcrumbSegment = {
   label: string
@@ -260,6 +261,7 @@ export function AppShell() {
           <CommandPalette open={searchOpen} onOpenChange={setSearchOpen} />
         </div>
         <AssistantWidget hidden={assistantHidden} onHide={() => setAssistantHiddenState(true)} />
+        <ConfirmDialogHost />
         <ToastContainer />
       </>
     </PageTabsProvider>

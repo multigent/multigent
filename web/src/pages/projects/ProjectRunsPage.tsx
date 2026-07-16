@@ -5,6 +5,7 @@ import { BarChart3, FileText, MessageSquareText, RefreshCw, StopCircle, X } from
 import { Pagination } from '../../components/ui/Pagination'
 import { PlaceholderCard } from '../../components/ui/PlaceholderCard'
 import { ConversationLog } from '../../components/ui/ConversationLog'
+import { confirmDialog } from '../../components/ui/ConfirmDialog'
 import { cn } from '../../lib/cn'
 import { useFormatDateTime } from '../../lib/format-datetime'
 import { useApiJson } from '../../lib/use-api'
@@ -178,7 +179,13 @@ export default function ProjectRunsPage() {
   const [abortingAgent, setAbortingAgent] = useState<string | null>(null)
 
   async function doAbort(project: string, agent: string) {
-    if (!window.confirm(t('schedule.confirmAbort'))) return
+    const ok = await confirmDialog({
+      title: t('common.confirm'),
+      description: t('schedule.confirmAbort'),
+      confirmLabel: t('common.confirm'),
+      cancelLabel: t('common.cancel'),
+    })
+    if (!ok) return
     setAbortingAgent(`${project}/${agent}`)
     try {
       await apiPost('/api/v1/scheduler/abort', { project, agent })

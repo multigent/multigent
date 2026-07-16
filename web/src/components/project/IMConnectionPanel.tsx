@@ -5,6 +5,7 @@ import { QRCodeSVG } from 'qrcode.react'
 import { apiFetch, apiPost, apiDelete, apiUrl } from '../../lib/api'
 import { getStoredToken } from '../../lib/auth'
 import { cn } from '../../lib/cn'
+import { confirmDialog } from '../ui/ConfirmDialog'
 
 type Platform = {
   type: string
@@ -281,7 +282,13 @@ export function IMConnectionPanel({ project, agentName, model, workDir }: {
   }
 
   async function handleDisconnect(_platformType: string) {
-    if (!confirm(t('ccconnect.confirmDisconnect'))) return
+    const ok = await confirmDialog({
+      title: t('common.confirm'),
+      description: t('ccconnect.confirmDisconnect'),
+      confirmLabel: t('common.confirm'),
+      cancelLabel: t('common.cancel'),
+    })
+    if (!ok) return
     try {
       await apiDelete(`/api/v1/ccconnect/projects/${encodeURIComponent(defaultProjectName)}`)
       setNeedRestart(true)

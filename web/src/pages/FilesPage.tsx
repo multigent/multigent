@@ -6,6 +6,7 @@ import {
 } from 'lucide-react'
 import { apiFetch, apiPost, apiUrl } from '../lib/api'
 import { getStoredToken } from '../lib/auth'
+import { confirmDialog } from '../components/ui/ConfirmDialog'
 
 type FileEntry = {
   name: string; path: string; isDir: boolean
@@ -163,7 +164,13 @@ export default function FilesPage() {
   }
 
   async function deleteEntry(entry: FileEntry) {
-    if (!confirm(entry.isDir ? t('files.deleteFolderConfirm', { name: entry.name }) : t('files.deleteConfirm', { name: entry.name }))) return
+    const ok = await confirmDialog({
+      title: t('common.delete'),
+      description: entry.isDir ? t('files.deleteFolderConfirm', { name: entry.name }) : t('files.deleteConfirm', { name: entry.name }),
+      confirmLabel: t('common.delete'),
+      cancelLabel: t('common.cancel'),
+    })
+    if (!ok) return
     const encoded = entry.path.split('/').map(encodeURIComponent).join('/')
     await apiFetch(`/api/v1/files/${encoded}`, { method: 'DELETE' })
     load()

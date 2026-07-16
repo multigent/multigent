@@ -34,6 +34,7 @@ import { CreateMessageDialog } from '../components/project/CreateMessageDialog'
 import { CreateTaskDialog } from '../components/project/CreateTaskDialog'
 import { RunAgentDialog } from '../components/project/RunAgentDialog'
 import { Pagination } from '../components/ui/Pagination'
+import { confirmDialog } from '../components/ui/ConfirmDialog'
 import { TaskKanban } from '../components/task/TaskKanban'
 import { TaskTable } from '../components/task/TaskTable'
 import { getQuickLinks, removeQuickLink, type QuickLink } from '../lib/quick-links'
@@ -266,7 +267,13 @@ function MessagesPanel({ projectsAgents, onMutated }: { projectsAgents: ProjectA
   }
   async function batchDelete() {
     const count = checked.size
-    if (!window.confirm(t('messages.confirmBatchDelete', { count: String(count) }))) return
+    const ok = await confirmDialog({
+      title: t('messages.batchDelete'),
+      description: t('messages.confirmBatchDelete', { count: String(count) }),
+      confirmLabel: t('common.delete'),
+      cancelLabel: t('common.cancel'),
+    })
+    if (!ok) return
     setBatchBusy(true)
     try {
       for (const row of getCheckedRows())
@@ -524,7 +531,13 @@ function TasksPanel({ projectsAgents, onMutated }: { projectsAgents: ProjectAgen
 
   async function batchCancel() {
     const count = checked.size
-    if (!window.confirm(t('tasks.confirmBatchCancel', { count: String(count) }))) return
+    const ok = await confirmDialog({
+      title: t('tasks.cancel'),
+      description: t('tasks.confirmBatchCancel', { count: String(count) }),
+      confirmLabel: t('common.confirm'),
+      cancelLabel: t('common.cancel'),
+    })
+    if (!ok) return
     setBatchBusy(true)
     try {
       for (const row of getCheckedRows().filter((r) => !isTerminal(r.status)))
@@ -542,7 +555,13 @@ function TasksPanel({ projectsAgents, onMutated }: { projectsAgents: ProjectAgen
   }
   async function batchDelete() {
     const count = checked.size
-    if (!window.confirm(t('tasks.confirmBatchDelete', { count: String(count) }))) return
+    const ok = await confirmDialog({
+      title: t('tasks.batchDelete'),
+      description: t('tasks.confirmBatchDelete', { count: String(count) }),
+      confirmLabel: t('common.delete'),
+      cancelLabel: t('common.cancel'),
+    })
+    if (!ok) return
     setBatchBusy(true)
     try {
       for (const row of getCheckedRows())
@@ -553,7 +572,13 @@ function TasksPanel({ projectsAgents, onMutated }: { projectsAgents: ProjectAgen
 
   async function quickCancel(row: TaskRow, e: React.MouseEvent) {
     e.stopPropagation()
-    if (!window.confirm(t('tasks.confirmCancel'))) return
+    const ok = await confirmDialog({
+      title: t('tasks.cancel'),
+      description: t('tasks.confirmCancel'),
+      confirmLabel: t('common.confirm'),
+      cancelLabel: t('common.cancel'),
+    })
+    if (!ok) return
     await apiPost('/api/v1/tasks/cancel', { project: row.project, agent: row.agent, id: row.id })
     reload()
   }
@@ -564,7 +589,13 @@ function TasksPanel({ projectsAgents, onMutated }: { projectsAgents: ProjectAgen
   }
   async function quickDelete(row: TaskRow, e: React.MouseEvent) {
     e.stopPropagation()
-    if (!window.confirm(t('tasks.confirmDelete'))) return
+    const ok = await confirmDialog({
+      title: t('tasks.delete'),
+      description: t('tasks.confirmDelete'),
+      confirmLabel: t('common.delete'),
+      cancelLabel: t('common.cancel'),
+    })
+    if (!ok) return
     await apiPost('/api/v1/tasks/delete', { project: row.project, agent: row.agent, id: row.id })
     reload()
   }

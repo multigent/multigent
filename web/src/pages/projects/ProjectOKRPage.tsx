@@ -4,6 +4,7 @@ import { useTranslation } from 'react-i18next'
 import { Plus, ChevronDown, ChevronRight, Trash2, X, TrendingUp, Pencil } from 'lucide-react'
 import { apiFetch, apiPost, apiPut, apiDelete } from '../../lib/api'
 import { cn } from '../../lib/cn'
+import { confirmDialog } from '../../components/ui/ConfirmDialog'
 
 type KR = {
   id: string; description: string; metricType: string
@@ -83,11 +84,23 @@ export default function ProjectOKRPage() {
   }
 
   async function deleteOKR(id: string) {
-    if (!confirm(t('okr.confirmDelete'))) return
+    const ok = await confirmDialog({
+      title: t('common.delete'),
+      description: t('okr.confirmDelete'),
+      confirmLabel: t('common.delete'),
+      cancelLabel: t('common.cancel'),
+    })
+    if (!ok) return
     await apiDelete(`/api/v1/okrs/${id}`); void load()
   }
   async function deleteKR(okrId: string, krId: string) {
-    if (!confirm(t('okr.confirmDeleteKR'))) return
+    const ok = await confirmDialog({
+      title: t('common.delete'),
+      description: t('okr.confirmDeleteKR'),
+      confirmLabel: t('common.delete'),
+      cancelLabel: t('common.cancel'),
+    })
+    if (!ok) return
     await apiDelete(`/api/v1/okrs/${okrId}/key-results/${krId}`); void load()
   }
   async function saveKRValue(okrId: string, krId: string, val: string) {

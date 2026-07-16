@@ -5,6 +5,7 @@ import { Users, Bot, User, UserMinus } from 'lucide-react'
 import { HireAgentDialog } from '../../components/project/HireAgentDialog'
 import { cn } from '../../lib/cn'
 import { PlaceholderCard } from '../../components/ui/PlaceholderCard'
+import { ConfirmDialog } from '../../components/ui/ConfirmDialog'
 import { useFormatDateTime } from '../../lib/format-datetime'
 import { useApiJson } from '../../lib/use-api'
 import { apiDelete } from '../../lib/api'
@@ -65,12 +66,28 @@ export default function ProjectMembersPage() {
   const { projectId } = useParams<{ projectId: string }>()
 
   const [reloadKey, setReloadKey] = useState(0)
+  const [pendingDelete, setPendingDelete] = useState<AgentRow | null>(null)
+  const [deleting, setDeleting] = useState(false)
   const agentsPath =
     projectId != null && projectId !== ''
       ? `/api/v1/projects/${encodeURIComponent(projectId)}/agents`
       : null
   const agentsState = useApiJson<AgentRow[]>(agentsPath, reloadKey)
   const members = agentsState.status === 'ok' ? (agentsState.data ?? []) : []
+
+  async function deleteMember() {
+    if (!projectId || !pendingDelete) return
+    setDeleting(true)
+    try {
+      await apiDelete(`/api/v1/projects/${encodeURIComponent(projectId)}/agents/${encodeURIComponent(pendingDelete.name)}`)
+      setPendingDelete(null)
+      setReloadKey((k) => k + 1)
+    } catch (e) {
+      alert(String(e))
+    } finally {
+      setDeleting(false)
+    }
+  }
 
   return (
     <div className="flex h-full flex-col overflow-hidden">
@@ -136,11 +153,9 @@ export default function ProjectMembersPage() {
                     <button
                       type="button"
                       title={t('members.fire')}
-                      onClick={async (e) => {
+                      onClick={(e) => {
                         e.preventDefault()
-                        if (!confirm(t('members.confirmFire', { name: row.name }))) return
-                        await apiDelete(`/api/v1/projects/${encodeURIComponent(projectId!)}/agents/${encodeURIComponent(row.name)}`)
-                        setReloadKey((k) => k + 1)
+                        setPendingDelete(row)
                       }}
                       className="rounded p-1 text-neutral-400 opacity-0 transition-all hover:bg-red-50 hover:text-red-600 group-hover:opacity-100 dark:hover:bg-red-900/20 dark:hover:text-red-400"
                     >
@@ -153,6 +168,16 @@ export default function ProjectMembersPage() {
           </div>
         )}
       </div>
+      <ConfirmDialog
+        open={pendingDelete != null}
+        title={t('members.fire')}
+        description={pendingDelete ? t('members.confirmFire', { name: pendingDelete.name }) : ''}
+        confirmLabel={t('common.delete')}
+        cancelLabel={t('common.cancel')}
+        busy={deleting}
+        onCancel={() => setPendingDelete(null)}
+        onConfirm={() => void deleteMember()}
+      />
     </div>
   )
 }

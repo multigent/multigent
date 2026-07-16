@@ -4,6 +4,7 @@ import { KeyRound, Plus, Server, Trash2, Pencil, X, Eye, EyeOff, Users, Shield, 
 import { useAuth } from '../lib/auth'
 import { apiFetch, apiPost, apiPut, apiDelete } from '../lib/api'
 import { cn } from '../lib/cn'
+import { confirmDialog } from '../components/ui/ConfirmDialog'
 
 const selectCls =
   'max-w-xs rounded-md border border-neutral-200/80 bg-neutral-50/50 px-3 py-2 text-sm text-neutral-800 outline-none transition-colors focus:border-sky-400 dark:border-zinc-700/60 dark:bg-zinc-800 dark:text-zinc-200 dark:[color-scheme:dark] [&>option]:dark:bg-zinc-800 [&>option]:dark:text-zinc-200'
@@ -155,7 +156,13 @@ function UsersSection() {
   }
 
   async function handleDelete(username: string) {
-    if (!confirm(t('users.confirmDelete', { username }))) return
+    const ok = await confirmDialog({
+      title: t('common.delete'),
+      description: t('users.confirmDelete', { username }),
+      confirmLabel: t('common.delete'),
+      cancelLabel: t('common.cancel'),
+    })
+    if (!ok) return
     try { await apiDelete(`/api/v1/users/${encodeURIComponent(username)}`); await refresh() }
     catch { /* ignore */ }
   }
@@ -809,7 +816,13 @@ function SecretsSection() {
   }
 
   async function handleDelete(id: string) {
-    if (!confirm(t('secrets.confirmDelete'))) return
+    const ok = await confirmDialog({
+      title: t('common.delete'),
+      description: t('secrets.confirmDelete'),
+      confirmLabel: t('common.delete'),
+      cancelLabel: t('common.cancel'),
+    })
+    if (!ok) return
     try { await apiDelete(`/api/v1/envvars/${id}`); load() } catch { /* ignore */ }
   }
 

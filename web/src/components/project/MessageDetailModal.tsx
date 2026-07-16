@@ -5,6 +5,7 @@ import remarkGfm from 'remark-gfm'
 import { CheckCircle2, Reply, Send, X } from 'lucide-react'
 import { apiPost } from '../../lib/api'
 import { useFormatDateTime } from '../../lib/format-datetime'
+import { confirmDialog } from '../ui/ConfirmDialog'
 
 export type MessageDetailModel = {
   id: string
@@ -111,7 +112,13 @@ export function MessageDetailModal({ open, message, onClose, onMutated, canMutat
   }
 
   async function remove() {
-    if (!window.confirm(t('messages.confirmDelete'))) return
+    const ok = await confirmDialog({
+      title: t('common.delete'),
+      description: t('messages.confirmDelete'),
+      confirmLabel: t('common.delete'),
+      cancelLabel: t('common.cancel'),
+    })
+    if (!ok) return
     setErr(null)
     setBusy('delete')
     try {

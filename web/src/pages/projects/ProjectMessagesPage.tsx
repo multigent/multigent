@@ -9,6 +9,7 @@ import {
 import { CreateMessageDialog } from '../../components/project/CreateMessageDialog'
 import { Pagination } from '../../components/ui/Pagination'
 import { PlaceholderCard } from '../../components/ui/PlaceholderCard'
+import { confirmDialog } from '../../components/ui/ConfirmDialog'
 import { apiPost } from '../../lib/api'
 import { canOperateAgent, isSystemAdmin, useAuth } from '../../lib/auth'
 import { cn } from '../../lib/cn'
@@ -142,7 +143,13 @@ export default function ProjectMessagesPage() {
   }
   async function batchDelete() {
     const count = checked.size
-    if (!window.confirm(t('messages.confirmBatchDelete', { count: String(count) }))) return
+    const ok = await confirmDialog({
+      title: t('messages.batchDelete'),
+      description: t('messages.confirmBatchDelete', { count: String(count) }),
+      confirmLabel: t('common.delete'),
+      cancelLabel: t('common.cancel'),
+    })
+    if (!ok) return
     setBatchBusy(true)
     try {
       for (const row of getCheckedRows().filter((r) => canMutateMailbox(r.mailbox))) {
@@ -167,7 +174,13 @@ export default function ProjectMessagesPage() {
   async function quickDelete(row: MessageRow, e: React.MouseEvent) {
     e.stopPropagation()
     if (!canMutateMailbox(row.mailbox)) return
-    if (!window.confirm(t('messages.confirmDelete'))) return
+    const ok = await confirmDialog({
+      title: t('common.delete'),
+      description: t('messages.confirmDelete'),
+      confirmLabel: t('common.delete'),
+      cancelLabel: t('common.cancel'),
+    })
+    if (!ok) return
     await apiPost('/api/v1/messages/delete', { mailbox: row.mailbox, id: row.id })
     setReloadKey((k) => k + 1)
   }

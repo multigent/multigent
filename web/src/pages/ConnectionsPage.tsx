@@ -4,6 +4,7 @@ import { useSearchParams } from 'react-router-dom'
 import { apiDelete, apiFetch, apiPost, apiPut } from '../lib/api'
 import { useAuth } from '../lib/auth'
 import { cn } from '../lib/cn'
+import { confirmDialog } from '../components/ui/ConfirmDialog'
 
 type ProviderField = { key: string; label: string; inputType: string; required: boolean; secret: boolean }
 type Provider = { provider: string; displayName: string; authTypes: string[]; fields?: ProviderField[]; enabled: boolean }
@@ -131,7 +132,13 @@ export default function ConnectionsPage() {
   }, [reloadKey])
 
   async function removeConnection(connection: Connection) {
-    if (!window.confirm(`Remove ${connection.provider}/${connection.connectionName}?`)) return
+    const ok = await confirmDialog({
+      title: 'Remove connection',
+      description: `Remove ${connection.provider}/${connection.connectionName}?`,
+      confirmLabel: 'Remove',
+      cancelLabel: 'Cancel',
+    })
+    if (!ok) return
     await apiDelete(`/api/v1/connections/${encodeURIComponent(connection.id)}`)
     setReloadKey(k => k + 1)
   }
@@ -347,7 +354,13 @@ function OAuthClientConfigDialog({ config, onClose, onSaved }: { config: OAuthCl
     }
   }
   async function remove() {
-    if (!window.confirm(`Remove OAuth client config for ${config.displayName}?`)) return
+    const ok = await confirmDialog({
+      title: 'Remove OAuth client',
+      description: `Remove OAuth client config for ${config.displayName}?`,
+      confirmLabel: 'Remove',
+      cancelLabel: 'Cancel',
+    })
+    if (!ok) return
     await apiDelete(`/api/v1/oauth/client-configs/${encodeURIComponent(config.provider)}`)
     onSaved()
   }

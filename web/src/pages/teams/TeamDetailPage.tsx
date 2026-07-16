@@ -7,6 +7,7 @@ import { Users, Save, ChevronDown, ChevronRight, FileText, Puzzle, Plus, X, Tras
 import { CreateRoleDialog } from '../../components/team/CreateRoleDialog'
 import { cn } from '../../lib/cn'
 import { PlaceholderCard } from '../../components/ui/PlaceholderCard'
+import { ConfirmDialog } from '../../components/ui/ConfirmDialog'
 import { apiTeamPath, apiPut, apiPost, apiDelete } from '../../lib/api'
 import { useApiJson } from '../../lib/use-api'
 
@@ -215,6 +216,8 @@ function RolePromptRow({
   const promptPath = `/api/v1/prompts/roles?team=${encodeURIComponent(teamPath)}&role=${encodeURIComponent(role.name)}`
   const promptState = useApiJson<PromptData>(open ? promptPath : null, 0)
   const [localSkills, setLocalSkills] = useState<string[]>(role.skills ?? [])
+  const [confirmDelete, setConfirmDelete] = useState(false)
+  const [deleting, setDeleting] = useState(false)
 
   const bindSkill = useCallback(async (skillName: string, action: 'add' | 'remove') => {
     try {
@@ -232,14 +235,17 @@ function RolePromptRow({
   }, [teamPath, role.name, onSkillsChanged])
 
   const deleteRole = useCallback(async () => {
-    if (!window.confirm(t('teams.confirmDeleteRole', { name: role.name }))) return
+    setDeleting(true)
     try {
       await apiDelete(`/api/v1/teams/${encodeURIComponent(teamPath)}/roles/${encodeURIComponent(role.name)}`)
+      setConfirmDelete(false)
       onDeleted()
     } catch (e) {
       alert(String(e))
+    } finally {
+      setDeleting(false)
     }
-  }, [teamPath, role.name, onDeleted, t])
+  }, [teamPath, role.name, onDeleted])
 
   return (
     <div className="border-b border-neutral-100 last:border-b-0 dark:border-zinc-700/40">
@@ -269,7 +275,7 @@ function RolePromptRow({
         </button>
         <button
           type="button"
-          onClick={deleteRole}
+          onClick={() => setConfirmDelete(true)}
           className="rounded-md p-1.5 text-neutral-400 transition-colors hover:bg-red-50 hover:text-red-600 dark:hover:bg-red-900/20 dark:hover:text-red-400"
           title={t('teams.deleteRole')}
         >
@@ -310,6 +316,16 @@ function RolePromptRow({
           )}
         </div>
       )}
+      <ConfirmDialog
+        open={confirmDelete}
+        title={t('teams.deleteRole')}
+        description={t('teams.confirmDeleteRole', { name: role.name })}
+        confirmLabel={t('common.delete')}
+        cancelLabel={t('common.cancel')}
+        busy={deleting}
+        onCancel={() => setConfirmDelete(false)}
+        onConfirm={() => void deleteRole()}
+      />
     </div>
   )
 }
@@ -330,6 +346,8 @@ export default function TeamDetailPage() {
   const allSkills = allSkillsState.status === 'ok' ? (allSkillsState.data ?? []) : []
 
   const teamSkills = state.status === 'ok' ? (state.data.skills ?? []) : []
+  const [confirmDeleteTeam, setConfirmDeleteTeam] = useState(false)
+  const [deletingTeam, setDeletingTeam] = useState(false)
 
   const bindTeamSkill = useCallback(async (skillName: string, action: 'add' | 'remove') => {
     if (!teamId) return
@@ -343,14 +361,17 @@ export default function TeamDetailPage() {
 
   const deleteTeam = useCallback(async () => {
     if (!teamId) return
-    if (!window.confirm(t('teams.confirmDeleteTeam', { name: teamId }))) return
+    setDeletingTeam(true)
     try {
       await apiDelete(`/api/v1/teams/${apiTeamPath(teamId)}`)
+      setConfirmDeleteTeam(false)
       navigate('/teams')
     } catch (e) {
       alert(String(e))
+    } finally {
+      setDeletingTeam(false)
     }
-  }, [teamId, navigate, t])
+  }, [teamId, navigate])
 
   return (
     <div className="flex h-full flex-col overflow-hidden">
@@ -363,7 +384,7 @@ export default function TeamDetailPage() {
           {teamId && (
             <button
               type="button"
-              onClick={deleteTeam}
+              onClick={() => setConfirmDeleteTeam(true)}
               className="inline-flex items-center gap-1.5 rounded-lg border border-red-200 bg-white px-3 py-2 text-sm font-medium text-red-600 transition-colors hover:bg-red-50 dark:border-red-900/60 dark:bg-zinc-900 dark:text-red-400 dark:hover:bg-red-900/20"
             >
               <Trash2 className="size-4" strokeWidth={1.8} />
@@ -468,6 +489,16 @@ export default function TeamDetailPage() {
           </div>
         )}
       </div>
+      <ConfirmDialog
+        open={confirmDeleteTeam}
+        title={t('teams.deleteTeam')}
+        description={t('teams.confirmDeleteTeam', { name: teamId })}
+        confirmLabel={t('common.delete')}
+        cancelLabel={t('common.cancel')}
+        busy={deletingTeam}
+        onCancel={() => setConfirmDeleteTeam(false)}
+        onConfirm={() => void deleteTeam()}
+      />
     </div>
   )
 }
