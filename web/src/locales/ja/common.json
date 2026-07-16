@@ -6,7 +6,8 @@
     "delete": "削除",
     "edit": "編集",
     "confirm": "確認",
-    "add": "追加"
+    "add": "追加",
+    "creating": "作成中…"
   },
   "apiErrors": {
     "bad_request": "リクエストを処理できませんでした。",
@@ -297,6 +298,12 @@
   "projects": {
     "listEyebrow": "デリバリー",
     "listSubtitle": "プロジェクトは作業の場です。開くとタスク、メッセージ、プロジェクトメンバーを管理できます。チーム側で編成と採用を行い、プロジェクトに人員を割り当てます。",
+    "create": "新規プロジェクト",
+    "createTitle": "新規プロジェクト",
+    "createHint": "空のプロジェクトを作成します。あとでメンバー、タスク、スケジュール、Agent を追加できます。",
+    "name": "プロジェクト名",
+    "description": "説明",
+    "repo": "リポジトリまたはパス",
     "openDemo": "デモプロジェクトを開く",
     "demoHintTitle": "デモプロジェクト",
     "demoHintBody": "demo でサイドバーを試せます。タスク、メッセージ、メンバーはすべて同一の projectId 下にあり、実 API 接続まではこちらを利用します。",
@@ -348,6 +355,14 @@
     "catalogTitle": "Skills スキルカタログ",
     "catalogHint": "ワークスペースで使えるすべての Skill。展開して SKILL.md の内容を表示・編集できます。",
     "empty": "Skill がまだ定義されていません。CLI または skills/ ディレクトリで作成してください。",
+    "create": "新規 Skill",
+    "createTitle": "新規 Skill",
+    "createHint": "Skill を手書きするか、既存の SKILL.md をアップロードします。",
+    "name": "Skill 名",
+    "description": "説明",
+    "uploadMarkdown": "Markdown ファイルをアップロード",
+    "contentPlaceholder": "# Skill: ...\n\n使う場面、手順、制約、例を書いてください。",
+    "registryHint": "将来的には npx skills などのインストーラーと接続し、外部 Skill をこのワークスペースに追加できます。",
     "skills": "スキル",
     "teamSkills": "チームスキル",
     "roleSkills": "ロールスキル",

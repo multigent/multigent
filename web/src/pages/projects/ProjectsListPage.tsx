@@ -1,8 +1,10 @@
-import { Link } from 'react-router-dom'
+import { useState } from 'react'
+import { Link, useNavigate } from 'react-router-dom'
 import { useTranslation } from 'react-i18next'
-import { FolderKanban, ArrowRight } from 'lucide-react'
+import { FolderKanban, ArrowRight, Plus, X } from 'lucide-react'
 import { PlaceholderCard } from '../../components/ui/PlaceholderCard'
 import { useApiJson } from '../../lib/use-api'
+import { apiPost } from '../../lib/api'
 
 type ProjectRow = {
   name: string
@@ -12,13 +14,26 @@ type ProjectRow = {
 
 export default function ProjectsListPage() {
   const { t } = useTranslation()
-  const state = useApiJson<ProjectRow[]>('/api/v1/projects')
+  const navigate = useNavigate()
+  const [reloadKey, setReloadKey] = useState(0)
+  const [createOpen, setCreateOpen] = useState(false)
+  const state = useApiJson<ProjectRow[]>('/api/v1/projects', reloadKey)
 
   return (
     <div className="animate-fade-in px-8 py-6">
-      <div className="pb-5">
-        <h1 className="text-xl font-semibold text-neutral-900 dark:text-zinc-100">{t('nav.projects')}</h1>
-        <p className="mt-0.5 text-sm text-neutral-500 dark:text-zinc-500">{t('projects.listSubtitle')}</p>
+      <div className="flex items-start justify-between gap-4 pb-5">
+        <div>
+          <h1 className="text-xl font-semibold text-neutral-900 dark:text-zinc-100">{t('nav.projects')}</h1>
+          <p className="mt-0.5 text-sm text-neutral-500 dark:text-zinc-500">{t('projects.listSubtitle')}</p>
+        </div>
+        <button
+          type="button"
+          onClick={() => setCreateOpen(true)}
+          className="inline-flex items-center gap-2 rounded-lg bg-sky-600 px-3 py-2 text-sm font-medium text-white shadow-sm transition-colors hover:bg-sky-700"
+        >
+          <Plus className="size-4" strokeWidth={2} />
+          {t('projects.create')}
+        </button>
       </div>
 
       {state.status === 'loading' && (
@@ -40,6 +55,14 @@ export default function ProjectsListPage() {
           </div>
           <p className="text-lg font-medium text-neutral-600 dark:text-zinc-400">{t('projects.emptyTitle')}</p>
           <p className="mt-1.5 text-sm text-neutral-400 dark:text-zinc-500">{t('api.noProjects')}</p>
+          <button
+            type="button"
+            onClick={() => setCreateOpen(true)}
+            className="mt-5 inline-flex items-center gap-2 rounded-lg bg-sky-600 px-3.5 py-2 text-sm font-medium text-white shadow-sm transition-colors hover:bg-sky-700"
+          >
+            <Plus className="size-4" strokeWidth={2} />
+            {t('projects.create')}
+          </button>
         </div>
       )}
       {state.status === 'ok' && state.data.length > 0 && (
@@ -73,6 +96,73 @@ export default function ProjectsListPage() {
           ))}
         </div>
       )}
+      {createOpen && (
+        <CreateProjectDialog
+          onClose={() => setCreateOpen(false)}
+          onCreated={(name) => {
+            setCreateOpen(false)
+            setReloadKey((v) => v + 1)
+            navigate(`/projects/${encodeURIComponent(name)}/tasks`)
+          }}
+        />
+      )}
+    </div>
+  )
+}
+
+function CreateProjectDialog({ onClose, onCreated }: { onClose: () => void; onCreated: (name: string) => void }) {
+  const { t } = useTranslation()
+  const [name, setName] = useState('')
+  const [description, setDescription] = useState('')
+  const [repo, setRepo] = useState('')
+  const [saving, setSaving] = useState(false)
+
+  async function create() {
+    const projectName = name.trim()
+    if (!projectName) return
+    setSaving(true)
+    try {
+      await apiPost('/api/v1/projects', { name: projectName, description, repo })
+      onCreated(projectName)
+    } finally {
+      setSaving(false)
+    }
+  }
+
+  return (
+    <div className="fixed inset-0 z-50 flex items-start justify-center px-4 pt-[12vh]">
+      <div className="absolute inset-0 bg-black/30 backdrop-blur-[2px] dark:bg-black/50" onClick={onClose} />
+      <div className="relative w-full max-w-lg overflow-hidden rounded-xl border border-neutral-200/80 bg-white shadow-2xl dark:border-zinc-700/80 dark:bg-zinc-900">
+        <div className="flex items-center justify-between border-b border-neutral-200/80 px-5 py-3 dark:border-zinc-700/60">
+          <div>
+            <h2 className="text-sm font-semibold text-neutral-900 dark:text-zinc-100">{t('projects.createTitle')}</h2>
+            <p className="mt-0.5 text-xs text-neutral-500 dark:text-zinc-500">{t('projects.createHint')}</p>
+          </div>
+          <button type="button" onClick={onClose} className="rounded-md p-1 text-neutral-400 hover:bg-neutral-100 hover:text-neutral-700 dark:hover:bg-zinc-800 dark:hover:text-zinc-300">
+            <X className="size-4" strokeWidth={2} />
+          </button>
+        </div>
+        <div className="space-y-4 p-5">
+          <label className="block">
+            <span className="text-xs font-medium text-neutral-600 dark:text-zinc-400">{t('projects.name')}</span>
+            <input value={name} onChange={(e) => setName(e.target.value)} placeholder="tapnow-agent" className="mt-1 w-full rounded-lg border border-neutral-200 bg-white px-3 py-2 text-sm outline-none focus:border-sky-400 dark:border-zinc-700 dark:bg-zinc-950 dark:text-zinc-100" />
+          </label>
+          <label className="block">
+            <span className="text-xs font-medium text-neutral-600 dark:text-zinc-400">{t('projects.description')}</span>
+            <textarea value={description} onChange={(e) => setDescription(e.target.value)} rows={3} className="mt-1 w-full resize-y rounded-lg border border-neutral-200 bg-white px-3 py-2 text-sm outline-none focus:border-sky-400 dark:border-zinc-700 dark:bg-zinc-950 dark:text-zinc-100" />
+          </label>
+          <label className="block">
+            <span className="text-xs font-medium text-neutral-600 dark:text-zinc-400">{t('projects.repo')}</span>
+            <input value={repo} onChange={(e) => setRepo(e.target.value)} placeholder="https://github.com/org/repo or /repo/path" className="mt-1 w-full rounded-lg border border-neutral-200 bg-white px-3 py-2 text-sm outline-none focus:border-sky-400 dark:border-zinc-700 dark:bg-zinc-950 dark:text-zinc-100" />
+          </label>
+        </div>
+        <div className="flex justify-end gap-2 border-t border-neutral-200/80 px-5 py-3 dark:border-zinc-700/60">
+          <button type="button" onClick={onClose} className="rounded-lg px-3 py-2 text-sm font-medium text-neutral-600 hover:bg-neutral-100 dark:text-zinc-400 dark:hover:bg-zinc-800">{t('common.cancel')}</button>
+          <button type="button" onClick={() => void create()} disabled={saving || !name.trim()} className="rounded-lg bg-sky-600 px-3 py-2 text-sm font-medium text-white hover:bg-sky-700 disabled:opacity-50">
+            {saving ? t('common.creating') : t('projects.create')}
+          </button>
+        </div>
+      </div>
     </div>
   )
 }

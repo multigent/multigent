@@ -6,7 +6,8 @@
     "delete": "删除",
     "edit": "编辑",
     "confirm": "确认",
-    "add": "添加"
+    "add": "添加",
+    "creating": "创建中…"
   },
   "apiErrors": {
     "bad_request": "请求无法处理。",
@@ -297,6 +298,12 @@
   "projects": {
     "listEyebrow": "交付",
     "listSubtitle": "项目是干活的地方：进入后可管理任务、消息与项目内成员。团队侧负责编制与雇佣，再为项目配人。",
+    "create": "新建项目",
+    "createTitle": "新建项目",
+    "createHint": "创建一个空项目，后续可以添加成员、任务、调度和 Agent。",
+    "name": "项目名称",
+    "description": "项目描述",
+    "repo": "代码仓库或路径",
     "openDemo": "打开演示项目",
     "demoHintTitle": "演示项目",
     "demoHintBody": "使用 demo 预览侧栏：任务、消息、成员，均在同一 projectId 下，直到接入真实 API。",
@@ -348,6 +355,14 @@
     "catalogTitle": "Skills 技能库",
     "catalogHint": "工作区可用的全部 Skill，可展开查看和编辑 SKILL.md 内容。",
     "empty": "尚未定义 Skill。使用 CLI 或在 skills/ 目录下创建。",
+    "create": "新建 Skill",
+    "createTitle": "新建 Skill",
+    "createHint": "手写一个 Skill，或上传已有的 SKILL.md。",
+    "name": "Skill 名称",
+    "description": "描述",
+    "uploadMarkdown": "上传 Markdown 文件",
+    "contentPlaceholder": "# Skill: ...\n\n写清楚适用场景、工作流程、约束和示例。",
+    "registryHint": "后续可以在这里接入 npx skills 之类的安装源，把外部 Skill 安装到当前工作区。",
     "skills": "技能",
     "teamSkills": "团队技能",
     "roleSkills": "角色技能",

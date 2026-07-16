@@ -15,6 +15,12 @@ type skillRow struct {
 	Description string `json:"description,omitempty"`
 }
 
+type createSkillBody struct {
+	Name        string `json:"name"`
+	Description string `json:"description"`
+	Content     string `json:"content"`
+}
+
 func (s *Server) handleListSkills(w http.ResponseWriter, _ *http.Request) {
 	skills, err := s.st.ListSkills()
 	if err != nil {
@@ -54,6 +60,87 @@ func (s *Server) handleGetSkillDetail(w http.ResponseWriter, r *http.Request) {
 		"prompt":      prompt,
 		"dir":         s.st.SkillDir(name),
 	})
+}
+
+func (s *Server) handleCreateSkill(w http.ResponseWriter, r *http.Request) {
+	if !s.checkCurrentWorkspaceAdmin(w, r) {
+		return
+	}
+	var body createSkillBody
+	if err := s.readJSON(w, r, &body); err != nil {
+		s.jsonErrorCode(w, http.StatusBadRequest, ErrCodeInvalidJSON, "invalid JSON body")
+		return
+	}
+	name := strings.TrimSpace(body.Name)
+	if err := validateWorkspaceObjectName("skill", name); err != nil {
+		s.jsonErrorCode(w, http.StatusBadRequest, ErrCodeValidationFailed, err.Error())
+		return
+	}
+	if _, err := s.st.Skill(name); err == nil {
+		s.jsonErrorCode(w, http.StatusConflict, ErrCodeConflict, fmt.Sprintf("skill %q already exists", name))
+		return
+	} else if !isNotFoundErr(err) {
+		s.serverError(w, err)
+		return
+	}
+
+	var sb strings.Builder
+	sb.WriteString("---\n")
+	sb.WriteString(fmt.Sprintf("name: %s\n", name))
+	description := strings.TrimSpace(body.Description)
+	if description != "" {
+		sb.WriteString(fmt.Sprintf("description: %q\n", description))
+	}
+	sb.WriteString("---\n\n")
+	content := normalizeUploadedSkillContent(body.Content)
+	if content == "" {
+		sb.WriteString(fmt.Sprintf("# Skill: %s\n\n", name))
+		sb.WriteString("Describe when to use this skill, the workflow to follow, and any constraints.\n")
+	} else {
+		sb.WriteString(content)
+		if !strings.HasSuffix(content, "\n") {
+			sb.WriteString("\n")
+		}
+	}
+
+	skillDir := s.st.SkillDir(name)
+	if err := os.MkdirAll(skillDir, 0o755); err != nil {
+		s.serverError(w, err)
+		return
+	}
+	if err := os.WriteFile(filepath.Join(skillDir, "SKILL.md"), []byte(sb.String()), 0o644); err != nil {
+		s.serverError(w, err)
+		return
+	}
+	s.auditLog(auditLogInput{
+		Action:       "skill.create",
+		ResourceType: "skill",
+		ResourceID:   name,
+		Summary:      "Skill created",
+		After: map[string]any{
+			"name":        name,
+			"description": description,
+		},
+		Request: r,
+	})
+	w.WriteHeader(http.StatusCreated)
+	_ = json.NewEncoder(w).Encode(map[string]any{
+		"ok":    true,
+		"skill": name,
+	})
+}
+
+func normalizeUploadedSkillContent(content string) string {
+	content = strings.TrimSpace(content)
+	if !strings.HasPrefix(content, "---") {
+		return content
+	}
+	rest := content[3:]
+	idx := strings.Index(rest, "\n---")
+	if idx == -1 {
+		return content
+	}
+	return strings.TrimSpace(strings.TrimPrefix(rest[idx+4:], "\n"))
 }
 
 func (s *Server) handlePutSkillPrompt(w http.ResponseWriter, r *http.Request) {

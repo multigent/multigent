@@ -6,7 +6,8 @@
     "delete": "Delete",
     "edit": "Edit",
     "confirm": "Confirm",
-    "add": "Add"
+    "add": "Add",
+    "creating": "Creating…"
   },
   "apiErrors": {
     "bad_request": "The request could not be processed.",
@@ -297,6 +298,12 @@
   "projects": {
     "listEyebrow": "Delivery",
     "listSubtitle": "Projects are where execution happens: open one to manage tasks, messages, and on-project members. Teams are where you maintain roster and hire agents.",
+    "create": "New project",
+    "createTitle": "New project",
+    "createHint": "Create an empty project. You can add members, tasks, schedules, and agents next.",
+    "name": "Project name",
+    "description": "Description",
+    "repo": "Repository or path",
     "openDemo": "Open demo project",
     "demoHintTitle": "Demo project",
     "demoHintBody": "Use “demo” to preview the project sidebar: Tasks, Messages, Members—all scoped to one project ID until the API is wired.",
@@ -348,6 +355,14 @@
     "catalogTitle": "Skills Catalog",
     "catalogHint": "All skills available in this workspace. Expand to view and edit SKILL.md.",
     "empty": "No skills defined yet. Create one with the CLI or under skills/ directory.",
+    "create": "New skill",
+    "createTitle": "New skill",
+    "createHint": "Write a skill from scratch or upload an existing SKILL.md.",
+    "name": "Skill name",
+    "description": "Description",
+    "uploadMarkdown": "Upload Markdown file",
+    "contentPlaceholder": "# Skill: ...\n\nDescribe when to use it, the workflow, constraints, and examples.",
+    "registryHint": "Later this can connect to installers such as npx skills and install external skills into this workspace.",
     "skills": "Skills",
     "teamSkills": "Team skills",
     "roleSkills": "Role skills",
