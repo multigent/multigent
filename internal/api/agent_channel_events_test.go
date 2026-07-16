@@ -240,6 +240,20 @@ func TestAgentChannelSecurityPreservesConnectionSecret(t *testing.T) {
 	}
 }
 
+func TestAgentChannelResponseIncludesPublicMetadata(t *testing.T) {
+	resp := agentChannelToResponse(controldb.AgentChannelBinding{
+		ID:             "chan-one",
+		Provider:       "feishu",
+		Status:         "connected",
+		ConnectionID:   "conn-one",
+		ExternalChatID: "oc_one",
+		MetadataJSON:   `{"appId":"cli_app","accountsUrl":"https://accounts.feishu.cn"}`,
+	})
+	if resp.AppID != "cli_app" || resp.AccountsURL != "https://accounts.feishu.cn" || resp.ExternalChatID != "oc_one" {
+		t.Fatalf("response metadata missing: %#v", resp)
+	}
+}
+
 func TestAPIInteractionLeasePersistsRuntimeSessionID(t *testing.T) {
 	s, workspaceID := newConnectionGrantPolicyServer(t)
 	lease, err := s.acquireAgentInteractionLease(s.interactionAgentRef(workspaceID, "sample", "pm"), interaction.Source{

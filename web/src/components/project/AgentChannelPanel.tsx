@@ -14,6 +14,8 @@ type AgentChannel = {
   status: string
   connectionId?: string
   callbackUrl?: string
+  appId?: string
+  accountsUrl?: string
   externalBotId?: string
   externalChatId?: string
   externalOwnerId?: string
@@ -242,6 +244,13 @@ export function AgentChannelPanel({ project, agentName }: { project: string; age
                   {channel ? (
                     <div className="mt-1 space-y-1 text-xs text-neutral-400 dark:text-zinc-500">
                       <p>{t('agentChannels.connectedBy', { user: channel.createdBy || '-' })}</p>
+                      {channel.appId && <p>{t('agentChannels.appId', { appId: channel.appId })}</p>}
+                      <p>
+                        {channel.externalChatId
+                          ? t('agentChannels.chatBound', { chatId: channel.externalChatId })
+                          : t('agentChannels.chatPending')}
+                      </p>
+                      <p>{t('agentChannels.lastActivity', { time: channel.lastActivityAt ? new Date(channel.lastActivityAt).toLocaleString() : '-' })}</p>
                       {channel.callbackUrl && (
                         <div className="flex max-w-full items-center gap-1.5">
                           <span className="shrink-0">{t('agentChannels.callbackUrl')}</span>

@@ -20,6 +20,8 @@ type agentChannelResponse struct {
 	Status          string `json:"status"`
 	ConnectionID    string `json:"connectionId,omitempty"`
 	CallbackURL     string `json:"callbackUrl,omitempty"`
+	AppID           string `json:"appId,omitempty"`
+	AccountsURL     string `json:"accountsUrl,omitempty"`
 	ExternalBotID   string `json:"externalBotId,omitempty"`
 	ExternalChatID  string `json:"externalChatId,omitempty"`
 	ExternalOwnerID string `json:"externalOwnerId,omitempty"`
@@ -460,11 +462,18 @@ func (s *Server) findAgentChannelBinding(workspaceID, project, agent, provider s
 }
 
 func agentChannelToResponse(binding controldb.AgentChannelBinding) agentChannelResponse {
+	var meta struct {
+		AppID       string `json:"appId"`
+		AccountsURL string `json:"accountsUrl"`
+	}
+	_ = json.Unmarshal([]byte(binding.MetadataJSON), &meta)
 	return agentChannelResponse{
 		ID:              binding.ID,
 		Provider:        binding.Provider,
 		Status:          binding.Status,
 		ConnectionID:    binding.ConnectionID,
+		AppID:           meta.AppID,
+		AccountsURL:     meta.AccountsURL,
 		ExternalBotID:   binding.ExternalBotID,
 		ExternalChatID:  binding.ExternalChatID,
 		ExternalOwnerID: binding.ExternalOwnerID,
