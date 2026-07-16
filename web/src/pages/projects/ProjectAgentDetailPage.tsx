@@ -1224,6 +1224,7 @@ type RuntimeConnectionsResponse = {
 }
 
 function AgentRuntimeConnectionsPanel({ project, agentName }: { project: string; agentName: string }) {
+  const { t } = useTranslation()
   const [reloadKey, setReloadKey] = useState(0)
   const path = `/api/v1/projects/${encodeURIComponent(project)}/agents/${encodeURIComponent(agentName)}/runtime/connections`
   const state = useApiJson<RuntimeConnectionsResponse>(path, reloadKey)
@@ -1231,19 +1232,19 @@ function AgentRuntimeConnectionsPanel({ project, agentName }: { project: string;
   return (
     <section>
       <div className="flex items-center justify-between">
-        <SectionHeader icon={Cable} title="Runtime connections" />
+        <SectionHeader icon={Cable} title={t('members.runtimeConnections')} />
         <button
           type="button"
           onClick={() => setReloadKey(k => k + 1)}
           className="inline-flex items-center gap-1 rounded-md border border-neutral-200 bg-white px-2.5 py-1 text-xs font-medium text-neutral-600 transition-colors hover:border-neutral-300 hover:bg-neutral-50 dark:border-zinc-700 dark:bg-zinc-800 dark:text-zinc-300 dark:hover:border-zinc-600 dark:hover:bg-zinc-700"
         >
           <RefreshCw className="size-3.5" strokeWidth={1.8} />
-          Refresh
+          {t('common.refresh')}
         </button>
       </div>
       <div className="mt-3 rounded-lg border border-neutral-200/80 bg-white p-4 dark:border-zinc-700/60 dark:bg-zinc-900/40">
         {state.status === 'loading' && (
-          <p className="text-sm text-neutral-400 dark:text-zinc-500">Loading runtime connections...</p>
+          <p className="text-sm text-neutral-400 dark:text-zinc-500">{t('members.loadingRuntimeConnections')}</p>
         )}
         {state.status === 'error' && (
           <p className="text-sm text-red-500">{state.error.message}</p>

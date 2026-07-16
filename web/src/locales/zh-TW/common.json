@@ -410,6 +410,8 @@
     "apiProvider": "模型帳號",
     "configuration": "設定",
     "setupChecklist": "環境檢查",
+    "runtimeConnections": "執行時連線",
+    "loadingRuntimeConnections": "正在載入執行時連線…",
     "addEnvVar": "新增變數",
     "hiring": "僱用中…",
     "hire": "僱用"

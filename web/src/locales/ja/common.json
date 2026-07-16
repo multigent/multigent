@@ -410,6 +410,8 @@
     "apiProvider": "モデルアカウント",
     "configuration": "設定",
     "setupChecklist": "環境チェック",
+    "runtimeConnections": "ランタイム接続",
+    "loadingRuntimeConnections": "ランタイム接続を読み込み中…",
     "addEnvVar": "変数を追加",
     "hiring": "採用中…",
     "hire": "採用"

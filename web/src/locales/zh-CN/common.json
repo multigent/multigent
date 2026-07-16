@@ -410,6 +410,8 @@
     "apiProvider": "模型账号",
     "configuration": "配置",
     "setupChecklist": "环境检查",
+    "runtimeConnections": "运行时连接",
+    "loadingRuntimeConnections": "正在加载运行时连接…",
     "addEnvVar": "添加变量",
     "hiring": "雇佣中…",
     "hire": "雇佣"

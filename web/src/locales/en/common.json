@@ -410,6 +410,8 @@
     "apiProvider": "Model Account",
     "configuration": "Configuration",
     "setupChecklist": "Setup Checklist",
+    "runtimeConnections": "Runtime Connections",
+    "loadingRuntimeConnections": "Loading runtime connections…",
     "addEnvVar": "Add variable",
     "hiring": "Hiring…",
     "hire": "Hire"
