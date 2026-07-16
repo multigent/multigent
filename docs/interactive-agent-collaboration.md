@@ -47,6 +47,8 @@ This is not enough for the SaaS product direction because the external cc-connec
 
 cc-connect itself is still valuable. Its platform layer, especially Feishu/Lark message handling, card rendering, QR setup, retry logic, and event handling, is mature enough to reuse. The part we should not reuse as-is is the external agent execution ownership.
 
+The existing external cc-connect integration should be removed from the product path. This is a new project and we do not need to preserve a compatibility layer that asks users to configure a cc-connect API URL. The old code can be used as a reference while implementing the native Lark bridge, but the final Web product should expose Multigent-native connection settings only.
+
 ## Recommended Direction
 
 Build a first-class Multigent interaction layer and initially support only Feishu/Lark.
@@ -76,6 +78,23 @@ internal/runtime/session/
 ```
 
 Later we can add Slack, DingTalk, WeCom, Telegram, or other platforms using the same bridge interface. We should not expose "cc-connect instance URL" as a primary product setting in the final product.
+
+## MVP Target Experience
+
+The first shippable version should deliver this exact user experience:
+
+1. A user opens an agent detail page in Multigent.
+2. The page shows a "Connect Feishu/Lark" action when the agent is not connected.
+3. The user clicks the action and sees a QR-code based connection flow.
+4. After scanning and approving in Feishu/Lark, Multigent creates or binds the Feishu/Lark app bot connection.
+5. The agent detail page changes to "Connected to Feishu/Lark" and shows the connected bot/chat status.
+6. The user can open Feishu/Lark and directly message the created/bound app bot.
+7. The message enters the same Multigent agent session system as Web Chat.
+8. The agent replies in Feishu/Lark.
+9. The Web agent page shows the active session, latest connection status, and transcript/run state.
+10. If the agent is already running a task, the Feishu/Lark message joins or intervenes in that active session instead of creating a conflicting run.
+
+The MVP does not need multiple IM providers. It only needs Feishu/Lark to work well.
 
 ## Why Not Keep cc-connect As An External Dependency
 
@@ -310,23 +329,105 @@ The product should not automatically rewrite prompts from every chat. Instead, i
 
 ## Implementation Plan
 
-### Phase 1: Internal Session API
+### Phase 0: Remove External cc-connect Product Dependency
+
+Goal: remove the old external-service mental model before implementing the native bridge.
+
+Code changes:
+
+- Remove the user-facing cc-connect API URL/token settings from the Web settings flow.
+- Remove or hide `IMConnectionPanel` behavior that creates projects in an external cc-connect instance.
+- Remove backend routes whose only job is proxying to an external cc-connect service.
+- Keep any reusable reference code outside the runtime path, or copy selected Lark logic into the new native bridge modules.
+- Replace UI wording from "cc-connect" to "Feishu/Lark connection".
+
+Acceptance:
+
+- Users are never asked to configure a cc-connect endpoint.
+- Agent pages do not expose work directories, external cc-connect projects, or agent runtime types as IM setup concepts.
+- The only visible setup concept is connecting an agent to Feishu/Lark.
+
+### Phase 1: Internal Session API And Locking
 
 - Create `interactive_sessions` and `session_events` storage.
-- Refactor Web Chat to use `SessionManager` instead of directly spawning `multigent exec`.
+- Create a `SessionManager` that can acquire, send to, release, and force-unlock an agent session.
+- Refactor Web Chat to use `SessionManager` instead of directly spawning `multigent exec` from the handler.
 - Add strict per-agent active session lock.
+- Define lock reasons: `running_task`, `interactive`, `stopping`.
 - Persist transcript events separately from raw run logs.
 - Add scheduler skip behavior for locked agents.
+- Add audit events for session acquire, message send, run start, run stop, release, and force unlock.
+
+Acceptance:
+
+- Web Chat still works after the refactor.
+- Starting a Web Chat session locks the agent.
+- Scheduler does not assign a new task to a locked agent.
+- A running task can be observed and joined by a permitted human instead of being killed by a new chat request.
+- Force unlock requires manager/admin permission and writes an audit log.
 
 ### Phase 2: Lark Bridge MVP
 
-- Copy/vendor the minimum Feishu/Lark event and send logic from cc-connect.
-- Add workspace-level Lark app connection settings.
-- Add Feishu user binding to Multigent users.
-- Add project/agent chat binding.
-- Route incoming Lark messages to `SessionManager.Send`.
-- Return agent output to Feishu as text/card messages.
-- Audit every inbound message, outbound reply, and permission denial.
+Goal: connect a Feishu/Lark bot to one Multigent agent without external cc-connect.
+
+Backend:
+
+- Add workspace-level Lark app connection storage with encrypted `app_id` / `app_secret` or QR-derived credentials.
+- Add Lark setup endpoints:
+  - `POST /api/v1/lark/setup/begin`
+  - `POST /api/v1/lark/setup/poll`
+  - `POST /api/v1/lark/setup/complete`
+- Add Lark event callback or websocket/event receiver, depending on the chosen Lark connection mode.
+- Add tables for external identity and chat binding:
+
+```text
+external_identities
+  workspace_id
+  provider: lark
+  external_user_id
+  user_id
+  metadata_json
+
+agent_channel_bindings
+  workspace_id
+  project_id
+  agent_id
+  provider: lark
+  bot_id
+  chat_id
+  status
+  created_by
+```
+
+- Route inbound Lark messages through:
+
+```text
+Lark event
+  → verify signature/token
+  → map sender to Multigent user
+  → resolve bound agent
+  → check RBAC
+  → SessionManager.Send
+  → send reply to Lark
+  → audit
+```
+
+Frontend:
+
+- On the agent detail page, replace the old cc-connect panel with a native "Feishu/Lark" connection panel.
+- If disconnected, show "Connect Feishu/Lark".
+- On click, open a modal with QR code and setup progress.
+- After success, show connected status, bot/chat info, last activity time, and reconnect/disconnect actions.
+
+Acceptance:
+
+- User can connect an agent to Feishu/Lark from the agent page.
+- QR scan completes the setup.
+- Web shows "Connected to Feishu/Lark".
+- User can message the connected bot in Feishu/Lark.
+- The agent replies in Feishu/Lark using the same model account, sandbox, prompt, skills, and permissions configured in Multigent.
+- Every inbound and outbound message has an audit record.
+- Permission-denied Feishu/Lark messages get a friendly reply and are audited.
 
 ### Phase 3: Human Intervention UX
 
@@ -336,6 +437,13 @@ The product should not automatically rewrite prompts from every chat. Instead, i
 - Add transcript review and "distill into prompt/skill/doc/task template" actions.
 - Add Feishu shortcut cards for stop, continue, create task, and summarize.
 
+Acceptance:
+
+- A user can see whether an agent is idle, running a task, or currently in an interactive conversation.
+- If a task is running, a permitted user can enter the same session and add context.
+- Users can stop or release a session without corrupting the next run.
+- After a conversation, users can save useful context into docs, skills, prompt notes, or task templates.
+
 ### Phase 4: Runtime Improvements
 
 - Add persistent session runtime support where needed.
@@ -343,6 +451,13 @@ The product should not automatically rewrite prompts from every chat. Instead, i
 - Add idle timeout and cleanup for long-running containers/processes.
 - Add resource limits per active session.
 - Normalize streaming events across Codex, Claude Code, Gemini, and future runtimes.
+
+Acceptance:
+
+- Codex sessions can resume reliably across Lark/Web turns.
+- Claude Code has a clear path for long-running interactive sessions or a documented resume-based first version.
+- One agent cannot read another agent's CLI session files or credentials.
+- Idle sessions are cleaned up without losing durable transcript/run history.
 
 ## Open Questions
 
