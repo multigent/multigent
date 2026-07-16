@@ -15,6 +15,7 @@ import (
 	"sync"
 	"time"
 
+	"github.com/multigent/multigent/internal/builtins"
 	controldb "github.com/multigent/multigent/internal/db"
 	"github.com/multigent/multigent/internal/entity"
 	"github.com/multigent/multigent/internal/store"
@@ -67,6 +68,9 @@ type Server struct {
 // NewServer builds an API server for the given workspace root.
 // If apiKey is non-empty, requests must send Authorization: Bearer <apiKey>.
 func NewServer(root, apiKey string) *Server {
+	if err := builtins.EnsureSkills(root); err != nil {
+		log.Printf("ensure builtin skills failed: %v", err)
+	}
 	controlDB, err := controldb.OpenDefault()
 	if err != nil {
 		log.Fatalf("control DB unavailable: %v", err)

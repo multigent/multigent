@@ -13,6 +13,7 @@ import (
 	"text/template"
 	"time"
 
+	"github.com/multigent/multigent/internal/builtins"
 	"github.com/multigent/multigent/internal/entity"
 	"github.com/multigent/multigent/internal/store"
 	"gopkg.in/yaml.v3"
@@ -57,6 +58,9 @@ func InitAgency(root string, a *entity.Agency) error {
 		if err := os.MkdirAll(filepath.Join(root, dir), 0o755); err != nil {
 			return fmt.Errorf("scaffold: create %s dir: %w", dir, err)
 		}
+	}
+	if err := builtins.EnsureSkills(root); err != nil {
+		return fmt.Errorf("scaffold: builtin skills: %w", err)
 	}
 
 	if err := writeTemplateOnce(
