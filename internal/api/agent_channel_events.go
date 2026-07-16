@@ -16,6 +16,12 @@ import (
 	larkbridge "github.com/multigent/multigent/internal/imbridge/lark"
 )
 
+type resolvedChannelEventBinding struct {
+	Binding      controldb.AgentChannelBinding
+	SecretValues map[string]string
+	Identity     controldb.ExternalIdentity
+}
+
 func (s *Server) handleIMEvent(w http.ResponseWriter, r *http.Request) {
 	provider, ok := larkbridge.NormalizeProvider(r.PathValue("provider"))
 	if !ok {
@@ -55,7 +61,7 @@ func (s *Server) handleIMEvent(w http.ResponseWriter, r *http.Request) {
 		s.serverError(w, err)
 		return
 	}
-	binding, secretValues, found, err := s.resolveChannelEventBinding(workspaceID, provider, env.Header.AppID, event.Message.ChatID)
+	resolved, found, err := s.resolveChannelEventBinding(workspaceID, provider, env.Header.AppID, event.Message.ChatID, event.Sender.SenderID.OpenID)
 	if err != nil {
 		s.serverError(w, err)
 		return
@@ -64,19 +70,44 @@ func (s *Server) handleIMEvent(w http.ResponseWriter, r *http.Request) {
 		_ = json.NewEncoder(w).Encode(map[string]any{"ok": true, "ignored": true, "reason": "binding_not_found"})
 		return
 	}
+	if !s.userCanOperateAgent(resolved.Identity.UserID, resolved.Binding.ProjectID, resolved.Binding.AgentID) {
+		s.auditLog(auditLogInput{
+			WorkspaceID:  workspaceID,
+			ActorType:    "user",
+			ActorID:      resolved.Identity.UserID,
+			Action:       "agent_channel.permission_denied",
+			ResourceType: "agent_channel",
+			ResourceID:   resolved.Binding.ID,
+			Summary:      fmt.Sprintf("Denied %s message for %s/%s", provider, resolved.Binding.ProjectID, resolved.Binding.AgentID),
+			After: map[string]any{
+				"provider":       provider,
+				"externalUserId": event.Sender.SenderID.OpenID,
+				"messageId":      event.Message.MessageID,
+			},
+		})
+		_ = json.NewEncoder(w).Encode(map[string]any{"ok": true, "ignored": true, "reason": "permission_denied"})
+		return
+	}
 	_ = json.NewEncoder(w).Encode(map[string]any{"ok": true})
 
-	go s.runAgentForIMEvent(provider, binding, secretValues, event, text)
+	go s.runAgentForIMEvent(provider, resolved, event, text)
 }
 
-func (s *Server) resolveChannelEventBinding(workspaceID, provider, appID, chatID string) (controldb.AgentChannelBinding, map[string]string, bool, error) {
+func (s *Server) resolveChannelEventBinding(workspaceID, provider, appID, chatID, externalUserID string) (resolvedChannelEventBinding, bool, error) {
+	identity, ok, err := s.controlDB.ExternalIdentityByExternalID(workspaceID, provider, strings.TrimSpace(externalUserID))
+	if err != nil {
+		return resolvedChannelEventBinding{}, false, err
+	}
+	if !ok {
+		return resolvedChannelEventBinding{}, false, nil
+	}
 	bindings, err := s.controlDB.ListAgentChannelBindings(controldb.AgentChannelBindingFilter{
 		WorkspaceID: workspaceID,
 		Provider:    provider,
 		Status:      "connected",
 	})
 	if err != nil {
-		return controldb.AgentChannelBinding{}, nil, false, err
+		return resolvedChannelEventBinding{}, false, err
 	}
 	for _, binding := range bindings {
 		if binding.ExternalChatID != "" && chatID != "" && binding.ExternalChatID != chatID {
@@ -91,23 +122,24 @@ func (s *Server) resolveChannelEventBinding(workspaceID, provider, appID, chatID
 		}
 		secret, ok, err := s.controlDB.ConnectionSecret(binding.ConnectionID)
 		if err != nil {
-			return controldb.AgentChannelBinding{}, nil, false, err
+			return resolvedChannelEventBinding{}, false, err
 		}
 		if !ok {
 			continue
 		}
 		values, err := openConnectionSecret(secret)
 		if err != nil {
-			return controldb.AgentChannelBinding{}, nil, false, err
+			return resolvedChannelEventBinding{}, false, err
 		}
-		return binding, values, true, nil
+		return resolvedChannelEventBinding{Binding: binding, SecretValues: values, Identity: identity}, true, nil
 	}
-	return controldb.AgentChannelBinding{}, nil, false, nil
+	return resolvedChannelEventBinding{}, false, nil
 }
 
-func (s *Server) runAgentForIMEvent(provider string, binding controldb.AgentChannelBinding, secretValues map[string]string, event larkbridge.MessageEvent, text string) {
+func (s *Server) runAgentForIMEvent(provider string, resolved resolvedChannelEventBinding, event larkbridge.MessageEvent, text string) {
 	ctx, cancel := context.WithTimeout(context.Background(), 30*time.Minute)
 	defer cancel()
+	binding := resolved.Binding
 	if binding.ExternalChatID == "" && event.Message.ChatID != "" {
 		binding.ExternalChatID = event.Message.ChatID
 		binding.LastActivityAt = time.Now().UTC().Format(time.RFC3339)
@@ -116,8 +148,8 @@ func (s *Server) runAgentForIMEvent(provider string, binding controldb.AgentChan
 	}
 	s.auditLog(auditLogInput{
 		WorkspaceID:  binding.WorkspaceID,
-		ActorType:    "external_user",
-		ActorID:      firstNonEmptyString(event.Sender.SenderID.OpenID, event.Sender.SenderID.UserID, "unknown"),
+		ActorType:    "user",
+		ActorID:      resolved.Identity.UserID,
 		Action:       "agent_channel.message_received",
 		ResourceType: "agent_channel",
 		ResourceID:   binding.ID,
@@ -138,9 +170,9 @@ func (s *Server) runAgentForIMEvent(provider string, binding controldb.AgentChan
 	}
 	reply = trimForIM(reply, 3500)
 	client := larkbridge.OpenAPIClient{
-		BaseURL:   secretValues["baseUrl"],
-		AppID:     secretValues["appId"],
-		AppSecret: secretValues["appSecret"],
+		BaseURL:   resolved.SecretValues["baseUrl"],
+		AppID:     resolved.SecretValues["appId"],
+		AppSecret: resolved.SecretValues["appSecret"],
 	}
 	if err := client.ReplyText(ctx, event.Message.MessageID, reply); err != nil {
 		log.Printf("[im:%s] reply failed for %s/%s: %v", provider, binding.ProjectID, binding.AgentID, err)
@@ -161,6 +193,19 @@ func (s *Server) runAgentForIMEvent(provider string, binding controldb.AgentChan
 	})
 }
 
+func (s *Server) userCanOperateAgent(username, project, agent string) bool {
+	username = strings.TrimSpace(username)
+	if username == "" {
+		return false
+	}
+	req, err := http.NewRequest(http.MethodGet, "/", nil)
+	if err != nil {
+		return false
+	}
+	req = req.WithContext(context.WithValue(req.Context(), ctxUserKey, username))
+	return s.canOperateAgent(req, project, agent)
+}
+
 func (s *Server) execAgentPrompt(ctx context.Context, project, agent, prompt string) (string, error) {
 	args := []string{"--dir", s.root, "exec", "--project", project, "--agent", agent, "--prompt", prompt}
 	cmd := exec.CommandContext(ctx, s.sched.binPath, args...)
@@ -179,15 +224,6 @@ func trimForIM(s string, max int) string {
 	}
 	r := []rune(s)
 	return string(r[:max]) + "\n\n...(truncated)"
-}
-
-func firstNonEmptyString(values ...string) string {
-	for _, value := range values {
-		if strings.TrimSpace(value) != "" {
-			return strings.TrimSpace(value)
-		}
-	}
-	return ""
 }
 
 func errString(err error) string {

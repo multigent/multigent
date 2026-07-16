@@ -164,6 +164,19 @@ func (db *SQLiteStore) migrate() error {
 )`,
 		`CREATE INDEX IF NOT EXISTS idx_agent_channel_bindings_agent ON agent_channel_bindings(workspace_id, project_id, agent_id)`,
 		`CREATE INDEX IF NOT EXISTS idx_agent_channel_bindings_connection ON agent_channel_bindings(connection_id)`,
+		`CREATE TABLE IF NOT EXISTS external_identities (
+	id TEXT PRIMARY KEY,
+	workspace_id TEXT NOT NULL REFERENCES workspaces(id) ON DELETE CASCADE,
+	provider TEXT NOT NULL,
+	external_user_id TEXT NOT NULL,
+	user_id TEXT NOT NULL REFERENCES users(username) ON DELETE CASCADE,
+	metadata_json TEXT NOT NULL DEFAULT '{}',
+	created_by TEXT NOT NULL DEFAULT '',
+	created_at TEXT NOT NULL,
+	updated_at TEXT NOT NULL DEFAULT '',
+	UNIQUE(workspace_id, provider, external_user_id)
+)`,
+		`CREATE INDEX IF NOT EXISTS idx_external_identities_user ON external_identities(workspace_id, user_id)`,
 		`CREATE TABLE IF NOT EXISTS model_providers (
 	id TEXT NOT NULL,
 	workspace_id TEXT NOT NULL REFERENCES workspaces(id) ON DELETE CASCADE,

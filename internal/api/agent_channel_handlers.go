@@ -283,6 +283,27 @@ func (s *Server) saveLarkFamilyAgentChannel(r *http.Request, workspaceID, projec
 	if err := s.controlDB.UpsertAgentChannelBinding(binding); err != nil {
 		return controldb.AgentChannelBinding{}, err
 	}
+	if strings.TrimSpace(poll.OwnerOpenID) != "" {
+		metadataRaw, _ := json.Marshal(map[string]any{
+			"source":      "agent_channel_setup",
+			"project":     project,
+			"agent":       agent,
+			"connectedAt": now,
+		})
+		if err := s.controlDB.UpsertExternalIdentity(controldb.ExternalIdentity{
+			ID:             newChannelID("ext"),
+			WorkspaceID:    workspaceID,
+			Provider:       provider,
+			ExternalUserID: poll.OwnerOpenID,
+			UserID:         requestUsername(r),
+			MetadataJSON:   string(metadataRaw),
+			CreatedBy:      requestUsername(r),
+			CreatedAt:      now,
+			UpdatedAt:      now,
+		}); err != nil {
+			return controldb.AgentChannelBinding{}, err
+		}
+	}
 	s.auditLog(auditLogInput{
 		WorkspaceID:  workspaceID,
 		Action:       "agent_channel.connected",

@@ -72,6 +72,10 @@ type Store interface {
 	AgentChannelBindingByID(id string) (AgentChannelBinding, bool, error)
 	ListAgentChannelBindings(filter AgentChannelBindingFilter) ([]AgentChannelBinding, error)
 	DeleteAgentChannelBinding(id string) error
+
+	UpsertExternalIdentity(identity ExternalIdentity) error
+	ExternalIdentityByExternalID(workspaceID, provider, externalUserID string) (ExternalIdentity, bool, error)
+	ListExternalIdentities(filter ExternalIdentityFilter) ([]ExternalIdentity, error)
 }
 
 type SQLiteStore struct {
@@ -261,6 +265,25 @@ type AgentChannelBindingFilter struct {
 	Provider     string
 	ConnectionID string
 	Status       string
+}
+
+type ExternalIdentity struct {
+	ID             string
+	WorkspaceID    string
+	Provider       string
+	ExternalUserID string
+	UserID         string
+	MetadataJSON   string
+	CreatedBy      string
+	CreatedAt      string
+	UpdatedAt      string
+}
+
+type ExternalIdentityFilter struct {
+	WorkspaceID    string
+	Provider       string
+	ExternalUserID string
+	UserID         string
 }
 
 func OpenDefault() (*SQLiteStore, error) {
