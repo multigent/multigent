@@ -424,7 +424,9 @@ type ProviderRow = {
 }
 type WorkspaceAccessSummary = { currentUserCanAdmin?: boolean }
 
-const PROVIDER_TYPES = ['anthropic', 'openai', 'gemini', 'custom'] as const
+const OFFICIAL_PROVIDER_TYPES = ['openai', 'anthropic', 'gemini'] as const
+const GATEWAY_PROVIDER_TYPES = ['openai', 'anthropic', 'gemini', 'custom'] as const
+type ModelAccountMode = 'official' | 'gateway'
 
 type ProviderPreset = {
   id: string
@@ -433,20 +435,23 @@ type ProviderPreset = {
   baseUrl: string
   model: string
   hint: string
+  mode: ModelAccountMode
 }
 
 const MODEL_ACCOUNT_PRESETS: ProviderPreset[] = [
-  { id: 'anthropic', label: 'Anthropic Claude', type: 'anthropic', baseUrl: 'https://api.anthropic.com', model: 'claude-sonnet-4-20250514', hint: 'Claude Code' },
-  { id: 'openai', label: 'OpenAI', type: 'openai', baseUrl: 'https://api.openai.com/v1', model: 'gpt-5.1', hint: 'Codex' },
-  { id: 'openai-compatible', label: 'OpenAI Compatible', type: 'openai', baseUrl: '', model: '', hint: 'Codex / OpenAI-compatible gateways' },
-  { id: 'anthropic-compatible', label: 'Anthropic Compatible', type: 'anthropic', baseUrl: '', model: '', hint: 'Claude Code-compatible gateways' },
-  { id: 'deepseek-codex', label: 'DeepSeek for Codex', type: 'openai', baseUrl: 'https://api.deepseek.com', model: 'deepseek-v4-flash', hint: 'Codex via OpenAI-compatible API' },
-  { id: 'deepseek-claude', label: 'DeepSeek for Claude Code', type: 'anthropic', baseUrl: 'https://api.deepseek.com/anthropic', model: 'deepseek-v4-pro', hint: 'Claude Code-compatible API' },
-  { id: 'kimi-codex', label: 'Kimi for Codex', type: 'openai', baseUrl: 'https://api.moonshot.cn/v1', model: 'kimi-k2.7-code', hint: 'Codex via OpenAI-compatible API' },
-  { id: 'kimi-coding', label: 'Kimi Coding', type: 'openai', baseUrl: 'https://api.kimi.com/coding/v1', model: 'kimi-for-coding', hint: 'Codex coding endpoint' },
-  { id: 'openrouter', label: 'OpenRouter', type: 'openai', baseUrl: 'https://openrouter.ai/api/v1', model: '', hint: 'OpenAI-compatible model router' },
-  { id: 'gemini', label: 'Google Gemini', type: 'gemini', baseUrl: 'https://generativelanguage.googleapis.com', model: 'gemini-3.5-flash', hint: 'Gemini API key' },
+  { id: 'official-openai', label: 'OpenAI', type: 'openai', baseUrl: '', model: '', hint: 'Codex / Cursor', mode: 'official' },
+  { id: 'official-anthropic', label: 'Anthropic Claude', type: 'anthropic', baseUrl: '', model: '', hint: 'Claude Code', mode: 'official' },
+  { id: 'official-gemini', label: 'Google Gemini', type: 'gemini', baseUrl: '', model: '', hint: 'Gemini CLI', mode: 'official' },
+  { id: 'openai-compatible', label: 'OpenAI Compatible', type: 'openai', baseUrl: '', model: '', hint: 'Codex / OpenAI-compatible gateways', mode: 'gateway' },
+  { id: 'anthropic-compatible', label: 'Anthropic Compatible', type: 'anthropic', baseUrl: '', model: '', hint: 'Claude Code-compatible gateways', mode: 'gateway' },
+  { id: 'deepseek-codex', label: 'DeepSeek for Codex', type: 'openai', baseUrl: 'https://api.deepseek.com', model: 'deepseek-chat', hint: 'Codex via OpenAI-compatible API', mode: 'gateway' },
+  { id: 'deepseek-claude', label: 'DeepSeek for Claude Code', type: 'anthropic', baseUrl: 'https://api.deepseek.com/anthropic', model: 'deepseek-chat', hint: 'Claude Code-compatible API', mode: 'gateway' },
+  { id: 'kimi-codex', label: 'Kimi for Codex', type: 'openai', baseUrl: 'https://api.moonshot.cn/v1', model: 'kimi-k2-turbo-preview', hint: 'Codex via OpenAI-compatible API', mode: 'gateway' },
+  { id: 'kimi-coding', label: 'Kimi Coding', type: 'openai', baseUrl: 'https://api.kimi.com/coding/v1', model: 'kimi-for-coding', hint: 'Codex coding endpoint', mode: 'gateway' },
+  { id: 'openrouter', label: 'OpenRouter', type: 'openai', baseUrl: 'https://openrouter.ai/api/v1', model: '', hint: 'OpenAI-compatible model router', mode: 'gateway' },
 ]
+
+type ProviderDraft = Partial<ProviderRow> & { apiKey?: string; accountMode?: ModelAccountMode }
 
 function ProvidersSection() {
   const { t } = useTranslation()
@@ -455,7 +460,7 @@ function ProvidersSection() {
   const canCreateWorkspaceProvider = workspace?.currentUserCanAdmin ?? (!user || user.role === 'admin')
   const [providers, setProviders] = useState<ProviderRow[]>([])
   const [loading, setLoading] = useState(true)
-  const [editing, setEditing] = useState<Partial<ProviderRow> & { apiKey?: string } | null>(null)
+  const [editing, setEditing] = useState<ProviderDraft | null>(null)
   const [saving, setSaving] = useState(false)
   const [err, setErr] = useState<string | null>(null)
   const [showKey, setShowKey] = useState(false)
@@ -475,13 +480,13 @@ function ProvidersSection() {
   useEffect(() => { void refresh() }, [refresh])
 
   function openNew() {
-    setEditing({ ownerType: canCreateWorkspaceProvider ? 'workspace' : 'user', name: '', type: 'anthropic', baseUrl: 'https://api.anthropic.com', model: 'claude-sonnet-4-20250514', apiKey: '' })
+    setEditing({ accountMode: 'official', ownerType: canCreateWorkspaceProvider ? 'workspace' : 'user', name: 'OpenAI', type: 'openai', baseUrl: '', model: '', apiKey: '' })
     setShowKey(false)
     setErr(null)
   }
 
   function openEdit(p: ProviderRow) {
-    setEditing({ ...p, apiKey: '' })
+    setEditing({ ...p, accountMode: inferModelAccountMode(p), apiKey: '' })
     setShowKey(false)
     setErr(null)
   }
@@ -494,8 +499,8 @@ function ProvidersSection() {
         ownerType: editing.ownerType || (canCreateWorkspaceProvider ? 'workspace' : 'user'),
         name: editing.name,
         type: editing.type || 'anthropic',
-        baseUrl: editing.baseUrl || '',
-        model: editing.model || '',
+        baseUrl: editing.accountMode === 'official' ? '' : editing.baseUrl || '',
+        model: editing.accountMode === 'official' ? '' : editing.model || '',
       }
       if (editing.apiKey) body.apiKey = editing.apiKey
       if (editing.id) {
@@ -530,10 +535,44 @@ function ProvidersSection() {
     setEditing(prev => ({
       ...prev,
       name: prev?.name?.trim() ? prev.name : preset.label,
+      accountMode: preset.mode,
       type: preset.type,
       baseUrl: preset.baseUrl,
       model: preset.model,
     }))
+  }
+
+  function setAccountMode(mode: ModelAccountMode) {
+    setEditing(prev => {
+      if (!prev) return prev
+      if (mode === 'official') {
+        const nextType = isOfficialProviderType(prev.type) ? prev.type : 'openai'
+        return {
+          ...prev,
+          accountMode: 'official',
+          type: nextType,
+          baseUrl: '',
+          model: '',
+          name: prev.name?.trim() ? prev.name : providerOfficialName(nextType),
+        }
+      }
+      return {
+        ...prev,
+        accountMode: 'gateway',
+        type: prev.type || 'openai',
+      }
+    })
+  }
+
+  function setProviderType(type: string) {
+    setEditing(prev => {
+      if (!prev) return prev
+      return {
+        ...prev,
+        type,
+        name: prev.name?.trim() ? prev.name : (prev.accountMode === 'official' ? providerOfficialName(type) : ''),
+      }
+    })
   }
 
   const fieldCls = 'w-full rounded-md border border-neutral-200/80 bg-neutral-50/50 px-3 py-2 text-sm outline-none transition-colors focus:border-sky-400 dark:border-zinc-700/60 dark:bg-zinc-800/50 dark:text-zinc-200 dark:[color-scheme:dark]'
@@ -563,7 +602,9 @@ function ProvidersSection() {
               <div className="flex flex-col">
                 <span className="text-sm font-medium text-neutral-800 dark:text-zinc-200">{p.name}</span>
                 <span className="text-xs text-neutral-400 dark:text-zinc-500">
-                  {providerTypeLabel(p.type)}{p.model ? ` · ${p.model}` : ''}{p.baseUrl ? ` · ${p.baseUrl}` : ''}{p.hasKey ? ` · ${t('provider.keyConfigured')}` : ''}
+                  {inferModelAccountMode(p) === 'official' ? t('provider.officialBadge') : t('provider.gatewayBadge')}
+                  {' · '}{providerTypeLabel(p.type)}
+                  {p.model ? ` · ${p.model}` : ''}{p.baseUrl ? ` · ${p.baseUrl}` : ''}{p.hasKey ? ` · ${t('provider.keyConfigured')}` : ''}
                 </span>
               </div>
               <div className="flex items-center gap-2">
@@ -603,11 +644,37 @@ function ProvidersSection() {
             </div>
             <div className="space-y-3 px-5 py-4">
               {!editing.id && (
+                <div className="grid grid-cols-2 gap-2 rounded-lg bg-neutral-100 p-1 dark:bg-zinc-800/70">
+                  <button
+                    type="button"
+                    onClick={() => setAccountMode('official')}
+                    className={cn('rounded-md px-3 py-2 text-sm font-medium transition-colors',
+                      (editing.accountMode ?? 'official') === 'official'
+                        ? 'bg-white text-neutral-900 shadow-sm dark:bg-zinc-950 dark:text-zinc-100'
+                        : 'text-neutral-500 hover:text-neutral-800 dark:text-zinc-400 dark:hover:text-zinc-200'
+                    )}
+                  >
+                    {t('provider.modeOfficial')}
+                  </button>
+                  <button
+                    type="button"
+                    onClick={() => setAccountMode('gateway')}
+                    className={cn('rounded-md px-3 py-2 text-sm font-medium transition-colors',
+                      editing.accountMode === 'gateway'
+                        ? 'bg-white text-neutral-900 shadow-sm dark:bg-zinc-950 dark:text-zinc-100'
+                        : 'text-neutral-500 hover:text-neutral-800 dark:text-zinc-400 dark:hover:text-zinc-200'
+                    )}
+                  >
+                    {t('provider.modeGateway')}
+                  </button>
+                </div>
+              )}
+              {!editing.id && (
                 <label className="flex flex-col gap-1">
                   <span className="text-sm font-medium text-neutral-600 dark:text-zinc-400">{t('provider.presetLabel')}</span>
                   <select value="" onChange={e => applyPreset(e.target.value)} className={fieldCls}>
                     <option value="">{t('provider.presetPlaceholder')}</option>
-                    {MODEL_ACCOUNT_PRESETS.map(preset => (
+                    {MODEL_ACCOUNT_PRESETS.filter(preset => preset.mode === (editing.accountMode ?? 'official')).map(preset => (
                       <option key={preset.id} value={preset.id}>{preset.label} - {preset.hint}</option>
                     ))}
                   </select>
@@ -632,18 +699,27 @@ function ProvidersSection() {
               </label>
               <label className="flex flex-col gap-1">
                 <span className="text-sm font-medium text-neutral-600 dark:text-zinc-400">{t('provider.typeLabel')}</span>
-                <select value={editing.type ?? 'anthropic'} onChange={e => setEditing({ ...editing, type: e.target.value })} className={fieldCls}>
-                  {PROVIDER_TYPES.map(t => <option key={t} value={t}>{providerTypeLabel(t)}</option>)}
+                <select value={editing.type ?? 'openai'} onChange={e => setProviderType(e.target.value)} className={fieldCls}>
+                  {((editing.accountMode ?? 'official') === 'official' ? OFFICIAL_PROVIDER_TYPES : GATEWAY_PROVIDER_TYPES).map(t => <option key={t} value={t}>{providerTypeLabel(t)}</option>)}
                 </select>
               </label>
-              <label className="flex flex-col gap-1">
-                <span className="text-sm font-medium text-neutral-600 dark:text-zinc-400">{t('provider.endpointLabel')}</span>
-                <input value={editing.baseUrl ?? ''} onChange={e => setEditing({ ...editing, baseUrl: e.target.value })} className={cn(fieldCls, 'font-mono text-xs')} placeholder={providerEndpointPlaceholder(editing.type)} />
-              </label>
-              <label className="flex flex-col gap-1">
-                <span className="text-sm font-medium text-neutral-600 dark:text-zinc-400">{t('provider.modelLabel')}</span>
-                <input value={editing.model ?? ''} onChange={e => setEditing({ ...editing, model: e.target.value })} className={cn(fieldCls, 'font-mono text-xs')} placeholder="claude-sonnet-4-20250514" />
-              </label>
+              {(editing.accountMode ?? 'official') === 'official' ? (
+                <p className="rounded-lg border border-sky-100 bg-sky-50 px-3 py-2 text-xs leading-5 text-sky-700 dark:border-sky-900/50 dark:bg-sky-900/20 dark:text-sky-300">
+                  {t('provider.officialHint')}
+                </p>
+              ) : (
+                <>
+                  <label className="flex flex-col gap-1">
+                    <span className="text-sm font-medium text-neutral-600 dark:text-zinc-400">{t('provider.endpointLabel')}</span>
+                    <input value={editing.baseUrl ?? ''} onChange={e => setEditing({ ...editing, baseUrl: e.target.value })} className={cn(fieldCls, 'font-mono text-xs')} placeholder={providerEndpointPlaceholder(editing.type)} />
+                  </label>
+                  <label className="flex flex-col gap-1">
+                    <span className="text-sm font-medium text-neutral-600 dark:text-zinc-400">{t('provider.defaultModelLabel')}</span>
+                    <input value={editing.model ?? ''} onChange={e => setEditing({ ...editing, model: e.target.value })} className={cn(fieldCls, 'font-mono text-xs')} placeholder={providerModelPlaceholder(editing.type)} />
+                  </label>
+                  <p className="text-xs leading-5 text-neutral-400 dark:text-zinc-500">{t('provider.gatewayHint')}</p>
+                </>
+              )}
               <label className="flex flex-col gap-1">
                 <span className="text-sm font-medium text-neutral-600 dark:text-zinc-400">{t('provider.apiKeyLabel')}</span>
                 <div className="flex items-center gap-2">
@@ -690,12 +766,40 @@ function providerTypeLabel(type?: string): string {
   }
 }
 
+function inferModelAccountMode(provider: Pick<ProviderRow, 'baseUrl' | 'type'>): ModelAccountMode {
+  if (provider.baseUrl?.trim()) return 'gateway'
+  if (isOfficialProviderType(provider.type)) return 'official'
+  return 'gateway'
+}
+
+function isOfficialProviderType(type?: string): type is typeof OFFICIAL_PROVIDER_TYPES[number] {
+  return type === 'openai' || type === 'anthropic' || type === 'gemini'
+}
+
+function providerOfficialName(type?: string): string {
+  switch (type) {
+    case 'anthropic': return 'Anthropic Claude'
+    case 'gemini': return 'Google Gemini'
+    case 'openai':
+    default: return 'OpenAI'
+  }
+}
+
 function providerEndpointPlaceholder(type?: string): string {
   switch (type) {
-    case 'openai': return 'https://api.openai.com/v1'
-    case 'gemini': return 'https://generativelanguage.googleapis.com'
-    case 'anthropic': return 'https://api.anthropic.com'
+    case 'openai': return 'https://api.example.com/v1'
+    case 'gemini': return 'https://generativelanguage.example.com'
+    case 'anthropic': return 'https://api.example.com/anthropic'
     default: return 'https://api.example.com'
+  }
+}
+
+function providerModelPlaceholder(type?: string): string {
+  switch (type) {
+    case 'anthropic': return 'claude-sonnet-4-20250514'
+    case 'gemini': return 'gemini-3.5-flash'
+    case 'openai':
+    default: return 'gpt-5.6-sol'
   }
 }
 
