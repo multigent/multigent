@@ -37,12 +37,7 @@ func (s *Server) handleIMEvent(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	if encryptedPayload, encrypted := channelProvider.ExtractEncryptedPayload(raw); encrypted {
-		workspaceID, err := s.currentWorkspaceID()
-		if err != nil {
-			s.serverError(w, err)
-			return
-		}
-		decrypted, ok, err := s.decryptIMEvent(workspaceID, channelProvider, encryptedPayload)
+		decrypted, ok, err := s.decryptIMEvent(channelProvider, encryptedPayload)
 		if err != nil {
 			s.serverError(w, err)
 			return
@@ -72,12 +67,7 @@ func (s *Server) handleIMEvent(w http.ResponseWriter, r *http.Request) {
 		_ = json.NewEncoder(w).Encode(map[string]any{"ok": true, "ignored": true})
 		return
 	}
-	workspaceID, err := s.currentWorkspaceID()
-	if err != nil {
-		s.serverError(w, err)
-		return
-	}
-	resolved, found, err := s.resolveChannelEventBinding(workspaceID, provider, parsed.AppID, message.ChatID, message.SenderOpenID)
+	resolved, found, err := s.resolveChannelEventBinding(provider, parsed.AppID, message.ChatID, message.SenderOpenID)
 	if err != nil {
 		s.serverError(w, err)
 		return
@@ -88,7 +78,7 @@ func (s *Server) handleIMEvent(w http.ResponseWriter, r *http.Request) {
 	}
 	if !channelProvider.ShouldHandleMessage(resolved.Binding.ExternalChatID, message) {
 		s.auditLog(auditLogInput{
-			WorkspaceID:  workspaceID,
+			WorkspaceID:  resolved.Binding.WorkspaceID,
 			ActorType:    "user",
 			ActorID:      resolved.Identity.UserID,
 			Action:       "agent_channel.message_ignored",
@@ -107,7 +97,7 @@ func (s *Server) handleIMEvent(w http.ResponseWriter, r *http.Request) {
 	}
 	if !verifyIMEventToken(parsed.VerificationToken, resolved.SecretValues) {
 		s.auditLog(auditLogInput{
-			WorkspaceID:  workspaceID,
+			WorkspaceID:  resolved.Binding.WorkspaceID,
 			Action:       "agent_channel.verification_failed",
 			ResourceType: "agent_channel",
 			ResourceID:   resolved.Binding.ID,
@@ -121,9 +111,9 @@ func (s *Server) handleIMEvent(w http.ResponseWriter, r *http.Request) {
 		_ = json.NewEncoder(w).Encode(map[string]any{"ok": true, "ignored": true, "reason": "verification_failed"})
 		return
 	}
-	if !s.userCanOperateAgent(resolved.Identity.UserID, resolved.Binding.ProjectID, resolved.Binding.AgentID) {
+	if !s.userCanOperateAgentInWorkspace(resolved.Identity.UserID, resolved.Binding.WorkspaceID, resolved.Binding.ProjectID, resolved.Binding.AgentID) {
 		s.auditLog(auditLogInput{
-			WorkspaceID:  workspaceID,
+			WorkspaceID:  resolved.Binding.WorkspaceID,
 			ActorType:    "user",
 			ActorID:      resolved.Identity.UserID,
 			Action:       "agent_channel.permission_denied",
@@ -144,12 +134,11 @@ func (s *Server) handleIMEvent(w http.ResponseWriter, r *http.Request) {
 	go s.runAgentForIMEvent(channelProvider, resolved, message, text)
 }
 
-func (s *Server) decryptIMEvent(workspaceID string, provider imbridge.Provider, encryptedPayload string) ([]byte, bool, error) {
+func (s *Server) decryptIMEvent(provider imbridge.Provider, encryptedPayload string) ([]byte, bool, error) {
 	providerID := provider.Info().ID
 	bindings, err := s.controlDB.ListAgentChannelBindings(controldb.AgentChannelBindingFilter{
-		WorkspaceID: workspaceID,
-		Provider:    providerID,
-		Status:      "connected",
+		Provider: providerID,
+		Status:   "connected",
 	})
 	if err != nil {
 		return nil, false, err
@@ -178,16 +167,29 @@ func (s *Server) decryptIMEvent(workspaceID string, provider imbridge.Provider, 
 	return nil, false, nil
 }
 
-func (s *Server) resolveChannelEventBinding(workspaceID, provider, appID, chatID, externalUserID string) (resolvedChannelEventBinding, bool, error) {
-	identity, ok, err := s.controlDB.ExternalIdentityByExternalID(workspaceID, provider, strings.TrimSpace(externalUserID))
+func (s *Server) resolveChannelEventBinding(provider, appID, chatID, externalUserID string) (resolvedChannelEventBinding, bool, error) {
+	identities, err := s.controlDB.ListExternalIdentities(controldb.ExternalIdentityFilter{
+		Provider:       provider,
+		ExternalUserID: strings.TrimSpace(externalUserID),
+	})
 	if err != nil {
 		return resolvedChannelEventBinding{}, false, err
 	}
-	if !ok {
+	if len(identities) == 0 {
 		return resolvedChannelEventBinding{}, false, nil
 	}
+	for _, identity := range identities {
+		resolved, found, err := s.resolveChannelEventBindingForIdentity(identity, provider, appID, chatID)
+		if err != nil || found {
+			return resolved, found, err
+		}
+	}
+	return resolvedChannelEventBinding{}, false, nil
+}
+
+func (s *Server) resolveChannelEventBindingForIdentity(identity controldb.ExternalIdentity, provider, appID, chatID string) (resolvedChannelEventBinding, bool, error) {
 	bindings, err := s.controlDB.ListAgentChannelBindings(controldb.AgentChannelBindingFilter{
-		WorkspaceID: workspaceID,
+		WorkspaceID: identity.WorkspaceID,
 		Provider:    provider,
 		Status:      "connected",
 	})
@@ -347,16 +349,39 @@ func (s *Server) replyToIMEvent(ctx context.Context, provider imbridge.Provider,
 }
 
 func (s *Server) userCanOperateAgent(username, project, agent string) bool {
+	workspaceID, err := s.currentWorkspaceID()
+	if err != nil {
+		return false
+	}
+	return s.userCanOperateAgentInWorkspace(username, workspaceID, project, agent)
+}
+
+func (s *Server) userCanOperateAgentInWorkspace(username, workspaceID, project, agent string) bool {
 	username = strings.TrimSpace(username)
 	if username == "" {
 		return false
 	}
-	req, err := http.NewRequest(http.MethodGet, "/", nil)
-	if err != nil {
-		return false
+	if username == "apikey" {
+		return true
 	}
-	req = req.WithContext(context.WithValue(req.Context(), ctxUserKey, username))
-	return s.canOperateAgent(req, project, agent)
+	cur := s.users.GetUser(username)
+	if cur == nil {
+		cur = &userRecord{Username: username, Role: RoleMember}
+	}
+	if cur.Role == RoleAdmin {
+		return true
+	}
+	if s.controlDB != nil {
+		member, ok, err := s.controlDB.WorkspaceMember(workspaceID, username)
+		if err == nil && ok && (member.Role == WorkspaceRoleOwner || member.Role == WorkspaceRoleAdmin) {
+			return true
+		}
+	}
+	role, ok := s.users.HasProjectAccess(username, project)
+	if ok && projectRoleLevel(role) >= projectRoleLevel(ProjectRoleOperator) {
+		return true
+	}
+	return currentUserLinkedAgent(cur, project+"/"+agent)
 }
 
 func verifyIMEventToken(token string, values map[string]string) bool {

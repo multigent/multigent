@@ -52,7 +52,7 @@ func TestChannelEventBindingRequiresExternalIdentity(t *testing.T) {
 		t.Fatalf("binding: %v", err)
 	}
 
-	if _, found, err := s.resolveChannelEventBinding(workspaceID, "feishu", "cli_app", "", "ou_missing"); err != nil || found {
+	if _, found, err := s.resolveChannelEventBinding("feishu", "cli_app", "", "ou_missing"); err != nil || found {
 		t.Fatalf("missing identity found=%v err=%v", found, err)
 	}
 	if err := s.controlDB.UpsertExternalIdentity(controldb.ExternalIdentity{
@@ -64,12 +64,79 @@ func TestChannelEventBindingRequiresExternalIdentity(t *testing.T) {
 	}); err != nil {
 		t.Fatalf("identity: %v", err)
 	}
-	resolved, found, err := s.resolveChannelEventBinding(workspaceID, "feishu", "cli_app", "", "ou_owner")
+	resolved, found, err := s.resolveChannelEventBinding("feishu", "cli_app", "", "ou_owner")
 	if err != nil || !found {
 		t.Fatalf("resolve found=%v err=%v", found, err)
 	}
 	if resolved.Identity.UserID != "owner" || resolved.Binding.ID != "chan-feishu" || resolved.SecretValues["appSecret"] != "secret" {
 		t.Fatalf("resolved=%#v secrets=%#v", resolved, resolved.SecretValues)
+	}
+}
+
+func TestChannelEventBindingResolvesAcrossWorkspaces(t *testing.T) {
+	s, currentWorkspaceID := newConnectionGrantPolicyServer(t)
+	workspaceID := "ws-second"
+	if err := s.controlDB.UpsertWorkspace(controldb.Workspace{ID: workspaceID, Name: "Second", Slug: "second"}); err != nil {
+		t.Fatalf("workspace: %v", err)
+	}
+	if err := s.users.CreateUser("second-owner", "pass123", RoleMember, "", "", "", "", ""); err != nil {
+		t.Fatalf("create user: %v", err)
+	}
+	if err := s.controlDB.UpsertWorkspaceMember(workspaceID, "second-owner", WorkspaceRoleMember); err != nil {
+		t.Fatalf("workspace member: %v", err)
+	}
+	if err := s.controlDB.UpsertConnection(controldb.Connection{
+		ID:             "conn-feishu-second",
+		WorkspaceID:    workspaceID,
+		Provider:       "feishu",
+		ConnectionName: "agent-sample-pm",
+		OwnerType:      ConnectionOwnerWorkspace,
+		OwnerID:        workspaceID,
+		AuthType:       "app_secret",
+		Status:         "active",
+		ProfileJSON:    "{}",
+	}); err != nil {
+		t.Fatalf("connection: %v", err)
+	}
+	secret, err := sealConnectionSecret(map[string]string{"baseUrl": "https://open.feishu.cn", "appId": "cli_second", "appSecret": "second-secret"})
+	if err != nil {
+		t.Fatalf("seal secret: %v", err)
+	}
+	secret.ConnectionID = "conn-feishu-second"
+	if err := s.controlDB.UpsertConnectionSecret(secret); err != nil {
+		t.Fatalf("secret: %v", err)
+	}
+	if err := s.controlDB.UpsertAgentChannelBinding(controldb.AgentChannelBinding{
+		ID:           "chan-feishu-second",
+		WorkspaceID:  workspaceID,
+		ProjectID:    "sample",
+		AgentID:      "pm",
+		Provider:     "feishu",
+		ConnectionID: "conn-feishu-second",
+		Status:       "connected",
+		MetadataJSON: `{"appId":"cli_second"}`,
+	}); err != nil {
+		t.Fatalf("binding: %v", err)
+	}
+	if err := s.controlDB.UpsertExternalIdentity(controldb.ExternalIdentity{
+		ID:             "ext-feishu-second",
+		WorkspaceID:    workspaceID,
+		Provider:       "feishu",
+		ExternalUserID: "ou_second",
+		UserID:         "second-owner",
+	}); err != nil {
+		t.Fatalf("identity: %v", err)
+	}
+
+	resolved, found, err := s.resolveChannelEventBinding("feishu", "cli_second", "", "ou_second")
+	if err != nil || !found {
+		t.Fatalf("resolve found=%v err=%v", found, err)
+	}
+	if currentWorkspaceID == workspaceID {
+		t.Fatalf("test setup expected a distinct current workspace")
+	}
+	if resolved.Binding.WorkspaceID != workspaceID || resolved.Binding.ID != "chan-feishu-second" || resolved.SecretValues["appSecret"] != "second-secret" {
+		t.Fatalf("resolved wrong workspace binding: %#v secrets=%#v", resolved.Binding, resolved.SecretValues)
 	}
 }
 
@@ -146,7 +213,7 @@ func TestDecryptIMEventUsesConfiguredProviderKey(t *testing.T) {
 	plaintext := []byte(`{"schema":"2.0","header":{"event_type":"url_verification"},"challenge":"ok"}`)
 	encrypted := encryptLarkEventForAPITest(t, plaintext, "encrypt-one")
 	feishu, _ := imbridge.LookupProvider("feishu")
-	decrypted, ok, err := s.decryptIMEvent(workspaceID, feishu, encrypted)
+	decrypted, ok, err := s.decryptIMEvent(feishu, encrypted)
 	if err != nil || !ok {
 		t.Fatalf("decrypt ok=%v err=%v", ok, err)
 	}
@@ -154,7 +221,7 @@ func TestDecryptIMEventUsesConfiguredProviderKey(t *testing.T) {
 		t.Fatalf("decrypted=%s", decrypted)
 	}
 	lark, _ := imbridge.LookupProvider("lark")
-	if _, ok, err := s.decryptIMEvent(workspaceID, lark, encrypted); err != nil || ok {
+	if _, ok, err := s.decryptIMEvent(lark, encrypted); err != nil || ok {
 		t.Fatalf("wrong provider should not decrypt ok=%v err=%v", ok, err)
 	}
 }
