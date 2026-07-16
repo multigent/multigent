@@ -15,7 +15,7 @@ import { useApiJson } from '../../lib/use-api'
 import { apiFetch, apiPost, apiPut, apiDelete, apiPatch } from '../../lib/api'
 import { canConfigureAgent, canManageProject, canOperateAgent, useAuth } from '../../lib/auth'
 import { Pagination } from '../../components/ui/Pagination'
-import { IMConnectionPanel } from '../../components/project/IMConnectionPanel'
+import { AgentChannelPanel } from '../../components/project/AgentChannelPanel'
 
 const AGENT_MODELS = [
   'claudecode', 'codex', 'cursor', 'gemini',
@@ -802,12 +802,10 @@ export default function ProjectAgentDetailPage() {
 
               {canConfigureThisAgent && (
                 <>
-                  {/* IM Connections */}
-                  <IMConnectionPanel
+                  {/* Agent channels */}
+                  <AgentChannelPanel
                     project={projectId}
                     agentName={agentName}
-                    model={ctx.model}
-                    workDir={ctx.workDir}
                   />
 
                   <AgentRuntimeConnectionsPanel project={projectId} agentName={agentName} />

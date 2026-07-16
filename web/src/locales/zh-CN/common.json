@@ -1367,6 +1367,25 @@
     "add": "添加变量",
     "empty": "暂未设置环境变量"
   },
+  "agentChannels": {
+    "title": "飞书 / Lark",
+    "subtitle": "把这个 Agent 接入日常 IM，让成员可以在已有工作流里介入协作。",
+    "connect": "连接",
+    "connected": "已连接",
+    "notConnected": "未连接",
+    "connectHint": "扫码为这个 Agent 创建或绑定应用机器人。",
+    "connectedBy": "连接人：{{user}}",
+    "disconnect": "断开连接",
+    "disconnectConfirm": "确定断开这个 Agent 的 {{provider}} 连接吗？",
+    "scanToConnect": "连接 {{provider}}",
+    "preparingQr": "正在准备二维码...",
+    "scanHint": "使用 {{provider}} 扫码并确认应用机器人连接。",
+    "waitingApproval": "等待确认中...",
+    "connectedReady": "{{provider}} 已连接。现在可以直接给机器人发消息来和这个 Agent 协作。",
+    "setupFailed": "连接失败",
+    "denied": "授权已拒绝",
+    "expired": "二维码已过期"
+  },
   "sandbox": {
     "title": "运行环境",
     "provider": "运行模式",

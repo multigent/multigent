@@ -67,6 +67,11 @@ type Store interface {
 	CreateConnectionGrant(grant ConnectionGrant) error
 	DeleteConnectionGrant(id string) error
 	ListConnectionGrants(connectionID string) ([]ConnectionGrant, error)
+
+	UpsertAgentChannelBinding(binding AgentChannelBinding) error
+	AgentChannelBindingByID(id string) (AgentChannelBinding, bool, error)
+	ListAgentChannelBindings(filter AgentChannelBindingFilter) ([]AgentChannelBinding, error)
+	DeleteAgentChannelBinding(id string) error
 }
 
 type SQLiteStore struct {
@@ -229,6 +234,33 @@ type ConnectionGrant struct {
 	TargetID     string
 	CreatedBy    string
 	CreatedAt    string
+}
+
+type AgentChannelBinding struct {
+	ID              string
+	WorkspaceID     string
+	ProjectID       string
+	AgentID         string
+	Provider        string
+	ConnectionID    string
+	ExternalBotID   string
+	ExternalChatID  string
+	ExternalOwnerID string
+	Status          string
+	MetadataJSON    string
+	CreatedBy       string
+	CreatedAt       string
+	UpdatedAt       string
+	LastActivityAt  string
+}
+
+type AgentChannelBindingFilter struct {
+	WorkspaceID  string
+	ProjectID    string
+	AgentID      string
+	Provider     string
+	ConnectionID string
+	Status       string
 }
 
 func OpenDefault() (*SQLiteStore, error) {

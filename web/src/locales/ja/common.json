@@ -1367,6 +1367,25 @@
     "add": "変数追加",
     "empty": "環境変数は設定されていません"
   },
+  "agentChannels": {
+    "title": "Feishu / Lark",
+    "subtitle": "このエージェントを日常のIMに接続し、既存のワークフローから介入できるようにします。",
+    "connect": "接続",
+    "connected": "接続済み",
+    "notConnected": "未接続",
+    "connectHint": "QRコードをスキャンして、このエージェント用のアプリボットを作成またはバインドします。",
+    "connectedBy": "{{user}} が接続",
+    "disconnect": "切断",
+    "disconnectConfirm": "このエージェントから {{provider}} を切断しますか？",
+    "scanToConnect": "{{provider}} に接続",
+    "preparingQr": "QRコードを準備しています...",
+    "scanHint": "{{provider}} でスキャンしてアプリボット接続を承認してください。",
+    "waitingApproval": "承認待ち...",
+    "connectedReady": "{{provider}} に接続しました。ボットにメッセージしてこのエージェントと作業できます。",
+    "setupFailed": "接続に失敗しました",
+    "denied": "承認が拒否されました",
+    "expired": "QRコードの有効期限が切れました"
+  },
   "sandbox": {
     "title": "実行環境",
     "provider": "実行モード",

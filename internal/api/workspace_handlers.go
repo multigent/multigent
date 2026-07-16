@@ -488,7 +488,6 @@ func (s *Server) switchWorkspaceRoot(root string) error {
 	s.sched = newSchedulerManager(absRoot)
 	s.triggers = newTriggerManager(absRoot, s.sched.binPath, s.ts)
 	s.triggers.StartPoller()
-	s.ccStore = store.NewCCConnectStore(absRoot)
 	s.okrStore = store.NewOKRStore(absRoot)
 	s.msStore = store.NewMilestoneStore(absRoot)
 	return s.markWorkspaceOpened(absRoot)

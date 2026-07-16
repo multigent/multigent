@@ -1367,6 +1367,25 @@
     "add": "Add Variable",
     "empty": "No environment variables set"
   },
+  "agentChannels": {
+    "title": "Feishu / Lark",
+    "subtitle": "Connect this agent to workplace chat so people can intervene from the tools they already use.",
+    "connect": "Connect",
+    "connected": "Connected",
+    "notConnected": "Not connected",
+    "connectHint": "Scan to create or bind an app bot for this agent.",
+    "connectedBy": "Connected by {{user}}",
+    "disconnect": "Disconnect",
+    "disconnectConfirm": "Disconnect {{provider}} from this agent?",
+    "scanToConnect": "Connect {{provider}}",
+    "preparingQr": "Preparing QR code...",
+    "scanHint": "Scan with {{provider}} and approve the app bot connection.",
+    "waitingApproval": "Waiting for approval...",
+    "connectedReady": "{{provider}} is connected. You can now message the bot to work with this agent.",
+    "setupFailed": "Connection failed",
+    "denied": "Authorization denied",
+    "expired": "QR code expired"
+  },
   "sandbox": {
     "title": "Runtime Environment",
     "provider": "Run Mode",

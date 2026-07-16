@@ -52,7 +52,6 @@ type Server struct {
 	sched                  *SchedulerManager
 	schedulerDesiredMu     sync.Mutex
 	triggers               *triggerManager
-	ccStore                *store.CCConnectStore
 	okrStore               *store.OKRStore
 	msStore                *store.MilestoneStore
 	updateCheck            UpdateChecker
@@ -88,7 +87,6 @@ func NewServer(root, apiKey string) *Server {
 		users:     newUserStore(controlDB),
 		sched:     sched,
 		triggers:  tm,
-		ccStore:   store.NewCCConnectStore(root),
 		okrStore:  store.NewOKRStore(root),
 		msStore:   store.NewMilestoneStore(root),
 		execProcs: make(map[string]*execProcess),
@@ -198,6 +196,10 @@ func (s *Server) Handler() http.Handler {
 	mux.HandleFunc("POST /api/v1/projects/{name}/agents/{agent}/runtime/token", s.handleIssueAgentRuntimeToken)
 	mux.HandleFunc("GET /api/v1/projects/{name}/agents/{agent}/runtime/connections", s.handleAgentRuntimeConnections)
 	mux.HandleFunc("GET /api/v1/projects/{name}/agents/{agent}/context", s.handleGetAgentContext)
+	mux.HandleFunc("GET /api/v1/projects/{name}/agents/{agent}/channels", s.handleAgentChannels)
+	mux.HandleFunc("POST /api/v1/projects/{name}/agents/{agent}/channels/{provider}/setup/begin", s.handleAgentChannelSetupBegin)
+	mux.HandleFunc("POST /api/v1/projects/{name}/agents/{agent}/channels/{provider}/setup/poll", s.handleAgentChannelSetupPoll)
+	mux.HandleFunc("DELETE /api/v1/projects/{name}/agents/{agent}/channels/{provider}", s.handleAgentChannelDelete)
 	mux.HandleFunc("GET /api/v1/projects/{name}/agents/{agent}/chat/history", s.handleAgentChatHistory)
 	mux.HandleFunc("POST /api/v1/projects/{name}/agents/{agent}/chat", s.handleAgentChat)
 	mux.HandleFunc("DELETE /api/v1/projects/{name}/agents/{agent}/chat", s.handleAgentChatStop)
@@ -287,23 +289,6 @@ func (s *Server) Handler() http.Handler {
 	mux.HandleFunc("GET /api/v1/projects/{name}/milestones/{msId}", s.handleGetMilestone)
 	mux.HandleFunc("PUT /api/v1/projects/{name}/milestones/{msId}", s.handleUpdateMilestone)
 	mux.HandleFunc("DELETE /api/v1/projects/{name}/milestones/{msId}", s.handleDeleteMilestone)
-
-	mux.HandleFunc("GET /api/v1/ccconnect/config", s.handleCCConnectGetConfig)
-	mux.HandleFunc("PUT /api/v1/ccconnect/config", s.handleCCConnectPutConfig)
-	mux.HandleFunc("POST /api/v1/ccconnect/test", s.handleCCConnectTest)
-	mux.HandleFunc("GET /api/v1/ccconnect/projects", s.handleCCProxyProjects)
-	mux.HandleFunc("GET /api/v1/ccconnect/projects/{name}", s.handleCCProxyProjectDetail)
-	mux.HandleFunc("DELETE /api/v1/ccconnect/projects/{name}", s.handleCCProxyProjectDelete)
-	mux.HandleFunc("POST /api/v1/ccconnect/projects/{name}/add-platform", s.handleCCProxyAddPlatform)
-	mux.HandleFunc("GET /api/v1/ccconnect/projects/{name}/sessions", s.handleCCProxyProjectSessions)
-	mux.HandleFunc("POST /api/v1/ccconnect/setup/feishu/begin", s.handleCCProxySetupFeishuBegin)
-	mux.HandleFunc("POST /api/v1/ccconnect/setup/feishu/poll", s.handleCCProxySetupFeishuPoll)
-	mux.HandleFunc("POST /api/v1/ccconnect/setup/feishu/save", s.handleCCProxySetupFeishuSave)
-	mux.HandleFunc("POST /api/v1/ccconnect/setup/weixin/begin", s.handleCCProxySetupWeixinBegin)
-	mux.HandleFunc("POST /api/v1/ccconnect/setup/weixin/poll", s.handleCCProxySetupWeixinPoll)
-	mux.HandleFunc("POST /api/v1/ccconnect/setup/weixin/save", s.handleCCProxySetupWeixinSave)
-	mux.HandleFunc("POST /api/v1/ccconnect/reload", s.handleCCProxyReload)
-	mux.HandleFunc("POST /api/v1/ccconnect/restart", s.handleCCProxyRestart)
 
 	// ── Files ──
 	mux.HandleFunc("GET /api/v1/files", s.handleListFiles)

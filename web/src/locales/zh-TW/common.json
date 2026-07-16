@@ -1367,6 +1367,25 @@
     "add": "新增變數",
     "empty": "尚未設定環境變數"
   },
+  "agentChannels": {
+    "title": "飛書 / Lark",
+    "subtitle": "把這個 Agent 接入日常 IM，讓成員可以在既有工作流裡介入協作。",
+    "connect": "連接",
+    "connected": "已連接",
+    "notConnected": "未連接",
+    "connectHint": "掃碼為這個 Agent 建立或綁定應用機器人。",
+    "connectedBy": "連接人：{{user}}",
+    "disconnect": "斷開連接",
+    "disconnectConfirm": "確定斷開這個 Agent 的 {{provider}} 連接嗎？",
+    "scanToConnect": "連接 {{provider}}",
+    "preparingQr": "正在準備二維碼...",
+    "scanHint": "使用 {{provider}} 掃碼並確認應用機器人連接。",
+    "waitingApproval": "等待確認中...",
+    "connectedReady": "{{provider}} 已連接。現在可以直接給機器人發訊息來和這個 Agent 協作。",
+    "setupFailed": "連接失敗",
+    "denied": "授權已拒絕",
+    "expired": "二維碼已過期"
+  },
   "sandbox": {
     "title": "執行環境",
     "provider": "執行模式",
