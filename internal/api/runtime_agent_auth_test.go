@@ -16,7 +16,7 @@ func TestAgentRuntimeTokenValidateAndExpire(t *testing.T) {
 
 	token := s.issueAgentRuntimeToken(runtimeAgentTokenPayload{
 		WorkspaceID:  "ws-one",
-		Project:      "tapnow",
+		Project:      "sample",
 		Agent:        "pm",
 		RunID:        "run-one",
 		Capabilities: []string{"connection.use"},
@@ -25,7 +25,7 @@ func TestAgentRuntimeTokenValidateAndExpire(t *testing.T) {
 	if !ok {
 		t.Fatalf("runtime token did not validate")
 	}
-	if principal.WorkspaceID != "ws-one" || principal.Project != "tapnow" || principal.Agent != "pm" || principal.RunID != "run-one" {
+	if principal.WorkspaceID != "ws-one" || principal.Project != "sample" || principal.Agent != "pm" || principal.RunID != "run-one" {
 		t.Fatalf("principal mismatch: %#v", principal)
 	}
 	if !runtimeHasCapability(principal, "connection.use") {
@@ -34,7 +34,7 @@ func TestAgentRuntimeTokenValidateAndExpire(t *testing.T) {
 
 	expired := s.issueAgentRuntimeToken(runtimeAgentTokenPayload{
 		WorkspaceID:  "ws-one",
-		Project:      "tapnow",
+		Project:      "sample",
 		Agent:        "pm",
 		Capabilities: []string{"connection.use"},
 	}, -time.Second)
@@ -59,14 +59,14 @@ func TestIssueAgentRuntimeTokenRequiresAgentOperatorAccess(t *testing.T) {
 	grantProjectRoleForTest(t, s, workspaceID, "viewer", ProjectRoleViewer)
 	grantProjectRoleForTest(t, s, workspaceID, "operator", ProjectRoleOperator)
 
-	viewerReq := issueAgentRuntimeTokenRequestForTest("viewer", "tapnow", "pm")
+	viewerReq := issueAgentRuntimeTokenRequestForTest("viewer", "sample", "pm")
 	viewerRec := httptest.NewRecorder()
 	s.handleIssueAgentRuntimeToken(viewerRec, viewerReq)
 	if viewerRec.Code != http.StatusForbidden {
 		t.Fatalf("viewer status=%d body=%s", viewerRec.Code, viewerRec.Body.String())
 	}
 
-	operatorReq := issueAgentRuntimeTokenRequestForTest("operator", "tapnow", "backend")
+	operatorReq := issueAgentRuntimeTokenRequestForTest("operator", "sample", "backend")
 	operatorRec := httptest.NewRecorder()
 	s.handleIssueAgentRuntimeToken(operatorRec, operatorReq)
 	if operatorRec.Code != http.StatusOK {
@@ -81,14 +81,14 @@ func TestIssueAgentRuntimeTokenRequiresAgentOperatorAccess(t *testing.T) {
 	if err := json.Unmarshal(operatorRec.Body.Bytes(), &body); err != nil {
 		t.Fatalf("decode token response: %v", err)
 	}
-	if body.Token == "" || body.Project != "tapnow" || body.Agent != "backend" {
+	if body.Token == "" || body.Project != "sample" || body.Agent != "backend" {
 		t.Fatalf("bad token response=%#v", body)
 	}
 	if len(body.Capabilities) != 1 || body.Capabilities[0] != "connection.use" {
 		t.Fatalf("capabilities=%#v", body.Capabilities)
 	}
 
-	ownerReq := issueAgentRuntimeTokenRequestForTest("owner", "tapnow", "pm")
+	ownerReq := issueAgentRuntimeTokenRequestForTest("owner", "sample", "pm")
 	ownerRec := httptest.NewRecorder()
 	s.handleIssueAgentRuntimeToken(ownerRec, ownerReq)
 	if ownerRec.Code != http.StatusOK {
@@ -139,7 +139,7 @@ func TestFindRuntimeConnectionRequiresMatchingGrant(t *testing.T) {
 		WorkspaceID:  workspaceID,
 		ConnectionID: granted.ID,
 		TargetType:   ConnectionTargetAgent,
-		TargetID:     "tapnow/pm",
+		TargetID:     "sample/pm",
 	}); err != nil {
 		t.Fatalf("agent grant: %v", err)
 	}
@@ -155,7 +155,7 @@ func TestFindRuntimeConnectionRequiresMatchingGrant(t *testing.T) {
 
 	principal := runtimeAgentPrincipal{
 		WorkspaceID:  workspaceID,
-		Project:      "tapnow",
+		Project:      "sample",
 		Agent:        "pm",
 		Capabilities: []string{"connection.use"},
 	}

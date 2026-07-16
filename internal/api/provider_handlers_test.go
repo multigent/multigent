@@ -264,7 +264,7 @@ func TestModelProviderAgentScopedListFiltersUsableProviders(t *testing.T) {
 	}
 
 	adminAgentRec := httptest.NewRecorder()
-	s.handleListProviders(adminAgentRec, providerTestRequest(http.MethodGet, "/api/v1/providers?project=tapnow&agent=pm", "admin", nil))
+	s.handleListProviders(adminAgentRec, providerTestRequest(http.MethodGet, "/api/v1/providers?project=sample&agent=pm", "admin", nil))
 	if adminAgentRec.Code != http.StatusOK {
 		t.Fatalf("admin agent-scoped list status=%d body=%s", adminAgentRec.Code, adminAgentRec.Body.String())
 	}
@@ -279,7 +279,7 @@ func TestModelProviderAgentScopedListFiltersUsableProviders(t *testing.T) {
 	}
 
 	ownerAgentRec := httptest.NewRecorder()
-	s.handleListProviders(ownerAgentRec, providerTestRequest(http.MethodGet, "/api/v1/providers?project=tapnow&agent=pm", "owner", nil))
+	s.handleListProviders(ownerAgentRec, providerTestRequest(http.MethodGet, "/api/v1/providers?project=sample&agent=pm", "owner", nil))
 	if ownerAgentRec.Code != http.StatusOK {
 		t.Fatalf("owner agent-scoped list status=%d body=%s", ownerAgentRec.Code, ownerAgentRec.Body.String())
 	}
@@ -302,12 +302,12 @@ func TestModelProviderAgentScopedListRequiresAgentManagementAccess(t *testing.T)
 	if err := s.controlDB.UpsertWorkspaceMember(workspaceID, "viewer", WorkspaceRoleMember); err != nil {
 		t.Fatalf("viewer workspace member: %v", err)
 	}
-	if err := s.users.UpdateUser("viewer", nil, nil, nil, nil, nil, nil, nil, []projectAccess{{Project: "tapnow", Role: ProjectRoleViewer}}, nil, nil); err != nil {
+	if err := s.users.UpdateUser("viewer", nil, nil, nil, nil, nil, nil, nil, []projectAccess{{Project: "sample", Role: ProjectRoleViewer}}, nil, nil); err != nil {
 		t.Fatalf("grant viewer project role: %v", err)
 	}
 
 	rec := httptest.NewRecorder()
-	s.handleListProviders(rec, providerTestRequest(http.MethodGet, "/api/v1/providers?project=tapnow&agent=pm", "viewer", nil))
+	s.handleListProviders(rec, providerTestRequest(http.MethodGet, "/api/v1/providers?project=sample&agent=pm", "viewer", nil))
 	if rec.Code != http.StatusForbidden {
 		t.Fatalf("viewer agent-scoped list status=%d body=%s", rec.Code, rec.Body.String())
 	}

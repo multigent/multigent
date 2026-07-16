@@ -8,7 +8,7 @@ import (
 func TestIssueAndValidate(t *testing.T) {
 	token := Issue("secret", Payload{
 		WorkspaceID:  "ws-one",
-		Project:      "tapnow",
+		Project:      "sample",
 		Agent:        "pm",
 		RunID:        "run-one",
 		Capabilities: []string{"connection.use"},
@@ -17,7 +17,7 @@ func TestIssueAndValidate(t *testing.T) {
 	if !ok {
 		t.Fatalf("token did not validate")
 	}
-	if principal.WorkspaceID != "ws-one" || principal.Project != "tapnow" || principal.Agent != "pm" || principal.RunID != "run-one" {
+	if principal.WorkspaceID != "ws-one" || principal.Project != "sample" || principal.Agent != "pm" || principal.RunID != "run-one" {
 		t.Fatalf("principal mismatch: %#v", principal)
 	}
 	if _, ok := Validate("wrong-secret", token); ok {
@@ -28,7 +28,7 @@ func TestIssueAndValidate(t *testing.T) {
 func TestExpiredTokenDoesNotValidate(t *testing.T) {
 	token := Issue("secret", Payload{
 		WorkspaceID: "ws-one",
-		Project:     "tapnow",
+		Project:     "sample",
 		Agent:       "pm",
 	}, -time.Second)
 	if _, ok := Validate("secret", token); ok {

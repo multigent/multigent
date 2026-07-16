@@ -19,7 +19,7 @@ func grantProjectRoleForTest(t *testing.T, s *Server, workspaceID, username, rol
 	if err := s.controlDB.UpsertWorkspaceMember(workspaceID, username, WorkspaceRoleMember); err != nil {
 		t.Fatalf("workspace member %s: %v", username, err)
 	}
-	if err := s.users.UpdateUser(username, nil, nil, nil, nil, nil, nil, nil, []projectAccess{{Project: "tapnow", Role: role}}, nil, nil); err != nil {
+	if err := s.users.UpdateUser(username, nil, nil, nil, nil, nil, nil, nil, []projectAccess{{Project: "sample", Role: role}}, nil, nil); err != nil {
 		t.Fatalf("grant %s project role: %v", username, err)
 	}
 }
@@ -31,24 +31,24 @@ func TestProjectWriteRBACDistinguishesViewerOperatorAndLinkedAgent(t *testing.T)
 
 	taskBody := postTaskBody{Agent: "pm", Title: "Plan launch", Prompt: "Create the launch plan.", Priority: 2}
 	viewerRec := httptest.NewRecorder()
-	viewerReq := providerTestRequest(http.MethodPost, "/api/v1/projects/tapnow/tasks", "viewer", taskBody)
-	viewerReq.SetPathValue("name", "tapnow")
+	viewerReq := providerTestRequest(http.MethodPost, "/api/v1/projects/sample/tasks", "viewer", taskBody)
+	viewerReq.SetPathValue("name", "sample")
 	s.handlePostProjectTask(viewerRec, viewerReq)
 	if viewerRec.Code != http.StatusForbidden {
 		t.Fatalf("viewer create task status=%d body=%s", viewerRec.Code, viewerRec.Body.String())
 	}
 
 	operatorRec := httptest.NewRecorder()
-	operatorReq := providerTestRequest(http.MethodPost, "/api/v1/projects/tapnow/tasks", "operator", taskBody)
-	operatorReq.SetPathValue("name", "tapnow")
+	operatorReq := providerTestRequest(http.MethodPost, "/api/v1/projects/sample/tasks", "operator", taskBody)
+	operatorReq.SetPathValue("name", "sample")
 	s.handlePostProjectTask(operatorRec, operatorReq)
 	if operatorRec.Code != http.StatusCreated {
 		t.Fatalf("operator create task status=%d body=%s", operatorRec.Code, operatorRec.Body.String())
 	}
 
 	linkedRec := httptest.NewRecorder()
-	linkedReq := providerTestRequest(http.MethodPost, "/api/v1/projects/tapnow/tasks", "owner", taskBody)
-	linkedReq.SetPathValue("name", "tapnow")
+	linkedReq := providerTestRequest(http.MethodPost, "/api/v1/projects/sample/tasks", "owner", taskBody)
+	linkedReq.SetPathValue("name", "sample")
 	s.handlePostProjectTask(linkedRec, linkedReq)
 	if linkedRec.Code != http.StatusCreated {
 		t.Fatalf("linked owner create own-agent task status=%d body=%s", linkedRec.Code, linkedRec.Body.String())
@@ -56,8 +56,8 @@ func TestProjectWriteRBACDistinguishesViewerOperatorAndLinkedAgent(t *testing.T)
 
 	otherAgentBody := postTaskBody{Agent: "backend", Title: "Implement API", Prompt: "Build it.", Priority: 2}
 	linkedOtherRec := httptest.NewRecorder()
-	linkedOtherReq := providerTestRequest(http.MethodPost, "/api/v1/projects/tapnow/tasks", "owner", otherAgentBody)
-	linkedOtherReq.SetPathValue("name", "tapnow")
+	linkedOtherReq := providerTestRequest(http.MethodPost, "/api/v1/projects/sample/tasks", "owner", otherAgentBody)
+	linkedOtherReq.SetPathValue("name", "sample")
 	s.handlePostProjectTask(linkedOtherRec, linkedOtherReq)
 	if linkedOtherRec.Code != http.StatusForbidden {
 		t.Fatalf("linked owner create other-agent task status=%d body=%s", linkedOtherRec.Code, linkedOtherRec.Body.String())
@@ -71,16 +71,16 @@ func TestProjectAndAgentConfigRequireManager(t *testing.T) {
 
 	for _, username := range []string{"viewer", "operator"} {
 		rec := httptest.NewRecorder()
-		req := providerTestRequest(http.MethodPut, "/api/v1/projects/tapnow", username, map[string]string{"description": "new"})
-		req.SetPathValue("name", "tapnow")
+		req := providerTestRequest(http.MethodPut, "/api/v1/projects/sample", username, map[string]string{"description": "new"})
+		req.SetPathValue("name", "sample")
 		s.handlePutProject(rec, req)
 		if rec.Code != http.StatusForbidden {
 			t.Fatalf("%s update project status=%d body=%s", username, rec.Code, rec.Body.String())
 		}
 
 		agentRec := httptest.NewRecorder()
-		agentReq := providerTestRequest(http.MethodPatch, "/api/v1/projects/tapnow/agents/pm", username, map[string]string{"name": "pm"})
-		agentReq.SetPathValue("name", "tapnow")
+		agentReq := providerTestRequest(http.MethodPatch, "/api/v1/projects/sample/agents/pm", username, map[string]string{"name": "pm"})
+		agentReq.SetPathValue("name", "sample")
 		agentReq.SetPathValue("agent", "pm")
 		s.handlePatchAgent(agentRec, agentReq)
 		if agentRec.Code != http.StatusForbidden {
@@ -88,8 +88,8 @@ func TestProjectAndAgentConfigRequireManager(t *testing.T) {
 		}
 	}
 
-	adminReq := providerTestRequest(http.MethodPut, "/api/v1/projects/tapnow", "admin", map[string]string{"description": "new"})
-	adminReq.SetPathValue("name", "tapnow")
+	adminReq := providerTestRequest(http.MethodPut, "/api/v1/projects/sample", "admin", map[string]string{"description": "new"})
+	adminReq.SetPathValue("name", "sample")
 	adminRec := httptest.NewRecorder()
 	s.handlePutProject(adminRec, adminReq)
 	if adminRec.Code != http.StatusOK {
@@ -105,7 +105,7 @@ func TestSessionResetRequiresAgentManagementAccess(t *testing.T) {
 	for _, username := range []string{"viewer", "operator"} {
 		rec := httptest.NewRecorder()
 		s.handleSessionReset(rec, providerTestRequest(http.MethodPost, "/api/v1/session/reset", username, sessionResetBody{
-			Project: "tapnow",
+			Project: "sample",
 			Agent:   "pm",
 		}))
 		if rec.Code != http.StatusForbidden {
@@ -115,7 +115,7 @@ func TestSessionResetRequiresAgentManagementAccess(t *testing.T) {
 
 	rec := httptest.NewRecorder()
 	s.handleSessionReset(rec, providerTestRequest(http.MethodPost, "/api/v1/session/reset", "owner", sessionResetBody{
-		Project: "tapnow",
+		Project: "sample",
 		Agent:   "pm",
 	}))
 	if rec.Code != http.StatusOK {
@@ -130,10 +130,10 @@ func TestSetModelRequiresAgentManagementAccess(t *testing.T) {
 
 	for _, username := range []string{"viewer", "operator"} {
 		rec := httptest.NewRecorder()
-		req := providerTestRequest(http.MethodPost, "/api/v1/projects/tapnow/agents/pm/set-model", username, setModelBody{
+		req := providerTestRequest(http.MethodPost, "/api/v1/projects/sample/agents/pm/set-model", username, setModelBody{
 			Model: "codex",
 		})
-		req.SetPathValue("name", "tapnow")
+		req.SetPathValue("name", "sample")
 		req.SetPathValue("agent", "pm")
 		s.handleSetModel(rec, req)
 		if rec.Code != http.StatusForbidden {
@@ -146,14 +146,14 @@ func TestMessageMailboxRBAC(t *testing.T) {
 	s, workspaceID := newConnectionGrantPolicyServer(t)
 	grantProjectRoleForTest(t, s, workspaceID, "viewer", ProjectRoleViewer)
 
-	msg := map[string]any{"from": "human", "to": "tapnow/backend", "body": "hello"}
+	msg := map[string]any{"from": "human", "to": "sample/backend", "body": "hello"}
 	rec := httptest.NewRecorder()
 	s.handlePostMessage(rec, providerTestRequest(http.MethodPost, "/api/v1/messages", "owner", msg))
 	if rec.Code != http.StatusForbidden {
 		t.Fatalf("linked owner send to other agent status=%d body=%s", rec.Code, rec.Body.String())
 	}
 
-	ownMsg := map[string]any{"from": "human", "to": "tapnow/pm", "body": "hello"}
+	ownMsg := map[string]any{"from": "human", "to": "sample/pm", "body": "hello"}
 	ownRec := httptest.NewRecorder()
 	s.handlePostMessage(ownRec, providerTestRequest(http.MethodPost, "/api/v1/messages", "owner", ownMsg))
 	if ownRec.Code != http.StatusCreated {
@@ -162,7 +162,7 @@ func TestMessageMailboxRBAC(t *testing.T) {
 
 	viewerRec := httptest.NewRecorder()
 	s.handlePostMarkMessageRead(viewerRec, providerTestRequest(http.MethodPost, "/api/v1/messages/mark-read", "viewer", markReadBody{
-		Mailbox: "tapnow/pm",
+		Mailbox: "sample/pm",
 		ID:      "msg-any",
 	}))
 	if viewerRec.Code != http.StatusForbidden {
@@ -180,7 +180,7 @@ func TestLinkedAgentProjectViewsAreFilteredToLinkedAgents(t *testing.T) {
 		{agent: "pm", title: "PM task"},
 		{agent: "backend", title: "Backend task"},
 	} {
-		if err := s.ts.AddTask("tapnow", tc.agent, &entity.Task{
+		if err := s.ts.AddTask("sample", tc.agent, &entity.Task{
 			ID:        entity.NewTaskID(),
 			Title:     tc.title,
 			Prompt:    tc.title,
@@ -194,7 +194,7 @@ func TestLinkedAgentProjectViewsAreFilteredToLinkedAgents(t *testing.T) {
 		if err := s.ts.SendMessage(&entity.Message{
 			ID:     entity.NewMessageID(),
 			From:   "human",
-			To:     "tapnow/" + tc.agent,
+			To:     "sample/" + tc.agent,
 			Body:   tc.title,
 			SentAt: now,
 		}); err != nil {
@@ -202,8 +202,8 @@ func TestLinkedAgentProjectViewsAreFilteredToLinkedAgents(t *testing.T) {
 		}
 	}
 
-	agentsReq := providerTestRequest(http.MethodGet, "/api/v1/projects/tapnow/agents", "owner", nil)
-	agentsReq.SetPathValue("name", "tapnow")
+	agentsReq := providerTestRequest(http.MethodGet, "/api/v1/projects/sample/agents", "owner", nil)
+	agentsReq.SetPathValue("name", "sample")
 	agentsRec := httptest.NewRecorder()
 	s.handleProjectAgents(agentsRec, agentsReq)
 	if agentsRec.Code != http.StatusOK {
@@ -213,8 +213,8 @@ func TestLinkedAgentProjectViewsAreFilteredToLinkedAgents(t *testing.T) {
 		t.Fatalf("linked agents list not filtered: %s", body)
 	}
 
-	tasksReq := providerTestRequest(http.MethodGet, "/api/v1/projects/tapnow/tasks?scope=all", "owner", nil)
-	tasksReq.SetPathValue("name", "tapnow")
+	tasksReq := providerTestRequest(http.MethodGet, "/api/v1/projects/sample/tasks?scope=all", "owner", nil)
+	tasksReq.SetPathValue("name", "sample")
 	tasksRec := httptest.NewRecorder()
 	s.handleProjectTasks(tasksRec, tasksReq)
 	if tasksRec.Code != http.StatusOK {
@@ -228,8 +228,8 @@ func TestLinkedAgentProjectViewsAreFilteredToLinkedAgents(t *testing.T) {
 		t.Fatalf("linked task list=%#v", tasks)
 	}
 
-	messagesReq := providerTestRequest(http.MethodGet, "/api/v1/projects/tapnow/messages?archived=all", "owner", nil)
-	messagesReq.SetPathValue("name", "tapnow")
+	messagesReq := providerTestRequest(http.MethodGet, "/api/v1/projects/sample/messages?archived=all", "owner", nil)
+	messagesReq.SetPathValue("name", "sample")
 	messagesRec := httptest.NewRecorder()
 	s.handleProjectMessages(messagesRec, messagesReq)
 	if messagesRec.Code != http.StatusOK {
@@ -239,12 +239,12 @@ func TestLinkedAgentProjectViewsAreFilteredToLinkedAgents(t *testing.T) {
 	if err := json.Unmarshal(messagesRec.Body.Bytes(), &messages); err != nil {
 		t.Fatalf("decode messages: %v", err)
 	}
-	if len(messages) != 1 || messages[0].Mailbox != "tapnow/pm" {
+	if len(messages) != 1 || messages[0].Mailbox != "sample/pm" {
 		t.Fatalf("linked message list=%#v", messages)
 	}
 
-	backendMailboxReq := providerTestRequest(http.MethodGet, "/api/v1/projects/tapnow/messages?mailbox=tapnow/backend", "owner", nil)
-	backendMailboxReq.SetPathValue("name", "tapnow")
+	backendMailboxReq := providerTestRequest(http.MethodGet, "/api/v1/projects/sample/messages?mailbox=sample/backend", "owner", nil)
+	backendMailboxReq.SetPathValue("name", "sample")
 	backendMailboxRec := httptest.NewRecorder()
 	s.handleProjectMessages(backendMailboxRec, backendMailboxReq)
 	if backendMailboxRec.Code != http.StatusForbidden {

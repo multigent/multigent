@@ -132,7 +132,7 @@ function CreateProjectDialog({ onClose, onCreated }: { onClose: () => void; onCr
         <div className="space-y-4 p-5">
           <label className="block">
             <span className="text-xs font-medium text-neutral-600 dark:text-zinc-400">{t('projects.name')}</span>
-            <input value={name} onChange={(e) => setName(e.target.value)} placeholder="tapnow-agent" className="mt-1 w-full rounded-lg border border-neutral-200 bg-white px-3 py-2 text-sm outline-none focus:border-sky-400 dark:border-zinc-700 dark:bg-zinc-950 dark:text-zinc-100" />
+            <input value={name} onChange={(e) => setName(e.target.value)} placeholder="sample-agent" className="mt-1 w-full rounded-lg border border-neutral-200 bg-white px-3 py-2 text-sm outline-none focus:border-sky-400 dark:border-zinc-700 dark:bg-zinc-950 dark:text-zinc-100" />
           </label>
           <label className="block">
             <span className="text-xs font-medium text-neutral-600 dark:text-zinc-400">{t('projects.description')}</span>

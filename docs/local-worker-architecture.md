@@ -95,13 +95,13 @@ Worker 看到的 Job 应该足够小：
 {
   "id": "job_123",
   "tenant_id": "tenant_abc",
-  "project_id": "tapnow-agent",
+  "project_id": "sample-agent",
   "task_id": "task_plugin_connector_backend",
   "agent_name": "backend-connector-dev",
   "runtime": "codex",
   "prompt": "Implement connector OAuth callback handling...",
   "context_refs": [
-    "ctx://project/tapnow-agent/base@v12",
+    "ctx://project/sample-agent/base@v12",
     "ctx://task/task_plugin_connector_backend/brief@v4",
     "ctx://api/connectors@v7"
   ]

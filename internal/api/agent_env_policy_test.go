@@ -33,14 +33,14 @@ func agentEnvPolicyRequest(method, path, username, project, agent string, body a
 func TestAgentEnvHandlersRequireAgentManagementAccess(t *testing.T) {
 	s, _ := newConnectionGrantPolicyServer(t)
 
-	req := agentEnvPolicyRequest(http.MethodGet, "/api/v1/projects/tapnow/agents/pm/env", "admin", "tapnow", "pm", nil)
+	req := agentEnvPolicyRequest(http.MethodGet, "/api/v1/projects/sample/agents/pm/env", "admin", "sample", "pm", nil)
 	rec := httptest.NewRecorder()
 	s.handleGetAgentEnv(rec, req)
 	if rec.Code != http.StatusOK {
 		t.Fatalf("admin get status=%d body=%s", rec.Code, rec.Body.String())
 	}
 
-	req = agentEnvPolicyRequest(http.MethodGet, "/api/v1/projects/tapnow/agents/pm/env", "owner", "tapnow", "pm", nil)
+	req = agentEnvPolicyRequest(http.MethodGet, "/api/v1/projects/sample/agents/pm/env", "owner", "sample", "pm", nil)
 	rec = httptest.NewRecorder()
 	s.handleGetAgentEnv(rec, req)
 	if rec.Code != http.StatusOK {
@@ -50,7 +50,7 @@ func TestAgentEnvHandlersRequireAgentManagementAccess(t *testing.T) {
 	if err := s.users.CreateUser("outsider", "pass123", RoleMember, "", "", "", "", ""); err != nil {
 		t.Fatalf("create outsider: %v", err)
 	}
-	req = agentEnvPolicyRequest(http.MethodGet, "/api/v1/projects/tapnow/agents/pm/env", "outsider", "tapnow", "pm", nil)
+	req = agentEnvPolicyRequest(http.MethodGet, "/api/v1/projects/sample/agents/pm/env", "outsider", "sample", "pm", nil)
 	rec = httptest.NewRecorder()
 	s.handleGetAgentEnv(rec, req)
 	if rec.Code != http.StatusForbidden {
@@ -80,7 +80,7 @@ func TestPutAgentEnvValidatesProviderAndAuditsWithoutValues(t *testing.T) {
 	}
 
 	missingProvider := "prov-missing"
-	req := agentEnvPolicyRequest(http.MethodPut, "/api/v1/projects/tapnow/agents/pm/env", "owner", "tapnow", "pm", agentEnvBody{
+	req := agentEnvPolicyRequest(http.MethodPut, "/api/v1/projects/sample/agents/pm/env", "owner", "sample", "pm", agentEnvBody{
 		Env:      map[string]string{"OPENAI_API_KEY": "value-secret"},
 		Provider: &missingProvider,
 	})
@@ -91,7 +91,7 @@ func TestPutAgentEnvValidatesProviderAndAuditsWithoutValues(t *testing.T) {
 	}
 
 	provider := "prov-main"
-	req = agentEnvPolicyRequest(http.MethodPut, "/api/v1/projects/tapnow/agents/pm/env", "owner", "tapnow", "pm", agentEnvBody{
+	req = agentEnvPolicyRequest(http.MethodPut, "/api/v1/projects/sample/agents/pm/env", "owner", "sample", "pm", agentEnvBody{
 		Env:      map[string]string{"OPENAI_API_KEY": "value-secret"},
 		Provider: &provider,
 	})
@@ -100,7 +100,7 @@ func TestPutAgentEnvValidatesProviderAndAuditsWithoutValues(t *testing.T) {
 	if rec.Code != http.StatusOK {
 		t.Fatalf("put env status=%d body=%s", rec.Code, rec.Body.String())
 	}
-	meta, err := s.st.AgentMeta("tapnow", "pm")
+	meta, err := s.st.AgentMeta("sample", "pm")
 	if err != nil {
 		t.Fatalf("agent meta: %v", err)
 	}
@@ -111,7 +111,7 @@ func TestPutAgentEnvValidatesProviderAndAuditsWithoutValues(t *testing.T) {
 		WorkspaceID:  workspaceID,
 		Action:       "agent.env.update",
 		ResourceType: "agent",
-		ResourceID:   "tapnow/pm",
+		ResourceID:   "sample/pm",
 		Limit:        10,
 	})
 	if err != nil {
@@ -151,7 +151,7 @@ func TestPutAgentEnvRestrictsPersonalModelProviders(t *testing.T) {
 	}
 
 	provider := "prov-owner"
-	req := agentEnvPolicyRequest(http.MethodPut, "/api/v1/projects/tapnow/agents/pm/env", "admin", "tapnow", "pm", agentEnvBody{
+	req := agentEnvPolicyRequest(http.MethodPut, "/api/v1/projects/sample/agents/pm/env", "admin", "sample", "pm", agentEnvBody{
 		Env:      map[string]string{},
 		Provider: &provider,
 	})
@@ -161,7 +161,7 @@ func TestPutAgentEnvRestrictsPersonalModelProviders(t *testing.T) {
 		t.Fatalf("admin should not bind another user's provider status=%d body=%s", rec.Code, rec.Body.String())
 	}
 
-	req = agentEnvPolicyRequest(http.MethodPut, "/api/v1/projects/tapnow/agents/pm/env", "owner", "tapnow", "pm", agentEnvBody{
+	req = agentEnvPolicyRequest(http.MethodPut, "/api/v1/projects/sample/agents/pm/env", "owner", "sample", "pm", agentEnvBody{
 		Env:      map[string]string{},
 		Provider: &provider,
 	})
@@ -171,7 +171,7 @@ func TestPutAgentEnvRestrictsPersonalModelProviders(t *testing.T) {
 		t.Fatalf("owner linked agent bind status=%d body=%s", rec.Code, rec.Body.String())
 	}
 
-	req = agentEnvPolicyRequest(http.MethodPut, "/api/v1/projects/tapnow/agents/backend/env", "owner", "tapnow", "backend", agentEnvBody{
+	req = agentEnvPolicyRequest(http.MethodPut, "/api/v1/projects/sample/agents/backend/env", "owner", "sample", "backend", agentEnvBody{
 		Env:      map[string]string{},
 		Provider: &provider,
 	})

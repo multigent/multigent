@@ -25,7 +25,7 @@ func TestConnectionGrantMatchesAgent(t *testing.T) {
 			name:      "workspace grant matches current workspace",
 			grant:     controldb.ConnectionGrant{TargetType: ConnectionTargetWorkspace, TargetID: "ws-one"},
 			workspace: "ws-one",
-			project:   "tapnow",
+			project:   "sample",
 			agent:     "dev",
 			want:      true,
 		},
@@ -33,23 +33,23 @@ func TestConnectionGrantMatchesAgent(t *testing.T) {
 			name:      "workspace grant rejects another workspace",
 			grant:     controldb.ConnectionGrant{TargetType: ConnectionTargetWorkspace, TargetID: "ws-two"},
 			workspace: "ws-one",
-			project:   "tapnow",
+			project:   "sample",
 			agent:     "dev",
 			want:      false,
 		},
 		{
 			name:      "project grant matches project",
-			grant:     controldb.ConnectionGrant{TargetType: ConnectionTargetProject, TargetID: "tapnow"},
+			grant:     controldb.ConnectionGrant{TargetType: ConnectionTargetProject, TargetID: "sample"},
 			workspace: "ws-one",
-			project:   "tapnow",
+			project:   "sample",
 			agent:     "dev",
 			want:      true,
 		},
 		{
 			name:      "agent grant matches exact agent ref",
-			grant:     controldb.ConnectionGrant{TargetType: ConnectionTargetAgent, TargetID: "tapnow/dev"},
+			grant:     controldb.ConnectionGrant{TargetType: ConnectionTargetAgent, TargetID: "sample/dev"},
 			workspace: "ws-one",
-			project:   "tapnow",
+			project:   "sample",
 			agent:     "dev",
 			want:      true,
 		},
@@ -57,7 +57,7 @@ func TestConnectionGrantMatchesAgent(t *testing.T) {
 			name:      "user grant does not become agent runtime access",
 			grant:     controldb.ConnectionGrant{TargetType: ConnectionTargetUser, TargetID: "ella"},
 			workspace: "ws-one",
-			project:   "tapnow",
+			project:   "sample",
 			agent:     "dev",
 			want:      false,
 		},
@@ -83,7 +83,7 @@ func TestAgentRuntimeConnectionResponseDoesNotExposeSecretValues(t *testing.T) {
 		ProfileJSON:    `{"provider":"github","connectionName":"ci","visible":"ok","apiKey":"ghp_secret","token":"secret","accountName":"octo","accountEmail":"octo@example.test","scopes":["repo"],"providerPermissions":["Issues:write"]}`,
 	}
 	resp := agentRuntimeConnectionToResponse(connection, []controldb.ConnectionGrant{
-		{ID: "grant-one", TargetType: ConnectionTargetAgent, TargetID: "tapnow/dev"},
+		{ID: "grant-one", TargetType: ConnectionTargetAgent, TargetID: "sample/dev"},
 	}, []connector.ProviderAction{{Name: "get_authenticated_user", Method: "GET", Endpoint: "/user"}})
 	raw, err := json.Marshal(resp)
 	if err != nil {
@@ -224,11 +224,11 @@ func TestResolveAgentRuntimeConnectionsUsesGrantRules(t *testing.T) {
 		WorkspaceID:  workspaceID,
 		ConnectionID: granted.ID,
 		TargetType:   ConnectionTargetProject,
-		TargetID:     "tapnow",
+		TargetID:     "sample",
 	}); err != nil {
 		t.Fatalf("grant: %v", err)
 	}
-	connections, err := s.resolveAgentRuntimeConnections(workspaceID, "tapnow", "pm")
+	connections, err := s.resolveAgentRuntimeConnections(workspaceID, "sample", "pm")
 	if err != nil {
 		t.Fatalf("resolve: %v", err)
 	}
@@ -245,7 +245,7 @@ func TestRuntimeConnectionsRequiresConnectionCapability(t *testing.T) {
 	req := httptest.NewRequest(http.MethodGet, "/api/v1/runtime/connections", nil)
 	req = req.WithContext(context.WithValue(req.Context(), ctxRuntimeAgentKey, runtimeAgentPrincipal{
 		WorkspaceID:  "ws-one",
-		Project:      "tapnow",
+		Project:      "sample",
 		Agent:        "pm",
 		Capabilities: []string{"task.read"},
 	}))
@@ -263,21 +263,21 @@ func TestAgentRuntimeConnectionsRequireAgentOperatorAccess(t *testing.T) {
 	grantProjectRoleForTest(t, s, workspaceID, "viewer", ProjectRoleViewer)
 	grantProjectRoleForTest(t, s, workspaceID, "operator", ProjectRoleOperator)
 
-	viewerReq := agentRuntimeConnectionsRequest("viewer", "tapnow", "pm")
+	viewerReq := agentRuntimeConnectionsRequest("viewer", "sample", "pm")
 	viewerRec := httptest.NewRecorder()
 	s.handleAgentRuntimeConnections(viewerRec, viewerReq)
 	if viewerRec.Code != http.StatusForbidden {
 		t.Fatalf("viewer status=%d body=%s", viewerRec.Code, viewerRec.Body.String())
 	}
 
-	operatorReq := agentRuntimeConnectionsRequest("operator", "tapnow", "backend")
+	operatorReq := agentRuntimeConnectionsRequest("operator", "sample", "backend")
 	operatorRec := httptest.NewRecorder()
 	s.handleAgentRuntimeConnections(operatorRec, operatorReq)
 	if operatorRec.Code != http.StatusOK {
 		t.Fatalf("operator status=%d body=%s", operatorRec.Code, operatorRec.Body.String())
 	}
 
-	ownerReq := agentRuntimeConnectionsRequest("owner", "tapnow", "pm")
+	ownerReq := agentRuntimeConnectionsRequest("owner", "sample", "pm")
 	ownerRec := httptest.NewRecorder()
 	s.handleAgentRuntimeConnections(ownerRec, ownerReq)
 	if ownerRec.Code != http.StatusOK {

@@ -38,14 +38,14 @@ func newConnectionGrantPolicyServer(t *testing.T) (*Server, string) {
 	if err := s.controlDB.UpsertWorkspaceMember(workspaceID, "owner", WorkspaceRoleMember); err != nil {
 		t.Fatalf("owner member: %v", err)
 	}
-	if err := s.users.UpdateUser("owner", nil, nil, nil, nil, nil, nil, nil, nil, []string{"tapnow/pm"}, nil); err != nil {
+	if err := s.users.UpdateUser("owner", nil, nil, nil, nil, nil, nil, nil, nil, []string{"sample/pm"}, nil); err != nil {
 		t.Fatalf("link owner agent: %v", err)
 	}
-	if err := st.SaveProject("tapnow", &entity.Project{Name: "tapnow"}); err != nil {
+	if err := st.SaveProject("sample", &entity.Project{Name: "sample"}); err != nil {
 		t.Fatalf("save project: %v", err)
 	}
 	for _, agent := range []string{"pm", "backend"} {
-		if err := st.SaveAgentMeta("tapnow", agent, &entity.AgentMeta{Name: agent, Project: "tapnow"}); err != nil {
+		if err := st.SaveAgentMeta("sample", agent, &entity.AgentMeta{Name: agent, Project: "sample"}); err != nil {
 			t.Fatalf("save agent %s: %v", agent, err)
 		}
 	}
@@ -72,7 +72,7 @@ func TestUserOwnedConnectionGrantTargetsAreLimitedToOwnerAndLinkedAgents(t *test
 		targetID   string
 	}{
 		{ConnectionTargetUser, "owner"},
-		{ConnectionTargetAgent, "tapnow/pm"},
+		{ConnectionTargetAgent, "sample/pm"},
 	}
 	for _, tc := range allowed {
 		if err := s.validateConnectionGrantTarget(req, connection, tc.targetType, tc.targetID); err != nil {
@@ -85,9 +85,9 @@ func TestUserOwnedConnectionGrantTargetsAreLimitedToOwnerAndLinkedAgents(t *test
 		targetID   string
 	}{
 		{ConnectionTargetWorkspace, workspaceID},
-		{ConnectionTargetProject, "tapnow"},
+		{ConnectionTargetProject, "sample"},
 		{ConnectionTargetUser, "admin"},
-		{ConnectionTargetAgent, "tapnow/backend"},
+		{ConnectionTargetAgent, "sample/backend"},
 	}
 	for _, tc := range blocked {
 		if err := s.validateConnectionGrantTarget(req, connection, tc.targetType, tc.targetID); err == nil {
@@ -117,7 +117,7 @@ func TestUserOwnedConnectionGrantMustBeCreatedByOwner(t *testing.T) {
 	adminRec := httptest.NewRecorder()
 	adminReq := providerTestRequest(http.MethodPost, "/api/v1/connections/conn-owner/grants", "admin", createConnectionGrantRequest{
 		TargetType: ConnectionTargetAgent,
-		TargetID:   "tapnow/pm",
+		TargetID:   "sample/pm",
 	})
 	adminReq.SetPathValue("id", "conn-owner")
 	s.handleCreateConnectionGrant(adminRec, adminReq)
@@ -128,7 +128,7 @@ func TestUserOwnedConnectionGrantMustBeCreatedByOwner(t *testing.T) {
 	ownerRec := httptest.NewRecorder()
 	ownerReq := providerTestRequest(http.MethodPost, "/api/v1/connections/conn-owner/grants", "owner", createConnectionGrantRequest{
 		TargetType: ConnectionTargetAgent,
-		TargetID:   "tapnow/pm",
+		TargetID:   "sample/pm",
 	})
 	ownerReq.SetPathValue("id", "conn-owner")
 	s.handleCreateConnectionGrant(ownerRec, ownerReq)
@@ -162,7 +162,7 @@ func TestUserOwnedConnectionCanGrantToOperatedProjectAgents(t *testing.T) {
 	operatorRec := httptest.NewRecorder()
 	operatorReq := providerTestRequest(http.MethodPost, "/api/v1/connections/conn-operator/grants", "operator", createConnectionGrantRequest{
 		TargetType: ConnectionTargetAgent,
-		TargetID:   "tapnow/backend",
+		TargetID:   "sample/backend",
 	})
 	operatorReq.SetPathValue("id", "conn-operator")
 	s.handleCreateConnectionGrant(operatorRec, operatorReq)
@@ -173,7 +173,7 @@ func TestUserOwnedConnectionCanGrantToOperatedProjectAgents(t *testing.T) {
 	viewerRec := httptest.NewRecorder()
 	viewerReq := providerTestRequest(http.MethodPost, "/api/v1/connections/conn-viewer/grants", "viewer", createConnectionGrantRequest{
 		TargetType: ConnectionTargetAgent,
-		TargetID:   "tapnow/backend",
+		TargetID:   "sample/backend",
 	})
 	viewerReq.SetPathValue("id", "conn-viewer")
 	s.handleCreateConnectionGrant(viewerRec, viewerReq)

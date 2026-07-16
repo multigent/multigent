@@ -66,14 +66,14 @@ func TestRuntimeMCPProxyForwardsCustomMCPWithServerSideToken(t *testing.T) {
 		WorkspaceID:  workspaceID,
 		ConnectionID: connection.ID,
 		TargetType:   ConnectionTargetAgent,
-		TargetID:     "tapnow/pm",
+		TargetID:     "sample/pm",
 	}); err != nil {
 		t.Fatalf("grant: %v", err)
 	}
 
 	principal := runtimeAgentPrincipal{
 		WorkspaceID:  workspaceID,
-		Project:      "tapnow",
+		Project:      "sample",
 		Agent:        "pm",
 		RunID:        "run-one",
 		Capabilities: []string{"connection.use"},
@@ -337,14 +337,14 @@ func TestRuntimeActionProxyForwardsCustomHTTPWithServerSideCredential(t *testing
 		WorkspaceID:  workspaceID,
 		ConnectionID: connection.ID,
 		TargetType:   ConnectionTargetAgent,
-		TargetID:     "tapnow/pm",
+		TargetID:     "sample/pm",
 	}); err != nil {
 		t.Fatalf("grant: %v", err)
 	}
 
 	principal := runtimeAgentPrincipal{
 		WorkspaceID:  workspaceID,
-		Project:      "tapnow",
+		Project:      "sample",
 		Agent:        "pm",
 		RunID:        "run-one",
 		Capabilities: []string{"connection.use"},
@@ -525,14 +525,14 @@ func TestRuntimeActionProxyForwardsFeishuWithTenantToken(t *testing.T) {
 		WorkspaceID:  workspaceID,
 		ConnectionID: connection.ID,
 		TargetType:   ConnectionTargetAgent,
-		TargetID:     "tapnow/pm",
+		TargetID:     "sample/pm",
 	}); err != nil {
 		t.Fatalf("grant: %v", err)
 	}
 
 	principal := runtimeAgentPrincipal{
 		WorkspaceID:  workspaceID,
-		Project:      "tapnow",
+		Project:      "sample",
 		Agent:        "pm",
 		RunID:        "run-one",
 		Capabilities: []string{"connection.use"},
@@ -591,13 +591,13 @@ func TestRuntimeActionProxyRejectsUnsafeEndpoint(t *testing.T) {
 		WorkspaceID:  "ws-one",
 		ConnectionID: connection.ID,
 		TargetType:   ConnectionTargetAgent,
-		TargetID:     "tapnow/pm",
+		TargetID:     "sample/pm",
 	}); err != nil {
 		t.Fatalf("grant: %v", err)
 	}
 	principal := runtimeAgentPrincipal{
 		WorkspaceID:  "ws-one",
-		Project:      "tapnow",
+		Project:      "sample",
 		Agent:        "pm",
 		RunID:        "run-one",
 		Capabilities: []string{"connection.use"},
@@ -654,13 +654,13 @@ func TestRuntimeActionProxyEnforcesConnectionActionPolicy(t *testing.T) {
 		WorkspaceID:  workspaceID,
 		ConnectionID: connection.ID,
 		TargetType:   ConnectionTargetAgent,
-		TargetID:     "tapnow/pm",
+		TargetID:     "sample/pm",
 	}); err != nil {
 		t.Fatalf("grant: %v", err)
 	}
 	principal := runtimeAgentPrincipal{
 		WorkspaceID:  workspaceID,
-		Project:      "tapnow",
+		Project:      "sample",
 		Agent:        "pm",
 		RunID:        "run-one",
 		Capabilities: []string{"connection.use"},

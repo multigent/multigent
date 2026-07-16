@@ -59,24 +59,24 @@ func TestDeleteRoleTeamAndProjectRequireWorkspaceAdmin(t *testing.T) {
 	}
 
 	memberProjectRec := httptest.NewRecorder()
-	memberProjectReq := providerTestRequest(http.MethodDelete, "/api/v1/projects/tapnow", "member", nil)
-	memberProjectReq.SetPathValue("name", "tapnow")
+	memberProjectReq := providerTestRequest(http.MethodDelete, "/api/v1/projects/sample", "member", nil)
+	memberProjectReq.SetPathValue("name", "sample")
 	s.handleDeleteProject(memberProjectRec, memberProjectReq)
 	if memberProjectRec.Code != http.StatusForbidden {
 		t.Fatalf("member delete project status=%d body=%s", memberProjectRec.Code, memberProjectRec.Body.String())
 	}
 
 	adminProjectRec := httptest.NewRecorder()
-	adminProjectReq := providerTestRequest(http.MethodDelete, "/api/v1/projects/tapnow", "admin", nil)
-	adminProjectReq.SetPathValue("name", "tapnow")
+	adminProjectReq := providerTestRequest(http.MethodDelete, "/api/v1/projects/sample", "admin", nil)
+	adminProjectReq.SetPathValue("name", "sample")
 	s.handleDeleteProject(adminProjectRec, adminProjectReq)
 	if adminProjectRec.Code != http.StatusOK {
 		t.Fatalf("admin delete project status=%d body=%s", adminProjectRec.Code, adminProjectRec.Body.String())
 	}
-	if _, err := s.st.Project("tapnow"); err == nil {
+	if _, err := s.st.Project("sample"); err == nil {
 		t.Fatalf("project still exists")
 	}
-	if agents, err := s.st.ListAgents("tapnow"); err != nil || len(agents) != 0 {
+	if agents, err := s.st.ListAgents("sample"); err != nil || len(agents) != 0 {
 		t.Fatalf("project agents after delete len=%d err=%v", len(agents), err)
 	}
 }

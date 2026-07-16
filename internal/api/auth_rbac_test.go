@@ -23,8 +23,8 @@ func newTestUserStore(t *testing.T) *UserStore {
 func TestUserStorePrincipalMapsProjectAndAgentRoles(t *testing.T) {
 	users := newTestUserStore(t)
 	role := RoleMember
-	projects := []projectAccess{{Project: "tapnow", Role: ProjectRoleViewer}}
-	linkedAgents := []string{"tapnow/connector-dev"}
+	projects := []projectAccess{{Project: "sample", Role: ProjectRoleViewer}}
+	linkedAgents := []string{"sample/connector-dev"}
 
 	if err := users.CreateUser("dev", "pass", role, "", "", "", "", ""); err != nil {
 		t.Fatalf("create user: %v", err)
@@ -40,10 +40,10 @@ func TestUserStorePrincipalMapsProjectAndAgentRoles(t *testing.T) {
 	if p.OrgRole != rbac.OrgRoleMember {
 		t.Fatalf("org role=%q", p.OrgRole)
 	}
-	if got := p.ProjectRoles[rbac.ProjectKey("tapnow")]; got != rbac.ProjectRoleViewer {
+	if got := p.ProjectRoles[rbac.ProjectKey("sample")]; got != rbac.ProjectRoleViewer {
 		t.Fatalf("project role=%q", got)
 	}
-	if got := p.AgentRoles[rbac.AgentKey("tapnow", "connector-dev")]; got != rbac.AgentRoleOperator {
+	if got := p.AgentRoles[rbac.AgentKey("sample", "connector-dev")]; got != rbac.AgentRoleOperator {
 		t.Fatalf("agent role=%q", got)
 	}
 }
@@ -68,9 +68,9 @@ func TestUserStoreRegisterByEmailAllowsEmailLogin(t *testing.T) {
 
 func TestUserStoreAcceptInvitationCreatesMemberWithGrants(t *testing.T) {
 	users := newTestUserStore(t)
-	projects := []projectAccess{{Project: "tapnow", Role: ProjectRoleOperator}}
+	projects := []projectAccess{{Project: "sample", Role: ProjectRoleOperator}}
 
-	inv, err := users.CreateInvitation("Ella@Example.com", RoleMember, "Ella", "admin", projects, []string{"tapnow/frontend"})
+	inv, err := users.CreateInvitation("Ella@Example.com", RoleMember, "Ella", "admin", projects, []string{"sample/frontend"})
 	if err != nil {
 		t.Fatalf("invite: %v", err)
 	}
@@ -85,10 +85,10 @@ func TestUserStoreAcceptInvitationCreatesMemberWithGrants(t *testing.T) {
 	if !ok {
 		t.Fatalf("principal not found")
 	}
-	if got := p.ProjectRoles[rbac.ProjectKey("tapnow")]; got != rbac.ProjectRoleOperator {
+	if got := p.ProjectRoles[rbac.ProjectKey("sample")]; got != rbac.ProjectRoleOperator {
 		t.Fatalf("project role=%q", got)
 	}
-	if got := p.AgentRoles[rbac.AgentKey("tapnow", "frontend")]; got != rbac.AgentRoleOperator {
+	if got := p.AgentRoles[rbac.AgentKey("sample", "frontend")]; got != rbac.AgentRoleOperator {
 		t.Fatalf("agent role=%q", got)
 	}
 }
@@ -98,19 +98,19 @@ func TestServerCanManageProjectRequiresManagerRole(t *testing.T) {
 	if err := users.CreateUser("viewer", "pass123", RoleMember, "", "", "", "", ""); err != nil {
 		t.Fatalf("create viewer: %v", err)
 	}
-	if err := users.UpdateUser("viewer", nil, nil, nil, nil, nil, nil, nil, []projectAccess{{Project: "tapnow", Role: ProjectRoleViewer}}, nil, nil); err != nil {
+	if err := users.UpdateUser("viewer", nil, nil, nil, nil, nil, nil, nil, []projectAccess{{Project: "sample", Role: ProjectRoleViewer}}, nil, nil); err != nil {
 		t.Fatalf("grant viewer: %v", err)
 	}
 	if err := users.CreateUser("operator", "pass123", RoleMember, "", "", "", "", ""); err != nil {
 		t.Fatalf("create operator: %v", err)
 	}
-	if err := users.UpdateUser("operator", nil, nil, nil, nil, nil, nil, nil, []projectAccess{{Project: "tapnow", Role: ProjectRoleOperator}}, nil, nil); err != nil {
+	if err := users.UpdateUser("operator", nil, nil, nil, nil, nil, nil, nil, []projectAccess{{Project: "sample", Role: ProjectRoleOperator}}, nil, nil); err != nil {
 		t.Fatalf("grant operator: %v", err)
 	}
 	if err := users.CreateUser("manager", "pass123", RoleMember, "", "", "", "", ""); err != nil {
 		t.Fatalf("create manager: %v", err)
 	}
-	if err := users.UpdateUser("manager", nil, nil, nil, nil, nil, nil, nil, []projectAccess{{Project: "tapnow", Role: ProjectRoleManager}}, nil, nil); err != nil {
+	if err := users.UpdateUser("manager", nil, nil, nil, nil, nil, nil, nil, []projectAccess{{Project: "sample", Role: ProjectRoleManager}}, nil, nil); err != nil {
 		t.Fatalf("grant manager: %v", err)
 	}
 
@@ -127,7 +127,7 @@ func TestServerCanManageProjectRequiresManagerRole(t *testing.T) {
 	for _, tc := range cases {
 		req := httptest.NewRequest("GET", "/", nil)
 		req = req.WithContext(context.WithValue(req.Context(), ctxUserKey, tc.user))
-		if got := s.canManageProject(req, "tapnow"); got != tc.want {
+		if got := s.canManageProject(req, "sample"); got != tc.want {
 			t.Fatalf("canManageProject(%s)=%v, want %v", tc.user, got, tc.want)
 		}
 	}

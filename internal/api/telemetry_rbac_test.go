@@ -46,8 +46,8 @@ func seedTelemetryRun(t *testing.T, s *Server, project, agent, logBody string) s
 
 func TestTelemetryRunsAreFilteredByAgentAccess(t *testing.T) {
 	s, _ := newConnectionGrantPolicyServer(t)
-	pmLog := seedTelemetryRun(t, s, "tapnow", "pm", "pm log")
-	backendLog := seedTelemetryRun(t, s, "tapnow", "backend", "backend log")
+	pmLog := seedTelemetryRun(t, s, "sample", "pm", "pm log")
+	backendLog := seedTelemetryRun(t, s, "sample", "backend", "backend log")
 
 	ownerRec := httptest.NewRecorder()
 	s.handleTelemetryRuns(ownerRec, providerTestRequest(http.MethodGet, "/api/v1/telemetry/runs?allTime=1", "owner", nil))

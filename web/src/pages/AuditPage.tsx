@@ -68,7 +68,7 @@ export default function AuditPage() {
           Filters
         </div>
         <div className="grid gap-3 md:grid-cols-5">
-          <FilterField label="Actor" value={filters.actorId} onChange={actorId => setFilters(v => ({ ...v, actorId }))} placeholder="admin or tapnow/pm" />
+          <FilterField label="Actor" value={filters.actorId} onChange={actorId => setFilters(v => ({ ...v, actorId }))} placeholder="admin or sample/pm" />
           <FilterField label="Action" value={filters.action} onChange={action => setFilters(v => ({ ...v, action }))} placeholder="connection.use" />
           <FilterField label="Resource type" value={filters.resourceType} onChange={resourceType => setFilters(v => ({ ...v, resourceType }))} placeholder="connection" />
           <FilterField label="Resource ID" value={filters.resourceId} onChange={resourceId => setFilters(v => ({ ...v, resourceId }))} placeholder="conn-..." />

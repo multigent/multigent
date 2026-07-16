@@ -26,7 +26,7 @@ func TestOrgAdminCannotManageBilling(t *testing.T) {
 		t.Fatalf("admin should not manage billing: %+v", decision)
 	}
 
-	decision = a.HasCapability(p, AgentCreate, Resource{Kind: ResourceProject, Project: "tapnow"})
+	decision = a.HasCapability(p, AgentCreate, Resource{Kind: ResourceProject, Project: "sample"})
 	if !decision.Allowed {
 		t.Fatalf("admin should create agents: %+v", decision)
 	}
@@ -37,18 +37,18 @@ func TestProjectRolesInheritToTaskAndAgent(t *testing.T) {
 	p := Principal{
 		ID:           "pm",
 		OrgRole:      OrgRoleMember,
-		ProjectRoles: map[string]Role{ProjectKey("tapnow"): ProjectRoleManager},
+		ProjectRoles: map[string]Role{ProjectKey("sample"): ProjectRoleManager},
 	}
 
 	decision := a.HasCapability(p, TaskAssign, Resource{
-		Kind: ResourceTask, Project: "tapnow", Task: "connector-backend",
+		Kind: ResourceTask, Project: "sample", Task: "connector-backend",
 	})
 	if !decision.Allowed || decision.Reason != "inherited project role" {
 		t.Fatalf("project manager should assign project tasks: %+v", decision)
 	}
 
 	decision = a.HasCapability(p, AgentEditPrompt, Resource{
-		Kind: ResourceAgent, Project: "tapnow", Agent: "backend-connector",
+		Kind: ResourceAgent, Project: "sample", Agent: "backend-connector",
 	})
 	if !decision.Allowed {
 		t.Fatalf("project manager should edit project agent prompt: %+v", decision)
@@ -60,32 +60,32 @@ func TestAgentOwnerCanCoachAgentWithoutProjectManager(t *testing.T) {
 	p := Principal{
 		ID:         "glenn",
 		OrgRole:    OrgRoleMember,
-		AgentRoles: map[string]Role{AgentKey("tapnow", "connector-dev"): AgentRoleOwner},
+		AgentRoles: map[string]Role{AgentKey("sample", "connector-dev"): AgentRoleOwner},
 	}
 
 	decision := a.HasCapability(p, AgentEditPrompt, Resource{
-		Kind: ResourceAgent, Project: "tapnow", Agent: "connector-dev",
+		Kind: ResourceAgent, Project: "sample", Agent: "connector-dev",
 	})
 	if !decision.Allowed {
 		t.Fatalf("agent owner should edit prompt: %+v", decision)
 	}
 
 	decision = a.HasCapability(p, AgentDelegateTask, Resource{
-		Kind: ResourceAgent, Project: "tapnow", Agent: "connector-dev",
+		Kind: ResourceAgent, Project: "sample", Agent: "connector-dev",
 	})
 	if !decision.Allowed {
 		t.Fatalf("agent owner should delegate agent tasks: %+v", decision)
 	}
 
 	decision = a.HasCapability(p, AgentReadRuns, Resource{
-		Kind: ResourceAgent, Project: "tapnow", Agent: "connector-dev",
+		Kind: ResourceAgent, Project: "sample", Agent: "connector-dev",
 	})
 	if !decision.Allowed {
 		t.Fatalf("agent owner should read agent runs: %+v", decision)
 	}
 
 	decision = a.HasCapability(p, ProjectManageMembers, Resource{
-		Kind: ResourceProject, Project: "tapnow",
+		Kind: ResourceProject, Project: "sample",
 	})
 	if decision.Allowed {
 		t.Fatalf("agent owner should not manage project members: %+v", decision)
@@ -97,25 +97,25 @@ func TestAgentViewerHasNarrowAgentVisibility(t *testing.T) {
 	p := Principal{
 		ID:         "viewer",
 		OrgRole:    OrgRoleMember,
-		AgentRoles: map[string]Role{AgentKey("tapnow", "pm-codex"): AgentRoleViewer},
+		AgentRoles: map[string]Role{AgentKey("sample", "pm-codex"): AgentRoleViewer},
 	}
 
 	decision := a.HasCapability(p, AgentReadProfile, Resource{
-		Kind: ResourceAgent, Project: "tapnow", Agent: "pm-codex",
+		Kind: ResourceAgent, Project: "sample", Agent: "pm-codex",
 	})
 	if !decision.Allowed {
 		t.Fatalf("agent viewer should read agent profile: %+v", decision)
 	}
 
 	decision = a.HasCapability(p, AgentReadRuns, Resource{
-		Kind: ResourceAgent, Project: "tapnow", Agent: "pm-codex",
+		Kind: ResourceAgent, Project: "sample", Agent: "pm-codex",
 	})
 	if decision.Allowed {
 		t.Fatalf("agent viewer should not read agent runs: %+v", decision)
 	}
 
 	decision = a.HasCapability(p, AgentMessage, Resource{
-		Kind: ResourceAgent, Project: "tapnow", Agent: "pm-codex",
+		Kind: ResourceAgent, Project: "sample", Agent: "pm-codex",
 	})
 	if decision.Allowed {
 		t.Fatalf("agent viewer should not message as operator: %+v", decision)
@@ -127,7 +127,7 @@ func TestContextRequiresExplicitGrant(t *testing.T) {
 	p := Principal{
 		ID:           "dev",
 		OrgRole:      OrgRoleMember,
-		ProjectRoles: map[string]Role{ProjectKey("tapnow"): ProjectRoleManager},
+		ProjectRoles: map[string]Role{ProjectKey("sample"): ProjectRoleManager},
 	}
 
 	decision := a.HasCapability(p, ContextRead, Resource{
