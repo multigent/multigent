@@ -1,7 +1,7 @@
 import { useCallback, useEffect, useState } from 'react'
 import { useTranslation } from 'react-i18next'
 import { Link } from 'react-router-dom'
-import { User, FolderKanban, X, Copy } from 'lucide-react'
+import { User, X, Copy } from 'lucide-react'
 import { apiFetch, apiPost } from '../lib/api'
 import { cn } from '../lib/cn'
 
@@ -59,13 +59,17 @@ function inviteLink(token: string): string {
   return `${window.location.origin}/invite/${encodeURIComponent(token)}`
 }
 
+function looksLikeEmail(value: string): boolean {
+  return /^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(value.trim())
+}
+
 export default function PeoplePage() {
   const { t } = useTranslation()
   const [people, setPeople] = useState<PersonRow[]>([])
   const [invitations, setInvitations] = useState<InvitationRow[]>([])
   const [loading, setLoading] = useState(true)
   const [creating, setCreating] = useState(false)
-  const [form, setForm] = useState({ displayName: '', email: '', role: 'member' })
+  const [form, setForm] = useState({ email: '', role: 'member' })
   const [lookup, setLookup] = useState<UserLookupResponse | null>(null)
   const [lookupLoading, setLookupLoading] = useState(false)
   const [inviteUrl, setInviteUrl] = useState('')
@@ -87,9 +91,36 @@ export default function PeoplePage() {
 
   useEffect(() => { void refresh() }, [refresh])
 
+  useEffect(() => {
+    const email = form.email.trim()
+    setLookup(null)
+    if (!looksLikeEmail(email)) {
+      setLookupLoading(false)
+      return
+    }
+    let cancelled = false
+    setLookupLoading(true)
+    const timer = window.setTimeout(() => {
+      apiFetch<UserLookupResponse>(`/api/v1/users/lookup?email=${encodeURIComponent(email)}`)
+        .then((res) => {
+          if (!cancelled) setLookup(res)
+        })
+        .catch((e) => {
+          if (!cancelled) setErr(e instanceof Error ? e.message : String(e))
+        })
+        .finally(() => {
+          if (!cancelled) setLookupLoading(false)
+        })
+    }, 350)
+    return () => {
+      cancelled = true
+      window.clearTimeout(timer)
+    }
+  }, [form.email])
+
   async function lookupEmail() {
     const email = form.email.trim()
-    if (!email || /[\s,;\n\r\t]/.test(email)) {
+    if (!looksLikeEmail(email)) {
       setLookup(null)
       return
     }
@@ -98,9 +129,6 @@ export default function PeoplePage() {
     try {
       const res = await apiFetch<UserLookupResponse>(`/api/v1/users/lookup?email=${encodeURIComponent(email)}`)
       setLookup(res)
-      if (res.user?.displayName && !form.displayName.trim()) {
-        setForm(prev => ({ ...prev, displayName: res.user?.displayName ?? prev.displayName }))
-      }
     } catch (e) {
       setLookup(null)
       setErr(e instanceof Error ? e.message : String(e))
@@ -117,7 +145,6 @@ export default function PeoplePage() {
       const res = await apiPost<InvitationCreateResponse>('/api/v1/invitations', {
         emails,
         role: form.role,
-        displayName: form.displayName.trim(),
       })
       setInviteUrl(res.invitation?.token ? inviteLink(res.invitation.token) : (res.inviteUrl ?? ''))
       setInviteResults([
@@ -131,7 +158,8 @@ export default function PeoplePage() {
           error: item.error,
         })),
       ])
-      setForm({ displayName: '', email: '', role: 'member' })
+      setForm({ email: '', role: 'member' })
+      setLookup(null)
       await refresh()
     } catch (e) { setErr(e instanceof Error ? e.message : String(e)) }
     finally { setSaving(false) }
@@ -169,47 +197,42 @@ export default function PeoplePage() {
           <p className="mt-1 text-xs text-neutral-400 dark:text-zinc-500">{t('people.emptyHint')}</p>
         </div>
       ) : (
-        <div className="grid gap-3 sm:grid-cols-2 lg:grid-cols-3">
-          {people.map(p => (
-            <Link key={p.username} to={`/people/${encodeURIComponent(p.username)}`}
-              className={cn(
-                'group rounded-xl border bg-white p-4 transition-all hover:shadow-md dark:bg-zinc-900/40',
-                p.disabled
-                  ? 'border-neutral-200/50 opacity-60 dark:border-zinc-700/40'
-                  : 'border-neutral-200/80 hover:border-sky-300 dark:border-zinc-700/60 dark:hover:border-sky-600/40'
-              )}>
-              <div className="flex items-start gap-3">
-                {p.avatar ? (
-                  <img src={p.avatar} alt="" className="size-10 shrink-0 rounded-full object-cover" />
-                ) : (
-                  <div className="flex size-10 shrink-0 items-center justify-center rounded-full bg-indigo-100 dark:bg-indigo-900/30">
-                    <User className="size-5 text-indigo-600 dark:text-indigo-400" strokeWidth={1.8} />
-                  </div>
-                )}
-                <div className="min-w-0 flex-1">
-                  <div className="flex items-center gap-2">
-                    <span className="truncate text-sm font-semibold text-neutral-900 dark:text-zinc-100">{p.displayName || p.username}</span>
-                    {p.disabled && <span className="rounded bg-red-100 px-1.5 py-0.5 text-[10px] font-medium text-red-600 dark:bg-red-900/30 dark:text-red-400">{t('users.disabled')}</span>}
-                  </div>
-                  {p.displayName && (
-                    <p className="truncate text-xs text-neutral-400 dark:text-zinc-500">{p.username}</p>
-                  )}
-                  {p.email && (
-                    <p className="truncate text-xs text-neutral-400 dark:text-zinc-500">{p.email}</p>
-                  )}
-                </div>
-              </div>
-              <div className="mt-3 flex items-center gap-3 text-xs text-neutral-400 dark:text-zinc-500">
-                <span className="flex items-center gap-1">
-                  <FolderKanban className="size-3.5" strokeWidth={1.5} />
-                  {(p.projects?.length ?? 0)} {t('people.projects')}
-                </span>
-                {p.linkedAgents && p.linkedAgents.length > 0 && (
-                  <span className="truncate">{p.linkedAgents.join(', ')}</span>
-                )}
-              </div>
-            </Link>
-          ))}
+        <div className="overflow-x-auto rounded-xl border border-neutral-200/80 bg-white dark:border-zinc-700/60 dark:bg-zinc-900/40">
+          <table className="w-full text-left text-sm">
+            <thead className="border-b border-neutral-200 bg-neutral-50 text-xs font-medium uppercase tracking-wide text-neutral-500 dark:border-zinc-800 dark:bg-zinc-900 dark:text-zinc-500">
+              <tr>
+                <th className="px-4 py-3">{t('people.columnUser')}</th>
+                <th className="px-4 py-3">{t('users.email')}</th>
+                <th className="px-4 py-3">{t('people.columnRole')}</th>
+                <th className="px-4 py-3">{t('people.columnProjects')}</th>
+                <th className="px-4 py-3">{t('people.columnCreated')}</th>
+                <th className="px-4 py-3">{t('people.columnStatus')}</th>
+              </tr>
+            </thead>
+            <tbody className="divide-y divide-neutral-100 dark:divide-zinc-800">
+              {people.map(p => (
+                <tr key={p.username} className={cn('hover:bg-neutral-50 dark:hover:bg-zinc-800/50', p.disabled && 'opacity-60')}>
+                  <td className="px-4 py-3">
+                    <Link to={`/people/${encodeURIComponent(p.username)}`} className="font-medium text-neutral-900 hover:text-sky-700 dark:text-zinc-100 dark:hover:text-sky-300">
+                      {p.displayName || p.username}
+                    </Link>
+                    {p.displayName && <p className="mt-0.5 text-xs text-neutral-400 dark:text-zinc-500">{p.username}</p>}
+                  </td>
+                  <td className="px-4 py-3 text-neutral-600 dark:text-zinc-400">{p.email || '-'}</td>
+                  <td className="px-4 py-3">
+                    <span className="rounded-full bg-neutral-100 px-2 py-0.5 text-xs font-medium text-neutral-600 dark:bg-zinc-800 dark:text-zinc-300">{p.role}</span>
+                  </td>
+                  <td className="px-4 py-3 text-neutral-600 dark:text-zinc-400">{p.projects?.length ?? 0}</td>
+                  <td className="px-4 py-3 text-neutral-500 dark:text-zinc-500">{p.createdAt ? new Date(p.createdAt).toLocaleString() : '-'}</td>
+                  <td className="px-4 py-3">
+                    <span className={cn('rounded-full px-2 py-0.5 text-xs font-medium', p.disabled ? 'bg-red-100 text-red-700 dark:bg-red-900/30 dark:text-red-300' : 'bg-emerald-100 text-emerald-700 dark:bg-emerald-900/30 dark:text-emerald-300')}>
+                      {p.disabled ? t('users.disabled') : t('people.statusActive')}
+                    </span>
+                  </td>
+                </tr>
+              ))}
+            </tbody>
+          </table>
         </div>
       )}
 
@@ -263,13 +286,9 @@ export default function PeoplePage() {
               <label className="flex flex-col gap-1">
                 <span className="text-sm font-medium text-neutral-600 dark:text-zinc-400">{t('users.email')} *</span>
                 <div className="flex gap-2">
-                  <input value={form.email} onChange={e => { setForm({ ...form, email: e.target.value }); setLookup(null) }} onBlur={() => void lookupEmail()} className={fieldCls} placeholder="alice@example.com" autoFocus />
-                  <button type="button" onClick={() => void lookupEmail()} disabled={lookupLoading || !form.email.trim()}
-                    className="shrink-0 rounded-lg border border-neutral-300 px-3 py-2 text-sm font-medium text-neutral-700 hover:bg-neutral-50 disabled:opacity-50 dark:border-zinc-600 dark:text-zinc-300 dark:hover:bg-zinc-800">
-                    {lookupLoading ? t('forms.loading') : t('people.search')}
-                  </button>
+                  <input value={form.email} onChange={e => { setForm({ ...form, email: e.target.value }); setErr(null) }} onBlur={() => void lookupEmail()} className={fieldCls} placeholder="alice@example.com" autoFocus />
                 </div>
-                <span className="text-xs text-neutral-400 dark:text-zinc-500">{t('people.emailSearchHint')}</span>
+                <span className="text-xs text-neutral-400 dark:text-zinc-500">{lookupLoading ? t('people.checkingEmail') : t('people.emailSearchHint')}</span>
               </label>
               {lookup && (
                 <div className={cn('rounded-lg border p-3 text-sm', lookup.alreadyMember
@@ -290,10 +309,6 @@ export default function PeoplePage() {
                   {lookup.pendingInvite && <p className="mt-1 text-xs opacity-80">{t('people.lookupPendingInvite')}</p>}
                 </div>
               )}
-              <label className="flex flex-col gap-1">
-                <span className="text-sm font-medium text-neutral-600 dark:text-zinc-400">{t('users.displayName')}</span>
-                <input value={form.displayName} onChange={e => setForm({ ...form, displayName: e.target.value })} className={fieldCls} placeholder="Alice Wang" />
-              </label>
               <label className="flex flex-col gap-1">
                 <span className="text-sm font-medium text-neutral-600 dark:text-zinc-400">Workspace role</span>
                 <select value={form.role} onChange={e => setForm({ ...form, role: e.target.value })} className={fieldCls}>
@@ -341,7 +356,7 @@ export default function PeoplePage() {
               )}
               <div className="flex justify-end gap-2 pt-1">
                 <button type="button" onClick={() => setCreating(false)} disabled={saving} className="rounded-lg border border-neutral-300 px-3 py-1.5 text-sm dark:border-zinc-600">{t('forms.cancel')}</button>
-                <button type="button" onClick={() => void handleCreate()} disabled={saving || !form.email.trim() || Boolean(lookup?.alreadyMember)}
+                <button type="button" onClick={() => void handleCreate()} disabled={saving || !looksLikeEmail(form.email) || Boolean(lookup?.alreadyMember) || Boolean(lookup?.pendingInvite)}
                   className="rounded-lg bg-sky-600 px-3 py-1.5 text-sm font-medium text-white disabled:opacity-50">
                   {saving ? t('forms.saving') : t('people.sendInvite')}
                 </button>

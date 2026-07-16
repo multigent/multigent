@@ -203,6 +203,24 @@ func TestInviteExistingUserByEmail(t *testing.T) {
 		t.Fatalf("bad lookup=%#v", lookup)
 	}
 
+	unregisteredReq := providerTestRequest(http.MethodGet, "/api/v1/users/lookup?email=new-user@example.com", "admin", nil)
+	unregisteredRec := httptest.NewRecorder()
+	s.handleLookupUserByEmail(unregisteredRec, unregisteredReq)
+	if unregisteredRec.Code != http.StatusOK {
+		t.Fatalf("lookup unregistered status=%d body=%s", unregisteredRec.Code, unregisteredRec.Body.String())
+	}
+	var unregistered struct {
+		Registered    bool `json:"registered"`
+		AlreadyMember bool `json:"alreadyMember"`
+		PendingInvite bool `json:"pendingInvite"`
+	}
+	if err := json.Unmarshal(unregisteredRec.Body.Bytes(), &unregistered); err != nil {
+		t.Fatalf("decode unregistered lookup: %v", err)
+	}
+	if unregistered.Registered || unregistered.AlreadyMember || unregistered.PendingInvite {
+		t.Fatalf("bad unregistered lookup=%#v", unregistered)
+	}
+
 	inv, err := s.users.CreateInvitation("existing@example.com", WorkspaceRoleMember, "", "admin", nil, nil)
 	if err != nil {
 		t.Fatalf("create invitation: %v", err)
