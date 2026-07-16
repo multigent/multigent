@@ -11,7 +11,7 @@ import (
 	"time"
 
 	controldb "github.com/multigent/multigent/internal/db"
-	larkbridge "github.com/multigent/multigent/internal/imbridge/lark"
+	"github.com/multigent/multigent/internal/imbridge"
 )
 
 type agentChannelResponse struct {
@@ -79,11 +79,8 @@ func (s *Server) handleAgentChannels(w http.ResponseWriter, r *http.Request) {
 		out = append(out, resp)
 	}
 	_ = json.NewEncoder(w).Encode(map[string]any{
-		"channels": out,
-		"providers": []map[string]string{
-			{"id": larkbridge.ProviderFeishu, "label": "Feishu"},
-			{"id": larkbridge.ProviderLark, "label": "Lark"},
-		},
+		"channels":  out,
+		"providers": imbridge.Providers(),
 	})
 }
 
@@ -137,10 +134,14 @@ func (s *Server) handleAgentChannelSetupBegin(w http.ResponseWriter, r *http.Req
 	if _, ok := s.currentWorkspaceForRequest(w, r); !ok {
 		return
 	}
-	client := larkbridge.RegistrationClient{}
+	channelProvider, ok := imbridge.LookupProvider(provider)
+	if !ok {
+		s.jsonError(w, http.StatusBadRequest, "unsupported channel provider")
+		return
+	}
 	ctx, cancel := contextWithRequestTimeout(r, 20*time.Second)
 	defer cancel()
-	resp, err := client.Begin(ctx, provider)
+	resp, err := channelProvider.BeginSetup(ctx)
 	if err != nil {
 		s.jsonError(w, http.StatusBadGateway, err.Error())
 		return
@@ -258,10 +259,14 @@ func (s *Server) handleAgentChannelSetupPoll(w http.ResponseWriter, r *http.Requ
 		s.jsonError(w, http.StatusBadRequest, "invalid JSON body")
 		return
 	}
-	client := larkbridge.RegistrationClient{}
+	channelProvider, ok := imbridge.LookupProvider(provider)
+	if !ok {
+		s.jsonError(w, http.StatusBadRequest, "unsupported channel provider")
+		return
+	}
 	ctx, cancel := contextWithRequestTimeout(r, 20*time.Second)
 	defer cancel()
-	poll, err := client.Poll(ctx, provider, req.DeviceCode, req.BaseURL)
+	poll, err := channelProvider.PollSetup(ctx, req.DeviceCode, req.BaseURL)
 	if err != nil {
 		s.jsonError(w, http.StatusBadGateway, err.Error())
 		return
@@ -287,8 +292,12 @@ func (s *Server) handleAgentChannelSetupPoll(w http.ResponseWriter, r *http.Requ
 	_ = json.NewEncoder(w).Encode(resp)
 }
 
-func (s *Server) saveLarkFamilyAgentChannel(r *http.Request, workspaceID, project, agent, provider string, poll larkbridge.PollResponse) (controldb.AgentChannelBinding, error) {
+func (s *Server) saveLarkFamilyAgentChannel(r *http.Request, workspaceID, project, agent, provider string, poll imbridge.SetupPollResponse) (controldb.AgentChannelBinding, error) {
 	now := time.Now().UTC().Format(time.RFC3339)
+	openBaseURL, err := imbridge.MustOpenBaseURL(provider)
+	if err != nil {
+		return controldb.AgentChannelBinding{}, err
+	}
 	connectionName := agentChannelConnectionName(project, agent)
 	connectionID := ""
 	connections, err := s.controlDB.ListConnections(controldb.ConnectionFilter{
@@ -311,7 +320,7 @@ func (s *Server) saveLarkFamilyAgentChannel(r *http.Request, workspaceID, projec
 	}
 
 	profileRaw, _ := json.Marshal(map[string]any{
-		"baseUrl":     larkOpenBaseURL(provider),
+		"baseUrl":     openBaseURL,
 		"accountsUrl": poll.BaseURL,
 		"appId":       poll.AppID,
 		"ownerOpenId": poll.OwnerOpenID,
@@ -335,7 +344,7 @@ func (s *Server) saveLarkFamilyAgentChannel(r *http.Request, workspaceID, projec
 		return controldb.AgentChannelBinding{}, err
 	}
 	secret, err := sealConnectionSecret(map[string]string{
-		"baseUrl":   larkOpenBaseURL(provider),
+		"baseUrl":   openBaseURL,
 		"appId":     poll.AppID,
 		"appSecret": poll.AppSecret,
 	})
@@ -425,11 +434,12 @@ func (s *Server) parseProjectAgentProvider(w http.ResponseWriter, r *http.Reques
 	if !s.checkProjectAccess(w, r, project) {
 		return "", "", "", false
 	}
-	provider, ok := larkbridge.NormalizeProvider(r.PathValue("provider"))
+	channelProvider, ok := imbridge.LookupProvider(r.PathValue("provider"))
 	if !ok {
 		s.jsonError(w, http.StatusBadRequest, "unsupported channel provider")
 		return "", "", "", false
 	}
+	provider := channelProvider.Info().ID
 	return project, agent, provider, true
 }
 
@@ -486,13 +496,6 @@ func agentChannelToResponse(binding controldb.AgentChannelBinding) agentChannelR
 
 func agentChannelConnectionName(project, agent string) string {
 	return "agent-" + strings.NewReplacer("/", "-", " ", "-").Replace(project+"-"+agent)
-}
-
-func larkOpenBaseURL(provider string) string {
-	if provider == larkbridge.ProviderLark {
-		return "https://open.larksuite.com"
-	}
-	return "https://open.feishu.cn"
 }
 
 func requestUsername(r *http.Request) string {
