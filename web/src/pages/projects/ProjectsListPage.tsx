@@ -1,7 +1,7 @@
 import { useState } from 'react'
 import { Link, useNavigate } from 'react-router-dom'
 import { useTranslation } from 'react-i18next'
-import { FolderKanban, ArrowRight, Plus, X } from 'lucide-react'
+import { FolderKanban, ArrowRight, X } from 'lucide-react'
 import { PlaceholderCard } from '../../components/ui/PlaceholderCard'
 import { useApiJson } from '../../lib/use-api'
 import { apiPost } from '../../lib/api'
@@ -31,7 +31,6 @@ export default function ProjectsListPage() {
           onClick={() => setCreateOpen(true)}
           className={primaryOutlineButton}
         >
-          <Plus className="size-4" strokeWidth={2} />
           {t('projects.create')}
         </button>
       </div>

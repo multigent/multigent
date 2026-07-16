@@ -1,5 +1,5 @@
 import { useEffect, useMemo, useState, type ReactNode } from 'react'
-import { Cable, KeyRound, Link2, Pencil, Plus, RefreshCw, ShieldCheck, Trash2, X } from 'lucide-react'
+import { Cable, KeyRound, Link2, Pencil, RefreshCw, ShieldCheck, Trash2, X } from 'lucide-react'
 import { useSearchParams } from 'react-router-dom'
 import { useTranslation } from 'react-i18next'
 import { apiDelete, apiFetch, apiPost, apiPut } from '../lib/api'
@@ -200,7 +200,6 @@ export default function ConnectionsPage() {
             </button>
           )}
           <button type="button" onClick={() => setCreating(true)} className={primaryOutlineButton}>
-            <Plus className="size-4" strokeWidth={1.8} />
             {t('connections.newConnection')}
           </button>
         </div>

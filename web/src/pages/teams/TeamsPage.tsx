@@ -1,7 +1,7 @@
 import { useState, type FormEvent } from 'react'
 import { Link } from 'react-router-dom'
 import { useTranslation } from 'react-i18next'
-import { Users, Puzzle, ArrowRight, User, Database, Plus, X } from 'lucide-react'
+import { Users, Puzzle, ArrowRight, User, Database, X } from 'lucide-react'
 import { PlaceholderCard } from '../../components/ui/PlaceholderCard'
 import { useApiJson } from '../../lib/use-api'
 import { apiPost } from '../../lib/api'
@@ -191,7 +191,6 @@ function CreateTeamDialog({ templates, locale, onCreated }: { templates: TeamTem
         onClick={openDialog}
         className={primaryOutlineButton}
       >
-        <Plus className="size-4" strokeWidth={2} />
         {t('teams.createTeam')}
       </button>
       {open && (

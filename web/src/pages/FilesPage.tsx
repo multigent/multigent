@@ -2,7 +2,7 @@ import { useState, useEffect, useCallback, useRef } from 'react'
 import { useTranslation } from 'react-i18next'
 import {
   Check, ChevronRight, Copy, File, Film, Folder, FolderPlus, Grid3x3, Image,
-  List, Music, Trash2, Upload, X, ZoomIn, ZoomOut, Maximize2, Download, Play,
+  List, Music, Trash2, X, ZoomIn, ZoomOut, Maximize2, Download, Play,
 } from 'lucide-react'
 import { apiFetch, apiPost, apiUrl } from '../lib/api'
 import { getStoredToken } from '../lib/auth'
@@ -216,9 +216,7 @@ export default function FilesPage() {
         <div className="flex items-center gap-1.5 shrink-0">
           <input ref={fileInputRef} type="file" multiple className="hidden"
             onChange={e => { if (e.target.files?.length) { uploadFiles(e.target.files); e.target.value = '' } }} />
-          <button onClick={() => fileInputRef.current?.click()} className={primaryOutlineButton}>
-            <Upload className="size-4" /> {t('files.upload')}
-          </button>
+          <button onClick={() => fileInputRef.current?.click()} className={primaryOutlineButton}>{t('files.upload')}</button>
           <button onClick={() => setShowMkdir(true)} className={btnGhost}>
             <FolderPlus className="size-4" /> {t('files.newFolder')}
           </button>

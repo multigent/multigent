@@ -355,9 +355,7 @@ export default function DocsPage() {
                   </button>
                 )}
               </div>
-              <button onClick={() => setShowAdd(true)} className={primaryOutlineButton}>
-                <Plus className="size-4" /> {t('docs.addDoc')}
-              </button>
+              <button onClick={() => setShowAdd(true)} className={primaryOutlineButton}>{t('docs.addDoc')}</button>
             </div>
             {(selectedIndex || selectedTag) && !searchQ && (
               <button onClick={() => { setSelectedIndex(null); setSelectedTag(null); navigate('/docs', { replace: true }) }} className={`${btnGhost} mb-4`}>

@@ -3,7 +3,7 @@ import { useTranslation } from 'react-i18next'
 import { useSearchParams } from 'react-router-dom'
 import Markdown from 'react-markdown'
 import remarkGfm from 'remark-gfm'
-import { BookOpen, Plus, Puzzle, Save, Upload, X } from 'lucide-react'
+import { BookOpen, Puzzle, Save, Upload, X } from 'lucide-react'
 import { cn } from '../lib/cn'
 import { useApiJson } from '../lib/use-api'
 import { apiPost, apiPut } from '../lib/api'
@@ -176,7 +176,6 @@ export default function SkillsPage() {
           onClick={() => setCreateOpen(true)}
           className={primaryOutlineButton}
         >
-          <Plus className="size-4" strokeWidth={2} />
           {t('skill.create')}
         </button>
       </div>
