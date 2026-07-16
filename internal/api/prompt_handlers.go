@@ -11,6 +11,7 @@ import (
 
 	"github.com/multigent/multigent/internal/agentcli"
 	"github.com/multigent/multigent/internal/entity"
+	"github.com/multigent/multigent/internal/sandbox"
 )
 
 type promptResponse struct {
@@ -456,10 +457,18 @@ func (s *Server) handlePutAgentSandbox(w http.ResponseWriter, r *http.Request) {
 			}
 			meta.Sandbox.Docker = dc
 		} else if body.Provider == "e2b" {
+			caps := sandbox.DetectCapabilities()
+			if !caps.E2B.Available {
+				s.jsonErrorCode(w, http.StatusBadRequest, ErrCodeValidationFailed, "e2b runtime unavailable: "+caps.E2B.Reason)
+				return
+			}
 			meta.Sandbox.E2B = &entity.E2BSandboxConfig{
 				Template:   body.Template,
 				TimeoutSec: body.TimeoutSec,
 			}
+		} else {
+			s.jsonErrorCode(w, http.StatusBadRequest, ErrCodeValidationFailed, "unsupported sandbox provider")
+			return
 		}
 	}
 

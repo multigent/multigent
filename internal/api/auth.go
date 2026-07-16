@@ -1030,6 +1030,7 @@ func (s *Server) handleCreateInvitation(w http.ResponseWriter, r *http.Request) 
 	type invitationResult struct {
 		Invitation *invitationRecord `json:"invitation"`
 		InviteURL  string            `json:"inviteUrl"`
+		Delivery   string            `json:"delivery,omitempty"`
 	}
 	type invitationError struct {
 		Email string `json:"email"`
@@ -1037,13 +1038,26 @@ func (s *Server) handleCreateInvitation(w http.ResponseWriter, r *http.Request) 
 	}
 	results := make([]invitationResult, 0, len(emails))
 	errors := make([]invitationError, 0)
+	smtpCfg, smtpEnabled := loadSMTPConfig()
+	delivery := "local-link"
+	if smtpEnabled {
+		delivery = "smtp"
+	}
 	for _, email := range emails {
 		inv, err := s.users.CreateInvitation(email, body.Role, strings.TrimSpace(body.DisplayName), cur.Username, body.Projects, body.LinkedAgents)
 		if err != nil {
 			errors = append(errors, invitationError{Email: email, Error: err.Error()})
 			continue
 		}
-		results = append(results, invitationResult{Invitation: inv, InviteURL: s.invitationURL(r, inv.Token)})
+		inviteURL := s.invitationURL(r, inv.Token)
+		result := invitationResult{Invitation: inv, InviteURL: inviteURL, Delivery: delivery}
+		if smtpEnabled {
+			if err := smtpCfg.sendInvitation(inv.Email, inv.DisplayName, inviteURL); err != nil {
+				result.Delivery = "smtp_failed"
+				errors = append(errors, invitationError{Email: email, Error: "invitation created, but email delivery failed: " + err.Error()})
+			}
+		}
+		results = append(results, result)
 	}
 	if len(results) == 0 {
 		w.WriteHeader(http.StatusBadRequest)
@@ -1054,7 +1068,7 @@ func (s *Server) handleCreateInvitation(w http.ResponseWriter, r *http.Request) 
 		"ok":          true,
 		"invitations": results,
 		"errors":      errors,
-		"delivery":    "local-link",
+		"delivery":    delivery,
 	}
 	if len(results) == 1 {
 		response["invitation"] = results[0].Invitation

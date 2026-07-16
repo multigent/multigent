@@ -1268,6 +1268,7 @@
     "image": "基础镜像",
     "template": "运行镜像",
     "e2bTemplate": "E2B 模板",
+    "e2bUnavailable": "E2B 当前不可用",
     "imagePlaceholder": "留空使用 provider 默认值",
     "agentCli": "Agent CLI 工具链",
     "agentCliHint": "基础镜像外独立安装和升级",

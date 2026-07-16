@@ -30,6 +30,7 @@ type InvitationCreateResponse = {
   invitations?: {
     invitation: InvitationRow
     inviteUrl: string
+    delivery?: string
   }[]
   errors?: {
     email: string
@@ -52,7 +53,7 @@ export default function PeoplePage() {
   const [creating, setCreating] = useState(false)
   const [form, setForm] = useState({ displayName: '', email: '', phone: '', role: 'member' })
   const [inviteUrl, setInviteUrl] = useState('')
-  const [inviteResults, setInviteResults] = useState<{ email: string; inviteUrl?: string; error?: string }[]>([])
+  const [inviteResults, setInviteResults] = useState<{ email: string; inviteUrl?: string; delivery?: string; error?: string }[]>([])
   const [saving, setSaving] = useState(false)
   const [err, setErr] = useState<string | null>(null)
 
@@ -85,6 +86,7 @@ export default function PeoplePage() {
         ...(res.invitations ?? []).map(item => ({
           email: item.invitation.email,
           inviteUrl: inviteLink(item.invitation.token),
+          delivery: item.delivery,
         })),
         ...(res.errors ?? []).map(item => ({
           email: item.email,
@@ -258,7 +260,12 @@ export default function PeoplePage() {
                   <p className="text-xs font-medium text-neutral-500 dark:text-zinc-400">Invite results</p>
                   {inviteResults.map((item, idx) => (
                     <div key={`${item.email}-${idx}`} className="rounded-md bg-white p-2 dark:bg-zinc-900/60">
-                      <p className="truncate text-xs font-medium text-neutral-700 dark:text-zinc-300">{item.email}</p>
+                      <div className="flex items-center justify-between gap-2">
+                        <p className="truncate text-xs font-medium text-neutral-700 dark:text-zinc-300">{item.email}</p>
+                        {item.delivery && (
+                          <span className="shrink-0 rounded bg-neutral-100 px-1.5 py-0.5 text-[10px] font-medium text-neutral-500 dark:bg-zinc-800 dark:text-zinc-400">{item.delivery}</span>
+                        )}
+                      </div>
                       {item.error ? (
                         <p className="mt-1 text-xs text-red-600 dark:text-red-400">{item.error}</p>
                       ) : (

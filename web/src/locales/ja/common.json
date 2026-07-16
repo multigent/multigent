@@ -1268,6 +1268,7 @@
     "image": "ベースイメージ",
     "template": "ランタイムイメージ",
     "e2bTemplate": "E2B テンプレート",
+    "e2bUnavailable": "E2B は現在利用できません",
     "imagePlaceholder": "空欄の場合は provider のデフォルト",
     "agentCli": "Agent CLI ツールチェーン",
     "agentCliHint": "ベースイメージとは別にインストール・更新",

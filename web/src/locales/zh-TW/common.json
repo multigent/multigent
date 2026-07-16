@@ -1268,6 +1268,7 @@
     "image": "基礎映像",
     "template": "執行映像",
     "e2bTemplate": "E2B 模板",
+    "e2bUnavailable": "E2B 目前不可用",
     "imagePlaceholder": "留空使用 provider 預設值",
     "agentCli": "Agent CLI 工具鏈",
     "agentCliHint": "獨立於基礎映像安裝和升級",

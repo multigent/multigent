@@ -2,6 +2,7 @@
 package runenv
 
 import (
+	"fmt"
 	"os"
 	"path/filepath"
 
@@ -65,11 +66,33 @@ func (DockerProvider) Command(spec ProcessSpec) (string, []string, error) {
 	return sandbox.RunArgs(spec.AgentDir, spec.Model, cfg, command)
 }
 
+// E2BProvider represents a self-hosted E2B-compatible runtime. It is currently
+// wired for capability detection and explicit configuration validation; process
+// lifecycle execution will be implemented against the selected self-hosted E2B
+// API once that deployment contract is fixed.
+type E2BProvider struct{}
+
+func (E2BProvider) Name() entity.SandboxProvider { return entity.SandboxE2B }
+
+func (E2BProvider) Available() error {
+	caps := sandbox.DetectCapabilities()
+	if !caps.E2B.Available {
+		return fmt.Errorf("e2b runtime unavailable: %s", caps.E2B.Reason)
+	}
+	return nil
+}
+
+func (E2BProvider) Command(ProcessSpec) (string, []string, error) {
+	return "", nil, fmt.Errorf("e2b runtime execution is not implemented yet; configure Docker/gVisor until the self-hosted E2B API adapter is connected")
+}
+
 // ProviderFor returns the local provider adapter for provider.
 func ProviderFor(provider entity.SandboxProvider) (Provider, bool) {
 	switch provider {
 	case entity.SandboxDocker:
 		return DockerProvider{}, true
+	case entity.SandboxE2B:
+		return E2BProvider{}, true
 	default:
 		return nil, false
 	}

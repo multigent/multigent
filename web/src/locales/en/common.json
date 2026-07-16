@@ -1268,6 +1268,7 @@
     "image": "Base Image",
     "template": "Runtime Image",
     "e2bTemplate": "E2B Template",
+    "e2bUnavailable": "E2B is currently unavailable",
     "imagePlaceholder": "Leave empty for provider default",
     "agentCli": "Agent CLI Toolchain",
     "agentCliHint": "Installed and upgraded outside the base image",

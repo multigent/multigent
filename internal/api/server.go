@@ -155,6 +155,7 @@ func (s *Server) Handler() http.Handler {
 	mux.HandleFunc("POST /api/v1/projects", s.handleCreateProject)
 	mux.HandleFunc("DELETE /api/v1/projects/{name}", s.handleDeleteProject)
 	mux.HandleFunc("GET /api/v1/rbac/model", s.handleRBACModel)
+	mux.HandleFunc("GET /api/v1/sandbox/capabilities", s.handleSandboxCapabilities)
 	mux.HandleFunc("POST /api/v1/projects/{name}/tasks", s.handlePostProjectTask)
 	mux.HandleFunc("POST /api/v1/projects/{name}/agents/{agent}/crons/{cronId}/pause", s.handlePostCronPause)
 	mux.HandleFunc("POST /api/v1/projects/{name}/agents/{agent}/crons/{cronId}/resume", s.handlePostCronResume)

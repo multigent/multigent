@@ -84,6 +84,12 @@ type SandboxConfig = {
   }
 }
 
+type SandboxCapabilities = {
+  docker?: { available: boolean; reason?: string }
+  kvm?: { available: boolean; reason?: string }
+  e2b?: { available: boolean; reason?: string }
+}
+
 type AgentCLIConfig = {
   vendor?: string
   version?: string
@@ -915,6 +921,8 @@ function SandboxEditor({ project, agentName, initial, initialAddDirs, onChanged 
   project: string; agentName: string; initial?: SandboxConfig; initialAddDirs: string[]; onChanged: () => void
 }) {
   const { t } = useTranslation()
+  const capsState = useApiJson<SandboxCapabilities>('/api/v1/sandbox/capabilities', 0)
+  const caps = capsState.status === 'ok' ? capsState.data : null
   const [provider, setProvider] = useState(initial?.provider ?? '')
   const [image, setImage] = useState(initial?.image ?? initial?.docker?.image ?? '')
   const [template, setTemplate] = useState(initial?.e2b?.template ?? '')
@@ -1022,8 +1030,13 @@ function SandboxEditor({ project, agentName, initial, initialAddDirs, onChanged 
           <select value={provider} onChange={(e) => { setProvider(e.target.value); setDirty(true) }} className={inputCls}>
             <option value="">{t('sandbox.providerNone')}</option>
             <option value="docker">Docker</option>
-            <option value="e2b" disabled={provider !== 'e2b'}>E2B (planned)</option>
+            <option value="e2b" disabled={!caps?.e2b?.available && provider !== 'e2b'}>E2B</option>
           </select>
+          {caps?.e2b && !caps.e2b.available && (
+            <p className="mt-1.5 text-[11px] leading-relaxed text-amber-600 dark:text-amber-400">
+              {t('sandbox.e2bUnavailable')}: {caps.e2b.reason}
+            </p>
+          )}
         </div>
         {provider && provider !== 'none' && (
           <>
