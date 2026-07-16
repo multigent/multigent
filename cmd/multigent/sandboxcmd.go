@@ -135,7 +135,7 @@ func newSandboxShowCmd() *cobra.Command {
 			if real, err2 := filepath.EvalSymlinks(multigentBin); err2 == nil {
 				multigentBin = real
 			}
-			fmt.Printf("\nAgent runtime CLI mount (auto, enables `multigent-agent` inside container):\n")
+			fmt.Printf("\nAgent runtime CLI mount (auto, enables `mga` inside container):\n")
 			fmt.Printf("  -v %s:%s:ro\n", multigentBin, runtimecli.BinaryPath)
 
 			// Preview the actual docker run command (include all auto mounts)

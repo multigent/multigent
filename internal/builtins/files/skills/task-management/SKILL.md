@@ -1,318 +1,84 @@
 ---
 name: task-management
-description: Create, assign, monitor, and close tasks across agents. Covers full task lifecycle — add, priority, dependencies, confirm-request, retry, cancel, bulk ops, and cross-agent search.
+description: Create, inspect, update, complete, confirm, and cancel tasks through the mga runtime CLI.
 ---
 
 # Skill: Task Management
 
-Use this skill when your role involves planning, delegating, and tracking work across agents. The agency workspace is at `$AGENCY_DIR`.
+Use `mga task` for task work inside an agent sandbox. The CLI talks to the Multigent Server with the scoped runtime token; it does not read or write workspace control files directly.
 
----
+## Priority
 
-## Priority levels
+| Value | Label | Use |
+| --- | --- | --- |
+| 0 | critical | Production/blocking issue |
+| 1 | high | Should run in the current cycle |
+| 2 | normal | Default backlog work |
+| 3 | low | Nice-to-have |
 
-| Value | Label    | When to use |
-|-------|----------|-------------|
-| 0     | critical | Blocking production / blocking other agents |
-| 1     | high     | Should be picked up in the current cycle |
-| 2     | normal   | Default — regular backlog work |
-| 3     | low      | Nice-to-have, do when free |
-
----
-
-## Create a task for an agent
+## List And Inspect
 
 ```bash
-# Minimal
-multigent-agent task add \
-  --project <project> --agent <agent> \
+mga task list
+mga task list --status pending
+mga task list --scope active --format table
+mga task show <task-id>
+```
+
+## Create
+
+```bash
+mga task add \
+  --agent <agent> \
   --title "Short title" \
-  --prompt "Detailed instructions for the agent..."
-
-# With priority and type
-multigent-agent task add \
-  --project <project> --agent <agent> \
-  --title "Fix auth bug" \
-  --prompt "Reproduce with: curl -X POST /login with empty password. Root cause is in auth/validator.go." \
-  --priority 1 \
-  --type bug
-
-# With dependencies (task will not start until listed IDs are done)
-multigent-agent task add \
-  --project <project> --agent <agent> \
-  --title "Deploy to staging" \
-  --prompt "Run: make deploy-staging" \
-  --depends-on <task-id-1> --depends-on <task-id-2>
-
-# With scheduling / nesting metadata
-multigent-agent task add \
-  --project <project> --agent <agent> \
-  --title "Implement sub-feature" \
-  --prompt "..." \
-  --parent <parent-task-id> \
-  --due-date 2026-07-15 \
-  --estimate-duration 2h
+  --prompt "Detailed instructions and acceptance criteria" \
+  --priority 2 \
+  --type chore
 ```
 
-### Task metadata fields
+If `--agent` is omitted, the task is assigned to the current agent. Agents may create tasks for other agents in the same project.
 
-| Field | CLI flag | Notes |
-|-------|----------|-------|
-| Due date | `--due-date YYYY-MM-DD` | Deadline |
-| Estimate | `--estimate-duration 30m` | Go duration (`30m`, `2h`) |
-| Parent | `--parent <task-id>` | Sub-task nesting |
-| Labels | `--label` (repeatable) | Tags |
-| Started / finished | *(auto)* | Set when status → `in_progress` / terminal |
-
-
-### Task types
-
-`feature` · `bug` · `chore` · `review` · `deploy` · `research` · `wakeup` · (custom string)
-
----
-
-## Inspect task queues
+## Update
 
 ```bash
-# All active tasks for one agent (sorted by priority)
-multigent-agent task list --project <project> --agent <agent>
-
-# Filter by status
-multigent-agent task list --project <project> --agent <agent> --status pending
-multigent-agent task list --project <project> --agent <agent> --status in_progress
-
-# Include archived (completed / cancelled) tasks
-multigent-agent task list --project <project> --agent <agent> --archived
-
-# Show full detail of a specific task (project + agent known)
-multigent-agent task show <task-id> --project <project> --agent <agent>
-
-# Find a task anywhere by ID (no project/agent needed)
-multigent-agent task find --id <task-id>
+mga task set <task-id> --status in_progress
+mga task set <task-id> --summary "Progress so far"
+mga task set <task-id> --priority 1
 ```
 
----
+Supported statuses:
 
-## Update task fields
+- `pending`
+- `in_progress`
+- `awaiting_confirmation`
+- `blocked`
+- `done_success`
+- `done_failed`
+- `cancelled`
+
+## Complete
 
 ```bash
-# Only flags you pass are changed; project/agent auto-detected if omitted
-multigent-agent task set <task-id> --priority 1
-multigent-agent task set <task-id> --status in_progress
-multigent-agent task set <task-id> \
-  --due-date 2026-07-15 --estimate-duration 2h --parent <parent-task-id>
-multigent-agent task set <task-id> --label bug --label urgent
-multigent-agent task set <task-id> --due-date ""   # clear due date
-multigent-agent task set <task-id> --format json   # print updated task
+mga task done --id <task-id> --status success --summary "What was accomplished"
+mga task done --id <task-id> --status failed --error "Reason"
 ```
 
-Updatable: `title`, `description`, `status`, `priority`, `type`, `summary`, `label`,
-`parent`, `due-date`, `estimate-duration`, `assignee`, `prompt` / `prompt-file`, `position`.
+Completion summaries must describe actual output, produced files/links, residual risks, and whether human follow-up is needed.
 
-Status changes auto-maintain `started_at` / `finished_at`.
-
----
-
-## Monitor progress across agents
-
-To get an overview of all agents and their queue depths:
+## Confirmation
 
 ```bash
-multigent-agent overview
+mga task confirm-request \
+  --id <task-id> \
+  --summary "One-line decision needed" \
+  --action-item "Approve option A" \
+  --action-item "Reject with reason"
 ```
 
-To iterate agents and check queues programmatically:
+Use confirmation only for decisions that should not be automated: money, external publication, irreversible production actions, policy exceptions, or unclear strategic direction.
+
+## Cancel
 
 ```bash
-# List all agents in a project
-multigent-agent list agents --project <project>
-
-# Then per agent
-multigent-agent task list --project <project> --agent <agent> --status pending
-multigent-agent task list --project <project> --agent <agent> --status in_progress
+mga task cancel <task-id> --reason "No longer needed"
 ```
-
----
-
-## Task stats (throughput & efficiency)
-
-```bash
-# Today by executor queue (default: all agents, grouped)
-multigent-agent task stats --since today
-
-# One agent's queue
-multigent-agent task stats --since today --project <project> --agent <agent>
-
-# By assignee field
-multigent-agent task stats --since today --assignee <project>/<agent>
-multigent-agent task stats --since 7d --by assignee
-
-# By label (evening summary: value / category buckets)
-multigent-agent task stats --since today --by label:value
-multigent-agent task stats --since today --by label:category
-multigent-agent task stats --since today --label value:owner
-
-# List each finished task
-multigent-agent task stats --since today --detail
-
-# JSON export (includes elapsedHuman, estimateHuman, etc.)
-multigent-agent task stats --since today --format json
-```
-
-Metrics: success/failed/cancelled counts, sum of actual elapsed time (`started_at`→`finished_at`),
-sum of `estimate_duration`, coverage (tasks with estimates), and actual/estimate ratio.
-JSON uses human-readable durations (`elapsedHuman`: `14m32s`) instead of nanosecond integers.
-
----
-
-```bash
-# Success
-multigent-agent task done \
-  --id <task-id> --status success --summary "What was accomplished"
-
-# Failure
-multigent-agent task done \
-  --id <task-id> --status failed --error "reason"
-```
-
----
-
-## Request human confirmation (non-blocking)
-
-When an agent needs a human decision before continuing, it calls:
-
-```bash
-multigent-agent task confirm-request \
-  --id $TASK_ID \
-  --summary "One-line description of what needs approval" \
-  --action-item "Option A: reply 'approve'" \
-  --action-item "Option B: reply 'reject <reason>'"
-```
-
-The task is archived. The human responds via:
-
-```bash
-multigent-agent inbox list
-multigent-agent inbox messages    # view messages
-multigent-agent inbox reply <msg-id> --body "approve"
-multigent-agent inbox reject  <task-id> --reason "out of scope"
-```
-
-The human's reply is sent as a message. The agent sees it on the next wakeup and continues via session memory.
-
----
-
-## Escalate or delegate a task
-
-If a task is better suited for a different agent, cancel it and re-create for the target agent:
-
-```bash
-# 1. Cancel the original
-multigent-agent task cancel <task-id> --project <project> --agent <from-agent>
-
-# 2. Create for the new agent with transferred context
-multigent-agent task add \
-  --project <project> --agent <to-agent> \
-  --title "<same title>" \
-  --prompt "<original prompt + re-delegation note>"
-```
-
-To notify the new agent with async context before the task runs:
-
-```bash
-multigent-agent inbox send \
-  --from <project>/pm \
-  --to   <project>/<to-agent> \
-  --subject "Incoming task: <title>" \
-  --body "Extra context: ..."
-```
-
----
-
-## Retry a failed task
-
-```bash
-multigent-agent task retry <task-id> \
-  --project <project> --agent <agent>
-```
-
-Optionally update the prompt before retrying:
-
-```bash
-multigent-agent task retry <task-id> \
-  --project <project> --agent <agent> \
-  --prompt "Updated instructions based on failure: ..."
-```
-
----
-
-## Cancel tasks
-
-```bash
-# Cancel a specific task
-multigent-agent task cancel <task-id> \
-  --project <project> --agent <agent>
-
-# Emergency halt — cancel all pending tasks for all agents in a project
-multigent-agent task stop-all \
-  --project <project> --all-agents
-
-# Cancel pending + in-progress for a single agent
-multigent-agent task stop-all \
-  --project <project> --agent <agent> --include-running
-```
-
----
-
-## Recurring tasks with cron
-
-Schedule a task to be automatically enqueued on a fixed schedule:
-
-```bash
-multigent-agent cron add \
-  --project <project> --agent <agent> \
-  --id weekly-review \
-  --title "Weekly backlog review" \
-  --schedule "0 9 * * 1" \
-  --prompt "Review all open issues. Prioritise for the week. Update task queue accordingly."
-
-multigent-agent cron list    --project <project> --agent <agent>
-multigent-agent cron disable weekly-review --project <project> --agent <agent>
-multigent-agent cron enable  weekly-review --project <project> --agent <agent>
-```
-
-Cron syntax: `minute hour day month weekday` (standard 5-field)
-
----
-
-## Token usage and cost
-
-```bash
-# One agent
-multigent-agent task tokens --project <project> --agent <agent>
-
-# All agents in a project
-multigent-agent task tokens --project <project> --all-agents
-
-# Specific task
-multigent-agent task tokens \
-  --project <project> --agent <agent> --task <task-id>
-```
-
----
-
-## Task assignment decision guide
-
-| Situation | Action |
-|-----------|--------|
-| Clear scope, right agent | `task add` directly |
-| Scope unclear, need human input first | `inbox send --to human` to clarify, then `task add` |
-| Depends on another task being done first | `task add --depends-on <id>` |
-| Task failed once | `task retry` with updated prompt |
-| Wrong agent received the task | Cancel + re-create for correct agent |
-| Repeated recurring work | `cron add` with a schedule |
-| Human must approve before agent proceeds | Agent calls `task confirm-request` |
-| Need to change title/priority/due date/parent mid-flight | `task set <id> --<field> ...` |
-| Review throughput / efficiency for a person or agent | `task stats --since today [--assignee A]` |
-| Evening summary by value/category labels | `task stats --since today --by label:value` or `--by label:category` |
-| Need to know which agent owns a task ID | `task find --id <id>` |

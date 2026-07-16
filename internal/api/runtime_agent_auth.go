@@ -95,7 +95,7 @@ func (s *Server) handleIssueAgentRuntimeToken(w http.ResponseWriter, r *http.Req
 
 func normalizeRuntimeCapabilities(caps []string) []string {
 	if len(caps) == 0 {
-		return []string{"connection.use"}
+		return defaultRuntimeCapabilities()
 	}
 	seen := map[string]bool{}
 	out := make([]string, 0, len(caps))
@@ -108,14 +108,18 @@ func normalizeRuntimeCapabilities(caps []string) []string {
 		out = append(out, cap)
 	}
 	if len(out) == 0 {
-		return []string{"connection.use"}
+		return defaultRuntimeCapabilities()
 	}
 	return out
 }
 
+func defaultRuntimeCapabilities() []string {
+	return []string{"connection.use", "task.use", "message.use", "okr.use"}
+}
+
 func runtimeCapabilityAllowed(capability string) bool {
 	switch capability {
-	case "connection.use":
+	case "connection.use", "task.use", "message.use", "okr.use":
 		return true
 	default:
 		return false

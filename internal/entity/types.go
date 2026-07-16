@@ -809,7 +809,7 @@ type HeartbeatConfig struct {
 	//   wakeup_condition: "gh pr list --state open | grep -q ."
 	//
 	//   # only wake when there are unread inbox messages
-	//   wakeup_condition: "multigent-agent inbox messages --unread-only | grep -q ."
+	//   wakeup_condition: "mga inbox messages --unread-only | grep -q ."
 	WakeupCondition string `yaml:"wakeup_condition,omitempty"`
 
 	// WakeupPreset is a built-in gate evaluated before each periodic wakeup.

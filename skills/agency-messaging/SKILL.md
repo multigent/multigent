@@ -1,174 +1,55 @@
 ---
 name: agency-messaging
-description: Discover all agents in the current agency and send/receive async messages between agents and the human owner via the inbox system.
+description: Send, read, and reply to async Multigent messages through the mga runtime CLI.
 ---
 
 # Skill: Agency Messaging
 
-You can discover every agent in this agency and exchange async messages with them or with the human owner. Messages are non-blocking: the sender continues working immediately, and the recipient reads the message on their next wakeup.
+Use `mga inbox` to exchange async messages from inside an agent sandbox. Messages are non-blocking; the recipient reads them on their next wakeup or in the Web UI.
 
-The agency workspace is at: `$AGENCY_DIR`
+## Recipients
 
----
+- Human owner: `human`
+- Agent in the same project: `<project>/<agent>`
 
-## Discover Agents
-
-```bash
-multigent-agent list agents
-multigent-agent show agent <project> <agent>
-```
-
-### Recipient address format
-- **Human owner**: `human`
-- **Any agent**: `<project>/<agent>` — e.g. `cc-connect/pm`, `cc-connect/qa-reviewer`
-
----
-
-## Send a Message
-
-```bash
-# Single recipient
-multigent-agent inbox send \
-  --from <your-address> \
-  --to   <recipient-address> \
-  --subject "<subject>" \
-  --body "<body>"
-
-# Group send — repeat --to for multiple recipients
-multigent-agent inbox send \
-  --from cc-connect/pm \
-  --to cc-connect/dev-claude --to cc-connect/qa-reviewer --to human \
-  --subject "Sprint kick-off" \
-  --body "New sprint starts Monday. See backlog for tasks."
-```
-
-**Examples:**
-
-```bash
-# PM → dev-claude: extra context
-multigent-agent inbox send \
-  --from cc-connect/pm --to cc-connect/dev-claude \
-  --subject "Issue #205 extra context" \
-  --body "Only reproduces with UTF-8 filenames. Reproduce: echo '测试' > test.txt"
-
-# PM → human: async progress update
-multigent-agent inbox send \
-  --from cc-connect/pm --to human \
-  --subject "Backlog updated" \
-  --body "Added 3 new issues (P2). No action needed, just FYI."
-
-# PM → QA: heads-up
-multigent-agent inbox send \
-  --from cc-connect/pm --to cc-connect/qa-reviewer \
-  --subject "PR incoming for #205" \
-  --body "dev-claude is working on it. Expect a PR within the hour."
-```
-
----
-
-## Reply to a Message
-
-```bash
-multigent-agent inbox reply <msg-id> \
-  --from <your-address> \
-  --body "<reply text>"
-```
-
----
-
-## Forward a Message
-
-```bash
-# Forward to a single recipient
-multigent-agent inbox fwd <msg-id> \
-  --from <your-address> \
-  --to   <recipient-address>
-
-# Forward to multiple recipients with a note
-multigent-agent inbox fwd <msg-id> \
-  --from cc-connect/pm \
-  --to cc-connect/dev-claude --to cc-connect/qa-reviewer \
-  --note "Please coordinate on this."
-```
-
-The forwarded message includes the original sender, subject, and body. Subject is auto-prefixed with `Fwd:`.
-
----
+Runtime agents may send to `human` or agents in the same project.
 
 ## Read Messages
 
 ```bash
-# Your unread messages (also auto-injected into your wakeup prompt)
-multigent-agent inbox messages --recipient <your-address>
-
-# Filter by sender
-multigent-agent inbox messages --recipient <your-address> --from human
-
-# All messages including already-read
-multigent-agent inbox messages --recipient <your-address> --all
-
-# Show archived messages
-multigent-agent inbox messages --recipient <your-address> --archived
-
-# Mark all as read after listing
-multigent-agent inbox messages --recipient <your-address> --mark-read
+mga inbox messages
+mga inbox list --archived
 ```
 
----
-
-## Per-Message Status Management
+## Send A Message
 
 ```bash
-# Mark a single message as read
-multigent-agent inbox read <msg-id> --recipient <your-address>
+mga inbox send \
+  --to <project>/<agent> \
+  --subject "Subject" \
+  --body "Message body"
 
-# Archive (hides from normal listing, retrievable with --archived)
-multigent-agent inbox archive <msg-id> --recipient <your-address>
-
-# Permanently delete
-multigent-agent inbox delete <msg-id> --recipient <your-address>
-multigent-agent inbox rm     <msg-id> --recipient <your-address>
+mga inbox send \
+  --to human \
+  --subject "Progress update" \
+  --body "No action needed. Summary: ..."
 ```
 
----
+Repeat `--to` to send to multiple recipients.
 
-## When to Use Messaging vs. Confirm-Request
-
-| Situation | Use |
-|-----------|-----|
-| Need human to make a decision before you continue | `task confirm-request` (non-blocking, archived) |
-| Sending info or a heads-up, no reply needed immediately | `inbox send` (non-blocking) |
-| Coordinating context between agents asynchronously | `inbox send` (non-blocking) |
-| Broadcast to multiple participants at once | `inbox send --to A --to B --to C` |
-| Forwarding a message to someone else | `inbox fwd` |
-| Replying to a message someone sent you | `inbox reply` |
-
----
-
-## Common PM Messaging Patterns
+## Reply
 
 ```bash
-# 1. Broadcast sprint kick-off to all agents
-multigent-agent inbox send \
-  --from cc-connect/pm \
-  --to cc-connect/dev-claude --to cc-connect/qa-reviewer --to cc-connect/biz-dev \
-  --subject "Sprint W14 kick-off" \
-  --body "Focus this week: <priorities>. See backlog for assigned tasks."
-
-# 2. Notify dev of approved task
-multigent-agent inbox send \
-  --from cc-connect/pm --to cc-connect/dev-claude \
-  --subject "New task approved: <task-title>" \
-  --body "Human confirmed. Priority: P<N>. Key context: <notes>"
-
-# 3. Escalate stale task to human
-multigent-agent inbox send \
-  --from cc-connect/pm --to human \
-  --subject "Task stale: <task-title>" \
-  --body "Task <id> has been in_progress for >2 days. May need intervention."
-
-# 4. Forward a customer report from human to dev
-multigent-agent inbox fwd <msg-id> \
-  --from cc-connect/pm --to cc-connect/dev-claude \
-  --note "Customer reported this bug. Please investigate."
+mga inbox reply <message-id> --body "Reply body"
 ```
+
+## When To Message
+
+Use messages for:
+
+- Non-blocking status updates.
+- Passing context to another agent.
+- Asking a peer agent to coordinate on a task.
+- Escalating a risk without blocking current work.
+
+Use `mga task confirm-request` instead when you need a human decision before continuing.

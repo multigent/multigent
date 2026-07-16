@@ -44,12 +44,12 @@ func TestAgentRuntimeTokenValidateAndExpire(t *testing.T) {
 }
 
 func TestNormalizeRuntimeCapabilitiesFiltersUnsupportedValues(t *testing.T) {
-	got := normalizeRuntimeCapabilities([]string{"connection.use", "task.read", "connection.use", "", "agent.admin"})
-	if len(got) != 1 || got[0] != "connection.use" {
+	got := normalizeRuntimeCapabilities([]string{"connection.use", "task.use", "connection.use", "", "agent.admin"})
+	if len(got) != 2 || got[0] != "connection.use" || got[1] != "task.use" {
 		t.Fatalf("capabilities=%#v", got)
 	}
 	got = normalizeRuntimeCapabilities([]string{"task.read"})
-	if len(got) != 1 || got[0] != "connection.use" {
+	if len(got) != len(defaultRuntimeCapabilities()) {
 		t.Fatalf("fallback capabilities=%#v", got)
 	}
 }

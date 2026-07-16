@@ -59,14 +59,14 @@ Task ID : %s
 Agent   : %s/%s
 
 When complete successfully, run:
-  multigent-agent task done --id %s --status success
+  mga task done --id %s --status success
 
 If human confirmation needed, run:
-  multigent-agent task confirm-request --id %s --summary "one-line explanation"
+  mga task confirm-request --id %s --summary "one-line explanation"
   (then exit 0)
 
 If unable to complete, run:
-  multigent-agent task done --id %s --status failed --error "reason"
+  mga task done --id %s --status failed --error "reason"
 `
 
 // Runner executes tasks for agents using their configured CLI.
@@ -1097,7 +1097,7 @@ func (r *Runner) resolveRuntimeControlEnv(project, agentName, runID string) map[
 		Project:      project,
 		Agent:        agentName,
 		RunID:        runID,
-		Capabilities: []string{"connection.use"},
+		Capabilities: []string{"connection.use", "task.use", "message.use", "okr.use"},
 	}, 6*time.Hour)
 	return map[string]string{
 		"MULTIGENT_API_URL":      apiURL,

@@ -30,8 +30,8 @@ func TestCodexFormatterIncludesRuntimeConnectionGuide(t *testing.T) {
 	for _, want := range []string{
 		"## Runtime Connections",
 		"MULTIGENT_CONNECTIONS_FILE",
-		"multigent-agent runtime connections --format table",
-		"multigent-agent runtime action --connection <alias>",
+		"mga runtime connections --format table",
+		"mga runtime action --connection <alias>",
 	} {
 		if !strings.Contains(text, want) {
 			t.Fatalf("AGENTS.md missing %q:\n%s", want, text)
