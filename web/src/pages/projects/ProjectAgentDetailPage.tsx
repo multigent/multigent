@@ -4,8 +4,8 @@ import { useTranslation } from 'react-i18next'
 import Markdown from 'react-markdown'
 import remarkGfm from 'remark-gfm'
 import {
-  RefreshCw, Save, ChevronRight, Bot, BookOpen, Puzzle, Check,
-  Settings2, Users, UserCog, Activity, User, Mail, ListTodo, Reply, Send, Pencil, Container, MessageSquareText,
+  ChevronRight, Bot, BookOpen, Puzzle, Check,
+  Settings2, Users, UserCog, Activity, User, Mail, ListTodo, Reply, Send, Container,
   Cable,
 } from 'lucide-react'
 import type { LucideIcon } from 'lucide-react'
@@ -126,8 +126,8 @@ const RUNTIME_MODEL_PRESETS: Record<string, string[]> = {
   opencode: ['gpt-5.1', 'claude-sonnet-4-20250514'],
 }
 
-const buttonBaseCls = 'inline-flex h-8 items-center justify-center gap-1.5 rounded-md px-3 text-xs font-medium transition-colors disabled:cursor-not-allowed disabled:opacity-50'
-const primaryButtonCls = cn(buttonBaseCls, 'bg-sky-600 text-white hover:bg-sky-700')
+const buttonBaseCls = 'inline-flex h-8 items-center justify-center rounded-md px-3 text-xs font-medium transition-colors disabled:cursor-not-allowed disabled:opacity-50'
+const primaryButtonCls = cn(buttonBaseCls, 'border border-sky-200 bg-sky-50 text-sky-700 hover:bg-sky-100 dark:border-sky-800 dark:bg-sky-900/20 dark:text-sky-300 dark:hover:bg-sky-900/30')
 const secondaryButtonCls = cn(buttonBaseCls, 'border border-neutral-200 bg-white text-neutral-700 hover:border-neutral-300 hover:bg-neutral-50 dark:border-zinc-700 dark:bg-zinc-900 dark:text-zinc-300 dark:hover:border-zinc-600 dark:hover:bg-zinc-800')
 const subtleButtonCls = cn(buttonBaseCls, 'text-neutral-500 hover:bg-neutral-100 hover:text-neutral-800 dark:text-zinc-400 dark:hover:bg-zinc-800 dark:hover:text-zinc-200')
 
@@ -174,7 +174,6 @@ function PromptEditor({ label, icon: Icon, apiPath, initialContent, canEdit = tr
           )}
           {canEdit && !editing && (
             <button type="button" onClick={() => setEditing(true)} className={secondaryButtonCls}>
-              <Pencil className="size-3.5" strokeWidth={1.8} />
               {t('common.edit')}
             </button>
           )}
@@ -184,7 +183,7 @@ function PromptEditor({ label, icon: Icon, apiPath, initialContent, canEdit = tr
               {t('common.cancel')}
             </button>
             <button type="button" onClick={save} disabled={saving || !dirty} className={primaryButtonCls}>
-              <Save className="size-3" strokeWidth={2} />{saving ? t('prompt.saving') : t('prompt.save')}
+              {saving ? t('prompt.saving') : t('prompt.save')}
             </button>
             </>
           )}
@@ -237,7 +236,7 @@ function SessionPanel({ project, agentName, canConfigure, canRun }: { project: s
 
   return (
     <div className="rounded-lg border border-neutral-200/80 bg-neutral-50/50 px-4 py-3 dark:border-zinc-700/60 dark:bg-zinc-900/30">
-      <h4 className="mb-2 text-xs font-semibold uppercase tracking-wider text-neutral-400 dark:text-zinc-500">{t('session.sessionLabel')}</h4>
+      <h4 className="mb-2 text-xs font-semibold uppercase tracking-wider text-neutral-400 dark:text-zinc-500">{t('agentDetail.webSession')}</h4>
       <div className="flex flex-wrap items-center gap-x-6 gap-y-2 text-xs">
         <span className="text-neutral-500 dark:text-zinc-500">
           Session ID: {hasSession ? <span className="font-mono text-emerald-700 dark:text-emerald-400" title={info.sessionId}>{info.sessionId!.slice(0, 16)}…</span> : <span className="text-neutral-400 dark:text-zinc-500">{t('session.noSession')}</span>}
@@ -252,7 +251,6 @@ function SessionPanel({ project, agentName, canConfigure, canRun }: { project: s
             to={`/projects/${encodeURIComponent(project)}/members/${encodeURIComponent(agentName)}/chat${hasSession ? `?sessionId=${encodeURIComponent(info.sessionId!)}` : ''}`}
             className={primaryButtonCls}
           >
-            <MessageSquareText className="size-3.5" strokeWidth={2} />
             {t('agentChat.openChat')}
           </Link>
           {canConfigure && hasSession && (
@@ -475,11 +473,11 @@ export default function ProjectAgentDetailPage() {
                     placeholder={t('agentIdentity.avatarPlaceholder')}
                   />
                   <button type="button" onClick={() => void saveIdentity()} disabled={savingIdentity}
-                    className="rounded-md bg-sky-600 px-2.5 py-1.5 text-xs font-medium text-white hover:bg-sky-700 disabled:opacity-50">
+                    className={primaryButtonCls}>
                     {savingIdentity ? t('forms.saving') : t('forms.save')}
                   </button>
                   <button type="button" onClick={() => { setEditingIdentity(false); setIdentityError(null); setIdentityName(agentName); setIdentityAvatar(avatar ?? '') }} disabled={savingIdentity}
-                    className="rounded-md border border-neutral-300 px-2.5 py-1.5 text-xs text-neutral-600 hover:bg-neutral-50 dark:border-zinc-600 dark:text-zinc-300 dark:hover:bg-zinc-800">
+                    className={secondaryButtonCls}>
                     {t('forms.cancel')}
                   </button>
                 </div>
@@ -523,8 +521,8 @@ export default function ProjectAgentDetailPage() {
               <div className="flex items-center gap-2">
                 <h1 className="truncate text-xl font-semibold text-neutral-900 dark:text-zinc-100">{agentName}</h1>
                 {ctxState.status === 'ok' && canManageThisProject && (
-                  <button type="button" onClick={() => setEditingIdentity(true)} className="rounded-md p-1 text-neutral-400 hover:bg-neutral-100 hover:text-neutral-700 dark:text-zinc-500 dark:hover:bg-zinc-800 dark:hover:text-zinc-300" title="Edit name/avatar">
-                    <Pencil className="size-3.5" strokeWidth={1.8} />
+                  <button type="button" onClick={() => setEditingIdentity(true)} className={subtleButtonCls}>
+                    {t('common.edit')}
                   </button>
                 )}
               </div>
@@ -589,7 +587,7 @@ export default function ProjectAgentDetailPage() {
               <section>
                 <SectionHeader icon={Activity} title={t('agentDetail.connectAndChat')} />
                 <p className="mt-1 text-sm text-neutral-500 dark:text-zinc-500">{t('agentDetail.connectAndChatHint')}</p>
-                <div className="mt-3 grid gap-4 xl:grid-cols-[minmax(0,0.9fr)_minmax(0,1.1fr)]">
+                <div className="mt-3 space-y-4">
                   <SessionPanel
                     project={projectId}
                     agentName={agentName}
@@ -610,7 +608,7 @@ export default function ProjectAgentDetailPage() {
                   <section>
                     <SectionHeader icon={Cable} title={t('agentDetail.toolsAndSkills')} />
                     <p className="mt-1 text-sm text-neutral-500 dark:text-zinc-500">{t('agentDetail.toolsAndSkillsHint')}</p>
-                    <div className="mt-3 grid gap-4 xl:grid-cols-[minmax(0,1.15fr)_minmax(0,0.85fr)]">
+                    <div className="mt-3 space-y-4">
                       <AgentRuntimeConnectionsPanel project={projectId} agentName={agentName} />
                       <AgentSkillsPanel skills={ctx.skills ?? []} />
                     </div>
@@ -822,7 +820,6 @@ function SandboxEditor({ project, agentName, initial, onChanged }: {
         {dirty && (
           <button type="button" onClick={() => void save()} disabled={saving}
             className={primaryButtonCls}>
-            <Save className="size-3" strokeWidth={2} />
             {saving ? t('common.save') + '...' : t('common.save')}
           </button>
         )}
@@ -984,17 +981,9 @@ function ModelCredentialsPanel({ project, agentName, ctx, onChanged }: {
           <ReadOnlyField label={t('agentDetail.runtimeModel')} value={runtimeModel} valueClassName="font-mono" />
         </div>
         <button type="button" onClick={() => setEditing((v) => !v)} className={secondaryButtonCls}>
-          <Pencil className="size-3.5" strokeWidth={1.8} />
           {editing ? t('common.done') : t('common.edit')}
         </button>
       </div>
-      {!ctx.provider && providerOptions.length === 0 && !editing && (
-        <div className="border-t border-neutral-100 px-4 py-3 dark:border-zinc-800">
-          <Link to="/connections" className={primaryButtonCls}>
-            {t('agentDetail.addCredential')}
-          </Link>
-        </div>
-      )}
       {editing && (
         <div className="space-y-4 border-t border-neutral-100 p-4 dark:border-zinc-800">
           <ModelSelector
@@ -1103,7 +1092,6 @@ function AgentRuntimeConnectionsPanel({ project, agentName }: { project: string;
           onClick={() => setReloadKey(k => k + 1)}
           className={secondaryButtonCls}
         >
-          <RefreshCw className="size-3.5" strokeWidth={1.8} />
           {t('common.refresh')}
         </button>
       </div>
@@ -1264,7 +1252,6 @@ function EnvEditor({ project, agentName, model, initialEnv, initialProvider, ini
           {saved && <span className="text-xs text-emerald-500">{t('forms.saved')}</span>}
           <button type="button" onClick={save} disabled={busy}
             className={primaryButtonCls}>
-            <Save className="size-3" strokeWidth={2} />
             {busy ? t('forms.saving') : t('forms.save')}
           </button>
         </div>

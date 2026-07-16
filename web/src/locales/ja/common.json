@@ -1002,6 +1002,7 @@
     "modelAccount": "モデルアカウント",
     "runtimeModel": "実行モデル",
     "notConfigured": "未設定",
+    "webSession": "Web セッション",
     "context": "Context",
     "contextHint": "エージェントが実際に受け取る完全なマージ済みコンテキストを確認します。Prompt、ロール、プロジェクト、Skill の注入確認に使います。",
     "fullContext": "完全なマージ済み Context",

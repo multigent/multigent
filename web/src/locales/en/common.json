@@ -1002,6 +1002,7 @@
     "modelAccount": "Model Account",
     "runtimeModel": "Runtime Model",
     "notConfigured": "Not configured",
+    "webSession": "Web Session",
     "context": "Context",
     "contextHint": "Review the complete merged context the agent receives, including prompt, role, project, and skill content.",
     "fullContext": "Complete Merged Context",

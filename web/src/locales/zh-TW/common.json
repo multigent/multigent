@@ -1002,6 +1002,7 @@
     "modelAccount": "模型帳號",
     "runtimeModel": "執行模型",
     "notConfigured": "未配置",
+    "webSession": "Web 會話",
     "context": "Context",
     "contextHint": "這裡展示 Agent 實際收到的完整合併上下文，用來排查 Prompt、角色、專案和 Skill 是否正確注入。",
     "fullContext": "完整合併 Context",

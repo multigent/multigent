@@ -1,7 +1,7 @@
 import { useCallback, useEffect, useRef, useState } from 'react'
 import { useTranslation } from 'react-i18next'
 import { QRCodeSVG } from 'qrcode.react'
-import { CheckCircle2, Copy, Loader2, MessageSquare, PlugZap, RefreshCw, ShieldCheck, Trash2, X } from 'lucide-react'
+import { CheckCircle2, Copy, Loader2, MessageSquare, ShieldCheck, Trash2, X } from 'lucide-react'
 import { apiDelete, apiFetch, apiPost, apiPut } from '../../lib/api'
 import { cn } from '../../lib/cn'
 import { confirmDialog } from '../ui/ConfirmDialog'
@@ -206,8 +206,8 @@ export function AgentChannelPanel({ project, agentName }: { project: string; age
           <MessageSquare className="size-4 text-neutral-500 dark:text-zinc-500" strokeWidth={1.8} />
           <h4 className="text-sm font-semibold text-neutral-900 dark:text-zinc-100">{t('agentChannels.title')}</h4>
         </div>
-        <button type="button" onClick={() => void load()} className="rounded-md p-1.5 text-neutral-400 hover:bg-neutral-100 hover:text-neutral-700 dark:text-zinc-500 dark:hover:bg-zinc-800 dark:hover:text-zinc-200" title={t('common.refresh')}>
-          <RefreshCw className={cn('size-4', loading && 'animate-spin')} />
+        <button type="button" onClick={() => void load()} className="rounded-md border border-neutral-200 bg-white px-2.5 py-1 text-xs font-medium text-neutral-600 hover:border-neutral-300 hover:bg-neutral-50 disabled:opacity-50 dark:border-zinc-700 dark:bg-zinc-900 dark:text-zinc-300 dark:hover:border-zinc-600 dark:hover:bg-zinc-800" disabled={loading}>
+          {t('common.refresh')}
         </button>
       </div>
       <p className="mt-1 text-xs text-neutral-400 dark:text-zinc-500">{t('agentChannels.subtitle')}</p>
@@ -320,8 +320,7 @@ export function AgentChannelPanel({ project, agentName }: { project: string; age
                   </div>
                 ) : (
                   <button type="button" onClick={() => void begin(provider)} disabled={setup.step === 'beginning' || setup.step === 'scanning'}
-                    className="inline-flex items-center gap-1.5 rounded-md bg-sky-600 px-3 py-1.5 text-sm font-medium text-white hover:bg-sky-700 disabled:opacity-50">
-                    <PlugZap className="size-3.5" />
+                    className="rounded-md border border-sky-200 bg-sky-50 px-2.5 py-1 text-xs font-medium text-sky-700 hover:bg-sky-100 disabled:opacity-50 dark:border-sky-800 dark:bg-sky-900/20 dark:text-sky-300 dark:hover:bg-sky-900/30">
                     {t('agentChannels.connect')}
                   </button>
                 )}
@@ -412,8 +411,7 @@ export function AgentChannelPanel({ project, agentName }: { project: string; age
               <button type="button" onClick={() => setSecurity({ open: false })} className="rounded-md border border-neutral-200 px-3 py-2 text-sm text-neutral-600 hover:bg-neutral-50 dark:border-zinc-700 dark:text-zinc-300 dark:hover:bg-zinc-800">
                 {t('common.cancel')}
               </button>
-              <button type="button" onClick={() => void saveSecurity()} disabled={security.saving} className="inline-flex items-center gap-1.5 rounded-md bg-sky-600 px-3 py-2 text-sm font-medium text-white hover:bg-sky-700 disabled:opacity-50">
-                {security.saving && <Loader2 className="size-3.5 animate-spin" />}
+              <button type="button" onClick={() => void saveSecurity()} disabled={security.saving} className="rounded-md border border-sky-200 bg-sky-50 px-3 py-2 text-sm font-medium text-sky-700 hover:bg-sky-100 disabled:opacity-50 dark:border-sky-800 dark:bg-sky-900/20 dark:text-sky-300 dark:hover:bg-sky-900/30">
                 {t('common.save')}
               </button>
             </div>
