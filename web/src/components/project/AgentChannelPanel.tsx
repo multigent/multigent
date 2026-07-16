@@ -6,11 +6,11 @@ import { apiDelete, apiFetch, apiPost, apiPut } from '../../lib/api'
 import { cn } from '../../lib/cn'
 import { confirmDialog } from '../ui/ConfirmDialog'
 
-type ChannelProvider = { id: 'feishu' | 'lark'; label: string }
+type ChannelProvider = { id: string; label: string }
 
 type AgentChannel = {
   id: string
-  provider: 'feishu' | 'lark'
+  provider: string
   status: string
   connectionId?: string
   callbackUrl?: string
