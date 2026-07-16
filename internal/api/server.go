@@ -314,6 +314,7 @@ func (s *Server) Handler() http.Handler {
 	mux.HandleFunc("DELETE /api/v1/envvars/{id}", s.handleDeleteEnvVar)
 
 	mux.HandleFunc("GET /api/v1/users", s.handleListUsers)
+	mux.HandleFunc("GET /api/v1/users/lookup", s.handleLookupUserByEmail)
 	mux.HandleFunc("POST /api/v1/users", s.handleCreateUser)
 	mux.HandleFunc("GET /api/v1/invitations", s.handleListInvitations)
 	mux.HandleFunc("POST /api/v1/invitations", s.handleCreateInvitation)

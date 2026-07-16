@@ -177,6 +177,10 @@ func (s *UserStore) userByEmailLocked(email string) *userRecord {
 	return &rec
 }
 
+func (s *UserStore) UserByEmail(email string) *userRecord {
+	return s.userByEmailLocked(email)
+}
+
 func (s *UserStore) ListUsers() []userRecord {
 	users, err := s.db.ListUsers()
 	if err != nil {
@@ -349,11 +353,19 @@ func (s *UserStore) AcceptInvitation(token, password, displayName string) (*user
 		_ = s.db.UpdateInvitation(recordToDBInvitation(inv))
 		return nil, fmt.Errorf("invitation expired")
 	}
+	if existing := s.userByEmailLocked(inv.Email); existing != nil {
+		if bcrypt.CompareHashAndPassword([]byte(existing.Hash), []byte(password)) != nil {
+			return nil, fmt.Errorf("invalid credentials")
+		}
+		inv.Status = "accepted"
+		inv.AcceptedAt = now.Format(time.RFC3339)
+		if err := s.db.UpdateInvitation(recordToDBInvitation(inv)); err != nil {
+			return nil, err
+		}
+		return existing, nil
+	}
 	if len(password) < 6 {
 		return nil, fmt.Errorf("password must be at least 6 characters")
-	}
-	if existing := s.userByEmailLocked(inv.Email); existing != nil {
-		return nil, fmt.Errorf("email %q already exists", inv.Email)
 	}
 	if displayName == "" {
 		displayName = inv.DisplayName
@@ -934,6 +946,63 @@ func (s *Server) handleListUsers(w http.ResponseWriter, r *http.Request) {
 		}
 	}
 	_ = json.NewEncoder(w).Encode(out)
+}
+
+func (s *Server) handleLookupUserByEmail(w http.ResponseWriter, r *http.Request) {
+	if !s.checkCurrentWorkspaceAdmin(w, r) {
+		return
+	}
+	email := normalizeEmail(r.URL.Query().Get("email"))
+	if !validEmail(email) {
+		s.jsonErrorCode(w, http.StatusBadRequest, ErrCodeValidationFailed, "valid email required")
+		return
+	}
+	workspaceID, err := s.currentWorkspaceID()
+	if err != nil {
+		s.serverError(w, err)
+		return
+	}
+	var user *userRecord
+	if u := s.users.UserByEmail(email); u != nil {
+		user = u
+	}
+	alreadyMember := false
+	if user != nil && s.controlDB != nil {
+		if _, ok, err := s.controlDB.WorkspaceMember(workspaceID, user.Username); err != nil {
+			s.serverError(w, err)
+			return
+		} else {
+			alreadyMember = ok
+		}
+	}
+	pendingInvite := false
+	invitations, err := s.users.ListInvitations()
+	if err != nil {
+		s.serverError(w, err)
+		return
+	}
+	for _, inv := range invitations {
+		if normalizeEmail(inv.Email) == email && inv.Status == "pending" {
+			pendingInvite = true
+			break
+		}
+	}
+	resp := map[string]any{
+		"email":         email,
+		"registered":    user != nil,
+		"alreadyMember": alreadyMember,
+		"pendingInvite": pendingInvite,
+	}
+	if user != nil {
+		resp["user"] = map[string]any{
+			"username":    user.Username,
+			"displayName": user.DisplayName,
+			"email":       user.Email,
+			"avatar":      user.Avatar,
+			"disabled":    user.Disabled,
+		}
+	}
+	_ = json.NewEncoder(w).Encode(resp)
 }
 
 func (s *Server) handleCreateUser(w http.ResponseWriter, r *http.Request) {

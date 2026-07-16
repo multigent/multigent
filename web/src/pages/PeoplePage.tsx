@@ -38,6 +38,20 @@ type InvitationCreateResponse = {
   }[]
 }
 
+type UserLookupResponse = {
+  email: string
+  registered: boolean
+  alreadyMember: boolean
+  pendingInvite: boolean
+  user?: {
+    username: string
+    displayName?: string
+    email?: string
+    avatar?: string
+    disabled?: boolean
+  }
+}
+
 const fieldCls =
   'w-full rounded-md border border-neutral-200/80 bg-neutral-50/50 px-3 py-2 text-sm outline-none transition-colors focus:border-sky-400 dark:border-zinc-700/60 dark:bg-zinc-800/50 dark:text-zinc-200 dark:[color-scheme:dark]'
 
@@ -52,6 +66,8 @@ export default function PeoplePage() {
   const [loading, setLoading] = useState(true)
   const [creating, setCreating] = useState(false)
   const [form, setForm] = useState({ displayName: '', email: '', role: 'member' })
+  const [lookup, setLookup] = useState<UserLookupResponse | null>(null)
+  const [lookupLoading, setLookupLoading] = useState(false)
   const [inviteUrl, setInviteUrl] = useState('')
   const [inviteResults, setInviteResults] = useState<{ email: string; inviteUrl?: string; delivery?: string; error?: string }[]>([])
   const [saving, setSaving] = useState(false)
@@ -70,6 +86,28 @@ export default function PeoplePage() {
   }, [])
 
   useEffect(() => { void refresh() }, [refresh])
+
+  async function lookupEmail() {
+    const email = form.email.trim()
+    if (!email || /[\s,;\n\r\t]/.test(email)) {
+      setLookup(null)
+      return
+    }
+    setLookupLoading(true)
+    setErr(null)
+    try {
+      const res = await apiFetch<UserLookupResponse>(`/api/v1/users/lookup?email=${encodeURIComponent(email)}`)
+      setLookup(res)
+      if (res.user?.displayName && !form.displayName.trim()) {
+        setForm(prev => ({ ...prev, displayName: res.user?.displayName ?? prev.displayName }))
+      }
+    } catch (e) {
+      setLookup(null)
+      setErr(e instanceof Error ? e.message : String(e))
+    } finally {
+      setLookupLoading(false)
+    }
+  }
 
   async function handleCreate() {
     if (!form.email.trim()) return
@@ -116,7 +154,7 @@ export default function PeoplePage() {
           <h1 className="text-xl font-semibold text-neutral-900 dark:text-zinc-100">{t('people.title')}</h1>
           <p className="mt-0.5 text-sm text-neutral-500 dark:text-zinc-500">{t('people.subtitle')}</p>
         </div>
-        <button type="button" onClick={() => { setCreating(true); setErr(null); setInviteUrl(''); setInviteResults([]) }}
+        <button type="button" onClick={() => { setCreating(true); setErr(null); setInviteUrl(''); setInviteResults([]); setLookup(null) }}
           className="rounded-lg border border-sky-600 bg-white px-3 py-2 text-sm font-medium text-sky-700 hover:bg-sky-50 dark:border-sky-500 dark:bg-zinc-900 dark:text-sky-400 dark:hover:bg-zinc-800">
           {t('people.add')}
         </button>
@@ -223,13 +261,38 @@ export default function PeoplePage() {
             </div>
             <div className="space-y-3 px-5 py-4">
               <label className="flex flex-col gap-1">
+                <span className="text-sm font-medium text-neutral-600 dark:text-zinc-400">{t('users.email')} *</span>
+                <div className="flex gap-2">
+                  <input value={form.email} onChange={e => { setForm({ ...form, email: e.target.value }); setLookup(null) }} onBlur={() => void lookupEmail()} className={fieldCls} placeholder="alice@example.com" autoFocus />
+                  <button type="button" onClick={() => void lookupEmail()} disabled={lookupLoading || !form.email.trim()}
+                    className="shrink-0 rounded-lg border border-neutral-300 px-3 py-2 text-sm font-medium text-neutral-700 hover:bg-neutral-50 disabled:opacity-50 dark:border-zinc-600 dark:text-zinc-300 dark:hover:bg-zinc-800">
+                    {lookupLoading ? t('forms.loading') : t('people.search')}
+                  </button>
+                </div>
+                <span className="text-xs text-neutral-400 dark:text-zinc-500">{t('people.emailSearchHint')}</span>
+              </label>
+              {lookup && (
+                <div className={cn('rounded-lg border p-3 text-sm', lookup.alreadyMember
+                  ? 'border-amber-200 bg-amber-50 text-amber-800 dark:border-amber-900/50 dark:bg-amber-900/20 dark:text-amber-300'
+                  : 'border-sky-200 bg-sky-50 text-sky-800 dark:border-sky-900/50 dark:bg-sky-900/20 dark:text-sky-300')}>
+                  <p className="font-medium">
+                    {lookup.alreadyMember
+                      ? t('people.lookupAlreadyMember')
+                      : lookup.registered
+                        ? t('people.lookupRegistered')
+                        : t('people.lookupUnregistered')}
+                  </p>
+                  {lookup.user && (
+                    <p className="mt-1 text-xs opacity-80">
+                      {(lookup.user.displayName || lookup.user.username)} · {lookup.user.email}
+                    </p>
+                  )}
+                  {lookup.pendingInvite && <p className="mt-1 text-xs opacity-80">{t('people.lookupPendingInvite')}</p>}
+                </div>
+              )}
+              <label className="flex flex-col gap-1">
                 <span className="text-sm font-medium text-neutral-600 dark:text-zinc-400">{t('users.displayName')}</span>
                 <input value={form.displayName} onChange={e => setForm({ ...form, displayName: e.target.value })} className={fieldCls} placeholder="Alice Wang" />
-              </label>
-              <label className="flex flex-col gap-1">
-                <span className="text-sm font-medium text-neutral-600 dark:text-zinc-400">{t('users.email')} *</span>
-                <textarea value={form.email} onChange={e => setForm({ ...form, email: e.target.value })} className={cn(fieldCls, 'min-h-24 resize-y')} placeholder={'alice@example.com\nbob@example.com'} autoFocus />
-                <span className="text-xs text-neutral-400 dark:text-zinc-500">One or more emails, separated by spaces, commas, or new lines.</span>
               </label>
               <label className="flex flex-col gap-1">
                 <span className="text-sm font-medium text-neutral-600 dark:text-zinc-400">Workspace role</span>
@@ -278,7 +341,7 @@ export default function PeoplePage() {
               )}
               <div className="flex justify-end gap-2 pt-1">
                 <button type="button" onClick={() => setCreating(false)} disabled={saving} className="rounded-lg border border-neutral-300 px-3 py-1.5 text-sm dark:border-zinc-600">{t('forms.cancel')}</button>
-                <button type="button" onClick={() => void handleCreate()} disabled={saving || !form.email.trim()}
+                <button type="button" onClick={() => void handleCreate()} disabled={saving || !form.email.trim() || Boolean(lookup?.alreadyMember)}
                   className="rounded-lg bg-sky-600 px-3 py-1.5 text-sm font-medium text-white disabled:opacity-50">
                   {saving ? t('forms.saving') : t('people.sendInvite')}
                 </button>

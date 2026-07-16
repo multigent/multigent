@@ -178,3 +178,43 @@ func TestAcceptInvitationJoinsCurrentWorkspaceAndRejectBlocksAccept(t *testing.T
 		t.Fatalf("accept rejected status=%d body=%s", acceptRejectedRec.Code, acceptRejectedRec.Body.String())
 	}
 }
+
+func TestInviteExistingUserByEmail(t *testing.T) {
+	s, workspaceID := newConnectionGrantPolicyServer(t)
+	if err := s.users.CreateUser("existing", "secret1", RoleMember, "Existing User", "existing@example.com", "", "", ""); err != nil {
+		t.Fatalf("create existing user: %v", err)
+	}
+
+	lookupReq := providerTestRequest(http.MethodGet, "/api/v1/users/lookup?email=existing@example.com", "admin", nil)
+	lookupRec := httptest.NewRecorder()
+	s.handleLookupUserByEmail(lookupRec, lookupReq)
+	if lookupRec.Code != http.StatusOK {
+		t.Fatalf("lookup status=%d body=%s", lookupRec.Code, lookupRec.Body.String())
+	}
+	var lookup struct {
+		Registered    bool `json:"registered"`
+		AlreadyMember bool `json:"alreadyMember"`
+		PendingInvite bool `json:"pendingInvite"`
+	}
+	if err := json.Unmarshal(lookupRec.Body.Bytes(), &lookup); err != nil {
+		t.Fatalf("decode lookup: %v", err)
+	}
+	if !lookup.Registered || lookup.AlreadyMember || lookup.PendingInvite {
+		t.Fatalf("bad lookup=%#v", lookup)
+	}
+
+	inv, err := s.users.CreateInvitation("existing@example.com", WorkspaceRoleMember, "", "admin", nil, nil)
+	if err != nil {
+		t.Fatalf("create invitation: %v", err)
+	}
+	req := httptest.NewRequest(http.MethodPost, "/api/v1/invitations/"+inv.Token+"/accept", bytes.NewReader([]byte(`{"password":"secret1"}`)))
+	req.SetPathValue("token", inv.Token)
+	rec := httptest.NewRecorder()
+	s.handleAcceptInvitation(rec, req)
+	if rec.Code != http.StatusOK {
+		t.Fatalf("accept existing status=%d body=%s", rec.Code, rec.Body.String())
+	}
+	if _, ok, err := s.controlDB.WorkspaceMember(workspaceID, "existing"); err != nil || !ok {
+		t.Fatalf("workspace membership ok=%v err=%v", ok, err)
+	}
+}
