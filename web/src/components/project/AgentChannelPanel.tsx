@@ -249,15 +249,25 @@ export function AgentChannelPanel({ project, agentName }: { project: string; age
                     )}
                   </div>
                   {channel ? (
-                    <div className="mt-1 space-y-1 text-xs text-neutral-400 dark:text-zinc-500">
-                      <p>{t('agentChannels.connectedBy', { user: channel.createdBy || '-' })}</p>
-                      {channel.appId && <p>{t('agentChannels.appId', { appId: channel.appId })}</p>}
-                      <p>
-                        {channel.externalChatId
-                          ? t('agentChannels.chatBound', { chatId: channel.externalChatId })
-                          : t('agentChannels.chatPending')}
-                      </p>
-                      <p>{t('agentChannels.lastActivity', { time: channel.lastActivityAt ? new Date(channel.lastActivityAt).toLocaleString() : '-' })}</p>
+                    <div className="mt-2 space-y-1.5 text-xs text-neutral-400 dark:text-zinc-500">
+                      <ChannelDetail label={t('agentChannels.connectedByLabel')} value={channel.createdBy || '-'} />
+                      {channel.appId && <ChannelDetail label={t('agentChannels.appIdLabel')} value={channel.appId} mono />}
+                      <ChannelDetail
+                        label={t('agentChannels.ownerIdLabel')}
+                        value={channel.externalOwnerId || t('agentChannels.ownerPending')}
+                        mono={Boolean(channel.externalOwnerId)}
+                      />
+                      <ChannelDetail
+                        label={t('agentChannels.botIdLabel')}
+                        value={channel.externalBotId || t('agentChannels.botPending')}
+                        mono={Boolean(channel.externalBotId)}
+                      />
+                      <ChannelDetail
+                        label={t('agentChannels.chatIdLabel')}
+                        value={channel.externalChatId || t('agentChannels.chatPending')}
+                        mono={Boolean(channel.externalChatId)}
+                      />
+                      <ChannelDetail label={t('agentChannels.lastActivityLabel')} value={channel.lastActivityAt ? new Date(channel.lastActivityAt).toLocaleString() : '-'} />
                       {channel.callbackUrl && (
                         <div className="flex max-w-full items-center gap-1.5">
                           <span className="shrink-0">{t('agentChannels.callbackUrl')}</span>
@@ -399,5 +409,14 @@ export function AgentChannelPanel({ project, agentName }: { project: string; age
         </div>
       )}
     </section>
+  )
+}
+
+function ChannelDetail({ label, value, mono = false }: { label: string; value: string; mono?: boolean }) {
+  return (
+    <p className="flex min-w-0 items-center gap-1.5">
+      <span className="shrink-0 text-neutral-500 dark:text-zinc-400">{label}</span>
+      <span className={cn('min-w-0 truncate', mono && 'font-mono text-[11px] text-neutral-500 dark:text-zinc-300')}>{value}</span>
+    </p>
   )
 }

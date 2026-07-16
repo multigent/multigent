@@ -6,6 +6,7 @@ import (
 	"crypto/cipher"
 	"crypto/sha256"
 	"encoding/base64"
+	"encoding/json"
 	"net/http"
 	"net/http/httptest"
 	"strings"
@@ -190,6 +191,77 @@ func TestChannelEventBindingRecordsUnknownIdentityOnMatchedChannel(t *testing.T)
 		SenderOpenID: "ou_unknown",
 		Text:         "hello",
 	}, "")
+	updated, ok, err := s.controlDB.AgentChannelBindingByID("chan-feishu")
+	if err != nil || !ok {
+		t.Fatalf("load binding ok=%v err=%v", ok, err)
+	}
+	resp := agentChannelToResponse(updated)
+	if resp.Callback.Status != "rejected" || resp.Callback.Reason != "unknown_identity" || resp.Callback.MessageID != "om_unknown" {
+		t.Fatalf("callback metadata not recorded: %#v", resp.Callback)
+	}
+}
+
+func TestHandleIMEventRecordsUnknownIdentityDiagnostic(t *testing.T) {
+	s, workspaceID := newConnectionGrantPolicyServer(t)
+	if err := s.controlDB.UpsertConnection(controldb.Connection{
+		ID:             "conn-feishu",
+		WorkspaceID:    workspaceID,
+		Provider:       "feishu",
+		ConnectionName: "agent-sample-pm",
+		OwnerType:      ConnectionOwnerWorkspace,
+		OwnerID:        workspaceID,
+		AuthType:       "app_secret",
+		Status:         "active",
+		ProfileJSON:    "{}",
+	}); err != nil {
+		t.Fatalf("connection: %v", err)
+	}
+	secret, err := sealConnectionSecret(map[string]string{"baseUrl": "https://open.feishu.cn", "appId": "cli_app", "appSecret": "secret"})
+	if err != nil {
+		t.Fatalf("seal secret: %v", err)
+	}
+	secret.ConnectionID = "conn-feishu"
+	if err := s.controlDB.UpsertConnectionSecret(secret); err != nil {
+		t.Fatalf("secret: %v", err)
+	}
+	if err := s.controlDB.UpsertAgentChannelBinding(controldb.AgentChannelBinding{
+		ID:           "chan-feishu",
+		WorkspaceID:  workspaceID,
+		ProjectID:    "sample",
+		AgentID:      "pm",
+		Provider:     "feishu",
+		ConnectionID: "conn-feishu",
+		Status:       "connected",
+		MetadataJSON: `{"appId":"cli_app"}`,
+	}); err != nil {
+		t.Fatalf("binding: %v", err)
+	}
+
+	body := `{
+		"schema":"2.0",
+		"header":{"event_type":"im.message.receive_v1","app_id":"cli_app"},
+		"event":{
+			"sender":{"sender_id":{"open_id":"ou_unknown"}},
+			"message":{"message_id":"om_unknown","chat_id":"oc_one","chat_type":"p2p","message_type":"text","content":"{\"text\":\"hello\"}"}
+		}
+	}`
+	req := httptest.NewRequest(http.MethodPost, "/api/v1/im/feishu/events", strings.NewReader(body))
+	req.SetPathValue("provider", "feishu")
+	rec := httptest.NewRecorder()
+	s.handleIMEvent(rec, req)
+	if rec.Code != http.StatusOK {
+		t.Fatalf("status=%d body=%s", rec.Code, rec.Body.String())
+	}
+	var got struct {
+		Ignored bool   `json:"ignored"`
+		Reason  string `json:"reason"`
+	}
+	if err := json.Unmarshal(rec.Body.Bytes(), &got); err != nil {
+		t.Fatalf("response JSON: %v body=%s", err, rec.Body.String())
+	}
+	if !got.Ignored || got.Reason != "unknown_identity" {
+		t.Fatalf("unexpected response: %#v", got)
+	}
 	updated, ok, err := s.controlDB.AgentChannelBindingByID("chan-feishu")
 	if err != nil || !ok {
 		t.Fatalf("load binding ok=%v err=%v", ok, err)
