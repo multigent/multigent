@@ -832,10 +832,9 @@ func validAgentName(name string) bool {
 		return false
 	}
 	for _, r := range name {
-		if (r >= 'a' && r <= 'z') || (r >= 'A' && r <= 'Z') || (r >= '0' && r <= '9') || r == '-' || r == '_' {
-			continue
+		if r < 0x20 || r == 0x7f {
+			return false
 		}
-		return false
 	}
 	return true
 }

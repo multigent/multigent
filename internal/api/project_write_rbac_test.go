@@ -97,6 +97,31 @@ func TestProjectAndAgentConfigRequireManager(t *testing.T) {
 	}
 }
 
+func TestPatchAgentAllowsUnicodeName(t *testing.T) {
+	s, _ := newConnectionGrantPolicyServer(t)
+	if err := s.st.SaveAgentMeta("sample", "开发者", &entity.AgentMeta{
+		Name:    "开发者",
+		Project: "sample",
+		Team:    "engineering",
+		Model:   entity.ModelClaudeCode,
+		HiredAt: time.Now().UTC(),
+	}); err != nil {
+		t.Fatalf("save unicode agent: %v", err)
+	}
+
+	req := providerTestRequest(http.MethodPatch, "/api/v1/projects/sample/agents/%E5%BC%80%E5%8F%91%E8%80%85", "admin", map[string]string{
+		"name":   "开发者",
+		"avatar": "https://api.dicebear.com/9.x/notionists/svg?seed=dev",
+	})
+	req.SetPathValue("name", "sample")
+	req.SetPathValue("agent", "开发者")
+	rec := httptest.NewRecorder()
+	s.handlePatchAgent(rec, req)
+	if rec.Code != http.StatusOK {
+		t.Fatalf("patch unicode agent status=%d body=%s", rec.Code, rec.Body.String())
+	}
+}
+
 func TestSessionResetRequiresAgentManagementAccess(t *testing.T) {
 	s, workspaceID := newConnectionGrantPolicyServer(t)
 	grantProjectRoleForTest(t, s, workspaceID, "viewer", ProjectRoleViewer)
