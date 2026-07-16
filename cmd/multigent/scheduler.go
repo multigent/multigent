@@ -684,6 +684,22 @@ func runAllPendingTasks(ctx context.Context, root, project, agentName string,
 	r := runner.New(root, ts, s)
 	sessionID := hb.SessionID
 	i18n := wakeupStrings(agencyLang(s))
+	sourceChannel := "scheduler"
+	if hb != nil && hb.LastWakeupStatus == "running" {
+		sourceChannel = "heartbeat"
+	}
+	interactionLease, busy, err := acquireCLIInteraction(root, project, agentName, "scheduler", sourceChannel, "scheduler", "running_task")
+	if err != nil {
+		return err
+	}
+	if busy {
+		taskLog("%s skipping cycle — agent is busy in %s session from %s",
+			colorYellow+"⚠", interactionLease.session.SourceKind, interactionLease.session.SourceChannel)
+		return nil
+	}
+	if interactionLease != nil {
+		defer interactionLease.Release()
+	}
 
 	cycleStart := time.Now()
 	tasksProcessed := 0
@@ -778,6 +794,12 @@ func runAllPendingTasks(ctx context.Context, root, project, agentName string,
 					_ = ts.UpdateTask(project, agentName, wakeupTask)
 				}
 
+				if interactionLease != nil {
+					_ = interactionLease.event("system", "scheduler", sourceChannel, "run_started", "", map[string]any{
+						"taskId": wakeupTask.ID,
+						"type":   "wakeup",
+					})
+				}
 				result, rErr := r.RunTask(project, agentName, wakeupTask, sessionID)
 				if rErr == nil && result.SessionID != "" {
 					sessionID = result.SessionID
@@ -790,11 +812,21 @@ func runAllPendingTasks(ctx context.Context, root, project, agentName string,
 				wakeupTask.FinishedAt = &finished
 				wakeupTask.RunLogPath = ""
 				if rErr != nil {
+					if interactionLease != nil {
+						interactionLease.Fail(rErr.Error())
+					}
 					wakeupTask.Status = entity.TaskStatusDoneFailed
 					wakeupTask.LastError = rErr.Error()
 					_ = ts.ArchiveTask(project, agentName, wakeupTask)
 					return fmt.Errorf("[heartbeat %s/%s] wakeup failed: %w", project, agentName, rErr)
 				} else {
+					if interactionLease != nil {
+						_ = interactionLease.event("agent", project+"/"+agentName, sourceChannel, "run_completed", "", map[string]any{
+							"taskId":           wakeupTask.ID,
+							"runtimeSessionId": result.SessionID,
+							"status":           string(result.Status),
+						})
+					}
 					wakeupTask.Status = result.Status
 					wakeupTask.RunLogPath = result.LogPath
 					// All statuses (including awaiting_confirmation) are archived.
@@ -816,6 +848,13 @@ func runAllPendingTasks(ctx context.Context, root, project, agentName string,
 		}
 
 		taskLog("%s task %s  %s", colorCyan+"▶", task.ID, task.Title)
+		if interactionLease != nil {
+			_ = interactionLease.event("system", "scheduler", sourceChannel, "message", task.Prompt, map[string]any{
+				"taskId": task.ID,
+				"title":  task.Title,
+				"type":   task.Type,
+			})
+		}
 
 		now := time.Now().UTC()
 		task.Status = entity.TaskStatusInProgress
@@ -839,8 +878,17 @@ func runAllPendingTasks(ctx context.Context, root, project, agentName string,
 			}
 		}
 
+		if interactionLease != nil {
+			_ = interactionLease.event("system", "scheduler", sourceChannel, "run_started", "", map[string]any{
+				"taskId":    task.ID,
+				"sessionId": taskSessionID,
+			})
+		}
 		result, err := r.RunTask(project, agentName, task, taskSessionID)
 		if err != nil {
+			if interactionLease != nil {
+				interactionLease.Fail(err.Error())
+			}
 			task.Status = entity.TaskStatusDoneFailed
 			task.LastError = err.Error()
 			finished := time.Now().UTC()
@@ -848,6 +896,13 @@ func runAllPendingTasks(ctx context.Context, root, project, agentName string,
 			_ = ts.ArchiveTask(project, agentName, task)
 			taskLog("%s task %s failed: %v", colorRed+"✗", task.ID, err)
 			return fmt.Errorf("task %s failed: %w", task.ID, err)
+		}
+		if interactionLease != nil {
+			_ = interactionLease.event("agent", project+"/"+agentName, sourceChannel, "run_completed", "", map[string]any{
+				"taskId":           task.ID,
+				"runtimeSessionId": result.SessionID,
+				"status":           string(result.Status),
+			})
 		}
 
 		// Update session ID for the cycle (per-cycle scope by default).

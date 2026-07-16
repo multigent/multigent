@@ -87,6 +87,21 @@ This is a one-shot manual trigger. For recurring automated runs, use
 			if err != nil {
 				return err
 			}
+			interactionLease, busy, err := acquireCLIInteraction(root, project, agentName, "manual_run", "cli", "cli", "running_task")
+			if err != nil {
+				return err
+			}
+			if busy {
+				return fmt.Errorf("agent %s/%s is busy in %s session from %s", project, agentName, interactionLease.session.SourceKind, interactionLease.session.SourceChannel)
+			}
+			if interactionLease != nil {
+				defer interactionLease.Release()
+				_ = interactionLease.event("system", "cli", "cli", "message", task.Prompt, map[string]any{
+					"taskId": task.ID,
+					"title":  task.Title,
+					"type":   task.Type,
+				})
+			}
 
 			fmt.Printf("▶ Running task %s  [%s]\n", task.ID, task.Title)
 
@@ -101,8 +116,17 @@ This is a one-shot manual trigger. For recurring automated runs, use
 			}
 
 			r := runner.New(root, ts, s)
+			if interactionLease != nil {
+				_ = interactionLease.event("system", "cli", "cli", "run_started", "", map[string]any{
+					"taskId":    task.ID,
+					"sessionId": hb.SessionID,
+				})
+			}
 			result, err := r.RunTask(project, agentName, task, hb.SessionID)
 			if err != nil {
+				if interactionLease != nil {
+					interactionLease.Fail(err.Error())
+				}
 				// Execution error (not the same as task failure).
 				task.Status = entity.TaskStatusDoneFailed
 				task.LastError = err.Error()
@@ -110,6 +134,13 @@ This is a one-shot manual trigger. For recurring automated runs, use
 				task.FinishedAt = &finished
 				_ = ts.ArchiveTask(project, agentName, task)
 				return fmt.Errorf("execution error: %w", err)
+			}
+			if interactionLease != nil {
+				_ = interactionLease.event("agent", project+"/"+agentName, "cli", "run_completed", "", map[string]any{
+					"taskId":           task.ID,
+					"runtimeSessionId": result.SessionID,
+					"status":           string(result.Status),
+				})
 			}
 
 			// Persist new session ID if captured.
