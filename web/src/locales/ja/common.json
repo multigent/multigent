@@ -103,7 +103,11 @@
     "basicInfo": "基本情報",
     "name": "名前",
     "description": "説明",
-    "repo": "リポジトリ"
+    "repo": "リポジトリ",
+    "dangerZone": "危険な操作",
+    "deleteProject": "プロジェクトを削除",
+    "deleteProjectDesc": "現在のワークスペースから、このプロジェクト、配下の Agent、プロンプト、プロジェクト内ファイルを削除します。",
+    "confirmDeleteProject": "プロジェクト「{{name}}」を削除しますか？配下の Agent も削除され、元に戻せません。"
   },
   "sidebar": {
     "footer": "チームは編成とエージェントを管理し、プロジェクトは具体的なタスクとメッセージを担います。今後 multigent データと連携します。",
@@ -383,7 +387,11 @@
     "roleName": "ロール名",
     "roleDescription": "説明",
     "roleDescPlaceholder": "このロールの責務を簡潔に記述",
-    "roleSkills": "スキルを紐付け"
+    "roleSkills": "スキルを紐付け",
+    "deleteTeam": "チームを削除",
+    "deleteRole": "ロールを削除",
+    "confirmDeleteTeam": "チーム「{{name}}」とすべてのロールを削除しますか？この操作は元に戻せません。",
+    "confirmDeleteRole": "ロール「{{name}}」を削除しますか？この操作は元に戻せません。"
   },
   "teamTemplates": {
     "product-discovery": {

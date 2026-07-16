@@ -103,7 +103,11 @@
     "basicInfo": "Basic information",
     "name": "Name",
     "description": "Description",
-    "repo": "Repository"
+    "repo": "Repository",
+    "dangerZone": "Danger zone",
+    "deleteProject": "Delete project",
+    "deleteProjectDesc": "Delete this project, its agents, prompts, and project-local files from the current workspace.",
+    "confirmDeleteProject": "Delete project \"{{name}}\"? This will also delete its agents and cannot be undone."
   },
   "sidebar": {
     "footer": "Teams hold your roster; projects are where tasks and messages run. Data will connect to multigent later.",
@@ -383,7 +387,11 @@
     "roleName": "Role name",
     "roleDescription": "Description",
     "roleDescPlaceholder": "Short description of this role's responsibilities",
-    "roleSkills": "Bind skills"
+    "roleSkills": "Bind skills",
+    "deleteTeam": "Delete team",
+    "deleteRole": "Delete role",
+    "confirmDeleteTeam": "Delete team \"{{name}}\" and all its roles? This cannot be undone.",
+    "confirmDeleteRole": "Delete role \"{{name}}\"? This cannot be undone."
   },
   "teamTemplates": {
     "product-discovery": {

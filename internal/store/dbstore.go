@@ -55,6 +55,22 @@ func (s *dbStore) SaveTeam(path string, t *entity.Team) error {
 	return s.putJSON("teams", []string{path}, t)
 }
 
+func (s *dbStore) DeleteTeam(path string) error {
+	roles, err := s.ListRoles(path)
+	if err != nil {
+		return err
+	}
+	for _, role := range roles {
+		if err := s.db.DeleteRecord("roles", s.workspaceID, []string{path, role.Name}); err != nil {
+			return err
+		}
+	}
+	if err := s.db.DeleteRecord("teams", s.workspaceID, []string{path}); err != nil {
+		return err
+	}
+	return s.files.DeleteTeam(path)
+}
+
 func (s *dbStore) TeamPrompt(path string) (string, error) { return s.files.TeamPrompt(path) }
 func (s *dbStore) SaveTeamPrompt(path string, content string) error {
 	return s.files.SaveTeamPrompt(path, content)
@@ -91,6 +107,13 @@ func (s *dbStore) SaveRole(teamPath, roleName string, r *entity.Role) error {
 		r.Name = roleName
 	}
 	return s.putJSON("roles", []string{teamPath, roleName}, r)
+}
+
+func (s *dbStore) DeleteRole(teamPath, roleName string) error {
+	if err := s.db.DeleteRecord("roles", s.workspaceID, []string{teamPath, roleName}); err != nil {
+		return err
+	}
+	return s.files.DeleteRole(teamPath, roleName)
 }
 
 func (s *dbStore) RolePrompt(teamPath, roleName string) (string, error) {
@@ -133,6 +156,22 @@ func (s *dbStore) SaveProject(name string, p *entity.Project) error {
 		p.Name = name
 	}
 	return s.putJSON("projects", []string{name}, p)
+}
+
+func (s *dbStore) DeleteProject(name string) error {
+	agents, err := s.ListAgents(name)
+	if err != nil {
+		return err
+	}
+	for _, agent := range agents {
+		if err := s.db.DeleteRecord("agents", s.workspaceID, []string{name, agent.Name}); err != nil {
+			return err
+		}
+	}
+	if err := s.db.DeleteRecord("projects", s.workspaceID, []string{name}); err != nil {
+		return err
+	}
+	return s.files.DeleteProject(name)
 }
 
 func (s *dbStore) ProjectPrompt(name string) (string, error) { return s.files.ProjectPrompt(name) }
@@ -181,6 +220,12 @@ func (s *dbStore) SaveAgentMeta(project, name string, meta *entity.AgentMeta) er
 		meta.Project = project
 	}
 	return s.putJSON("agents", []string{project, name}, meta)
+}
+func (s *dbStore) DeleteAgentMeta(project, name string) error {
+	if err := s.db.DeleteRecord("agents", s.workspaceID, []string{project, name}); err != nil {
+		return err
+	}
+	return s.files.DeleteAgentMeta(project, name)
 }
 func (s *dbStore) ListAgents(project string) ([]*AgentEntry, error) {
 	recs, err := s.db.ListRecords("agents", s.workspaceID, []string{project})

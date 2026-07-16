@@ -127,6 +127,13 @@ func (s *fsStore) SaveTeam(path string, t *entity.Team) error {
 	return nil
 }
 
+func (s *fsStore) DeleteTeam(path string) error {
+	if err := os.RemoveAll(s.teamDir(path)); err != nil {
+		return fmt.Errorf("store: delete team %q: %w", path, err)
+	}
+	return nil
+}
+
 func (s *fsStore) TeamPrompt(path string) (string, error) {
 	content, err := readText(filepath.Join(s.teamDir(path), "prompt.md"))
 	if err != nil {
@@ -199,6 +206,13 @@ func (s *fsStore) SaveRole(teamPath, roleName string, r *entity.Role) error {
 	return nil
 }
 
+func (s *fsStore) DeleteRole(teamPath, roleName string) error {
+	if err := os.RemoveAll(s.RoleDir(teamPath, roleName)); err != nil {
+		return fmt.Errorf("store: delete role %q/%q: %w", teamPath, roleName, err)
+	}
+	return nil
+}
+
 func (s *fsStore) RolePrompt(teamPath, roleName string) (string, error) {
 	content, err := readText(filepath.Join(s.RoleDir(teamPath, roleName), "prompt.md"))
 	if err != nil {
@@ -259,6 +273,13 @@ func (s *fsStore) SaveProject(name string, p *entity.Project) error {
 	path := filepath.Join(s.projectDir(name), "project.yaml")
 	if err := writeYAML(path, p); err != nil {
 		return fmt.Errorf("store: save project %q: %w", name, err)
+	}
+	return nil
+}
+
+func (s *fsStore) DeleteProject(name string) error {
+	if err := os.RemoveAll(s.projectDir(name)); err != nil {
+		return fmt.Errorf("store: delete project %q: %w", name, err)
 	}
 	return nil
 }
@@ -424,6 +445,13 @@ func (s *fsStore) SaveAgentMeta(project, name string, meta *entity.AgentMeta) er
 	path := filepath.Join(s.AgentDir(project, name), ".multigent", "agent.yaml")
 	if err := writeYAML(path, meta); err != nil {
 		return fmt.Errorf("store: save agent meta %q/%q: %w", project, name, err)
+	}
+	return nil
+}
+
+func (s *fsStore) DeleteAgentMeta(project, name string) error {
+	if err := os.RemoveAll(s.AgentDir(project, name)); err != nil {
+		return fmt.Errorf("store: delete agent %q/%q: %w", project, name, err)
 	}
 	return nil
 }

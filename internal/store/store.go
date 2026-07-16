@@ -55,6 +55,7 @@ type Store interface {
 
 	Team(path string) (*entity.Team, error)
 	SaveTeam(path string, t *entity.Team) error
+	DeleteTeam(path string) error
 	TeamPrompt(path string) (string, error)
 	SaveTeamPrompt(path string, content string) error
 	// ListTeams returns all teams in no guaranteed order.
@@ -64,6 +65,7 @@ type Store interface {
 
 	Project(name string) (*entity.Project, error)
 	SaveProject(name string, p *entity.Project) error
+	DeleteProject(name string) error
 	ProjectPrompt(name string) (string, error)
 	SaveProjectPrompt(name string, content string) error
 	ListProjects() ([]*entity.Project, error)
@@ -78,6 +80,7 @@ type Store interface {
 
 	Role(teamPath, roleName string) (*entity.Role, error)
 	SaveRole(teamPath, roleName string, r *entity.Role) error
+	DeleteRole(teamPath, roleName string) error
 	RolePrompt(teamPath, roleName string) (string, error)
 	SaveRolePrompt(teamPath, roleName string, content string) error
 	RoleDir(teamPath, roleName string) string
@@ -96,6 +99,7 @@ type Store interface {
 
 	AgentMeta(project, name string) (*entity.AgentMeta, error)
 	SaveAgentMeta(project, name string, meta *entity.AgentMeta) error
+	DeleteAgentMeta(project, name string) error
 	ListAgents(project string) ([]*AgentEntry, error)
 
 	// AgentDir returns the absolute path of an agent's working directory.

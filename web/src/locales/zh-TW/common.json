@@ -103,7 +103,11 @@
     "basicInfo": "基本資訊",
     "name": "名稱",
     "description": "描述",
-    "repo": "儲存庫"
+    "repo": "儲存庫",
+    "dangerZone": "危險操作",
+    "deleteProject": "刪除專案",
+    "deleteProjectDesc": "從目前工作區刪除此專案、專案下的 Agent、提示詞和專案本地檔案。",
+    "confirmDeleteProject": "確定刪除專案「{{name}}」？專案下的 Agent 也會被刪除，且無法復原。"
   },
   "sidebar": {
     "footer": "團隊維護編制與 Agent；專案承載具體任務與訊息。後續對接 multigent 資料。",
@@ -383,7 +387,11 @@
     "roleName": "角色名稱",
     "roleDescription": "描述",
     "roleDescPlaceholder": "簡要描述該角色的職責",
-    "roleSkills": "綁定技能"
+    "roleSkills": "綁定技能",
+    "deleteTeam": "刪除團隊",
+    "deleteRole": "刪除角色",
+    "confirmDeleteTeam": "確定刪除團隊「{{name}}」以及它的所有角色？此操作無法復原。",
+    "confirmDeleteRole": "確定刪除角色「{{name}}」？此操作無法復原。"
   },
   "teamTemplates": {
     "product-discovery": {

@@ -1,18 +1,19 @@
 import { useCallback, useState } from 'react'
-import { useParams } from 'react-router-dom'
+import { useNavigate, useParams } from 'react-router-dom'
 import { useTranslation } from 'react-i18next'
 import Markdown from 'react-markdown'
 import remarkGfm from 'remark-gfm'
-import { FileText, Save } from 'lucide-react'
+import { FileText, Save, Trash2 } from 'lucide-react'
 import { cn } from '../../lib/cn'
 import { useApiJson } from '../../lib/use-api'
-import { apiPut } from '../../lib/api'
+import { apiDelete, apiPut } from '../../lib/api'
 
 type ProjectDetail = { name: string; description: string; repo: string }
 type PromptData = { content: string }
 
 export default function ProjectSettingsPage() {
   const { t } = useTranslation()
+  const navigate = useNavigate()
   const { projectId } = useParams<{ projectId: string }>()
 
   const detailPath = projectId ? `/api/v1/projects/${encodeURIComponent(projectId)}` : null
@@ -50,9 +51,57 @@ export default function ProjectSettingsPage() {
               initialContent={promptState.data.content}
             />
           )}
+
+          {projectId && (
+            <DangerZone
+              projectId={projectId}
+              onDeleted={() => navigate('/projects')}
+            />
+          )}
         </div>
       </div>
     </div>
+  )
+}
+
+function DangerZone({ projectId, onDeleted }: { projectId: string; onDeleted: () => void }) {
+  const { t } = useTranslation()
+  const [busy, setBusy] = useState(false)
+
+  async function deleteProject() {
+    if (!window.confirm(t('projectSettings.confirmDeleteProject', { name: projectId }))) return
+    setBusy(true)
+    try {
+      await apiDelete(`/api/v1/projects/${encodeURIComponent(projectId)}`)
+      onDeleted()
+    } catch (e) {
+      alert(String(e))
+    } finally {
+      setBusy(false)
+    }
+  }
+
+  return (
+    <section className="rounded-lg border border-red-200/80 bg-white dark:border-red-900/60 dark:bg-zinc-900/40">
+      <div className="border-b border-red-100 px-5 py-3 dark:border-red-900/40">
+        <span className="text-sm font-semibold text-red-700 dark:text-red-300">{t('projectSettings.dangerZone')}</span>
+      </div>
+      <div className="flex items-center justify-between gap-4 px-5 py-4">
+        <div>
+          <p className="text-sm font-medium text-neutral-800 dark:text-zinc-200">{t('projectSettings.deleteProject')}</p>
+          <p className="mt-1 text-xs leading-relaxed text-neutral-500 dark:text-zinc-500">{t('projectSettings.deleteProjectDesc')}</p>
+        </div>
+        <button
+          type="button"
+          disabled={busy}
+          onClick={() => void deleteProject()}
+          className="inline-flex shrink-0 items-center gap-1.5 rounded-lg border border-red-200 bg-white px-3 py-2 text-sm font-medium text-red-600 transition-colors hover:bg-red-50 disabled:opacity-50 dark:border-red-900/60 dark:bg-zinc-900 dark:text-red-400 dark:hover:bg-red-900/20"
+        >
+          <Trash2 className="size-4" strokeWidth={1.8} />
+          {t('projectSettings.deleteProject')}
+        </button>
+      </div>
+    </section>
   )
 }
 

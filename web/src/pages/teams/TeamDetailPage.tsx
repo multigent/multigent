@@ -1,13 +1,13 @@
 import { useCallback, useState } from 'react'
-import { useParams } from 'react-router-dom'
+import { useNavigate, useParams } from 'react-router-dom'
 import { useTranslation } from 'react-i18next'
 import Markdown from 'react-markdown'
 import remarkGfm from 'remark-gfm'
-import { Users, Save, ChevronDown, ChevronRight, FileText, Puzzle, Plus, X } from 'lucide-react'
+import { Users, Save, ChevronDown, ChevronRight, FileText, Puzzle, Plus, X, Trash2 } from 'lucide-react'
 import { CreateRoleDialog } from '../../components/team/CreateRoleDialog'
 import { cn } from '../../lib/cn'
 import { PlaceholderCard } from '../../components/ui/PlaceholderCard'
-import { apiTeamPath, apiPut, apiPost } from '../../lib/api'
+import { apiTeamPath, apiPut, apiPost, apiDelete } from '../../lib/api'
 import { useApiJson } from '../../lib/use-api'
 
 type SkillRow = { name: string; description?: string }
@@ -202,11 +202,13 @@ function RolePromptRow({
   role,
   allSkills,
   onSkillsChanged,
+  onDeleted,
 }: {
   teamPath: string
   role: RoleRow
   allSkills: SkillRow[]
   onSkillsChanged: () => void
+  onDeleted: () => void
 }) {
   const { t } = useTranslation()
   const [open, setOpen] = useState(false)
@@ -229,31 +231,51 @@ function RolePromptRow({
     }
   }, [teamPath, role.name, onSkillsChanged])
 
+  const deleteRole = useCallback(async () => {
+    if (!window.confirm(t('teams.confirmDeleteRole', { name: role.name }))) return
+    try {
+      await apiDelete(`/api/v1/teams/${encodeURIComponent(teamPath)}/roles/${encodeURIComponent(role.name)}`)
+      onDeleted()
+    } catch (e) {
+      alert(String(e))
+    }
+  }, [teamPath, role.name, onDeleted, t])
+
   return (
     <div className="border-b border-neutral-100 last:border-b-0 dark:border-zinc-700/40">
-      <button
-        type="button"
-        onClick={() => setOpen((o) => !o)}
-        className="flex w-full items-center gap-3 px-4 py-3 text-left transition-colors hover:bg-neutral-50/80 dark:hover:bg-zinc-800/30"
-      >
-        <div className="min-w-0 flex-1">
-          <div className="flex items-center gap-2">
-            <p className="font-mono text-sm text-neutral-900 dark:text-zinc-100">{role.name}</p>
-            {localSkills.length > 0 && (
-              <span className="rounded-full bg-amber-50 px-1.5 py-0.5 text-[10px] font-medium text-amber-600 dark:bg-amber-900/20 dark:text-amber-400">
-                {localSkills.length} {t('skill.skills')}
-              </span>
+      <div className="flex items-center gap-2 px-4 py-3 transition-colors hover:bg-neutral-50/80 dark:hover:bg-zinc-800/30">
+        <button
+          type="button"
+          onClick={() => setOpen((o) => !o)}
+          className="flex min-w-0 flex-1 items-center gap-3 text-left"
+        >
+          <div className="min-w-0 flex-1">
+            <div className="flex items-center gap-2">
+              <p className="font-mono text-sm text-neutral-900 dark:text-zinc-100">{role.name}</p>
+              {localSkills.length > 0 && (
+                <span className="rounded-full bg-amber-50 px-1.5 py-0.5 text-[10px] font-medium text-amber-600 dark:bg-amber-900/20 dark:text-amber-400">
+                  {localSkills.length} {t('skill.skills')}
+                </span>
+              )}
+            </div>
+            {role.description && (
+              <p className="mt-0.5 text-xs text-neutral-400 dark:text-zinc-500">{role.description}</p>
             )}
           </div>
-          {role.description && (
-            <p className="mt-0.5 text-xs text-neutral-400 dark:text-zinc-500">{role.description}</p>
-          )}
-        </div>
-        {open
-          ? <ChevronDown className="size-4 shrink-0 text-neutral-400" strokeWidth={2} />
-          : <ChevronRight className="size-4 shrink-0 text-neutral-400" strokeWidth={2} />
-        }
-      </button>
+          {open
+            ? <ChevronDown className="size-4 shrink-0 text-neutral-400" strokeWidth={2} />
+            : <ChevronRight className="size-4 shrink-0 text-neutral-400" strokeWidth={2} />
+          }
+        </button>
+        <button
+          type="button"
+          onClick={deleteRole}
+          className="rounded-md p-1.5 text-neutral-400 transition-colors hover:bg-red-50 hover:text-red-600 dark:hover:bg-red-900/20 dark:hover:text-red-400"
+          title={t('teams.deleteRole')}
+        >
+          <Trash2 className="size-3.5" strokeWidth={1.8} />
+        </button>
+      </div>
       {open && (
         <div className="space-y-4 px-4 pb-4">
           {/* Role skills */}
@@ -294,6 +316,7 @@ function RolePromptRow({
 
 export default function TeamDetailPage() {
   const { t } = useTranslation()
+  const navigate = useNavigate()
   const { teamId } = useParams<{ teamId: string }>()
   const apiPath =
     teamId != null && teamId !== '' ? `/api/v1/teams/${apiTeamPath(teamId)}` : null
@@ -318,11 +341,36 @@ export default function TeamDetailPage() {
     }
   }, [teamId])
 
+  const deleteTeam = useCallback(async () => {
+    if (!teamId) return
+    if (!window.confirm(t('teams.confirmDeleteTeam', { name: teamId }))) return
+    try {
+      await apiDelete(`/api/v1/teams/${apiTeamPath(teamId)}`)
+      navigate('/teams')
+    } catch (e) {
+      alert(String(e))
+    }
+  }, [teamId, navigate, t])
+
   return (
     <div className="flex h-full flex-col overflow-hidden">
       <div className="shrink-0 px-6 pt-5 pb-3">
-        <h1 className="text-xl font-semibold text-neutral-900 dark:text-zinc-100">{t('teams.detailSubtitle')}</h1>
-        <span className="mt-0.5 block font-mono text-sm text-neutral-800 dark:text-zinc-300">{teamId}</span>
+        <div className="flex items-start justify-between gap-3">
+          <div>
+            <h1 className="text-xl font-semibold text-neutral-900 dark:text-zinc-100">{t('teams.detailSubtitle')}</h1>
+            <span className="mt-0.5 block font-mono text-sm text-neutral-800 dark:text-zinc-300">{teamId}</span>
+          </div>
+          {teamId && (
+            <button
+              type="button"
+              onClick={deleteTeam}
+              className="inline-flex items-center gap-1.5 rounded-lg border border-red-200 bg-white px-3 py-2 text-sm font-medium text-red-600 transition-colors hover:bg-red-50 dark:border-red-900/60 dark:bg-zinc-900 dark:text-red-400 dark:hover:bg-red-900/20"
+            >
+              <Trash2 className="size-4" strokeWidth={1.8} />
+              {t('teams.deleteTeam')}
+            </button>
+          )}
+        </div>
       </div>
 
       <div className="flex-1 overflow-y-auto px-6 pb-6">
@@ -406,6 +454,7 @@ export default function TeamDetailPage() {
                       role={r}
                       allSkills={allSkills}
                       onSkillsChanged={() => setReloadKey((k) => k + 1)}
+                      onDeleted={() => setReloadKey((k) => k + 1)}
                     />
                   ))}
                 </div>

@@ -103,7 +103,11 @@
     "basicInfo": "基本信息",
     "name": "名称",
     "description": "描述",
-    "repo": "仓库"
+    "repo": "仓库",
+    "dangerZone": "危险操作",
+    "deleteProject": "删除项目",
+    "deleteProjectDesc": "从当前工作区删除该项目、项目下的 Agent、提示词和项目本地文件。",
+    "confirmDeleteProject": "确定删除项目 \"{{name}}\"？项目下的 Agent 也会被删除，且无法撤销。"
   },
   "sidebar": {
     "footer": "团队维护编制与 Agent；项目承载具体任务与消息。后续对接 multigent 数据。",
@@ -383,7 +387,11 @@
     "roleName": "角色名称",
     "roleDescription": "描述",
     "roleDescPlaceholder": "简要描述该角色的职责",
-    "roleSkills": "绑定技能"
+    "roleSkills": "绑定技能",
+    "deleteTeam": "删除团队",
+    "deleteRole": "删除角色",
+    "confirmDeleteTeam": "确定删除团队 \"{{name}}\" 以及它的所有角色？此操作无法撤销。",
+    "confirmDeleteRole": "确定删除角色 \"{{name}}\"？此操作无法撤销。"
   },
   "teamTemplates": {
     "product-discovery": {

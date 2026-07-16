@@ -896,7 +896,7 @@ func (s *Server) handleFireAgent(w http.ResponseWriter, r *http.Request) {
 	agentDir := s.st.AgentDir(project, agent)
 
 	if force {
-		if err := os.RemoveAll(agentDir); err != nil {
+		if err := s.st.DeleteAgentMeta(project, agent); err != nil {
 			s.serverError(w, fmt.Errorf("fire: %w", err))
 			return
 		}
@@ -909,6 +909,10 @@ func (s *Server) handleFireAgent(w http.ResponseWriter, r *http.Request) {
 			return
 		}
 		if err := os.Rename(agentDir, firedDir); err != nil {
+			s.serverError(w, fmt.Errorf("fire: %w", err))
+			return
+		}
+		if err := s.st.DeleteAgentMeta(project, agent); err != nil {
 			s.serverError(w, fmt.Errorf("fire: %w", err))
 			return
 		}
