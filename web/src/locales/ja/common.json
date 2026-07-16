@@ -1153,7 +1153,7 @@
     "workspaceRole_admin": "管理者",
     "workspaceRole_member": "メンバー",
     "workspaceRole_guest": "ゲスト",
-    "invitations": "招待",
+    "invitations": "ユーザー招待",
     "inviteStatus_pending": "保留中",
     "inviteStatus_accepted": "承認済み",
     "inviteStatus_revoked": "取り消し済み",

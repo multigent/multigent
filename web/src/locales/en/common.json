@@ -1153,7 +1153,7 @@
     "workspaceRole_admin": "Admin",
     "workspaceRole_member": "Member",
     "workspaceRole_guest": "Guest",
-    "invitations": "Invitations",
+    "invitations": "User Invitations",
     "inviteStatus_pending": "Pending",
     "inviteStatus_accepted": "Accepted",
     "inviteStatus_revoked": "Revoked",
