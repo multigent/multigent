@@ -10,6 +10,7 @@ import (
 
 	controldb "github.com/multigent/multigent/internal/db"
 	"github.com/multigent/multigent/internal/entity"
+	"github.com/multigent/multigent/internal/secretbox"
 )
 
 type ProviderStore struct {
@@ -234,6 +235,14 @@ func modelProviderFromDB(row controldb.ModelProvider) (entity.APIProvider, error
 			return entity.APIProvider{}, err
 		}
 	}
+	apiKey := ""
+	if strings.TrimSpace(row.APIKey) != "" {
+		opened, err := secretbox.OpenString(row.APIKey)
+		if err != nil {
+			return entity.APIProvider{}, err
+		}
+		apiKey = opened
+	}
 	return entity.APIProvider{
 		ID:        row.ID,
 		OwnerType: row.OwnerType,
@@ -241,7 +250,7 @@ func modelProviderFromDB(row controldb.ModelProvider) (entity.APIProvider, error
 		Name:      row.Name,
 		Type:      row.Type,
 		BaseURL:   row.BaseURL,
-		APIKey:    row.APIKey,
+		APIKey:    apiKey,
 		Model:     row.Model,
 		Env:       env,
 	}, nil
@@ -265,6 +274,10 @@ func modelProviderToDB(workspaceID string, p entity.APIProvider) (controldb.Mode
 	if ownerID == "" {
 		ownerID = workspaceID
 	}
+	apiKey, err := secretbox.SealString(p.APIKey)
+	if err != nil {
+		return controldb.ModelProvider{}, err
+	}
 	return controldb.ModelProvider{
 		ID:          strings.TrimSpace(p.ID),
 		WorkspaceID: workspaceID,
@@ -273,7 +286,7 @@ func modelProviderToDB(workspaceID string, p entity.APIProvider) (controldb.Mode
 		Name:        strings.TrimSpace(p.Name),
 		Type:        strings.TrimSpace(p.Type),
 		BaseURL:     strings.TrimSpace(p.BaseURL),
-		APIKey:      strings.TrimSpace(p.APIKey),
+		APIKey:      apiKey,
 		Model:       strings.TrimSpace(p.Model),
 		EnvJSON:     string(envJSON),
 		CreatedAt:   now,

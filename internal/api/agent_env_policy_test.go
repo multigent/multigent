@@ -10,6 +10,7 @@ import (
 	"testing"
 
 	controldb "github.com/multigent/multigent/internal/db"
+	"github.com/multigent/multigent/internal/secretbox"
 )
 
 func agentEnvPolicyRequest(method, path, username, project, agent string, body any) *http.Request {
@@ -59,13 +60,17 @@ func TestAgentEnvHandlersRequireAgentManagementAccess(t *testing.T) {
 
 func TestPutAgentEnvValidatesProviderAndAuditsWithoutValues(t *testing.T) {
 	s, workspaceID := newConnectionGrantPolicyServer(t)
+	sealedKey, err := secretbox.SealString("sk-secret")
+	if err != nil {
+		t.Fatalf("seal key: %v", err)
+	}
 	if err := s.controlDB.UpsertModelProvider(workspaceID, controldb.ModelProvider{
 		ID:        "prov-main",
 		OwnerType: ConnectionOwnerWorkspace,
 		OwnerID:   workspaceID,
 		Name:      "Main",
 		Type:      "openai",
-		APIKey:    "sk-secret",
+		APIKey:    sealedKey,
 		Model:     "gpt-test",
 		EnvJSON:   `{}`,
 		CreatedAt: "2026-07-15T00:00:00Z",
@@ -126,13 +131,17 @@ func TestPutAgentEnvValidatesProviderAndAuditsWithoutValues(t *testing.T) {
 
 func TestPutAgentEnvRestrictsPersonalModelProviders(t *testing.T) {
 	s, workspaceID := newConnectionGrantPolicyServer(t)
+	sealedKey, err := secretbox.SealString("sk-owner")
+	if err != nil {
+		t.Fatalf("seal key: %v", err)
+	}
 	if err := s.controlDB.UpsertModelProvider(workspaceID, controldb.ModelProvider{
 		ID:        "prov-owner",
 		OwnerType: ConnectionOwnerUser,
 		OwnerID:   "owner",
 		Name:      "Owner Personal",
 		Type:      "openai",
-		APIKey:    "sk-owner",
+		APIKey:    sealedKey,
 		Model:     "gpt-test",
 		EnvJSON:   `{}`,
 		CreatedAt: "2026-07-15T00:00:00Z",

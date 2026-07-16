@@ -701,6 +701,9 @@ func (s *Server) canAdminWorkspace(r *http.Request, workspaceID string) bool {
 	if cur == nil || cur.Username == "" || s.controlDB == nil {
 		return false
 	}
+	if cur.Role == RoleAdmin {
+		return true
+	}
 	member, ok, err := s.controlDB.WorkspaceMember(workspaceID, cur.Username)
 	if err != nil || !ok {
 		return false

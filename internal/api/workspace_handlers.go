@@ -553,6 +553,9 @@ func (s *Server) checkWorkspaceAccess(w http.ResponseWriter, r *http.Request, wo
 		s.jsonErrorCode(w, http.StatusForbidden, ErrCodeWorkspaceAccessRequired, "workspace access required")
 		return false
 	}
+	if cur.Role == RoleAdmin {
+		return true
+	}
 	if s.controlDB == nil {
 		s.jsonErrorCode(w, http.StatusServiceUnavailable, ErrCodeWorkspaceDatabaseUnavailable, "control database unavailable")
 		return false
@@ -581,6 +584,9 @@ func (s *Server) checkCurrentWorkspaceAdmin(w http.ResponseWriter, r *http.Reque
 		s.jsonErrorCode(w, http.StatusForbidden, ErrCodeWorkspaceAdminRequired, "workspace admin access required")
 		return false
 	}
+	if cur.Role == RoleAdmin {
+		return true
+	}
 	if s.controlDB == nil {
 		s.jsonErrorCode(w, http.StatusServiceUnavailable, ErrCodeWorkspaceDatabaseUnavailable, "control database unavailable")
 		return false
@@ -604,6 +610,9 @@ func (s *Server) currentWorkspaceRole(r *http.Request, workspaceID string) (stri
 	}
 	if cur == nil || cur.Username == "" || s.controlDB == nil {
 		return "", false
+	}
+	if cur.Role == RoleAdmin {
+		return WorkspaceRoleOwner, true
 	}
 	member, ok, err := s.controlDB.WorkspaceMember(workspaceID, cur.Username)
 	if err != nil || !ok {

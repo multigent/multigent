@@ -115,6 +115,16 @@ func TestModelProviderHandlersScopeWritesByOwner(t *testing.T) {
 	if created["ownerType"] != ConnectionOwnerWorkspace || created["ownerId"] != "ws-one" {
 		t.Fatalf("owner provider should default to workspace scope: %#v", created)
 	}
+	stored, ok, err := s.controlDB.ModelProviderByID("ws-one", id)
+	if err != nil || !ok {
+		t.Fatalf("stored provider ok=%v err=%v", ok, err)
+	}
+	if strings.Contains(stored.APIKey, "sk-secret") {
+		t.Fatalf("stored provider leaked raw api key: %#v", stored)
+	}
+	if !strings.HasPrefix(stored.APIKey, "sealed:") {
+		t.Fatalf("stored provider api key is not sealed: %#v", stored)
+	}
 
 	deleteWorkspaceReq := providerTestRequest(http.MethodDelete, "/api/v1/providers/"+id, "member", nil)
 	deleteWorkspaceReq.SetPathValue("id", id)
