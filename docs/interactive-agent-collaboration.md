@@ -329,16 +329,17 @@ The product should not automatically rewrite prompts from every chat. Instead, i
 
 ## Implementation Plan
 
-### Phase 0: Remove External cc-connect Product Dependency
+### Phase 0: Remove cc-connect From The Product Path
 
-Goal: remove the old external-service mental model before implementing the native bridge.
+Goal: Multigent owns the whole Feishu/Lark connection and message execution path. cc-connect can be used as reference code, but it must not appear as a runtime dependency, user setting, or external service requirement.
 
 Code changes:
 
 - Remove the user-facing cc-connect API URL/token settings from the Web settings flow.
 - Remove or hide `IMConnectionPanel` behavior that creates projects in an external cc-connect instance.
 - Remove backend routes whose only job is proxying to an external cc-connect service.
-- Keep any reusable reference code outside the runtime path, or copy selected Lark logic into the new native bridge modules.
+- Copy selected Feishu/Lark setup and event-handling ideas into Multigent-native modules when useful.
+- Do not keep a compatibility layer that calls a cc-connect server.
 - Replace UI wording from "cc-connect" to "Feishu/Lark connection".
 
 Acceptance:
@@ -347,89 +348,188 @@ Acceptance:
 - Agent pages do not expose work directories, external cc-connect projects, or agent runtime types as IM setup concepts.
 - The only visible setup concept is connecting an agent to Feishu/Lark.
 
-### Phase 1: Internal Session API And Locking
+### Phase 1: Native Agent Channel Connection
+
+Goal: on an agent detail page, a user can connect that specific agent to Feishu or Lark by scanning a QR code. After connection, the same page shows that Feishu/Lark is connected.
+
+User flow:
+
+1. User opens `Project → Agent detail`.
+2. User clicks `Connect Feishu` or `Connect Lark`.
+3. Multigent starts a provider-specific QR setup flow.
+4. User scans the QR code with Feishu/Lark.
+5. Multigent receives the setup result and stores:
+   - provider: `feishu` or `lark`
+   - app id / app secret in encrypted connection secrets
+   - bot/app metadata in non-secret profile fields
+   - agent binding: workspace, project, agent, provider, bot/chat identifiers
+   - external identity mapping from the scanning Feishu/Lark user to the current Multigent user
+6. Agent detail page refreshes and shows `Connected to Feishu` or `Connected to Lark`.
+
+Backend modules:
+
+```text
+internal/imbridge/lark/
+  registration.go   # Feishu/Lark QR setup, provider endpoints, app credential result
+  events.go         # provider event envelope parsing
+  client.go         # send replies through Feishu/Lark OpenAPI
+
+internal/api/
+  agent_channel_handlers.go  # connect/disconnect/list channel state
+  agent_channel_events.go    # public event callback and message dispatch
+```
+
+HTTP API:
+
+```text
+GET    /api/v1/projects/{project}/agents/{agent}/channels
+POST   /api/v1/projects/{project}/agents/{agent}/channels/{provider}/setup/begin
+POST   /api/v1/projects/{project}/agents/{agent}/channels/{provider}/setup/poll
+DELETE /api/v1/projects/{project}/agents/{agent}/channels/{provider}
+
+POST   /api/v1/im/{provider}/events
+```
+
+Data model:
+
+```text
+connections
+  provider: feishu | lark
+  auth_type: app_secret
+  owner_type: workspace
+  profile_json: base_url, app_id, bot/app metadata
+
+connection_secrets
+  encrypted app_id
+  encrypted app_secret
+  encrypted verification token / encrypt key when configured
+
+agent_channel_bindings
+  workspace_id
+  project_id
+  agent_id
+  provider: feishu | lark
+  connection_id
+  external_bot_id
+  external_chat_id
+  external_owner_id
+  status: connected | disconnected | error
+  metadata_json
+
+external_identities
+  workspace_id
+  provider: feishu | lark
+  external_user_id
+  user_id
+```
+
+Frontend:
+
+- Replace the old cc-connect panel with a native agent channel panel.
+- Show two provider cards: Feishu and Lark.
+- Disconnected state: show provider name and a connect button.
+- Connecting state: show QR modal, progress, timeout/failed state, and retry.
+- Connected state: show provider, connected user, bot/chat status, last activity, callback status, and disconnect.
+- The page should not ask the user for work directories, runtime names, or cc-connect configuration.
+
+Acceptance:
+
+- A user can complete QR scan from the agent detail page.
+- The agent page displays connected Feishu/Lark status after setup.
+- The connection survives page refresh and server restart.
+- Disconnect removes the binding and writes an audit event.
+- No cc-connect endpoint, token, project, or external runtime setting is visible in this flow.
+
+### Phase 2: Feishu/Lark Message Callback
+
+Goal: after connection, the created/bound Feishu/Lark app bot can receive user messages and route them to the correct Multigent agent.
+
+Inbound message flow:
+
+```text
+Feishu/Lark user sends message to bot
+  ↓
+Feishu/Lark calls /api/v1/im/{provider}/events
+  ↓
+Multigent verifies event token/signature/encryption when configured
+  ↓
+Multigent parses message, sender, chat, app id, message id
+  ↓
+Multigent resolves agent_channel_binding by workspace + provider + app/chat metadata
+  ↓
+Multigent maps external sender to a Multigent user
+  ↓
+Multigent checks workspace/project/agent RBAC
+  ↓
+Multigent sends the message into the agent execution path
+  ↓
+Agent reply is sent back through Feishu/Lark OpenAPI
+  ↓
+Inbound message, run result, outbound reply, and denied requests are audited
+```
+
+Security requirements:
+
+- Events must be scoped by provider and app id.
+- The event sender must map to a Multigent user before the agent is run.
+- The mapped user must have permission to operate/message the target agent.
+- Permission-denied messages must not run the agent.
+- Callback verification token and encrypt key are secret values, not public metadata.
+- The public event route must not expose internal errors or secret values.
+
+Reply behavior:
+
+- Direct message: reply to the incoming message.
+- Group chat: respond only when explicitly mentioned or when the chat is bound for this agent.
+- Empty or unsupported message types should be acknowledged and ignored.
+- Long agent replies should be truncated or summarized to fit IM limits.
+
+Acceptance:
+
+- User can message the connected Feishu/Lark bot.
+- The correct Multigent agent receives the message.
+- The agent replies in Feishu/Lark.
+- Unauthorized Feishu/Lark users cannot trigger the agent.
+- Every accepted, ignored, denied, failed, and replied event has an audit trail.
+
+### Phase 3: Internal Session API And Locking
+
+Goal: Feishu/Lark, Web Chat, task, cron, and wakeup all enter the same session system instead of spawning unrelated runs.
+
+Work:
 
 - Create `interactive_sessions` and `session_events` storage.
 - Create a `SessionManager` that can acquire, send to, release, and force-unlock an agent session.
-- Refactor Web Chat to use `SessionManager` instead of directly spawning `multigent exec` from the handler.
+- Refactor Web Chat and Feishu/Lark event handling to use `SessionManager` instead of directly spawning `multigent exec`.
 - Add strict per-agent active session lock.
 - Define lock reasons: `running_task`, `interactive`, `stopping`.
 - Persist transcript events separately from raw run logs.
 - Add scheduler skip behavior for locked agents.
 - Add audit events for session acquire, message send, run start, run stop, release, and force unlock.
 
+```text
+Web Chat
+Feishu/Lark
+Task
+Cron
+Wakeup
+  → SessionManager.Acquire
+  → append session event
+  → runtime adapter
+  → append output events
+  → release or keep locked
+```
+
 Acceptance:
 
 - Web Chat still works after the refactor.
-- Starting a Web Chat session locks the agent.
+- Feishu/Lark messages and Web Chat messages can join the same active agent session.
+- Starting an interactive session locks the agent.
 - Scheduler does not assign a new task to a locked agent.
 - A running task can be observed and joined by a permitted human instead of being killed by a new chat request.
 - Force unlock requires manager/admin permission and writes an audit log.
 
-### Phase 2: Lark Bridge MVP
-
-Goal: connect a Feishu/Lark bot to one Multigent agent without external cc-connect.
-
-Backend:
-
-- Add workspace-level Lark app connection storage with encrypted `app_id` / `app_secret` or QR-derived credentials.
-- Add Lark setup endpoints:
-  - `POST /api/v1/lark/setup/begin`
-  - `POST /api/v1/lark/setup/poll`
-  - `POST /api/v1/lark/setup/complete`
-- Add Lark event callback or websocket/event receiver, depending on the chosen Lark connection mode.
-- Add tables for external identity and chat binding:
-
-```text
-external_identities
-  workspace_id
-  provider: lark
-  external_user_id
-  user_id
-  metadata_json
-
-agent_channel_bindings
-  workspace_id
-  project_id
-  agent_id
-  provider: lark
-  bot_id
-  chat_id
-  status
-  created_by
-```
-
-- Route inbound Lark messages through:
-
-```text
-Lark event
-  → verify signature/token
-  → map sender to Multigent user
-  → resolve bound agent
-  → check RBAC
-  → SessionManager.Send
-  → send reply to Lark
-  → audit
-```
-
-Frontend:
-
-- On the agent detail page, replace the old cc-connect panel with a native "Feishu/Lark" connection panel.
-- If disconnected, show "Connect Feishu/Lark".
-- On click, open a modal with QR code and setup progress.
-- After success, show connected status, bot/chat info, last activity time, and reconnect/disconnect actions.
-
-Acceptance:
-
-- User can connect an agent to Feishu/Lark from the agent page.
-- QR scan completes the setup.
-- Web shows "Connected to Feishu/Lark".
-- User can message the connected bot in Feishu/Lark.
-- The agent replies in Feishu/Lark using the same model account, sandbox, prompt, skills, and permissions configured in Multigent.
-- Every inbound and outbound message has an audit record.
-- Permission-denied Feishu/Lark messages get a friendly reply and are audited.
-
-### Phase 3: Human Intervention UX
+### Phase 4: Human Intervention UX
 
 - Show active session and lock status on agent detail.
 - Let users join the current running task session from Web.
@@ -444,7 +544,7 @@ Acceptance:
 - Users can stop or release a session without corrupting the next run.
 - After a conversation, users can save useful context into docs, skills, prompt notes, or task templates.
 
-### Phase 4: Runtime Improvements
+### Phase 5: Runtime Improvements
 
 - Add persistent session runtime support where needed.
 - Keep per-agent runtime homes and credentials isolated.
