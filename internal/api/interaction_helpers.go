@@ -124,6 +124,21 @@ func (l *apiInteractionLease) SessionID() string {
 	return l.session.ID
 }
 
+func (l *apiInteractionLease) SetRuntimeSessionID(runtimeSessionID string) {
+	runtimeSessionID = strings.TrimSpace(runtimeSessionID)
+	if l == nil || l.done || runtimeSessionID == "" || runtimeSessionID == l.session.RuntimeSessionID {
+		return
+	}
+	now := time.Now().UTC().Format(time.RFC3339)
+	l.session.RuntimeSessionID = runtimeSessionID
+	l.session.UpdatedAt = now
+	l.session.LastActivityAt = now
+	_ = l.server.controlDB.UpdateInteractionSession(l.session)
+	_ = l.server.createInteractionEvent(l.session, "system", "", l.session.SourceChannel, "runtime_session_updated", "", map[string]any{
+		"runtimeSessionId": runtimeSessionID,
+	})
+}
+
 func interactionSessionRecord(session interaction.Session, source interaction.Source) controldb.InteractionSession {
 	now := session.CreatedAt.UTC().Format(time.RFC3339)
 	actorType := "user"

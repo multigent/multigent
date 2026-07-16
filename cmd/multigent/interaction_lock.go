@@ -99,6 +99,21 @@ func (l *cliInteractionLease) Fail(reason string) {
 	_ = l.db.Close()
 }
 
+func (l *cliInteractionLease) SetRuntimeSessionID(runtimeSessionID string) {
+	runtimeSessionID = strings.TrimSpace(runtimeSessionID)
+	if l == nil || l.db == nil || l.done || runtimeSessionID == "" || runtimeSessionID == l.session.RuntimeSessionID {
+		return
+	}
+	now := time.Now().UTC().Format(time.RFC3339)
+	l.session.RuntimeSessionID = runtimeSessionID
+	l.session.UpdatedAt = now
+	l.session.LastActivityAt = now
+	_ = l.db.UpdateInteractionSession(l.session)
+	_ = l.event("system", "", l.session.SourceChannel, "runtime_session_updated", "", map[string]any{
+		"runtimeSessionId": runtimeSessionID,
+	})
+}
+
 func (l *cliInteractionLease) event(actorType, actorID, channel, eventType, content string, metadata map[string]any) error {
 	if l == nil || l.db == nil {
 		return nil

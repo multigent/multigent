@@ -135,6 +135,9 @@ This is a one-shot manual trigger. For recurring automated runs, use
 				_ = ts.ArchiveTask(project, agentName, task)
 				return fmt.Errorf("execution error: %w", err)
 			}
+			if interactionLease != nil && result.SessionID != "" {
+				interactionLease.SetRuntimeSessionID(result.SessionID)
+			}
 			if interactionLease != nil {
 				_ = interactionLease.event("agent", project+"/"+agentName, "cli", "run_completed", "", map[string]any{
 					"taskId":           task.ID,

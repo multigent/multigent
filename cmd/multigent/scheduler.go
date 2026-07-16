@@ -802,6 +802,9 @@ func runAllPendingTasks(ctx context.Context, root, project, agentName string,
 				}
 				result, rErr := r.RunTask(project, agentName, wakeupTask, sessionID)
 				if rErr == nil && result.SessionID != "" {
+					if interactionLease != nil {
+						interactionLease.SetRuntimeSessionID(result.SessionID)
+					}
 					sessionID = result.SessionID
 					latestHB, _ := ts.GetHeartbeat(project, agentName)
 					latestHB.SessionID = sessionID
@@ -896,6 +899,9 @@ func runAllPendingTasks(ctx context.Context, root, project, agentName string,
 			_ = ts.ArchiveTask(project, agentName, task)
 			taskLog("%s task %s failed: %v", colorRed+"✗", task.ID, err)
 			return fmt.Errorf("task %s failed: %w", task.ID, err)
+		}
+		if interactionLease != nil && result.SessionID != "" {
+			interactionLease.SetRuntimeSessionID(result.SessionID)
 		}
 		if interactionLease != nil {
 			_ = interactionLease.event("agent", project+"/"+agentName, sourceChannel, "run_completed", "", map[string]any{

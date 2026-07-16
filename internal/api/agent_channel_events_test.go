@@ -9,6 +9,7 @@ import (
 
 	controldb "github.com/multigent/multigent/internal/db"
 	larkbridge "github.com/multigent/multigent/internal/imbridge/lark"
+	"github.com/multigent/multigent/internal/interaction"
 )
 
 func TestChannelEventBindingRequiresExternalIdentity(t *testing.T) {
@@ -160,4 +161,25 @@ func TestAgentChannelSecurityPreservesConnectionSecret(t *testing.T) {
 	if values["appId"] != "cli_app" || values["appSecret"] != "secret" || values["verificationToken"] != "verify-one" || values["encryptKey"] != "encrypt-one" {
 		t.Fatalf("secret values not preserved/updated: %#v", values)
 	}
+}
+
+func TestAPIInteractionLeasePersistsRuntimeSessionID(t *testing.T) {
+	s, workspaceID := newConnectionGrantPolicyServer(t)
+	lease, err := s.acquireAgentInteractionLease(s.interactionAgentRef(workspaceID, "sample", "pm"), interaction.Source{
+		Kind:    "web_chat",
+		ActorID: "owner",
+		Channel: "web",
+	}, "interactive")
+	if err != nil {
+		t.Fatalf("acquire lease: %v", err)
+	}
+	lease.SetRuntimeSessionID("runtime-one")
+	stored, ok, err := s.controlDB.InteractionSessionByID(lease.SessionID())
+	if err != nil || !ok {
+		t.Fatalf("lookup session ok=%v err=%v", ok, err)
+	}
+	if stored.RuntimeSessionID != "runtime-one" {
+		t.Fatalf("runtime session id=%q", stored.RuntimeSessionID)
+	}
+	lease.Release()
 }

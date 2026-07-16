@@ -329,6 +329,22 @@ The product should not automatically rewrite prompts from every chat. Instead, i
 
 ## Implementation Plan
 
+Final product effect:
+
+- User opens an agent page and clicks `Connect Feishu` or `Connect Lark`.
+- Multigent shows a QR-code setup flow. The user scans with Feishu/Lark and approves.
+- Multigent stores the app/bot connection, binds it to the current agent, and maps the scanning IM user to the current Multigent user.
+- The agent page shows `Connected to Feishu` or `Connected to Lark`, including bot/chat status and last activity.
+- The user messages the created/bound Feishu/Lark app bot.
+- Multigent receives the event, authenticates the external user, checks RBAC, resumes the agent's runtime session, and replies through the same IM bot.
+- Web Chat, Feishu/Lark, task, cron, and wakeup share one interaction/session lock model so one agent does not receive conflicting mutable work.
+
+Provider naming:
+
+- `feishu` and `lark` are separate providers in product UI, API, audit, and stored connection data.
+- They may share the same implementation package because their OpenAPI/event model is similar.
+- User-facing text should say Feishu or Lark, never cc-connect.
+
 ### Phase 0: Remove cc-connect From The Product Path
 
 Goal: Multigent owns the whole Feishu/Lark connection and message execution path. cc-connect can be used as reference code, but it must not appear as a runtime dependency, user setting, or external service requirement.
@@ -352,12 +368,14 @@ Acceptance:
 
 Goal: on an agent detail page, a user can connect that specific agent to Feishu or Lark by scanning a QR code. After connection, the same page shows that Feishu/Lark is connected.
 
+This phase is about setup and binding only. It should not run the agent yet.
+
 User flow:
 
 1. User opens `Project → Agent detail`.
 2. User clicks `Connect Feishu` or `Connect Lark`.
-3. Multigent starts a provider-specific QR setup flow.
-4. User scans the QR code with Feishu/Lark.
+3. Multigent opens a QR-code modal for the selected provider.
+4. User scans the QR code with Feishu/Lark and approves.
 5. Multigent receives the setup result and stores:
    - provider: `feishu` or `lark`
    - app id / app secret in encrypted connection secrets
@@ -370,7 +388,7 @@ Backend modules:
 
 ```text
 internal/imbridge/lark/
-  registration.go   # Feishu/Lark QR setup, provider endpoints, app credential result
+  setup.go          # Feishu/Lark QR setup and setup polling
   events.go         # provider event envelope parsing
   client.go         # send replies through Feishu/Lark OpenAPI
 
@@ -426,7 +444,7 @@ external_identities
 Frontend:
 
 - Replace the old cc-connect panel with a native agent channel panel.
-- Show two provider cards: Feishu and Lark.
+- Show Feishu and Lark as provider choices.
 - Disconnected state: show provider name and a connect button.
 - Connecting state: show QR modal, progress, timeout/failed state, and retry.
 - Connected state: show provider, connected user, bot/chat status, last activity, callback status, and disconnect.
@@ -443,6 +461,8 @@ Acceptance:
 ### Phase 2: Feishu/Lark Message Callback
 
 Goal: after connection, the created/bound Feishu/Lark app bot can receive user messages and route them to the correct Multigent agent.
+
+This phase turns the connected bot into a usable conversation channel.
 
 Inbound message flow:
 
@@ -496,6 +516,8 @@ Acceptance:
 
 Goal: Feishu/Lark, Web Chat, task, cron, and wakeup all enter the same session system instead of spawning unrelated runs.
 
+This is the core product boundary. IM channels should not own execution. They only submit messages into Multigent's interaction layer.
+
 Work:
 
 - Create `interactive_sessions` and `session_events` storage.
@@ -506,6 +528,8 @@ Work:
 - Persist transcript events separately from raw run logs.
 - Add scheduler skip behavior for locked agents.
 - Add audit events for session acquire, message send, run start, run stop, release, and force unlock.
+- Persist the runtime session ID returned by Codex/Claude/etc. onto `interactive_sessions.current_runtime_session_id`.
+- Reuse the latest runtime session ID when a user sends another Web/Feishu/Lark message to the same agent.
 
 ```text
 Web Chat
@@ -527,9 +551,12 @@ Acceptance:
 - Starting an interactive session locks the agent.
 - Scheduler does not assign a new task to a locked agent.
 - A running task can be observed and joined by a permitted human instead of being killed by a new chat request.
+- Repeated IM messages resume the same runtime context instead of starting unrelated conversations.
 - Force unlock requires manager/admin permission and writes an audit log.
 
 ### Phase 4: Human Intervention UX
+
+Goal: make it obvious to users whether they are talking to an idle agent, joining a current run, or correcting a failed/low-quality run.
 
 - Show active session and lock status on agent detail.
 - Let users join the current running task session from Web.
@@ -545,6 +572,8 @@ Acceptance:
 - After a conversation, users can save useful context into docs, skills, prompt notes, or task templates.
 
 ### Phase 5: Runtime Improvements
+
+Goal: make interactive agent conversations reliable enough for daily company use.
 
 - Add persistent session runtime support where needed.
 - Keep per-agent runtime homes and credentials isolated.

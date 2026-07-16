@@ -329,6 +329,7 @@ func (s *Server) handleAgentChat(w http.ResponseWriter, r *http.Request) {
 				log.Printf("[chat] %s/%s: detected session_id=%s", project, agent, sid)
 			}
 			detectedSessionID = sid
+			lease.SetRuntimeSessionID(sid)
 		}
 		if clientGone {
 			continue

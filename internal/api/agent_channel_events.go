@@ -214,7 +214,22 @@ func (s *Server) runAgentForIMEvent(provider string, resolved resolvedChannelEve
 	_ = s.createInteractionEvent(lease.session, "system", "", provider, "run_started", "", map[string]any{
 		"messageId": event.Message.MessageID,
 	})
-	output, err := s.execAgentPrompt(ctx, binding.ProjectID, binding.AgentID, text)
+	runtimeSessionID := ""
+	if hb, hbErr := s.ts.GetHeartbeat(binding.ProjectID, binding.AgentID); hbErr == nil && hb != nil {
+		runtimeSessionID = strings.TrimSpace(hb.SessionID)
+	}
+	output, detectedRuntimeSessionID, err := s.execAgentPrompt(ctx, binding.ProjectID, binding.AgentID, text, runtimeSessionID)
+	if detectedRuntimeSessionID != "" {
+		lease.SetRuntimeSessionID(detectedRuntimeSessionID)
+		if hb, hbErr := s.ts.GetHeartbeat(binding.ProjectID, binding.AgentID); hbErr == nil && hb != nil {
+			hb.SessionID = detectedRuntimeSessionID
+			if hb.SessionStartedAt == nil {
+				now := time.Now().UTC()
+				hb.SessionStartedAt = &now
+			}
+			_ = s.ts.SaveHeartbeat(binding.ProjectID, binding.AgentID, hb)
+		}
+	}
 	reply := strings.TrimSpace(output)
 	if err != nil {
 		lease.Fail(err.Error())
@@ -227,13 +242,15 @@ func (s *Server) runAgentForIMEvent(provider string, resolved resolvedChannelEve
 	replyErr := s.replyToLarkFamilyEvent(ctx, provider, resolved, event, reply)
 	if err != nil {
 		_ = s.createInteractionEvent(lease.session, "system", "", provider, "run_failed", output, map[string]any{
-			"messageId": event.Message.MessageID,
-			"error":     err.Error(),
+			"messageId":        event.Message.MessageID,
+			"error":            err.Error(),
+			"runtimeSessionId": detectedRuntimeSessionID,
 		})
 	} else {
 		_ = s.createInteractionEvent(lease.session, "agent", binding.ProjectID+"/"+binding.AgentID, provider, "run_completed", reply, map[string]any{
-			"messageId": event.Message.MessageID,
-			"replyErr":  errString(replyErr),
+			"messageId":        event.Message.MessageID,
+			"replyErr":         errString(replyErr),
+			"runtimeSessionId": detectedRuntimeSessionID,
 		})
 	}
 	s.auditLog(auditLogInput{
@@ -298,15 +315,19 @@ func subtleConstantTimeEqual(a, b string) bool {
 	return diff == 0
 }
 
-func (s *Server) execAgentPrompt(ctx context.Context, project, agent, prompt string) (string, error) {
+func (s *Server) execAgentPrompt(ctx context.Context, project, agent, prompt, sessionID string) (string, string, error) {
 	args := []string{"--dir", s.root, "exec", "--project", project, "--agent", agent, "--prompt", prompt}
+	if strings.TrimSpace(sessionID) != "" {
+		args = append(args, "--session", strings.TrimSpace(sessionID))
+	}
 	cmd := exec.CommandContext(ctx, s.sched.binPath, args...)
 	cmd.Dir = s.root
 	var out bytes.Buffer
 	cmd.Stdout = &out
 	cmd.Stderr = &out
 	err := cmd.Run()
-	return out.String(), err
+	output := out.String()
+	return output, extractAgentChatSessionID(output), err
 }
 
 func trimForIM(s string, max int) string {
