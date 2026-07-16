@@ -54,14 +54,6 @@ export default function ProjectsListPage() {
           </div>
           <p className="text-lg font-medium text-neutral-600 dark:text-zinc-400">{t('projects.emptyTitle')}</p>
           <p className="mt-1.5 text-sm text-neutral-400 dark:text-zinc-500">{t('api.noProjects')}</p>
-          <button
-            type="button"
-            onClick={() => setCreateOpen(true)}
-            className="mt-5 inline-flex items-center gap-2 rounded-lg bg-sky-600 px-3.5 py-2 text-sm font-medium text-white shadow-sm transition-colors hover:bg-sky-700"
-          >
-            <Plus className="size-4" strokeWidth={2} />
-            {t('projects.create')}
-          </button>
         </div>
       )}
       {state.status === 'ok' && state.data.length > 0 && (
