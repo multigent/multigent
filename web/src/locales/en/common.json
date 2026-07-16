@@ -1384,7 +1384,16 @@
     "connectedReady": "{{provider}} is connected. You can now message the bot to work with this agent.",
     "setupFailed": "Connection failed",
     "denied": "Authorization denied",
-    "expired": "QR code expired"
+    "expired": "QR code expired",
+    "callbackUrl": "Callback URL",
+    "copyCallback": "Copy callback URL",
+    "security": "Security",
+    "securityHint": "Configure this callback URL in the Feishu/Lark developer console. Verification Token is checked on message events; Encrypt Key is stored for encrypted event support.",
+    "securityConfigured": "Verification Token configured",
+    "securityNotConfigured": "Verification Token not configured",
+    "verificationToken": "Verification Token",
+    "encryptKey": "Encrypt Key",
+    "keepExisting": "Leave empty to keep unchanged; enter a new value to update"
   },
   "sandbox": {
     "title": "Runtime Environment",

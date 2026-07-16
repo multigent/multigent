@@ -1384,7 +1384,16 @@
     "connectedReady": "{{provider}} 已連接。現在可以直接給機器人發訊息來和這個 Agent 協作。",
     "setupFailed": "連接失敗",
     "denied": "授權已拒絕",
-    "expired": "二維碼已過期"
+    "expired": "二維碼已過期",
+    "callbackUrl": "回調地址",
+    "copyCallback": "複製回調地址",
+    "security": "安全設定",
+    "securityHint": "把回調地址設定到飛書/Lark 開發者後台。Verification Token 會在收到訊息事件時校驗；Encrypt Key 會先保存供後續加密事件支援使用。",
+    "securityConfigured": "已設定 Verification Token",
+    "securityNotConfigured": "未設定 Verification Token",
+    "verificationToken": "Verification Token",
+    "encryptKey": "Encrypt Key",
+    "keepExisting": "留空保持不變；輸入新值可更新"
   },
   "sandbox": {
     "title": "執行環境",

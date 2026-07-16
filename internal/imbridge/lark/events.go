@@ -9,6 +9,7 @@ const MessageReceiveEvent = "im.message.receive_v1"
 
 type EventEnvelope struct {
 	Challenge string          `json:"challenge"`
+	Token     string          `json:"token"`
 	Type      string          `json:"type"`
 	Schema    string          `json:"schema"`
 	Header    EventHeader     `json:"header"`

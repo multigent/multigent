@@ -1384,7 +1384,16 @@
     "connectedReady": "{{provider}} に接続しました。ボットにメッセージしてこのエージェントと作業できます。",
     "setupFailed": "接続に失敗しました",
     "denied": "承認が拒否されました",
-    "expired": "QRコードの有効期限が切れました"
+    "expired": "QRコードの有効期限が切れました",
+    "callbackUrl": "コールバックURL",
+    "copyCallback": "コールバックURLをコピー",
+    "security": "セキュリティ",
+    "securityHint": "このコールバックURLをFeishu/Lark開発者コンソールに設定します。Verification Token はメッセージイベント受信時に検証され、Encrypt Key は暗号化イベント対応用に保存されます。",
+    "securityConfigured": "Verification Token 設定済み",
+    "securityNotConfigured": "Verification Token 未設定",
+    "verificationToken": "Verification Token",
+    "encryptKey": "Encrypt Key",
+    "keepExisting": "空のままなら変更しません。新しい値を入力すると更新されます"
   },
   "sandbox": {
     "title": "実行環境",

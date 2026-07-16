@@ -1384,7 +1384,16 @@
     "connectedReady": "{{provider}} 已连接。现在可以直接给机器人发消息来和这个 Agent 协作。",
     "setupFailed": "连接失败",
     "denied": "授权已拒绝",
-    "expired": "二维码已过期"
+    "expired": "二维码已过期",
+    "callbackUrl": "回调地址",
+    "copyCallback": "复制回调地址",
+    "security": "安全配置",
+    "securityHint": "把回调地址配置到飞书/Lark 开发者后台。Verification Token 会在收到消息事件时校验；Encrypt Key 会先保存为后续加密事件支持使用。",
+    "securityConfigured": "已配置 Verification Token",
+    "securityNotConfigured": "未配置 Verification Token",
+    "verificationToken": "Verification Token",
+    "encryptKey": "Encrypt Key",
+    "keepExisting": "留空保持不变；输入新值可更新"
   },
   "sandbox": {
     "title": "运行环境",

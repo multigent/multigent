@@ -19,18 +19,28 @@ type agentChannelResponse struct {
 	Provider        string `json:"provider"`
 	Status          string `json:"status"`
 	ConnectionID    string `json:"connectionId,omitempty"`
+	CallbackURL     string `json:"callbackUrl,omitempty"`
 	ExternalBotID   string `json:"externalBotId,omitempty"`
 	ExternalChatID  string `json:"externalChatId,omitempty"`
 	ExternalOwnerID string `json:"externalOwnerId,omitempty"`
-	CreatedBy       string `json:"createdBy,omitempty"`
-	CreatedAt       string `json:"createdAt,omitempty"`
-	UpdatedAt       string `json:"updatedAt,omitempty"`
-	LastActivityAt  string `json:"lastActivityAt,omitempty"`
+	Security        struct {
+		VerificationTokenConfigured bool `json:"verificationTokenConfigured"`
+		EncryptKeyConfigured        bool `json:"encryptKeyConfigured"`
+	} `json:"security"`
+	CreatedBy      string `json:"createdBy,omitempty"`
+	CreatedAt      string `json:"createdAt,omitempty"`
+	UpdatedAt      string `json:"updatedAt,omitempty"`
+	LastActivityAt string `json:"lastActivityAt,omitempty"`
 }
 
 type larkSetupPollRequest struct {
 	DeviceCode string `json:"deviceCode"`
 	BaseURL    string `json:"baseUrl"`
+}
+
+type agentChannelSecurityRequest struct {
+	VerificationToken *string `json:"verificationToken"`
+	EncryptKey        *string `json:"encryptKey"`
 }
 
 func (s *Server) handleAgentChannels(w http.ResponseWriter, r *http.Request) {
@@ -56,7 +66,15 @@ func (s *Server) handleAgentChannels(w http.ResponseWriter, r *http.Request) {
 	}
 	out := make([]agentChannelResponse, 0, len(bindings))
 	for _, binding := range bindings {
-		out = append(out, agentChannelToResponse(binding))
+		resp := agentChannelToResponse(binding)
+		resp.CallbackURL = requestBaseURL(r) + "/api/v1/im/" + binding.Provider + "/events"
+		if secret, ok, err := s.controlDB.ConnectionSecret(binding.ConnectionID); err == nil && ok {
+			if values, err := openConnectionSecret(secret); err == nil {
+				resp.Security.VerificationTokenConfigured = strings.TrimSpace(values["verificationToken"]) != ""
+				resp.Security.EncryptKeyConfigured = strings.TrimSpace(values["encryptKey"]) != ""
+			}
+		}
+		out = append(out, resp)
 	}
 	_ = json.NewEncoder(w).Encode(map[string]any{
 		"channels": out,
@@ -133,6 +151,87 @@ func (s *Server) handleAgentChannelSetupBegin(w http.ResponseWriter, r *http.Req
 		After: map[string]any{
 			"provider": provider,
 			"baseUrl":  resp.BaseURL,
+		},
+		Request: r,
+	})
+	_ = json.NewEncoder(w).Encode(resp)
+}
+
+func (s *Server) handleAgentChannelSecurity(w http.ResponseWriter, r *http.Request) {
+	project, agent, provider, ok := s.parseProjectAgentProvider(w, r)
+	if !ok {
+		return
+	}
+	if !s.canOperateAgent(r, project, agent) {
+		s.jsonError(w, http.StatusForbidden, "agent operator access required")
+		return
+	}
+	workspaceID, ok := s.currentWorkspaceForRequest(w, r)
+	if !ok {
+		return
+	}
+	var req agentChannelSecurityRequest
+	if err := s.readJSON(w, r, &req); err != nil {
+		s.jsonError(w, http.StatusBadRequest, "invalid JSON body")
+		return
+	}
+	binding, found, err := s.findAgentChannelBinding(workspaceID, project, agent, provider)
+	if err != nil {
+		s.serverError(w, err)
+		return
+	}
+	if !found {
+		s.jsonError(w, http.StatusNotFound, "agent channel is not connected")
+		return
+	}
+	secret, found, err := s.controlDB.ConnectionSecret(binding.ConnectionID)
+	if err != nil {
+		s.serverError(w, err)
+		return
+	}
+	values := map[string]string{}
+	if found {
+		values, err = openConnectionSecret(secret)
+		if err != nil {
+			s.serverError(w, err)
+			return
+		}
+	}
+	if req.VerificationToken != nil {
+		values["verificationToken"] = strings.TrimSpace(*req.VerificationToken)
+	}
+	if req.EncryptKey != nil {
+		values["encryptKey"] = strings.TrimSpace(*req.EncryptKey)
+	}
+	next, err := sealConnectionSecret(values)
+	if err != nil {
+		s.serverError(w, err)
+		return
+	}
+	next.ConnectionID = binding.ConnectionID
+	if err := s.controlDB.UpsertConnectionSecret(next); err != nil {
+		s.serverError(w, err)
+		return
+	}
+	binding.UpdatedAt = time.Now().UTC().Format(time.RFC3339)
+	if err := s.controlDB.UpsertAgentChannelBinding(binding); err != nil {
+		s.serverError(w, err)
+		return
+	}
+	resp := agentChannelToResponse(binding)
+	resp.CallbackURL = requestBaseURL(r) + "/api/v1/im/" + binding.Provider + "/events"
+	resp.Security.VerificationTokenConfigured = strings.TrimSpace(values["verificationToken"]) != ""
+	resp.Security.EncryptKeyConfigured = strings.TrimSpace(values["encryptKey"]) != ""
+	s.auditLog(auditLogInput{
+		WorkspaceID:  workspaceID,
+		Action:       "agent_channel.security_updated",
+		ResourceType: "agent_channel",
+		ResourceID:   binding.ID,
+		Summary:      fmt.Sprintf("Updated %s channel security for %s/%s", provider, project, agent),
+		After: map[string]any{
+			"provider":                    provider,
+			"verificationTokenConfigured": resp.Security.VerificationTokenConfigured,
+			"encryptKeyConfigured":        resp.Security.EncryptKeyConfigured,
 		},
 		Request: r,
 	})

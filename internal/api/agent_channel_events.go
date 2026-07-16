@@ -70,6 +70,22 @@ func (s *Server) handleIMEvent(w http.ResponseWriter, r *http.Request) {
 		_ = json.NewEncoder(w).Encode(map[string]any{"ok": true, "ignored": true, "reason": "binding_not_found"})
 		return
 	}
+	if !verifyLarkFamilyEventToken(env, resolved.SecretValues) {
+		s.auditLog(auditLogInput{
+			WorkspaceID:  workspaceID,
+			Action:       "agent_channel.verification_failed",
+			ResourceType: "agent_channel",
+			ResourceID:   resolved.Binding.ID,
+			Summary:      fmt.Sprintf("Rejected %s event for %s/%s because verification token did not match", provider, resolved.Binding.ProjectID, resolved.Binding.AgentID),
+			After: map[string]any{
+				"provider":  provider,
+				"messageId": event.Message.MessageID,
+				"chatId":    event.Message.ChatID,
+			},
+		})
+		_ = json.NewEncoder(w).Encode(map[string]any{"ok": true, "ignored": true, "reason": "verification_failed"})
+		return
+	}
 	if !s.userCanOperateAgent(resolved.Identity.UserID, resolved.Binding.ProjectID, resolved.Binding.AgentID) {
 		s.auditLog(auditLogInput{
 			WorkspaceID:  workspaceID,
@@ -204,6 +220,25 @@ func (s *Server) userCanOperateAgent(username, project, agent string) bool {
 	}
 	req = req.WithContext(context.WithValue(req.Context(), ctxUserKey, username))
 	return s.canOperateAgent(req, project, agent)
+}
+
+func verifyLarkFamilyEventToken(env larkbridge.EventEnvelope, values map[string]string) bool {
+	expected := strings.TrimSpace(values["verificationToken"])
+	if expected == "" {
+		return true
+	}
+	return subtleConstantTimeEqual(strings.TrimSpace(env.Token), expected)
+}
+
+func subtleConstantTimeEqual(a, b string) bool {
+	if len(a) != len(b) {
+		return false
+	}
+	var diff byte
+	for i := range a {
+		diff |= a[i] ^ b[i]
+	}
+	return diff == 0
 }
 
 func (s *Server) execAgentPrompt(ctx context.Context, project, agent, prompt string) (string, error) {
