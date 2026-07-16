@@ -981,6 +981,23 @@
     "overrideHint": "選択したアカウントがエンドポイントと認証情報を提供します。ここではモデル名のみ上書きします。",
     "keyUnchangedHint": "（変更なし、空欄で維持）"
   },
+  "agentDetail": {
+    "modelCredentials": "モデルと認証情報",
+    "modelCredentialsHint": "エージェントが使う CLI、実行モデル、モデルアカウントを選択します。利用できるモデルは選択した認証情報に応じて変わります。",
+    "connectAndChat": "接続とチャット",
+    "connectAndChatHint": "Web Chat で直接対話するか、Feishu、Lark などのコラボレーションチャネルに接続します。",
+    "toolsAndSkills": "ツールと Skill",
+    "toolsAndSkillsHint": "このエージェントが使える外部ツールを設定し、コンテキストに注入されるロール Skill を確認します。",
+    "instructions": "Prompt と動作",
+    "instructionsHint": "アイドル時の起床、巡回、継続作業のふるまいを調整します。",
+    "health": "最近の状態",
+    "skillCount": "Skill 数",
+    "advancedRuntime": "高度な実行設定",
+    "noCredential": "利用可能な認証情報がありません",
+    "addCredential": "モデルアカウントを追加",
+    "skillsHint": "これらの Skill は通常、チームとロール設定から継承され、エージェントのコンテキストに注入されます。",
+    "noSkills": "Skill はまだありません"
+  },
   "runs": {
     "subtitle": "このプロジェクトのエージェントの実行信頼性、所要時間、トークン使用量。",
     "window": "期間",

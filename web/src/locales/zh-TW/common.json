@@ -981,6 +981,23 @@
     "overrideHint": "所選帳號提供服務地址和密鑰。Agent 这里只覆蓋模型名稱。",
     "keyUnchangedHint": "（未更改，留空保持不變）"
   },
+  "agentDetail": {
+    "modelCredentials": "模型與憑證",
+    "modelCredentialsHint": "選擇 Agent 使用的 CLI 類型、執行模型和模型帳號。模型列表會隨憑證來源變化。",
+    "connectAndChat": "連接與對話",
+    "connectAndChatHint": "從 Web Chat 直接對話，或把 Agent 接入飛書、Lark 等協作渠道。",
+    "toolsAndSkills": "工具與 Skill",
+    "toolsAndSkillsHint": "配置 Agent 可調用的外部工具，並確認它繼承了哪些角色 Skill。",
+    "instructions": "Prompt 與行為",
+    "instructionsHint": "調整 Agent 空閒喚醒、日常巡檢和自我推進時遵循的工作方式。",
+    "health": "近期狀態",
+    "skillCount": "Skill 數",
+    "advancedRuntime": "進階執行設定",
+    "noCredential": "暫無可用憑證",
+    "addCredential": "去新增模型帳號",
+    "skillsHint": "這些 Skill 通常來自團隊和角色配置，會進入 Agent 的上下文。",
+    "noSkills": "暫無 Skill"
+  },
   "runs": {
     "subtitle": "本專案 Agent 的執行可靠性、耗時與 Token 消耗。",
     "window": "時間範圍",

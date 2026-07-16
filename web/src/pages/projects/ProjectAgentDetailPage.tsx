@@ -4,15 +4,15 @@ import { useTranslation } from 'react-i18next'
 import Markdown from 'react-markdown'
 import remarkGfm from 'remark-gfm'
 import {
-  RefreshCw, Save, ChevronRight, Bot, BookOpen, Puzzle, Check, Plus, Trash2, X,
-  Settings2, Users, UserCog, FileCode, Clock, Activity, User, Mail, ListTodo, Reply, Send, KeyRound, Pencil, Eye, EyeOff, Container, MessageSquareText,
+  RefreshCw, Save, ChevronRight, Bot, BookOpen, Puzzle, Check,
+  Settings2, Users, UserCog, Clock, Activity, User, Mail, ListTodo, Reply, Send, Pencil, Container, MessageSquareText,
   Cable,
 } from 'lucide-react'
 import type { LucideIcon } from 'lucide-react'
 import { cn } from '../../lib/cn'
 import { useFormatDateTime } from '../../lib/format-datetime'
 import { useApiJson } from '../../lib/use-api'
-import { apiFetch, apiPost, apiPut, apiDelete, apiPatch } from '../../lib/api'
+import { apiFetch, apiPost, apiPut, apiPatch } from '../../lib/api'
 import { canConfigureAgent, canManageProject, canOperateAgent, useAuth } from '../../lib/auth'
 import { Pagination } from '../../components/ui/Pagination'
 import { AgentChannelPanel } from '../../components/project/AgentChannelPanel'
@@ -118,167 +118,12 @@ type AgentContext = {
   addDirs?: string[]
 }
 
-const WELL_KNOWN_ENV: Record<string, { keys: string[]; hint: string }> = {
-  claudecode: {
-    keys: [
-      'ANTHROPIC_MODEL', 'ANTHROPIC_BASE_URL', 'ANTHROPIC_AUTH_TOKEN',
-      'CLAUDE_AUTOCOMPACT_PCT_OVERRIDE', 'CLAUDE_CODE_AUTO_COMPACT_WINDOW',
-    ],
-    hint: 'AUTOCOMPACT_PCT: auto-compact threshold % (default 90, recommend 70-80); AUTO_COMPACT_WINDOW: effective token window size',
-  },
-  codex: {
-    keys: ['OPENAI_API_KEY', 'OPENAI_MODEL', 'OPENAI_BASE_URL'],
-    hint: 'Auto-compact: config model_auto_compact_token_limit in codex config',
-  },
-  gemini: {
-    keys: ['GEMINI_API_KEY', 'GOOGLE_API_KEY', 'GOOGLE_CLOUD_PROJECT'],
-    hint: 'Auto-compress: set chatCompression.contextPercentageThreshold (0-1) in .gemini/settings.json',
-  },
-  cursor: {
-    keys: ['ANTHROPIC_AUTH_TOKEN', 'OPENAI_API_KEY'],
-    hint: 'Cursor uses its own auth; env vars are optional overrides',
-  },
-  opencode: {
-    keys: ['ANTHROPIC_AUTH_TOKEN', 'ANTHROPIC_BASE_URL', 'OPENAI_API_KEY', 'OPENAI_BASE_URL'],
-    hint: 'OpenCode supports multiple providers',
-  },
-}
-
 const RUNTIME_MODEL_PRESETS: Record<string, string[]> = {
   codex: ['gpt-5.6-sol', 'gpt-5.1-codex-max', 'gpt-5.1-codex', 'gpt-5.1'],
   claudecode: ['claude-sonnet-4-20250514', 'claude-opus-4-20250514', 'claude-3-7-sonnet-latest'],
   gemini: ['gemini-2.5-pro', 'gemini-2.5-flash', 'gemini-2.0-flash'],
   cursor: ['auto', 'gpt-5.1', 'claude-sonnet-4-20250514'],
   opencode: ['gpt-5.1', 'claude-sonnet-4-20250514'],
-}
-
-// ── Agent Env Panel ─────────────────────────────────────────────────────────
-
-const envInputCls = 'block w-full rounded-md border border-neutral-200/80 bg-neutral-50/50 px-2.5 py-1.5 text-sm text-neutral-800 outline-none placeholder:text-neutral-400 focus:border-sky-400 dark:border-zinc-700/60 dark:bg-zinc-800/50 dark:text-zinc-200 dark:placeholder:text-zinc-600'
-
-function AgentEnvPanel({ project, agent }: { project: string; agent: string }) {
-  const { t } = useTranslation()
-  type Entry = { key: string; value: string }
-  const [entries, setEntries] = useState<Entry[]>([])
-  const [revealed, setRevealed] = useState<Set<string>>(new Set())
-  const [showAdd, setShowAdd] = useState(false)
-  const [editingKey, setEditingKey] = useState<string | null>(null)
-  const [editVal, setEditVal] = useState('')
-  const [newKey, setNewKey] = useState('')
-  const [newVal, setNewVal] = useState('')
-
-  const load = useCallback(async () => {
-    try {
-      const data = await apiFetch(`/api/v1/projects/${encodeURIComponent(project)}/agents/${encodeURIComponent(agent)}/env`)
-      setEntries(data as Entry[])
-    } catch { /* ignore */ }
-  }, [project, agent])
-
-  useEffect(() => { load() }, [load])
-
-  const envApi = `/api/v1/projects/${encodeURIComponent(project)}/agents/${encodeURIComponent(agent)}/env`
-
-  async function handleAdd(e: React.FormEvent) {
-    e.preventDefault()
-    if (!newKey.trim()) return
-    try {
-      await apiPost(envApi, { key: newKey.trim(), value: newVal })
-      setNewKey(''); setNewVal(''); setShowAdd(false); load()
-    } catch { /* ignore */ }
-  }
-
-  async function handleUpdate(key: string) {
-    try {
-      await apiPost(envApi, { key, value: editVal })
-      setEditingKey(null); setEditVal(''); load()
-    } catch { /* ignore */ }
-  }
-
-  async function handleRemove(key: string) {
-    try {
-      await apiDelete(`${envApi}?key=${encodeURIComponent(key)}`)
-      load()
-    } catch { /* ignore */ }
-  }
-
-  function toggleReveal(key: string) {
-    setRevealed(prev => { const n = new Set(prev); n.has(key) ? n.delete(key) : n.add(key); return n })
-  }
-
-  const isSensitive = (k: string) => /key|token|secret|password|credential/i.test(k)
-
-  return (
-    <section className="rounded-xl border border-neutral-200/70 bg-white p-5 dark:border-zinc-700/50 dark:bg-zinc-900">
-      <div className="flex items-center justify-between">
-        <h3 className="flex items-center gap-2 text-sm font-semibold text-neutral-800 dark:text-zinc-100">
-          <KeyRound className="size-4 text-sky-600" />
-          {t('agentEnv.title')}
-        </h3>
-        {!showAdd && (
-          <button onClick={() => setShowAdd(true)} className="flex items-center gap-1 rounded-md border border-sky-600 px-2 py-1 text-xs font-medium text-sky-700 hover:bg-sky-50 dark:border-sky-500 dark:text-sky-400 dark:hover:bg-zinc-800">
-            <Plus className="size-3" />
-            {t('agentEnv.add')}
-          </button>
-        )}
-      </div>
-      <p className="mt-1 text-xs text-neutral-500 dark:text-zinc-500">{t('agentEnv.hint')}</p>
-
-      {showAdd && (
-        <form onSubmit={handleAdd} className="mt-3 flex items-end gap-2">
-          <div className="flex-1">
-            <label className="mb-1 block text-[11px] font-medium text-neutral-500 dark:text-zinc-400">KEY</label>
-            <input value={newKey} onChange={e => setNewKey(e.target.value)} placeholder="MY_TOKEN" required className={envInputCls} />
-          </div>
-          <div className="flex-1">
-            <label className="mb-1 block text-[11px] font-medium text-neutral-500 dark:text-zinc-400">VALUE</label>
-            <input value={newVal} onChange={e => setNewVal(e.target.value)} placeholder="" required className={envInputCls} />
-          </div>
-          <button type="submit" className="rounded-md bg-sky-600 px-3 py-1.5 text-xs font-medium text-white hover:bg-sky-700">{t('common.save')}</button>
-          <button type="button" onClick={() => { setShowAdd(false); setNewKey(''); setNewVal('') }} className="rounded-md border border-neutral-300 px-3 py-1.5 text-xs text-neutral-600 hover:bg-neutral-50 dark:border-zinc-600 dark:text-zinc-400 dark:hover:bg-zinc-800">{t('common.cancel')}</button>
-        </form>
-      )}
-
-      {entries.length > 0 ? (
-        <div className="mt-3 space-y-1.5">
-          {entries.map(e => {
-            const sensitive = isSensitive(e.key)
-            const show = !sensitive || revealed.has(e.key)
-            const isEditing = editingKey === e.key
-            return (
-              <div key={e.key} className="flex items-center justify-between rounded-lg bg-neutral-50/70 px-3 py-2 dark:bg-zinc-800/30">
-                <div className="flex min-w-0 flex-1 items-center gap-2">
-                  <span className="shrink-0 font-mono text-xs font-semibold text-neutral-800 dark:text-zinc-200">{e.key}</span>
-                  <span className="text-[10px] text-neutral-300 dark:text-zinc-600">=</span>
-                  {isEditing ? (
-                    <div className="flex items-center gap-1.5">
-                      <input autoFocus value={editVal} onChange={ev => setEditVal(ev.target.value)} className="w-40 rounded border border-sky-300 bg-white px-1.5 py-0.5 font-mono text-xs text-neutral-800 outline-none dark:border-sky-700 dark:bg-zinc-800 dark:text-zinc-200" />
-                      <button onClick={() => handleUpdate(e.key)} className="text-sky-600 hover:text-sky-700 dark:text-sky-400"><Check className="size-3.5" /></button>
-                      <button onClick={() => setEditingKey(null)} className="text-neutral-400 hover:text-neutral-600 dark:text-zinc-500"><X className="size-3.5" /></button>
-                    </div>
-                  ) : (
-                    <span className="truncate font-mono text-xs text-neutral-600 dark:text-zinc-400">{show ? (e.value || '—') : '••••••'}</span>
-                  )}
-                </div>
-                <div className="flex shrink-0 items-center gap-1.5">
-                  {sensitive && !isEditing && (
-                    <button onClick={() => toggleReveal(e.key)} className="text-neutral-400 hover:text-sky-600 dark:text-zinc-500 dark:hover:text-sky-400">
-                      {show ? <EyeOff className="size-3.5" /> : <Eye className="size-3.5" />}
-                    </button>
-                  )}
-                  {!isEditing && (
-                    <button onClick={() => { setEditingKey(e.key); setEditVal(e.value) }} className="text-neutral-400 hover:text-sky-600 dark:text-zinc-500 dark:hover:text-sky-400"><Pencil className="size-3.5" /></button>
-                  )}
-                  <button onClick={() => handleRemove(e.key)} className="text-neutral-400 hover:text-red-500 dark:text-zinc-500 dark:hover:text-red-400"><Trash2 className="size-3.5" /></button>
-                </div>
-              </div>
-            )
-          })}
-        </div>
-      ) : !showAdd ? (
-        <p className="mt-3 text-xs text-neutral-400 dark:text-zinc-600">{t('agentEnv.empty')}</p>
-      ) : null}
-    </section>
-  )
 }
 
 function PromptEditor({ label, icon: Icon, apiPath, initialContent, canEdit = true }: { label: string; icon: LucideIcon; apiPath: string; initialContent: string; canEdit?: boolean }) {
@@ -517,8 +362,6 @@ export default function ProjectAgentDetailPage() {
   const [ctxReload, setCtxReload] = useState(0)
   const ctxState = useApiJson<AgentContext>(ctxPath, ctxReload)
 
-  const [syncing, setSyncing] = useState(false)
-  const [syncOutput, setSyncOutput] = useState<string | null>(null)
   const [editingIdentity, setEditingIdentity] = useState(false)
   const [identityName, setIdentityName] = useState(agentName ?? '')
   const [identityAvatar, setIdentityAvatar] = useState('')
@@ -531,21 +374,6 @@ export default function ProjectAgentDetailPage() {
     setIdentityName(agentName ?? '')
     setIdentityAvatar(ctxState.data.avatar ?? '')
   }, [agentName, ctxState.status, ctxState.status === 'ok' ? ctxState.data.avatar : undefined])
-
-  const doSync = useCallback(async () => {
-    if (!projectId || !agentName) return
-    setSyncing(true)
-    setSyncOutput(null)
-    try {
-      const res = await apiPost<{ ok: boolean; output: string }>(`/api/v1/projects/${encodeURIComponent(projectId)}/sync`, { agent: agentName })
-      setSyncOutput(res.output || 'Sync completed.')
-      setCtxReload((k) => k + 1)
-    } catch (e) {
-      setSyncOutput(String(e))
-    } finally {
-      setSyncing(false)
-    }
-  }, [projectId, agentName])
 
   const saveIdentity = useCallback(async () => {
     if (!projectId || !agentName) return
@@ -714,19 +542,12 @@ export default function ProjectAgentDetailPage() {
           const ctx = ctxState.data
           return (
             <div className="space-y-8">
-              {/* Overview info grid */}
-              <div className="grid grid-cols-1 gap-3 sm:grid-cols-2 lg:grid-cols-4">
-                {ctx.team && <InfoCard icon={Users} label={t('prompt.team')} value={ctx.team} />}
-                {ctx.role && <InfoCard icon={UserCog} label={t('prompt.role')} value={ctx.role} />}
-                <InfoCard icon={FileCode} label={t('prompt.contextFile')} value={ctx.contextFile} mono />
-                {ctx.syncedAt && <InfoCard icon={Clock} label={t('prompt.lastSync')} value={fmt(ctx.syncedAt)} />}
-              </div>
-
               {canConfigureThisAgent && (
                 <section>
-                  <SectionHeader icon={Settings2} title={t('members.configuration')} />
-                  <div className="mt-3 space-y-4">
-                    <div className="rounded-lg border border-neutral-200/80 bg-white p-4 dark:border-zinc-700/60 dark:bg-zinc-900/40">
+                  <SectionHeader icon={Settings2} title={t('agentDetail.modelCredentials')} />
+                  <p className="mt-1 text-sm text-neutral-500 dark:text-zinc-500">{t('agentDetail.modelCredentialsHint')}</p>
+                  <div className="mt-3 rounded-lg border border-neutral-200/80 bg-white p-4 dark:border-zinc-700/60 dark:bg-zinc-900/40">
+                    <div className="grid gap-4 lg:grid-cols-[minmax(0,0.8fr)_minmax(0,1.2fr)]">
                       <ModelSelector
                         project={projectId}
                         agentName={agentName}
@@ -734,47 +555,24 @@ export default function ProjectAgentDetailPage() {
                         currentHttpAgent={ctx.httpAgent}
                         onChanged={() => setCtxReload((k) => k + 1)}
                       />
+                      <EnvEditor
+                        project={projectId}
+                        agentName={agentName}
+                        model={ctx.model}
+                        initialRuntimeModel={ctx.runtimeModel}
+                        initialEnv={ctx.env ?? {}}
+                        initialProvider={ctx.provider}
+                        onChanged={() => setCtxReload((k) => k + 1)}
+                      />
                     </div>
-                    <EnvEditor
-                      project={projectId}
-                      agentName={agentName}
-                      model={ctx.model}
-                      initialRuntimeModel={ctx.runtimeModel}
-                      initialEnv={ctx.env ?? {}}
-                      initialProvider={ctx.provider}
-                      onChanged={() => setCtxReload((k) => k + 1)}
-                    />
-                    <SandboxEditor
-                      project={projectId}
-                      agentName={agentName}
-                      initial={ctx.sandbox}
-                      initialAddDirs={ctx.addDirs ?? []}
-                      onChanged={() => setCtxReload((k) => k + 1)}
-                    />
                   </div>
                 </section>
               )}
 
-              {/* Skills */}
-              {ctx.skills && ctx.skills.length > 0 && (
-                <section>
-                  <SectionHeader icon={Puzzle} title={t('skill.agentSkills')} />
-                  <div className="mt-3 flex flex-wrap gap-2">
-                    {ctx.skills.map((sk) => (
-                      <Link key={sk} to={`/skills?open=${encodeURIComponent(sk)}`}
-                        className="inline-flex items-center gap-1.5 rounded-md bg-amber-50 px-2.5 py-1 text-sm font-medium text-amber-700 transition-colors hover:bg-amber-100 dark:bg-amber-900/20 dark:text-amber-400 dark:hover:bg-amber-900/40">
-                        <Puzzle className="size-3.5" strokeWidth={2} />
-                        {sk}
-                      </Link>
-                    ))}
-                  </div>
-                </section>
-              )}
-
-              {/* Session & Sync */}
               <section>
-                <SectionHeader icon={Activity} title={t('session.sessionLabel')} />
-                <div className="mt-3 space-y-3">
+                <SectionHeader icon={Activity} title={t('agentDetail.connectAndChat')} />
+                <p className="mt-1 text-sm text-neutral-500 dark:text-zinc-500">{t('agentDetail.connectAndChatHint')}</p>
+                <div className="mt-3 grid gap-4 xl:grid-cols-[minmax(0,0.9fr)_minmax(0,1.1fr)]">
                   <SessionPanel
                     project={projectId}
                     agentName={agentName}
@@ -782,47 +580,68 @@ export default function ProjectAgentDetailPage() {
                     canRun={canRunThisAgent}
                   />
                   {canConfigureThisAgent && (
-                    <div className="flex items-center gap-3">
-                      <button
-                        type="button"
-                        onClick={doSync}
-                        disabled={syncing}
-                        className="flex items-center gap-1.5 rounded-md border border-neutral-200 bg-white px-3 py-1.5 text-sm font-medium text-neutral-700 transition-colors hover:border-neutral-300 hover:bg-neutral-50 disabled:opacity-50 dark:border-zinc-700 dark:bg-zinc-800 dark:text-zinc-300 dark:hover:border-zinc-600 dark:hover:bg-zinc-700"
-                      >
-                        <RefreshCw className={cn('size-4', syncing && 'animate-spin')} strokeWidth={2} />
-                        {syncing ? t('prompt.syncing') : t('prompt.sync')}
-                      </button>
-                      {syncOutput && (
-                        <span className="text-sm text-neutral-500 dark:text-zinc-500">{syncOutput}</span>
-                      )}
-                    </div>
+                    <AgentChannelPanel
+                      project={projectId}
+                      agentName={agentName}
+                    />
                   )}
                 </div>
               </section>
 
               {canConfigureThisAgent && (
                 <>
-                  {/* Agent channels */}
-                  <AgentChannelPanel
-                    project={projectId}
-                    agentName={agentName}
-                  />
-
-                  <AgentRuntimeConnectionsPanel project={projectId} agentName={agentName} />
-
-                  {/* Environment Variables */}
-                  <AgentEnvPanel project={projectId} agent={agentName} />
+                  <section>
+                    <SectionHeader icon={Cable} title={t('agentDetail.toolsAndSkills')} />
+                    <p className="mt-1 text-sm text-neutral-500 dark:text-zinc-500">{t('agentDetail.toolsAndSkillsHint')}</p>
+                    <div className="mt-3 grid gap-4 xl:grid-cols-[minmax(0,1.15fr)_minmax(0,0.85fr)]">
+                      <AgentRuntimeConnectionsPanel project={projectId} agentName={agentName} />
+                      <AgentSkillsPanel skills={ctx.skills ?? []} />
+                    </div>
+                  </section>
                 </>
               )}
 
-              {/* Wakeup prompt */}
-              <PromptEditor
-                label={t('prompt.wakeup')}
-                icon={BookOpen}
-                apiPath={`/api/v1/projects/${encodeURIComponent(projectId)}/agents/${encodeURIComponent(agentName)}/wakeup`}
-                initialContent={ctx.wakeup}
-                canEdit={canConfigureThisAgent}
-              />
+              <section>
+                <SectionHeader icon={BookOpen} title={t('agentDetail.instructions')} />
+                <p className="mt-1 text-sm text-neutral-500 dark:text-zinc-500">{t('agentDetail.instructionsHint')}</p>
+                <div className="mt-3">
+                  <PromptEditor
+                    label={t('prompt.wakeup')}
+                    icon={BookOpen}
+                    apiPath={`/api/v1/projects/${encodeURIComponent(projectId)}/agents/${encodeURIComponent(agentName)}/wakeup`}
+                    initialContent={ctx.wakeup}
+                    canEdit={canConfigureThisAgent}
+                  />
+                </div>
+              </section>
+
+              <section>
+                <SectionHeader icon={Activity} title={t('agentDetail.health')} />
+                <div className="mt-3 grid grid-cols-1 gap-3 sm:grid-cols-2 lg:grid-cols-4">
+                  {ctx.team && <InfoCard icon={Users} label={t('prompt.team')} value={ctx.team} />}
+                  {ctx.role && <InfoCard icon={UserCog} label={t('prompt.role')} value={ctx.role} />}
+                  <InfoCard icon={Puzzle} label={t('agentDetail.skillCount')} value={String(ctx.skills?.length ?? 0)} />
+                  {ctx.syncedAt && <InfoCard icon={Clock} label={t('prompt.lastSync')} value={fmt(ctx.syncedAt)} />}
+                </div>
+              </section>
+
+              {canConfigureThisAgent && (
+                <details className="group rounded-lg border border-neutral-200/80 bg-white dark:border-zinc-700/60 dark:bg-zinc-900/40">
+                  <summary className="flex cursor-pointer items-center gap-2 px-4 py-3 text-sm font-medium text-neutral-700 dark:text-zinc-300">
+                    <ChevronRight className="size-4 transition-transform group-open:rotate-90" strokeWidth={2} />
+                    <Container className="size-4 text-neutral-400 dark:text-zinc-500" strokeWidth={1.8} />
+                    {t('agentDetail.advancedRuntime')}
+                  </summary>
+                  <div className="border-t border-neutral-100 p-4 dark:border-zinc-800">
+                    <SandboxEditor
+                      project={projectId}
+                      agentName={agentName}
+                      initial={ctx.sandbox}
+                      onChanged={() => setCtxReload((k) => k + 1)}
+                    />
+                  </div>
+                </details>
+              )}
 
               {/* Merged context */}
               {ctx.context && (
@@ -915,13 +734,13 @@ function completeAgentCli(input: { vendor: string; version: string }): AgentCLIC
   }
 }
 
-function SandboxEditor({ project, agentName, initial, initialAddDirs, onChanged }: {
-  project: string; agentName: string; initial?: SandboxConfig; initialAddDirs: string[]; onChanged: () => void
+function SandboxEditor({ project, agentName, initial, onChanged }: {
+  project: string; agentName: string; initial?: SandboxConfig; onChanged: () => void
 }) {
   const { t } = useTranslation()
   const capsState = useApiJson<SandboxCapabilities>('/api/v1/sandbox/capabilities', 0)
   const caps = capsState.status === 'ok' ? capsState.data : null
-  const [provider, setProvider] = useState(initial?.provider ?? '')
+  const [provider, setProvider] = useState(initial?.provider || 'docker')
   const [image, setImage] = useState(initial?.image ?? initial?.docker?.image ?? '')
   const [template, setTemplate] = useState(initial?.e2b?.template ?? '')
   const [network, setNetwork] = useState(initial?.networkMode ?? initial?.docker?.network_mode ?? '')
@@ -931,13 +750,11 @@ function SandboxEditor({ project, agentName, initial, initialAddDirs, onChanged 
   const [cliVendor, setCliVendor] = useState(initial?.agentCli?.vendor ?? '')
   const [cliVersion, setCliVersion] = useState(normalizeCliVersion(initial?.agentCli?.vendor ?? '', initial?.agentCli?.version ?? ''))
   const [customCliVersion, setCustomCliVersion] = useState(false)
-  const [addDirs, setAddDirs] = useState<string[]>(initialAddDirs)
-  const [newDir, setNewDir] = useState('')
   const [saving, setSaving] = useState(false)
   const [dirty, setDirty] = useState(false)
 
   useEffect(() => {
-    setProvider(initial?.provider ?? '')
+    setProvider(initial?.provider || 'docker')
     setImage(initial?.image ?? initial?.docker?.image ?? '')
     setTemplate(initial?.e2b?.template ?? '')
     setNetwork(initial?.networkMode ?? initial?.docker?.network_mode ?? '')
@@ -949,9 +766,8 @@ function SandboxEditor({ project, agentName, initial, initialAddDirs, onChanged 
     setCliVendor(nextVendor)
     setCliVersion(nextVersion)
     setCustomCliVersion(Boolean(nextVersion && !(CLI_DEFAULTS[nextVendor]?.versions ?? ['latest']).includes(nextVersion)))
-    setAddDirs(initialAddDirs)
     setDirty(false)
-  }, [initial, initialAddDirs])
+  }, [initial])
 
   const inputCls = 'w-full rounded-md border border-neutral-200/80 bg-white px-3 py-1.5 text-sm text-neutral-800 outline-none transition-colors focus:border-sky-400 focus:ring-1 focus:ring-sky-400/30 dark:border-zinc-700/60 dark:bg-zinc-800/50 dark:text-zinc-200 dark:focus:border-sky-500'
   const labelCls = 'block text-xs font-medium text-neutral-500 dark:text-zinc-400 mb-1'
@@ -961,7 +777,7 @@ function SandboxEditor({ project, agentName, initial, initialAddDirs, onChanged 
     setSaving(true)
     try {
       await apiPut(`/api/v1/projects/${encodeURIComponent(project)}/agents/${encodeURIComponent(agentName)}/sandbox`, {
-        provider: provider || 'none',
+        provider: provider || 'docker',
         image,
         template,
         network,
@@ -969,24 +785,11 @@ function SandboxEditor({ project, agentName, initial, initialAddDirs, onChanged 
         cpus,
         timeoutSec,
         agentCli,
-        addDirs,
+        addDirs: [],
       })
       setDirty(false)
       onChanged()
     } finally { setSaving(false) }
-  }
-
-  function addDir() {
-    const d = newDir.trim()
-    if (!d || addDirs.includes(d)) return
-    setAddDirs(prev => [...prev, d])
-    setNewDir('')
-    setDirty(true)
-  }
-
-  function removeDir(dir: string) {
-    setAddDirs(prev => prev.filter(d => d !== dir))
-    setDirty(true)
   }
 
   function versionOptions(vendor: string): string[] {
@@ -1026,7 +829,6 @@ function SandboxEditor({ project, agentName, initial, initialAddDirs, onChanged 
         <div>
           <label className={labelCls}>{t('sandbox.provider')}</label>
           <select value={provider} onChange={(e) => { setProvider(e.target.value); setDirty(true) }} className={inputCls}>
-            <option value="">{t('sandbox.providerNone')}</option>
             <option value="docker">Docker</option>
             <option value="e2b" disabled={!caps?.e2b?.available && provider !== 'e2b'}>E2B</option>
           </select>
@@ -1036,7 +838,7 @@ function SandboxEditor({ project, agentName, initial, initialAddDirs, onChanged 
             </p>
           )}
         </div>
-        {provider && provider !== 'none' && (
+        {provider && (
           <>
             <div>
               <label className={labelCls}>{provider === 'e2b' ? t('sandbox.template') : t('sandbox.image')}</label>
@@ -1135,40 +937,6 @@ function SandboxEditor({ project, agentName, initial, initialAddDirs, onChanged 
             </div>
           </>
         )}
-
-        {/* Add Dirs — provider-neutral materialized or mounted paths */}
-        <div>
-          <label className={labelCls}>{t('sandbox.addDirs')}</label>
-          <p className="mb-1.5 text-[11px] text-neutral-400 dark:text-zinc-500">{t('sandbox.addDirsHint')}</p>
-          {addDirs.length > 0 && (
-            <div className="mb-2 space-y-1">
-              {addDirs.map(dir => (
-                <div key={dir} className="flex items-center gap-2 rounded-md bg-neutral-50 px-3 py-1.5 dark:bg-zinc-800/40">
-                  <span className="min-w-0 flex-1 truncate font-mono text-xs text-neutral-700 dark:text-zinc-300">{dir}</span>
-                  <button type="button" onClick={() => removeDir(dir)}
-                    className="shrink-0 text-neutral-400 transition-colors hover:text-red-500 dark:text-zinc-500 dark:hover:text-red-400">
-                    <X className="size-3.5" strokeWidth={2} />
-                  </button>
-                </div>
-              ))}
-            </div>
-          )}
-          <div className="flex gap-2">
-            <input
-              type="text"
-              value={newDir}
-              onChange={(e) => setNewDir(e.target.value)}
-              onKeyDown={(e) => { if (e.key === 'Enter') { e.preventDefault(); addDir() } }}
-              placeholder="/path/to/repo"
-              className="min-w-0 flex-1 rounded-md border border-neutral-200/80 bg-white px-3 py-1.5 font-mono text-xs text-neutral-800 outline-none focus:border-sky-400 focus:ring-1 focus:ring-sky-400/30 dark:border-zinc-700/60 dark:bg-zinc-800/50 dark:text-zinc-200 dark:focus:border-sky-500"
-            />
-            <button type="button" onClick={addDir}
-              className="flex shrink-0 items-center gap-1 rounded-md border border-neutral-200 bg-white px-2.5 py-1.5 text-xs font-medium text-neutral-600 transition-colors hover:border-sky-400 hover:text-sky-600 dark:border-zinc-700 dark:bg-zinc-800 dark:text-zinc-400 dark:hover:border-sky-600 dark:hover:text-sky-400">
-              <Plus className="size-3.5" strokeWidth={2} />
-              {t('sandbox.addDirsAdd')}
-            </button>
-          </div>
-        </div>
       </div>
     </div>
   )
@@ -1252,17 +1020,6 @@ function AgentRuntimeConnectionsPanel({ project, agentName }: { project: string;
         )}
         {state.status === 'ok' && (
           <div className="space-y-3">
-            <div className="flex flex-wrap gap-2 text-[11px] text-neutral-500 dark:text-zinc-500">
-              <span className="rounded-md bg-neutral-100 px-2 py-1 dark:bg-zinc-800">
-                {state.data.manifest?.version ?? 'multigent.connections.v1'}
-              </span>
-              <span className="rounded-md bg-neutral-100 px-2 py-1 font-mono dark:bg-zinc-800">
-                {state.data.manifest?.apiBaseUrlEnv ?? 'MULTIGENT_API_URL'}
-              </span>
-              <span className="rounded-md bg-neutral-100 px-2 py-1 font-mono dark:bg-zinc-800">
-                {state.data.manifest?.agentTokenEnv ?? 'MULTIGENT_AGENT_TOKEN'}
-              </span>
-            </div>
             {(state.data.connections ?? []).length === 0 ? (
               <p className="text-sm text-neutral-400 dark:text-zinc-500">
                 {t('members.noRuntimeConnections')}
@@ -1337,14 +1094,36 @@ function runtimeConnectionAccountLabel(connection: RuntimeConnection): string {
   return [summary?.accountId, summary?.accountName, summary?.accountEmail].filter(Boolean).join(' · ')
 }
 
+function AgentSkillsPanel({ skills }: { skills: string[] }) {
+  const { t } = useTranslation()
+  return (
+    <section className="rounded-lg border border-neutral-200/80 bg-white p-4 dark:border-zinc-700/60 dark:bg-zinc-900/40">
+      <div className="flex items-center gap-2">
+        <Puzzle className="size-4 text-neutral-500 dark:text-zinc-500" strokeWidth={1.8} />
+        <h4 className="text-sm font-semibold text-neutral-800 dark:text-zinc-200">{t('skill.agentSkills')}</h4>
+      </div>
+      <p className="mt-1 text-xs text-neutral-400 dark:text-zinc-500">{t('agentDetail.skillsHint')}</p>
+      {skills.length > 0 ? (
+        <div className="mt-3 flex flex-wrap gap-2">
+          {skills.map((sk) => (
+            <Link key={sk} to={`/skills?open=${encodeURIComponent(sk)}`}
+              className="inline-flex items-center gap-1.5 rounded-md bg-amber-50 px-2.5 py-1 text-sm font-medium text-amber-700 transition-colors hover:bg-amber-100 dark:bg-amber-900/20 dark:text-amber-400 dark:hover:bg-amber-900/40">
+              <Puzzle className="size-3.5" strokeWidth={2} />
+              {sk}
+            </Link>
+          ))}
+        </div>
+      ) : (
+        <p className="mt-3 text-sm text-neutral-400 dark:text-zinc-500">{t('agentDetail.noSkills')}</p>
+      )}
+    </section>
+  )
+}
+
 function EnvEditor({ project, agentName, model, initialEnv, initialProvider, initialRuntimeModel, onChanged }: {
   project: string; agentName: string; model: string; initialEnv: Record<string, string>; initialProvider?: string; initialRuntimeModel?: string; onChanged: () => void
 }) {
   const { t } = useTranslation()
-  const [entries, setEntries] = useState<{ key: string; value: string }[]>(() => {
-    const items = Object.entries(initialEnv).map(([key, value]) => ({ key, value }))
-    return items.length > 0 ? items : []
-  })
   const [busy, setBusy] = useState(false)
   const [saved, setSaved] = useState(false)
   const [providerOptions, setProviderOptions] = useState<ProviderOption[]>([])
@@ -1357,40 +1136,18 @@ function EnvEditor({ project, agentName, model, initialEnv, initialProvider, ini
   }, [project, agentName])
 
   useEffect(() => {
-    const items = Object.entries(initialEnv).map(([key, value]) => ({ key, value }))
-    setEntries(items)
     setSelectedProvider(initialProvider ?? '')
     setRuntimeModel(initialRuntimeModel ?? '')
     setSaved(false)
   }, [initialEnv, initialProvider, initialRuntimeModel])
 
-  const wellKnown = WELL_KNOWN_ENV[model]
   const runtimeModelOptions = RUNTIME_MODEL_PRESETS[model] ?? []
-  const usedKeys = new Set(entries.map((e) => e.key))
-
-  function addEntry(key = '') {
-    setEntries((prev) => [...prev, { key, value: '' }])
-    setSaved(false)
-  }
-
-  function removeEntry(idx: number) {
-    setEntries((prev) => prev.filter((_, i) => i !== idx))
-    setSaved(false)
-  }
-
-  function updateEntry(idx: number, field: 'key' | 'value', val: string) {
-    setEntries((prev) => prev.map((e, i) => i === idx ? { ...e, [field]: val } : e))
-    setSaved(false)
-  }
+  const selectedProviderInfo = providerOptions.find((p) => p.id === selectedProvider)
 
   async function save() {
     setBusy(true); setSaved(false)
     try {
-      const env: Record<string, string> = {}
-      for (const e of entries) {
-        const k = e.key.trim()
-        if (k) env[k] = e.value
-      }
+      const env = { ...initialEnv }
       await apiPut(`/api/v1/projects/${encodeURIComponent(project)}/agents/${encodeURIComponent(agentName)}/env`, { env, provider: selectedProvider, runtimeModel })
       setSaved(true)
       setTimeout(() => setSaved(false), 2500)
@@ -1402,7 +1159,7 @@ function EnvEditor({ project, agentName, model, initialEnv, initialProvider, ini
   const inputCls = 'h-8 rounded-md border border-neutral-200 bg-white px-2.5 text-sm text-neutral-700 outline-none hover:border-neutral-300 focus:border-sky-400 disabled:opacity-50 dark:border-zinc-700 dark:bg-zinc-800 dark:text-zinc-300 dark:[color-scheme:dark]'
 
   return (
-    <div className="rounded-lg border border-neutral-200/80 bg-white p-4 dark:border-zinc-700/60 dark:bg-zinc-900/40">
+    <div>
       <div className="mb-3 flex items-center justify-between">
         <h3 className="text-sm font-semibold text-neutral-700 dark:text-zinc-300">
           {t('members.apiProvider')}
@@ -1417,20 +1174,34 @@ function EnvEditor({ project, agentName, model, initialEnv, initialProvider, ini
         </div>
       </div>
 
-      <div className="mb-3 grid gap-3 md:grid-cols-2">
-        {providerOptions.length > 0 && (
-          <label className="block">
-            <span className="mb-1 block text-xs font-medium text-neutral-600 dark:text-zinc-400">{t('provider.selectLabel')}</span>
-            <select value={selectedProvider} onChange={e => { setSelectedProvider(e.target.value); setSaved(false) }}
-              className={cn(inputCls, 'w-full text-xs')}>
-              <option value="">{t('provider.none')}</option>
-              {providerOptions.map(p => (
-                <option key={p.id} value={p.id}>
-                  {p.name} ({p.type}{p.model ? ` · ${p.model}` : ''} · {p.ownerType === 'user' ? t('provider.scopePersonal') : t('provider.scopeWorkspace')})
-                </option>
-              ))}
-            </select>
-          </label>
+      <div className="grid gap-3 md:grid-cols-2">
+        <label className="block">
+          <span className="mb-1 block text-xs font-medium text-neutral-600 dark:text-zinc-400">{t('provider.selectLabel')}</span>
+          <select value={selectedProvider} onChange={e => { setSelectedProvider(e.target.value); setSaved(false) }}
+            className={cn(inputCls, 'w-full text-xs')}>
+            <option value="">{providerOptions.length > 0 ? t('provider.none') : t('agentDetail.noCredential')}</option>
+            {providerOptions.map(p => (
+              <option key={p.id} value={p.id}>
+                {p.name} ({p.type}{p.model ? ` · ${p.model}` : ''} · {p.ownerType === 'user' ? t('provider.scopePersonal') : t('provider.scopeWorkspace')})
+              </option>
+            ))}
+          </select>
+        </label>
+        {providerOptions.length === 0 ? (
+          <div className="flex items-end">
+            <Link
+              to="/connections"
+              className="inline-flex h-8 items-center rounded-md border border-sky-200 bg-sky-50 px-3 text-xs font-medium text-sky-700 hover:bg-sky-100 dark:border-sky-800 dark:bg-sky-900/20 dark:text-sky-300 dark:hover:bg-sky-900/30"
+            >
+              {t('agentDetail.addCredential')}
+            </Link>
+          </div>
+        ) : (
+          selectedProviderInfo && (
+            <div className="rounded-md bg-neutral-50 px-3 py-2 text-xs text-neutral-500 dark:bg-zinc-800/40 dark:text-zinc-400">
+              {selectedProviderInfo.type}{selectedProviderInfo.model ? ` · ${selectedProviderInfo.model}` : ''} · {selectedProviderInfo.ownerType === 'user' ? t('provider.scopePersonal') : t('provider.scopeWorkspace')}
+            </div>
+          )
         )}
         <label className="block">
           <span className="mb-1 block text-xs font-medium text-neutral-600 dark:text-zinc-400">{t('provider.runtimeModelLabel')}</span>
@@ -1451,59 +1222,6 @@ function EnvEditor({ project, agentName, model, initialEnv, initialProvider, ini
           <p className="md:col-span-2 text-[11px] text-neutral-400 dark:text-zinc-500">{t('provider.overrideHint')}</p>
         )}
       </div>
-
-      {wellKnown && (
-        <p className="mb-3 text-xs text-neutral-400 dark:text-zinc-500">
-          {wellKnown.hint}
-        </p>
-      )}
-
-      {/* Quick-add buttons for well-known keys */}
-      {wellKnown && (
-        <div className="mb-3 flex flex-wrap gap-1.5">
-          {wellKnown.keys.filter((k) => !usedKeys.has(k)).map((k) => (
-            <button key={k} type="button" onClick={() => addEntry(k)}
-              className="inline-flex items-center gap-1 rounded-md border border-dashed border-neutral-300 px-2 py-0.5 text-xs text-neutral-500 transition-colors hover:border-sky-400 hover:text-sky-600 dark:border-zinc-600 dark:text-zinc-500 dark:hover:border-sky-600 dark:hover:text-sky-400">
-              <Plus className="size-3" strokeWidth={2} />
-              {k}
-            </button>
-          ))}
-        </div>
-      )}
-
-      {/* Entries */}
-      <div className="space-y-2">
-        {entries.map((entry, idx) => (
-          <div key={idx} className="flex items-center gap-2">
-            <input
-              value={entry.key}
-              onChange={(e) => updateEntry(idx, 'key', e.target.value)}
-              placeholder="ENV_KEY"
-              className={cn(inputCls, 'w-48 font-mono text-xs')}
-              disabled={busy}
-            />
-            <span className="text-neutral-300 dark:text-zinc-500">=</span>
-            <input
-              value={entry.value}
-              onChange={(e) => updateEntry(idx, 'value', e.target.value)}
-              placeholder="value"
-              type={entry.key.toLowerCase().includes('key') || entry.key.toLowerCase().includes('token') ? 'password' : 'text'}
-              className={cn(inputCls, 'min-w-0 flex-1')}
-              disabled={busy}
-            />
-            <button type="button" onClick={() => removeEntry(idx)} disabled={busy}
-              className="rounded-md p-1.5 text-neutral-400 transition-colors hover:bg-red-50 hover:text-red-500 dark:text-zinc-500 dark:hover:bg-red-900/20 dark:hover:text-red-400">
-              <Trash2 className="size-3.5" strokeWidth={2} />
-            </button>
-          </div>
-        ))}
-      </div>
-
-      <button type="button" onClick={() => addEntry()} disabled={busy}
-        className="mt-2 inline-flex items-center gap-1 rounded-md px-2 py-1 text-xs text-neutral-500 transition-colors hover:bg-neutral-100 hover:text-neutral-700 dark:text-zinc-500 dark:hover:bg-zinc-800 dark:hover:text-zinc-300">
-        <Plus className="size-3" strokeWidth={2} />
-        {t('members.addEnvVar')}
-      </button>
     </div>
   )
 }

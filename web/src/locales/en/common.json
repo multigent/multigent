@@ -981,6 +981,23 @@
     "overrideHint": "The selected account provides endpoint and credentials. Agent model can override only the model name.",
     "keyUnchangedHint": "(unchanged, leave empty to keep)"
   },
+  "agentDetail": {
+    "modelCredentials": "Model & Credentials",
+    "modelCredentialsHint": "Choose the agent CLI, runtime model, and model account. Available models depend on the selected credential.",
+    "connectAndChat": "Connect & Chat",
+    "connectAndChatHint": "Talk from Web Chat, or connect the agent to Feishu, Lark, and future collaboration channels.",
+    "toolsAndSkills": "Tools & Skills",
+    "toolsAndSkillsHint": "Configure external tools this agent can use and review the role skills injected into its context.",
+    "instructions": "Prompt & Behavior",
+    "instructionsHint": "Tune how this agent wakes up, checks work, and continues when it is idle.",
+    "health": "Recent Status",
+    "skillCount": "Skills",
+    "advancedRuntime": "Advanced Runtime Settings",
+    "noCredential": "No credentials available",
+    "addCredential": "Add model account",
+    "skillsHint": "These skills usually come from team and role configuration and are injected into the agent context.",
+    "noSkills": "No skills yet"
+  },
   "runs": {
     "subtitle": "Run reliability, duration, and token usage for this project’s agents.",
     "window": "Window",
