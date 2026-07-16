@@ -9,6 +9,7 @@
     "refresh": "刷新",
     "confirm": "确认",
     "add": "添加",
+    "done": "完成",
     "creating": "创建中…"
   },
   "apiErrors": {
@@ -996,7 +997,15 @@
     "noCredential": "暂无可用凭证",
     "addCredential": "去添加模型账号",
     "skillsHint": "这些 Skill 通常来自团队和角色配置，会进入 Agent 的上下文。",
-    "noSkills": "暂无 Skill"
+    "noSkills": "暂无 Skill",
+    "cliType": "CLI 类型",
+    "modelAccount": "模型账号",
+    "runtimeModel": "运行模型",
+    "notConfigured": "未配置",
+    "context": "Context",
+    "contextHint": "这里展示 Agent 实际收到的完整合并上下文，用来排查 Prompt、角色、项目和 Skill 是否正确注入。",
+    "fullContext": "完整合并 Context",
+    "contextEmpty": "暂无 Context"
   },
   "runs": {
     "subtitle": "本项目 Agent 的运行可靠性、耗时与 Token 消耗。",

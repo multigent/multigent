@@ -5,7 +5,7 @@ import Markdown from 'react-markdown'
 import remarkGfm from 'remark-gfm'
 import {
   RefreshCw, Save, ChevronRight, Bot, BookOpen, Puzzle, Check,
-  Settings2, Users, UserCog, Clock, Activity, User, Mail, ListTodo, Reply, Send, Pencil, Container, MessageSquareText,
+  Settings2, Users, UserCog, Activity, User, Mail, ListTodo, Reply, Send, Pencil, Container, MessageSquareText,
   Cable,
 } from 'lucide-react'
 import type { LucideIcon } from 'lucide-react'
@@ -126,18 +126,37 @@ const RUNTIME_MODEL_PRESETS: Record<string, string[]> = {
   opencode: ['gpt-5.1', 'claude-sonnet-4-20250514'],
 }
 
+const buttonBaseCls = 'inline-flex h-8 items-center justify-center gap-1.5 rounded-md px-3 text-xs font-medium transition-colors disabled:cursor-not-allowed disabled:opacity-50'
+const primaryButtonCls = cn(buttonBaseCls, 'bg-sky-600 text-white hover:bg-sky-700')
+const secondaryButtonCls = cn(buttonBaseCls, 'border border-neutral-200 bg-white text-neutral-700 hover:border-neutral-300 hover:bg-neutral-50 dark:border-zinc-700 dark:bg-zinc-900 dark:text-zinc-300 dark:hover:border-zinc-600 dark:hover:bg-zinc-800')
+const subtleButtonCls = cn(buttonBaseCls, 'text-neutral-500 hover:bg-neutral-100 hover:text-neutral-800 dark:text-zinc-400 dark:hover:bg-zinc-800 dark:hover:text-zinc-200')
+
 function PromptEditor({ label, icon: Icon, apiPath, initialContent, canEdit = true }: { label: string; icon: LucideIcon; apiPath: string; initialContent: string; canEdit?: boolean }) {
   const { t } = useTranslation()
   const [value, setValue] = useState(initialContent)
+  const [editing, setEditing] = useState(false)
   const [dirty, setDirty] = useState(false)
   const [saving, setSaving] = useState(false)
   const [preview, setPreview] = useState(false)
   const [saved, setSaved] = useState(false)
+  useEffect(() => {
+    setValue(initialContent)
+    setDirty(false)
+    setSaved(false)
+    setEditing(false)
+    setPreview(false)
+  }, [initialContent])
   const save = useCallback(async () => {
     setSaving(true); setSaved(false)
-    try { await apiPut(apiPath, { content: value }); setDirty(false); setSaved(true); setTimeout(() => setSaved(false), 2000) }
+    try { await apiPut(apiPath, { content: value }); setDirty(false); setEditing(false); setSaved(true); setTimeout(() => setSaved(false), 2000) }
     catch (e) { alert(String(e)) } finally { setSaving(false) }
   }, [apiPath, value])
+  function cancelEdit() {
+    setValue(initialContent)
+    setDirty(false)
+    setEditing(false)
+    setPreview(false)
+  }
   return (
     <div className="rounded-lg border border-neutral-200/80 bg-white dark:border-zinc-700/60 dark:bg-zinc-900/40">
       <div className="flex items-center justify-between border-b border-neutral-100 px-4 py-2.5 dark:border-zinc-700/40">
@@ -148,18 +167,31 @@ function PromptEditor({ label, icon: Icon, apiPath, initialContent, canEdit = tr
           {saved && <span className="text-[10px] text-emerald-500">{t('prompt.saved')}</span>}
         </div>
         <div className="flex items-center gap-2">
-          <button type="button" onClick={() => setPreview((p) => !p)} className={cn('rounded-md px-2 py-1 text-[11px] font-medium transition-colors', preview ? 'bg-sky-100 text-sky-700 dark:bg-sky-900/30 dark:text-sky-400' : 'text-neutral-400 hover:text-neutral-600 dark:text-zinc-500 dark:hover:text-zinc-400')}>
-            {preview ? t('prompt.edit') : t('prompt.preview')}
-          </button>
-          {canEdit && (
-            <button type="button" onClick={save} disabled={saving} className="flex items-center gap-1 rounded-md bg-sky-600 px-2.5 py-1 text-[11px] font-medium text-white transition-colors hover:bg-sky-700 disabled:opacity-50">
+          {editing && (
+            <button type="button" onClick={() => setPreview((p) => !p)} className={subtleButtonCls}>
+              {preview ? t('prompt.edit') : t('prompt.preview')}
+            </button>
+          )}
+          {canEdit && !editing && (
+            <button type="button" onClick={() => setEditing(true)} className={secondaryButtonCls}>
+              <Pencil className="size-3.5" strokeWidth={1.8} />
+              {t('common.edit')}
+            </button>
+          )}
+          {canEdit && editing && (
+            <>
+            <button type="button" onClick={cancelEdit} disabled={saving} className={secondaryButtonCls}>
+              {t('common.cancel')}
+            </button>
+            <button type="button" onClick={save} disabled={saving || !dirty} className={primaryButtonCls}>
               <Save className="size-3" strokeWidth={2} />{saving ? t('prompt.saving') : t('prompt.save')}
             </button>
+            </>
           )}
         </div>
       </div>
-      {preview ? (
-        <div className="prose-none max-h-[40vh] overflow-auto p-4 text-sm leading-relaxed text-neutral-800 dark:text-zinc-200">
+      {!editing || preview ? (
+        <div className={cn('prose prose-sm prose-neutral dark:prose-invert max-w-none p-4 text-sm leading-relaxed', !editing && 'max-h-56 overflow-auto')}>
           <Markdown remarkPlugins={[remarkGfm]}>{value || '*（空）*'}</Markdown>
         </div>
       ) : (
@@ -218,20 +250,20 @@ function SessionPanel({ project, agentName, canConfigure, canRun }: { project: s
         <div className="flex items-center gap-2">
           <Link
             to={`/projects/${encodeURIComponent(project)}/members/${encodeURIComponent(agentName)}/chat${hasSession ? `?sessionId=${encodeURIComponent(info.sessionId!)}` : ''}`}
-            className="flex items-center gap-1 rounded-md border border-sky-200 bg-white px-2.5 py-1 text-xs font-medium text-sky-700 transition-colors hover:bg-sky-50 dark:border-sky-800 dark:bg-sky-900/30 dark:text-sky-400 dark:hover:bg-sky-900/50"
+            className={primaryButtonCls}
           >
             <MessageSquareText className="size-3.5" strokeWidth={2} />
             {t('agentChat.openChat')}
           </Link>
           {canConfigure && hasSession && (
             <button type="button" onClick={() => void doReset()} disabled={resetting}
-              className="cursor-pointer rounded-md border border-amber-200 bg-white px-2.5 py-1 text-xs font-medium text-amber-700 transition-colors hover:bg-amber-50 disabled:opacity-50 dark:border-amber-800 dark:bg-amber-900/30 dark:text-amber-400 dark:hover:bg-amber-900/50">
+              className={secondaryButtonCls}>
               {resetting ? t('session.resettingSession') : t('session.resetSession')}
             </button>
           )}
           {canRun && (
             <button type="button" onClick={() => void doRun()} disabled={running}
-              className="cursor-pointer rounded-md border border-sky-200 bg-white px-2.5 py-1 text-xs font-medium text-sky-700 transition-colors hover:bg-sky-50 disabled:opacity-50 dark:border-sky-800 dark:bg-sky-900/30 dark:text-sky-400 dark:hover:bg-sky-900/50">
+              className={secondaryButtonCls}>
               {running ? t('session.running') : t('session.run')}
             </button>
           )}
@@ -311,7 +343,7 @@ function ModelSelector({ project, agentName, currentModel, currentHttpAgent, onC
             type="button"
             onClick={() => void apply()}
             disabled={busy}
-            className="flex items-center gap-1 rounded-md bg-sky-600 px-2 py-1 text-[11px] font-medium text-white transition-colors hover:bg-sky-700 disabled:opacity-50"
+            className={primaryButtonCls}
           >
             {busy ? t('forms.saving') : t('forms.apply')}
           </button>
@@ -351,7 +383,6 @@ function ModelSelector({ project, agentName, currentModel, currentHttpAgent, onC
 
 export default function ProjectAgentDetailPage() {
   const { t } = useTranslation()
-  const fmt = useFormatDateTime()
   const { user } = useAuth()
   const navigate = useNavigate()
   const { projectId, agentName } = useParams<{ projectId: string; agentName: string }>()
@@ -546,26 +577,12 @@ export default function ProjectAgentDetailPage() {
                 <section>
                   <SectionHeader icon={Settings2} title={t('agentDetail.modelCredentials')} />
                   <p className="mt-1 text-sm text-neutral-500 dark:text-zinc-500">{t('agentDetail.modelCredentialsHint')}</p>
-                  <div className="mt-3 rounded-lg border border-neutral-200/80 bg-white p-4 dark:border-zinc-700/60 dark:bg-zinc-900/40">
-                    <div className="grid gap-4 lg:grid-cols-[minmax(0,0.8fr)_minmax(0,1.2fr)]">
-                      <ModelSelector
-                        project={projectId}
-                        agentName={agentName}
-                        currentModel={ctx.model}
-                        currentHttpAgent={ctx.httpAgent}
-                        onChanged={() => setCtxReload((k) => k + 1)}
-                      />
-                      <EnvEditor
-                        project={projectId}
-                        agentName={agentName}
-                        model={ctx.model}
-                        initialRuntimeModel={ctx.runtimeModel}
-                        initialEnv={ctx.env ?? {}}
-                        initialProvider={ctx.provider}
-                        onChanged={() => setCtxReload((k) => k + 1)}
-                      />
-                    </div>
-                  </div>
+                  <ModelCredentialsPanel
+                    project={projectId}
+                    agentName={agentName}
+                    ctx={ctx}
+                    onChanged={() => setCtxReload((k) => k + 1)}
+                  />
                 </section>
               )}
 
@@ -615,15 +632,13 @@ export default function ProjectAgentDetailPage() {
                 </div>
               </section>
 
-              <section>
-                <SectionHeader icon={Activity} title={t('agentDetail.health')} />
-                <div className="mt-3 grid grid-cols-1 gap-3 sm:grid-cols-2 lg:grid-cols-4">
-                  {ctx.team && <InfoCard icon={Users} label={t('prompt.team')} value={ctx.team} />}
-                  {ctx.role && <InfoCard icon={UserCog} label={t('prompt.role')} value={ctx.role} />}
-                  <InfoCard icon={Puzzle} label={t('agentDetail.skillCount')} value={String(ctx.skills?.length ?? 0)} />
-                  {ctx.syncedAt && <InfoCard icon={Clock} label={t('prompt.lastSync')} value={fmt(ctx.syncedAt)} />}
-                </div>
-              </section>
+              {ctx.context && (
+                <section>
+                  <SectionHeader icon={BookOpen} title={t('agentDetail.context')} />
+                  <p className="mt-1 text-sm text-neutral-500 dark:text-zinc-500">{t('agentDetail.contextHint')}</p>
+                  <ContextPanel context={ctx.context} contextFile={ctx.contextFile} syncedAt={ctx.syncedAt} />
+                </section>
+              )}
 
               {canConfigureThisAgent && (
                 <details className="group rounded-lg border border-neutral-200/80 bg-white dark:border-zinc-700/60 dark:bg-zinc-900/40">
@@ -639,19 +654,6 @@ export default function ProjectAgentDetailPage() {
                       initial={ctx.sandbox}
                       onChanged={() => setCtxReload((k) => k + 1)}
                     />
-                  </div>
-                </details>
-              )}
-
-              {/* Merged context */}
-              {ctx.context && (
-                <details className="group">
-                  <summary className="flex cursor-pointer items-center gap-1.5 text-sm font-medium text-neutral-600 dark:text-zinc-400">
-                    <ChevronRight className="size-4 transition-transform group-open:rotate-90" strokeWidth={2} />
-                    {t('prompt.mergedContext')} ({ctx.contextFile})
-                  </summary>
-                  <div className="mt-2 max-h-[50vh] overflow-auto rounded-lg border border-neutral-200/80 bg-neutral-50 p-4 font-mono text-sm leading-relaxed text-neutral-600 dark:border-zinc-700/60 dark:bg-zinc-950 dark:text-zinc-400">
-                    <Markdown remarkPlugins={[remarkGfm]}>{ctx.context}</Markdown>
                   </div>
                 </details>
               )}
@@ -819,7 +821,7 @@ function SandboxEditor({ project, agentName, initial, onChanged }: {
         </div>
         {dirty && (
           <button type="button" onClick={() => void save()} disabled={saving}
-            className="flex items-center gap-1.5 rounded-md border border-sky-200 bg-sky-50 px-3 py-1 text-xs font-medium text-sky-700 transition-colors hover:bg-sky-100 disabled:opacity-40 dark:border-sky-800 dark:bg-sky-900/30 dark:text-sky-400 dark:hover:bg-sky-900/50">
+            className={primaryButtonCls}>
             <Save className="size-3" strokeWidth={2} />
             {saving ? t('common.save') + '...' : t('common.save')}
           </button>
@@ -896,7 +898,7 @@ function SandboxEditor({ project, agentName, initial, onChanged }: {
                       <button
                         type="button"
                         onClick={() => { setCustomCliVersion(false); setCliVersion(versionOptions(cliVendor)[0] ?? 'latest'); setDirty(true) }}
-                        className="shrink-0 rounded-md border border-neutral-200 px-2 text-xs font-medium text-neutral-500 hover:bg-neutral-50 dark:border-zinc-700 dark:text-zinc-400 dark:hover:bg-zinc-800"
+                        className={secondaryButtonCls}
                       >
                         {t('common.cancel')}
                       </button>
@@ -955,6 +957,100 @@ function SectionHeader({ icon: Icon, title }: { icon: LucideIcon; title: string 
 
 type ProviderOption = { id: string; ownerType?: 'workspace' | 'user'; name: string; type: string; model?: string }
 
+function ModelCredentialsPanel({ project, agentName, ctx, onChanged }: {
+  project: string; agentName: string; ctx: AgentContext; onChanged: () => void
+}) {
+  const { t } = useTranslation()
+  const [editing, setEditing] = useState(false)
+  const [providerOptions, setProviderOptions] = useState<ProviderOption[]>([])
+  const selectedProviderInfo = providerOptions.find((p) => p.id === ctx.provider)
+  const runtimeModel = ctx.runtimeModel || selectedProviderInfo?.model || t('agentDetail.notConfigured')
+
+  useEffect(() => {
+    const path = `/api/v1/providers?project=${encodeURIComponent(project)}&agent=${encodeURIComponent(agentName)}`
+    void apiFetch<ProviderOption[]>(path).then(data => setProviderOptions(data ?? [])).catch(() => {})
+  }, [project, agentName])
+
+  return (
+    <div className="mt-3 rounded-lg border border-neutral-200/80 bg-white dark:border-zinc-700/60 dark:bg-zinc-900/40">
+      <div className="flex items-start justify-between gap-4 px-4 py-3">
+        <div className="grid min-w-0 flex-1 gap-x-8 gap-y-3 sm:grid-cols-3">
+          <ReadOnlyField label={t('agentDetail.cliType')} value={ctx.model} valueClassName="font-mono" />
+          <ReadOnlyField
+            label={t('agentDetail.modelAccount')}
+            value={selectedProviderInfo ? selectedProviderInfo.name : (ctx.provider ? ctx.provider : t('agentDetail.noCredential'))}
+            detail={selectedProviderInfo ? `${selectedProviderInfo.type} · ${selectedProviderInfo.ownerType === 'user' ? t('provider.scopePersonal') : t('provider.scopeWorkspace')}` : undefined}
+          />
+          <ReadOnlyField label={t('agentDetail.runtimeModel')} value={runtimeModel} valueClassName="font-mono" />
+        </div>
+        <button type="button" onClick={() => setEditing((v) => !v)} className={secondaryButtonCls}>
+          <Pencil className="size-3.5" strokeWidth={1.8} />
+          {editing ? t('common.done') : t('common.edit')}
+        </button>
+      </div>
+      {!ctx.provider && providerOptions.length === 0 && !editing && (
+        <div className="border-t border-neutral-100 px-4 py-3 dark:border-zinc-800">
+          <Link to="/connections" className={primaryButtonCls}>
+            {t('agentDetail.addCredential')}
+          </Link>
+        </div>
+      )}
+      {editing && (
+        <div className="space-y-4 border-t border-neutral-100 p-4 dark:border-zinc-800">
+          <ModelSelector
+            project={project}
+            agentName={agentName}
+            currentModel={ctx.model}
+            currentHttpAgent={ctx.httpAgent}
+            onChanged={onChanged}
+          />
+          <EnvEditor
+            project={project}
+            agentName={agentName}
+            model={ctx.model}
+            initialRuntimeModel={ctx.runtimeModel}
+            initialEnv={ctx.env ?? {}}
+            initialProvider={ctx.provider}
+            onChanged={onChanged}
+          />
+        </div>
+      )}
+    </div>
+  )
+}
+
+function ReadOnlyField({ label, value, detail, valueClassName }: { label: string; value: string; detail?: string; valueClassName?: string }) {
+  return (
+    <div className="min-w-0">
+      <p className="text-xs font-medium text-neutral-400 dark:text-zinc-500">{label}</p>
+      <p className={cn('mt-1 truncate text-sm font-medium text-neutral-800 dark:text-zinc-200', valueClassName)} title={value}>{value}</p>
+      {detail && <p className="mt-0.5 truncate text-xs text-neutral-400 dark:text-zinc-500" title={detail}>{detail}</p>}
+    </div>
+  )
+}
+
+function ContextPanel({ context, contextFile, syncedAt }: { context: string; contextFile?: string; syncedAt?: string | null }) {
+  const { t } = useTranslation()
+  const fmt = useFormatDateTime()
+  return (
+    <details className="group mt-3 rounded-lg border border-neutral-200/80 bg-white dark:border-zinc-700/60 dark:bg-zinc-900/40">
+      <summary className="flex cursor-pointer items-center justify-between gap-3 px-4 py-3">
+        <div className="flex min-w-0 items-center gap-2 text-sm font-medium text-neutral-700 dark:text-zinc-300">
+          <ChevronRight className="size-4 shrink-0 transition-transform group-open:rotate-90" strokeWidth={2} />
+          <span>{t('agentDetail.fullContext')}</span>
+          {contextFile && <span className="truncate font-mono text-xs font-normal text-neutral-400 dark:text-zinc-500">{contextFile}</span>}
+        </div>
+        {syncedAt && <span className="shrink-0 text-xs text-neutral-400 dark:text-zinc-500">{fmt(syncedAt)}</span>}
+      </summary>
+      <div className="border-t border-neutral-100 bg-neutral-50/60 p-4 dark:border-zinc-800 dark:bg-zinc-950/40">
+        <div className="prose prose-sm prose-neutral dark:prose-invert max-w-none">
+          <Markdown remarkPlugins={[remarkGfm]}>{context || t('agentDetail.contextEmpty')}</Markdown>
+        </div>
+      </div>
+    </details>
+  )
+}
+
 type RuntimeConnectionGrant = { id: string; targetType: string; targetId: string }
 type RuntimeConnection = {
   id: string
@@ -1005,7 +1101,7 @@ function AgentRuntimeConnectionsPanel({ project, agentName }: { project: string;
         <button
           type="button"
           onClick={() => setReloadKey(k => k + 1)}
-          className="inline-flex items-center gap-1 rounded-md border border-neutral-200 bg-white px-2.5 py-1 text-xs font-medium text-neutral-600 transition-colors hover:border-neutral-300 hover:bg-neutral-50 dark:border-zinc-700 dark:bg-zinc-800 dark:text-zinc-300 dark:hover:border-zinc-600 dark:hover:bg-zinc-700"
+          className={secondaryButtonCls}
         >
           <RefreshCw className="size-3.5" strokeWidth={1.8} />
           {t('common.refresh')}
@@ -1167,7 +1263,7 @@ function EnvEditor({ project, agentName, model, initialEnv, initialProvider, ini
         <div className="flex items-center gap-2">
           {saved && <span className="text-xs text-emerald-500">{t('forms.saved')}</span>}
           <button type="button" onClick={save} disabled={busy}
-            className="flex items-center gap-1 rounded-md bg-sky-600 px-2.5 py-1 text-xs font-medium text-white transition-colors hover:bg-sky-700 disabled:opacity-50">
+            className={primaryButtonCls}>
             <Save className="size-3" strokeWidth={2} />
             {busy ? t('forms.saving') : t('forms.save')}
           </button>
@@ -1191,7 +1287,7 @@ function EnvEditor({ project, agentName, model, initialEnv, initialProvider, ini
           <div className="flex items-end">
             <Link
               to="/connections"
-              className="inline-flex h-8 items-center rounded-md border border-sky-200 bg-sky-50 px-3 text-xs font-medium text-sky-700 hover:bg-sky-100 dark:border-sky-800 dark:bg-sky-900/20 dark:text-sky-300 dark:hover:bg-sky-900/30"
+              className={primaryButtonCls}
             >
               {t('agentDetail.addCredential')}
             </Link>

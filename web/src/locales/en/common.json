@@ -9,6 +9,7 @@
     "refresh": "Refresh",
     "confirm": "Confirm",
     "add": "Add",
+    "done": "Done",
     "creating": "Creating…"
   },
   "apiErrors": {
@@ -996,7 +997,15 @@
     "noCredential": "No credentials available",
     "addCredential": "Add model account",
     "skillsHint": "These skills usually come from team and role configuration and are injected into the agent context.",
-    "noSkills": "No skills yet"
+    "noSkills": "No skills yet",
+    "cliType": "CLI Type",
+    "modelAccount": "Model Account",
+    "runtimeModel": "Runtime Model",
+    "notConfigured": "Not configured",
+    "context": "Context",
+    "contextHint": "Review the complete merged context the agent receives, including prompt, role, project, and skill content.",
+    "fullContext": "Complete Merged Context",
+    "contextEmpty": "No context yet"
   },
   "runs": {
     "subtitle": "Run reliability, duration, and token usage for this project’s agents.",

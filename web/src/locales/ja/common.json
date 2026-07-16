@@ -9,6 +9,7 @@
     "refresh": "更新",
     "confirm": "確認",
     "add": "追加",
+    "done": "完了",
     "creating": "作成中…"
   },
   "apiErrors": {
@@ -996,7 +997,15 @@
     "noCredential": "利用可能な認証情報がありません",
     "addCredential": "モデルアカウントを追加",
     "skillsHint": "これらの Skill は通常、チームとロール設定から継承され、エージェントのコンテキストに注入されます。",
-    "noSkills": "Skill はまだありません"
+    "noSkills": "Skill はまだありません",
+    "cliType": "CLI タイプ",
+    "modelAccount": "モデルアカウント",
+    "runtimeModel": "実行モデル",
+    "notConfigured": "未設定",
+    "context": "Context",
+    "contextHint": "エージェントが実際に受け取る完全なマージ済みコンテキストを確認します。Prompt、ロール、プロジェクト、Skill の注入確認に使います。",
+    "fullContext": "完全なマージ済み Context",
+    "contextEmpty": "Context はまだありません"
   },
   "runs": {
     "subtitle": "このプロジェクトのエージェントの実行信頼性、所要時間、トークン使用量。",
