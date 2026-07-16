@@ -89,6 +89,25 @@ func (s *Server) handleIMEvent(w http.ResponseWriter, r *http.Request) {
 		_ = json.NewEncoder(w).Encode(map[string]any{"ok": true, "ignored": true, "reason": "binding_not_found"})
 		return
 	}
+	if !shouldHandleLarkFamilyMessage(resolved.Binding, event.Message) {
+		s.auditLog(auditLogInput{
+			WorkspaceID:  workspaceID,
+			ActorType:    "user",
+			ActorID:      resolved.Identity.UserID,
+			Action:       "agent_channel.message_ignored",
+			ResourceType: "agent_channel",
+			ResourceID:   resolved.Binding.ID,
+			Summary:      fmt.Sprintf("Ignored %s group message for %s/%s because the chat is not bound and the bot was not addressed", provider, resolved.Binding.ProjectID, resolved.Binding.AgentID),
+			After: map[string]any{
+				"provider":  provider,
+				"messageId": event.Message.MessageID,
+				"chatId":    event.Message.ChatID,
+				"chatType":  event.Message.ChatType,
+			},
+		})
+		_ = json.NewEncoder(w).Encode(map[string]any{"ok": true, "ignored": true, "reason": "group_not_addressed"})
+		return
+	}
 	if !verifyLarkFamilyEventToken(env, resolved.SecretValues) {
 		s.auditLog(auditLogInput{
 			WorkspaceID:  workspaceID,
@@ -202,6 +221,16 @@ func (s *Server) resolveChannelEventBinding(workspaceID, provider, appID, chatID
 		return resolvedChannelEventBinding{Binding: binding, SecretValues: values, Identity: identity}, true, nil
 	}
 	return resolvedChannelEventBinding{}, false, nil
+}
+
+func shouldHandleLarkFamilyMessage(binding controldb.AgentChannelBinding, message larkbridge.EventMessage) bool {
+	if larkbridge.IsDirectChat(message) {
+		return true
+	}
+	if strings.TrimSpace(binding.ExternalChatID) != "" && strings.TrimSpace(binding.ExternalChatID) == strings.TrimSpace(message.ChatID) {
+		return true
+	}
+	return larkbridge.HasExplicitMention(message) || larkbridge.IsReplyMessage(message)
 }
 
 func (s *Server) runAgentForIMEvent(provider string, resolved resolvedChannelEventBinding, event larkbridge.MessageEvent, text string) {

@@ -78,3 +78,22 @@ func ExtractText(message EventMessage) string {
 	}
 	return ""
 }
+
+func IsDirectChat(message EventMessage) bool {
+	chatType := strings.ToLower(strings.TrimSpace(message.ChatType))
+	return chatType == "" || chatType == "p2p" || chatType == "private"
+}
+
+func HasExplicitMention(message EventMessage) bool {
+	var body struct {
+		Mentions []json.RawMessage `json:"mentions"`
+	}
+	if json.Unmarshal([]byte(message.Content), &body) != nil {
+		return false
+	}
+	return len(body.Mentions) > 0
+}
+
+func IsReplyMessage(message EventMessage) bool {
+	return strings.TrimSpace(message.RootID) != "" || strings.TrimSpace(message.ParentID) != ""
+}

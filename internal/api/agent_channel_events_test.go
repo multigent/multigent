@@ -158,6 +158,29 @@ func TestDecryptLarkFamilyEventUsesConfiguredProviderKey(t *testing.T) {
 	}
 }
 
+func TestShouldHandleLarkFamilyMessageRequiresGroupAddressing(t *testing.T) {
+	binding := controldb.AgentChannelBinding{ExternalChatID: ""}
+	if !shouldHandleLarkFamilyMessage(binding, larkbridge.EventMessage{ChatType: "p2p", ChatID: "oc_direct"}) {
+		t.Fatalf("direct chat should be handled")
+	}
+	if shouldHandleLarkFamilyMessage(binding, larkbridge.EventMessage{ChatType: "group", ChatID: "oc_group", Content: `{"text":"hello"}`}) {
+		t.Fatalf("unbound group without mention should be ignored")
+	}
+	if !shouldHandleLarkFamilyMessage(binding, larkbridge.EventMessage{ChatType: "group", ChatID: "oc_group", Content: `{"text":"@bot hello","mentions":[{"key":"@bot"}]}`}) {
+		t.Fatalf("unbound group mention should be handled")
+	}
+	if !shouldHandleLarkFamilyMessage(binding, larkbridge.EventMessage{ChatType: "group", ChatID: "oc_group", ParentID: "om_parent", Content: `{"text":"continue"}`}) {
+		t.Fatalf("unbound group reply should be handled")
+	}
+	binding.ExternalChatID = "oc_group"
+	if !shouldHandleLarkFamilyMessage(binding, larkbridge.EventMessage{ChatType: "group", ChatID: "oc_group", Content: `{"text":"hello"}`}) {
+		t.Fatalf("bound group should be handled")
+	}
+	if shouldHandleLarkFamilyMessage(binding, larkbridge.EventMessage{ChatType: "group", ChatID: "oc_other", Content: `{"text":"hello"}`}) {
+		t.Fatalf("different unmentioned group should be ignored")
+	}
+}
+
 func TestAgentChannelSecurityPreservesConnectionSecret(t *testing.T) {
 	s, workspaceID := newConnectionGrantPolicyServer(t)
 	if err := s.controlDB.UpsertConnection(controldb.Connection{
