@@ -1,6 +1,7 @@
 import { useEffect, useMemo, useState, type ReactNode } from 'react'
 import { Cable, KeyRound, Link2, Pencil, Plus, RefreshCw, ShieldCheck, Trash2, X } from 'lucide-react'
 import { useSearchParams } from 'react-router-dom'
+import { useTranslation } from 'react-i18next'
 import { apiDelete, apiFetch, apiPost, apiPut } from '../lib/api'
 import { useAuth } from '../lib/auth'
 import { cn } from '../lib/cn'
@@ -59,6 +60,7 @@ const inputCls = 'w-full rounded-lg border border-neutral-200 bg-white px-3 py-2
 const selectCls = 'w-full rounded-lg border border-neutral-200 bg-white px-3 py-2 text-sm outline-none focus:border-sky-400 dark:border-zinc-700 dark:bg-zinc-950 dark:text-zinc-100 dark:[color-scheme:dark]'
 
 export default function ConnectionsPage() {
+  const { t } = useTranslation()
   const { user } = useAuth()
   const [workspace, setWorkspace] = useState<WorkspaceSummary | null>(null)
   const isWorkspaceAdmin = workspace?.currentUserCanAdmin ?? (!user || user.role === 'admin')
@@ -81,13 +83,13 @@ export default function ConnectionsPage() {
   useEffect(() => {
     const status = searchParams.get('oauth')
     if (status !== 'success' && status !== 'error') return
-    const provider = searchParams.get('oauthProvider') || 'OAuth provider'
-    const connectionName = searchParams.get('oauthConnection') || 'connection'
+    const provider = searchParams.get('oauthProvider') || t('connections.oauthProviderFallback')
+    const connectionName = searchParams.get('oauthConnection') || t('connections.connectionFallback')
     if (status === 'success') {
-      setOauthMessage({ kind: 'success', text: `${provider}/${connectionName} connected.` })
+      setOauthMessage({ kind: 'success', text: t('connections.oauthConnected', { provider, connection: connectionName }) })
       setReloadKey(k => k + 1)
     } else {
-      const message = searchParams.get('message') || 'OAuth authorization failed.'
+      const message = searchParams.get('message') || t('connections.oauthFailed')
       setOauthMessage({ kind: 'error', text: `${provider}/${connectionName}: ${message}` })
     }
     const next = new URLSearchParams(searchParams)
@@ -133,10 +135,10 @@ export default function ConnectionsPage() {
 
   async function removeConnection(connection: Connection) {
     const ok = await confirmDialog({
-      title: 'Remove connection',
-      description: `Remove ${connection.provider}/${connection.connectionName}?`,
-      confirmLabel: 'Remove',
-      cancelLabel: 'Cancel',
+      title: t('connections.removeConnection'),
+      description: t('connections.removeConnectionConfirm', { name: `${connection.provider}/${connection.connectionName}` }),
+      confirmLabel: t('common.delete'),
+      cancelLabel: t('common.cancel'),
     })
     if (!ok) return
     await apiDelete(`/api/v1/connections/${encodeURIComponent(connection.id)}`)
@@ -151,7 +153,7 @@ export default function ConnectionsPage() {
         ...prev,
         [connection.id]: {
           ok: result.ok,
-          message: result.ok ? `OK · HTTP ${result.status}` : `${result.message || 'Failed'} · HTTP ${result.status}`,
+          message: result.ok ? `OK · HTTP ${result.status}` : `${result.message || t('connections.failed')} · HTTP ${result.status}`,
         },
       }))
     } catch (e) {
@@ -169,7 +171,7 @@ export default function ConnectionsPage() {
     setHealthCheckMessage('')
     try {
       const result = await apiPost<ConnectionHealthCheckRunResult>('/api/v1/connections/health-check', { force: true, limit: 100 })
-      setHealthCheckMessage(`Checked ${result.checked}; skipped ${result.skipped}.`)
+      setHealthCheckMessage(t('connections.healthCheckSummary', { checked: result.checked, skipped: result.skipped }))
     } catch (e) {
       setHealthCheckMessage(e instanceof Error ? e.message : String(e))
     } finally {
@@ -182,23 +184,23 @@ export default function ConnectionsPage() {
     <div className="animate-fade-in px-8 py-6">
       <div className="flex items-center justify-between pb-5">
         <div>
-          <h1 className="text-xl font-semibold text-neutral-900 dark:text-zinc-100">Connections</h1>
-          <p className="mt-0.5 text-sm text-neutral-500 dark:text-zinc-500">Connect external tools and grant them to agents.</p>
+          <h1 className="text-xl font-semibold text-neutral-900 dark:text-zinc-100">{t('connections.title')}</h1>
+          <p className="mt-0.5 text-sm text-neutral-500 dark:text-zinc-500">{t('connections.subtitle')}</p>
         </div>
         <div className="flex items-center gap-2">
           <button type="button" onClick={() => setReloadKey(k => k + 1)} className="inline-flex items-center gap-2 rounded-lg border border-neutral-200 px-3 py-2 text-sm font-medium text-neutral-600 hover:bg-neutral-50 dark:border-zinc-700 dark:text-zinc-300 dark:hover:bg-zinc-800">
             <RefreshCw className="size-4" strokeWidth={1.8} />
-            Refresh
+            {t('common.refresh')}
           </button>
           {isWorkspaceAdmin && (
             <button type="button" onClick={() => void runHealthChecks()} disabled={healthCheckLoading} className="inline-flex items-center gap-2 rounded-lg border border-neutral-200 px-3 py-2 text-sm font-medium text-neutral-600 hover:bg-neutral-50 disabled:opacity-50 dark:border-zinc-700 dark:text-zinc-300 dark:hover:bg-zinc-800">
               <RefreshCw className={cn('size-4', healthCheckLoading && 'animate-spin')} strokeWidth={1.8} />
-              Run checks
+              {t('connections.runChecks')}
             </button>
           )}
           <button type="button" onClick={() => setCreating(true)} className="inline-flex items-center gap-2 rounded-lg bg-sky-600 px-3 py-2 text-sm font-medium text-white hover:bg-sky-700">
             <Plus className="size-4" strokeWidth={1.8} />
-            New connection
+            {t('connections.newConnection')}
           </button>
         </div>
       </div>
@@ -225,13 +227,13 @@ export default function ConnectionsPage() {
       {loading ? (
         <div className="flex items-center justify-center gap-2 py-16 text-sm text-neutral-500">
           <div className="size-5 animate-spin rounded-full border-2 border-neutral-300 border-t-sky-600 dark:border-zinc-600 dark:border-t-sky-400" />
-          Loading connections
+          {t('connections.loading')}
         </div>
       ) : connections.length === 0 ? (
         <div className="rounded-xl border border-dashed border-neutral-300 bg-white p-12 text-center dark:border-zinc-700 dark:bg-zinc-900/40">
           <Cable className="mx-auto mb-3 size-10 text-neutral-300 dark:text-zinc-600" strokeWidth={1.5} />
-          <p className="text-sm font-medium text-neutral-600 dark:text-zinc-300">No connections yet</p>
-          <p className="mt-1 text-xs text-neutral-400 dark:text-zinc-500">Create a workspace or personal connection to give agents safe access to tools.</p>
+          <p className="text-sm font-medium text-neutral-600 dark:text-zinc-300">{t('connections.emptyTitle')}</p>
+          <p className="mt-1 text-xs text-neutral-400 dark:text-zinc-500">{t('connections.emptyHint')}</p>
         </div>
       ) : (
         <div className="grid gap-4 xl:grid-cols-2">
@@ -288,13 +290,14 @@ export default function ConnectionsPage() {
 }
 
 function OAuthClientConfigsPanel({ configs, onChanged }: { configs: OAuthClientConfig[]; onChanged: () => void }) {
+  const { t } = useTranslation()
   const [editing, setEditing] = useState<OAuthClientConfig | null>(null)
   return (
     <section className="mb-5 rounded-xl border border-neutral-200/80 bg-white p-4 dark:border-zinc-700/60 dark:bg-zinc-900/40">
       <div className="flex items-center justify-between gap-3">
         <div>
-          <h2 className="text-sm font-semibold text-neutral-900 dark:text-zinc-100">OAuth client configs</h2>
-          <p className="mt-0.5 text-xs text-neutral-400 dark:text-zinc-500">Configure provider OAuth apps once per workspace. Client secrets stay server-side.</p>
+          <h2 className="text-sm font-semibold text-neutral-900 dark:text-zinc-100">{t('connections.oauthClientConfigs')}</h2>
+          <p className="mt-0.5 text-xs text-neutral-400 dark:text-zinc-500">{t('connections.oauthClientConfigsHint')}</p>
         </div>
       </div>
       <div className="mt-3 grid gap-3 lg:grid-cols-2">
@@ -305,10 +308,10 @@ function OAuthClientConfigsPanel({ configs, onChanged }: { configs: OAuthClientC
                 <div className="flex flex-wrap items-center gap-2">
                   <p className="text-sm font-medium text-neutral-800 dark:text-zinc-100">{config.displayName}</p>
                   <span className={cn('rounded-full px-2 py-0.5 text-[11px] font-medium', config.configured ? 'bg-emerald-100 text-emerald-700 dark:bg-emerald-900/30 dark:text-emerald-300' : 'bg-neutral-100 text-neutral-500 dark:bg-zinc-800 dark:text-zinc-400')}>
-                    {config.configured ? 'Configured' : 'Not configured'}
+                    {config.configured ? t('connections.configured') : t('connections.notConfigured')}
                   </span>
                 </div>
-                {config.clientId && <p className="mt-1 text-xs text-neutral-500 dark:text-zinc-400">Client ID: {config.clientId}</p>}
+                {config.clientId && <p className="mt-1 text-xs text-neutral-500 dark:text-zinc-400">{t('connections.clientId')}: {config.clientId}</p>}
                 <p className="mt-1 break-all font-mono text-[11px] text-neutral-400 dark:text-zinc-500">{config.expectedRedirectUri}</p>
                 {(config.oauth?.scopes?.length ?? 0) > 0 && (
                   <div className="mt-2 flex flex-wrap gap-1.5">
@@ -318,7 +321,7 @@ function OAuthClientConfigsPanel({ configs, onChanged }: { configs: OAuthClientC
                   </div>
                 )}
               </div>
-              <button type="button" onClick={() => setEditing(config)} className="rounded-md p-2 text-neutral-500 hover:bg-neutral-100 hover:text-neutral-800 dark:text-zinc-400 dark:hover:bg-zinc-800 dark:hover:text-zinc-100" title="Configure OAuth client">
+              <button type="button" onClick={() => setEditing(config)} className="rounded-md p-2 text-neutral-500 hover:bg-neutral-100 hover:text-neutral-800 dark:text-zinc-400 dark:hover:bg-zinc-800 dark:hover:text-zinc-100" title={t('connections.configureOAuthClient')}>
                 <Pencil className="size-4" strokeWidth={1.8} />
               </button>
             </div>
@@ -337,6 +340,7 @@ function OAuthClientConfigsPanel({ configs, onChanged }: { configs: OAuthClientC
 }
 
 function OAuthClientConfigDialog({ config, onClose, onSaved }: { config: OAuthClientConfig; onClose: () => void; onSaved: () => void }) {
+  const { t } = useTranslation()
   const [clientId, setClientId] = useState(config.clientId ?? '')
   const [clientSecret, setClientSecret] = useState('')
   const [saving, setSaving] = useState(false)
@@ -355,35 +359,35 @@ function OAuthClientConfigDialog({ config, onClose, onSaved }: { config: OAuthCl
   }
   async function remove() {
     const ok = await confirmDialog({
-      title: 'Remove OAuth client',
-      description: `Remove OAuth client config for ${config.displayName}?`,
-      confirmLabel: 'Remove',
-      cancelLabel: 'Cancel',
+      title: t('connections.removeOAuthClient'),
+      description: t('connections.removeOAuthClientConfirm', { name: config.displayName }),
+      confirmLabel: t('common.delete'),
+      cancelLabel: t('common.cancel'),
     })
     if (!ok) return
     await apiDelete(`/api/v1/oauth/client-configs/${encodeURIComponent(config.provider)}`)
     onSaved()
   }
   return (
-    <Modal title={`OAuth client: ${config.displayName}`} onClose={onClose}>
+    <Modal title={t('connections.oauthClientTitle', { name: config.displayName })} onClose={onClose}>
       <div className="space-y-4">
         <label className="block">
-          <span className="text-xs font-medium text-neutral-500 dark:text-zinc-400">Client ID</span>
+          <span className="text-xs font-medium text-neutral-500 dark:text-zinc-400">{t('connections.clientId')}</span>
           <input className={inputCls} value={clientId} onChange={e => setClientId(e.target.value)} />
         </label>
         <label className="block">
-          <span className="text-xs font-medium text-neutral-500 dark:text-zinc-400">Client secret</span>
-          <input className={inputCls} type="password" value={clientSecret} onChange={e => setClientSecret(e.target.value)} placeholder={config.configured ? 'Leave blank to keep current secret' : ''} />
+          <span className="text-xs font-medium text-neutral-500 dark:text-zinc-400">{t('connections.clientSecret')}</span>
+          <input className={inputCls} type="password" value={clientSecret} onChange={e => setClientSecret(e.target.value)} placeholder={config.configured ? t('connections.keepCurrentSecret') : ''} />
         </label>
         <div className="rounded-lg bg-neutral-50 px-3 py-2 dark:bg-zinc-800/50">
-          <p className="text-xs font-medium text-neutral-500 dark:text-zinc-400">Redirect URI</p>
+          <p className="text-xs font-medium text-neutral-500 dark:text-zinc-400">{t('connections.redirectUri')}</p>
           <p className="mt-1 break-all font-mono text-xs text-neutral-600 dark:text-zinc-300">{config.expectedRedirectUri}</p>
         </div>
         <div className="flex justify-between gap-2 pt-2">
-          <button type="button" onClick={() => void remove()} disabled={saving || !config.configured} className="rounded-lg border border-red-200 px-3 py-2 text-sm text-red-600 disabled:opacity-50 dark:border-red-900/60 dark:text-red-300">Remove</button>
+          <button type="button" onClick={() => void remove()} disabled={saving || !config.configured} className="rounded-lg border border-red-200 px-3 py-2 text-sm text-red-600 disabled:opacity-50 dark:border-red-900/60 dark:text-red-300">{t('common.delete')}</button>
           <div className="flex gap-2">
-            <button type="button" onClick={onClose} disabled={saving} className="rounded-lg border border-neutral-300 px-3 py-2 text-sm dark:border-zinc-600">Cancel</button>
-            <button type="button" onClick={() => void submit()} disabled={saving || clientId.trim() === '' || (!config.configured && clientSecret.trim() === '')} className="rounded-lg bg-sky-600 px-3 py-2 text-sm font-medium text-white disabled:opacity-50">Save</button>
+            <button type="button" onClick={onClose} disabled={saving} className="rounded-lg border border-neutral-300 px-3 py-2 text-sm dark:border-zinc-600">{t('common.cancel')}</button>
+            <button type="button" onClick={() => void submit()} disabled={saving || clientId.trim() === '' || (!config.configured && clientSecret.trim() === '')} className="rounded-lg bg-sky-600 px-3 py-2 text-sm font-medium text-white disabled:opacity-50">{t('common.save')}</button>
           </div>
         </div>
       </div>
@@ -392,6 +396,7 @@ function OAuthClientConfigDialog({ config, onClose, onSaved }: { config: OAuthCl
 }
 
 function ConnectionCard({ connection, provider, canGrant, canEdit, canDelete, testState, onEdit, onGrant, onTest, onDelete }: { connection: Connection; provider?: Provider; canGrant: boolean; canEdit: boolean; canDelete: boolean; testState?: { loading?: boolean; ok?: boolean; message?: string }; onEdit: () => void; onGrant: () => void; onTest: () => void; onDelete: () => void }) {
+  const { t } = useTranslation()
   const validation = connectionValidation(connection)
   const health = connectionHealthPolicy(connection)
   const hasActionPolicy = connectionHasActionPolicy(connection)
@@ -413,21 +418,21 @@ function ConnectionCard({ connection, provider, canGrant, canEdit, canDelete, te
               </span>
               {validation && (
                 <span className={cn('rounded-full px-2 py-0.5 text-[11px] font-medium', validation.ok ? 'bg-teal-100 text-teal-700 dark:bg-teal-900/30 dark:text-teal-300' : 'bg-red-100 text-red-700 dark:bg-red-900/30 dark:text-red-300')}>
-                  {validation.ok ? 'Healthy' : 'Failed'}{validation.status ? ` · ${validation.status}` : ''}
+                  {validation.ok ? t('connections.healthy') : t('connections.failed')}{validation.status ? ` · ${validation.status}` : ''}
                 </span>
               )}
               {health.enabled && (
                 <span className="rounded-full bg-amber-100 px-2 py-0.5 text-[11px] font-medium text-amber-700 dark:bg-amber-900/30 dark:text-amber-300">
-                  Auto-check · {health.intervalMinutes}m
+                  {t('connections.autoCheck')} · {health.intervalMinutes}m
                 </span>
               )}
               {hasActionPolicy && (
                 <span className="rounded-full bg-violet-100 px-2 py-0.5 text-[11px] font-medium text-violet-700 dark:bg-violet-900/30 dark:text-violet-300">
-                  Action policy
+                  {t('connections.actionPolicy')}
                 </span>
               )}
             </div>
-            <p className="mt-1 text-xs text-neutral-400 dark:text-zinc-500">{connection.authType} · owner {connection.ownerId}</p>
+            <p className="mt-1 text-xs text-neutral-400 dark:text-zinc-500">{connection.authType} · {t('connections.ownerLower')} {connection.ownerId}</p>
             {(summary?.accountId || accountLabel) && (
               <p className="mt-1 truncate text-xs text-neutral-500 dark:text-zinc-400" title={[summary?.accountId, accountLabel].filter(Boolean).join(' · ')}>
                 {[summary?.accountId, accountLabel].filter(Boolean).join(' · ')}
@@ -435,38 +440,38 @@ function ConnectionCard({ connection, provider, canGrant, canEdit, canDelete, te
             )}
             {validation && (
               <p className="mt-1 truncate text-xs text-neutral-400 dark:text-zinc-500" title={validation.message || undefined}>
-                Validated {validation.atLabel}{validation.message ? ` · ${validation.message}` : ''}
+                {t('connections.validatedAt', { time: validation.atLabel })}{validation.message ? ` · ${validation.message}` : ''}
               </p>
             )}
             {health.enabled && health.nextLabel && (
-              <p className="mt-1 text-xs text-neutral-400 dark:text-zinc-500">Next check {health.nextLabel}</p>
+              <p className="mt-1 text-xs text-neutral-400 dark:text-zinc-500">{t('connections.nextCheck', { time: health.nextLabel })}</p>
             )}
           </div>
         </div>
         <div className="flex shrink-0 items-center gap-1">
           <button type="button" onClick={onTest} disabled={testState?.loading}
-            className="rounded-md p-2 text-neutral-500 hover:bg-neutral-100 hover:text-neutral-800 disabled:opacity-50 dark:text-zinc-400 dark:hover:bg-zinc-800 dark:hover:text-zinc-100" title="Test connection">
+            className="rounded-md p-2 text-neutral-500 hover:bg-neutral-100 hover:text-neutral-800 disabled:opacity-50 dark:text-zinc-400 dark:hover:bg-zinc-800 dark:hover:text-zinc-100" title={t('connections.testConnection')}>
             <RefreshCw className={cn('size-4', testState?.loading && 'animate-spin')} strokeWidth={1.8} />
           </button>
           {canGrant && (
-            <button type="button" onClick={onGrant} className="rounded-md p-2 text-neutral-500 hover:bg-neutral-100 hover:text-neutral-800 dark:text-zinc-400 dark:hover:bg-zinc-800 dark:hover:text-zinc-100" title="Manage grants">
+            <button type="button" onClick={onGrant} className="rounded-md p-2 text-neutral-500 hover:bg-neutral-100 hover:text-neutral-800 dark:text-zinc-400 dark:hover:bg-zinc-800 dark:hover:text-zinc-100" title={t('connections.manageGrants')}>
               <ShieldCheck className="size-4" strokeWidth={1.8} />
             </button>
           )}
           {canEdit && (
-            <button type="button" onClick={onEdit} className="rounded-md p-2 text-neutral-500 hover:bg-neutral-100 hover:text-neutral-800 dark:text-zinc-400 dark:hover:bg-zinc-800 dark:hover:text-zinc-100" title="Edit connection">
+            <button type="button" onClick={onEdit} className="rounded-md p-2 text-neutral-500 hover:bg-neutral-100 hover:text-neutral-800 dark:text-zinc-400 dark:hover:bg-zinc-800 dark:hover:text-zinc-100" title={t('connections.editConnection')}>
               <Pencil className="size-4" strokeWidth={1.8} />
             </button>
           )}
           {canDelete && (
-            <button type="button" onClick={onDelete} className="rounded-md p-2 text-neutral-500 hover:bg-red-50 hover:text-red-600 dark:text-zinc-400 dark:hover:bg-red-900/20 dark:hover:text-red-300" title="Remove">
+            <button type="button" onClick={onDelete} className="rounded-md p-2 text-neutral-500 hover:bg-red-50 hover:text-red-600 dark:text-zinc-400 dark:hover:bg-red-900/20 dark:hover:text-red-300" title={t('common.delete')}>
               <Trash2 className="size-4" strokeWidth={1.8} />
             </button>
           )}
         </div>
       </div>
       <div className="mt-4">
-        <p className="text-xs font-medium text-neutral-400 dark:text-zinc-500">Grants</p>
+        <p className="text-xs font-medium text-neutral-400 dark:text-zinc-500">{t('connections.grants')}</p>
         {connection.grants && connection.grants.length > 0 ? (
           <div className="mt-2 flex flex-wrap gap-1.5">
             {connection.grants.map(grant => (
@@ -476,13 +481,13 @@ function ConnectionCard({ connection, provider, canGrant, canEdit, canDelete, te
             ))}
           </div>
         ) : (
-          <p className="mt-2 text-xs text-neutral-400 dark:text-zinc-500">No grants yet</p>
+          <p className="mt-2 text-xs text-neutral-400 dark:text-zinc-500">{t('connections.noGrantsYet')}</p>
         )}
       </div>
       {((summary?.scopes?.length ?? 0) > 0 || (summary?.providerPermissions?.length ?? 0) > 0) && (
         <div className="mt-4 grid gap-3 sm:grid-cols-2">
-          <ProfileChips title="Scopes" items={summary?.scopes ?? []} />
-          <ProfileChips title="Permissions" items={summary?.providerPermissions ?? []} />
+          <ProfileChips title={t('connections.scopes')} items={summary?.scopes ?? []} />
+          <ProfileChips title={t('connections.permissions')} items={summary?.providerPermissions ?? []} />
         </div>
       )}
       {testState?.message && (
@@ -553,6 +558,7 @@ function parsePolicyList(value: string): string[] {
 }
 
 function ConnectionDialog({ providers, isWorkspaceAdmin, connection, onClose, onCreated }: { providers: Provider[]; isWorkspaceAdmin: boolean; connection?: Connection; onClose: () => void; onCreated: () => void }) {
+  const { t } = useTranslation()
   const isEditing = Boolean(connection)
   const [providerId, setProviderId] = useState(connection?.provider ?? providers[0]?.provider ?? '')
   const provider = providers.find(p => p.provider === providerId)
@@ -635,24 +641,24 @@ function ConnectionDialog({ providers, isWorkspaceAdmin, connection, onClose, on
   }
 
   return (
-    <Modal title={isEditing ? 'Edit connection' : 'New connection'} onClose={onClose}>
+    <Modal title={isEditing ? t('connections.editConnection') : t('connections.newConnection')} onClose={onClose}>
       <div className="space-y-4">
         <label className="block">
-          <span className="text-xs font-medium text-neutral-500 dark:text-zinc-400">Provider</span>
+          <span className="text-xs font-medium text-neutral-500 dark:text-zinc-400">{t('connections.provider')}</span>
           <select className={selectCls} value={providerId} onChange={e => setProviderId(e.target.value)} disabled={isEditing}>
             {providers.map(p => <option key={p.provider} value={p.provider}>{p.displayName}</option>)}
           </select>
         </label>
         <div className="grid gap-3 sm:grid-cols-2">
           <label className="block">
-            <span className="text-xs font-medium text-neutral-500 dark:text-zinc-400">Owner</span>
+            <span className="text-xs font-medium text-neutral-500 dark:text-zinc-400">{t('connections.owner')}</span>
             <select className={selectCls} value={ownerType} onChange={e => setOwnerType(e.target.value)} disabled={isEditing}>
-              {isWorkspaceAdmin && <option value="workspace">Workspace</option>}
-              <option value="user">Me</option>
+              {isWorkspaceAdmin && <option value="workspace">{t('connections.workspace')}</option>}
+              <option value="user">{t('connections.me')}</option>
             </select>
           </label>
           <label className="block">
-            <span className="text-xs font-medium text-neutral-500 dark:text-zinc-400">Auth type</span>
+            <span className="text-xs font-medium text-neutral-500 dark:text-zinc-400">{t('connections.authType')}</span>
             <select className={selectCls} value={authType} onChange={e => setAuthType(e.target.value)}>
               {(provider?.authTypes ?? []).map(t => <option key={t} value={t}>{t}</option>)}
             </select>
@@ -660,17 +666,17 @@ function ConnectionDialog({ providers, isWorkspaceAdmin, connection, onClose, on
         </div>
         <div className="grid gap-3 sm:grid-cols-2">
           <label className="block">
-            <span className="text-xs font-medium text-neutral-500 dark:text-zinc-400">Connection name</span>
+            <span className="text-xs font-medium text-neutral-500 dark:text-zinc-400">{t('connections.connectionName')}</span>
             <input className={inputCls} value={connectionName} onChange={e => setConnectionName(e.target.value)} />
           </label>
           <label className="block">
-            <span className="text-xs font-medium text-neutral-500 dark:text-zinc-400">Display name</span>
+            <span className="text-xs font-medium text-neutral-500 dark:text-zinc-400">{t('connections.displayName')}</span>
             <input className={inputCls} value={displayName} onChange={e => setDisplayName(e.target.value)} placeholder={provider?.displayName} />
           </label>
         </div>
         {authType === 'oauth2' && (
           <p className="rounded-lg bg-sky-50 px-3 py-2 text-xs text-sky-700 dark:bg-sky-950/30 dark:text-sky-300">
-            Saving will start the provider OAuth flow. The callback creates this connection without exposing tokens to the browser.
+            {t('connections.oauthStartHint')}
           </p>
         )}
         {fields.map(field => (
@@ -681,41 +687,41 @@ function ConnectionDialog({ providers, isWorkspaceAdmin, connection, onClose, on
               className={inputCls}
               value={values[field.key] ?? ''}
               onChange={e => setValues(v => ({ ...v, [field.key]: e.target.value }))}
-              placeholder={isEditing ? 'Leave blank to keep current value' : ''}
+              placeholder={isEditing ? t('connections.keepCurrentValue') : ''}
             />
           </label>
         ))}
         {isEditing && authType !== 'no_auth' && (
           <p className="rounded-lg bg-neutral-50 px-3 py-2 text-xs text-neutral-500 dark:bg-zinc-800/50 dark:text-zinc-400">
-            Existing credential values are hidden. Fill only the fields you want to replace; leave all credential fields blank to keep the current secret.
+            {t('connections.credentialsHiddenHint')}
           </p>
         )}
         <div className="rounded-lg border border-neutral-200 p-3 dark:border-zinc-700">
           <div>
-            <p className="text-sm font-medium text-neutral-700 dark:text-zinc-200">Account profile</p>
-            <p className="mt-0.5 text-xs text-neutral-400 dark:text-zinc-500">Safe identity and authorization metadata shown to humans and agent runtimes. Do not place secrets here.</p>
+            <p className="text-sm font-medium text-neutral-700 dark:text-zinc-200">{t('connections.accountProfile')}</p>
+            <p className="mt-0.5 text-xs text-neutral-400 dark:text-zinc-500">{t('connections.accountProfileHint')}</p>
           </div>
           <div className="mt-3 grid gap-3 sm:grid-cols-3">
             <label className="block">
-              <span className="text-xs font-medium text-neutral-500 dark:text-zinc-400">Account ID</span>
+              <span className="text-xs font-medium text-neutral-500 dark:text-zinc-400">{t('connections.accountId')}</span>
               <input className={inputCls} value={accountId} onChange={e => setAccountId(e.target.value)} />
             </label>
             <label className="block">
-              <span className="text-xs font-medium text-neutral-500 dark:text-zinc-400">Account name</span>
+              <span className="text-xs font-medium text-neutral-500 dark:text-zinc-400">{t('connections.accountName')}</span>
               <input className={inputCls} value={accountName} onChange={e => setAccountName(e.target.value)} />
             </label>
             <label className="block">
-              <span className="text-xs font-medium text-neutral-500 dark:text-zinc-400">Account email</span>
+              <span className="text-xs font-medium text-neutral-500 dark:text-zinc-400">{t('connections.accountEmail')}</span>
               <input className={inputCls} value={accountEmail} onChange={e => setAccountEmail(e.target.value)} />
             </label>
           </div>
           <div className="mt-3 grid gap-3 sm:grid-cols-2">
             <label className="block">
-              <span className="text-xs font-medium text-neutral-500 dark:text-zinc-400">Granted scopes</span>
+              <span className="text-xs font-medium text-neutral-500 dark:text-zinc-400">{t('connections.grantedScopes')}</span>
               <textarea className={`${inputCls} min-h-20 resize-y`} value={scopes} onChange={e => setScopes(e.target.value)} placeholder={'repo\nread:user'} />
             </label>
             <label className="block">
-              <span className="text-xs font-medium text-neutral-500 dark:text-zinc-400">Provider permissions</span>
+              <span className="text-xs font-medium text-neutral-500 dark:text-zinc-400">{t('connections.providerPermissions')}</span>
               <textarea className={`${inputCls} min-h-20 resize-y`} value={providerPermissions} onChange={e => setProviderPermissions(e.target.value)} placeholder={'Issues: read/write\nWiki: read'} />
             </label>
           </div>
@@ -723,45 +729,45 @@ function ConnectionDialog({ providers, isWorkspaceAdmin, connection, onClose, on
         <div className="rounded-lg border border-neutral-200 p-3 dark:border-zinc-700">
           <label className="flex items-center justify-between gap-3">
             <span>
-              <span className="block text-sm font-medium text-neutral-700 dark:text-zinc-200">Automatic health checks</span>
-              <span className="block text-xs text-neutral-400 dark:text-zinc-500">Multigent periodically validates this connection without exposing secrets to agents.</span>
+              <span className="block text-sm font-medium text-neutral-700 dark:text-zinc-200">{t('connections.automaticHealthChecks')}</span>
+              <span className="block text-xs text-neutral-400 dark:text-zinc-500">{t('connections.automaticHealthChecksHint')}</span>
             </span>
             <input type="checkbox" checked={healthCheckEnabled} onChange={e => setHealthCheckEnabled(e.target.checked)} className="size-4 accent-sky-600" />
           </label>
           {healthCheckEnabled && (
             <label className="mt-3 block">
-              <span className="text-xs font-medium text-neutral-500 dark:text-zinc-400">Interval minutes</span>
+              <span className="text-xs font-medium text-neutral-500 dark:text-zinc-400">{t('connections.intervalMinutes')}</span>
               <input type="number" min={5} max={43200} className={inputCls} value={healthCheckIntervalMinutes} onChange={e => setHealthCheckIntervalMinutes(e.target.value)} />
             </label>
           )}
         </div>
         <div className="rounded-lg border border-neutral-200 p-3 dark:border-zinc-700">
           <div>
-            <p className="text-sm font-medium text-neutral-700 dark:text-zinc-200">Runtime action policy</p>
-            <p className="mt-0.5 text-xs text-neutral-400 dark:text-zinc-500">Optional allow/block rules for agent HTTP action proxy calls. Endpoint patterns support exact paths, <code>/prefix/*</code>, or <code>*</code>.</p>
+            <p className="text-sm font-medium text-neutral-700 dark:text-zinc-200">{t('connections.runtimeActionPolicy')}</p>
+            <p className="mt-0.5 text-xs text-neutral-400 dark:text-zinc-500">{t('connections.runtimeActionPolicyHint')} <code>/prefix/*</code>, <code>*</code>.</p>
           </div>
           <div className="mt-3 grid gap-3 sm:grid-cols-2">
             <label className="block">
-              <span className="text-xs font-medium text-neutral-500 dark:text-zinc-400">Allowed methods</span>
+              <span className="text-xs font-medium text-neutral-500 dark:text-zinc-400">{t('connections.allowedMethods')}</span>
               <textarea className={`${inputCls} min-h-20 resize-y`} value={allowedActionMethods} onChange={e => setAllowedActionMethods(e.target.value)} placeholder={'GET\nPOST'} />
             </label>
             <label className="block">
-              <span className="text-xs font-medium text-neutral-500 dark:text-zinc-400">Blocked methods</span>
+              <span className="text-xs font-medium text-neutral-500 dark:text-zinc-400">{t('connections.blockedMethods')}</span>
               <textarea className={`${inputCls} min-h-20 resize-y`} value={blockedActionMethods} onChange={e => setBlockedActionMethods(e.target.value)} placeholder={'DELETE'} />
             </label>
             <label className="block">
-              <span className="text-xs font-medium text-neutral-500 dark:text-zinc-400">Allowed endpoints</span>
+              <span className="text-xs font-medium text-neutral-500 dark:text-zinc-400">{t('connections.allowedEndpoints')}</span>
               <textarea className={`${inputCls} min-h-24 resize-y`} value={allowedActionEndpoints} onChange={e => setAllowedActionEndpoints(e.target.value)} placeholder={'/open-apis/wiki/*\n/repos/*'} />
             </label>
             <label className="block">
-              <span className="text-xs font-medium text-neutral-500 dark:text-zinc-400">Blocked endpoints</span>
+              <span className="text-xs font-medium text-neutral-500 dark:text-zinc-400">{t('connections.blockedEndpoints')}</span>
               <textarea className={`${inputCls} min-h-24 resize-y`} value={blockedActionEndpoints} onChange={e => setBlockedActionEndpoints(e.target.value)} placeholder={'/admin/*\n/private'} />
             </label>
           </div>
         </div>
         <div className="flex justify-end gap-2 pt-2">
-          <button type="button" onClick={onClose} disabled={saving} className="rounded-lg border border-neutral-300 px-3 py-2 text-sm dark:border-zinc-600">Cancel</button>
-          <button type="button" onClick={() => void submit()} disabled={saving || !provider} className="rounded-lg bg-sky-600 px-3 py-2 text-sm font-medium text-white disabled:opacity-50">{authType === 'oauth2' && !isEditing ? 'Start OAuth' : isEditing ? 'Save' : 'Create'}</button>
+          <button type="button" onClick={onClose} disabled={saving} className="rounded-lg border border-neutral-300 px-3 py-2 text-sm dark:border-zinc-600">{t('common.cancel')}</button>
+          <button type="button" onClick={() => void submit()} disabled={saving || !provider} className="rounded-lg bg-sky-600 px-3 py-2 text-sm font-medium text-white disabled:opacity-50">{authType === 'oauth2' && !isEditing ? t('connections.startOAuth') : isEditing ? t('common.save') : t('common.create')}</button>
         </div>
       </div>
     </Modal>
@@ -769,6 +775,7 @@ function ConnectionDialog({ providers, isWorkspaceAdmin, connection, onClose, on
 }
 
 function GrantDialog({ connection, workspaceId, projects, agentsByProject, isWorkspaceAdmin, currentUsername, linkedAgents, onClose, onChanged }: { connection: Connection; workspaceId: string; projects: ProjectRow[]; agentsByProject: Record<string, ProjectAgent[]>; isWorkspaceAdmin: boolean; currentUsername: string; linkedAgents: string[]; onClose: () => void; onChanged: () => void }) {
+  const { t } = useTranslation()
   const isUserOwned = connection.ownerType === 'user'
   const isCurrentUserOwner = isUserOwned && connection.ownerId === currentUsername
   const canEditGrants = !isUserOwned || isCurrentUserOwner
@@ -827,33 +834,33 @@ function GrantDialog({ connection, workspaceId, projects, agentsByProject, isWor
   }
 
   return (
-    <Modal title="Connection grants" onClose={onClose}>
+    <Modal title={t('connections.connectionGrants')} onClose={onClose}>
       <div className="space-y-4">
         <div className="rounded-lg bg-neutral-50 p-3 text-sm text-neutral-600 dark:bg-zinc-800/50 dark:text-zinc-300">
           <p className="font-medium text-neutral-900 dark:text-zinc-100">{connection.provider} / {connection.connectionName}</p>
           <p className="mt-1 text-xs text-neutral-400 dark:text-zinc-500">
-            {isUserOwned ? 'Personal connections can only be granted by their owner to that owner or agents they can operate.' : 'Grant this workspace connection to a workspace, project, agent, or user.'}
+            {isUserOwned ? t('connections.personalGrantHint') : t('connections.workspaceGrantHint')}
           </p>
         </div>
         {canEditGrants && (
         <div className="grid gap-3 sm:grid-cols-[160px_minmax(0,1fr)]">
           <label className="block">
-            <span className="text-xs font-medium text-neutral-500 dark:text-zinc-400">Target type</span>
+            <span className="text-xs font-medium text-neutral-500 dark:text-zinc-400">{t('connections.targetType')}</span>
             <select className={selectCls} value={targetType} onChange={e => setTargetType(e.target.value)}>
-              {isWorkspaceAdmin && !isUserOwned && <option value="workspace">Workspace</option>}
-              {isWorkspaceAdmin && !isUserOwned && <option value="project">Project</option>}
-              {(isWorkspaceAdmin && !isUserOwned) || isCurrentUserOwner ? <option value="agent">Agent</option> : null}
-              <option value="user">User</option>
+              {isWorkspaceAdmin && !isUserOwned && <option value="workspace">{t('connections.workspace')}</option>}
+              {isWorkspaceAdmin && !isUserOwned && <option value="project">{t('connections.project')}</option>}
+              {(isWorkspaceAdmin && !isUserOwned) || isCurrentUserOwner ? <option value="agent">{t('connections.agent')}</option> : null}
+              <option value="user">{t('connections.user')}</option>
             </select>
           </label>
           {targetType === 'workspace' ? (
             <label className="block">
-              <span className="text-xs font-medium text-neutral-500 dark:text-zinc-400">Workspace ID</span>
+              <span className="text-xs font-medium text-neutral-500 dark:text-zinc-400">{t('connections.workspaceId')}</span>
               <input className={inputCls} value={targetId} readOnly />
             </label>
           ) : targetType === 'project' ? (
             <label className="block">
-              <span className="text-xs font-medium text-neutral-500 dark:text-zinc-400">Project</span>
+              <span className="text-xs font-medium text-neutral-500 dark:text-zinc-400">{t('connections.project')}</span>
               <select className={selectCls} value={project} onChange={e => setProject(e.target.value)}>
                 {projects.map(p => <option key={p.name} value={p.name}>{p.name}</option>)}
               </select>
@@ -861,23 +868,23 @@ function GrantDialog({ connection, workspaceId, projects, agentsByProject, isWor
           ) : targetType === 'agent' ? (
             <div className="grid gap-3 sm:grid-cols-2">
               <label className="block">
-                <span className="text-xs font-medium text-neutral-500 dark:text-zinc-400">Project</span>
+                <span className="text-xs font-medium text-neutral-500 dark:text-zinc-400">{t('connections.project')}</span>
                 <select className={selectCls} value={project} onChange={e => { setProject(e.target.value); setAgent('') }}>
                   {projectOptions.map(p => <option key={p.name} value={p.name}>{p.name}</option>)}
                 </select>
               </label>
               <label className="block">
-                <span className="text-xs font-medium text-neutral-500 dark:text-zinc-400">Agent</span>
+                <span className="text-xs font-medium text-neutral-500 dark:text-zinc-400">{t('connections.agent')}</span>
                 <select className={selectCls} value={agent} onChange={e => setAgent(e.target.value)}>
-                  <option value="">Select agent</option>
+                  <option value="">{t('connections.selectAgent')}</option>
                   {agentOptions.map(a => <option key={a.name} value={a.name}>{a.name}</option>)}
                 </select>
               </label>
             </div>
           ) : (
             <label className="block">
-              <span className="text-xs font-medium text-neutral-500 dark:text-zinc-400">Username</span>
-              <input className={inputCls} value={targetId} readOnly placeholder="username" />
+              <span className="text-xs font-medium text-neutral-500 dark:text-zinc-400">{t('connections.username')}</span>
+              <input className={inputCls} value={targetId} readOnly placeholder={t('connections.usernamePlaceholder')} />
             </label>
           )}
         </div>
@@ -886,7 +893,7 @@ function GrantDialog({ connection, workspaceId, projects, agentsByProject, isWor
         <div className="flex justify-end">
           <button type="button" disabled={saving || targetId.trim() === ''} onClick={() => void addGrant()} className="inline-flex items-center gap-2 rounded-lg bg-sky-600 px-3 py-2 text-sm font-medium text-white disabled:opacity-50">
             <Link2 className="size-4" strokeWidth={1.8} />
-            Add grant
+            {t('connections.addGrant')}
           </button>
         </div>
         )}
@@ -905,7 +912,7 @@ function GrantDialog({ connection, workspaceId, projects, agentsByProject, isWor
               ))}
             </div>
           ) : (
-            <p className="py-3 text-center text-sm text-neutral-400 dark:text-zinc-500">No grants configured.</p>
+            <p className="py-3 text-center text-sm text-neutral-400 dark:text-zinc-500">{t('connections.noGrantsConfigured')}</p>
           )}
         </div>
       </div>
