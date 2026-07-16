@@ -62,6 +62,15 @@ function looksLikeEmail(value: string): boolean {
   return /^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(value.trim())
 }
 
+function unregisteredLookup(email: string): UserLookupResponse {
+  return {
+    email,
+    registered: false,
+    alreadyMember: false,
+    pendingInvite: false,
+  }
+}
+
 export default function PeoplePage() {
   const { t } = useTranslation()
   const [people, setPeople] = useState<PersonRow[]>([])
@@ -104,8 +113,8 @@ export default function PeoplePage() {
         .then((res) => {
           if (!cancelled) setLookup(res)
         })
-        .catch((e) => {
-          if (!cancelled) setErr(e instanceof Error ? e.message : String(e))
+        .catch(() => {
+          if (!cancelled) setLookup(unregisteredLookup(email))
         })
         .finally(() => {
           if (!cancelled) setLookupLoading(false)
@@ -128,9 +137,8 @@ export default function PeoplePage() {
     try {
       const res = await apiFetch<UserLookupResponse>(`/api/v1/users/lookup?email=${encodeURIComponent(email)}`)
       setLookup(res)
-    } catch (e) {
-      setLookup(null)
-      setErr(e instanceof Error ? e.message : String(e))
+    } catch {
+      setLookup(unregisteredLookup(email))
     } finally {
       setLookupLoading(false)
     }
