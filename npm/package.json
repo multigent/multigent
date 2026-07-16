@@ -21,7 +21,7 @@
   "bugs": {
     "url": "https://github.com/multigent/multigent/issues"
   },
-  "license": "MIT",
+  "license": "PolyForm-Noncommercial-1.0.0",
   "author": "chenhg5",
   "bin": {
     "multigent": "run.js"

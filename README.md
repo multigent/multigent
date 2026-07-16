@@ -64,3 +64,9 @@ Preview a worker start config without contacting a control plane:
 Worker protocol implementation is intentionally not faked yet. See:
 
 - `docs/local-worker-architecture.md`
+
+## License
+
+Multigent is source-available under the PolyForm Noncommercial License 1.0.0.
+Commercial use is not permitted without a separate written commercial license
+from the copyright holder. See [LICENSE](LICENSE).

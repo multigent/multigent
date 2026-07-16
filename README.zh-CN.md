@@ -64,3 +64,8 @@ make build-go
 Worker 协议还没有假装实现，下一步要真正接入 control plane。详见：
 
 - `docs/local-worker-architecture.md`
+
+## 许可证
+
+Multigent 采用 PolyForm Noncommercial License 1.0.0 以 source-available 方式发布。
+未经版权持有人另行书面授权，不允许任何商业使用。详见 [LICENSE](LICENSE)。
