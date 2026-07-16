@@ -8,7 +8,7 @@ import type { Components } from 'react-markdown'
 import {
   BookOpen, ChevronRight, ChevronDown, FileText, FolderOpen, Folder,
   Maximize2, Minimize2, Plus, Search, ArrowLeft, Pencil, Trash2, X, Save, Copy, Check,
-  Calendar, User, Tag, FolderTree, Download, PanelLeftClose, PanelLeft,
+  Calendar, User, Tag, FolderTree, Download, PanelLeftClose, PanelLeft, Upload,
 } from 'lucide-react'
 import { apiFetch, apiPost, apiUrl } from '../../lib/api'
 import { getStoredToken } from '../../lib/auth'
@@ -1028,90 +1028,17 @@ function DocViewer({ doc, content, onBack, onRemove, onUpdated, onOpenDoc, sideb
   )
 }
 
-/* ─── File picker modal ────────────────────────────────────────────────────── */
-
-type FileEntry = { name: string; path: string; isDir: boolean }
-
-function FilePickerModal({ onClose, onSelect }: { onClose: () => void; onSelect: (path: string) => void }) {
-  const [currentPath, setCurrentPath] = useState('')
-  const [entries, setEntries] = useState<FileEntry[]>([])
-  const [loading, setLoading] = useState(true)
-
-  const load = useCallback(async () => {
-    setLoading(true)
-    const params = currentPath ? `?path=${encodeURIComponent(currentPath)}` : ''
-    const data = await apiFetch<FileEntry[]>(`/api/v1/files${params}`)
-    setEntries(data ?? [])
-    setLoading(false)
-  }, [currentPath])
-
-  useEffect(() => { void load() }, [load])
-
-  const breadcrumbs = currentPath ? currentPath.split('/').filter(Boolean) : []
-
-  return (
-    <div className="fixed inset-0 z-[60] flex items-center justify-center bg-black/40" onClick={onClose}>
-      <div onClick={e => e.stopPropagation()} className="w-full max-w-lg rounded-2xl border border-neutral-200 bg-white dark:border-zinc-700 dark:bg-zinc-900 shadow-2xl">
-        <div className="flex items-center justify-between border-b border-neutral-100 dark:border-zinc-700/60 px-5 py-3">
-          <h3 className="text-sm font-semibold text-neutral-900 dark:text-zinc-100">选择文件</h3>
-          <button onClick={onClose} className="text-neutral-400 hover:text-neutral-600 dark:hover:text-zinc-300">
-            <X className="size-4" />
-          </button>
-        </div>
-        {/* Breadcrumb */}
-        <div className="flex items-center gap-1 px-5 py-2 text-xs text-neutral-500 border-b border-neutral-100 dark:border-zinc-700/60 overflow-x-auto">
-          <button onClick={() => setCurrentPath('')} className="hover:text-sky-600 shrink-0">根目录</button>
-          {breadcrumbs.map((seg, i) => (
-            <span key={i} className="flex items-center gap-1 shrink-0">
-              <ChevronRight className="size-3" />
-              <button onClick={() => setCurrentPath(breadcrumbs.slice(0, i + 1).join('/'))} className="hover:text-sky-600">
-                {seg}
-              </button>
-            </span>
-          ))}
-        </div>
-        {/* File list */}
-        <div className="max-h-80 overflow-y-auto p-2">
-          {loading ? (
-            <div className="py-8 text-center text-sm text-neutral-400">加载中...</div>
-          ) : entries.length === 0 ? (
-            <div className="py-8 text-center text-sm text-neutral-400">空目录</div>
-          ) : (
-            <div className="space-y-0.5">
-              {entries.map(entry => (
-                <button
-                  key={entry.path}
-                  onClick={() => entry.isDir ? setCurrentPath(entry.path) : onSelect(entry.path)}
-                  className="flex w-full items-center gap-2 rounded-lg px-3 py-2 text-sm hover:bg-neutral-100 dark:hover:bg-zinc-800"
-                >
-                  {entry.isDir ? (
-                    <Folder className="size-4 text-amber-500" />
-                  ) : (
-                    <FileText className="size-4 text-neutral-400" />
-                  )}
-                  <span className="text-neutral-700 dark:text-zinc-300">{entry.name}</span>
-                  {entry.isDir && <span className="ml-auto text-xs text-neutral-400">/</span>}
-                </button>
-              ))}
-            </div>
-          )}
-        </div>
-      </div>
-    </div>
-  )
-}
-
 /* ─── Add document modal ───────────────────────────────────────────────────── */
 
 function AddDocModal({ allDocs, onClose, onAdded }: { allDocs: DocEntry[]; onClose: () => void; onAdded: () => void }) {
   const { t } = useTranslation()
-  const [filePath, setFilePath] = useState('')
-  const [showPicker, setShowPicker] = useState(false)
   const [title, setTitle] = useState('')
   const [index, setIndex] = useState('')
   const [createdBy, setCreatedBy] = useState('human')
   const [tags, setTags] = useState('')
   const [description, setDescription] = useState('')
+  const [content, setContent] = useState('')
+  const [sourceName, setSourceName] = useState('')
   const [busy, setBusy] = useState(false)
 
   const uniqueIndexes = useMemo(() => {
@@ -1129,7 +1056,7 @@ function AddDocModal({ allDocs, onClose, onAdded }: { allDocs: DocEntry[]; onClo
     setBusy(true)
     try {
       await apiPost('/api/v1/docs', {
-        filePath, title, index, createdBy,
+        content, sourceName, title, index, createdBy,
         tags: tags.split(',').map(s => s.trim()).filter(Boolean),
         description,
       })
@@ -1140,6 +1067,13 @@ function AddDocModal({ allDocs, onClose, onAdded }: { allDocs: DocEntry[]; onClo
   }
 
   const inputCls = 'w-full rounded-lg border border-neutral-200 px-3 py-2 text-sm dark:border-zinc-700 dark:bg-zinc-800 dark:text-zinc-200'
+  async function onFileChange(file: File | undefined) {
+    if (!file) return
+    const text = await file.text()
+    setContent(text)
+    setSourceName(file.name)
+    if (!title) setTitle(file.name.replace(/\.[^.]+$/, ''))
+  }
 
   return (
     <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/40" onClick={onClose}>
@@ -1151,16 +1085,12 @@ function AddDocModal({ allDocs, onClose, onAdded }: { allDocs: DocEntry[]; onClo
         <h3 className="text-base font-semibold mb-5 text-neutral-900 dark:text-zinc-100">{t('docs.addDoc')}</h3>
         <div className="space-y-3">
           <label className="block space-y-1">
-            <span className="text-sm text-neutral-600 dark:text-zinc-400">{t('docs.filePath')} *</span>
-            <div className="flex gap-2">
-              <input required value={filePath} onChange={e => setFilePath(e.target.value)} placeholder="/path/to/file.md"
-                className="flex-1 rounded-lg border border-neutral-200 px-3 py-2 text-sm dark:border-zinc-700 dark:bg-zinc-800 dark:text-zinc-200" />
-              <button type="button" onClick={() => setShowPicker(true)} className={btnGhost}>
-                <FolderOpen className="size-4" />
-              </button>
-            </div>
+            <span className="text-sm text-neutral-600 dark:text-zinc-400">{t('docs.uploadFile')}</span>
+            <label className="flex cursor-pointer items-center justify-between rounded-lg border border-dashed border-neutral-300 px-3 py-2 text-sm text-neutral-500 hover:bg-neutral-50 dark:border-zinc-700 dark:text-zinc-400 dark:hover:bg-zinc-800">
+              <span className="inline-flex items-center gap-2"><Upload className="size-4" /> {sourceName || t('docs.selectFile')}</span>
+              <input className="hidden" type="file" accept=".md,.markdown,.txt,.json,.yaml,.yml,.csv,.log,text/*" onChange={e => void onFileChange(e.target.files?.[0])} />
+            </label>
           </label>
-          {showPicker && <FilePickerModal onClose={() => setShowPicker(false)} onSelect={p => { setFilePath(p); setShowPicker(false) }} />}
           <div className="grid grid-cols-2 gap-3">
             <label className="block space-y-1">
               <span className="text-sm text-neutral-600 dark:text-zinc-400">Title</span>
@@ -1191,6 +1121,13 @@ function AddDocModal({ allDocs, onClose, onAdded }: { allDocs: DocEntry[]; onClo
             <span className="text-sm text-neutral-600 dark:text-zinc-400">{t('docs.description')}</span>
             <input value={description} onChange={e => setDescription(e.target.value)}
               className={inputCls} />
+          </label>
+          <label className="block space-y-1">
+            <span className="text-sm text-neutral-600 dark:text-zinc-400">{t('docs.content')} *</span>
+            <textarea required value={content} onChange={e => setContent(e.target.value)}
+              rows={10}
+              placeholder="# Markdown"
+              className={`${inputCls} font-mono`} />
           </label>
         </div>
         <div className="mt-5 flex justify-end gap-2">

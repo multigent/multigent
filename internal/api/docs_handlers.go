@@ -2,6 +2,7 @@ package api
 
 import (
 	"encoding/json"
+	"fmt"
 	"net/http"
 	"net/url"
 	"os"
@@ -102,6 +103,8 @@ func (s *Server) handleDocsGet(w http.ResponseWriter, r *http.Request) {
 
 type docsAddBody struct {
 	FilePath    string   `json:"filePath"`
+	Content     string   `json:"content"`
+	SourceName  string   `json:"sourceName"`
 	Title       string   `json:"title"`
 	Index       string   `json:"index"`
 	CreatedBy   string   `json:"createdBy"`
@@ -114,17 +117,16 @@ func (s *Server) handleDocsAdd(w http.ResponseWriter, r *http.Request) {
 	if err := s.readJSON(w, r, &body); err != nil {
 		return
 	}
-	if body.FilePath == "" {
-		s.jsonError(w, http.StatusBadRequest, "filePath is required")
+	if strings.TrimSpace(body.FilePath) == "" && body.Content == "" {
+		s.jsonError(w, http.StatusBadRequest, "content or filePath is required")
 		return
 	}
 	if body.CreatedBy == "" {
-		s.jsonError(w, http.StatusBadRequest, "createdBy is required")
-		return
-	}
-	if _, err := os.Stat(body.FilePath); err != nil {
-		s.jsonError(w, http.StatusBadRequest, "file not found: "+body.FilePath)
-		return
+		if cur := s.currentUser(r); cur != nil && cur.Username != "" {
+			body.CreatedBy = cur.Username
+		} else {
+			body.CreatedBy = "human"
+		}
 	}
 
 	ds := store.NewDocsStore(s.root)
@@ -137,12 +139,27 @@ func (s *Server) handleDocsAdd(w http.ResponseWriter, r *http.Request) {
 		Description: body.Description,
 	}
 	if entry.Title == "" {
-		parts := strings.Split(entry.FilePath, "/")
-		entry.Title = parts[len(parts)-1]
+		if body.SourceName != "" {
+			entry.Title = strings.TrimSuffix(filepath.Base(body.SourceName), filepath.Ext(body.SourceName))
+		} else if entry.FilePath != "" {
+			parts := strings.Split(entry.FilePath, "/")
+			entry.Title = parts[len(parts)-1]
+		}
 	}
-	if err := ds.Add(entry); err != nil {
-		s.serverError(w, err)
-		return
+	if body.Content != "" {
+		if err := ds.AddManagedContent(entry, body.Content, body.SourceName); err != nil {
+			s.serverError(w, err)
+			return
+		}
+	} else {
+		if _, err := os.Stat(body.FilePath); err != nil {
+			s.jsonError(w, http.StatusBadRequest, "file not found: "+body.FilePath)
+			return
+		}
+		if err := ds.Add(entry); err != nil {
+			s.serverError(w, err)
+			return
+		}
 	}
 	w.WriteHeader(http.StatusCreated)
 	_ = json.NewEncoder(w).Encode(docsEntryResponse(r, entry))
@@ -191,6 +208,7 @@ type docsUpdateBody struct {
 	Index       *string  `json:"index,omitempty"`
 	Tags        []string `json:"tags,omitempty"`
 	Description *string  `json:"description,omitempty"`
+	Content     *string  `json:"content,omitempty"`
 }
 
 func (s *Server) handleDocsUpdate(w http.ResponseWriter, r *http.Request) {
@@ -220,6 +238,12 @@ func (s *Server) handleDocsUpdate(w http.ResponseWriter, r *http.Request) {
 		}
 		s.serverError(w, err)
 		return
+	}
+	if body.Content != nil {
+		if err := ds.WriteContent(id, *body.Content); err != nil {
+			s.serverError(w, err)
+			return
+		}
 	}
 	doc, _ := ds.Get(id)
 	_ = json.NewEncoder(w).Encode(doc)
@@ -360,4 +384,100 @@ func (s *Server) handleDocsLint(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	_ = json.NewEncoder(w).Encode(result)
+}
+
+func (s *Server) handleRuntimeDocsList(w http.ResponseWriter, r *http.Request) {
+	if _, ok := s.runtimeRequireCapability(w, r, "docs.use"); !ok {
+		return
+	}
+	ds := store.NewDocsStore(s.root)
+	q := strings.TrimSpace(r.URL.Query().Get("q"))
+	if q != "" {
+		results, err := ds.QueryDocs(q, r.URL.Query().Get("content") == "true", 10)
+		if err != nil {
+			s.serverError(w, err)
+			return
+		}
+		_ = json.NewEncoder(w).Encode(results)
+		return
+	}
+	docs, err := ds.List()
+	if err != nil {
+		s.serverError(w, err)
+		return
+	}
+	if docs == nil {
+		docs = []*store.DocEntry{}
+	}
+	_ = json.NewEncoder(w).Encode(docs)
+}
+
+func (s *Server) handleRuntimeDocsGet(w http.ResponseWriter, r *http.Request) {
+	if _, ok := s.runtimeRequireCapability(w, r, "docs.use"); !ok {
+		return
+	}
+	id := r.PathValue("id")
+	ds := store.NewDocsStore(s.root)
+	doc, err := ds.Get(id)
+	if err != nil {
+		s.jsonError(w, http.StatusNotFound, "document not found")
+		return
+	}
+	content, err := ds.ReadContent(doc.FilePath)
+	if err != nil {
+		s.serverError(w, err)
+		return
+	}
+	_ = json.NewEncoder(w).Encode(map[string]any{
+		"id":          doc.ID,
+		"title":       doc.Title,
+		"index":       doc.Index,
+		"createdBy":   doc.CreatedBy,
+		"tags":        doc.Tags,
+		"description": doc.Description,
+		"createdAt":   doc.CreatedAt,
+		"updatedAt":   doc.UpdatedAt,
+		"content":     content,
+	})
+}
+
+func (s *Server) handleRuntimeDocsCreate(w http.ResponseWriter, r *http.Request) {
+	principal, ok := s.runtimeRequireCapability(w, r, "docs.use")
+	if !ok {
+		return
+	}
+	var body docsAddBody
+	if err := s.readJSON(w, r, &body); err != nil {
+		s.jsonErrorCode(w, http.StatusBadRequest, ErrCodeInvalidJSON, "invalid JSON body")
+		return
+	}
+	if strings.TrimSpace(body.Content) == "" {
+		s.jsonError(w, http.StatusBadRequest, "content is required")
+		return
+	}
+	ds := store.NewDocsStore(s.root)
+	entry := &store.DocEntry{
+		Title:       strings.TrimSpace(body.Title),
+		Index:       strings.Trim(body.Index, "/"),
+		CreatedBy:   runtimeAgentAddress(principal),
+		Tags:        body.Tags,
+		Description: body.Description,
+	}
+	if err := ds.AddManagedContent(entry, body.Content, body.SourceName); err != nil {
+		s.serverError(w, err)
+		return
+	}
+	s.auditLog(auditLogInput{
+		WorkspaceID:  principal.WorkspaceID,
+		ActorType:    "agent",
+		ActorID:      runtimeAgentAddress(principal),
+		Action:       "runtime.docs.create",
+		ResourceType: "doc",
+		ResourceID:   entry.ID,
+		Summary:      fmt.Sprintf("Runtime agent created doc %s", entry.Title),
+		After:        entry,
+		Request:      r,
+	})
+	w.WriteHeader(http.StatusCreated)
+	_ = json.NewEncoder(w).Encode(entry)
 }

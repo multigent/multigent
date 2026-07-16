@@ -75,3 +75,15 @@ Rules:
 - Never ask humans to paste provider secrets into chat.
 - Runtime writes are audited by the Multigent Server.
 - If a needed command is missing, report the missing capability instead of using local workspace files as a control plane.
+
+## Knowledge Base Docs
+
+```bash
+mga docs list
+mga docs search "query" --content
+mga docs show <doc-id>
+mga docs create --title "Runbook" --index "engineering/runbooks" --tags runbook,api --content "# Runbook..."
+mga docs create --title "Research note" --file notes.md --index "research"
+```
+
+Use docs for durable knowledge: runbooks, decisions, task receipts, research notes, handoffs, and reusable project context.

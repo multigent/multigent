@@ -40,6 +40,7 @@ func main() {
 		newRuntimeCmd(),
 		newTaskCmd(),
 		newInboxCmd(),
+		newDocsCmd(),
 	)
 	if err := root.Execute(); err != nil {
 		fmt.Fprintln(os.Stderr, "Error:", err)
@@ -394,6 +395,106 @@ func newInboxCmd() *cobra.Command {
 	return cmd
 }
 
+func newDocsCmd() *cobra.Command {
+	cmd := &cobra.Command{Use: "docs", Short: "Read and create knowledge base documents"}
+	cmd.AddCommand(newDocsListCmd(), newDocsSearchCmd(), newDocsShowCmd(), newDocsCreateCmd())
+	return cmd
+}
+
+func newDocsListCmd() *cobra.Command {
+	cmd := &cobra.Command{
+		Use:   "list",
+		Short: "List knowledge base documents",
+		RunE: func(cmd *cobra.Command, args []string) error {
+			body, err := requestJSON(http.MethodGet, "/api/v1/runtime/docs", nil, nil)
+			if err != nil {
+				return err
+			}
+			return writeJSON(body)
+		},
+	}
+	return cmd
+}
+
+func newDocsSearchCmd() *cobra.Command {
+	var content bool
+	cmd := &cobra.Command{
+		Use:   "search <query>",
+		Short: "Search knowledge base documents",
+		Args:  cobra.ExactArgs(1),
+		RunE: func(cmd *cobra.Command, args []string) error {
+			q := url.Values{"q": []string{args[0]}}
+			if content {
+				q.Set("content", "true")
+			}
+			body, err := requestJSON(http.MethodGet, "/api/v1/runtime/docs", q, nil)
+			if err != nil {
+				return err
+			}
+			return writeJSON(body)
+		},
+	}
+	cmd.Flags().BoolVar(&content, "content", true, "search document content")
+	return cmd
+}
+
+func newDocsShowCmd() *cobra.Command {
+	cmd := &cobra.Command{
+		Use:   "show <doc-id>",
+		Short: "Show a knowledge base document with content",
+		Args:  cobra.ExactArgs(1),
+		RunE: func(cmd *cobra.Command, args []string) error {
+			body, err := requestJSON(http.MethodGet, "/api/v1/runtime/docs/"+url.PathEscape(args[0]), nil, nil)
+			if err != nil {
+				return err
+			}
+			return writeJSON(body)
+		},
+	}
+	return cmd
+}
+
+func newDocsCreateCmd() *cobra.Command {
+	var title, index, tags, description, content, file string
+	cmd := &cobra.Command{
+		Use:   "create",
+		Short: "Create a managed knowledge base document",
+		RunE: func(cmd *cobra.Command, args []string) error {
+			bodyText := content
+			sourceName := ""
+			if strings.TrimSpace(file) != "" {
+				raw, err := readTextFile(file)
+				if err != nil {
+					return err
+				}
+				bodyText = raw
+				if file != "-" {
+					sourceName = file
+				}
+			}
+			if strings.TrimSpace(bodyText) == "" {
+				return fmt.Errorf("--content or --file is required")
+			}
+			raw, _ := json.Marshal(map[string]any{
+				"title": title, "index": index, "tags": splitCSV(tags),
+				"description": description, "content": bodyText, "sourceName": sourceName,
+			})
+			resp, err := requestJSON(http.MethodPost, "/api/v1/runtime/docs", nil, raw)
+			if err != nil {
+				return err
+			}
+			return writeJSON(resp)
+		},
+	}
+	cmd.Flags().StringVar(&title, "title", "", "document title")
+	cmd.Flags().StringVar(&index, "index", "", "virtual directory")
+	cmd.Flags().StringVar(&tags, "tags", "", "comma-separated tags")
+	cmd.Flags().StringVar(&description, "description", "", "document description")
+	cmd.Flags().StringVar(&content, "content", "", "document content")
+	cmd.Flags().StringVar(&file, "file", "", "read document content from file, or '-' for stdin")
+	return cmd
+}
+
 func newInboxMessagesCmd() *cobra.Command {
 	var archived bool
 	cmd := &cobra.Command{
@@ -548,6 +649,38 @@ func readRequestBody(data, file string) ([]byte, error) {
 		return body, nil
 	}
 	return nil, fmt.Errorf("--data or --file is required")
+}
+
+func readTextFile(file string) (string, error) {
+	var body []byte
+	var err error
+	if file == "-" {
+		body, err = io.ReadAll(io.LimitReader(os.Stdin, maxJSONBody+1))
+	} else {
+		body, err = os.ReadFile(file)
+	}
+	if err != nil {
+		return "", err
+	}
+	if len(body) > maxJSONBody {
+		return "", fmt.Errorf("file too large")
+	}
+	return string(body), nil
+}
+
+func splitCSV(s string) []string {
+	if strings.TrimSpace(s) == "" {
+		return nil
+	}
+	parts := strings.Split(s, ",")
+	out := make([]string, 0, len(parts))
+	for _, part := range parts {
+		part = strings.TrimSpace(part)
+		if part != "" {
+			out = append(out, part)
+		}
+	}
+	return out
 }
 
 func writeJSON(body []byte) error {

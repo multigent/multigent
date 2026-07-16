@@ -1,10 +1,13 @@
 package store
 
 import (
+	"crypto/sha256"
+	"encoding/hex"
 	"fmt"
 	"math/rand"
 	"os"
 	"path/filepath"
+	"regexp"
 	"sort"
 	"strings"
 	"time"
@@ -36,6 +39,10 @@ func NewDocsStore(root string) *DocsStore {
 
 func (ds *DocsStore) filePath() string {
 	return filepath.Join(ds.root, ".multigent", "docs.yaml")
+}
+
+func (ds *DocsStore) contentDir() string {
+	return filepath.Join(ds.root, ".multigent", "docs-content")
 }
 
 func newDocID() string {
@@ -91,6 +98,69 @@ func (ds *DocsStore) Add(e *DocEntry) error {
 	return ds.save(docs)
 }
 
+// AddManagedContent writes content into Multigent-managed document storage and
+// adds an index entry pointing at that internal file.
+func (ds *DocsStore) AddManagedContent(e *DocEntry, content, sourceName string) error {
+	if e == nil {
+		return fmt.Errorf("document is nil")
+	}
+	if e.ID == "" {
+		e.ID = newDocID()
+	}
+	ext := strings.ToLower(filepath.Ext(sourceName))
+	if ext == "" {
+		ext = ".md"
+	}
+	if !safeDocExt(ext) {
+		ext = ".txt"
+	}
+	if err := os.MkdirAll(ds.contentDir(), 0o755); err != nil {
+		return err
+	}
+	fileName := e.ID + "-" + slugifyDocFilename(e.Title, sourceName) + ext
+	relPath := filepath.Join(".multigent", "docs-content", fileName)
+	absPath := filepath.Join(ds.root, relPath)
+	if err := os.WriteFile(absPath, []byte(content), 0o644); err != nil {
+		return err
+	}
+	e.FilePath = relPath
+	if e.Title == "" {
+		e.Title = strings.TrimSuffix(filepath.Base(sourceName), filepath.Ext(sourceName))
+	}
+	if e.Title == "" {
+		e.Title = e.ID
+	}
+	return ds.Add(e)
+}
+
+func safeDocExt(ext string) bool {
+	switch ext {
+	case ".md", ".markdown", ".txt", ".json", ".yaml", ".yml", ".csv", ".log":
+		return true
+	default:
+		return false
+	}
+}
+
+var unsafeDocFilenameChars = regexp.MustCompile(`[^a-zA-Z0-9._-]+`)
+
+func slugifyDocFilename(title, sourceName string) string {
+	base := strings.TrimSpace(title)
+	if base == "" {
+		base = strings.TrimSuffix(filepath.Base(sourceName), filepath.Ext(sourceName))
+	}
+	base = unsafeDocFilenameChars.ReplaceAllString(base, "-")
+	base = strings.Trim(base, ".-_")
+	if base == "" {
+		sum := sha256.Sum256([]byte(sourceName + time.Now().UTC().Format(time.RFC3339Nano)))
+		base = hex.EncodeToString(sum[:])[:12]
+	}
+	if len(base) > 80 {
+		base = base[:80]
+	}
+	return base
+}
+
 func (ds *DocsStore) List() ([]*DocEntry, error) {
 	return ds.load()
 }
@@ -141,6 +211,27 @@ func (ds *DocsStore) Remove(id string) error {
 		return fmt.Errorf("document %q not found", id)
 	}
 	return ds.save(out)
+}
+
+func (ds *DocsStore) WriteContent(id, content string) error {
+	doc, err := ds.Get(id)
+	if err != nil {
+		return err
+	}
+	if doc.FilePath == "" {
+		return fmt.Errorf("document %q has no file path", id)
+	}
+	filePath := doc.FilePath
+	if !filepath.IsAbs(filePath) {
+		filePath = filepath.Join(ds.root, filePath)
+	}
+	if err := os.MkdirAll(filepath.Dir(filePath), 0o755); err != nil {
+		return err
+	}
+	if err := os.WriteFile(filePath, []byte(content), 0o644); err != nil {
+		return err
+	}
+	return ds.Update(id, func(e *DocEntry) {})
 }
 
 func (ds *DocsStore) Search(query string) ([]*DocEntry, error) {

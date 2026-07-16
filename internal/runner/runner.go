@@ -1097,7 +1097,7 @@ func (r *Runner) resolveRuntimeControlEnv(project, agentName, runID string) map[
 		Project:      project,
 		Agent:        agentName,
 		RunID:        runID,
-		Capabilities: []string{"connection.use", "task.use", "message.use", "okr.use"},
+		Capabilities: []string{"connection.use", "task.use", "message.use", "okr.use", "docs.use"},
 	}, 6*time.Hour)
 	return map[string]string{
 		"MULTIGENT_API_URL":      apiURL,

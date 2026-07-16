@@ -67,6 +67,10 @@ mga task confirm-request --id <id> --summary "..."
 mga message list
 mga message send
 mga message reply
+mga docs list
+mga docs search
+mga docs show <id>
+mga docs create
 mga okr list
 mga okr update
 mga tool list
@@ -120,6 +124,7 @@ Server 根据 token 解析：
 - `task.use`
 - `message.use`
 - `okr.use`
+- `docs.use`
 
 Server 可以在发 token 时收窄 capability。每个 mutating command 都必须写 audit log。
 
