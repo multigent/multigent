@@ -2,6 +2,10 @@ package api
 
 import (
 	"context"
+	"crypto/aes"
+	"crypto/cipher"
+	"crypto/sha256"
+	"encoding/base64"
 	"net/http"
 	"net/http/httptest"
 	"strings"
@@ -104,6 +108,56 @@ func TestLarkFamilyEventTokenVerification(t *testing.T) {
 	}
 }
 
+func TestDecryptLarkFamilyEventUsesConfiguredProviderKey(t *testing.T) {
+	s, workspaceID := newConnectionGrantPolicyServer(t)
+	if err := s.controlDB.UpsertConnection(controldb.Connection{
+		ID:             "conn-feishu",
+		WorkspaceID:    workspaceID,
+		Provider:       "feishu",
+		ConnectionName: "agent-sample-pm",
+		OwnerType:      ConnectionOwnerWorkspace,
+		OwnerID:        workspaceID,
+		AuthType:       "app_secret",
+		Status:         "active",
+		ProfileJSON:    "{}",
+	}); err != nil {
+		t.Fatalf("connection: %v", err)
+	}
+	secret, err := sealConnectionSecret(map[string]string{"baseUrl": "https://open.feishu.cn", "appId": "cli_app", "appSecret": "secret", "encryptKey": "encrypt-one"})
+	if err != nil {
+		t.Fatalf("seal secret: %v", err)
+	}
+	secret.ConnectionID = "conn-feishu"
+	if err := s.controlDB.UpsertConnectionSecret(secret); err != nil {
+		t.Fatalf("secret: %v", err)
+	}
+	if err := s.controlDB.UpsertAgentChannelBinding(controldb.AgentChannelBinding{
+		ID:           "chan-feishu",
+		WorkspaceID:  workspaceID,
+		ProjectID:    "sample",
+		AgentID:      "pm",
+		Provider:     "feishu",
+		ConnectionID: "conn-feishu",
+		Status:       "connected",
+		MetadataJSON: `{"appId":"cli_app"}`,
+	}); err != nil {
+		t.Fatalf("binding: %v", err)
+	}
+
+	plaintext := []byte(`{"schema":"2.0","header":{"event_type":"url_verification"},"challenge":"ok"}`)
+	encrypted := encryptLarkEventForAPITest(t, plaintext, "encrypt-one")
+	decrypted, ok, err := s.decryptLarkFamilyEvent(workspaceID, "feishu", encrypted)
+	if err != nil || !ok {
+		t.Fatalf("decrypt ok=%v err=%v", ok, err)
+	}
+	if string(decrypted) != string(plaintext) {
+		t.Fatalf("decrypted=%s", decrypted)
+	}
+	if _, ok, err := s.decryptLarkFamilyEvent(workspaceID, "lark", encrypted); err != nil || ok {
+		t.Fatalf("wrong provider should not decrypt ok=%v err=%v", ok, err)
+	}
+}
+
 func TestAgentChannelSecurityPreservesConnectionSecret(t *testing.T) {
 	s, workspaceID := newConnectionGrantPolicyServer(t)
 	if err := s.controlDB.UpsertConnection(controldb.Connection{
@@ -182,4 +236,22 @@ func TestAPIInteractionLeasePersistsRuntimeSessionID(t *testing.T) {
 		t.Fatalf("runtime session id=%q", stored.RuntimeSessionID)
 	}
 	lease.Release()
+}
+
+func encryptLarkEventForAPITest(t *testing.T, plaintext []byte, encryptKey string) string {
+	t.Helper()
+	key := sha256.Sum256([]byte(encryptKey))
+	block, err := aes.NewCipher(key[:])
+	if err != nil {
+		t.Fatal(err)
+	}
+	padding := aes.BlockSize - len(plaintext)%aes.BlockSize
+	padded := append(append([]byte(nil), plaintext...), make([]byte, padding)...)
+	for i := len(padded) - padding; i < len(padded); i++ {
+		padded[i] = byte(padding)
+	}
+	iv := []byte("1234567890abcdef")
+	body := append([]byte(nil), padded...)
+	cipher.NewCBCEncrypter(block, iv).CryptBlocks(body, body)
+	return base64.StdEncoding.EncodeToString(append(append([]byte(nil), iv...), body...))
 }

@@ -35,6 +35,23 @@ func (s *Server) handleIMEvent(w http.ResponseWriter, r *http.Request) {
 		s.jsonError(w, http.StatusBadRequest, "read event body failed")
 		return
 	}
+	if encryptedPayload, encrypted := larkbridge.ExtractEncryptedPayload(raw); encrypted {
+		workspaceID, err := s.currentWorkspaceID()
+		if err != nil {
+			s.serverError(w, err)
+			return
+		}
+		decrypted, ok, err := s.decryptLarkFamilyEvent(workspaceID, provider, encryptedPayload)
+		if err != nil {
+			s.serverError(w, err)
+			return
+		}
+		if !ok {
+			_ = json.NewEncoder(w).Encode(map[string]any{"ok": true, "ignored": true, "reason": "decrypt_failed"})
+			return
+		}
+		raw = decrypted
+	}
 	var env larkbridge.EventEnvelope
 	if err := json.Unmarshal(raw, &env); err != nil {
 		s.jsonError(w, http.StatusBadRequest, "invalid event JSON")
@@ -109,6 +126,39 @@ func (s *Server) handleIMEvent(w http.ResponseWriter, r *http.Request) {
 	_ = json.NewEncoder(w).Encode(map[string]any{"ok": true})
 
 	go s.runAgentForIMEvent(provider, resolved, event, text)
+}
+
+func (s *Server) decryptLarkFamilyEvent(workspaceID, provider, encryptedPayload string) ([]byte, bool, error) {
+	bindings, err := s.controlDB.ListAgentChannelBindings(controldb.AgentChannelBindingFilter{
+		WorkspaceID: workspaceID,
+		Provider:    provider,
+		Status:      "connected",
+	})
+	if err != nil {
+		return nil, false, err
+	}
+	for _, binding := range bindings {
+		secret, ok, err := s.controlDB.ConnectionSecret(binding.ConnectionID)
+		if err != nil {
+			return nil, false, err
+		}
+		if !ok {
+			continue
+		}
+		values, err := openConnectionSecret(secret)
+		if err != nil {
+			return nil, false, err
+		}
+		encryptKey := strings.TrimSpace(values["encryptKey"])
+		if encryptKey == "" {
+			continue
+		}
+		decrypted, err := larkbridge.DecryptEncryptedEvent(encryptedPayload, encryptKey)
+		if err == nil {
+			return decrypted, true, nil
+		}
+	}
+	return nil, false, nil
 }
 
 func (s *Server) resolveChannelEventBinding(workspaceID, provider, appID, chatID, externalUserID string) (resolvedChannelEventBinding, bool, error) {
