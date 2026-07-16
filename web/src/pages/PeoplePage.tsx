@@ -71,6 +71,30 @@ function unregisteredLookup(email: string): UserLookupResponse {
   }
 }
 
+function statusKey(status: string): string {
+  switch (status) {
+    case 'pending':
+    case 'accepted':
+    case 'revoked':
+    case 'rejected':
+      return `people.inviteStatus_${status}`
+    default:
+      return 'people.inviteStatus_unknown'
+  }
+}
+
+function roleKey(role: string): string {
+  switch (role) {
+    case 'owner':
+    case 'admin':
+    case 'member':
+    case 'guest':
+      return `people.workspaceRole_${role}`
+    default:
+      return 'people.workspaceRole_member'
+  }
+}
+
 export default function PeoplePage() {
   const { t } = useTranslation()
   const [people, setPeople] = useState<PersonRow[]>([])
@@ -227,7 +251,7 @@ export default function PeoplePage() {
                   </td>
                   <td className="px-4 py-3 text-neutral-600 dark:text-zinc-400">{p.email || '-'}</td>
                   <td className="px-4 py-3">
-                    <span className="rounded-full bg-neutral-100 px-2 py-0.5 text-xs font-medium text-neutral-600 dark:bg-zinc-800 dark:text-zinc-300">{p.role}</span>
+                    <span className="rounded-full bg-neutral-100 px-2 py-0.5 text-xs font-medium text-neutral-600 dark:bg-zinc-800 dark:text-zinc-300">{t(roleKey(p.role))}</span>
                   </td>
                   <td className="px-4 py-3 text-neutral-600 dark:text-zinc-400">{p.projects?.length ?? 0}</td>
                   <td className="px-4 py-3 text-neutral-500 dark:text-zinc-500">{p.createdAt ? new Date(p.createdAt).toLocaleString() : '-'}</td>
@@ -244,39 +268,56 @@ export default function PeoplePage() {
       )}
 
       {invitations.length > 0 && (
-        <section className="mt-6 rounded-xl border border-neutral-200/80 bg-white p-5 dark:border-zinc-700/60 dark:bg-zinc-900/40">
+        <section className="mt-6">
           <div className="mb-3 flex items-center justify-between">
-            <h2 className="text-base font-semibold text-neutral-900 dark:text-zinc-100">Invitations</h2>
+            <h2 className="text-base font-semibold text-neutral-900 dark:text-zinc-100">{t('people.invitations')}</h2>
             <span className="text-xs text-neutral-400 dark:text-zinc-500">{invitations.length}</span>
           </div>
-          <div className="divide-y divide-neutral-100 dark:divide-zinc-800">
-            {invitations.map(inv => {
-              const link = inviteLink(inv.token)
-              return (
-                <div key={inv.token} className="flex items-center justify-between gap-3 py-3">
-                  <div className="min-w-0">
-                    <div className="flex flex-wrap items-center gap-2">
-                      <p className="truncate text-sm font-medium text-neutral-900 dark:text-zinc-100">{inv.displayName || inv.email}</p>
-                      <span className="rounded-full bg-neutral-100 px-2 py-0.5 text-[11px] font-medium text-neutral-500 dark:bg-zinc-800 dark:text-zinc-400">{inv.role}</span>
-                      <span className={cn('rounded-full px-2 py-0.5 text-[11px] font-medium', inv.status === 'pending' ? 'bg-amber-100 text-amber-700 dark:bg-amber-900/30 dark:text-amber-300' : inv.status === 'accepted' ? 'bg-emerald-100 text-emerald-700 dark:bg-emerald-900/30 dark:text-emerald-300' : 'bg-neutral-100 text-neutral-500 dark:bg-zinc-800 dark:text-zinc-400')}>
-                        {inv.status}
-                      </span>
-                    </div>
-                    <p className="mt-1 truncate text-xs text-neutral-400 dark:text-zinc-500">{inv.email} · expires {new Date(inv.expiresAt).toLocaleString()}</p>
-                  </div>
-                  <div className="flex shrink-0 items-center gap-1.5">
-                    <button type="button" onClick={() => navigator.clipboard?.writeText(link)} className="rounded p-2 text-neutral-500 hover:bg-neutral-100 dark:text-zinc-400 dark:hover:bg-zinc-800" title="Copy invite link">
-                      <Copy className="size-4" />
-                    </button>
-                    {inv.status === 'pending' && (
-                      <button type="button" onClick={() => void revokeInvite(inv.token)} className="rounded px-2 py-1 text-xs font-medium text-red-600 hover:bg-red-50 dark:text-red-400 dark:hover:bg-red-900/20">
-                        Revoke
-                      </button>
-                    )}
-                  </div>
-                </div>
-              )
-            })}
+          <div className="overflow-x-auto rounded-xl border border-neutral-200/80 bg-white dark:border-zinc-700/60 dark:bg-zinc-900/40">
+            <table className="w-full text-left text-sm">
+              <thead className="border-b border-neutral-200 bg-neutral-50 text-xs font-medium uppercase tracking-wide text-neutral-500 dark:border-zinc-800 dark:bg-zinc-900 dark:text-zinc-500">
+                <tr>
+                  <th className="px-4 py-3">{t('users.email')}</th>
+                  <th className="px-4 py-3">{t('people.columnRole')}</th>
+                  <th className="px-4 py-3">{t('people.columnStatus')}</th>
+                  <th className="px-4 py-3">{t('people.columnCreated')}</th>
+                  <th className="px-4 py-3">{t('people.columnExpires')}</th>
+                  <th className="px-4 py-3 text-right">{t('people.columnActions')}</th>
+                </tr>
+              </thead>
+              <tbody className="divide-y divide-neutral-100 dark:divide-zinc-800">
+                {invitations.map(inv => {
+                  const link = inviteLink(inv.token)
+                  return (
+                    <tr key={inv.token} className="hover:bg-neutral-50 dark:hover:bg-zinc-800/50">
+                      <td className="px-4 py-3 font-medium text-neutral-900 dark:text-zinc-100">{inv.email}</td>
+                      <td className="px-4 py-3">
+                        <span className="rounded-full bg-neutral-100 px-2 py-0.5 text-xs font-medium text-neutral-600 dark:bg-zinc-800 dark:text-zinc-300">{t(roleKey(inv.role))}</span>
+                      </td>
+                      <td className="px-4 py-3">
+                        <span className={cn('rounded-full px-2 py-0.5 text-xs font-medium', inv.status === 'pending' ? 'bg-amber-100 text-amber-700 dark:bg-amber-900/30 dark:text-amber-300' : inv.status === 'accepted' ? 'bg-emerald-100 text-emerald-700 dark:bg-emerald-900/30 dark:text-emerald-300' : 'bg-neutral-100 text-neutral-500 dark:bg-zinc-800 dark:text-zinc-400')}>
+                          {t(statusKey(inv.status))}
+                        </span>
+                      </td>
+                      <td className="px-4 py-3 text-neutral-500 dark:text-zinc-500">{new Date(inv.createdAt).toLocaleString()}</td>
+                      <td className="px-4 py-3 text-neutral-500 dark:text-zinc-500">{new Date(inv.expiresAt).toLocaleString()}</td>
+                      <td className="px-4 py-3">
+                        <div className="flex justify-end gap-1.5">
+                          <button type="button" onClick={() => navigator.clipboard?.writeText(link)} className="rounded px-2 py-1 text-xs font-medium text-sky-700 hover:bg-sky-50 dark:text-sky-300 dark:hover:bg-sky-900/20">
+                            {t('people.copyInviteLink')}
+                          </button>
+                          {inv.status === 'pending' && (
+                            <button type="button" onClick={() => void revokeInvite(inv.token)} className="rounded px-2 py-1 text-xs font-medium text-red-600 hover:bg-red-50 dark:text-red-400 dark:hover:bg-red-900/20">
+                              {t('people.revokeInvite')}
+                            </button>
+                          )}
+                        </div>
+                      </td>
+                    </tr>
+                  )
+                })}
+              </tbody>
+            </table>
           </div>
         </section>
       )}
@@ -317,11 +358,11 @@ export default function PeoplePage() {
                 </div>
               )}
               <label className="flex flex-col gap-1">
-                <span className="text-sm font-medium text-neutral-600 dark:text-zinc-400">Workspace role</span>
+                <span className="text-sm font-medium text-neutral-600 dark:text-zinc-400">{t('people.workspaceRole')}</span>
                 <select value={form.role} onChange={e => setForm({ ...form, role: e.target.value })} className={fieldCls}>
-                  <option value="member">Member</option>
-                  <option value="admin">Admin</option>
-                  <option value="guest">Guest</option>
+                  <option value="member">{t('people.workspaceRole_member')}</option>
+                  <option value="admin">{t('people.workspaceRole_admin')}</option>
+                  <option value="guest">{t('people.workspaceRole_guest')}</option>
                 </select>
               </label>
               {err && <p className="text-sm text-red-600 dark:text-red-400">{err}</p>}
@@ -338,7 +379,7 @@ export default function PeoplePage() {
               )}
               {inviteResults.length > 0 && (
                 <div className="max-h-56 space-y-2 overflow-auto rounded-lg border border-neutral-200 bg-neutral-50 p-3 dark:border-zinc-700 dark:bg-zinc-800/40">
-                  <p className="text-xs font-medium text-neutral-500 dark:text-zinc-400">Invite results</p>
+                  <p className="text-xs font-medium text-neutral-500 dark:text-zinc-400">{t('people.inviteResults')}</p>
                   {inviteResults.map((item, idx) => (
                     <div key={`${item.email}-${idx}`} className="rounded-md bg-white p-2 dark:bg-zinc-900/60">
                       <div className="flex items-center justify-between gap-2">
