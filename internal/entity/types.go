@@ -423,9 +423,9 @@ type DockerSandboxConfig struct {
 	// "host"             — shares host network (debug only, not recommended).
 	NetworkMode string `yaml:"network_mode,omitempty" json:"network_mode,omitempty"`
 
-	// CredentialMounts mounts host credential paths into the container
-	// as read-only volumes. Format: "~/.claude:/root/.claude" or
-	// "~/.claude:/root/.claude:ro". The tilde is expanded at runtime.
+	// CredentialMounts mounts explicit host credential paths into the container.
+	// Defaults are agent-scoped under <agent>/.multigent/runtime-home; avoid
+	// mounting host-global ~/.claude, ~/.codex, ~/.ssh, or ~/.config/gh.
 	// Defaults are set automatically per-model when empty.
 	CredentialMounts []string `yaml:"credential_mounts,omitempty" json:"credential_mounts,omitempty"`
 

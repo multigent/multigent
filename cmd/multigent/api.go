@@ -2,15 +2,23 @@ package main
 
 import (
 	"context"
+	"crypto/rand"
+	"encoding/hex"
 	"fmt"
 	"log"
 	"net/http"
 	"os"
 	"os/signal"
+	"path/filepath"
+	"strings"
 	"syscall"
 
 	"github.com/multigent/multigent/internal/api"
+	"github.com/multigent/multigent/internal/appconfig"
 	"github.com/multigent/multigent/internal/daemon"
+	controldb "github.com/multigent/multigent/internal/db"
+	"github.com/multigent/multigent/internal/entity"
+	"github.com/multigent/multigent/internal/scaffold"
 	"github.com/spf13/cobra"
 )
 
@@ -60,16 +68,18 @@ Authorization: Bearer <key>.`,
 			if !cmd.Flags().Changed("api-key") && apiKey == "" {
 				apiKey = effectiveAPIKey(cfg)
 			}
+			dataRoot, root, err := resolveAPIServeRoots(cfg)
+			if err != nil {
+				return err
+			}
+			if err := os.Setenv("MULTIGENT_DATA_DIR", dataRoot); err != nil {
+				return err
+			}
 			logCloser, err := initServiceLogger(resolveServiceLogOptions(cfg, logFile, logLevel, logFormat, logMaxSizeMB, cmd.Flags().Changed), "api")
 			if err != nil {
 				return fmt.Errorf("init logger: %w", err)
 			}
 			defer logCloser()
-
-			root, err := resolveRoot()
-			if err != nil {
-				return err
-			}
 			key := api.ResolveAPIKey(apiKey)
 			srv := api.NewServer(root, key)
 			srv.SetVersion(version)
@@ -114,4 +124,81 @@ Authorization: Bearer <key>.`,
 	cmd.Flags().StringVar(&logFormat, "log-format", "", "log format: json|text")
 	cmd.Flags().IntVar(&logMaxSizeMB, "log-max-size", 0, "max log file size in MB")
 	return cmd
+}
+
+func resolveAPIServeRoots(cfg *appconfig.Config) (dataRoot, activeRoot string, err error) {
+	start := strings.TrimSpace(globalDir)
+	if start == "" && cfg != nil {
+		start = strings.TrimSpace(cfg.Workspace.Dir)
+	}
+	if start == "" {
+		start, err = os.Getwd()
+		if err != nil {
+			return "", "", err
+		}
+	}
+	dataRoot, err = filepath.Abs(start)
+	if err != nil {
+		return "", "", err
+	}
+	if err := os.MkdirAll(dataRoot, 0o755); err != nil {
+		return "", "", err
+	}
+	if hasAgency(dataRoot) {
+		return dataRoot, dataRoot, nil
+	}
+	if err := os.Setenv("MULTIGENT_DATA_DIR", dataRoot); err != nil {
+		return "", "", err
+	}
+	db, err := controldb.OpenDefault()
+	if err != nil {
+		return "", "", err
+	}
+	defer db.Close()
+	rows, err := db.ListWorkspaces()
+	if err != nil {
+		return "", "", err
+	}
+	for _, row := range rows {
+		if row.Root != "" && hasAgency(row.Root) {
+			return dataRoot, row.Root, nil
+		}
+	}
+	id := newAPIServeWorkspaceID()
+	activeRoot = filepath.Join(dataRoot, "workspaces", id)
+	now := daemon.NowISO()
+	if err := scaffold.InitAgency(activeRoot, &entity.Agency{
+		Name:      "Default Workspace",
+		CreatedBy: "system",
+		CreatedAt: now,
+	}); err != nil {
+		return "", "", err
+	}
+	if err := db.UpsertWorkspace(controldb.Workspace{
+		ID:        id,
+		Name:      "Default Workspace",
+		Slug:      "default-workspace",
+		Root:      activeRoot,
+		CreatedBy: "system",
+		CreatedAt: now,
+		UpdatedAt: now,
+	}); err != nil {
+		return "", "", err
+	}
+	return dataRoot, activeRoot, nil
+}
+
+func hasAgency(root string) bool {
+	_, err := os.Stat(filepath.Join(root, ".multigent", "agency.yaml"))
+	return err == nil
+}
+
+func newAPIServeWorkspaceID() string {
+	var b [16]byte
+	if _, err := rand.Read(b[:]); err != nil {
+		return "ws-" + fmt.Sprint(os.Getpid())
+	}
+	b[6] = (b[6] & 0x0f) | 0x40
+	b[8] = (b[8] & 0x3f) | 0x80
+	return hex.EncodeToString(b[:])
 }

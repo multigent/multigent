@@ -46,11 +46,17 @@ func NewManager() (Manager, error) {
 }
 
 func DefaultLogFile() string {
+	if dataDir := os.Getenv("MULTIGENT_DATA_DIR"); dataDir != "" {
+		return filepath.Join(dataDir, ".multigent", "logs", "multigent.log")
+	}
 	home, _ := os.UserHomeDir()
 	return filepath.Join(home, ".multigent", "logs", "multigent.log")
 }
 
 func DefaultDataDir() string {
+	if dataDir := os.Getenv("MULTIGENT_DATA_DIR"); dataDir != "" {
+		return dataDir
+	}
 	home, _ := os.UserHomeDir()
 	return filepath.Join(home, ".multigent")
 }

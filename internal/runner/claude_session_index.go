@@ -49,15 +49,10 @@ func updateClaudeSessionIndex(agentDir, sessionID string) {
 		return
 	}
 
-	homeDir, err := os.UserHomeDir()
-	if err != nil {
-		return
-	}
-
 	// Claude Code computes the project directory name by replacing each "/"
 	// in the absolute path with "-" (including the leading slash).
 	projectHash := strings.ReplaceAll(absDir, "/", "-")
-	claudeProjectDir := filepath.Join(homeDir, ".claude", "projects", projectHash)
+	claudeProjectDir := filepath.Join(agentDir, ".multigent", "runtime-home", "claudecode", ".claude", "projects", projectHash)
 
 	sessionFile := filepath.Join(claudeProjectDir, sessionID+".jsonl")
 	if _, err := os.Stat(sessionFile); err != nil {

@@ -5,8 +5,8 @@
 //     This works on any OS with Docker installed: Linux, macOS, Windows.
 //   - The agent working directory is bind-mounted into the container at
 //     /workspace; the container process runs with that as its cwd.
-//   - Credential files (e.g. ~/.claude, ~/.config/gh) are mounted read-only
-//     so the agent can authenticate without copying secrets into the image.
+//   - Agent CLI session/config directories are mounted from the agent's own
+//     .multigent/runtime-home tree, never from host-global ~/.claude or ~/.codex.
 //   - API keys are injected as environment variables.
 //   - The container is removed after each run (--rm).
 //   - All stdout/stderr is streamed to the caller via the provided io.Writer.
@@ -60,49 +60,9 @@ var defaultImages = map[entity.AgentModel]string{
 	entity.ModelQoder:      BaseImage,
 }
 
-// defaultCredentialMounts returns the credential paths that should be mounted
-// read-only for a given model.
-// The host paths use ~ which is expanded at runtime.
-var defaultCredentialMounts = map[entity.AgentModel][]string{
-	entity.ModelClaudeCode: {
-		// ~/.claude.json holds user state / onboarding read at every startup.
-		// ~/.claude/ must be writable so Claude can create session-env dirs,
-		// write session state, and update settings during a run.
-		"~/.claude.json:/root/.claude.json",
-		"~/.claude:/root/.claude",
-		"~/.config/gh:/root/.config/gh:ro",
-		"~/.ssh:/root/.ssh:ro",
-	},
-	entity.ModelCodex: {
-		"~/.codex:/root/.codex",
-		"~/.config/gh:/root/.config/gh:ro",
-		"~/.ssh:/root/.ssh:ro",
-	},
-	entity.ModelGemini: {
-		// Gemini CLI stores OAuth tokens in ~/.gemini/oauth_creds.json
-		// and account info in ~/.gemini/google_accounts.json.
-		"~/.gemini:/root/.gemini:ro",
-		"~/.config/gh:/root/.config/gh:ro",
-		"~/.ssh:/root/.ssh:ro",
-	},
-	entity.ModelOpenCode: {
-		"~/.config/opencode:/root/.config/opencode:ro",
-		"~/.config/gh:/root/.config/gh:ro",
-		"~/.ssh:/root/.ssh:ro",
-	},
-	entity.ModelCursor: {
-		"~/.cursor:/root/.cursor",
-		"~/.config/cursor:/root/.config/cursor:ro",
-		"~/.local/share/cursor-agent:/root/.local/share/cursor-agent:ro",
-		"~/.config/gh:/root/.config/gh:ro",
-		"~/.ssh:/root/.ssh:ro",
-	},
-	entity.ModelQoder: {
-		"~/.codex:/root/.codex:ro",
-		"~/.config/gh:/root/.config/gh:ro",
-		"~/.ssh:/root/.ssh:ro",
-	},
-}
+// Default credential/session mounts are scoped to one agent directory. Do not
+// mount host-global ~/.claude, ~/.codex, ~/.ssh, or ~/.config/gh by default:
+// those would let one agent read another agent's sessions or credentials.
 
 // BuildArgs constructs the full `docker run` argument list for running an
 // agent inside a container. The returned slice is ready to pass to exec.Command.
@@ -171,13 +131,12 @@ func BuildArgs(agentDir string, model entity.AgentModel, cfg *entity.DockerSandb
 		args = append(args, "-e", "PATH="+UserBin+":"+ContainerDefaultPATH)
 	}
 
-	// ── Credential mounts ────────────────────────────────────────────────────
-	mounts := resolveCredentialMounts(model, cfg)
+	// ── Agent-scoped credential/session mounts ───────────────────────────────
+	mounts := resolveCredentialMounts(model, cfg, agentDir)
 	for _, m := range mounts {
 		expanded := expandTilde(m)
-		// Only mount if the host path exists (skip silently if not set up).
 		hostPath := strings.SplitN(expanded, ":", 2)[0]
-		if _, err := os.Stat(hostPath); err == nil {
+		if ensureRuntimeMountPath(hostPath) == nil {
 			args = append(args, "-v", expanded)
 		}
 	}
@@ -324,7 +283,7 @@ func imageExists(image string) bool {
 
 // ResolveCredentialMounts is the exported form for use by CLI commands.
 func ResolveCredentialMounts(model entity.AgentModel, cfg *entity.DockerSandboxConfig) []string {
-	return resolveCredentialMounts(model, cfg)
+	return resolveCredentialMounts(model, cfg, "")
 }
 
 // WellKnownEnvKeys is the exported form for use by CLI commands.
@@ -332,12 +291,12 @@ func WellKnownEnvKeys(model entity.AgentModel) []string {
 	return wellKnownEnvKeys(model)
 }
 
-func resolveCredentialMounts(model entity.AgentModel, cfg *entity.DockerSandboxConfig) []string {
+func resolveCredentialMounts(model entity.AgentModel, cfg *entity.DockerSandboxConfig, agentDir string) []string {
 	if cfg != nil && cfg.NoAutoCredentials {
 		return cfg.CredentialMounts
 	}
 	model = entity.NormaliseModel(model)
-	defaults := defaultCredentialMounts[model]
+	defaults := defaultCredentialMountsForAgent(model, agentDir)
 	if cfg == nil || len(cfg.CredentialMounts) == 0 {
 		return defaults
 	}
@@ -354,6 +313,50 @@ func resolveCredentialMounts(model entity.AgentModel, cfg *entity.DockerSandboxC
 		}
 	}
 	return merged
+}
+
+func defaultCredentialMountsForAgent(model entity.AgentModel, agentDir string) []string {
+	if agentDir == "" {
+		return nil
+	}
+	base := filepath.Join(agentDir, ".multigent", "runtime-home", string(entity.NormaliseModel(model)))
+	switch entity.NormaliseModel(model) {
+	case entity.ModelClaudeCode:
+		return []string{
+			filepath.Join(base, ".claude.json") + ":/root/.claude.json",
+			filepath.Join(base, ".claude") + ":/root/.claude",
+		}
+	case entity.ModelCodex, entity.ModelQoder:
+		return []string{filepath.Join(base, ".codex") + ":/root/.codex"}
+	case entity.ModelGemini:
+		return []string{filepath.Join(base, ".gemini") + ":/root/.gemini"}
+	case entity.ModelOpenCode:
+		return []string{filepath.Join(base, ".config", "opencode") + ":/root/.config/opencode"}
+	case entity.ModelCursor:
+		return []string{
+			filepath.Join(base, ".cursor") + ":/root/.cursor",
+			filepath.Join(base, ".config", "cursor") + ":/root/.config/cursor",
+			filepath.Join(base, ".local", "share", "cursor-agent") + ":/root/.local/share/cursor-agent",
+		}
+	default:
+		return nil
+	}
+}
+
+func ensureRuntimeMountPath(hostPath string) error {
+	if strings.TrimSpace(hostPath) == "" {
+		return fmt.Errorf("empty mount path")
+	}
+	if strings.HasSuffix(hostPath, ".json") {
+		if err := os.MkdirAll(filepath.Dir(hostPath), 0o700); err != nil {
+			return err
+		}
+		if _, err := os.Stat(hostPath); os.IsNotExist(err) {
+			return os.WriteFile(hostPath, []byte("{}\n"), 0o600)
+		}
+		return nil
+	}
+	return os.MkdirAll(hostPath, 0o700)
 }
 
 // mountKey extracts the container path (the key for deduplication).

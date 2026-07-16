@@ -50,6 +50,26 @@ func TestEffectiveImageNormalizesPublishedDefault(t *testing.T) {
 	}
 }
 
+func TestBuildArgsUsesAgentScopedRuntimeHome(t *testing.T) {
+	root := t.TempDir()
+	agentDir := filepath.Join(root, "projects", "demo", "agents", "dev")
+	if err := os.MkdirAll(agentDir, 0o755); err != nil {
+		t.Fatalf("create agent dir: %v", err)
+	}
+	args, err := BuildArgs(agentDir, entity.ModelCodex, nil, []string{"codex", "exec", "-"})
+	if err != nil {
+		t.Fatalf("BuildArgs: %v", err)
+	}
+	joined := strings.Join(args, "\n")
+	if strings.Contains(joined, "~/.codex") || strings.Contains(joined, "~/.claude") || strings.Contains(joined, "~/.ssh") {
+		t.Fatalf("global host credential mount leaked into args:\n%s", joined)
+	}
+	want := filepath.Join(agentDir, ".multigent", "runtime-home", "codex", ".codex") + ":/root/.codex"
+	if !strings.Contains(joined, want) {
+		t.Fatalf("missing agent-scoped codex mount %q in args:\n%s", want, joined)
+	}
+}
+
 func findEnvArg(args []string, prefix string) string {
 	for i := 0; i < len(args)-1; i++ {
 		if args[i] == "-e" && strings.HasPrefix(args[i+1], prefix) {

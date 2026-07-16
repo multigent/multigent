@@ -269,6 +269,9 @@ func (db *SQLiteStore) Close() error {
 }
 
 func defaultPath() (string, error) {
+	if dataDir := os.Getenv("MULTIGENT_DATA_DIR"); dataDir != "" {
+		return filepath.Join(dataDir, ".multigent", "multigent.db"), nil
+	}
 	home, err := os.UserHomeDir()
 	if err != nil {
 		return "", err
