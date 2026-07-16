@@ -5,6 +5,7 @@ import { CheckCircle2, Copy, Loader2, MessageSquare, ShieldCheck, Trash2, X } fr
 import { apiDelete, apiFetch, apiPost, apiPut } from '../../lib/api'
 import { cn } from '../../lib/cn'
 import { confirmDialog } from '../ui/ConfirmDialog'
+import { useFormatDateTime } from '../../lib/format-datetime'
 
 type ChannelProvider = { id: string; label: string }
 
@@ -76,6 +77,7 @@ type SecurityState =
 
 export function AgentChannelPanel({ project, agentName }: { project: string; agentName: string }) {
   const { t } = useTranslation()
+  const fmtDateTime = useFormatDateTime()
   const [loading, setLoading] = useState(true)
   const [channels, setChannels] = useState<AgentChannel[]>([])
   const [interaction, setInteraction] = useState<InteractionStatus | null>(null)
@@ -279,7 +281,7 @@ export function AgentChannelPanel({ project, agentName }: { project: string; age
                         value={channel.externalChatId || t('agentChannels.chatPending')}
                         mono={Boolean(channel.externalChatId)}
                       />
-                      <ChannelDetail label={t('agentChannels.lastActivityLabel')} value={channel.lastActivityAt ? new Date(channel.lastActivityAt).toLocaleString() : '-'} />
+                      <ChannelDetail label={t('agentChannels.lastActivityLabel')} value={fmtDateTime(channel.lastActivityAt)} />
                       {channel.callbackUrl && (
                         <div className="flex max-w-full items-center gap-1.5">
                           <span className="shrink-0">{t('agentChannels.callbackUrl')}</span>
@@ -295,7 +297,7 @@ export function AgentChannelPanel({ project, agentName }: { project: string; age
                       {channel.callback?.lastAt ? (
                         <p className={cn(channel.callback.error && 'text-red-500 dark:text-red-300')}>
                           {t('agentChannels.lastCallback', {
-                            time: new Date(channel.callback.lastAt).toLocaleString(),
+                            time: fmtDateTime(channel.callback.lastAt),
                             status: t(`agentChannels.callbackStatus.${channel.callback.status || 'unknown'}`),
                             reason: channel.callback.reason ? t(`agentChannels.callbackReason.${channel.callback.reason}`, { defaultValue: channel.callback.reason }) : '-',
                           })}

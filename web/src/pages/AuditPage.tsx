@@ -2,6 +2,7 @@ import { useCallback, useEffect, useState } from 'react'
 import { Filter, RefreshCw, ShieldCheck } from 'lucide-react'
 import { apiFetch } from '../lib/api'
 import { cn } from '../lib/cn'
+import { useFormatDateTime } from '../lib/format-datetime'
 
 type AuditEvent = {
   id: string
@@ -106,8 +107,8 @@ function FilterField({ label, value, onChange, placeholder }: { label: string; v
 }
 
 function AuditEventCard({ event }: { event: AuditEvent }) {
-  const timestamp = new Date(event.createdAt)
-  const created = Number.isNaN(timestamp.getTime()) ? event.createdAt : timestamp.toLocaleString()
+  const fmtDateTime = useFormatDateTime()
+  const created = fmtDateTime(event.createdAt)
   const hasBefore = event.before !== undefined && event.before !== null
   const hasAfter = event.after !== undefined && event.after !== null
   return (

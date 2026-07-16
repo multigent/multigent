@@ -6,6 +6,7 @@ import type { LucideIcon } from 'lucide-react'
 import { PlaceholderCard } from '../components/ui/PlaceholderCard'
 import { apiPut } from '../lib/api'
 import { useApiJson } from '../lib/use-api'
+import { useFormatDateTime } from '../lib/format-datetime'
 
 type WorkspaceSummary = {
   id: string
@@ -20,15 +21,9 @@ type WorkspaceSummary = {
   tasks: number
 }
 
-function formatDate(value?: string) {
-  if (!value) return '-'
-  const d = new Date(value)
-  if (Number.isNaN(d.getTime())) return value
-  return d.toLocaleString()
-}
-
 export default function WorkspacePage() {
   const { t } = useTranslation()
+  const fmtDateTime = useFormatDateTime()
   const [reloadKey, setReloadKey] = useState(0)
   const state = useApiJson<WorkspaceSummary>('/api/v1/workspace', reloadKey)
   const [name, setName] = useState('')
@@ -90,8 +85,8 @@ export default function WorkspacePage() {
 
             <div className="mt-5 grid gap-3 sm:grid-cols-2">
               <Info icon={UserRound} label={t('workspace.createdBy')} value={state.data.createdBy || '-'} />
-              <Info icon={CalendarDays} label={t('workspace.createdAt')} value={formatDate(state.data.createdAt)} />
-              <Info icon={RefreshCw} label={t('workspace.updatedAt')} value={formatDate(state.data.updatedAt)} />
+              <Info icon={CalendarDays} label={t('workspace.createdAt')} value={fmtDateTime(state.data.createdAt)} />
+              <Info icon={RefreshCw} label={t('workspace.updatedAt')} value={fmtDateTime(state.data.updatedAt)} />
               <Info icon={Hash} label="Workspace ID" value={state.data.id} mono />
             </div>
 

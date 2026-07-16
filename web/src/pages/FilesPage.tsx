@@ -8,6 +8,7 @@ import { apiFetch, apiPost, apiUrl } from '../lib/api'
 import { getStoredToken } from '../lib/auth'
 import { confirmDialog } from '../components/ui/ConfirmDialog'
 import { primaryOutlineButton } from '../lib/button-styles'
+import { useFormatDateTime } from '../lib/format-datetime'
 
 type FileEntry = {
   name: string; path: string; isDir: boolean
@@ -182,11 +183,7 @@ export default function FilesPage() {
     else setPreview(entry)
   }
 
-  const fmtDate = useCallback((s: string) => {
-    const d = new Date(s)
-    if (isNaN(d.getTime())) return '—'
-    return d.toLocaleDateString(undefined, { year: 'numeric', month: '2-digit', day: '2-digit', hour: '2-digit', minute: '2-digit' })
-  }, [])
+  const fmtDate = useFormatDateTime()
 
   return (
     <div className="flex flex-col h-full">

@@ -3,6 +3,7 @@ import { useTranslation } from 'react-i18next'
 import { User, X, Copy } from 'lucide-react'
 import { apiFetch, apiPost } from '../lib/api'
 import { cn } from '../lib/cn'
+import { useFormatDateTime } from '../lib/format-datetime'
 
 type PersonRow = {
   username: string; role: string; displayName?: string
@@ -97,6 +98,7 @@ function roleKey(role: string): string {
 
 export default function PeoplePage() {
   const { t } = useTranslation()
+  const fmtDateTime = useFormatDateTime()
   const [people, setPeople] = useState<PersonRow[]>([])
   const [invitations, setInvitations] = useState<InvitationRow[]>([])
   const [loading, setLoading] = useState(true)
@@ -254,7 +256,7 @@ export default function PeoplePage() {
                     <span className="rounded-full bg-neutral-100 px-2 py-0.5 text-xs font-medium text-neutral-600 dark:bg-zinc-800 dark:text-zinc-300">{t(roleKey(p.role))}</span>
                   </td>
                   <td className="px-4 py-3 text-neutral-600 dark:text-zinc-400">{p.projects?.length ?? 0}</td>
-                  <td className="px-4 py-3 text-neutral-500 dark:text-zinc-500">{p.createdAt ? new Date(p.createdAt).toLocaleString() : '-'}</td>
+                  <td className="px-4 py-3 text-neutral-500 dark:text-zinc-500">{fmtDateTime(p.createdAt)}</td>
                   <td className="px-4 py-3">
                     <span className={cn('rounded-full px-2 py-0.5 text-xs font-medium', p.disabled ? 'bg-red-100 text-red-700 dark:bg-red-900/30 dark:text-red-300' : 'bg-emerald-100 text-emerald-700 dark:bg-emerald-900/30 dark:text-emerald-300')}>
                       {p.disabled ? t('users.disabled') : t('people.statusActive')}
@@ -299,8 +301,8 @@ export default function PeoplePage() {
                           {t(statusKey(inv.status))}
                         </span>
                       </td>
-                      <td className="px-4 py-3 text-neutral-500 dark:text-zinc-500">{new Date(inv.createdAt).toLocaleString()}</td>
-                      <td className="px-4 py-3 text-neutral-500 dark:text-zinc-500">{new Date(inv.expiresAt).toLocaleString()}</td>
+                      <td className="px-4 py-3 text-neutral-500 dark:text-zinc-500">{fmtDateTime(inv.createdAt)}</td>
+                      <td className="px-4 py-3 text-neutral-500 dark:text-zinc-500">{fmtDateTime(inv.expiresAt)}</td>
                       <td className="px-4 py-3">
                         <div className="flex justify-end gap-1.5">
                           <button type="button" onClick={() => navigator.clipboard?.writeText(link)} className="rounded px-2 py-1 text-xs font-medium text-sky-700 hover:bg-sky-50 dark:text-sky-300 dark:hover:bg-sky-900/20">

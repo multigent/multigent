@@ -7,6 +7,7 @@ import { useAuth } from '../lib/auth'
 import { cn } from '../lib/cn'
 import { confirmDialog } from '../components/ui/ConfirmDialog'
 import { primaryOutlineButton } from '../lib/button-styles'
+import { formatDateTimeForLanguage, useFormatDateTime } from '../lib/format-datetime'
 
 type ProviderField = { key: string; label: string; inputType: string; required: boolean; secret: boolean }
 type Provider = { provider: string; displayName: string; authTypes: string[]; fields?: ProviderField[]; enabled: boolean }
@@ -397,8 +398,9 @@ function OAuthClientConfigDialog({ config, onClose, onSaved }: { config: OAuthCl
 
 function ConnectionCard({ connection, provider, canGrant, canEdit, canDelete, testState, onEdit, onGrant, onTest, onDelete }: { connection: Connection; provider?: Provider; canGrant: boolean; canEdit: boolean; canDelete: boolean; testState?: { loading?: boolean; ok?: boolean; message?: string }; onEdit: () => void; onGrant: () => void; onTest: () => void; onDelete: () => void }) {
   const { t } = useTranslation()
-  const validation = connectionValidation(connection)
-  const health = connectionHealthPolicy(connection)
+  const fmtDateTime = useFormatDateTime()
+  const validation = connectionValidation(connection, fmtDateTime)
+  const health = connectionHealthPolicy(connection, fmtDateTime)
   const hasActionPolicy = connectionHasActionPolicy(connection)
   const summary = connection.profileSummary
   const accountLabel = [summary?.accountName, summary?.accountEmail].filter(Boolean).join(' · ')
@@ -518,26 +520,24 @@ function ProfileChips({ title, items }: { title: string; items: string[] }) {
   )
 }
 
-function connectionValidation(connection: Connection): { ok: boolean; status?: number; message: string; atLabel: string } | null {
+function connectionValidation(connection: Connection, fmtDateTime: (input: string | number | Date | null | undefined) => string = (input) => formatDateTimeForLanguage(input, undefined)): { ok: boolean; status?: number; message: string; atLabel: string } | null {
   const profile = connection.profile ?? {}
   const at = typeof profile.lastValidatedAt === 'string' ? profile.lastValidatedAt : ''
   if (!at) return null
   const ok = profile.lastValidationOK === true
   const status = typeof profile.lastValidationStatus === 'number' ? profile.lastValidationStatus : undefined
   const message = typeof profile.lastValidationMessage === 'string' ? profile.lastValidationMessage : ''
-  const timestamp = new Date(at)
-  const atLabel = Number.isNaN(timestamp.getTime()) ? at : timestamp.toLocaleString()
+  const atLabel = fmtDateTime(at)
   return { ok, status, message, atLabel }
 }
 
-function connectionHealthPolicy(connection: Connection): { enabled: boolean; intervalMinutes: number; nextLabel: string } {
+function connectionHealthPolicy(connection: Connection, fmtDateTime: (input: string | number | Date | null | undefined) => string = (input) => formatDateTimeForLanguage(input, undefined)): { enabled: boolean; intervalMinutes: number; nextLabel: string } {
   const profile = connection.profile ?? {}
   const enabled = profile.healthCheckEnabled === true
   const rawInterval = typeof profile.healthCheckIntervalMinutes === 'number' ? profile.healthCheckIntervalMinutes : 360
   const intervalMinutes = Math.max(5, Math.min(43200, Math.round(rawInterval || 360)))
   const next = typeof profile.nextHealthCheckAt === 'string' ? profile.nextHealthCheckAt : ''
-  const timestamp = next ? new Date(next) : null
-  const nextLabel = timestamp && !Number.isNaN(timestamp.getTime()) ? timestamp.toLocaleString() : next
+  const nextLabel = next ? fmtDateTime(next) : next
   return { enabled, intervalMinutes, nextLabel }
 }
 
