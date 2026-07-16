@@ -1355,6 +1355,7 @@
     },
     "callbackReason": {
       "group_not_addressed": "群消息未明确发给机器人",
+      "unknown_identity": "发送人尚未绑定账号",
       "verification_failed": "校验失败",
       "permission_denied": "权限不足",
       "agent_locked": "Agent 会话已被占用"

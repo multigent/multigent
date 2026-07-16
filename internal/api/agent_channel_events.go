@@ -24,6 +24,13 @@ type resolvedChannelEventBinding struct {
 	Identity     controldb.ExternalIdentity
 }
 
+type channelEventResolution struct {
+	Resolved     resolvedChannelEventBinding
+	Found        bool
+	Candidate    controldb.AgentChannelBinding
+	HasCandidate bool
+}
+
 func (s *Server) handleIMEvent(w http.ResponseWriter, r *http.Request) {
 	channelProvider, ok := imbridge.LookupProvider(r.PathValue("provider"))
 	if !ok {
@@ -67,15 +74,36 @@ func (s *Server) handleIMEvent(w http.ResponseWriter, r *http.Request) {
 		_ = json.NewEncoder(w).Encode(map[string]any{"ok": true, "ignored": true})
 		return
 	}
-	resolved, found, err := s.resolveChannelEventBinding(provider, parsed.AppID, message.ChatID, message.SenderOpenID)
+	resolution, err := s.resolveChannelEventBindingDetailed(provider, parsed.AppID, message.ChatID, message.SenderOpenID)
 	if err != nil {
 		s.serverError(w, err)
 		return
 	}
-	if !found {
-		_ = json.NewEncoder(w).Encode(map[string]any{"ok": true, "ignored": true, "reason": "binding_not_found"})
+	if !resolution.Found {
+		reason := "binding_not_found"
+		if resolution.HasCandidate {
+			reason = "unknown_identity"
+			s.recordAgentChannelCallback(resolution.Candidate, "rejected", reason, message, "")
+			s.auditLog(auditLogInput{
+				WorkspaceID:  resolution.Candidate.WorkspaceID,
+				Action:       "agent_channel.identity_missing",
+				ResourceType: "agent_channel",
+				ResourceID:   resolution.Candidate.ID,
+				Summary:      fmt.Sprintf("Ignored %s message for %s/%s because the sender is not linked to a Multigent user", provider, resolution.Candidate.ProjectID, resolution.Candidate.AgentID),
+				After: map[string]any{
+					"provider":       provider,
+					"externalUserId": message.SenderOpenID,
+					"messageId":      message.MessageID,
+					"chatId":         message.ChatID,
+				},
+			})
+		} else {
+			log.Printf("[im:%s] binding not found app=%s chat=%s sender=%s message=%s", provider, parsed.AppID, message.ChatID, message.SenderOpenID, message.MessageID)
+		}
+		_ = json.NewEncoder(w).Encode(map[string]any{"ok": true, "ignored": true, "reason": reason})
 		return
 	}
+	resolved := resolution.Resolved
 	if !channelProvider.ShouldHandleMessage(resolved.Binding.ExternalChatID, message) {
 		s.recordAgentChannelCallback(resolved.Binding, "ignored", "group_not_addressed", message, "")
 		s.auditLog(auditLogInput{
@@ -172,59 +200,85 @@ func (s *Server) decryptIMEvent(provider imbridge.Provider, encryptedPayload str
 }
 
 func (s *Server) resolveChannelEventBinding(provider, appID, chatID, externalUserID string) (resolvedChannelEventBinding, bool, error) {
+	resolution, err := s.resolveChannelEventBindingDetailed(provider, appID, chatID, externalUserID)
+	return resolution.Resolved, resolution.Found, err
+}
+
+func (s *Server) resolveChannelEventBindingDetailed(provider, appID, chatID, externalUserID string) (channelEventResolution, error) {
+	bindings, err := s.matchChannelEventBindings(provider, appID, chatID)
+	if err != nil {
+		return channelEventResolution{}, err
+	}
+	if len(bindings) == 0 {
+		return channelEventResolution{}, nil
+	}
 	identities, err := s.controlDB.ListExternalIdentities(controldb.ExternalIdentityFilter{
 		Provider:       provider,
 		ExternalUserID: strings.TrimSpace(externalUserID),
 	})
 	if err != nil {
-		return resolvedChannelEventBinding{}, false, err
+		return channelEventResolution{}, err
 	}
 	if len(identities) == 0 {
-		return resolvedChannelEventBinding{}, false, nil
+		return channelEventResolution{Candidate: bindings[0], HasCandidate: true}, nil
 	}
+	identityByWorkspace := map[string]controldb.ExternalIdentity{}
 	for _, identity := range identities {
-		resolved, found, err := s.resolveChannelEventBindingForIdentity(identity, provider, appID, chatID)
-		if err != nil || found {
-			return resolved, found, err
-		}
-	}
-	return resolvedChannelEventBinding{}, false, nil
-}
-
-func (s *Server) resolveChannelEventBindingForIdentity(identity controldb.ExternalIdentity, provider, appID, chatID string) (resolvedChannelEventBinding, bool, error) {
-	bindings, err := s.controlDB.ListAgentChannelBindings(controldb.AgentChannelBindingFilter{
-		WorkspaceID: identity.WorkspaceID,
-		Provider:    provider,
-		Status:      "connected",
-	})
-	if err != nil {
-		return resolvedChannelEventBinding{}, false, err
+		identityByWorkspace[identity.WorkspaceID] = identity
 	}
 	for _, binding := range bindings {
-		if binding.ExternalChatID != "" && chatID != "" && binding.ExternalChatID != chatID {
-			continue
-		}
-		var meta struct {
-			AppID string `json:"appId"`
-		}
-		_ = json.Unmarshal([]byte(binding.MetadataJSON), &meta)
-		if strings.TrimSpace(appID) != "" && strings.TrimSpace(meta.AppID) != "" && strings.TrimSpace(appID) != strings.TrimSpace(meta.AppID) {
+		identity, ok := identityByWorkspace[binding.WorkspaceID]
+		if !ok {
 			continue
 		}
 		secret, ok, err := s.controlDB.ConnectionSecret(binding.ConnectionID)
 		if err != nil {
-			return resolvedChannelEventBinding{}, false, err
+			return channelEventResolution{}, err
 		}
 		if !ok {
 			continue
 		}
 		values, err := openConnectionSecret(secret)
 		if err != nil {
-			return resolvedChannelEventBinding{}, false, err
+			return channelEventResolution{}, err
 		}
-		return resolvedChannelEventBinding{Binding: binding, SecretValues: values, Identity: identity}, true, nil
+		return channelEventResolution{
+			Resolved: resolvedChannelEventBinding{Binding: binding, SecretValues: values, Identity: identity},
+			Found:    true,
+		}, nil
 	}
-	return resolvedChannelEventBinding{}, false, nil
+	return channelEventResolution{Candidate: bindings[0], HasCandidate: true}, nil
+}
+
+func (s *Server) matchChannelEventBindings(provider, appID, chatID string) ([]controldb.AgentChannelBinding, error) {
+	bindings, err := s.controlDB.ListAgentChannelBindings(controldb.AgentChannelBindingFilter{
+		Provider: provider,
+		Status:   "connected",
+	})
+	if err != nil {
+		return nil, err
+	}
+	out := make([]controldb.AgentChannelBinding, 0, len(bindings))
+	for _, binding := range bindings {
+		if channelEventBindingMatches(binding, appID, chatID) {
+			out = append(out, binding)
+		}
+	}
+	return out, nil
+}
+
+func channelEventBindingMatches(binding controldb.AgentChannelBinding, appID, chatID string) bool {
+	if strings.TrimSpace(binding.ExternalChatID) != "" && strings.TrimSpace(chatID) != "" && strings.TrimSpace(binding.ExternalChatID) != strings.TrimSpace(chatID) {
+		return false
+	}
+	var meta struct {
+		AppID string `json:"appId"`
+	}
+	_ = json.Unmarshal([]byte(binding.MetadataJSON), &meta)
+	if strings.TrimSpace(meta.AppID) != "" {
+		return strings.TrimSpace(appID) == strings.TrimSpace(meta.AppID)
+	}
+	return true
 }
 
 func (s *Server) runAgentForIMEvent(provider imbridge.Provider, resolved resolvedChannelEventBinding, message imbridge.IncomingMessage, text string) {

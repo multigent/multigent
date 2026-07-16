@@ -1355,6 +1355,7 @@
     },
     "callbackReason": {
       "group_not_addressed": "Group not addressed",
+      "unknown_identity": "Sender not linked",
       "verification_failed": "Verification failed",
       "permission_denied": "Permission denied",
       "agent_locked": "Agent locked"

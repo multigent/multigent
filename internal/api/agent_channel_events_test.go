@@ -140,6 +140,66 @@ func TestChannelEventBindingResolvesAcrossWorkspaces(t *testing.T) {
 	}
 }
 
+func TestChannelEventBindingRecordsUnknownIdentityOnMatchedChannel(t *testing.T) {
+	s, workspaceID := newConnectionGrantPolicyServer(t)
+	if err := s.controlDB.UpsertConnection(controldb.Connection{
+		ID:             "conn-feishu",
+		WorkspaceID:    workspaceID,
+		Provider:       "feishu",
+		ConnectionName: "agent-sample-pm",
+		OwnerType:      ConnectionOwnerWorkspace,
+		OwnerID:        workspaceID,
+		AuthType:       "app_secret",
+		Status:         "active",
+		ProfileJSON:    "{}",
+	}); err != nil {
+		t.Fatalf("connection: %v", err)
+	}
+	secret, err := sealConnectionSecret(map[string]string{"baseUrl": "https://open.feishu.cn", "appId": "cli_app", "appSecret": "secret"})
+	if err != nil {
+		t.Fatalf("seal secret: %v", err)
+	}
+	secret.ConnectionID = "conn-feishu"
+	if err := s.controlDB.UpsertConnectionSecret(secret); err != nil {
+		t.Fatalf("secret: %v", err)
+	}
+	if err := s.controlDB.UpsertAgentChannelBinding(controldb.AgentChannelBinding{
+		ID:           "chan-feishu",
+		WorkspaceID:  workspaceID,
+		ProjectID:    "sample",
+		AgentID:      "pm",
+		Provider:     "feishu",
+		ConnectionID: "conn-feishu",
+		Status:       "connected",
+		MetadataJSON: `{"appId":"cli_app"}`,
+	}); err != nil {
+		t.Fatalf("binding: %v", err)
+	}
+
+	resolution, err := s.resolveChannelEventBindingDetailed("feishu", "cli_app", "oc_one", "ou_unknown")
+	if err != nil {
+		t.Fatalf("resolve: %v", err)
+	}
+	if resolution.Found || !resolution.HasCandidate || resolution.Candidate.ID != "chan-feishu" {
+		t.Fatalf("unexpected resolution: %#v", resolution)
+	}
+	s.recordAgentChannelCallback(resolution.Candidate, "rejected", "unknown_identity", imbridge.IncomingMessage{
+		MessageID:    "om_unknown",
+		ChatID:       "oc_one",
+		ChatType:     "p2p",
+		SenderOpenID: "ou_unknown",
+		Text:         "hello",
+	}, "")
+	updated, ok, err := s.controlDB.AgentChannelBindingByID("chan-feishu")
+	if err != nil || !ok {
+		t.Fatalf("load binding ok=%v err=%v", ok, err)
+	}
+	resp := agentChannelToResponse(updated)
+	if resp.Callback.Status != "rejected" || resp.Callback.Reason != "unknown_identity" || resp.Callback.MessageID != "om_unknown" {
+		t.Fatalf("callback metadata not recorded: %#v", resp.Callback)
+	}
+}
+
 func TestChannelEventUserPermissionUsesAgentRBAC(t *testing.T) {
 	s, workspaceID := newConnectionGrantPolicyServer(t)
 	grantProjectRoleForTest(t, s, workspaceID, "viewer", ProjectRoleViewer)
@@ -245,6 +305,22 @@ func TestShouldHandleIMMessageRequiresGroupAddressing(t *testing.T) {
 	}
 	if provider.ShouldHandleMessage("oc_group", imbridge.IncomingMessage{ChatType: "group", ChatID: "oc_other", RawContent: `{"text":"hello"}`}) {
 		t.Fatalf("different unmentioned group should be ignored")
+	}
+}
+
+func TestChannelEventBindingRequiresMatchingAppIDWhenConfigured(t *testing.T) {
+	binding := controldb.AgentChannelBinding{
+		Provider:     "feishu",
+		MetadataJSON: `{"appId":"cli_app"}`,
+	}
+	if channelEventBindingMatches(binding, "", "") {
+		t.Fatalf("missing event app id should not match a configured channel app id")
+	}
+	if channelEventBindingMatches(binding, "other_app", "") {
+		t.Fatalf("different event app id should not match")
+	}
+	if !channelEventBindingMatches(binding, "cli_app", "") {
+		t.Fatalf("matching event app id should match")
 	}
 }
 
