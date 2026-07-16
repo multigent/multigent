@@ -76,7 +76,7 @@ function RBACSection() {
   )
 }
 
-function UsersSection() {
+export function UsersSection() {
   const { t } = useTranslation()
   const [users, setUsers] = useState<UserRow[]>([])
   const [projects, setProjects] = useState<ProjectItem[]>([])
@@ -1072,9 +1072,6 @@ export default function SettingsPage() {
       </div>
 
       <div className="space-y-5">
-        {/* User Management (admin only) */}
-        {user?.role === 'admin' && <UsersSection />}
-
         {/* RBAC Model (admin only) */}
         {user?.role === 'admin' && <RBACSection />}
 

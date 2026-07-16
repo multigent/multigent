@@ -13,7 +13,6 @@ const MODELS = [
   'iflow',
   'generic-cli',
   'http-agent',
-  'human',
 ] as const
 
 type TeamInfo = { path: string; name: string }
@@ -34,6 +33,7 @@ export function HireAgentDialog({ projectId, onHired }: Props) {
   const [name, setName] = useState('')
   const [team, setTeam] = useState('')
   const [role, setRole] = useState('')
+  const [memberType, setMemberType] = useState<'agent' | 'human'>('agent')
   const [model, setModel] = useState<string>('claudecode')
   const [busy, setBusy] = useState(false)
   const [err, setErr] = useState<string | null>(null)
@@ -69,6 +69,7 @@ export function HireAgentDialog({ projectId, onHired }: Props) {
     setName('')
     setTeam('')
     setRole('')
+    setMemberType('agent')
     setModel('claudecode')
     setErr(null)
     setOutput(null)
@@ -83,7 +84,7 @@ export function HireAgentDialog({ projectId, onHired }: Props) {
     e.preventDefault()
     setErr(null)
     setOutput(null)
-    if (!name.trim() || !team.trim() || !model.trim()) {
+    if (!name.trim() || (memberType === 'agent' && (!team.trim() || !model.trim()))) {
       setErr(t('forms.fillRequired'))
       return
     }
@@ -93,9 +94,9 @@ export function HireAgentDialog({ projectId, onHired }: Props) {
         `/api/v1/projects/${encodeURIComponent(projectId)}/hire`,
         {
           name: name.trim(),
-          team: team.trim(),
-          role: role.trim() || undefined,
-          model: model.trim(),
+          team: memberType === 'agent' ? team.trim() : 'human',
+          role: memberType === 'agent' ? (role.trim() || undefined) : undefined,
+          model: memberType === 'agent' ? model.trim() : 'human',
         },
       )
       setOutput(res.output)
@@ -117,7 +118,7 @@ export function HireAgentDialog({ projectId, onHired }: Props) {
         onClick={openDialog}
         className="rounded-lg border border-sky-600 bg-white px-3 py-2 text-sm font-medium text-sky-700 hover:bg-sky-50 dark:border-sky-500 dark:bg-zinc-900 dark:text-sky-400 dark:hover:bg-zinc-800"
       >
-        {t('members.hireAgent')}
+        {t('members.addMember')}
       </button>
       {open && (
         <div
@@ -133,17 +134,37 @@ export function HireAgentDialog({ projectId, onHired }: Props) {
           >
             <div className="border-b border-neutral-200 px-4 py-3 dark:border-zinc-700">
               <h2 id="hire-agent-title" className="text-base font-semibold text-neutral-900 dark:text-zinc-100">
-                {t('members.hireAgent')}
+                {t('members.addMember')}
               </h2>
               <p className="mt-0.5 text-xs text-neutral-400 dark:text-zinc-500">
-                {t('members.hireAgentDesc', { project: projectId })}
+                {t('members.addMemberDesc', { project: projectId })}
               </p>
             </div>
             <form onSubmit={onSubmit} className="space-y-3 px-4 py-3">
-              {model === 'human' ? (
+              <label className="block text-sm">
+                <span className="text-neutral-600 dark:text-zinc-400">{t('members.memberType')} *</span>
+                <select
+                  value={memberType}
+                  onChange={(e) => {
+                    const next = e.target.value as 'agent' | 'human'
+                    setMemberType(next)
+                    setName('')
+                    setTeam('')
+                    setRole('')
+                    if (next === 'agent') setModel('claudecode')
+                  }}
+                  className={fieldCls}
+                  autoFocus
+                >
+                  <option value="agent">{t('members.memberTypeAgent')}</option>
+                  <option value="human">{t('members.memberTypeHuman')}</option>
+                </select>
+              </label>
+
+              {memberType === 'human' ? (
                 <label className="block text-sm">
                   <span className="text-neutral-600 dark:text-zinc-400">{t('people.selectPerson')} *</span>
-                  <select value={name} onChange={(e) => setName(e.target.value)} className={fieldCls} autoFocus>
+                  <select value={name} onChange={(e) => setName(e.target.value)} className={fieldCls}>
                     <option value="">{t('people.selectPerson')}</option>
                     {people
                       .filter(p => !p.linkedAgents?.some(la => la.startsWith(projectId + '/')))
@@ -170,19 +191,21 @@ export function HireAgentDialog({ projectId, onHired }: Props) {
                 </label>
               )}
 
-              <label className="block text-sm">
-                <span className="text-neutral-600 dark:text-zinc-400">{t('members.team')} *</span>
-                <select value={team} onChange={(e) => setTeam(e.target.value)} className={fieldCls}>
-                  <option value="">{t('members.selectTeam')}</option>
-                  {teams.map((te) => (
-                    <option key={te.path} value={te.path}>
-                      {te.name} ({te.path})
-                    </option>
-                  ))}
-                </select>
-              </label>
+              {memberType === 'agent' && (
+                <label className="block text-sm">
+                  <span className="text-neutral-600 dark:text-zinc-400">{t('members.team')} *</span>
+                  <select value={team} onChange={(e) => setTeam(e.target.value)} className={fieldCls}>
+                    <option value="">{t('members.selectTeam')}</option>
+                    {teams.map((te) => (
+                      <option key={te.path} value={te.path}>
+                        {te.name} ({te.path})
+                      </option>
+                    ))}
+                  </select>
+                </label>
+              )}
 
-              {roles.length > 0 && (
+              {memberType === 'agent' && roles.length > 0 && (
                 <label className="block text-sm">
                   <span className="text-neutral-600 dark:text-zinc-400">{t('members.role')}</span>
                   <select value={role} onChange={(e) => setRole(e.target.value)} className={fieldCls}>
@@ -196,14 +219,16 @@ export function HireAgentDialog({ projectId, onHired }: Props) {
                 </label>
               )}
 
-              <label className="block text-sm">
-                <span className="text-neutral-600 dark:text-zinc-400">{t('members.model')} *</span>
-                <select value={model} onChange={(e) => { setModel(e.target.value); setName('') }} className={fieldCls}>
-                  {MODELS.map((m) => (
-                    <option key={m} value={m}>{m}</option>
-                  ))}
-                </select>
-              </label>
+              {memberType === 'agent' && (
+                <label className="block text-sm">
+                  <span className="text-neutral-600 dark:text-zinc-400">{t('members.model')} *</span>
+                  <select value={model} onChange={(e) => { setModel(e.target.value); setName('') }} className={fieldCls}>
+                    {MODELS.map((m) => (
+                      <option key={m} value={m}>{m}</option>
+                    ))}
+                  </select>
+                </label>
+              )}
 
               {output && (
                 <div className="rounded-md bg-emerald-50 p-3 text-xs text-emerald-800 dark:bg-emerald-900/20 dark:text-emerald-300">
@@ -225,7 +250,7 @@ export function HireAgentDialog({ projectId, onHired }: Props) {
                   disabled={busy}
                   className="rounded-lg bg-sky-600 px-3 py-1.5 text-sm font-medium text-white disabled:opacity-50"
                 >
-                  {busy ? t('members.hiring') : t('members.hire')}
+                  {busy ? t('members.adding') : t('members.add')}
                 </button>
               </div>
             </form>

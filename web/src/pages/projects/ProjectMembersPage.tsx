@@ -130,6 +130,7 @@ export default function ProjectMembersPage() {
           <div className="grid grid-cols-1 gap-4 sm:grid-cols-2 xl:grid-cols-3">
             {members.map((row) => {
               const modelCls = MODEL_COLORS[row.model] ?? 'bg-neutral-100 text-neutral-600 dark:bg-zinc-800 dark:text-zinc-400'
+              const isHuman = row.model === 'human'
               return (
                 <div
                   key={row.name}
@@ -142,7 +143,7 @@ export default function ProjectMembersPage() {
                     <MemberAvatar row={row} />
                     <div className="min-w-0 flex-1">
                       <p className="truncate font-mono text-sm font-semibold text-neutral-900 dark:text-zinc-100">{row.name}</p>
-                      <p className="mt-0.5 truncate text-xs text-neutral-500 dark:text-zinc-500">{row.team}</p>
+                      <p className="mt-0.5 truncate text-xs text-neutral-500 dark:text-zinc-500">{isHuman ? t('members.memberTypeHuman') : row.team}</p>
                     </div>
                   </Link>
                   <div className="mt-3 flex items-center gap-2">
