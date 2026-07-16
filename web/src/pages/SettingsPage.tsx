@@ -424,34 +424,31 @@ type ProviderRow = {
 }
 type WorkspaceAccessSummary = { currentUserCanAdmin?: boolean }
 
-const OFFICIAL_PROVIDER_TYPES = ['openai', 'anthropic', 'gemini'] as const
-const GATEWAY_PROVIDER_TYPES = ['openai', 'anthropic', 'gemini', 'custom'] as const
 type ModelAccountMode = 'official' | 'gateway'
+type ModelAccountCLI = 'codex' | 'claudecode' | 'gemini'
+const OFFICIAL_ACCOUNT_CLIS: ModelAccountCLI[] = ['codex', 'claudecode', 'gemini']
+const GATEWAY_ACCOUNT_CLIS: ModelAccountCLI[] = ['codex', 'claudecode']
 
 type ProviderPreset = {
   id: string
   label: string
-  type: ProviderRow['type']
+  cli: ModelAccountCLI
   baseUrl: string
   model: string
   hint: string
-  mode: ModelAccountMode
 }
 
-const MODEL_ACCOUNT_PRESETS: ProviderPreset[] = [
-  { id: 'official-openai', label: 'OpenAI', type: 'openai', baseUrl: '', model: '', hint: 'Codex / Cursor', mode: 'official' },
-  { id: 'official-anthropic', label: 'Anthropic Claude', type: 'anthropic', baseUrl: '', model: '', hint: 'Claude Code', mode: 'official' },
-  { id: 'official-gemini', label: 'Google Gemini', type: 'gemini', baseUrl: '', model: '', hint: 'Gemini CLI', mode: 'official' },
-  { id: 'openai-compatible', label: 'OpenAI Compatible', type: 'openai', baseUrl: '', model: '', hint: 'Codex / OpenAI-compatible gateways', mode: 'gateway' },
-  { id: 'anthropic-compatible', label: 'Anthropic Compatible', type: 'anthropic', baseUrl: '', model: '', hint: 'Claude Code-compatible gateways', mode: 'gateway' },
-  { id: 'deepseek-codex', label: 'DeepSeek for Codex', type: 'openai', baseUrl: 'https://api.deepseek.com', model: 'deepseek-chat', hint: 'Codex via OpenAI-compatible API', mode: 'gateway' },
-  { id: 'deepseek-claude', label: 'DeepSeek for Claude Code', type: 'anthropic', baseUrl: 'https://api.deepseek.com/anthropic', model: 'deepseek-chat', hint: 'Claude Code-compatible API', mode: 'gateway' },
-  { id: 'kimi-codex', label: 'Kimi for Codex', type: 'openai', baseUrl: 'https://api.moonshot.cn/v1', model: 'kimi-k2-turbo-preview', hint: 'Codex via OpenAI-compatible API', mode: 'gateway' },
-  { id: 'kimi-coding', label: 'Kimi Coding', type: 'openai', baseUrl: 'https://api.kimi.com/coding/v1', model: 'kimi-for-coding', hint: 'Codex coding endpoint', mode: 'gateway' },
-  { id: 'openrouter', label: 'OpenRouter', type: 'openai', baseUrl: 'https://openrouter.ai/api/v1', model: '', hint: 'OpenAI-compatible model router', mode: 'gateway' },
+const GATEWAY_ACCOUNT_PRESETS: ProviderPreset[] = [
+  { id: 'codex-compatible', label: 'OpenAI Compatible', cli: 'codex', baseUrl: '', model: '', hint: 'Codex / OpenAI-compatible gateways' },
+  { id: 'claude-compatible', label: 'Anthropic Compatible', cli: 'claudecode', baseUrl: '', model: '', hint: 'Claude Code-compatible gateways' },
+  { id: 'deepseek-codex', label: 'DeepSeek', cli: 'codex', baseUrl: 'https://api.deepseek.com', model: 'deepseek-chat', hint: 'Codex via OpenAI-compatible API' },
+  { id: 'deepseek-claude', label: 'DeepSeek', cli: 'claudecode', baseUrl: 'https://api.deepseek.com/anthropic', model: 'deepseek-chat', hint: 'Claude Code-compatible API' },
+  { id: 'kimi-codex', label: 'Kimi', cli: 'codex', baseUrl: 'https://api.moonshot.cn/v1', model: 'kimi-k2-turbo-preview', hint: 'Codex via OpenAI-compatible API' },
+  { id: 'kimi-coding', label: 'Kimi Coding', cli: 'codex', baseUrl: 'https://api.kimi.com/coding/v1', model: 'kimi-for-coding', hint: 'Codex coding endpoint' },
+  { id: 'openrouter', label: 'OpenRouter', cli: 'codex', baseUrl: 'https://openrouter.ai/api/v1', model: '', hint: 'OpenAI-compatible model router' },
 ]
 
-type ProviderDraft = Partial<ProviderRow> & { apiKey?: string; accountMode?: ModelAccountMode }
+type ProviderDraft = Partial<ProviderRow> & { apiKey?: string; accountMode?: ModelAccountMode; cli?: ModelAccountCLI }
 
 function ProvidersSection() {
   const { t } = useTranslation()
@@ -480,13 +477,13 @@ function ProvidersSection() {
   useEffect(() => { void refresh() }, [refresh])
 
   function openNew() {
-    setEditing({ accountMode: 'official', ownerType: canCreateWorkspaceProvider ? 'workspace' : 'user', name: 'OpenAI', type: 'openai', baseUrl: '', model: '', apiKey: '' })
+    setEditing({ accountMode: 'official', cli: 'codex', ownerType: canCreateWorkspaceProvider ? 'workspace' : 'user', name: providerOfficialName('codex'), type: providerTypeForCLI('codex'), baseUrl: '', model: '', apiKey: '' })
     setShowKey(false)
     setErr(null)
   }
 
   function openEdit(p: ProviderRow) {
-    setEditing({ ...p, accountMode: inferModelAccountMode(p), apiKey: '' })
+    setEditing({ ...p, accountMode: inferModelAccountMode(p), cli: inferModelAccountCLI(p), apiKey: '' })
     setShowKey(false)
     setErr(null)
   }
@@ -498,7 +495,7 @@ function ProvidersSection() {
       const body: any = {
         ownerType: editing.ownerType || (canCreateWorkspaceProvider ? 'workspace' : 'user'),
         name: editing.name,
-        type: editing.type || 'anthropic',
+        type: providerTypeForCLI(editing.cli),
         baseUrl: editing.accountMode === 'official' ? '' : editing.baseUrl || '',
         model: editing.accountMode === 'official' ? '' : editing.model || '',
       }
@@ -530,13 +527,14 @@ function ProvidersSection() {
   }
 
   function applyPreset(presetID: string) {
-    const preset = MODEL_ACCOUNT_PRESETS.find(p => p.id === presetID)
+    const preset = GATEWAY_ACCOUNT_PRESETS.find(p => p.id === presetID)
     if (!preset) return
     setEditing(prev => ({
       ...prev,
-      name: prev?.name?.trim() ? prev.name : preset.label,
-      accountMode: preset.mode,
-      type: preset.type,
+      name: prev?.name?.trim() && !isGeneratedModelAccountName(prev.name) ? prev.name : preset.label,
+      accountMode: 'gateway',
+      cli: preset.cli,
+      type: providerTypeForCLI(preset.cli),
       baseUrl: preset.baseUrl,
       model: preset.model,
     }))
@@ -546,31 +544,36 @@ function ProvidersSection() {
     setEditing(prev => {
       if (!prev) return prev
       if (mode === 'official') {
-        const nextType = isOfficialProviderType(prev.type) ? prev.type : 'openai'
+        const nextCLI = isOfficialCLI(prev.cli) ? prev.cli : 'codex'
         return {
           ...prev,
           accountMode: 'official',
-          type: nextType,
+          cli: nextCLI,
+          type: providerTypeForCLI(nextCLI),
           baseUrl: '',
           model: '',
-          name: prev.name?.trim() ? prev.name : providerOfficialName(nextType),
+          name: prev.name?.trim() && !isGeneratedModelAccountName(prev.name) ? prev.name : providerOfficialName(nextCLI),
         }
       }
+      const nextCLI = isGatewayCLI(prev.cli) ? prev.cli : 'codex'
       return {
         ...prev,
         accountMode: 'gateway',
-        type: prev.type || 'openai',
+        cli: nextCLI,
+        type: providerTypeForCLI(nextCLI),
+        name: prev.name?.trim() && !isGeneratedModelAccountName(prev.name) ? prev.name : '',
       }
     })
   }
 
-  function setProviderType(type: string) {
+  function setProviderCLI(cli: ModelAccountCLI) {
     setEditing(prev => {
       if (!prev) return prev
       return {
         ...prev,
-        type,
-        name: prev.name?.trim() ? prev.name : (prev.accountMode === 'official' ? providerOfficialName(type) : ''),
+        cli,
+        type: providerTypeForCLI(cli),
+        name: prev.name?.trim() && !isGeneratedModelAccountName(prev.name) ? prev.name : (prev.accountMode === 'official' ? providerOfficialName(cli) : ''),
       }
     })
   }
@@ -603,7 +606,7 @@ function ProvidersSection() {
                 <span className="text-sm font-medium text-neutral-800 dark:text-zinc-200">{p.name}</span>
                 <span className="text-xs text-neutral-400 dark:text-zinc-500">
                   {inferModelAccountMode(p) === 'official' ? t('provider.officialBadge') : t('provider.gatewayBadge')}
-                  {' · '}{providerTypeLabel(p.type)}
+                  {' · '}{providerCLILabel(inferModelAccountCLI(p))}
                   {p.model ? ` · ${p.model}` : ''}{p.baseUrl ? ` · ${p.baseUrl}` : ''}{p.hasKey ? ` · ${t('provider.keyConfigured')}` : ''}
                 </span>
               </div>
@@ -671,11 +674,10 @@ function ProvidersSection() {
               )}
               {!editing.id && (
                 <label className="flex flex-col gap-1">
-                  <span className="text-sm font-medium text-neutral-600 dark:text-zinc-400">{t('provider.presetLabel')}</span>
-                  <select value="" onChange={e => applyPreset(e.target.value)} className={fieldCls}>
-                    <option value="">{t('provider.presetPlaceholder')}</option>
-                    {MODEL_ACCOUNT_PRESETS.filter(preset => preset.mode === (editing.accountMode ?? 'official')).map(preset => (
-                      <option key={preset.id} value={preset.id}>{preset.label} - {preset.hint}</option>
+                  <span className="text-sm font-medium text-neutral-600 dark:text-zinc-400">{t('provider.cliLabel')}</span>
+                  <select value={editing.cli ?? 'codex'} onChange={e => setProviderCLI(e.target.value as ModelAccountCLI)} className={fieldCls}>
+                    {((editing.accountMode ?? 'official') === 'official' ? OFFICIAL_ACCOUNT_CLIS : GATEWAY_ACCOUNT_CLIS).map(cli => (
+                      <option key={cli} value={cli}>{providerCLILabel(cli)}</option>
                     ))}
                   </select>
                 </label>
@@ -697,25 +699,30 @@ function ProvidersSection() {
                 <span className="text-sm font-medium text-neutral-600 dark:text-zinc-400">{t('provider.nameLabel')}</span>
                 <input value={editing.name ?? ''} onChange={e => setEditing({ ...editing, name: e.target.value })} className={fieldCls} placeholder={t('provider.namePlaceholder')} />
               </label>
-              <label className="flex flex-col gap-1">
-                <span className="text-sm font-medium text-neutral-600 dark:text-zinc-400">{t('provider.typeLabel')}</span>
-                <select value={editing.type ?? 'openai'} onChange={e => setProviderType(e.target.value)} className={fieldCls}>
-                  {((editing.accountMode ?? 'official') === 'official' ? OFFICIAL_PROVIDER_TYPES : GATEWAY_PROVIDER_TYPES).map(t => <option key={t} value={t}>{providerTypeLabel(t)}</option>)}
-                </select>
-              </label>
               {(editing.accountMode ?? 'official') === 'official' ? (
                 <p className="rounded-lg border border-sky-100 bg-sky-50 px-3 py-2 text-xs leading-5 text-sky-700 dark:border-sky-900/50 dark:bg-sky-900/20 dark:text-sky-300">
                   {t('provider.officialHint')}
                 </p>
               ) : (
                 <>
+                  {!editing.id && (
+                    <label className="flex flex-col gap-1">
+                      <span className="text-sm font-medium text-neutral-600 dark:text-zinc-400">{t('provider.presetLabel')}</span>
+                      <select value="" onChange={e => applyPreset(e.target.value)} className={fieldCls}>
+                        <option value="">{t('provider.presetPlaceholder')}</option>
+                        {GATEWAY_ACCOUNT_PRESETS.filter(preset => preset.cli === (editing.cli ?? 'codex')).map(preset => (
+                          <option key={preset.id} value={preset.id}>{preset.label} - {preset.hint}</option>
+                        ))}
+                      </select>
+                    </label>
+                  )}
                   <label className="flex flex-col gap-1">
                     <span className="text-sm font-medium text-neutral-600 dark:text-zinc-400">{t('provider.endpointLabel')}</span>
-                    <input value={editing.baseUrl ?? ''} onChange={e => setEditing({ ...editing, baseUrl: e.target.value })} className={cn(fieldCls, 'font-mono text-xs')} placeholder={providerEndpointPlaceholder(editing.type)} />
+                    <input value={editing.baseUrl ?? ''} onChange={e => setEditing({ ...editing, baseUrl: e.target.value })} className={cn(fieldCls, 'font-mono text-xs')} placeholder={providerEndpointPlaceholder(editing.cli)} />
                   </label>
                   <label className="flex flex-col gap-1">
                     <span className="text-sm font-medium text-neutral-600 dark:text-zinc-400">{t('provider.defaultModelLabel')}</span>
-                    <input value={editing.model ?? ''} onChange={e => setEditing({ ...editing, model: e.target.value })} className={cn(fieldCls, 'font-mono text-xs')} placeholder={providerModelPlaceholder(editing.type)} />
+                    <input value={editing.model ?? ''} onChange={e => setEditing({ ...editing, model: e.target.value })} className={cn(fieldCls, 'font-mono text-xs')} placeholder={providerModelPlaceholder(editing.cli)} />
                   </label>
                   <p className="text-xs leading-5 text-neutral-400 dark:text-zinc-500">{t('provider.gatewayHint')}</p>
                 </>
@@ -757,48 +764,77 @@ function canManageProviderRow(provider: ProviderRow, canManageWorkspace: boolean
   return canManageWorkspace
 }
 
-function providerTypeLabel(type?: string): string {
-  switch (type) {
-    case 'anthropic': return 'Claude / Anthropic'
-    case 'openai': return 'Codex / OpenAI'
-    case 'gemini': return 'Gemini'
-    default: return 'Custom'
-  }
-}
-
 function inferModelAccountMode(provider: Pick<ProviderRow, 'baseUrl' | 'type'>): ModelAccountMode {
   if (provider.baseUrl?.trim()) return 'gateway'
-  if (isOfficialProviderType(provider.type)) return 'official'
+  if (isKnownProviderType(provider.type)) return 'official'
   return 'gateway'
 }
 
-function isOfficialProviderType(type?: string): type is typeof OFFICIAL_PROVIDER_TYPES[number] {
+function isKnownProviderType(type?: string): boolean {
   return type === 'openai' || type === 'anthropic' || type === 'gemini'
 }
 
-function providerOfficialName(type?: string): string {
-  switch (type) {
-    case 'anthropic': return 'Anthropic Claude'
-    case 'gemini': return 'Google Gemini'
+function inferModelAccountCLI(provider: Pick<ProviderRow, 'type'>): ModelAccountCLI {
+  switch (provider.type) {
+    case 'anthropic': return 'claudecode'
+    case 'gemini': return 'gemini'
     case 'openai':
-    default: return 'OpenAI'
+    default: return 'codex'
   }
 }
 
-function providerEndpointPlaceholder(type?: string): string {
-  switch (type) {
-    case 'openai': return 'https://api.example.com/v1'
-    case 'gemini': return 'https://generativelanguage.example.com'
-    case 'anthropic': return 'https://api.example.com/anthropic'
-    default: return 'https://api.example.com'
+function isOfficialCLI(cli?: string): cli is ModelAccountCLI {
+  return cli === 'codex' || cli === 'claudecode' || cli === 'gemini'
+}
+
+function isGatewayCLI(cli?: string): cli is ModelAccountCLI {
+  return cli === 'codex' || cli === 'claudecode'
+}
+
+function providerTypeForCLI(cli?: ModelAccountCLI): string {
+  switch (cli) {
+    case 'claudecode': return 'anthropic'
+    case 'gemini': return 'gemini'
+    case 'codex':
+    default: return 'openai'
   }
 }
 
-function providerModelPlaceholder(type?: string): string {
-  switch (type) {
-    case 'anthropic': return 'claude-sonnet-4-20250514'
-    case 'gemini': return 'gemini-3.5-flash'
-    case 'openai':
+function providerCLILabel(cli?: ModelAccountCLI): string {
+  switch (cli) {
+    case 'claudecode': return 'Claude Code'
+    case 'gemini': return 'Gemini CLI'
+    case 'codex':
+    default: return 'Codex'
+  }
+}
+
+function providerOfficialName(cli?: ModelAccountCLI): string {
+  switch (cli) {
+    case 'claudecode': return 'Claude Code Official'
+    case 'gemini': return 'Gemini Official'
+    case 'codex':
+    default: return 'Codex Official'
+  }
+}
+
+function isGeneratedModelAccountName(name?: string): boolean {
+  const trimmed = name?.trim()
+  return trimmed === 'Codex Official' || trimmed === 'Claude Code Official' || trimmed === 'Gemini Official'
+}
+
+function providerEndpointPlaceholder(cli?: ModelAccountCLI): string {
+  switch (cli) {
+    case 'claudecode': return 'https://api.example.com/anthropic'
+    case 'codex':
+    default: return 'https://api.example.com/v1'
+  }
+}
+
+function providerModelPlaceholder(cli?: ModelAccountCLI): string {
+  switch (cli) {
+    case 'claudecode': return 'claude-sonnet-4-20250514'
+    case 'codex':
     default: return 'gpt-5.6-sol'
   }
 }
