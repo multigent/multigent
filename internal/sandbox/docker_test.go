@@ -28,7 +28,7 @@ func TestBuildArgsBinPATHKeepsToolchainPaths(t *testing.T) {
 	if pathEnv == "" {
 		t.Fatalf("PATH env not found in args: %v", args)
 	}
-	for _, want := range []string{AgencycliBin, "/usr/local/go/bin", "/root/go/bin", "/usr/local/bin"} {
+	for _, want := range []string{UserBin, "/usr/local/go/bin", "/root/go/bin", "/usr/local/bin"} {
 		if !strings.Contains(pathEnv, want) {
 			t.Fatalf("PATH %q missing %s", pathEnv, want)
 		}

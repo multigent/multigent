@@ -8,6 +8,7 @@ import (
 
 	"github.com/multigent/multigent/internal/agentcli"
 	"github.com/multigent/multigent/internal/entity"
+	"github.com/multigent/multigent/internal/runtimecli"
 	"github.com/multigent/multigent/internal/sandbox"
 )
 
@@ -55,7 +56,7 @@ func (DockerProvider) Available() error { return sandbox.CheckDocker() }
 func (DockerProvider) Command(spec ProcessSpec) (string, []string, error) {
 	cfg := DockerConfig(spec.Runtime)
 	cfg.ExtraVolumes = append(cfg.ExtraVolumes, "multigent-toolchains:"+agentcli.ToolchainHome)
-	cfg.ExtraEnv = append(cfg.ExtraEnv, "PATH="+agentcli.ToolchainBin+":"+sandbox.AgencycliBin+":"+sandbox.ContainerDefaultPATH)
+	cfg.ExtraEnv = append(cfg.ExtraEnv, "PATH="+runtimecli.BinDir+":"+agentcli.ToolchainBin+":"+sandbox.UserBin+":"+sandbox.ContainerDefaultPATH)
 	for _, mount := range spec.Mounts {
 		volume := DockerVolume(mount)
 		if volume != "" {

@@ -1,297 +1,145 @@
 ---
 name: multigent-usage
-description: Operate the multigent tool — create agencies, teams, projects, and hire AI agents into working directories.
+description: Use the Multigent agent runtime CLI from inside a sandbox to coordinate tasks, messages, OKRs, and granted tools through the server API.
 ---
 
-# Skill: multigent Usage
+# Skill: Multigent Agent Runtime CLI
 
-`multigent` is the CLI tool that builds and manages this agency. Use it to manage teams, projects, agents, tasks, and inter-agent communication.
+Use this skill when you need to coordinate with Multigent from inside an agent sandbox.
 
-## Workspace
+The command for agents is:
 
-The current agency workspace is at: `$AGENCY_DIR`
-
-All commands auto-discover the workspace when run from inside it, or use `--dir`:
 ```bash
-multigent --dir $AGENCY_DIR <command>
+multigent-agent
 ```
 
----
+Do not use the human/admin `multigent` CLI from a sandbox. Human users operate Multigent through the Web UI; agents use `multigent-agent`, which talks to the Multigent Server with the scoped runtime token injected into the sandbox.
 
-## Discover what exists
+## Runtime Identity
+
+Multigent injects these environment variables into each run:
 
 ```bash
-multigent --dir $AGENCY_DIR list teams      # all teams
-multigent --dir $AGENCY_DIR list projects   # all projects
-multigent --dir $AGENCY_DIR list agents     # all agents across all projects
-multigent --dir $AGENCY_DIR list skills     # available skills
-
-multigent --dir $AGENCY_DIR show team engineering
-multigent --dir $AGENCY_DIR show project cc-connect
-multigent --dir $AGENCY_DIR show agent cc-connect pm
-multigent --dir $AGENCY_DIR show agent cc-connect pm --raw  # full merged context
+MULTIGENT_API_URL
+MULTIGENT_AGENT_TOKEN
+MULTIGENT_RUN_ID
+MULTIGENT_WORKSPACE_ID
+MULTIGENT_PROJECT
+MULTIGENT_AGENT
 ```
 
----
+Do not ask humans for API tokens or provider secrets. If a command fails with a permission error, report which permission or grant is missing.
 
-## Tasks
+## Completion
 
-### Add a task for an agent
+When a task is complete:
 
 ```bash
-multigent --dir $AGENCY_DIR task add \
-  --project <project> --agent <agent> \
-  --title "Task title" \
-  --prompt "Detailed instructions..." \
-  --priority <0-3>   # 0=critical 1=high 2=normal(default) 3=low
+multigent-agent task done \
+  --id "$TASK_ID" \
+  --status success \
+  --summary "What was actually completed and where the result is."
 ```
 
-### View the task queue (sorted by priority)
+If the task failed:
 
 ```bash
-multigent --dir $AGENCY_DIR task list --project <project> --agent <agent>
-multigent --dir $AGENCY_DIR task list --project <project> --agent <agent> --status pending
+multigent-agent task done \
+  --id "$TASK_ID" \
+  --status failed \
+  --error "Concrete reason and attempted fixes."
 ```
 
-### Control tasks
+If human input is required:
 
 ```bash
-multigent --dir $AGENCY_DIR task set <task-id> [--title T] [--status S] [--priority N] \
-  [--due-date YYYY-MM-DD] [--estimate-duration 30m] [--parent ID] [--label L]...
-multigent --dir $AGENCY_DIR task stats [--since today] [--project P] [--agent A] [--assignee X] \
-  [--label L] [--by agent|assignee|label|label:value|label:category] [--detail] [--format json]
-multigent --dir $AGENCY_DIR task cancel <task-id>
-multigent --dir $AGENCY_DIR task retry  <task-id>
-
-# Emergency halt — cancel all pending (and optionally running) tasks
-multigent --dir $AGENCY_DIR task stop-all \
-  --project <project> --all-agents
-multigent --dir $AGENCY_DIR task stop-all \
-  --project <project> --agent <agent> --include-running
+multigent-agent task confirm-request \
+  --id "$TASK_ID" \
+  --summary "Decision needed in one line" \
+  --action-item "Option A: ..." \
+  --action-item "Option B: ..."
 ```
 
-### View token usage and cost
+Only request human confirmation when the action is blocked by policy, missing authority, external publication, real money, or an irreversible decision.
+
+## Task Work
+
+Common task operations:
 
 ```bash
-# One agent
-multigent --dir $AGENCY_DIR task tokens \
-  --project <project> --agent <agent>
-
-# All agents in a project
-multigent --dir $AGENCY_DIR task tokens \
-  --project <project> --all-agents
-
-# Specific task
-multigent --dir $AGENCY_DIR task tokens \
-  --project <project> --agent <agent> --task <task-id>
+multigent-agent task list --status pending
+multigent-agent task show <task-id>
+multigent-agent task add \
+  --project <project> \
+  --agent <agent> \
+  --title "Short title" \
+  --prompt "Detailed, actionable instructions"
+multigent-agent task set <task-id> --status in_progress
+multigent-agent task retry <task-id>
+multigent-agent task cancel <task-id> --reason "Reason"
 ```
 
-### Task done / confirm-request (called by agents inside their prompt)
+Use task operations to create follow-up work instead of burying new work inside a chat response.
+
+## Messages
+
+Use messages for async coordination:
 
 ```bash
-# Report completion
-multigent --dir $AGENCY_DIR task done \
-  --id $TASK_ID --status success --summary "Brief description of what was done"
-
-# Report failure
-multigent --dir $AGENCY_DIR task done \
-  --id $TASK_ID --status failed --error "reason"
-
-# Request human input before proceeding (non-blocking)
-multigent --dir $AGENCY_DIR task confirm-request \
-  --id $TASK_ID \
-  --summary "PR #42 ready, awaiting merge approval" \
-  --action-item "Review: gh pr view 42 --repo org/repo" \
-  --action-item "Approve: inbox reply <msg-id> --body 'approve'" \
-  --action-item "Hold: inbox reply <msg-id> --body 'hold <reason>'"
-```
-
-After `confirm-request`, the task is archived (non-blocking). The human replies via `inbox reply` and the agent continues on their next wakeup.
-
----
-
-## Inbox — async messages (non-blocking)
-
-Any participant (human or agent) can send non-blocking messages to any other participant. The recipient reads them on their next wakeup — the scheduler automatically injects unread messages at the top of the wakeup prompt.
-
-### Participant address format
-- Human: `human`
-- Agent: `<project>/<agent>` — e.g. `cc-connect/pm`, `cc-connect/dev-claude`
-
-### Send a message
-
-```bash
-# Human → agent
-multigent --dir $AGENCY_DIR inbox send \
+multigent-agent inbox send \
+  --from "$MULTIGENT_PROJECT/$MULTIGENT_AGENT" \
   --to <project>/<agent> \
-  --subject "Subject" \
-  --body "Body"
+  --subject "Short subject" \
+  --body "Context, request, and expected next step."
 
-# Agent → human
-multigent --dir $AGENCY_DIR inbox send \
-  --from <project>/<agent> --to human \
-  --subject "Subject" --body "Body"
-
-# Agent → agent
-multigent --dir $AGENCY_DIR inbox send \
-  --from <project>/pm --to <project>/dev \
-  --subject "Extra context for task <id>" \
-  --body "Details..."
-
-# Group send (repeat --to for multiple recipients)
-multigent --dir $AGENCY_DIR inbox send \
-  --from <project>/pm \
-  --to <project>/dev --to <project>/qa --to human \
-  --subject "Sprint kick-off" --body "..."
+multigent-agent inbox messages --recipient "$MULTIGENT_PROJECT/$MULTIGENT_AGENT"
+multigent-agent inbox reply <msg-id> --body "Reply"
 ```
 
-### Read messages
+Keep messages concise and include enough context for the recipient to act without asking for clarification.
+
+## OKRs
+
+If your task clearly advances an OKR, update the relevant progress or add a review note:
 
 ```bash
-multigent --dir $AGENCY_DIR inbox messages                          # human's unread
-multigent --dir $AGENCY_DIR inbox messages --recipient <project>/pm # agent's mailbox
-multigent --dir $AGENCY_DIR inbox messages --from <project>/qa      # filter by sender
-multigent --dir $AGENCY_DIR inbox messages --all                    # include read
-multigent --dir $AGENCY_DIR inbox messages --archived               # archived only
-multigent --dir $AGENCY_DIR inbox messages --mark-read              # mark all read
+multigent-agent okr list
+multigent-agent okr show <okr-id>
+multigent-agent okr update <okr-id> --status on_track
+multigent-agent okr review --okr <okr-id> --note "Progress made and evidence."
 ```
 
-### Reply / Forward
+Do not invent OKR changes. If you are unsure whether a task maps to an OKR, mention that uncertainty in the task summary.
+
+## Runtime Connections
+
+Use runtime connection commands for granted external tools:
 
 ```bash
-multigent --dir $AGENCY_DIR inbox reply <msg-id> --from <address> --body "..."
-multigent --dir $AGENCY_DIR inbox fwd   <msg-id> --to <address> --note "..."
+multigent-agent runtime connections --format table
+multigent-agent runtime action --connection <alias> --data '{"method":"GET","endpoint":"/path"}'
+multigent-agent runtime mcp --connection <alias> --data '{"jsonrpc":"2.0","id":1,"method":"tools/list"}'
 ```
 
-### Per-message status
+Rules:
+
+- Use only connection aliases shown by `runtime connections`.
+- Do not read or expose raw provider credentials.
+- If a required connection is missing, report the missing provider and target agent.
+
+## Output Discipline
+
+Prefer structured output when available:
 
 ```bash
-multigent --dir $AGENCY_DIR inbox read    <msg-id>
-multigent --dir $AGENCY_DIR inbox archive <msg-id>
-multigent --dir $AGENCY_DIR inbox delete  <msg-id>
-multigent --dir $AGENCY_DIR inbox rm      <msg-id>   # alias for delete
+multigent-agent task list --json
 ```
 
----
+When reporting completion, include:
 
-## Heartbeat scheduler
-
-```bash
-multigent --dir $AGENCY_DIR scheduler start
-multigent --dir $AGENCY_DIR scheduler stop
-multigent --dir $AGENCY_DIR scheduler status
-
-# Configure an agent's heartbeat
-multigent --dir $AGENCY_DIR scheduler heartbeat \
-  --project <project> --agent <agent> \
-  --enable --interval 30m \
-  --active-hours "09:00-20:00" \
-  --active-days weekdays
-
-# Set or update the wakeup routine (runs when task queue is empty)
-multigent --dir $AGENCY_DIR scheduler heartbeat \
-  --project <project> --agent <agent> \
-  --wakeup-prompt-file projects/<project>/agents/<agent>/wakeup.md
-```
-
-When the scheduler wakes an agent:
-1. If **pending tasks** exist → runs the highest-priority task
-2. If queue is **empty** and a wakeup routine is set → runs `wakeup.md` as a synthetic task
-3. Any **unread messages** for the agent are auto-prepended to the prompt
-
----
-
-## Cron jobs
-
-```bash
-multigent --dir $AGENCY_DIR cron add \
-  --project <project> --agent <agent> \
-  --title "Weekly backlog review" \
-  --schedule "0 9 * * 1" \
-  --prompt "Review the backlog and reprioritise for the week..."
-
-multigent --dir $AGENCY_DIR cron list    --project <project> --agent <agent>
-multigent --dir $AGENCY_DIR cron disable <cron-id> --project <project> --agent <agent>
-```
-
----
-
-## OKRs (Objectives and Key Results)
-
-OKRs support three scope levels: **agency** (global), **project**, and **agent**. Child OKRs can link to a parent via `--parent` for hierarchical alignment.
-
-```bash
-# List — filter by scope and/or quarter
-multigent --dir $AGENCY_DIR okr list
-multigent --dir $AGENCY_DIR okr list --quarter 2026-Q2
-multigent --dir $AGENCY_DIR okr list --scope project --scope-ref my-service
-multigent --dir $AGENCY_DIR okr list --scope agent --scope-ref my-service/dev
-
-# Create — specify scope level
-multigent --dir $AGENCY_DIR okr create \
-  --objective "Ship v2.0" --owner human --quarter 2026-Q2
-multigent --dir $AGENCY_DIR okr create \
-  --objective "Reduce latency" --scope project --scope-ref my-service
-multigent --dir $AGENCY_DIR okr create \
-  --objective "Improve autonomy" --scope agent --scope-ref my-service/dev \
-  --parent <parent-okr-id> --description "Detailed description"
-
-# Show / Update / Delete
-multigent --dir $AGENCY_DIR okr show <okr-id>
-multigent --dir $AGENCY_DIR okr update <okr-id> --status at_risk
-multigent --dir $AGENCY_DIR okr update <okr-id> --scope project --scope-ref my-service
-multigent --dir $AGENCY_DIR okr delete <okr-id>
-
-# Key Results
-multigent --dir $AGENCY_DIR okr kr add \
-  --okr <okr-id> --description "Reduce p95 latency" --target 200 --unit ms
-multigent --dir $AGENCY_DIR okr kr update \
-  --okr <okr-id> --kr <kr-id> --current 150
-
-# Review notes
-multigent --dir $AGENCY_DIR okr review \
-  --okr <okr-id> --note "Good progress this week" --author human
-```
-
-OKR scope: agency (default), project, agent. Status: on_track, in_progress, at_risk, off_track, achieved. Progress is auto-calculated from Key Results.
-
-When completing a task, check if it advances any Key Result and update accordingly.
-
----
-
-## Milestones
-
-```bash
-multigent --dir $AGENCY_DIR milestone list --project <project>
-multigent --dir $AGENCY_DIR milestone create --project <project> \
-  --title "Beta Release" --due-date 2026-05-01 --owner human \
-  --criteria "All P0 bugs fixed" --criteria "Docs updated"
-multigent --dir $AGENCY_DIR milestone show <ms-id> --project <project>
-multigent --dir $AGENCY_DIR milestone update <ms-id> --project <project> \
-  --progress 75 --status in_progress
-multigent --dir $AGENCY_DIR milestone delete <ms-id> --project <project>
-```
-
-Milestone status: planned, in_progress, completed, cancelled.
-
----
-
-## Context sync
-
-```bash
-multigent --dir $AGENCY_DIR sync                                # all agents with changed context
-multigent --dir $AGENCY_DIR sync --project <project>           # one project
-multigent --dir $AGENCY_DIR sync --project <project> --name <agent>  # one agent
-multigent --dir $AGENCY_DIR sync --force                        # force regenerate everything
-```
-
----
-
-## Context Inheritance
-
-Every hired agent automatically receives context in this order:
-1. **agency-prompt.md** — global rules, values
-2. **teams/\<team\>/prompt.md** — team-specific standards
-3. **teams/\<team\>/roles/\<role\>/prompt.md** — role responsibilities
-4. **projects/\<project\>/prompt.md** — project background and tech stack
-5. **skills** — all skills listed in the team's `team.yaml` and role's `role.yaml`
+- actual work done
+- files, links, or artifacts produced
+- decisions made
+- open questions
+- risks
+- next suggested step

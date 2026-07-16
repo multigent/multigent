@@ -1,6 +1,6 @@
 # Unified MCP Gateway
 
-本文档描述 Multigent 后续的统一 MCP 接入点设计。它的目标不是简单把某个 MCP Server 暴露给 Agent，而是把 MCP、Skill、Connection、RBAC、审计和 Agent 身份统一到同一个治理面里。
+本文档描述 Multigent 对外部 MCP Server 的兼容接入设计。Multigent 的主路径是 **skill + `multigent-agent` CLI**；MCP 只作为外部工具生态的一种接入方式，不作为 Multigent 内部协作协议。
 
 ## 背景
 
@@ -9,7 +9,7 @@
 - Connection 支持 workspace/user ownership、grant、加密凭证、health check 和 runtime manifest。
 - `custom-mcp` 已经可以通过 `/api/v1/runtime/mcp` 代理 Agent 对单个 MCP Server 的 JSON-RPC 请求。
 - Agent runtime 已经能拿到 `MULTIGENT_API_URL`、`MULTIGENT_AGENT_TOKEN` 和 connection manifest。
-- Agent prompt 中已经注入 `multigent runtime connections`、`multigent runtime action`、`multigent runtime mcp` 的使用说明。
+- Agent prompt 中已经注入 `multigent-agent runtime connections`、`multigent-agent runtime action`、`multigent-agent runtime mcp` 的使用说明。
 
 这说明我们已经有了“代理一个 MCP Server”的能力，但还没有“统一 MCP 接入点”：
 
@@ -29,13 +29,13 @@
 | [`open-webui/mcpo`](https://github.com/open-webui/mcpo) | MCP 到 OpenAPI 的桥，强调 HTTP、文档、认证和工具互操作。 | 它主要解决 MCP 变 OpenAPI，不解决 Agent 级授权和 Multigent 内部治理。 |
 | [`supergateway`](https://github.com/supercorp-ai/supergateway) / [`mcp-proxy`](https://github.com/sparfenyuk/mcp-proxy) | stdio、SSE、WebSocket、Streamable HTTP 之间的 transport bridge。 | 它们解决传输适配，不解决工具目录、权限、凭证托管和审计。 |
 
-结论：Multigent 应该借鉴 gateway/registry 的控制面思想，以及 proxy 项目的 transport 适配能力，但核心产品形态应是自己的“Agent-aware MCP Gateway”。
+结论：Multigent 可以借鉴 gateway/registry 的控制面思想，以及 proxy 项目的 transport 适配能力，但 MCP Gateway 应定位为外部工具兼容层。核心 Agent 工作流仍然应通过 `multigent-agent` CLI 调用 Server API。
 
 ## 产品目标
 
-统一 MCP Gateway 应该做到：
+MCP 兼容层应该做到：
 
-1. Agent 只接入一个 Multigent MCP Server，就能访问被授权的外部工具。
+1. 外部 MCP Server 能以 Connection 的形式接入 Multigent。
 2. 所有工具调用都走 Multigent 的身份认证、RBAC、connection grant 和审计。
 3. 人可以在 Web 上管理 MCP Server、连接凭证、授权范围和可见工具。
 4. Agent 不直接接触 workspace 全量文件、数据库或原始 provider secret。
@@ -43,16 +43,16 @@
 
 ## 推荐形态
 
-默认提供一个统一 MCP Server：
+兼容层可以提供一个聚合 MCP Server：
 
 ```text
 Agent MCP client
-  -> Multigent Unified MCP Server
+  -> Multigent MCP compatibility gateway
     -> RBAC / Grant / Audit / Policy
       -> Upstream MCP Server / REST Action / Skill Tool
 ```
 
-这个 MCP Server 初期只暴露两个核心 tool：
+如果需要给 MCP client 暴露入口，初期只暴露两个 broker tool：
 
 1. `multigent.list_tools`
    - 输入：可选过滤条件，例如 provider、connection、category、keyword、project、risk level。

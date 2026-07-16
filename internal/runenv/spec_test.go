@@ -6,6 +6,7 @@ import (
 
 	"github.com/multigent/multigent/internal/agentcli"
 	"github.com/multigent/multigent/internal/entity"
+	"github.com/multigent/multigent/internal/runtimecli"
 	"github.com/multigent/multigent/internal/sandbox"
 )
 
@@ -38,7 +39,8 @@ func TestDockerProviderWrapsManagedAgentCLI(t *testing.T) {
 	joined := strings.Join(args, "\n")
 	for _, want := range []string{
 		"multigent-toolchains:" + agentcli.ToolchainHome,
-		"PATH=" + agentcli.ToolchainBin,
+		"PATH=" + runtimecli.BinDir,
+		agentcli.ToolchainBin,
 		sandbox.BaseImage,
 		"npm install -g @openai/codex@1.2.3",
 	} {

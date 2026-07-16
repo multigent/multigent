@@ -14,8 +14,8 @@ The agency workspace is at: `$AGENCY_DIR`
 ## Discover Agents
 
 ```bash
-multigent --dir $AGENCY_DIR list agents
-multigent --dir $AGENCY_DIR show agent <project> <agent>
+multigent-agent list agents
+multigent-agent show agent <project> <agent>
 ```
 
 ### Recipient address format
@@ -28,14 +28,14 @@ multigent --dir $AGENCY_DIR show agent <project> <agent>
 
 ```bash
 # Single recipient
-multigent --dir $AGENCY_DIR inbox send \
+multigent-agent inbox send \
   --from <your-address> \
   --to   <recipient-address> \
   --subject "<subject>" \
   --body "<body>"
 
 # Group send — repeat --to for multiple recipients
-multigent --dir $AGENCY_DIR inbox send \
+multigent-agent inbox send \
   --from cc-connect/pm \
   --to cc-connect/dev-claude --to cc-connect/qa-reviewer --to human \
   --subject "Sprint kick-off" \
@@ -46,19 +46,19 @@ multigent --dir $AGENCY_DIR inbox send \
 
 ```bash
 # PM → dev-claude: extra context
-multigent --dir $AGENCY_DIR inbox send \
+multigent-agent inbox send \
   --from cc-connect/pm --to cc-connect/dev-claude \
   --subject "Issue #205 extra context" \
   --body "Only reproduces with UTF-8 filenames. Reproduce: echo '测试' > test.txt"
 
 # PM → human: async progress update
-multigent --dir $AGENCY_DIR inbox send \
+multigent-agent inbox send \
   --from cc-connect/pm --to human \
   --subject "Backlog updated" \
   --body "Added 3 new issues (P2). No action needed, just FYI."
 
 # PM → QA: heads-up
-multigent --dir $AGENCY_DIR inbox send \
+multigent-agent inbox send \
   --from cc-connect/pm --to cc-connect/qa-reviewer \
   --subject "PR incoming for #205" \
   --body "dev-claude is working on it. Expect a PR within the hour."
@@ -69,7 +69,7 @@ multigent --dir $AGENCY_DIR inbox send \
 ## Reply to a Message
 
 ```bash
-multigent --dir $AGENCY_DIR inbox reply <msg-id> \
+multigent-agent inbox reply <msg-id> \
   --from <your-address> \
   --body "<reply text>"
 ```
@@ -80,12 +80,12 @@ multigent --dir $AGENCY_DIR inbox reply <msg-id> \
 
 ```bash
 # Forward to a single recipient
-multigent --dir $AGENCY_DIR inbox fwd <msg-id> \
+multigent-agent inbox fwd <msg-id> \
   --from <your-address> \
   --to   <recipient-address>
 
 # Forward to multiple recipients with a note
-multigent --dir $AGENCY_DIR inbox fwd <msg-id> \
+multigent-agent inbox fwd <msg-id> \
   --from cc-connect/pm \
   --to cc-connect/dev-claude --to cc-connect/qa-reviewer \
   --note "Please coordinate on this."
@@ -99,19 +99,19 @@ The forwarded message includes the original sender, subject, and body. Subject i
 
 ```bash
 # Your unread messages (also auto-injected into your wakeup prompt)
-multigent --dir $AGENCY_DIR inbox messages --recipient <your-address>
+multigent-agent inbox messages --recipient <your-address>
 
 # Filter by sender
-multigent --dir $AGENCY_DIR inbox messages --recipient <your-address> --from human
+multigent-agent inbox messages --recipient <your-address> --from human
 
 # All messages including already-read
-multigent --dir $AGENCY_DIR inbox messages --recipient <your-address> --all
+multigent-agent inbox messages --recipient <your-address> --all
 
 # Show archived messages
-multigent --dir $AGENCY_DIR inbox messages --recipient <your-address> --archived
+multigent-agent inbox messages --recipient <your-address> --archived
 
 # Mark all as read after listing
-multigent --dir $AGENCY_DIR inbox messages --recipient <your-address> --mark-read
+multigent-agent inbox messages --recipient <your-address> --mark-read
 ```
 
 ---
@@ -120,14 +120,14 @@ multigent --dir $AGENCY_DIR inbox messages --recipient <your-address> --mark-rea
 
 ```bash
 # Mark a single message as read
-multigent --dir $AGENCY_DIR inbox read <msg-id> --recipient <your-address>
+multigent-agent inbox read <msg-id> --recipient <your-address>
 
 # Archive (hides from normal listing, retrievable with --archived)
-multigent --dir $AGENCY_DIR inbox archive <msg-id> --recipient <your-address>
+multigent-agent inbox archive <msg-id> --recipient <your-address>
 
 # Permanently delete
-multigent --dir $AGENCY_DIR inbox delete <msg-id> --recipient <your-address>
-multigent --dir $AGENCY_DIR inbox rm     <msg-id> --recipient <your-address>
+multigent-agent inbox delete <msg-id> --recipient <your-address>
+multigent-agent inbox rm     <msg-id> --recipient <your-address>
 ```
 
 ---
@@ -149,26 +149,26 @@ multigent --dir $AGENCY_DIR inbox rm     <msg-id> --recipient <your-address>
 
 ```bash
 # 1. Broadcast sprint kick-off to all agents
-multigent --dir $AGENCY_DIR inbox send \
+multigent-agent inbox send \
   --from cc-connect/pm \
   --to cc-connect/dev-claude --to cc-connect/qa-reviewer --to cc-connect/biz-dev \
   --subject "Sprint W14 kick-off" \
   --body "Focus this week: <priorities>. See backlog for assigned tasks."
 
 # 2. Notify dev of approved task
-multigent --dir $AGENCY_DIR inbox send \
+multigent-agent inbox send \
   --from cc-connect/pm --to cc-connect/dev-claude \
   --subject "New task approved: <task-title>" \
   --body "Human confirmed. Priority: P<N>. Key context: <notes>"
 
 # 3. Escalate stale task to human
-multigent --dir $AGENCY_DIR inbox send \
+multigent-agent inbox send \
   --from cc-connect/pm --to human \
   --subject "Task stale: <task-title>" \
   --body "Task <id> has been in_progress for >2 days. May need intervention."
 
 # 4. Forward a customer report from human to dev
-multigent --dir $AGENCY_DIR inbox fwd <msg-id> \
+multigent-agent inbox fwd <msg-id> \
   --from cc-connect/pm --to cc-connect/dev-claude \
   --note "Customer reported this bug. Please investigate."
 ```

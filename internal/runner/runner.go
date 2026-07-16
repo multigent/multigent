@@ -30,7 +30,7 @@ import (
 	"github.com/multigent/multigent/internal/entity"
 	"github.com/multigent/multigent/internal/runenv"
 	"github.com/multigent/multigent/internal/runtimeauth"
-	"github.com/multigent/multigent/internal/sandbox"
+	"github.com/multigent/multigent/internal/runtimecli"
 	"github.com/multigent/multigent/internal/store"
 	"github.com/multigent/multigent/internal/taskstore"
 	"github.com/multigent/multigent/internal/telemetry"
@@ -49,7 +49,7 @@ const (
 )
 
 // systemMetaFooter is appended to every task prompt so agents know how to
-// call back into multigent to update task state.
+// call back into the Multigent Server through the agent runtime CLI.
 const systemMetaFooter = `
 
 ---
@@ -59,14 +59,14 @@ Task ID : %s
 Agent   : %s/%s
 
 When complete successfully, run:
-  multigent task done --id %s --status success
+  multigent-agent task done --id %s --status success
 
 If human confirmation needed, run:
-  multigent task confirm-request --id %s --summary "one-line explanation"
+  multigent-agent task confirm-request --id %s --summary "one-line explanation"
   (then exit 0)
 
 If unable to complete, run:
-  multigent task done --id %s --status failed --error "reason"
+  multigent-agent task done --id %s --status failed --error "reason"
 `
 
 // Runner executes tasks for agents using their configured CLI.
@@ -159,7 +159,7 @@ func (r *Runner) ExecPrompt(project, agentName, prompt, sessionID string) (*RunR
 		if wsMount := r.root + ":" + r.root; r.root != "" {
 			runtimeCfg.Docker.ExtraVolumes = append(runtimeCfg.Docker.ExtraVolumes, wsMount)
 		}
-		if binMount := resolveAgencycliBinaryMount(); binMount != "" {
+		if binMount := runtimecli.ResolveHostBinaryMount(); binMount != "" {
 			runtimeCfg.Docker.ExtraVolumes = append(runtimeCfg.Docker.ExtraVolumes, binMount)
 		}
 		containerPromptFile := agentDir + "/" + filepath.Base(promptFile)
@@ -375,7 +375,7 @@ func (r *Runner) RunTask(project, agentName string, task *entity.Task, sessionID
 
 		// Auto-mount the multigent binary itself (read-only) so agents can
 		// invoke `multigent` inside the container.
-		if binMount := resolveAgencycliBinaryMount(); binMount != "" {
+		if binMount := runtimecli.ResolveHostBinaryMount(); binMount != "" {
 			runtimeCfg.Docker.ExtraVolumes = append(runtimeCfg.Docker.ExtraVolumes, binMount)
 		}
 
@@ -813,26 +813,6 @@ func parseLineSentinel(output, prefix string) string {
 		}
 	}
 	return ""
-}
-
-// resolveAgencycliBinaryMount returns a read-only Docker volume mount for the
-// multigent binary running on the host, so that agent containers can invoke
-// `multigent task add`, `multigent inbox`, etc. to coordinate with peers.
-// Returns "" if the binary path cannot be determined.
-func resolveAgencycliBinaryMount() string {
-	binPath, err := os.Executable()
-	if err != nil {
-		return ""
-	}
-	// Resolve symlinks so we get the real binary path.
-	binPath, err = filepath.EvalSymlinks(binPath)
-	if err != nil {
-		return ""
-	}
-	if _, err := os.Stat(binPath); err != nil {
-		return ""
-	}
-	return binPath + ":" + sandbox.AgencycliMount + ":ro"
 }
 
 // cloneDockerCfg returns a shallow copy of cfg (or a fresh struct if nil)

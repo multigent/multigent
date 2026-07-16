@@ -38,14 +38,10 @@ const (
 	// bumps do not require rebuilding this image.
 	BaseImage = imagePrefix + "/runtime-base:latest"
 
-	// AgencycliMount is where the multigent binary is mounted inside the
-	// container so that agents can run `multigent task add` etc.
-	AgencycliMount = "/usr/local/bin/multigent"
-
-	// AgencycliBin is where user-provided binaries are mounted inside the
+	// UserBin is where user-provided binaries are mounted inside the
 	// container. If <root>/bin/ exists on the host, it is mounted here and
 	// prepended to PATH so those binaries are directly accessible.
-	AgencycliBin = "/multigent/bin"
+	UserBin = "/multigent/bin"
 
 	// ContainerDefaultPATH mirrors the tool locations provided by the sandbox
 	// images. Keep Go paths here because Docker -e PATH=... replaces the image
@@ -171,8 +167,8 @@ func BuildArgs(agentDir string, model entity.AgentModel, cfg *entity.DockerSandb
 		"bin",
 	)
 	if fi, err := os.Stat(binHostDir); err == nil && fi.IsDir() {
-		args = append(args, "-v", binHostDir+":"+AgencycliBin)
-		args = append(args, "-e", "PATH="+AgencycliBin+":"+ContainerDefaultPATH)
+		args = append(args, "-v", binHostDir+":"+UserBin)
+		args = append(args, "-e", "PATH="+UserBin+":"+ContainerDefaultPATH)
 	}
 
 	// ── Credential mounts ────────────────────────────────────────────────────

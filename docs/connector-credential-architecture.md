@@ -243,9 +243,9 @@ Rules:
 Runtime CLI helpers:
 
 ```bash
-multigent runtime connections --format table
-multigent runtime mcp --connection custom-mcp_docs --data '{"jsonrpc":"2.0","id":1,"method":"tools/list"}'
-multigent runtime action --connection github_default --data '{"method":"GET","endpoint":"/user"}'
+multigent-agent runtime connections --format table
+multigent-agent runtime mcp --connection custom-mcp_docs --data '{"jsonrpc":"2.0","id":1,"method":"tools/list"}'
+multigent-agent runtime action --connection github_default --data '{"method":"GET","endpoint":"/user"}'
 ```
 
 ## Permission Rules

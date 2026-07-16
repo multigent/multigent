@@ -24,14 +24,14 @@ At runtime, Multigent injects:
 Use these commands when available:
 
 `+"```bash"+`
-multigent runtime connections --format table
-multigent runtime action --connection <alias> --data '{"method":"GET","endpoint":"/path"}'
-multigent runtime mcp --connection <alias> --data '{"jsonrpc":"2.0","id":1,"method":"tools/list"}'
+multigent-agent runtime connections --format table
+multigent-agent runtime action --connection <alias> --data '{"method":"GET","endpoint":"/path"}'
+multigent-agent runtime mcp --connection <alias> --data '{"jsonrpc":"2.0","id":1,"method":"tools/list"}'
 `+"```"+`
 
 Rules:
 
-- Use connection aliases from the manifest or `+"`multigent runtime connections`"+`.
+- Use connection aliases from the manifest or `+"`multigent-agent runtime connections`"+`.
 - Do not read or expose raw provider secrets; call through Multigent runtime proxies.
 - If a needed connection is missing, report the missing provider and target agent instead of inventing credentials.
 `) + "\n"

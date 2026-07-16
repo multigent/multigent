@@ -24,13 +24,13 @@ Use this skill when your role involves planning, delegating, and tracking work a
 
 ```bash
 # Minimal
-multigent --dir $AGENCY_DIR task add \
+multigent-agent task add \
   --project <project> --agent <agent> \
   --title "Short title" \
   --prompt "Detailed instructions for the agent..."
 
 # With priority and type
-multigent --dir $AGENCY_DIR task add \
+multigent-agent task add \
   --project <project> --agent <agent> \
   --title "Fix auth bug" \
   --prompt "Reproduce with: curl -X POST /login with empty password. Root cause is in auth/validator.go." \
@@ -38,14 +38,14 @@ multigent --dir $AGENCY_DIR task add \
   --type bug
 
 # With dependencies (task will not start until listed IDs are done)
-multigent --dir $AGENCY_DIR task add \
+multigent-agent task add \
   --project <project> --agent <agent> \
   --title "Deploy to staging" \
   --prompt "Run: make deploy-staging" \
   --depends-on <task-id-1> --depends-on <task-id-2>
 
 # With scheduling / nesting metadata
-multigent --dir $AGENCY_DIR task add \
+multigent-agent task add \
   --project <project> --agent <agent> \
   --title "Implement sub-feature" \
   --prompt "..." \
@@ -75,20 +75,20 @@ multigent --dir $AGENCY_DIR task add \
 
 ```bash
 # All active tasks for one agent (sorted by priority)
-multigent --dir $AGENCY_DIR task list --project <project> --agent <agent>
+multigent-agent task list --project <project> --agent <agent>
 
 # Filter by status
-multigent --dir $AGENCY_DIR task list --project <project> --agent <agent> --status pending
-multigent --dir $AGENCY_DIR task list --project <project> --agent <agent> --status in_progress
+multigent-agent task list --project <project> --agent <agent> --status pending
+multigent-agent task list --project <project> --agent <agent> --status in_progress
 
 # Include archived (completed / cancelled) tasks
-multigent --dir $AGENCY_DIR task list --project <project> --agent <agent> --archived
+multigent-agent task list --project <project> --agent <agent> --archived
 
 # Show full detail of a specific task (project + agent known)
-multigent --dir $AGENCY_DIR task show <task-id> --project <project> --agent <agent>
+multigent-agent task show <task-id> --project <project> --agent <agent>
 
 # Find a task anywhere by ID (no project/agent needed)
-multigent --dir $AGENCY_DIR task find --id <task-id>
+multigent-agent task find --id <task-id>
 ```
 
 ---
@@ -97,13 +97,13 @@ multigent --dir $AGENCY_DIR task find --id <task-id>
 
 ```bash
 # Only flags you pass are changed; project/agent auto-detected if omitted
-multigent --dir $AGENCY_DIR task set <task-id> --priority 1
-multigent --dir $AGENCY_DIR task set <task-id> --status in_progress
-multigent --dir $AGENCY_DIR task set <task-id> \
+multigent-agent task set <task-id> --priority 1
+multigent-agent task set <task-id> --status in_progress
+multigent-agent task set <task-id> \
   --due-date 2026-07-15 --estimate-duration 2h --parent <parent-task-id>
-multigent --dir $AGENCY_DIR task set <task-id> --label bug --label urgent
-multigent --dir $AGENCY_DIR task set <task-id> --due-date ""   # clear due date
-multigent --dir $AGENCY_DIR task set <task-id> --format json   # print updated task
+multigent-agent task set <task-id> --label bug --label urgent
+multigent-agent task set <task-id> --due-date ""   # clear due date
+multigent-agent task set <task-id> --format json   # print updated task
 ```
 
 Updatable: `title`, `description`, `status`, `priority`, `type`, `summary`, `label`,
@@ -118,18 +118,18 @@ Status changes auto-maintain `started_at` / `finished_at`.
 To get an overview of all agents and their queue depths:
 
 ```bash
-multigent --dir $AGENCY_DIR overview
+multigent-agent overview
 ```
 
 To iterate agents and check queues programmatically:
 
 ```bash
 # List all agents in a project
-multigent --dir $AGENCY_DIR list agents --project <project>
+multigent-agent list agents --project <project>
 
 # Then per agent
-multigent --dir $AGENCY_DIR task list --project <project> --agent <agent> --status pending
-multigent --dir $AGENCY_DIR task list --project <project> --agent <agent> --status in_progress
+multigent-agent task list --project <project> --agent <agent> --status pending
+multigent-agent task list --project <project> --agent <agent> --status in_progress
 ```
 
 ---
@@ -138,25 +138,25 @@ multigent --dir $AGENCY_DIR task list --project <project> --agent <agent> --stat
 
 ```bash
 # Today by executor queue (default: all agents, grouped)
-multigent --dir $AGENCY_DIR task stats --since today
+multigent-agent task stats --since today
 
 # One agent's queue
-multigent --dir $AGENCY_DIR task stats --since today --project <project> --agent <agent>
+multigent-agent task stats --since today --project <project> --agent <agent>
 
 # By assignee field
-multigent --dir $AGENCY_DIR task stats --since today --assignee <project>/<agent>
-multigent --dir $AGENCY_DIR task stats --since 7d --by assignee
+multigent-agent task stats --since today --assignee <project>/<agent>
+multigent-agent task stats --since 7d --by assignee
 
 # By label (evening summary: value / category buckets)
-multigent --dir $AGENCY_DIR task stats --since today --by label:value
-multigent --dir $AGENCY_DIR task stats --since today --by label:category
-multigent --dir $AGENCY_DIR task stats --since today --label value:owner
+multigent-agent task stats --since today --by label:value
+multigent-agent task stats --since today --by label:category
+multigent-agent task stats --since today --label value:owner
 
 # List each finished task
-multigent --dir $AGENCY_DIR task stats --since today --detail
+multigent-agent task stats --since today --detail
 
 # JSON export (includes elapsedHuman, estimateHuman, etc.)
-multigent --dir $AGENCY_DIR task stats --since today --format json
+multigent-agent task stats --since today --format json
 ```
 
 Metrics: success/failed/cancelled counts, sum of actual elapsed time (`started_at`→`finished_at`),
@@ -167,11 +167,11 @@ JSON uses human-readable durations (`elapsedHuman`: `14m32s`) instead of nanosec
 
 ```bash
 # Success
-multigent --dir $AGENCY_DIR task done \
+multigent-agent task done \
   --id <task-id> --status success --summary "What was accomplished"
 
 # Failure
-multigent --dir $AGENCY_DIR task done \
+multigent-agent task done \
   --id <task-id> --status failed --error "reason"
 ```
 
@@ -182,7 +182,7 @@ multigent --dir $AGENCY_DIR task done \
 When an agent needs a human decision before continuing, it calls:
 
 ```bash
-multigent --dir $AGENCY_DIR task confirm-request \
+multigent-agent task confirm-request \
   --id $TASK_ID \
   --summary "One-line description of what needs approval" \
   --action-item "Option A: reply 'approve'" \
@@ -192,10 +192,10 @@ multigent --dir $AGENCY_DIR task confirm-request \
 The task is archived. The human responds via:
 
 ```bash
-multigent --dir $AGENCY_DIR inbox list
-multigent --dir $AGENCY_DIR inbox messages    # view messages
-multigent --dir $AGENCY_DIR inbox reply <msg-id> --body "approve"
-multigent --dir $AGENCY_DIR inbox reject  <task-id> --reason "out of scope"
+multigent-agent inbox list
+multigent-agent inbox messages    # view messages
+multigent-agent inbox reply <msg-id> --body "approve"
+multigent-agent inbox reject  <task-id> --reason "out of scope"
 ```
 
 The human's reply is sent as a message. The agent sees it on the next wakeup and continues via session memory.
@@ -208,10 +208,10 @@ If a task is better suited for a different agent, cancel it and re-create for th
 
 ```bash
 # 1. Cancel the original
-multigent --dir $AGENCY_DIR task cancel <task-id> --project <project> --agent <from-agent>
+multigent-agent task cancel <task-id> --project <project> --agent <from-agent>
 
 # 2. Create for the new agent with transferred context
-multigent --dir $AGENCY_DIR task add \
+multigent-agent task add \
   --project <project> --agent <to-agent> \
   --title "<same title>" \
   --prompt "<original prompt + re-delegation note>"
@@ -220,7 +220,7 @@ multigent --dir $AGENCY_DIR task add \
 To notify the new agent with async context before the task runs:
 
 ```bash
-multigent --dir $AGENCY_DIR inbox send \
+multigent-agent inbox send \
   --from <project>/pm \
   --to   <project>/<to-agent> \
   --subject "Incoming task: <title>" \
@@ -232,14 +232,14 @@ multigent --dir $AGENCY_DIR inbox send \
 ## Retry a failed task
 
 ```bash
-multigent --dir $AGENCY_DIR task retry <task-id> \
+multigent-agent task retry <task-id> \
   --project <project> --agent <agent>
 ```
 
 Optionally update the prompt before retrying:
 
 ```bash
-multigent --dir $AGENCY_DIR task retry <task-id> \
+multigent-agent task retry <task-id> \
   --project <project> --agent <agent> \
   --prompt "Updated instructions based on failure: ..."
 ```
@@ -250,15 +250,15 @@ multigent --dir $AGENCY_DIR task retry <task-id> \
 
 ```bash
 # Cancel a specific task
-multigent --dir $AGENCY_DIR task cancel <task-id> \
+multigent-agent task cancel <task-id> \
   --project <project> --agent <agent>
 
 # Emergency halt — cancel all pending tasks for all agents in a project
-multigent --dir $AGENCY_DIR task stop-all \
+multigent-agent task stop-all \
   --project <project> --all-agents
 
 # Cancel pending + in-progress for a single agent
-multigent --dir $AGENCY_DIR task stop-all \
+multigent-agent task stop-all \
   --project <project> --agent <agent> --include-running
 ```
 
@@ -269,16 +269,16 @@ multigent --dir $AGENCY_DIR task stop-all \
 Schedule a task to be automatically enqueued on a fixed schedule:
 
 ```bash
-multigent --dir $AGENCY_DIR cron add \
+multigent-agent cron add \
   --project <project> --agent <agent> \
   --id weekly-review \
   --title "Weekly backlog review" \
   --schedule "0 9 * * 1" \
   --prompt "Review all open issues. Prioritise for the week. Update task queue accordingly."
 
-multigent --dir $AGENCY_DIR cron list    --project <project> --agent <agent>
-multigent --dir $AGENCY_DIR cron disable weekly-review --project <project> --agent <agent>
-multigent --dir $AGENCY_DIR cron enable  weekly-review --project <project> --agent <agent>
+multigent-agent cron list    --project <project> --agent <agent>
+multigent-agent cron disable weekly-review --project <project> --agent <agent>
+multigent-agent cron enable  weekly-review --project <project> --agent <agent>
 ```
 
 Cron syntax: `minute hour day month weekday` (standard 5-field)
@@ -289,13 +289,13 @@ Cron syntax: `minute hour day month weekday` (standard 5-field)
 
 ```bash
 # One agent
-multigent --dir $AGENCY_DIR task tokens --project <project> --agent <agent>
+multigent-agent task tokens --project <project> --agent <agent>
 
 # All agents in a project
-multigent --dir $AGENCY_DIR task tokens --project <project> --all-agents
+multigent-agent task tokens --project <project> --all-agents
 
 # Specific task
-multigent --dir $AGENCY_DIR task tokens \
+multigent-agent task tokens \
   --project <project> --agent <agent> --task <task-id>
 ```
 

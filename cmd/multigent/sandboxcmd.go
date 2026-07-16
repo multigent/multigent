@@ -8,6 +8,7 @@ import (
 	"strings"
 
 	"github.com/multigent/multigent/internal/entity"
+	"github.com/multigent/multigent/internal/runtimecli"
 	"github.com/multigent/multigent/internal/sandbox"
 	"github.com/multigent/multigent/internal/store"
 	"github.com/spf13/cobra"
@@ -129,13 +130,13 @@ func newSandboxShowCmd() *cobra.Command {
 			fmt.Printf("\nWorkspace root mount (auto, enables inter-agent coordination):\n")
 			fmt.Printf("  -v %s\n", wsMount)
 
-			// multigent binary mount (auto, so agents can run multigent inside container)
+			// Agent runtime CLI mount (auto, so agents can call back into Multigent).
 			multigentBin, _ := os.Executable()
 			if real, err2 := filepath.EvalSymlinks(multigentBin); err2 == nil {
 				multigentBin = real
 			}
-			fmt.Printf("\nAgencycli binary mount (auto, enables `multigent` inside container):\n")
-			fmt.Printf("  -v %s:%s:ro\n", multigentBin, sandbox.AgencycliMount)
+			fmt.Printf("\nAgent runtime CLI mount (auto, enables `multigent-agent` inside container):\n")
+			fmt.Printf("  -v %s:%s:ro\n", multigentBin, runtimecli.BinaryPath)
 
 			// Preview the actual docker run command (include all auto mounts)
 			previewCfg := sbxCloneDockerCfg(dockerCfg)
@@ -145,7 +146,7 @@ func newSandboxShowCmd() *cobra.Command {
 			previewCfg.ExtraVolumes = append(previewCfg.ExtraVolumes, wsMount)
 			if multigentBin != "" {
 				previewCfg.ExtraVolumes = append(previewCfg.ExtraVolumes,
-					multigentBin+":"+sandbox.AgencycliMount+":ro")
+					multigentBin+":"+runtimecli.BinaryPath+":ro")
 			}
 			innerArgs := agentInnerArgs(meta.Model)
 			dockerArgs, err := sandbox.BuildArgs(agentDir, meta.Model, previewCfg, innerArgs)
