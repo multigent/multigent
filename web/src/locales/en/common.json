@@ -303,7 +303,6 @@
     "createHint": "Create an empty project. You can add members, tasks, schedules, and agents next.",
     "name": "Project name",
     "description": "Description",
-    "repo": "Repository or path",
     "openDemo": "Open demo project",
     "demoHintTitle": "Demo project",
     "demoHintBody": "Use “demo” to preview the project sidebar: Tasks, Messages, Members—all scoped to one project ID until the API is wired.",
@@ -354,7 +353,7 @@
   "skill": {
     "catalogTitle": "Skills Catalog",
     "catalogHint": "All skills available in this workspace. Expand to view and edit SKILL.md.",
-    "empty": "No skills defined yet. Create one with the CLI or under skills/ directory.",
+    "empty": "No skills yet",
     "create": "New skill",
     "createTitle": "New skill",
     "createHint": "Write a skill from scratch or upload an existing SKILL.md.",

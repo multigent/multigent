@@ -303,7 +303,6 @@
     "createHint": "建立一個空專案，後續可加入成員、任務、排程和 Agent。",
     "name": "專案名稱",
     "description": "專案描述",
-    "repo": "程式碼倉庫或路徑",
     "openDemo": "開啟示範專案",
     "demoHintTitle": "示範專案",
     "demoHintBody": "使用 demo 預覽側欄：任務、訊息、成員，皆在同一 projectId 下，直到接入真實 API。",
@@ -354,7 +353,7 @@
   "skill": {
     "catalogTitle": "Skills 技能庫",
     "catalogHint": "工作區可用的全部 Skill，可展開查看與編輯 SKILL.md 內容。",
-    "empty": "尚未定義 Skill。使用 CLI 或在 skills/ 目錄下建立。",
+    "empty": "暫無 Skill",
     "create": "新增 Skill",
     "createTitle": "新增 Skill",
     "createHint": "手寫一個 Skill，或上傳既有的 SKILL.md。",

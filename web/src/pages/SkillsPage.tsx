@@ -192,14 +192,6 @@ export default function SkillsPage() {
             <Puzzle className="size-7 text-neutral-400 dark:text-zinc-500" strokeWidth={1.5} />
           </div>
           <p className="text-lg font-medium text-neutral-600 dark:text-zinc-400">{t('skill.empty')}</p>
-          <button
-            type="button"
-            onClick={() => setCreateOpen(true)}
-            className="mt-5 inline-flex items-center gap-2 rounded-lg bg-sky-600 px-3.5 py-2 text-sm font-medium text-white shadow-sm transition-colors hover:bg-sky-700"
-          >
-            <Plus className="size-4" strokeWidth={2} />
-            {t('skill.create')}
-          </button>
         </div>
       )}
       {skills.length > 0 && (

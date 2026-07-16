@@ -9,7 +9,6 @@ import { apiPost } from '../../lib/api'
 type ProjectRow = {
   name: string
   description?: string
-  repo?: string
 }
 
 export default function ProjectsListPage() {
@@ -83,9 +82,6 @@ export default function ProjectsListPage() {
                 {p.description && (
                   <p className="mt-2.5 text-sm leading-relaxed text-neutral-500 dark:text-zinc-500 line-clamp-2">{p.description}</p>
                 )}
-                {p.repo && (
-                  <p className="mt-1.5 truncate font-mono text-xs text-neutral-400 dark:text-zinc-500">{p.repo}</p>
-                )}
               </div>
               <div className="mt-4 flex items-center justify-end">
                 <span className="flex items-center gap-1 text-xs font-medium text-sky-600 opacity-0 transition-opacity group-hover:opacity-100 dark:text-sky-400">
@@ -114,7 +110,6 @@ function CreateProjectDialog({ onClose, onCreated }: { onClose: () => void; onCr
   const { t } = useTranslation()
   const [name, setName] = useState('')
   const [description, setDescription] = useState('')
-  const [repo, setRepo] = useState('')
   const [saving, setSaving] = useState(false)
 
   async function create() {
@@ -122,7 +117,7 @@ function CreateProjectDialog({ onClose, onCreated }: { onClose: () => void; onCr
     if (!projectName) return
     setSaving(true)
     try {
-      await apiPost('/api/v1/projects', { name: projectName, description, repo })
+      await apiPost('/api/v1/projects', { name: projectName, description })
       onCreated(projectName)
     } finally {
       setSaving(false)
@@ -150,10 +145,6 @@ function CreateProjectDialog({ onClose, onCreated }: { onClose: () => void; onCr
           <label className="block">
             <span className="text-xs font-medium text-neutral-600 dark:text-zinc-400">{t('projects.description')}</span>
             <textarea value={description} onChange={(e) => setDescription(e.target.value)} rows={3} className="mt-1 w-full resize-y rounded-lg border border-neutral-200 bg-white px-3 py-2 text-sm outline-none focus:border-sky-400 dark:border-zinc-700 dark:bg-zinc-950 dark:text-zinc-100" />
-          </label>
-          <label className="block">
-            <span className="text-xs font-medium text-neutral-600 dark:text-zinc-400">{t('projects.repo')}</span>
-            <input value={repo} onChange={(e) => setRepo(e.target.value)} placeholder="https://github.com/org/repo or /repo/path" className="mt-1 w-full rounded-lg border border-neutral-200 bg-white px-3 py-2 text-sm outline-none focus:border-sky-400 dark:border-zinc-700 dark:bg-zinc-950 dark:text-zinc-100" />
           </label>
         </div>
         <div className="flex justify-end gap-2 border-t border-neutral-200/80 px-5 py-3 dark:border-zinc-700/60">
