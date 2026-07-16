@@ -10,6 +10,7 @@ import (
 	"net/http"
 	"os"
 	"os/exec"
+	"path/filepath"
 	"sort"
 	"strings"
 	"sync"
@@ -69,12 +70,13 @@ type Server struct {
 // NewServer builds an API server for the given workspace root.
 // If apiKey is non-empty, requests must send Authorization: Bearer <apiKey>.
 func NewServer(root, apiKey string) *Server {
-	if err := builtins.EnsureSkills(root); err != nil {
-		log.Printf("ensure builtin skills failed: %v", err)
-	}
 	controlDB, err := controldb.OpenDefault()
 	if err != nil {
 		log.Fatalf("control DB unavailable: %v", err)
+	}
+	root = normalizeServerWorkspaceRoot(root, controlDB)
+	if err := builtins.EnsureSkills(root); err != nil {
+		log.Printf("ensure builtin skills failed: %v", err)
 	}
 	sched := newSchedulerManager(root)
 	ts := taskstore.NewDB(root, controlDB)
@@ -97,6 +99,47 @@ func NewServer(root, apiKey string) *Server {
 	go s.restoreDesiredSchedulers()
 	s.startConnectionHealthChecker()
 	return s
+}
+
+func normalizeServerWorkspaceRoot(root string, db controldb.Store) string {
+	absRoot, err := filepath.Abs(root)
+	if err != nil {
+		absRoot = root
+	}
+	if serverHasAgency(absRoot) {
+		return absRoot
+	}
+	if db == nil {
+		return absRoot
+	}
+	rows, err := db.ListWorkspaces()
+	if err != nil {
+		log.Printf("list workspaces while normalizing root failed: %v", err)
+		return absRoot
+	}
+	for _, row := range rows {
+		if row.Root != "" && serverWorkspaceRootBelongsToDataRoot(absRoot, row.Root) && serverHasAgency(row.Root) {
+			return row.Root
+		}
+	}
+	return absRoot
+}
+
+func serverWorkspaceRootBelongsToDataRoot(dataRoot, root string) bool {
+	absData, err := filepath.Abs(dataRoot)
+	if err != nil {
+		return false
+	}
+	absRoot, err := filepath.Abs(root)
+	if err != nil {
+		return false
+	}
+	return filepath.Dir(absRoot) == absData && filepath.Base(absRoot) != ".multigent"
+}
+
+func serverHasAgency(root string) bool {
+	_, err := os.Stat(filepath.Join(root, ".multigent", "agency.yaml"))
+	return err == nil
 }
 
 // SetVersion sets the build version string exposed via /api/v1/health.

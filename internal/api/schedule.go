@@ -7,6 +7,7 @@ import (
 	"net/http"
 	"os"
 	"path/filepath"
+	"sort"
 	"strings"
 	"syscall"
 	"time"
@@ -229,20 +230,55 @@ func (s *Server) parseProjectAgent(w http.ResponseWriter, r *http.Request) (proj
 	}
 	if _, err := s.st.Project(project); err != nil {
 		if isNotFoundErr(err) {
-			s.jsonErrorCode(w, http.StatusNotFound, ErrCodeProjectNotFound, "project not found")
+			s.jsonErrorDetails(w, http.StatusNotFound, ErrCodeProjectNotFound, "project not found", s.projectAgentLookupDetails(project, agent))
 			return "", "", false
 		}
 		s.serverError(w, err)
 		return "", "", false
 	}
 	if !s.agentExistsInProject(project, agent) {
-		s.jsonErrorCode(w, http.StatusNotFound, ErrCodeAgentNotFound, "agent not found")
+		s.jsonErrorDetails(w, http.StatusNotFound, ErrCodeAgentNotFound, "agent not found", s.projectAgentLookupDetails(project, agent))
 		return "", "", false
 	}
 	if !s.checkAgentAccess(w, r, project, agent) {
 		return "", "", false
 	}
 	return project, agent, true
+}
+
+func (s *Server) projectAgentLookupDetails(project, agent string) map[string]any {
+	details := map[string]any{
+		"project": project,
+		"agent":   agent,
+	}
+	if id, err := s.currentWorkspaceID(); err == nil {
+		details["workspaceId"] = id
+	}
+	if ref, ok, err := s.workspaceRefForRoot(s.root); err == nil && ok {
+		details["workspaceName"] = ref.Name
+		details["workspaceRoot"] = ref.Root
+	}
+	if projects, err := s.st.ListProjects(); err == nil {
+		names := make([]string, 0, len(projects))
+		for _, p := range projects {
+			if p != nil && strings.TrimSpace(p.Name) != "" {
+				names = append(names, p.Name)
+			}
+		}
+		sort.Strings(names)
+		details["availableProjects"] = names
+	}
+	if agents, err := s.st.ListAgents(project); err == nil {
+		names := make([]string, 0, len(agents))
+		for _, a := range agents {
+			if a != nil && strings.TrimSpace(a.Name) != "" {
+				names = append(names, a.Name)
+			}
+		}
+		sort.Strings(names)
+		details["availableAgents"] = names
+	}
+	return details
 }
 
 type patchHeartbeatBody struct {

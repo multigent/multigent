@@ -10,8 +10,8 @@ import (
 )
 
 type ProviderInfo struct {
-	ID    string
-	Label string
+	ID    string `json:"id"`
+	Label string `json:"label"`
 }
 
 type SetupBeginResponse = larkbridge.BeginResponse
