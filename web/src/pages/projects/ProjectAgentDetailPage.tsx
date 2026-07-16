@@ -608,7 +608,7 @@ export default function ProjectAgentDetailPage() {
                   <section>
                     <SectionHeader icon={Cable} title={t('agentDetail.capabilities')} />
                     <p className="mt-1 text-sm text-neutral-500 dark:text-zinc-500">{t('agentDetail.capabilitiesHint')}</p>
-                    <div className="mt-3 space-y-4">
+                    <div className="mt-3 divide-y divide-neutral-100 rounded-lg border border-neutral-200/80 bg-white dark:divide-zinc-800 dark:border-zinc-700/60 dark:bg-zinc-900/40">
                       <AgentRuntimeConnectionsPanel project={projectId} agentName={agentName} />
                       <AgentSkillsPanel skills={ctx.skills ?? []} />
                     </div>
@@ -1088,7 +1088,7 @@ function AgentRuntimeConnectionsPanel({ project, agentName }: { project: string;
   const state = useApiJson<RuntimeConnectionsResponse>(path, reloadKey)
 
   return (
-    <section>
+    <section className="p-4">
       <SubsectionHeader
         title={t('agentDetail.externalTools')}
         description={t('members.runtimeConnectionsHelp')}
@@ -1102,7 +1102,7 @@ function AgentRuntimeConnectionsPanel({ project, agentName }: { project: string;
           </button>
         )}
       />
-      <div className="mt-3 rounded-lg border border-neutral-200/80 bg-white p-4 dark:border-zinc-700/60 dark:bg-zinc-900/40">
+      <div className="mt-3">
         {state.status === 'loading' && (
           <p className="text-sm text-neutral-400 dark:text-zinc-500">{t('members.loadingRuntimeConnections')}</p>
         )}
@@ -1188,9 +1188,9 @@ function runtimeConnectionAccountLabel(connection: RuntimeConnection): string {
 function AgentSkillsPanel({ skills }: { skills: string[] }) {
   const { t } = useTranslation()
   return (
-    <section>
+    <section className="p-4">
       <SubsectionHeader title={t('agentDetail.inheritedSkills')} description={t('agentDetail.skillsHint')} />
-      <div className="mt-3 rounded-lg border border-neutral-200/80 bg-white p-4 dark:border-zinc-700/60 dark:bg-zinc-900/40">
+      <div className="mt-3">
         {skills.length > 0 ? (
           <div className="flex flex-wrap gap-2">
             {skills.map((sk) => (
