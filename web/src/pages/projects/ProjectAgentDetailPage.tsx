@@ -606,8 +606,8 @@ export default function ProjectAgentDetailPage() {
               {canConfigureThisAgent && (
                 <>
                   <section>
-                    <SectionHeader icon={Cable} title={t('agentDetail.toolsAndSkills')} />
-                    <p className="mt-1 text-sm text-neutral-500 dark:text-zinc-500">{t('agentDetail.toolsAndSkillsHint')}</p>
+                    <SectionHeader icon={Cable} title={t('agentDetail.capabilities')} />
+                    <p className="mt-1 text-sm text-neutral-500 dark:text-zinc-500">{t('agentDetail.capabilitiesHint')}</p>
                     <div className="mt-3 space-y-4">
                       <AgentRuntimeConnectionsPanel project={projectId} agentName={agentName} />
                       <AgentSkillsPanel skills={ctx.skills ?? []} />
@@ -617,9 +617,9 @@ export default function ProjectAgentDetailPage() {
               )}
 
               <section>
-                <SectionHeader icon={BookOpen} title={t('agentDetail.instructions')} />
-                <p className="mt-1 text-sm text-neutral-500 dark:text-zinc-500">{t('agentDetail.instructionsHint')}</p>
-                <div className="mt-3">
+                <SectionHeader icon={BookOpen} title={t('agentDetail.promptContext')} />
+                <p className="mt-1 text-sm text-neutral-500 dark:text-zinc-500">{t('agentDetail.promptContextHint')}</p>
+                <div className="mt-3 space-y-4">
                   <PromptEditor
                     label={t('prompt.wakeup')}
                     icon={BookOpen}
@@ -627,16 +627,11 @@ export default function ProjectAgentDetailPage() {
                     initialContent={ctx.wakeup}
                     canEdit={canConfigureThisAgent}
                   />
+                  {ctx.context && (
+                    <ContextPanel context={ctx.context} contextFile={ctx.contextFile} syncedAt={ctx.syncedAt} />
+                  )}
                 </div>
               </section>
-
-              {ctx.context && (
-                <section>
-                  <SectionHeader icon={BookOpen} title={t('agentDetail.context')} />
-                  <p className="mt-1 text-sm text-neutral-500 dark:text-zinc-500">{t('agentDetail.contextHint')}</p>
-                  <ContextPanel context={ctx.context} contextFile={ctx.contextFile} syncedAt={ctx.syncedAt} />
-                </section>
-              )}
 
               {canConfigureThisAgent && (
                 <details className="group rounded-lg border border-neutral-200/80 bg-white dark:border-zinc-700/60 dark:bg-zinc-900/40">
@@ -1084,7 +1079,7 @@ function AgentRuntimeConnectionsPanel({ project, agentName }: { project: string;
     <section>
       <div className="flex items-center justify-between">
         <div>
-          <SectionHeader icon={Cable} title={t('members.runtimeConnections')} />
+          <SectionHeader icon={Cable} title={t('agentDetail.externalTools')} />
           <p className="mt-1 text-xs text-neutral-400 dark:text-zinc-500">{t('members.runtimeConnectionsHelp')}</p>
         </div>
         <button
@@ -1181,25 +1176,25 @@ function runtimeConnectionAccountLabel(connection: RuntimeConnection): string {
 function AgentSkillsPanel({ skills }: { skills: string[] }) {
   const { t } = useTranslation()
   return (
-    <section className="rounded-lg border border-neutral-200/80 bg-white p-4 dark:border-zinc-700/60 dark:bg-zinc-900/40">
-      <div className="flex items-center gap-2">
-        <Puzzle className="size-4 text-neutral-500 dark:text-zinc-500" strokeWidth={1.8} />
-        <h4 className="text-sm font-semibold text-neutral-800 dark:text-zinc-200">{t('skill.agentSkills')}</h4>
+    <section>
+      <div>
+        <SectionHeader icon={Puzzle} title={t('agentDetail.inheritedSkills')} />
+        <p className="mt-1 text-xs text-neutral-400 dark:text-zinc-500">{t('agentDetail.skillsHint')}</p>
       </div>
-      <p className="mt-1 text-xs text-neutral-400 dark:text-zinc-500">{t('agentDetail.skillsHint')}</p>
-      {skills.length > 0 ? (
-        <div className="mt-3 flex flex-wrap gap-2">
-          {skills.map((sk) => (
-            <Link key={sk} to={`/skills?open=${encodeURIComponent(sk)}`}
-              className="inline-flex items-center gap-1.5 rounded-md bg-amber-50 px-2.5 py-1 text-sm font-medium text-amber-700 transition-colors hover:bg-amber-100 dark:bg-amber-900/20 dark:text-amber-400 dark:hover:bg-amber-900/40">
-              <Puzzle className="size-3.5" strokeWidth={2} />
-              {sk}
-            </Link>
-          ))}
-        </div>
-      ) : (
-        <p className="mt-3 text-sm text-neutral-400 dark:text-zinc-500">{t('agentDetail.noSkills')}</p>
-      )}
+      <div className="mt-3 rounded-lg border border-neutral-200/80 bg-white p-4 dark:border-zinc-700/60 dark:bg-zinc-900/40">
+        {skills.length > 0 ? (
+          <div className="flex flex-wrap gap-2">
+            {skills.map((sk) => (
+              <Link key={sk} to={`/skills?open=${encodeURIComponent(sk)}`}
+                className="inline-flex items-center rounded-md bg-amber-50 px-2.5 py-1 text-sm font-medium text-amber-700 transition-colors hover:bg-amber-100 dark:bg-amber-900/20 dark:text-amber-400 dark:hover:bg-amber-900/40">
+                {sk}
+              </Link>
+            ))}
+          </div>
+        ) : (
+          <p className="text-sm text-neutral-400 dark:text-zinc-500">{t('agentDetail.noSkills')}</p>
+        )}
+      </div>
     </section>
   )
 }
