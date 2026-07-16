@@ -144,9 +144,6 @@ func resolveAPIServeRoots(cfg *appconfig.Config) (dataRoot, activeRoot string, e
 	if err := os.MkdirAll(dataRoot, 0o755); err != nil {
 		return "", "", err
 	}
-	if hasAgency(dataRoot) {
-		return dataRoot, dataRoot, nil
-	}
 	if err := os.Setenv("MULTIGENT_DATA_DIR", dataRoot); err != nil {
 		return "", "", err
 	}
@@ -160,12 +157,12 @@ func resolveAPIServeRoots(cfg *appconfig.Config) (dataRoot, activeRoot string, e
 		return "", "", err
 	}
 	for _, row := range rows {
-		if row.Root != "" && hasAgency(row.Root) {
+		if row.Root != "" && workspaceRootBelongsToDataRoot(dataRoot, row.Root) && hasAgency(row.Root) {
 			return dataRoot, row.Root, nil
 		}
 	}
 	id := newAPIServeWorkspaceID()
-	activeRoot = filepath.Join(dataRoot, "workspaces", id)
+	activeRoot = filepath.Join(dataRoot, id)
 	now := daemon.NowISO()
 	if err := scaffold.InitAgency(activeRoot, &entity.Agency{
 		Name:      "Default Workspace",
@@ -186,6 +183,18 @@ func resolveAPIServeRoots(cfg *appconfig.Config) (dataRoot, activeRoot string, e
 		return "", "", err
 	}
 	return dataRoot, activeRoot, nil
+}
+
+func workspaceRootBelongsToDataRoot(dataRoot, root string) bool {
+	absData, err := filepath.Abs(dataRoot)
+	if err != nil {
+		return false
+	}
+	absRoot, err := filepath.Abs(root)
+	if err != nil {
+		return false
+	}
+	return filepath.Dir(absRoot) == absData && filepath.Base(absRoot) != ".multigent"
 }
 
 func hasAgency(root string) bool {

@@ -81,7 +81,7 @@ type WebRuntimeMeta struct {
 }
 
 func metaPath() string {
-	return filepath.Join(DefaultDataDir(), "daemon.json")
+	return filepath.Join(DefaultDataDir(), ".multigent", "daemon.json")
 }
 
 func SaveMeta(m *Meta) error {
@@ -113,7 +113,7 @@ func RemoveMeta() {
 
 func webRuntimeMetaPath(workDir string) string {
 	sum := sha256.Sum256([]byte(filepath.Clean(workDir)))
-	return filepath.Join(DefaultDataDir(), "web-runtimes", fmt.Sprintf("%x.json", sum[:8]))
+	return filepath.Join(DefaultDataDir(), ".multigent", "web-runtimes", fmt.Sprintf("%x.json", sum[:8]))
 }
 
 func SaveWebRuntimeMeta(m *WebRuntimeMeta) error {

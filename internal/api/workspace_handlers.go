@@ -151,7 +151,7 @@ func (s *Server) handleCreateWorkspace(w http.ResponseWriter, r *http.Request) {
 	}
 
 	id := newWorkspaceID()
-	absRoot, err := filepath.Abs(filepath.Join(defaultWorkspaceDataDir(), "workspaces", id))
+	absRoot, err := filepath.Abs(filepath.Join(defaultWorkspaceDataDir(), id))
 	if err != nil {
 		s.jsonError(w, http.StatusBadRequest, err.Error())
 		return
@@ -237,6 +237,10 @@ func (s *Server) handleSwitchWorkspace(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	if !ok {
+		s.jsonErrorCode(w, http.StatusNotFound, ErrCodeWorkspaceNotFound, "workspace not found")
+		return
+	}
+	if !workspaceRootInDataDir(row.Root) {
 		s.jsonErrorCode(w, http.StatusNotFound, ErrCodeWorkspaceNotFound, "workspace not found")
 		return
 	}
@@ -371,12 +375,18 @@ func (s *Server) listWorkspaceRefs(r *http.Request) ([]workspaceRef, error) {
 	allowed := map[string]bool{}
 	cur := s.currentUser(r)
 	if cur != nil && cur.Username != "" && cur.Username != "apikey" {
-		memberships, err := s.controlDB.ListWorkspaceMembersForUser(cur.Username)
-		if err != nil {
-			return nil, err
-		}
-		for _, m := range memberships {
-			allowed[m.WorkspaceID] = true
+		if cur.Role == RoleAdmin {
+			for _, row := range rows {
+				allowed[row.ID] = true
+			}
+		} else {
+			memberships, err := s.controlDB.ListWorkspaceMembersForUser(cur.Username)
+			if err != nil {
+				return nil, err
+			}
+			for _, m := range memberships {
+				allowed[m.WorkspaceID] = true
+			}
 		}
 	} else if cur != nil && cur.Username == "apikey" {
 		for _, row := range rows {
@@ -385,6 +395,9 @@ func (s *Server) listWorkspaceRefs(r *http.Request) ([]workspaceRef, error) {
 	}
 	out := make([]workspaceRef, 0, len(rows))
 	for _, row := range rows {
+		if !workspaceRootInDataDir(row.Root) {
+			continue
+		}
 		if !allowed[row.ID] {
 			continue
 		}
@@ -624,6 +637,18 @@ func defaultWorkspaceDataDir() string {
 		return ".multigent"
 	}
 	return filepath.Join(home, ".multigent")
+}
+
+func workspaceRootInDataDir(root string) bool {
+	absData, err := filepath.Abs(defaultWorkspaceDataDir())
+	if err != nil {
+		return false
+	}
+	absRoot, err := filepath.Abs(root)
+	if err != nil {
+		return false
+	}
+	return filepath.Dir(absRoot) == absData && filepath.Base(absRoot) != ".multigent"
 }
 
 func workspaceRefFromDB(row controldb.Workspace, currentRoot string) workspaceRef {

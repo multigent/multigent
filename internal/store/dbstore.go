@@ -22,10 +22,10 @@ type dbStore struct {
 }
 
 func NewDB(root string, db controldb.Store) Store {
-	_ = ensureWorkspace(root, db)
+	workspaceID, _ := ensureWorkspace(root, db)
 	return &dbStore{
 		root:        root,
-		workspaceID: workspaceID(root),
+		workspaceID: workspaceID,
 		db:          db,
 		files:       NewFS(root),
 	}
@@ -274,23 +274,46 @@ func workspaceID(root string) string {
 	return hex.EncodeToString(sum[:])[:12]
 }
 
-func ensureWorkspace(root string, db controldb.Store) error {
+func ensureWorkspace(root string, db controldb.Store) (string, error) {
 	absRoot, err := filepath.Abs(root)
 	if err != nil {
 		absRoot = root
+	}
+	if rows, err := db.ListWorkspaces(); err == nil {
+		for _, row := range rows {
+			if samePath(row.Root, absRoot) && row.ID != "" {
+				return row.ID, nil
+			}
+		}
 	}
 	name := filepath.Base(absRoot)
 	if name == "." || name == string(filepath.Separator) || name == "" {
 		name = "Multigent Workspace"
 	}
 	now := time.Now().UTC().Format(time.RFC3339)
-	return db.UpsertWorkspace(controldb.Workspace{
-		ID:        workspaceID(absRoot),
+	id := workspaceID(absRoot)
+	if base := filepath.Base(absRoot); base != "." && base != string(filepath.Separator) && base != "" {
+		id = base
+	}
+	return id, db.UpsertWorkspace(controldb.Workspace{
+		ID:        id,
 		Name:      name,
 		Slug:      name,
 		Root:      absRoot,
 		UpdatedAt: now,
 	})
+}
+
+func samePath(a, b string) bool {
+	aa, errA := filepath.Abs(a)
+	bb, errB := filepath.Abs(b)
+	if errA == nil {
+		a = aa
+	}
+	if errB == nil {
+		b = bb
+	}
+	return filepath.Clean(a) == filepath.Clean(b)
 }
 
 func ensureDir(path string) error {
