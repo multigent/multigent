@@ -77,6 +77,7 @@ func (s *Server) handleIMEvent(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	if !channelProvider.ShouldHandleMessage(resolved.Binding.ExternalChatID, message) {
+		s.recordAgentChannelCallback(resolved.Binding, "ignored", "group_not_addressed", message, "")
 		s.auditLog(auditLogInput{
 			WorkspaceID:  resolved.Binding.WorkspaceID,
 			ActorType:    "user",
@@ -96,6 +97,7 @@ func (s *Server) handleIMEvent(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	if !verifyIMEventToken(parsed.VerificationToken, resolved.SecretValues) {
+		s.recordAgentChannelCallback(resolved.Binding, "rejected", "verification_failed", message, "")
 		s.auditLog(auditLogInput{
 			WorkspaceID:  resolved.Binding.WorkspaceID,
 			Action:       "agent_channel.verification_failed",
@@ -112,6 +114,7 @@ func (s *Server) handleIMEvent(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	if !s.userCanOperateAgentInWorkspace(resolved.Identity.UserID, resolved.Binding.WorkspaceID, resolved.Binding.ProjectID, resolved.Binding.AgentID) {
+		s.recordAgentChannelCallback(resolved.Binding, "rejected", "permission_denied", message, "")
 		s.auditLog(auditLogInput{
 			WorkspaceID:  resolved.Binding.WorkspaceID,
 			ActorType:    "user",
@@ -129,6 +132,7 @@ func (s *Server) handleIMEvent(w http.ResponseWriter, r *http.Request) {
 		_ = json.NewEncoder(w).Encode(map[string]any{"ok": true, "ignored": true, "reason": "permission_denied"})
 		return
 	}
+	s.recordAgentChannelCallback(resolved.Binding, "accepted", "", message, "")
 	_ = json.NewEncoder(w).Encode(map[string]any{"ok": true})
 
 	go s.runAgentForIMEvent(channelProvider, resolved, message, text)
@@ -236,6 +240,7 @@ func (s *Server) runAgentForIMEvent(provider imbridge.Provider, resolved resolve
 	lease, err := s.acquireAgentInteractionLease(s.interactionAgentRef(binding.WorkspaceID, binding.ProjectID, binding.AgentID), source, "interactive")
 	if err != nil {
 		if errors.Is(err, interaction.ErrAgentLocked) {
+			s.recordAgentChannelCallback(binding, "busy", "agent_locked", message, "")
 			s.auditLog(auditLogInput{
 				WorkspaceID:  binding.WorkspaceID,
 				ActorType:    "user",
@@ -310,6 +315,13 @@ func (s *Server) runAgentForIMEvent(provider imbridge.Provider, resolved resolve
 	}
 	reply = trimForIM(reply, 3500)
 	replyErr := s.replyToIMEvent(ctx, provider, resolved, message, reply)
+	if replyErr != nil {
+		s.recordAgentChannelCallback(binding, "reply_failed", "", message, replyErr.Error())
+	} else if err != nil {
+		s.recordAgentChannelCallback(binding, "run_failed", "", message, err.Error())
+	} else {
+		s.recordAgentChannelCallback(binding, "replied", "", message, "")
+	}
 	if err != nil {
 		_ = s.createInteractionEvent(lease.session, "system", "", providerID, "run_failed", output, map[string]any{
 			"messageId":        message.MessageID,
@@ -346,6 +358,34 @@ func (s *Server) replyToIMEvent(ctx context.Context, provider imbridge.Provider,
 		return err
 	}
 	return nil
+}
+
+func (s *Server) recordAgentChannelCallback(binding controldb.AgentChannelBinding, status, reason string, message imbridge.IncomingMessage, errorText string) {
+	now := time.Now().UTC().Format(time.RFC3339)
+	meta := map[string]any{}
+	_ = json.Unmarshal([]byte(binding.MetadataJSON), &meta)
+	meta["lastCallback"] = map[string]any{
+		"at":        now,
+		"status":    strings.TrimSpace(status),
+		"reason":    strings.TrimSpace(reason),
+		"messageId": strings.TrimSpace(message.MessageID),
+		"chatId":    strings.TrimSpace(message.ChatID),
+		"chatType":  strings.TrimSpace(message.ChatType),
+		"error":     strings.TrimSpace(errorText),
+	}
+	raw, err := json.Marshal(meta)
+	if err != nil {
+		log.Printf("[im:%s] marshal callback metadata failed for %s/%s: %v", binding.Provider, binding.ProjectID, binding.AgentID, err)
+		return
+	}
+	binding.MetadataJSON = string(raw)
+	binding.UpdatedAt = now
+	if status == "accepted" || status == "replied" {
+		binding.LastActivityAt = now
+	}
+	if err := s.controlDB.UpsertAgentChannelBinding(binding); err != nil {
+		log.Printf("[im:%s] update callback metadata failed for %s/%s: %v", binding.Provider, binding.ProjectID, binding.AgentID, err)
+	}
 }
 
 func (s *Server) userCanOperateAgent(username, project, agent string) bool {

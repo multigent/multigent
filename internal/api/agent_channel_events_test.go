@@ -314,10 +314,60 @@ func TestAgentChannelResponseIncludesPublicMetadata(t *testing.T) {
 		Status:         "connected",
 		ConnectionID:   "conn-one",
 		ExternalChatID: "oc_one",
-		MetadataJSON:   `{"appId":"cli_app","accountsUrl":"https://accounts.feishu.cn"}`,
+		MetadataJSON:   `{"appId":"cli_app","accountsUrl":"https://accounts.feishu.cn","lastCallback":{"at":"2026-07-16T10:00:00Z","status":"replied","reason":"","messageId":"om_one","error":""}}`,
 	})
 	if resp.AppID != "cli_app" || resp.AccountsURL != "https://accounts.feishu.cn" || resp.ExternalChatID != "oc_one" {
 		t.Fatalf("response metadata missing: %#v", resp)
+	}
+	if resp.Callback.LastAt != "2026-07-16T10:00:00Z" || resp.Callback.Status != "replied" || resp.Callback.MessageID != "om_one" {
+		t.Fatalf("callback metadata missing: %#v", resp.Callback)
+	}
+}
+
+func TestRecordAgentChannelCallbackPreservesMetadata(t *testing.T) {
+	s, workspaceID := newConnectionGrantPolicyServer(t)
+	if err := s.controlDB.UpsertConnection(controldb.Connection{
+		ID:             "conn-feishu",
+		WorkspaceID:    workspaceID,
+		Provider:       "feishu",
+		ConnectionName: "agent-sample-pm",
+		OwnerType:      ConnectionOwnerWorkspace,
+		OwnerID:        workspaceID,
+		AuthType:       "app_secret",
+		Status:         "active",
+		ProfileJSON:    "{}",
+	}); err != nil {
+		t.Fatalf("connection: %v", err)
+	}
+	binding := controldb.AgentChannelBinding{
+		ID:           "chan-feishu",
+		WorkspaceID:  workspaceID,
+		ProjectID:    "sample",
+		AgentID:      "pm",
+		Provider:     "feishu",
+		ConnectionID: "conn-feishu",
+		Status:       "connected",
+		MetadataJSON: `{"appId":"cli_app","accountsUrl":"https://accounts.feishu.cn"}`,
+	}
+	if err := s.controlDB.UpsertAgentChannelBinding(binding); err != nil {
+		t.Fatalf("binding: %v", err)
+	}
+	s.recordAgentChannelCallback(binding, "ignored", "group_not_addressed", imbridge.IncomingMessage{
+		MessageID:  "om_one",
+		ChatID:     "oc_one",
+		ChatType:   "group",
+		RawContent: `{"text":"hello"}`,
+	}, "")
+	updated, ok, err := s.controlDB.AgentChannelBindingByID("chan-feishu")
+	if err != nil || !ok {
+		t.Fatalf("load updated binding ok=%v err=%v", ok, err)
+	}
+	resp := agentChannelToResponse(updated)
+	if resp.AppID != "cli_app" || resp.AccountsURL != "https://accounts.feishu.cn" {
+		t.Fatalf("existing metadata not preserved: %#v", resp)
+	}
+	if resp.Callback.Status != "ignored" || resp.Callback.Reason != "group_not_addressed" || resp.Callback.MessageID != "om_one" {
+		t.Fatalf("callback metadata not recorded: %#v", resp.Callback)
 	}
 }
 

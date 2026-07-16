@@ -29,6 +29,13 @@ type agentChannelResponse struct {
 		VerificationTokenConfigured bool `json:"verificationTokenConfigured"`
 		EncryptKeyConfigured        bool `json:"encryptKeyConfigured"`
 	} `json:"security"`
+	Callback struct {
+		LastAt    string `json:"lastAt,omitempty"`
+		Status    string `json:"status,omitempty"`
+		Reason    string `json:"reason,omitempty"`
+		MessageID string `json:"messageId,omitempty"`
+		Error     string `json:"error,omitempty"`
+	} `json:"callback"`
 	CreatedBy      string `json:"createdBy,omitempty"`
 	CreatedAt      string `json:"createdAt,omitempty"`
 	UpdatedAt      string `json:"updatedAt,omitempty"`
@@ -473,11 +480,18 @@ func (s *Server) findAgentChannelBinding(workspaceID, project, agent, provider s
 
 func agentChannelToResponse(binding controldb.AgentChannelBinding) agentChannelResponse {
 	var meta struct {
-		AppID       string `json:"appId"`
-		AccountsURL string `json:"accountsUrl"`
+		AppID        string `json:"appId"`
+		AccountsURL  string `json:"accountsUrl"`
+		LastCallback struct {
+			At        string `json:"at"`
+			Status    string `json:"status"`
+			Reason    string `json:"reason"`
+			MessageID string `json:"messageId"`
+			Error     string `json:"error"`
+		} `json:"lastCallback"`
 	}
 	_ = json.Unmarshal([]byte(binding.MetadataJSON), &meta)
-	return agentChannelResponse{
+	resp := agentChannelResponse{
 		ID:              binding.ID,
 		Provider:        binding.Provider,
 		Status:          binding.Status,
@@ -492,6 +506,12 @@ func agentChannelToResponse(binding controldb.AgentChannelBinding) agentChannelR
 		UpdatedAt:       binding.UpdatedAt,
 		LastActivityAt:  binding.LastActivityAt,
 	}
+	resp.Callback.LastAt = meta.LastCallback.At
+	resp.Callback.Status = meta.LastCallback.Status
+	resp.Callback.Reason = meta.LastCallback.Reason
+	resp.Callback.MessageID = meta.LastCallback.MessageID
+	resp.Callback.Error = meta.LastCallback.Error
+	return resp
 }
 
 func agentChannelConnectionName(project, agent string) string {

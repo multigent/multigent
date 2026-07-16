@@ -1341,6 +1341,24 @@
     "securityHint": "把回调地址配置到飞书/Lark 开发者后台。Verification Token 会在收到消息事件时校验；Encrypt Key 用于解密飞书/Lark 加密事件。",
     "securityConfigured": "已配置 Verification Token",
     "securityNotConfigured": "未配置 Verification Token",
+    "lastCallback": "最近回调：{{time}} · {{status}} · {{reason}}",
+    "callbackPending": "尚未收到回调",
+    "callbackStatus": {
+      "accepted": "已接收",
+      "replied": "已回复",
+      "ignored": "已忽略",
+      "rejected": "已拒绝",
+      "busy": "Agent 忙碌",
+      "reply_failed": "回复失败",
+      "run_failed": "运行失败",
+      "unknown": "未知"
+    },
+    "callbackReason": {
+      "group_not_addressed": "群消息未明确发给机器人",
+      "verification_failed": "校验失败",
+      "permission_denied": "权限不足",
+      "agent_locked": "Agent 会话已被占用"
+    },
     "verificationToken": "Verification Token",
     "encryptKey": "Encrypt Key",
     "keepExisting": "留空保持不变；输入新值可更新",

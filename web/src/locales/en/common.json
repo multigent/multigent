@@ -1341,6 +1341,24 @@
     "securityHint": "Configure this callback URL in the Feishu/Lark developer console. Verification Token is checked on message events; Encrypt Key decrypts encrypted Feishu/Lark events.",
     "securityConfigured": "Verification Token configured",
     "securityNotConfigured": "Verification Token not configured",
+    "lastCallback": "Last callback: {{time}} · {{status}} · {{reason}}",
+    "callbackPending": "No callback received yet",
+    "callbackStatus": {
+      "accepted": "Accepted",
+      "replied": "Replied",
+      "ignored": "Ignored",
+      "rejected": "Rejected",
+      "busy": "Busy",
+      "reply_failed": "Reply failed",
+      "run_failed": "Run failed",
+      "unknown": "Unknown"
+    },
+    "callbackReason": {
+      "group_not_addressed": "Group not addressed",
+      "verification_failed": "Verification failed",
+      "permission_denied": "Permission denied",
+      "agent_locked": "Agent locked"
+    },
     "verificationToken": "Verification Token",
     "encryptKey": "Encrypt Key",
     "keepExisting": "Leave empty to keep unchanged; enter a new value to update",

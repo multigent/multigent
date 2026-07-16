@@ -23,6 +23,13 @@ type AgentChannel = {
     verificationTokenConfigured: boolean
     encryptKeyConfigured: boolean
   }
+  callback?: {
+    lastAt?: string
+    status?: string
+    reason?: string
+    messageId?: string
+    error?: string
+  }
   createdBy?: string
   createdAt?: string
   updatedAt?: string
@@ -263,6 +270,18 @@ export function AgentChannelPanel({ project, agentName }: { project: string; age
                       <p>
                         {channel.security?.verificationTokenConfigured ? t('agentChannels.securityConfigured') : t('agentChannels.securityNotConfigured')}
                       </p>
+                      {channel.callback?.lastAt ? (
+                        <p className={cn(channel.callback.error && 'text-red-500 dark:text-red-300')}>
+                          {t('agentChannels.lastCallback', {
+                            time: new Date(channel.callback.lastAt).toLocaleString(),
+                            status: t(`agentChannels.callbackStatus.${channel.callback.status || 'unknown'}`),
+                            reason: channel.callback.reason ? t(`agentChannels.callbackReason.${channel.callback.reason}`, { defaultValue: channel.callback.reason }) : '-',
+                          })}
+                          {channel.callback.error ? ` · ${channel.callback.error}` : ''}
+                        </p>
+                      ) : (
+                        <p>{t('agentChannels.callbackPending')}</p>
+                      )}
                     </div>
                   ) : (
                     <p className="mt-1 text-xs text-neutral-400 dark:text-zinc-500">{t('agentChannels.connectHint')}</p>
