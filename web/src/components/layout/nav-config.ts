@@ -65,7 +65,7 @@ export const workspaceNav: NavItem[] = [
     activePrefix: '/projects',
   },
   { to: '/goals', navKey: 'goals', icon: Target, activePrefix: '/goals' },
-  { to: '/people', navKey: 'people', icon: User, activePrefix: '/people' },
+  { to: '/people', navKey: 'people', icon: User, activePrefix: '/people', adminOnly: true },
   { to: '/teams', navKey: 'teams', icon: Users, activePrefix: '/teams', adminOnly: true },
   { to: '/connections', navKey: 'connections', icon: Cable, activePrefix: '/connections' },
   { to: '/skills', navKey: 'skills', icon: Puzzle, activePrefix: '/skills', adminOnly: true },

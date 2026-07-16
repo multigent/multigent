@@ -115,8 +115,8 @@ function AuthenticatedRoutes() {
           {canAdmin && <Route path="settings" element={<ProjectSettingsPage />} />}
         </Route>
         <Route path="goals" element={<OKRPage />} />
-        <Route path="people" element={<PeoplePage />} />
-        <Route path="people/:username" element={<PersonDetailPage />} />
+        {canAdmin && <Route path="people" element={<PeoplePage />} />}
+        {canAdmin && <Route path="people/:username" element={<PersonDetailPage />} />}
         <Route path="workbench" element={<WorkbenchPage />} />
         <Route path="connections" element={<ConnectionsPage />} />
         {canAdmin && <Route path="audit" element={<AuditPage />} />}

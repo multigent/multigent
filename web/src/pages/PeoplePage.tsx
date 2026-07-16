@@ -7,7 +7,7 @@ import { cn } from '../lib/cn'
 
 type PersonRow = {
   username: string; role: string; displayName?: string
-  email?: string; avatar?: string; phone?: string; bio?: string
+  email?: string; avatar?: string; bio?: string
   projects?: { project: string; role: string }[]
   linkedAgents?: string[]; disabled?: boolean; createdAt?: string
 }
@@ -51,7 +51,7 @@ export default function PeoplePage() {
   const [invitations, setInvitations] = useState<InvitationRow[]>([])
   const [loading, setLoading] = useState(true)
   const [creating, setCreating] = useState(false)
-  const [form, setForm] = useState({ displayName: '', email: '', phone: '', role: 'member' })
+  const [form, setForm] = useState({ displayName: '', email: '', role: 'member' })
   const [inviteUrl, setInviteUrl] = useState('')
   const [inviteResults, setInviteResults] = useState<{ email: string; inviteUrl?: string; delivery?: string; error?: string }[]>([])
   const [saving, setSaving] = useState(false)
@@ -63,7 +63,7 @@ export default function PeoplePage() {
         apiFetch<PersonRow[]>('/api/v1/users'),
         apiFetch<{ invitations: InvitationRow[] }>('/api/v1/invitations').catch(() => ({ invitations: [] })),
       ])
-      setPeople((data ?? []).filter(u => u.role === 'member'))
+      setPeople(data ?? [])
       setInvitations(inviteData.invitations ?? [])
     } catch { /* ignore */ }
     finally { setLoading(false) }
@@ -93,7 +93,7 @@ export default function PeoplePage() {
           error: item.error,
         })),
       ])
-      setForm({ displayName: '', email: '', phone: '', role: 'member' })
+      setForm({ displayName: '', email: '', role: 'member' })
       await refresh()
     } catch (e) { setErr(e instanceof Error ? e.message : String(e)) }
     finally { setSaving(false) }
@@ -230,10 +230,6 @@ export default function PeoplePage() {
                 <span className="text-sm font-medium text-neutral-600 dark:text-zinc-400">{t('users.email')} *</span>
                 <textarea value={form.email} onChange={e => setForm({ ...form, email: e.target.value })} className={cn(fieldCls, 'min-h-24 resize-y')} placeholder={'alice@example.com\nbob@example.com'} autoFocus />
                 <span className="text-xs text-neutral-400 dark:text-zinc-500">One or more emails, separated by spaces, commas, or new lines.</span>
-              </label>
-              <label className="flex flex-col gap-1">
-                <span className="text-sm font-medium text-neutral-600 dark:text-zinc-400">{t('users.phone')}</span>
-                <input value={form.phone} onChange={e => setForm({ ...form, phone: e.target.value })} className={fieldCls} placeholder="+86 138..." />
               </label>
               <label className="flex flex-col gap-1">
                 <span className="text-sm font-medium text-neutral-600 dark:text-zinc-400">Workspace role</span>
