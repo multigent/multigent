@@ -426,6 +426,28 @@ type WorkspaceAccessSummary = { currentUserCanAdmin?: boolean }
 
 const PROVIDER_TYPES = ['anthropic', 'openai', 'gemini', 'custom'] as const
 
+type ProviderPreset = {
+  id: string
+  label: string
+  type: ProviderRow['type']
+  baseUrl: string
+  model: string
+  hint: string
+}
+
+const MODEL_ACCOUNT_PRESETS: ProviderPreset[] = [
+  { id: 'anthropic', label: 'Anthropic Claude', type: 'anthropic', baseUrl: 'https://api.anthropic.com', model: 'claude-sonnet-4-20250514', hint: 'Claude Code' },
+  { id: 'openai', label: 'OpenAI', type: 'openai', baseUrl: 'https://api.openai.com/v1', model: 'gpt-5.1', hint: 'Codex' },
+  { id: 'openai-compatible', label: 'OpenAI Compatible', type: 'openai', baseUrl: '', model: '', hint: 'Codex / OpenAI-compatible gateways' },
+  { id: 'anthropic-compatible', label: 'Anthropic Compatible', type: 'anthropic', baseUrl: '', model: '', hint: 'Claude Code-compatible gateways' },
+  { id: 'deepseek-codex', label: 'DeepSeek for Codex', type: 'openai', baseUrl: 'https://api.deepseek.com', model: 'deepseek-v4-flash', hint: 'Codex via OpenAI-compatible API' },
+  { id: 'deepseek-claude', label: 'DeepSeek for Claude Code', type: 'anthropic', baseUrl: 'https://api.deepseek.com/anthropic', model: 'deepseek-v4-pro', hint: 'Claude Code-compatible API' },
+  { id: 'kimi-codex', label: 'Kimi for Codex', type: 'openai', baseUrl: 'https://api.moonshot.cn/v1', model: 'kimi-k2.7-code', hint: 'Codex via OpenAI-compatible API' },
+  { id: 'kimi-coding', label: 'Kimi Coding', type: 'openai', baseUrl: 'https://api.kimi.com/coding/v1', model: 'kimi-for-coding', hint: 'Codex coding endpoint' },
+  { id: 'openrouter', label: 'OpenRouter', type: 'openai', baseUrl: 'https://openrouter.ai/api/v1', model: '', hint: 'OpenAI-compatible model router' },
+  { id: 'gemini', label: 'Google Gemini', type: 'gemini', baseUrl: 'https://generativelanguage.googleapis.com', model: 'gemini-3.5-flash', hint: 'Gemini API key' },
+]
+
 function ProvidersSection() {
   const { t } = useTranslation()
   const { user } = useAuth()
@@ -453,7 +475,7 @@ function ProvidersSection() {
   useEffect(() => { void refresh() }, [refresh])
 
   function openNew() {
-    setEditing({ ownerType: canCreateWorkspaceProvider ? 'workspace' : 'user', name: '', type: 'anthropic', baseUrl: '', model: '', apiKey: '' })
+    setEditing({ ownerType: canCreateWorkspaceProvider ? 'workspace' : 'user', name: '', type: 'anthropic', baseUrl: 'https://api.anthropic.com', model: 'claude-sonnet-4-20250514', apiKey: '' })
     setShowKey(false)
     setErr(null)
   }
@@ -488,10 +510,30 @@ function ProvidersSection() {
   }
 
   async function handleDelete(id: string) {
+    const confirmed = await confirmDialog({
+      title: t('provider.removeTitle'),
+      description: t('provider.removeDescription'),
+      confirmLabel: t('forms.delete'),
+      cancelLabel: t('forms.cancel'),
+      tone: 'danger',
+    })
+    if (!confirmed) return
     try {
       await apiDelete(`/api/v1/providers/${id}`)
       await refresh()
     } catch { /* ignore */ }
+  }
+
+  function applyPreset(presetID: string) {
+    const preset = MODEL_ACCOUNT_PRESETS.find(p => p.id === presetID)
+    if (!preset) return
+    setEditing(prev => ({
+      ...prev,
+      name: prev?.name?.trim() ? prev.name : preset.label,
+      type: preset.type,
+      baseUrl: preset.baseUrl,
+      model: preset.model,
+    }))
   }
 
   const fieldCls = 'w-full rounded-md border border-neutral-200/80 bg-neutral-50/50 px-3 py-2 text-sm outline-none transition-colors focus:border-sky-400 dark:border-zinc-700/60 dark:bg-zinc-800/50 dark:text-zinc-200 dark:[color-scheme:dark]'
@@ -521,7 +563,7 @@ function ProvidersSection() {
               <div className="flex flex-col">
                 <span className="text-sm font-medium text-neutral-800 dark:text-zinc-200">{p.name}</span>
                 <span className="text-xs text-neutral-400 dark:text-zinc-500">
-                  {p.type}{p.model ? ` · ${p.model}` : ''}{p.baseUrl ? ` · ${p.baseUrl}` : ''}{p.hasKey ? ' · key' : ''}
+                  {providerTypeLabel(p.type)}{p.model ? ` · ${p.model}` : ''}{p.baseUrl ? ` · ${p.baseUrl}` : ''}{p.hasKey ? ` · ${t('provider.keyConfigured')}` : ''}
                 </span>
               </div>
               <div className="flex items-center gap-2">
@@ -562,12 +604,19 @@ function ProvidersSection() {
             <div className="space-y-3 px-5 py-4">
               {!editing.id && (
                 <label className="flex flex-col gap-1">
-                  <span className="text-sm font-medium text-neutral-600 dark:text-zinc-400">{t('provider.scopeLabel')}</span>
-                  <select value={editing.ownerType ?? (canCreateWorkspaceProvider ? 'workspace' : 'user')} onChange={e => setEditing({ ...editing, ownerType: e.target.value as 'workspace' | 'user' })} className={fieldCls}>
-                    {canCreateWorkspaceProvider && <option value="workspace">{t('provider.scopeWorkspace')}</option>}
-                    <option value="user">{t('provider.scopePersonal')}</option>
+                  <span className="text-sm font-medium text-neutral-600 dark:text-zinc-400">{t('provider.presetLabel')}</span>
+                  <select value="" onChange={e => applyPreset(e.target.value)} className={fieldCls}>
+                    <option value="">{t('provider.presetPlaceholder')}</option>
+                    {MODEL_ACCOUNT_PRESETS.map(preset => (
+                      <option key={preset.id} value={preset.id}>{preset.label} - {preset.hint}</option>
+                    ))}
                   </select>
                 </label>
+              )}
+              {!editing.id && !canCreateWorkspaceProvider && (
+                <p className="rounded-lg border border-amber-200 bg-amber-50 px-3 py-2 text-xs text-amber-700 dark:border-amber-900/50 dark:bg-amber-900/20 dark:text-amber-300">
+                  {t('provider.personalFallbackHint')}
+                </p>
               )}
               {editing.id && (
                 <div className="flex items-center justify-between rounded-lg border border-neutral-200/80 bg-neutral-50/50 px-3 py-2 dark:border-zinc-700/60 dark:bg-zinc-800/40">
@@ -579,24 +628,24 @@ function ProvidersSection() {
               )}
               <label className="flex flex-col gap-1">
                 <span className="text-sm font-medium text-neutral-600 dark:text-zinc-400">{t('provider.nameLabel')}</span>
-                <input value={editing.name ?? ''} onChange={e => setEditing({ ...editing, name: e.target.value })} className={fieldCls} placeholder="My Anthropic" />
+                <input value={editing.name ?? ''} onChange={e => setEditing({ ...editing, name: e.target.value })} className={fieldCls} placeholder={t('provider.namePlaceholder')} />
               </label>
               <label className="flex flex-col gap-1">
                 <span className="text-sm font-medium text-neutral-600 dark:text-zinc-400">{t('provider.typeLabel')}</span>
                 <select value={editing.type ?? 'anthropic'} onChange={e => setEditing({ ...editing, type: e.target.value })} className={fieldCls}>
-                  {PROVIDER_TYPES.map(t => <option key={t} value={t}>{t.charAt(0).toUpperCase() + t.slice(1)}</option>)}
+                  {PROVIDER_TYPES.map(t => <option key={t} value={t}>{providerTypeLabel(t)}</option>)}
                 </select>
               </label>
               <label className="flex flex-col gap-1">
-                <span className="text-sm font-medium text-neutral-600 dark:text-zinc-400">Base URL</span>
-                <input value={editing.baseUrl ?? ''} onChange={e => setEditing({ ...editing, baseUrl: e.target.value })} className={cn(fieldCls, 'font-mono text-xs')} placeholder="https://api.anthropic.com" />
+                <span className="text-sm font-medium text-neutral-600 dark:text-zinc-400">{t('provider.endpointLabel')}</span>
+                <input value={editing.baseUrl ?? ''} onChange={e => setEditing({ ...editing, baseUrl: e.target.value })} className={cn(fieldCls, 'font-mono text-xs')} placeholder={providerEndpointPlaceholder(editing.type)} />
               </label>
               <label className="flex flex-col gap-1">
                 <span className="text-sm font-medium text-neutral-600 dark:text-zinc-400">{t('provider.modelLabel')}</span>
                 <input value={editing.model ?? ''} onChange={e => setEditing({ ...editing, model: e.target.value })} className={cn(fieldCls, 'font-mono text-xs')} placeholder="claude-sonnet-4-20250514" />
               </label>
               <label className="flex flex-col gap-1">
-                <span className="text-sm font-medium text-neutral-600 dark:text-zinc-400">API Key</span>
+                <span className="text-sm font-medium text-neutral-600 dark:text-zinc-400">{t('provider.apiKeyLabel')}</span>
                 <div className="flex items-center gap-2">
                   <input
                     type={showKey ? 'text' : 'password'}
@@ -611,6 +660,7 @@ function ProvidersSection() {
                   </button>
                 </div>
               </label>
+              <p className="text-xs leading-5 text-neutral-400 dark:text-zinc-500">{t('provider.apiKeyHint')}</p>
               {err && <p className="text-sm text-red-600 dark:text-red-400">{err}</p>}
               <div className="flex justify-end gap-2 pt-1">
                 <button type="button" onClick={() => setEditing(null)} disabled={saving} className="rounded-lg border border-neutral-300 px-3 py-1.5 text-sm dark:border-zinc-600">{t('forms.cancel')}</button>
@@ -629,6 +679,24 @@ function canManageProviderRow(provider: ProviderRow, canManageWorkspace: boolean
     return Boolean(username && provider.ownerId === username)
   }
   return canManageWorkspace
+}
+
+function providerTypeLabel(type?: string): string {
+  switch (type) {
+    case 'anthropic': return 'Claude / Anthropic'
+    case 'openai': return 'Codex / OpenAI'
+    case 'gemini': return 'Gemini'
+    default: return 'Custom'
+  }
+}
+
+function providerEndpointPlaceholder(type?: string): string {
+  switch (type) {
+    case 'openai': return 'https://api.openai.com/v1'
+    case 'gemini': return 'https://generativelanguage.googleapis.com'
+    case 'anthropic': return 'https://api.anthropic.com'
+    default: return 'https://api.example.com'
+  }
 }
 
 function CCConnectSection() {
@@ -984,7 +1052,7 @@ export default function SettingsPage() {
         {/* RBAC Model (admin only) */}
         {user?.role === 'admin' && <RBACSection />}
 
-        {/* API Providers */}
+        {/* Model accounts */}
         <ProvidersSection />
 
         {/* cc-connect (admin only) */}
