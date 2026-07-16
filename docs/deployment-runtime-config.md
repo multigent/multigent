@@ -2,6 +2,10 @@
 
 ## SMTP Invitations
 
+For full startup configuration, see
+[configuration-and-logging.md](configuration-and-logging.md) and
+[config.example.toml](../config.example.toml).
+
 Multigent sends invitation emails when SMTP is configured. Without SMTP, it keeps
 the local development behavior and returns copyable invite links.
 

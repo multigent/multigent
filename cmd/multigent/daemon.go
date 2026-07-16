@@ -48,11 +48,28 @@ func newDaemonInstallCmd() *cobra.Command {
 		Example: `  multigent daemon install
   multigent daemon install --work-dir /path/to/workspace
   multigent daemon install --addr 0.0.0.0:8080 --force`,
-		RunE: func(_ *cobra.Command, _ []string) error {
+		RunE: func(cmd *cobra.Command, _ []string) error {
+			appCfg, err := loadAppConfig()
+			if err != nil {
+				return err
+			}
+			if !cmd.Flags().Changed("work-dir") && workDir == "" && appCfg.Workspace.Dir != "" {
+				workDir = appCfg.Workspace.Dir
+			}
+			if !cmd.Flags().Changed("addr") {
+				addr = effectiveServerAddr(appCfg, addr)
+			}
+			if !cmd.Flags().Changed("log-file") && appCfg.Logging.File != "" {
+				logFile = appCfg.Logging.File
+			}
+			if !cmd.Flags().Changed("log-max-size") && appCfg.Logging.MaxSizeMB > 0 {
+				logMaxSize = appCfg.Logging.MaxSizeMB
+			}
 			cfg := daemon.Config{
-				WorkDir: workDir,
-				LogFile: logFile,
-				Addr:    addr,
+				WorkDir:    workDir,
+				ConfigPath: activeConfigPath(),
+				LogFile:    logFile,
+				Addr:       addr,
 			}
 			if logMaxSize > 0 {
 				cfg.LogMaxSize = int64(logMaxSize) * 1024 * 1024
@@ -80,6 +97,7 @@ func newDaemonInstallCmd() *cobra.Command {
 				LogFile:     cfg.LogFile,
 				LogMaxSize:  cfg.LogMaxSize,
 				WorkDir:     cfg.WorkDir,
+				ConfigPath:  cfg.ConfigPath,
 				BinaryPath:  cfg.BinaryPath,
 				Addr:        cfg.Addr,
 				InstalledAt: daemon.NowISO(),

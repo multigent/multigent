@@ -164,7 +164,11 @@ func (m *systemdManager) buildUnit(cfg Config) string {
 
 	sb.WriteString("[Service]\n")
 	sb.WriteString("Type=simple\n")
-	fmt.Fprintf(&sb, "ExecStart=%s start --dir %s --addr %s\n", cfg.BinaryPath, cfg.WorkDir, cfg.Addr)
+	fmt.Fprintf(&sb, "ExecStart=%s start", cfg.BinaryPath)
+	if cfg.ConfigPath != "" {
+		fmt.Fprintf(&sb, " --config %s", cfg.ConfigPath)
+	}
+	fmt.Fprintf(&sb, " --dir %s --addr %s\n", cfg.WorkDir, cfg.Addr)
 	fmt.Fprintf(&sb, "WorkingDirectory=%s\n", cfg.WorkDir)
 	sb.WriteString("Restart=on-failure\n")
 	sb.WriteString("RestartSec=10\n")

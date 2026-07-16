@@ -1,0 +1,40 @@
+# Multigent runtime configuration.
+#
+# Priority: CLI flags > environment variables > this file > defaults.
+# Use with:
+#   multigent --config ./config.toml start
+#   multigent --config ./config.toml api serve
+
+[workspace]
+# Optional. If omitted, Multigent discovers the workspace from current directory.
+dir = "/var/lib/multigent/workspaces/default"
+
+[server]
+addr = "127.0.0.1:27892"
+
+[auth]
+# Optional. Environment variable MULTIGENT_WEB_API_KEY still takes precedence.
+api_key = ""
+
+[smtp]
+# If host/from are empty, invitations fall back to local invite links.
+host = ""
+port = 587
+username = ""
+password = ""
+from = ""
+from_name = "Multigent"
+tls = "starttls" # starttls | implicit | none
+
+[logging]
+# Default file is ~/.multigent/logs/multigent.log.
+file = ""
+level = "info"      # debug | info | warn | error
+format = "json"    # json | text
+max_size_mb = 10   # one rotated backup is kept as <file>.1
+stderr = true      # also mirror service logs to stderr
+
+[sandbox.e2b]
+# Optional self-hosted E2B-compatible API endpoint.
+# E2B is selectable only when this is configured and /dev/kvm is available.
+api_url = ""

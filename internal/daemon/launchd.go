@@ -160,6 +160,7 @@ func buildPlist(cfg Config) string {
 	<array>
 		<string>%s</string>
 		<string>start</string>
+%s
 		<string>--dir</string>
 		<string>%s</string>
 		<string>--addr</string>
@@ -189,7 +190,14 @@ func buildPlist(cfg Config) string {
 	<string>/dev/null</string>
 </dict>
 </plist>
-`, launchdLabel, cfg.BinaryPath, cfg.WorkDir, cfg.Addr, cfg.WorkDir, cfg.LogFile, cfg.LogMaxSize, envPATH)
+`, launchdLabel, cfg.BinaryPath, launchdConfigArgs(cfg.ConfigPath), cfg.WorkDir, cfg.Addr, cfg.WorkDir, cfg.LogFile, cfg.LogMaxSize, envPATH)
+}
+
+func launchdConfigArgs(configPath string) string {
+	if configPath == "" {
+		return ""
+	}
+	return fmt.Sprintf("\t\t<string>--config</string>\n\t\t<string>%s</string>", configPath)
 }
 
 func runLaunchctl(args ...string) (string, error) {

@@ -4,7 +4,9 @@ import (
 	"errors"
 	"fmt"
 	"os"
+	"strings"
 
+	"github.com/multigent/multigent/internal/appconfig"
 	"github.com/multigent/multigent/internal/errs"
 	"github.com/multigent/multigent/internal/workspace"
 	"github.com/spf13/cobra"
@@ -14,6 +16,8 @@ import (
 // When non-empty it is used as the starting point for workspace discovery
 // instead of the current working directory.
 var globalDir string
+var globalConfigPath string
+var loadedConfig *appconfig.Config
 
 var rootCmd = &cobra.Command{
 	SilenceErrors: true, // error is printed by main()
@@ -56,6 +60,10 @@ func init() {
 	rootCmd.PersistentFlags().StringVar(
 		&globalDir, "dir", "",
 		"workspace directory (default: auto-discover from current directory)",
+	)
+	rootCmd.PersistentFlags().StringVar(
+		&globalConfigPath, "config", "",
+		"TOML config file path (or MULTIGENT_CONFIG)",
 	)
 
 	rootCmd.AddCommand(
@@ -105,7 +113,63 @@ func resolveRoot() (string, error) {
 	if globalDir != "" {
 		return workspace.FindRoot(globalDir)
 	}
+	cfg, err := loadAppConfig()
+	if err != nil {
+		return "", err
+	}
+	if cfg.Workspace.Dir != "" {
+		return workspace.FindRoot(cfg.Workspace.Dir)
+	}
 	return workspace.FindRootFromCWD()
+}
+
+func loadAppConfig() (*appconfig.Config, error) {
+	if loadedConfig != nil {
+		return loadedConfig, nil
+	}
+	path := strings.TrimSpace(globalConfigPath)
+	if path == "" {
+		path = strings.TrimSpace(os.Getenv("MULTIGENT_CONFIG"))
+	}
+	cfg, err := appconfig.Load(path)
+	if err != nil {
+		return nil, err
+	}
+	loadedConfig = cfg
+	applyConfigEnv(cfg)
+	return cfg, nil
+}
+
+func activeConfigPath() string {
+	path := strings.TrimSpace(globalConfigPath)
+	if path == "" {
+		path = strings.TrimSpace(os.Getenv("MULTIGENT_CONFIG"))
+	}
+	return path
+}
+
+func applyConfigEnv(cfg *appconfig.Config) {
+	if cfg == nil {
+		return
+	}
+	setEnvIfEmpty("MULTIGENT_SMTP_HOST", cfg.SMTP.Host)
+	if cfg.SMTP.Port > 0 {
+		setEnvIfEmpty("MULTIGENT_SMTP_PORT", fmt.Sprintf("%d", cfg.SMTP.Port))
+	}
+	setEnvIfEmpty("MULTIGENT_SMTP_USERNAME", cfg.SMTP.Username)
+	setEnvIfEmpty("MULTIGENT_SMTP_PASSWORD", cfg.SMTP.Password)
+	setEnvIfEmpty("MULTIGENT_SMTP_FROM", cfg.SMTP.From)
+	setEnvIfEmpty("MULTIGENT_SMTP_FROM_NAME", cfg.SMTP.FromName)
+	setEnvIfEmpty("MULTIGENT_SMTP_TLS", cfg.SMTP.TLS)
+	setEnvIfEmpty("MULTIGENT_E2B_API_URL", cfg.Sandbox.E2B.APIURL)
+}
+
+func setEnvIfEmpty(key, value string) {
+	value = strings.TrimSpace(value)
+	if value == "" || os.Getenv(key) != "" {
+		return
+	}
+	_ = os.Setenv(key, value)
 }
 
 func main() {

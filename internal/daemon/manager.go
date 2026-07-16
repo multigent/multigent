@@ -17,6 +17,7 @@ const (
 type Config struct {
 	BinaryPath string
 	WorkDir    string
+	ConfigPath string
 	LogFile    string
 	LogMaxSize int64
 	Addr       string // --addr for "multigent start"
@@ -60,6 +61,7 @@ type Meta struct {
 	LogFile     string `json:"log_file"`
 	LogMaxSize  int64  `json:"log_max_size"`
 	WorkDir     string `json:"work_dir"`
+	ConfigPath  string `json:"config_path,omitempty"`
 	BinaryPath  string `json:"binary_path"`
 	Addr        string `json:"addr,omitempty"`
 	InstalledAt string `json:"installed_at"`

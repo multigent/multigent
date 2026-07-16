@@ -5,7 +5,6 @@ import (
 	"fmt"
 	"io/fs"
 	"log"
-	"log/slog"
 	"mime"
 	"net/http"
 	"os"
@@ -13,7 +12,6 @@ import (
 	"os/signal"
 	"path/filepath"
 	"runtime"
-	"strconv"
 	"strings"
 	"syscall"
 
@@ -25,9 +23,13 @@ import (
 
 func newStartCmd() *cobra.Command {
 	var (
-		addr   string
-		apiKey string
-		open   bool
+		addr         string
+		apiKey       string
+		open         bool
+		logFile      string
+		logLevel     string
+		logFormat    string
+		logMaxSizeMB int
 	)
 
 	cmd := &cobra.Command{
@@ -51,24 +53,22 @@ remote server. For local development with hot-reload, use
 
   # Auto-open browser
   multigent start --open`,
-		RunE: func(_ *cobra.Command, _ []string) error {
-			// When started as a daemon, redirect logs to a rotating file.
-			var logCloser func()
-			if logFile := os.Getenv("MULTIGENT_LOG_FILE"); logFile != "" {
-				maxSize := int64(daemon.DefaultLogMaxSize)
-				if v := os.Getenv("MULTIGENT_LOG_MAX_SIZE"); v != "" {
-					if n, err := strconv.ParseInt(v, 10, 64); err == nil && n > 0 {
-						maxSize = n
-					}
-				}
-				w, err := daemon.NewRotatingWriter(logFile, maxSize)
-				if err != nil {
-					return fmt.Errorf("open log file %s: %w", logFile, err)
-				}
-				slog.SetDefault(slog.New(slog.NewTextHandler(w, &slog.HandlerOptions{Level: slog.LevelInfo})))
-				log.SetOutput(w)
-				logCloser = func() { w.Close() }
+		RunE: func(cmd *cobra.Command, _ []string) error {
+			cfg, err := loadAppConfig()
+			if err != nil {
+				return err
 			}
+			if !cmd.Flags().Changed("addr") {
+				addr = effectiveServerAddr(cfg, addr)
+			}
+			if !cmd.Flags().Changed("api-key") && apiKey == "" {
+				apiKey = effectiveAPIKey(cfg)
+			}
+			logCloser, err := initServiceLogger(resolveServiceLogOptions(cfg, logFile, logLevel, logFormat, logMaxSizeMB, cmd.Flags().Changed), "web")
+			if err != nil {
+				return fmt.Errorf("init logger: %w", err)
+			}
+			defer logCloser()
 
 			root, err := resolveRoot()
 			if err != nil {
@@ -112,9 +112,6 @@ remote server. For local development with hot-reload, use
 			}()
 
 			err = httpSrv.ListenAndServe()
-			if logCloser != nil {
-				logCloser()
-			}
 			if err != nil && err != http.ErrServerClosed {
 				return fmt.Errorf("http server: %w", err)
 			}
@@ -125,6 +122,10 @@ remote server. For local development with hot-reload, use
 	cmd.Flags().StringVar(&addr, "addr", "127.0.0.1:27892", "listen address (host:port)")
 	cmd.Flags().StringVar(&apiKey, "api-key", "", "optional Bearer token (or MULTIGENT_WEB_API_KEY)")
 	cmd.Flags().BoolVar(&open, "open", false, "open the web console in default browser")
+	cmd.Flags().StringVar(&logFile, "log-file", "", "log file path")
+	cmd.Flags().StringVar(&logLevel, "log-level", "", "log level: debug|info|warn|error")
+	cmd.Flags().StringVar(&logFormat, "log-format", "", "log format: json|text")
+	cmd.Flags().IntVar(&logMaxSizeMB, "log-max-size", 0, "max log file size in MB")
 	return cmd
 }
 
