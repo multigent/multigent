@@ -237,7 +237,8 @@ func (s *Server) findRuntimeConnection(principal runtimeAgentPrincipal, connecti
 		if err != nil {
 			return controldb.Connection{}, false, err
 		}
-		if len(matchingAgentConnectionGrants(grants, principal.WorkspaceID, principal.Project, principal.Agent)) == 0 {
+		if len(matchingAgentConnectionGrants(grants, principal.WorkspaceID, principal.Project, principal.Agent)) == 0 &&
+			!workspaceConnectionAvailableToAgent(connection, principal.WorkspaceID) {
 			continue
 		}
 		return connection, true, nil

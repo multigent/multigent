@@ -105,7 +105,7 @@ func issueAgentRuntimeTokenRequestForTest(username, project, agent string) *http
 	return req
 }
 
-func TestFindRuntimeConnectionRequiresMatchingGrant(t *testing.T) {
+func TestFindRuntimeConnectionAllowsWorkspaceConnectionByDefault(t *testing.T) {
 	users := newTestUserStore(t)
 	s := &Server{controlDB: users.db, users: users}
 	workspaceID := "ws-one"
@@ -128,20 +128,13 @@ func TestFindRuntimeConnectionRequiresMatchingGrant(t *testing.T) {
 	userOnly := granted
 	userOnly.ID = "conn-user-only"
 	userOnly.ConnectionName = "personal"
+	userOnly.OwnerType = ConnectionOwnerUser
+	userOnly.OwnerID = "pm-owner"
 	if err := users.db.UpsertConnection(granted); err != nil {
 		t.Fatalf("granted connection: %v", err)
 	}
 	if err := users.db.UpsertConnection(userOnly); err != nil {
 		t.Fatalf("user connection: %v", err)
-	}
-	if err := users.db.CreateConnectionGrant(controldb.ConnectionGrant{
-		ID:           "grant-agent",
-		WorkspaceID:  workspaceID,
-		ConnectionID: granted.ID,
-		TargetType:   ConnectionTargetAgent,
-		TargetID:     "sample/pm",
-	}); err != nil {
-		t.Fatalf("agent grant: %v", err)
 	}
 	if err := users.db.CreateConnectionGrant(controldb.ConnectionGrant{
 		ID:           "grant-user",

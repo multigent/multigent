@@ -147,7 +147,7 @@ func (s *Server) resolveAgentRuntimeConnections(workspaceID, project, agent stri
 			return nil, err
 		}
 		matched := matchingAgentConnectionGrants(grants, workspaceID, project, agent)
-		if len(matched) == 0 {
+		if len(matched) == 0 && !workspaceConnectionAvailableToAgent(connection, workspaceID) {
 			continue
 		}
 		actions, err := s.runtimeActionsForConnection(connection)
@@ -175,6 +175,10 @@ func (s *Server) writeAgentRuntimeConnections(w http.ResponseWriter, project, ag
 		"manifest":    agentConnectionManifest(),
 		"connections": connections,
 	})
+}
+
+func workspaceConnectionAvailableToAgent(connection controldb.Connection, workspaceID string) bool {
+	return connection.OwnerType == ConnectionOwnerWorkspace && connection.OwnerID == workspaceID
 }
 
 func matchingAgentConnectionGrants(grants []controldb.ConnectionGrant, workspaceID, project, agent string) []controldb.ConnectionGrant {

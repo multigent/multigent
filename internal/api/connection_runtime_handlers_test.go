@@ -192,7 +192,7 @@ func TestRuntimeConnectionAlias(t *testing.T) {
 	}
 }
 
-func TestResolveAgentRuntimeConnectionsUsesGrantRules(t *testing.T) {
+func TestResolveAgentRuntimeConnectionsUsesWorkspaceDefaultAndGrantRules(t *testing.T) {
 	users := newTestUserStore(t)
 	s := &Server{controlDB: users.db, users: users}
 	workspaceID := "ws-one"
@@ -213,11 +213,19 @@ func TestResolveAgentRuntimeConnectionsUsesGrantRules(t *testing.T) {
 	ungranted := granted
 	ungranted.ID = "conn-ungranted"
 	ungranted.ConnectionName = "other"
+	ungranted.OwnerType = ConnectionOwnerUser
+	ungranted.OwnerID = "owner"
+	workspaceDefault := granted
+	workspaceDefault.ID = "conn-workspace-default"
+	workspaceDefault.ConnectionName = "default-tools"
 	if err := users.db.UpsertConnection(granted); err != nil {
 		t.Fatalf("granted connection: %v", err)
 	}
 	if err := users.db.UpsertConnection(ungranted); err != nil {
 		t.Fatalf("ungranted connection: %v", err)
+	}
+	if err := users.db.UpsertConnection(workspaceDefault); err != nil {
+		t.Fatalf("workspace default connection: %v", err)
 	}
 	if err := users.db.CreateConnectionGrant(controldb.ConnectionGrant{
 		ID:           "grant-project",
@@ -232,11 +240,17 @@ func TestResolveAgentRuntimeConnectionsUsesGrantRules(t *testing.T) {
 	if err != nil {
 		t.Fatalf("resolve: %v", err)
 	}
-	if len(connections) != 1 || connections[0].ID != granted.ID {
+	gotIDs := map[string]bool{}
+	for _, connection := range connections {
+		gotIDs[connection.ID] = true
+	}
+	if len(connections) != 2 || !gotIDs[granted.ID] || !gotIDs[workspaceDefault.ID] {
 		t.Fatalf("connections=%#v", connections)
 	}
-	if _, ok := connections[0].Profile["token"]; ok {
-		t.Fatalf("runtime profile leaked token: %#v", connections[0].Profile)
+	for _, connection := range connections {
+		if _, ok := connection.Profile["token"]; ok {
+			t.Fatalf("runtime profile leaked token: %#v", connection.Profile)
+		}
 	}
 }
 

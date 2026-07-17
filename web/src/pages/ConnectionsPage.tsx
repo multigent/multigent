@@ -1,6 +1,6 @@
 import { useEffect, useMemo, useRef, useState, type ReactNode } from 'react'
 import { QRCodeSVG } from 'qrcode.react'
-import { Link2, Trash2, X } from 'lucide-react'
+import { X } from 'lucide-react'
 import { useSearchParams } from 'react-router-dom'
 import { useTranslation } from 'react-i18next'
 import { apiDelete, apiFetch, apiPost, apiPut } from '../lib/api'
@@ -62,8 +62,6 @@ type ConnectionHealthCheckRunResult = { checked: number; skipped: number; result
 type OAuthAuthorizationStart = { authorizationUrl: string; state: string }
 type DeviceSetupBegin = { deviceCode: string; qrUrl: string; userCode?: string; interval?: number; expiresIn?: number; baseUrl?: string }
 type DeviceSetupPoll = { status: string; stage?: string; deviceCode?: string; qrUrl?: string; userCode?: string; interval?: number; expiresIn?: number; baseUrl?: string; slowDown?: boolean; error?: string; connection?: Connection }
-type ProjectRow = { name: string }
-type ProjectAgent = { name: string }
 type WorkspaceSummary = { id: string; name: string; currentUserRole?: string; currentUserCanAdmin?: boolean }
 type OAuthClientConfig = {
   provider: string
@@ -87,12 +85,9 @@ export default function ConnectionsPage() {
   const [providers, setProviders] = useState<Provider[]>([])
   const [oauthConfigs, setOAuthConfigs] = useState<OAuthClientConfig[]>([])
   const [connections, setConnections] = useState<Connection[]>([])
-  const [projects, setProjects] = useState<ProjectRow[]>([])
-  const [agentsByProject, setAgentsByProject] = useState<Record<string, ProjectAgent[]>>({})
   const [loading, setLoading] = useState(true)
   const [creatingProvider, setCreatingProvider] = useState<string | null>(null)
   const [editing, setEditing] = useState<Connection | null>(null)
-  const [granting, setGranting] = useState<Connection | null>(null)
   const [testResults, setTestResults] = useState<Record<string, { loading?: boolean; ok?: boolean; message?: string }>>({})
   const [healthCheckLoading, setHealthCheckLoading] = useState(false)
   const [healthCheckMessage, setHealthCheckMessage] = useState('')
@@ -124,10 +119,9 @@ export default function ConnectionsPage() {
     async function load() {
       setLoading(true)
       try {
-        const [providerData, connectionData, projectData, workspaceData] = await Promise.all([
+        const [providerData, connectionData, workspaceData] = await Promise.all([
           apiFetch<{ providers: Provider[] }>('/api/v1/connectors/providers'),
           apiFetch<{ connections: Connection[] }>('/api/v1/connections'),
-          apiFetch<ProjectRow[]>('/api/v1/projects').catch(() => []),
           apiFetch<WorkspaceSummary>('/api/v1/workspace').catch(() => null),
         ])
         const oauthData = await apiFetch<{ configs: OAuthClientConfig[] }>('/api/v1/oauth/client-configs').catch(() => ({ configs: [] }))
@@ -136,12 +130,6 @@ export default function ConnectionsPage() {
         setProviders(providerData.providers ?? [])
         setOAuthConfigs(oauthData.configs ?? [])
         setConnections(connectionData.connections ?? [])
-        setProjects(projectData ?? [])
-        const nextAgents: Record<string, ProjectAgent[]> = {}
-        for (const project of projectData ?? []) {
-          nextAgents[project.name] = await apiFetch<ProjectAgent[]>(`/api/v1/projects/${encodeURIComponent(project.name)}/agents`).catch(() => [])
-        }
-        if (!cancelled) setAgentsByProject(nextAgents)
       } finally {
         if (!cancelled) setLoading(false)
       }
@@ -275,9 +263,6 @@ export default function ConnectionsPage() {
                     testResults={testResults}
                     onConfigure={() => setCreatingProvider(provider.provider)}
                     onEdit={setEditing}
-                    onGrant={setGranting}
-                    onTest={connection => void testConnection(connection)}
-                    onDelete={connection => void removeConnection(connection)}
                   />
                 ))}
               </div>
@@ -302,21 +287,11 @@ export default function ConnectionsPage() {
           oauthConfigs={oauthConfigs}
           isWorkspaceAdmin={isWorkspaceAdmin}
           connection={editing}
+          testState={testResults[editing.id]}
+          onTest={connection => void testConnection(connection)}
+          onDelete={connection => void removeConnection(connection)}
           onClose={() => setEditing(null)}
           onCreated={() => { setEditing(null); setReloadKey(k => k + 1) }}
-        />
-      )}
-      {granting && (
-        <GrantDialog
-          connection={granting}
-          workspaceId={workspace?.id ?? ''}
-          projects={projects}
-          agentsByProject={agentsByProject}
-          isWorkspaceAdmin={isWorkspaceAdmin}
-          currentUsername={user?.username ?? ''}
-          linkedAgents={user?.linkedAgents ?? []}
-          onClose={() => setGranting(null)}
-          onChanged={() => { setGranting(null); setReloadKey(k => k + 1) }}
         />
       )}
     </div>
@@ -332,9 +307,6 @@ function ExternalToolCard({
   testResults,
   onConfigure,
   onEdit,
-  onGrant,
-  onTest,
-  onDelete,
 }: {
   provider: Provider
   connection?: Connection
@@ -344,13 +316,9 @@ function ExternalToolCard({
   testResults: Record<string, { loading?: boolean; ok?: boolean; message?: string }>
   onConfigure: () => void
   onEdit: (connection: Connection) => void
-  onGrant: (connection: Connection) => void
-  onTest: (connection: Connection) => void
-  onDelete: (connection: Connection) => void
 }) {
   const { t } = useTranslation()
   const fmtDateTime = useFormatDateTime()
-  const grantCount = connection?.grants?.length ?? 0
   const latestValidation = connection ? connectionValidation(connection, fmtDateTime) : null
   const oauthSupported = provider.authTypes.includes('oauth2')
   const staticAuthTypes = provider.authTypes.filter(type => type !== 'oauth2')
@@ -390,10 +358,9 @@ function ExternalToolCard({
           {connection ? t('connections.manageConnection') : t('connections.configureTool')}
         </button>
       </div>
-      <div className="mt-4 grid gap-3 sm:grid-cols-4">
+      <div className="mt-4 grid gap-3 sm:grid-cols-3">
         <ToolStat label={t('connections.authMethods')} value={formatAuthTypes(provider.authTypes, oauthAvailable, isWorkspaceAdmin, t)} />
         <ToolStat label={t('connections.credentials')} value={connection ? t('connections.connected') : t('connections.notConfigured')} />
-        <ToolStat label={t('connections.grants')} value={String(grantCount)} />
         <ToolStat label={t('connections.actions')} value={String(provider.actions?.length ?? 0)} />
       </div>
       <div className="mt-4 flex flex-wrap items-center gap-2 text-xs text-neutral-400 dark:text-zinc-500">
@@ -404,22 +371,10 @@ function ExternalToolCard({
           <span>{latestValidation.ok ? t('connections.healthy') : t('connections.failed')} · {latestValidation.atLabel}</span>
         )}
       </div>
-      {connection ? (
-        <div className="mt-4 border-t border-neutral-100 pt-3 dark:border-zinc-800">
-          <ConnectionSummary
-            connection={connection}
-            canGrant={connection.ownerType === 'workspace' ? isWorkspaceAdmin : connection.ownerId === currentUsername}
-            canEdit={connection.ownerType === 'workspace' ? isWorkspaceAdmin : connection.ownerId === currentUsername}
-            canDelete={connection.ownerType === 'workspace' ? isWorkspaceAdmin : connection.ownerId === currentUsername}
-            testState={testResults[connection.id]}
-            onEdit={() => onEdit(connection)}
-            onGrant={() => onGrant(connection)}
-            onTest={() => onTest(connection)}
-            onDelete={() => onDelete(connection)}
-          />
-        </div>
-      ) : (
-        <p className="mt-4 border-t border-neutral-100 pt-3 text-xs text-neutral-400 dark:border-zinc-800 dark:text-zinc-500">{t('connections.noConnectionsForTool')}</p>
+      {connection && testResults[connection.id]?.message && (
+        <p className={cn('mt-3 truncate text-xs', testResults[connection.id]?.ok ? 'text-emerald-600 dark:text-emerald-300' : 'text-red-600 dark:text-red-300')}>
+          {testResults[connection.id]?.message}
+        </p>
       )}
     </section>
   )
@@ -500,40 +455,6 @@ const providerLogoDomains: Record<string, string> = {
   sentry: 'sentry.io',
 }
 
-function ConnectionSummary({ connection, canGrant, canEdit, canDelete, testState, onEdit, onGrant, onTest, onDelete }: { connection: Connection; canGrant: boolean; canEdit: boolean; canDelete: boolean; testState?: { loading?: boolean; ok?: boolean; message?: string }; onEdit: () => void; onGrant: () => void; onTest: () => void; onDelete: () => void }) {
-  const { t } = useTranslation()
-  const summary = connection.profileSummary
-  const accountLabel = [summary?.accountName, summary?.accountEmail].filter(Boolean).join(' · ')
-  return (
-    <div className="rounded-lg border border-neutral-200 px-3 py-3 dark:border-zinc-700">
-      <div className="flex items-center justify-between gap-3">
-        <div className="min-w-0">
-          <p className="truncate text-sm font-medium text-neutral-800 dark:text-zinc-100">{summary?.displayName || connection.connectionName}</p>
-          <p className="truncate text-xs text-neutral-400 dark:text-zinc-500">{connection.authType} · {connection.ownerType} · {connection.ownerId}</p>
-          {(summary?.accountId || accountLabel) && (
-            <p className="mt-1 truncate text-xs text-neutral-500 dark:text-zinc-400" title={[summary?.accountId, accountLabel].filter(Boolean).join(' · ')}>
-              {[summary?.accountId, accountLabel].filter(Boolean).join(' · ')}
-            </p>
-          )}
-        </div>
-        <div className="flex shrink-0 items-center gap-1">
-          <button type="button" onClick={onTest} disabled={testState?.loading} className="rounded-md px-2 py-1 text-xs text-neutral-500 hover:bg-neutral-100 hover:text-neutral-800 disabled:opacity-50 dark:text-zinc-400 dark:hover:bg-zinc-800 dark:hover:text-zinc-100">{t('connections.test')}</button>
-          {canGrant && <button type="button" onClick={onGrant} className="rounded-md px-2 py-1 text-xs text-neutral-500 hover:bg-neutral-100 hover:text-neutral-800 dark:text-zinc-400 dark:hover:bg-zinc-800 dark:hover:text-zinc-100">{t('connections.grant')}</button>}
-          {canEdit && <button type="button" onClick={onEdit} className="rounded-md px-2 py-1 text-xs text-neutral-500 hover:bg-neutral-100 hover:text-neutral-800 dark:text-zinc-400 dark:hover:bg-zinc-800 dark:hover:text-zinc-100">{t('common.edit')}</button>}
-          {canDelete && <button type="button" onClick={onDelete} className="rounded-md px-2 py-1 text-xs text-red-600 hover:bg-red-50 dark:text-red-300 dark:hover:bg-red-900/20">{t('connections.disconnect')}</button>}
-        </div>
-      </div>
-      <div className="mt-2 flex flex-wrap gap-1.5">
-        {(connection.grants ?? []).slice(0, 4).map(grant => (
-          <span key={grant.id} className="rounded-md bg-neutral-100 px-2 py-0.5 text-[11px] text-neutral-500 dark:bg-zinc-800 dark:text-zinc-400">{grant.targetType}: {grant.targetId}</span>
-        ))}
-        {(connection.grants?.length ?? 0) === 0 && <span className="text-xs text-neutral-400 dark:text-zinc-500">{t('connections.noGrantsYet')}</span>}
-      </div>
-      {testState?.message && <p className={cn('mt-1 truncate text-xs', testState.ok ? 'text-emerald-600 dark:text-emerald-300' : 'text-red-600 dark:text-red-300')}>{testState.message}</p>}
-    </div>
-  )
-}
-
 function primaryConnectionForProvider(connections: Connection[], provider: string): Connection | undefined {
   return connections
     .filter(connection => connection.provider === provider)
@@ -575,6 +496,9 @@ function ConnectionDialog({
   isWorkspaceAdmin,
   fixedProviderId,
   connection,
+  testState,
+  onTest,
+  onDelete,
   onClose,
   onCreated,
 }: {
@@ -583,6 +507,9 @@ function ConnectionDialog({
   isWorkspaceAdmin: boolean
   fixedProviderId?: string
   connection?: Connection
+  testState?: { loading?: boolean; ok?: boolean; message?: string }
+  onTest?: (connection: Connection) => void
+  onDelete?: (connection: Connection) => void
   onClose: () => void
   onCreated: () => void
 }) {
@@ -736,7 +663,7 @@ function ConnectionDialog({
   }
 
   return (
-    <Modal title={isEditing ? t('connections.editConnection') : t('connections.configureToolTitle', { name: provider?.displayName ?? '' })} onClose={onClose}>
+    <Modal title={isEditing ? t('connections.manageConnection') : t('connections.configureToolTitle', { name: provider?.displayName ?? '' })} onClose={onClose}>
       <div className="space-y-4">
         {!fixedProviderId && (
           <label className="block">
@@ -754,6 +681,27 @@ function ConnectionDialog({
         {isEditing && connection && (
           <SavedConnectionSummary connection={connection} />
         )}
+        {isEditing && connection ? (
+          <>
+            <div className="rounded-lg border border-neutral-200 bg-white p-3 dark:border-zinc-700 dark:bg-zinc-900/40">
+              <p className="text-sm font-medium text-neutral-900 dark:text-zinc-100">{t('connections.connected')}</p>
+              <p className="mt-1 text-xs leading-5 text-neutral-500 dark:text-zinc-400">{t('connections.connectedReadonlyHint')}</p>
+              {testState?.message && (
+                <p className={cn('mt-2 truncate text-xs', testState.ok ? 'text-emerald-600 dark:text-emerald-300' : 'text-red-600 dark:text-red-300')}>
+                  {testState.message}
+                </p>
+              )}
+            </div>
+            <div className="flex justify-between gap-2 pt-2">
+              <button type="button" onClick={onClose} className="rounded-lg border border-neutral-300 px-3 py-2 text-sm dark:border-zinc-600">{t('common.close')}</button>
+              <div className="flex gap-2">
+                <button type="button" onClick={() => onTest?.(connection)} disabled={testState?.loading} className="rounded-lg border border-neutral-300 px-3 py-2 text-sm font-medium text-neutral-700 hover:bg-neutral-50 disabled:opacity-50 dark:border-zinc-600 dark:text-zinc-200 dark:hover:bg-zinc-800">{t('connections.test')}</button>
+                <button type="button" onClick={() => onDelete?.(connection)} className="rounded-lg border border-red-200 px-3 py-2 text-sm font-medium text-red-600 hover:bg-red-50 dark:border-red-900/60 dark:text-red-300 dark:hover:bg-red-900/20">{t('connections.disconnect')}</button>
+              </div>
+            </div>
+          </>
+        ) : (
+          <>
         {canQuickAuthorize && (
           <div className="rounded-lg border border-sky-100 bg-sky-50 p-3 dark:border-sky-900/60 dark:bg-sky-950/20">
             <div className="flex items-start justify-between gap-3">
@@ -842,6 +790,8 @@ function ConnectionDialog({
           <button type="button" onClick={onClose} disabled={saving} className="rounded-lg border border-neutral-300 px-3 py-2 text-sm dark:border-zinc-600">{t('common.cancel')}</button>
           <button type="button" onClick={() => void submit()} disabled={saving || !provider || provider.comingSoon || availableAuthTypes.length === 0} className="rounded-lg bg-sky-600 px-3 py-2 text-sm font-medium text-white disabled:opacity-50">{authType === 'oauth2' && !isEditing ? t('connections.startOAuth') : isEditing ? t('common.save') : t('common.create')}</button>
         </div>
+          </>
+        )}
       </div>
     </Modal>
   )
@@ -873,152 +823,6 @@ function SavedConnectionSummary({ connection }: { connection: Connection }) {
         ))}
       </div>
     </div>
-  )
-}
-
-function GrantDialog({ connection, workspaceId, projects, agentsByProject, isWorkspaceAdmin, currentUsername, linkedAgents, onClose, onChanged }: { connection: Connection; workspaceId: string; projects: ProjectRow[]; agentsByProject: Record<string, ProjectAgent[]>; isWorkspaceAdmin: boolean; currentUsername: string; linkedAgents: string[]; onClose: () => void; onChanged: () => void }) {
-  const { t } = useTranslation()
-  const isUserOwned = connection.ownerType === 'user'
-  const isCurrentUserOwner = isUserOwned && connection.ownerId === currentUsername
-  const canEditGrants = !isUserOwned || isCurrentUserOwner
-  const initialTargetType = isUserOwned ? (isCurrentUserOwner && projects.length > 0 ? 'agent' : 'user') : (isWorkspaceAdmin ? 'workspace' : 'user')
-  const [targetType, setTargetType] = useState(initialTargetType)
-  const [project, setProject] = useState(projects[0]?.name ?? '')
-  const [agent, setAgent] = useState('')
-  const [targetId, setTargetId] = useState(initialTargetType === 'workspace' ? workspaceId : initialTargetType === 'user' ? (isUserOwned ? connection.ownerId : currentUsername) : '')
-  const [saving, setSaving] = useState(false)
-
-  const linkedAgentRefs = useMemo(() => linkedAgents.filter(ref => ref.includes('/')), [linkedAgents])
-  const linkedAgentsByProject = useMemo(() => {
-    const out: Record<string, ProjectAgent[]> = {}
-    for (const ref of linkedAgentRefs) {
-      const [proj, name] = ref.split('/', 2)
-      if (!proj || !name) continue
-      out[proj] = [...(out[proj] ?? []), { name }]
-    }
-    return out
-  }, [linkedAgentRefs])
-  const agentOptions = project ? (agentsByProject[project] ?? []) : []
-  const projectOptions = projects.length > 0
-    ? projects
-    : Object.keys(linkedAgentsByProject).map(name => ({ name }))
-
-  useEffect(() => {
-    if (targetType === 'workspace') setTargetId(workspaceId)
-    if (targetType === 'project') setTargetId(project)
-    if (targetType === 'agent') setTargetId(project && agent ? `${project}/${agent}` : '')
-    if (targetType === 'user') setTargetId(isUserOwned ? connection.ownerId : currentUsername)
-  }, [targetType, project, agent, workspaceId, isUserOwned, connection.ownerId, currentUsername])
-
-  useEffect(() => {
-    if ((isUserOwned || !isWorkspaceAdmin) && projectOptions.length > 0 && !projectOptions.some(p => p.name === project)) {
-      setProject(projectOptions[0].name)
-      setAgent('')
-    }
-  }, [isUserOwned, isWorkspaceAdmin, projectOptions, project])
-
-  async function addGrant() {
-    setSaving(true)
-    try {
-      await apiPost(`/api/v1/connections/${encodeURIComponent(connection.id)}/grants`, {
-        targetType,
-        targetId: targetId.trim(),
-      })
-      onChanged()
-    } finally {
-      setSaving(false)
-    }
-  }
-
-  async function removeGrant(grant: ConnectionGrant) {
-    await apiDelete(`/api/v1/connections/${encodeURIComponent(connection.id)}/grants/${encodeURIComponent(grant.id)}`)
-    onChanged()
-  }
-
-  return (
-    <Modal title={t('connections.connectionGrants')} onClose={onClose}>
-      <div className="space-y-4">
-        <div className="rounded-lg bg-neutral-50 p-3 text-sm text-neutral-600 dark:bg-zinc-800/50 dark:text-zinc-300">
-          <p className="font-medium text-neutral-900 dark:text-zinc-100">{connection.provider} / {connection.connectionName}</p>
-          <p className="mt-1 text-xs text-neutral-400 dark:text-zinc-500">
-            {isUserOwned ? t('connections.personalGrantHint') : t('connections.workspaceGrantHint')}
-          </p>
-        </div>
-        {canEditGrants && (
-        <div className="grid gap-3 sm:grid-cols-[160px_minmax(0,1fr)]">
-          <label className="block">
-            <span className="text-xs font-medium text-neutral-500 dark:text-zinc-400">{t('connections.targetType')}</span>
-            <select className={selectCls} value={targetType} onChange={e => setTargetType(e.target.value)}>
-              {isWorkspaceAdmin && !isUserOwned && <option value="workspace">{t('connections.workspace')}</option>}
-              {isWorkspaceAdmin && !isUserOwned && <option value="project">{t('connections.project')}</option>}
-              {(isWorkspaceAdmin && !isUserOwned) || isCurrentUserOwner ? <option value="agent">{t('connections.agent')}</option> : null}
-              <option value="user">{t('connections.user')}</option>
-            </select>
-          </label>
-          {targetType === 'workspace' ? (
-            <label className="block">
-              <span className="text-xs font-medium text-neutral-500 dark:text-zinc-400">{t('connections.workspaceId')}</span>
-              <input className={inputCls} value={targetId} readOnly />
-            </label>
-          ) : targetType === 'project' ? (
-            <label className="block">
-              <span className="text-xs font-medium text-neutral-500 dark:text-zinc-400">{t('connections.project')}</span>
-              <select className={selectCls} value={project} onChange={e => setProject(e.target.value)}>
-                {projects.map(p => <option key={p.name} value={p.name}>{p.name}</option>)}
-              </select>
-            </label>
-          ) : targetType === 'agent' ? (
-            <div className="grid gap-3 sm:grid-cols-2">
-              <label className="block">
-                <span className="text-xs font-medium text-neutral-500 dark:text-zinc-400">{t('connections.project')}</span>
-                <select className={selectCls} value={project} onChange={e => { setProject(e.target.value); setAgent('') }}>
-                  {projectOptions.map(p => <option key={p.name} value={p.name}>{p.name}</option>)}
-                </select>
-              </label>
-              <label className="block">
-                <span className="text-xs font-medium text-neutral-500 dark:text-zinc-400">{t('connections.agent')}</span>
-                <select className={selectCls} value={agent} onChange={e => setAgent(e.target.value)}>
-                  <option value="">{t('connections.selectAgent')}</option>
-                  {agentOptions.map(a => <option key={a.name} value={a.name}>{a.name}</option>)}
-                </select>
-              </label>
-            </div>
-          ) : (
-            <label className="block">
-              <span className="text-xs font-medium text-neutral-500 dark:text-zinc-400">{t('connections.username')}</span>
-              <input className={inputCls} value={targetId} readOnly placeholder={t('connections.usernamePlaceholder')} />
-            </label>
-          )}
-        </div>
-        )}
-        {canEditGrants && (
-        <div className="flex justify-end">
-          <button type="button" disabled={saving || targetId.trim() === ''} onClick={() => void addGrant()} className="inline-flex items-center gap-2 rounded-lg bg-sky-600 px-3 py-2 text-sm font-medium text-white disabled:opacity-50">
-            <Link2 className="size-4" strokeWidth={1.8} />
-            {t('connections.addGrant')}
-          </button>
-        </div>
-        )}
-        <div className="border-t border-neutral-200 pt-4 dark:border-zinc-700">
-          {connection.grants && connection.grants.length > 0 ? (
-            <div className="space-y-2">
-              {connection.grants.map(grant => (
-                <div key={grant.id} className="flex items-center justify-between rounded-lg border border-neutral-200 px-3 py-2 dark:border-zinc-700">
-                  <span className="text-sm text-neutral-700 dark:text-zinc-300">{grant.targetType}: {grant.targetId}</span>
-                  {canEditGrants && (
-                    <button type="button" onClick={() => void removeGrant(grant)} className="rounded-md p-1.5 text-neutral-400 hover:bg-red-50 hover:text-red-600 dark:hover:bg-red-900/20">
-                      <Trash2 className="size-4" />
-                    </button>
-                  )}
-                </div>
-              ))}
-            </div>
-          ) : (
-            <p className="py-3 text-center text-sm text-neutral-400 dark:text-zinc-500">{t('connections.noGrantsConfigured')}</p>
-          )}
-        </div>
-      </div>
-    </Modal>
   )
 }
 

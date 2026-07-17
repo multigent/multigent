@@ -222,7 +222,8 @@ Google Workspace
 3. Google Workspace 支持产品分组，内部 provider 分开。
 4. OAuth 未配置时普通用户隐藏 OAuth-only 工具的连接入口。
 5. 产品层第一版每个外部工具只展示一个主连接；底层可以保留多 connection 扩展能力，但不暴露连接池管理。
-6. Wave 1 先复用当前已有 provider，不要一次性补完 20 个 runtime executor。
+6. 产品层第一版不展示连接授权管理。管理员创建的 workspace 级工具默认对本 workspace 内 Agent 可用；个人连接后续再按用户所有权和可操作 Agent 做细粒度控制。
+7. Wave 1 先复用当前已有 provider，不要一次性补完 20 个 runtime executor。
 
 第一版可验收目标：
 
@@ -232,6 +233,7 @@ Google Workspace
 尚未实现 runtime action 的 OAuth-first 工具显示为 Coming soon 或 Admin setup required。
 普通用户不会看到不可用的 OAuth 入口。
 每个工具在产品层只展示一个主连接，避免第一版引入多连接选择和优先级复杂度。
+工具卡片不直接展开连接列表；连接成功后管理弹框只展示状态、测试和断连。替换凭证走“断连后重新配置”，不做原地编辑。
 ```
 
 ## 当前实现矩阵
