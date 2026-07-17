@@ -305,7 +305,13 @@
       "childTask": "子タスク",
       "summary": "概要",
       "notSpecified": "未指定",
-      "notRequired": "不要"
+      "notRequired": "不要",
+      "nodeSettings": "ノード設定",
+      "title": "タイトル",
+      "type": "タイプ",
+      "description": "説明",
+      "startNode": "開始",
+      "setAsStart": "開始ノードにする"
     }
   },
   "projectSettings": {

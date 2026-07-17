@@ -305,7 +305,13 @@
       "childTask": "子任務",
       "summary": "總結",
       "notSpecified": "未指定",
-      "notRequired": "不需要"
+      "notRequired": "不需要",
+      "nodeSettings": "節點設定",
+      "title": "標題",
+      "type": "類型",
+      "description": "描述",
+      "startNode": "開始",
+      "setAsStart": "設為開始節點"
     }
   },
   "projectSettings": {

@@ -305,7 +305,13 @@
       "childTask": "Child task",
       "summary": "Summary",
       "notSpecified": "Not specified",
-      "notRequired": "Not required"
+      "notRequired": "Not required",
+      "nodeSettings": "Node settings",
+      "title": "Title",
+      "type": "Type",
+      "description": "Description",
+      "startNode": "Start",
+      "setAsStart": "Use as start node"
     }
   },
   "projectSettings": {

@@ -138,6 +138,11 @@ const edgeClass: Record<string, string> = {
   failed: '#ef4444',
 }
 
+const stepTypes = ['agent_task', 'human_task', 'human_review', 'branch', 'join', 'terminal']
+
+const fieldClass =
+  'mt-1 w-full rounded-lg border border-neutral-300 bg-white px-3 py-2 text-sm text-neutral-900 outline-none transition-colors focus:border-sky-400 dark:border-zinc-600 dark:bg-zinc-800 dark:text-zinc-100'
+
 function WorkflowStepNode({ data, selected }: NodeProps<WorkflowNode>) {
   const { t } = useTranslation()
   const { step, status, active } = data
@@ -329,6 +334,14 @@ export function WorkflowBoard({
     })
   }
 
+  function updateSelectedStep(patch: Partial<WorkflowStep>) {
+    if (!editable || !selected) return
+    updateDefinition({
+      ...definition,
+      steps: definition.steps.map((step) => (step.id === selected.id ? { ...step, ...patch } : step)),
+    })
+  }
+
   return (
     <div className={cn('grid min-h-0 gap-4', fill && 'h-full flex-1', compact ? 'grid-cols-1' : fullscreen ? 'grid-cols-[minmax(0,1fr)_360px]' : 'grid-cols-[minmax(0,1fr)_320px]')}>
       <div
@@ -405,26 +418,87 @@ export function WorkflowBoard({
       </div>
       {!compact && selected ? (
         <aside className={cn('rounded-xl border border-neutral-200/80 bg-white p-4 dark:border-zinc-700/60 dark:bg-zinc-900', fill ? 'h-full min-h-[560px] overflow-y-auto' : fullscreen ? 'min-h-[calc(100vh-150px)]' : 'min-h-[420px]')}>
-          <div className="flex items-start justify-between gap-3">
-            <div>
-              <p className="text-xs font-medium uppercase text-neutral-400 dark:text-zinc-500">{t(`workflows.stepTypes.${selected.type}`, { defaultValue: selected.type.replace('_', ' ') })}</p>
-              <h3 className="mt-1 text-base font-semibold text-neutral-900 dark:text-zinc-100">{selected.title}</h3>
+          {editable ? (
+            <div className="space-y-4 text-sm">
+              <div className="flex items-start justify-between gap-3">
+                <div>
+                  <p className="text-xs font-medium uppercase text-neutral-400 dark:text-zinc-500">{t('workflows.detail.nodeSettings')}</p>
+                  <p className="mt-1 font-mono text-xs text-neutral-400 dark:text-zinc-500">{selected.id}</p>
+                </div>
+                {definition.startStepId === selected.id ? (
+                  <span className="rounded-full bg-sky-100 px-2 py-1 text-xs font-medium text-sky-700 dark:bg-sky-900/50 dark:text-sky-300">
+                    {t('workflows.detail.startNode')}
+                  </span>
+                ) : null}
+              </div>
+              <label className="block">
+                <span className="text-xs font-medium uppercase text-neutral-400 dark:text-zinc-500">{t('workflows.detail.title')}</span>
+                <input value={selected.title} onChange={(event) => updateSelectedStep({ title: event.target.value })} className={fieldClass} />
+              </label>
+              <label className="block">
+                <span className="text-xs font-medium uppercase text-neutral-400 dark:text-zinc-500">{t('workflows.detail.type')}</span>
+                <select value={selected.type} onChange={(event) => updateSelectedStep({ type: event.target.value })} className={fieldClass}>
+                  {stepTypes.map((type) => (
+                    <option key={type} value={type}>
+                      {t(`workflows.stepTypes.${type}`, { defaultValue: type.replace('_', ' ') })}
+                    </option>
+                  ))}
+                </select>
+              </label>
+              <label className="block">
+                <span className="text-xs font-medium uppercase text-neutral-400 dark:text-zinc-500">{t('workflows.detail.description')}</span>
+                <textarea value={selected.description || ''} onChange={(event) => updateSelectedStep({ description: event.target.value })} rows={3} className={cn(fieldClass, 'resize-y')} />
+              </label>
+              <label className="block">
+                <span className="text-xs font-medium uppercase text-neutral-400 dark:text-zinc-500">{t('workflows.detail.actor')}</span>
+                <input value={selected.actorRole || ''} onChange={(event) => updateSelectedStep({ actorRole: event.target.value })} placeholder="agent" className={fieldClass} />
+              </label>
+              <label className="block">
+                <span className="text-xs font-medium uppercase text-neutral-400 dark:text-zinc-500">{t('workflows.detail.input')}</span>
+                <textarea value={selected.inputSchema || ''} onChange={(event) => updateSelectedStep({ inputSchema: event.target.value })} rows={3} className={cn(fieldClass, 'resize-y')} />
+              </label>
+              <label className="block">
+                <span className="text-xs font-medium uppercase text-neutral-400 dark:text-zinc-500">{t('workflows.detail.output')}</span>
+                <textarea value={selected.outputSchema || ''} onChange={(event) => updateSelectedStep({ outputSchema: event.target.value })} rows={3} className={cn(fieldClass, 'resize-y')} />
+              </label>
+              <label className="block">
+                <span className="text-xs font-medium uppercase text-neutral-400 dark:text-zinc-500">{t('workflows.detail.review')}</span>
+                <input value={selected.reviewPolicy || ''} onChange={(event) => updateSelectedStep({ reviewPolicy: event.target.value })} placeholder={t('workflows.detail.notRequired')} className={fieldClass} />
+              </label>
+              <label className="flex items-center justify-between gap-3 rounded-lg border border-neutral-200 px-3 py-2 dark:border-zinc-700">
+                <span className="text-sm text-neutral-600 dark:text-zinc-300">{t('workflows.detail.setAsStart')}</span>
+                <input
+                  type="checkbox"
+                  checked={definition.startStepId === selected.id}
+                  onChange={(event) => event.target.checked && updateDefinition({ ...definition, startStepId: selected.id })}
+                  className="size-4 accent-sky-600"
+                />
+              </label>
             </div>
-            {selectedInst ? (
-              <span className={cn('rounded-full px-2 py-1 text-xs font-medium', statusClass[selectedInst.status] ?? statusClass.pending)}>
-                {selectedInst.status}
-              </span>
-            ) : null}
-          </div>
-          <p className="mt-3 text-sm leading-6 text-neutral-600 dark:text-zinc-400">{selected.description || t('workflows.noDescription')}</p>
-          <div className="mt-5 space-y-4 text-sm">
-            <Detail label={t('workflows.detail.actor')} value={selected.actorRole || selectedInst?.actorId || 'system'} />
-            <Detail label={t('workflows.detail.input')} value={selected.inputSchema || selectedInst?.inputArtifact || t('workflows.detail.notSpecified')} />
-            <Detail label={t('workflows.detail.output')} value={selected.outputSchema || selectedInst?.outputArtifact || t('workflows.detail.notSpecified')} />
-            <Detail label={t('workflows.detail.review')} value={selected.reviewPolicy || selectedInst?.reviewItemId || t('workflows.detail.notRequired')} />
-            {selectedInst?.childTaskId ? <Detail label={t('workflows.detail.childTask')} value={selectedInst.childTaskId} mono /> : null}
-            {selectedInst?.summary ? <Detail label={t('workflows.detail.summary')} value={selectedInst.summary} /> : null}
-          </div>
+          ) : (
+            <>
+              <div className="flex items-start justify-between gap-3">
+                <div>
+                  <p className="text-xs font-medium uppercase text-neutral-400 dark:text-zinc-500">{t(`workflows.stepTypes.${selected.type}`, { defaultValue: selected.type.replace('_', ' ') })}</p>
+                  <h3 className="mt-1 text-base font-semibold text-neutral-900 dark:text-zinc-100">{selected.title}</h3>
+                </div>
+                {selectedInst ? (
+                  <span className={cn('rounded-full px-2 py-1 text-xs font-medium', statusClass[selectedInst.status] ?? statusClass.pending)}>
+                    {selectedInst.status}
+                  </span>
+                ) : null}
+              </div>
+              <p className="mt-3 text-sm leading-6 text-neutral-600 dark:text-zinc-400">{selected.description || t('workflows.noDescription')}</p>
+              <div className="mt-5 space-y-4 text-sm">
+                <Detail label={t('workflows.detail.actor')} value={selected.actorRole || selectedInst?.actorId || 'system'} />
+                <Detail label={t('workflows.detail.input')} value={selected.inputSchema || selectedInst?.inputArtifact || t('workflows.detail.notSpecified')} />
+                <Detail label={t('workflows.detail.output')} value={selected.outputSchema || selectedInst?.outputArtifact || t('workflows.detail.notSpecified')} />
+                <Detail label={t('workflows.detail.review')} value={selected.reviewPolicy || selectedInst?.reviewItemId || t('workflows.detail.notRequired')} />
+                {selectedInst?.childTaskId ? <Detail label={t('workflows.detail.childTask')} value={selectedInst.childTaskId} mono /> : null}
+                {selectedInst?.summary ? <Detail label={t('workflows.detail.summary')} value={selectedInst.summary} /> : null}
+              </div>
+            </>
+          )}
         </aside>
       ) : null}
     </div>
