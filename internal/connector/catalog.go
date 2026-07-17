@@ -291,7 +291,7 @@ func Defaults() []Provider {
 		oauthOnlyProvider("google_docs", "Google Docs", "Knowledge And Docs", "Use Google Docs documents as readable and writable knowledge artifacts.", "https://accounts.google.com/o/oauth2/v2/auth", "https://oauth2.googleapis.com/token", []string{"https://www.googleapis.com/auth/documents", "https://www.googleapis.com/auth/drive.file"}),
 		oauthOnlyProvider("google_sheets", "Google Sheets", "Knowledge And Docs", "Use Google Sheets for structured data, lightweight operations tables, and reporting.", "https://accounts.google.com/o/oauth2/v2/auth", "https://oauth2.googleapis.com/token", []string{"https://www.googleapis.com/auth/spreadsheets", "https://www.googleapis.com/auth/drive.file"}),
 		oauthOnlyProvider("google_calendar", "Google Calendar", "Communication", "Use calendars, meeting schedules, availability, and reminders.", "https://accounts.google.com/o/oauth2/v2/auth", "https://oauth2.googleapis.com/token", []string{"https://www.googleapis.com/auth/calendar.events", "https://www.googleapis.com/auth/calendar.readonly"}),
-		staticPATProvider("figma", "Figma", "Design And Data", "Use Figma files, components, comments, and design handoff context.", "Personal access token", "Create a Figma personal access token from account settings. Grant only file read scopes until write actions are explicitly needed.", "Figma personal access tokens", "https://www.figma.com/developers/api#access-tokens", figmaActions()),
+		figmaProvider(),
 		staticPATProvider("airtable", "Airtable", "Design And Data", "Use Airtable bases for operations tables, CRM data, and lightweight internal systems.", "Personal access token", "Create a scoped personal access token in Airtable developer hub and limit it to specific bases.", "Airtable personal access tokens", "https://airtable.com/create/tokens", airtableActions()),
 		staticPATProvider("asana", "Asana", "Project Management", "Use Asana tasks, projects, sections, and non-engineering project workflows.", "Personal access token", "Create a personal access token from Asana developer console. Prefer least-privilege project access.", "Asana personal access tokens", "https://developers.asana.com/docs/personal-access-token", asanaActions()),
 		staticPATProvider("clickup", "ClickUp", "Project Management", "Use ClickUp tasks, lists, spaces, and cross-functional work tracking.", "API token", "Create an API token in ClickUp personal settings. Use workspace-level access carefully.", "ClickUp API token", "https://clickup.com/api", clickUpActions()),
@@ -456,6 +456,32 @@ func staticPATProvider(provider, displayName, category, description, fieldLabel,
 		Actions: actions,
 		Enabled: true,
 	}
+}
+
+func figmaProvider() Provider {
+	p := staticPATProvider(
+		"figma",
+		"Figma",
+		"Design And Data",
+		"Use Figma files, components, comments, and design handoff context.",
+		"Personal access token",
+		"Create a Figma personal access token from account settings. Grant only file read scopes until write actions are explicitly needed.",
+		"Figma personal access tokens",
+		"https://www.figma.com/developers/api#access-tokens",
+		figmaActions(),
+	)
+	p.Fields = append(p.Fields, ProviderField{
+		Key:       "mcpServerUrl",
+		Label:     "MCP server URL",
+		InputType: "url",
+		Required:  false,
+		Secret:    false,
+	})
+	p.Guides = append(p.Guides, ProviderGuide{
+		Title: "MCP Gateway",
+		Body:  "Optional. Add a Figma-compatible MCP HTTP endpoint when agents should use MCP Gateway tools. If omitted, agents can still use the built-in Figma HTTP actions.",
+	})
+	return p
 }
 
 func oauthOnlyProvider(provider, displayName, category, description, authorizationURL, tokenURL string, scopes []string) Provider {

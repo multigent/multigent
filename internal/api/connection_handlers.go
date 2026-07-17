@@ -1324,6 +1324,11 @@ func validateConnectionValues(provider connector.Provider, authType string, valu
 			return fmt.Errorf("credential field %q is required", key)
 		}
 	}
+	if raw := strings.TrimSpace(values["mcpServerUrl"]); raw != "" {
+		if err := validateMCPGatewayServerURL(raw); err != nil {
+			return err
+		}
+	}
 	return nil
 }
 

@@ -398,6 +398,7 @@ mga runtime tools --format table
 目标：证明 Unified MCP Gateway Adapter。
 
 - Connection：Figma token。
+- Connection fields：`apiKey` 必填；`mcpServerUrl` 可选。未配置 `mcpServerUrl` 时仍可使用 Figma HTTP action fallback。
 - Runtime：不直接把 Figma MCP 全量 tools 暴露给 agent 原生 context。
 - Gateway：配置 Figma upstream MCP endpoint 后，`multigent.list_tools(provider=figma)` 从 upstream `tools/list` 动态发现工具，再通过 `multigent.call_tool(tool_id=...)` 转发到 upstream `tools/call`。
 - Skills：Figma usage skill，告诉 agent 先 list 再 call。

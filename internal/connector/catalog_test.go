@@ -67,3 +67,28 @@ func TestDefaultProvidersIncludeRuntimeAdapters(t *testing.T) {
 		})
 	}
 }
+
+func TestFigmaProviderIncludesOptionalMCPServerURLField(t *testing.T) {
+	var figma Provider
+	for _, provider := range Defaults() {
+		if provider.Provider == "figma" {
+			figma = provider
+			break
+		}
+	}
+	if figma.Provider == "" {
+		t.Fatalf("figma provider missing")
+	}
+	found := false
+	for _, field := range figma.Fields {
+		if field.Key == "mcpServerUrl" {
+			found = true
+			if field.Required || field.Secret {
+				t.Fatalf("mcpServerUrl should be optional and non-secret: %#v", field)
+			}
+		}
+	}
+	if !found {
+		t.Fatalf("figma mcpServerUrl field missing: %#v", figma.Fields)
+	}
+}

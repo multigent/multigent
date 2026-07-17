@@ -145,6 +145,32 @@ func TestConnectorProviderFromDBDrivesCredentialValidation(t *testing.T) {
 	}
 }
 
+func TestConnectionValuesValidateMCPServerURL(t *testing.T) {
+	var figma connector.Provider
+	for _, provider := range connector.Defaults() {
+		if provider.Provider == "figma" {
+			figma = provider
+			break
+		}
+	}
+	if figma.Provider == "" {
+		t.Fatalf("figma provider missing")
+	}
+	err := validateConnectionValues(figma, ConnectionAuthAPIKey, map[string]string{
+		"apiKey":       "figma-token",
+		"mcpServerUrl": "file:///tmp/mcp.sock",
+	})
+	if err == nil || !strings.Contains(err.Error(), "must use http or https") {
+		t.Fatalf("expected invalid mcpServerUrl error, got %v", err)
+	}
+	if err := validateConnectionValues(figma, ConnectionAuthAPIKey, map[string]string{
+		"apiKey":       "figma-token",
+		"mcpServerUrl": "https://mcp.example.test/figma",
+	}); err != nil {
+		t.Fatalf("valid mcpServerUrl rejected: %v", err)
+	}
+}
+
 func TestConnectionByIDRequiresCurrentWorkspace(t *testing.T) {
 	db, err := controldb.Open(filepath.Join(t.TempDir(), "multigent.db"))
 	if err != nil {
