@@ -255,6 +255,7 @@
   },
   "projectNav": {
     "tasks": "任務",
+    "workflows": "流程",
     "goals": "OKR",
     "milestones": "里程碑",
     "messages": "訊息",
@@ -262,6 +263,12 @@
     "schedule": "計畫",
     "runs": "執行",
     "settings": "設定"
+  },
+  "workflows": {
+    "subtitle": "用白板檢視定義和查看任務可選的協作流程。",
+    "taskWorkflow": "任務流程",
+    "noWorkflow": "不使用流程",
+    "taskWorkflowHint": "選擇後，任務建立時會啟動對應的流程執行。"
   },
   "projectSettings": {
     "subtitle": "專案設定與提示詞管理。",

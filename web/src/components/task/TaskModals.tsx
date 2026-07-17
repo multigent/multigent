@@ -9,6 +9,7 @@ import { useFormatDateTime } from '../../lib/format-datetime'
 import { useApiJson } from '../../lib/use-api'
 import { useAuth } from '../../lib/auth'
 import { formatGoDuration, taskElapsedLabel } from '../../lib/task-duration'
+import { WorkflowBoard, type WorkflowDefinition, type WorkflowRun, type WorkflowStepInstance } from '../workflow/WorkflowBoard'
 
 export type TaskRow = {
   id: string
@@ -48,6 +49,7 @@ type RunRow = {
 }
 
 type LogData = { content: string; truncated: boolean }
+type TaskWorkflowData = { definition: WorkflowDefinition; run: WorkflowRun; steps: WorkflowStepInstance[] }
 
 // Restore real line breaks for descriptions whose upstream author stored literal
 // "\n" / "\r\n" / "\t" sequences (typically agent-generated text that survived a
@@ -244,6 +246,7 @@ export function TaskDetailModal({ task, onClose, onEdit, canEdit = true }: { tas
   const hasLog = Boolean(matchingRun?.logPath)
   const logQuery = hasLog ? `/api/v1/telemetry/log?path=${encodeURIComponent(matchingRun!.logPath!)}` : null
   const logState = useApiJson<LogData>(logQuery, 0)
+  const workflowState = useApiJson<TaskWorkflowData>(`/api/v1/projects/${encodeURIComponent(task.project)}/tasks/${encodeURIComponent(task.id)}/workflow`, 0)
 
   return (
     <div className="fixed inset-0 z-50 flex items-start justify-center pt-[3vh]">
@@ -316,6 +319,28 @@ export function TaskDetailModal({ task, onClose, onEdit, canEdit = true }: { tas
         </div>
 
         <div className="flex-1 min-h-0 overflow-y-auto">
+        {workflowState.status === 'ok' && (
+          <div className="border-b border-neutral-100 px-5 py-4 dark:border-zinc-700/40">
+            <div className="mb-3 flex items-center justify-between gap-3">
+              <div>
+                <span className="text-xs font-semibold uppercase tracking-wider text-sky-500 dark:text-sky-400">{t('workflows.taskWorkflow')}</span>
+                <h3 className="mt-1 text-base font-semibold text-neutral-900 dark:text-zinc-100">{workflowState.data.definition.name}</h3>
+              </div>
+              <span className="rounded-full bg-sky-100 px-2.5 py-1 text-xs font-medium text-sky-700 dark:bg-sky-900/50 dark:text-sky-300">
+                {workflowState.data.run.status}
+              </span>
+            </div>
+            <WorkflowBoard definition={workflowState.data.definition} run={workflowState.data.run} instances={workflowState.data.steps} />
+          </div>
+        )}
+        {workflowState.status === 'error' && (workflowState.error as { status?: number }).status !== 404 && (
+          <div className="border-b border-neutral-100 px-5 py-3 dark:border-zinc-700/40">
+            <p className="rounded-lg border border-red-200 bg-red-50 px-3 py-2 text-sm text-red-700 dark:border-red-900/60 dark:bg-red-950/30 dark:text-red-300">
+              {workflowState.error.message}
+            </p>
+          </div>
+        )}
+
         {task.description && (
           <div className="border-b border-neutral-100 px-5 py-3 dark:border-zinc-700/40">
             <span className="text-xs font-semibold uppercase tracking-wider text-neutral-400 dark:text-zinc-500">{t('tasks.description')}</span>

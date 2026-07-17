@@ -255,6 +255,7 @@
   },
   "projectNav": {
     "tasks": "任务",
+    "workflows": "流程",
     "goals": "OKR",
     "milestones": "里程碑",
     "messages": "消息",
@@ -262,6 +263,12 @@
     "schedule": "计划",
     "runs": "运行",
     "settings": "设置"
+  },
+  "workflows": {
+    "subtitle": "用白板视图定义和查看任务可选的协作流程。",
+    "taskWorkflow": "任务流程",
+    "noWorkflow": "不使用流程",
+    "taskWorkflowHint": "选择后，任务创建时会启动对应的流程运行。"
   },
   "projectSettings": {
     "subtitle": "项目配置与提示词管理。",

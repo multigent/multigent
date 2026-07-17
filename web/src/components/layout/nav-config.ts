@@ -6,6 +6,7 @@ import {
   Cable,
   FolderKanban,
   FolderOpen,
+  GitBranch,
   LayoutDashboard,
   ListTodo,
   Milestone,
@@ -36,7 +37,7 @@ export type NavKey =
   | 'settings'
 
 /** 项目内执行面：`projectNav.*` */
-export type ProjectNavKey = 'tasks' | 'goals' | 'milestones' | 'messages' | 'members' | 'schedule' | 'runs' | 'settings'
+export type ProjectNavKey = 'tasks' | 'workflows' | 'goals' | 'milestones' | 'messages' | 'members' | 'schedule' | 'runs' | 'settings'
 
 export type NavItem = {
   to: string
@@ -77,6 +78,7 @@ export const workspaceNav: NavItem[] = [
 
 export const projectSubNav: ProjectNavItem[] = [
   { segment: 'tasks', icon: ListTodo },
+  { segment: 'workflows', icon: GitBranch },
   { segment: 'goals', icon: Target },
   { segment: 'milestones', icon: Milestone },
   { segment: 'messages', icon: MessageSquare },
@@ -115,7 +117,7 @@ export function projectIdFromPath(pathname: string): string | null {
 
 export function projectNavKeyFromPath(pathname: string): ProjectNavKey | null {
   const m =
-    /^\/projects\/[^/]+\/(tasks|goals|milestones|messages|members|schedule|runs|settings)(?:\/|$)/.exec(pathname)
+    /^\/projects\/[^/]+\/(tasks|workflows|goals|milestones|messages|members|schedule|runs|settings)(?:\/|$)/.exec(pathname)
   return (m?.[1] as ProjectNavKey) ?? null
 }
 

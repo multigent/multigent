@@ -2,6 +2,7 @@ import { useMemo, useState, type FormEvent } from 'react'
 import { useTranslation } from 'react-i18next'
 import { apiPost } from '../../lib/api'
 import { cn } from '../../lib/cn'
+import { useApiJson } from '../../lib/use-api'
 import type { TaskOption } from '../task/TaskModals'
 
 const TASK_TYPES = ['chore', 'feature', 'bug', 'review', 'triage', 'test', 'research'] as const
@@ -9,6 +10,8 @@ const TASK_TYPES = ['chore', 'feature', 'bug', 'review', 'triage', 'test', 'rese
 type AgentOpt = { name: string }
 
 type ProjectAgentsOpt = { projectId: string; agents: AgentOpt[] }
+type WorkflowOpt = { id: string; name: string }
+type WorkflowListResponse = { workflows: WorkflowOpt[] }
 
 type Props = {
   projectId: string
@@ -36,10 +39,14 @@ export function CreateTaskDialog({ projectId: defaultProjectId, agents: defaultA
   const [dueDate, setDueDate] = useState('')
   const [parentId, setParentId] = useState('')
   const [estimateDuration, setEstimateDuration] = useState('')
+  const [workflowDefinitionId, setWorkflowDefinitionId] = useState('')
   const [busy, setBusy] = useState(false)
   const [err, setErr] = useState<string | null>(null)
 
   const multiProject = Boolean(allProjectsAgents && allProjectsAgents.length > 1)
+  const workflowPath = open && selectedProject ? `/api/v1/projects/${encodeURIComponent(selectedProject)}/workflows` : null
+  const workflowsState = useApiJson<WorkflowListResponse>(workflowPath, 0)
+  const workflows = workflowsState.status === 'ok' ? workflowsState.data.workflows : []
 
   const currentAgents = useMemo(() => {
     if (!allProjectsAgents) return defaultAgents
@@ -64,6 +71,7 @@ export function CreateTaskDialog({ projectId: defaultProjectId, agents: defaultA
     setDueDate('')
     setParentId('')
     setEstimateDuration('')
+    setWorkflowDefinitionId('')
     setErr(null)
   }
 
@@ -112,6 +120,7 @@ export function CreateTaskDialog({ projectId: defaultProjectId, agents: defaultA
           ...(dueDate ? { dueDate } : {}),
           ...(parentId ? { parentId } : {}),
           ...(estimateDuration.trim() ? { estimateDuration: estimateDuration.trim() } : {}),
+          ...(workflowDefinitionId ? { workflowDefinitionId } : {}),
         },
       )
       setOpen(false)
@@ -244,6 +253,15 @@ export function CreateTaskDialog({ projectId: defaultProjectId, agents: defaultA
                   <input value={labelsStr} onChange={(e) => setLabelsStr(e.target.value)} placeholder={t('tasks.labelsHint')} className={fieldCls} />
                 </label>
               </div>
+
+              <label className="block text-sm">
+                <span className="text-neutral-600 dark:text-zinc-400">{t('workflows.taskWorkflow')}</span>
+                <select value={workflowDefinitionId} onChange={(e) => setWorkflowDefinitionId(e.target.value)} className={fieldCls}>
+                  <option value="">{t('workflows.noWorkflow')}</option>
+                  {workflows.map((wf) => <option key={wf.id} value={wf.id}>{wf.name}</option>)}
+                </select>
+                <p className="mt-0.5 text-xs text-neutral-400 dark:text-zinc-500">{t('workflows.taskWorkflowHint')}</p>
+              </label>
 
               {err && <p className="text-sm text-red-600 dark:text-red-400">{err}</p>}
               <div className="flex justify-end gap-2 pt-1">

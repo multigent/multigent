@@ -26,6 +26,7 @@ import ProjectSchedulePage from './pages/projects/ProjectSchedulePage'
 import ProjectsListPage from './pages/projects/ProjectsListPage'
 import ProjectSettingsPage from './pages/projects/ProjectSettingsPage'
 import ProjectTasksPage from './pages/projects/ProjectTasksPage'
+import ProjectWorkflowsPage from './pages/projects/ProjectWorkflowsPage'
 import TeamDetailPage from './pages/teams/TeamDetailPage'
 import TeamsPage from './pages/teams/TeamsPage'
 import DocsPage from './pages/docs/DocsPage'
@@ -122,6 +123,7 @@ function AuthenticatedRoutes() {
         <Route path="projects/:projectId" element={<ProjectBranch />}>
           <Route index element={<Navigate to="tasks" replace />} />
           <Route path="tasks" element={<ProjectTasksPage />} />
+          <Route path="workflows" element={<ProjectWorkflowsPage />} />
           <Route path="goals" element={<ProjectOKRPage />} />
           <Route path="milestones" element={<ProjectMilestonePage />} />
           <Route path="messages" element={<ProjectMessagesPage />} />

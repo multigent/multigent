@@ -255,6 +255,7 @@
   },
   "projectNav": {
     "tasks": "Tasks",
+    "workflows": "Workflows",
     "goals": "OKR",
     "milestones": "Milestones",
     "messages": "Messages",
@@ -262,6 +263,12 @@
     "schedule": "Schedule",
     "runs": "Runs",
     "settings": "Settings"
+  },
+  "workflows": {
+    "subtitle": "Define and inspect task workflows with a whiteboard-style graph.",
+    "taskWorkflow": "Task workflow",
+    "noWorkflow": "No workflow",
+    "taskWorkflowHint": "When selected, creating the task starts a workflow run."
   },
   "projectSettings": {
     "subtitle": "Project configuration and prompts.",

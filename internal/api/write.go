@@ -30,18 +30,19 @@ func validTaskStatus(s string) bool {
 }
 
 type postTaskBody struct {
-	Agent            string   `json:"agent"`
-	Title            string   `json:"title"`
-	Prompt           string   `json:"prompt"`
-	Description      string   `json:"description"`
-	Type             string   `json:"type"`
-	Priority         int      `json:"priority"`
-	Assignee         string   `json:"assignee"`
-	CreatedBy        string   `json:"createdBy"`
-	Labels           []string `json:"labels"`
-	ParentID         string   `json:"parentId"`
-	DueDate          string   `json:"dueDate"`          // YYYY-MM-DD
-	EstimateDuration string   `json:"estimateDuration"` // Go duration, e.g. "30m", "2h"
+	Agent                string   `json:"agent"`
+	Title                string   `json:"title"`
+	Prompt               string   `json:"prompt"`
+	Description          string   `json:"description"`
+	Type                 string   `json:"type"`
+	Priority             int      `json:"priority"`
+	Assignee             string   `json:"assignee"`
+	CreatedBy            string   `json:"createdBy"`
+	Labels               []string `json:"labels"`
+	ParentID             string   `json:"parentId"`
+	DueDate              string   `json:"dueDate"`          // YYYY-MM-DD
+	EstimateDuration     string   `json:"estimateDuration"` // Go duration, e.g. "30m", "2h"
+	WorkflowDefinitionID string   `json:"workflowDefinitionId"`
 }
 
 func (s *Server) handlePostProjectTask(w http.ResponseWriter, r *http.Request) {
@@ -161,6 +162,17 @@ func (s *Server) handlePostProjectTask(w http.ResponseWriter, r *http.Request) {
 
 	// Fire trigger if configured for this agent.
 	s.triggers.Fire(name, agentName, entity.TriggerOnTask, "task "+t.ID)
+
+	if workflowID := strings.TrimSpace(body.WorkflowDefinitionID); workflowID != "" {
+		wfStore, ok := s.workflowStoreForRequest(w, r)
+		if !ok {
+			return
+		}
+		if _, _, err := wfStore.StartRun(name, t.ID, workflowID); err != nil {
+			s.serverError(w, err)
+			return
+		}
+	}
 
 	w.WriteHeader(http.StatusCreated)
 	_ = json.NewEncoder(w).Encode(map[string]string{
