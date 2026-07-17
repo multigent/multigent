@@ -1015,7 +1015,122 @@ Task
 - Review Item 是人工门禁。
 - Artifact 是结构化产物。
 
+### Task 创建时选择流程
+
+Task 创建时应该允许选择一个 workflow definition，但这不意味着每个 Task 都按同一条完整流程跑到底。
+
+推荐产品形态：
+
+```text
+创建 Task
+  -> 选择任务类型：需求 / Bug / 调研 / 发布 / 客服问题
+  -> 系统推荐流程模板
+  -> 用户确认或切换流程
+  -> Workflow Run 启动
+```
+
+示例：
+
+```yaml
+task_type: feature
+workflow_definition: software_delivery_v1
+workflow_mode: auto
+```
+
+`workflow_mode` 可以支持：
+
+- `auto`：系统根据复杂度自动裁剪流程。
+- `simple`：轻量流程，适合小 bug、小改动。
+- `standard`：标准流程，适合普通需求。
+- `strict`：强门禁流程，适合高风险发布或客户项目。
+
+这样用户不用每次从零设计流程，但也不会被迫为小需求走完整研发流程。
+
+### 运行时路由与流程裁剪
+
+同一个 workflow definition 内部应该支持路由节点。
+
+流程可以先进入一个 `routing` 或 `system_gate` 节点，由系统、PM agent 或 human 判断：
+
+```text
+这个 Task 是小改动，还是需要拆分的大需求？
+是否需要产品 spec？
+是否需要开发方案 review？
+是否需要并行开发？
+是否需要 QA 完整测试？
+是否需要上线审批？
+```
+
+推荐把“是否并行”作为运行时决策，而不是写死在每条需求必经路径里。
+
+示例：
+
+```yaml
+  - id: complexity_routing
+    type: system_gate
+    title: 复杂度路由
+    input_schema: task_intake_output_v1
+    rules:
+      - when: complexity == "small"
+        to: simple_implementation
+      - when: complexity == "medium"
+        to: standard_engineering_spec
+      - when: complexity == "large" or split_required == true
+        to: decomposition
+```
+
+对于小需求：
+
+```text
+Requirement Intake
+-> Complexity Routing
+-> Simple Implementation
+-> PR Review
+-> Done
+```
+
+对于中等需求：
+
+```text
+Requirement Intake
+-> Product Clarification
+-> Engineering Investigation
+-> Implementation
+-> QA
+-> Done
+```
+
+对于大需求：
+
+```text
+Requirement Intake
+-> Product Clarification
+-> Engineering Investigation
+-> Decomposition
+-> Parallel Group / Child Workflow Runs
+-> Integration
+-> QA
+-> Release
+```
+
+这里的关键是：
+
+```text
+Workflow Definition 是一张可路由的流程图；
+Workflow Run 是某个 Task 在这张图上实际走过的路径。
+```
+
+因此可视化时也应该区分：
+
+- Definition Graph：完整可选路径。
+- Run Path：本次实际走过的路径。
+- Skipped Steps：本次被裁剪或跳过的节点。
+
 ### 并行与子 Task 的关系
+
+并行 workflow 不应该是所有需求的默认路径。
+
+它只在运行时路由判断需要拆分时出现。
 
 并行 workflow 不一定都要创建 child workflow，但通常都应该创建 child task。
 
@@ -1050,6 +1165,51 @@ Task
 
 如果 Brave Search 和 Exa Search 都变成独立需求，各自需要产品确认、开发方案、PR、测试报告，则 A/B 应该各自启动 child workflow run。
 
+### Decomposition Step
+
+为了兼容“有些需求需要拆，有些不需要拆”，可以单独定义一个 decomposition 节点。
+
+这个节点的职责不是执行开发，而是判断是否拆分，以及拆成什么。
+
+输入：
+
+```yaml
+task:
+product_spec:
+engineering_spec:
+constraints:
+```
+
+输出：
+
+```yaml
+decomposition:
+  split_required: true | false
+  reason:
+  branches:
+    - title:
+      owner_role:
+      suggested_agent:
+      workflow_definition:
+      input:
+      dependency:
+  join_policy: all_success | manual_join
+```
+
+如果 `split_required = false`：
+
+```text
+Decomposition -> Simple / Standard Implementation
+```
+
+如果 `split_required = true`：
+
+```text
+Decomposition -> Parallel Group 或 Child Workflow Runs
+```
+
+这样并行是流程运行时的展开结果，而不是每个需求都固定经过的步骤。
+
 ### Step 类型
 
 为了避免过度设计，第一版 step 类型可以控制在以下几类：
@@ -1060,6 +1220,8 @@ step_types:
   - human_task
   - human_review
   - system_gate
+  - routing
+  - decomposition
   - parallel_group
   - join
   - child_workflow
@@ -1072,6 +1234,8 @@ step_types:
 - `human_task`：创建 child task，分配给 human 执行。
 - `human_review`：创建 review item，等待人审核。
 - `system_gate`：系统校验 schema、权限、产物、条件。
+- `routing`：根据任务复杂度、风险和输入完整度选择路径。
+- `decomposition`：判断是否拆分，并生成并行分支或子流程计划。
 - `parallel_group`：展开多个并行分支。
 - `join`：等待并行分支或 child workflow 汇合。
 - `child_workflow`：创建 child task，并启动新的 workflow run。
@@ -1096,7 +1260,18 @@ steps:
     input_schema: requirement_intake_input_v1
     output_schema: requirement_intake_output_v1
     next:
-      - to: product_spec
+      - to: complexity_routing
+
+  - id: complexity_routing
+    type: routing
+    title: 复杂度路由
+    rules:
+      - when: complexity == "small"
+        to: simple_implementation
+      - when: complexity == "medium"
+        to: engineering_spec
+      - when: complexity == "large"
+        to: decomposition
 
   - id: implementation_parallel
     type: parallel_group
