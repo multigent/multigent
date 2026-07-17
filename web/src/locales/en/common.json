@@ -1101,6 +1101,7 @@
     "notConfigured": "Not configured",
     "webSession": "Web Session",
     "selectToolConnection": "Select a tool connection to enable",
+    "noEnabledTools": "No enabled tools yet",
     "adapterDefault": "Default adapter",
     "adapterCli": "Platform CLI",
     "adapterMcpGateway": "MCP Gateway",

@@ -731,7 +731,7 @@ function ProvidersSection() {
   const fieldCls = 'w-full rounded-md border border-neutral-200/80 bg-neutral-50/50 px-3 py-2 text-sm outline-none transition-colors focus:border-sky-400 dark:border-zinc-700/60 dark:bg-zinc-800/50 dark:text-zinc-200 dark:[color-scheme:dark]'
 
   return (
-    <section className="rounded-xl border border-neutral-200/80 bg-white p-5 dark:border-zinc-700/60 dark:bg-zinc-900/40">
+    <section id="model-accounts" className="scroll-mt-6 rounded-xl border border-neutral-200/80 bg-white p-5 dark:border-zinc-700/60 dark:bg-zinc-900/40">
       <div className="flex items-center justify-between pb-3">
         <div className="flex items-center gap-2">
           <Server className="size-4 text-neutral-500 dark:text-zinc-500" strokeWidth={1.8} />

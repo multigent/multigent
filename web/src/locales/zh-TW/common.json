@@ -1101,6 +1101,7 @@
     "notConfigured": "未配置",
     "webSession": "Web 會話",
     "selectToolConnection": "選擇要啟用的工具連接",
+    "noEnabledTools": "暫無已啟用工具",
     "adapterDefault": "預設接入方式",
     "adapterCli": "平台 CLI",
     "adapterMcpGateway": "MCP Gateway",

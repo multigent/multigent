@@ -1101,6 +1101,7 @@
     "notConfigured": "未設定",
     "webSession": "Web セッション",
     "selectToolConnection": "有効化するツール接続を選択",
+    "noEnabledTools": "有効なツールはまだありません",
     "adapterDefault": "デフォルトの接続方式",
     "adapterCli": "プラットフォーム CLI",
     "adapterMcpGateway": "MCP Gateway",
