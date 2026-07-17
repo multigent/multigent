@@ -107,7 +107,6 @@ export function CommandPalette({
       return [
         { id: `p-${p.name}`, label: p.name, group: t('search.groupProjects'), icon: FolderKanban, to: `${base}/tasks`, keywords: `project ${p.name}` },
         { id: `p-${p.name}-tasks`, label: `${p.name} / ${t('projectNav.tasks')}`, group: t('search.groupProjects'), icon: ListTodo, to: `${base}/tasks` },
-        { id: `p-${p.name}-workflows`, label: `${p.name} / ${t('projectNav.workflows')}`, group: t('search.groupProjects'), icon: GitBranch, to: `${base}/workflows` },
         { id: `p-${p.name}-messages`, label: `${p.name} / ${t('projectNav.messages')}`, group: t('search.groupProjects'), icon: MessageSquare, to: `${base}/messages` },
         { id: `p-${p.name}-members`, label: `${p.name} / ${t('projectNav.members')}`, group: t('search.groupProjects'), icon: Users, to: `${base}/members` },
         ...(canAdmin ? [{ id: `p-${p.name}-schedule`, label: `${p.name} / ${t('projectNav.schedule')}`, group: t('search.groupProjects'), icon: CalendarClock, to: `${base}/schedule` }] : []),

@@ -266,9 +266,9 @@
     "settings": "Settings"
   },
   "workflows": {
-    "workspaceSubtitle": "Choose a project to inspect or configure its workflow whiteboard.",
-    "projectCardHint": "View workflow templates and task workflow runs for this project.",
-    "openProjectWorkflows": "Open workflows",
+    "workspaceSubtitle": "Inspect and configure workspace-wide workflow whiteboards that tasks can use.",
+    "emptyTitle": "No workflows yet",
+    "emptyHint": "Create workflows so tasks can start workflow runs from them.",
     "subtitle": "Define and inspect task workflows with a whiteboard-style graph.",
     "taskWorkflow": "Task workflow",
     "noWorkflow": "No workflow",

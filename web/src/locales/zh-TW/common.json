@@ -266,9 +266,9 @@
     "settings": "設定"
   },
   "workflows": {
-    "workspaceSubtitle": "選擇一個專案，查看或設定它的協作流程白板。",
-    "projectCardHint": "查看這個專案中的流程範本和任務流程執行。",
-    "openProjectWorkflows": "開啟流程",
+    "workspaceSubtitle": "查看和設定工作區通用的協作流程白板，任務建立時可選擇使用。",
+    "emptyTitle": "暫無流程",
+    "emptyHint": "建立流程後，任務可以選擇它來啟動流程執行。",
     "subtitle": "用白板檢視定義和查看任務可選的協作流程。",
     "taskWorkflow": "任務流程",
     "noWorkflow": "不使用流程",

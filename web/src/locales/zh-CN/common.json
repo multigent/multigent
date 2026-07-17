@@ -266,9 +266,9 @@
     "settings": "设置"
   },
   "workflows": {
-    "workspaceSubtitle": "选择一个项目，查看或配置它的协作流程白板。",
-    "projectCardHint": "查看这个项目中的流程模板和任务流程运行。",
-    "openProjectWorkflows": "打开流程",
+    "workspaceSubtitle": "查看和配置工作区通用的协作流程白板，任务创建时可选择使用。",
+    "emptyTitle": "暂无流程",
+    "emptyHint": "创建流程后，任务可以选择它来启动流程运行。",
     "subtitle": "用白板视图定义和查看任务可选的协作流程。",
     "taskWorkflow": "任务流程",
     "noWorkflow": "不使用流程",

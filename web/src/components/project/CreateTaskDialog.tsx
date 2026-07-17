@@ -44,7 +44,7 @@ export function CreateTaskDialog({ projectId: defaultProjectId, agents: defaultA
   const [err, setErr] = useState<string | null>(null)
 
   const multiProject = Boolean(allProjectsAgents && allProjectsAgents.length > 1)
-  const workflowPath = open && selectedProject ? `/api/v1/projects/${encodeURIComponent(selectedProject)}/workflows` : null
+  const workflowPath = open ? '/api/v1/workflows' : null
   const workflowsState = useApiJson<WorkflowListResponse>(workflowPath, 0)
   const workflows = workflowsState.status === 'ok' ? workflowsState.data.workflows : []
 

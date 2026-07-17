@@ -37,27 +37,15 @@ func (s *Server) workflowStoreForRequest(w http.ResponseWriter, r *http.Request)
 }
 
 func (s *Server) handleListWorkflows(w http.ResponseWriter, r *http.Request) {
-	project := r.PathValue("name")
-	if !s.checkProjectAccess(w, r, project) {
-		return
-	}
-	if _, err := s.st.Project(project); err != nil {
-		if isNotFoundErr(err) {
-			s.jsonError(w, http.StatusNotFound, "project not found")
-			return
-		}
-		s.serverError(w, err)
-		return
-	}
 	wfStore, ok := s.workflowStoreForRequest(w, r)
 	if !ok {
 		return
 	}
-	if err := wfStore.SeedDefaults(project); err != nil {
+	if err := wfStore.SeedDefaults(); err != nil {
 		s.serverError(w, err)
 		return
 	}
-	defs, err := wfStore.ListDefinitions(project)
+	defs, err := wfStore.ListDefinitions()
 	if err != nil {
 		s.serverError(w, err)
 		return
@@ -66,15 +54,11 @@ func (s *Server) handleListWorkflows(w http.ResponseWriter, r *http.Request) {
 }
 
 func (s *Server) handleGetWorkflow(w http.ResponseWriter, r *http.Request) {
-	project := r.PathValue("name")
-	if !s.checkProjectAccess(w, r, project) {
-		return
-	}
 	wfStore, ok := s.workflowStoreForRequest(w, r)
 	if !ok {
 		return
 	}
-	def, found, err := wfStore.Definition(project, r.PathValue("workflowId"))
+	def, found, err := wfStore.Definition(r.PathValue("workflowId"))
 	if err != nil {
 		s.serverError(w, err)
 		return
@@ -87,12 +71,7 @@ func (s *Server) handleGetWorkflow(w http.ResponseWriter, r *http.Request) {
 }
 
 func (s *Server) handleCreateWorkflow(w http.ResponseWriter, r *http.Request) {
-	project := r.PathValue("name")
-	if !s.checkProjectAccess(w, r, project) {
-		return
-	}
-	if !s.canManageProject(r, project) {
-		s.jsonError(w, http.StatusForbidden, "project manager access required")
+	if !s.checkCurrentWorkspaceAdmin(w, r) {
 		return
 	}
 	var body workflowCreateBody
@@ -119,8 +98,7 @@ func (s *Server) handleCreateWorkflow(w http.ResponseWriter, r *http.Request) {
 		Name:        name,
 		Description: strings.TrimSpace(body.Description),
 		Version:     1,
-		Scope:       "project",
-		Project:     project,
+		Scope:       "workspace",
 		StartStepID: start,
 		Steps:       body.Steps,
 		Edges:       body.Edges,
@@ -158,7 +136,7 @@ func (s *Server) handleGetTaskWorkflow(w http.ResponseWriter, r *http.Request) {
 		s.jsonError(w, http.StatusNotFound, "workflow run not found")
 		return
 	}
-	def, found, err := wfStore.Definition(project, run.DefinitionID)
+	def, found, err := wfStore.Definition(run.DefinitionID)
 	if err != nil {
 		s.serverError(w, err)
 		return

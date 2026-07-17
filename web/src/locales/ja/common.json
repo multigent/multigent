@@ -266,9 +266,9 @@
     "settings": "設定"
   },
   "workflows": {
-    "workspaceSubtitle": "プロジェクトを選択して、協業ワークフローのホワイトボードを確認または設定します。",
-    "projectCardHint": "このプロジェクトのワークフローテンプレートとタスク実行を表示します。",
-    "openProjectWorkflows": "ワークフローを開く",
+    "workspaceSubtitle": "タスクで利用できるワークスペース共通のワークフローホワイトボードを確認・設定します。",
+    "emptyTitle": "ワークフローはまだありません",
+    "emptyHint": "ワークフローを作成すると、タスク作成時に選択して実行できます。",
     "subtitle": "ホワイトボード形式のグラフでタスクの協業ワークフローを確認します。",
     "taskWorkflow": "タスクワークフロー",
     "noWorkflow": "ワークフローなし",

@@ -20,12 +20,10 @@ func NewStore(db controldb.Store, workspaceID string) *Store {
 	return &Store{db: db, workspaceID: workspaceID}
 }
 
-func (s *Store) SeedDefaults(project string) error {
-	defs, err := s.ListDefinitions(project)
-	if err != nil {
+func (s *Store) SeedDefaults() error {
+	if def, ok, err := s.Definition("software-delivery-v1"); err != nil {
 		return err
-	}
-	if len(defs) > 0 {
+	} else if ok && def.Scope == "workspace" && def.Project == "" {
 		return nil
 	}
 	now := time.Now().UTC()
@@ -34,8 +32,7 @@ func (s *Store) SeedDefaults(project string) error {
 		Name:        "Software Delivery",
 		Description: "A practical human-agent workflow for product clarification, implementation, review, QA, and release.",
 		Version:     1,
-		Scope:       "project",
-		Project:     project,
+		Scope:       "workspace",
 		StartStepID: "intake",
 		CreatedAt:   now,
 		UpdatedAt:   now,
@@ -80,18 +77,18 @@ func (s *Store) SaveDefinition(def *entity.WorkflowDefinition) error {
 	if err != nil {
 		return err
 	}
-	return s.db.UpsertRecord("workflow_definitions", s.workspaceID, []string{def.Project, def.ID}, string(raw))
+	return s.db.UpsertRecord("workflow_definitions", s.workspaceID, []string{def.ID}, string(raw))
 }
 
-func (s *Store) ListDefinitions(project string) ([]entity.WorkflowDefinition, error) {
-	recs, err := s.db.ListRecords("workflow_definitions", s.workspaceID, []string{project})
+func (s *Store) ListDefinitions() ([]entity.WorkflowDefinition, error) {
+	recs, err := s.db.ListRecords("workflow_definitions", s.workspaceID, nil)
 	if err != nil {
 		return nil, err
 	}
 	out := make([]entity.WorkflowDefinition, 0, len(recs))
 	for _, rec := range recs {
 		var def entity.WorkflowDefinition
-		if json.Unmarshal([]byte(rec.Payload), &def) == nil {
+		if json.Unmarshal([]byte(rec.Payload), &def) == nil && def.Scope == "workspace" && def.Project == "" {
 			out = append(out, def)
 		}
 	}
@@ -101,8 +98,8 @@ func (s *Store) ListDefinitions(project string) ([]entity.WorkflowDefinition, er
 	return out, nil
 }
 
-func (s *Store) Definition(project, id string) (entity.WorkflowDefinition, bool, error) {
-	raw, ok, err := s.db.GetRecord("workflow_definitions", s.workspaceID, []string{project, id})
+func (s *Store) Definition(id string) (entity.WorkflowDefinition, bool, error) {
+	raw, ok, err := s.db.GetRecord("workflow_definitions", s.workspaceID, []string{id})
 	if err != nil || !ok {
 		return entity.WorkflowDefinition{}, ok, err
 	}
@@ -114,7 +111,7 @@ func (s *Store) Definition(project, id string) (entity.WorkflowDefinition, bool,
 }
 
 func (s *Store) StartRun(project, taskID, definitionID string) (entity.WorkflowRun, []entity.WorkflowStepInstance, error) {
-	def, ok, err := s.Definition(project, definitionID)
+	def, ok, err := s.Definition(definitionID)
 	if err != nil {
 		return entity.WorkflowRun{}, nil, err
 	}
