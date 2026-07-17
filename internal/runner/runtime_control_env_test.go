@@ -5,6 +5,7 @@ import (
 	"net/http"
 	"net/http/httptest"
 	"os"
+	"path/filepath"
 	"strings"
 	"testing"
 
@@ -192,6 +193,62 @@ func TestMaterializeRuntimeFilesWritesToolPlan(t *testing.T) {
 	}
 	if _, err := os.Stat(env[runtimeToolDirEnv]); err != nil {
 		t.Fatalf("runtime tool dir missing: %v", err)
+	}
+}
+
+func TestWriteRuntimeToolsFileMaterializesGitHubCLIConfig(t *testing.T) {
+	body := []byte(`{
+		"tools":[{
+			"provider":"github",
+			"displayName":"GitHub",
+			"connectionId":"conn_gh",
+			"connectionAlias":"github",
+			"connectionName":"default",
+			"recommendedAdapter":"cli",
+			"skills":["github"],
+			"adapters":[{
+				"type":"cli",
+				"priority":100,
+				"skills":["github"],
+				"cli":{
+					"binary":"gh",
+					"configFiles":[{"path":"~/.config/gh/hosts.yml","format":"yaml"}]
+				},
+				"credentialMaterialize":"runtime_file"
+			}]
+		}]
+	}`)
+	agentDir := t.TempDir()
+	toolDir, toolsPath, env, err := writeRuntimeToolsFile(agentDir, "run-gh", "/tmp/connections.json", body, func(connectionID string) (map[string]string, bool, error) {
+		if connectionID != "conn_gh" {
+			t.Fatalf("connectionID=%q", connectionID)
+		}
+		return map[string]string{"apiKey": "ghp_test_token"}, true, nil
+	})
+	if err != nil {
+		t.Fatalf("write tools file: %v", err)
+	}
+	if toolDir == "" || toolsPath == "" {
+		t.Fatalf("toolDir=%q toolsPath=%q", toolDir, toolsPath)
+	}
+	ghConfigDir := env["GH_CONFIG_DIR"]
+	if ghConfigDir == "" || !strings.Contains(ghConfigDir, toolDir) {
+		t.Fatalf("GH_CONFIG_DIR=%q toolDir=%q", ghConfigDir, toolDir)
+	}
+	hostsPath := filepath.Join(ghConfigDir, "hosts.yml")
+	hostsBody, err := os.ReadFile(hostsPath)
+	if err != nil {
+		t.Fatalf("read hosts.yml: %v", err)
+	}
+	if !strings.Contains(string(hostsBody), "ghp_test_token") || !strings.Contains(string(hostsBody), "git_protocol: https") {
+		t.Fatalf("unexpected hosts.yml: %s", string(hostsBody))
+	}
+	toolsBody, err := os.ReadFile(toolsPath)
+	if err != nil {
+		t.Fatalf("read tools file: %v", err)
+	}
+	if strings.Contains(string(toolsBody), "ghp_test_token") {
+		t.Fatalf("tools file leaked token: %s", string(toolsBody))
 	}
 }
 

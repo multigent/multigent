@@ -10,8 +10,12 @@ package runner
 import (
 	"bufio"
 	"bytes"
+	"crypto/aes"
+	"crypto/cipher"
 	"crypto/sha1"
+	"crypto/sha256"
 	"database/sql"
+	"encoding/base64"
 	"encoding/hex"
 	"encoding/json"
 	"fmt"
@@ -1127,10 +1131,19 @@ func (r *Runner) materializeRuntimeFiles(agentDir string, env map[string]string)
 		return nil
 	}
 	env[runtimeConnectionsFileEnv] = path
-	toolDir, toolsPath, err := writeRuntimeToolsFile(agentDir, env["MULTIGENT_RUN_ID"], path, body)
-	if err == nil {
+	secretResolver, closeResolver := newRuntimeConnectionSecretResolver()
+	if closeResolver != nil {
+		defer closeResolver()
+	}
+	toolDir, toolsPath, extraEnv, err := writeRuntimeToolsFile(agentDir, env["MULTIGENT_RUN_ID"], path, body, secretResolver)
+	if err == nil && toolDir != "" && toolsPath != "" {
 		env[runtimeToolDirEnv] = toolDir
 		env[runtimeToolsFileEnv] = toolsPath
+		for key, value := range extraEnv {
+			if key != "" && value != "" {
+				env[key] = value
+			}
+		}
 	}
 	return func() {
 		_ = os.Remove(path)
@@ -1269,21 +1282,34 @@ type runtimeActionRef struct {
 	Endpoint    string `json:"endpoint,omitempty"`
 }
 
-func writeRuntimeToolsFile(agentDir, runID, connectionsPath string, body []byte) (string, string, error) {
+type runtimeConnectionSecretResolver func(connectionID string) (map[string]string, bool, error)
+
+func writeRuntimeToolsFile(agentDir, runID, connectionsPath string, body []byte, secretResolver runtimeConnectionSecretResolver) (string, string, map[string]string, error) {
 	var manifest struct {
 		Tools []runtimeToolRef `json:"tools"`
 	}
 	if err := json.Unmarshal(body, &manifest); err != nil {
-		return "", "", err
+		return "", "", nil, err
 	}
 	if len(manifest.Tools) == 0 {
-		return "", "", nil
+		return "", "", nil, nil
 	}
 	toolDir := filepath.Join(agentDir, ".multigent", "runtime-tools", safeRuntimePathPart(runID))
 	if err := os.MkdirAll(toolDir, 0o700); err != nil {
-		return "", "", err
+		return "", "", nil, err
 	}
+	extraEnv := map[string]string{}
 	for ti := range manifest.Tools {
+		var secretValues map[string]string
+		if secretResolver != nil {
+			values, ok, err := secretResolver(manifest.Tools[ti].ConnectionID)
+			if err != nil {
+				return "", "", nil, err
+			}
+			if ok {
+				secretValues = values
+			}
+		}
 		for ai := range manifest.Tools[ti].Adapters {
 			adapter := &manifest.Tools[ti].Adapters[ai]
 			if adapter.CLI == nil {
@@ -1291,15 +1317,16 @@ func writeRuntimeToolsFile(agentDir, runID, connectionsPath string, body []byte)
 			}
 			for ci := range adapter.CLI.ConfigFiles {
 				cfg := &adapter.CLI.ConfigFiles[ci]
-				cfg.MaterializedPath = filepath.Join(
-					toolDir,
-					"config",
-					safeRuntimePathPart(manifest.Tools[ti].Provider),
-					safeRuntimePathPart(manifest.Tools[ti].ConnectionAlias),
-					safeRuntimePathPart(cfg.Path),
-				)
+				cfg.MaterializedPath = runtimeConfigMaterializedPath(toolDir, manifest.Tools[ti], cfg.Path)
 				if err := os.MkdirAll(filepath.Dir(cfg.MaterializedPath), 0o700); err != nil {
-					return "", "", err
+					return "", "", nil, err
+				}
+				env, err := materializeCLIConfig(manifest.Tools[ti], *adapter, *cfg, secretValues)
+				if err != nil {
+					return "", "", nil, err
+				}
+				for key, value := range env {
+					extraEnv[key] = value
 				}
 			}
 		}
@@ -1313,13 +1340,135 @@ func writeRuntimeToolsFile(agentDir, runID, connectionsPath string, body []byte)
 	}
 	planBody, err := json.MarshalIndent(plan, "", "  ")
 	if err != nil {
-		return "", "", err
+		return "", "", nil, err
 	}
 	planPath := filepath.Join(toolDir, "tools.json")
 	if err := os.WriteFile(planPath, append(planBody, '\n'), 0o600); err != nil {
-		return "", "", err
+		return "", "", nil, err
 	}
-	return toolDir, planPath, nil
+	return toolDir, planPath, extraEnv, nil
+}
+
+func runtimeConfigMaterializedPath(toolDir string, tool runtimeToolRef, configuredPath string) string {
+	path := strings.TrimSpace(configuredPath)
+	path = strings.TrimPrefix(path, "~/")
+	path = strings.TrimPrefix(path, "/")
+	if path == "" {
+		path = "config"
+	}
+	return filepath.Join(
+		toolDir,
+		"home",
+		safeRuntimePathPart(tool.Provider),
+		safeRuntimePathPart(tool.ConnectionAlias),
+		filepath.FromSlash(path),
+	)
+}
+
+func materializeCLIConfig(tool runtimeToolRef, adapter runtimeAdapterRef, cfg runtimeConfigFileRef, secretValues map[string]string) (map[string]string, error) {
+	switch strings.TrimSpace(tool.Provider) {
+	case "github":
+		return materializeGitHubCLIConfig(adapter, cfg, secretValues)
+	default:
+		return nil, nil
+	}
+}
+
+func materializeGitHubCLIConfig(adapter runtimeAdapterRef, cfg runtimeConfigFileRef, secretValues map[string]string) (map[string]string, error) {
+	if adapter.CLI == nil || adapter.CLI.Binary != "gh" {
+		return nil, nil
+	}
+	if !strings.HasSuffix(strings.TrimSpace(cfg.Path), "hosts.yml") {
+		return nil, nil
+	}
+	token := firstNonEmpty(secretValues["apiKey"], secretValues["accessToken"], secretValues["token"])
+	if token == "" || cfg.MaterializedPath == "" {
+		return nil, nil
+	}
+	body := "github.com:\n  oauth_token: " + yamlQuote(token) + "\n  git_protocol: https\n"
+	if err := os.WriteFile(cfg.MaterializedPath, []byte(body), 0o600); err != nil {
+		return nil, err
+	}
+	return map[string]string{"GH_CONFIG_DIR": filepath.Dir(cfg.MaterializedPath)}, nil
+}
+
+func firstNonEmpty(values ...string) string {
+	for _, value := range values {
+		if strings.TrimSpace(value) != "" {
+			return strings.TrimSpace(value)
+		}
+	}
+	return ""
+}
+
+func yamlQuote(value string) string {
+	escaped := strings.ReplaceAll(value, "\\", "\\\\")
+	escaped = strings.ReplaceAll(escaped, `"`, `\"`)
+	return `"` + escaped + `"`
+}
+
+func newRuntimeConnectionSecretResolver() (runtimeConnectionSecretResolver, func()) {
+	controlDB, err := controldb.OpenDefault()
+	if err != nil {
+		return nil, nil
+	}
+	return func(connectionID string) (map[string]string, bool, error) {
+		secret, ok, err := controlDB.ConnectionSecret(connectionID)
+		if err != nil || !ok {
+			return nil, ok, err
+		}
+		values, err := openRuntimeConnectionSecret(secret)
+		return values, true, err
+	}, func() { _ = controlDB.Close() }
+}
+
+func openRuntimeConnectionSecret(secret controldb.ConnectionSecret) (map[string]string, error) {
+	if secret.Ciphertext == "" {
+		return map[string]string{}, nil
+	}
+	var raw []byte
+	switch secret.KeyVersion {
+	case "", "plain-dev":
+		decoded, err := base64.StdEncoding.DecodeString(secret.Ciphertext)
+		if err != nil {
+			return nil, err
+		}
+		raw = decoded
+	case "env-v1":
+		key := strings.TrimSpace(os.Getenv("MULTIGENT_CONNECTION_ENCRYPTION_KEY"))
+		if key == "" {
+			return nil, fmt.Errorf("MULTIGENT_CONNECTION_ENCRYPTION_KEY is required to decrypt connection secret")
+		}
+		ciphertextBody, err := base64.StdEncoding.DecodeString(secret.Ciphertext)
+		if err != nil {
+			return nil, err
+		}
+		nonce, err := base64.StdEncoding.DecodeString(secret.Nonce)
+		if err != nil {
+			return nil, err
+		}
+		sum := sha256.Sum256([]byte(key))
+		block, err := aes.NewCipher(sum[:])
+		if err != nil {
+			return nil, err
+		}
+		gcm, err := cipher.NewGCM(block)
+		if err != nil {
+			return nil, err
+		}
+		opened, err := gcm.Open(nil, nonce, ciphertextBody, nil)
+		if err != nil {
+			return nil, err
+		}
+		raw = opened
+	default:
+		return nil, fmt.Errorf("unsupported connection secret key version %q", secret.KeyVersion)
+	}
+	out := map[string]string{}
+	if err := json.Unmarshal(raw, &out); err != nil {
+		return nil, err
+	}
+	return out, nil
 }
 
 func safeRuntimePathPart(value string) string {
