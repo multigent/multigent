@@ -266,11 +266,25 @@ function WorkflowStepNode({ data, selected }: NodeProps<WorkflowNode>) {
       {selected ? <span className="absolute -right-1.5 -top-1.5 size-3 rounded-full border-2 border-white bg-sky-500 dark:border-zinc-950 dark:bg-sky-400" /> : null}
       <Handle
         type="target"
+        id="target-left"
         position={Position.Left}
         className="!h-2.5 !w-2.5 !border-2 !border-white !bg-neutral-400 dark:!border-zinc-950 dark:!bg-zinc-500"
       />
       <Handle
         type="source"
+        id="source-right"
+        position={Position.Right}
+        className="!h-2.5 !w-2.5 !border-2 !border-white !bg-neutral-400 dark:!border-zinc-950 dark:!bg-zinc-500"
+      />
+      <Handle
+        type="source"
+        id="source-left"
+        position={Position.Left}
+        className="!h-2.5 !w-2.5 !border-2 !border-white !bg-neutral-400 dark:!border-zinc-950 dark:!bg-zinc-500"
+      />
+      <Handle
+        type="target"
+        id="target-right"
         position={Position.Right}
         className="!h-2.5 !w-2.5 !border-2 !border-white !bg-neutral-400 dark:!border-zinc-950 dark:!bg-zinc-500"
       />
@@ -323,8 +337,6 @@ export function WorkflowBoard({
           id: step.id,
           type: 'workflowStep',
           position: step.position,
-          sourcePosition: Position.Right,
-          targetPosition: Position.Left,
           data: { step, status: inst?.status, active },
         }
       }),
@@ -337,10 +349,15 @@ export function WorkflowBoard({
         const sourceInst = instanceByStep.get(edge.from)
         const active = run?.activeStepId === edge.from || sourceInst?.status === 'running'
         const color = active ? edgeClass.running : sourceInst?.status === 'completed' ? edgeClass.completed : edgeClass.pending
+        const sourceStep = definition.steps.find((step) => step.id === edge.from)
+        const targetStep = definition.steps.find((step) => step.id === edge.to)
+        const backward = Boolean(sourceStep && targetStep && sourceStep.position.x > targetStep.position.x)
         return {
           id: edge.id,
           source: edge.from,
           target: edge.to,
+          sourceHandle: backward ? 'source-left' : 'source-right',
+          targetHandle: backward ? 'target-right' : 'target-left',
           label: edge.label || conditionLabel(edge),
           type: 'smoothstep',
           animated: active,
@@ -352,7 +369,7 @@ export function WorkflowBoard({
           labelBgStyle: { fill: 'rgba(255,255,255,0.92)' },
         }
       }),
-    [definition.edges, instanceByStep, run?.activeStepId, selectedEdgeId],
+    [definition.edges, definition.steps, instanceByStep, run?.activeStepId, selectedEdgeId],
   )
 
   const [nodes, setNodes, onNodesChange] = useNodesState(initialNodes)
