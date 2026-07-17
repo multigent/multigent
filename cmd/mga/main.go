@@ -66,7 +66,7 @@ func newRuntimeCmd() *cobra.Command {
 		Use:   "runtime",
 		Short: "Use scoped runtime tool connections",
 	}
-	cmd.AddCommand(newRuntimeConnectionsCmd(), newRuntimeToolsCmd(), newRuntimeActionCmd(), newRuntimeMCPCmd())
+	cmd.AddCommand(newRuntimeConnectionsCmd(), newRuntimeToolsCmd(), newRuntimeActionCmd(), newRuntimeMCPCmd(), newRuntimeGatewayCmd())
 	cmd.AddCommand(newRuntimeVersionCmd())
 	return cmd
 }
@@ -94,7 +94,7 @@ func newRuntimeConnectionsCmd() *cobra.Command {
 		Use:   "connections",
 		Short: "List tool connections granted to this agent",
 		RunE: func(cmd *cobra.Command, args []string) error {
-			body, err := runtimeToolsBody(refresh)
+			body, err := runtimeConnectionsBody(refresh)
 			if err != nil {
 				return err
 			}
@@ -120,7 +120,7 @@ func newRuntimeToolsCmd() *cobra.Command {
 		Use:   "tools",
 		Short: "List external tools and recommended runtime adapters for this agent",
 		RunE: func(cmd *cobra.Command, args []string) error {
-			body, err := runtimeConnectionsBody(refresh)
+			body, err := runtimeToolsBody(refresh)
 			if err != nil {
 				return err
 			}
@@ -137,6 +137,76 @@ func newRuntimeToolsCmd() *cobra.Command {
 
 func newRuntimeMCPCmd() *cobra.Command {
 	return newProxyCmd("mcp", "Send a JSON-RPC request through a granted MCP connection", "/api/v1/runtime/mcp")
+}
+
+func newRuntimeGatewayCmd() *cobra.Command {
+	cmd := &cobra.Command{
+		Use:   "gateway",
+		Short: "Use the unified Multigent MCP Gateway",
+	}
+	cmd.AddCommand(newRuntimeGatewayListToolsCmd(), newRuntimeGatewayCallToolCmd())
+	return cmd
+}
+
+func newRuntimeGatewayListToolsCmd() *cobra.Command {
+	var provider, adapter, format string
+	cmd := &cobra.Command{
+		Use:   "list-tools",
+		Short: "List gateway-callable tools available to this agent",
+		RunE: func(cmd *cobra.Command, args []string) error {
+			arguments := map[string]any{}
+			if strings.TrimSpace(provider) != "" {
+				arguments["provider"] = strings.TrimSpace(provider)
+			}
+			if strings.TrimSpace(adapter) != "" {
+				arguments["adapter"] = strings.TrimSpace(adapter)
+			}
+			body, err := callMCPGatewayTool("multigent.list_tools", arguments)
+			if err != nil {
+				return err
+			}
+			if format == "table" {
+				return printGatewayToolsTable(body)
+			}
+			return writeJSON(body)
+		},
+	}
+	cmd.Flags().StringVar(&provider, "provider", "", "filter by provider")
+	cmd.Flags().StringVar(&adapter, "adapter", "", "filter by adapter: cli, mcp_gateway, http_action, or skill_only")
+	cmd.Flags().StringVar(&format, "format", "json", "output format: json or table")
+	return cmd
+}
+
+func newRuntimeGatewayCallToolCmd() *cobra.Command {
+	var data, file string
+	cmd := &cobra.Command{
+		Use:   "call-tool <tool-id>",
+		Short: "Call a gateway tool by tool id",
+		Args:  cobra.ExactArgs(1),
+		RunE: func(cmd *cobra.Command, args []string) error {
+			toolArgs := map[string]any{}
+			if strings.TrimSpace(data) != "" || strings.TrimSpace(file) != "" {
+				body, err := readRequestBody(data, file)
+				if err != nil {
+					return err
+				}
+				if err := json.Unmarshal(body, &toolArgs); err != nil {
+					return fmt.Errorf("tool arguments must be a JSON object")
+				}
+			}
+			body, err := callMCPGatewayTool("multigent.call_tool", map[string]any{
+				"tool_id":   args[0],
+				"arguments": toolArgs,
+			})
+			if err != nil {
+				return err
+			}
+			return writeJSON(body)
+		},
+	}
+	cmd.Flags().StringVar(&data, "data", "", "JSON tool arguments")
+	cmd.Flags().StringVar(&file, "file", "", "read JSON tool arguments from file, or '-' for stdin")
+	return cmd
 }
 
 func newProxyCmd(use, short, endpoint string) *cobra.Command {
@@ -685,6 +755,53 @@ func readRequestBody(data, file string) ([]byte, error) {
 	return nil, fmt.Errorf("--data or --file is required")
 }
 
+func callMCPGatewayTool(name string, arguments map[string]any) ([]byte, error) {
+	reqBody, err := json.Marshal(map[string]any{
+		"jsonrpc": "2.0",
+		"id":      1,
+		"method":  "tools/call",
+		"params": map[string]any{
+			"name":      name,
+			"arguments": arguments,
+		},
+	})
+	if err != nil {
+		return nil, err
+	}
+	body, err := requestJSON(http.MethodPost, "/api/v1/runtime/mcp/gateway", nil, reqBody)
+	if err != nil {
+		return nil, err
+	}
+	return unwrapMCPGatewayTextResult(body)
+}
+
+func unwrapMCPGatewayTextResult(body []byte) ([]byte, error) {
+	var resp struct {
+		Result struct {
+			Content []struct {
+				Type string `json:"type"`
+				Text string `json:"text"`
+			} `json:"content"`
+		} `json:"result"`
+		Error *struct {
+			Code    int    `json:"code"`
+			Message string `json:"message"`
+		} `json:"error"`
+	}
+	if err := json.Unmarshal(body, &resp); err != nil {
+		return nil, err
+	}
+	if resp.Error != nil {
+		return nil, fmt.Errorf("MCP gateway error %d: %s", resp.Error.Code, resp.Error.Message)
+	}
+	for _, content := range resp.Result.Content {
+		if content.Type == "text" && json.Valid([]byte(content.Text)) {
+			return []byte(content.Text), nil
+		}
+	}
+	return body, nil
+}
+
 func readTextFile(file string) (string, error) {
 	var body []byte
 	var err error
@@ -798,6 +915,26 @@ func printRuntimeToolsTable(body []byte) error {
 			strings.Join(tool.Skills, ","),
 			strings.Join(names, ","),
 		)
+	}
+	return tw.Flush()
+}
+
+func printGatewayToolsTable(body []byte) error {
+	var tools []struct {
+		ID          string `json:"id"`
+		Name        string `json:"name"`
+		Provider    string `json:"provider"`
+		Connection  string `json:"connection"`
+		Adapter     string `json:"adapter"`
+		Description string `json:"description"`
+	}
+	if err := json.Unmarshal(body, &tools); err != nil {
+		return err
+	}
+	tw := tabwriter.NewWriter(os.Stdout, 0, 4, 2, ' ', 0)
+	fmt.Fprintln(tw, "ID\tPROVIDER\tCONNECTION\tADAPTER\tNAME")
+	for _, tool := range tools {
+		fmt.Fprintf(tw, "%s\t%s\t%s\t%s\t%s\n", tool.ID, tool.Provider, tool.Connection, tool.Adapter, tool.Name)
 	}
 	return tw.Flush()
 }

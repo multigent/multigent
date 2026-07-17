@@ -72,6 +72,8 @@ mga runtime tools --format table
 mga runtime connections --format table
 mga runtime action --connection <alias> --data '{"method":"GET","endpoint":"/path"}'
 mga runtime mcp --connection <alias> --data '{"jsonrpc":"2.0","id":1,"method":"tools/list"}'
+mga runtime gateway list-tools --format table
+mga runtime gateway call-tool action:github:get_authenticated_user --data '{}'
 mga runtime version --check
 ```
 
@@ -82,6 +84,7 @@ Rules:
   - `mcp_gateway`: use Multigent MCP Gateway tool discovery/calls.
   - `http_action`: use `mga runtime action`.
   - `skill_only`: follow the bundled skill; no executable tool is configured.
+- Prefer `mga runtime gateway list-tools` and `mga runtime gateway call-tool` when you need the unified MCP Gateway broker without writing JSON-RPC manually.
 - Use connection aliases from `mga runtime connections` when calling runtime proxies.
 - Never ask humans to paste provider secrets into chat.
 - Runtime writes are audited by the Multigent Server.

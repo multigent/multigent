@@ -143,6 +143,15 @@ Agent 侧只看到少量稳定工具：
 - `multigent.list_tools`
 - `multigent.call_tool`
 
+如果 agent 不能直接挂 MCP client，也可以通过 `mga` 使用同一套 gateway：
+
+```bash
+mga runtime gateway list-tools --format table
+mga runtime gateway list-tools --provider figma
+mga runtime gateway call-tool action:github:list_repository_issues \
+  --data '{"owner":"acme","repo":"web","state":"open"}'
+```
+
 `list_tools` 返回当前 agent 被授权的工具目录，可以按 provider、category、keyword 过滤。
 
 `call_tool` 根据 `tool_id` 调用真实工具：
@@ -309,6 +318,8 @@ Use Multigent MCP Gateway:
 - Agent 不需要知道 API Key。
 - Agent 不应该手写 provider token。
 - Agent 优先使用对应 skill 推荐的入口。
+- Agent 需要统一工具目录时，优先使用 `mga runtime gateway list-tools`。
+- Agent 需要通过 Gateway 调用工具时，优先使用 `mga runtime gateway call-tool`，低层 `mga runtime mcp` 和 `mga runtime action` 只作为明确知道连接和协议时的 fallback。
 - 如果工具缺失，报告缺少哪个 provider/connection，而不是让人粘贴密钥。
 
 ## 数据模型补充
