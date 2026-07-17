@@ -426,12 +426,11 @@ Use Multigent MCP Gateway:
 
 仍需补齐：
 
-1. Agent tool binding UI：后端已经支持 agent 级启用/禁用和 adapter override，Web agent detail 还没有接入编辑入口。
-2. Tool-specific skills 自动同步：当前 runtime manifest 已声明 skills，但还没有按连接自动安装/同步缺失 skill。
-3. Figma MCP Gateway upstream：当前 Figma 已有 MCP Gateway adapter 声明和 HTTP action fallback，但还没有真实启动/托管 Figma upstream MCP server。
-4. Agent detail 页面展示“已启用工具”和接入方式。
-5. CLI wrapper command audit：当前有 run log 和 proxy audit，但平台 CLI 命令级审计还是 best effort。
-6. E2E：Lark CLI、GitHub CLI、Figma Gateway 三条链路需要真实 sandbox 验证。
+1. Tool-specific skills 自动同步：当前 runtime manifest 已声明 skills，但还没有按连接自动安装/同步缺失 skill。
+2. Figma MCP Gateway upstream：当前 Figma 已有 MCP Gateway adapter 声明和 HTTP action fallback，但还没有真实启动/托管 Figma upstream MCP server。
+3. Agent detail 页面展示工具健康状态、最近调用和错误。
+4. CLI wrapper command audit：当前有 run log 和 proxy audit，但平台 CLI 命令级审计还是 best effort。
+5. E2E：Lark CLI、GitHub CLI、Figma Gateway 三条链路需要真实 sandbox 验证。
 
 ## 实施顺序
 
@@ -458,8 +457,8 @@ Use Multigent MCP Gateway:
 
 - 已部分完成：工具页面展示 provider 和连接。
 - 已完成：后端支持 agent 级工具启用/禁用和 adapter override。
-- 待完成：agent 页面接入启用/禁用工具的编辑 UI。
-- 待完成：展示该工具对 agent 的接入方式：CLI / MCP Gateway / HTTP Action / Skill。
+- 已完成：agent 页面接入启用/解除工具的编辑 UI。
+- 已部分完成：展示该工具对 agent 的接入方式：CLI / MCP Gateway / HTTP Action / Skill。
 - 待完成：展示健康状态、最近调用、错误。
 
 ### Phase 5: Audit And Policy

@@ -12,7 +12,7 @@ import type { LucideIcon } from 'lucide-react'
 import { cn } from '../../lib/cn'
 import { useFormatDateTime } from '../../lib/format-datetime'
 import { useApiJson } from '../../lib/use-api'
-import { apiFetch, apiPost, apiPut, apiPatch } from '../../lib/api'
+import { apiDelete, apiFetch, apiPost, apiPut, apiPatch } from '../../lib/api'
 import { canConfigureAgent, canManageProject, canOperateAgent, useAuth } from '../../lib/auth'
 import { Pagination } from '../../components/ui/Pagination'
 import { AgentChannelPanel } from '../../components/project/AgentChannelPanel'
@@ -1048,6 +1048,13 @@ function ContextPanel({ context, contextFile, syncedAt }: { context: string; con
 }
 
 type RuntimeConnectionGrant = { id: string; targetType: string; targetId: string }
+type RuntimeToolBinding = {
+  id: string
+  connectionId: string
+  provider: string
+  adapterType?: string
+  status: string
+}
 type RuntimeConnection = {
   id: string
   provider: string
@@ -1069,6 +1076,7 @@ type RuntimeConnection = {
     mcpProxy?: { path?: string }
     actionProxy?: { path?: string }
   }
+  toolBinding?: RuntimeToolBinding
 }
 type RuntimeConnectionsResponse = {
   manifest?: {
@@ -1080,12 +1088,71 @@ type RuntimeConnectionsResponse = {
   }
   connections?: RuntimeConnection[]
 }
+type AgentToolBindingsResponse = { bindings?: RuntimeToolBinding[] }
+type ConnectionOption = {
+  id: string
+  provider: string
+  connectionName: string
+  ownerType: string
+  ownerId: string
+  authType: string
+  status?: string
+}
+type ConnectionsResponse = { connections?: ConnectionOption[] }
 
 function AgentRuntimeConnectionsPanel({ project, agentName }: { project: string; agentName: string }) {
   const { t } = useTranslation()
   const [reloadKey, setReloadKey] = useState(0)
-  const path = `/api/v1/projects/${encodeURIComponent(project)}/agents/${encodeURIComponent(agentName)}/runtime/connections`
-  const state = useApiJson<RuntimeConnectionsResponse>(path, reloadKey)
+  const [connections, setConnections] = useState<ConnectionOption[]>([])
+  const [connectionId, setConnectionId] = useState('')
+  const [adapterType, setAdapterType] = useState('')
+  const [saving, setSaving] = useState(false)
+  const runtimePath = `/api/v1/projects/${encodeURIComponent(project)}/agents/${encodeURIComponent(agentName)}/runtime/connections`
+  const bindingsPath = `/api/v1/projects/${encodeURIComponent(project)}/agents/${encodeURIComponent(agentName)}/tool-bindings`
+  const state = useApiJson<RuntimeConnectionsResponse>(runtimePath, reloadKey)
+  const bindingsState = useApiJson<AgentToolBindingsResponse>(bindingsPath, reloadKey)
+
+  useEffect(() => {
+    let cancelled = false
+    apiFetch<ConnectionsResponse>('/api/v1/connections')
+      .then((res) => {
+        if (!cancelled) setConnections((res.connections ?? []).filter((connection) => connection.status !== 'revoked'))
+      })
+      .catch(() => {
+        if (!cancelled) setConnections([])
+      })
+    return () => { cancelled = true }
+  }, [reloadKey])
+
+  const boundConnectionIds = new Set((bindingsState.status === 'ok' ? bindingsState.data.bindings ?? [] : []).map(binding => binding.connectionId))
+  const availableConnections = connections.filter(connection => !boundConnectionIds.has(connection.id))
+
+  async function enableBinding() {
+    if (!connectionId) return
+    setSaving(true)
+    try {
+      await apiPost(bindingsPath, {
+        connectionId,
+        adapterType: adapterType || undefined,
+        status: 'enabled',
+      })
+      setConnectionId('')
+      setAdapterType('')
+      setReloadKey(k => k + 1)
+    } finally {
+      setSaving(false)
+    }
+  }
+
+  async function removeBinding(binding: RuntimeToolBinding) {
+    setSaving(true)
+    try {
+      await apiDelete(`${bindingsPath}/${encodeURIComponent(binding.id)}`)
+      setReloadKey(k => k + 1)
+    } finally {
+      setSaving(false)
+    }
+  }
 
   return (
     <section className="p-4">
@@ -1103,6 +1170,51 @@ function AgentRuntimeConnectionsPanel({ project, agentName }: { project: string;
         )}
       />
       <div className="mt-3">
+        <div className="mb-4 rounded-lg border border-neutral-200/70 bg-neutral-50/60 p-3 dark:border-zinc-700/60 dark:bg-zinc-800/30">
+          <div className="grid gap-2 md:grid-cols-[minmax(0,1fr)_160px_auto]">
+            <select
+              value={connectionId}
+              onChange={(event) => setConnectionId(event.target.value)}
+              className="h-8 rounded-md border border-neutral-200 bg-white px-2 text-sm text-neutral-800 outline-none focus:border-sky-400 dark:border-zinc-700 dark:bg-zinc-900 dark:text-zinc-100"
+            >
+              <option value="">{t('agentDetail.selectToolConnection')}</option>
+              {availableConnections.map(connection => (
+                <option key={connection.id} value={connection.id}>
+                  {connection.provider} / {connection.connectionName} · {connection.ownerType}
+                </option>
+              ))}
+            </select>
+            <select
+              value={adapterType}
+              onChange={(event) => setAdapterType(event.target.value)}
+              className="h-8 rounded-md border border-neutral-200 bg-white px-2 text-sm text-neutral-800 outline-none focus:border-sky-400 dark:border-zinc-700 dark:bg-zinc-900 dark:text-zinc-100"
+            >
+              <option value="">{t('agentDetail.adapterDefault')}</option>
+              <option value="cli">{t('agentDetail.adapterCli')}</option>
+              <option value="mcp_gateway">{t('agentDetail.adapterMcpGateway')}</option>
+              <option value="http_action">{t('agentDetail.adapterHttpAction')}</option>
+              <option value="skill_only">{t('agentDetail.adapterSkillOnly')}</option>
+            </select>
+            <button type="button" onClick={() => void enableBinding()} disabled={saving || !connectionId} className={primaryButtonCls}>
+              {t('agentDetail.enableTool')}
+            </button>
+          </div>
+          {bindingsState.status === 'ok' && (bindingsState.data.bindings ?? []).length > 0 && (
+            <div className="mt-3">
+              <p className="mb-2 text-xs font-medium text-neutral-500 dark:text-zinc-400">{t('agentDetail.configuredToolBindings')}</p>
+              <div className="flex flex-wrap gap-2">
+                {(bindingsState.data.bindings ?? []).map(binding => (
+                  <span key={binding.id} className="inline-flex items-center gap-2 rounded-md border border-neutral-200 bg-white px-2 py-1 text-xs text-neutral-600 dark:border-zinc-700 dark:bg-zinc-900 dark:text-zinc-300">
+                    {binding.provider} · {binding.adapterType || t('agentDetail.adapterDefault')} · {binding.status}
+                    <button type="button" disabled={saving} onClick={() => void removeBinding(binding)} className="font-medium text-red-500 hover:text-red-600 disabled:opacity-50">
+                      {t('agentDetail.removeToolBinding')}
+                    </button>
+                  </span>
+                ))}
+              </div>
+            </div>
+          )}
+        </div>
         {state.status === 'loading' && (
           <p className="text-sm text-neutral-400 dark:text-zinc-500">{t('members.loadingRuntimeConnections')}</p>
         )}
@@ -1131,6 +1243,11 @@ function AgentRuntimeConnectionsPanel({ project, agentName }: { project: string;
                           <span className="rounded-full bg-sky-50 px-2 py-0.5 text-[10px] font-medium text-sky-700 dark:bg-sky-900/20 dark:text-sky-300">
                             {connection.ownerType}
                           </span>
+                          {connection.toolBinding && (
+                            <span className="rounded-full bg-emerald-50 px-2 py-0.5 text-[10px] font-medium text-emerald-700 dark:bg-emerald-900/20 dark:text-emerald-300">
+                              {connection.toolBinding.adapterType || t('agentDetail.adapterDefault')}
+                            </span>
+                          )}
                         </div>
                         <p className="mt-1 text-xs text-neutral-400 dark:text-zinc-500">
                           {connection.connectionName} · {connection.authType} · owner {connection.ownerId}
