@@ -322,6 +322,7 @@
     "themeHint": "ヒント：上部バーの太陽／月／モニターアイコンで、ライト → ダーク → システムに合わせるを順に切り替えられます。",
     "externalToolOAuthTitle": "外部ツール OAuth アプリ",
     "externalToolOAuthIntro": "管理者はここで各プロバイダーの OAuth Client を設定します。設定されるまで、外部ツールページはユーザーに OAuth 認可入口を表示しません。",
+    "oauthSetupGuide": "設定ガイド",
     "oauthProvider": "プロバイダー",
     "oauthStatus": "ステータス",
     "oauthClientTitle": "OAuth アプリ: {{name}}",

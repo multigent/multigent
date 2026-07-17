@@ -90,7 +90,7 @@ export function Sidebar({ collapsed, onToggle }: { collapsed: boolean; onToggle:
   }, [])
 
   const workspaceName = workspace?.name ?? 'Multigent'
-  const workspaceInitial = workspaceName.trim().charAt(0).toUpperCase() || 'M'
+  const workspaceInitial = 'M'
 
   async function switchWorkspace(id: string) {
     setSwitchingId(id)
@@ -159,7 +159,7 @@ export function Sidebar({ collapsed, onToggle }: { collapsed: boolean; onToggle:
               <p className="px-2 pb-1.5 text-xs font-medium text-neutral-400 dark:text-zinc-500">{t('workspace.currentWorkspace')}</p>
               <div className="space-y-1">
                 {(workspaces.length > 0 ? workspaces : [{ id: workspace?.id ?? 'current', name: workspaceName, active: true }]).map((item) => {
-                  const initial = item.name.trim().charAt(0).toUpperCase() || 'M'
+                  const initial = 'M'
                   return (
                     <button
                       key={item.id}

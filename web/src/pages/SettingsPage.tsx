@@ -87,10 +87,11 @@ function RBACSection() {
 }
 
 function ExternalToolOAuthSection() {
-  const { t } = useTranslation()
+  const { t, i18n } = useTranslation()
   const [configs, setConfigs] = useState<OAuthClientConfig[]>([])
   const [loading, setLoading] = useState(true)
   const [editing, setEditing] = useState<OAuthClientConfig | null>(null)
+  const [showGuide, setShowGuide] = useState(false)
 
   async function refresh() {
     setLoading(true)
@@ -111,6 +112,13 @@ function ExternalToolOAuthSection() {
           <h3 className="text-base font-semibold text-neutral-900 dark:text-zinc-100">{t('settings.externalToolOAuthTitle')}</h3>
           <p className="mt-1 text-xs text-neutral-400 dark:text-zinc-500">{t('settings.externalToolOAuthIntro')}</p>
         </div>
+        <button
+          type="button"
+          onClick={() => setShowGuide(true)}
+          className="shrink-0 rounded-lg border border-sky-600 bg-white px-3 py-2 text-sm font-medium text-sky-700 hover:bg-sky-50 dark:border-sky-500 dark:bg-zinc-900 dark:text-sky-400 dark:hover:bg-zinc-800"
+        >
+          {t('settings.oauthSetupGuide')}
+        </button>
       </div>
       {loading ? (
         <p className="py-3 text-sm text-neutral-400">{t('forms.loading')}</p>
@@ -154,6 +162,332 @@ function ExternalToolOAuthSection() {
           onClose={() => setEditing(null)}
           onSaved={() => { setEditing(null); void refresh() }}
         />
+      )}
+      {showGuide && (
+        <OAuthSetupGuideDialog
+          lang={i18n.language}
+          onClose={() => setShowGuide(false)}
+        />
+      )}
+    </section>
+  )
+}
+
+type OAuthGuideSection = {
+  title: string
+  intro?: string
+  steps: string[]
+  notes?: string[]
+}
+
+type OAuthGuideContent = {
+  title: string
+  intro: string
+  beforeTitle: string
+  beforeSteps: string[]
+  sections: OAuthGuideSection[]
+  troubleshootingTitle: string
+  troubleshooting: string[]
+}
+
+function oauthGuideLocale(language: string): 'en' | 'zh-CN' | 'zh-TW' | 'ja' {
+  if (language.startsWith('zh-TW') || language === 'zh-Hant') return 'zh-TW'
+  if (language.startsWith('zh')) return 'zh-CN'
+  if (language.startsWith('ja')) return 'ja'
+  return 'en'
+}
+
+function oauthSetupGuideContent(language: string): OAuthGuideContent {
+  const locale = oauthGuideLocale(language)
+  if (locale === 'zh-CN') {
+    return {
+      title: '外部工具 OAuth 应用配置指引',
+      intro: '管理员先在第三方平台创建 OAuth 应用，把 Multigent 显示的 Redirect URI 配进去，再把平台生成的 Client ID 和 Client Secret 保存回 Multigent。配置完成后，普通用户才能在外部工具页看到 OAuth 授权入口。',
+      beforeTitle: '开始前',
+      beforeSteps: [
+        '打开「工作区设置 -> 外部工具 OAuth 应用」。',
+        '找到要配置的平台行，例如 GitHub、Slack、Google Drive、Jira。',
+        '复制该行展示的 Redirect URI，后面要原样粘贴到第三方平台。',
+        '配置完成后回到该行，点击「编辑」，保存 Client ID 和 Client Secret。',
+      ],
+      sections: [
+        {
+          title: 'GitHub',
+          intro: '用于代码仓库、Issue、PR、Release、Workflow 等研发上下文。',
+          steps: [
+            '打开 https://github.com/settings/developers。',
+            '进入 OAuth Apps，点击 New OAuth App。',
+            'Application name 填 Multigent。',
+            'Homepage URL 填你的 Multigent 访问地址。',
+            'Authorization callback URL 粘贴 Multigent 的 Redirect URI。',
+            '点击 Register application。',
+            '复制 Client ID。',
+            '点击 Generate a new client secret，立即复制 Client Secret。',
+            '回到 Multigent 的 GitHub 行，保存 Client ID 和 Client Secret。',
+          ],
+          notes: ['GitHub 的 Client Secret 只会完整显示一次。', '如果 Multigent 域名变化，需要同步修改 GitHub OAuth App 的 callback URL。'],
+        },
+        {
+          title: 'Slack',
+          intro: '用于 Slack 频道、用户、消息和通知工作流。',
+          steps: [
+            '打开 https://api.slack.com/apps。',
+            '点击 Create New App，选择 From scratch。',
+            'App Name 填 Multigent，并选择要安装的 Slack workspace。',
+            '进入左侧 OAuth & Permissions。',
+            '在 Redirect URLs 点击 Add New Redirect URL。',
+            '粘贴 Multigent 的 Redirect URI，点击 Save URLs。',
+            '在 Scopes 中添加需要的 Bot Token Scopes 或 User Token Scopes。',
+            '进入左侧 Basic Information。',
+            '复制 Client ID 和 Client Secret。',
+            '回到 Multigent 的 Slack 行，保存 Client ID 和 Client Secret。',
+          ],
+          notes: ['Slack 的 Redirect URLs 在 OAuth & Permissions 页面。', 'Slack 的 Client ID 和 Client Secret 在 Basic Information 页面。'],
+        },
+        {
+          title: 'Google / Gmail / Drive / Docs / Sheets / Calendar',
+          intro: '用于 Gmail、Google Drive、Google Docs、Google Sheets、Google Calendar 等工具。',
+          steps: [
+            '打开 https://console.cloud.google.com/apis/credentials。',
+            '选择或创建一个 Google Cloud Project。',
+            '进入 OAuth consent screen，配置应用名称、支持邮箱和开发者联系方式。',
+            '回到 Credentials，点击 Create credentials -> OAuth client ID。',
+            'Application type 选择 Web application。',
+            'Name 填 Multigent。',
+            'Authorized JavaScript origins 填你的 Multigent Web Origin，例如 https://multigent.example.com。',
+            'Authorized redirect URIs 粘贴 Multigent 的 Redirect URI。',
+            '点击 Create。',
+            '复制 Client ID 和 Client Secret。',
+            '回到 Multigent 对应的 Google 工具行保存。',
+          ],
+          notes: ['Gmail 通常会触发更严格的 Google 审核；生产环境可能需要完成 OAuth consent screen 验证。', '如果报 redirect_uri_mismatch，通常是 Google Cloud 里的 Redirect URI 和 Multigent 展示的不完全一致。'],
+        },
+        {
+          title: 'Jira / Atlassian',
+          intro: '用于 Jira Issue、Epic、Project 和研发计划上下文。',
+          steps: [
+            '打开 https://developer.atlassian.com/console/myapps/。',
+            '点击 Create app。',
+            '创建或启用 OAuth 2.0 授权能力。',
+            '进入 Permissions，添加需要的 Jira API 权限。',
+            '进入 Authorization，添加 Multigent 的 Redirect URI 作为 Callback URL。',
+            '保存应用。',
+            '复制 Client ID，生成或复制 Client Secret。',
+            '回到 Multigent 的 Jira 行保存。',
+          ],
+          notes: ['Jira 和 Confluence 权限是分开的，不要默认加不需要的权限。'],
+        },
+        {
+          title: 'Figma',
+          intro: '用于设计文件和用户授权的设计上下文。',
+          steps: [
+            '打开 https://www.figma.com/developers/apps。',
+            '创建一个新应用。',
+            'App name 填 Multigent。',
+            'Website URL 填你的 Multigent 访问地址。',
+            '找到 OAuth redirect / callback URL 设置，粘贴 Multigent 的 Redirect URI。',
+            '保存应用。',
+            '复制 Client ID 和 Client Secret。',
+            '回到 Multigent 的 Figma 行保存。',
+          ],
+          notes: ['Figma 也可能通过 Token 或 MCP 方式接入；只有需要用户授权时才使用 OAuth。'],
+        },
+        {
+          title: 'Feishu / Lark',
+          intro: '目前 Feishu / Lark 在 Multigent 外部工具页使用 App ID 和 App Secret，不走这个 OAuth 应用表。',
+          steps: [
+            'Feishu 打开 https://open.feishu.cn/app。',
+            'Lark 打开 https://open.larksuite.com/app。',
+            '创建企业自建应用，复制 App ID 和 App Secret。',
+            '回到 Multigent 外部工具页配置 Feishu 或 Lark。',
+            'Agent 聊天渠道绑定则在 Agent 页面使用协作渠道连接流程。',
+          ],
+        },
+      ],
+      troubleshootingTitle: '常见问题',
+      troubleshooting: [
+        '普通用户看不到 OAuth 授权入口：确认管理员已经在本页保存 Client ID 和 Client Secret。',
+        'redirect_uri_mismatch：逐字符检查协议、域名、端口和 /api/v1/oauth/callback 路径。',
+        '授权后权限不足：补充平台 scope 后，让用户重新授权。',
+        'Client Secret 泄露：在平台控制台轮换密钥，并更新 Multigent 配置。',
+      ],
+    }
+  }
+  if (locale === 'zh-TW') {
+    return {
+      title: '外部工具 OAuth 應用配置指引',
+      intro: '管理員先在第三方平台建立 OAuth 應用，把 Multigent 顯示的 Redirect URI 配進去，再把平台產生的 Client ID 和 Client Secret 保存回 Multigent。',
+      beforeTitle: '開始前',
+      beforeSteps: [
+        '打開「工作區設定 -> 外部工具 OAuth 應用」。',
+        '找到要設定的平台列，例如 GitHub、Slack、Google Drive、Jira。',
+        '複製該列展示的 Redirect URI。',
+        '配置完成後回到該列，點擊「編輯」，保存 Client ID 和 Client Secret。',
+      ],
+      sections: [
+        {
+          title: 'GitHub',
+          steps: ['打開 https://github.com/settings/developers。', '進入 OAuth Apps，點擊 New OAuth App。', 'Application name 填 Multigent。', 'Homepage URL 填你的 Multigent 網址。', 'Authorization callback URL 貼上 Multigent 的 Redirect URI。', '註冊後複製 Client ID，產生並複製 Client Secret。', '回到 Multigent 的 GitHub 列保存。'],
+          notes: ['GitHub 的 Client Secret 只會完整顯示一次。'],
+        },
+        {
+          title: 'Slack',
+          steps: ['打開 https://api.slack.com/apps。', '點擊 Create New App，選擇 From scratch。', 'App Name 填 Multigent 並選擇 workspace。', '進入 OAuth & Permissions。', '在 Redirect URLs 新增 Multigent 的 Redirect URI。', '在 Scopes 加入需要的權限。', '到 Basic Information 複製 Client ID 和 Client Secret。', '回到 Multigent 的 Slack 列保存。'],
+        },
+        {
+          title: 'Google / Gmail / Drive / Docs / Sheets / Calendar',
+          steps: ['打開 https://console.cloud.google.com/apis/credentials。', '選擇或建立 Google Cloud Project。', '設定 OAuth consent screen。', 'Create credentials -> OAuth client ID。', 'Application type 選 Web application。', 'Authorized redirect URIs 貼上 Multigent 的 Redirect URI。', '建立後複製 Client ID 和 Client Secret。', '回到 Multigent 對應 Google 工具列保存。'],
+          notes: ['Gmail 等敏感 scope 在正式環境可能需要 Google 驗證。'],
+        },
+        {
+          title: 'Jira / Atlassian',
+          steps: ['打開 https://developer.atlassian.com/console/myapps/。', 'Create app。', '啟用 OAuth 2.0。', '在 Permissions 加入需要的 Jira API 權限。', '在 Authorization 增加 Multigent Redirect URI。', '複製 Client ID 和 Client Secret 回填 Multigent。'],
+        },
+        {
+          title: 'Figma',
+          steps: ['打開 https://www.figma.com/developers/apps。', '建立新 app。', 'App name 填 Multigent。', 'OAuth redirect / callback URL 貼上 Multigent Redirect URI。', '複製 Client ID 和 Client Secret 回填 Multigent。'],
+        },
+        {
+          title: 'Feishu / Lark',
+          steps: ['Feishu 使用 https://open.feishu.cn/app。', 'Lark 使用 https://open.larksuite.com/app。', '目前在 Multigent 外部工具頁填 App ID 和 App Secret，不走這個 OAuth 應用表。'],
+        },
+      ],
+      troubleshootingTitle: '常見問題',
+      troubleshooting: ['看不到 OAuth 授權入口：先確認本頁已保存 Client ID 和 Client Secret。', 'redirect_uri_mismatch：檢查 Redirect URI 是否完全一致。', '權限不足：補 scope 後重新授權。'],
+    }
+  }
+  if (locale === 'ja') {
+    return {
+      title: '外部ツール OAuth アプリ設定ガイド',
+      intro: '管理者が各プロバイダーの開発者コンソールで OAuth アプリを作成し、Multigent が表示する Redirect URI を登録してから、Client ID と Client Secret を Multigent に保存します。',
+      beforeTitle: '始める前に',
+      beforeSteps: [
+        'Workspace Settings -> External tool OAuth apps を開きます。',
+        'GitHub、Slack、Google Drive、Jira など設定したい行を探します。',
+        'その行の Redirect URI をコピーします。',
+        'プロバイダー側でアプリを作成した後、Client ID と Client Secret を Multigent に保存します。',
+      ],
+      sections: [
+        {
+          title: 'GitHub',
+          steps: ['https://github.com/settings/developers を開きます。', 'OAuth Apps -> New OAuth App を選びます。', 'Application name に Multigent を入力します。', 'Homepage URL に Multigent の URL を入力します。', 'Authorization callback URL に Multigent の Redirect URI を貼り付けます。', '登録後、Client ID と Client Secret をコピーして Multigent に保存します。'],
+        },
+        {
+          title: 'Slack',
+          steps: ['https://api.slack.com/apps を開きます。', 'Create New App -> From scratch を選びます。', 'App Name に Multigent を入力し workspace を選びます。', 'OAuth & Permissions を開きます。', 'Redirect URLs に Multigent の Redirect URI を追加します。', '必要な Scopes を追加します。', 'Basic Information で Client ID と Client Secret をコピーして Multigent に保存します。'],
+        },
+        {
+          title: 'Google / Gmail / Drive / Docs / Sheets / Calendar',
+          steps: ['https://console.cloud.google.com/apis/credentials を開きます。', 'Google Cloud Project を選びます。', 'OAuth consent screen を設定します。', 'Create credentials -> OAuth client ID を選びます。', 'Application type は Web application を選びます。', 'Authorized redirect URIs に Multigent の Redirect URI を貼り付けます。', 'Client ID と Client Secret を Multigent に保存します。'],
+        },
+        {
+          title: 'Jira / Atlassian',
+          steps: ['https://developer.atlassian.com/console/myapps/ を開きます。', 'Create app を選びます。', 'OAuth 2.0 を有効化します。', 'Permissions で必要な Jira API 権限を追加します。', 'Authorization に Multigent Redirect URI を追加します。', 'Client ID と Client Secret を Multigent に保存します。'],
+        },
+        {
+          title: 'Figma',
+          steps: ['https://www.figma.com/developers/apps を開きます。', '新しい app を作成します。', 'App name に Multigent を入力します。', 'OAuth redirect / callback URL に Multigent Redirect URI を貼り付けます。', 'Client ID と Client Secret を Multigent に保存します。'],
+        },
+        {
+          title: 'Feishu / Lark',
+          steps: ['Feishu は https://open.feishu.cn/app を使います。', 'Lark は https://open.larksuite.com/app を使います。', '現在は External Tools で App ID と App Secret を設定し、この OAuth アプリ表は使いません。'],
+        },
+      ],
+      troubleshootingTitle: 'トラブルシューティング',
+      troubleshooting: ['OAuth ボタンが表示されない場合は、このページで Client ID と Client Secret が保存されているか確認します。', 'redirect_uri_mismatch は Redirect URI の不一致です。', '権限不足の場合は scope を追加して再認可します。'],
+    }
+  }
+  return {
+    title: 'External Tool OAuth App Setup Guide',
+    intro: 'A workspace admin creates an OAuth app in the provider developer console, pastes the Redirect URI shown by Multigent, then saves the provider Client ID and Client Secret back into Multigent.',
+    beforeTitle: 'Before You Start',
+    beforeSteps: [
+      'Open Workspace Settings -> External tool OAuth apps.',
+      'Find the provider row, such as GitHub, Slack, Google Drive, or Jira.',
+      'Copy the exact Redirect URI shown in that row.',
+      'After creating the provider app, return to this row, click Edit, and save the Client ID and Client Secret.',
+    ],
+    sections: [
+      {
+        title: 'GitHub',
+        intro: 'For repositories, issues, pull requests, releases, workflows, and organization context.',
+        steps: ['Open https://github.com/settings/developers.', 'Choose OAuth Apps, then New OAuth App.', 'Set Application name to Multigent.', 'Set Homepage URL to your Multigent web URL.', 'Paste the Multigent Redirect URI into Authorization callback URL.', 'Register the app.', 'Copy Client ID.', 'Generate a new client secret and copy it immediately.', 'Save Client ID and Client Secret in the GitHub row in Multigent.'],
+        notes: ['GitHub shows the Client Secret only once after generation.'],
+      },
+      {
+        title: 'Slack',
+        intro: 'For Slack channels, users, messages, and notification workflows.',
+        steps: ['Open https://api.slack.com/apps.', 'Click Create New App and choose From scratch.', 'Set App Name to Multigent and choose a workspace.', 'Open OAuth & Permissions from the left sidebar.', 'Under Redirect URLs, add the Multigent Redirect URI and save URLs.', 'Add the required Bot Token Scopes or User Token Scopes.', 'Open Basic Information.', 'Copy Client ID and Client Secret.', 'Save them in the Slack row in Multigent.'],
+        notes: ['Redirect URLs live under OAuth & Permissions. Client ID and Client Secret live under Basic Information.'],
+      },
+      {
+        title: 'Google / Gmail / Drive / Docs / Sheets / Calendar',
+        intro: 'For Google workspace tools such as Gmail, Drive, Docs, Sheets, and Calendar.',
+        steps: ['Open https://console.cloud.google.com/apis/credentials.', 'Select or create a Google Cloud Project.', 'Configure OAuth consent screen.', 'Go back to Credentials and click Create credentials -> OAuth client ID.', 'Choose Web application.', 'Set Name to Multigent.', 'Add your Multigent web origin under Authorized JavaScript origins.', 'Paste the Multigent Redirect URI under Authorized redirect URIs.', 'Create the client.', 'Copy Client ID and Client Secret into the matching Google provider row in Multigent.'],
+        notes: ['Gmail and sensitive scopes may require Google verification in production.'],
+      },
+      {
+        title: 'Jira / Atlassian',
+        steps: ['Open https://developer.atlassian.com/console/myapps/.', 'Create an app.', 'Enable OAuth 2.0.', 'Add the Jira API permissions your workflow needs.', 'Add the Multigent Redirect URI under Authorization callback URL.', 'Copy Client ID and Client Secret into Multigent.'],
+      },
+      {
+        title: 'Figma',
+        steps: ['Open https://www.figma.com/developers/apps.', 'Create a new app.', 'Set App name to Multigent.', 'Paste the Multigent Redirect URI into the OAuth redirect or callback URL field.', 'Copy Client ID and Client Secret into Multigent.'],
+      },
+      {
+        title: 'Feishu / Lark',
+        steps: ['Feishu uses https://open.feishu.cn/app.', 'Lark uses https://open.larksuite.com/app.', 'Today Multigent configures Feishu/Lark with App ID and App Secret in External Tools, not through this OAuth app table.'],
+      },
+    ],
+    troubleshootingTitle: 'Troubleshooting',
+    troubleshooting: ['OAuth is hidden from users until Client ID and Client Secret are saved here.', 'redirect_uri_mismatch means the provider callback URL does not exactly match the Multigent Redirect URI.', 'If permissions are insufficient, add the missing scopes and ask users to authorize again.'],
+  }
+}
+
+function OAuthSetupGuideDialog({ lang, onClose }: { lang: string; onClose: () => void }) {
+  const { t } = useTranslation()
+  const guide = oauthSetupGuideContent(lang)
+  return (
+    <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/45 p-4" onClick={onClose}>
+      <div className="max-h-[88vh] w-full max-w-4xl overflow-y-auto rounded-xl border border-neutral-200 bg-white shadow-xl dark:border-zinc-700 dark:bg-zinc-900" onClick={e => e.stopPropagation()}>
+        <div className="sticky top-0 z-10 flex items-center justify-between border-b border-neutral-200 bg-white px-5 py-3 dark:border-zinc-700 dark:bg-zinc-900">
+          <h2 className="text-base font-semibold text-neutral-900 dark:text-zinc-100">{guide.title}</h2>
+          <button type="button" onClick={onClose} className="rounded-md p-1 text-neutral-400 hover:bg-neutral-100 dark:hover:bg-zinc-800">
+            <X className="size-4" />
+          </button>
+        </div>
+        <div className="space-y-6 p-5">
+          <p className="text-sm leading-6 text-neutral-600 dark:text-zinc-300">{guide.intro}</p>
+          <GuideBlock title={guide.beforeTitle} steps={guide.beforeSteps} />
+          {guide.sections.map(section => (
+            <GuideBlock key={section.title} {...section} />
+          ))}
+          <GuideBlock title={guide.troubleshootingTitle} steps={guide.troubleshooting} />
+          <div className="flex justify-end border-t border-neutral-100 pt-4 dark:border-zinc-800">
+            <button type="button" onClick={onClose} className="rounded-lg border border-neutral-300 px-3 py-2 text-sm dark:border-zinc-600">
+              {t('common.close')}
+            </button>
+          </div>
+        </div>
+      </div>
+    </div>
+  )
+}
+
+function GuideBlock({ title, intro, steps, notes }: OAuthGuideSection) {
+  return (
+    <section className="rounded-lg border border-neutral-200/80 bg-neutral-50/40 p-4 dark:border-zinc-700/60 dark:bg-zinc-800/30">
+      <h3 className="text-sm font-semibold text-neutral-900 dark:text-zinc-100">{title}</h3>
+      {intro && <p className="mt-2 text-sm leading-6 text-neutral-500 dark:text-zinc-400">{intro}</p>}
+      <ol className="mt-3 list-decimal space-y-1.5 pl-5 text-sm leading-6 text-neutral-600 dark:text-zinc-300">
+        {steps.map((step, idx) => <li key={`${title}-${idx}`}>{step}</li>)}
+      </ol>
+      {notes && notes.length > 0 && (
+        <div className="mt-3 rounded-md bg-white px-3 py-2 dark:bg-zinc-900/70">
+          <ul className="list-disc space-y-1 pl-4 text-xs leading-5 text-neutral-500 dark:text-zinc-400">
+            {notes.map((note, idx) => <li key={`${title}-note-${idx}`}>{note}</li>)}
+          </ul>
+        </div>
       )}
     </section>
   )
@@ -575,8 +909,8 @@ type ProviderRow = {
 type WorkspaceAccessSummary = { currentUserCanAdmin?: boolean }
 
 type ModelAccountMode = 'official' | 'gateway'
-type ModelAccountCLI = 'codex' | 'claudecode' | 'gemini'
-const OFFICIAL_ACCOUNT_CLIS: ModelAccountCLI[] = ['codex', 'claudecode', 'gemini']
+type ModelAccountCLI = 'codex' | 'claudecode' | 'cursor' | 'gemini'
+const OFFICIAL_ACCOUNT_CLIS: ModelAccountCLI[] = ['codex', 'claudecode', 'cursor', 'gemini']
 const GATEWAY_ACCOUNT_CLIS: ModelAccountCLI[] = ['codex', 'claudecode']
 
 type ProviderPreset = {
@@ -921,12 +1255,13 @@ function inferModelAccountMode(provider: Pick<ProviderRow, 'baseUrl' | 'type'>):
 }
 
 function isKnownProviderType(type?: string): boolean {
-  return type === 'openai' || type === 'anthropic' || type === 'gemini'
+  return type === 'openai' || type === 'anthropic' || type === 'cursor' || type === 'gemini'
 }
 
 function inferModelAccountCLI(provider: Pick<ProviderRow, 'type'>): ModelAccountCLI {
   switch (provider.type) {
     case 'anthropic': return 'claudecode'
+    case 'cursor': return 'cursor'
     case 'gemini': return 'gemini'
     case 'openai':
     default: return 'codex'
@@ -934,7 +1269,7 @@ function inferModelAccountCLI(provider: Pick<ProviderRow, 'type'>): ModelAccount
 }
 
 function isOfficialCLI(cli?: string): cli is ModelAccountCLI {
-  return cli === 'codex' || cli === 'claudecode' || cli === 'gemini'
+  return cli === 'codex' || cli === 'claudecode' || cli === 'cursor' || cli === 'gemini'
 }
 
 function isGatewayCLI(cli?: string): cli is ModelAccountCLI {
@@ -944,6 +1279,7 @@ function isGatewayCLI(cli?: string): cli is ModelAccountCLI {
 function providerTypeForCLI(cli?: ModelAccountCLI): string {
   switch (cli) {
     case 'claudecode': return 'anthropic'
+    case 'cursor': return 'cursor'
     case 'gemini': return 'gemini'
     case 'codex':
     default: return 'openai'
@@ -953,6 +1289,7 @@ function providerTypeForCLI(cli?: ModelAccountCLI): string {
 function providerCLILabel(cli?: ModelAccountCLI): string {
   switch (cli) {
     case 'claudecode': return 'Claude Code'
+    case 'cursor': return 'Cursor'
     case 'gemini': return 'Gemini CLI'
     case 'codex':
     default: return 'Codex'
@@ -962,6 +1299,7 @@ function providerCLILabel(cli?: ModelAccountCLI): string {
 function providerOfficialName(cli?: ModelAccountCLI): string {
   switch (cli) {
     case 'claudecode': return 'Claude Code Official'
+    case 'cursor': return 'Cursor Official'
     case 'gemini': return 'Gemini Official'
     case 'codex':
     default: return 'Codex Official'
@@ -970,7 +1308,7 @@ function providerOfficialName(cli?: ModelAccountCLI): string {
 
 function isGeneratedModelAccountName(name?: string): boolean {
   const trimmed = name?.trim()
-  return trimmed === 'Codex Official' || trimmed === 'Claude Code Official' || trimmed === 'Gemini Official'
+  return trimmed === 'Codex Official' || trimmed === 'Claude Code Official' || trimmed === 'Cursor Official' || trimmed === 'Gemini Official'
 }
 
 function providerEndpointPlaceholder(cli?: ModelAccountCLI): string {
@@ -984,6 +1322,7 @@ function providerEndpointPlaceholder(cli?: ModelAccountCLI): string {
 function providerModelPlaceholder(cli?: ModelAccountCLI): string {
   switch (cli) {
     case 'claudecode': return 'claude-sonnet-4-20250514'
+    case 'cursor': return 'auto'
     case 'codex':
     default: return 'gpt-5.6-sol'
   }

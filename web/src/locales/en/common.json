@@ -322,6 +322,7 @@
     "themeHint": "Tip: use the sun / moon / monitor icon in the top bar to cycle light → dark → system.",
     "externalToolOAuthTitle": "External tool OAuth apps",
     "externalToolOAuthIntro": "Admins configure provider OAuth clients here. External Tools only shows OAuth authorization to users after a client is configured.",
+    "oauthSetupGuide": "Setup guide",
     "oauthProvider": "Provider",
     "oauthStatus": "Status",
     "oauthClientTitle": "OAuth app: {{name}}",

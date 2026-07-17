@@ -186,6 +186,10 @@ func (ps *ProviderStore) ResolveEnv(id string) (map[string]string, error) {
 		if p.BaseURL != "" {
 			env["GOOGLE_API_BASE"] = p.BaseURL
 		}
+	case "cursor":
+		if p.APIKey != "" {
+			env["CURSOR_API_KEY"] = p.APIKey
+		}
 	}
 	return env, nil
 }

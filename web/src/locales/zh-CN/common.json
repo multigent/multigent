@@ -322,6 +322,7 @@
     "themeHint": "提示：顶部栏太阳 / 月亮 / 显示器图标可循环切换浅色 → 深色 → 跟随系统。",
     "externalToolOAuthTitle": "外部工具 OAuth 应用",
     "externalToolOAuthIntro": "管理员在这里配置各平台 OAuth Client。未配置时，外部工具页不会向普通用户展示 OAuth 授权入口。",
+    "oauthSetupGuide": "查看配置文档",
     "oauthProvider": "平台",
     "oauthStatus": "状态",
     "oauthClientTitle": "OAuth 应用：{{name}}",
