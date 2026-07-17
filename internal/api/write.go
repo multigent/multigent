@@ -30,19 +30,20 @@ func validTaskStatus(s string) bool {
 }
 
 type postTaskBody struct {
-	Agent                string   `json:"agent"`
-	Title                string   `json:"title"`
-	Prompt               string   `json:"prompt"`
-	Description          string   `json:"description"`
-	Type                 string   `json:"type"`
-	Priority             int      `json:"priority"`
-	Assignee             string   `json:"assignee"`
-	CreatedBy            string   `json:"createdBy"`
-	Labels               []string `json:"labels"`
-	ParentID             string   `json:"parentId"`
-	DueDate              string   `json:"dueDate"`          // YYYY-MM-DD
-	EstimateDuration     string   `json:"estimateDuration"` // Go duration, e.g. "30m", "2h"
-	WorkflowDefinitionID string   `json:"workflowDefinitionId"`
+	Agent                 string                                 `json:"agent"`
+	Title                 string                                 `json:"title"`
+	Prompt                string                                 `json:"prompt"`
+	Description           string                                 `json:"description"`
+	Type                  string                                 `json:"type"`
+	Priority              int                                    `json:"priority"`
+	Assignee              string                                 `json:"assignee"`
+	CreatedBy             string                                 `json:"createdBy"`
+	Labels                []string                               `json:"labels"`
+	ParentID              string                                 `json:"parentId"`
+	DueDate               string                                 `json:"dueDate"`          // YYYY-MM-DD
+	EstimateDuration      string                                 `json:"estimateDuration"` // Go duration, e.g. "30m", "2h"
+	WorkflowDefinitionID  string                                 `json:"workflowDefinitionId"`
+	WorkflowActorBindings map[string]entity.WorkflowActorBinding `json:"workflowActorBindings"`
 }
 
 func (s *Server) handlePostProjectTask(w http.ResponseWriter, r *http.Request) {
@@ -168,7 +169,7 @@ func (s *Server) handlePostProjectTask(w http.ResponseWriter, r *http.Request) {
 		if !ok {
 			return
 		}
-		if _, _, err := wfStore.StartRun(name, t.ID, workflowID); err != nil {
+		if _, _, err := wfStore.StartRun(name, t.ID, workflowID, body.WorkflowActorBindings); err != nil {
 			s.serverError(w, err)
 			return
 		}

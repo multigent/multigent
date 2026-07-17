@@ -538,7 +538,7 @@ func (s *Store) DeleteDefinition(id string) error {
 	return s.db.DeleteRecord("workflow_definitions", s.workspaceID, []string{id})
 }
 
-func (s *Store) StartRun(project, taskID, definitionID string) (entity.WorkflowRun, []entity.WorkflowStepInstance, error) {
+func (s *Store) StartRun(project, taskID, definitionID string, actorBindings map[string]entity.WorkflowActorBinding) (entity.WorkflowRun, []entity.WorkflowStepInstance, error) {
 	def, ok, err := s.Definition(definitionID)
 	if err != nil {
 		return entity.WorkflowRun{}, nil, err
@@ -548,14 +548,15 @@ func (s *Store) StartRun(project, taskID, definitionID string) (entity.WorkflowR
 	}
 	now := time.Now().UTC()
 	run := entity.WorkflowRun{
-		ID:           entity.NewWorkflowRunID(),
-		DefinitionID: def.ID,
-		Project:      project,
-		TaskID:       taskID,
-		Status:       "active",
-		ActiveStepID: def.StartStepID,
-		StartedAt:    now,
-		UpdatedAt:    now,
+		ID:            entity.NewWorkflowRunID(),
+		DefinitionID:  def.ID,
+		Project:       project,
+		TaskID:        taskID,
+		Status:        "active",
+		ActiveStepID:  def.StartStepID,
+		ActorBindings: actorBindings,
+		StartedAt:     now,
+		UpdatedAt:     now,
 	}
 	if err := s.SaveRun(&run); err != nil {
 		return entity.WorkflowRun{}, nil, err
@@ -575,6 +576,10 @@ func (s *Store) StartRun(project, taskID, definitionID string) (entity.WorkflowR
 			Status:    status,
 			StartedAt: started,
 			UpdatedAt: now,
+		}
+		if binding, ok := actorBindings[step.ActorRole]; ok {
+			inst.ActorType = binding.Type
+			inst.ActorID = binding.ID
 		}
 		if err := s.SaveStepInstance(&inst); err != nil {
 			return entity.WorkflowRun{}, nil, err

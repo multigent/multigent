@@ -10,8 +10,12 @@ const TASK_TYPES = ['chore', 'feature', 'bug', 'review', 'triage', 'test', 'rese
 type AgentOpt = { name: string }
 
 type ProjectAgentsOpt = { projectId: string; agents: AgentOpt[] }
-type WorkflowOpt = { id: string; name: string }
+type WorkflowStepOpt = { id: string; type: string; title: string; actorRole?: string }
+type WorkflowOpt = { id: string; name: string; steps?: WorkflowStepOpt[] }
 type WorkflowListResponse = { workflows: WorkflowOpt[] }
+type PersonOpt = { username: string; displayName?: string; disabled?: boolean }
+type UserListResponse = PersonOpt[]
+type ActorBinding = { type: 'agent' | 'human'; id: string }
 
 type Props = {
   projectId: string
@@ -40,13 +44,17 @@ export function CreateTaskDialog({ projectId: defaultProjectId, agents: defaultA
   const [parentId, setParentId] = useState('')
   const [estimateDuration, setEstimateDuration] = useState('')
   const [workflowDefinitionId, setWorkflowDefinitionId] = useState('')
+  const [actorBindings, setActorBindings] = useState<Record<string, ActorBinding>>({})
   const [busy, setBusy] = useState(false)
   const [err, setErr] = useState<string | null>(null)
 
   const multiProject = Boolean(allProjectsAgents && allProjectsAgents.length > 1)
   const workflowPath = open ? '/api/v1/workflows' : null
   const workflowsState = useApiJson<WorkflowListResponse>(workflowPath, 0)
+  const usersState = useApiJson<UserListResponse>(open ? '/api/v1/users' : null, 0)
   const workflows = workflowsState.status === 'ok' ? workflowsState.data.workflows : []
+  const people = usersState.status === 'ok' ? usersState.data.filter((p) => !p.disabled) : []
+  const selectedWorkflow = workflows.find((wf) => wf.id === workflowDefinitionId)
 
   const currentAgents = useMemo(() => {
     if (!allProjectsAgents) return defaultAgents
@@ -72,6 +80,7 @@ export function CreateTaskDialog({ projectId: defaultProjectId, agents: defaultA
     setParentId('')
     setEstimateDuration('')
     setWorkflowDefinitionId('')
+    setActorBindings({})
     setErr(null)
   }
 
@@ -96,11 +105,33 @@ export function CreateTaskDialog({ projectId: defaultProjectId, agents: defaultA
     return taskOptions.filter((o) => !o.project || o.project === selectedProject)
   }, [taskOptions, selectedProject])
 
+  const workflowActorSlots = useMemo(() => {
+    const steps = selectedWorkflow?.steps ?? []
+    const byRole = new Map<string, { role: string; preferredType: 'agent' | 'human'; titles: string[] }>()
+    for (const step of steps) {
+      const role = step.actorRole?.trim()
+      if (!role) continue
+      const preferredType = step.type === 'human_review' || step.type === 'human_task' ? 'human' : 'agent'
+      const existing = byRole.get(role)
+      if (existing) {
+        existing.titles.push(step.title)
+        if (preferredType === 'human') existing.preferredType = 'human'
+      } else {
+        byRole.set(role, { role, preferredType, titles: [step.title] })
+      }
+    }
+    return Array.from(byRole.values())
+  }, [selectedWorkflow])
+
   async function onSubmit(e: FormEvent) {
     e.preventDefault()
     setErr(null)
     if (!agent.trim() || !title.trim() || !prompt.trim()) {
       setErr(t('forms.fillRequired'))
+      return
+    }
+    if (workflowDefinitionId && missingWorkflowActors.length > 0) {
+      setErr(t('workflows.actorBindingsRequired'))
       return
     }
     setBusy(true)
@@ -121,6 +152,7 @@ export function CreateTaskDialog({ projectId: defaultProjectId, agents: defaultA
           ...(parentId ? { parentId } : {}),
           ...(estimateDuration.trim() ? { estimateDuration: estimateDuration.trim() } : {}),
           ...(workflowDefinitionId ? { workflowDefinitionId } : {}),
+          ...(workflowDefinitionId ? { workflowActorBindings: actorBindings } : {}),
         },
       )
       setOpen(false)
@@ -131,6 +163,42 @@ export function CreateTaskDialog({ projectId: defaultProjectId, agents: defaultA
       setBusy(false)
     }
   }
+
+  function autoBindingFor(role: string, preferredType: 'agent' | 'human'): ActorBinding {
+    if (preferredType === 'agent') {
+      const exact = currentAgents.find((a) => a.name === role)
+      const weak = currentAgents.find((a) => role.includes(a.name) || a.name.includes(role.replace(/-agent$/, '')))
+      return { type: 'agent', id: exact?.name || weak?.name || currentAgents[0]?.name || '' }
+    }
+    return { type: 'human', id: people[0]?.username || 'human' }
+  }
+
+  function onWorkflowChange(id: string) {
+    setWorkflowDefinitionId(id)
+    const workflow = workflows.find((wf) => wf.id === id)
+    const next: Record<string, ActorBinding> = {}
+    for (const step of workflow?.steps ?? []) {
+      const role = step.actorRole?.trim()
+      if (!role || next[role]) continue
+      const preferredType = step.type === 'human_review' || step.type === 'human_task' ? 'human' : 'agent'
+      next[role] = autoBindingFor(role, preferredType)
+    }
+    setActorBindings(next)
+  }
+
+  function updateActorBinding(role: string, patch: Partial<ActorBinding>) {
+    setActorBindings((current) => {
+      const prev = current[role] ?? { type: 'agent', id: '' }
+      const nextType = patch.type ?? prev.type
+      let nextID = patch.id ?? prev.id
+      if (patch.type && patch.type !== prev.type) {
+        nextID = patch.type === 'agent' ? currentAgents[0]?.name || '' : people[0]?.username || 'human'
+      }
+      return { ...current, [role]: { type: nextType, id: nextID } }
+    })
+  }
+
+  const missingWorkflowActors = workflowActorSlots.filter((slot) => !actorBindings[slot.role]?.id.trim())
 
   return (
     <>
@@ -148,7 +216,7 @@ export function CreateTaskDialog({ projectId: defaultProjectId, agents: defaultA
           onClick={() => !busy && setOpen(false)}
         >
           <div
-            className="max-h-[min(90vh,640px)] w-full max-w-md overflow-y-auto rounded-xl border border-neutral-200 bg-white shadow-lg dark:border-zinc-700 dark:bg-zinc-900 animate-scale-in"
+            className="max-h-[min(90vh,760px)] w-full max-w-2xl overflow-y-auto rounded-xl border border-neutral-200 bg-white shadow-lg dark:border-zinc-700 dark:bg-zinc-900 animate-scale-in"
             onClick={(e) => e.stopPropagation()}
             role="dialog"
             aria-labelledby="create-task-title"
@@ -256,12 +324,51 @@ export function CreateTaskDialog({ projectId: defaultProjectId, agents: defaultA
 
               <label className="block text-sm">
                 <span className="text-neutral-600 dark:text-zinc-400">{t('workflows.taskWorkflow')}</span>
-                <select value={workflowDefinitionId} onChange={(e) => setWorkflowDefinitionId(e.target.value)} className={fieldCls}>
+                <select value={workflowDefinitionId} onChange={(e) => onWorkflowChange(e.target.value)} className={fieldCls}>
                   <option value="">{t('workflows.noWorkflow')}</option>
                   {workflows.map((wf) => <option key={wf.id} value={wf.id}>{wf.name}</option>)}
                 </select>
                 <p className="mt-0.5 text-xs text-neutral-400 dark:text-zinc-500">{t('workflows.taskWorkflowHint')}</p>
               </label>
+
+              {workflowDefinitionId && workflowActorSlots.length > 0 ? (
+                <div className="rounded-lg border border-neutral-200 bg-neutral-50 p-3 dark:border-zinc-700 dark:bg-zinc-950/40">
+                  <div className="flex items-center justify-between gap-2">
+                    <span className="text-sm font-medium text-neutral-700 dark:text-zinc-300">{t('workflows.actorBindings')}</span>
+                    <span className={cn('text-xs', missingWorkflowActors.length === 0 ? 'text-emerald-600 dark:text-emerald-400' : 'text-amber-600 dark:text-amber-400')}>
+                      {t('workflows.actorBindingsProgress', { done: workflowActorSlots.length - missingWorkflowActors.length, total: workflowActorSlots.length })}
+                    </span>
+                  </div>
+                  <div className="mt-3 space-y-2">
+                    {workflowActorSlots.map((slot) => {
+                      const binding = actorBindings[slot.role] ?? { type: slot.preferredType, id: '' }
+                      const options = binding.type === 'agent' ? currentAgents.map((a) => ({ id: a.name, label: a.name })) : [{ id: 'human', label: 'human' }, ...people.map((p) => ({ id: p.username, label: p.displayName ? `${p.displayName} (${p.username})` : p.username }))]
+                      return (
+                        <div key={slot.role} className="rounded-md border border-neutral-200 bg-white p-2 dark:border-zinc-700 dark:bg-zinc-900">
+                          <div className="flex items-start justify-between gap-2">
+                            <div className="min-w-0">
+                              <p className="truncate text-sm font-medium text-neutral-800 dark:text-zinc-200">{slot.role}</p>
+                              <p className="mt-0.5 line-clamp-1 text-xs text-neutral-400 dark:text-zinc-500">{slot.titles.join('、')}</p>
+                            </div>
+                          </div>
+                          <div className="mt-2 grid grid-cols-[96px_minmax(0,1fr)] gap-2">
+                            <select value={binding.type} onChange={(e) => updateActorBinding(slot.role, { type: e.target.value as 'agent' | 'human' })} className={fieldCls}>
+                              <option value="agent">{t('workflows.actorTypeAgent')}</option>
+                              <option value="human">{t('workflows.actorTypeHuman')}</option>
+                            </select>
+                            <select value={binding.id} onChange={(e) => updateActorBinding(slot.role, { id: e.target.value })} className={fieldCls}>
+                              <option value="">{t('workflows.selectActor')}</option>
+                              {options.map((option) => (
+                                <option key={option.id} value={option.id}>{option.label}</option>
+                              ))}
+                            </select>
+                          </div>
+                        </div>
+                      )
+                    })}
+                  </div>
+                </div>
+              ) : null}
 
               {err && <p className="text-sm text-red-600 dark:text-red-400">{err}</p>}
               <div className="flex justify-end gap-2 pt-1">
