@@ -278,7 +278,7 @@
     "untitledName": "無題のワークフロー",
     "copyName": "{{name}} のコピー",
     "duplicate": "複製",
-    "backToList": "ワークフロー一覧へ戻る",
+    "backToList": "戻る",
     "notFound": "ワークフローが見つかりません",
     "descriptionPlaceholder": "このワークフローを使う場面を説明します。",
     "noDescription": "説明なし",

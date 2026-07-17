@@ -278,7 +278,7 @@
     "untitledName": "Untitled workflow",
     "copyName": "{{name}} copy",
     "duplicate": "Duplicate",
-    "backToList": "Back to workflows",
+    "backToList": "Back",
     "notFound": "Workflow not found",
     "descriptionPlaceholder": "Describe when this workflow should be used.",
     "noDescription": "No description",
