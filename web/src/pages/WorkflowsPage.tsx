@@ -1,4 +1,4 @@
-import { useEffect, useMemo, useState } from 'react'
+import { useEffect, useMemo, useRef, useState } from 'react'
 import { useTranslation } from 'react-i18next'
 import { useNavigate, useParams } from 'react-router-dom'
 import { GitBranch, X } from 'lucide-react'
@@ -41,11 +41,19 @@ export default function WorkflowsPage() {
   const [createMode, setCreateMode] = useState<'blank' | 'template'>('template')
   const [selectedTemplateId, setSelectedTemplateId] = useState('')
   const [workflowName, setWorkflowName] = useState('')
+  const descriptionRef = useRef<HTMLTextAreaElement | null>(null)
 
   useEffect(() => {
     setDraft(selected ? structuredClone(selected) : null)
     setFullscreen(false)
   }, [selected?.id])
+
+  useEffect(() => {
+    const el = descriptionRef.current
+    if (!el) return
+    el.style.height = 'auto'
+    el.style.height = `${Math.min(el.scrollHeight, 96)}px`
+  }, [draft?.description])
 
   async function createBlank(name = t('workflows.untitledName')) {
     setSaving(true)
@@ -181,11 +189,12 @@ export default function WorkflowsPage() {
                     className="block w-full rounded-lg border border-transparent bg-transparent px-0 text-xl font-semibold text-neutral-900 outline-none focus:border-neutral-200 focus:bg-white focus:px-3 dark:text-zinc-100 dark:focus:border-zinc-700 dark:focus:bg-zinc-900"
                   />
                   <textarea
+                    ref={descriptionRef}
                     value={draft.description || ''}
                     onChange={(e) => setDraft({ ...draft, description: e.target.value })}
                     placeholder={t('workflows.descriptionPlaceholder')}
                     rows={1}
-                    className="mt-1 block w-full resize-y whitespace-pre-wrap rounded-lg border border-transparent bg-transparent px-0 py-0.5 text-sm leading-5 text-neutral-500 outline-none focus:border-neutral-200 focus:bg-white focus:px-3 dark:text-zinc-400 dark:focus:border-zinc-700 dark:focus:bg-zinc-900"
+                    className="mt-1 block w-full resize-none overflow-hidden whitespace-pre-wrap rounded-lg border border-transparent bg-transparent px-0 py-0.5 text-sm leading-5 text-neutral-500 outline-none focus:border-neutral-200 focus:bg-white focus:px-3 dark:text-zinc-400 dark:focus:border-zinc-700 dark:focus:bg-zinc-900"
                   />
                 </div>
                 <div className="flex gap-2">
