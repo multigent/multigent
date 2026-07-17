@@ -112,3 +112,44 @@ button, [role="button"], a, select, label[for], summary, [tabindex]:not([tabinde
 
 .scrollbar-none { scrollbar-width: none; -ms-overflow-style: none; }
 .scrollbar-none::-webkit-scrollbar { display: none; }
+
+/* React Flow workflow canvas controls */
+.workflow-flow .react-flow__controls {
+  box-shadow: 0 8px 24px rgba(15, 23, 42, 0.08);
+}
+
+.workflow-flow .react-flow__controls-button {
+  border-color: rgb(229 229 229);
+  background: rgb(255 255 255);
+  color: rgb(63 63 70);
+}
+
+.workflow-flow .react-flow__controls-button svg {
+  fill: currentColor;
+}
+
+.workflow-flow .react-flow__minimap {
+  border: 1px solid rgb(229 229 229);
+  border-radius: 0.75rem;
+  overflow: hidden;
+  background: rgb(255 255 255);
+}
+
+.dark .workflow-flow .react-flow__controls {
+  box-shadow: 0 8px 24px rgba(0, 0, 0, 0.35);
+}
+
+.dark .workflow-flow .react-flow__controls-button {
+  border-color: rgb(63 63 70);
+  background: rgb(24 24 27);
+  color: rgb(212 212 216);
+}
+
+.dark .workflow-flow .react-flow__minimap {
+  border-color: rgb(63 63 70);
+  background: rgb(24 24 27);
+}
+
+.dark .workflow-flow .react-flow__minimap-mask {
+  fill: rgba(63, 63, 70, 0.72);
+}

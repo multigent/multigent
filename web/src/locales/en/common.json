@@ -11,7 +11,8 @@
     "confirm": "Confirm",
     "add": "Add",
     "done": "Done",
-    "creating": "Creating…"
+    "creating": "Creating…",
+    "saving": "Saving…"
   },
   "apiErrors": {
     "bad_request": "The request could not be processed.",
@@ -272,7 +273,30 @@
     "subtitle": "Define and inspect task workflows with a whiteboard-style graph.",
     "taskWorkflow": "Task workflow",
     "noWorkflow": "No workflow",
-    "taskWorkflowHint": "When selected, creating the task starts a workflow run."
+    "taskWorkflowHint": "When selected, creating the task starts a workflow run.",
+    "createBlank": "New workflow",
+    "untitledName": "Untitled workflow",
+    "copyName": "{{name}} copy",
+    "duplicate": "Duplicate",
+    "backToList": "Back to workflows",
+    "notFound": "Workflow not found",
+    "descriptionPlaceholder": "Describe when this workflow should be used.",
+    "noDescription": "No description",
+    "stepCount": "{{count}} steps",
+    "addNode": "Add node",
+    "deleteNode": "Delete node",
+    "deleteEdge": "Delete edge",
+    "fullscreen": "Fullscreen",
+    "exitFullscreen": "Exit fullscreen",
+    "newStepTitle": "New step",
+    "stepTypes": {
+      "agent_task": "Agent task",
+      "human_task": "Human task",
+      "human_review": "Human review",
+      "branch": "Branch",
+      "join": "Join",
+      "terminal": "Terminal"
+    }
   },
   "projectSettings": {
     "subtitle": "Project configuration and prompts.",

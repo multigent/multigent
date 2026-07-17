@@ -117,6 +117,57 @@ func (s *Server) handleCreateWorkflow(w http.ResponseWriter, r *http.Request) {
 	_ = json.NewEncoder(w).Encode(def)
 }
 
+func (s *Server) handleUpdateWorkflow(w http.ResponseWriter, r *http.Request) {
+	if !s.checkCurrentWorkspaceAdmin(w, r) {
+		return
+	}
+	wfStore, ok := s.workflowStoreForRequest(w, r)
+	if !ok {
+		return
+	}
+	workflowID := r.PathValue("workflowId")
+	existing, found, err := wfStore.Definition(workflowID)
+	if err != nil {
+		s.serverError(w, err)
+		return
+	}
+	if !found || existing.Scope != "workspace" || existing.Project != "" {
+		s.jsonError(w, http.StatusNotFound, "workflow not found")
+		return
+	}
+	var body workflowCreateBody
+	if err := s.readJSON(w, r, &body); err != nil {
+		s.jsonError(w, http.StatusBadRequest, "invalid JSON body")
+		return
+	}
+	name := strings.TrimSpace(body.Name)
+	if name == "" {
+		s.jsonError(w, http.StatusBadRequest, "name is required")
+		return
+	}
+	if len(body.Steps) == 0 {
+		s.jsonError(w, http.StatusBadRequest, "at least one step is required")
+		return
+	}
+	start := strings.TrimSpace(body.StartStepID)
+	if start == "" {
+		start = body.Steps[0].ID
+	}
+	existing.Name = name
+	existing.Description = strings.TrimSpace(body.Description)
+	existing.StartStepID = start
+	existing.Steps = body.Steps
+	existing.Edges = body.Edges
+	existing.Scope = "workspace"
+	existing.Project = ""
+	existing.Version++
+	if err := wfStore.SaveDefinition(&existing); err != nil {
+		s.serverError(w, err)
+		return
+	}
+	_ = json.NewEncoder(w).Encode(existing)
+}
+
 func (s *Server) handleGetTaskWorkflow(w http.ResponseWriter, r *http.Request) {
 	project := r.PathValue("name")
 	taskID := r.PathValue("taskId")

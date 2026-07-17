@@ -1,5 +1,7 @@
 import { useEffect, useMemo, useState } from 'react'
+import { useTranslation } from 'react-i18next'
 import {
+  addEdge,
   Background,
   BackgroundVariant,
   Controls,
@@ -8,8 +10,10 @@ import {
   MiniMap,
   Position,
   ReactFlow,
+  type Connection,
   type Edge,
   type Node,
+  type NodeChange,
   type NodeProps,
   useEdgesState,
   useNodesState,
@@ -43,9 +47,13 @@ export type WorkflowDefinition = {
   name: string
   description?: string
   version: number
+  scope?: string
+  project?: string
   startStepId: string
   steps: WorkflowStep[]
   edges: WorkflowEdge[]
+  createdAt?: string
+  updatedAt?: string
 }
 
 export type WorkflowRun = {
@@ -82,6 +90,10 @@ type Props = {
   run?: WorkflowRun
   instances?: WorkflowStepInstance[]
   compact?: boolean
+  editable?: boolean
+  onChange?: (definition: WorkflowDefinition) => void
+  fullscreen?: boolean
+  onToggleFullscreen?: () => void
 }
 
 const EMPTY_INSTANCES: WorkflowStepInstance[] = []
@@ -126,6 +138,7 @@ const edgeClass: Record<string, string> = {
 }
 
 function WorkflowStepNode({ data, selected }: NodeProps<WorkflowNode>) {
+  const { t } = useTranslation()
   const { step, status, active } = data
   return (
     <div
@@ -146,7 +159,7 @@ function WorkflowStepNode({ data, selected }: NodeProps<WorkflowNode>) {
         position={Position.Right}
         className="!h-2.5 !w-2.5 !border-2 !border-white !bg-neutral-400 dark:!border-zinc-950 dark:!bg-zinc-500"
       />
-      <span className="text-[11px] font-semibold uppercase opacity-60">{step.type.replace('_', ' ')}</span>
+      <span className="text-[11px] font-semibold uppercase opacity-60">{t(`workflows.stepTypes.${step.type}`, { defaultValue: step.type.replace('_', ' ') })}</span>
       <span className="mt-1 line-clamp-1 text-sm font-semibold">{step.title}</span>
       <span className="mt-auto flex w-full items-center justify-between gap-2">
         <span className="truncate text-xs opacity-60">{step.actorRole || 'system'}</span>
@@ -156,9 +169,20 @@ function WorkflowStepNode({ data, selected }: NodeProps<WorkflowNode>) {
   )
 }
 
-export function WorkflowBoard({ definition, run, instances = EMPTY_INSTANCES, compact = false }: Props) {
+export function WorkflowBoard({
+  definition,
+  run,
+  instances = EMPTY_INSTANCES,
+  compact = false,
+  editable = false,
+  onChange,
+  fullscreen = false,
+  onToggleFullscreen,
+}: Props) {
+  const { t } = useTranslation()
   const instanceByStep = useMemo(() => new Map(instances.map((inst) => [inst.stepId, inst])), [instances])
   const [selectedId, setSelectedId] = useState(definition.startStepId || definition.steps[0]?.id || '')
+  const [selectedEdgeId, setSelectedEdgeId] = useState('')
   const selected = definition.steps.find((s) => s.id === selectedId) ?? definition.steps[0]
   const selectedInst = selected ? instanceByStep.get(selected.id) : undefined
 
@@ -220,30 +244,142 @@ export function WorkflowBoard({ definition, run, instances = EMPTY_INSTANCES, co
     }
   }, [definition.startStepId, definition.steps, selectedId])
 
+  function updateDefinition(next: WorkflowDefinition) {
+    onChange?.(next)
+  }
+
+  function handleNodesChange(changes: NodeChange<WorkflowNode>[]) {
+    onNodesChange(changes)
+    if (!editable || !onChange) return
+    const posByID = new Map<string, { x: number; y: number }>()
+    for (const change of changes) {
+      if (change.type === 'position' && change.position) {
+        posByID.set(change.id, change.position)
+      }
+    }
+    if (posByID.size === 0) return
+    updateDefinition({
+      ...definition,
+      steps: definition.steps.map((step) => {
+        const pos = posByID.get(step.id)
+        return pos ? { ...step, position: { x: Math.round(pos.x), y: Math.round(pos.y) } } : step
+      }),
+    })
+  }
+
+  function handleConnect(connection: Connection) {
+    if (!editable || !connection.source || !connection.target || connection.source === connection.target) return
+    const edgeID = `e-${connection.source}-${connection.target}-${Date.now().toString(36)}`
+    setEdges((eds) =>
+      addEdge(
+        {
+          ...connection,
+          id: edgeID,
+          type: 'smoothstep',
+          markerEnd: { type: MarkerType.ArrowClosed, color: edgeClass.pending },
+          style: { stroke: edgeClass.pending, strokeWidth: 2 },
+        },
+        eds,
+      ),
+    )
+    updateDefinition({
+      ...definition,
+      edges: [...definition.edges, { id: edgeID, from: connection.source, to: connection.target }],
+    })
+  }
+
+  function addNode() {
+    if (!editable) return
+    const base = selected ?? definition.steps[definition.steps.length - 1]
+    const id = `step_${Date.now().toString(36)}`
+    const step: WorkflowStep = {
+      id,
+      type: 'agent_task',
+      title: t('workflows.newStepTitle'),
+      description: '',
+      actorRole: 'agent',
+      position: { x: (base?.position.x ?? 80) + 280, y: base?.position.y ?? 180 },
+    }
+    setSelectedId(id)
+    updateDefinition({
+      ...definition,
+      startStepId: definition.startStepId || id,
+      steps: [...definition.steps, step],
+    })
+  }
+
+  function deleteSelected() {
+    if (!editable) return
+    if (selectedEdgeId) {
+      updateDefinition({ ...definition, edges: definition.edges.filter((edge) => edge.id !== selectedEdgeId) })
+      setSelectedEdgeId('')
+      return
+    }
+    if (!selected || definition.steps.length <= 1) return
+    const nextSteps = definition.steps.filter((step) => step.id !== selected.id)
+    const nextSelected = nextSteps[0]?.id || ''
+    setSelectedId(nextSelected)
+    updateDefinition({
+      ...definition,
+      startStepId: definition.startStepId === selected.id ? nextSelected : definition.startStepId,
+      steps: nextSteps,
+      edges: definition.edges.filter((edge) => edge.from !== selected.id && edge.to !== selected.id),
+    })
+  }
+
   return (
-    <div className={cn('grid min-h-0 gap-4', compact ? 'grid-cols-1' : 'grid-cols-[minmax(0,1fr)_320px]')}>
+    <div className={cn('grid min-h-0 gap-4', compact || fullscreen ? 'grid-cols-1' : 'grid-cols-[minmax(0,1fr)_320px]')}>
       <div
         className={cn(
           'relative overflow-hidden rounded-xl border border-neutral-200/80 bg-white dark:border-zinc-700/60 dark:bg-zinc-950',
-          compact ? 'h-[360px]' : 'h-[520px]',
+          fullscreen ? 'h-[calc(100vh-150px)]' : compact ? 'h-[360px]' : 'h-[520px]',
         )}
       >
+        {(editable || onToggleFullscreen) && (
+          <div className="absolute left-3 top-3 z-10 flex flex-wrap gap-2">
+            {editable ? (
+              <>
+                <button type="button" onClick={addNode} className="rounded-lg border border-sky-600 bg-white px-3 py-1.5 text-xs font-medium text-sky-700 shadow-sm hover:bg-sky-50 dark:border-sky-500 dark:bg-zinc-900 dark:text-sky-400 dark:hover:bg-zinc-800">
+                  {t('workflows.addNode')}
+                </button>
+                <button type="button" onClick={deleteSelected} disabled={!selected && !selectedEdgeId} className="rounded-lg border border-neutral-300 bg-white px-3 py-1.5 text-xs font-medium text-neutral-600 shadow-sm hover:bg-neutral-50 disabled:opacity-40 dark:border-zinc-600 dark:bg-zinc-900 dark:text-zinc-300 dark:hover:bg-zinc-800">
+                  {selectedEdgeId ? t('workflows.deleteEdge') : t('workflows.deleteNode')}
+                </button>
+              </>
+            ) : null}
+            {onToggleFullscreen ? (
+              <button type="button" onClick={onToggleFullscreen} className="rounded-lg border border-neutral-300 bg-white px-3 py-1.5 text-xs font-medium text-neutral-600 shadow-sm hover:bg-neutral-50 dark:border-zinc-600 dark:bg-zinc-900 dark:text-zinc-300 dark:hover:bg-zinc-800">
+                {fullscreen ? t('workflows.exitFullscreen') : t('workflows.fullscreen')}
+              </button>
+            ) : null}
+          </div>
+        )}
         <ReactFlow
           nodes={nodes}
           edges={edges}
           nodeTypes={nodeTypes}
-          onNodesChange={onNodesChange}
+          onNodesChange={handleNodesChange}
           onEdgesChange={onEdgesChange}
-          onNodeClick={(_, node) => setSelectedId(node.id)}
+          onConnect={handleConnect}
+          onNodeClick={(_, node) => {
+            setSelectedId(node.id)
+            setSelectedEdgeId('')
+          }}
+          onEdgeClick={(_, edge) => {
+            setSelectedEdgeId(edge.id)
+            setSelectedId('')
+          }}
+          onPaneClick={() => setSelectedEdgeId('')}
           fitView
           fitViewOptions={{ padding: 0.18 }}
           minZoom={0.25}
           maxZoom={1.8}
           panOnScroll
           zoomOnPinch
-          nodesDraggable
-          nodesConnectable={false}
+          nodesDraggable={editable}
+          nodesConnectable={editable}
           elementsSelectable
+          deleteKeyCode={null}
           className="workflow-flow"
         >
           <Background variant={BackgroundVariant.Dots} gap={24} size={1.2} color="rgba(14,165,233,0.22)" />
@@ -265,11 +401,11 @@ export function WorkflowBoard({ definition, run, instances = EMPTY_INSTANCES, co
           ) : null}
         </ReactFlow>
       </div>
-      {!compact && selected ? (
+      {!compact && !fullscreen && selected ? (
         <aside className="min-h-[420px] rounded-xl border border-neutral-200/80 bg-white p-4 dark:border-zinc-700/60 dark:bg-zinc-900">
           <div className="flex items-start justify-between gap-3">
             <div>
-              <p className="text-xs font-medium uppercase text-neutral-400 dark:text-zinc-500">{selected.type.replace('_', ' ')}</p>
+              <p className="text-xs font-medium uppercase text-neutral-400 dark:text-zinc-500">{t(`workflows.stepTypes.${selected.type}`, { defaultValue: selected.type.replace('_', ' ') })}</p>
               <h3 className="mt-1 text-base font-semibold text-neutral-900 dark:text-zinc-100">{selected.title}</h3>
             </div>
             {selectedInst ? (

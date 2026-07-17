@@ -11,7 +11,8 @@
     "confirm": "確認",
     "add": "新增",
     "done": "完成",
-    "creating": "建立中…"
+    "creating": "建立中…",
+    "saving": "儲存中…"
   },
   "apiErrors": {
     "bad_request": "請求無法處理。",
@@ -272,7 +273,30 @@
     "subtitle": "用白板檢視定義和查看任務可選的協作流程。",
     "taskWorkflow": "任務流程",
     "noWorkflow": "不使用流程",
-    "taskWorkflowHint": "選擇後，任務建立時會啟動對應的流程執行。"
+    "taskWorkflowHint": "選擇後，任務建立時會啟動對應的流程執行。",
+    "createBlank": "新增流程",
+    "untitledName": "未命名流程",
+    "copyName": "{{name}} 副本",
+    "duplicate": "複製",
+    "backToList": "返回流程列表",
+    "notFound": "找不到該流程",
+    "descriptionPlaceholder": "說明這個流程適合在什麼場景使用。",
+    "noDescription": "暫無描述",
+    "stepCount": "{{count}} 個節點",
+    "addNode": "新增節點",
+    "deleteNode": "刪除節點",
+    "deleteEdge": "刪除連線",
+    "fullscreen": "全螢幕",
+    "exitFullscreen": "退出全螢幕",
+    "newStepTitle": "新節點",
+    "stepTypes": {
+      "agent_task": "Agent 任務",
+      "human_task": "人工任務",
+      "human_review": "人工審核",
+      "branch": "分支",
+      "join": "匯合",
+      "terminal": "結束"
+    }
   },
   "projectSettings": {
     "subtitle": "專案設定與提示詞管理。",

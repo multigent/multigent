@@ -11,7 +11,8 @@
     "confirm": "確認",
     "add": "追加",
     "done": "完了",
-    "creating": "作成中…"
+    "creating": "作成中…",
+    "saving": "保存中…"
   },
   "apiErrors": {
     "bad_request": "リクエストを処理できませんでした。",
@@ -272,7 +273,30 @@
     "subtitle": "ホワイトボード形式のグラフでタスクの協業ワークフローを確認します。",
     "taskWorkflow": "タスクワークフロー",
     "noWorkflow": "ワークフローなし",
-    "taskWorkflowHint": "選択すると、タスク作成時に対応するワークフロー実行を開始します。"
+    "taskWorkflowHint": "選択すると、タスク作成時に対応するワークフロー実行を開始します。",
+    "createBlank": "新規ワークフロー",
+    "untitledName": "無題のワークフロー",
+    "copyName": "{{name}} のコピー",
+    "duplicate": "複製",
+    "backToList": "ワークフロー一覧へ戻る",
+    "notFound": "ワークフローが見つかりません",
+    "descriptionPlaceholder": "このワークフローを使う場面を説明します。",
+    "noDescription": "説明なし",
+    "stepCount": "{{count}} ノード",
+    "addNode": "ノードを追加",
+    "deleteNode": "ノードを削除",
+    "deleteEdge": "エッジを削除",
+    "fullscreen": "全画面",
+    "exitFullscreen": "全画面を終了",
+    "newStepTitle": "新しいノード",
+    "stepTypes": {
+      "agent_task": "Agent タスク",
+      "human_task": "人のタスク",
+      "human_review": "人のレビュー",
+      "branch": "分岐",
+      "join": "結合",
+      "terminal": "終了"
+    }
   },
   "projectSettings": {
     "subtitle": "プロジェクト設定とプロンプト管理。",

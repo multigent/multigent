@@ -118,6 +118,7 @@ function AuthenticatedRoutes() {
         <Route index element={canAdmin ? <OverviewPage /> : <Navigate to="workbench" replace />} />
         <Route path="workspace" element={<WorkspacePage />} />
         <Route path="workflows" element={<WorkflowsPage />} />
+        <Route path="workflows/:workflowId" element={<WorkflowsPage />} />
         {canAdmin && <Route path="teams/:teamId" element={<TeamDetailPage />} />}
         {canAdmin && <Route path="teams" element={<TeamsPage />} />}
         <Route path="projects" element={<ProjectsListPage />} />
