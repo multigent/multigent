@@ -1,4 +1,5 @@
 import { useCallback, useEffect, useState } from 'react'
+import { useTranslation } from 'react-i18next'
 import { Filter, RefreshCw, ShieldCheck } from 'lucide-react'
 import { apiFetch } from '../lib/api'
 import { cn } from '../lib/cn'
@@ -23,6 +24,7 @@ type AuditEvent = {
 const inputCls = 'w-full rounded-lg border border-neutral-200 bg-white px-3 py-2 text-sm outline-none focus:border-sky-400 dark:border-zinc-700 dark:bg-zinc-950 dark:text-zinc-100'
 
 export default function AuditPage() {
+  const { t } = useTranslation()
   const [events, setEvents] = useState<AuditEvent[]>([])
   const [loading, setLoading] = useState(true)
   const [filters, setFilters] = useState({
@@ -80,13 +82,13 @@ export default function AuditPage() {
       {loading ? (
         <div className="flex items-center justify-center gap-2 py-16 text-sm text-neutral-500">
           <div className="size-5 animate-spin rounded-full border-2 border-neutral-300 border-t-sky-600 dark:border-zinc-600 dark:border-t-sky-400" />
-          Loading audit events
+          {t('api.loading')}
         </div>
       ) : events.length === 0 ? (
         <div className="rounded-xl border border-dashed border-neutral-300 bg-white p-12 text-center dark:border-zinc-700 dark:bg-zinc-900/40">
           <ShieldCheck className="mx-auto mb-3 size-10 text-neutral-300 dark:text-zinc-600" strokeWidth={1.5} />
-          <p className="text-sm font-medium text-neutral-600 dark:text-zinc-300">No audit events match these filters</p>
-          <p className="mt-1 text-xs text-neutral-400 dark:text-zinc-500">Sensitive operations will appear here as they happen.</p>
+          <p className="text-sm font-medium text-neutral-600 dark:text-zinc-300">{t('audit.emptyFiltered')}</p>
+          <p className="mt-1 text-xs text-neutral-400 dark:text-zinc-500">{t('audit.emptyHint')}</p>
         </div>
       ) : (
         <div className="space-y-3">

@@ -554,7 +554,7 @@ function MkdirModal({ currentPath, onClose, onCreated }: {
         <div className="mt-4 flex justify-end gap-2">
           <button type="button" onClick={onClose} className={btnGhost}>{t('files.cancel')}</button>
           <button type="submit" disabled={busy || !name.trim()} className={btnPrimary}>
-            {busy ? '...' : t('files.create')}
+            {busy ? t('forms.saving') : t('files.create')}
           </button>
         </div>
       </form>

@@ -955,6 +955,9 @@ function OverviewPanel() {
         )}
         {state.status === 'ok' && projects.length === 0 && (
           <div className="flex flex-col items-center justify-center py-24 text-center">
+            <div className="mb-4 flex size-16 items-center justify-center rounded-2xl bg-neutral-100 dark:bg-zinc-800/50">
+              <KanbanSquare className="size-7 text-neutral-400 dark:text-zinc-500" strokeWidth={1.5} />
+            </div>
             <p className="text-lg font-medium text-neutral-600 dark:text-zinc-400">{t('workbench.noProjects')}</p>
           </div>
         )}

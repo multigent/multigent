@@ -75,7 +75,9 @@
   },
   "app": {
     "name": "Multigent",
-    "tagline": "workspace"
+    "tagline": "workspace",
+    "loadingWorkspace": "Loading workspace…",
+    "loadingWorkspaceAccess": "Loading workspace access…"
   },
   "nav": {
     "overview": "Overview",
@@ -1118,10 +1120,15 @@
     "hideHint": "AI Assistant (right-click to hide)",
     "clear": "Clear",
     "stop": "Stop",
+    "stopping": "Stopping…",
     "permissionTitle": "Permission requested",
     "permAllow": "Allow",
     "permDeny": "Deny",
     "permAllowAll": "Allow All"
+  },
+  "audit": {
+    "emptyFiltered": "No audit events match these filters",
+    "emptyHint": "Sensitive operations will appear here as they happen."
   },
   "people": {
     "title": "User Management",

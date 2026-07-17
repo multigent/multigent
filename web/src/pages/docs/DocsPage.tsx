@@ -1131,7 +1131,7 @@ function AddDocModal({ allDocs, onClose, onAdded }: { allDocs: DocEntry[]; onClo
         </div>
         <div className="mt-5 flex justify-end gap-2">
           <button type="button" onClick={onClose} className={btnGhost}>{t('docs.cancel')}</button>
-          <button type="submit" disabled={busy} className={btnPrimary}>{busy ? '...' : t('docs.save')}</button>
+          <button type="submit" disabled={busy} className={btnPrimary}>{busy ? t('forms.saving') : t('docs.save')}</button>
         </div>
       </form>
     </div>

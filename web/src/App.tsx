@@ -1,5 +1,6 @@
 import { useEffect, useState, type ReactNode } from 'react'
 import { Navigate, Route, Routes } from 'react-router-dom'
+import { useTranslation } from 'react-i18next'
 import { AppShell } from './components/layout/AppShell'
 import { useAuth } from './lib/auth'
 import { apiFetch } from './lib/api'
@@ -52,6 +53,7 @@ export default function App() {
 }
 
 function WorkspaceGate({ children }: { children: ReactNode }) {
+  const { t } = useTranslation()
   const [state, setState] = useState<'loading' | 'ready' | 'empty'>('loading')
   const [reloadKey, setReloadKey] = useState(0)
 
@@ -71,7 +73,7 @@ function WorkspaceGate({ children }: { children: ReactNode }) {
   if (state === 'loading') {
     return (
       <div className="flex min-h-screen items-center justify-center bg-white text-sm text-neutral-500 dark:bg-zinc-950 dark:text-zinc-400">
-        Loading workspace…
+        {t('app.loadingWorkspace')}
       </div>
     )
   }
@@ -82,12 +84,13 @@ function WorkspaceGate({ children }: { children: ReactNode }) {
 }
 
 function AuthenticatedRoutes() {
+  const { t } = useTranslation()
   const { loading, canAdmin } = useWorkspaceAccess()
 
   if (loading) {
     return (
       <div className="flex min-h-screen items-center justify-center bg-white text-sm text-neutral-500 dark:bg-zinc-950 dark:text-zinc-400">
-        Loading workspace access…
+        {t('app.loadingWorkspaceAccess')}
       </div>
     )
   }

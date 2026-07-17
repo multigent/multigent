@@ -75,7 +75,9 @@
   },
   "app": {
     "name": "Multigent",
-    "tagline": "工作區"
+    "tagline": "工作區",
+    "loadingWorkspace": "正在載入工作區…",
+    "loadingWorkspaceAccess": "正在載入工作區權限…"
   },
   "nav": {
     "overview": "概覽",
@@ -1118,10 +1120,15 @@
     "hideHint": "AI 助手（右鍵隱藏）",
     "clear": "清空",
     "stop": "停止",
+    "stopping": "正在停止…",
     "permissionTitle": "請求權限",
     "permAllow": "允許",
     "permDeny": "拒絕",
     "permAllowAll": "全部允許"
+  },
+  "audit": {
+    "emptyFiltered": "沒有符合篩選條件的審計事件",
+    "emptyHint": "敏感操作發生後會顯示在這裡。"
   },
   "people": {
     "title": "使用者管理",

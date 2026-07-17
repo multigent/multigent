@@ -75,7 +75,9 @@
   },
   "app": {
     "name": "Multigent",
-    "tagline": "ワークスペース"
+    "tagline": "ワークスペース",
+    "loadingWorkspace": "ワークスペースを読み込み中…",
+    "loadingWorkspaceAccess": "ワークスペース権限を読み込み中…"
   },
   "nav": {
     "overview": "概要",
@@ -1118,10 +1120,15 @@
     "hideHint": "AI アシスタント（右クリックで非表示）",
     "clear": "クリア",
     "stop": "停止",
+    "stopping": "停止中…",
     "permissionTitle": "権限のリクエスト",
     "permAllow": "許可",
     "permDeny": "拒否",
     "permAllowAll": "すべて許可"
+  },
+  "audit": {
+    "emptyFiltered": "条件に一致する監査イベントはありません",
+    "emptyHint": "機密性の高い操作が発生するとここに表示されます。"
   },
   "people": {
     "title": "ユーザー管理",

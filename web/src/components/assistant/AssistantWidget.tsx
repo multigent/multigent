@@ -353,7 +353,7 @@ export default function AssistantWidget({ hidden = false, onHide }: AssistantWid
               <div className="flex items-center justify-center pt-1">
                 <div className="flex items-center gap-1.5 rounded-full border border-amber-200/60 bg-amber-50 px-3 py-1.5 text-[11px] text-amber-600 dark:border-amber-700/40 dark:bg-amber-900/20 dark:text-amber-400">
                   <Square className="size-2.5" fill="currentColor" />
-                  Stopping...
+                  {t('assistant.stopping')}
                 </div>
               </div>
             )}
@@ -429,7 +429,7 @@ export default function AssistantWidget({ hidden = false, onHide }: AssistantWid
                       ? 'bg-amber-500 cursor-not-allowed'
                       : 'bg-red-500 hover:bg-red-600'
                   )}
-                  title={stopping ? 'Stopping...' : 'Stop'}
+                  title={stopping ? t('assistant.stopping') : t('assistant.stop')}
                 >
                   <Square className="size-3" fill="currentColor" />
                 </button>
