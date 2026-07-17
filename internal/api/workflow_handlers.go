@@ -192,6 +192,31 @@ func (s *Server) handleUpdateWorkflow(w http.ResponseWriter, r *http.Request) {
 	_ = json.NewEncoder(w).Encode(existing)
 }
 
+func (s *Server) handleDeleteWorkflow(w http.ResponseWriter, r *http.Request) {
+	if !s.checkCurrentWorkspaceAdmin(w, r) {
+		return
+	}
+	wfStore, ok := s.workflowStoreForRequest(w, r)
+	if !ok {
+		return
+	}
+	workflowID := r.PathValue("workflowId")
+	existing, found, err := wfStore.Definition(workflowID)
+	if err != nil {
+		s.serverError(w, err)
+		return
+	}
+	if !found || existing.Scope != "workspace" || existing.Project != "" {
+		s.jsonError(w, http.StatusNotFound, "workflow not found")
+		return
+	}
+	if err := wfStore.DeleteDefinition(workflowID); err != nil {
+		s.serverError(w, err)
+		return
+	}
+	w.WriteHeader(http.StatusNoContent)
+}
+
 func (s *Server) handleGetTaskWorkflow(w http.ResponseWriter, r *http.Request) {
 	project := r.PathValue("name")
 	taskID := r.PathValue("taskId")

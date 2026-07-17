@@ -3,8 +3,9 @@ import { useTranslation } from 'react-i18next'
 import { useNavigate, useParams } from 'react-router-dom'
 import { GitBranch, X } from 'lucide-react'
 import { PlaceholderCard } from '../components/ui/PlaceholderCard'
+import { confirmDialog } from '../components/ui/ConfirmDialog'
 import { WorkflowBoard, type WorkflowDefinition, type WorkflowStep } from '../components/workflow/WorkflowBoard'
-import { apiPost, apiPut } from '../lib/api'
+import { apiDelete, apiPost, apiPut } from '../lib/api'
 import { useFormatDateTime } from '../lib/format-datetime'
 import { useApiJson } from '../lib/use-api'
 
@@ -24,12 +25,14 @@ export default function WorkflowsPage() {
   const navigate = useNavigate()
   const params = useParams()
   const fmt = useFormatDateTime()
-  const state = useApiJson<WorkflowListResponse>('/api/v1/workflows', 0)
+  const [reloadKey, setReloadKey] = useState(0)
+  const state = useApiJson<WorkflowListResponse>('/api/v1/workflows', reloadKey)
   const templateLocale = i18n.resolvedLanguage || i18n.language || 'en'
   const templateState = useApiJson<{ templates: WorkflowDefinition[] }>(`/api/v1/workflow-templates?locale=${encodeURIComponent(templateLocale)}`, 0)
+  const detailState = useApiJson<WorkflowDefinition>(params.workflowId ? `/api/v1/workflows/${encodeURIComponent(params.workflowId)}` : null, 0)
   const workflows = state.status === 'ok' ? state.data.workflows : []
   const templates = templateState.status === 'ok' ? templateState.data.templates : []
-  const selected = useMemo(() => workflows.find((wf) => wf.id === params.workflowId), [workflows, params.workflowId])
+  const selected = useMemo(() => workflows.find((wf) => wf.id === params.workflowId) ?? (detailState.status === 'ok' ? detailState.data : undefined), [workflows, params.workflowId, detailState])
 
   const [draft, setDraft] = useState<WorkflowDefinition | null>(null)
   const [saving, setSaving] = useState(false)
@@ -115,6 +118,25 @@ export default function WorkflowsPage() {
     }
   }
 
+  async function deleteWorkflow(wf: WorkflowDefinition) {
+    const ok = await confirmDialog({
+      title: t('workflows.deleteWorkflow'),
+      description: t('workflows.confirmDeleteWorkflow', { name: wf.name }),
+      confirmLabel: t('common.delete'),
+      cancelLabel: t('common.cancel'),
+      tone: 'danger',
+    })
+    if (!ok) return
+    setSaving(true)
+    try {
+      await apiDelete(`/api/v1/workflows/${encodeURIComponent(wf.id)}`)
+      if (params.workflowId === wf.id) navigate('/workflows')
+      setReloadKey((key) => key + 1)
+    } finally {
+      setSaving(false)
+    }
+  }
+
   async function saveDraft() {
     if (!draft) return
     setSaving(true)
@@ -135,13 +157,13 @@ export default function WorkflowsPage() {
   if (params.workflowId) {
     return (
       <div className={fullscreen ? 'fixed inset-0 z-50 flex h-dvh flex-col overflow-hidden bg-neutral-50 px-6 py-5 dark:bg-zinc-950' : 'flex h-full min-h-full flex-col px-8 py-6 animate-fade-in'}>
-        {state.status === 'loading' && <Loading label={t('api.loading')} />}
-        {state.status === 'error' && (
+        {(state.status === 'loading' || detailState.status === 'loading') && <Loading label={t('api.loading')} />}
+        {(state.status === 'error' || detailState.status === 'error') && (
           <PlaceholderCard title={t('api.loadError')}>
-            <p className="text-[13px]">{state.error.message}</p>
+            <p className="text-[13px]">{state.status === 'error' ? state.error.message : detailState.status === 'error' ? detailState.error.message : ''}</p>
           </PlaceholderCard>
         )}
-        {state.status === 'ok' && !selected && (
+        {state.status === 'ok' && detailState.status !== 'loading' && !selected && (
           <PlaceholderCard title={t('workflows.notFound')}>
             <button type="button" onClick={() => navigate('/workflows')} className="mt-3 rounded-lg border border-sky-600 bg-white px-3 py-2 text-sm font-medium text-sky-700 hover:bg-sky-50 dark:border-sky-500 dark:bg-zinc-900 dark:text-sky-400 dark:hover:bg-zinc-800">
               {t('workflows.backToList')}
@@ -172,6 +194,9 @@ export default function WorkflowsPage() {
                   </button>
                   <button type="button" onClick={() => void duplicateWorkflow(draft)} disabled={saving} className="rounded-lg border border-neutral-300 bg-white px-3 py-2 text-sm font-medium text-neutral-600 hover:bg-neutral-50 disabled:opacity-50 dark:border-zinc-600 dark:bg-zinc-900 dark:text-zinc-300 dark:hover:bg-zinc-800">
                     {t('workflows.duplicate')}
+                  </button>
+                  <button type="button" onClick={() => void deleteWorkflow(draft)} disabled={saving} className="rounded-lg border border-red-300 bg-white px-3 py-2 text-sm font-medium text-red-600 hover:bg-red-50 disabled:opacity-50 dark:border-red-900/70 dark:bg-zinc-900 dark:text-red-400 dark:hover:bg-red-950/30">
+                    {t('common.delete')}
                   </button>
                   <button type="button" onClick={() => void saveDraft()} disabled={saving || !draft.name.trim()} className="rounded-lg border border-sky-600 bg-white px-3 py-2 text-sm font-medium text-sky-700 hover:bg-sky-50 disabled:opacity-50 dark:border-sky-500 dark:bg-zinc-900 dark:text-sky-400 dark:hover:bg-zinc-800">
                     {saving ? t('common.saving') : t('common.save')}
@@ -296,7 +321,10 @@ export default function WorkflowsPage() {
                   <span>{fmt(wf.updatedAt)}</span>
                 </div>
               </button>
-              <div className="mt-4 flex justify-end">
+              <div className="mt-4 flex items-center justify-between gap-2">
+                <button type="button" onClick={() => void deleteWorkflow(wf)} disabled={saving} className="rounded-lg px-2.5 py-1.5 text-xs font-medium text-red-500 hover:bg-red-50 disabled:opacity-50 dark:text-red-400 dark:hover:bg-red-950/30">
+                  {t('common.delete')}
+                </button>
                 <button type="button" onClick={() => void duplicateWorkflow(wf)} disabled={saving} className="rounded-lg border border-neutral-300 bg-white px-3 py-1.5 text-xs font-medium text-neutral-600 hover:bg-neutral-50 disabled:opacity-50 dark:border-zinc-600 dark:bg-zinc-900 dark:text-zinc-300 dark:hover:bg-zinc-800">
                   {t('workflows.duplicate')}
                 </button>

@@ -534,6 +534,10 @@ func (s *Store) Definition(id string) (entity.WorkflowDefinition, bool, error) {
 	return def, true, nil
 }
 
+func (s *Store) DeleteDefinition(id string) error {
+	return s.db.DeleteRecord("workflow_definitions", s.workspaceID, []string{id})
+}
+
 func (s *Store) StartRun(project, taskID, definitionID string) (entity.WorkflowRun, []entity.WorkflowStepInstance, error) {
 	def, ok, err := s.Definition(definitionID)
 	if err != nil {

@@ -286,6 +286,8 @@
     "untitledName": "無題のワークフロー",
     "copyName": "{{name}} のコピー",
     "duplicate": "複製",
+    "deleteWorkflow": "ワークフローを削除",
+    "confirmDeleteWorkflow": "ワークフロー「{{name}}」を削除しますか？この操作は元に戻せません。",
     "backToList": "戻る",
     "notFound": "ワークフローが見つかりません",
     "descriptionPlaceholder": "このワークフローを使う場面を説明します。",

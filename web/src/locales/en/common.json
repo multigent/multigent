@@ -286,6 +286,8 @@
     "untitledName": "Untitled workflow",
     "copyName": "{{name}} copy",
     "duplicate": "Duplicate",
+    "deleteWorkflow": "Delete workflow",
+    "confirmDeleteWorkflow": "Delete workflow \"{{name}}\"? This cannot be undone.",
     "backToList": "Back",
     "notFound": "Workflow not found",
     "descriptionPlaceholder": "Describe when this workflow should be used.",

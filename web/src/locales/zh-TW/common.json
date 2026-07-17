@@ -286,6 +286,8 @@
     "untitledName": "未命名流程",
     "copyName": "{{name}} 副本",
     "duplicate": "複製",
+    "deleteWorkflow": "刪除流程",
+    "confirmDeleteWorkflow": "確定刪除流程「{{name}}」？刪除後無法復原。",
     "backToList": "返回",
     "notFound": "找不到該流程",
     "descriptionPlaceholder": "說明這個流程適合在什麼場景使用。",
