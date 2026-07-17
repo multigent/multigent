@@ -420,17 +420,6 @@ export function WorkflowBoard({
         <aside className={cn('rounded-xl border border-neutral-200/80 bg-white p-4 dark:border-zinc-700/60 dark:bg-zinc-900', fill ? 'h-full min-h-[560px] overflow-y-auto' : fullscreen ? 'min-h-[calc(100vh-150px)]' : 'min-h-[420px]')}>
           {editable ? (
             <div className="space-y-4 text-sm">
-              <div className="flex items-start justify-between gap-3">
-                <div>
-                  <p className="text-xs font-medium uppercase text-neutral-400 dark:text-zinc-500">{t('workflows.detail.nodeSettings')}</p>
-                  <p className="mt-1 font-mono text-xs text-neutral-400 dark:text-zinc-500">{selected.id}</p>
-                </div>
-                {definition.startStepId === selected.id ? (
-                  <span className="rounded-full bg-sky-100 px-2 py-1 text-xs font-medium text-sky-700 dark:bg-sky-900/50 dark:text-sky-300">
-                    {t('workflows.detail.startNode')}
-                  </span>
-                ) : null}
-              </div>
               <label className="block">
                 <span className="text-xs font-medium uppercase text-neutral-400 dark:text-zinc-500">{t('workflows.detail.title')}</span>
                 <input value={selected.title} onChange={(event) => updateSelectedStep({ title: event.target.value })} className={fieldClass} />
