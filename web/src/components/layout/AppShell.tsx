@@ -119,7 +119,7 @@ function Breadcrumbs({ crumbs }: { crumbs: BreadcrumbSegment[] }) {
 
 const SIDEBAR_KEY = 'sidebar-collapsed'
 const ASSISTANT_HIDDEN_KEY = 'assistant-hidden'
-const WORKSPACE_TRANSITION_MIN_MS = 2400
+const WORKSPACE_TRANSITION_MIN_MS = 5000
 const WORKSPACE_TRANSITION_STEPS = [
   'workspace.switchingWorkspaceStepPrepare',
   'workspace.switchingWorkspaceStepAccess',
