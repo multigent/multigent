@@ -20,7 +20,7 @@ import {
   isTerminal,
 } from '../../components/task/TaskModals'
 
-type AgentRow = { name: string }
+type AgentRow = { name: string; model?: string }
 
 type ViewMode = 'table' | 'board'
 type Filters = { status: string; agent: string; priority: string; scope: string }

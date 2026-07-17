@@ -7,7 +7,7 @@ import type { TaskOption } from '../task/TaskModals'
 
 const TASK_TYPES = ['chore', 'feature', 'bug', 'review', 'triage', 'test', 'research'] as const
 
-type AgentOpt = { name: string }
+type AgentOpt = { name: string; model?: string }
 
 type ProjectAgentsOpt = { projectId: string; agents: AgentOpt[] }
 type WorkflowStepOpt = { id: string; type: string; title: string; actorRole?: string }
@@ -61,6 +61,9 @@ export function CreateTaskDialog({ projectId: defaultProjectId, agents: defaultA
     return allProjectsAgents.find((p) => p.projectId === selectedProject)?.agents ?? []
   }, [allProjectsAgents, selectedProject, defaultAgents])
 
+  const currentAgentActors = useMemo(() => currentAgents.filter((a) => a.model !== 'human'), [currentAgents])
+  const currentHumanMembers = useMemo(() => currentAgents.filter((a) => a.model === 'human'), [currentAgents])
+
   const allAgentsFlat = useMemo(() => {
     if (!allProjectsAgents) return defaultAgents.map((a) => ({ projectId: defaultProjectId, name: a.name }))
     return allProjectsAgents.flatMap((p) => p.agents.map((a) => ({ projectId: p.projectId, name: a.name })))
@@ -89,8 +92,8 @@ export function CreateTaskDialog({ projectId: defaultProjectId, agents: defaultA
     setOpen(true)
     setTimeout(() => {
       const first = allProjectsAgents
-        ? (allProjectsAgents.find((p) => p.projectId === defaultProjectId)?.agents[0]?.name ?? '')
-        : (defaultAgents[0]?.name ?? '')
+        ? (allProjectsAgents.find((p) => p.projectId === defaultProjectId)?.agents.find((a) => a.model !== 'human')?.name ?? '')
+        : (defaultAgents.find((a) => a.model !== 'human')?.name ?? '')
       setAgent(first)
     }, 0)
   }
@@ -98,7 +101,8 @@ export function CreateTaskDialog({ projectId: defaultProjectId, agents: defaultA
   function onProjectChange(proj: string) {
     setSelectedProject(proj)
     const projAgents = allProjectsAgents?.find((p) => p.projectId === proj)?.agents ?? []
-    setAgent(projAgents[0]?.name ?? '')
+    setAgent(projAgents.find((a) => a.model !== 'human')?.name ?? '')
+    setActorBindings({})
   }
 
   const parentChoices = useMemo(() => {
@@ -166,11 +170,11 @@ export function CreateTaskDialog({ projectId: defaultProjectId, agents: defaultA
 
   function autoBindingFor(role: string, preferredType: 'agent' | 'human'): ActorBinding {
     if (preferredType === 'agent') {
-      const exact = currentAgents.find((a) => a.name === role)
-      const weak = currentAgents.find((a) => role.includes(a.name) || a.name.includes(role.replace(/-agent$/, '')))
-      return { type: 'agent', id: exact?.name || weak?.name || currentAgents[0]?.name || '' }
+      const exact = currentAgentActors.find((a) => a.name === role)
+      const weak = currentAgentActors.find((a) => role.includes(a.name) || a.name.includes(role.replace(/-agent$/, '')))
+      return { type: 'agent', id: exact?.name || weak?.name || currentAgentActors[0]?.name || '' }
     }
-    return { type: 'human', id: people[0]?.username || 'human' }
+    return { type: 'human', id: currentHumanMembers[0]?.name || people[0]?.username || 'human' }
   }
 
   function onWorkflowChange(id: string) {
@@ -192,7 +196,7 @@ export function CreateTaskDialog({ projectId: defaultProjectId, agents: defaultA
       const nextType = patch.type ?? prev.type
       let nextID = patch.id ?? prev.id
       if (patch.type && patch.type !== prev.type) {
-        nextID = patch.type === 'agent' ? currentAgents[0]?.name || '' : people[0]?.username || 'human'
+        nextID = patch.type === 'agent' ? currentAgentActors[0]?.name || '' : currentHumanMembers[0]?.name || people[0]?.username || 'human'
       }
       return { ...current, [role]: { type: nextType, id: nextID } }
     })
@@ -236,14 +240,14 @@ export function CreateTaskDialog({ projectId: defaultProjectId, agents: defaultA
                 </label>
               )}
 
-              {currentAgents.length === 0 && (
+              {currentAgentActors.length === 0 && (
                 <p className="text-sm text-amber-800 dark:text-amber-400">{t('forms.needAgentsForTask')}</p>
               )}
 
               <label className="block text-sm">
                 <span className="text-neutral-600 dark:text-zinc-400">{t('forms.agent')}</span>
-                <select value={agent} onChange={(e) => setAgent(e.target.value)} className={fieldCls} disabled={currentAgents.length === 0}>
-                  {currentAgents.map((a) => <option key={a.name} value={a.name}>{a.name}</option>)}
+                <select value={agent} onChange={(e) => setAgent(e.target.value)} className={fieldCls} disabled={currentAgentActors.length === 0}>
+                  {currentAgentActors.map((a) => <option key={a.name} value={a.name}>{a.name}</option>)}
                 </select>
               </label>
 
@@ -342,7 +346,14 @@ export function CreateTaskDialog({ projectId: defaultProjectId, agents: defaultA
                   <div className="mt-3 space-y-2">
                     {workflowActorSlots.map((slot) => {
                       const binding = actorBindings[slot.role] ?? { type: slot.preferredType, id: '' }
-                      const options = binding.type === 'agent' ? currentAgents.map((a) => ({ id: a.name, label: a.name })) : [{ id: 'human', label: 'human' }, ...people.map((p) => ({ id: p.username, label: p.displayName ? `${p.displayName} (${p.username})` : p.username }))]
+                      const humanOptions = [
+                        { id: 'human', label: 'human' },
+                        ...currentHumanMembers.map((member) => ({ id: member.name, label: member.name })),
+                        ...people
+                          .filter((person) => !currentHumanMembers.some((member) => member.name === person.username))
+                          .map((p) => ({ id: p.username, label: p.displayName ? `${p.displayName} (${p.username})` : p.username })),
+                      ]
+                      const options = binding.type === 'agent' ? currentAgentActors.map((a) => ({ id: a.name, label: a.name })) : humanOptions
                       return (
                         <div key={slot.role} className="rounded-md border border-neutral-200 bg-white p-2 dark:border-zinc-700 dark:bg-zinc-900">
                           <div className="flex items-start justify-between gap-2">
@@ -373,7 +384,7 @@ export function CreateTaskDialog({ projectId: defaultProjectId, agents: defaultA
               {err && <p className="text-sm text-red-600 dark:text-red-400">{err}</p>}
               <div className="flex justify-end gap-2 pt-1">
                 <button type="button" onClick={() => setOpen(false)} disabled={busy} className="rounded-lg border border-neutral-300 px-3 py-1.5 text-sm dark:border-zinc-600">{t('forms.cancel')}</button>
-                <button type="submit" disabled={busy || currentAgents.length === 0} className="rounded-lg bg-sky-600 px-3 py-1.5 text-sm font-medium text-white disabled:opacity-50">{busy ? t('forms.saving') : t('forms.submit')}</button>
+                <button type="submit" disabled={busy || currentAgentActors.length === 0} className="rounded-lg bg-sky-600 px-3 py-1.5 text-sm font-medium text-white disabled:opacity-50">{busy ? t('forms.saving') : t('forms.submit')}</button>
               </div>
             </form>
           </div>

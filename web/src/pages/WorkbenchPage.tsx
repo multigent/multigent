@@ -49,7 +49,7 @@ import {
   STATUS_KEYS,
 } from '../components/task/TaskModals'
 
-type ProjectAgents = { projectId: string; agents: { name: string }[] }
+type ProjectAgents = { projectId: string; agents: { name: string; model?: string }[] }
 
 function useProjectsAgents() {
   const [data, setData] = useState<ProjectAgents[]>([])
@@ -61,7 +61,7 @@ function useProjectsAgents() {
         const result: ProjectAgents[] = []
         for (const p of projects) {
           try {
-            const agents = await apiFetch<{ name: string }[]>(`/api/v1/projects/${encodeURIComponent(p.name)}/agents`)
+            const agents = await apiFetch<{ name: string; model?: string }[]>(`/api/v1/projects/${encodeURIComponent(p.name)}/agents`)
             result.push({ projectId: p.name, agents })
           } catch { result.push({ projectId: p.name, agents: [] }) }
         }
