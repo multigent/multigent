@@ -993,6 +993,391 @@ integration_risks:
 
 Join 节点可以由 agent 或 human 判断是否进入联调 / 集成测试。
 
+## 通用流程引擎抽象
+
+研发流程只是一个落地场景。Multigent 真正需要的是一个围绕 Task 的通用流程引擎。
+
+推荐抽象如下：
+
+```text
+Task
+  -> Workflow Run
+      -> Step Instance
+          -> Child Task / Review Item / Artifact / Agent Run
+```
+
+其中：
+
+- Task 是用户理解的工作项。
+- Workflow Run 是这个 Task 当前采用的流程执行实例。
+- Step Instance 是流程节点的运行记录。
+- Child Task 是分配给具体 human 或 agent 的执行单元。
+- Review Item 是人工门禁。
+- Artifact 是结构化产物。
+
+### 并行与子 Task 的关系
+
+并行 workflow 不一定都要创建 child workflow，但通常都应该创建 child task。
+
+推荐规则：
+
+```text
+一个流程节点需要某个 agent 或 human 实际执行
+-> 创建一个 child task。
+
+一个大需求拆成独立子需求，每个子需求有自己的生命周期、owner、PR、测试和 review
+-> 创建 child task，并为这个 child task 启动 child workflow run。
+```
+
+也就是说：
+
+- Parallel Group 的每个分支通常对应一个 child task。
+- Child Workflow Run 一定挂在某个 child task 上。
+- 父 Task 的 workflow run 不直接替代子 task；它负责协调、等待、聚合和推进。
+
+示例：
+
+```text
+父 Task：实现 Web Search 外部工具
+  Workflow Run：研发交付流程
+    Step：并行实现
+      Child Task A：实现 Brave Search 工具接入
+      Child Task B：实现 Exa Search 工具接入
+      Child Task C：补充 Web Search 测试用例
+```
+
+如果 A/B/C 都只是当前阶段的并行工作，可以只创建 child task，不启动 child workflow run。
+
+如果 Brave Search 和 Exa Search 都变成独立需求，各自需要产品确认、开发方案、PR、测试报告，则 A/B 应该各自启动 child workflow run。
+
+### Step 类型
+
+为了避免过度设计，第一版 step 类型可以控制在以下几类：
+
+```yaml
+step_types:
+  - agent_task
+  - human_task
+  - human_review
+  - system_gate
+  - parallel_group
+  - join
+  - child_workflow
+  - terminal
+```
+
+含义：
+
+- `agent_task`：创建 child task，分配给 agent 执行。
+- `human_task`：创建 child task，分配给 human 执行。
+- `human_review`：创建 review item，等待人审核。
+- `system_gate`：系统校验 schema、权限、产物、条件。
+- `parallel_group`：展开多个并行分支。
+- `join`：等待并行分支或 child workflow 汇合。
+- `child_workflow`：创建 child task，并启动新的 workflow run。
+- `terminal`：流程结束。
+
+### Workflow Definition 最小结构
+
+第一版可以用 JSON/YAML 描述，不急着做复杂可视化编辑器。
+
+```yaml
+id: software_delivery_v1
+name: 软件研发交付流程
+version: 1
+entity_type: task
+start_step: requirement_intake
+steps:
+  - id: requirement_intake
+    type: agent_task
+    title: 需求输入整理
+    actor:
+      role: pm
+    input_schema: requirement_intake_input_v1
+    output_schema: requirement_intake_output_v1
+    next:
+      - to: product_spec
+
+  - id: implementation_parallel
+    type: parallel_group
+    title: 并行实现
+    branches:
+      - step: frontend_implementation
+      - step: backend_implementation
+      - step: qa_case_draft
+    join:
+      policy: all_success
+      to: integration_review
+```
+
+### Workflow Run 最小结构
+
+```yaml
+id:
+task_id:
+workflow_definition_id:
+workflow_version:
+status: active | completed | failed | cancelled
+active_step_ids:
+parent_run_id:
+parent_step_instance_id:
+started_at:
+finished_at:
+metrics:
+```
+
+`active_step_ids` 支持并行节点，因为一个 workflow run 在同一时间可能有多个活跃 step。
+
+### Step Instance 最小结构
+
+```yaml
+id:
+workflow_run_id:
+step_id:
+status: pending | running | waiting_review | blocked | completed | failed | cancelled
+actor_type: human | agent | system
+actor_id:
+child_task_id:
+review_item_id:
+input_artifact_ids:
+output_artifact_ids:
+agent_run_ids:
+started_at:
+finished_at:
+token_usage:
+error:
+```
+
+这个结构能同时覆盖：
+
+- agent 执行。
+- human 执行。
+- 人工 review。
+- schema gate。
+- 并行分支。
+- child workflow。
+
+## 可视化设计
+
+流程引擎的可视化不应该只做成一个 Kanban。Kanban 只能表达“当前任务处于哪个状态”，但表达不了：
+
+- 并行分支。
+- 子流程。
+- 人工 review 门禁。
+- 输入输出产物。
+- 流转原因。
+- token 和耗时。
+- 哪个节点导致阻塞。
+
+推荐第一版做成 **Task 内的 Workflow View**。
+
+### 页面结构
+
+```text
+Task Detail
+  Header: 标题 / owner / workflow 状态 / 总耗时 / 当前活跃节点
+  Main: Workflow Graph
+  Right Panel: Step Inspector
+  Bottom Panel: Timeline / Artifacts / Metrics
+```
+
+### Workflow Graph
+
+Graph 展示 workflow definition，并叠加 workflow run 状态。
+
+节点类型：
+
+- Agent Task：agent 执行节点。
+- Human Task：人执行节点。
+- Review：人工审核节点。
+- Gate：系统校验节点。
+- Parallel Group：并行展开节点。
+- Join：汇合节点。
+- Child Workflow：可折叠子流程节点。
+- Terminal：结束节点。
+
+节点状态：
+
+```text
+not_started
+active
+waiting_review
+blocked
+completed
+failed
+cancelled
+```
+
+图上应该能直接看到：
+
+- 当前活跃节点高亮。
+- 已完成节点置灰或打勾。
+- 阻塞节点用明确的 blocked 状态。
+- 人工 review 节点显示待审核人。
+- 并行组显示各分支完成比例。
+- child workflow 节点显示子 Task 数和完成数。
+
+### Step Inspector
+
+点击节点后，右侧展示：
+
+```text
+节点目的
+执行者
+输入 schema
+实际输入
+输出 schema
+实际输出
+关联 child task
+关联 agent run
+关联 review item
+关联 artifacts
+错误和阻塞原因
+下一步允许动作
+```
+
+这比只看聊天记录更适合客户理解流程，也方便人介入调教。
+
+### Timeline
+
+Timeline 展示 workflow run 的事件流：
+
+```text
+Workflow started
+Step started
+Child task created
+Agent run started
+Artifact produced
+Transition requested
+Review requested
+Review approved
+Step completed
+Parallel branch joined
+Workflow completed
+```
+
+Timeline 是审计和复盘的基础。
+
+### Metrics Overlay
+
+Graph 或 Inspector 上应该显示关键指标：
+
+- 节点耗时。
+- 等人耗时。
+- agent 执行耗时。
+- token 消耗。
+- retry 次数。
+- review 次数。
+- schema 校验失败次数。
+
+这样流程图不只是“好看”，而是能帮助客户看出流程瓶颈。
+
+### 可视化编辑器的边界
+
+第一版不建议直接做复杂拖拽式流程编辑器。
+
+推荐顺序：
+
+1. 先支持只读 Workflow Graph，从 workflow definition 自动渲染。
+2. 支持在表单里编辑 step、transition、schema、reviewer。
+3. 支持从模板创建 workflow definition。
+4. 后续再做拖拽式编辑器。
+
+这样可以先保证流程引擎的数据模型正确，而不是过早陷入画布交互复杂度。
+
+### 前端实现建议
+
+如果做 React 版本，Workflow Graph 可以基于 React Flow 实现。
+
+React Flow 适合：
+
+- 节点和边。
+- 自定义节点。
+- 子流程 / 分组节点。
+- 交互式 Inspector。
+- 后续升级成编辑器。
+
+但第一版要把 React Flow 当成展示层，不要让画布状态成为流程定义的真实数据源。真实数据源应该是后端的 workflow definition 和 workflow run。
+
+## 参考系统观察
+
+### Plane
+
+Plane 的核心还是 project / issue / state / cycle / module / view。
+
+它对我们的启发是：
+
+- Task/Issue 仍然应该是用户的主要入口。
+- 状态、周期、模块、视图适合做项目管理。
+- 默认状态组可以保持简单。
+
+但 Plane 没有解决 agent-human 协作流程的问题：
+
+- 没有节点级输入输出 schema。
+- 没有 agent run 和 token 绑定。
+- 没有人工 review 作为流程门禁。
+- 没有 child workflow 的执行模型。
+
+所以 Multigent 不应该把 workflow 简化成 issue state。
+
+### Huly
+
+Huly 的 process 设计更接近我们要的流程引擎。
+
+可借鉴点：
+
+- Process / State / Transition / Execution 分层。
+- Transition 上挂 actions。
+- Execution 有日志。
+- ToDo 和 ApproveRequest 可以作为人工节点。
+- SubProcess 和 parent execution 可以表达子流程。
+- Context DSL 用来引用流程上下文。
+
+但 Multigent 的核心对象不同。我们要围绕 Task、Agent Run、Artifact、Review Item 和 Token 指标设计，而不是直接照搬 Huly 的 card/process 模型。
+
+### BPMN / Camunda
+
+BPMN 的成熟概念值得借鉴：
+
+- Task。
+- User Task。
+- Service Task。
+- Gateway。
+- Parallel Gateway。
+- Subprocess。
+- Process Instance。
+
+但 BPMN 对普通客户和 agent 产品来说太重。Multigent 可以吸收它的表达能力，但不直接把 BPMN 作为第一版用户界面。
+
+### Temporal
+
+Temporal 的 child workflow 模型适合我们内部理解：
+
+```text
+Parent workflow run
+  -> Child workflow run
+```
+
+它强调 durable execution、parent/child 关系、child workflow 生命周期策略。
+
+Multigent 可以借鉴这种执行语义，但用户侧仍然展示为：
+
+```text
+父 Task
+  -> 子 Task
+      -> 子流程
+```
+
+### Airflow
+
+Airflow 的 DAG、TaskGroup、Dynamic Task Mapping 对并行可视化有参考价值：
+
+- DAG 图适合展示依赖关系。
+- TaskGroup 适合降低复杂图的视觉噪音。
+- 动态任务映射说明并行任务可以在运行时根据上游输出展开。
+
+但 Airflow 更偏数据管道，不适合直接作为人和 agent 协作模型。
+
 ## 流程评估指标
 
 协作状态机必须自带评估指标，否则客户无法判断流程是否真的变好了。
