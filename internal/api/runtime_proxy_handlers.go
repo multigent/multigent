@@ -121,9 +121,9 @@ func (s *Server) proxyCustomMCP(w http.ResponseWriter, r *http.Request, principa
 type runtimeActionProxyRequest struct {
 	Endpoint string            `json:"endpoint"`
 	Method   string            `json:"method"`
-	Query    map[string]string `json:"query"`
-	Headers  map[string]string `json:"headers"`
-	Body     json.RawMessage   `json:"body"`
+	Query    map[string]string `json:"query,omitempty"`
+	Headers  map[string]string `json:"headers,omitempty"`
+	Body     json.RawMessage   `json:"body,omitempty"`
 }
 
 type runtimeActionInputError struct {

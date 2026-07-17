@@ -387,6 +387,7 @@ func (s *Server) Handler() http.Handler {
 	runtimeMux.HandleFunc("POST /api/v1/runtime/docs", s.handleRuntimeDocsCreate)
 	runtimeMux.HandleFunc("GET /api/v1/runtime/docs/{id}", s.handleRuntimeDocsGet)
 	runtimeMux.HandleFunc("POST /api/v1/runtime/mcp", s.handleRuntimeMCPProxy)
+	runtimeMux.HandleFunc("POST /api/v1/runtime/mcp/gateway", s.handleRuntimeMCPGateway)
 	runtimeMux.HandleFunc("POST /api/v1/runtime/actions", s.handleRuntimeActionProxy)
 	publicMux.Handle("/api/v1/runtime/", s.withRuntimeAgentAuth(runtimeMux))
 	publicMux.Handle("/", s.withTokenAuth(mux))

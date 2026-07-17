@@ -102,6 +102,162 @@ func TestRuntimeMCPProxyForwardsCustomMCPWithServerSideToken(t *testing.T) {
 	}
 }
 
+func TestRuntimeMCPGatewayListsBrokerAndRuntimeTools(t *testing.T) {
+	users := newTestUserStore(t)
+	s := &Server{controlDB: users.db, users: users}
+	workspaceID := "ws-one"
+	if err := users.db.UpsertWorkspace(controldb.Workspace{ID: workspaceID, Name: "One", Slug: "one"}); err != nil {
+		t.Fatalf("workspace: %v", err)
+	}
+	connection := controldb.Connection{
+		ID:             "conn-github",
+		WorkspaceID:    workspaceID,
+		Provider:       "github",
+		ConnectionName: "default",
+		OwnerType:      ConnectionOwnerWorkspace,
+		OwnerID:        workspaceID,
+		AuthType:       ConnectionAuthAPIKey,
+		Status:         "active",
+		ProfileJSON:    `{"allowedActionMethods":["GET"],"allowedActionEndpoints":["/user"]}`,
+		CreatedBy:      "admin",
+	}
+	if err := users.db.UpsertConnection(connection); err != nil {
+		t.Fatalf("connection: %v", err)
+	}
+	principal := runtimeAgentPrincipal{
+		WorkspaceID:  workspaceID,
+		Project:      "sample",
+		Agent:        "pm",
+		RunID:        "run-one",
+		Capabilities: []string{"connection.use"},
+	}
+
+	listReq := httptest.NewRequest(http.MethodPost, "/api/v1/runtime/mcp/gateway", stringsReader(`{"jsonrpc":"2.0","id":1,"method":"tools/list"}`))
+	listReq = listReq.WithContext(context.WithValue(listReq.Context(), ctxRuntimeAgentKey, principal))
+	listRec := httptest.NewRecorder()
+	s.handleRuntimeMCPGateway(listRec, listReq)
+	if listRec.Code != http.StatusOK {
+		t.Fatalf("tools/list status=%d body=%s", listRec.Code, listRec.Body.String())
+	}
+	if !strings.Contains(listRec.Body.String(), "multigent.list_tools") || !strings.Contains(listRec.Body.String(), "multigent.call_tool") {
+		t.Fatalf("broker tools missing: %s", listRec.Body.String())
+	}
+
+	callReq := httptest.NewRequest(http.MethodPost, "/api/v1/runtime/mcp/gateway", stringsReader(`{
+		"jsonrpc":"2.0",
+		"id":2,
+		"method":"tools/call",
+		"params":{"name":"multigent.list_tools","arguments":{"provider":"github"}}
+	}`))
+	callReq = callReq.WithContext(context.WithValue(callReq.Context(), ctxRuntimeAgentKey, principal))
+	callRec := httptest.NewRecorder()
+	s.handleRuntimeMCPGateway(callRec, callReq)
+	if callRec.Code != http.StatusOK {
+		t.Fatalf("list_tools status=%d body=%s", callRec.Code, callRec.Body.String())
+	}
+	body := callRec.Body.String()
+	if !strings.Contains(body, "action:github:get_authenticated_user") || !strings.Contains(body, `\"adapter\": \"http_action\"`) {
+		t.Fatalf("runtime tools missing github action: %s", body)
+	}
+}
+
+func TestRuntimeMCPGatewayCallToolRoutesThroughActionProxy(t *testing.T) {
+	users := newTestUserStore(t)
+	s := &Server{controlDB: users.db, users: users}
+	workspaceID := "ws-one"
+	var upstreamAuth string
+	upstream := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		upstreamAuth = r.Header.Get("Authorization")
+		if r.URL.Path != "/user" {
+			t.Fatalf("path=%s", r.URL.Path)
+		}
+		w.Header().Set("Content-Type", "application/json")
+		_ = json.NewEncoder(w).Encode(map[string]any{"login": "octo"})
+	}))
+	defer upstream.Close()
+	if err := users.db.UpsertWorkspace(controldb.Workspace{ID: workspaceID, Name: "One", Slug: "one"}); err != nil {
+		t.Fatalf("workspace: %v", err)
+	}
+	connection := controldb.Connection{
+		ID:             "conn-github",
+		WorkspaceID:    workspaceID,
+		Provider:       "github",
+		ConnectionName: "default",
+		OwnerType:      ConnectionOwnerWorkspace,
+		OwnerID:        workspaceID,
+		AuthType:       ConnectionAuthAPIKey,
+		Status:         "active",
+		ProfileJSON:    `{"baseUrl":"` + upstream.URL + `","allowedActionMethods":["GET"],"allowedActionEndpoints":["/user"]}`,
+		CreatedBy:      "admin",
+	}
+	if err := users.db.UpsertConnection(connection); err != nil {
+		t.Fatalf("connection: %v", err)
+	}
+	connections, err := users.db.ListConnections(controldb.ConnectionFilter{WorkspaceID: workspaceID, Provider: "github"})
+	if err != nil || len(connections) != 1 {
+		t.Fatalf("list connection: %v %#v", err, connections)
+	}
+	connection = connections[0]
+	secret, err := sealConnectionSecret(map[string]string{"apiKey": "github-token"})
+	if err != nil {
+		t.Fatalf("seal secret: %v", err)
+	}
+	secret.ConnectionID = connection.ID
+	if err := users.db.UpsertConnectionSecret(secret); err != nil {
+		t.Fatalf("secret: %v", err)
+	}
+	cfg, err := s.runtimeHTTPActionConfig(connection)
+	if err != nil {
+		t.Fatalf("runtime action config: %v", err)
+	}
+	if cfg.AuthValue != "Bearer github-token" {
+		t.Fatalf("runtime action auth=%q", cfg.AuthValue)
+	}
+	principal := runtimeAgentPrincipal{
+		WorkspaceID:  workspaceID,
+		Project:      "sample",
+		Agent:        "pm",
+		RunID:        "run-one",
+		Capabilities: []string{"connection.use"},
+	}
+	found, ok, err := s.findRuntimeConnection(principal, "", "github")
+	if err != nil || !ok {
+		t.Fatalf("find runtime connection: ok=%v err=%v", ok, err)
+	}
+	foundCfg, err := s.runtimeHTTPActionConfig(found)
+	if err != nil {
+		t.Fatalf("found runtime action config: %v", err)
+	}
+	if found.ID != connection.ID || foundCfg.AuthValue != "Bearer github-token" {
+		t.Fatalf("found connection=%#v auth=%q want id=%q", found, foundCfg.AuthValue, connection.ID)
+	}
+	req := httptest.NewRequest(http.MethodPost, "/api/v1/runtime/mcp/gateway", stringsReader(`{
+		"jsonrpc":"2.0",
+		"id":3,
+		"method":"tools/call",
+		"params":{
+			"name":"multigent.call_tool",
+			"arguments":{"tool_id":"action:github:get_authenticated_user","arguments":{}}
+		}
+	}`))
+	req = req.WithContext(context.WithValue(req.Context(), ctxRuntimeAgentKey, principal))
+	rec := httptest.NewRecorder()
+	s.handleRuntimeMCPGateway(rec, req)
+	if rec.Code != http.StatusOK {
+		t.Fatalf("status=%d body=%s", rec.Code, rec.Body.String())
+	}
+	if upstreamAuth != "Bearer github-token" {
+		t.Fatalf("upstream auth=%q body=%s", upstreamAuth, rec.Body.String())
+	}
+	body := rec.Body.String()
+	if !strings.Contains(body, `\"login\": \"octo\"`) {
+		t.Fatalf("gateway result missing upstream body: %s", body)
+	}
+	if strings.Contains(body, "github-token") {
+		t.Fatalf("gateway leaked token: %s", body)
+	}
+}
+
 func TestCustomMCPRuntimeConfigSupportsNoAuthProfileURL(t *testing.T) {
 	users := newTestUserStore(t)
 	s := &Server{controlDB: users.db, users: users}
