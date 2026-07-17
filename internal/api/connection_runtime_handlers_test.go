@@ -84,7 +84,7 @@ func TestAgentRuntimeConnectionResponseDoesNotExposeSecretValues(t *testing.T) {
 	}
 	resp := agentRuntimeConnectionToResponse(connection, []controldb.ConnectionGrant{
 		{ID: "grant-one", TargetType: ConnectionTargetAgent, TargetID: "sample/dev"},
-	}, []connector.ProviderAction{{Name: "get_authenticated_user", Method: "GET", Endpoint: "/user"}}, []connector.ToolRuntimeAdapter{
+	}, nil, []connector.ProviderAction{{Name: "get_authenticated_user", Method: "GET", Endpoint: "/user"}}, []connector.ToolRuntimeAdapter{
 		{Type: connector.RuntimeAdapterCLI, Priority: 100, Skills: []string{"github"}},
 		{Type: connector.RuntimeAdapterHTTPAction, Priority: 20, HTTPAction: &connector.ToolHTTPActionAdapter{ActionNames: []string{"get_authenticated_user"}}},
 	})
@@ -318,6 +318,77 @@ func TestResolveAgentRuntimeConnectionsUsesWorkspaceDefaultAndGrantRules(t *test
 	for _, connection := range connections {
 		if _, ok := connection.Profile["token"]; ok {
 			t.Fatalf("runtime profile leaked token: %#v", connection.Profile)
+		}
+	}
+}
+
+func TestResolveAgentRuntimeConnectionsUsesExplicitToolBindings(t *testing.T) {
+	users := newTestUserStore(t)
+	s := &Server{controlDB: users.db, users: users}
+	workspaceID := "ws-one"
+	if err := users.db.UpsertWorkspace(controldb.Workspace{ID: workspaceID, Name: "One", Slug: "one"}); err != nil {
+		t.Fatalf("workspace: %v", err)
+	}
+	github := controldb.Connection{
+		ID:             "conn-github",
+		WorkspaceID:    workspaceID,
+		Provider:       "github",
+		ConnectionName: "default",
+		OwnerType:      ConnectionOwnerWorkspace,
+		OwnerID:        workspaceID,
+		AuthType:       ConnectionAuthAPIKey,
+		Status:         "active",
+		ProfileJSON:    `{}`,
+	}
+	lark := github
+	lark.ID = "conn-lark"
+	lark.Provider = "lark"
+	if err := users.db.UpsertConnection(github); err != nil {
+		t.Fatalf("github connection: %v", err)
+	}
+	if err := users.db.UpsertConnection(lark); err != nil {
+		t.Fatalf("lark connection: %v", err)
+	}
+	if err := users.db.UpsertAgentToolBinding(controldb.AgentToolBinding{
+		ID:           "bind-github",
+		WorkspaceID:  workspaceID,
+		ProjectID:    "sample",
+		AgentID:      "pm",
+		ConnectionID: github.ID,
+		Provider:     github.Provider,
+		AdapterType:  connector.RuntimeAdapterHTTPAction,
+		Status:       "enabled",
+	}); err != nil {
+		t.Fatalf("binding: %v", err)
+	}
+	if err := users.db.UpsertAgentToolBinding(controldb.AgentToolBinding{
+		ID:           "bind-lark",
+		WorkspaceID:  workspaceID,
+		ProjectID:    "sample",
+		AgentID:      "pm",
+		ConnectionID: lark.ID,
+		Provider:     lark.Provider,
+		Status:       "disabled",
+	}); err != nil {
+		t.Fatalf("disabled binding: %v", err)
+	}
+
+	connections, err := s.resolveAgentRuntimeConnections(workspaceID, "sample", "pm")
+	if err != nil {
+		t.Fatalf("resolve: %v", err)
+	}
+	if len(connections) != 1 || connections[0].ID != github.ID {
+		t.Fatalf("connections=%#v", connections)
+	}
+	if connections[0].ToolBinding == nil || connections[0].ToolBinding.ID != "bind-github" {
+		t.Fatalf("tool binding missing: %#v", connections[0])
+	}
+	if connections[0].Runtime.RecommendedAdapter != connector.RuntimeAdapterHTTPAction {
+		t.Fatalf("adapter override not applied: %#v", connections[0].Runtime.Adapters)
+	}
+	for _, adapter := range connections[0].Runtime.Adapters {
+		if adapter.Type != connector.RuntimeAdapterHTTPAction {
+			t.Fatalf("unexpected adapter after override: %#v", connections[0].Runtime.Adapters)
 		}
 	}
 }

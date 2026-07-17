@@ -223,6 +223,16 @@ func (s *Server) findRuntimeConnection(principal runtimeAgentPrincipal, connecti
 	if err != nil {
 		return controldb.Connection{}, false, err
 	}
+	bindings, err := s.controlDB.ListAgentToolBindings(controldb.AgentToolBindingFilter{
+		WorkspaceID: principal.WorkspaceID,
+		ProjectID:   principal.Project,
+		AgentID:     principal.Agent,
+	})
+	if err != nil {
+		return controldb.Connection{}, false, err
+	}
+	explicitBindings := len(bindings) > 0
+	enabledBindings := enabledAgentToolBindingsByConnection(bindings)
 	for _, connection := range connections {
 		if connectionID != "" && connection.ID != connectionID {
 			continue
@@ -232,6 +242,11 @@ func (s *Server) findRuntimeConnection(principal runtimeAgentPrincipal, connecti
 		}
 		if connectionID == "" && alias == "" {
 			continue
+		}
+		if explicitBindings {
+			if _, ok := enabledBindings[connection.ID]; !ok {
+				continue
+			}
 		}
 		grants, err := s.controlDB.ListConnectionGrants(connection.ID)
 		if err != nil {

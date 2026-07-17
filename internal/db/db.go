@@ -68,6 +68,10 @@ type Store interface {
 	CreateConnectionGrant(grant ConnectionGrant) error
 	DeleteConnectionGrant(id string) error
 	ListConnectionGrants(connectionID string) ([]ConnectionGrant, error)
+	UpsertAgentToolBinding(binding AgentToolBinding) error
+	AgentToolBindingByID(id string) (AgentToolBinding, bool, error)
+	ListAgentToolBindings(filter AgentToolBindingFilter) ([]AgentToolBinding, error)
+	DeleteAgentToolBinding(id string) error
 
 	UpsertAgentChannelBinding(binding AgentChannelBinding) error
 	AgentChannelBindingByID(id string) (AgentChannelBinding, bool, error)
@@ -247,6 +251,30 @@ type ConnectionGrant struct {
 	TargetID     string
 	CreatedBy    string
 	CreatedAt    string
+}
+
+type AgentToolBinding struct {
+	ID           string
+	WorkspaceID  string
+	ProjectID    string
+	AgentID      string
+	ConnectionID string
+	Provider     string
+	AdapterType  string
+	Status       string
+	ConfigJSON   string
+	CreatedBy    string
+	CreatedAt    string
+	UpdatedAt    string
+}
+
+type AgentToolBindingFilter struct {
+	WorkspaceID  string
+	ProjectID    string
+	AgentID      string
+	ConnectionID string
+	Provider     string
+	Status       string
 }
 
 type AgentChannelBinding struct {

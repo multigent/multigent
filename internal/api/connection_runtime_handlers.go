@@ -20,6 +20,7 @@ type agentRuntimeConnectionResponse struct {
 	Profile        map[string]any           `json:"profile"`
 	ProfileSummary connectionProfileSummary `json:"profileSummary"`
 	MatchedGrants  []connectionGrantModel   `json:"matchedGrants"`
+	ToolBinding    *agentToolBindingModel   `json:"toolBinding,omitempty"`
 	Runtime        connectionRuntimeSpec    `json:"runtime"`
 }
 
@@ -68,6 +69,17 @@ type connectionRuntimeHeader struct {
 	Name         string `json:"name"`
 	Value        string `json:"value,omitempty"`
 	ValueFromEnv string `json:"valueFromEnv,omitempty"`
+}
+
+type agentToolBindingModel struct {
+	ID           string `json:"id"`
+	ConnectionID string `json:"connectionId"`
+	Provider     string `json:"provider"`
+	AdapterType  string `json:"adapterType,omitempty"`
+	Status       string `json:"status"`
+	CreatedBy    string `json:"createdBy,omitempty"`
+	CreatedAt    string `json:"createdAt,omitempty"`
+	UpdatedAt    string `json:"updatedAt,omitempty"`
 }
 
 func (s *Server) handleAgentRuntimeConnections(w http.ResponseWriter, r *http.Request) {
@@ -154,8 +166,26 @@ func (s *Server) resolveAgentRuntimeConnections(workspaceID, project, agent stri
 	if err != nil {
 		return nil, err
 	}
+	bindings, err := s.controlDB.ListAgentToolBindings(controldb.AgentToolBindingFilter{
+		WorkspaceID: workspaceID,
+		ProjectID:   project,
+		AgentID:     agent,
+	})
+	if err != nil {
+		return nil, err
+	}
+	explicitBindings := len(bindings) > 0
+	enabledBindings := enabledAgentToolBindingsByConnection(bindings)
 	out := make([]agentRuntimeConnectionResponse, 0)
 	for _, connection := range connections {
+		var binding *controldb.AgentToolBinding
+		if explicitBindings {
+			if b, ok := enabledBindings[connection.ID]; ok {
+				binding = &b
+			} else {
+				continue
+			}
+		}
 		grants, err := s.controlDB.ListConnectionGrants(connection.ID)
 		if err != nil {
 			return nil, err
@@ -178,7 +208,13 @@ func (s *Server) resolveAgentRuntimeConnections(workspaceID, project, agent stri
 		}
 		actions := runtimeActionsForProviderConnection(connection, provider)
 		adapters := runtimeAdaptersForProviderConnection(provider, actions)
-		out = append(out, agentRuntimeConnectionToResponse(connection, matched, actions, adapters))
+		if binding != nil && strings.TrimSpace(binding.AdapterType) != "" {
+			adapters = filterRuntimeAdaptersByType(adapters, binding.AdapterType)
+			if len(adapters) == 0 {
+				continue
+			}
+		}
+		out = append(out, agentRuntimeConnectionToResponse(connection, matched, binding, actions, adapters))
 	}
 	sort.Slice(out, func(i, j int) bool {
 		if out[i].Provider != out[j].Provider {
@@ -231,11 +267,11 @@ func connectionGrantMatchesAgent(grant controldb.ConnectionGrant, workspaceID, p
 	}
 }
 
-func agentRuntimeConnectionToResponse(connection controldb.Connection, grants []controldb.ConnectionGrant, actions []connector.ProviderAction, adapters []connector.ToolRuntimeAdapter) agentRuntimeConnectionResponse {
+func agentRuntimeConnectionToResponse(connection controldb.Connection, grants []controldb.ConnectionGrant, binding *controldb.AgentToolBinding, actions []connector.ProviderAction, adapters []connector.ToolRuntimeAdapter) agentRuntimeConnectionResponse {
 	profile := map[string]any{}
 	_ = json.Unmarshal([]byte(connection.ProfileJSON), &profile)
 	alias := runtimeConnectionAlias(connection.Provider, connection.ConnectionName)
-	return agentRuntimeConnectionResponse{
+	resp := agentRuntimeConnectionResponse{
 		ID:             connection.ID,
 		Provider:       connection.Provider,
 		ConnectionName: connection.ConnectionName,
@@ -247,6 +283,11 @@ func agentRuntimeConnectionToResponse(connection controldb.Connection, grants []
 		MatchedGrants:  grantsToResponse(grants),
 		Runtime:        runtimeSpecForConnection(connection, alias, actions, adapters),
 	}
+	if binding != nil {
+		model := agentToolBindingToModel(*binding)
+		resp.ToolBinding = &model
+	}
+	return resp
 }
 
 func agentConnectionManifest() agentRuntimeConnectionManifest {
@@ -357,6 +398,20 @@ func runtimeAdaptersForProviderConnection(provider connector.Provider, actions [
 	return out
 }
 
+func filterRuntimeAdaptersByType(adapters []connector.ToolRuntimeAdapter, adapterType string) []connector.ToolRuntimeAdapter {
+	adapterType = strings.TrimSpace(adapterType)
+	if adapterType == "" {
+		return adapters
+	}
+	out := make([]connector.ToolRuntimeAdapter, 0, len(adapters))
+	for _, adapter := range adapters {
+		if adapter.Type == adapterType {
+			out = append(out, adapter)
+		}
+	}
+	return out
+}
+
 func recommendedRuntimeAdapter(adapters []connector.ToolRuntimeAdapter) string {
 	if len(adapters) == 0 {
 		return ""
@@ -402,6 +457,33 @@ func runtimeSkillsFromAdapters(adapters []connector.ToolRuntimeAdapter) []string
 		}
 	}
 	return out
+}
+
+func enabledAgentToolBindingsByConnection(bindings []controldb.AgentToolBinding) map[string]controldb.AgentToolBinding {
+	out := map[string]controldb.AgentToolBinding{}
+	for _, binding := range bindings {
+		if strings.TrimSpace(binding.ConnectionID) == "" {
+			continue
+		}
+		if strings.TrimSpace(binding.Status) != "enabled" {
+			continue
+		}
+		out[binding.ConnectionID] = binding
+	}
+	return out
+}
+
+func agentToolBindingToModel(binding controldb.AgentToolBinding) agentToolBindingModel {
+	return agentToolBindingModel{
+		ID:           binding.ID,
+		ConnectionID: binding.ConnectionID,
+		Provider:     binding.Provider,
+		AdapterType:  binding.AdapterType,
+		Status:       binding.Status,
+		CreatedBy:    binding.CreatedBy,
+		CreatedAt:    binding.CreatedAt,
+		UpdatedAt:    binding.UpdatedAt,
+	}
 }
 
 func connectorDisplayName(providerID string) string {

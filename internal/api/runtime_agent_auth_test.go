@@ -166,3 +166,59 @@ func TestFindRuntimeConnectionAllowsWorkspaceConnectionByDefault(t *testing.T) {
 		t.Fatalf("alias lookup failed: ok=%v conn=%#v err=%v", ok, conn, err)
 	}
 }
+
+func TestFindRuntimeConnectionRequiresEnabledBindingWhenBindingsExist(t *testing.T) {
+	users := newTestUserStore(t)
+	s := &Server{controlDB: users.db, users: users}
+	workspaceID := "ws-one"
+	if err := users.db.UpsertWorkspace(controldb.Workspace{ID: workspaceID, Name: "One", Slug: "one"}); err != nil {
+		t.Fatalf("workspace: %v", err)
+	}
+	github := controldb.Connection{
+		ID:             "conn-github",
+		WorkspaceID:    workspaceID,
+		Provider:       "github",
+		ConnectionName: "default",
+		OwnerType:      ConnectionOwnerWorkspace,
+		OwnerID:        workspaceID,
+		AuthType:       ConnectionAuthAPIKey,
+		Status:         "active",
+		ProfileJSON:    "{}",
+		CreatedBy:      "admin",
+	}
+	lark := github
+	lark.ID = "conn-lark"
+	lark.Provider = "lark"
+	if err := users.db.UpsertConnection(github); err != nil {
+		t.Fatalf("github connection: %v", err)
+	}
+	if err := users.db.UpsertConnection(lark); err != nil {
+		t.Fatalf("lark connection: %v", err)
+	}
+	if err := users.db.UpsertAgentToolBinding(controldb.AgentToolBinding{
+		ID:           "bind-lark",
+		WorkspaceID:  workspaceID,
+		ProjectID:    "sample",
+		AgentID:      "pm",
+		ConnectionID: lark.ID,
+		Provider:     lark.Provider,
+		Status:       "enabled",
+	}); err != nil {
+		t.Fatalf("binding: %v", err)
+	}
+
+	principal := runtimeAgentPrincipal{WorkspaceID: workspaceID, Project: "sample", Agent: "pm", Capabilities: []string{"connection.use"}}
+	if _, ok, err := s.findRuntimeConnection(principal, github.ID, ""); err != nil || ok {
+		t.Fatalf("unbound workspace connection should not be available: ok=%v err=%v", ok, err)
+	}
+	if _, ok, err := s.findRuntimeConnection(principal, "", "github"); err != nil || ok {
+		t.Fatalf("unbound workspace alias should not be available: ok=%v err=%v", ok, err)
+	}
+	conn, ok, err := s.findRuntimeConnection(principal, lark.ID, "")
+	if err != nil {
+		t.Fatalf("find bound connection: %v", err)
+	}
+	if !ok || conn.ID != lark.ID {
+		t.Fatalf("bound connection not found: ok=%v conn=%#v", ok, conn)
+	}
+}

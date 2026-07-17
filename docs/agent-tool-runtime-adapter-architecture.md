@@ -415,6 +415,7 @@ Use Multigent MCP Gateway:
 - `mga` agent runtime CLI。
 - Provider runtime adapter catalog。
 - Agent runtime connection resolve。
+- Agent tool binding 表、管理 API 和 runtime 过滤。
 - CLI adapter installer/checker bootstrap。
 - GitHub `gh` agent-scoped config materializer。
 - Feishu/Lark `lark-cli` agent-scoped config materializer 和 wrapper。
@@ -425,7 +426,7 @@ Use Multigent MCP Gateway:
 
 仍需补齐：
 
-1. Agent tool binding 表和 UI：当前主要从 active workspace connection 和 grants 推导，缺少明确的 agent 级启用/禁用状态。
+1. Agent tool binding UI：后端已经支持 agent 级启用/禁用和 adapter override，Web agent detail 还没有接入编辑入口。
 2. Tool-specific skills 自动同步：当前 runtime manifest 已声明 skills，但还没有按连接自动安装/同步缺失 skill。
 3. Figma MCP Gateway upstream：当前 Figma 已有 MCP Gateway adapter 声明和 HTTP action fallback，但还没有真实启动/托管 Figma upstream MCP server。
 4. Agent detail 页面展示“已启用工具”和接入方式。
@@ -456,7 +457,8 @@ Use Multigent MCP Gateway:
 ### Phase 4: Web Product Loop
 
 - 已部分完成：工具页面展示 provider 和连接。
-- 待完成：agent 页面可以启用/禁用工具。
+- 已完成：后端支持 agent 级工具启用/禁用和 adapter override。
+- 待完成：agent 页面接入启用/禁用工具的编辑 UI。
 - 待完成：展示该工具对 agent 的接入方式：CLI / MCP Gateway / HTTP Action / Skill。
 - 待完成：展示健康状态、最近调用、错误。
 
