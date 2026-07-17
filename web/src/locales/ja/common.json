@@ -397,7 +397,8 @@
     "switchTitle": "作成と切り替え",
     "switchHint": "現在のローカル API インスタンスは 1 つの workspace root に紐づいています。SaaS 型の作成と切り替えは今後の workspace registry/control plane で扱います。",
     "createWorkspace": "ワークスペースを作成",
-    "switchWorkspace": "ワークスペースを切替"
+    "switchWorkspace": "ワークスペースを切替",
+    "switchingWorkspace": "ワークスペースを切り替え中"
   },
   "inbox": {
     "subtitle": "このプロジェクト内のメッセージと受信箱：確認、転送、未読など。各行に送信元と割り当て（人またはエージェント）を表示します。",

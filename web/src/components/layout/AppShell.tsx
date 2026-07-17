@@ -1,13 +1,14 @@
 import { useEffect, useRef, useState } from 'react'
 import { Link, Outlet, useLocation } from 'react-router-dom'
 import { useTranslation } from 'react-i18next'
-import { ChevronRight } from 'lucide-react'
+import { ChevronRight, Loader2 } from 'lucide-react'
 import { Sidebar } from './Sidebar'
 import { TopBar } from './TopBar'
 import { CommandPalette } from './CommandPalette'
 import { PageTabsProvider } from '../../lib/page-tabs'
 import { recordVisit } from '../../lib/recent-visits'
 import { apiFetch } from '../../lib/api'
+import { useWorkspaceAccess } from '../../lib/workspace-access'
 import {
   navKeyFromPath,
   projectIdFromPath,
@@ -118,10 +119,12 @@ function Breadcrumbs({ crumbs }: { crumbs: BreadcrumbSegment[] }) {
 
 const SIDEBAR_KEY = 'sidebar-collapsed'
 const ASSISTANT_HIDDEN_KEY = 'assistant-hidden'
+const WORKSPACE_TRANSITION_MIN_MS = 650
 
 export function AppShell() {
   const { t } = useTranslation()
   const { pathname } = useLocation()
+  const { loading: workspaceAccessLoading } = useWorkspaceAccess()
   const crumbs = useBreadcrumbs()
   const [searchOpen, setSearchOpen] = useState(false)
   const [collapsed, setCollapsed] = useState(() => localStorage.getItem(SIDEBAR_KEY) === '1')
@@ -129,6 +132,9 @@ export function AppShell() {
   const [appVersion, setAppVersion] = useState('…')
   const [updateInfo, setUpdateInfo] = useState<{ hasUpdate: boolean; latestVersion?: string } | null>(null)
   const [workspaceScope, setWorkspaceScope] = useState('default')
+  const [workspaceTransitioning, setWorkspaceTransitioning] = useState(false)
+  const [workspaceSwitchCommitted, setWorkspaceSwitchCommitted] = useState(false)
+  const workspaceTransitionStartedAt = useRef(0)
   const autoCollapsedSidebar = useRef(false)
 
   useEffect(() => {
@@ -159,6 +165,36 @@ export function AppShell() {
       window.removeEventListener('workspace-changed', loadWorkspaceScope)
     }
   }, [pathname])
+
+  useEffect(() => {
+    function onWorkspaceSwitchStart() {
+      workspaceTransitionStartedAt.current = Date.now()
+      setWorkspaceSwitchCommitted(false)
+      setWorkspaceTransitioning(true)
+    }
+    function onWorkspaceChangedForTransition() {
+      setWorkspaceSwitchCommitted(true)
+    }
+    function onWorkspaceSwitchFinish() {
+      setWorkspaceSwitchCommitted(true)
+    }
+    window.addEventListener('workspace-switch-start', onWorkspaceSwitchStart)
+    window.addEventListener('workspace-changed', onWorkspaceChangedForTransition)
+    window.addEventListener('workspace-switch-finish', onWorkspaceSwitchFinish)
+    return () => {
+      window.removeEventListener('workspace-switch-start', onWorkspaceSwitchStart)
+      window.removeEventListener('workspace-changed', onWorkspaceChangedForTransition)
+      window.removeEventListener('workspace-switch-finish', onWorkspaceSwitchFinish)
+    }
+  }, [])
+
+  useEffect(() => {
+    if (!workspaceTransitioning || !workspaceSwitchCommitted || workspaceAccessLoading) return
+    const elapsed = Date.now() - workspaceTransitionStartedAt.current
+    const remaining = Math.max(WORKSPACE_TRANSITION_MIN_MS - elapsed, 120)
+    const timer = window.setTimeout(() => setWorkspaceTransitioning(false), remaining)
+    return () => window.clearTimeout(timer)
+  }, [workspaceAccessLoading, workspaceSwitchCommitted, workspaceTransitioning, workspaceScope, pathname])
 
   function toggleSidebar() {
     setCollapsed((v) => {
@@ -252,6 +288,15 @@ export function AppShell() {
           </div>
           <CommandPalette open={searchOpen} onOpenChange={setSearchOpen} />
         </div>
+        {workspaceTransitioning && (
+          <div className="fixed inset-0 z-[80] flex items-center justify-center bg-neutral-50/85 backdrop-blur-sm dark:bg-zinc-950/85">
+            <div className="flex min-w-64 flex-col items-center rounded-xl border border-neutral-200 bg-white px-6 py-5 shadow-xl dark:border-zinc-700 dark:bg-zinc-900">
+              <Loader2 className="size-6 animate-spin text-sky-600 dark:text-sky-400" strokeWidth={1.8} />
+              <p className="mt-3 text-sm font-medium text-neutral-900 dark:text-zinc-100">{t('workspace.switchingWorkspace')}</p>
+              <p className="mt-1 text-xs text-neutral-400 dark:text-zinc-500">{t('app.loadingWorkspaceAccess')}</p>
+            </div>
+          </div>
+        )}
         <AssistantWidget hidden={assistantHidden} onHide={() => setAssistantHiddenState(true)} />
         <ConfirmDialogHost />
         <ToastContainer />

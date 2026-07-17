@@ -94,12 +94,15 @@ export function Sidebar({ collapsed, onToggle }: { collapsed: boolean; onToggle:
 
   async function switchWorkspace(id: string) {
     setSwitchingId(id)
+    window.dispatchEvent(new Event('workspace-switch-start'))
     try {
       await apiPost(`/api/v1/workspaces/${encodeURIComponent(id)}/switch`, {})
       refreshWorkspaceData()
       setWorkspaceMenuOpen(false)
       window.dispatchEvent(new Event('workspace-changed'))
       navigate('/')
+    } catch {
+      window.dispatchEvent(new Event('workspace-switch-finish'))
     } finally {
       setSwitchingId(null)
     }
@@ -109,6 +112,7 @@ export function Sidebar({ collapsed, onToggle }: { collapsed: boolean; onToggle:
     const name = newWorkspaceName.trim()
     if (!name) return
     setCreatingWorkspace(true)
+    window.dispatchEvent(new Event('workspace-switch-start'))
     try {
       await apiPost('/api/v1/workspaces', { name, switch: true })
       setNewWorkspaceName('')
@@ -116,6 +120,8 @@ export function Sidebar({ collapsed, onToggle }: { collapsed: boolean; onToggle:
       setWorkspaceMenuOpen(false)
       window.dispatchEvent(new Event('workspace-changed'))
       navigate('/')
+    } catch {
+      window.dispatchEvent(new Event('workspace-switch-finish'))
     } finally {
       setCreatingWorkspace(false)
     }

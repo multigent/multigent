@@ -397,7 +397,8 @@
     "switchTitle": "Create and switch",
     "switchHint": "This local API instance is bound to one workspace root. SaaS-style creation and switching will be handled by the future workspace registry/control plane.",
     "createWorkspace": "Create workspace",
-    "switchWorkspace": "Switch workspace"
+    "switchWorkspace": "Switch workspace",
+    "switchingWorkspace": "Switching workspace"
   },
   "inbox": {
     "subtitle": "Project-scoped thread: confirmations, forwards, and unread items. Each row shows from and assignee (human or agent).",
