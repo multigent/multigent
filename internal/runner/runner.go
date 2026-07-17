@@ -39,6 +39,7 @@ import (
 	"github.com/multigent/multigent/internal/store"
 	"github.com/multigent/multigent/internal/taskstore"
 	"github.com/multigent/multigent/internal/telemetry"
+	workflowstore "github.com/multigent/multigent/internal/workflow"
 )
 
 const (
@@ -321,7 +322,7 @@ func (r *Runner) RunTask(project, agentName string, task *entity.Task, sessionID
 		return r.runTaskHTTP(project, agentName, agentDir, meta, task)
 	}
 
-	fullPrompt := task.Prompt + fmt.Sprintf(systemMetaFooter,
+	fullPrompt := r.taskPromptWithWorkflowContext(project, agentName, task) + fmt.Sprintf(systemMetaFooter,
 		task.ID, project, agentName, task.ID, task.ID, task.ID)
 
 	// Write prompt to a temp file (avoids shell escaping issues).
@@ -536,6 +537,172 @@ func (r *Runner) RunTask(project, agentName string, task *entity.Task, sessionID
 		runStarted, runFinished, result.Status, &ec, result.SessionID, result.ErrorMsg,
 		logPath, cmdSummary, fullPrompt, outBuf.Bytes())
 	return result, nil
+}
+
+func (r *Runner) taskPromptWithWorkflowContext(project, agentName string, task *entity.Task) string {
+	if task == nil {
+		return ""
+	}
+	ctx := strings.TrimSpace(r.workflowPromptContext(project, agentName, task.ID))
+	if ctx == "" {
+		return task.Prompt
+	}
+	return ctx + "\n\n---\n## Task Prompt\n\n" + task.Prompt
+}
+
+func (r *Runner) workflowPromptContext(project, agentName, taskID string) string {
+	controlDB, err := controldb.OpenDefault()
+	if err != nil {
+		return ""
+	}
+	defer controlDB.Close()
+	workspaceID := resolveRuntimeWorkspaceID(r.root, controlDB)
+	wfStore := workflowstore.NewStore(controlDB, workspaceID)
+	run, ok, err := wfStore.RunForTask(project, taskID)
+	if err != nil || !ok {
+		return ""
+	}
+	def, ok, err := wfStore.Definition(run.DefinitionID)
+	if err != nil || !ok {
+		return ""
+	}
+	instances, err := wfStore.ListStepInstances(run.ID)
+	if err != nil {
+		instances = nil
+	}
+	step, ok := workflowStepByID(def.Steps, run.ActiveStepID)
+	if !ok {
+		return ""
+	}
+	inst, _ := workflowStepInstanceByStepID(instances, step.ID)
+
+	var b strings.Builder
+	b.WriteString("## Workflow Context\n\n")
+	fmt.Fprintf(&b, "- Workflow: %s (`%s`)\n", def.Name, def.ID)
+	fmt.Fprintf(&b, "- Run ID: `%s`\n", run.ID)
+	fmt.Fprintf(&b, "- Current step: %s (`%s`, type: `%s`)\n", step.Title, step.ID, step.Type)
+	if step.Description != "" {
+		fmt.Fprintf(&b, "- Step goal: %s\n", step.Description)
+	}
+	if step.ActorRole != "" {
+		fmt.Fprintf(&b, "- Step actor role: `%s`\n", step.ActorRole)
+	}
+	if inst.ActorType != "" || inst.ActorID != "" {
+		fmt.Fprintf(&b, "- Assigned actor: `%s:%s`\n", inst.ActorType, inst.ActorID)
+	}
+	fmt.Fprintf(&b, "- Running agent: `%s/%s`\n", project, agentName)
+	b.WriteString("\n")
+	if len(step.InputFields) > 0 {
+		b.WriteString("Expected input fields:\n")
+		writeWorkflowFields(&b, step.InputFields)
+		b.WriteString("\n")
+	}
+	if strings.TrimSpace(inst.InputArtifact) != "" {
+		b.WriteString("Current step input artifact:\n")
+		fmt.Fprintf(&b, "%s\n\n", indentWorkflowBlock(limitWorkflowText(inst.InputArtifact, 3000)))
+	}
+	if len(step.OutputFields) > 0 {
+		b.WriteString("Required output fields:\n")
+		writeWorkflowFields(&b, step.OutputFields)
+		b.WriteString("\n")
+	}
+	if previous := workflowPreviousOutputs(def.Steps, instances, step.ID); previous != "" {
+		b.WriteString("Previous workflow outputs and review notes:\n")
+		b.WriteString(previous)
+		b.WriteString("\n")
+	}
+	b.WriteString("Instructions:\n")
+	b.WriteString("- Treat the current step as the workflow contract for this task.\n")
+	b.WriteString("- Produce the required output fields explicitly in your task summary or artifact.\n")
+	b.WriteString("- If this step needs human review or clarification, use `mga task confirm-request` instead of blocking silently.\n")
+	b.WriteString("- To inspect the full workflow run, run `mga workflow current --task-id ")
+	b.WriteString(taskID)
+	b.WriteString("`.\n")
+	b.WriteString("- To inspect the task record, run `mga task show ")
+	b.WriteString(taskID)
+	b.WriteString("`.\n")
+	return b.String()
+}
+
+func workflowStepByID(steps []entity.WorkflowStep, id string) (entity.WorkflowStep, bool) {
+	for _, step := range steps {
+		if step.ID == id {
+			return step, true
+		}
+	}
+	return entity.WorkflowStep{}, false
+}
+
+func workflowStepInstanceByStepID(instances []entity.WorkflowStepInstance, stepID string) (entity.WorkflowStepInstance, bool) {
+	for _, inst := range instances {
+		if inst.StepID == stepID {
+			return inst, true
+		}
+	}
+	return entity.WorkflowStepInstance{}, false
+}
+
+func writeWorkflowFields(b *strings.Builder, fields []entity.WorkflowField) {
+	for _, field := range fields {
+		name := strings.TrimSpace(field.Name)
+		if name == "" {
+			continue
+		}
+		if desc := strings.TrimSpace(field.Description); desc != "" {
+			fmt.Fprintf(b, "- `%s`: %s\n", name, desc)
+		} else {
+			fmt.Fprintf(b, "- `%s`\n", name)
+		}
+	}
+}
+
+func workflowPreviousOutputs(steps []entity.WorkflowStep, instances []entity.WorkflowStepInstance, activeStepID string) string {
+	titleByID := make(map[string]string, len(steps))
+	for _, step := range steps {
+		titleByID[step.ID] = step.Title
+	}
+	var b strings.Builder
+	for _, inst := range instances {
+		if inst.StepID == activeStepID {
+			continue
+		}
+		summary := strings.TrimSpace(inst.Summary)
+		output := strings.TrimSpace(inst.OutputArtifact)
+		if summary == "" && output == "" {
+			continue
+		}
+		title := titleByID[inst.StepID]
+		if title == "" {
+			title = inst.StepID
+		}
+		fmt.Fprintf(&b, "- %s (`%s`, status: `%s`):\n", title, inst.StepID, inst.Status)
+		if summary != "" {
+			fmt.Fprintf(&b, "  - Summary: %s\n", limitWorkflowText(summary, 1200))
+		}
+		if output != "" {
+			fmt.Fprintf(&b, "  - Output: %s\n", limitWorkflowText(strings.ReplaceAll(output, "\n", " "), 1600))
+		}
+	}
+	return b.String()
+}
+
+func limitWorkflowText(s string, limit int) string {
+	s = strings.TrimSpace(s)
+	if len(s) <= limit {
+		return s
+	}
+	if limit <= 3 {
+		return s[:limit]
+	}
+	return s[:limit-3] + "..."
+}
+
+func indentWorkflowBlock(s string) string {
+	lines := strings.Split(strings.TrimSpace(s), "\n")
+	for i, line := range lines {
+		lines[i] = "> " + line
+	}
+	return strings.Join(lines, "\n")
 }
 
 // ResumeTask re-invokes the agent after human confirmation.
@@ -875,7 +1042,7 @@ func (r *Runner) runTaskHTTP(project, agentName, agentDir string, meta *entity.A
 		return nil, fmt.Errorf("http-agent: no http_agent config in .multigent-agent.yaml (re-hire with --http-url)")
 	}
 
-	userPrompt := task.Prompt + fmt.Sprintf(systemMetaFooter,
+	userPrompt := r.taskPromptWithWorkflowContext(project, agentName, task) + fmt.Sprintf(systemMetaFooter,
 		task.ID, project, agentName, task.ID, task.ID, task.ID)
 
 	logDir, err := r.ts.RunLogDir(project, agentName)

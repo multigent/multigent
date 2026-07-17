@@ -390,6 +390,7 @@ func (s *Server) Handler() http.Handler {
 	runtimeMux.HandleFunc("PUT /api/v1/runtime/tasks/{id}", s.handleRuntimePutTask)
 	runtimeMux.HandleFunc("POST /api/v1/runtime/tasks/{id}/done", s.handleRuntimeTaskDone)
 	runtimeMux.HandleFunc("POST /api/v1/runtime/tasks/{id}/confirm-request", s.handleRuntimeTaskConfirmRequest)
+	runtimeMux.HandleFunc("GET /api/v1/runtime/tasks/{id}/workflow", s.handleRuntimeTaskWorkflow)
 	runtimeMux.HandleFunc("GET /api/v1/runtime/messages", s.handleRuntimeMessages)
 	runtimeMux.HandleFunc("POST /api/v1/runtime/messages", s.handleRuntimePostMessage)
 	runtimeMux.HandleFunc("POST /api/v1/runtime/messages/{id}/reply", s.handleRuntimeReplyMessage)

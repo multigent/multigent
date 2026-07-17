@@ -46,11 +46,49 @@ func main() {
 		newTaskCmd(),
 		newInboxCmd(),
 		newDocsCmd(),
+		newWorkflowCmd(),
 	)
 	if err := root.Execute(); err != nil {
 		fmt.Fprintln(os.Stderr, "Error:", err)
 		os.Exit(1)
 	}
+}
+
+func newWorkflowCmd() *cobra.Command {
+	cmd := &cobra.Command{
+		Use:   "workflow",
+		Short: "Inspect the current task workflow",
+	}
+	cmd.AddCommand(newWorkflowCurrentCmd())
+	return cmd
+}
+
+func newWorkflowCurrentCmd() *cobra.Command {
+	var taskID, agent string
+	cmd := &cobra.Command{
+		Use:   "current",
+		Short: "Show the workflow run attached to a task",
+		RunE: func(cmd *cobra.Command, args []string) error {
+			if taskID == "" && len(args) > 0 {
+				taskID = args[0]
+			}
+			if strings.TrimSpace(taskID) == "" {
+				return fmt.Errorf("--task-id or task id argument is required")
+			}
+			q := url.Values{}
+			if strings.TrimSpace(agent) != "" {
+				q.Set("agent", agent)
+			}
+			body, err := requestJSON(http.MethodGet, "/api/v1/runtime/tasks/"+url.PathEscape(taskID)+"/workflow", q, nil)
+			if err != nil {
+				return err
+			}
+			return writeJSON(body)
+		},
+	}
+	cmd.Flags().StringVar(&taskID, "task-id", "", "task id")
+	cmd.Flags().StringVar(&agent, "agent", "", "agent that owns the task")
+	return cmd
 }
 
 func newVersionCmd() *cobra.Command {

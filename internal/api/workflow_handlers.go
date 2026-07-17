@@ -252,3 +252,40 @@ func (s *Server) handleGetTaskWorkflow(w http.ResponseWriter, r *http.Request) {
 	}
 	_ = json.NewEncoder(w).Encode(taskWorkflowResponse{Definition: def, Run: run, Steps: steps})
 }
+
+func (s *Server) handleRuntimeTaskWorkflow(w http.ResponseWriter, r *http.Request) {
+	principal, ok := s.runtimeRequireCapability(w, r, "task.use")
+	if !ok {
+		return
+	}
+	t, _, _, err := s.runtimeFindTask(principal, r.PathValue("id"), r.URL.Query().Get("agent"))
+	if err != nil || t == nil {
+		s.jsonError(w, http.StatusNotFound, "task not found")
+		return
+	}
+	wfStore := workflowstore.NewStore(s.controlDB, principal.WorkspaceID)
+	run, found, err := wfStore.RunForTask(principal.Project, t.ID)
+	if err != nil {
+		s.serverError(w, err)
+		return
+	}
+	if !found {
+		s.jsonError(w, http.StatusNotFound, "workflow run not found")
+		return
+	}
+	def, found, err := wfStore.Definition(run.DefinitionID)
+	if err != nil {
+		s.serverError(w, err)
+		return
+	}
+	if !found {
+		s.jsonError(w, http.StatusNotFound, "workflow definition not found")
+		return
+	}
+	steps, err := wfStore.ListStepInstances(run.ID)
+	if err != nil {
+		s.serverError(w, err)
+		return
+	}
+	_ = json.NewEncoder(w).Encode(taskWorkflowResponse{Definition: def, Run: run, Steps: steps})
+}

@@ -632,3 +632,29 @@ func (s *Store) ListStepInstances(runID string) ([]entity.WorkflowStepInstance, 
 	sort.Slice(out, func(i, j int) bool { return out[i].StepID < out[j].StepID })
 	return out, nil
 }
+
+func (s *Store) RecordActiveStepOutput(project, taskID, summary, output, status string) error {
+	run, ok, err := s.RunForTask(project, taskID)
+	if err != nil || !ok {
+		return err
+	}
+	instances, err := s.ListStepInstances(run.ID)
+	if err != nil {
+		return err
+	}
+	for _, inst := range instances {
+		if inst.StepID != run.ActiveStepID {
+			continue
+		}
+		now := time.Now().UTC()
+		inst.Summary = strings.TrimSpace(summary)
+		inst.OutputArtifact = strings.TrimSpace(output)
+		if strings.TrimSpace(status) != "" {
+			inst.Status = strings.TrimSpace(status)
+		}
+		inst.FinishedAt = now
+		inst.UpdatedAt = now
+		return s.SaveStepInstance(&inst)
+	}
+	return nil
+}

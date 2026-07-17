@@ -10,6 +10,7 @@ import (
 
 	"github.com/multigent/multigent/internal/entity"
 	"github.com/multigent/multigent/internal/taskstore"
+	workflowstore "github.com/multigent/multigent/internal/workflow"
 )
 
 type runtimeTaskBody struct {
@@ -408,6 +409,7 @@ func (s *Server) handleRuntimeTaskDone(w http.ResponseWriter, r *http.Request) {
 		s.serverError(w, err)
 		return
 	}
+	s.recordRuntimeTaskWorkflowOutput(principal.WorkspaceID, principal.Project, t)
 	if t.CreatedBy != "" {
 		s.notifyTaskDone(t, principal.Project, agent)
 	}
@@ -423,6 +425,25 @@ func (s *Server) handleRuntimeTaskDone(w http.ResponseWriter, r *http.Request) {
 		Request:      r,
 	})
 	_ = json.NewEncoder(w).Encode(taskToRow(t, principal.Project, agent, true))
+}
+
+func (s *Server) recordRuntimeTaskWorkflowOutput(workspaceID, project string, t *entity.Task) {
+	if s == nil || s.controlDB == nil || t == nil || strings.TrimSpace(workspaceID) == "" {
+		return
+	}
+	stepStatus := "completed"
+	if t.Status == entity.TaskStatusDoneFailed {
+		stepStatus = "failed"
+	}
+	if t.Status != entity.TaskStatusDoneSuccess && t.Status != entity.TaskStatusDoneFailed {
+		return
+	}
+	wfStore := workflowstore.NewStore(s.controlDB, workspaceID)
+	output := strings.TrimSpace(t.Summary)
+	if output == "" {
+		output = strings.TrimSpace(t.LastError)
+	}
+	_ = wfStore.RecordActiveStepOutput(project, t.ID, t.Summary, output, stepStatus)
 }
 
 func normalizeDoneStatus(status, errText string) entity.TaskStatus {
