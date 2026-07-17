@@ -405,54 +405,60 @@ Use Multigent MCP Gateway:
 
 ## 和现有代码的关系
 
-已有能力：
+已落地能力：
 
 - connection、secret、profile、grant、health check。
 - runtime token。
-- runtime manifest。
+- runtime manifest 和 `MULTIGENT_TOOLS_FILE`。
 - Docker sandbox。
 - agent scoped runtime home。
-- `mga` 控制面 CLI。
+- `mga` agent runtime CLI。
+- Provider runtime adapter catalog。
+- Agent runtime connection resolve。
+- CLI adapter installer/checker bootstrap。
+- GitHub `gh` agent-scoped config materializer。
+- Feishu/Lark `lark-cli` agent-scoped config materializer 和 wrapper。
 - HTTP action proxy。
+- MCP Gateway broker mode：`multigent.list_tools` / `multigent.call_tool`。
+- `mga runtime gateway list-tools` / `mga runtime gateway call-tool`。
 - custom MCP proxy。
 
-需要补齐：
+仍需补齐：
 
-1. Provider runtime adapter catalog。
-2. Agent tool binding / runtime resolve。
-3. CLI adapter 的安装、配置文件 materialize 和隔离。
-4. MCP Gateway broker mode。
-5. Tool-specific skills 自动同步。
-6. Agent detail 页面展示“已启用工具”和接入方式。
-7. E2E：Lark CLI、GitHub CLI、Figma MCP Gateway 三条链路。
+1. Agent tool binding 表和 UI：当前主要从 active workspace connection 和 grants 推导，缺少明确的 agent 级启用/禁用状态。
+2. Tool-specific skills 自动同步：当前 runtime manifest 已声明 skills，但还没有按连接自动安装/同步缺失 skill。
+3. Figma MCP Gateway upstream：当前 Figma 已有 MCP Gateway adapter 声明和 HTTP action fallback，但还没有真实启动/托管 Figma upstream MCP server。
+4. Agent detail 页面展示“已启用工具”和接入方式。
+5. CLI wrapper command audit：当前有 run log 和 proxy audit，但平台 CLI 命令级审计还是 best effort。
+6. E2E：Lark CLI、GitHub CLI、Figma Gateway 三条链路需要真实 sandbox 验证。
 
 ## 实施顺序
 
 ### Phase 1: Adapter Catalog
 
-- 定义 provider runtime adapter schema。
-- 给 Lark、GitHub、Figma 写静态 catalog。
-- Runtime manifest 增加 `tools` 字段，描述 agent 可用工具和推荐入口。
+- 已完成：定义 provider runtime adapter schema。
+- 已完成：给 Lark、GitHub、Figma 写静态 catalog。
+- 已完成：Runtime manifest 增加 `tools` 字段，描述 agent 可用工具和推荐入口。
 
 ### Phase 2: CLI Adapter
 
-- 实现 CLI installer/checker。
-- 实现 agent 专属 config materializer。
-- 先支持 Lark 和 GitHub。
-- 同步对应 skills。
+- 已完成：实现 CLI installer/checker bootstrap。
+- 已完成：实现 agent 专属 config materializer。
+- 已完成：先支持 Feishu/Lark 和 GitHub。
+- 待完成：按连接自动同步缺失 skills。
 
 ### Phase 3: MCP Gateway Broker
 
-- 实现 `multigent.list_tools` 和 `multigent.call_tool`。
-- 先接 Figma MCP。
-- 将 HTTP action catalog 也映射成 gateway tool。
+- 已完成：实现 `multigent.list_tools` 和 `multigent.call_tool`。
+- 已完成：将 HTTP action catalog 映射成 gateway tool。
+- 待完成：接 Figma upstream MCP server，而不是只暴露 adapter 声明。
 
 ### Phase 4: Web Product Loop
 
-- 工具页面展示 provider。
-- agent 页面可以启用/禁用工具。
-- 展示该工具对 agent 的接入方式：CLI / MCP Gateway / HTTP Action / Skill。
-- 展示健康状态、最近调用、错误。
+- 已部分完成：工具页面展示 provider 和连接。
+- 待完成：agent 页面可以启用/禁用工具。
+- 待完成：展示该工具对 agent 的接入方式：CLI / MCP Gateway / HTTP Action / Skill。
+- 待完成：展示健康状态、最近调用、错误。
 
 ### Phase 5: Audit And Policy
 
