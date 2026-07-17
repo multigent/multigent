@@ -296,6 +296,16 @@
       "branch": "分支",
       "join": "汇合",
       "terminal": "结束"
+    },
+    "detail": {
+      "actor": "执行者",
+      "input": "输入",
+      "output": "输出",
+      "review": "审核",
+      "childTask": "子任务",
+      "summary": "总结",
+      "notSpecified": "未指定",
+      "notRequired": "不需要"
     }
   },
   "projectSettings": {

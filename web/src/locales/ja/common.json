@@ -296,6 +296,16 @@
       "branch": "分岐",
       "join": "結合",
       "terminal": "終了"
+    },
+    "detail": {
+      "actor": "担当",
+      "input": "入力",
+      "output": "出力",
+      "review": "レビュー",
+      "childTask": "子タスク",
+      "summary": "概要",
+      "notSpecified": "未指定",
+      "notRequired": "不要"
     }
   },
   "projectSettings": {

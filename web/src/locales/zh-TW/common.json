@@ -296,6 +296,16 @@
       "branch": "分支",
       "join": "匯合",
       "terminal": "結束"
+    },
+    "detail": {
+      "actor": "執行者",
+      "input": "輸入",
+      "output": "輸出",
+      "review": "審核",
+      "childTask": "子任務",
+      "summary": "總結",
+      "notSpecified": "未指定",
+      "notRequired": "不需要"
     }
   },
   "projectSettings": {

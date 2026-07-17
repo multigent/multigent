@@ -328,7 +328,7 @@ export function WorkflowBoard({
   }
 
   return (
-    <div className={cn('grid min-h-0 gap-4', compact || fullscreen ? 'grid-cols-1' : 'grid-cols-[minmax(0,1fr)_320px]')}>
+    <div className={cn('grid min-h-0 gap-4', compact ? 'grid-cols-1' : fullscreen ? 'grid-cols-[minmax(0,1fr)_360px]' : 'grid-cols-[minmax(0,1fr)_320px]')}>
       <div
         className={cn(
           'relative overflow-hidden rounded-xl border border-neutral-200/80 bg-white dark:border-zinc-700/60 dark:bg-zinc-950',
@@ -401,8 +401,8 @@ export function WorkflowBoard({
           ) : null}
         </ReactFlow>
       </div>
-      {!compact && !fullscreen && selected ? (
-        <aside className="min-h-[420px] rounded-xl border border-neutral-200/80 bg-white p-4 dark:border-zinc-700/60 dark:bg-zinc-900">
+      {!compact && selected ? (
+        <aside className={cn('rounded-xl border border-neutral-200/80 bg-white p-4 dark:border-zinc-700/60 dark:bg-zinc-900', fullscreen ? 'min-h-[calc(100vh-150px)]' : 'min-h-[420px]')}>
           <div className="flex items-start justify-between gap-3">
             <div>
               <p className="text-xs font-medium uppercase text-neutral-400 dark:text-zinc-500">{t(`workflows.stepTypes.${selected.type}`, { defaultValue: selected.type.replace('_', ' ') })}</p>
@@ -414,14 +414,14 @@ export function WorkflowBoard({
               </span>
             ) : null}
           </div>
-          <p className="mt-3 text-sm leading-6 text-neutral-600 dark:text-zinc-400">{selected.description || 'No description.'}</p>
+          <p className="mt-3 text-sm leading-6 text-neutral-600 dark:text-zinc-400">{selected.description || t('workflows.noDescription')}</p>
           <div className="mt-5 space-y-4 text-sm">
-            <Detail label="Actor" value={selected.actorRole || selectedInst?.actorId || 'system'} />
-            <Detail label="Input" value={selected.inputSchema || selectedInst?.inputArtifact || 'Not specified'} />
-            <Detail label="Output" value={selected.outputSchema || selectedInst?.outputArtifact || 'Not specified'} />
-            <Detail label="Review" value={selected.reviewPolicy || selectedInst?.reviewItemId || 'Not required'} />
-            {selectedInst?.childTaskId ? <Detail label="Child task" value={selectedInst.childTaskId} mono /> : null}
-            {selectedInst?.summary ? <Detail label="Summary" value={selectedInst.summary} /> : null}
+            <Detail label={t('workflows.detail.actor')} value={selected.actorRole || selectedInst?.actorId || 'system'} />
+            <Detail label={t('workflows.detail.input')} value={selected.inputSchema || selectedInst?.inputArtifact || t('workflows.detail.notSpecified')} />
+            <Detail label={t('workflows.detail.output')} value={selected.outputSchema || selectedInst?.outputArtifact || t('workflows.detail.notSpecified')} />
+            <Detail label={t('workflows.detail.review')} value={selected.reviewPolicy || selectedInst?.reviewItemId || t('workflows.detail.notRequired')} />
+            {selectedInst?.childTaskId ? <Detail label={t('workflows.detail.childTask')} value={selectedInst.childTaskId} mono /> : null}
+            {selectedInst?.summary ? <Detail label={t('workflows.detail.summary')} value={selectedInst.summary} /> : null}
           </div>
         </aside>
       ) : null}

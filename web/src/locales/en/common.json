@@ -296,6 +296,16 @@
       "branch": "Branch",
       "join": "Join",
       "terminal": "Terminal"
+    },
+    "detail": {
+      "actor": "Actor",
+      "input": "Input",
+      "output": "Output",
+      "review": "Review",
+      "childTask": "Child task",
+      "summary": "Summary",
+      "notSpecified": "Not specified",
+      "notRequired": "Not required"
     }
   },
   "projectSettings": {

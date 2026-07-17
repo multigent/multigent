@@ -106,24 +106,23 @@ export default function WorkflowsPage() {
           <div className="space-y-4">
             {!fullscreen && (
               <div className="flex flex-wrap items-start justify-between gap-4">
-                <div>
-                  <button type="button" onClick={() => navigate('/workflows')} className="mb-3 text-sm font-medium text-sky-700 hover:text-sky-800 dark:text-sky-400">
-                    {t('workflows.backToList')}
-                  </button>
+                <div className="min-w-[360px] flex-1">
                   <input
                     value={draft.name}
                     onChange={(e) => setDraft({ ...draft, name: e.target.value })}
-                    className="block w-full max-w-2xl rounded-lg border border-transparent bg-transparent px-0 text-xl font-semibold text-neutral-900 outline-none focus:border-neutral-200 focus:bg-white focus:px-3 dark:text-zinc-100 dark:focus:border-zinc-700 dark:focus:bg-zinc-900"
+                    className="block w-full rounded-lg border border-transparent bg-transparent px-0 text-xl font-semibold text-neutral-900 outline-none focus:border-neutral-200 focus:bg-white focus:px-3 dark:text-zinc-100 dark:focus:border-zinc-700 dark:focus:bg-zinc-900"
                   />
-                  <textarea
+                  <input
                     value={draft.description || ''}
                     onChange={(e) => setDraft({ ...draft, description: e.target.value })}
-                    rows={2}
                     placeholder={t('workflows.descriptionPlaceholder')}
-                    className="mt-1 block w-full max-w-3xl resize-none rounded-lg border border-transparent bg-transparent px-0 text-sm text-neutral-500 outline-none focus:border-neutral-200 focus:bg-white focus:px-3 dark:text-zinc-400 dark:focus:border-zinc-700 dark:focus:bg-zinc-900"
+                    className="mt-1 block w-full rounded-lg border border-transparent bg-transparent px-0 text-sm text-neutral-500 outline-none focus:border-neutral-200 focus:bg-white focus:px-3 dark:text-zinc-400 dark:focus:border-zinc-700 dark:focus:bg-zinc-900"
                   />
                 </div>
                 <div className="flex gap-2">
+                  <button type="button" onClick={() => navigate('/workflows')} className="rounded-lg border border-neutral-300 bg-white px-3 py-2 text-sm font-medium text-neutral-600 hover:bg-neutral-50 dark:border-zinc-600 dark:bg-zinc-900 dark:text-zinc-300 dark:hover:bg-zinc-800">
+                    {t('workflows.backToList')}
+                  </button>
                   <button type="button" onClick={() => void duplicateWorkflow(draft)} disabled={saving} className="rounded-lg border border-neutral-300 bg-white px-3 py-2 text-sm font-medium text-neutral-600 hover:bg-neutral-50 disabled:opacity-50 dark:border-zinc-600 dark:bg-zinc-900 dark:text-zinc-300 dark:hover:bg-zinc-800">
                     {t('workflows.duplicate')}
                   </button>
