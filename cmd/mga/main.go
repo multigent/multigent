@@ -1,6 +1,7 @@
 package main
 
 import (
+	"bufio"
 	"bytes"
 	"encoding/json"
 	"fmt"
@@ -8,6 +9,7 @@ import (
 	"net/http"
 	"net/url"
 	"os"
+	"strconv"
 	"strings"
 	"text/tabwriter"
 	"time"
@@ -68,7 +70,7 @@ func newRuntimeCmd() *cobra.Command {
 		Use:   "runtime",
 		Short: "Use scoped runtime tool connections",
 	}
-	cmd.AddCommand(newRuntimeConnectionsCmd(), newRuntimeToolsCmd(), newRuntimeSkillGuideCmd(), newRuntimeActionCmd(), newRuntimeMCPCmd(), newRuntimeGatewayCmd())
+	cmd.AddCommand(newRuntimeConnectionsCmd(), newRuntimeToolsCmd(), newRuntimeSkillGuideCmd(), newRuntimeActionCmd(), newRuntimeMCPCmd(), newRuntimeMCPServerCmd(), newRuntimeGatewayCmd())
 	cmd.AddCommand(newRuntimeVersionCmd())
 	return cmd
 }
@@ -170,6 +172,16 @@ func newRuntimeSkillGuideCmd() *cobra.Command {
 
 func newRuntimeMCPCmd() *cobra.Command {
 	return newProxyCmd("mcp", "Send a JSON-RPC request through a granted MCP connection", "/api/v1/runtime/mcp")
+}
+
+func newRuntimeMCPServerCmd() *cobra.Command {
+	return &cobra.Command{
+		Use:   "mcp-server",
+		Short: "Run the scoped Multigent MCP Gateway over stdio",
+		RunE: func(cmd *cobra.Command, args []string) error {
+			return serveRuntimeMCPStdio(os.Stdin, os.Stdout)
+		},
+	}
 }
 
 func newRuntimeGatewayCmd() *cobra.Command {
@@ -806,6 +818,129 @@ func callMCPGatewayTool(name string, arguments map[string]any) ([]byte, error) {
 		return nil, err
 	}
 	return unwrapMCPGatewayTextResult(body)
+}
+
+func serveRuntimeMCPStdio(in io.Reader, out io.Writer) error {
+	reader := bufio.NewReader(in)
+	for {
+		body, err := readMCPStdioFrame(reader)
+		if err == io.EOF {
+			return nil
+		}
+		if err != nil {
+			response := mcpGatewayErrorResponse(nil, -32700, err.Error())
+			if writeErr := writeMCPStdioFrame(out, response); writeErr != nil {
+				return writeErr
+			}
+			continue
+		}
+		if !json.Valid(body) {
+			response := mcpGatewayErrorResponse(nil, -32700, "invalid JSON-RPC request")
+			if writeErr := writeMCPStdioFrame(out, response); writeErr != nil {
+				return writeErr
+			}
+			continue
+		}
+		if !mcpRequestHasID(body) {
+			continue
+		}
+		respBody, err := requestJSON(http.MethodPost, "/api/v1/runtime/mcp/gateway", nil, body)
+		if err != nil {
+			response := mcpGatewayErrorResponse(mcpRequestID(body), -32000, err.Error())
+			if writeErr := writeMCPStdioFrame(out, response); writeErr != nil {
+				return writeErr
+			}
+			continue
+		}
+		if err := writeMCPStdioFrame(out, respBody); err != nil {
+			return err
+		}
+	}
+}
+
+func readMCPStdioFrame(reader *bufio.Reader) ([]byte, error) {
+	contentLength := -1
+	for {
+		line, err := reader.ReadString('\n')
+		if err != nil {
+			if err == io.EOF && strings.TrimSpace(line) == "" {
+				return nil, io.EOF
+			}
+			return nil, err
+		}
+		line = strings.TrimRight(line, "\r\n")
+		if line == "" {
+			break
+		}
+		name, value, ok := strings.Cut(line, ":")
+		if !ok {
+			continue
+		}
+		if strings.EqualFold(strings.TrimSpace(name), "Content-Length") {
+			n, err := strconv.Atoi(strings.TrimSpace(value))
+			if err != nil || n < 0 || n > maxJSONBody {
+				return nil, fmt.Errorf("invalid MCP Content-Length")
+			}
+			contentLength = n
+		}
+	}
+	if contentLength < 0 {
+		return nil, fmt.Errorf("missing MCP Content-Length")
+	}
+	body := make([]byte, contentLength)
+	if _, err := io.ReadFull(reader, body); err != nil {
+		return nil, err
+	}
+	return body, nil
+}
+
+func writeMCPStdioFrame(out io.Writer, body []byte) error {
+	if len(body) == 0 {
+		body = []byte(`{"jsonrpc":"2.0","id":null,"error":{"code":-32603,"message":"empty MCP gateway response"}}`)
+	}
+	if _, err := fmt.Fprintf(out, "Content-Length: %d\r\n\r\n", len(body)); err != nil {
+		return err
+	}
+	_, err := out.Write(body)
+	return err
+}
+
+func mcpRequestID(body []byte) json.RawMessage {
+	var req struct {
+		ID json.RawMessage `json:"id"`
+	}
+	if err := json.Unmarshal(body, &req); err != nil || len(req.ID) == 0 {
+		return nil
+	}
+	return req.ID
+}
+
+func mcpRequestHasID(body []byte) bool {
+	var req struct {
+		ID *json.RawMessage `json:"id"`
+	}
+	if err := json.Unmarshal(body, &req); err != nil {
+		return false
+	}
+	return req.ID != nil
+}
+
+func mcpGatewayErrorResponse(id json.RawMessage, code int, message string) []byte {
+	if len(id) == 0 {
+		id = json.RawMessage("null")
+	}
+	body, err := json.Marshal(map[string]any{
+		"jsonrpc": "2.0",
+		"id":      id,
+		"error": map[string]any{
+			"code":    code,
+			"message": message,
+		},
+	})
+	if err != nil {
+		return []byte(`{"jsonrpc":"2.0","id":null,"error":{"code":-32603,"message":"internal MCP bridge error"}}`)
+	}
+	return body
 }
 
 func unwrapMCPGatewayTextResult(body []byte) ([]byte, error) {

@@ -204,6 +204,69 @@ func TestMaterializeRuntimeFilesWritesToolPlan(t *testing.T) {
 			t.Fatalf("guide missing %q: %s", want, guideText)
 		}
 	}
+	if env[runtimeMCPConfigEnv] != "1" {
+		t.Fatalf("expected MCP config marker env, got %#v", env[runtimeMCPConfigEnv])
+	}
+	for _, path := range []string{
+		filepath.Join(agentDir, ".mcp.json"),
+		filepath.Join(agentDir, ".cursor", "mcp.json"),
+		filepath.Join(agentDir, ".multigent", "runtime-home", string(entity.ModelCodex), ".codex", "config.toml"),
+		filepath.Join(agentDir, ".multigent", "runtime-home", string(entity.ModelQoder), ".codex", "config.toml"),
+		filepath.Join(agentDir, ".multigent", "runtime-home", string(entity.ModelCursor), ".cursor", "mcp.json"),
+	} {
+		cfgBody, err := os.ReadFile(path)
+		if err != nil {
+			t.Fatalf("read MCP config %s: %v", path, err)
+		}
+		text := string(cfgBody)
+		if !strings.Contains(text, "multigent") || !strings.Contains(text, "mcp-server") {
+			t.Fatalf("MCP config missing gateway entry %s: %s", path, text)
+		}
+		if strings.Contains(text, token) {
+			t.Fatalf("MCP config leaked token %s: %s", path, text)
+		}
+	}
+}
+
+func TestWriteRuntimeMCPClientConfigsMergesExistingConfig(t *testing.T) {
+	agentDir := t.TempDir()
+	cursorPath := filepath.Join(agentDir, ".cursor", "mcp.json")
+	if err := os.MkdirAll(filepath.Dir(cursorPath), 0o700); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.WriteFile(cursorPath, []byte(`{"mcpServers":{"existing":{"command":"existing-mcp"}}}`), 0o600); err != nil {
+		t.Fatal(err)
+	}
+	codexPath := filepath.Join(agentDir, ".multigent", "runtime-home", string(entity.ModelCodex), ".codex", "config.toml")
+	if err := os.MkdirAll(filepath.Dir(codexPath), 0o700); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.WriteFile(codexPath, []byte("[projects.\"/workspace\"]\ntrust_level = \"trusted\"\n"), 0o600); err != nil {
+		t.Fatal(err)
+	}
+	if err := writeRuntimeMCPClientConfigs(agentDir); err != nil {
+		t.Fatalf("write MCP configs: %v", err)
+	}
+	cursorBody, err := os.ReadFile(cursorPath)
+	if err != nil {
+		t.Fatal(err)
+	}
+	cursorText := string(cursorBody)
+	for _, want := range []string{"existing-mcp", "multigent", "mcp-server"} {
+		if !strings.Contains(cursorText, want) {
+			t.Fatalf("cursor config missing %q: %s", want, cursorText)
+		}
+	}
+	codexBody, err := os.ReadFile(codexPath)
+	if err != nil {
+		t.Fatal(err)
+	}
+	codexText := string(codexBody)
+	for _, want := range []string{"trust_level", "BEGIN MULTIGENT MCP", "[mcp_servers.multigent]", "env_vars"} {
+		if !strings.Contains(codexText, want) {
+			t.Fatalf("codex config missing %q: %s", want, codexText)
+		}
+	}
 }
 
 func TestWriteRuntimeToolsFileMaterializesGitHubCLIConfig(t *testing.T) {

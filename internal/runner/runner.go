@@ -56,6 +56,7 @@ const (
 	runtimeToolBootstrapEnv   = "MULTIGENT_TOOL_BOOTSTRAP_FILE"
 	runtimeToolSkillsFileEnv  = "MULTIGENT_TOOL_SKILLS_FILE"
 	runtimeToolCLIAuditEnv    = "MULTIGENT_TOOL_CLI_AUDIT_FILE"
+	runtimeMCPConfigEnv       = "MULTIGENT_MCP_CONFIGURED"
 	maxRuntimeConnectionsFile = 1 << 20
 )
 
@@ -1136,6 +1137,9 @@ func (r *Runner) materializeRuntimeFiles(agentDir string, env map[string]string)
 		return nil
 	}
 	env[runtimeConnectionsFileEnv] = path
+	if err := writeRuntimeMCPClientConfigs(agentDir); err == nil {
+		env[runtimeMCPConfigEnv] = "1"
+	}
 	secretResolver, closeResolver := newRuntimeConnectionSecretResolver()
 	if closeResolver != nil {
 		defer closeResolver()
@@ -1239,6 +1243,106 @@ func writeRuntimeConnectionsFile(agentDir string, body []byte) (string, error) {
 		return "", err
 	}
 	return f.Name(), nil
+}
+
+func writeRuntimeMCPClientConfigs(agentDir string) error {
+	if strings.TrimSpace(agentDir) == "" {
+		return fmt.Errorf("agent dir is required")
+	}
+	projectMCPPath := filepath.Join(agentDir, ".mcp.json")
+	if err := mergeMCPJSONConfig(projectMCPPath); err != nil {
+		return err
+	}
+	cursorProjectPath := filepath.Join(agentDir, ".cursor", "mcp.json")
+	if err := mergeMCPJSONConfig(cursorProjectPath); err != nil {
+		return err
+	}
+	for _, model := range []entity.AgentModel{entity.ModelCodex, entity.ModelQoder} {
+		path := filepath.Join(agentDir, ".multigent", "runtime-home", string(model), ".codex", "config.toml")
+		if err := mergeCodexMCPConfig(path); err != nil {
+			return err
+		}
+	}
+	cursorHomePath := filepath.Join(agentDir, ".multigent", "runtime-home", string(entity.ModelCursor), ".cursor", "mcp.json")
+	if err := mergeMCPJSONConfig(cursorHomePath); err != nil {
+		return err
+	}
+	return nil
+}
+
+func mergeMCPJSONConfig(path string) error {
+	if err := os.MkdirAll(filepath.Dir(path), 0o700); err != nil {
+		return err
+	}
+	cfg := map[string]any{}
+	if body, err := os.ReadFile(path); err == nil && len(bytes.TrimSpace(body)) > 0 {
+		if err := json.Unmarshal(body, &cfg); err != nil {
+			return fmt.Errorf("decode MCP config %s: %w", path, err)
+		}
+	}
+	servers, _ := cfg["mcpServers"].(map[string]any)
+	if servers == nil {
+		servers = map[string]any{}
+	}
+	servers["multigent"] = map[string]any{
+		"command": runtimecli.BinaryName,
+		"args":    []string{"runtime", "mcp-server"},
+	}
+	cfg["mcpServers"] = servers
+	body, err := json.MarshalIndent(cfg, "", "  ")
+	if err != nil {
+		return err
+	}
+	return os.WriteFile(path, append(body, '\n'), 0o600)
+}
+
+func mergeCodexMCPConfig(path string) error {
+	if err := os.MkdirAll(filepath.Dir(path), 0o700); err != nil {
+		return err
+	}
+	body, err := os.ReadFile(path)
+	if err != nil && !os.IsNotExist(err) {
+		return err
+	}
+	updated := replaceManagedBlock(string(body), "# BEGIN MULTIGENT MCP", "# END MULTIGENT MCP", codexMCPConfigBlock())
+	return os.WriteFile(path, []byte(updated), 0o600)
+}
+
+func codexMCPConfigBlock() string {
+	return `# BEGIN MULTIGENT MCP
+[mcp_servers.multigent]
+enabled = true
+command = "mga"
+args = ["runtime", "mcp-server"]
+env_vars = ["MULTIGENT_API_URL", "MULTIGENT_AGENT_TOKEN"]
+# END MULTIGENT MCP
+`
+}
+
+func replaceManagedBlock(content, begin, end, block string) string {
+	content = strings.TrimRight(content, "\n")
+	start := strings.Index(content, begin)
+	if start >= 0 {
+		stopRel := strings.Index(content[start:], end)
+		if stopRel >= 0 {
+			stop := start + stopRel + len(end)
+			prefix := strings.TrimRight(content[:start], "\n")
+			suffix := strings.TrimLeft(content[stop:], "\n")
+			parts := []string{}
+			if prefix != "" {
+				parts = append(parts, prefix)
+			}
+			parts = append(parts, strings.TrimRight(block, "\n"))
+			if suffix != "" {
+				parts = append(parts, suffix)
+			}
+			return strings.Join(parts, "\n\n") + "\n"
+		}
+	}
+	if content == "" {
+		return strings.TrimRight(block, "\n") + "\n"
+	}
+	return content + "\n\n" + strings.TrimRight(block, "\n") + "\n"
 }
 
 type runtimeToolsPlan struct {
