@@ -84,6 +84,8 @@ type Props = {
   compact?: boolean
 }
 
+const EMPTY_INSTANCES: WorkflowStepInstance[] = []
+
 type WorkflowNodeData = {
   step: WorkflowStep
   status?: string
@@ -154,7 +156,7 @@ function WorkflowStepNode({ data, selected }: NodeProps<WorkflowNode>) {
   )
 }
 
-export function WorkflowBoard({ definition, run, instances = [], compact = false }: Props) {
+export function WorkflowBoard({ definition, run, instances = EMPTY_INSTANCES, compact = false }: Props) {
   const instanceByStep = useMemo(() => new Map(instances.map((inst) => [inst.stepId, inst])), [instances])
   const [selectedId, setSelectedId] = useState(definition.startStepId || definition.steps[0]?.id || '')
   const selected = definition.steps.find((s) => s.id === selectedId) ?? definition.steps[0]
