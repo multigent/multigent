@@ -299,9 +299,9 @@
     },
     "detail": {
       "actor": "担当",
+      "defaultRole": "既定の担当ロール",
       "input": "入力",
       "output": "出力",
-      "review": "レビュー",
       "childTask": "子タスク",
       "summary": "概要",
       "notSpecified": "未指定",
@@ -311,7 +311,12 @@
       "type": "タイプ",
       "description": "説明",
       "color": "色",
-      "saveNode": "ノードを保存"
+      "saveNode": "ノードを保存",
+      "addField": "フィールド追加",
+      "noFields": "フィールドなし",
+      "fieldName": "フィールド名",
+      "fieldDescription": "説明",
+      "required": "必須"
     },
     "colors": {
       "neutral": "ニュートラル",

@@ -21,6 +21,13 @@ import { cn } from '../../lib/cn'
 
 export type WorkflowPosition = { x: number; y: number }
 
+export type WorkflowField = {
+  name: string
+  type?: string
+  description?: string
+  required?: boolean
+}
+
 export type WorkflowStep = {
   id: string
   type: string
@@ -29,6 +36,8 @@ export type WorkflowStep = {
   actorRole?: string
   inputSchema?: string
   outputSchema?: string
+  inputFields?: WorkflowField[]
+  outputFields?: WorkflowField[]
   reviewPolicy?: string
   position: WorkflowPosition
   config?: Record<string, string>
@@ -167,10 +176,34 @@ const edgeClass: Record<string, string> = {
 
 const stepTypes = ['agent_task', 'human_task', 'human_review', 'branch', 'join', 'terminal']
 const colorOptions = ['neutral', 'sky', 'violet', 'amber', 'emerald', 'rose']
+const fieldTypes = ['string', 'number', 'boolean', 'object', 'array', 'file', 'url', 'date']
 const ALIGN_THRESHOLD = 28
 
 const fieldClass =
   'mt-1 w-full rounded-lg border border-neutral-300 bg-white px-3 py-2 text-sm text-neutral-900 outline-none transition-colors focus:border-sky-400 dark:border-zinc-600 dark:bg-zinc-800 dark:text-zinc-100'
+
+function legacyFields(schema?: string): WorkflowField[] {
+  if (!schema?.trim()) return []
+  return schema
+    .split(',')
+    .map((part) => part.trim())
+    .filter(Boolean)
+    .map((name) => ({ name, type: 'string', required: true }))
+}
+
+function schemaFieldsFor(step: WorkflowStep, kind: 'input' | 'output'): WorkflowField[] {
+  const fields = kind === 'input' ? step.inputFields : step.outputFields
+  if (fields && fields.length > 0) return fields
+  return legacyFields(kind === 'input' ? step.inputSchema : step.outputSchema)
+}
+
+function normalizeStepFields(step: WorkflowStep): WorkflowStep {
+  return {
+    ...step,
+    inputFields: schemaFieldsFor(step, 'input'),
+    outputFields: schemaFieldsFor(step, 'output'),
+  }
+}
 
 function WorkflowStepNode({ data, selected }: NodeProps<WorkflowNode>) {
   const { t } = useTranslation()
@@ -226,7 +259,7 @@ export function WorkflowBoard({
   const [stepDraft, setStepDraft] = useState<WorkflowStep | null>(selected ?? null)
 
   useEffect(() => {
-    setStepDraft(selected ?? null)
+    setStepDraft(selected ? normalizeStepFields(selected) : null)
   }, [selected?.id])
 
   const initialNodes = useMemo<WorkflowNode[]>(
@@ -395,6 +428,10 @@ export function WorkflowBoard({
     })
   }
 
+  function updateStepDraftFields(kind: 'inputFields' | 'outputFields', fields: WorkflowField[]) {
+    setStepDraft((current) => (current ? { ...current, [kind]: fields, [kind === 'inputFields' ? 'inputSchema' : 'outputSchema']: '' } : current))
+  }
+
   function saveSelectedStep() {
     if (!editable || !selected || !stepDraft) return
     updateDefinition({
@@ -525,21 +562,19 @@ export function WorkflowBoard({
                 <textarea value={stepDraft.description || ''} onChange={(event) => updateStepDraft({ description: event.target.value })} rows={3} className={cn(fieldClass, 'resize-y')} />
               </label>
               <label className="block">
-                <span className="text-xs font-medium uppercase text-neutral-400 dark:text-zinc-500">{t('workflows.detail.actor')}</span>
+                <span className="text-xs font-medium uppercase text-neutral-400 dark:text-zinc-500">{t('workflows.detail.defaultRole')}</span>
                 <input value={stepDraft.actorRole || ''} onChange={(event) => updateStepDraft({ actorRole: event.target.value })} placeholder="agent" className={fieldClass} />
               </label>
-              <label className="block">
-                <span className="text-xs font-medium uppercase text-neutral-400 dark:text-zinc-500">{t('workflows.detail.input')}</span>
-                <textarea value={stepDraft.inputSchema || ''} onChange={(event) => updateStepDraft({ inputSchema: event.target.value })} rows={3} className={cn(fieldClass, 'resize-y')} />
-              </label>
-              <label className="block">
-                <span className="text-xs font-medium uppercase text-neutral-400 dark:text-zinc-500">{t('workflows.detail.output')}</span>
-                <textarea value={stepDraft.outputSchema || ''} onChange={(event) => updateStepDraft({ outputSchema: event.target.value })} rows={3} className={cn(fieldClass, 'resize-y')} />
-              </label>
-              <label className="block">
-                <span className="text-xs font-medium uppercase text-neutral-400 dark:text-zinc-500">{t('workflows.detail.review')}</span>
-                <input value={stepDraft.reviewPolicy || ''} onChange={(event) => updateStepDraft({ reviewPolicy: event.target.value })} placeholder={t('workflows.detail.notRequired')} className={fieldClass} />
-              </label>
+              <FieldTable
+                title={t('workflows.detail.input')}
+                fields={stepDraft.inputFields ?? []}
+                onChange={(fields) => updateStepDraftFields('inputFields', fields)}
+              />
+              <FieldTable
+                title={t('workflows.detail.output')}
+                fields={stepDraft.outputFields ?? []}
+                onChange={(fields) => updateStepDraftFields('outputFields', fields)}
+              />
               <button
                 type="button"
                 onClick={saveSelectedStep}
@@ -564,10 +599,9 @@ export function WorkflowBoard({
               </div>
               <p className="mt-3 text-sm leading-6 text-neutral-600 dark:text-zinc-400">{selected.description || t('workflows.noDescription')}</p>
               <div className="mt-5 space-y-4 text-sm">
-                <Detail label={t('workflows.detail.actor')} value={selected.actorRole || selectedInst?.actorId || 'system'} />
-                <Detail label={t('workflows.detail.input')} value={selected.inputSchema || selectedInst?.inputArtifact || t('workflows.detail.notSpecified')} />
-                <Detail label={t('workflows.detail.output')} value={selected.outputSchema || selectedInst?.outputArtifact || t('workflows.detail.notSpecified')} />
-                <Detail label={t('workflows.detail.review')} value={selected.reviewPolicy || selectedInst?.reviewItemId || t('workflows.detail.notRequired')} />
+                <Detail label={t('workflows.detail.defaultRole')} value={selected.actorRole || selectedInst?.actorId || 'system'} />
+                <FieldSummary label={t('workflows.detail.input')} fields={schemaFieldsFor(selected, 'input')} fallback={selected.inputSchema || selectedInst?.inputArtifact || t('workflows.detail.notSpecified')} />
+                <FieldSummary label={t('workflows.detail.output')} fields={schemaFieldsFor(selected, 'output')} fallback={selected.outputSchema || selectedInst?.outputArtifact || t('workflows.detail.notSpecified')} />
                 {selectedInst?.childTaskId ? <Detail label={t('workflows.detail.childTask')} value={selectedInst.childTaskId} mono /> : null}
                 {selectedInst?.summary ? <Detail label={t('workflows.detail.summary')} value={selectedInst.summary} /> : null}
               </div>
@@ -586,6 +620,102 @@ function Detail({ label, value, mono = false }: { label: string; value: string; 
       <p className={cn('mt-1 rounded-lg bg-neutral-50 px-3 py-2 text-neutral-700 dark:bg-zinc-800/70 dark:text-zinc-300', mono && 'font-mono text-xs')}>
         {value}
       </p>
+    </div>
+  )
+}
+
+function FieldTable({ title, fields, onChange }: { title: string; fields: WorkflowField[]; onChange: (fields: WorkflowField[]) => void }) {
+  const { t } = useTranslation()
+
+  function updateField(index: number, patch: Partial<WorkflowField>) {
+    onChange(fields.map((field, i) => (i === index ? { ...field, ...patch } : field)))
+  }
+
+  function addField() {
+    onChange([...fields, { name: '', type: 'string', required: true }])
+  }
+
+  function removeField(index: number) {
+    onChange(fields.filter((_, i) => i !== index))
+  }
+
+  return (
+    <div>
+      <div className="flex items-center justify-between gap-2">
+        <span className="text-xs font-medium uppercase text-neutral-400 dark:text-zinc-500">{title}</span>
+        <button type="button" onClick={addField} className="rounded-md border border-neutral-300 px-2 py-1 text-xs text-neutral-600 hover:bg-neutral-50 dark:border-zinc-600 dark:text-zinc-300 dark:hover:bg-zinc-800">
+          {t('workflows.detail.addField')}
+        </button>
+      </div>
+      <div className="mt-2 overflow-hidden rounded-lg border border-neutral-200 dark:border-zinc-700">
+        {fields.length === 0 ? (
+          <div className="px-3 py-3 text-xs text-neutral-400 dark:text-zinc-500">{t('workflows.detail.noFields')}</div>
+        ) : (
+          <div className="divide-y divide-neutral-200 dark:divide-zinc-700">
+            {fields.map((field, index) => (
+              <div key={index} className="space-y-2 p-2">
+                <div className="grid grid-cols-[minmax(0,1fr)_92px] gap-2">
+                  <input
+                    value={field.name}
+                    onChange={(event) => updateField(index, { name: event.target.value })}
+                    placeholder={t('workflows.detail.fieldName')}
+                    className="rounded-md border border-neutral-300 bg-white px-2 py-1.5 text-xs text-neutral-900 outline-none focus:border-sky-400 dark:border-zinc-600 dark:bg-zinc-800 dark:text-zinc-100"
+                  />
+                  <select
+                    value={field.type || 'string'}
+                    onChange={(event) => updateField(index, { type: event.target.value })}
+                    className="rounded-md border border-neutral-300 bg-white px-2 py-1.5 text-xs text-neutral-900 outline-none focus:border-sky-400 dark:border-zinc-600 dark:bg-zinc-800 dark:text-zinc-100"
+                  >
+                    {fieldTypes.map((type) => (
+                      <option key={type} value={type}>{type}</option>
+                    ))}
+                  </select>
+                </div>
+                <input
+                  value={field.description || ''}
+                  onChange={(event) => updateField(index, { description: event.target.value })}
+                  placeholder={t('workflows.detail.fieldDescription')}
+                  className="w-full rounded-md border border-neutral-300 bg-white px-2 py-1.5 text-xs text-neutral-900 outline-none focus:border-sky-400 dark:border-zinc-600 dark:bg-zinc-800 dark:text-zinc-100"
+                />
+                <div className="flex items-center justify-between gap-2">
+                  <label className="flex items-center gap-1.5 text-xs text-neutral-500 dark:text-zinc-400">
+                    <input
+                      type="checkbox"
+                      checked={Boolean(field.required)}
+                      onChange={(event) => updateField(index, { required: event.target.checked })}
+                      className="size-3.5 accent-sky-600"
+                    />
+                    {t('workflows.detail.required')}
+                  </label>
+                  <button type="button" onClick={() => removeField(index)} className="text-xs text-red-500 hover:text-red-600 dark:text-red-400">
+                    {t('common.delete')}
+                  </button>
+                </div>
+              </div>
+            ))}
+          </div>
+        )}
+      </div>
+    </div>
+  )
+}
+
+function FieldSummary({ label, fields, fallback }: { label: string; fields: WorkflowField[]; fallback: string }) {
+  if (fields.length === 0) return <Detail label={label} value={fallback} />
+  return (
+    <div>
+      <p className="text-xs font-medium uppercase text-neutral-400 dark:text-zinc-500">{label}</p>
+      <div className="mt-1 overflow-hidden rounded-lg border border-neutral-200 dark:border-zinc-700">
+        {fields.map((field, index) => (
+          <div key={`${field.name}-${index}`} className="border-b border-neutral-200 px-3 py-2 last:border-b-0 dark:border-zinc-700">
+            <div className="flex items-center justify-between gap-2">
+              <span className="truncate text-sm font-medium text-neutral-700 dark:text-zinc-300">{field.name || '-'}</span>
+              <span className="shrink-0 rounded-full bg-neutral-100 px-2 py-0.5 text-[11px] text-neutral-500 dark:bg-zinc-800 dark:text-zinc-400">{field.type || 'string'}</span>
+            </div>
+            {field.description ? <p className="mt-1 text-xs text-neutral-500 dark:text-zinc-500">{field.description}</p> : null}
+          </div>
+        ))}
+      </div>
     </div>
   )
 }

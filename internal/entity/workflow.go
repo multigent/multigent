@@ -28,9 +28,18 @@ type WorkflowStep struct {
 	ActorRole    string            `json:"actorRole,omitempty" yaml:"actor_role,omitempty"`
 	InputSchema  string            `json:"inputSchema,omitempty" yaml:"input_schema,omitempty"`
 	OutputSchema string            `json:"outputSchema,omitempty" yaml:"output_schema,omitempty"`
+	InputFields  []WorkflowField   `json:"inputFields,omitempty" yaml:"input_fields,omitempty"`
+	OutputFields []WorkflowField   `json:"outputFields,omitempty" yaml:"output_fields,omitempty"`
 	ReviewPolicy string            `json:"reviewPolicy,omitempty" yaml:"review_policy,omitempty"`
 	Position     WorkflowPosition  `json:"position" yaml:"position"`
 	Config       map[string]string `json:"config,omitempty" yaml:"config,omitempty"`
+}
+
+type WorkflowField struct {
+	Name        string `json:"name" yaml:"name"`
+	Type        string `json:"type,omitempty" yaml:"type,omitempty"`
+	Description string `json:"description,omitempty" yaml:"description,omitempty"`
+	Required    bool   `json:"required,omitempty" yaml:"required,omitempty"`
 }
 
 type WorkflowPosition struct {

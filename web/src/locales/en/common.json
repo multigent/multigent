@@ -299,9 +299,9 @@
     },
     "detail": {
       "actor": "Actor",
+      "defaultRole": "Default role",
       "input": "Input",
       "output": "Output",
-      "review": "Review",
       "childTask": "Child task",
       "summary": "Summary",
       "notSpecified": "Not specified",
@@ -311,7 +311,12 @@
       "type": "Type",
       "description": "Description",
       "color": "Color",
-      "saveNode": "Save node"
+      "saveNode": "Save node",
+      "addField": "Add field",
+      "noFields": "No fields",
+      "fieldName": "Field name",
+      "fieldDescription": "Description",
+      "required": "Required"
     },
     "colors": {
       "neutral": "Neutral",

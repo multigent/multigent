@@ -299,9 +299,9 @@
     },
     "detail": {
       "actor": "執行者",
+      "defaultRole": "預設執行角色",
       "input": "輸入",
       "output": "輸出",
-      "review": "審核",
       "childTask": "子任務",
       "summary": "總結",
       "notSpecified": "未指定",
@@ -311,7 +311,12 @@
       "type": "類型",
       "description": "描述",
       "color": "顏色",
-      "saveNode": "儲存節點"
+      "saveNode": "儲存節點",
+      "addField": "新增欄位",
+      "noFields": "暫無欄位",
+      "fieldName": "欄位名",
+      "fieldDescription": "欄位說明",
+      "required": "必填"
     },
     "colors": {
       "neutral": "中性",
