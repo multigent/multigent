@@ -2,6 +2,7 @@ package api
 
 import (
 	"bytes"
+	"context"
 	"encoding/json"
 	"fmt"
 	"net/http"
@@ -74,7 +75,7 @@ func (s *Server) handleRuntimeMCPGatewayToolCall(w http.ResponseWriter, r *http.
 	}
 	switch params.Name {
 	case "multigent.list_tools":
-		tools, err := s.mcpGatewayRuntimeTools(principal, params.Arguments)
+		tools, err := s.mcpGatewayRuntimeTools(r.Context(), principal, params.Arguments)
 		if err != nil {
 			writeMCPGatewayError(w, req.ID, -32000, err.Error())
 			return
@@ -122,7 +123,7 @@ func mcpGatewayBrokerTools() []map[string]any {
 	}
 }
 
-func (s *Server) mcpGatewayRuntimeTools(principal runtimeAgentPrincipal, args map[string]any) ([]mcpGatewayToolInfo, error) {
+func (s *Server) mcpGatewayRuntimeTools(ctx context.Context, principal runtimeAgentPrincipal, args map[string]any) ([]mcpGatewayToolInfo, error) {
 	providerFilter := strings.TrimSpace(stringArg(args, "provider"))
 	adapterFilter := strings.TrimSpace(stringArg(args, "adapter"))
 	connections, err := s.resolveAgentRuntimeConnections(principal.WorkspaceID, principal.Project, principal.Agent)
@@ -156,15 +157,74 @@ func (s *Server) mcpGatewayRuntimeTools(principal runtimeAgentPrincipal, args ma
 			if adapterFilter != "" && adapterFilter != connector.RuntimeAdapterMCPGateway {
 				continue
 			}
-			out = append(out, mcpGatewayToolInfo{
-				ID:          "mcp:" + connection.Runtime.Alias + ":tools/call",
-				Name:        "tools/call",
-				Provider:    connection.Provider,
-				Connection:  connection.Runtime.Alias,
-				Adapter:     connector.RuntimeAdapterMCPGateway,
-				Description: adapter.Description,
-			})
+			upstreamTools, err := s.mcpGatewayListUpstreamTools(ctx, principal, connection, adapter.Description)
+			if err != nil {
+				out = append(out, mcpGatewayToolInfo{
+					ID:          "mcp:" + connection.Runtime.Alias + ":__unavailable",
+					Name:        "unavailable",
+					Provider:    connection.Provider,
+					Connection:  connection.Runtime.Alias,
+					Adapter:     connector.RuntimeAdapterMCPGateway,
+					Description: "MCP upstream is not available: " + err.Error(),
+				})
+				continue
+			}
+			out = append(out, upstreamTools...)
 		}
+	}
+	return out, nil
+}
+
+func (s *Server) mcpGatewayListUpstreamTools(ctx context.Context, principal runtimeAgentPrincipal, connection agentRuntimeConnectionResponse, fallbackDescription string) ([]mcpGatewayToolInfo, error) {
+	dbConnection, ok, err := s.findRuntimeConnection(principal, "", connection.Runtime.Alias)
+	if err != nil {
+		return nil, err
+	}
+	if !ok {
+		return nil, fmt.Errorf("connection is not granted to this agent")
+	}
+	reqBody, _ := json.Marshal(map[string]any{"jsonrpc": "2.0", "id": 1, "method": "tools/list"})
+	payload, err := s.callMCPUpstream(ctx, principal, dbConnection, reqBody)
+	if err != nil {
+		return nil, err
+	}
+	var resp struct {
+		Result struct {
+			Tools []struct {
+				Name        string         `json:"name"`
+				Description string         `json:"description"`
+				InputSchema map[string]any `json:"inputSchema"`
+			} `json:"tools"`
+		} `json:"result"`
+		Error *struct {
+			Message string `json:"message"`
+		} `json:"error"`
+	}
+	if err := json.Unmarshal(payload, &resp); err != nil {
+		return nil, fmt.Errorf("decode MCP tools/list response: %w", err)
+	}
+	if resp.Error != nil {
+		return nil, fmt.Errorf("%s", resp.Error.Message)
+	}
+	out := make([]mcpGatewayToolInfo, 0, len(resp.Result.Tools))
+	for _, tool := range resp.Result.Tools {
+		name := strings.TrimSpace(tool.Name)
+		if name == "" {
+			continue
+		}
+		description := strings.TrimSpace(tool.Description)
+		if description == "" {
+			description = fallbackDescription
+		}
+		out = append(out, mcpGatewayToolInfo{
+			ID:          "mcp:" + connection.Runtime.Alias + ":" + name,
+			Name:        name,
+			Provider:    connection.Provider,
+			Connection:  connection.Runtime.Alias,
+			Adapter:     connector.RuntimeAdapterMCPGateway,
+			Description: description,
+			InputSchema: tool.InputSchema,
+		})
 	}
 	return out, nil
 }
@@ -183,7 +243,7 @@ func (s *Server) mcpGatewayCallTool(r *http.Request, principal runtimeAgentPrinc
 	case "action":
 		return s.mcpGatewayCallActionTool(r, principal, parts[1], parts[2], toolArgs)
 	case "mcp":
-		return s.mcpGatewayCallCustomMCPTool(r, principal, parts[1], parts[2], toolArgs)
+		return s.mcpGatewayCallMCPTool(r, principal, parts[1], parts[2], toolArgs)
 	default:
 		return nil, fmt.Errorf("unsupported tool_id type %q", parts[0])
 	}
@@ -235,7 +295,7 @@ func (s *Server) mcpGatewayCallActionTool(r *http.Request, principal runtimeAgen
 	return payload, nil
 }
 
-func (s *Server) mcpGatewayCallCustomMCPTool(r *http.Request, principal runtimeAgentPrincipal, alias, method string, args map[string]any) (map[string]any, error) {
+func (s *Server) mcpGatewayCallMCPTool(r *http.Request, principal runtimeAgentPrincipal, alias, toolName string, args map[string]any) (map[string]any, error) {
 	connection, ok, err := s.findRuntimeConnection(principal, "", alias)
 	if err != nil {
 		return nil, err
@@ -243,30 +303,49 @@ func (s *Server) mcpGatewayCallCustomMCPTool(r *http.Request, principal runtimeA
 	if !ok {
 		return nil, fmt.Errorf("connection is not granted to this agent")
 	}
-	if connection.Provider != "custom-mcp" {
-		return nil, fmt.Errorf("MCP gateway upstream calls are only implemented for custom-mcp connections")
+	hasAdapter, err := s.runtimeConnectionHasAdapter(principal, alias, connector.RuntimeAdapterMCPGateway)
+	if err != nil {
+		return nil, err
+	}
+	if !hasAdapter {
+		return nil, fmt.Errorf("connection %q does not expose an MCP Gateway adapter", alias)
 	}
 	reqBody, _ := json.Marshal(map[string]any{
 		"jsonrpc": "2.0",
 		"id":      1,
-		"method":  method,
-		"params":  args,
+		"method":  "tools/call",
+		"params": map[string]any{
+			"name":      toolName,
+			"arguments": args,
+		},
 	})
-	proxyReq := r.Clone(r.Context())
-	proxyReq.Body = ioNopCloser{Reader: bytes.NewReader(reqBody)}
-	proxyReq.ContentLength = int64(len(reqBody))
-	rec := newRuntimeProxyRecorder()
-	if err := s.proxyCustomMCP(rec, proxyReq, principal, connection); err != nil {
+	payload, err := s.callMCPUpstream(r.Context(), principal, connection, reqBody)
+	if err != nil {
 		return nil, err
 	}
-	if rec.status < 200 || rec.status >= 300 {
-		return nil, fmt.Errorf("runtime MCP returned HTTP %d: %s", rec.status, strings.TrimSpace(rec.body.String()))
-	}
-	var payload map[string]any
-	if err := json.Unmarshal(rec.body.Bytes(), &payload); err != nil {
+	var result map[string]any
+	if err := json.Unmarshal(payload, &result); err != nil {
 		return nil, err
 	}
-	return payload, nil
+	return result, nil
+}
+
+func (s *Server) runtimeConnectionHasAdapter(principal runtimeAgentPrincipal, alias, adapterType string) (bool, error) {
+	connections, err := s.resolveAgentRuntimeConnections(principal.WorkspaceID, principal.Project, principal.Agent)
+	if err != nil {
+		return false, err
+	}
+	for _, connection := range connections {
+		if connection.Runtime.Alias != alias {
+			continue
+		}
+		for _, adapter := range connection.Runtime.Adapters {
+			if adapter.Type == adapterType {
+				return true, nil
+			}
+		}
+	}
+	return false, nil
 }
 
 func runtimeActionRequestFromProviderAction(action connector.ProviderAction, args map[string]any) ([]byte, error) {

@@ -118,6 +118,125 @@ func (s *Server) proxyCustomMCP(w http.ResponseWriter, r *http.Request, principa
 	return nil
 }
 
+func (s *Server) callMCPUpstream(ctx context.Context, principal runtimeAgentPrincipal, connection controldb.Connection, body []byte) ([]byte, error) {
+	cfg, err := s.mcpGatewayUpstreamConfig(connection)
+	if err != nil {
+		return nil, err
+	}
+	if cfg.ServerURL == "" {
+		return nil, fmt.Errorf("MCP upstream connection is missing mcpServerUrl")
+	}
+	req, err := http.NewRequestWithContext(ctx, http.MethodPost, cfg.ServerURL, bytes.NewReader(body))
+	if err != nil {
+		return nil, fmt.Errorf("build MCP upstream request: %w", err)
+	}
+	req.Header.Set("Content-Type", "application/json")
+	req.Header.Set("Accept", "application/json")
+	if cfg.AuthHeader != "" && cfg.AuthValue != "" {
+		req.Header.Set(cfg.AuthHeader, cfg.AuthValue)
+	}
+	client := &http.Client{Timeout: 60 * time.Second}
+	resp, err := client.Do(req)
+	if err != nil {
+		return nil, fmt.Errorf("call MCP upstream: %w", err)
+	}
+	defer resp.Body.Close()
+	s.auditRuntimeConnectionUse(contextRequest(ctx), principal, connection, "mcp_gateway")
+	respBody, err := io.ReadAll(io.LimitReader(resp.Body, maxJSONBody+1))
+	if err != nil {
+		return nil, fmt.Errorf("read MCP upstream response: %w", err)
+	}
+	if len(respBody) > maxJSONBody {
+		return nil, fmt.Errorf("MCP upstream response too large")
+	}
+	respBody = redactRuntimeProxyResponse(respBody, cfg.RedactValues...)
+	if resp.StatusCode < 200 || resp.StatusCode >= 300 {
+		return nil, fmt.Errorf("MCP upstream returned HTTP %d: %s", resp.StatusCode, strings.TrimSpace(string(respBody)))
+	}
+	if !json.Valid(respBody) {
+		return nil, fmt.Errorf("MCP upstream response is not valid JSON")
+	}
+	return respBody, nil
+}
+
+type mcpGatewayUpstreamConfig struct {
+	ServerURL    string
+	AuthHeader   string
+	AuthValue    string
+	RedactValues []string
+}
+
+func (s *Server) mcpGatewayUpstreamConfig(connection controldb.Connection) (mcpGatewayUpstreamConfig, error) {
+	values := map[string]string{}
+	if connection.AuthType != ConnectionAuthNoAuth {
+		secret, ok, err := s.controlDB.ConnectionSecret(connection.ID)
+		if err != nil {
+			return mcpGatewayUpstreamConfig{}, err
+		}
+		if ok {
+			opened, err := openConnectionSecret(secret)
+			if err != nil {
+				return mcpGatewayUpstreamConfig{}, err
+			}
+			values = opened
+		}
+	}
+	profile := map[string]any{}
+	_ = json.Unmarshal([]byte(connection.ProfileJSON), &profile)
+	serverURL := firstNonEmpty(
+		values["mcpServerUrl"],
+		values["serverUrl"],
+		firstProfileString(profile, "mcpServerUrl"),
+		firstProfileString(profile, "serverUrl"),
+	)
+	if err := validateMCPGatewayServerURL(serverURL); err != nil {
+		return mcpGatewayUpstreamConfig{}, err
+	}
+	token := firstNonEmpty(values["mcpToken"], values["token"], values["apiKey"])
+	if token == "" && connection.AuthType == ConnectionAuthOAuth2 {
+		accessToken, err := s.oauthAccessTokenForConnection(connection, values)
+		if err != nil {
+			return mcpGatewayUpstreamConfig{}, err
+		}
+		token = accessToken
+	}
+	if token == "" {
+		token = strings.TrimSpace(values["accessToken"])
+	}
+	authHeader := firstNonEmpty(values["mcpAuthHeader"], values["authHeader"], firstProfileString(profile, "mcpAuthHeader"), firstProfileString(profile, "authHeader"))
+	authScheme := firstNonEmpty(values["mcpAuthScheme"], values["authScheme"], firstProfileString(profile, "mcpAuthScheme"), firstProfileString(profile, "authScheme"))
+	cfg := mcpGatewayUpstreamConfig{ServerURL: serverURL}
+	if token != "" {
+		switch connection.Provider {
+		case "figma":
+			if authHeader == "" {
+				authHeader = "X-Figma-Token"
+			}
+			cfg.AuthValue = token
+		default:
+			if authHeader == "" {
+				authHeader = "Authorization"
+			}
+			if strings.EqualFold(authHeader, "Authorization") {
+				if authScheme == "" {
+					authScheme = "Bearer"
+				}
+				cfg.AuthValue = strings.TrimSpace(authScheme + " " + token)
+			} else {
+				cfg.AuthValue = token
+			}
+		}
+		cfg.AuthHeader = authHeader
+		cfg.RedactValues = append(cfg.RedactValues, token, cfg.AuthValue)
+	}
+	return cfg, nil
+}
+
+func contextRequest(ctx context.Context) *http.Request {
+	req, _ := http.NewRequestWithContext(ctx, http.MethodPost, "/", nil)
+	return req
+}
+
 type runtimeActionProxyRequest struct {
 	Endpoint string            `json:"endpoint"`
 	Method   string            `json:"method"`
@@ -933,6 +1052,23 @@ func validateCustomMCPServerURL(raw string) error {
 	}
 	if u.Host == "" {
 		return fmt.Errorf("custom MCP serverUrl must include a host")
+	}
+	return nil
+}
+
+func validateMCPGatewayServerURL(raw string) error {
+	if strings.TrimSpace(raw) == "" {
+		return nil
+	}
+	u, err := url.Parse(raw)
+	if err != nil {
+		return fmt.Errorf("invalid MCP upstream serverUrl: %w", err)
+	}
+	if u.Scheme != "http" && u.Scheme != "https" {
+		return fmt.Errorf("MCP upstream serverUrl must use http or https")
+	}
+	if u.Host == "" {
+		return fmt.Errorf("MCP upstream serverUrl must include a host")
 	}
 	return nil
 }

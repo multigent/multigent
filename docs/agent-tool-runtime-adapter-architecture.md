@@ -160,6 +160,14 @@ mga runtime gateway call-tool action:github:list_repository_issues \
 - `mcp:browser:open_page`
 - `action:github:list_issues`
 
+MCP Gateway adapter 不应该只声明“这个 provider 支持 MCP”。它必须能连接到一个 server-side upstream MCP endpoint：
+
+- `mcpServerUrl` / `serverUrl`: upstream MCP HTTP endpoint。
+- `mcpToken` / `token` / `apiKey` / `accessToken`: upstream credential。
+- `mcpAuthHeader` / `authHeader`: 可选。Figma 默认使用 `X-Figma-Token`，其他 provider 默认使用 `Authorization: Bearer <token>`。
+
+Gateway 会先调用 upstream `tools/list`，再把真实工具暴露成 `mcp:<connection-alias>:<tool-name>`。调用 `multigent.call_tool` 时，Gateway 再转成 upstream `tools/call`，并写入审计。
+
 凭证策略：
 
 - 原始 provider secret 留在 Multigent server。
@@ -390,8 +398,8 @@ mga runtime tools --format table
 目标：证明 Unified MCP Gateway Adapter。
 
 - Connection：Figma token。
-- Runtime：不直接把 Figma MCP 全量 tools 暴露给 agent。
-- Gateway：`multigent.list_tools(provider=figma)` + `multigent.call_tool(tool_id=...)`。
+- Runtime：不直接把 Figma MCP 全量 tools 暴露给 agent 原生 context。
+- Gateway：配置 Figma upstream MCP endpoint 后，`multigent.list_tools(provider=figma)` 从 upstream `tools/list` 动态发现工具，再通过 `multigent.call_tool(tool_id=...)` 转发到 upstream `tools/call`。
 - Skills：Figma usage skill，告诉 agent 先 list 再 call。
 - 验证：agent 能读取文件结构或设计节点信息。
 
@@ -414,13 +422,14 @@ mga runtime tools --format table
 - runtime tool skill guide：自动生成 `MULTIGENT_TOOL_SKILLS_FILE`，并通过 `mga runtime skill-guide` 暴露给 agent。
 - HTTP action proxy。
 - MCP Gateway broker mode：`multigent.list_tools` / `multigent.call_tool`。
+- MCP Gateway upstream mode：支持 provider 连接配置 `mcpServerUrl` 后动态代理 upstream `tools/list` / `tools/call`，Figma 默认用 `X-Figma-Token`。
 - `mga runtime gateway list-tools` / `mga runtime gateway call-tool`。
 - custom MCP proxy。
 
 仍需补齐：
 
 1. Tool-specific skills asset 自动安装：当前已自动生成 runtime tool skill guide，但还没有按连接 vendor/install 缺失的完整 provider skill asset。
-2. Figma MCP Gateway upstream：当前 Figma 已有 MCP Gateway adapter 声明和 HTTP action fallback，但还没有真实启动/托管 Figma upstream MCP server。
+2. Figma MCP Gateway upstream packaging：当前已支持配置 `mcpServerUrl` 后代理 upstream MCP，但还没有内置启动/托管官方或推荐的 Figma MCP server。
 3. Agent detail 页面展示工具健康状态、最近调用和错误。
 4. CLI wrapper command audit：当前有 run log 和 proxy audit，但平台 CLI 命令级审计还是 best effort。
 5. E2E：Lark CLI、GitHub CLI、Figma Gateway 三条链路需要真实 sandbox 验证。
@@ -445,7 +454,8 @@ mga runtime tools --format table
 
 - 已完成：实现 `multigent.list_tools` 和 `multigent.call_tool`。
 - 已完成：将 HTTP action catalog 映射成 gateway tool。
-- 待完成：接 Figma upstream MCP server，而不是只暴露 adapter 声明。
+- 已完成：支持 provider MCP upstream endpoint，通过 `tools/list` 动态发现并通过 `tools/call` 代理调用。
+- 待完成：内置或托管 Figma upstream MCP server，而不是要求用户先提供 `mcpServerUrl`。
 
 ### Phase 4: Web Product Loop
 

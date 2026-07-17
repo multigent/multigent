@@ -258,6 +258,127 @@ func TestRuntimeMCPGatewayCallToolRoutesThroughActionProxy(t *testing.T) {
 	}
 }
 
+func TestRuntimeMCPGatewayRoutesProviderUpstreamTools(t *testing.T) {
+	users := newTestUserStore(t)
+	s := &Server{controlDB: users.db, users: users}
+	workspaceID := "ws-one"
+	var upstreamAuth string
+	upstream := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		upstreamAuth = r.Header.Get("X-Figma-Token")
+		var req map[string]any
+		if err := json.NewDecoder(r.Body).Decode(&req); err != nil {
+			t.Fatalf("decode upstream request: %v", err)
+		}
+		w.Header().Set("Content-Type", "application/json")
+		switch req["method"] {
+		case "tools/list":
+			_ = json.NewEncoder(w).Encode(map[string]any{
+				"jsonrpc": "2.0",
+				"id":      req["id"],
+				"result": map[string]any{
+					"tools": []map[string]any{{
+						"name":        "inspect_file",
+						"description": "Inspect a design file",
+						"inputSchema": map[string]any{
+							"type":       "object",
+							"properties": map[string]any{"file_key": map[string]any{"type": "string"}},
+						},
+					}},
+				},
+			})
+		case "tools/call":
+			params := req["params"].(map[string]any)
+			if params["name"] != "inspect_file" {
+				t.Fatalf("tool name=%#v", params["name"])
+			}
+			_ = json.NewEncoder(w).Encode(map[string]any{
+				"jsonrpc": "2.0",
+				"id":      req["id"],
+				"result": map[string]any{
+					"content": []map[string]string{{"type": "text", "text": "figma-token should be redacted if echoed"}},
+				},
+			})
+		default:
+			t.Fatalf("method=%#v", req["method"])
+		}
+	}))
+	defer upstream.Close()
+	if err := users.db.UpsertWorkspace(controldb.Workspace{ID: workspaceID, Name: "One", Slug: "one"}); err != nil {
+		t.Fatalf("workspace: %v", err)
+	}
+	connection := controldb.Connection{
+		ID:             "conn-figma",
+		WorkspaceID:    workspaceID,
+		Provider:       "figma",
+		ConnectionName: "default",
+		OwnerType:      ConnectionOwnerWorkspace,
+		OwnerID:        workspaceID,
+		AuthType:       ConnectionAuthAPIKey,
+		Status:         "active",
+		ProfileJSON:    `{"mcpServerUrl":"` + upstream.URL + `"}`,
+		CreatedBy:      "admin",
+	}
+	if err := users.db.UpsertConnection(connection); err != nil {
+		t.Fatalf("connection: %v", err)
+	}
+	secret, err := sealConnectionSecret(map[string]string{"apiKey": "figma-token"})
+	if err != nil {
+		t.Fatalf("seal secret: %v", err)
+	}
+	secret.ConnectionID = connection.ID
+	if err := users.db.UpsertConnectionSecret(secret); err != nil {
+		t.Fatalf("secret: %v", err)
+	}
+	principal := runtimeAgentPrincipal{
+		WorkspaceID:  workspaceID,
+		Project:      "sample",
+		Agent:        "pm",
+		RunID:        "run-one",
+		Capabilities: []string{"connection.use"},
+	}
+	listReq := httptest.NewRequest(http.MethodPost, "/api/v1/runtime/mcp/gateway", stringsReader(`{
+		"jsonrpc":"2.0",
+		"id":1,
+		"method":"tools/call",
+		"params":{"name":"multigent.list_tools","arguments":{"provider":"figma","adapter":"mcp_gateway"}}
+	}`))
+	listReq = listReq.WithContext(context.WithValue(listReq.Context(), ctxRuntimeAgentKey, principal))
+	listRec := httptest.NewRecorder()
+	s.handleRuntimeMCPGateway(listRec, listReq)
+	if listRec.Code != http.StatusOK {
+		t.Fatalf("list status=%d body=%s", listRec.Code, listRec.Body.String())
+	}
+	if upstreamAuth != "figma-token" {
+		t.Fatalf("upstream auth=%q", upstreamAuth)
+	}
+	if !strings.Contains(listRec.Body.String(), "mcp:figma:inspect_file") || !strings.Contains(listRec.Body.String(), "Inspect a design file") {
+		t.Fatalf("upstream tool missing: %s", listRec.Body.String())
+	}
+
+	callReq := httptest.NewRequest(http.MethodPost, "/api/v1/runtime/mcp/gateway", stringsReader(`{
+		"jsonrpc":"2.0",
+		"id":2,
+		"method":"tools/call",
+		"params":{
+			"name":"multigent.call_tool",
+			"arguments":{"tool_id":"mcp:figma:inspect_file","arguments":{"file_key":"abc"}}
+		}
+	}`))
+	callReq = callReq.WithContext(context.WithValue(callReq.Context(), ctxRuntimeAgentKey, principal))
+	callRec := httptest.NewRecorder()
+	s.handleRuntimeMCPGateway(callRec, callReq)
+	if callRec.Code != http.StatusOK {
+		t.Fatalf("call status=%d body=%s", callRec.Code, callRec.Body.String())
+	}
+	callBody := callRec.Body.String()
+	if !strings.Contains(callBody, "[redacted] should be redacted") {
+		t.Fatalf("gateway result missing redacted upstream body: %s", callBody)
+	}
+	if strings.Contains(callBody, "figma-token") {
+		t.Fatalf("gateway leaked token: %s", callBody)
+	}
+}
+
 func TestCustomMCPRuntimeConfigSupportsNoAuthProfileURL(t *testing.T) {
 	users := newTestUserStore(t)
 	s := &Server{controlDB: users.db, users: users}
