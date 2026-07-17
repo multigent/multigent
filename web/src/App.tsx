@@ -37,7 +37,7 @@ import ProjectOKRPage from './pages/projects/ProjectOKRPage'
 
 type WorkspaceRef = { id: string; name: string; active?: boolean }
 
-const WORKSPACE_TRANSITION_MIN_MS = 2500
+const WORKSPACE_TRANSITION_MIN_MS = 2000
 const WORKSPACE_TRANSITION_STEPS = [
   'workspace.switchingWorkspaceStepPrepare',
   'workspace.switchingWorkspaceStepAccess',
@@ -167,8 +167,8 @@ function WorkspaceSwitchOverlay() {
   useEffect(() => {
     if (!transitioning) return
     const timers = [
-      window.setTimeout(() => setStep(1), 800),
-      window.setTimeout(() => setStep(2), 1650),
+      window.setTimeout(() => setStep(1), 650),
+      window.setTimeout(() => setStep(2), 1300),
       window.setTimeout(() => setTransitioning(false), WORKSPACE_TRANSITION_MIN_MS),
     ]
     return () => timers.forEach((timer) => window.clearTimeout(timer))
