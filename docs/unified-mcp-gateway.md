@@ -1,6 +1,6 @@
 # Unified MCP Gateway
 
-本文档描述 Multigent 对外部 MCP Server 的兼容接入设计。Multigent 的主路径是 **skill + `mga` CLI**；MCP 只作为外部工具生态的一种接入方式，不作为 Multigent 内部协作协议。
+本文档描述 Multigent 对外部 MCP Server 的兼容接入设计。Multigent 的外部工具主路径不是统一收敛到 `mga`，而是按 provider 选择最自然的 agent 侧接入方式：平台 CLI + 对应 skill、MCP Gateway、HTTP action 或 skill-only。`mga` 只负责 Multigent 控制面能力，例如任务、消息、知识库、OKR、runtime manifest 和审计。
 
 ## 背景
 
@@ -29,7 +29,7 @@
 | [`open-webui/mcpo`](https://github.com/open-webui/mcpo) | MCP 到 OpenAPI 的桥，强调 HTTP、文档、认证和工具互操作。 | 它主要解决 MCP 变 OpenAPI，不解决 Agent 级授权和 Multigent 内部治理。 |
 | [`supergateway`](https://github.com/supercorp-ai/supergateway) / [`mcp-proxy`](https://github.com/sparfenyuk/mcp-proxy) | stdio、SSE、WebSocket、Streamable HTTP 之间的 transport bridge。 | 它们解决传输适配，不解决工具目录、权限、凭证托管和审计。 |
 
-结论：Multigent 可以借鉴 gateway/registry 的控制面思想，以及 proxy 项目的 transport 适配能力，但 MCP Gateway 应定位为外部工具兼容层。核心 Agent 工作流仍然应通过 `mga` CLI 调用 Server API。
+结论：Multigent 可以借鉴 gateway/registry 的控制面思想，以及 proxy 项目的 transport 适配能力，但 MCP Gateway 应定位为外部工具兼容层。对于已有成熟 CLI 的平台，核心 Agent 工作流应优先使用平台 CLI + 对应 skill；对于 MCP 原生工具，走统一 MCP Gateway；对于 API 型工具，走受控 HTTP action。
 
 ## 产品目标
 
