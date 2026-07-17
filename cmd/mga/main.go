@@ -65,7 +65,7 @@ func newRuntimeCmd() *cobra.Command {
 		Use:   "runtime",
 		Short: "Use scoped runtime tool connections",
 	}
-	cmd.AddCommand(newRuntimeConnectionsCmd(), newRuntimeActionCmd(), newRuntimeMCPCmd())
+	cmd.AddCommand(newRuntimeConnectionsCmd(), newRuntimeToolsCmd(), newRuntimeActionCmd(), newRuntimeMCPCmd())
 	cmd.AddCommand(newRuntimeVersionCmd())
 	return cmd
 }
@@ -110,6 +110,28 @@ func newRuntimeConnectionsCmd() *cobra.Command {
 
 func newRuntimeActionCmd() *cobra.Command {
 	return newProxyCmd("action", "Send an HTTP action proxy request through a granted connection", "/api/v1/runtime/actions")
+}
+
+func newRuntimeToolsCmd() *cobra.Command {
+	var format string
+	var refresh bool
+	cmd := &cobra.Command{
+		Use:   "tools",
+		Short: "List external tools and recommended runtime adapters for this agent",
+		RunE: func(cmd *cobra.Command, args []string) error {
+			body, err := runtimeConnectionsBody(refresh)
+			if err != nil {
+				return err
+			}
+			if format == "table" {
+				return printRuntimeToolsTable(body)
+			}
+			return printRuntimeToolsJSON(body)
+		},
+	}
+	cmd.Flags().StringVar(&format, "format", "json", "output format: json or table")
+	cmd.Flags().BoolVar(&refresh, "refresh", false, "refresh from runtime API instead of using materialized manifest")
+	return cmd
 }
 
 func newRuntimeMCPCmd() *cobra.Command {
@@ -710,6 +732,60 @@ func printConnectionsTable(body []byte) error {
 	fmt.Fprintln(tw, "ALIAS\tPROVIDER\tNAME\tID")
 	for _, c := range doc.Connections {
 		fmt.Fprintf(tw, "%s\t%s\t%s\t%s\n", c.Runtime.Alias, c.Provider, c.ConnectionName, c.ID)
+	}
+	return tw.Flush()
+}
+
+func printRuntimeToolsJSON(body []byte) error {
+	var doc struct {
+		Tools json.RawMessage `json:"tools"`
+	}
+	if err := json.Unmarshal(body, &doc); err != nil {
+		return err
+	}
+	if len(doc.Tools) == 0 {
+		doc.Tools = []byte("[]")
+	}
+	return writeJSON(doc.Tools)
+}
+
+func printRuntimeToolsTable(body []byte) error {
+	var doc struct {
+		Tools []struct {
+			Provider           string   `json:"provider"`
+			DisplayName        string   `json:"displayName"`
+			ConnectionAlias    string   `json:"connectionAlias"`
+			ConnectionName     string   `json:"connectionName"`
+			RecommendedAdapter string   `json:"recommendedAdapter"`
+			Skills             []string `json:"skills"`
+			Actions            []struct {
+				Name string `json:"name"`
+			} `json:"actions"`
+		} `json:"tools"`
+	}
+	if err := json.Unmarshal(body, &doc); err != nil {
+		return err
+	}
+	tw := tabwriter.NewWriter(os.Stdout, 0, 4, 2, ' ', 0)
+	fmt.Fprintln(tw, "ALIAS\tPROVIDER\tADAPTER\tSKILLS\tACTIONS")
+	for _, tool := range doc.Tools {
+		names := make([]string, 0, len(tool.Actions))
+		for _, action := range tool.Actions {
+			if strings.TrimSpace(action.Name) != "" {
+				names = append(names, action.Name)
+			}
+		}
+		provider := tool.DisplayName
+		if provider == "" {
+			provider = tool.Provider
+		}
+		fmt.Fprintf(tw, "%s\t%s\t%s\t%s\t%s\n",
+			tool.ConnectionAlias,
+			provider,
+			tool.RecommendedAdapter,
+			strings.Join(tool.Skills, ","),
+			strings.Join(names, ","),
+		)
 	}
 	return tw.Flush()
 }

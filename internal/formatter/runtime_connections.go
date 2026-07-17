@@ -24,6 +24,7 @@ At runtime, Multigent injects:
 Use these commands when available:
 
 `+"```bash"+`
+mga runtime tools --format table
 mga runtime connections --format table
 mga runtime action --connection <alias> --data '{"method":"GET","endpoint":"/path"}'
 mga runtime mcp --connection <alias> --data '{"jsonrpc":"2.0","id":1,"method":"tools/list"}'
@@ -31,7 +32,7 @@ mga runtime mcp --connection <alias> --data '{"jsonrpc":"2.0","id":1,"method":"t
 
 Rules:
 
-- First inspect `+"`MULTIGENT_CONNECTIONS_FILE`"+` or `+"`mga runtime connections`"+` to see the `+"`tools`"+`, `+"`recommendedAdapter`"+`, adapter list, skills, and connection aliases.
+- First inspect `+"`MULTIGENT_CONNECTIONS_FILE`"+` or run `+"`mga runtime tools --format table`"+` to see each tool's `+"`recommendedAdapter`"+`, skills, actions, and connection alias.
 - If a tool recommends a platform CLI, use that CLI and its bundled skill, for example `+"`gh`"+` for GitHub or `+"`lark-cli`"+` for Feishu/Lark.
 - If a tool recommends MCP Gateway, use the configured MCP Gateway tools rather than attaching every provider MCP server directly.
 - Use `+"`mga runtime action`"+` only for provider HTTP actions or as the documented fallback path.

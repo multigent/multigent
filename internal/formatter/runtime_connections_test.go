@@ -31,6 +31,7 @@ func TestCodexFormatterIncludesRuntimeConnectionGuide(t *testing.T) {
 		"## Runtime Connections",
 		"MULTIGENT_CONNECTIONS_FILE",
 		"recommendedAdapter",
+		"mga runtime tools --format table",
 		"mga runtime connections --format table",
 		"mga runtime action --connection <alias>",
 	} {
