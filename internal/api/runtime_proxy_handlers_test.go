@@ -282,6 +282,94 @@ func TestRuntimeActionConfigExpiredOAuthTokenRequiresRefreshToken(t *testing.T) 
 	}
 }
 
+func TestRuntimeActionConfigForTokenFirstExternalTools(t *testing.T) {
+	users := newTestUserStore(t)
+	s := &Server{controlDB: users.db, users: users}
+	workspaceID := "ws-one"
+	if err := users.db.UpsertWorkspace(controldb.Workspace{ID: workspaceID, Name: "One", Slug: "one"}); err != nil {
+		t.Fatalf("workspace: %v", err)
+	}
+	cases := []struct {
+		provider        string
+		baseURL         string
+		authHeader      string
+		authValue       string
+		defaultHeader   string
+		defaultValue    string
+		rewrittenQuery  string
+		redactedSnippet string
+	}{
+		{provider: "github", baseURL: "https://api.github.com", authHeader: "Authorization", authValue: "Bearer token-github", redactedSnippet: "Bearer token-github"},
+		{provider: "gitlab", baseURL: "https://gitlab.com/api/v4", authHeader: "PRIVATE-TOKEN", authValue: "token-gitlab", redactedSnippet: "token-gitlab"},
+		{provider: "gitee", baseURL: "https://gitee.com/api/v5", rewrittenQuery: "token-gitee", redactedSnippet: "token-gitee"},
+		{provider: "linear", baseURL: "https://api.linear.app", authHeader: "Authorization", authValue: "token-linear", redactedSnippet: "token-linear"},
+		{provider: "notion", baseURL: "https://api.notion.com/v1", authHeader: "Authorization", authValue: "Bearer token-notion", defaultHeader: "Notion-Version", defaultValue: "2022-06-28", redactedSnippet: "Bearer token-notion"},
+		{provider: "figma", baseURL: "https://api.figma.com/v1", authHeader: "X-Figma-Token", authValue: "token-figma", redactedSnippet: "token-figma"},
+		{provider: "airtable", baseURL: "https://api.airtable.com/v0", authHeader: "Authorization", authValue: "Bearer token-airtable", redactedSnippet: "Bearer token-airtable"},
+		{provider: "asana", baseURL: "https://app.asana.com/api/1.0", authHeader: "Authorization", authValue: "Bearer token-asana", redactedSnippet: "Bearer token-asana"},
+		{provider: "clickup", baseURL: "https://api.clickup.com/api/v2", authHeader: "Authorization", authValue: "token-clickup", redactedSnippet: "token-clickup"},
+		{provider: "sentry", baseURL: "https://sentry.io/api/0", authHeader: "Authorization", authValue: "Bearer token-sentry", redactedSnippet: "Bearer token-sentry"},
+		{provider: "vercel", baseURL: "https://api.vercel.com", authHeader: "Authorization", authValue: "Bearer token-vercel", redactedSnippet: "Bearer token-vercel"},
+	}
+	for _, tc := range cases {
+		t.Run(tc.provider, func(t *testing.T) {
+			connection := controldb.Connection{
+				ID:             "conn-" + tc.provider,
+				WorkspaceID:    workspaceID,
+				Provider:       tc.provider,
+				ConnectionName: "default",
+				OwnerType:      ConnectionOwnerWorkspace,
+				OwnerID:        workspaceID,
+				AuthType:       ConnectionAuthAPIKey,
+				Status:         "active",
+				ProfileJSON:    "{}",
+				CreatedBy:      "admin",
+			}
+			if err := users.db.UpsertConnection(connection); err != nil {
+				t.Fatalf("connection: %v", err)
+			}
+			token := "token-" + tc.provider
+			secret, err := sealConnectionSecret(map[string]string{"apiKey": token})
+			if err != nil {
+				t.Fatalf("seal secret: %v", err)
+			}
+			secret.ConnectionID = connection.ID
+			if err := users.db.UpsertConnectionSecret(secret); err != nil {
+				t.Fatalf("secret: %v", err)
+			}
+
+			cfg, err := s.runtimeHTTPActionConfig(connection)
+			if err != nil {
+				t.Fatalf("runtime action config: %v", err)
+			}
+			if cfg.BaseURL != tc.baseURL {
+				t.Fatalf("baseURL=%q want %q", cfg.BaseURL, tc.baseURL)
+			}
+			if cfg.AuthHeader != tc.authHeader {
+				t.Fatalf("authHeader=%q want %q", cfg.AuthHeader, tc.authHeader)
+			}
+			if cfg.AuthValue != tc.authValue {
+				t.Fatalf("authValue=%q want %q", cfg.AuthValue, tc.authValue)
+			}
+			if tc.defaultHeader != "" && cfg.DefaultHeaders[tc.defaultHeader] != tc.defaultValue {
+				t.Fatalf("default header %q=%q want %q", tc.defaultHeader, cfg.DefaultHeaders[tc.defaultHeader], tc.defaultValue)
+			}
+			if tc.rewrittenQuery != "" {
+				_, query, err := cfg.EndpointRewrite("/user", nil)
+				if err != nil {
+					t.Fatalf("rewrite: %v", err)
+				}
+				if query["access_token"] != tc.rewrittenQuery {
+					t.Fatalf("rewritten access_token=%q want %q", query["access_token"], tc.rewrittenQuery)
+				}
+			}
+			if !strings.Contains(strings.Join(cfg.RedactValues, "\n"), tc.redactedSnippet) {
+				t.Fatalf("redact values %#v missing %q", cfg.RedactValues, tc.redactedSnippet)
+			}
+		})
+	}
+}
+
 func TestRuntimeActionProxyForwardsCustomHTTPWithServerSideCredential(t *testing.T) {
 	users := newTestUserStore(t)
 	s := &Server{controlDB: users.db, users: users}

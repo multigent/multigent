@@ -115,7 +115,7 @@ func Defaults() []Provider {
 			},
 			Enabled: true,
 		},
-		staticPATProvider("gitlab", "GitLab", "Developer Tools", "Use GitLab repositories, merge requests, issues, and CI/CD context.", "Personal access token", "Create a personal access token from GitLab preferences. Prefer project-scoped tokens for production workspaces.", "GitLab access tokens", "https://docs.gitlab.com/user/profile/personal_access_tokens/"),
+		staticPATProvider("gitlab", "GitLab", "Developer Tools", "Use GitLab repositories, merge requests, issues, and CI/CD context.", "Personal access token", "Create a personal access token from GitLab preferences. Prefer project-scoped tokens for production workspaces.", "GitLab access tokens", "https://docs.gitlab.com/user/profile/personal_access_tokens/", gitLabActions()),
 		{
 			Provider:    "gitee",
 			DisplayName: "Gitee",
@@ -134,8 +134,8 @@ func Defaults() []Provider {
 			Guides: []ProviderGuide{
 				credentialGuide("Personal access token", "Create a Gitee personal access token with the minimum repository and issue scopes needed by the agent.", "Gitee API docs", "https://gitee.com/api/v5/swagger"),
 			},
-			ComingSoon: true,
-			Enabled:    true,
+			Actions: giteeActions(),
+			Enabled: true,
 		},
 		{
 			Provider:    "feishu",
@@ -198,7 +198,7 @@ func Defaults() []Provider {
 			Enabled: true,
 		},
 		oauthOnlyProvider("jira", "Jira", "Project Management", "Use Jira issues, epics, projects, and enterprise development workflows.", "https://auth.atlassian.com/authorize", "https://auth.atlassian.com/oauth/token", []string{"read:jira-work", "write:jira-work", "read:jira-user"}),
-		staticPATProvider("notion", "Notion", "Knowledge And Docs", "Use Notion pages, databases, knowledge bases, and lightweight product docs.", "Internal integration token", "Create an internal integration in Notion, copy its token, and explicitly share the target pages or databases with that integration.", "Notion integrations", "https://www.notion.so/my-integrations"),
+		staticPATProvider("notion", "Notion", "Knowledge And Docs", "Use Notion pages, databases, knowledge bases, and lightweight product docs.", "Internal integration token", "Create an internal integration in Notion, copy its token, and explicitly share the target pages or databases with that integration.", "Notion integrations", "https://www.notion.so/my-integrations", notionActions()),
 		oauthOnlyProvider("slack", "Slack", "Communication", "Use Slack channels, messages, threads, and team notification workflows.", "https://slack.com/oauth/v2/authorize", "https://slack.com/api/oauth.v2.access", []string{"channels:read", "chat:write", "users:read"}),
 		{
 			Provider:    "dingtalk_bot",
@@ -232,16 +232,16 @@ func Defaults() []Provider {
 		oauthOnlyProvider("google_docs", "Google Docs", "Knowledge And Docs", "Use Google Docs documents as readable and writable knowledge artifacts.", "https://accounts.google.com/o/oauth2/v2/auth", "https://oauth2.googleapis.com/token", []string{"https://www.googleapis.com/auth/documents", "https://www.googleapis.com/auth/drive.file"}),
 		oauthOnlyProvider("google_sheets", "Google Sheets", "Knowledge And Docs", "Use Google Sheets for structured data, lightweight operations tables, and reporting.", "https://accounts.google.com/o/oauth2/v2/auth", "https://oauth2.googleapis.com/token", []string{"https://www.googleapis.com/auth/spreadsheets", "https://www.googleapis.com/auth/drive.file"}),
 		oauthOnlyProvider("google_calendar", "Google Calendar", "Communication", "Use calendars, meeting schedules, availability, and reminders.", "https://accounts.google.com/o/oauth2/v2/auth", "https://oauth2.googleapis.com/token", []string{"https://www.googleapis.com/auth/calendar.events", "https://www.googleapis.com/auth/calendar.readonly"}),
-		staticPATProvider("figma", "Figma", "Design And Data", "Use Figma files, components, comments, and design handoff context.", "Personal access token", "Create a Figma personal access token from account settings. Grant only file read scopes until write actions are explicitly needed.", "Figma personal access tokens", "https://www.figma.com/developers/api#access-tokens"),
-		staticPATProvider("airtable", "Airtable", "Design And Data", "Use Airtable bases for operations tables, CRM data, and lightweight internal systems.", "Personal access token", "Create a scoped personal access token in Airtable developer hub and limit it to specific bases.", "Airtable personal access tokens", "https://airtable.com/create/tokens"),
-		staticPATProvider("asana", "Asana", "Project Management", "Use Asana tasks, projects, sections, and non-engineering project workflows.", "Personal access token", "Create a personal access token from Asana developer console. Prefer least-privilege project access.", "Asana personal access tokens", "https://developers.asana.com/docs/personal-access-token"),
-		staticPATProvider("clickup", "ClickUp", "Project Management", "Use ClickUp tasks, lists, spaces, and cross-functional work tracking.", "API token", "Create an API token in ClickUp personal settings. Use workspace-level access carefully.", "ClickUp API token", "https://clickup.com/api"),
-		oauthOnlyProvider("sentry", "Sentry", "Developer Tools", "Use Sentry issues, releases, error events, and triage signals.", "https://sentry.io/oauth/authorize/", "https://sentry.io/oauth/token/", []string{"event:read", "project:read", "org:read"}),
-		staticPATProvider("vercel", "Vercel", "Developer Tools", "Use Vercel projects, deployments, checks, and release status.", "Access token", "Create an access token in Vercel account settings. Use team-scoped tokens when possible.", "Vercel access tokens", "https://vercel.com/account/tokens"),
+		staticPATProvider("figma", "Figma", "Design And Data", "Use Figma files, components, comments, and design handoff context.", "Personal access token", "Create a Figma personal access token from account settings. Grant only file read scopes until write actions are explicitly needed.", "Figma personal access tokens", "https://www.figma.com/developers/api#access-tokens", figmaActions()),
+		staticPATProvider("airtable", "Airtable", "Design And Data", "Use Airtable bases for operations tables, CRM data, and lightweight internal systems.", "Personal access token", "Create a scoped personal access token in Airtable developer hub and limit it to specific bases.", "Airtable personal access tokens", "https://airtable.com/create/tokens", airtableActions()),
+		staticPATProvider("asana", "Asana", "Project Management", "Use Asana tasks, projects, sections, and non-engineering project workflows.", "Personal access token", "Create a personal access token from Asana developer console. Prefer least-privilege project access.", "Asana personal access tokens", "https://developers.asana.com/docs/personal-access-token", asanaActions()),
+		staticPATProvider("clickup", "ClickUp", "Project Management", "Use ClickUp tasks, lists, spaces, and cross-functional work tracking.", "API token", "Create an API token in ClickUp personal settings. Use workspace-level access carefully.", "ClickUp API token", "https://clickup.com/api", clickUpActions()),
+		staticPATProvider("sentry", "Sentry", "Developer Tools", "Use Sentry issues, releases, error events, and triage signals.", "Auth token", "Create an internal integration or auth token in Sentry settings. Start with org:read, project:read, and event:read scopes.", "Sentry auth tokens", "https://sentry.io/settings/account/api/auth-tokens/", sentryActions()),
+		staticPATProvider("vercel", "Vercel", "Developer Tools", "Use Vercel projects, deployments, checks, and release status.", "Access token", "Create an access token in Vercel account settings. Use team-scoped tokens when possible.", "Vercel access tokens", "https://vercel.com/account/tokens", vercelActions()),
 	}
 }
 
-func staticPATProvider(provider, displayName, category, description, fieldLabel, guideBody, linkLabel, linkURL string) Provider {
+func staticPATProvider(provider, displayName, category, description, fieldLabel, guideBody, linkLabel, linkURL string, actions []ProviderAction) Provider {
 	return Provider{
 		Provider:    provider,
 		DisplayName: displayName,
@@ -254,8 +254,8 @@ func staticPATProvider(provider, displayName, category, description, fieldLabel,
 		Guides: []ProviderGuide{
 			credentialGuide(fieldLabel, guideBody, linkLabel, linkURL),
 		},
-		ComingSoon: true,
-		Enabled:    true,
+		Actions: actions,
+		Enabled: true,
 	}
 }
 
@@ -314,6 +314,91 @@ func feishuActions() []ProviderAction {
 				"content":         stringSchema("Message content JSON string required by Feishu/Lark."),
 			}, []string{"receive_id_type", "receive_id", "msg_type", "content"}),
 		},
+	}
+}
+
+func gitLabActions() []ProviderAction {
+	return []ProviderAction{
+		{Name: "get_authenticated_user", DisplayName: "Get authenticated user", Description: "Verify the GitLab credential and read the authenticated user profile.", Method: "GET", Endpoint: "/user", InputSchema: objectSchema(nil, nil)},
+		{Name: "list_project_issues", DisplayName: "List project issues", Description: "List issues from a GitLab project.", Method: "GET", Endpoint: "/projects/{project_id}/issues", InputSchema: objectSchema(map[string]any{
+			"project_id": stringSchema("URL-encoded numeric project ID or namespace/project path."),
+			"state":      enumStringSchema("Issue state filter.", []string{"opened", "closed", "all"}),
+		}, []string{"project_id"})},
+		{Name: "create_project_issue", DisplayName: "Create project issue", Description: "Create an issue in a GitLab project.", Method: "POST", Endpoint: "/projects/{project_id}/issues", InputSchema: objectSchema(map[string]any{
+			"project_id":  stringSchema("URL-encoded numeric project ID or namespace/project path."),
+			"title":       stringSchema("Issue title."),
+			"description": stringSchema("Issue description in Markdown."),
+		}, []string{"project_id", "title"})},
+	}
+}
+
+func giteeActions() []ProviderAction {
+	return []ProviderAction{
+		{Name: "get_authenticated_user", DisplayName: "Get authenticated user", Description: "Verify the Gitee credential and read the authenticated user profile.", Method: "GET", Endpoint: "/user", InputSchema: objectSchema(nil, nil)},
+		{Name: "list_repository_issues", DisplayName: "List repository issues", Description: "List issues for a Gitee repository.", Method: "GET", Endpoint: "/repos/{owner}/{repo}/issues", InputSchema: objectSchema(map[string]any{
+			"owner": stringSchema("Repository owner login."),
+			"repo":  stringSchema("Repository name."),
+			"state": enumStringSchema("Issue state filter.", []string{"open", "progressing", "closed", "rejected"}),
+		}, []string{"owner", "repo"})},
+	}
+}
+
+func notionActions() []ProviderAction {
+	return []ProviderAction{
+		{Name: "get_bot_user", DisplayName: "Get bot user", Description: "Verify the Notion integration token and read the bot user profile.", Method: "GET", Endpoint: "/users/me", InputSchema: objectSchema(nil, nil)},
+		{Name: "search", DisplayName: "Search workspace", Description: "Search pages and databases shared with the integration.", Method: "POST", Endpoint: "/search", InputSchema: objectSchema(map[string]any{
+			"query": stringSchema("Optional search query."),
+		}, nil)},
+	}
+}
+
+func figmaActions() []ProviderAction {
+	return []ProviderAction{
+		{Name: "get_authenticated_user", DisplayName: "Get authenticated user", Description: "Verify the Figma credential and read the authenticated user profile.", Method: "GET", Endpoint: "/me", InputSchema: objectSchema(nil, nil)},
+		{Name: "get_file", DisplayName: "Get file", Description: "Read a Figma file by key.", Method: "GET", Endpoint: "/files/{file_key}", InputSchema: objectSchema(map[string]any{
+			"file_key": stringSchema("Figma file key."),
+		}, []string{"file_key"})},
+	}
+}
+
+func airtableActions() []ProviderAction {
+	return []ProviderAction{
+		{Name: "get_authenticated_user", DisplayName: "Get authenticated user", Description: "Verify the Airtable token and read the authenticated account profile.", Method: "GET", Endpoint: "/meta/whoami", InputSchema: objectSchema(nil, nil)},
+		{Name: "list_bases", DisplayName: "List bases", Description: "List Airtable bases visible to the token.", Method: "GET", Endpoint: "/meta/bases", InputSchema: objectSchema(nil, nil)},
+	}
+}
+
+func asanaActions() []ProviderAction {
+	return []ProviderAction{
+		{Name: "get_authenticated_user", DisplayName: "Get authenticated user", Description: "Verify the Asana token and read the authenticated user profile.", Method: "GET", Endpoint: "/users/me", InputSchema: objectSchema(nil, nil)},
+		{Name: "list_my_tasks", DisplayName: "List my tasks", Description: "List tasks assigned to the authenticated user in a workspace.", Method: "GET", Endpoint: "/tasks", InputSchema: objectSchema(map[string]any{
+			"workspace": stringSchema("Asana workspace GID."),
+			"assignee":  stringSchema("Assignee GID, or me."),
+		}, []string{"workspace", "assignee"})},
+	}
+}
+
+func clickUpActions() []ProviderAction {
+	return []ProviderAction{
+		{Name: "get_authenticated_user", DisplayName: "Get authenticated user", Description: "Verify the ClickUp token and read the authenticated user profile.", Method: "GET", Endpoint: "/user", InputSchema: objectSchema(nil, nil)},
+		{Name: "list_teams", DisplayName: "List workspaces", Description: "List ClickUp workspaces visible to the token.", Method: "GET", Endpoint: "/team", InputSchema: objectSchema(nil, nil)},
+	}
+}
+
+func vercelActions() []ProviderAction {
+	return []ProviderAction{
+		{Name: "get_authenticated_user", DisplayName: "Get authenticated user", Description: "Verify the Vercel token and read the authenticated user profile.", Method: "GET", Endpoint: "/v2/user", InputSchema: objectSchema(nil, nil)},
+		{Name: "list_deployments", DisplayName: "List deployments", Description: "List Vercel deployments visible to the token.", Method: "GET", Endpoint: "/v6/deployments", InputSchema: objectSchema(nil, nil)},
+	}
+}
+
+func sentryActions() []ProviderAction {
+	return []ProviderAction{
+		{Name: "list_organizations", DisplayName: "List organizations", Description: "Verify the Sentry token and list organizations visible to it.", Method: "GET", Endpoint: "/organizations/", InputSchema: objectSchema(nil, nil)},
+		{Name: "list_organization_issues", DisplayName: "List organization issues", Description: "List issues from a Sentry organization.", Method: "GET", Endpoint: "/organizations/{organization_slug}/issues/", InputSchema: objectSchema(map[string]any{
+			"organization_slug": stringSchema("Sentry organization slug."),
+			"query":             stringSchema("Optional Sentry issue search query."),
+		}, []string{"organization_slug"})},
 	}
 }
 

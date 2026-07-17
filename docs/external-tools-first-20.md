@@ -29,7 +29,7 @@ open-connector 的 provider 设计对我们有三点参考价值：
 | 4 | Linear | Project Management | API key | Yes | 现代研发团队常见任务系统，适合 issue/task agent。 |
 | 5 | Jira | Project Management | OAuth | Yes | 企业研发管理常见系统，偏 OAuth。 |
 | 6 | Notion | Docs / Knowledge | Internal integration token | Yes | 轻量知识库和需求文档常见来源。 |
-| 7 | Feishu / Lark | Communication / Docs | App ID + App Secret | Later | 国内/全球团队常用 IM 和云文档入口。 |
+| 7 | Feishu / Lark | Communication / Docs | App ID + App Secret / quick authorization | Later | 国内/全球团队常用 IM 和云文档入口。产品上按 Feishu、Lark 两个地区工具展示。 |
 | 8 | Slack | Communication | OAuth | Yes | 海外团队 IM 入口，适合 agent 通知和交互。 |
 | 9 | DingTalk Bot | Communication | Webhook token / signing secret | No | 国内企业通知和机器人消息入口。 |
 | 10 | Gmail | Email | OAuth | Yes | 邮件读取、整理、回复草稿等工作流。 |
@@ -41,7 +41,7 @@ open-connector 的 provider 设计对我们有三点参考价值：
 | 16 | Airtable | Data / Ops | PAT | No | 运营表、CRM 表、内部流程表常见。 |
 | 17 | Asana | Project Management | PAT | Later | 非研发项目管理常见工具。 |
 | 18 | ClickUp | Project Management | API token | Yes | 通用项目管理，支持 token 和 OAuth。 |
-| 19 | Sentry | Monitoring | OAuth | Yes | bug、error、release health，可形成自动 triage。 |
+| 19 | Sentry | Monitoring | Auth token | Yes | bug、error、release health，可形成自动 triage。 |
 | 20 | Vercel | Deployment | Access token | No | 前端部署、项目状态、发布检查常见。 |
 
 ## 分组展示建议
@@ -72,7 +72,8 @@ open-connector 的 provider 设计对我们有三点参考价值：
 
 ### Communication
 
-- Feishu / Lark
+- Feishu
+- Lark
 - Slack
 - DingTalk Bot
 - Gmail
@@ -132,12 +133,14 @@ Google Workspace
 - Gitee
 - Linear
 - Notion
-- Feishu / Lark
+- Feishu
+- Lark
 - DingTalk Bot
 - Figma
 - Airtable
 - Asana
 - ClickUp
+- Sentry
 - Vercel
 
 ### 第一版必须准备 OAuth 的工具
@@ -149,7 +152,6 @@ Google Workspace
 - Google Docs
 - Google Sheets
 - Google Calendar
-- Sentry
 
 这些工具如果管理员未配置 OAuth Client，就先不向普通用户展示连接入口，或者展示为“需要管理员启用”。
 
@@ -177,6 +179,8 @@ Google Workspace
 - Sentry
 - Vercel
 
+当前状态：这些已补到 token-first 最小可用，不再只是 Coming soon。后续还需要补更完整的 action 集、provider-specific health check 文案，以及写入型 action 的风险策略。
+
 ### Wave 3：补齐项目管理和 Google Workspace
 
 目标：覆盖更多客户现有协作系统。
@@ -191,6 +195,8 @@ Google Workspace
 - Asana
 - ClickUp
 - Airtable
+
+当前状态：Asana、ClickUp、Airtable 已补到 token-first 最小可用。Google Workspace、Jira、Slack 仍主要依赖 OAuth client 配置，暂不伪装成完整可用。
 
 ## 暂缓但应保留候选
 
@@ -222,8 +228,43 @@ Google Workspace
 
 ```text
 用户进入“外部工具”页面，可以清楚看到 20 个目标工具。
-已有实现的工具可以配置、测试、授权。
-尚未实现 runtime action 的工具显示为 Coming soon 或 Admin setup required。
+已有实现的工具可以配置、测试、授权，并能通过 runtime action proxy 被 agent 使用。
+尚未实现 runtime action 的 OAuth-first 工具显示为 Coming soon 或 Admin setup required。
 普通用户不会看到不可用的 OAuth 入口。
 每个工具在产品层只展示一个主连接，避免第一版引入多连接选择和优先级复杂度。
 ```
+
+## 当前实现矩阵
+
+当前代码里 Feishu 与 Lark 已拆成两个 provider，所以是 **20 个逻辑工具 / 21 个 provider 条目**。
+
+### Token-first 已最小可用
+
+| Provider | Auth | Current runtime baseline |
+|---|---|---|
+| GitHub | Device flow + PAT + OAuth when configured | user、issues |
+| GitLab | PAT | user、project issues |
+| Gitee | PAT + OAuth metadata | user、repository issues |
+| Feishu | quick authorization + app credential | wiki spaces、IM message |
+| Lark | quick authorization + app credential | wiki spaces、IM message |
+| Linear | API key | viewer assigned issues |
+| Notion | Internal integration token | bot user、search |
+| DingTalk Bot | Webhook token / signing secret | send text message |
+| Figma | PAT | user、file |
+| Airtable | PAT | whoami、bases |
+| Asana | PAT | user、tasks |
+| ClickUp | API token | user、teams |
+| Sentry | Auth token | organizations、issues |
+| Vercel | Access token | user、deployments |
+
+### OAuth-first 仍待补完整闭环
+
+| Provider | Current state | Notes |
+|---|---|---|
+| Jira | OAuth metadata only | 还需要站点/cloud id 选择与 API base URL 绑定。 |
+| Slack | OAuth metadata only | 还需要 workspace app 配置、bot/user token 边界和消息 action。 |
+| Gmail | OAuth metadata only | 需要 Google OAuth client、scope 组合、邮件读取/草稿 action。 |
+| Google Drive | OAuth metadata only | 需要 Drive 文件列表、下载、权限边界。 |
+| Google Docs | OAuth metadata only | 需要 Docs 读取/写入 action。 |
+| Google Sheets | OAuth metadata only | 需要 Sheets 读取/写入 action。 |
+| Google Calendar | OAuth metadata only | 需要日程读取/创建 action。 |

@@ -7,10 +7,16 @@ func TestDefaultProvidersIncludeActionCatalogs(t *testing.T) {
 	for _, provider := range Defaults() {
 		providers[provider.Provider] = provider
 	}
-	for _, providerID := range []string{"github", "feishu", "lark", "dingtalk_bot"} {
+	for _, providerID := range []string{
+		"github", "gitlab", "gitee", "feishu", "lark", "linear", "notion", "dingtalk_bot",
+		"figma", "airtable", "asana", "clickup", "sentry", "vercel",
+	} {
 		provider, ok := providers[providerID]
 		if !ok {
 			t.Fatalf("provider %q missing", providerID)
+		}
+		if provider.ComingSoon {
+			t.Fatalf("provider %q should be available", providerID)
 		}
 		if len(provider.Actions) == 0 {
 			t.Fatalf("provider %q has no actions", providerID)

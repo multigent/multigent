@@ -344,7 +344,7 @@ func (s *Server) testConnection(r *http.Request, connection controldb.Connection
 	switch connection.Provider {
 	case "custom-mcp":
 		return s.testCustomMCPConnection(r, connection)
-	case "custom-http", "github", "linear", "feishu", "lark", "dingtalk_bot":
+	case "custom-http", "github", "gitlab", "gitee", "linear", "notion", "figma", "airtable", "asana", "clickup", "sentry", "vercel", "feishu", "lark", "dingtalk_bot":
 		return s.testHTTPConnection(r, connection, body)
 	default:
 		return testConnectionResult{}, fmt.Errorf("connection test is not supported for provider %q", connection.Provider)
@@ -427,6 +427,7 @@ func (s *Server) testHTTPConnection(r *http.Request, connection controldb.Connec
 	if len(actionReq.Body) > 0 {
 		req.Header.Set("Content-Type", "application/json")
 	}
+	applyRuntimeDefaultHeaders(req, cfg)
 	for key, value := range actionReq.Headers {
 		key = strings.TrimSpace(key)
 		if key == "" || runtimeActionBlockedHeader(key) {
@@ -440,7 +441,7 @@ func (s *Server) testHTTPConnection(r *http.Request, connection controldb.Connec
 
 func applyDefaultConnectionTestRequest(provider string, req *runtimeActionProxyRequest) {
 	switch provider {
-	case "github":
+	case "github", "gitlab", "gitee":
 		if req.Endpoint == "" {
 			req.Endpoint = "/user"
 		}
@@ -456,6 +457,55 @@ func applyDefaultConnectionTestRequest(provider string, req *runtimeActionProxyR
 		}
 		if len(req.Body) == 0 {
 			req.Body = json.RawMessage(`{"query":"query { viewer { id name } }"}`)
+		}
+	case "notion":
+		if req.Endpoint == "" {
+			req.Endpoint = "/users/me"
+		}
+		if req.Method == "" {
+			req.Method = http.MethodGet
+		}
+	case "figma":
+		if req.Endpoint == "" {
+			req.Endpoint = "/me"
+		}
+		if req.Method == "" {
+			req.Method = http.MethodGet
+		}
+	case "airtable":
+		if req.Endpoint == "" {
+			req.Endpoint = "/meta/whoami"
+		}
+		if req.Method == "" {
+			req.Method = http.MethodGet
+		}
+	case "asana":
+		if req.Endpoint == "" {
+			req.Endpoint = "/users/me"
+		}
+		if req.Method == "" {
+			req.Method = http.MethodGet
+		}
+	case "clickup":
+		if req.Endpoint == "" {
+			req.Endpoint = "/user"
+		}
+		if req.Method == "" {
+			req.Method = http.MethodGet
+		}
+	case "sentry":
+		if req.Endpoint == "" {
+			req.Endpoint = "/organizations/"
+		}
+		if req.Method == "" {
+			req.Method = http.MethodGet
+		}
+	case "vercel":
+		if req.Endpoint == "" {
+			req.Endpoint = "/v2/user"
+		}
+		if req.Method == "" {
+			req.Method = http.MethodGet
 		}
 	case "custom-http":
 		if req.Endpoint == "" {

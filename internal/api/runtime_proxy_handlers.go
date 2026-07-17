@@ -184,6 +184,7 @@ func (s *Server) proxyRuntimeAction(w http.ResponseWriter, r *http.Request, prin
 	if len(reqBody.Body) > 0 {
 		upstreamReq.Header.Set("Content-Type", "application/json")
 	}
+	applyRuntimeDefaultHeaders(upstreamReq, cfg)
 	for key, value := range reqBody.Headers {
 		key = strings.TrimSpace(key)
 		if key == "" || runtimeActionBlockedHeader(key) {
@@ -223,6 +224,7 @@ type runtimeHTTPActionConfig struct {
 	BaseURL         string
 	AuthHeader      string
 	AuthValue       string
+	DefaultHeaders  map[string]string
 	RedactValues    []string
 	EndpointRewrite func(endpoint string, query map[string]string) (string, map[string]string, error)
 }
@@ -244,7 +246,7 @@ func (s *Server) runtimeHTTPActionConfig(connection controldb.Connection) (runti
 	}
 	profile := map[string]any{}
 	_ = json.Unmarshal([]byte(connection.ProfileJSON), &profile)
-	cfg := runtimeHTTPActionConfig{}
+	cfg := runtimeHTTPActionConfig{DefaultHeaders: map[string]string{}}
 	cfg.BaseURL = strings.TrimSpace(values["baseUrl"])
 	if cfg.BaseURL == "" {
 		if v, ok := profile["baseUrl"].(string); ok {
@@ -287,6 +289,28 @@ func (s *Server) runtimeHTTPActionConfig(connection controldb.Connection) (runti
 			cfg.AuthValue = "Bearer " + apiKey
 			cfg.RedactValues = append(cfg.RedactValues, apiKey, cfg.AuthValue)
 		}
+	case "gitlab":
+		if cfg.BaseURL == "" {
+			cfg.BaseURL = "https://gitlab.com/api/v4"
+		}
+		cfg.AuthHeader = "PRIVATE-TOKEN"
+		if apiKey != "" {
+			cfg.AuthValue = apiKey
+			cfg.RedactValues = append(cfg.RedactValues, apiKey)
+		}
+	case "gitee":
+		if cfg.BaseURL == "" {
+			cfg.BaseURL = "https://gitee.com/api/v5"
+		}
+		if apiKey == "" {
+			return runtimeHTTPActionConfig{}, fmt.Errorf("Gitee apiKey is required")
+		}
+		cfg.RedactValues = append(cfg.RedactValues, apiKey)
+		cfg.EndpointRewrite = func(endpoint string, query map[string]string) (string, map[string]string, error) {
+			nextQuery := copyStringMap(query)
+			nextQuery["access_token"] = apiKey
+			return endpoint, nextQuery, nil
+		}
 	case "linear":
 		if cfg.BaseURL == "" {
 			cfg.BaseURL = "https://api.linear.app"
@@ -295,6 +319,70 @@ func (s *Server) runtimeHTTPActionConfig(connection controldb.Connection) (runti
 		if apiKey != "" {
 			cfg.AuthValue = apiKey
 			cfg.RedactValues = append(cfg.RedactValues, apiKey)
+		}
+	case "notion":
+		if cfg.BaseURL == "" {
+			cfg.BaseURL = "https://api.notion.com/v1"
+		}
+		cfg.AuthHeader = "Authorization"
+		cfg.DefaultHeaders["Notion-Version"] = "2022-06-28"
+		if apiKey != "" {
+			cfg.AuthValue = "Bearer " + apiKey
+			cfg.RedactValues = append(cfg.RedactValues, apiKey, cfg.AuthValue)
+		}
+	case "figma":
+		if cfg.BaseURL == "" {
+			cfg.BaseURL = "https://api.figma.com/v1"
+		}
+		cfg.AuthHeader = "X-Figma-Token"
+		if apiKey != "" {
+			cfg.AuthValue = apiKey
+			cfg.RedactValues = append(cfg.RedactValues, apiKey)
+		}
+	case "airtable":
+		if cfg.BaseURL == "" {
+			cfg.BaseURL = "https://api.airtable.com/v0"
+		}
+		cfg.AuthHeader = "Authorization"
+		if apiKey != "" {
+			cfg.AuthValue = "Bearer " + apiKey
+			cfg.RedactValues = append(cfg.RedactValues, apiKey, cfg.AuthValue)
+		}
+	case "asana":
+		if cfg.BaseURL == "" {
+			cfg.BaseURL = "https://app.asana.com/api/1.0"
+		}
+		cfg.AuthHeader = "Authorization"
+		if apiKey != "" {
+			cfg.AuthValue = "Bearer " + apiKey
+			cfg.RedactValues = append(cfg.RedactValues, apiKey, cfg.AuthValue)
+		}
+	case "clickup":
+		if cfg.BaseURL == "" {
+			cfg.BaseURL = "https://api.clickup.com/api/v2"
+		}
+		cfg.AuthHeader = "Authorization"
+		if apiKey != "" {
+			cfg.AuthValue = apiKey
+			cfg.RedactValues = append(cfg.RedactValues, apiKey)
+		}
+	case "sentry":
+		if cfg.BaseURL == "" {
+			cfg.BaseURL = "https://sentry.io/api/0"
+		}
+		cfg.AuthHeader = "Authorization"
+		if apiKey != "" {
+			cfg.AuthValue = "Bearer " + apiKey
+			cfg.RedactValues = append(cfg.RedactValues, apiKey, cfg.AuthValue)
+		}
+	case "vercel":
+		if cfg.BaseURL == "" {
+			cfg.BaseURL = "https://api.vercel.com"
+		}
+		cfg.AuthHeader = "Authorization"
+		if apiKey != "" {
+			cfg.AuthValue = "Bearer " + apiKey
+			cfg.RedactValues = append(cfg.RedactValues, apiKey, cfg.AuthValue)
 		}
 	case "dingtalk_bot":
 		accessToken, err := normalizeDingTalkBotAccessToken(apiKey)
@@ -757,6 +845,17 @@ func runtimeActionBlockedHeader(header string) bool {
 func applyRuntimeActionAuth(req *http.Request, cfg runtimeHTTPActionConfig) {
 	if cfg.AuthHeader != "" && cfg.AuthValue != "" {
 		req.Header.Set(cfg.AuthHeader, cfg.AuthValue)
+	}
+}
+
+func applyRuntimeDefaultHeaders(req *http.Request, cfg runtimeHTTPActionConfig) {
+	for key, value := range cfg.DefaultHeaders {
+		key = strings.TrimSpace(key)
+		value = strings.TrimSpace(value)
+		if key == "" || value == "" || runtimeActionBlockedHeader(key) {
+			continue
+		}
+		req.Header.Set(key, value)
 	}
 }
 
