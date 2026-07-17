@@ -398,7 +398,10 @@
     "switchHint": "目前本機 API 實例綁定一個 workspace root。SaaS 化的建立和切換後續會由 workspace registry/control plane 承接。",
     "createWorkspace": "建立工作區",
     "switchWorkspace": "切換工作區",
-    "switchingWorkspace": "正在切換工作區"
+    "switchingWorkspace": "正在切換工作區",
+    "switchingWorkspaceStepPrepare": "正在準備新的工作區上下文…",
+    "switchingWorkspaceStepAccess": "正在載入權限和導覽狀態…",
+    "switchingWorkspaceStepReady": "正在整理工作台資料…"
   },
   "inbox": {
     "subtitle": "本專案內的訊息與收件項目：確認、轉寄、未讀等；每列展示來自與指派（人或 Agent）。",

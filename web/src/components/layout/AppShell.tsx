@@ -119,7 +119,12 @@ function Breadcrumbs({ crumbs }: { crumbs: BreadcrumbSegment[] }) {
 
 const SIDEBAR_KEY = 'sidebar-collapsed'
 const ASSISTANT_HIDDEN_KEY = 'assistant-hidden'
-const WORKSPACE_TRANSITION_MIN_MS = 650
+const WORKSPACE_TRANSITION_MIN_MS = 2400
+const WORKSPACE_TRANSITION_STEPS = [
+  'workspace.switchingWorkspaceStepPrepare',
+  'workspace.switchingWorkspaceStepAccess',
+  'workspace.switchingWorkspaceStepReady',
+]
 
 export function AppShell() {
   const { t } = useTranslation()
@@ -134,6 +139,7 @@ export function AppShell() {
   const [workspaceScope, setWorkspaceScope] = useState('default')
   const [workspaceTransitioning, setWorkspaceTransitioning] = useState(false)
   const [workspaceSwitchCommitted, setWorkspaceSwitchCommitted] = useState(false)
+  const [workspaceTransitionStep, setWorkspaceTransitionStep] = useState(0)
   const workspaceTransitionStartedAt = useRef(0)
   const autoCollapsedSidebar = useRef(false)
 
@@ -170,6 +176,7 @@ export function AppShell() {
     function onWorkspaceSwitchStart() {
       workspaceTransitionStartedAt.current = Date.now()
       setWorkspaceSwitchCommitted(false)
+      setWorkspaceTransitionStep(0)
       setWorkspaceTransitioning(true)
     }
     function onWorkspaceChangedForTransition() {
@@ -195,6 +202,15 @@ export function AppShell() {
     const timer = window.setTimeout(() => setWorkspaceTransitioning(false), remaining)
     return () => window.clearTimeout(timer)
   }, [workspaceAccessLoading, workspaceSwitchCommitted, workspaceTransitioning, workspaceScope, pathname])
+
+  useEffect(() => {
+    if (!workspaceTransitioning) return
+    const timers = [
+      window.setTimeout(() => setWorkspaceTransitionStep(1), 800),
+      window.setTimeout(() => setWorkspaceTransitionStep(2), 1600),
+    ]
+    return () => timers.forEach((timer) => window.clearTimeout(timer))
+  }, [workspaceTransitioning])
 
   function toggleSidebar() {
     setCollapsed((v) => {
@@ -293,7 +309,7 @@ export function AppShell() {
             <div className="flex min-w-64 flex-col items-center rounded-xl border border-neutral-200 bg-white px-6 py-5 shadow-xl dark:border-zinc-700 dark:bg-zinc-900">
               <Loader2 className="size-6 animate-spin text-sky-600 dark:text-sky-400" strokeWidth={1.8} />
               <p className="mt-3 text-sm font-medium text-neutral-900 dark:text-zinc-100">{t('workspace.switchingWorkspace')}</p>
-              <p className="mt-1 text-xs text-neutral-400 dark:text-zinc-500">{t('app.loadingWorkspaceAccess')}</p>
+              <p className="mt-1 text-xs text-neutral-400 dark:text-zinc-500">{t(WORKSPACE_TRANSITION_STEPS[workspaceTransitionStep] ?? WORKSPACE_TRANSITION_STEPS[0])}</p>
             </div>
           </div>
         )}
