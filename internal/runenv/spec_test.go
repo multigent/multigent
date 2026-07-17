@@ -77,3 +77,33 @@ func TestDockerProviderPrependsRuntimeToolBin(t *testing.T) {
 		t.Fatalf("docker args missing tool bin path %q:\n%s", want, joined)
 	}
 }
+
+func TestDockerProviderRunsRuntimeToolBootstrap(t *testing.T) {
+	dir := t.TempDir()
+	runtime := &entity.SandboxConfig{
+		Provider: entity.SandboxDocker,
+		Image:    sandbox.BaseImage,
+		Docker:   &entity.DockerSandboxConfig{Image: sandbox.BaseImage},
+		Env: []entity.RuntimeEnvVar{
+			{Name: "MULTIGENT_TOOL_BOOTSTRAP_FILE", Value: "/agent/.multigent/runtime-tools/run/bootstrap-tools.sh"},
+		},
+	}
+
+	_, args, err := DockerProvider{}.Command(ProcessSpec{
+		AgentDir: dir,
+		Model:    entity.ModelCodex,
+		Runtime:  runtime,
+		Command:  []string{"codex", "exec", "-"},
+	})
+	if err != nil {
+		t.Fatalf("Command: %v", err)
+	}
+
+	joined := strings.Join(args, "\n")
+	if !strings.Contains(joined, "/agent/.multigent/runtime-tools/run/bootstrap-tools.sh") {
+		t.Fatalf("docker args missing bootstrap script:\n%s", joined)
+	}
+	if !strings.Contains(joined, "exec \"$@\"") {
+		t.Fatalf("docker args missing command handoff:\n%s", joined)
+	}
+}

@@ -17,6 +17,7 @@ Use `mga` inside an agent sandbox to talk to the Multigent Server. Do not use th
 - `MULTIGENT_TOOLS_FILE`
 - `MULTIGENT_TOOL_RUNTIME_DIR`
 - `MULTIGENT_TOOL_BIN_DIR`
+- `MULTIGENT_TOOL_BOOTSTRAP_FILE`
 
 ## Task Commands
 

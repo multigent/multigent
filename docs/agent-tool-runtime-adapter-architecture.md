@@ -278,6 +278,7 @@ mga runtime gateway call-tool action:github:list_repository_issues \
 - `MULTIGENT_TOOLS_FILE`: agent 侧工具运行计划，包含 `tools`、`recommendedAdapter`、adapter 列表、skills、actions 和 CLI config 的 materialized path。
 - `MULTIGENT_TOOL_RUNTIME_DIR`: 本次 run 的工具运行目录。
 - `MULTIGENT_TOOL_BIN_DIR`: 本次 run 的工具 wrapper 目录，会被放到 `PATH` 最前面，用来把 `gh`、`lark-cli` 等平台 CLI 指向 agent 专属配置。
+- `MULTIGENT_TOOL_BOOTSTRAP_FILE`: 本次 run 的工具初始化脚本，sandbox 启动 agent 命令前执行，用来安装或校验 runtime adapter 声明的平台 CLI。
 
 `MULTIGENT_TOOLS_FILE` 不应该包含第三方原始凭证。它只描述：
 
@@ -285,6 +286,7 @@ mga runtime gateway call-tool action:github:list_repository_issues \
 - 每个工具推荐用 CLI、MCP Gateway、HTTP action 还是 skill-only。
 - CLI config 应该写到哪个 agent-scoped path。
 - 平台 CLI 是否有 wrapper，以及 wrapper 对应的 per-run home/config。
+- 平台 CLI 的 installer/checker 是否生成了 bootstrap 脚本。
 - MCP Gateway 的 namespace。
 - HTTP action 的 allowlist。
 

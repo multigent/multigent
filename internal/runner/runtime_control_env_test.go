@@ -268,6 +268,7 @@ func TestWriteRuntimeToolsFileMaterializesLarkCLIConfig(t *testing.T) {
 				"skills":["lark-doc","lark-im"],
 				"cli":{
 					"binary":"lark-cli",
+					"installer":{"type":"npm","package":"@larksuite/cli","version":"latest","check":["lark-cli --version"]},
 					"configFiles":[{"path":"~/.lark-cli/config.json","format":"json"}]
 				},
 				"credentialMaterialize":"runtime_file"
@@ -323,6 +324,15 @@ func TestWriteRuntimeToolsFileMaterializesLarkCLIConfig(t *testing.T) {
 	}
 	if strings.Contains(string(toolsBody), "secret_test") {
 		t.Fatalf("tools file leaked app secret: %s", string(toolsBody))
+	}
+	bootstrapPath := filepath.Join(toolDir, "bootstrap-tools.sh")
+	bootstrapBody, err := os.ReadFile(bootstrapPath)
+	if err != nil {
+		t.Fatalf("read bootstrap-tools.sh: %v", err)
+	}
+	bootstrapText := string(bootstrapBody)
+	if !strings.Contains(bootstrapText, "npm install -g '@larksuite/cli'") || !strings.Contains(bootstrapText, "lark-cli --version") {
+		t.Fatalf("unexpected bootstrap script: %s", bootstrapText)
 	}
 }
 

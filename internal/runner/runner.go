@@ -52,6 +52,7 @@ const (
 	runtimeToolsFileEnv       = "MULTIGENT_TOOLS_FILE"
 	runtimeToolDirEnv         = "MULTIGENT_TOOL_RUNTIME_DIR"
 	runtimeToolBinDirEnv      = "MULTIGENT_TOOL_BIN_DIR"
+	runtimeToolBootstrapEnv   = "MULTIGENT_TOOL_BOOTSTRAP_FILE"
 	maxRuntimeConnectionsFile = 1 << 20
 )
 
@@ -1142,6 +1143,9 @@ func (r *Runner) materializeRuntimeFiles(agentDir string, env map[string]string)
 		env[runtimeToolsFileEnv] = toolsPath
 		env[runtimeToolBinDirEnv] = filepath.Join(toolDir, "bin")
 		env["PATH"] = filepath.Join(toolDir, "bin") + string(os.PathListSeparator) + os.Getenv("PATH")
+		if bootstrap := filepath.Join(toolDir, "bootstrap-tools.sh"); fileExists(bootstrap) {
+			env[runtimeToolBootstrapEnv] = bootstrap
+		}
 		for key, value := range extraEnv {
 			if key != "" && value != "" {
 				env[key] = value
@@ -1263,8 +1267,16 @@ type runtimeAdapterRef struct {
 
 type runtimeCLIRef struct {
 	Binary      string                 `json:"binary"`
-	Installer   map[string]any         `json:"installer,omitempty"`
+	Installer   *runtimeInstallerRef   `json:"installer,omitempty"`
 	ConfigFiles []runtimeConfigFileRef `json:"configFiles,omitempty"`
+}
+
+type runtimeInstallerRef struct {
+	Type    string   `json:"type,omitempty"`
+	Package string   `json:"package,omitempty"`
+	Version string   `json:"version,omitempty"`
+	Command []string `json:"command,omitempty"`
+	Check   []string `json:"check,omitempty"`
 }
 
 type runtimeConfigFileRef struct {
@@ -1305,6 +1317,7 @@ func writeRuntimeToolsFile(agentDir, runID, connectionsPath string, body []byte,
 		return "", "", nil, err
 	}
 	extraEnv := map[string]string{}
+	var bootstrapSteps []string
 	for ti := range manifest.Tools {
 		var secretValues map[string]string
 		if secretResolver != nil {
@@ -1321,6 +1334,7 @@ func writeRuntimeToolsFile(agentDir, runID, connectionsPath string, body []byte,
 			if adapter.CLI == nil {
 				continue
 			}
+			bootstrapSteps = append(bootstrapSteps, runtimeCLIInstallerScript(manifest.Tools[ti], *adapter)...)
 			for ci := range adapter.CLI.ConfigFiles {
 				cfg := &adapter.CLI.ConfigFiles[ci]
 				cfg.MaterializedPath = runtimeConfigMaterializedPath(toolDir, manifest.Tools[ti], cfg.Path)
@@ -1335,6 +1349,13 @@ func writeRuntimeToolsFile(agentDir, runID, connectionsPath string, body []byte,
 					extraEnv[key] = value
 				}
 			}
+		}
+	}
+	if len(bootstrapSteps) > 0 {
+		bootstrapPath := filepath.Join(toolDir, "bootstrap-tools.sh")
+		bootstrapBody := strings.Join(append([]string{"#!/bin/sh", "set -eu"}, bootstrapSteps...), "\n") + "\n"
+		if err := os.WriteFile(bootstrapPath, []byte(bootstrapBody), 0o700); err != nil {
+			return "", "", nil, err
 		}
 	}
 	plan := runtimeToolsPlan{
@@ -1380,6 +1401,78 @@ func materializeCLIConfig(tool runtimeToolRef, adapter runtimeAdapterRef, cfg ru
 	default:
 		return nil, nil
 	}
+}
+
+func runtimeCLIInstallerScript(tool runtimeToolRef, adapter runtimeAdapterRef) []string {
+	if adapter.CLI == nil {
+		return nil
+	}
+	binary := strings.TrimSpace(adapter.CLI.Binary)
+	installer := adapter.CLI.Installer
+	if installer == nil {
+		if binary == "" {
+			return nil
+		}
+		return []string{fmt.Sprintf("command -v %s >/dev/null 2>&1 || { echo %s >&2; exit 127; }", shellQuote(binary), shellQuote("Multigent runtime tool missing: "+binary))}
+	}
+	label := firstNonEmpty(tool.Provider, tool.ConnectionAlias, binary)
+	var lines []string
+	lines = append(lines, fmt.Sprintf("echo %s >&2", shellQuote("multigent: preparing runtime tool "+label)))
+	lines = append(lines,
+		"export MULTIGENT_TOOLCHAIN_HOME="+shellQuote(agentcli.ToolchainHome),
+		"export NPM_CONFIG_PREFIX=\"$MULTIGENT_TOOLCHAIN_HOME/npm\"",
+		"export PATH=\"$NPM_CONFIG_PREFIX/bin:$PATH\"",
+		"mkdir -p \"$NPM_CONFIG_PREFIX\" \"$MULTIGENT_TOOLCHAIN_HOME/markers\"",
+	)
+	switch strings.TrimSpace(installer.Type) {
+	case "npm":
+		pkg := firstNonEmpty(installer.Package, binary)
+		if pkg == "" {
+			break
+		}
+		version := strings.TrimSpace(installer.Version)
+		installPkg := pkg
+		if version != "" && version != "latest" {
+			installPkg += "@" + version
+		}
+		marker := runtimeToolInstallerMarker(*installer, binary)
+		lines = append(lines,
+			fmt.Sprintf("if [ ! -f %s ] || [ \"${MULTIGENT_TOOL_FORCE_INSTALL:-}\" = \"1\" ]; then", shellQuote(marker)),
+			fmt.Sprintf("  npm install -g %s", shellQuote(installPkg)),
+			fmt.Sprintf("  touch %s", shellQuote(marker)),
+			"fi",
+		)
+	case "script":
+		lines = append(lines, installer.Command...)
+	case "system", "":
+		if installer.Package != "" && binary != "" {
+			lines = append(lines, fmt.Sprintf("command -v %s >/dev/null 2>&1 || { echo %s >&2; exit 127; }", shellQuote(binary), shellQuote("Multigent runtime tool package is not installed in sandbox image: "+installer.Package)))
+		}
+	default:
+		if binary != "" {
+			lines = append(lines, fmt.Sprintf("command -v %s >/dev/null 2>&1 || { echo %s >&2; exit 127; }", shellQuote(binary), shellQuote("Unsupported Multigent runtime tool installer type: "+installer.Type)))
+		}
+	}
+	if binary != "" {
+		lines = append(lines, fmt.Sprintf("command -v %s >/dev/null 2>&1", shellQuote(binary)))
+	}
+	for _, check := range installer.Check {
+		if strings.TrimSpace(check) != "" {
+			lines = append(lines, check)
+		}
+	}
+	return lines
+}
+
+func runtimeToolInstallerMarker(installer runtimeInstallerRef, binary string) string {
+	key := strings.Join([]string{
+		strings.TrimSpace(installer.Type),
+		strings.TrimSpace(installer.Package),
+		strings.TrimSpace(installer.Version),
+		strings.TrimSpace(binary),
+	}, "\x00")
+	sum := sha256.Sum256([]byte(key))
+	return agentcli.ToolchainHome + "/markers/tool-" + hex.EncodeToString(sum[:8])
 }
 
 func materializeGitHubCLIConfig(adapter runtimeAdapterRef, cfg runtimeConfigFileRef, secretValues map[string]string) (map[string]string, error) {
@@ -1492,6 +1585,14 @@ exec lark-cli "$@"
 
 func shellQuote(value string) string {
 	return "'" + strings.ReplaceAll(value, "'", "'\\''") + "'"
+}
+
+func fileExists(path string) bool {
+	if path == "" {
+		return false
+	}
+	_, err := os.Stat(path)
+	return err == nil
 }
 
 func firstNonEmpty(values ...string) string {
@@ -1700,7 +1801,7 @@ func injectRuntimeControlEnvIntoRuntime(cfg *entity.SandboxConfig, env map[strin
 		if k == "" {
 			continue
 		}
-		if k == runtimeToolBinDirEnv || k == "PATH" {
+		if k == runtimeToolBinDirEnv || k == runtimeToolBootstrapEnv || k == "PATH" {
 			cfg.Env = append(cfg.Env, entity.RuntimeEnvVar{Name: k, Value: v})
 			continue
 		}
@@ -1710,7 +1811,7 @@ func injectRuntimeControlEnvIntoRuntime(cfg *entity.SandboxConfig, env map[strin
 
 func isRuntimeControlEnvKey(key string) bool {
 	switch key {
-	case "MULTIGENT_API_URL", "MULTIGENT_AGENT_TOKEN", "MULTIGENT_RUN_ID", "MULTIGENT_WORKSPACE_ID", runtimeConnectionsFileEnv, runtimeToolsFileEnv, runtimeToolDirEnv, runtimeToolBinDirEnv:
+	case "MULTIGENT_API_URL", "MULTIGENT_AGENT_TOKEN", "MULTIGENT_RUN_ID", "MULTIGENT_WORKSPACE_ID", runtimeConnectionsFileEnv, runtimeToolsFileEnv, runtimeToolDirEnv, runtimeToolBinDirEnv, runtimeToolBootstrapEnv:
 		return true
 	default:
 		return false

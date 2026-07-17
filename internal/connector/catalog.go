@@ -316,7 +316,8 @@ func DefaultRuntimeAdapters(provider Provider) []ToolRuntimeAdapter {
 				CLI: &ToolCLIAdapter{
 					Binary: "lark-cli",
 					Installer: &ToolInstallerSpec{
-						Type:    "script",
+						Type:    "npm",
+						Package: "@larksuite/cli",
 						Version: "latest",
 						Check:   []string{"lark-cli --version"},
 					},

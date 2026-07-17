@@ -70,6 +70,9 @@ func (DockerProvider) Command(spec ProcessSpec) (string, []string, error) {
 		}
 	}
 	command := agentcli.WrapCommand(spec.Command, spec.AgentCLI)
+	if bootstrap := runtimeEnvValue(spec.Runtime, "MULTIGENT_TOOL_BOOTSTRAP_FILE"); bootstrap != "" {
+		command = wrapBootstrapScript(command, bootstrap)
+	}
 	return sandbox.RunArgs(spec.AgentDir, spec.Model, cfg, command)
 }
 
@@ -83,6 +86,19 @@ func runtimeEnvValue(runtime *entity.SandboxConfig, name string) string {
 		}
 	}
 	return ""
+}
+
+func wrapBootstrapScript(cmd []string, scriptPath string) []string {
+	if len(cmd) == 0 || strings.TrimSpace(scriptPath) == "" {
+		return cmd
+	}
+	wrapped := []string{"/bin/sh", "-lc", shellQuote(scriptPath) + "\nexec \"$@\"", "--"}
+	wrapped = append(wrapped, cmd...)
+	return wrapped
+}
+
+func shellQuote(value string) string {
+	return "'" + strings.ReplaceAll(value, "'", "'\\''") + "'"
 }
 
 // E2BProvider represents a self-hosted E2B-compatible runtime. It is currently

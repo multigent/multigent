@@ -20,6 +20,7 @@ At runtime, Multigent injects:
 - `+"`MULTIGENT_TOOLS_FILE`"+`: JSON tool runtime plan with recommended adapters, skills, actions, and materialized config paths.
 - `+"`MULTIGENT_TOOL_RUNTIME_DIR`"+`: per-run directory for tool adapter config and runtime files.
 - `+"`MULTIGENT_TOOL_BIN_DIR`"+`: per-run command wrapper directory. It is prepended to `+"`PATH`"+` so provider CLIs such as `+"`gh`"+` or `+"`lark-cli`"+` can use agent-scoped credentials.
+- `+"`MULTIGENT_TOOL_BOOTSTRAP_FILE`"+`: per-run bootstrap script executed before the agent command to install/check provider CLIs declared by runtime adapters.
 - `+"`MULTIGENT_API_URL`"+`: Multigent control API base URL.
 - `+"`MULTIGENT_AGENT_TOKEN`"+`: scoped runtime token for this agent/run.
 - `+"`MULTIGENT_RUN_ID`"+` and `+"`MULTIGENT_WORKSPACE_ID`"+`: run and workspace identifiers.
