@@ -2,6 +2,7 @@
   "common": {
     "save": "Save",
     "cancel": "Cancel",
+    "close": "Close",
     "actions": "Actions",
     "delete": "Delete",
     "edit": "Edit",
@@ -198,7 +199,7 @@
     "oauthUnavailable": "OAuth unavailable",
     "test": "Test",
     "grant": "Grant",
-    "authApiKey": "Token / API Key",
+    "authApiKey": "API Key",
     "authAppCredential": "App credential",
     "authOAuth": "OAuth",
     "authNoAuth": "No auth",
@@ -215,7 +216,39 @@
     "deviceAuthExpired": "Authorization expired",
     "deviceAuthError": "Authorization failed",
     "savedCredentialSummary": "Saved credential summary",
-    "advancedSettings": "Advanced settings"
+    "advancedSettings": "Advanced settings",
+    "categories": {
+      "developer_tools": "Developer Tools",
+      "project_management": "Project Management",
+      "knowledge_and_docs": "Knowledge and Docs",
+      "communication": "Communication",
+      "design_and_data": "Design and Data",
+      "advanced": "Advanced",
+      "other_tools": "Other Tools"
+    },
+    "providerDescriptions": {
+      "github": "Connect repositories, issues, pull requests, releases, and engineering collaboration context.",
+      "gitlab": "Connect GitLab repositories, merge requests, issues, and CI/CD context.",
+      "gitee": "Connect Gitee repositories, issues, pull requests, and domestic code hosting workflows.",
+      "feishu": "Connect Feishu OpenAPI for docs, wiki, messaging, and collaboration workflows.",
+      "lark": "Connect Lark OpenAPI for global docs, messaging, and collaboration workflows.",
+      "linear": "Connect Linear issues, projects, cycles, and engineering planning context.",
+      "jira": "Connect Jira issues, epics, projects, and enterprise development workflows.",
+      "notion": "Connect Notion pages, databases, knowledge bases, and lightweight product docs.",
+      "slack": "Connect Slack channels, messages, threads, and team notification workflows.",
+      "dingtalk_bot": "Connect DingTalk group bots for notifications and workflow updates.",
+      "gmail": "Connect Gmail for email search, triage, and draft workflows.",
+      "google_drive": "Connect Google Drive files, folders, attachments, and knowledge sources.",
+      "google_docs": "Connect Google Docs documents for readable and writable knowledge artifacts.",
+      "google_sheets": "Connect Google Sheets for structured data, operations tables, and reporting.",
+      "google_calendar": "Connect Google Calendar for schedules, meetings, and reminders.",
+      "figma": "Connect Figma files, components, comments, and design handoff context.",
+      "airtable": "Connect Airtable bases for operations tables, CRM data, and internal workflows.",
+      "asana": "Connect Asana tasks, projects, sections, and non-engineering project workflows.",
+      "clickup": "Connect ClickUp tasks, lists, spaces, and cross-functional work tracking.",
+      "sentry": "Connect Sentry issues, error events, releases, and triage signals.",
+      "vercel": "Connect Vercel projects, deployments, checks, and release status."
+    }
   },
   "projectNav": {
     "tasks": "Tasks",

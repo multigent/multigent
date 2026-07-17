@@ -58,7 +58,6 @@ type ConnectionProfileSummary = {
   }
 }
 type ConnectionTestResult = { ok: boolean; status: number; message: string }
-type ConnectionHealthCheckRunResult = { checked: number; skipped: number; results: Array<{ connectionId: string; ok: boolean; status: number; message: string; error?: string }> }
 type OAuthAuthorizationStart = { authorizationUrl: string; state: string }
 type DeviceSetupBegin = { deviceCode: string; qrUrl: string; userCode?: string; interval?: number; expiresIn?: number; baseUrl?: string }
 type DeviceSetupPoll = { status: string; stage?: string; deviceCode?: string; qrUrl?: string; userCode?: string; interval?: number; expiresIn?: number; baseUrl?: string; slowDown?: boolean; error?: string; connection?: Connection }
@@ -89,8 +88,6 @@ export default function ConnectionsPage() {
   const [creatingProvider, setCreatingProvider] = useState<string | null>(null)
   const [editing, setEditing] = useState<Connection | null>(null)
   const [testResults, setTestResults] = useState<Record<string, { loading?: boolean; ok?: boolean; message?: string }>>({})
-  const [healthCheckLoading, setHealthCheckLoading] = useState(false)
-  const [healthCheckMessage, setHealthCheckMessage] = useState('')
   const [oauthMessage, setOauthMessage] = useState<{ kind: 'success' | 'error'; text: string } | null>(null)
   const [reloadKey, setReloadKey] = useState(0)
   const [searchParams, setSearchParams] = useSearchParams()
@@ -171,25 +168,11 @@ export default function ConnectionsPage() {
     }
   }
 
-  async function runHealthChecks() {
-    setHealthCheckLoading(true)
-    setHealthCheckMessage('')
-    try {
-      const result = await apiPost<ConnectionHealthCheckRunResult>('/api/v1/connections/health-check', { force: true, limit: 100 })
-      setHealthCheckMessage(t('connections.healthCheckSummary', { checked: result.checked, skipped: result.skipped }))
-    } catch (e) {
-      setHealthCheckMessage(e instanceof Error ? e.message : String(e))
-    } finally {
-      setHealthCheckLoading(false)
-      setReloadKey(k => k + 1)
-    }
-  }
-
   const providersByCategory = useMemo(() => {
     const order = ['Developer Tools', 'Project Management', 'Knowledge And Docs', 'Communication', 'Design And Data', 'Advanced']
     const groups = new Map<string, Provider[]>()
     for (const provider of providers) {
-      const category = provider.category || t('connections.otherTools')
+      const category = provider.category || 'Other Tools'
       groups.set(category, [...(groups.get(category) ?? []), provider])
     }
     return Array.from(groups.entries())
@@ -202,7 +185,7 @@ export default function ConnectionsPage() {
         return ai - bi
       })
       .map(([category, items]) => [category, items.sort((a, b) => a.displayName.localeCompare(b.displayName))] as const)
-  }, [providers, t])
+  }, [providers])
 
   return (
     <div className="animate-fade-in px-8 py-6">
@@ -211,22 +194,7 @@ export default function ConnectionsPage() {
           <h1 className="text-xl font-semibold text-neutral-900 dark:text-zinc-100">{t('connections.title')}</h1>
           <p className="mt-0.5 text-sm text-neutral-500 dark:text-zinc-500">{t('connections.subtitle')}</p>
         </div>
-        <div className="flex items-center gap-2">
-          <button type="button" onClick={() => setReloadKey(k => k + 1)} className="rounded-lg border border-neutral-200 px-3 py-2 text-sm font-medium text-neutral-600 hover:bg-neutral-50 dark:border-zinc-700 dark:text-zinc-300 dark:hover:bg-zinc-800">
-            {t('common.refresh')}
-          </button>
-          {isWorkspaceAdmin && (
-            <button type="button" onClick={() => void runHealthChecks()} disabled={healthCheckLoading} className="rounded-lg border border-neutral-200 px-3 py-2 text-sm font-medium text-neutral-600 hover:bg-neutral-50 disabled:opacity-50 dark:border-zinc-700 dark:text-zinc-300 dark:hover:bg-zinc-800">
-              {t('connections.runChecks')}
-            </button>
-          )}
-        </div>
       </div>
-      {healthCheckMessage && (
-        <div className="mb-4 rounded-lg border border-neutral-200 bg-white px-3 py-2 text-xs text-neutral-600 dark:border-zinc-700 dark:bg-zinc-900/50 dark:text-zinc-300">
-          {healthCheckMessage}
-        </div>
-      )}
       {oauthMessage && (
         <div className={cn(
           'mb-4 rounded-lg border px-3 py-2 text-xs',
@@ -248,7 +216,7 @@ export default function ConnectionsPage() {
           {providersByCategory.map(([category, items]) => (
             <section key={category}>
               <div className="mb-3 flex items-center justify-between">
-                <h2 className="text-sm font-semibold text-neutral-900 dark:text-zinc-100">{category}</h2>
+                <h2 className="text-sm font-semibold text-neutral-900 dark:text-zinc-100">{providerCategoryLabel(category, t)}</h2>
                 <span className="text-xs text-neutral-400 dark:text-zinc-500">{t('connections.toolCount', { count: items.length })}</span>
               </div>
               <div className="grid gap-4 xl:grid-cols-2">
@@ -351,7 +319,7 @@ function ExternalToolCard({
                 {statusLabel}
               </span>
             </div>
-            <p className="mt-2 line-clamp-2 text-sm text-neutral-500 dark:text-zinc-400">{provider.description || t('connections.externalToolDefaultDescription')}</p>
+            <p className="mt-2 line-clamp-2 text-sm text-neutral-500 dark:text-zinc-400">{providerDescription(provider, t)}</p>
           </div>
         </div>
         <button type="button" onClick={() => connection && canManageConnection ? onEdit(connection) : onConfigure()} disabled={connection ? !canManageConnection : !canConfigure} className={cn(primaryOutlineButton, 'shrink-0 disabled:cursor-not-allowed disabled:opacity-50')}>
@@ -364,8 +332,8 @@ function ExternalToolCard({
         <ToolStat label={t('connections.actions')} value={String(provider.actions?.length ?? 0)} />
       </div>
       <div className="mt-4 flex flex-wrap items-center gap-2 text-xs text-neutral-400 dark:text-zinc-500">
-        {oauthSupported && (
-          <span>{oauthAvailable ? t('connections.oauthEnabled') : isWorkspaceAdmin ? t('connections.oauthAdminCanEnable') : t('connections.oauthUnavailable')}</span>
+        {oauthSupported && oauthAvailable && (
+          <span>{t('connections.oauthEnabled')}</span>
         )}
         {latestValidation && (
           <span>{latestValidation.ok ? t('connections.healthy') : t('connections.failed')} · {latestValidation.atLabel}</span>
@@ -387,6 +355,23 @@ function ToolStat({ label, value }: { label: string; value: string }) {
       <p className="mt-1 truncate text-xs font-medium text-neutral-700 dark:text-zinc-200" title={value}>{value}</p>
     </div>
   )
+}
+
+function providerCategoryLabel(category: string, t: (key: string) => string): string {
+  const key = `connections.categories.${categoryKey(category)}`
+  const value = t(key)
+  return value === key ? category : value
+}
+
+function providerDescription(provider: Provider, t: (key: string) => string): string {
+  const key = `connections.providerDescriptions.${provider.provider}`
+  const value = t(key)
+  if (value !== key) return value
+  return provider.description || t('connections.externalToolDefaultDescription')
+}
+
+function categoryKey(category: string): string {
+  return category.trim().toLowerCase().replace(/[^a-z0-9]+/g, '_').replace(/^_+|_+$/g, '')
 }
 
 function ProviderLogo({ provider }: { provider: Provider }) {

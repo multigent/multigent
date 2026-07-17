@@ -2,6 +2,7 @@
   "common": {
     "save": "儲存",
     "cancel": "取消",
+    "close": "關閉",
     "actions": "操作",
     "delete": "刪除",
     "edit": "編輯",
@@ -198,7 +199,7 @@
     "oauthUnavailable": "OAuth 暫不可用",
     "test": "測試",
     "grant": "授權",
-    "authApiKey": "Token / API Key",
+    "authApiKey": "API Key",
     "authAppCredential": "App 憑證",
     "authOAuth": "OAuth",
     "authNoAuth": "無需認證",
@@ -215,7 +216,39 @@
     "deviceAuthExpired": "授權已過期",
     "deviceAuthError": "授權失敗",
     "savedCredentialSummary": "已儲存的憑證摘要",
-    "advancedSettings": "進階設定"
+    "advancedSettings": "進階設定",
+    "categories": {
+      "developer_tools": "開發工具",
+      "project_management": "專案管理",
+      "knowledge_and_docs": "知識與文件",
+      "communication": "溝通協作",
+      "design_and_data": "設計與資料",
+      "advanced": "進階",
+      "other_tools": "其他工具"
+    },
+    "providerDescriptions": {
+      "github": "連接程式碼倉庫、Issue、PR、發布和研發協作上下文。",
+      "gitlab": "連接 GitLab 倉庫、合併請求、Issue 和 CI/CD 上下文。",
+      "gitee": "連接 Gitee 倉庫、Issue、Pull Request 和國內程式碼託管流程。",
+      "feishu": "連接飛書開放平台，用於文件、知識庫、訊息和協作流程。",
+      "lark": "連接 Lark 開放平台，用於全球租戶的文件、訊息和協作流程。",
+      "linear": "連接 Linear Issue、專案、週期和研發規劃上下文。",
+      "jira": "連接 Jira Issue、Epic、專案和企業研發流程。",
+      "notion": "連接 Notion 頁面、資料庫、知識庫和輕量產品文件。",
+      "slack": "連接 Slack 頻道、訊息、討論串和團隊通知流程。",
+      "dingtalk_bot": "連接釘釘群機器人，用於發送通知和流程更新。",
+      "gmail": "連接 Gmail，用於郵件搜尋、整理和草稿工作流。",
+      "google_drive": "連接 Google Drive 檔案、資料夾、附件和知識來源。",
+      "google_docs": "連接 Google Docs 文件，用於讀取和寫入知識內容。",
+      "google_sheets": "連接 Google Sheets，用於結構化資料、營運表和報告。",
+      "google_calendar": "連接 Google Calendar，用於日程、會議和提醒。",
+      "figma": "連接 Figma 檔案、元件、評論和設計交付上下文。",
+      "airtable": "連接 Airtable Base，用於營運表、CRM 資料和內部流程。",
+      "asana": "連接 Asana 任務、專案、分組和非研發專案流程。",
+      "clickup": "連接 ClickUp 任務、列表、空間和跨職能工作追蹤。",
+      "sentry": "連接 Sentry Issue、錯誤事件、版本和故障分流訊號。",
+      "vercel": "連接 Vercel 專案、部署、檢查和發布狀態。"
+    }
   },
   "projectNav": {
     "tasks": "任務",

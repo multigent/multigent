@@ -2,6 +2,7 @@
   "common": {
     "save": "保存",
     "cancel": "取消",
+    "close": "关闭",
     "actions": "操作",
     "delete": "删除",
     "edit": "编辑",
@@ -198,7 +199,7 @@
     "oauthUnavailable": "OAuth 暂不可用",
     "test": "测试",
     "grant": "授权",
-    "authApiKey": "Token / API Key",
+    "authApiKey": "API Key",
     "authAppCredential": "App 凭证",
     "authOAuth": "OAuth",
     "authNoAuth": "无需认证",
@@ -215,7 +216,39 @@
     "deviceAuthExpired": "授权已过期",
     "deviceAuthError": "授权失败",
     "savedCredentialSummary": "已保存的凭证摘要",
-    "advancedSettings": "高级设置"
+    "advancedSettings": "高级设置",
+    "categories": {
+      "developer_tools": "开发工具",
+      "project_management": "项目管理",
+      "knowledge_and_docs": "知识与文档",
+      "communication": "沟通协作",
+      "design_and_data": "设计与数据",
+      "advanced": "高级",
+      "other_tools": "其他工具"
+    },
+    "providerDescriptions": {
+      "github": "连接代码仓库、Issue、PR、发布和研发协作上下文。",
+      "gitlab": "连接 GitLab 仓库、合并请求、Issue 和 CI/CD 上下文。",
+      "gitee": "连接 Gitee 仓库、Issue、Pull Request 和国内代码托管流程。",
+      "feishu": "连接飞书开放平台，用于文档、知识库、消息和协作流程。",
+      "lark": "连接 Lark 开放平台，用于全球租户的文档、消息和协作流程。",
+      "linear": "连接 Linear Issue、项目、周期和研发计划上下文。",
+      "jira": "连接 Jira Issue、Epic、项目和企业研发流程。",
+      "notion": "连接 Notion 页面、数据库、知识库和轻量产品文档。",
+      "slack": "连接 Slack 频道、消息、线程和团队通知流程。",
+      "dingtalk_bot": "连接钉钉群机器人，用于发送通知和流程更新。",
+      "gmail": "连接 Gmail，用于邮件搜索、整理和草稿工作流。",
+      "google_drive": "连接 Google Drive 文件、文件夹、附件和知识来源。",
+      "google_docs": "连接 Google Docs 文档，用于读取和写入知识内容。",
+      "google_sheets": "连接 Google Sheets，用于结构化数据、运营表和报告。",
+      "google_calendar": "连接 Google Calendar，用于日程、会议和提醒。",
+      "figma": "连接 Figma 文件、组件、评论和设计交付上下文。",
+      "airtable": "连接 Airtable Base，用于运营表、CRM 数据和内部流程。",
+      "asana": "连接 Asana 任务、项目、分组和非研发项目流程。",
+      "clickup": "连接 ClickUp 任务、列表、空间和跨职能工作跟踪。",
+      "sentry": "连接 Sentry Issue、错误事件、版本和故障分流信号。",
+      "vercel": "连接 Vercel 项目、部署、检查和发布状态。"
+    }
   },
   "projectNav": {
     "tasks": "任务",
