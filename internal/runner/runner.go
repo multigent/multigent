@@ -55,6 +55,7 @@ const (
 	runtimeToolBinDirEnv      = "MULTIGENT_TOOL_BIN_DIR"
 	runtimeToolBootstrapEnv   = "MULTIGENT_TOOL_BOOTSTRAP_FILE"
 	runtimeToolSkillsFileEnv  = "MULTIGENT_TOOL_SKILLS_FILE"
+	runtimeToolCLIAuditEnv    = "MULTIGENT_TOOL_CLI_AUDIT_FILE"
 	maxRuntimeConnectionsFile = 1 << 20
 )
 
@@ -1324,6 +1325,8 @@ func writeRuntimeToolsFile(agentDir, runID, connectionsPath string, body []byte,
 		return "", "", nil, err
 	}
 	extraEnv := map[string]string{}
+	cliAuditPath := filepath.Join(toolDir, "cli-audit.jsonl")
+	extraEnv[runtimeToolCLIAuditEnv] = cliAuditPath
 	var bootstrapSteps []string
 	for ti := range manifest.Tools {
 		var secretValues map[string]string
@@ -1355,6 +1358,9 @@ func writeRuntimeToolsFile(agentDir, runID, connectionsPath string, body []byte,
 				for key, value := range env {
 					extraEnv[key] = value
 				}
+			}
+			if err := materializeCLIWrapper(toolDir, manifest.Tools[ti], *adapter); err != nil {
+				return "", "", nil, err
 			}
 		}
 	}
@@ -1519,6 +1525,21 @@ func runtimeCLIInstallerScript(tool runtimeToolRef, adapter runtimeAdapterRef) [
 	return lines
 }
 
+func materializeCLIWrapper(toolDir string, tool runtimeToolRef, adapter runtimeAdapterRef) error {
+	if adapter.CLI == nil {
+		return nil
+	}
+	binary := strings.TrimSpace(adapter.CLI.Binary)
+	if binary == "" {
+		return nil
+	}
+	wrapperPath := filepath.Join(toolDir, "bin", binary)
+	if fileExists(wrapperPath) {
+		return nil
+	}
+	return os.WriteFile(wrapperPath, []byte(runtimeCLIWrapperScript(binary, tool, nil)), 0o700)
+}
+
 func runtimeToolInstallerMarker(installer runtimeInstallerRef, binary string) string {
 	key := strings.Join([]string{
 		strings.TrimSpace(installer.Type),
@@ -1584,7 +1605,7 @@ func materializeLarkCLIConfig(tool runtimeToolRef, adapter runtimeAdapterRef, cf
 		return nil, err
 	}
 	wrapperPath := filepath.Join(binDir, "lark-cli")
-	if err := os.WriteFile(wrapperPath, []byte(larkCLIWrapperScript(larkHome)), 0o700); err != nil {
+	if err := os.WriteFile(wrapperPath, []byte(runtimeCLIWrapperScript("lark-cli", tool, map[string]string{"HOME": larkHome})), 0o700); err != nil {
 		return nil, err
 	}
 	return map[string]string{"MULTIGENT_LARK_HOME": larkHome}, nil
@@ -1614,9 +1635,20 @@ func runtimeToolDirFromConfigPath(path string) string {
 	}
 }
 
-func larkCLIWrapperScript(home string) string {
+func runtimeCLIWrapperScript(binary string, tool runtimeToolRef, env map[string]string) string {
+	var exports []string
+	for key, value := range env {
+		key = strings.TrimSpace(key)
+		if key == "" {
+			continue
+		}
+		exports = append(exports, "export "+key+"="+shellQuote(value))
+	}
+	if len(exports) == 0 {
+		exports = append(exports, ":")
+	}
 	return `#!/bin/sh
-set -eu
+set -u
 tool_bin_dir=$(CDPATH= cd -- "$(dirname -- "$0")" && pwd)
 clean_path=""
 old_ifs=$IFS
@@ -1633,8 +1665,29 @@ for p in ${PATH:-}; do
 done
 IFS=$old_ifs
 export PATH=$clean_path
-export HOME=` + shellQuote(home) + `
-exec lark-cli "$@"
+` + strings.Join(exports, "\n") + `
+start_sec=$(date +%s 2>/dev/null || printf 0)
+status=0
+` + shellQuote(binary) + ` "$@" || status=$?
+end_sec=$(date +%s 2>/dev/null || printf "$start_sec")
+duration_ms=$(( (end_sec - start_sec) * 1000 ))
+if [ -n "${MULTIGENT_TOOL_CLI_AUDIT_FILE:-}" ]; then
+  audit_dir=$(dirname -- "$MULTIGENT_TOOL_CLI_AUDIT_FILE")
+  mkdir -p "$audit_dir" 2>/dev/null || true
+  subcommand=${1:-}
+  safe_subcommand=$(printf '%s' "$subcommand" | sed 's/\\/\\\\/g; s/"/\\"/g')
+  argc=$#
+  printf '{"ts":"%s","provider":"%s","connection":"%s","binary":"%s","subcommand":"%s","argc":%s,"exitCode":%s,"durationMs":%s}\n' \
+    "$(date -u +%Y-%m-%dT%H:%M:%SZ 2>/dev/null || printf '')" \
+    ` + shellQuote(tool.Provider) + ` \
+    ` + shellQuote(tool.ConnectionAlias) + ` \
+    ` + shellQuote(binary) + ` \
+    "$safe_subcommand" \
+    "$argc" \
+    "$status" \
+    "$duration_ms" >> "$MULTIGENT_TOOL_CLI_AUDIT_FILE" 2>/dev/null || true
+fi
+exit "$status"
 `
 }
 
@@ -1856,7 +1909,7 @@ func injectRuntimeControlEnvIntoRuntime(cfg *entity.SandboxConfig, env map[strin
 		if k == "" {
 			continue
 		}
-		if k == runtimeToolBinDirEnv || k == runtimeToolBootstrapEnv || k == runtimeToolSkillsFileEnv || k == "PATH" {
+		if k == runtimeToolBinDirEnv || k == runtimeToolBootstrapEnv || k == runtimeToolSkillsFileEnv || k == runtimeToolCLIAuditEnv || k == "PATH" {
 			cfg.Env = append(cfg.Env, entity.RuntimeEnvVar{Name: k, Value: v})
 			continue
 		}
@@ -1866,7 +1919,7 @@ func injectRuntimeControlEnvIntoRuntime(cfg *entity.SandboxConfig, env map[strin
 
 func isRuntimeControlEnvKey(key string) bool {
 	switch key {
-	case "MULTIGENT_API_URL", "MULTIGENT_AGENT_TOKEN", "MULTIGENT_RUN_ID", "MULTIGENT_WORKSPACE_ID", runtimeConnectionsFileEnv, runtimeToolsFileEnv, runtimeToolDirEnv, runtimeToolBinDirEnv, runtimeToolBootstrapEnv, runtimeToolSkillsFileEnv:
+	case "MULTIGENT_API_URL", "MULTIGENT_AGENT_TOKEN", "MULTIGENT_RUN_ID", "MULTIGENT_WORKSPACE_ID", runtimeConnectionsFileEnv, runtimeToolsFileEnv, runtimeToolDirEnv, runtimeToolBinDirEnv, runtimeToolBootstrapEnv, runtimeToolSkillsFileEnv, runtimeToolCLIAuditEnv:
 		return true
 	default:
 		return false

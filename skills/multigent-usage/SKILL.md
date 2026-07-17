@@ -19,6 +19,7 @@ Use `mga` inside an agent sandbox to talk to the Multigent Server. Do not use th
 - `MULTIGENT_TOOL_BIN_DIR`
 - `MULTIGENT_TOOL_BOOTSTRAP_FILE`
 - `MULTIGENT_TOOL_SKILLS_FILE`
+- `MULTIGENT_TOOL_CLI_AUDIT_FILE`
 
 ## Task Commands
 
@@ -92,6 +93,7 @@ Rules:
 - Use connection aliases from `mga runtime connections` when calling runtime proxies.
 - Never ask humans to paste provider secrets into chat.
 - Runtime writes are audited by the Multigent Server.
+- Platform CLI adapters write best-effort low-sensitive command metadata to `MULTIGENT_TOOL_CLI_AUDIT_FILE`; do not write provider secrets or full sensitive arguments there.
 - If a needed command is missing, report the missing capability instead of using local workspace files as a control plane.
 
 ## Knowledge Base Docs

@@ -288,6 +288,7 @@ Gateway 会先调用 upstream `tools/list`，再把真实工具暴露成 `mcp:<c
 - `MULTIGENT_TOOL_BIN_DIR`: 本次 run 的工具 wrapper 目录，会被放到 `PATH` 最前面，用来把 `gh`、`lark-cli` 等平台 CLI 指向 agent 专属配置。
 - `MULTIGENT_TOOL_BOOTSTRAP_FILE`: 本次 run 的工具初始化脚本，sandbox 启动 agent 命令前执行，用来安装或校验 runtime adapter 声明的平台 CLI。
 - `MULTIGENT_TOOL_SKILLS_FILE`: 本次 run 自动生成的 Markdown 工具使用指南，告诉 agent 每个已启用工具应该走 CLI、MCP Gateway、HTTP action 还是 skill-only。
+- `MULTIGENT_TOOL_CLI_AUDIT_FILE`: 本次 run 的平台 CLI best-effort command audit jsonl。CLI wrapper 记录 provider、connection、binary、首个子命令、参数数量、exit code 和耗时，不记录完整参数。
 
 `MULTIGENT_TOOLS_FILE` 不应该包含第三方原始凭证。它只描述：
 
@@ -296,6 +297,7 @@ Gateway 会先调用 upstream `tools/list`，再把真实工具暴露成 `mcp:<c
 - CLI config 应该写到哪个 agent-scoped path。
 - 平台 CLI 是否有 wrapper，以及 wrapper 对应的 per-run home/config。
 - 平台 CLI 的 installer/checker 是否生成了 bootstrap 脚本。
+- 平台 CLI wrapper 是否写入 best-effort command audit。
 - MCP Gateway 的 namespace。
 - HTTP action 的 allowlist。
 - 每个工具对应的使用技能名和推荐入口。
@@ -421,6 +423,7 @@ mga runtime tools --format table
 - GitHub `gh` agent-scoped config materializer。
 - Feishu/Lark `lark-cli` agent-scoped config materializer 和 wrapper。
 - runtime tool skill guide：自动生成 `MULTIGENT_TOOL_SKILLS_FILE`，并通过 `mga runtime skill-guide` 暴露给 agent。
+- CLI wrapper command audit：平台 CLI wrapper 写入 `MULTIGENT_TOOL_CLI_AUDIT_FILE`，记录低敏命令元数据。
 - HTTP action proxy。
 - MCP Gateway broker mode：`multigent.list_tools` / `multigent.call_tool`。
 - MCP Gateway upstream mode：支持 provider 连接配置 `mcpServerUrl` 后动态代理 upstream `tools/list` / `tools/call`，Figma 默认用 `X-Figma-Token`。
@@ -432,7 +435,7 @@ mga runtime tools --format table
 1. Tool-specific skills asset 自动安装：当前已自动生成 runtime tool skill guide，但还没有按连接 vendor/install 缺失的完整 provider skill asset。
 2. Figma MCP Gateway upstream packaging：当前已支持配置 `mcpServerUrl` 后代理 upstream MCP，但还没有内置启动/托管官方或推荐的 Figma MCP server。
 3. Agent detail 页面展示工具健康状态、最近调用和错误。
-4. CLI wrapper command audit：当前有 run log 和 proxy audit，但平台 CLI 命令级审计还是 best effort。
+4. CLI wrapper command audit server ingestion：当前平台 CLI wrapper 已写本次 run 的 best-effort jsonl，但还没有汇总进 server 侧审计查询。
 5. E2E：Lark CLI、GitHub CLI、Figma Gateway 三条链路需要真实 sandbox 验证。
 
 ## 实施顺序
@@ -469,6 +472,7 @@ mga runtime tools --format table
 ### Phase 5: Audit And Policy
 
 - CLI wrapper command audit。
+- CLI audit jsonl ingestion into server audit/query surfaces。
 - MCP/action call audit。
 - 写操作风险分级。
 - 高风险工具调用接 human approval。

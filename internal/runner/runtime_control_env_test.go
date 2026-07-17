@@ -325,8 +325,12 @@ func TestWriteRuntimeToolsFileMaterializesLarkCLIConfig(t *testing.T) {
 	if err != nil {
 		t.Fatalf("read wrapper: %v", err)
 	}
-	if !strings.Contains(string(wrapperBody), "exec lark-cli") || !strings.Contains(string(wrapperBody), larkHome) {
+	wrapperText := string(wrapperBody)
+	if !strings.Contains(wrapperText, "'lark-cli' \"$@\"") || !strings.Contains(wrapperText, larkHome) || !strings.Contains(wrapperText, "MULTIGENT_TOOL_CLI_AUDIT_FILE") {
 		t.Fatalf("unexpected wrapper: %s", string(wrapperBody))
+	}
+	if env[runtimeToolCLIAuditEnv] == "" || !strings.Contains(env[runtimeToolCLIAuditEnv], toolDir) {
+		t.Fatalf("cli audit env=%q toolDir=%q", env[runtimeToolCLIAuditEnv], toolDir)
 	}
 	toolsBody, err := os.ReadFile(toolsPath)
 	if err != nil {
