@@ -32,7 +32,7 @@ export default function WorkflowsPage() {
   const detailState = useApiJson<WorkflowDefinition>(params.workflowId ? `/api/v1/workflows/${encodeURIComponent(params.workflowId)}` : null, 0)
   const workflows = state.status === 'ok' ? state.data.workflows : []
   const templates = templateState.status === 'ok' ? templateState.data.templates : []
-  const selected = useMemo(() => workflows.find((wf) => wf.id === params.workflowId) ?? (detailState.status === 'ok' ? detailState.data : undefined), [workflows, params.workflowId, detailState])
+  const selected = useMemo(() => (params.workflowId && detailState.status === 'ok' ? detailState.data : undefined), [params.workflowId, detailState])
 
   const [draft, setDraft] = useState<WorkflowDefinition | null>(null)
   const [saving, setSaving] = useState(false)
@@ -45,7 +45,7 @@ export default function WorkflowsPage() {
   useEffect(() => {
     setDraft(selected ? structuredClone(selected) : null)
     setFullscreen(false)
-  }, [selected])
+  }, [selected?.id])
 
   async function createBlank(name = t('workflows.untitledName')) {
     setSaving(true)
@@ -157,13 +157,13 @@ export default function WorkflowsPage() {
   if (params.workflowId) {
     return (
       <div className={fullscreen ? 'fixed inset-0 z-50 flex h-dvh flex-col overflow-hidden bg-neutral-50 px-6 py-5 dark:bg-zinc-950' : 'flex h-full min-h-full flex-col px-8 py-6 animate-fade-in'}>
-        {(state.status === 'loading' || detailState.status === 'loading') && <Loading label={t('api.loading')} />}
-        {(state.status === 'error' || detailState.status === 'error') && (
+        {detailState.status === 'loading' && <Loading label={t('api.loading')} />}
+        {detailState.status === 'error' && (
           <PlaceholderCard title={t('api.loadError')}>
-            <p className="text-[13px]">{state.status === 'error' ? state.error.message : detailState.status === 'error' ? detailState.error.message : ''}</p>
+            <p className="text-[13px]">{detailState.error.message}</p>
           </PlaceholderCard>
         )}
-        {state.status === 'ok' && detailState.status !== 'loading' && !selected && (
+        {detailState.status === 'ok' && !selected && (
           <PlaceholderCard title={t('workflows.notFound')}>
             <button type="button" onClick={() => navigate('/workflows')} className="mt-3 rounded-lg border border-sky-600 bg-white px-3 py-2 text-sm font-medium text-sky-700 hover:bg-sky-50 dark:border-sky-500 dark:bg-zinc-900 dark:text-sky-400 dark:hover:bg-zinc-800">
               {t('workflows.backToList')}
@@ -184,8 +184,8 @@ export default function WorkflowsPage() {
                     value={draft.description || ''}
                     onChange={(e) => setDraft({ ...draft, description: e.target.value })}
                     placeholder={t('workflows.descriptionPlaceholder')}
-                    rows={2}
-                    className="mt-1 block w-full resize-none whitespace-pre-wrap rounded-lg border border-transparent bg-transparent px-0 py-1 text-sm leading-5 text-neutral-500 outline-none focus:border-neutral-200 focus:bg-white focus:px-3 dark:text-zinc-400 dark:focus:border-zinc-700 dark:focus:bg-zinc-900"
+                    rows={1}
+                    className="mt-1 block w-full resize-y whitespace-pre-wrap rounded-lg border border-transparent bg-transparent px-0 py-0.5 text-sm leading-5 text-neutral-500 outline-none focus:border-neutral-200 focus:bg-white focus:px-3 dark:text-zinc-400 dark:focus:border-zinc-700 dark:focus:bg-zinc-900"
                   />
                 </div>
                 <div className="flex gap-2">
@@ -309,19 +309,16 @@ export default function WorkflowsPage() {
       {state.status === 'ok' && workflows.length > 0 && (
         <div className="grid gap-4 md:grid-cols-2 xl:grid-cols-3">
           {workflows.map((wf) => (
-            <article key={wf.id} className="rounded-xl border border-neutral-200/80 bg-white p-4 shadow-sm transition-colors hover:border-sky-200 hover:bg-sky-50/40 dark:border-zinc-700/60 dark:bg-zinc-900/40 dark:hover:border-sky-900/70 dark:hover:bg-sky-950/20">
-              <button type="button" onClick={() => navigate(`/workflows/${encodeURIComponent(wf.id)}`)} className="block w-full text-left">
-                <div className="flex items-start justify-between gap-3">
-                  <h2 className="line-clamp-1 text-base font-semibold text-neutral-900 dark:text-zinc-100">{wf.name}</h2>
-                  <span className="shrink-0 rounded-full bg-neutral-100 px-2.5 py-1 text-xs text-neutral-500 dark:bg-zinc-800 dark:text-zinc-400">v{wf.version}</span>
-                </div>
-                <p className="mt-2 line-clamp-2 min-h-10 text-sm text-neutral-500 dark:text-zinc-400">{wf.description || t('workflows.noDescription')}</p>
-                <div className="mt-4 flex items-center justify-between text-xs text-neutral-400 dark:text-zinc-500">
+            <article key={wf.id} className="flex min-h-[178px] flex-col rounded-xl border border-neutral-200/80 bg-white p-4 shadow-sm transition-colors hover:border-sky-200 hover:bg-sky-50/40 dark:border-zinc-700/60 dark:bg-zinc-900/40 dark:hover:border-sky-900/70 dark:hover:bg-sky-950/20">
+              <button type="button" onClick={() => navigate(`/workflows/${encodeURIComponent(wf.id)}`)} className="block flex-1 text-left">
+                <h2 className="line-clamp-1 text-base font-semibold text-neutral-900 dark:text-zinc-100">{wf.name}</h2>
+                <p className="mt-2 line-clamp-2 text-sm leading-5 text-neutral-500 dark:text-zinc-400">{wf.description || t('workflows.noDescription')}</p>
+                <div className="mt-4 flex flex-wrap items-center gap-x-3 gap-y-1 text-xs text-neutral-400 dark:text-zinc-500">
                   <span>{t('workflows.stepCount', { count: wf.steps.length })}</span>
                   <span>{fmt(wf.updatedAt)}</span>
                 </div>
               </button>
-              <div className="mt-4 flex items-center justify-between gap-2">
+              <div className="mt-4 flex items-center justify-end gap-2 border-t border-neutral-100 pt-3 dark:border-zinc-800">
                 <button type="button" onClick={() => void deleteWorkflow(wf)} disabled={saving} className="rounded-lg px-2.5 py-1.5 text-xs font-medium text-red-500 hover:bg-red-50 disabled:opacity-50 dark:text-red-400 dark:hover:bg-red-950/30">
                   {t('common.delete')}
                 </button>
