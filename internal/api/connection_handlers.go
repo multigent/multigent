@@ -153,6 +153,10 @@ func (s *Server) handleCreateConnection(w http.ResponseWriter, r *http.Request) 
 		s.jsonErrorCode(w, http.StatusBadRequest, ErrCodeUnsupportedProvider, "unsupported provider")
 		return
 	}
+	if provider.ComingSoon {
+		s.jsonErrorCode(w, http.StatusBadRequest, ErrCodeUnsupportedProvider, "provider is not available yet")
+		return
+	}
 	authType := strings.TrimSpace(body.AuthType)
 	if authType == "" {
 		authType = provider.AuthTypes[0]

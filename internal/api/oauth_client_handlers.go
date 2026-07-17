@@ -77,14 +77,12 @@ type oauthTokenResponse struct {
 }
 
 func (s *Server) handleListOAuthClientConfigs(w http.ResponseWriter, r *http.Request) {
-	if !s.checkCurrentWorkspaceAdmin(w, r) {
-		return
-	}
 	workspaceID, err := s.currentWorkspaceID()
 	if err != nil {
 		s.serverError(w, err)
 		return
 	}
+	isAdmin := s.canAdminCurrentWorkspace(r)
 	providers, err := s.oauthProviders()
 	if err != nil {
 		s.serverError(w, err)
@@ -102,7 +100,15 @@ func (s *Server) handleListOAuthClientConfigs(w http.ResponseWriter, r *http.Req
 	out := make([]oauthClientConfigResponse, 0, len(providers))
 	for _, provider := range providers {
 		config, configured := byProvider[provider.Provider]
-		out = append(out, oauthClientConfigToResponse(r, provider, config, configured))
+		resp := oauthClientConfigToResponse(r, provider, config, configured)
+		if !isAdmin {
+			resp.ClientID = ""
+			resp.Extra = nil
+			resp.CreatedBy = ""
+			resp.CreatedAt = ""
+			resp.UpdatedAt = ""
+		}
+		out = append(out, resp)
 	}
 	_ = json.NewEncoder(w).Encode(map[string]any{"configs": out})
 }

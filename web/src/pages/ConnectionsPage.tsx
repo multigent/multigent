@@ -1,5 +1,5 @@
 import { useEffect, useMemo, useState, type ReactNode } from 'react'
-import { Cable, KeyRound, Link2, Pencil, RefreshCw, ShieldCheck, Trash2, X } from 'lucide-react'
+import { Link2, Trash2, X } from 'lucide-react'
 import { useSearchParams } from 'react-router-dom'
 import { useTranslation } from 'react-i18next'
 import { apiDelete, apiFetch, apiPost, apiPut } from '../lib/api'
@@ -10,7 +10,20 @@ import { primaryOutlineButton } from '../lib/button-styles'
 import { formatDateTimeForLanguage, useFormatDateTime } from '../lib/format-datetime'
 
 type ProviderField = { key: string; label: string; inputType: string; required: boolean; secret: boolean }
-type Provider = { provider: string; displayName: string; authTypes: string[]; fields?: ProviderField[]; enabled: boolean }
+type ProviderGuide = { title: string; body: string; links?: Array<{ label: string; url: string }> }
+type ProviderAction = { name: string; displayName: string; description?: string }
+type Provider = {
+  provider: string
+  displayName: string
+  description?: string
+  category?: string
+  authTypes: string[]
+  fields?: ProviderField[]
+  actions?: ProviderAction[]
+  guides?: ProviderGuide[]
+  comingSoon?: boolean
+  enabled: boolean
+}
 type ConnectionGrant = { id: string; targetType: string; targetId: string; createdBy?: string; createdAt: string }
 type Connection = {
   id: string
@@ -72,7 +85,7 @@ export default function ConnectionsPage() {
   const [projects, setProjects] = useState<ProjectRow[]>([])
   const [agentsByProject, setAgentsByProject] = useState<Record<string, ProjectAgent[]>>({})
   const [loading, setLoading] = useState(true)
-  const [creating, setCreating] = useState(false)
+  const [creatingProvider, setCreatingProvider] = useState<string | null>(null)
   const [editing, setEditing] = useState<Connection | null>(null)
   const [granting, setGranting] = useState<Connection | null>(null)
   const [testResults, setTestResults] = useState<Record<string, { loading?: boolean; ok?: boolean; message?: string }>>({})
@@ -112,10 +125,7 @@ export default function ConnectionsPage() {
           apiFetch<ProjectRow[]>('/api/v1/projects').catch(() => []),
           apiFetch<WorkspaceSummary>('/api/v1/workspace').catch(() => null),
         ])
-        const canAdminWorkspace = workspaceData?.currentUserCanAdmin ?? (!user || user.role === 'admin')
-        const oauthData = canAdminWorkspace
-          ? await apiFetch<{ configs: OAuthClientConfig[] }>('/api/v1/oauth/client-configs').catch(() => ({ configs: [] }))
-          : { configs: [] }
+        const oauthData = await apiFetch<{ configs: OAuthClientConfig[] }>('/api/v1/oauth/client-configs').catch(() => ({ configs: [] }))
         if (cancelled) return
         setWorkspace(workspaceData)
         setProviders(providerData.providers ?? [])
@@ -137,8 +147,8 @@ export default function ConnectionsPage() {
 
   async function removeConnection(connection: Connection) {
     const ok = await confirmDialog({
-      title: t('connections.removeConnection'),
-      description: t('connections.removeConnectionConfirm', { name: `${connection.provider}/${connection.connectionName}` }),
+      title: t('connections.disconnectConnection'),
+      description: t('connections.disconnectConnectionConfirm', { name: `${connection.provider}/${connection.connectionName}` }),
       confirmLabel: t('common.delete'),
       cancelLabel: t('common.cancel'),
     })
@@ -182,6 +192,25 @@ export default function ConnectionsPage() {
     }
   }
 
+  const providersByCategory = useMemo(() => {
+    const order = ['Developer Tools', 'Project Management', 'Knowledge And Docs', 'Communication', 'Design And Data', 'Advanced']
+    const groups = new Map<string, Provider[]>()
+    for (const provider of providers) {
+      const category = provider.category || t('connections.otherTools')
+      groups.set(category, [...(groups.get(category) ?? []), provider])
+    }
+    return Array.from(groups.entries())
+      .sort(([a], [b]) => {
+        const ai = order.indexOf(a)
+        const bi = order.indexOf(b)
+        if (ai === -1 && bi === -1) return a.localeCompare(b)
+        if (ai === -1) return 1
+        if (bi === -1) return -1
+        return ai - bi
+      })
+      .map(([category, items]) => [category, items.sort((a, b) => a.displayName.localeCompare(b.displayName))] as const)
+  }, [providers, t])
+
   return (
     <div className="animate-fade-in px-8 py-6">
       <div className="flex items-center justify-between pb-5">
@@ -190,19 +219,14 @@ export default function ConnectionsPage() {
           <p className="mt-0.5 text-sm text-neutral-500 dark:text-zinc-500">{t('connections.subtitle')}</p>
         </div>
         <div className="flex items-center gap-2">
-          <button type="button" onClick={() => setReloadKey(k => k + 1)} className="inline-flex items-center gap-2 rounded-lg border border-neutral-200 px-3 py-2 text-sm font-medium text-neutral-600 hover:bg-neutral-50 dark:border-zinc-700 dark:text-zinc-300 dark:hover:bg-zinc-800">
-            <RefreshCw className="size-4" strokeWidth={1.8} />
+          <button type="button" onClick={() => setReloadKey(k => k + 1)} className="rounded-lg border border-neutral-200 px-3 py-2 text-sm font-medium text-neutral-600 hover:bg-neutral-50 dark:border-zinc-700 dark:text-zinc-300 dark:hover:bg-zinc-800">
             {t('common.refresh')}
           </button>
           {isWorkspaceAdmin && (
-            <button type="button" onClick={() => void runHealthChecks()} disabled={healthCheckLoading} className="inline-flex items-center gap-2 rounded-lg border border-neutral-200 px-3 py-2 text-sm font-medium text-neutral-600 hover:bg-neutral-50 disabled:opacity-50 dark:border-zinc-700 dark:text-zinc-300 dark:hover:bg-zinc-800">
-              <RefreshCw className={cn('size-4', healthCheckLoading && 'animate-spin')} strokeWidth={1.8} />
+            <button type="button" onClick={() => void runHealthChecks()} disabled={healthCheckLoading} className="rounded-lg border border-neutral-200 px-3 py-2 text-sm font-medium text-neutral-600 hover:bg-neutral-50 disabled:opacity-50 dark:border-zinc-700 dark:text-zinc-300 dark:hover:bg-zinc-800">
               {t('connections.runChecks')}
             </button>
           )}
-          <button type="button" onClick={() => setCreating(true)} className={primaryOutlineButton}>
-            {t('connections.newConnection')}
-          </button>
         </div>
       </div>
       {healthCheckMessage && (
@@ -221,52 +245,56 @@ export default function ConnectionsPage() {
         </div>
       )}
 
-      {isWorkspaceAdmin && oauthConfigs.length > 0 && (
-        <OAuthClientConfigsPanel configs={oauthConfigs} onChanged={() => setReloadKey(k => k + 1)} />
-      )}
-
       {loading ? (
         <div className="flex items-center justify-center gap-2 py-16 text-sm text-neutral-500">
           <div className="size-5 animate-spin rounded-full border-2 border-neutral-300 border-t-sky-600 dark:border-zinc-600 dark:border-t-sky-400" />
           {t('connections.loading')}
         </div>
-      ) : connections.length === 0 ? (
-        <div className="rounded-xl border border-dashed border-neutral-300 bg-white p-12 text-center dark:border-zinc-700 dark:bg-zinc-900/40">
-          <Cable className="mx-auto mb-3 size-10 text-neutral-300 dark:text-zinc-600" strokeWidth={1.5} />
-          <p className="text-sm font-medium text-neutral-600 dark:text-zinc-300">{t('connections.emptyTitle')}</p>
-          <p className="mt-1 text-xs text-neutral-400 dark:text-zinc-500">{t('connections.emptyHint')}</p>
-        </div>
       ) : (
-        <div className="grid gap-4 xl:grid-cols-2">
-          {connections.map(connection => (
-            <ConnectionCard
-              key={connection.id}
-              connection={connection}
-              provider={providers.find(p => p.provider === connection.provider)}
-              canGrant={connection.ownerType === 'workspace' ? isWorkspaceAdmin : connection.ownerId === user?.username}
-              canDelete={connection.ownerType === 'workspace' ? isWorkspaceAdmin : connection.ownerId === user?.username}
-              canEdit={connection.ownerType === 'workspace' ? isWorkspaceAdmin : connection.ownerId === user?.username}
-              testState={testResults[connection.id]}
-              onEdit={() => setEditing(connection)}
-              onGrant={() => setGranting(connection)}
-              onTest={() => void testConnection(connection)}
-              onDelete={() => void removeConnection(connection)}
-            />
+        <div className="space-y-7">
+          {providersByCategory.map(([category, items]) => (
+            <section key={category}>
+              <div className="mb-3 flex items-center justify-between">
+                <h2 className="text-sm font-semibold text-neutral-900 dark:text-zinc-100">{category}</h2>
+                <span className="text-xs text-neutral-400 dark:text-zinc-500">{t('connections.toolCount', { count: items.length })}</span>
+              </div>
+              <div className="grid gap-4 xl:grid-cols-2">
+                {items.map(provider => (
+                  <ExternalToolCard
+                    key={provider.provider}
+                    provider={provider}
+                    connection={primaryConnectionForProvider(connections, provider.provider)}
+                    oauthConfig={oauthConfigs.find(config => config.provider === provider.provider)}
+                    isWorkspaceAdmin={isWorkspaceAdmin}
+                    currentUsername={user?.username ?? ''}
+                    testResults={testResults}
+                    onConfigure={() => setCreatingProvider(provider.provider)}
+                    onEdit={setEditing}
+                    onGrant={setGranting}
+                    onTest={connection => void testConnection(connection)}
+                    onDelete={connection => void removeConnection(connection)}
+                  />
+                ))}
+              </div>
+            </section>
           ))}
         </div>
       )}
 
-      {creating && (
+      {creatingProvider && (
         <ConnectionDialog
           providers={providers}
+          oauthConfigs={oauthConfigs}
           isWorkspaceAdmin={isWorkspaceAdmin}
-          onClose={() => setCreating(false)}
-          onCreated={() => { setCreating(false); setReloadKey(k => k + 1) }}
+          fixedProviderId={creatingProvider}
+          onClose={() => setCreatingProvider(null)}
+          onCreated={() => { setCreatingProvider(null); setReloadKey(k => k + 1) }}
         />
       )}
       {editing && (
         <ConnectionDialog
           providers={providers}
+          oauthConfigs={oauthConfigs}
           isWorkspaceAdmin={isWorkspaceAdmin}
           connection={editing}
           onClose={() => setEditing(null)}
@@ -290,234 +318,170 @@ export default function ConnectionsPage() {
   )
 }
 
-function OAuthClientConfigsPanel({ configs, onChanged }: { configs: OAuthClientConfig[]; onChanged: () => void }) {
+function ExternalToolCard({
+  provider,
+  connection,
+  oauthConfig,
+  isWorkspaceAdmin,
+  currentUsername,
+  testResults,
+  onConfigure,
+  onEdit,
+  onGrant,
+  onTest,
+  onDelete,
+}: {
+  provider: Provider
+  connection?: Connection
+  oauthConfig?: OAuthClientConfig
+  isWorkspaceAdmin: boolean
+  currentUsername: string
+  testResults: Record<string, { loading?: boolean; ok?: boolean; message?: string }>
+  onConfigure: () => void
+  onEdit: (connection: Connection) => void
+  onGrant: (connection: Connection) => void
+  onTest: (connection: Connection) => void
+  onDelete: (connection: Connection) => void
+}) {
   const { t } = useTranslation()
-  const [editing, setEditing] = useState<OAuthClientConfig | null>(null)
+  const fmtDateTime = useFormatDateTime()
+  const grantCount = connection?.grants?.length ?? 0
+  const latestValidation = connection ? connectionValidation(connection, fmtDateTime) : null
+  const oauthSupported = provider.authTypes.includes('oauth2')
+  const staticAuthTypes = provider.authTypes.filter(type => type !== 'oauth2')
+  const oauthAvailable = oauthSupported && oauthConfig?.configured === true
+  const canConfigure = !provider.comingSoon && (staticAuthTypes.length > 0 || oauthAvailable)
+  const canManageConnection = connection && (connection.ownerType === 'workspace' ? isWorkspaceAdmin : connection.ownerId === currentUsername)
+  const statusLabel = provider.comingSoon
+    ? t('connections.comingSoon')
+    : connection
+      ? t('connections.configured')
+      : oauthSupported && staticAuthTypes.length === 0 && !oauthAvailable
+        ? t('connections.adminSetupRequired')
+        : t('connections.notConfigured')
   return (
-    <section className="mb-5 rounded-xl border border-neutral-200/80 bg-white p-4 dark:border-zinc-700/60 dark:bg-zinc-900/40">
-      <div className="flex items-center justify-between gap-3">
-        <div>
-          <h2 className="text-sm font-semibold text-neutral-900 dark:text-zinc-100">{t('connections.oauthClientConfigs')}</h2>
-          <p className="mt-0.5 text-xs text-neutral-400 dark:text-zinc-500">{t('connections.oauthClientConfigsHint')}</p>
-        </div>
-      </div>
-      <div className="mt-3 grid gap-3 lg:grid-cols-2">
-        {configs.map(config => (
-          <div key={config.provider} className="rounded-lg border border-neutral-200 px-3 py-3 dark:border-zinc-700">
-            <div className="flex items-start justify-between gap-3">
-              <div className="min-w-0">
-                <div className="flex flex-wrap items-center gap-2">
-                  <p className="text-sm font-medium text-neutral-800 dark:text-zinc-100">{config.displayName}</p>
-                  <span className={cn('rounded-full px-2 py-0.5 text-[11px] font-medium', config.configured ? 'bg-emerald-100 text-emerald-700 dark:bg-emerald-900/30 dark:text-emerald-300' : 'bg-neutral-100 text-neutral-500 dark:bg-zinc-800 dark:text-zinc-400')}>
-                    {config.configured ? t('connections.configured') : t('connections.notConfigured')}
-                  </span>
-                </div>
-                {config.clientId && <p className="mt-1 text-xs text-neutral-500 dark:text-zinc-400">{t('connections.clientId')}: {config.clientId}</p>}
-                <p className="mt-1 break-all font-mono text-[11px] text-neutral-400 dark:text-zinc-500">{config.expectedRedirectUri}</p>
-                {(config.oauth?.scopes?.length ?? 0) > 0 && (
-                  <div className="mt-2 flex flex-wrap gap-1.5">
-                    {(config.oauth?.scopes ?? []).map(scope => (
-                      <span key={scope} className="rounded-md bg-neutral-100 px-2 py-0.5 text-[11px] text-neutral-500 dark:bg-zinc-800 dark:text-zinc-400">{scope}</span>
-                    ))}
-                  </div>
-                )}
-              </div>
-              <button type="button" onClick={() => setEditing(config)} className="rounded-md p-2 text-neutral-500 hover:bg-neutral-100 hover:text-neutral-800 dark:text-zinc-400 dark:hover:bg-zinc-800 dark:hover:text-zinc-100" title={t('connections.configureOAuthClient')}>
-                <Pencil className="size-4" strokeWidth={1.8} />
-              </button>
-            </div>
+    <section className="rounded-xl border border-neutral-200/80 bg-white p-5 dark:border-zinc-700/60 dark:bg-zinc-900/40">
+      <div className="flex items-start justify-between gap-4">
+        <div className="min-w-0">
+          <div className="flex flex-wrap items-center gap-2">
+            <h3 className="text-sm font-semibold text-neutral-900 dark:text-zinc-100">{provider.displayName}</h3>
+            <span className={cn(
+              'rounded-full px-2 py-0.5 text-[11px] font-medium',
+              provider.comingSoon
+                ? 'bg-neutral-100 text-neutral-500 dark:bg-zinc-800 dark:text-zinc-400'
+                : connection
+                  ? 'bg-emerald-100 text-emerald-700 dark:bg-emerald-900/30 dark:text-emerald-300'
+                  : 'bg-amber-100 text-amber-700 dark:bg-amber-900/30 dark:text-amber-300',
+            )}>
+              {statusLabel}
+            </span>
           </div>
-        ))}
+          <p className="mt-2 line-clamp-2 text-sm text-neutral-500 dark:text-zinc-400">{provider.description || t('connections.externalToolDefaultDescription')}</p>
+        </div>
+        <button type="button" onClick={() => connection && canManageConnection ? onEdit(connection) : onConfigure()} disabled={connection ? !canManageConnection : !canConfigure} className={cn(primaryOutlineButton, 'shrink-0 disabled:cursor-not-allowed disabled:opacity-50')}>
+          {connection ? t('connections.manageConnection') : t('connections.configureTool')}
+        </button>
       </div>
-      {editing && (
-        <OAuthClientConfigDialog
-          config={editing}
-          onClose={() => setEditing(null)}
-          onSaved={() => { setEditing(null); onChanged() }}
-        />
+      <div className="mt-4 grid gap-3 sm:grid-cols-4">
+        <ToolStat label={t('connections.authMethods')} value={formatAuthTypes(provider.authTypes, oauthAvailable, isWorkspaceAdmin, t)} />
+        <ToolStat label={t('connections.credentials')} value={connection ? t('connections.connected') : t('connections.notConfigured')} />
+        <ToolStat label={t('connections.grants')} value={String(grantCount)} />
+        <ToolStat label={t('connections.actions')} value={String(provider.actions?.length ?? 0)} />
+      </div>
+      <div className="mt-4 flex flex-wrap items-center gap-2 text-xs text-neutral-400 dark:text-zinc-500">
+        {oauthSupported && (
+          <span>{oauthAvailable ? t('connections.oauthEnabled') : isWorkspaceAdmin ? t('connections.oauthAdminCanEnable') : t('connections.oauthUnavailable')}</span>
+        )}
+        {latestValidation && (
+          <span>{latestValidation.ok ? t('connections.healthy') : t('connections.failed')} · {latestValidation.atLabel}</span>
+        )}
+      </div>
+      {connection ? (
+        <div className="mt-4 border-t border-neutral-100 pt-3 dark:border-zinc-800">
+          <ConnectionSummary
+            connection={connection}
+            canGrant={connection.ownerType === 'workspace' ? isWorkspaceAdmin : connection.ownerId === currentUsername}
+            canEdit={connection.ownerType === 'workspace' ? isWorkspaceAdmin : connection.ownerId === currentUsername}
+            canDelete={connection.ownerType === 'workspace' ? isWorkspaceAdmin : connection.ownerId === currentUsername}
+            testState={testResults[connection.id]}
+            onEdit={() => onEdit(connection)}
+            onGrant={() => onGrant(connection)}
+            onTest={() => onTest(connection)}
+            onDelete={() => onDelete(connection)}
+          />
+        </div>
+      ) : (
+        <p className="mt-4 border-t border-neutral-100 pt-3 text-xs text-neutral-400 dark:border-zinc-800 dark:text-zinc-500">{t('connections.noConnectionsForTool')}</p>
       )}
     </section>
   )
 }
 
-function OAuthClientConfigDialog({ config, onClose, onSaved }: { config: OAuthClientConfig; onClose: () => void; onSaved: () => void }) {
-  const { t } = useTranslation()
-  const [clientId, setClientId] = useState(config.clientId ?? '')
-  const [clientSecret, setClientSecret] = useState('')
-  const [saving, setSaving] = useState(false)
-  async function submit() {
-    setSaving(true)
-    try {
-      await apiPut(`/api/v1/oauth/client-configs/${encodeURIComponent(config.provider)}`, {
-        clientId: clientId.trim(),
-        clientSecret: clientSecret.trim(),
-        extra: config.extra ?? {},
-      })
-      onSaved()
-    } finally {
-      setSaving(false)
-    }
-  }
-  async function remove() {
-    const ok = await confirmDialog({
-      title: t('connections.removeOAuthClient'),
-      description: t('connections.removeOAuthClientConfirm', { name: config.displayName }),
-      confirmLabel: t('common.delete'),
-      cancelLabel: t('common.cancel'),
-    })
-    if (!ok) return
-    await apiDelete(`/api/v1/oauth/client-configs/${encodeURIComponent(config.provider)}`)
-    onSaved()
-  }
+function ToolStat({ label, value }: { label: string; value: string }) {
   return (
-    <Modal title={t('connections.oauthClientTitle', { name: config.displayName })} onClose={onClose}>
-      <div className="space-y-4">
-        <label className="block">
-          <span className="text-xs font-medium text-neutral-500 dark:text-zinc-400">{t('connections.clientId')}</span>
-          <input className={inputCls} value={clientId} onChange={e => setClientId(e.target.value)} />
-        </label>
-        <label className="block">
-          <span className="text-xs font-medium text-neutral-500 dark:text-zinc-400">{t('connections.clientSecret')}</span>
-          <input className={inputCls} type="password" value={clientSecret} onChange={e => setClientSecret(e.target.value)} placeholder={config.configured ? t('connections.keepCurrentSecret') : ''} />
-        </label>
-        <div className="rounded-lg bg-neutral-50 px-3 py-2 dark:bg-zinc-800/50">
-          <p className="text-xs font-medium text-neutral-500 dark:text-zinc-400">{t('connections.redirectUri')}</p>
-          <p className="mt-1 break-all font-mono text-xs text-neutral-600 dark:text-zinc-300">{config.expectedRedirectUri}</p>
-        </div>
-        <div className="flex justify-between gap-2 pt-2">
-          <button type="button" onClick={() => void remove()} disabled={saving || !config.configured} className="rounded-lg border border-red-200 px-3 py-2 text-sm text-red-600 disabled:opacity-50 dark:border-red-900/60 dark:text-red-300">{t('common.delete')}</button>
-          <div className="flex gap-2">
-            <button type="button" onClick={onClose} disabled={saving} className="rounded-lg border border-neutral-300 px-3 py-2 text-sm dark:border-zinc-600">{t('common.cancel')}</button>
-            <button type="button" onClick={() => void submit()} disabled={saving || clientId.trim() === '' || (!config.configured && clientSecret.trim() === '')} className="rounded-lg bg-sky-600 px-3 py-2 text-sm font-medium text-white disabled:opacity-50">{t('common.save')}</button>
-          </div>
-        </div>
-      </div>
-    </Modal>
+    <div className="rounded-lg bg-neutral-50 px-3 py-2 dark:bg-zinc-800/50">
+      <p className="text-[11px] text-neutral-400 dark:text-zinc-500">{label}</p>
+      <p className="mt-1 truncate text-xs font-medium text-neutral-700 dark:text-zinc-200" title={value}>{value}</p>
+    </div>
   )
 }
 
-function ConnectionCard({ connection, provider, canGrant, canEdit, canDelete, testState, onEdit, onGrant, onTest, onDelete }: { connection: Connection; provider?: Provider; canGrant: boolean; canEdit: boolean; canDelete: boolean; testState?: { loading?: boolean; ok?: boolean; message?: string }; onEdit: () => void; onGrant: () => void; onTest: () => void; onDelete: () => void }) {
+function ConnectionSummary({ connection, canGrant, canEdit, canDelete, testState, onEdit, onGrant, onTest, onDelete }: { connection: Connection; canGrant: boolean; canEdit: boolean; canDelete: boolean; testState?: { loading?: boolean; ok?: boolean; message?: string }; onEdit: () => void; onGrant: () => void; onTest: () => void; onDelete: () => void }) {
   const { t } = useTranslation()
-  const fmtDateTime = useFormatDateTime()
-  const validation = connectionValidation(connection, fmtDateTime)
-  const health = connectionHealthPolicy(connection, fmtDateTime)
-  const hasActionPolicy = connectionHasActionPolicy(connection)
   const summary = connection.profileSummary
   const accountLabel = [summary?.accountName, summary?.accountEmail].filter(Boolean).join(' · ')
   return (
-    <section className="rounded-xl border border-neutral-200/80 bg-white p-5 dark:border-zinc-700/60 dark:bg-zinc-900/40">
-      <div className="flex items-start justify-between gap-3">
-        <div className="flex min-w-0 items-start gap-3">
-          <div className="flex size-10 shrink-0 items-center justify-center rounded-lg bg-sky-100 dark:bg-sky-900/30">
-            <KeyRound className="size-5 text-sky-700 dark:text-sky-300" strokeWidth={1.8} />
-          </div>
-          <div className="min-w-0">
-            <div className="flex flex-wrap items-center gap-2">
-              <h2 className="truncate text-sm font-semibold text-neutral-900 dark:text-zinc-100">{provider?.displayName ?? connection.provider}</h2>
-              <span className="rounded-full bg-neutral-100 px-2 py-0.5 text-[11px] font-medium text-neutral-500 dark:bg-zinc-800 dark:text-zinc-400">{connection.connectionName}</span>
-              <span className={cn('rounded-full px-2 py-0.5 text-[11px] font-medium', connection.ownerType === 'workspace' ? 'bg-emerald-100 text-emerald-700 dark:bg-emerald-900/30 dark:text-emerald-300' : 'bg-indigo-100 text-indigo-700 dark:bg-indigo-900/30 dark:text-indigo-300')}>
-                {connection.ownerType}
-              </span>
-              {validation && (
-                <span className={cn('rounded-full px-2 py-0.5 text-[11px] font-medium', validation.ok ? 'bg-teal-100 text-teal-700 dark:bg-teal-900/30 dark:text-teal-300' : 'bg-red-100 text-red-700 dark:bg-red-900/30 dark:text-red-300')}>
-                  {validation.ok ? t('connections.healthy') : t('connections.failed')}{validation.status ? ` · ${validation.status}` : ''}
-                </span>
-              )}
-              {health.enabled && (
-                <span className="rounded-full bg-amber-100 px-2 py-0.5 text-[11px] font-medium text-amber-700 dark:bg-amber-900/30 dark:text-amber-300">
-                  {t('connections.autoCheck')} · {health.intervalMinutes}m
-                </span>
-              )}
-              {hasActionPolicy && (
-                <span className="rounded-full bg-violet-100 px-2 py-0.5 text-[11px] font-medium text-violet-700 dark:bg-violet-900/30 dark:text-violet-300">
-                  {t('connections.actionPolicy')}
-                </span>
-              )}
-            </div>
-            <p className="mt-1 text-xs text-neutral-400 dark:text-zinc-500">{connection.authType} · {t('connections.ownerLower')} {connection.ownerId}</p>
-            {(summary?.accountId || accountLabel) && (
-              <p className="mt-1 truncate text-xs text-neutral-500 dark:text-zinc-400" title={[summary?.accountId, accountLabel].filter(Boolean).join(' · ')}>
-                {[summary?.accountId, accountLabel].filter(Boolean).join(' · ')}
-              </p>
-            )}
-            {validation && (
-              <p className="mt-1 truncate text-xs text-neutral-400 dark:text-zinc-500" title={validation.message || undefined}>
-                {t('connections.validatedAt', { time: validation.atLabel })}{validation.message ? ` · ${validation.message}` : ''}
-              </p>
-            )}
-            {health.enabled && health.nextLabel && (
-              <p className="mt-1 text-xs text-neutral-400 dark:text-zinc-500">{t('connections.nextCheck', { time: health.nextLabel })}</p>
-            )}
-          </div>
+    <div className="rounded-lg border border-neutral-200 px-3 py-3 dark:border-zinc-700">
+      <div className="flex items-center justify-between gap-3">
+        <div className="min-w-0">
+          <p className="truncate text-sm font-medium text-neutral-800 dark:text-zinc-100">{summary?.displayName || connection.connectionName}</p>
+          <p className="truncate text-xs text-neutral-400 dark:text-zinc-500">{connection.authType} · {connection.ownerType} · {connection.ownerId}</p>
+          {(summary?.accountId || accountLabel) && (
+            <p className="mt-1 truncate text-xs text-neutral-500 dark:text-zinc-400" title={[summary?.accountId, accountLabel].filter(Boolean).join(' · ')}>
+              {[summary?.accountId, accountLabel].filter(Boolean).join(' · ')}
+            </p>
+          )}
         </div>
         <div className="flex shrink-0 items-center gap-1">
-          <button type="button" onClick={onTest} disabled={testState?.loading}
-            className="rounded-md p-2 text-neutral-500 hover:bg-neutral-100 hover:text-neutral-800 disabled:opacity-50 dark:text-zinc-400 dark:hover:bg-zinc-800 dark:hover:text-zinc-100" title={t('connections.testConnection')}>
-            <RefreshCw className={cn('size-4', testState?.loading && 'animate-spin')} strokeWidth={1.8} />
-          </button>
-          {canGrant && (
-            <button type="button" onClick={onGrant} className="rounded-md p-2 text-neutral-500 hover:bg-neutral-100 hover:text-neutral-800 dark:text-zinc-400 dark:hover:bg-zinc-800 dark:hover:text-zinc-100" title={t('connections.manageGrants')}>
-              <ShieldCheck className="size-4" strokeWidth={1.8} />
-            </button>
-          )}
-          {canEdit && (
-            <button type="button" onClick={onEdit} className="rounded-md p-2 text-neutral-500 hover:bg-neutral-100 hover:text-neutral-800 dark:text-zinc-400 dark:hover:bg-zinc-800 dark:hover:text-zinc-100" title={t('connections.editConnection')}>
-              <Pencil className="size-4" strokeWidth={1.8} />
-            </button>
-          )}
-          {canDelete && (
-            <button type="button" onClick={onDelete} className="rounded-md p-2 text-neutral-500 hover:bg-red-50 hover:text-red-600 dark:text-zinc-400 dark:hover:bg-red-900/20 dark:hover:text-red-300" title={t('common.delete')}>
-              <Trash2 className="size-4" strokeWidth={1.8} />
-            </button>
-          )}
+          <button type="button" onClick={onTest} disabled={testState?.loading} className="rounded-md px-2 py-1 text-xs text-neutral-500 hover:bg-neutral-100 hover:text-neutral-800 disabled:opacity-50 dark:text-zinc-400 dark:hover:bg-zinc-800 dark:hover:text-zinc-100">{t('connections.test')}</button>
+          {canGrant && <button type="button" onClick={onGrant} className="rounded-md px-2 py-1 text-xs text-neutral-500 hover:bg-neutral-100 hover:text-neutral-800 dark:text-zinc-400 dark:hover:bg-zinc-800 dark:hover:text-zinc-100">{t('connections.grant')}</button>}
+          {canEdit && <button type="button" onClick={onEdit} className="rounded-md px-2 py-1 text-xs text-neutral-500 hover:bg-neutral-100 hover:text-neutral-800 dark:text-zinc-400 dark:hover:bg-zinc-800 dark:hover:text-zinc-100">{t('common.edit')}</button>}
+          {canDelete && <button type="button" onClick={onDelete} className="rounded-md px-2 py-1 text-xs text-red-600 hover:bg-red-50 dark:text-red-300 dark:hover:bg-red-900/20">{t('connections.disconnect')}</button>}
         </div>
       </div>
-      <div className="mt-4">
-        <p className="text-xs font-medium text-neutral-400 dark:text-zinc-500">{t('connections.grants')}</p>
-        {connection.grants && connection.grants.length > 0 ? (
-          <div className="mt-2 flex flex-wrap gap-1.5">
-            {connection.grants.map(grant => (
-              <span key={grant.id} className="rounded-md border border-neutral-200 px-2 py-1 text-xs text-neutral-600 dark:border-zinc-700 dark:text-zinc-300">
-                {grant.targetType}: {grant.targetId}
-              </span>
-            ))}
-          </div>
-        ) : (
-          <p className="mt-2 text-xs text-neutral-400 dark:text-zinc-500">{t('connections.noGrantsYet')}</p>
-        )}
+      <div className="mt-2 flex flex-wrap gap-1.5">
+        {(connection.grants ?? []).slice(0, 4).map(grant => (
+          <span key={grant.id} className="rounded-md bg-neutral-100 px-2 py-0.5 text-[11px] text-neutral-500 dark:bg-zinc-800 dark:text-zinc-400">{grant.targetType}: {grant.targetId}</span>
+        ))}
+        {(connection.grants?.length ?? 0) === 0 && <span className="text-xs text-neutral-400 dark:text-zinc-500">{t('connections.noGrantsYet')}</span>}
       </div>
-      {((summary?.scopes?.length ?? 0) > 0 || (summary?.providerPermissions?.length ?? 0) > 0) && (
-        <div className="mt-4 grid gap-3 sm:grid-cols-2">
-          <ProfileChips title={t('connections.scopes')} items={summary?.scopes ?? []} />
-          <ProfileChips title={t('connections.permissions')} items={summary?.providerPermissions ?? []} />
-        </div>
-      )}
-      {testState?.message && (
-        <div className={cn('mt-4 rounded-lg border px-3 py-2 text-xs',
-          testState.ok
-            ? 'border-emerald-200 bg-emerald-50 text-emerald-700 dark:border-emerald-900/60 dark:bg-emerald-950/30 dark:text-emerald-300'
-            : 'border-red-200 bg-red-50 text-red-700 dark:border-red-900/60 dark:bg-red-950/30 dark:text-red-300'
-        )}>
-          {testState.message}
-        </div>
-      )}
-    </section>
+      {testState?.message && <p className={cn('mt-1 truncate text-xs', testState.ok ? 'text-emerald-600 dark:text-emerald-300' : 'text-red-600 dark:text-red-300')}>{testState.message}</p>}
+    </div>
   )
 }
 
-function ProfileChips({ title, items }: { title: string; items: string[] }) {
-  if (items.length === 0) return null
-  return (
-    <div>
-      <p className="text-xs font-medium text-neutral-400 dark:text-zinc-500">{title}</p>
-      <div className="mt-2 flex flex-wrap gap-1.5">
-        {items.slice(0, 8).map(item => (
-          <span key={item} className="rounded-md border border-neutral-200 px-2 py-1 text-xs text-neutral-600 dark:border-zinc-700 dark:text-zinc-300">{item}</span>
-        ))}
-        {items.length > 8 && <span className="rounded-md border border-neutral-200 px-2 py-1 text-xs text-neutral-400 dark:border-zinc-700">+{items.length - 8}</span>}
-      </div>
-    </div>
-  )
+function primaryConnectionForProvider(connections: Connection[], provider: string): Connection | undefined {
+  return connections
+    .filter(connection => connection.provider === provider)
+    .sort((a, b) => {
+      if (a.ownerType !== b.ownerType) return a.ownerType === 'workspace' ? -1 : 1
+      return (b.updatedAt || b.createdAt).localeCompare(a.updatedAt || a.createdAt)
+    })[0]
+}
+
+function formatAuthTypes(authTypes: string[], oauthAvailable: boolean, isWorkspaceAdmin: boolean, t: (key: string) => string): string {
+  const labels = authTypes
+    .filter(type => type !== 'oauth2' || oauthAvailable || isWorkspaceAdmin)
+    .map(type => authTypeLabel(type, t))
+  return labels.length > 0 ? labels.join(', ') : t('connections.adminSetupRequired')
+}
+
+function authTypeLabel(type: string, t: (key: string) => string): string {
+  if (type === 'api_key') return t('connections.authApiKey')
+  if (type === 'custom_credential') return t('connections.authAppCredential')
+  if (type === 'oauth2') return t('connections.authOAuth')
+  if (type === 'no_auth') return t('connections.authNoAuth')
+  return type
 }
 
 function connectionValidation(connection: Connection, fmtDateTime: (input: string | number | Date | null | undefined) => string = (input) => formatDateTimeForLanguage(input, undefined)): { ok: boolean; status?: number; message: string; atLabel: string } | null {
@@ -548,22 +512,38 @@ function profileStringList(profile: Record<string, unknown> | undefined, key: st
   return []
 }
 
-function connectionHasActionPolicy(connection: Connection): boolean {
-  return ['allowedActionMethods', 'blockedActionMethods', 'allowedActionEndpoints', 'blockedActionEndpoints']
-    .some(key => profileStringList(connection.profile, key).length > 0)
-}
-
 function parsePolicyList(value: string): string[] {
   return value.split(/[\n,]+/).map(item => item.trim()).filter(Boolean)
 }
 
-function ConnectionDialog({ providers, isWorkspaceAdmin, connection, onClose, onCreated }: { providers: Provider[]; isWorkspaceAdmin: boolean; connection?: Connection; onClose: () => void; onCreated: () => void }) {
+function ConnectionDialog({
+  providers,
+  oauthConfigs,
+  isWorkspaceAdmin,
+  fixedProviderId,
+  connection,
+  onClose,
+  onCreated,
+}: {
+  providers: Provider[]
+  oauthConfigs: OAuthClientConfig[]
+  isWorkspaceAdmin: boolean
+  fixedProviderId?: string
+  connection?: Connection
+  onClose: () => void
+  onCreated: () => void
+}) {
   const { t } = useTranslation()
   const isEditing = Boolean(connection)
-  const [providerId, setProviderId] = useState(connection?.provider ?? providers[0]?.provider ?? '')
+  const [providerId, setProviderId] = useState(connection?.provider ?? fixedProviderId ?? providers[0]?.provider ?? '')
   const provider = providers.find(p => p.provider === providerId)
+  const oauthConfig = oauthConfigs.find(config => config.provider === providerId)
+  const availableAuthTypes = useMemo(() => {
+    const types = provider?.authTypes ?? []
+    return types.filter(type => type !== 'oauth2' || oauthConfig?.configured)
+  }, [provider, oauthConfig])
   const [ownerType, setOwnerType] = useState(connection?.ownerType ?? (isWorkspaceAdmin ? 'workspace' : 'user'))
-  const [authType, setAuthType] = useState(connection?.authType ?? provider?.authTypes[0] ?? 'api_key')
+  const [authType, setAuthType] = useState(connection?.authType ?? availableAuthTypes[0] ?? 'api_key')
   const [connectionName, setConnectionName] = useState(connection?.connectionName ?? 'default')
   const [displayName, setDisplayName] = useState(String(connection?.profile?.displayName ?? ''))
   const [accountId, setAccountId] = useState(String(connection?.profileSummary?.accountId ?? connection?.profile?.accountId ?? ''))
@@ -583,9 +563,10 @@ function ConnectionDialog({ providers, isWorkspaceAdmin, connection, onClose, on
   useEffect(() => {
     if (isEditing) return
     const p = providers.find(x => x.provider === providerId)
-    setAuthType(p?.authTypes[0] ?? 'api_key')
+    const nextAuthTypes = (p?.authTypes ?? []).filter(type => type !== 'oauth2' || oauthConfigs.find(config => config.provider === p?.provider)?.configured)
+    setAuthType(nextAuthTypes[0] ?? 'api_key')
     setValues({})
-  }, [providerId, providers, isEditing])
+  }, [providerId, providers, oauthConfigs, isWorkspaceAdmin, isEditing])
 
   const fields = useMemo(() => {
     if (!provider || authType === 'no_auth') return []
@@ -593,7 +574,7 @@ function ConnectionDialog({ providers, isWorkspaceAdmin, connection, onClose, on
   }, [provider, authType])
 
   async function submit() {
-    if (!provider) return
+    if (!provider || provider.comingSoon) return
     setSaving(true)
     try {
       const cleanValues = Object.fromEntries(Object.entries(values).filter(([, value]) => value.trim() !== ''))
@@ -641,14 +622,21 @@ function ConnectionDialog({ providers, isWorkspaceAdmin, connection, onClose, on
   }
 
   return (
-    <Modal title={isEditing ? t('connections.editConnection') : t('connections.newConnection')} onClose={onClose}>
+    <Modal title={isEditing ? t('connections.editConnection') : t('connections.configureToolTitle', { name: provider?.displayName ?? '' })} onClose={onClose}>
       <div className="space-y-4">
-        <label className="block">
-          <span className="text-xs font-medium text-neutral-500 dark:text-zinc-400">{t('connections.provider')}</span>
-          <select className={selectCls} value={providerId} onChange={e => setProviderId(e.target.value)} disabled={isEditing}>
-            {providers.map(p => <option key={p.provider} value={p.provider}>{p.displayName}</option>)}
-          </select>
-        </label>
+        {!fixedProviderId && (
+          <label className="block">
+            <span className="text-xs font-medium text-neutral-500 dark:text-zinc-400">{t('connections.provider')}</span>
+            <select className={selectCls} value={providerId} onChange={e => setProviderId(e.target.value)} disabled={isEditing}>
+              {providers.filter(p => !p.comingSoon).map(p => <option key={p.provider} value={p.provider}>{p.displayName}</option>)}
+            </select>
+          </label>
+        )}
+        {provider?.description && (
+          <div className="rounded-lg bg-neutral-50 px-3 py-2 text-sm text-neutral-600 dark:bg-zinc-800/50 dark:text-zinc-300">
+            {provider.description}
+          </div>
+        )}
         <div className="grid gap-3 sm:grid-cols-2">
           <label className="block">
             <span className="text-xs font-medium text-neutral-500 dark:text-zinc-400">{t('connections.owner')}</span>
@@ -660,20 +648,15 @@ function ConnectionDialog({ providers, isWorkspaceAdmin, connection, onClose, on
           <label className="block">
             <span className="text-xs font-medium text-neutral-500 dark:text-zinc-400">{t('connections.authType')}</span>
             <select className={selectCls} value={authType} onChange={e => setAuthType(e.target.value)}>
-              {(provider?.authTypes ?? []).map(t => <option key={t} value={t}>{t}</option>)}
+              {availableAuthTypes.map(type => <option key={type} value={type}>{authTypeLabel(type, t)}</option>)}
             </select>
           </label>
         </div>
-        <div className="grid gap-3 sm:grid-cols-2">
-          <label className="block">
-            <span className="text-xs font-medium text-neutral-500 dark:text-zinc-400">{t('connections.connectionName')}</span>
-            <input className={inputCls} value={connectionName} onChange={e => setConnectionName(e.target.value)} />
-          </label>
-          <label className="block">
-            <span className="text-xs font-medium text-neutral-500 dark:text-zinc-400">{t('connections.displayName')}</span>
-            <input className={inputCls} value={displayName} onChange={e => setDisplayName(e.target.value)} placeholder={provider?.displayName} />
-          </label>
-        </div>
+        {provider?.authTypes.includes('oauth2') && !oauthConfig?.configured && (
+          <p className="rounded-lg bg-amber-50 px-3 py-2 text-xs text-amber-700 dark:bg-amber-950/30 dark:text-amber-300">
+            {isWorkspaceAdmin ? t('connections.oauthNotConfiguredAdmin') : t('connections.oauthHiddenForUsers')}
+          </p>
+        )}
         {authType === 'oauth2' && (
           <p className="rounded-lg bg-sky-50 px-3 py-2 text-xs text-sky-700 dark:bg-sky-950/30 dark:text-sky-300">
             {t('connections.oauthStartHint')}
@@ -696,9 +679,38 @@ function ConnectionDialog({ providers, isWorkspaceAdmin, connection, onClose, on
             {t('connections.credentialsHiddenHint')}
           </p>
         )}
-        <div className="rounded-lg border border-neutral-200 p-3 dark:border-zinc-700">
+        {(provider?.guides?.length ?? 0) > 0 && (
+          <details className="rounded-lg border border-neutral-200 p-3 dark:border-zinc-700" open={!isEditing}>
+            <summary className="cursor-pointer text-sm font-medium text-neutral-700 dark:text-zinc-200">{t('connections.credentialGuide')}</summary>
+            <div className="mt-3 space-y-3">
+              {(provider?.guides ?? []).map(guide => (
+                <div key={guide.title}>
+                  <p className="text-xs font-medium text-neutral-600 dark:text-zinc-300">{guide.title}</p>
+                  <p className="mt-1 text-xs leading-5 text-neutral-500 dark:text-zinc-400">{guide.body}</p>
+                  {(guide.links ?? []).map(link => (
+                    <a key={link.url} href={link.url} target="_blank" rel="noreferrer" className="mt-1 inline-block text-xs font-medium text-sky-700 hover:underline dark:text-sky-300">{link.label}</a>
+                  ))}
+                </div>
+              ))}
+            </div>
+          </details>
+        )}
+        <details className="rounded-lg border border-neutral-200 p-3 dark:border-zinc-700">
+          <summary className="cursor-pointer text-sm font-medium text-neutral-700 dark:text-zinc-200">{t('connections.advancedSettings')}</summary>
+          <div className="mt-3 grid gap-3 sm:grid-cols-2">
+            <label className="block">
+              <span className="text-xs font-medium text-neutral-500 dark:text-zinc-400">{t('connections.connectionName')}</span>
+              <input className={inputCls} value={connectionName} onChange={e => setConnectionName(e.target.value)} />
+            </label>
+            <label className="block">
+              <span className="text-xs font-medium text-neutral-500 dark:text-zinc-400">{t('connections.displayName')}</span>
+              <input className={inputCls} value={displayName} onChange={e => setDisplayName(e.target.value)} placeholder={provider?.displayName} />
+            </label>
+          </div>
+        </details>
+        <details className="rounded-lg border border-neutral-200 p-3 dark:border-zinc-700">
+          <summary className="cursor-pointer text-sm font-medium text-neutral-700 dark:text-zinc-200">{t('connections.accountProfile')}</summary>
           <div>
-            <p className="text-sm font-medium text-neutral-700 dark:text-zinc-200">{t('connections.accountProfile')}</p>
             <p className="mt-0.5 text-xs text-neutral-400 dark:text-zinc-500">{t('connections.accountProfileHint')}</p>
           </div>
           <div className="mt-3 grid gap-3 sm:grid-cols-3">
@@ -725,11 +737,11 @@ function ConnectionDialog({ providers, isWorkspaceAdmin, connection, onClose, on
               <textarea className={`${inputCls} min-h-20 resize-y`} value={providerPermissions} onChange={e => setProviderPermissions(e.target.value)} placeholder={'Issues: read/write\nWiki: read'} />
             </label>
           </div>
-        </div>
-        <div className="rounded-lg border border-neutral-200 p-3 dark:border-zinc-700">
+        </details>
+        <details className="rounded-lg border border-neutral-200 p-3 dark:border-zinc-700">
+          <summary className="cursor-pointer text-sm font-medium text-neutral-700 dark:text-zinc-200">{t('connections.automaticHealthChecks')}</summary>
           <label className="flex items-center justify-between gap-3">
             <span>
-              <span className="block text-sm font-medium text-neutral-700 dark:text-zinc-200">{t('connections.automaticHealthChecks')}</span>
               <span className="block text-xs text-neutral-400 dark:text-zinc-500">{t('connections.automaticHealthChecksHint')}</span>
             </span>
             <input type="checkbox" checked={healthCheckEnabled} onChange={e => setHealthCheckEnabled(e.target.checked)} className="size-4 accent-sky-600" />
@@ -740,10 +752,10 @@ function ConnectionDialog({ providers, isWorkspaceAdmin, connection, onClose, on
               <input type="number" min={5} max={43200} className={inputCls} value={healthCheckIntervalMinutes} onChange={e => setHealthCheckIntervalMinutes(e.target.value)} />
             </label>
           )}
-        </div>
-        <div className="rounded-lg border border-neutral-200 p-3 dark:border-zinc-700">
+        </details>
+        <details className="rounded-lg border border-neutral-200 p-3 dark:border-zinc-700">
+          <summary className="cursor-pointer text-sm font-medium text-neutral-700 dark:text-zinc-200">{t('connections.runtimeActionPolicy')}</summary>
           <div>
-            <p className="text-sm font-medium text-neutral-700 dark:text-zinc-200">{t('connections.runtimeActionPolicy')}</p>
             <p className="mt-0.5 text-xs text-neutral-400 dark:text-zinc-500">{t('connections.runtimeActionPolicyHint')} <code>/prefix/*</code>, <code>*</code>.</p>
           </div>
           <div className="mt-3 grid gap-3 sm:grid-cols-2">
@@ -764,10 +776,10 @@ function ConnectionDialog({ providers, isWorkspaceAdmin, connection, onClose, on
               <textarea className={`${inputCls} min-h-24 resize-y`} value={blockedActionEndpoints} onChange={e => setBlockedActionEndpoints(e.target.value)} placeholder={'/admin/*\n/private'} />
             </label>
           </div>
-        </div>
+        </details>
         <div className="flex justify-end gap-2 pt-2">
           <button type="button" onClick={onClose} disabled={saving} className="rounded-lg border border-neutral-300 px-3 py-2 text-sm dark:border-zinc-600">{t('common.cancel')}</button>
-          <button type="button" onClick={() => void submit()} disabled={saving || !provider} className="rounded-lg bg-sky-600 px-3 py-2 text-sm font-medium text-white disabled:opacity-50">{authType === 'oauth2' && !isEditing ? t('connections.startOAuth') : isEditing ? t('common.save') : t('common.create')}</button>
+          <button type="button" onClick={() => void submit()} disabled={saving || !provider || provider.comingSoon || availableAuthTypes.length === 0} className="rounded-lg bg-sky-600 px-3 py-2 text-sm font-medium text-white disabled:opacity-50">{authType === 'oauth2' && !isEditing ? t('connections.startOAuth') : isEditing ? t('common.save') : t('common.create')}</button>
         </div>
       </div>
     </Modal>

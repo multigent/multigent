@@ -36,8 +36,6 @@
 - Jira
 - Notion
 - DingTalk
-- Custom HTTP
-- Custom MCP
 ```
 
 不要在主路径里强调：
@@ -101,6 +99,18 @@ if provider supports oauth2 but OAuth client is not configured:
 
 这样普通用户不会看到不可用入口，管理员仍然知道可以启用 OAuth。
 
+### 第一版产品层只暴露一个主连接
+
+底层 `Connection` 模型可以继续支持同一个 provider 下存在多个连接，这为未来的多账号、多租户、个人凭证和高级连接池场景留下空间。
+
+但第一版产品体验不做“连接列表管理”。每个外部工具在 UI 上只展示一个主连接：
+
+- 未连接：展示配置入口。
+- 已连接：展示连接状态、测试、授权、断开连接、更新凭证。
+- 已配置多个连接的底层情况不作为普通产品路径暴露。
+
+这样可以先降低用户心智负担，把主流程聚焦在“把外部工具接上，让 Agent 能安全使用”。
+
 ## 当前能力盘点
 
 ### 已有 Provider
@@ -114,8 +124,8 @@ if provider supports oauth2 but OAuth client is not configured:
 | Lark | `custom_credential` | tenant token + OpenAPI action proxy |
 | Linear | `api_key` | GraphQL action proxy |
 | DingTalk Bot | `api_key` | Bot send action proxy |
-| Custom MCP | `custom_credential`, `no_auth` | MCP proxy |
-| Custom HTTP | `custom_credential` | generic HTTP action proxy |
+
+Custom HTTP / Custom MCP 不进入第一版外部工具产品目录。后续如确实需要高级集成能力，应作为独立的开发者/管理员能力重新设计，不混入普通用户的外部工具主路径。
 
 ### 已有数据抽象
 
@@ -149,8 +159,8 @@ if provider supports oauth2 but OAuth client is not configured:
 - 状态：未配置 / 已配置 / 部分可用 / 失败。
 - 可用接入方式：Token、App Credential、OAuth。
 - OAuth 是否已启用。
-- 已配置凭证数量。
-- 已授权项目/Agent 数量。
+- 主连接状态。
+- 主连接授权数量。
 - 最近健康检查状态。
 - 可用能力数量。
 
@@ -162,8 +172,8 @@ GitHub
 
 状态：已配置
 接入方式：Token、OAuth
-凭证：2 个
-授权：3 个项目，5 个 Agent
+连接：已连接
+授权：3 个
 健康检查：正常，10 分钟前
 [配置] [授权] [测试]
 ```

@@ -18,8 +18,11 @@ func TestOAuthClientConfigHandlersAreAdminScopedAndDoNotLeakSecret(t *testing.T)
 	memberReq := providerTestRequest(http.MethodGet, "/api/v1/oauth/client-configs", "owner", nil)
 	memberRec := httptest.NewRecorder()
 	s.handleListOAuthClientConfigs(memberRec, memberReq)
-	if memberRec.Code != http.StatusForbidden {
+	if memberRec.Code != http.StatusOK {
 		t.Fatalf("member list status=%d body=%s", memberRec.Code, memberRec.Body.String())
+	}
+	if strings.Contains(memberRec.Body.String(), "clientId") || strings.Contains(memberRec.Body.String(), "createdBy") {
+		t.Fatalf("member list leaked admin-only config details: %s", memberRec.Body.String())
 	}
 
 	adminListReq := providerTestRequest(http.MethodGet, "/api/v1/oauth/client-configs", "admin", nil)
@@ -104,11 +107,11 @@ func TestOAuthClientConfigUpsertCanKeepExistingSecret(t *testing.T) {
 
 func TestOAuthClientConfigRejectsUnsupportedProviderAndSecretLikeExtra(t *testing.T) {
 	s, _ := newConnectionGrantPolicyServer(t)
-	unsupportedReq := providerTestRequest(http.MethodPut, "/api/v1/oauth/client-configs/custom-http", "admin", oauthClientConfigRequest{
+	unsupportedReq := providerTestRequest(http.MethodPut, "/api/v1/oauth/client-configs/linear", "admin", oauthClientConfigRequest{
 		ClientID:     "client",
 		ClientSecret: "secret",
 	})
-	unsupportedReq.SetPathValue("provider", "custom-http")
+	unsupportedReq.SetPathValue("provider", "linear")
 	unsupportedRec := httptest.NewRecorder()
 	s.handleUpsertOAuthClientConfig(unsupportedRec, unsupportedReq)
 	if unsupportedRec.Code != http.StatusBadRequest {

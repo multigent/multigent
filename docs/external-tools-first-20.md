@@ -163,10 +163,8 @@ Google Workspace
 - Linear
 - Feishu / Lark
 - DingTalk Bot
-- Custom HTTP
-- Custom MCP
 
-说明：这些已经在当前 Multigent 中有 provider/action/proxy 基础。虽然 Custom HTTP/MCP 不计入 first 20 的普通工具，但应该保留为高级入口。
+说明：这些已经在当前 Multigent 中有 provider/action/proxy 基础，适合先把外部工具页面、凭证配置、连接测试和授权流程跑通。Custom HTTP / Custom MCP 不进入第一版外部工具产品目录，避免把高级开发者能力混入普通用户主路径。
 
 ### Wave 2：补齐研发与文档主链路
 
@@ -217,7 +215,8 @@ Google Workspace
 2. 前端工具目录按 category 分组。
 3. Google Workspace 支持产品分组，内部 provider 分开。
 4. OAuth 未配置时普通用户隐藏 OAuth-only 工具的连接入口。
-5. Wave 1 先复用当前已有 provider，不要一次性补完 20 个 runtime executor。
+5. 产品层第一版每个外部工具只展示一个主连接；底层可以保留多 connection 扩展能力，但不暴露连接池管理。
+6. Wave 1 先复用当前已有 provider，不要一次性补完 20 个 runtime executor。
 
 第一版可验收目标：
 
@@ -226,4 +225,5 @@ Google Workspace
 已有实现的工具可以配置、测试、授权。
 尚未实现 runtime action 的工具显示为 Coming soon 或 Admin setup required。
 普通用户不会看到不可用的 OAuth 入口。
+每个工具在产品层只展示一个主连接，避免第一版引入多连接选择和优先级复杂度。
 ```

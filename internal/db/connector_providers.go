@@ -72,6 +72,11 @@ FROM connector_providers`
 	return out, rows.Err()
 }
 
+func (db *SQLiteStore) DeleteConnectorProvider(provider string) error {
+	_, err := db.sql.Exec(`DELETE FROM connector_providers WHERE provider = ?`, provider)
+	return err
+}
+
 type connectorProviderScanner interface {
 	Scan(dest ...any) error
 }

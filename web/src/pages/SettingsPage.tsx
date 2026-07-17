@@ -28,6 +28,16 @@ type RBACModel = {
   capabilities: { id: string; scope: string; label: string }[]
 }
 
+type OAuthClientConfig = {
+  provider: string
+  displayName: string
+  configured: boolean
+  clientId?: string
+  expectedRedirectUri: string
+  oauth?: { scopes?: string[] }
+  extra?: Record<string, unknown>
+}
+
 function RBACSection() {
   const { t } = useTranslation()
   const [model, setModel] = useState<RBACModel | null>(null)
@@ -73,6 +83,146 @@ function RBACSection() {
         </div>
       )}
     </section>
+  )
+}
+
+function ExternalToolOAuthSection() {
+  const { t } = useTranslation()
+  const [configs, setConfigs] = useState<OAuthClientConfig[]>([])
+  const [loading, setLoading] = useState(true)
+  const [editing, setEditing] = useState<OAuthClientConfig | null>(null)
+
+  async function refresh() {
+    setLoading(true)
+    try {
+      const data = await apiFetch<{ configs: OAuthClientConfig[] }>('/api/v1/oauth/client-configs')
+      setConfigs(data.configs ?? [])
+    } finally {
+      setLoading(false)
+    }
+  }
+
+  useEffect(() => { void refresh() }, [])
+
+  return (
+    <section className="rounded-xl border border-neutral-200/80 bg-white p-5 dark:border-zinc-700/60 dark:bg-zinc-900/40">
+      <div className="flex items-start justify-between gap-3 pb-4">
+        <div>
+          <h3 className="text-base font-semibold text-neutral-900 dark:text-zinc-100">{t('settings.externalToolOAuthTitle')}</h3>
+          <p className="mt-1 text-xs text-neutral-400 dark:text-zinc-500">{t('settings.externalToolOAuthIntro')}</p>
+        </div>
+      </div>
+      {loading ? (
+        <p className="py-3 text-sm text-neutral-400">{t('forms.loading')}</p>
+      ) : (
+        <div className="overflow-hidden rounded-lg border border-neutral-200/80 dark:border-zinc-700/60">
+          <table className="w-full text-left">
+            <thead className="bg-neutral-50 text-xs text-neutral-500 dark:bg-zinc-800/50 dark:text-zinc-400">
+              <tr>
+                <th className="px-4 py-2.5 font-medium">{t('settings.oauthProvider')}</th>
+                <th className="px-4 py-2.5 font-medium">{t('settings.oauthStatus')}</th>
+                <th className="px-4 py-2.5 font-medium">Client ID</th>
+                <th className="px-4 py-2.5 font-medium">Redirect URI</th>
+                <th className="px-4 py-2.5 text-right font-medium">{t('common.actions')}</th>
+              </tr>
+            </thead>
+            <tbody className="divide-y divide-neutral-200/80 dark:divide-zinc-700/60">
+              {configs.map(config => (
+                <tr key={config.provider}>
+                  <td className="px-4 py-3 text-sm font-medium text-neutral-800 dark:text-zinc-100">{config.displayName}</td>
+                  <td className="px-4 py-3">
+                    <span className={cn('rounded-full px-2 py-0.5 text-xs font-medium', config.configured ? 'bg-emerald-100 text-emerald-700 dark:bg-emerald-900/30 dark:text-emerald-300' : 'bg-neutral-100 text-neutral-500 dark:bg-zinc-800 dark:text-zinc-400')}>
+                      {config.configured ? t('connections.configured') : t('connections.notConfigured')}
+                    </span>
+                  </td>
+                  <td className="px-4 py-3 text-xs text-neutral-500 dark:text-zinc-400">{config.clientId || '—'}</td>
+                  <td className="max-w-sm truncate px-4 py-3 font-mono text-xs text-neutral-400 dark:text-zinc-500" title={config.expectedRedirectUri}>{config.expectedRedirectUri}</td>
+                  <td className="px-4 py-3 text-right">
+                    <button type="button" onClick={() => setEditing(config)} className="rounded-lg border border-neutral-200 px-3 py-1.5 text-xs font-medium text-neutral-600 hover:bg-neutral-50 dark:border-zinc-700 dark:text-zinc-300 dark:hover:bg-zinc-800">
+                      {t('common.edit')}
+                    </button>
+                  </td>
+                </tr>
+              ))}
+            </tbody>
+          </table>
+        </div>
+      )}
+      {editing && (
+        <OAuthClientConfigDialog
+          config={editing}
+          onClose={() => setEditing(null)}
+          onSaved={() => { setEditing(null); void refresh() }}
+        />
+      )}
+    </section>
+  )
+}
+
+function OAuthClientConfigDialog({ config, onClose, onSaved }: { config: OAuthClientConfig; onClose: () => void; onSaved: () => void }) {
+  const { t } = useTranslation()
+  const [clientId, setClientId] = useState(config.clientId ?? '')
+  const [clientSecret, setClientSecret] = useState('')
+  const [saving, setSaving] = useState(false)
+
+  async function submit() {
+    setSaving(true)
+    try {
+      await apiPut(`/api/v1/oauth/client-configs/${encodeURIComponent(config.provider)}`, {
+        clientId: clientId.trim(),
+        clientSecret: clientSecret.trim(),
+        extra: config.extra ?? {},
+      })
+      onSaved()
+    } finally {
+      setSaving(false)
+    }
+  }
+
+  async function remove() {
+    const ok = await confirmDialog({
+      title: t('settings.removeOAuthClient'),
+      description: t('settings.removeOAuthClientConfirm', { name: config.displayName }),
+      confirmLabel: t('common.delete'),
+      cancelLabel: t('common.cancel'),
+    })
+    if (!ok) return
+    await apiDelete(`/api/v1/oauth/client-configs/${encodeURIComponent(config.provider)}`)
+    onSaved()
+  }
+
+  return (
+    <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/45 p-4" onClick={onClose}>
+      <div className="max-h-[88vh] w-full max-w-2xl overflow-y-auto rounded-xl border border-neutral-200 bg-white shadow-xl dark:border-zinc-700 dark:bg-zinc-900" onClick={e => e.stopPropagation()}>
+        <div className="flex items-center justify-between border-b border-neutral-200 px-5 py-3 dark:border-zinc-700">
+          <h2 className="text-base font-semibold text-neutral-900 dark:text-zinc-100">{t('settings.oauthClientTitle', { name: config.displayName })}</h2>
+          <button type="button" onClick={onClose} className="rounded-md p-1 text-neutral-400 hover:bg-neutral-100 dark:hover:bg-zinc-800">
+            <X className="size-4" />
+          </button>
+        </div>
+        <div className="space-y-4 p-5">
+          <label className="block">
+            <span className="text-xs font-medium text-neutral-500 dark:text-zinc-400">Client ID</span>
+            <input className={inputCls} value={clientId} onChange={e => setClientId(e.target.value)} />
+          </label>
+          <label className="block">
+            <span className="text-xs font-medium text-neutral-500 dark:text-zinc-400">Client secret</span>
+            <input className={inputCls} type="password" value={clientSecret} onChange={e => setClientSecret(e.target.value)} placeholder={config.configured ? t('settings.keepCurrentSecret') : ''} />
+          </label>
+          <div className="rounded-lg bg-neutral-50 px-3 py-2 dark:bg-zinc-800/50">
+            <p className="text-xs font-medium text-neutral-500 dark:text-zinc-400">Redirect URI</p>
+            <p className="mt-1 break-all font-mono text-xs text-neutral-600 dark:text-zinc-300">{config.expectedRedirectUri}</p>
+          </div>
+          <div className="flex justify-between gap-2 pt-2">
+            <button type="button" onClick={() => void remove()} disabled={saving || !config.configured} className="rounded-lg border border-red-200 px-3 py-2 text-sm text-red-600 disabled:opacity-50 dark:border-red-900/60 dark:text-red-300">{t('common.delete')}</button>
+            <div className="flex gap-2">
+              <button type="button" onClick={onClose} disabled={saving} className="rounded-lg border border-neutral-300 px-3 py-2 text-sm dark:border-zinc-600">{t('common.cancel')}</button>
+              <button type="button" onClick={() => void submit()} disabled={saving || clientId.trim() === '' || (!config.configured && clientSecret.trim() === '')} className="rounded-lg bg-sky-600 px-3 py-2 text-sm font-medium text-white disabled:opacity-50">{t('common.save')}</button>
+            </div>
+          </div>
+        </div>
+      </div>
+    </div>
   )
 }
 
@@ -1077,6 +1227,9 @@ export default function SettingsPage() {
 
         {/* Model accounts */}
         <ProvidersSection />
+
+        {/* External tool OAuth apps (admin only) */}
+        {user?.role === 'admin' && <ExternalToolOAuthSection />}
 
         {/* Workspace Secrets (admin only) */}
         {user?.role === 'admin' && <SecretsSection />}

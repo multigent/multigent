@@ -205,13 +205,13 @@ func TestUpdateConnectionKeepsOrReplacesSecretsByOwner(t *testing.T) {
 	connection := controldb.Connection{
 		ID:             "conn-owner",
 		WorkspaceID:    workspaceID,
-		Provider:       "custom-http",
+		Provider:       "feishu",
 		ConnectionName: "api",
 		OwnerType:      ConnectionOwnerUser,
 		OwnerID:        "owner",
 		AuthType:       ConnectionAuthCustomCredential,
 		Status:         "active",
-		ProfileJSON:    `{"displayName":"Old API","provider":"custom-http","connectionName":"api"}`,
+		ProfileJSON:    `{"displayName":"Old API","provider":"feishu","connectionName":"api"}`,
 		CreatedBy:      "owner",
 		CreatedAt:      "2026-07-15T00:00:00Z",
 		UpdatedAt:      "2026-07-15T00:00:00Z",
@@ -219,7 +219,7 @@ func TestUpdateConnectionKeepsOrReplacesSecretsByOwner(t *testing.T) {
 	if err := s.controlDB.UpsertConnection(connection); err != nil {
 		t.Fatalf("connection: %v", err)
 	}
-	secret, err := sealConnectionSecret(map[string]string{"baseUrl": "https://old.example.test", "apiKey": "old-key"})
+	secret, err := sealConnectionSecret(map[string]string{"baseUrl": "https://open.feishu.cn", "appId": "old-app", "appSecret": "old-secret"})
 	if err != nil {
 		t.Fatalf("seal secret: %v", err)
 	}
@@ -242,8 +242,8 @@ func TestUpdateConnectionKeepsOrReplacesSecretsByOwner(t *testing.T) {
 	ownerReq := providerTestRequest(http.MethodPut, "/api/v1/connections/conn-owner", "owner", createConnectionRequest{
 		ConnectionName: "api-v2",
 		AuthType:       ConnectionAuthCustomCredential,
-		Values:         map[string]string{"apiKey": "new-key"},
-		Profile:        map[string]any{"displayName": "New API", "apiKey": "should-not-leak"},
+		Values:         map[string]string{"appSecret": "new-secret"},
+		Profile:        map[string]any{"displayName": "New API", "appSecret": "should-not-leak"},
 	})
 	ownerReq.SetPathValue("id", "conn-owner")
 	s.handleUpdateConnection(ownerRec, ownerReq)
@@ -251,7 +251,7 @@ func TestUpdateConnectionKeepsOrReplacesSecretsByOwner(t *testing.T) {
 		t.Fatalf("owner update status=%d body=%s", ownerRec.Code, ownerRec.Body.String())
 	}
 	body := ownerRec.Body.String()
-	if strings.Contains(body, "new-key") || strings.Contains(body, "should-not-leak") {
+	if strings.Contains(body, "new-secret") || strings.Contains(body, "should-not-leak") {
 		t.Fatalf("update response leaked secret: %s", body)
 	}
 	updated, ok, err := s.controlDB.ConnectionByID("conn-owner")
@@ -269,7 +269,7 @@ func TestUpdateConnectionKeepsOrReplacesSecretsByOwner(t *testing.T) {
 	if err != nil {
 		t.Fatalf("open secret: %v", err)
 	}
-	if values["apiKey"] != "new-key" || values["baseUrl"] != "https://old.example.test" {
+	if values["appSecret"] != "new-secret" || values["appId"] != "old-app" || values["baseUrl"] != "https://open.feishu.cn" {
 		t.Fatalf("secret values=%#v", values)
 	}
 }

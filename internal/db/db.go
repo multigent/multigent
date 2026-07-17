@@ -47,6 +47,7 @@ type Store interface {
 	UpsertConnectorProvider(provider ConnectorProvider) error
 	ConnectorProviderByID(provider string) (ConnectorProvider, bool, error)
 	ListConnectorProviders(includeDisabled bool) ([]ConnectorProvider, error)
+	DeleteConnectorProvider(provider string) error
 	UpsertOAuthClientConfig(config OAuthClientConfig) error
 	OAuthClientConfigByProvider(workspaceID, provider string) (OAuthClientConfig, bool, error)
 	ListOAuthClientConfigs(workspaceID string) ([]OAuthClientConfig, error)
