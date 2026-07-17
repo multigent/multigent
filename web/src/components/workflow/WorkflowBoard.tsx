@@ -181,9 +181,10 @@ function WorkflowStepNode({ data, selected }: NodeProps<WorkflowNode>) {
         'relative flex h-[88px] w-[198px] flex-col rounded-xl border px-3 py-2 text-left shadow-sm transition-shadow',
         nodeClass,
         active && 'ring-2 ring-sky-400 ring-offset-2 ring-offset-white dark:ring-sky-500 dark:ring-offset-zinc-950',
-        selected && 'shadow-lg',
+        selected && 'border-sky-500 shadow-lg ring-2 ring-sky-500 ring-offset-2 ring-offset-white dark:border-sky-400 dark:ring-sky-400 dark:ring-offset-zinc-950',
       )}
     >
+      {selected ? <span className="absolute -right-1.5 -top-1.5 size-3 rounded-full border-2 border-white bg-sky-500 dark:border-zinc-950 dark:bg-sky-400" /> : null}
       <Handle
         type="target"
         position={Position.Left}
