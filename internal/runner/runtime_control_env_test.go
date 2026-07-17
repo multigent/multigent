@@ -252,6 +252,80 @@ func TestWriteRuntimeToolsFileMaterializesGitHubCLIConfig(t *testing.T) {
 	}
 }
 
+func TestWriteRuntimeToolsFileMaterializesLarkCLIConfig(t *testing.T) {
+	body := []byte(`{
+		"tools":[{
+			"provider":"feishu",
+			"displayName":"Feishu",
+			"connectionId":"conn_feishu",
+			"connectionAlias":"feishu-main",
+			"connectionName":"Main Feishu",
+			"recommendedAdapter":"cli",
+			"skills":["lark-doc","lark-im"],
+			"adapters":[{
+				"type":"cli",
+				"priority":100,
+				"skills":["lark-doc","lark-im"],
+				"cli":{
+					"binary":"lark-cli",
+					"configFiles":[{"path":"~/.lark-cli/config.json","format":"json"}]
+				},
+				"credentialMaterialize":"runtime_file"
+			}]
+		}]
+	}`)
+	agentDir := t.TempDir()
+	toolDir, toolsPath, env, err := writeRuntimeToolsFile(agentDir, "run-lark", "/tmp/connections.json", body, func(connectionID string) (map[string]string, bool, error) {
+		if connectionID != "conn_feishu" {
+			t.Fatalf("connectionID=%q", connectionID)
+		}
+		return map[string]string{"appId": "cli_a_test", "appSecret": "secret_test"}, true, nil
+	})
+	if err != nil {
+		t.Fatalf("write tools file: %v", err)
+	}
+	if toolDir == "" || toolsPath == "" {
+		t.Fatalf("toolDir=%q toolsPath=%q", toolDir, toolsPath)
+	}
+	larkHome := env["MULTIGENT_LARK_HOME"]
+	if larkHome == "" || !strings.Contains(larkHome, toolDir) {
+		t.Fatalf("MULTIGENT_LARK_HOME=%q toolDir=%q", larkHome, toolDir)
+	}
+	configPath := filepath.Join(larkHome, ".lark-cli", "config.json")
+	configBody, err := os.ReadFile(configPath)
+	if err != nil {
+		t.Fatalf("read config.json: %v", err)
+	}
+	configText := string(configBody)
+	for _, want := range []string{`"appId": "cli_a_test"`, `"appSecret": "secret_test"`, `"brand": "feishu"`} {
+		if !strings.Contains(configText, want) {
+			t.Fatalf("config missing %q: %s", want, configText)
+		}
+	}
+	wrapperPath := filepath.Join(toolDir, "bin", "lark-cli")
+	info, err := os.Stat(wrapperPath)
+	if err != nil {
+		t.Fatalf("stat wrapper: %v", err)
+	}
+	if info.Mode().Perm()&0o111 == 0 {
+		t.Fatalf("wrapper is not executable: %v", info.Mode())
+	}
+	wrapperBody, err := os.ReadFile(wrapperPath)
+	if err != nil {
+		t.Fatalf("read wrapper: %v", err)
+	}
+	if !strings.Contains(string(wrapperBody), "exec lark-cli") || !strings.Contains(string(wrapperBody), larkHome) {
+		t.Fatalf("unexpected wrapper: %s", string(wrapperBody))
+	}
+	toolsBody, err := os.ReadFile(toolsPath)
+	if err != nil {
+		t.Fatalf("read tools file: %v", err)
+	}
+	if strings.Contains(string(toolsBody), "secret_test") {
+		t.Fatalf("tools file leaked app secret: %s", string(toolsBody))
+	}
+}
+
 func TestMaterializeRuntimeConnectionsFileSkipsWithoutRuntimeEnv(t *testing.T) {
 	env := map[string]string{"MULTIGENT_API_URL": "http://127.0.0.1:1"}
 	cleanup := (&Runner{}).materializeRuntimeConnectionsFile(t.TempDir(), env)

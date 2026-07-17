@@ -51,6 +51,7 @@ const (
 	runtimeConnectionsFileEnv = "MULTIGENT_CONNECTIONS_FILE"
 	runtimeToolsFileEnv       = "MULTIGENT_TOOLS_FILE"
 	runtimeToolDirEnv         = "MULTIGENT_TOOL_RUNTIME_DIR"
+	runtimeToolBinDirEnv      = "MULTIGENT_TOOL_BIN_DIR"
 	maxRuntimeConnectionsFile = 1 << 20
 )
 
@@ -1139,6 +1140,8 @@ func (r *Runner) materializeRuntimeFiles(agentDir string, env map[string]string)
 	if err == nil && toolDir != "" && toolsPath != "" {
 		env[runtimeToolDirEnv] = toolDir
 		env[runtimeToolsFileEnv] = toolsPath
+		env[runtimeToolBinDirEnv] = filepath.Join(toolDir, "bin")
+		env["PATH"] = filepath.Join(toolDir, "bin") + string(os.PathListSeparator) + os.Getenv("PATH")
 		for key, value := range extraEnv {
 			if key != "" && value != "" {
 				env[key] = value
@@ -1298,6 +1301,9 @@ func writeRuntimeToolsFile(agentDir, runID, connectionsPath string, body []byte,
 	if err := os.MkdirAll(toolDir, 0o700); err != nil {
 		return "", "", nil, err
 	}
+	if err := os.MkdirAll(filepath.Join(toolDir, "bin"), 0o700); err != nil {
+		return "", "", nil, err
+	}
 	extraEnv := map[string]string{}
 	for ti := range manifest.Tools {
 		var secretValues map[string]string
@@ -1369,6 +1375,8 @@ func materializeCLIConfig(tool runtimeToolRef, adapter runtimeAdapterRef, cfg ru
 	switch strings.TrimSpace(tool.Provider) {
 	case "github":
 		return materializeGitHubCLIConfig(adapter, cfg, secretValues)
+	case "feishu", "lark":
+		return materializeLarkCLIConfig(tool, adapter, cfg, secretValues)
 	default:
 		return nil, nil
 	}
@@ -1390,6 +1398,100 @@ func materializeGitHubCLIConfig(adapter runtimeAdapterRef, cfg runtimeConfigFile
 		return nil, err
 	}
 	return map[string]string{"GH_CONFIG_DIR": filepath.Dir(cfg.MaterializedPath)}, nil
+}
+
+func materializeLarkCLIConfig(tool runtimeToolRef, adapter runtimeAdapterRef, cfg runtimeConfigFileRef, secretValues map[string]string) (map[string]string, error) {
+	if adapter.CLI == nil || adapter.CLI.Binary != "lark-cli" {
+		return nil, nil
+	}
+	if !strings.HasSuffix(strings.TrimSpace(cfg.Path), ".lark-cli/config.json") {
+		return nil, nil
+	}
+	appID := firstNonEmpty(secretValues["appId"], secretValues["clientId"])
+	appSecret := firstNonEmpty(secretValues["appSecret"], secretValues["clientSecret"])
+	if appID == "" || appSecret == "" || cfg.MaterializedPath == "" {
+		return nil, nil
+	}
+	brand := larkBrand(tool.Provider, firstNonEmpty(secretValues["baseUrl"], secretValues["apiBaseUrl"]))
+	body, err := json.MarshalIndent(map[string]any{
+		"apps": []map[string]any{
+			{
+				"name":      firstNonEmpty(tool.ConnectionAlias, tool.ConnectionName, tool.Provider),
+				"appId":     appID,
+				"appSecret": appSecret,
+				"brand":     brand,
+				"users":     []any{},
+			},
+		},
+	}, "", "  ")
+	if err != nil {
+		return nil, err
+	}
+	if err := os.WriteFile(cfg.MaterializedPath, append(body, '\n'), 0o600); err != nil {
+		return nil, err
+	}
+	larkHome := filepath.Dir(filepath.Dir(cfg.MaterializedPath))
+	binDir := filepath.Join(runtimeToolDirFromConfigPath(cfg.MaterializedPath), "bin")
+	if err := os.MkdirAll(binDir, 0o700); err != nil {
+		return nil, err
+	}
+	wrapperPath := filepath.Join(binDir, "lark-cli")
+	if err := os.WriteFile(wrapperPath, []byte(larkCLIWrapperScript(larkHome)), 0o700); err != nil {
+		return nil, err
+	}
+	return map[string]string{"MULTIGENT_LARK_HOME": larkHome}, nil
+}
+
+func larkBrand(provider, baseURL string) string {
+	if strings.EqualFold(strings.TrimSpace(provider), "lark") || strings.Contains(strings.ToLower(baseURL), "larksuite") {
+		return "lark"
+	}
+	return "feishu"
+}
+
+func runtimeToolDirFromConfigPath(path string) string {
+	dir := filepath.Dir(path)
+	for {
+		if filepath.Base(dir) == "home" {
+			parent := filepath.Dir(dir)
+			if parent != "." && parent != dir {
+				return parent
+			}
+		}
+		next := filepath.Dir(dir)
+		if next == dir {
+			return filepath.Dir(path)
+		}
+		dir = next
+	}
+}
+
+func larkCLIWrapperScript(home string) string {
+	return `#!/bin/sh
+set -eu
+tool_bin_dir=$(CDPATH= cd -- "$(dirname -- "$0")" && pwd)
+clean_path=""
+old_ifs=$IFS
+IFS=:
+for p in ${PATH:-}; do
+  if [ "$p" = "$tool_bin_dir" ]; then
+    continue
+  fi
+  if [ -z "$clean_path" ]; then
+    clean_path=$p
+  else
+    clean_path=$clean_path:$p
+  fi
+done
+IFS=$old_ifs
+export PATH=$clean_path
+export HOME=` + shellQuote(home) + `
+exec lark-cli "$@"
+`
+}
+
+func shellQuote(value string) string {
+	return "'" + strings.ReplaceAll(value, "'", "'\\''") + "'"
 }
 
 func firstNonEmpty(values ...string) string {
@@ -1594,8 +1696,12 @@ func injectRuntimeControlEnvIntoRuntime(cfg *entity.SandboxConfig, env map[strin
 	if cfg == nil {
 		return
 	}
-	for k := range env {
+	for k, v := range env {
 		if k == "" {
+			continue
+		}
+		if k == runtimeToolBinDirEnv || k == "PATH" {
+			cfg.Env = append(cfg.Env, entity.RuntimeEnvVar{Name: k, Value: v})
 			continue
 		}
 		cfg.Env = append(cfg.Env, entity.RuntimeEnvVar{Name: k, Inherit: true})
@@ -1604,7 +1710,7 @@ func injectRuntimeControlEnvIntoRuntime(cfg *entity.SandboxConfig, env map[strin
 
 func isRuntimeControlEnvKey(key string) bool {
 	switch key {
-	case "MULTIGENT_API_URL", "MULTIGENT_AGENT_TOKEN", "MULTIGENT_RUN_ID", "MULTIGENT_WORKSPACE_ID", runtimeConnectionsFileEnv, runtimeToolsFileEnv, runtimeToolDirEnv:
+	case "MULTIGENT_API_URL", "MULTIGENT_AGENT_TOKEN", "MULTIGENT_RUN_ID", "MULTIGENT_WORKSPACE_ID", runtimeConnectionsFileEnv, runtimeToolsFileEnv, runtimeToolDirEnv, runtimeToolBinDirEnv:
 		return true
 	default:
 		return false

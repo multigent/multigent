@@ -5,6 +5,7 @@ import (
 	"fmt"
 	"os"
 	"path/filepath"
+	"strings"
 
 	"github.com/multigent/multigent/internal/agentcli"
 	"github.com/multigent/multigent/internal/entity"
@@ -56,7 +57,12 @@ func (DockerProvider) Available() error { return sandbox.CheckDocker() }
 func (DockerProvider) Command(spec ProcessSpec) (string, []string, error) {
 	cfg := DockerConfig(spec.Runtime)
 	cfg.ExtraVolumes = append(cfg.ExtraVolumes, "multigent-toolchains:"+agentcli.ToolchainHome)
-	cfg.ExtraEnv = append(cfg.ExtraEnv, "PATH="+runtimecli.BinDir+":"+agentcli.ToolchainBin+":"+sandbox.UserBin+":"+sandbox.ContainerDefaultPATH)
+	pathParts := []string{}
+	if toolBin := runtimeEnvValue(spec.Runtime, "MULTIGENT_TOOL_BIN_DIR"); toolBin != "" {
+		pathParts = append(pathParts, toolBin)
+	}
+	pathParts = append(pathParts, runtimecli.BinDir, agentcli.ToolchainBin, sandbox.UserBin, sandbox.ContainerDefaultPATH)
+	cfg.ExtraEnv = append(cfg.ExtraEnv, "PATH="+strings.Join(pathParts, ":"))
 	for _, mount := range spec.Mounts {
 		volume := DockerVolume(mount)
 		if volume != "" {
@@ -65,6 +71,18 @@ func (DockerProvider) Command(spec ProcessSpec) (string, []string, error) {
 	}
 	command := agentcli.WrapCommand(spec.Command, spec.AgentCLI)
 	return sandbox.RunArgs(spec.AgentDir, spec.Model, cfg, command)
+}
+
+func runtimeEnvValue(runtime *entity.SandboxConfig, name string) string {
+	if runtime == nil || name == "" {
+		return ""
+	}
+	for _, env := range runtime.Env {
+		if env.Name == name && env.Value != "" {
+			return env.Value
+		}
+	}
+	return ""
 }
 
 // E2BProvider represents a self-hosted E2B-compatible runtime. It is currently

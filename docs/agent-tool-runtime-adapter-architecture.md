@@ -268,16 +268,18 @@ Agent 侧只看到少量稳定工具：
 - `MULTIGENT_CONNECTIONS_FILE`: 原始 runtime connection manifest，包含连接、授权、proxy 和工具摘要。
 - `MULTIGENT_TOOLS_FILE`: agent 侧工具运行计划，包含 `tools`、`recommendedAdapter`、adapter 列表、skills、actions 和 CLI config 的 materialized path。
 - `MULTIGENT_TOOL_RUNTIME_DIR`: 本次 run 的工具运行目录。
+- `MULTIGENT_TOOL_BIN_DIR`: 本次 run 的工具 wrapper 目录，会被放到 `PATH` 最前面，用来把 `gh`、`lark-cli` 等平台 CLI 指向 agent 专属配置。
 
 `MULTIGENT_TOOLS_FILE` 不应该包含第三方原始凭证。它只描述：
 
 - 哪些工具连接可用。
 - 每个工具推荐用 CLI、MCP Gateway、HTTP action 还是 skill-only。
 - CLI config 应该写到哪个 agent-scoped path。
+- 平台 CLI 是否有 wrapper，以及 wrapper 对应的 per-run home/config。
 - MCP Gateway 的 namespace。
 - HTTP action 的 allowlist。
 
-后续 CLI credential materializer 只允许在 `MULTIGENT_TOOL_RUNTIME_DIR` 下写 agent 专属配置，然后通过 sandbox mount/env 映射给对应 CLI。不要写入宿主机全局 `~/.config`、`~/.codex`、`~/.claude` 或 workspace 全局目录。
+CLI credential materializer 只允许在 `MULTIGENT_TOOL_RUNTIME_DIR` 下写 agent 专属配置，然后通过 sandbox mount/env/wrapper 映射给对应 CLI。不要写入宿主机全局 `~/.config`、`~/.codex`、`~/.claude` 或 workspace 全局目录。
 
 ## Agent 侧统一体验
 
