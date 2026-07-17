@@ -167,6 +167,7 @@ const edgeClass: Record<string, string> = {
 
 const stepTypes = ['agent_task', 'human_task', 'human_review', 'branch', 'join', 'terminal']
 const colorOptions = ['neutral', 'sky', 'violet', 'amber', 'emerald', 'rose']
+const ALIGN_THRESHOLD = 28
 
 const fieldClass =
   'mt-1 w-full rounded-lg border border-neutral-300 bg-white px-3 py-2 text-sm text-neutral-900 outline-none transition-colors focus:border-sky-400 dark:border-zinc-600 dark:bg-zinc-800 dark:text-zinc-100'
@@ -290,9 +291,24 @@ export function WorkflowBoard({
     onChange?.(next)
   }
 
-  function persistNodePositions(nextNodes: WorkflowNode[]) {
+  function alignedPosition(node: WorkflowNode, allNodes: WorkflowNode[]) {
+    let x = Math.round(node.position.x)
+    let y = Math.round(node.position.y)
+    for (const other of allNodes) {
+      if (other.id === node.id) continue
+      if (Math.abs(x - other.position.x) <= ALIGN_THRESHOLD) {
+        x = Math.round(other.position.x)
+      }
+      if (Math.abs(y - other.position.y) <= ALIGN_THRESHOLD) {
+        y = Math.round(other.position.y)
+      }
+    }
+    return { x, y }
+  }
+
+  function persistNodePositions(nextNodes: WorkflowNode[], draggedNode?: WorkflowNode) {
     if (!editable || !onChange) return
-    const posByID = new Map(nextNodes.map((node) => [node.id, node.position]))
+    const posByID = new Map(nextNodes.map((node) => [node.id, draggedNode && node.id === draggedNode.id ? alignedPosition(node, nextNodes) : node.position]))
     updateDefinition({
       ...definition,
       steps: definition.steps.map((step) => {
@@ -422,7 +438,7 @@ export function WorkflowBoard({
           nodeTypes={nodeTypes}
           onNodesChange={onNodesChange}
           onEdgesChange={onEdgesChange}
-          onNodeDragStop={(_, __, nextNodes) => persistNodePositions(nextNodes as WorkflowNode[])}
+          onNodeDragStop={(_, node, nextNodes) => persistNodePositions(nextNodes as WorkflowNode[], node as WorkflowNode)}
           onConnect={handleConnect}
           onNodeClick={(_, node) => {
             setSelectedId(node.id)
