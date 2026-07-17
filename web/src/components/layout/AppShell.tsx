@@ -87,7 +87,7 @@ function Breadcrumbs({ crumbs }: { crumbs: BreadcrumbSegment[] }) {
   return (
     <nav className="flex h-10 min-w-0 shrink-0 items-center gap-1 border-b border-neutral-200/60 px-5 dark:border-zinc-700/40">
       <span className="mr-1 flex size-5 shrink-0 items-center justify-center rounded bg-sky-500/10 text-[10px] font-bold text-sky-600 dark:bg-sky-400/10 dark:text-sky-400">
-        A
+        M
       </span>
       {crumbs.map((seg, i) => {
         const isLast = i === crumbs.length - 1
