@@ -90,6 +90,7 @@ type Props = {
   run?: WorkflowRun
   instances?: WorkflowStepInstance[]
   compact?: boolean
+  fill?: boolean
   editable?: boolean
   onChange?: (definition: WorkflowDefinition) => void
   fullscreen?: boolean
@@ -174,6 +175,7 @@ export function WorkflowBoard({
   run,
   instances = EMPTY_INSTANCES,
   compact = false,
+  fill = false,
   editable = false,
   onChange,
   fullscreen = false,
@@ -328,11 +330,11 @@ export function WorkflowBoard({
   }
 
   return (
-    <div className={cn('grid min-h-0 gap-4', compact ? 'grid-cols-1' : fullscreen ? 'grid-cols-[minmax(0,1fr)_360px]' : 'grid-cols-[minmax(0,1fr)_320px]')}>
+    <div className={cn('grid min-h-0 gap-4', fill && 'h-full flex-1', compact ? 'grid-cols-1' : fullscreen ? 'grid-cols-[minmax(0,1fr)_360px]' : 'grid-cols-[minmax(0,1fr)_320px]')}>
       <div
         className={cn(
           'relative overflow-hidden rounded-xl border border-neutral-200/80 bg-white dark:border-zinc-700/60 dark:bg-zinc-950',
-          fullscreen ? 'h-[calc(100vh-150px)]' : compact ? 'h-[360px]' : 'h-[520px]',
+          fill ? 'h-full min-h-[560px]' : fullscreen ? 'h-[calc(100vh-150px)]' : compact ? 'h-[360px]' : 'h-[520px]',
         )}
       >
         {(editable || onToggleFullscreen) && (
@@ -402,7 +404,7 @@ export function WorkflowBoard({
         </ReactFlow>
       </div>
       {!compact && selected ? (
-        <aside className={cn('rounded-xl border border-neutral-200/80 bg-white p-4 dark:border-zinc-700/60 dark:bg-zinc-900', fullscreen ? 'min-h-[calc(100vh-150px)]' : 'min-h-[420px]')}>
+        <aside className={cn('rounded-xl border border-neutral-200/80 bg-white p-4 dark:border-zinc-700/60 dark:bg-zinc-900', fill ? 'h-full min-h-[560px] overflow-y-auto' : fullscreen ? 'min-h-[calc(100vh-150px)]' : 'min-h-[420px]')}>
           <div className="flex items-start justify-between gap-3">
             <div>
               <p className="text-xs font-medium uppercase text-neutral-400 dark:text-zinc-500">{t(`workflows.stepTypes.${selected.type}`, { defaultValue: selected.type.replace('_', ' ') })}</p>

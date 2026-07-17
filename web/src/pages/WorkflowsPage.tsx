@@ -88,7 +88,7 @@ export default function WorkflowsPage() {
 
   if (params.workflowId) {
     return (
-      <div className={fullscreen ? 'fixed inset-0 z-50 overflow-auto bg-neutral-50 px-6 py-5 dark:bg-zinc-950' : 'animate-fade-in px-8 py-6'}>
+      <div className={fullscreen ? 'fixed inset-0 z-50 flex h-dvh flex-col overflow-hidden bg-neutral-50 px-6 py-5 dark:bg-zinc-950' : 'flex h-full min-h-full flex-col px-8 py-6 animate-fade-in'}>
         {state.status === 'loading' && <Loading label={t('api.loading')} />}
         {state.status === 'error' && (
           <PlaceholderCard title={t('api.loadError')}>
@@ -103,9 +103,9 @@ export default function WorkflowsPage() {
           </PlaceholderCard>
         )}
         {draft && (
-          <div className="space-y-4">
+          <div className="flex min-h-0 flex-1 flex-col gap-4">
             {!fullscreen && (
-              <div className="flex flex-wrap items-start justify-between gap-4">
+              <div className="flex shrink-0 flex-wrap items-start justify-between gap-4">
                 <div className="min-w-[360px] flex-1">
                   <input
                     value={draft.name}
@@ -135,6 +135,7 @@ export default function WorkflowsPage() {
             <WorkflowBoard
               definition={draft}
               editable
+              fill
               fullscreen={fullscreen}
               onToggleFullscreen={() => setFullscreen((v) => !v)}
               onChange={setDraft}
