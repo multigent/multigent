@@ -37,9 +37,7 @@ type WorkflowStep struct {
 
 type WorkflowField struct {
 	Name        string `json:"name" yaml:"name"`
-	Type        string `json:"type,omitempty" yaml:"type,omitempty"`
 	Description string `json:"description,omitempty" yaml:"description,omitempty"`
-	Required    bool   `json:"required,omitempty" yaml:"required,omitempty"`
 }
 
 type WorkflowPosition struct {
@@ -48,11 +46,21 @@ type WorkflowPosition struct {
 }
 
 type WorkflowEdge struct {
-	ID     string `json:"id" yaml:"id"`
-	From   string `json:"from" yaml:"from"`
-	To     string `json:"to" yaml:"to"`
-	Label  string `json:"label,omitempty" yaml:"label,omitempty"`
-	Policy string `json:"policy,omitempty" yaml:"policy,omitempty"`
+	ID           string                 `json:"id" yaml:"id"`
+	From         string                 `json:"from" yaml:"from"`
+	To           string                 `json:"to" yaml:"to"`
+	Label        string                 `json:"label,omitempty" yaml:"label,omitempty"`
+	Policy       string                 `json:"policy,omitempty" yaml:"policy,omitempty"`
+	Condition    *WorkflowEdgeCondition `json:"condition,omitempty" yaml:"condition,omitempty"`
+	InputMapping map[string]string      `json:"inputMapping,omitempty" yaml:"input_mapping,omitempty"`
+	IsDefault    bool                   `json:"isDefault,omitempty" yaml:"is_default,omitempty"`
+}
+
+type WorkflowEdgeCondition struct {
+	Field    string   `json:"field,omitempty" yaml:"field,omitempty"`
+	Operator string   `json:"operator,omitempty" yaml:"operator,omitempty"`
+	Value    string   `json:"value,omitempty" yaml:"value,omitempty"`
+	Values   []string `json:"values,omitempty" yaml:"values,omitempty"`
 }
 
 type WorkflowRun struct {

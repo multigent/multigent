@@ -23,39 +23,162 @@ func NewStore(db controldb.Store, workspaceID string) *Store {
 func (s *Store) SeedDefaults() error {
 	if def, ok, err := s.Definition("software-delivery-v1"); err != nil {
 		return err
-	} else if ok && def.Scope == "workspace" && def.Project == "" {
+	} else if ok && def.Scope == "workspace" && def.Project == "" && def.Version >= 2 && def.StartStepID == "requirement_draft" {
 		return nil
 	}
 	now := time.Now().UTC()
 	def := entity.WorkflowDefinition{
 		ID:          "software-delivery-v1",
-		Name:        "Software Delivery",
-		Description: "A practical human-agent workflow for product clarification, implementation, review, QA, and release.",
-		Version:     1,
+		Name:        "Agentic Software Delivery",
+		Description: "A configurable human-agent delivery workflow. Agents draft artifacts, humans review only the decision gates, and rejected outputs loop back with structured feedback.",
+		Version:     2,
 		Scope:       "workspace",
-		StartStepID: "intake",
+		StartStepID: "requirement_draft",
 		CreatedAt:   now,
 		UpdatedAt:   now,
 		Steps: []entity.WorkflowStep{
-			{ID: "intake", Type: "agent_task", Title: "Intake", Description: "Clarify the request and collect missing context.", ActorRole: "pm", OutputSchema: "problem, goal, scope, non-goals, acceptance criteria", Position: entity.WorkflowPosition{X: 80, Y: 180}},
-			{ID: "spec_review", Type: "human_review", Title: "Spec Review", Description: "A human owner reviews scope and acceptance criteria.", ActorRole: "owner", ReviewPolicy: "manual", Position: entity.WorkflowPosition{X: 360, Y: 180}},
-			{ID: "branch_plan", Type: "branch", Title: "Branch Plan", Description: "Decide whether this task stays single-path or splits into child tasks.", ActorRole: "pm", OutputSchema: "split_required, branches, join_policy", Position: entity.WorkflowPosition{X: 640, Y: 180}},
-			{ID: "implementation", Type: "agent_task", Title: "Implementation", Description: "Implement the approved scope or execute the child task branch.", ActorRole: "developer", OutputSchema: "summary, changed files, tests run, risks", Position: entity.WorkflowPosition{X: 920, Y: 90}},
-			{ID: "qa", Type: "agent_task", Title: "QA", Description: "Produce and execute test cases, then report release risk.", ActorRole: "qa", OutputSchema: "test cases, test results, known issues", Position: entity.WorkflowPosition{X: 920, Y: 270}},
-			{ID: "join", Type: "join", Title: "Join", Description: "Merge branch outputs and decide whether the parent task can continue.", ReviewPolicy: "all_success", Position: entity.WorkflowPosition{X: 1200, Y: 180}},
-			{ID: "done", Type: "terminal", Title: "Done", Description: "Workflow completed and ready for retrospective.", Position: entity.WorkflowPosition{X: 1480, Y: 180}},
+			{
+				ID: "requirement_draft", Type: "agent_task", Title: "Requirement Draft",
+				Description:  "An agent turns an incoming request into a structured understanding: problem, goal, scope, non-goals, risks, and open questions.",
+				ActorRole:    "pm-agent",
+				InputFields:  []entity.WorkflowField{{Name: "request", Description: "Original user, customer, founder, or internal request."}, {Name: "context", Description: "Known background, links, meeting notes, or existing discussions."}},
+				OutputFields: []entity.WorkflowField{{Name: "requirement_draft", Description: "Structured requirement draft."}, {Name: "open_questions", Description: "Questions that still need human or stakeholder clarification."}},
+				Position:     entity.WorkflowPosition{X: 80, Y: 180},
+				Config:       map[string]string{"color": "sky"},
+			},
+			{
+				ID: "requirement_review", Type: "human_review", Title: "Requirement Review",
+				Description:  "A human reviews whether the requirement draft expresses the real problem and whether more clarification is needed.",
+				ActorRole:    "product-owner",
+				InputFields:  []entity.WorkflowField{{Name: "requirement_draft", Description: "Draft produced by the PM agent."}},
+				OutputFields: []entity.WorkflowField{{Name: "decision", Description: "approve, request_changes, or need_discussion."}, {Name: "comments", Description: "Review comments and clarification notes."}},
+				ReviewPolicy: "manual",
+				Position:     entity.WorkflowPosition{X: 360, Y: 180},
+				Config:       map[string]string{"color": "amber"},
+			},
+			{
+				ID: "prd_draft", Type: "agent_task", Title: "PRD Draft",
+				Description:  "The PM agent produces the product spec, acceptance criteria, release scope, and non-goals.",
+				ActorRole:    "pm-agent",
+				InputFields:  []entity.WorkflowField{{Name: "approved_requirement", Description: "Reviewed requirement with comments folded in."}},
+				OutputFields: []entity.WorkflowField{{Name: "prd", Description: "Product requirements document or spec."}, {Name: "acceptance_criteria", Description: "Observable acceptance criteria."}},
+				Position:     entity.WorkflowPosition{X: 640, Y: 180},
+				Config:       map[string]string{"color": "sky"},
+			},
+			{
+				ID: "prd_review", Type: "human_review", Title: "PRD Review",
+				Description:  "Product and engineering stakeholders review scope, non-goals, and acceptance criteria.",
+				ActorRole:    "product-owner",
+				InputFields:  []entity.WorkflowField{{Name: "prd", Description: "PRD draft to review."}},
+				OutputFields: []entity.WorkflowField{{Name: "decision", Description: "approve or request_changes."}, {Name: "comments", Description: "Review comments."}, {Name: "approved_prd", Description: "Final PRD when approved."}},
+				ReviewPolicy: "manual",
+				Position:     entity.WorkflowPosition{X: 920, Y: 180},
+				Config:       map[string]string{"color": "amber"},
+			},
+			{
+				ID: "tech_spec_draft", Type: "agent_task", Title: "Technical Spec Draft",
+				Description:  "Engineering agents inspect the codebase and produce implementation plan, affected surfaces, test strategy, and task split recommendation.",
+				ActorRole:    "engineering-agent",
+				InputFields:  []entity.WorkflowField{{Name: "approved_prd", Description: "Reviewed product spec."}},
+				OutputFields: []entity.WorkflowField{{Name: "technical_spec", Description: "Implementation plan and technical decisions."}, {Name: "task_split", Description: "Optional child task split for parallel work."}},
+				Position:     entity.WorkflowPosition{X: 1200, Y: 180},
+				Config:       map[string]string{"color": "violet"},
+			},
+			{
+				ID: "tech_spec_review", Type: "human_review", Title: "Technical Spec Review",
+				Description:  "Responsible engineers review the plan before implementation starts.",
+				ActorRole:    "tech-lead",
+				InputFields:  []entity.WorkflowField{{Name: "technical_spec", Description: "Technical plan to review."}},
+				OutputFields: []entity.WorkflowField{{Name: "decision", Description: "approve or request_changes."}, {Name: "comments", Description: "Review comments."}, {Name: "approved_technical_spec", Description: "Final technical spec when approved."}},
+				ReviewPolicy: "manual",
+				Position:     entity.WorkflowPosition{X: 1480, Y: 180},
+				Config:       map[string]string{"color": "amber"},
+			},
+			{
+				ID: "implementation", Type: "agent_task", Title: "Implementation",
+				Description:  "Development agents implement the approved technical plan and produce code changes, tests, and a PR or patch summary.",
+				ActorRole:    "developer-agent",
+				InputFields:  []entity.WorkflowField{{Name: "approved_technical_spec", Description: "Approved implementation plan."}},
+				OutputFields: []entity.WorkflowField{{Name: "pr", Description: "Pull request, patch, or change summary."}, {Name: "tests_run", Description: "Tests executed by the agent."}, {Name: "risks", Description: "Known risks or manual checks needed."}},
+				Position:     entity.WorkflowPosition{X: 1760, Y: 180},
+				Config:       map[string]string{"color": "emerald"},
+			},
+			{
+				ID: "code_review", Type: "human_review", Title: "Code Review",
+				Description:  "The responsible human reviews code quality, risk, and whether the output matches the approved spec.",
+				ActorRole:    "owner-engineer",
+				InputFields:  []entity.WorkflowField{{Name: "pr", Description: "PR or patch to review."}},
+				OutputFields: []entity.WorkflowField{{Name: "decision", Description: "approve or request_changes."}, {Name: "comments", Description: "Code review comments."}, {Name: "approved_change", Description: "Approved code artifact."}},
+				ReviewPolicy: "manual",
+				Position:     entity.WorkflowPosition{X: 2040, Y: 180},
+				Config:       map[string]string{"color": "amber"},
+			},
+			{
+				ID: "qa", Type: "agent_task", Title: "QA Test",
+				Description:  "QA agents generate and execute test cases, then identify remaining manual test needs.",
+				ActorRole:    "qa-agent",
+				InputFields:  []entity.WorkflowField{{Name: "approved_change", Description: "Code artifact approved for testing."}},
+				OutputFields: []entity.WorkflowField{{Name: "test_cases", Description: "Test cases."}, {Name: "test_report", Description: "Automated and manual test result summary."}},
+				Position:     entity.WorkflowPosition{X: 2320, Y: 180},
+				Config:       map[string]string{"color": "rose"},
+			},
+			{
+				ID: "qa_review", Type: "human_review", Title: "QA Review",
+				Description:  "Human QA or owner reviews the test report and decides whether release can proceed.",
+				ActorRole:    "qa-owner",
+				InputFields:  []entity.WorkflowField{{Name: "test_report", Description: "Test report to review."}},
+				OutputFields: []entity.WorkflowField{{Name: "decision", Description: "approve or request_changes."}, {Name: "comments", Description: "QA feedback."}, {Name: "release_candidate", Description: "Approved release candidate."}},
+				ReviewPolicy: "manual",
+				Position:     entity.WorkflowPosition{X: 2600, Y: 180},
+				Config:       map[string]string{"color": "amber"},
+			},
+			{
+				ID: "release", Type: "agent_task", Title: "Release and Observe",
+				Description:  "Release agents prepare rollout notes, execute allowed release steps, and check post-release signals.",
+				ActorRole:    "release-agent",
+				InputFields:  []entity.WorkflowField{{Name: "release_candidate", Description: "Approved release candidate."}},
+				OutputFields: []entity.WorkflowField{{Name: "release_report", Description: "Release result, monitoring checks, and follow-up items."}},
+				Position:     entity.WorkflowPosition{X: 2880, Y: 180},
+				Config:       map[string]string{"color": "emerald"},
+			},
+			{ID: "done", Type: "terminal", Title: "Done", Description: "Workflow completed with artifacts and metrics ready for retrospective.", Position: entity.WorkflowPosition{X: 3160, Y: 180}},
 		},
 		Edges: []entity.WorkflowEdge{
-			{ID: "e-intake-review", From: "intake", To: "spec_review"},
-			{ID: "e-review-branch", From: "spec_review", To: "branch_plan"},
-			{ID: "e-branch-impl", From: "branch_plan", To: "implementation", Label: "single or dev branch"},
-			{ID: "e-branch-qa", From: "branch_plan", To: "qa", Label: "qa branch"},
-			{ID: "e-impl-join", From: "implementation", To: "join"},
-			{ID: "e-qa-join", From: "qa", To: "join"},
-			{ID: "e-join-done", From: "join", To: "done"},
+			edge("e-req-to-review", "requirement_draft", "requirement_review", "", nil, nil, true),
+			edge("e-req-review-approve", "requirement_review", "prd_draft", "approved", cond("decision", "eq", "approve"), map[string]string{"approved_requirement": "$output.requirement_draft"}, false),
+			edge("e-req-review-rework", "requirement_review", "requirement_draft", "changes requested", cond("decision", "eq", "request_changes"), map[string]string{"review_comments": "$output.comments", "previous_draft": "$input.requirement_draft"}, false),
+			edge("e-prd-to-review", "prd_draft", "prd_review", "", nil, nil, true),
+			edge("e-prd-review-approve", "prd_review", "tech_spec_draft", "approved", cond("decision", "eq", "approve"), map[string]string{"approved_prd": "$output.approved_prd"}, false),
+			edge("e-prd-review-rework", "prd_review", "prd_draft", "changes requested", cond("decision", "eq", "request_changes"), map[string]string{"review_comments": "$output.comments", "previous_prd": "$input.prd"}, false),
+			edge("e-tech-to-review", "tech_spec_draft", "tech_spec_review", "", nil, nil, true),
+			edge("e-tech-review-approve", "tech_spec_review", "implementation", "approved", cond("decision", "eq", "approve"), map[string]string{"approved_technical_spec": "$output.approved_technical_spec"}, false),
+			edge("e-tech-review-rework", "tech_spec_review", "tech_spec_draft", "changes requested", cond("decision", "eq", "request_changes"), map[string]string{"review_comments": "$output.comments", "previous_spec": "$input.technical_spec"}, false),
+			edge("e-impl-to-review", "implementation", "code_review", "", nil, nil, true),
+			edge("e-code-review-approve", "code_review", "qa", "approved", cond("decision", "eq", "approve"), map[string]string{"approved_change": "$output.approved_change"}, false),
+			edge("e-code-review-rework", "code_review", "implementation", "changes requested", cond("decision", "eq", "request_changes"), map[string]string{"review_comments": "$output.comments", "previous_pr": "$input.pr"}, false),
+			edge("e-qa-to-review", "qa", "qa_review", "", nil, nil, true),
+			edge("e-qa-review-approve", "qa_review", "release", "approved", cond("decision", "eq", "approve"), map[string]string{"release_candidate": "$output.release_candidate"}, false),
+			edge("e-qa-review-rework", "qa_review", "qa", "changes requested", cond("decision", "eq", "request_changes"), map[string]string{"review_comments": "$output.comments", "previous_report": "$input.test_report"}, false),
+			edge("e-release-done", "release", "done", "", nil, nil, true),
 		},
 	}
 	return s.SaveDefinition(&def)
+}
+
+func cond(field, operator, value string) *entity.WorkflowEdgeCondition {
+	return &entity.WorkflowEdgeCondition{Field: field, Operator: operator, Value: value}
+}
+
+func edge(id, from, to, label string, condition *entity.WorkflowEdgeCondition, inputMapping map[string]string, isDefault bool) entity.WorkflowEdge {
+	return entity.WorkflowEdge{
+		ID:           id,
+		From:         from,
+		To:           to,
+		Label:        label,
+		Condition:    condition,
+		InputMapping: inputMapping,
+		IsDefault:    isDefault,
+	}
 }
 
 func (s *Store) SaveDefinition(def *entity.WorkflowDefinition) error {
