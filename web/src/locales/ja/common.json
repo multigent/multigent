@@ -311,7 +311,17 @@
       "type": "タイプ",
       "description": "説明",
       "startNode": "開始",
-      "setAsStart": "開始ノードにする"
+      "setAsStart": "開始ノードにする",
+      "color": "色",
+      "saveNode": "ノードを保存"
+    },
+    "colors": {
+      "neutral": "ニュートラル",
+      "sky": "ブルー",
+      "violet": "バイオレット",
+      "amber": "アンバー",
+      "emerald": "グリーン",
+      "rose": "ローズ"
     }
   },
   "projectSettings": {

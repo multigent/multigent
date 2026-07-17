@@ -311,7 +311,17 @@
       "type": "Type",
       "description": "Description",
       "startNode": "Start",
-      "setAsStart": "Use as start node"
+      "setAsStart": "Use as start node",
+      "color": "Color",
+      "saveNode": "Save node"
+    },
+    "colors": {
+      "neutral": "Neutral",
+      "sky": "Blue",
+      "violet": "Violet",
+      "amber": "Amber",
+      "emerald": "Green",
+      "rose": "Rose"
     }
   },
   "projectSettings": {

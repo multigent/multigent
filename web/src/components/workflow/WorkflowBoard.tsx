@@ -31,6 +31,7 @@ export type WorkflowStep = {
   outputSchema?: string
   reviewPolicy?: string
   position: WorkflowPosition
+  config?: Record<string, string>
 }
 
 export type WorkflowEdge = {
@@ -120,6 +121,33 @@ const typeClass: Record<string, string> = {
   terminal: 'border-neutral-200 bg-neutral-50/95 text-neutral-800 dark:border-zinc-700 dark:bg-zinc-800/90 dark:text-zinc-200',
 }
 
+const colorClass: Record<string, string> = {
+  neutral: 'border-neutral-200 bg-neutral-50/95 text-neutral-800 dark:border-zinc-700 dark:bg-zinc-800/90 dark:text-zinc-200',
+  sky: 'border-sky-200 bg-sky-50/95 text-sky-900 dark:border-sky-900/70 dark:bg-sky-950/80 dark:text-sky-100',
+  violet: 'border-violet-200 bg-violet-50/95 text-violet-900 dark:border-violet-900/70 dark:bg-violet-950/80 dark:text-violet-100',
+  amber: 'border-amber-200 bg-amber-50/95 text-amber-900 dark:border-amber-900/70 dark:bg-amber-950/80 dark:text-amber-100',
+  emerald: 'border-emerald-200 bg-emerald-50/95 text-emerald-900 dark:border-emerald-900/70 dark:bg-emerald-950/80 dark:text-emerald-100',
+  rose: 'border-rose-200 bg-rose-50/95 text-rose-900 dark:border-rose-900/70 dark:bg-rose-950/80 dark:text-rose-100',
+}
+
+const colorDotClass: Record<string, string> = {
+  neutral: 'bg-neutral-400',
+  sky: 'bg-sky-500',
+  violet: 'bg-violet-500',
+  amber: 'bg-amber-500',
+  emerald: 'bg-emerald-500',
+  rose: 'bg-rose-500',
+}
+
+const colorMiniMap: Record<string, string> = {
+  neutral: '#a1a1aa',
+  sky: '#0ea5e9',
+  violet: '#8b5cf6',
+  amber: '#f59e0b',
+  emerald: '#10b981',
+  rose: '#f43f5e',
+}
+
 const statusClass: Record<string, string> = {
   pending: 'bg-neutral-100 text-neutral-500 dark:bg-zinc-800 dark:text-zinc-400',
   running: 'bg-sky-100 text-sky-700 dark:bg-sky-900/50 dark:text-sky-300',
@@ -138,6 +166,7 @@ const edgeClass: Record<string, string> = {
 }
 
 const stepTypes = ['agent_task', 'human_task', 'human_review', 'branch', 'join', 'terminal']
+const colorOptions = ['neutral', 'sky', 'violet', 'amber', 'emerald', 'rose']
 
 const fieldClass =
   'mt-1 w-full rounded-lg border border-neutral-300 bg-white px-3 py-2 text-sm text-neutral-900 outline-none transition-colors focus:border-sky-400 dark:border-zinc-600 dark:bg-zinc-800 dark:text-zinc-100'
@@ -145,11 +174,12 @@ const fieldClass =
 function WorkflowStepNode({ data, selected }: NodeProps<WorkflowNode>) {
   const { t } = useTranslation()
   const { step, status, active } = data
+  const nodeClass = colorClass[step.config?.color || ''] ?? typeClass[step.type] ?? typeClass.terminal
   return (
     <div
       className={cn(
         'relative flex h-[88px] w-[198px] flex-col rounded-xl border px-3 py-2 text-left shadow-sm transition-shadow',
-        typeClass[step.type] ?? typeClass.terminal,
+        nodeClass,
         active && 'ring-2 ring-sky-400 ring-offset-2 ring-offset-white dark:ring-sky-500 dark:ring-offset-zinc-950',
         selected && 'shadow-lg',
       )}
@@ -191,6 +221,11 @@ export function WorkflowBoard({
   const [selectedEdgeId, setSelectedEdgeId] = useState('')
   const selected = definition.steps.find((s) => s.id === selectedId) ?? definition.steps[0]
   const selectedInst = selected ? instanceByStep.get(selected.id) : undefined
+  const [stepDraft, setStepDraft] = useState<WorkflowStep | null>(selected ?? null)
+
+  useEffect(() => {
+    setStepDraft(selected ?? null)
+  }, [selected?.id])
 
   const initialNodes = useMemo<WorkflowNode[]>(
     () =>
@@ -326,13 +361,32 @@ export function WorkflowBoard({
     })
   }
 
-  function updateSelectedStep(patch: Partial<WorkflowStep>) {
-    if (!editable || !selected) return
-    updateDefinition({
-      ...definition,
-      steps: definition.steps.map((step) => (step.id === selected.id ? { ...step, ...patch } : step)),
+  function updateStepDraft(patch: Partial<WorkflowStep>) {
+    setStepDraft((current) => (current ? { ...current, ...patch } : current))
+  }
+
+  function updateStepDraftColor(color: string) {
+    setStepDraft((current) => {
+      if (!current) return current
+      const config = { ...(current.config ?? {}) }
+      if (color) {
+        config.color = color
+      } else {
+        delete config.color
+      }
+      return { ...current, config }
     })
   }
+
+  function saveSelectedStep() {
+    if (!editable || !selected || !stepDraft) return
+    updateDefinition({
+      ...definition,
+      steps: definition.steps.map((step) => (step.id === selected.id ? stepDraft : step)),
+    })
+  }
+
+  const stepDraftChanged = Boolean(stepDraft && selected && JSON.stringify(stepDraft) !== JSON.stringify(selected))
 
   return (
     <div className={cn('grid min-h-0 gap-4', fill && 'h-full flex-1', compact ? 'grid-cols-1' : fullscreen ? 'grid-cols-[minmax(0,1fr)_360px]' : 'grid-cols-[minmax(0,1fr)_320px]')}>
@@ -382,6 +436,8 @@ export function WorkflowBoard({
           fitViewOptions={{ padding: 0.18 }}
           minZoom={0.25}
           maxZoom={1.8}
+          snapToGrid={editable}
+          snapGrid={[24, 24]}
           panOnScroll
           zoomOnPinch
           nodesDraggable={editable}
@@ -401,6 +457,7 @@ export function WorkflowBoard({
               nodeColor={(node) => {
                 const data = node.data as WorkflowNodeData
                 if (data.active) return '#0ea5e9'
+                if (data.step.config?.color && colorMiniMap[data.step.config.color]) return colorMiniMap[data.step.config.color]
                 if (data.status === 'completed') return '#10b981'
                 if (data.status === 'failed') return '#ef4444'
                 return '#a1a1aa'
@@ -411,15 +468,15 @@ export function WorkflowBoard({
       </div>
       {!compact && selected ? (
         <aside className={cn('rounded-xl border border-neutral-200/80 bg-white p-4 dark:border-zinc-700/60 dark:bg-zinc-900', fill ? 'h-full min-h-[560px] overflow-y-auto' : fullscreen ? 'min-h-[calc(100vh-150px)]' : 'min-h-[420px]')}>
-          {editable ? (
+          {editable && stepDraft ? (
             <div className="space-y-4 text-sm">
               <label className="block">
                 <span className="text-xs font-medium uppercase text-neutral-400 dark:text-zinc-500">{t('workflows.detail.title')}</span>
-                <input value={selected.title} onChange={(event) => updateSelectedStep({ title: event.target.value })} className={fieldClass} />
+                <input value={stepDraft.title} onChange={(event) => updateStepDraft({ title: event.target.value })} className={fieldClass} />
               </label>
               <label className="block">
                 <span className="text-xs font-medium uppercase text-neutral-400 dark:text-zinc-500">{t('workflows.detail.type')}</span>
-                <select value={selected.type} onChange={(event) => updateSelectedStep({ type: event.target.value })} className={fieldClass}>
+                <select value={stepDraft.type} onChange={(event) => updateStepDraft({ type: event.target.value })} className={fieldClass}>
                   {stepTypes.map((type) => (
                     <option key={type} value={type}>
                       {t(`workflows.stepTypes.${type}`, { defaultValue: type.replace('_', ' ') })}
@@ -427,25 +484,44 @@ export function WorkflowBoard({
                   ))}
                 </select>
               </label>
+              <div>
+                <span className="text-xs font-medium uppercase text-neutral-400 dark:text-zinc-500">{t('workflows.detail.color')}</span>
+                <div className="mt-2 flex flex-wrap gap-2">
+                  {colorOptions.map((color) => (
+                    <button
+                      key={color}
+                      type="button"
+                      onClick={() => updateStepDraftColor(color)}
+                      className={cn(
+                        'flex size-8 items-center justify-center rounded-full border border-neutral-200 bg-white dark:border-zinc-700 dark:bg-zinc-900',
+                        stepDraft.config?.color === color && 'ring-2 ring-sky-400 ring-offset-2 ring-offset-white dark:ring-offset-zinc-900',
+                      )}
+                      title={t(`workflows.colors.${color}`)}
+                    >
+                      <span className={cn('size-4 rounded-full', colorDotClass[color])} />
+                    </button>
+                  ))}
+                </div>
+              </div>
               <label className="block">
                 <span className="text-xs font-medium uppercase text-neutral-400 dark:text-zinc-500">{t('workflows.detail.description')}</span>
-                <textarea value={selected.description || ''} onChange={(event) => updateSelectedStep({ description: event.target.value })} rows={3} className={cn(fieldClass, 'resize-y')} />
+                <textarea value={stepDraft.description || ''} onChange={(event) => updateStepDraft({ description: event.target.value })} rows={3} className={cn(fieldClass, 'resize-y')} />
               </label>
               <label className="block">
                 <span className="text-xs font-medium uppercase text-neutral-400 dark:text-zinc-500">{t('workflows.detail.actor')}</span>
-                <input value={selected.actorRole || ''} onChange={(event) => updateSelectedStep({ actorRole: event.target.value })} placeholder="agent" className={fieldClass} />
+                <input value={stepDraft.actorRole || ''} onChange={(event) => updateStepDraft({ actorRole: event.target.value })} placeholder="agent" className={fieldClass} />
               </label>
               <label className="block">
                 <span className="text-xs font-medium uppercase text-neutral-400 dark:text-zinc-500">{t('workflows.detail.input')}</span>
-                <textarea value={selected.inputSchema || ''} onChange={(event) => updateSelectedStep({ inputSchema: event.target.value })} rows={3} className={cn(fieldClass, 'resize-y')} />
+                <textarea value={stepDraft.inputSchema || ''} onChange={(event) => updateStepDraft({ inputSchema: event.target.value })} rows={3} className={cn(fieldClass, 'resize-y')} />
               </label>
               <label className="block">
                 <span className="text-xs font-medium uppercase text-neutral-400 dark:text-zinc-500">{t('workflows.detail.output')}</span>
-                <textarea value={selected.outputSchema || ''} onChange={(event) => updateSelectedStep({ outputSchema: event.target.value })} rows={3} className={cn(fieldClass, 'resize-y')} />
+                <textarea value={stepDraft.outputSchema || ''} onChange={(event) => updateStepDraft({ outputSchema: event.target.value })} rows={3} className={cn(fieldClass, 'resize-y')} />
               </label>
               <label className="block">
                 <span className="text-xs font-medium uppercase text-neutral-400 dark:text-zinc-500">{t('workflows.detail.review')}</span>
-                <input value={selected.reviewPolicy || ''} onChange={(event) => updateSelectedStep({ reviewPolicy: event.target.value })} placeholder={t('workflows.detail.notRequired')} className={fieldClass} />
+                <input value={stepDraft.reviewPolicy || ''} onChange={(event) => updateStepDraft({ reviewPolicy: event.target.value })} placeholder={t('workflows.detail.notRequired')} className={fieldClass} />
               </label>
               <label className="flex items-center justify-between gap-3 rounded-lg border border-neutral-200 px-3 py-2 dark:border-zinc-700">
                 <span className="text-sm text-neutral-600 dark:text-zinc-300">{t('workflows.detail.setAsStart')}</span>
@@ -456,6 +532,14 @@ export function WorkflowBoard({
                   className="size-4 accent-sky-600"
                 />
               </label>
+              <button
+                type="button"
+                onClick={saveSelectedStep}
+                disabled={!stepDraftChanged || !stepDraft.title.trim()}
+                className="w-full rounded-lg border border-sky-600 bg-white px-3 py-2 text-sm font-medium text-sky-700 hover:bg-sky-50 disabled:opacity-50 dark:border-sky-500 dark:bg-zinc-900 dark:text-sky-400 dark:hover:bg-zinc-800"
+              >
+                {t('workflows.detail.saveNode')}
+              </button>
             </div>
           ) : (
             <>

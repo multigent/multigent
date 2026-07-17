@@ -311,7 +311,17 @@
       "type": "类型",
       "description": "描述",
       "startNode": "开始",
-      "setAsStart": "设为开始节点"
+      "setAsStart": "设为开始节点",
+      "color": "颜色",
+      "saveNode": "保存节点"
+    },
+    "colors": {
+      "neutral": "中性",
+      "sky": "蓝色",
+      "violet": "紫色",
+      "amber": "琥珀",
+      "emerald": "绿色",
+      "rose": "玫红"
     }
   },
   "projectSettings": {
