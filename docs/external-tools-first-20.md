@@ -1,6 +1,6 @@
-# External Tools First 20
+# External Tools First 22
 
-本文档基于 `/root/code/spaceship/3rd/open-connector` 的 provider catalog，并结合 Multigent 的产品定位，确定第一批优先支持的 20 个外部工具。
+本文档基于 `/root/code/spaceship/3rd/open-connector` 的 provider catalog，并结合 Multigent 的产品定位，确定第一批优先支持的 22 个外部工具。
 
 选择标准不是“open-connector 里有哪些就全接”，而是优先覆盖 agentic company 最常见的协作链路：
 
@@ -10,6 +10,7 @@
 - 团队沟通和异步通知。
 - 设计交付。
 - 监控、发布和反馈闭环。
+- Web search、资料发现和研究型 agent 工作流。
 
 ## 参考结论
 
@@ -19,7 +20,7 @@ open-connector 的 provider 设计对我们有三点参考价值：
 2. 多数企业工具至少有一种非 OAuth 接入方式，例如 PAT、API key、app credential 或 webhook token。
 3. Google、Slack、Jira、Gmail 等工具更偏 OAuth；如果管理员没有配置 OAuth Client，普通用户不应该看到不可用入口。
 
-## 第一批 20 个外部工具
+## 第一批 22 个外部工具
 
 | Priority | Tool | Category | Primary auth | OAuth when configured | Why first |
 |---:|---|---|---|---|---|
@@ -43,10 +44,12 @@ open-connector 的 provider 设计对我们有三点参考价值：
 | 18 | ClickUp | Project Management | API token | Yes | 通用项目管理，支持 token 和 OAuth。 |
 | 19 | Sentry | Monitoring | Auth token | Yes | bug、error、release health，可形成自动 triage。 |
 | 20 | Vercel | Deployment | Access token | No | 前端部署、项目状态、发布检查常见。 |
+| 21 | Exa | Research / Search | API key | No | Agent 调研、资料发现和语义搜索的高价值入口。 |
+| 22 | Brave Search | Research / Search | API key | No | 独立 Web 搜索，适合作为通用搜索兜底。 |
 
 ## 分组展示建议
 
-前端不要平铺 20 个毫无层次的卡片。建议按场景分组：
+前端不要平铺 22 个毫无层次的卡片。建议按场景分组：
 
 ### Developer Tools
 
@@ -83,6 +86,11 @@ open-connector 的 provider 设计对我们有三点参考价值：
 
 - Figma
 - Airtable
+
+### Research And Search
+
+- Exa
+- Brave Search
 
 ## Google Workspace 的产品处理
 
@@ -142,6 +150,8 @@ Google Workspace
 - ClickUp
 - Sentry
 - Vercel
+- Exa
+- Brave Search
 
 ### 第一版必须准备 OAuth 的工具
 
@@ -200,7 +210,7 @@ Google Workspace
 
 ## 暂缓但应保留候选
 
-这些工具很有价值，但不建议进入第一批 20 个核心工具。
+这些工具很有价值，但不建议进入第一批 22 个核心工具。
 
 | Tool | Reason |
 |---|---|
@@ -215,7 +225,7 @@ Google Workspace
 
 ## 对当前改造计划的影响
 
-`docs/external-tools-connection-redesign-plan.md` 中的外部工具页面应按这个 first 20 设计：
+`docs/external-tools-connection-redesign-plan.md` 中的外部工具页面应按这个 first 22 设计：
 
 1. Provider catalog 增加 `category`、`description`、`credentialGuide`、`recommendedScopes`。
 2. 前端工具目录按 category 分组。
@@ -223,12 +233,12 @@ Google Workspace
 4. OAuth 未配置时普通用户隐藏 OAuth-only 工具的连接入口。
 5. 产品层第一版每个外部工具只展示一个主连接；底层可以保留多 connection 扩展能力，但不暴露连接池管理。
 6. 产品层第一版不展示连接授权管理。管理员创建的 workspace 级工具默认对本 workspace 内 Agent 可用；个人连接后续再按用户所有权和可操作 Agent 做细粒度控制。
-7. Wave 1 先复用当前已有 provider，不要一次性补完 20 个 runtime executor。
+7. Wave 1 先复用当前已有 provider，不要一次性补完 22 个 runtime executor。
 
 第一版可验收目标：
 
 ```text
-用户进入“外部工具”页面，可以清楚看到 20 个目标工具。
+用户进入“外部工具”页面，可以清楚看到 22 个目标工具。
 已有实现的工具可以配置、测试、授权，并能通过 runtime action proxy 被 agent 使用。
 尚未实现 runtime action 的 OAuth-first 工具显示为 Coming soon 或 Admin setup required。
 普通用户不会看到不可用的 OAuth 入口。
@@ -238,7 +248,7 @@ Google Workspace
 
 ## 当前实现矩阵
 
-当前代码里 Feishu 与 Lark 已拆成两个 provider，所以是 **20 个逻辑工具 / 21 个 provider 条目**。
+当前代码里 Feishu 与 Lark 已拆成两个 provider，所以是 **22 个逻辑工具 / 23 个 provider 条目**。
 
 ### Token-first 已最小可用
 
@@ -258,6 +268,8 @@ Google Workspace
 | ClickUp | API token | user、teams |
 | Sentry | Auth token | organizations、issues |
 | Vercel | Access token | user、deployments |
+| Exa | API key | web search |
+| Brave Search | API key | web search |
 
 ### OAuth-first 仍待补完整闭环
 

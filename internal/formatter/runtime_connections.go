@@ -35,7 +35,7 @@ mga runtime skill-guide
 mga runtime connections --format table
 mga runtime action --connection <alias> --data '{"method":"GET","endpoint":"/path"}'
 mga runtime mcp --connection <alias> --data '{"jsonrpc":"2.0","id":1,"method":"tools/list"}'
-mga runtime gateway list-tools --format table
+mga runtime gateway list-tools --format table      # universal fallback/debug path
 mga runtime gateway call-tool action:github:get_authenticated_user --data '{}'
 `+"```"+`
 
@@ -44,8 +44,7 @@ Rules:
 - First run `+"`mga runtime skill-guide`"+` or inspect `+"`MULTIGENT_TOOL_SKILLS_FILE`"+` to see how each enabled tool should be used.
 - Use `+"`mga runtime tools --format table`"+` to see each tool's `+"`recommendedAdapter`"+`, skills, actions, and connection alias.
 - If a tool recommends a platform CLI, use that CLI and its bundled skill, for example `+"`gh`"+` for GitHub or `+"`lark-cli`"+` for Feishu/Lark.
-- If a tool recommends MCP Gateway, use the configured MCP Gateway tools rather than attaching every provider MCP server directly.
-- Use `+"`mga runtime gateway list-tools`"+` and `+"`mga runtime gateway call-tool`"+` for the unified Multigent MCP Gateway without hand-writing JSON-RPC.
+- If a tool recommends MCP Gateway and your runtime has native MCP config, use the injected Multigent MCP Gateway server. If native MCP config is unavailable, use `+"`mga runtime gateway list-tools`"+` and `+"`mga runtime gateway call-tool`"+` as the universal fallback/debug path.
 - Use `+"`mga runtime action`"+` only for provider HTTP actions or as the documented fallback path.
 - Do not read or expose raw provider secrets. Use the configured CLI, MCP Gateway, or Multigent runtime proxy.
 - If a needed connection is missing, report the missing provider and target agent instead of inventing credentials.

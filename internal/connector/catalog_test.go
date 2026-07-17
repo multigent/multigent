@@ -9,7 +9,7 @@ func TestDefaultProvidersIncludeActionCatalogs(t *testing.T) {
 	}
 	for _, providerID := range []string{
 		"github", "gitlab", "gitee", "feishu", "lark", "linear", "notion", "dingtalk_bot",
-		"figma", "airtable", "asana", "clickup", "sentry", "vercel",
+		"figma", "airtable", "asana", "clickup", "sentry", "vercel", "exa", "brave_search",
 	} {
 		provider, ok := providers[providerID]
 		if !ok {

@@ -169,7 +169,7 @@ export default function ConnectionsPage() {
   }
 
   const providersByCategory = useMemo(() => {
-    const order = ['Developer Tools', 'Project Management', 'Knowledge And Docs', 'Communication', 'Design And Data', 'Advanced']
+    const order = ['Developer Tools', 'Project Management', 'Knowledge And Docs', 'Communication', 'Design And Data', 'Research And Search', 'Advanced']
     const groups = new Map<string, Provider[]>()
     for (const provider of providers) {
       const category = provider.category || 'Other Tools'
@@ -438,6 +438,8 @@ const providerLogoDomains: Record<string, string> = {
   cloudflare: 'cloudflare.com',
   stripe: 'stripe.com',
   sentry: 'sentry.io',
+  exa: 'exa.ai',
+  brave_search: 'search.brave.com',
 }
 
 function primaryConnectionForProvider(connections: Connection[], provider: string): Connection | undefined {

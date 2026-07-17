@@ -223,6 +223,7 @@
       "knowledge_and_docs": "ナレッジとドキュメント",
       "communication": "コミュニケーション",
       "design_and_data": "デザインとデータ",
+      "research_and_search": "リサーチと検索",
       "advanced": "詳細",
       "other_tools": "その他のツール"
     },
@@ -247,7 +248,9 @@
       "asana": "Asana のタスク、プロジェクト、セクション、非開発系プロジェクト業務に接続します。",
       "clickup": "ClickUp のタスク、リスト、スペース、部門横断の作業追跡に接続します。",
       "sentry": "Sentry の Issue、エラーイベント、リリース、トリアージ信号に接続します。",
-      "vercel": "Vercel のプロジェクト、デプロイ、チェック、リリース状態に接続します。"
+      "vercel": "Vercel のプロジェクト、デプロイ、チェック、リリース状態に接続します。",
+      "exa": "Exa のニューラル検索に接続し、調査、情報源の発見、Agent のブラウジング業務に利用します。",
+      "brave_search": "Brave Search API に接続し、独立した Web 検索と軽量な情報源発見に利用します。"
     }
   },
   "projectNav": {
@@ -670,7 +673,7 @@
     "quickLinksHint": "上部タブを右クリックして「クイックリンクに追加」を選ぶと、次回ここから素早く移動できます。",
     "quickLinkRemove": "クイックリンクを削除",
     "emptyMessages": "メッセージはありません",
-    "emptyMessagesHint": "エージェントがあなた（human）にメッセージを送ると、ここに表示されます。",
+    "emptyMessagesHint": "エージェントがあなたにメッセージを送ると、ここに表示されます。",
     "emptyTasks": "タスクはありません",
     "emptyTasksHint": "プロジェクト横断のタスク集計です。進行中のタスクがすべて含まれます。",
     "viewList": "リスト表示",

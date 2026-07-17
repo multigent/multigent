@@ -223,6 +223,7 @@
       "knowledge_and_docs": "知识与文档",
       "communication": "沟通协作",
       "design_and_data": "设计与数据",
+      "research_and_search": "研究与搜索",
       "advanced": "高级",
       "other_tools": "其他工具"
     },
@@ -247,7 +248,9 @@
       "asana": "连接 Asana 任务、项目、分组和非研发项目流程。",
       "clickup": "连接 ClickUp 任务、列表、空间和跨职能工作跟踪。",
       "sentry": "连接 Sentry Issue、错误事件、版本和故障分流信号。",
-      "vercel": "连接 Vercel 项目、部署、检查和发布状态。"
+      "vercel": "连接 Vercel 项目、部署、检查和发布状态。",
+      "exa": "连接 Exa 神经搜索，用于调研、资料发现和 Agent 浏览工作流。",
+      "brave_search": "连接 Brave Search API，用于独立 Web 搜索和轻量资料发现。"
     }
   },
   "projectNav": {
@@ -670,7 +673,7 @@
     "quickLinksHint": "右键顶部标签页，选择「收藏到快速链接」，下次可从这里快速跳转。",
     "quickLinkRemove": "移除快速链接",
     "emptyMessages": "暂无消息",
-    "emptyMessagesHint": "当 Agent 给你（human）发消息时，会出现在这里。",
+    "emptyMessagesHint": "当 Agent 给你发消息时，会出现在这里。",
     "emptyTasks": "暂无任务",
     "emptyTasksHint": "跨项目的任务汇总，包含所有进行中的任务。",
     "viewList": "列表视图",

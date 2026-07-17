@@ -52,7 +52,7 @@ Agent MCP client
       -> Upstream MCP Server / REST Action / Skill Tool
 ```
 
-如果需要给 MCP client 暴露入口，初期只暴露两个 broker tool：
+如果需要给 Codex、Claude Code、Cursor 等 MCP client 暴露入口，Multigent 应注入一个原生 MCP server 配置。这个 server 初期只暴露两个 broker tool：
 
 1. `multigent.list_tools`
    - 输入：可选过滤条件，例如 provider、connection、category、keyword、project、risk level。
@@ -66,6 +66,8 @@ Agent MCP client
    - 调用后记录 audit log、run event、tool result metadata，并做 secret redaction。
 
 这个设计有一个重要好处：Agent 的 MCP client 里始终只有很少的工具，真实工具目录通过 `list_tools` 按需发现，避免工具列表爆炸。
+
+`mga runtime gateway list-tools/call-tool` 不是最终的 MCP 形态。它是所有 runtime 都能使用的 CLI fallback 和排障入口：当某个 CLI 尚未完成原生 MCP 配置注入、或需要在 shell 中复现一次工具调用时使用。产品化运行时应优先给 Codex、Claude Code、Cursor 等 CLI 写入它们各自支持的 MCP 配置。
 
 ## 为什么不是直接暴露所有工具
 
@@ -214,6 +216,7 @@ Connections 页面后续可以扩展为：
 - 暴露 `multigent.list_tools` 和 `multigent.call_tool`。
 - 支持 Agent runtime token 认证。
 - `call_tool` 先只支持 upstream MCP tools。
+- 为 Codex、Claude Code、Cursor 等 CLI 增加 runtime materializer，把 Multigent MCP Gateway 写入各自的 MCP 配置。
 
 ### Phase 3: 权限和审计
 

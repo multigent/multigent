@@ -223,6 +223,7 @@
       "knowledge_and_docs": "Knowledge and Docs",
       "communication": "Communication",
       "design_and_data": "Design and Data",
+      "research_and_search": "Research and Search",
       "advanced": "Advanced",
       "other_tools": "Other Tools"
     },
@@ -247,7 +248,9 @@
       "asana": "Connect Asana tasks, projects, sections, and non-engineering project workflows.",
       "clickup": "Connect ClickUp tasks, lists, spaces, and cross-functional work tracking.",
       "sentry": "Connect Sentry issues, error events, releases, and triage signals.",
-      "vercel": "Connect Vercel projects, deployments, checks, and release status."
+      "vercel": "Connect Vercel projects, deployments, checks, and release status.",
+      "exa": "Connect Exa neural search for research, source discovery, and agent browsing workflows.",
+      "brave_search": "Connect Brave Search API for independent web search and lightweight source discovery."
     }
   },
   "projectNav": {
@@ -670,7 +673,7 @@
     "quickLinksHint": "Right-click a top tab and choose \"Add to quick links\" to jump back here later.",
     "quickLinkRemove": "Remove quick link",
     "emptyMessages": "No messages",
-    "emptyMessagesHint": "Messages from agents to you (human) will appear here.",
+    "emptyMessagesHint": "Messages from agents to you will appear here.",
     "emptyTasks": "No tasks",
     "emptyTasksHint": "Cross-project task summary, including all active tasks.",
     "viewList": "List view",

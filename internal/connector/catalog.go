@@ -297,6 +297,8 @@ func Defaults() []Provider {
 		staticPATProvider("clickup", "ClickUp", "Project Management", "Use ClickUp tasks, lists, spaces, and cross-functional work tracking.", "API token", "Create an API token in ClickUp personal settings. Use workspace-level access carefully.", "ClickUp API token", "https://clickup.com/api", clickUpActions()),
 		staticPATProvider("sentry", "Sentry", "Developer Tools", "Use Sentry issues, releases, error events, and triage signals.", "Auth token", "Create an internal integration or auth token in Sentry settings. Start with org:read, project:read, and event:read scopes.", "Sentry auth tokens", "https://sentry.io/settings/account/api/auth-tokens/", sentryActions()),
 		staticPATProvider("vercel", "Vercel", "Developer Tools", "Use Vercel projects, deployments, checks, and release status.", "Access token", "Create an access token in Vercel account settings. Use team-scoped tokens when possible.", "Vercel access tokens", "https://vercel.com/account/tokens", vercelActions()),
+		staticPATProvider("exa", "Exa", "Research And Search", "Use Exa neural web search for research, source discovery, and agent browsing workflows.", "API key", "Create an API key in the Exa dashboard. Use a dedicated key for Multigent workspaces and rotate it if exposed.", "Exa API keys", "https://dashboard.exa.ai/api-keys", exaActions()),
+		staticPATProvider("brave_search", "Brave Search", "Research And Search", "Use Brave Search API for independent web search and lightweight source discovery.", "API key", "Create a subscription token in the Brave Search API dashboard. Start with Web Search access.", "Brave Search API dashboard", "https://api-dashboard.search.brave.com/app/keys", braveSearchActions()),
 	}
 	for i := range providers {
 		providers[i].RuntimeAdapters = DefaultRuntimeAdapters(providers[i])
@@ -624,6 +626,42 @@ func sentryActions() []ProviderAction {
 			"organization_slug": stringSchema("Sentry organization slug."),
 			"query":             stringSchema("Optional Sentry issue search query."),
 		}, []string{"organization_slug"})},
+	}
+}
+
+func exaActions() []ProviderAction {
+	return []ProviderAction{
+		{
+			Name:        "search_web",
+			DisplayName: "Search web",
+			Description: "Search the web with Exa and return relevant source results for agent research.",
+			Method:      "POST",
+			Endpoint:    "/search",
+			InputSchema: objectSchema(map[string]any{
+				"query":      stringSchema("Search query."),
+				"numResults": numberSchema("Maximum number of results to return."),
+				"type":       enumStringSchema("Search type.", []string{"auto", "neural", "keyword"}),
+			}, []string{"query"}),
+		},
+	}
+}
+
+func braveSearchActions() []ProviderAction {
+	return []ProviderAction{
+		{
+			Name:        "search_web",
+			DisplayName: "Search web",
+			Description: "Search the web with Brave Search API and return independent web results.",
+			Method:      "GET",
+			Endpoint:    "/res/v1/web/search",
+			InputSchema: objectSchema(map[string]any{
+				"q":           stringSchema("Search query."),
+				"count":       numberSchema("Number of results to return."),
+				"country":     stringSchema("Optional country code, for example US."),
+				"search_lang": stringSchema("Optional search language code, for example en."),
+				"freshness":   stringSchema("Optional freshness filter supported by Brave Search."),
+			}, []string{"q"}),
+		},
 	}
 }
 

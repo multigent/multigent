@@ -503,6 +503,24 @@ func (s *Server) runtimeHTTPActionConfig(connection controldb.Connection) (runti
 			cfg.AuthValue = "Bearer " + apiKey
 			cfg.RedactValues = append(cfg.RedactValues, apiKey, cfg.AuthValue)
 		}
+	case "exa":
+		if cfg.BaseURL == "" {
+			cfg.BaseURL = "https://api.exa.ai"
+		}
+		cfg.AuthHeader = "x-api-key"
+		if apiKey != "" {
+			cfg.AuthValue = apiKey
+			cfg.RedactValues = append(cfg.RedactValues, apiKey)
+		}
+	case "brave_search":
+		if cfg.BaseURL == "" {
+			cfg.BaseURL = "https://api.search.brave.com"
+		}
+		cfg.AuthHeader = "X-Subscription-Token"
+		if apiKey != "" {
+			cfg.AuthValue = apiKey
+			cfg.RedactValues = append(cfg.RedactValues, apiKey)
+		}
 	case "dingtalk_bot":
 		accessToken, err := normalizeDingTalkBotAccessToken(apiKey)
 		if err != nil {

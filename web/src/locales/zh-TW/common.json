@@ -223,6 +223,7 @@
       "knowledge_and_docs": "知識與文件",
       "communication": "溝通協作",
       "design_and_data": "設計與資料",
+      "research_and_search": "研究與搜尋",
       "advanced": "進階",
       "other_tools": "其他工具"
     },
@@ -247,7 +248,9 @@
       "asana": "連接 Asana 任務、專案、分組和非研發專案流程。",
       "clickup": "連接 ClickUp 任務、列表、空間和跨職能工作追蹤。",
       "sentry": "連接 Sentry Issue、錯誤事件、版本和故障分流訊號。",
-      "vercel": "連接 Vercel 專案、部署、檢查和發布狀態。"
+      "vercel": "連接 Vercel 專案、部署、檢查和發布狀態。",
+      "exa": "連接 Exa 神經搜尋，用於研究、資料發現和 Agent 瀏覽工作流。",
+      "brave_search": "連接 Brave Search API，用於獨立 Web 搜尋和輕量資料發現。"
     }
   },
   "projectNav": {
@@ -670,7 +673,7 @@
     "quickLinksHint": "右鍵頂部標籤頁，選擇「收藏到快速連結」，下次可從這裡快速跳轉。",
     "quickLinkRemove": "移除快速連結",
     "emptyMessages": "暫無訊息",
-    "emptyMessagesHint": "當 Agent 給你（human）發訊息時，會出現在這裡。",
+    "emptyMessagesHint": "當 Agent 給你發訊息時，會出現在這裡。",
     "emptyTasks": "暫無任務",
     "emptyTasksHint": "跨專案的任務彙總，包含所有進行中的任務。",
     "viewList": "列表視圖",

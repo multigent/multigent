@@ -587,6 +587,8 @@ func TestRuntimeActionConfigForTokenFirstExternalTools(t *testing.T) {
 		{provider: "clickup", baseURL: "https://api.clickup.com/api/v2", authHeader: "Authorization", authValue: "token-clickup", redactedSnippet: "token-clickup"},
 		{provider: "sentry", baseURL: "https://sentry.io/api/0", authHeader: "Authorization", authValue: "Bearer token-sentry", redactedSnippet: "Bearer token-sentry"},
 		{provider: "vercel", baseURL: "https://api.vercel.com", authHeader: "Authorization", authValue: "Bearer token-vercel", redactedSnippet: "Bearer token-vercel"},
+		{provider: "exa", baseURL: "https://api.exa.ai", authHeader: "x-api-key", authValue: "token-exa", redactedSnippet: "token-exa"},
+		{provider: "brave_search", baseURL: "https://api.search.brave.com", authHeader: "X-Subscription-Token", authValue: "token-brave_search", redactedSnippet: "token-brave_search"},
 	}
 	for _, tc := range cases {
 		t.Run(tc.provider, func(t *testing.T) {

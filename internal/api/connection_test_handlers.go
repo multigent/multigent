@@ -344,7 +344,7 @@ func (s *Server) testConnection(r *http.Request, connection controldb.Connection
 	switch connection.Provider {
 	case "custom-mcp":
 		return s.testCustomMCPConnection(r, connection)
-	case "custom-http", "github", "gitlab", "gitee", "linear", "notion", "figma", "airtable", "asana", "clickup", "sentry", "vercel", "feishu", "lark", "dingtalk_bot":
+	case "custom-http", "github", "gitlab", "gitee", "linear", "notion", "figma", "airtable", "asana", "clickup", "sentry", "vercel", "exa", "brave_search", "feishu", "lark", "dingtalk_bot":
 		return s.testHTTPConnection(r, connection, body)
 	default:
 		return testConnectionResult{}, fmt.Errorf("connection test is not supported for provider %q", connection.Provider)
@@ -506,6 +506,32 @@ func applyDefaultConnectionTestRequest(provider string, req *runtimeActionProxyR
 		}
 		if req.Method == "" {
 			req.Method = http.MethodGet
+		}
+	case "exa":
+		if req.Endpoint == "" {
+			req.Endpoint = "/search"
+		}
+		if req.Method == "" {
+			req.Method = http.MethodPost
+		}
+		if len(req.Body) == 0 {
+			req.Body = json.RawMessage(`{"query":"Multigent","numResults":1}`)
+		}
+	case "brave_search":
+		if req.Endpoint == "" {
+			req.Endpoint = "/res/v1/web/search"
+		}
+		if req.Method == "" {
+			req.Method = http.MethodGet
+		}
+		if req.Query == nil {
+			req.Query = map[string]string{}
+		}
+		if req.Query["q"] == "" {
+			req.Query["q"] = "Multigent"
+		}
+		if req.Query["count"] == "" {
+			req.Query["count"] = "1"
 		}
 	case "custom-http":
 		if req.Endpoint == "" {

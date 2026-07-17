@@ -76,7 +76,7 @@ mga runtime skill-guide
 mga runtime connections --format table
 mga runtime action --connection <alias> --data '{"method":"GET","endpoint":"/path"}'
 mga runtime mcp --connection <alias> --data '{"jsonrpc":"2.0","id":1,"method":"tools/list"}'
-mga runtime gateway list-tools --format table
+mga runtime gateway list-tools --format table      # universal fallback/debug path
 mga runtime gateway call-tool action:github:get_authenticated_user --data '{}'
 mga runtime version --check
 ```
@@ -86,10 +86,10 @@ Rules:
 - Start with `mga runtime skill-guide`. It is generated from the tools enabled for this agent and explains whether each tool should be used through a platform CLI, MCP Gateway, HTTP action, or skill-only instructions.
 - Prefer the provider's recommended adapter:
   - `cli`: use the platform CLI and bundled skill, for example `gh` or `lark-cli`.
-  - `mcp_gateway`: use Multigent MCP Gateway tool discovery/calls.
+  - `mcp_gateway`: use the injected Multigent MCP Gateway server when native MCP config is available; otherwise use the `mga runtime gateway` fallback.
   - `http_action`: use `mga runtime action`.
   - `skill_only`: follow the bundled skill; no executable tool is configured.
-- Prefer `mga runtime gateway list-tools` and `mga runtime gateway call-tool` when you need the unified MCP Gateway broker without writing JSON-RPC manually.
+- Use `mga runtime gateway list-tools` and `mga runtime gateway call-tool` as the universal fallback/debug path for the unified MCP Gateway broker. Product runtimes should eventually inject native MCP config for Codex, Claude Code, Cursor, and other supported CLIs.
 - Use connection aliases from `mga runtime connections` when calling runtime proxies.
 - Never ask humans to paste provider secrets into chat.
 - Runtime writes are audited by the Multigent Server.
