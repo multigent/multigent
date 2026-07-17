@@ -325,6 +325,9 @@
       "mappingKey": "下一节点输入字段",
       "mappingValue": "来源表达式，例如 $output.comments",
       "saveEdge": "保存连线",
+      "outgoingBranches": "输出分支",
+      "noBranches": "暂无输出分支",
+      "toNode": "流转到",
       "operators": {
         "eq": "等于",
         "neq": "不等于",

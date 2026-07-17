@@ -325,6 +325,9 @@
       "mappingKey": "次ノードの入力フィールド",
       "mappingValue": "ソース式、例: $output.comments",
       "saveEdge": "エッジを保存",
+      "outgoingBranches": "出力分岐",
+      "noBranches": "出力分岐なし",
+      "toNode": "遷移先",
       "operators": {
         "eq": "等しい",
         "neq": "等しくない",

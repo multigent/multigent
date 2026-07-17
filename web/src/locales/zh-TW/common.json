@@ -325,6 +325,9 @@
       "mappingKey": "下一節點輸入欄位",
       "mappingValue": "來源表示式，例如 $output.comments",
       "saveEdge": "儲存連線",
+      "outgoingBranches": "輸出分支",
+      "noBranches": "暫無輸出分支",
+      "toNode": "流轉到",
       "operators": {
         "eq": "等於",
         "neq": "不等於",

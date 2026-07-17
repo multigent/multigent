@@ -233,6 +233,23 @@ function normalizeEdge(edge: WorkflowEdge): WorkflowEdge {
   }
 }
 
+function normalizeEdgePatch(edge: WorkflowEdge, patch: Partial<WorkflowEdge>): WorkflowEdge {
+  const next = normalizeEdge({ ...edge, ...patch })
+  const condition = next.condition
+  return {
+    ...next,
+    label: next.label?.trim() || '',
+    condition: condition?.field || condition?.value || condition?.values?.length
+      ? {
+          ...condition,
+          operator: condition.operator || 'eq',
+          values: condition.operator === 'in' ? condition.values ?? [] : undefined,
+        }
+      : undefined,
+    inputMapping: Object.fromEntries(Object.entries(next.inputMapping ?? {}).filter(([key, value]) => key.trim() && value.trim())),
+  }
+}
+
 function WorkflowStepNode({ data, selected }: NodeProps<WorkflowNode>) {
   const { t } = useTranslation()
   const { step, status, active } = data
@@ -284,6 +301,7 @@ export function WorkflowBoard({
   const [selectedEdgeId, setSelectedEdgeId] = useState('')
   const selected = selectedId ? definition.steps.find((s) => s.id === selectedId) : !selectedEdgeId ? definition.steps[0] : undefined
   const selectedEdge = selectedEdgeId ? definition.edges.find((edge) => edge.id === selectedEdgeId) : undefined
+  const outgoingEdges = selected ? definition.edges.filter((edge) => edge.from === selected.id) : []
   const selectedInst = selected ? instanceByStep.get(selected.id) : undefined
   const [stepDraft, setStepDraft] = useState<WorkflowStep | null>(selected ?? null)
   const [edgeDraft, setEdgeDraft] = useState<WorkflowEdge | null>(selectedEdge ? normalizeEdge(selectedEdge) : null)
@@ -527,21 +545,23 @@ export function WorkflowBoard({
 
   function saveSelectedEdge() {
     if (!editable || !selectedEdge || !edgeDraft) return
-    const condition = edgeDraft.condition
-    const normalized: WorkflowEdge = {
-      ...edgeDraft,
-      label: edgeDraft.label?.trim() || '',
-      condition: condition?.field || condition?.value || condition?.values?.length ? {
-        ...condition,
-        operator: condition.operator || 'eq',
-        values: condition.operator === 'in' ? condition.values ?? [] : undefined,
-      } : undefined,
-      inputMapping: Object.fromEntries(Object.entries(edgeDraft.inputMapping ?? {}).filter(([key, value]) => key.trim() && value.trim())),
-    }
+    const normalized = normalizeEdgePatch(selectedEdge, edgeDraft)
     updateDefinition({
       ...definition,
       edges: definition.edges.map((edge) => (edge.id === selectedEdge.id ? normalized : edge)),
     })
+  }
+
+  function patchEdge(edgeID: string, patch: Partial<WorkflowEdge>) {
+    updateDefinition({
+      ...definition,
+      edges: definition.edges.map((edge) => (edge.id === edgeID ? normalizeEdgePatch(edge, patch) : edge)),
+    })
+  }
+
+  function selectEdge(edgeID: string) {
+    setSelectedEdgeId(edgeID)
+    setSelectedId('')
   }
 
   const stepDraftChanged = Boolean(stepDraft && selected && JSON.stringify(stepDraft) !== JSON.stringify(selected))
@@ -734,6 +754,12 @@ export function WorkflowBoard({
                 fields={stepDraft.outputFields ?? []}
                 onChange={(fields) => updateStepDraftFields('outputFields', fields)}
               />
+              <OutgoingBranches
+                edges={outgoingEdges}
+                steps={definition.steps}
+                onPatch={patchEdge}
+                onEditDetails={selectEdge}
+              />
               <button
                 type="button"
                 onClick={saveSelectedStep}
@@ -838,6 +864,105 @@ function FieldTable({ title, fields, onChange }: { title: string; fields: Workfl
                 </div>
               </div>
             ))}
+          </div>
+        )}
+      </div>
+    </div>
+  )
+}
+
+function OutgoingBranches({
+  edges,
+  steps,
+  onPatch,
+  onEditDetails,
+}: {
+  edges: WorkflowEdge[]
+  steps: WorkflowStep[]
+  onPatch: (edgeID: string, patch: Partial<WorkflowEdge>) => void
+  onEditDetails: (edgeID: string) => void
+}) {
+  const { t } = useTranslation()
+  const stepByID = useMemo(() => new Map(steps.map((step) => [step.id, step])), [steps])
+
+  function updateCondition(edge: WorkflowEdge, patch: Partial<WorkflowEdgeCondition>) {
+    const condition = { ...(edge.condition ?? {}), ...patch }
+    onPatch(edge.id, { condition })
+  }
+
+  return (
+    <div>
+      <div className="flex items-center justify-between gap-2">
+        <span className="text-xs font-medium uppercase text-neutral-400 dark:text-zinc-500">{t('workflows.detail.outgoingBranches')}</span>
+      </div>
+      <div className="mt-2 overflow-hidden rounded-lg border border-neutral-200 dark:border-zinc-700">
+        {edges.length === 0 ? (
+          <div className="px-3 py-3 text-xs text-neutral-400 dark:text-zinc-500">{t('workflows.detail.noBranches')}</div>
+        ) : (
+          <div className="divide-y divide-neutral-200 dark:divide-zinc-700">
+            {edges.map((edge) => {
+              const target = stepByID.get(edge.to)
+              const operator = edge.condition?.operator || 'eq'
+              return (
+                <div key={edge.id} className="space-y-2 p-3">
+                  <div className="flex items-center justify-between gap-2">
+                    <div className="min-w-0">
+                      <p className="truncate text-sm font-medium text-neutral-800 dark:text-zinc-200">
+                        {t('workflows.detail.toNode')}: {target?.title || edge.to}
+                      </p>
+                      <p className="mt-0.5 truncate text-xs text-neutral-400 dark:text-zinc-500">{conditionLabel(edge) || t('workflows.detail.notSpecified')}</p>
+                    </div>
+                    <button type="button" onClick={() => onEditDetails(edge.id)} className="shrink-0 rounded-md border border-neutral-300 px-2 py-1 text-xs text-neutral-600 hover:bg-neutral-50 dark:border-zinc-600 dark:text-zinc-300 dark:hover:bg-zinc-800">
+                      {t('common.edit')}
+                    </button>
+                  </div>
+                  <input
+                    value={edge.label || ''}
+                    onChange={(event) => onPatch(edge.id, { label: event.target.value })}
+                    placeholder={t('workflows.detail.label')}
+                    className="w-full rounded-md border border-neutral-300 bg-white px-2 py-1.5 text-xs text-neutral-900 outline-none focus:border-sky-400 dark:border-zinc-600 dark:bg-zinc-800 dark:text-zinc-100"
+                  />
+                  <div className="grid grid-cols-[minmax(0,1fr)_96px] gap-2">
+                    <input
+                      value={edge.condition?.field || ''}
+                      onChange={(event) => updateCondition(edge, { field: event.target.value })}
+                      placeholder={t('workflows.detail.conditionField')}
+                      className="rounded-md border border-neutral-300 bg-white px-2 py-1.5 text-xs text-neutral-900 outline-none focus:border-sky-400 dark:border-zinc-600 dark:bg-zinc-800 dark:text-zinc-100"
+                    />
+                    <select
+                      value={operator}
+                      onChange={(event) => updateCondition(edge, { operator: event.target.value })}
+                      className="rounded-md border border-neutral-300 bg-white px-2 py-1.5 text-xs text-neutral-900 outline-none focus:border-sky-400 dark:border-zinc-600 dark:bg-zinc-800 dark:text-zinc-100"
+                    >
+                      {edgeOperators.map((item) => (
+                        <option key={item} value={item}>
+                          {t(`workflows.detail.operators.${item}`)}
+                        </option>
+                      ))}
+                    </select>
+                  </div>
+                  {operator === 'in' ? (
+                    <input
+                      value={(edge.condition?.values ?? []).join(', ')}
+                      onChange={(event) => updateCondition(edge, { values: event.target.value.split(',').map((item) => item.trim()).filter(Boolean), value: '' })}
+                      placeholder={t('workflows.detail.conditionValues')}
+                      className="w-full rounded-md border border-neutral-300 bg-white px-2 py-1.5 text-xs text-neutral-900 outline-none focus:border-sky-400 dark:border-zinc-600 dark:bg-zinc-800 dark:text-zinc-100"
+                    />
+                  ) : operator !== 'exists' ? (
+                    <input
+                      value={edge.condition?.value || ''}
+                      onChange={(event) => updateCondition(edge, { value: event.target.value })}
+                      placeholder={t('workflows.detail.conditionValue')}
+                      className="w-full rounded-md border border-neutral-300 bg-white px-2 py-1.5 text-xs text-neutral-900 outline-none focus:border-sky-400 dark:border-zinc-600 dark:bg-zinc-800 dark:text-zinc-100"
+                    />
+                  ) : null}
+                  <label className="flex items-center gap-2 text-xs text-neutral-600 dark:text-zinc-400">
+                    <input type="checkbox" checked={Boolean(edge.isDefault)} onChange={(event) => onPatch(edge.id, { isDefault: event.target.checked })} />
+                    {t('workflows.detail.defaultEdge')}
+                  </label>
+                </div>
+              )
+            })}
           </div>
         )}
       </div>

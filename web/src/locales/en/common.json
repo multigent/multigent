@@ -325,6 +325,9 @@
       "mappingKey": "Next node input field",
       "mappingValue": "Source expression, for example $output.comments",
       "saveEdge": "Save edge",
+      "outgoingBranches": "Outgoing branches",
+      "noBranches": "No outgoing branches",
+      "toNode": "To",
       "operators": {
         "eq": "Equals",
         "neq": "Not equals",
