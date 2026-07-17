@@ -312,21 +312,14 @@ export function WorkflowBoard({
   const { t } = useTranslation()
   const instanceByStep = useMemo(() => new Map(instances.map((inst) => [inst.stepId, inst])), [instances])
   const [selectedId, setSelectedId] = useState(definition.startStepId || definition.steps[0]?.id || '')
-  const [selectedEdgeId, setSelectedEdgeId] = useState('')
-  const selected = selectedId ? definition.steps.find((s) => s.id === selectedId) : !selectedEdgeId ? definition.steps[0] : undefined
-  const selectedEdge = selectedEdgeId ? definition.edges.find((edge) => edge.id === selectedEdgeId) : undefined
+  const selected = definition.steps.find((s) => s.id === selectedId) ?? definition.steps[0]
   const outgoingEdges = selected ? definition.edges.filter((edge) => edge.from === selected.id) : []
   const selectedInst = selected ? instanceByStep.get(selected.id) : undefined
   const [stepDraft, setStepDraft] = useState<WorkflowStep | null>(selected ?? null)
-  const [edgeDraft, setEdgeDraft] = useState<WorkflowEdge | null>(selectedEdge ? normalizeEdge(selectedEdge) : null)
 
   useEffect(() => {
     setStepDraft(selected ? normalizeStepFields(selected) : null)
   }, [selected?.id])
-
-  useEffect(() => {
-    setEdgeDraft(selectedEdge ? normalizeEdge(selectedEdge) : null)
-  }, [selectedEdge?.id])
 
   const initialNodes = useMemo<WorkflowNode[]>(
     () =>
@@ -362,14 +355,14 @@ export function WorkflowBoard({
           type: 'smoothstep',
           animated: active,
           markerEnd: { type: MarkerType.ArrowClosed, color },
-          style: { stroke: selectedEdgeId === edge.id ? '#0284c7' : color, strokeWidth: selectedEdgeId === edge.id || active ? 2.5 : 2 },
+          style: { stroke: color, strokeWidth: active ? 2.5 : 2 },
           labelStyle: { fill: '#71717a', fontSize: 11, fontWeight: 500 },
           labelBgPadding: [6, 3],
           labelBgBorderRadius: 6,
           labelBgStyle: { fill: 'rgba(255,255,255,0.92)' },
         }
       }),
-    [definition.edges, definition.steps, instanceByStep, run?.activeStepId, selectedEdgeId],
+    [definition.edges, definition.steps, instanceByStep, run?.activeStepId],
   )
 
   const [nodes, setNodes, onNodesChange] = useNodesState(initialNodes)
@@ -388,12 +381,6 @@ export function WorkflowBoard({
       setSelectedId(definition.startStepId || definition.steps[0]?.id || '')
     }
   }, [definition.startStepId, definition.steps, selectedId])
-
-  useEffect(() => {
-    if (selectedEdgeId && !definition.edges.some((edge) => edge.id === selectedEdgeId)) {
-      setSelectedEdgeId('')
-    }
-  }, [definition.edges, selectedEdgeId])
 
   function updateDefinition(next: WorkflowDefinition) {
     onChange?.(next)
@@ -469,11 +456,6 @@ export function WorkflowBoard({
 
   function deleteSelected() {
     if (!editable) return
-    if (selectedEdgeId) {
-      updateDefinition({ ...definition, edges: definition.edges.filter((edge) => edge.id !== selectedEdgeId) })
-      setSelectedEdgeId('')
-      return
-    }
     if (!selected || definition.steps.length <= 1) return
     const nextSteps = definition.steps.filter((step) => step.id !== selected.id)
     const nextSelected = nextSteps[0]?.id || ''
@@ -507,65 +489,11 @@ export function WorkflowBoard({
     setStepDraft((current) => (current ? { ...current, [kind]: fields.map(({ name, description }) => ({ name, description })), [kind === 'inputFields' ? 'inputSchema' : 'outputSchema']: '' } : current))
   }
 
-  function updateEdgeDraft(patch: Partial<WorkflowEdge>) {
-    setEdgeDraft((current) => (current ? { ...current, ...patch } : current))
-  }
-
-  function updateEdgeCondition(patch: Partial<WorkflowEdgeCondition>) {
-    setEdgeDraft((current) => {
-      if (!current) return current
-      const next = { ...(current.condition ?? {}), ...patch }
-      const hasCondition = Boolean(next.field || next.operator || next.value || next.values?.length)
-      return { ...current, condition: hasCondition ? next : undefined }
-    })
-  }
-
-  function updateEdgeMapping(index: number, key: string, value: string) {
-    setEdgeDraft((current) => {
-      if (!current) return current
-      const entries = Object.entries(current.inputMapping ?? {})
-      entries[index] = [key, value]
-      return { ...current, inputMapping: Object.fromEntries(entries.filter(([entryKey]) => entryKey.trim())) }
-    })
-  }
-
-  function addEdgeMapping() {
-    setEdgeDraft((current) => {
-      if (!current) return current
-      const mapping = { ...(current.inputMapping ?? {}) }
-      let key = 'next_input'
-      let index = 2
-      while (mapping[key] !== undefined) {
-        key = `next_input_${index}`
-        index += 1
-      }
-      mapping[key] = '$output.'
-      return { ...current, inputMapping: mapping }
-    })
-  }
-
-  function removeEdgeMapping(index: number) {
-    setEdgeDraft((current) => {
-      if (!current) return current
-      const entries = Object.entries(current.inputMapping ?? {}).filter((_, i) => i !== index)
-      return { ...current, inputMapping: Object.fromEntries(entries) }
-    })
-  }
-
   function saveSelectedStep() {
     if (!editable || !selected || !stepDraft) return
     updateDefinition({
       ...definition,
       steps: definition.steps.map((step) => (step.id === selected.id ? stepDraft : step)),
-    })
-  }
-
-  function saveSelectedEdge() {
-    if (!editable || !selectedEdge || !edgeDraft) return
-    const normalized = normalizeEdgePatch(selectedEdge, edgeDraft)
-    updateDefinition({
-      ...definition,
-      edges: definition.edges.map((edge) => (edge.id === selectedEdge.id ? normalized : edge)),
     })
   }
 
@@ -576,13 +504,7 @@ export function WorkflowBoard({
     })
   }
 
-  function selectEdge(edgeID: string) {
-    setSelectedEdgeId(edgeID)
-    setSelectedId('')
-  }
-
   const stepDraftChanged = Boolean(stepDraft && selected && JSON.stringify(stepDraft) !== JSON.stringify(selected))
-  const edgeDraftChanged = Boolean(edgeDraft && selectedEdge && JSON.stringify(edgeDraft) !== JSON.stringify(normalizeEdge(selectedEdge)))
 
   return (
     <div className={cn('grid min-h-0 gap-4', fill && 'h-full flex-1', compact ? 'grid-cols-1' : fullscreen ? 'grid-cols-[minmax(0,1fr)_360px]' : 'grid-cols-[minmax(0,1fr)_320px]')}>
@@ -599,8 +521,8 @@ export function WorkflowBoard({
                 <button type="button" onClick={addNode} className="rounded-lg border border-sky-600 bg-white px-3 py-1.5 text-xs font-medium text-sky-700 shadow-sm hover:bg-sky-50 dark:border-sky-500 dark:bg-zinc-900 dark:text-sky-400 dark:hover:bg-zinc-800">
                   {t('workflows.addNode')}
                 </button>
-                <button type="button" onClick={deleteSelected} disabled={!selected && !selectedEdgeId} className="rounded-lg border border-neutral-300 bg-white px-3 py-1.5 text-xs font-medium text-neutral-600 shadow-sm hover:bg-neutral-50 disabled:opacity-40 dark:border-zinc-600 dark:bg-zinc-900 dark:text-zinc-300 dark:hover:bg-zinc-800">
-                  {selectedEdgeId ? t('workflows.deleteEdge') : t('workflows.deleteNode')}
+                <button type="button" onClick={deleteSelected} disabled={!selected} className="rounded-lg border border-neutral-300 bg-white px-3 py-1.5 text-xs font-medium text-neutral-600 shadow-sm hover:bg-neutral-50 disabled:opacity-40 dark:border-zinc-600 dark:bg-zinc-900 dark:text-zinc-300 dark:hover:bg-zinc-800">
+                  {t('workflows.deleteNode')}
                 </button>
               </>
             ) : null}
@@ -621,13 +543,10 @@ export function WorkflowBoard({
           onConnect={handleConnect}
           onNodeClick={(_, node) => {
             setSelectedId(node.id)
-            setSelectedEdgeId('')
           }}
           onEdgeClick={(_, edge) => {
-            setSelectedEdgeId(edge.id)
-            setSelectedId('')
+            setSelectedId(edge.source)
           }}
-          onPaneClick={() => setSelectedEdgeId('')}
           fitView
           fitViewOptions={{ padding: 0.18 }}
           minZoom={0.25}
@@ -662,63 +581,9 @@ export function WorkflowBoard({
           ) : null}
         </ReactFlow>
       </div>
-      {!compact && (selected || selectedEdge) ? (
+      {!compact && selected ? (
         <aside className={cn('rounded-xl border border-neutral-200/80 bg-white p-4 dark:border-zinc-700/60 dark:bg-zinc-900', fill ? 'h-full min-h-[560px] overflow-y-auto' : fullscreen ? 'min-h-[calc(100vh-150px)]' : 'min-h-[420px]')}>
-          {editable && selectedEdge && edgeDraft ? (
-            <div className="space-y-4 text-sm">
-              <div>
-                <p className="text-xs font-medium uppercase text-neutral-400 dark:text-zinc-500">{t('workflows.detail.edge')}</p>
-                <p className="mt-1 text-sm font-semibold text-neutral-900 dark:text-zinc-100">
-                  {selectedEdge.from} → {selectedEdge.to}
-                </p>
-              </div>
-              <label className="block">
-                <span className="text-xs font-medium uppercase text-neutral-400 dark:text-zinc-500">{t('workflows.detail.label')}</span>
-                <input value={edgeDraft.label || ''} onChange={(event) => updateEdgeDraft({ label: event.target.value })} className={fieldClass} />
-              </label>
-              <label className="flex items-center gap-2 text-sm text-neutral-700 dark:text-zinc-300">
-                <input type="checkbox" checked={Boolean(edgeDraft.isDefault)} onChange={(event) => updateEdgeDraft({ isDefault: event.target.checked })} />
-                {t('workflows.detail.defaultEdge')}
-              </label>
-              <div className="rounded-lg border border-neutral-200 p-3 dark:border-zinc-700">
-                <p className="text-xs font-medium uppercase text-neutral-400 dark:text-zinc-500">{t('workflows.detail.condition')}</p>
-                <div className="mt-2 grid gap-2">
-                  <input value={edgeDraft.condition?.field || ''} onChange={(event) => updateEdgeCondition({ field: event.target.value })} placeholder={t('workflows.detail.conditionField')} className={fieldClass} />
-                  <select value={edgeDraft.condition?.operator || 'eq'} onChange={(event) => updateEdgeCondition({ operator: event.target.value })} className={fieldClass}>
-                    {edgeOperators.map((operator) => (
-                      <option key={operator} value={operator}>
-                        {t(`workflows.detail.operators.${operator}`)}
-                      </option>
-                    ))}
-                  </select>
-                  {(edgeDraft.condition?.operator || 'eq') === 'in' ? (
-                    <input
-                      value={(edgeDraft.condition?.values ?? []).join(', ')}
-                      onChange={(event) => updateEdgeCondition({ values: event.target.value.split(',').map((item) => item.trim()).filter(Boolean), value: '' })}
-                      placeholder={t('workflows.detail.conditionValues')}
-                      className={fieldClass}
-                    />
-                  ) : (edgeDraft.condition?.operator || 'eq') !== 'exists' ? (
-                    <input value={edgeDraft.condition?.value || ''} onChange={(event) => updateEdgeCondition({ value: event.target.value })} placeholder={t('workflows.detail.conditionValue')} className={fieldClass} />
-                  ) : null}
-                </div>
-              </div>
-              <MappingTable
-                mapping={edgeDraft.inputMapping ?? {}}
-                onAdd={addEdgeMapping}
-                onRemove={removeEdgeMapping}
-                onChange={updateEdgeMapping}
-              />
-              <button
-                type="button"
-                onClick={saveSelectedEdge}
-                disabled={!edgeDraftChanged}
-                className="w-full rounded-lg border border-sky-600 bg-white px-3 py-2 text-sm font-medium text-sky-700 hover:bg-sky-50 disabled:opacity-50 dark:border-sky-500 dark:bg-zinc-900 dark:text-sky-400 dark:hover:bg-zinc-800"
-              >
-                {t('workflows.detail.saveEdge')}
-              </button>
-            </div>
-          ) : editable && stepDraft && selected ? (
+          {editable && stepDraft && selected ? (
             <div className="space-y-4 text-sm">
               <label className="block">
                 <span className="text-xs font-medium uppercase text-neutral-400 dark:text-zinc-500">{t('workflows.detail.title')}</span>
@@ -775,7 +640,6 @@ export function WorkflowBoard({
                 edges={outgoingEdges}
                 steps={definition.steps}
                 onPatch={patchEdge}
-                onEditDetails={selectEdge}
               />
               <button
                 type="button"
@@ -786,7 +650,7 @@ export function WorkflowBoard({
                 {t('workflows.detail.saveNode')}
               </button>
             </div>
-          ) : selected ? (
+          ) : (
             <>
               <div className="flex items-start justify-between gap-3">
                 <div>
@@ -808,13 +672,7 @@ export function WorkflowBoard({
                 {selectedInst?.summary ? <Detail label={t('workflows.detail.summary')} value={selectedInst.summary} /> : null}
               </div>
             </>
-          ) : selectedEdge ? (
-            <div className="space-y-4 text-sm">
-              <Detail label={t('workflows.detail.edge')} value={`${selectedEdge.from} → ${selectedEdge.to}`} />
-              <Detail label={t('workflows.detail.condition')} value={conditionLabel(selectedEdge) || t('workflows.detail.notSpecified')} />
-              <MappingSummary mapping={selectedEdge.inputMapping ?? {}} />
-            </div>
-          ) : null}
+          )}
         </aside>
       ) : null}
     </div>
@@ -892,12 +750,10 @@ function OutgoingBranches({
   edges,
   steps,
   onPatch,
-  onEditDetails,
 }: {
   edges: WorkflowEdge[]
   steps: WorkflowStep[]
   onPatch: (edgeID: string, patch: Partial<WorkflowEdge>) => void
-  onEditDetails: (edgeID: string) => void
 }) {
   const { t } = useTranslation()
   const stepByID = useMemo(() => new Map(steps.map((step) => [step.id, step])), [steps])
@@ -922,16 +778,11 @@ function OutgoingBranches({
               const operator = edge.condition?.operator || 'eq'
               return (
                 <div key={edge.id} className="space-y-2 p-3">
-                  <div className="flex items-center justify-between gap-2">
-                    <div className="min-w-0">
-                      <p className="truncate text-sm font-medium text-neutral-800 dark:text-zinc-200">
-                        {t('workflows.detail.toNode')}: {target?.title || edge.to}
-                      </p>
-                      <p className="mt-0.5 truncate text-xs text-neutral-400 dark:text-zinc-500">{conditionLabel(edge) || t('workflows.detail.notSpecified')}</p>
-                    </div>
-                    <button type="button" onClick={() => onEditDetails(edge.id)} className="shrink-0 rounded-md border border-neutral-300 px-2 py-1 text-xs text-neutral-600 hover:bg-neutral-50 dark:border-zinc-600 dark:text-zinc-300 dark:hover:bg-zinc-800">
-                      {t('common.edit')}
-                    </button>
+                  <div className="min-w-0">
+                    <p className="truncate text-sm font-medium text-neutral-800 dark:text-zinc-200">
+                      {t('workflows.detail.toNode')}: {target?.title || edge.to}
+                    </p>
+                    <p className="mt-0.5 truncate text-xs text-neutral-400 dark:text-zinc-500">{conditionLabel(edge) || t('workflows.detail.notSpecified')}</p>
                   </div>
                   <input
                     value={edge.label || ''}
@@ -982,79 +833,6 @@ function OutgoingBranches({
             })}
           </div>
         )}
-      </div>
-    </div>
-  )
-}
-
-function MappingTable({
-  mapping,
-  onAdd,
-  onRemove,
-  onChange,
-}: {
-  mapping: Record<string, string>
-  onAdd: () => void
-  onRemove: (index: number) => void
-  onChange: (index: number, key: string, value: string) => void
-}) {
-  const { t } = useTranslation()
-  const entries = Object.entries(mapping)
-  return (
-    <div>
-      <div className="flex items-center justify-between gap-2">
-        <span className="text-xs font-medium uppercase text-neutral-400 dark:text-zinc-500">{t('workflows.detail.inputMapping')}</span>
-        <button type="button" onClick={onAdd} className="rounded-md border border-neutral-300 px-2 py-1 text-xs text-neutral-600 hover:bg-neutral-50 dark:border-zinc-600 dark:text-zinc-300 dark:hover:bg-zinc-800">
-          {t('workflows.detail.addMapping')}
-        </button>
-      </div>
-      <div className="mt-2 overflow-hidden rounded-lg border border-neutral-200 dark:border-zinc-700">
-        {entries.length === 0 ? (
-          <div className="px-3 py-3 text-xs text-neutral-400 dark:text-zinc-500">{t('workflows.detail.noMappings')}</div>
-        ) : (
-          <div className="divide-y divide-neutral-200 dark:divide-zinc-700">
-            {entries.map(([key, value], index) => (
-              <div key={`${key}-${index}`} className="space-y-2 p-2">
-                <input
-                  value={key}
-                  onChange={(event) => onChange(index, event.target.value, value)}
-                  placeholder={t('workflows.detail.mappingKey')}
-                  className="w-full rounded-md border border-neutral-300 bg-white px-2 py-1.5 text-xs text-neutral-900 outline-none focus:border-sky-400 dark:border-zinc-600 dark:bg-zinc-800 dark:text-zinc-100"
-                />
-                <input
-                  value={value}
-                  onChange={(event) => onChange(index, key, event.target.value)}
-                  placeholder={t('workflows.detail.mappingValue')}
-                  className="w-full rounded-md border border-neutral-300 bg-white px-2 py-1.5 font-mono text-xs text-neutral-900 outline-none focus:border-sky-400 dark:border-zinc-600 dark:bg-zinc-800 dark:text-zinc-100"
-                />
-                <div className="flex justify-end">
-                  <button type="button" onClick={() => onRemove(index)} className="text-xs text-red-500 hover:text-red-600 dark:text-red-400">
-                    {t('common.delete')}
-                  </button>
-                </div>
-              </div>
-            ))}
-          </div>
-        )}
-      </div>
-    </div>
-  )
-}
-
-function MappingSummary({ mapping }: { mapping: Record<string, string> }) {
-  const { t } = useTranslation()
-  const entries = Object.entries(mapping)
-  if (entries.length === 0) return <Detail label={t('workflows.detail.inputMapping')} value={t('workflows.detail.notSpecified')} />
-  return (
-    <div>
-      <p className="text-xs font-medium uppercase text-neutral-400 dark:text-zinc-500">{t('workflows.detail.inputMapping')}</p>
-      <div className="mt-1 overflow-hidden rounded-lg border border-neutral-200 dark:border-zinc-700">
-        {entries.map(([key, value]) => (
-          <div key={key} className="border-b border-neutral-200 px-3 py-2 last:border-b-0 dark:border-zinc-700">
-            <span className="block truncate text-sm font-medium text-neutral-700 dark:text-zinc-300">{key}</span>
-            <p className="mt-1 font-mono text-xs text-neutral-500 dark:text-zinc-500">{value}</p>
-          </div>
-        ))}
       </div>
     </div>
   )
