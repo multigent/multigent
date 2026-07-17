@@ -60,6 +60,52 @@ Multigent 的协作状态机更像：
 
 ## 基本实体
 
+### Task
+
+Task 仍然应该是用户看到的核心工作项。
+
+用户不应该被迫理解一个新的“流程对象”来替代任务。对用户来说，一个需求、一个 bug、一次发布、一次 QA 验收，本质上都是一个 Task。
+
+但 Task 当前的状态不应该直接扩展成流程状态机。
+
+现有 Task 状态描述的是执行队列状态：
+
+```text
+pending
+in_progress
+awaiting_confirmation
+blocked
+done_success
+done_failed
+cancelled
+```
+
+这些状态服务于 scheduler、runner、队列、统计和归档。它们回答的是：
+
+```text
+这个任务是否待执行、正在执行、等待确认、阻塞、成功、失败或取消？
+```
+
+协作状态机要回答的是另一个问题：
+
+```text
+这个工作项现在处于哪个协作阶段？
+当前阶段的输入输出是什么？
+谁负责执行？
+是否需要 review？
+下一步流转到哪里？
+```
+
+因此，推荐设计是：
+
+```text
+Task 是用户可见工作项。
+Workflow Run 是挂在 Task 下面的流程执行层。
+Step Instance 是 Workflow Run 中的节点执行记录。
+```
+
+一个 Task 可以没有 Workflow Run，仍然按普通任务执行；也可以绑定一个 Workflow Run，进入可视化、结构化、可审计的协作流程。
+
 ### Workflow Definition
 
 表示一条协作流程模板，例如：
@@ -83,6 +129,19 @@ Multigent 的协作状态机更像：
 Workflow: 软件研发需求流程
 当前节点：开发实现
 ```
+
+Workflow Run 应该绑定到一个 Task：
+
+```yaml
+task_id:
+workflow_definition_id:
+current_step_id:
+status: active | completed | cancelled | failed
+started_at:
+finished_at:
+```
+
+这样用户仍然从 Task 进入，但系统可以在 Task 内展示流程图、当前节点、节点产物、review 状态和运行指标。
 
 ### Step Definition
 
@@ -125,6 +184,32 @@ audit_required:
 - 相关 artifacts。
 - 流转到哪里。
 
+Step Instance 可以对应一个子 Task，也可以只是一个人工 review 或系统判断节点。
+
+推荐做法：
+
+```text
+父 Task = 一个需求 / bug / 工作项。
+子 Task = 某个流程节点分配给某个 agent 或 human 的执行单元。
+```
+
+例如：
+
+```text
+父 Task：增加 Web Search 外部工具能力
+  Workflow Run：软件研发需求流程
+  当前节点：Implementation
+
+子 Task 1：PM Agent 输出产品 Spec
+子 Task 2：Human PM 审核产品 Spec
+子 Task 3：Developer Agent 输出开发方案 Spec
+子 Task 4：Human Tech Lead 审核开发方案
+子 Task 5：Developer Agent 实现并提交 PR
+子 Task 6：QA Agent 输出测试用例和测试报告
+```
+
+父 Task 负责展示整体流程状态；子 Task 负责具体执行、run、日志和完成结果。
+
 ### Transition Request
 
 Agent 不应该随意修改状态，而应该发起流转请求：
@@ -145,6 +230,56 @@ review_required:
 - 进入人工 review。
 - 拒绝并要求补充。
 - 回退到某个节点。
+
+Agent 侧可以通过受控 API 请求流转，例如：
+
+```text
+mga workflow request-transition \
+  --task <task-id> \
+  --from implementation \
+  --to pr_review \
+  --artifact <artifact-id> \
+  --summary "实现完成，已创建 PR，自测通过"
+```
+
+系统必须校验：
+
+- 当前 step 是否允许该 agent 请求流转。
+- output schema 是否完整。
+- 是否需要人工 review。
+- 下一个 step 应该分配给谁。
+- 是否要自动创建下一个子 Task。
+
+### Workflow Artifact
+
+每个关键节点都应该产出结构化 artifact，而不是只把结果留在聊天记录里。
+
+示例 artifact：
+
+- Product Spec。
+- Engineering Spec。
+- Pull Request。
+- Test Cases。
+- Test Report。
+- Release Package。
+- Retrospective。
+
+Artifact 应该可被后续节点引用，例如 QA 节点引用 Product Spec、Engineering Spec 和 PR。
+
+### Review Item
+
+人工审核应该是可追踪实体。
+
+Review Item 记录：
+
+- 审核对象。
+- 审核人。
+- 审核状态。
+- 审核意见。
+- 审核时间。
+- 审核后流转动作。
+
+这样人工 review 不是聊天里的一句话，而是状态机门禁的一部分。
 
 ## 推荐研发流程状态机
 
@@ -748,6 +883,256 @@ Engineering Investigation
 ```
 
 系统需要知道哪些并行节点全部完成后才能进入下一阶段。
+
+并行不应该只靠多个任务同时存在来表达，而应该在 workflow definition 里显式建模。
+
+推荐两种表达方式。
+
+#### Parallel Group
+
+当一个阶段拆成多个并行节点时，可以定义 parallel group：
+
+```yaml
+step:
+  id: implementation_parallel
+  type: parallel
+  branches:
+    - id: frontend_implementation
+      actor_role: frontend_agent
+    - id: backend_implementation
+      actor_role: backend_agent
+    - id: qa_test_case_draft
+      actor_role: qa_agent
+  join_policy: all_success
+  next: integration_test
+```
+
+`join_policy` 可以支持：
+
+- `all_success`：所有分支成功后进入下一步。
+- `any_success`：任一分支成功后进入下一步。
+- `quorum`：达到指定数量或比例后进入下一步。
+- `manual_join`：由人确认是否汇合。
+
+研发流程中最常见的是 `all_success` 或 `manual_join`。
+
+#### Child Workflow Runs
+
+当一个大需求被拆成多个子需求时，每个子需求可以是独立的 child workflow run：
+
+```yaml
+parent_task: feature_checkout_redesign
+child_workflows:
+  - task: frontend_checkout_ui
+    workflow: software_delivery_v1
+  - task: backend_checkout_api
+    workflow: software_delivery_v1
+  - task: qa_checkout_regression
+    workflow: qa_validation_v1
+join_condition:
+  required_children:
+    - frontend_checkout_ui
+    - backend_checkout_api
+    - qa_checkout_regression
+  required_state: completed
+```
+
+这种方式适合：
+
+- 子需求需要独立 owner。
+- 子需求有独立 PR / 测试 / review。
+- 子需求可能跨多个 agent 或团队。
+- 子需求完成时间不一致。
+
+父 workflow 可以有一个 `Coordination / Integration` 节点，负责等待和汇总子 workflow 的结果。
+
+### 并行节点的输入输出
+
+并行节点也必须结构化。
+
+例如前后端并行开发：
+
+Frontend branch 输出：
+
+```yaml
+frontend_summary:
+changed_files:
+ui_states:
+screenshots:
+tests_run:
+risks:
+```
+
+Backend branch 输出：
+
+```yaml
+backend_summary:
+api_changes:
+data_model_changes:
+changed_files:
+tests_run:
+risks:
+```
+
+QA branch 输出：
+
+```yaml
+test_case_draft:
+coverage:
+open_questions:
+```
+
+Join 节点输入就是这些 branch outputs：
+
+```yaml
+frontend_output:
+backend_output:
+qa_output:
+integration_risks:
+```
+
+Join 节点可以由 agent 或 human 判断是否进入联调 / 集成测试。
+
+## 流程评估指标
+
+协作状态机必须自带评估指标，否则客户无法判断流程是否真的变好了。
+
+指标应该覆盖 workflow、step、agent、human intervention 和 token/resource 几个层面。
+
+### Workflow 级指标
+
+用于评估一个需求从进入到完成的整体效率。
+
+```yaml
+workflow_started_at:
+workflow_finished_at:
+total_elapsed_time:
+active_execution_time:
+waiting_human_time:
+waiting_agent_time:
+blocked_time:
+rework_count:
+transition_count:
+review_count:
+success_rate:
+```
+
+重点不是只看总耗时，而是拆出：
+
+- agent 实际执行时间。
+- 人工等待时间。
+- 阻塞时间。
+- 返工次数。
+
+### Step 级指标
+
+每个节点都应该能评估：
+
+```yaml
+step_started_at:
+step_finished_at:
+elapsed_time:
+actor_type:
+actor_id:
+run_count:
+retry_count:
+review_required:
+review_wait_time:
+schema_validation_failures:
+blocked_reason:
+```
+
+这可以回答：
+
+- 哪个阶段最慢。
+- 哪个阶段最常返工。
+- 哪个阶段经常缺输入。
+- 哪个阶段经常需要人介入。
+
+### Token 与运行消耗
+
+每个 step 和 workflow 都应该聚合 token 和运行成本指标。
+
+```yaml
+input_tokens:
+output_tokens:
+total_tokens:
+model:
+provider:
+run_count:
+tool_call_count:
+connection_usage:
+```
+
+即使美元成本不一定精确，也应该至少能评估：
+
+- 哪些节点 token 消耗高。
+- 哪些 agent 经常重复读取上下文。
+- 哪些任务模板能降低 token。
+- 哪些流程拆分能减少无效消耗。
+
+### Human Intervention 指标
+
+记录人介入的原因和频率：
+
+```yaml
+human_intervention_count:
+intervention_reasons:
+repeated_intervention_patterns:
+average_response_time:
+converted_to_rule_count:
+converted_to_skill_count:
+converted_to_template_count:
+```
+
+这直接对应 Multigent 的核心价值：
+
+```text
+人不是同步阻塞点，而是审核者、调教者和规则沉淀者。
+```
+
+如果某类介入重复出现，系统应该建议沉淀：
+
+```text
+最近 5 个 Engineering Spec Review 中，有 4 次 reviewer 要求补充 rollback_plan。
+是否把 rollback_plan 加入 Engineering Spec 必填字段？
+```
+
+### 并行效率指标
+
+并行流程需要额外指标：
+
+```yaml
+parallel_group_elapsed_time:
+branch_elapsed_times:
+slowest_branch:
+blocked_branches:
+join_wait_time:
+integration_rework_count:
+```
+
+这可以回答：
+
+- 并行是否真的缩短了总耗时。
+- 哪个分支成为瓶颈。
+- join 阶段是否因为上下文不一致而返工。
+- 是否应该把某个并行节点提前或延后。
+
+### 指标的产品展示
+
+Web 上可以在 workflow run 页面展示：
+
+- 总耗时。
+- 当前阶段耗时。
+- 人工等待时间。
+- Agent 执行时间。
+- Token 消耗。
+- 返工次数。
+- 阻塞原因分布。
+- 最慢节点。
+- 重复人工介入建议。
+
+这些指标既服务客户 ROI，也服务流程调教。
 
 ## Web 产品形态
 
