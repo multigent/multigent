@@ -1,4 +1,4 @@
-import { useEffect, useRef, useState, type ReactNode } from 'react'
+import { useEffect, useState, type ReactNode } from 'react'
 import { Navigate, Route, Routes } from 'react-router-dom'
 import { useTranslation } from 'react-i18next'
 import { Loader2 } from 'lucide-react'
@@ -150,29 +150,17 @@ function AuthenticatedRoutes() {
 
 function WorkspaceSwitchOverlay() {
   const { t } = useTranslation()
-  const { loading: workspaceAccessLoading } = useWorkspaceAccess()
   const [transitioning, setTransitioning] = useState(false)
-  const [committed, setCommitted] = useState(false)
   const [step, setStep] = useState(0)
-  const startedAt = useRef(0)
 
   useEffect(() => {
     function start() {
-      startedAt.current = Date.now()
       setStep(0)
-      setCommitted(false)
       setTransitioning(true)
     }
-    function finish() {
-      setCommitted(true)
-    }
     window.addEventListener('workspace-switch-start', start)
-    window.addEventListener('workspace-changed', finish)
-    window.addEventListener('workspace-switch-finish', finish)
     return () => {
       window.removeEventListener('workspace-switch-start', start)
-      window.removeEventListener('workspace-changed', finish)
-      window.removeEventListener('workspace-switch-finish', finish)
     }
   }, [])
 
@@ -181,17 +169,10 @@ function WorkspaceSwitchOverlay() {
     const timers = [
       window.setTimeout(() => setStep(1), 1600),
       window.setTimeout(() => setStep(2), 3300),
+      window.setTimeout(() => setTransitioning(false), WORKSPACE_TRANSITION_MIN_MS),
     ]
     return () => timers.forEach((timer) => window.clearTimeout(timer))
   }, [transitioning])
-
-  useEffect(() => {
-    if (!transitioning || !committed || workspaceAccessLoading) return
-    const elapsed = Date.now() - startedAt.current
-    const remaining = Math.max(WORKSPACE_TRANSITION_MIN_MS - elapsed, 120)
-    const timer = window.setTimeout(() => setTransitioning(false), remaining)
-    return () => window.clearTimeout(timer)
-  }, [committed, transitioning, workspaceAccessLoading])
 
   if (!transitioning) return null
 
