@@ -23,9 +23,7 @@ export type WorkflowPosition = { x: number; y: number }
 
 export type WorkflowField = {
   name: string
-  type?: string
   description?: string
-  required?: boolean
 }
 
 export type WorkflowStep = {
@@ -176,7 +174,6 @@ const edgeClass: Record<string, string> = {
 
 const stepTypes = ['agent_task', 'human_task', 'human_review', 'branch', 'join', 'terminal']
 const colorOptions = ['neutral', 'sky', 'violet', 'amber', 'emerald', 'rose']
-const fieldTypes = ['string', 'number', 'boolean', 'object', 'array', 'file', 'url', 'date']
 const ALIGN_THRESHOLD = 28
 
 const fieldClass =
@@ -188,7 +185,7 @@ function legacyFields(schema?: string): WorkflowField[] {
     .split(',')
     .map((part) => part.trim())
     .filter(Boolean)
-    .map((name) => ({ name, type: 'string', required: true }))
+    .map((name) => ({ name }))
 }
 
 function schemaFieldsFor(step: WorkflowStep, kind: 'input' | 'output'): WorkflowField[] {
@@ -198,10 +195,12 @@ function schemaFieldsFor(step: WorkflowStep, kind: 'input' | 'output'): Workflow
 }
 
 function normalizeStepFields(step: WorkflowStep): WorkflowStep {
+  const inputFields = schemaFieldsFor(step, 'input').map(({ name, description }) => ({ name, description }))
+  const outputFields = schemaFieldsFor(step, 'output').map(({ name, description }) => ({ name, description }))
   return {
     ...step,
-    inputFields: schemaFieldsFor(step, 'input'),
-    outputFields: schemaFieldsFor(step, 'output'),
+    inputFields,
+    outputFields,
   }
 }
 
@@ -429,7 +428,7 @@ export function WorkflowBoard({
   }
 
   function updateStepDraftFields(kind: 'inputFields' | 'outputFields', fields: WorkflowField[]) {
-    setStepDraft((current) => (current ? { ...current, [kind]: fields, [kind === 'inputFields' ? 'inputSchema' : 'outputSchema']: '' } : current))
+    setStepDraft((current) => (current ? { ...current, [kind]: fields.map(({ name, description }) => ({ name, description })), [kind === 'inputFields' ? 'inputSchema' : 'outputSchema']: '' } : current))
   }
 
   function saveSelectedStep() {
@@ -632,7 +631,7 @@ function FieldTable({ title, fields, onChange }: { title: string; fields: Workfl
   }
 
   function addField() {
-    onChange([...fields, { name: '', type: 'string', required: true }])
+    onChange([...fields, { name: '' }])
   }
 
   function removeField(index: number) {
@@ -654,39 +653,19 @@ function FieldTable({ title, fields, onChange }: { title: string; fields: Workfl
           <div className="divide-y divide-neutral-200 dark:divide-zinc-700">
             {fields.map((field, index) => (
               <div key={index} className="space-y-2 p-2">
-                <div className="grid grid-cols-[minmax(0,1fr)_92px] gap-2">
-                  <input
-                    value={field.name}
-                    onChange={(event) => updateField(index, { name: event.target.value })}
-                    placeholder={t('workflows.detail.fieldName')}
-                    className="rounded-md border border-neutral-300 bg-white px-2 py-1.5 text-xs text-neutral-900 outline-none focus:border-sky-400 dark:border-zinc-600 dark:bg-zinc-800 dark:text-zinc-100"
-                  />
-                  <select
-                    value={field.type || 'string'}
-                    onChange={(event) => updateField(index, { type: event.target.value })}
-                    className="rounded-md border border-neutral-300 bg-white px-2 py-1.5 text-xs text-neutral-900 outline-none focus:border-sky-400 dark:border-zinc-600 dark:bg-zinc-800 dark:text-zinc-100"
-                  >
-                    {fieldTypes.map((type) => (
-                      <option key={type} value={type}>{type}</option>
-                    ))}
-                  </select>
-                </div>
+                <input
+                  value={field.name}
+                  onChange={(event) => updateField(index, { name: event.target.value })}
+                  placeholder={t('workflows.detail.fieldName')}
+                  className="w-full rounded-md border border-neutral-300 bg-white px-2 py-1.5 text-xs text-neutral-900 outline-none focus:border-sky-400 dark:border-zinc-600 dark:bg-zinc-800 dark:text-zinc-100"
+                />
                 <input
                   value={field.description || ''}
                   onChange={(event) => updateField(index, { description: event.target.value })}
                   placeholder={t('workflows.detail.fieldDescription')}
                   className="w-full rounded-md border border-neutral-300 bg-white px-2 py-1.5 text-xs text-neutral-900 outline-none focus:border-sky-400 dark:border-zinc-600 dark:bg-zinc-800 dark:text-zinc-100"
                 />
-                <div className="flex items-center justify-between gap-2">
-                  <label className="flex items-center gap-1.5 text-xs text-neutral-500 dark:text-zinc-400">
-                    <input
-                      type="checkbox"
-                      checked={Boolean(field.required)}
-                      onChange={(event) => updateField(index, { required: event.target.checked })}
-                      className="size-3.5 accent-sky-600"
-                    />
-                    {t('workflows.detail.required')}
-                  </label>
+                <div className="flex justify-end">
                   <button type="button" onClick={() => removeField(index)} className="text-xs text-red-500 hover:text-red-600 dark:text-red-400">
                     {t('common.delete')}
                   </button>
@@ -708,10 +687,7 @@ function FieldSummary({ label, fields, fallback }: { label: string; fields: Work
       <div className="mt-1 overflow-hidden rounded-lg border border-neutral-200 dark:border-zinc-700">
         {fields.map((field, index) => (
           <div key={`${field.name}-${index}`} className="border-b border-neutral-200 px-3 py-2 last:border-b-0 dark:border-zinc-700">
-            <div className="flex items-center justify-between gap-2">
-              <span className="truncate text-sm font-medium text-neutral-700 dark:text-zinc-300">{field.name || '-'}</span>
-              <span className="shrink-0 rounded-full bg-neutral-100 px-2 py-0.5 text-[11px] text-neutral-500 dark:bg-zinc-800 dark:text-zinc-400">{field.type || 'string'}</span>
-            </div>
+            <span className="block truncate text-sm font-medium text-neutral-700 dark:text-zinc-300">{field.name || '-'}</span>
             {field.description ? <p className="mt-1 text-xs text-neutral-500 dark:text-zinc-500">{field.description}</p> : null}
           </div>
         ))}

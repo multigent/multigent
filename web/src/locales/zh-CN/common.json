@@ -315,8 +315,7 @@
       "addField": "添加字段",
       "noFields": "暂无字段",
       "fieldName": "字段名",
-      "fieldDescription": "字段说明",
-      "required": "必填"
+      "fieldDescription": "字段说明"
     },
     "colors": {
       "neutral": "中性",

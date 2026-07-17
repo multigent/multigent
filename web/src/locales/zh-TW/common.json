@@ -315,8 +315,7 @@
       "addField": "新增欄位",
       "noFields": "暫無欄位",
       "fieldName": "欄位名",
-      "fieldDescription": "欄位說明",
-      "required": "必填"
+      "fieldDescription": "欄位說明"
     },
     "colors": {
       "neutral": "中性",

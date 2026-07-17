@@ -315,8 +315,7 @@
       "addField": "フィールド追加",
       "noFields": "フィールドなし",
       "fieldName": "フィールド名",
-      "fieldDescription": "説明",
-      "required": "必須"
+      "fieldDescription": "説明"
     },
     "colors": {
       "neutral": "ニュートラル",

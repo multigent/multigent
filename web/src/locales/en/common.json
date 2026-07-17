@@ -315,8 +315,7 @@
       "addField": "Add field",
       "noFields": "No fields",
       "fieldName": "Field name",
-      "fieldDescription": "Description",
-      "required": "Required"
+      "fieldDescription": "Description"
     },
     "colors": {
       "neutral": "Neutral",
