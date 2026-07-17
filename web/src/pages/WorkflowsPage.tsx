@@ -20,28 +20,35 @@ const blankStep: WorkflowStep = {
 }
 
 export default function WorkflowsPage() {
-  const { t } = useTranslation()
+  const { t, i18n } = useTranslation()
   const navigate = useNavigate()
   const params = useParams()
   const fmt = useFormatDateTime()
   const state = useApiJson<WorkflowListResponse>('/api/v1/workflows', 0)
+  const templateLocale = i18n.resolvedLanguage || i18n.language || 'en'
+  const templateState = useApiJson<{ templates: WorkflowDefinition[] }>(`/api/v1/workflow-templates?locale=${encodeURIComponent(templateLocale)}`, 0)
   const workflows = state.status === 'ok' ? state.data.workflows : []
+  const templates = templateState.status === 'ok' ? templateState.data.templates : []
   const selected = useMemo(() => workflows.find((wf) => wf.id === params.workflowId), [workflows, params.workflowId])
 
   const [draft, setDraft] = useState<WorkflowDefinition | null>(null)
   const [saving, setSaving] = useState(false)
   const [fullscreen, setFullscreen] = useState(false)
+  const [createOpen, setCreateOpen] = useState(false)
+  const [createMode, setCreateMode] = useState<'blank' | 'template'>('template')
+  const [selectedTemplateId, setSelectedTemplateId] = useState('')
+  const [workflowName, setWorkflowName] = useState('')
 
   useEffect(() => {
     setDraft(selected ? structuredClone(selected) : null)
     setFullscreen(false)
   }, [selected])
 
-  async function createBlank() {
+  async function createBlank(name = t('workflows.untitledName')) {
     setSaving(true)
     try {
       const created = await apiPost<WorkflowDefinition>('/api/v1/workflows', {
-        name: t('workflows.untitledName'),
+        name,
         description: '',
         startStepId: blankStep.id,
         steps: [blankStep],
@@ -51,6 +58,45 @@ export default function WorkflowsPage() {
     } finally {
       setSaving(false)
     }
+  }
+
+  async function createFromTemplate(templateId: string, name: string) {
+    setSaving(true)
+    try {
+      const created = await apiPost<WorkflowDefinition>('/api/v1/workflows', {
+        templateId,
+        locale: templateLocale,
+        name,
+      })
+      setCreateOpen(false)
+      navigate(`/workflows/${encodeURIComponent(created.id)}`)
+    } finally {
+      setSaving(false)
+    }
+  }
+
+  function openCreateDialog() {
+    const firstTemplate = templates[0]
+    setCreateMode(firstTemplate ? 'template' : 'blank')
+    setSelectedTemplateId(firstTemplate?.id || '')
+    setWorkflowName(firstTemplate?.name || t('workflows.untitledName'))
+    setCreateOpen(true)
+  }
+
+  function updateSelectedTemplate(templateId: string) {
+    const tmpl = templates.find((item) => item.id === templateId)
+    setSelectedTemplateId(templateId)
+    if (tmpl) setWorkflowName(tmpl.name)
+  }
+
+  async function submitCreate() {
+    if (createMode === 'blank') {
+      await createBlank(workflowName)
+      setCreateOpen(false)
+      return
+    }
+    if (!selectedTemplateId) return
+    await createFromTemplate(selectedTemplateId, workflowName)
   }
 
   async function duplicateWorkflow(wf: WorkflowDefinition) {
@@ -154,10 +200,65 @@ export default function WorkflowsPage() {
           <h1 className="text-xl font-semibold text-neutral-900 dark:text-zinc-100">{t('nav.workflows')}</h1>
           <p className="mt-0.5 text-sm text-neutral-500 dark:text-zinc-500">{t('workflows.workspaceSubtitle')}</p>
         </div>
-        <button type="button" onClick={() => void createBlank()} disabled={saving} className="rounded-lg border border-sky-600 bg-white px-3 py-2 text-sm font-medium text-sky-700 hover:bg-sky-50 disabled:opacity-50 dark:border-sky-500 dark:bg-zinc-900 dark:text-sky-400 dark:hover:bg-zinc-800">
+        <button type="button" onClick={openCreateDialog} disabled={saving} className="rounded-lg border border-sky-600 bg-white px-3 py-2 text-sm font-medium text-sky-700 hover:bg-sky-50 disabled:opacity-50 dark:border-sky-500 dark:bg-zinc-900 dark:text-sky-400 dark:hover:bg-zinc-800">
           {t('workflows.createBlank')}
         </button>
       </div>
+
+      {createOpen ? (
+        <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/30 px-4">
+          <div className="w-full max-w-2xl rounded-xl border border-neutral-200 bg-white p-5 shadow-xl dark:border-zinc-700 dark:bg-zinc-900">
+            <div className="flex items-start justify-between gap-4">
+              <div>
+                <h2 className="text-base font-semibold text-neutral-900 dark:text-zinc-100">{t('workflows.createWorkflow')}</h2>
+                <p className="mt-1 text-sm text-neutral-500 dark:text-zinc-400">{t('workflows.createWorkflowHint')}</p>
+              </div>
+              <button type="button" onClick={() => setCreateOpen(false)} className="rounded-lg border border-neutral-300 px-3 py-1.5 text-sm text-neutral-600 hover:bg-neutral-50 dark:border-zinc-600 dark:text-zinc-300 dark:hover:bg-zinc-800">
+                {t('common.cancel')}
+              </button>
+            </div>
+            <div className="mt-5 grid gap-3 sm:grid-cols-2">
+              <button type="button" onClick={() => { setCreateMode('blank'); setWorkflowName(t('workflows.untitledName')) }} className={`rounded-xl border p-4 text-left ${createMode === 'blank' ? 'border-sky-500 bg-sky-50 dark:border-sky-500 dark:bg-sky-950/30' : 'border-neutral-200 hover:bg-neutral-50 dark:border-zinc-700 dark:hover:bg-zinc-800'}`}>
+                <p className="font-medium text-neutral-900 dark:text-zinc-100">{t('workflows.blankWorkflow')}</p>
+                <p className="mt-1 text-sm text-neutral-500 dark:text-zinc-400">{t('workflows.blankWorkflowHint')}</p>
+              </button>
+              <button type="button" onClick={() => { setCreateMode('template'); updateSelectedTemplate(selectedTemplateId || templates[0]?.id || '') }} disabled={templates.length === 0} className={`rounded-xl border p-4 text-left disabled:opacity-50 ${createMode === 'template' ? 'border-sky-500 bg-sky-50 dark:border-sky-500 dark:bg-sky-950/30' : 'border-neutral-200 hover:bg-neutral-50 dark:border-zinc-700 dark:hover:bg-zinc-800'}`}>
+                <p className="font-medium text-neutral-900 dark:text-zinc-100">{t('workflows.fromTemplate')}</p>
+                <p className="mt-1 text-sm text-neutral-500 dark:text-zinc-400">{t('workflows.fromTemplateHint')}</p>
+              </button>
+            </div>
+            {createMode === 'template' ? (
+              <div className="mt-4 space-y-3">
+                <label className="block">
+                  <span className="text-xs font-medium uppercase text-neutral-400 dark:text-zinc-500">{t('workflows.template')}</span>
+                  <select value={selectedTemplateId} onChange={(event) => updateSelectedTemplate(event.target.value)} className="mt-1 w-full rounded-lg border border-neutral-300 bg-white px-3 py-2 text-sm text-neutral-900 outline-none focus:border-sky-400 dark:border-zinc-600 dark:bg-zinc-800 dark:text-zinc-100">
+                    {templates.map((tmpl) => (
+                      <option key={tmpl.id} value={tmpl.id}>{tmpl.name}</option>
+                    ))}
+                  </select>
+                </label>
+                {templates.find((item) => item.id === selectedTemplateId) ? (
+                  <p className="rounded-lg bg-neutral-50 px-3 py-2 text-sm text-neutral-500 dark:bg-zinc-800/70 dark:text-zinc-400">
+                    {templates.find((item) => item.id === selectedTemplateId)?.description}
+                  </p>
+                ) : null}
+              </div>
+            ) : null}
+            <label className="mt-4 block">
+              <span className="text-xs font-medium uppercase text-neutral-400 dark:text-zinc-500">{t('workflows.workflowName')}</span>
+              <input value={workflowName} onChange={(event) => setWorkflowName(event.target.value)} className="mt-1 w-full rounded-lg border border-neutral-300 bg-white px-3 py-2 text-sm text-neutral-900 outline-none focus:border-sky-400 dark:border-zinc-600 dark:bg-zinc-800 dark:text-zinc-100" />
+            </label>
+            <div className="mt-5 flex justify-end gap-2">
+              <button type="button" onClick={() => setCreateOpen(false)} className="rounded-lg border border-neutral-300 bg-white px-3 py-2 text-sm font-medium text-neutral-600 hover:bg-neutral-50 dark:border-zinc-600 dark:bg-zinc-900 dark:text-zinc-300 dark:hover:bg-zinc-800">
+                {t('common.cancel')}
+              </button>
+              <button type="button" onClick={() => void submitCreate()} disabled={saving || (createMode === 'template' && !selectedTemplateId) || !workflowName.trim()} className="rounded-lg border border-sky-600 bg-white px-3 py-2 text-sm font-medium text-sky-700 hover:bg-sky-50 disabled:opacity-50 dark:border-sky-500 dark:bg-zinc-900 dark:text-sky-400 dark:hover:bg-zinc-800">
+                {saving ? t('common.saving') : t('common.create')}
+              </button>
+            </div>
+          </div>
+        </div>
+      ) : null}
 
       {state.status === 'loading' && <Loading label={t('api.loading')} />}
 

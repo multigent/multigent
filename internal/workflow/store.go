@@ -20,6 +20,43 @@ func NewStore(db controldb.Store, workspaceID string) *Store {
 	return &Store{db: db, workspaceID: workspaceID}
 }
 
+func Templates(locale string) []entity.WorkflowTemplate {
+	return []entity.WorkflowTemplate{softwareDeliveryTemplate(locale)}
+}
+
+func Template(id, locale string) (entity.WorkflowTemplate, bool) {
+	for _, tmpl := range Templates(locale) {
+		if tmpl.ID == id {
+			return tmpl, true
+		}
+	}
+	return entity.WorkflowTemplate{}, false
+}
+
+func DefinitionFromTemplate(templateID, locale, name string) (entity.WorkflowDefinition, bool) {
+	tmpl, ok := Template(templateID, locale)
+	if !ok {
+		return entity.WorkflowDefinition{}, false
+	}
+	now := time.Now().UTC()
+	def := entity.WorkflowDefinition{
+		ID:          entity.NewWorkflowID(),
+		Name:        strings.TrimSpace(name),
+		Description: tmpl.Description,
+		Version:     1,
+		Scope:       "workspace",
+		StartStepID: tmpl.StartStepID,
+		Steps:       tmpl.Steps,
+		Edges:       tmpl.Edges,
+		CreatedAt:   now,
+		UpdatedAt:   now,
+	}
+	if def.Name == "" {
+		def.Name = tmpl.Name
+	}
+	return def, true
+}
+
 func (s *Store) SeedDefaults() error {
 	if def, ok, err := s.Definition("software-delivery-v1"); err != nil {
 		return err
@@ -179,6 +216,270 @@ func edge(id, from, to, label string, condition *entity.WorkflowEdgeCondition, i
 		InputMapping: inputMapping,
 		IsDefault:    isDefault,
 	}
+}
+
+func softwareDeliveryTemplate(locale string) entity.WorkflowTemplate {
+	locale = normalizeTemplateLocale(locale)
+	text := softwareDeliveryText(locale)
+	step := func(id, typ, titleKey, descKey, role, color string, x int, inputs, outputs []entity.WorkflowField) entity.WorkflowStep {
+		cfg := map[string]string{}
+		if color != "" {
+			cfg["color"] = color
+		}
+		return entity.WorkflowStep{
+			ID:           id,
+			Type:         typ,
+			Title:        text[titleKey],
+			Description:  text[descKey],
+			ActorRole:    role,
+			InputFields:  inputs,
+			OutputFields: outputs,
+			ReviewPolicy: reviewPolicyForType(typ),
+			Position:     entity.WorkflowPosition{X: x, Y: 180},
+			Config:       cfg,
+		}
+	}
+	field := func(name, descKey string) entity.WorkflowField {
+		return entity.WorkflowField{Name: name, Description: text[descKey]}
+	}
+	return entity.WorkflowTemplate{
+		ID:          "agentic-software-delivery",
+		Name:        text["name"],
+		Description: text["description"],
+		Version:     1,
+		Locale:      locale,
+		StartStepID: "requirement_draft",
+		Steps: []entity.WorkflowStep{
+			step("requirement_draft", "agent_task", "requirementDraftTitle", "requirementDraftDesc", "pm-agent", "sky", 80, []entity.WorkflowField{field("request", "requestField"), field("context", "contextField")}, []entity.WorkflowField{field("requirement_draft", "requirementDraftField"), field("open_questions", "openQuestionsField")}),
+			step("requirement_review", "human_review", "requirementReviewTitle", "requirementReviewDesc", "product-owner", "amber", 360, []entity.WorkflowField{field("requirement_draft", "requirementDraftReviewField")}, []entity.WorkflowField{field("decision", "decisionField"), field("comments", "commentsField")}),
+			step("prd_draft", "agent_task", "prdDraftTitle", "prdDraftDesc", "pm-agent", "sky", 640, []entity.WorkflowField{field("approved_requirement", "approvedRequirementField")}, []entity.WorkflowField{field("prd", "prdField"), field("acceptance_criteria", "acceptanceCriteriaField")}),
+			step("prd_review", "human_review", "prdReviewTitle", "prdReviewDesc", "product-owner", "amber", 920, []entity.WorkflowField{field("prd", "prdReviewField")}, []entity.WorkflowField{field("decision", "decisionField"), field("comments", "commentsField"), field("approved_prd", "approvedPRDField")}),
+			step("tech_spec_draft", "agent_task", "techSpecDraftTitle", "techSpecDraftDesc", "engineering-agent", "violet", 1200, []entity.WorkflowField{field("approved_prd", "approvedPRDInputField")}, []entity.WorkflowField{field("technical_spec", "technicalSpecField"), field("task_split", "taskSplitField")}),
+			step("tech_spec_review", "human_review", "techSpecReviewTitle", "techSpecReviewDesc", "tech-lead", "amber", 1480, []entity.WorkflowField{field("technical_spec", "technicalSpecReviewField")}, []entity.WorkflowField{field("decision", "decisionField"), field("comments", "commentsField"), field("approved_technical_spec", "approvedTechnicalSpecField")}),
+			step("implementation", "agent_task", "implementationTitle", "implementationDesc", "developer-agent", "emerald", 1760, []entity.WorkflowField{field("approved_technical_spec", "approvedTechnicalSpecInputField")}, []entity.WorkflowField{field("pr", "prField"), field("tests_run", "testsRunField"), field("risks", "risksField")}),
+			step("code_review", "human_review", "codeReviewTitle", "codeReviewDesc", "owner-engineer", "amber", 2040, []entity.WorkflowField{field("pr", "prReviewField")}, []entity.WorkflowField{field("decision", "decisionField"), field("comments", "commentsField"), field("approved_change", "approvedChangeField")}),
+			step("qa", "agent_task", "qaTitle", "qaDesc", "qa-agent", "rose", 2320, []entity.WorkflowField{field("approved_change", "approvedChangeInputField")}, []entity.WorkflowField{field("test_cases", "testCasesField"), field("test_report", "testReportField")}),
+			step("qa_review", "human_review", "qaReviewTitle", "qaReviewDesc", "qa-owner", "amber", 2600, []entity.WorkflowField{field("test_report", "testReportReviewField")}, []entity.WorkflowField{field("decision", "decisionField"), field("comments", "commentsField"), field("release_candidate", "releaseCandidateField")}),
+			step("release", "agent_task", "releaseTitle", "releaseDesc", "release-agent", "emerald", 2880, []entity.WorkflowField{field("release_candidate", "releaseCandidateInputField")}, []entity.WorkflowField{field("release_report", "releaseReportField")}),
+			step("done", "terminal", "doneTitle", "doneDesc", "", "", 3160, nil, nil),
+		},
+		Edges: []entity.WorkflowEdge{
+			edge("e-req-to-review", "requirement_draft", "requirement_review", "", nil, nil, true),
+			edge("e-req-review-approve", "requirement_review", "prd_draft", text["approved"], cond("decision", "eq", "approve"), map[string]string{"approved_requirement": "$output.requirement_draft"}, false),
+			edge("e-req-review-rework", "requirement_review", "requirement_draft", text["changesRequested"], cond("decision", "eq", "request_changes"), map[string]string{"review_comments": "$output.comments", "previous_draft": "$input.requirement_draft"}, false),
+			edge("e-prd-to-review", "prd_draft", "prd_review", "", nil, nil, true),
+			edge("e-prd-review-approve", "prd_review", "tech_spec_draft", text["approved"], cond("decision", "eq", "approve"), map[string]string{"approved_prd": "$output.approved_prd"}, false),
+			edge("e-prd-review-rework", "prd_review", "prd_draft", text["changesRequested"], cond("decision", "eq", "request_changes"), map[string]string{"review_comments": "$output.comments", "previous_prd": "$input.prd"}, false),
+			edge("e-tech-to-review", "tech_spec_draft", "tech_spec_review", "", nil, nil, true),
+			edge("e-tech-review-approve", "tech_spec_review", "implementation", text["approved"], cond("decision", "eq", "approve"), map[string]string{"approved_technical_spec": "$output.approved_technical_spec"}, false),
+			edge("e-tech-review-rework", "tech_spec_review", "tech_spec_draft", text["changesRequested"], cond("decision", "eq", "request_changes"), map[string]string{"review_comments": "$output.comments", "previous_spec": "$input.technical_spec"}, false),
+			edge("e-impl-to-review", "implementation", "code_review", "", nil, nil, true),
+			edge("e-code-review-approve", "code_review", "qa", text["approved"], cond("decision", "eq", "approve"), map[string]string{"approved_change": "$output.approved_change"}, false),
+			edge("e-code-review-rework", "code_review", "implementation", text["changesRequested"], cond("decision", "eq", "request_changes"), map[string]string{"review_comments": "$output.comments", "previous_pr": "$input.pr"}, false),
+			edge("e-qa-to-review", "qa", "qa_review", "", nil, nil, true),
+			edge("e-qa-review-approve", "qa_review", "release", text["approved"], cond("decision", "eq", "approve"), map[string]string{"release_candidate": "$output.release_candidate"}, false),
+			edge("e-qa-review-rework", "qa_review", "qa", text["changesRequested"], cond("decision", "eq", "request_changes"), map[string]string{"review_comments": "$output.comments", "previous_report": "$input.test_report"}, false),
+			edge("e-release-done", "release", "done", "", nil, nil, true),
+		},
+	}
+}
+
+func reviewPolicyForType(typ string) string {
+	if typ == "human_review" {
+		return "manual"
+	}
+	return ""
+}
+
+func normalizeTemplateLocale(locale string) string {
+	locale = strings.ToLower(strings.TrimSpace(locale))
+	switch {
+	case strings.HasPrefix(locale, "zh-tw"), strings.HasPrefix(locale, "zh-hk"):
+		return "zh-TW"
+	case strings.HasPrefix(locale, "zh"):
+		return "zh-CN"
+	case strings.HasPrefix(locale, "ja"):
+		return "ja"
+	default:
+		return "en"
+	}
+}
+
+func softwareDeliveryText(locale string) map[string]string {
+	en := map[string]string{
+		"name":                            "Agentic Software Delivery",
+		"description":                     "A configurable human-agent delivery workflow. Agents draft artifacts, humans review decision gates, and rejected outputs loop back with structured feedback.",
+		"approved":                        "approved",
+		"changesRequested":                "changes requested",
+		"requirementDraftTitle":           "Requirement Draft",
+		"requirementDraftDesc":            "An agent turns an incoming request into a structured understanding: problem, goal, scope, non-goals, risks, and open questions.",
+		"requirementReviewTitle":          "Requirement Review",
+		"requirementReviewDesc":           "A human reviews whether the requirement draft expresses the real problem and whether more clarification is needed.",
+		"prdDraftTitle":                   "PRD Draft",
+		"prdDraftDesc":                    "The PM agent produces the product spec, acceptance criteria, release scope, and non-goals.",
+		"prdReviewTitle":                  "PRD Review",
+		"prdReviewDesc":                   "Product and engineering stakeholders review scope, non-goals, and acceptance criteria.",
+		"techSpecDraftTitle":              "Technical Spec Draft",
+		"techSpecDraftDesc":               "Engineering agents inspect the codebase and produce implementation plan, affected surfaces, test strategy, and task split recommendation.",
+		"techSpecReviewTitle":             "Technical Spec Review",
+		"techSpecReviewDesc":              "Responsible engineers review the plan before implementation starts.",
+		"implementationTitle":             "Implementation",
+		"implementationDesc":              "Development agents implement the approved technical plan and produce code changes, tests, and a PR or patch summary.",
+		"codeReviewTitle":                 "Code Review",
+		"codeReviewDesc":                  "The responsible human reviews code quality, risk, and whether the output matches the approved spec.",
+		"qaTitle":                         "QA Test",
+		"qaDesc":                          "QA agents generate and execute test cases, then identify remaining manual test needs.",
+		"qaReviewTitle":                   "QA Review",
+		"qaReviewDesc":                    "Human QA or owner reviews the test report and decides whether release can proceed.",
+		"releaseTitle":                    "Release and Observe",
+		"releaseDesc":                     "Release agents prepare rollout notes, execute allowed release steps, and check post-release signals.",
+		"doneTitle":                       "Done",
+		"doneDesc":                        "Workflow completed with artifacts and metrics ready for retrospective.",
+		"requestField":                    "Original user, customer, founder, or internal request.",
+		"contextField":                    "Known background, links, meeting notes, or existing discussions.",
+		"requirementDraftField":           "Structured requirement draft.",
+		"openQuestionsField":              "Questions that still need human or stakeholder clarification.",
+		"requirementDraftReviewField":     "Draft produced by the PM agent.",
+		"decisionField":                   "approve, request_changes, or need_discussion.",
+		"commentsField":                   "Review comments and clarification notes.",
+		"approvedRequirementField":        "Reviewed requirement with comments folded in.",
+		"prdField":                        "Product requirements document or spec.",
+		"acceptanceCriteriaField":         "Observable acceptance criteria.",
+		"prdReviewField":                  "PRD draft to review.",
+		"approvedPRDField":                "Final PRD when approved.",
+		"approvedPRDInputField":           "Reviewed product spec.",
+		"technicalSpecField":              "Implementation plan and technical decisions.",
+		"taskSplitField":                  "Optional child task split for parallel work.",
+		"technicalSpecReviewField":        "Technical plan to review.",
+		"approvedTechnicalSpecField":      "Final technical spec when approved.",
+		"approvedTechnicalSpecInputField": "Approved implementation plan.",
+		"prField":                         "Pull request, patch, or change summary.",
+		"testsRunField":                   "Tests executed by the agent.",
+		"risksField":                      "Known risks or manual checks needed.",
+		"prReviewField":                   "PR or patch to review.",
+		"approvedChangeField":             "Approved code artifact.",
+		"approvedChangeInputField":        "Code artifact approved for testing.",
+		"testCasesField":                  "Test cases.",
+		"testReportField":                 "Automated and manual test result summary.",
+		"testReportReviewField":           "Test report to review.",
+		"releaseCandidateField":           "Approved release candidate.",
+		"releaseCandidateInputField":      "Approved release candidate.",
+		"releaseReportField":              "Release result, monitoring checks, and follow-up items.",
+	}
+	if locale == "zh-CN" {
+		return mergeText(en, map[string]string{
+			"name":                            "Agent 研发交付流程",
+			"description":                     "一套可配置的人机协作研发流程：Agent 产出文档和代码，人类只审核关键关口，未通过的产出带结构化意见回流修改。",
+			"approved":                        "通过",
+			"changesRequested":                "需要修改",
+			"requirementDraftTitle":           "需求理解草稿",
+			"requirementDraftDesc":            "Agent 将原始需求整理成结构化理解：问题、目标、范围、非目标、风险和待澄清问题。",
+			"requirementReviewTitle":          "需求审核",
+			"requirementReviewDesc":           "人类审核需求草稿是否表达了真实问题，以及是否还需要继续澄清。",
+			"prdDraftTitle":                   "产品文档草稿",
+			"prdDraftDesc":                    "产品 Agent 输出产品规格、验收标准、发版范围和非目标。",
+			"prdReviewTitle":                  "产品文档审核",
+			"prdReviewDesc":                   "产品和工程相关负责人审核范围、非目标和验收标准。",
+			"techSpecDraftTitle":              "技术方案草稿",
+			"techSpecDraftDesc":               "工程 Agent 调研代码库并输出实现方案、影响面、测试策略和任务拆分建议。",
+			"techSpecReviewTitle":             "技术方案审核",
+			"techSpecReviewDesc":              "负责工程师在开发开始前审核实现方案。",
+			"implementationTitle":             "开发实现",
+			"implementationDesc":              "开发 Agent 根据通过的技术方案完成代码修改、测试和 PR 或补丁摘要。",
+			"codeReviewTitle":                 "代码审核",
+			"codeReviewDesc":                  "负责人审核代码质量、风险，以及产出是否符合已确认的方案。",
+			"qaTitle":                         "测试执行",
+			"qaDesc":                          "测试 Agent 生成并执行测试用例，同时标记仍需人工检查的部分。",
+			"qaReviewTitle":                   "测试审核",
+			"qaReviewDesc":                    "QA 或负责人审核测试报告并决定是否可以进入发布。",
+			"releaseTitle":                    "发布与观察",
+			"releaseDesc":                     "发布 Agent 准备发布说明、执行允许的发布动作，并检查上线后信号。",
+			"doneTitle":                       "完成",
+			"doneDesc":                        "流程完成，产物和指标可用于复盘。",
+			"requestField":                    "用户、客户、老板或内部提出的原始需求。",
+			"contextField":                    "已知背景、链接、会议记录或历史讨论。",
+			"requirementDraftField":           "结构化需求草稿。",
+			"openQuestionsField":              "仍需要人类或相关方澄清的问题。",
+			"requirementDraftReviewField":     "PM Agent 输出的需求草稿。",
+			"decisionField":                   "approve、request_changes 或 need_discussion。",
+			"commentsField":                   "审核意见和澄清说明。",
+			"approvedRequirementField":        "已合入审核意见的需求。",
+			"prdField":                        "产品需求文档或规格说明。",
+			"acceptanceCriteriaField":         "可观察的验收标准。",
+			"prdReviewField":                  "待审核的产品文档草稿。",
+			"approvedPRDField":                "审核通过后的最终产品文档。",
+			"approvedPRDInputField":           "已审核的产品规格。",
+			"technicalSpecField":              "实现方案和技术决策。",
+			"taskSplitField":                  "可选的并行子任务拆分。",
+			"technicalSpecReviewField":        "待审核的技术方案。",
+			"approvedTechnicalSpecField":      "审核通过后的最终技术方案。",
+			"approvedTechnicalSpecInputField": "已通过的实现方案。",
+			"prField":                         "PR、补丁或变更摘要。",
+			"testsRunField":                   "Agent 已执行的测试。",
+			"risksField":                      "已知风险或需要人工检查的事项。",
+			"prReviewField":                   "待审核的 PR 或补丁。",
+			"approvedChangeField":             "已审核通过的代码产物。",
+			"approvedChangeInputField":        "已通过代码审核的产物。",
+			"testCasesField":                  "测试用例。",
+			"testReportField":                 "自动化和人工测试结果摘要。",
+			"testReportReviewField":           "待审核的测试报告。",
+			"releaseCandidateField":           "已通过测试准出的发布候选。",
+			"releaseCandidateInputField":      "已通过测试准出的发布候选。",
+			"releaseReportField":              "发布结果、监控检查和后续事项。",
+		})
+	}
+	if locale == "zh-TW" {
+		return mergeText(en, map[string]string{
+			"name":                   "Agent 研發交付流程",
+			"description":            "一套可配置的人機協作研發流程：Agent 產出文件和程式碼，人類只審核關鍵關口，未通過的產出帶結構化意見回流修改。",
+			"approved":               "通過",
+			"changesRequested":       "需要修改",
+			"requirementDraftTitle":  "需求理解草稿",
+			"requirementReviewTitle": "需求審核",
+			"prdDraftTitle":          "產品文件草稿",
+			"prdReviewTitle":         "產品文件審核",
+			"techSpecDraftTitle":     "技術方案草稿",
+			"techSpecReviewTitle":    "技術方案審核",
+			"implementationTitle":    "開發實作",
+			"codeReviewTitle":        "程式碼審核",
+			"qaTitle":                "測試執行",
+			"qaReviewTitle":          "測試審核",
+			"releaseTitle":           "發布與觀察",
+			"doneTitle":              "完成",
+		})
+	}
+	if locale == "ja" {
+		return mergeText(en, map[string]string{
+			"name":                   "Agent ソフトウェアデリバリー",
+			"description":            "Agent が成果物を作成し、人が重要なゲートだけをレビューし、差し戻しは構造化されたフィードバックとして戻るワークフローです。",
+			"approved":               "承認",
+			"changesRequested":       "修正依頼",
+			"requirementDraftTitle":  "要件ドラフト",
+			"requirementReviewTitle": "要件レビュー",
+			"prdDraftTitle":          "PRD ドラフト",
+			"prdReviewTitle":         "PRD レビュー",
+			"techSpecDraftTitle":     "技術仕様ドラフト",
+			"techSpecReviewTitle":    "技術仕様レビュー",
+			"implementationTitle":    "実装",
+			"codeReviewTitle":        "コードレビュー",
+			"qaTitle":                "QA テスト",
+			"qaReviewTitle":          "QA レビュー",
+			"releaseTitle":           "リリースと監視",
+			"doneTitle":              "完了",
+		})
+	}
+	return en
+}
+
+func mergeText(base, override map[string]string) map[string]string {
+	out := make(map[string]string, len(base)+len(override))
+	for k, v := range base {
+		out[k] = v
+	}
+	for k, v := range override {
+		out[k] = v
+	}
+	return out
 }
 
 func (s *Store) SaveDefinition(def *entity.WorkflowDefinition) error {

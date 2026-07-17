@@ -13,6 +13,8 @@ import (
 type workflowCreateBody struct {
 	Name        string                `json:"name"`
 	Description string                `json:"description"`
+	TemplateID  string                `json:"templateId"`
+	Locale      string                `json:"locale"`
 	StartStepID string                `json:"startStepId"`
 	Steps       []entity.WorkflowStep `json:"steps"`
 	Edges       []entity.WorkflowEdge `json:"edges"`
@@ -41,16 +43,20 @@ func (s *Server) handleListWorkflows(w http.ResponseWriter, r *http.Request) {
 	if !ok {
 		return
 	}
-	if err := wfStore.SeedDefaults(); err != nil {
-		s.serverError(w, err)
-		return
-	}
 	defs, err := wfStore.ListDefinitions()
 	if err != nil {
 		s.serverError(w, err)
 		return
 	}
 	_ = json.NewEncoder(w).Encode(map[string]any{"workflows": defs})
+}
+
+func (s *Server) handleListWorkflowTemplates(w http.ResponseWriter, r *http.Request) {
+	if _, ok := s.workflowStoreForRequest(w, r); !ok {
+		return
+	}
+	locale := strings.TrimSpace(r.URL.Query().Get("locale"))
+	_ = json.NewEncoder(w).Encode(map[string]any{"templates": workflowstore.Templates(locale)})
 }
 
 func (s *Server) handleGetWorkflow(w http.ResponseWriter, r *http.Request) {
@@ -80,6 +86,24 @@ func (s *Server) handleCreateWorkflow(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	name := strings.TrimSpace(body.Name)
+	if strings.TrimSpace(body.TemplateID) != "" {
+		def, found := workflowstore.DefinitionFromTemplate(body.TemplateID, body.Locale, name)
+		if !found {
+			s.jsonError(w, http.StatusNotFound, "workflow template not found")
+			return
+		}
+		wfStore, ok := s.workflowStoreForRequest(w, r)
+		if !ok {
+			return
+		}
+		if err := wfStore.SaveDefinition(&def); err != nil {
+			s.serverError(w, err)
+			return
+		}
+		w.WriteHeader(http.StatusCreated)
+		_ = json.NewEncoder(w).Encode(def)
+		return
+	}
 	if name == "" {
 		s.jsonError(w, http.StatusBadRequest, "name is required")
 		return

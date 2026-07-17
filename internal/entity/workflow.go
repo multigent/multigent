@@ -20,6 +20,17 @@ type WorkflowDefinition struct {
 	UpdatedAt   time.Time      `json:"updatedAt" yaml:"updated_at"`
 }
 
+type WorkflowTemplate struct {
+	ID          string         `json:"id" yaml:"id"`
+	Name        string         `json:"name" yaml:"name"`
+	Description string         `json:"description,omitempty" yaml:"description,omitempty"`
+	Version     int            `json:"version" yaml:"version"`
+	Locale      string         `json:"locale" yaml:"locale"`
+	StartStepID string         `json:"startStepId" yaml:"start_step_id"`
+	Steps       []WorkflowStep `json:"steps" yaml:"steps"`
+	Edges       []WorkflowEdge `json:"edges" yaml:"edges"`
+}
+
 type WorkflowStep struct {
 	ID           string            `json:"id" yaml:"id"`
 	Type         string            `json:"type" yaml:"type"` // agent_task, human_review, branch, join, terminal
