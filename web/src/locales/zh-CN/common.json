@@ -310,8 +310,6 @@
       "title": "标题",
       "type": "类型",
       "description": "描述",
-      "startNode": "开始",
-      "setAsStart": "设为开始节点",
       "color": "颜色",
       "saveNode": "保存节点"
     },

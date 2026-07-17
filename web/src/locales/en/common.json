@@ -310,8 +310,6 @@
       "title": "Title",
       "type": "Type",
       "description": "Description",
-      "startNode": "Start",
-      "setAsStart": "Use as start node",
       "color": "Color",
       "saveNode": "Save node"
     },

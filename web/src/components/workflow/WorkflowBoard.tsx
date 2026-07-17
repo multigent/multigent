@@ -523,15 +523,6 @@ export function WorkflowBoard({
                 <span className="text-xs font-medium uppercase text-neutral-400 dark:text-zinc-500">{t('workflows.detail.review')}</span>
                 <input value={stepDraft.reviewPolicy || ''} onChange={(event) => updateStepDraft({ reviewPolicy: event.target.value })} placeholder={t('workflows.detail.notRequired')} className={fieldClass} />
               </label>
-              <label className="flex items-center justify-between gap-3 rounded-lg border border-neutral-200 px-3 py-2 dark:border-zinc-700">
-                <span className="text-sm text-neutral-600 dark:text-zinc-300">{t('workflows.detail.setAsStart')}</span>
-                <input
-                  type="checkbox"
-                  checked={definition.startStepId === selected.id}
-                  onChange={(event) => event.target.checked && updateDefinition({ ...definition, startStepId: selected.id })}
-                  className="size-4 accent-sky-600"
-                />
-              </label>
               <button
                 type="button"
                 onClick={saveSelectedStep}
