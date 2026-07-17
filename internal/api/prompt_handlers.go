@@ -10,6 +10,7 @@ import (
 	"strings"
 
 	"github.com/multigent/multigent/internal/agentcli"
+	"github.com/multigent/multigent/internal/ctxbuild"
 	"github.com/multigent/multigent/internal/entity"
 	"github.com/multigent/multigent/internal/sandbox"
 )
@@ -197,21 +198,25 @@ func (s *Server) handleGetAgentContext(w http.ResponseWriter, r *http.Request) {
 
 	var skills []string
 	seen := map[string]bool{}
+	addSkill := func(skillName string) {
+		if skillName == "" || seen[skillName] {
+			return
+		}
+		skills = append(skills, skillName)
+		seen[skillName] = true
+	}
+	for _, sk := range ctxbuild.DefaultSkillNames() {
+		addSkill(sk)
+	}
 	if t, err := s.st.Team(meta.Team); err == nil && t != nil {
 		for _, sk := range t.Skills {
-			if !seen[sk] {
-				skills = append(skills, sk)
-				seen[sk] = true
-			}
+			addSkill(sk)
 		}
 	}
 	if meta.Role != "" {
 		if rl, err := s.st.Role(meta.Team, meta.Role); err == nil && rl != nil {
 			for _, sk := range rl.Skills {
-				if !seen[sk] {
-					skills = append(skills, sk)
-					seen[sk] = true
-				}
+				addSkill(sk)
 			}
 		}
 	}

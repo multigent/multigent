@@ -1108,6 +1108,7 @@
     "adapterSkillOnly": "僅 Skill",
     "enableTool": "啟用工具",
     "configuredToolBindings": "已啟用工具",
+    "toolEnabled": "已啟用",
     "removeToolBinding": "解除",
     "context": "Context",
     "contextHint": "這裡展示 Agent 實際收到的完整合併上下文，用來排查 Prompt、角色、專案和 Skill 是否正確注入。",

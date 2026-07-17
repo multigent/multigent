@@ -1108,6 +1108,7 @@
     "adapterSkillOnly": "Skill のみ",
     "enableTool": "ツールを有効化",
     "configuredToolBindings": "有効なツール",
+    "toolEnabled": "有効",
     "removeToolBinding": "解除",
     "context": "Context",
     "contextHint": "エージェントが実際に受け取る完全なマージ済みコンテキストを確認します。Prompt、ロール、プロジェクト、Skill の注入確認に使います。",

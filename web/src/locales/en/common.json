@@ -1108,6 +1108,7 @@
     "adapterSkillOnly": "Skill only",
     "enableTool": "Enable Tool",
     "configuredToolBindings": "Enabled tools",
+    "toolEnabled": "Enabled",
     "removeToolBinding": "Remove",
     "context": "Context",
     "contextHint": "Review the complete merged context the agent receives, including prompt, role, project, and skill content.",

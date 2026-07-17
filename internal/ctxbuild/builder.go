@@ -11,6 +11,17 @@ import (
 	"github.com/multigent/multigent/internal/store"
 )
 
+var defaultSkillNames = []string{
+	"multigent-usage",
+	"task-management",
+	"agency-messaging",
+}
+
+// DefaultSkillNames returns the built-in skills every agent receives.
+func DefaultSkillNames() []string {
+	return append([]string(nil), defaultSkillNames...)
+}
+
 // Builder constructs a MergedContext for a given (project, team, role) pair
 // by reading prompt files from the store in the correct inheritance order.
 type Builder struct {
@@ -32,8 +43,8 @@ func NewBuilder(s store.Store) *Builder {
 //  3. Role (when roleName != "")
 //  4. Project
 //
-// Skills are deduplicated and collected from team → role. Empty prompt files
-// are silently skipped.
+// Skills are deduplicated and collected from default → team → role. Empty
+// prompt files are silently skipped.
 func (b *Builder) Build(projectName, teamPath, roleName string) (*MergedContext, error) {
 	mc := &MergedContext{}
 
@@ -69,6 +80,10 @@ func (b *Builder) Build(projectName, teamPath, roleName string) (*MergedContext,
 			Prompt:      skillPrompt,
 			Files:       files,
 		})
+	}
+
+	for _, skillName := range DefaultSkillNames() {
+		addSkill(skillName)
 	}
 
 	if teamPath != "" {
