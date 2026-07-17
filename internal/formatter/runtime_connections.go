@@ -21,6 +21,7 @@ At runtime, Multigent injects:
 - `+"`MULTIGENT_TOOL_RUNTIME_DIR`"+`: per-run directory for tool adapter config and runtime files.
 - `+"`MULTIGENT_TOOL_BIN_DIR`"+`: per-run command wrapper directory. It is prepended to `+"`PATH`"+` so provider CLIs such as `+"`gh`"+` or `+"`lark-cli`"+` can use agent-scoped credentials.
 - `+"`MULTIGENT_TOOL_BOOTSTRAP_FILE`"+`: per-run bootstrap script executed before the agent command to install/check provider CLIs declared by runtime adapters.
+- `+"`MULTIGENT_TOOL_SKILLS_FILE`"+`: generated Markdown guide that explains how to use the enabled tools and their CLI, MCP Gateway, HTTP action, or skill-only adapters.
 - `+"`MULTIGENT_API_URL`"+`: Multigent control API base URL.
 - `+"`MULTIGENT_AGENT_TOKEN`"+`: scoped runtime token for this agent/run.
 - `+"`MULTIGENT_RUN_ID`"+` and `+"`MULTIGENT_WORKSPACE_ID`"+`: run and workspace identifiers.
@@ -29,6 +30,7 @@ Use these commands when available:
 
 `+"```bash"+`
 mga runtime tools --format table
+mga runtime skill-guide
 mga runtime connections --format table
 mga runtime action --connection <alias> --data '{"method":"GET","endpoint":"/path"}'
 mga runtime mcp --connection <alias> --data '{"jsonrpc":"2.0","id":1,"method":"tools/list"}'
@@ -38,7 +40,8 @@ mga runtime gateway call-tool action:github:get_authenticated_user --data '{}'
 
 Rules:
 
-- First inspect `+"`MULTIGENT_CONNECTIONS_FILE`"+` or run `+"`mga runtime tools --format table`"+` to see each tool's `+"`recommendedAdapter`"+`, skills, actions, and connection alias.
+- First run `+"`mga runtime skill-guide`"+` or inspect `+"`MULTIGENT_TOOL_SKILLS_FILE`"+` to see how each enabled tool should be used.
+- Use `+"`mga runtime tools --format table`"+` to see each tool's `+"`recommendedAdapter`"+`, skills, actions, and connection alias.
 - If a tool recommends a platform CLI, use that CLI and its bundled skill, for example `+"`gh`"+` for GitHub or `+"`lark-cli`"+` for Feishu/Lark.
 - If a tool recommends MCP Gateway, use the configured MCP Gateway tools rather than attaching every provider MCP server directly.
 - Use `+"`mga runtime gateway list-tools`"+` and `+"`mga runtime gateway call-tool`"+` for the unified Multigent MCP Gateway without hand-writing JSON-RPC.

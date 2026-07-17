@@ -35,6 +35,7 @@ import (
 	"github.com/multigent/multigent/internal/runenv"
 	"github.com/multigent/multigent/internal/runtimeauth"
 	"github.com/multigent/multigent/internal/runtimecli"
+	"github.com/multigent/multigent/internal/runtimeguide"
 	"github.com/multigent/multigent/internal/store"
 	"github.com/multigent/multigent/internal/taskstore"
 	"github.com/multigent/multigent/internal/telemetry"
@@ -53,6 +54,7 @@ const (
 	runtimeToolDirEnv         = "MULTIGENT_TOOL_RUNTIME_DIR"
 	runtimeToolBinDirEnv      = "MULTIGENT_TOOL_BIN_DIR"
 	runtimeToolBootstrapEnv   = "MULTIGENT_TOOL_BOOTSTRAP_FILE"
+	runtimeToolSkillsFileEnv  = "MULTIGENT_TOOL_SKILLS_FILE"
 	maxRuntimeConnectionsFile = 1 << 20
 )
 
@@ -1167,11 +1169,16 @@ func (r *Runner) materializeRuntimeConnectionsFile(agentDir string, env map[stri
 	if cleanup := r.materializeRuntimeFiles(agentDir, env); cleanup != nil {
 		toolsPath := env[runtimeToolsFileEnv]
 		toolDir := env[runtimeToolDirEnv]
+		toolSkillsPath := env[runtimeToolSkillsFileEnv]
 		delete(env, runtimeToolsFileEnv)
 		delete(env, runtimeToolDirEnv)
+		delete(env, runtimeToolSkillsFileEnv)
 		return func() {
 			if toolsPath != "" {
 				_ = os.Remove(toolsPath)
+			}
+			if toolSkillsPath != "" {
+				_ = os.Remove(toolSkillsPath)
 			}
 			if toolDir != "" {
 				_ = os.RemoveAll(toolDir)
@@ -1373,7 +1380,55 @@ func writeRuntimeToolsFile(agentDir, runID, connectionsPath string, body []byte,
 	if err := os.WriteFile(planPath, append(planBody, '\n'), 0o600); err != nil {
 		return "", "", nil, err
 	}
+	guide := runtimeguide.Render(runtimeguide.Plan{Tools: runtimeGuideTools(manifest.Tools)})
+	guidePath := filepath.Join(toolDir, "tool-skills.md")
+	if err := os.WriteFile(guidePath, []byte(guide), 0o644); err != nil {
+		return "", "", nil, err
+	}
+	extraEnv[runtimeToolSkillsFileEnv] = guidePath
 	return toolDir, planPath, extraEnv, nil
+}
+
+func runtimeGuideTools(tools []runtimeToolRef) []runtimeguide.Tool {
+	out := make([]runtimeguide.Tool, 0, len(tools))
+	for _, tool := range tools {
+		adapters := make([]runtimeguide.Adapter, 0, len(tool.Adapters))
+		for _, adapter := range tool.Adapters {
+			item := runtimeguide.Adapter{
+				Type:        adapter.Type,
+				Priority:    adapter.Priority,
+				Description: adapter.Description,
+				Skills:      append([]string(nil), adapter.Skills...),
+			}
+			if adapter.CLI != nil {
+				item.CLI = &runtimeguide.CLI{Binary: adapter.CLI.Binary}
+			}
+			if adapter.HTTPAction != nil {
+				item.HTTPAction = &runtimeguide.HTTP{ActionNames: append([]string(nil), adapter.HTTPAction.ActionNames...)}
+			}
+			adapters = append(adapters, item)
+		}
+		actions := make([]runtimeguide.Action, 0, len(tool.Actions))
+		for _, action := range tool.Actions {
+			actions = append(actions, runtimeguide.Action{
+				Name:        action.Name,
+				DisplayName: action.DisplayName,
+				Method:      action.Method,
+				Endpoint:    action.Endpoint,
+			})
+		}
+		out = append(out, runtimeguide.Tool{
+			Provider:           tool.Provider,
+			DisplayName:        tool.DisplayName,
+			ConnectionAlias:    tool.ConnectionAlias,
+			ConnectionName:     tool.ConnectionName,
+			RecommendedAdapter: tool.RecommendedAdapter,
+			Adapters:           adapters,
+			Skills:             append([]string(nil), tool.Skills...),
+			Actions:            actions,
+		})
+	}
+	return out
 }
 
 func runtimeConfigMaterializedPath(toolDir string, tool runtimeToolRef, configuredPath string) string {
@@ -1801,7 +1856,7 @@ func injectRuntimeControlEnvIntoRuntime(cfg *entity.SandboxConfig, env map[strin
 		if k == "" {
 			continue
 		}
-		if k == runtimeToolBinDirEnv || k == runtimeToolBootstrapEnv || k == "PATH" {
+		if k == runtimeToolBinDirEnv || k == runtimeToolBootstrapEnv || k == runtimeToolSkillsFileEnv || k == "PATH" {
 			cfg.Env = append(cfg.Env, entity.RuntimeEnvVar{Name: k, Value: v})
 			continue
 		}
@@ -1811,7 +1866,7 @@ func injectRuntimeControlEnvIntoRuntime(cfg *entity.SandboxConfig, env map[strin
 
 func isRuntimeControlEnvKey(key string) bool {
 	switch key {
-	case "MULTIGENT_API_URL", "MULTIGENT_AGENT_TOKEN", "MULTIGENT_RUN_ID", "MULTIGENT_WORKSPACE_ID", runtimeConnectionsFileEnv, runtimeToolsFileEnv, runtimeToolDirEnv, runtimeToolBinDirEnv, runtimeToolBootstrapEnv:
+	case "MULTIGENT_API_URL", "MULTIGENT_AGENT_TOKEN", "MULTIGENT_RUN_ID", "MULTIGENT_WORKSPACE_ID", runtimeConnectionsFileEnv, runtimeToolsFileEnv, runtimeToolDirEnv, runtimeToolBinDirEnv, runtimeToolBootstrapEnv, runtimeToolSkillsFileEnv:
 		return true
 	default:
 		return false

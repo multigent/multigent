@@ -259,7 +259,7 @@ mga runtime gateway call-tool action:github:list_repository_issues \
 3. Inject
    - 挂载或写入 agent 专属 runtime home。
    - 注入必要 env。
-   - 同步 skills。
+   - 生成 runtime tool skill guide。
    - 更新 agent context 中的工具说明。
 
 4. Run
@@ -279,6 +279,7 @@ mga runtime gateway call-tool action:github:list_repository_issues \
 - `MULTIGENT_TOOL_RUNTIME_DIR`: 本次 run 的工具运行目录。
 - `MULTIGENT_TOOL_BIN_DIR`: 本次 run 的工具 wrapper 目录，会被放到 `PATH` 最前面，用来把 `gh`、`lark-cli` 等平台 CLI 指向 agent 专属配置。
 - `MULTIGENT_TOOL_BOOTSTRAP_FILE`: 本次 run 的工具初始化脚本，sandbox 启动 agent 命令前执行，用来安装或校验 runtime adapter 声明的平台 CLI。
+- `MULTIGENT_TOOL_SKILLS_FILE`: 本次 run 自动生成的 Markdown 工具使用指南，告诉 agent 每个已启用工具应该走 CLI、MCP Gateway、HTTP action 还是 skill-only。
 
 `MULTIGENT_TOOLS_FILE` 不应该包含第三方原始凭证。它只描述：
 
@@ -289,37 +290,28 @@ mga runtime gateway call-tool action:github:list_repository_issues \
 - 平台 CLI 的 installer/checker 是否生成了 bootstrap 脚本。
 - MCP Gateway 的 namespace。
 - HTTP action 的 allowlist。
+- 每个工具对应的使用技能名和推荐入口。
 
 CLI credential materializer 只允许在 `MULTIGENT_TOOL_RUNTIME_DIR` 下写 agent 专属配置，然后通过 sandbox mount/env/wrapper 映射给对应 CLI。不要写入宿主机全局 `~/.config`、`~/.codex`、`~/.claude` 或 workspace 全局目录。
 
 ## Agent 侧统一体验
 
-虽然底层有多种 adapter，agent 看到的应该是一致的能力说明：
+虽然底层有多种 adapter，agent 看到的应该是一致的能力说明。统一入口是：
 
-```markdown
-## Available External Tools
-
-### Lark
-
-Use `lark-cli` for Feishu/Lark docs, IM, task, calendar, and drive operations.
-Read the bundled `lark-*` skills before using it.
-
-### GitHub
-
-Use `gh` for issues, pull requests, repositories, and workflow runs.
-
-### Figma
-
-Use Multigent MCP Gateway:
-- `multigent.list_tools` with provider=`figma`
-- `multigent.call_tool` with the returned tool id
+```bash
+mga runtime skill-guide
+mga runtime tools --format table
 ```
 
 规则：
 
 - Agent 不需要知道 API Key。
 - Agent 不应该手写 provider token。
-- Agent 优先使用对应 skill 推荐的入口。
+- Agent 优先阅读 `MULTIGENT_TOOL_SKILLS_FILE` 或运行 `mga runtime skill-guide`，再根据推荐 adapter 行动。
+- CLI adapter：直接使用平台 CLI，例如 `gh`、`lark-cli`，这些命令的凭证和 home/config 已被 Multigent 绑定到当前 agent runtime。
+- MCP Gateway adapter：不要直接挂很多 provider MCP server，优先通过统一 gateway。
+- HTTP action adapter：只在 provider 声明了 allowlist action 时使用 `mga runtime action`。
+- skill-only adapter：只提供流程说明，不代表有可执行工具。
 - Agent 需要统一工具目录时，优先使用 `mga runtime gateway list-tools`。
 - Agent 需要通过 Gateway 调用工具时，优先使用 `mga runtime gateway call-tool`，低层 `mga runtime mcp` 和 `mga runtime action` 只作为明确知道连接和协议时的 fallback。
 - 如果工具缺失，报告缺少哪个 provider/connection，而不是让人粘贴密钥。
@@ -419,6 +411,7 @@ Use Multigent MCP Gateway:
 - CLI adapter installer/checker bootstrap。
 - GitHub `gh` agent-scoped config materializer。
 - Feishu/Lark `lark-cli` agent-scoped config materializer 和 wrapper。
+- runtime tool skill guide：自动生成 `MULTIGENT_TOOL_SKILLS_FILE`，并通过 `mga runtime skill-guide` 暴露给 agent。
 - HTTP action proxy。
 - MCP Gateway broker mode：`multigent.list_tools` / `multigent.call_tool`。
 - `mga runtime gateway list-tools` / `mga runtime gateway call-tool`。
@@ -426,7 +419,7 @@ Use Multigent MCP Gateway:
 
 仍需补齐：
 
-1. Tool-specific skills 自动同步：当前 runtime manifest 已声明 skills，但还没有按连接自动安装/同步缺失 skill。
+1. Tool-specific skills asset 自动安装：当前已自动生成 runtime tool skill guide，但还没有按连接 vendor/install 缺失的完整 provider skill asset。
 2. Figma MCP Gateway upstream：当前 Figma 已有 MCP Gateway adapter 声明和 HTTP action fallback，但还没有真实启动/托管 Figma upstream MCP server。
 3. Agent detail 页面展示工具健康状态、最近调用和错误。
 4. CLI wrapper command audit：当前有 run log 和 proxy audit，但平台 CLI 命令级审计还是 best effort。
@@ -445,7 +438,8 @@ Use Multigent MCP Gateway:
 - 已完成：实现 CLI installer/checker bootstrap。
 - 已完成：实现 agent 专属 config materializer。
 - 已完成：先支持 Feishu/Lark 和 GitHub。
-- 待完成：按连接自动同步缺失 skills。
+- 已完成：按连接自动生成 runtime tool skill guide。
+- 待完成：按连接自动安装缺失的完整 provider skill asset。
 
 ### Phase 3: MCP Gateway Broker
 

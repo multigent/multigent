@@ -158,7 +158,7 @@ func TestMaterializeRuntimeFilesWritesToolPlan(t *testing.T) {
 		t.Fatalf("expected cleanup")
 	}
 	defer cleanup()
-	if env[runtimeConnectionsFileEnv] == "" || env[runtimeToolsFileEnv] == "" || env[runtimeToolDirEnv] == "" {
+	if env[runtimeConnectionsFileEnv] == "" || env[runtimeToolsFileEnv] == "" || env[runtimeToolDirEnv] == "" || env[runtimeToolSkillsFileEnv] == "" {
 		t.Fatalf("runtime env missing files: %#v", env)
 	}
 	planBody, err := os.ReadFile(env[runtimeToolsFileEnv])
@@ -193,6 +193,16 @@ func TestMaterializeRuntimeFilesWritesToolPlan(t *testing.T) {
 	}
 	if _, err := os.Stat(env[runtimeToolDirEnv]); err != nil {
 		t.Fatalf("runtime tool dir missing: %v", err)
+	}
+	guideBody, err := os.ReadFile(env[runtimeToolSkillsFileEnv])
+	if err != nil {
+		t.Fatalf("read tool skill guide: %v", err)
+	}
+	guideText := string(guideBody)
+	for _, want := range []string{"# Runtime Tool Skills", "GitHub", "gh --help", "mga runtime tools --format table"} {
+		if !strings.Contains(guideText, want) {
+			t.Fatalf("guide missing %q: %s", want, guideText)
+		}
 	}
 }
 
@@ -324,6 +334,20 @@ func TestWriteRuntimeToolsFileMaterializesLarkCLIConfig(t *testing.T) {
 	}
 	if strings.Contains(string(toolsBody), "secret_test") {
 		t.Fatalf("tools file leaked app secret: %s", string(toolsBody))
+	}
+	guidePath := env[runtimeToolSkillsFileEnv]
+	if guidePath == "" || !strings.Contains(guidePath, toolDir) {
+		t.Fatalf("tool skill guide path=%q toolDir=%q", guidePath, toolDir)
+	}
+	guideBody, err := os.ReadFile(guidePath)
+	if err != nil {
+		t.Fatalf("read tool skill guide: %v", err)
+	}
+	guideText := string(guideBody)
+	for _, want := range []string{"Feishu", "lark-cli --help", "lark-doc", "lark-im", "Adapter `cli`"} {
+		if !strings.Contains(guideText, want) {
+			t.Fatalf("guide missing %q: %s", want, guideText)
+		}
 	}
 	bootstrapPath := filepath.Join(toolDir, "bootstrap-tools.sh")
 	bootstrapBody, err := os.ReadFile(bootstrapPath)

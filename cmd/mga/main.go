@@ -12,6 +12,7 @@ import (
 	"text/tabwriter"
 	"time"
 
+	"github.com/multigent/multigent/internal/runtimeguide"
 	"github.com/spf13/cobra"
 )
 
@@ -20,6 +21,7 @@ const (
 	envAgentToken      = "MULTIGENT_AGENT_TOKEN"
 	envConnectionsFile = "MULTIGENT_CONNECTIONS_FILE"
 	envToolsFile       = "MULTIGENT_TOOLS_FILE"
+	envToolSkillsFile  = "MULTIGENT_TOOL_SKILLS_FILE"
 	maxJSONBody        = 1 << 20
 )
 
@@ -66,7 +68,7 @@ func newRuntimeCmd() *cobra.Command {
 		Use:   "runtime",
 		Short: "Use scoped runtime tool connections",
 	}
-	cmd.AddCommand(newRuntimeConnectionsCmd(), newRuntimeToolsCmd(), newRuntimeActionCmd(), newRuntimeMCPCmd(), newRuntimeGatewayCmd())
+	cmd.AddCommand(newRuntimeConnectionsCmd(), newRuntimeToolsCmd(), newRuntimeSkillGuideCmd(), newRuntimeActionCmd(), newRuntimeMCPCmd(), newRuntimeGatewayCmd())
 	cmd.AddCommand(newRuntimeVersionCmd())
 	return cmd
 }
@@ -132,6 +134,37 @@ func newRuntimeToolsCmd() *cobra.Command {
 	}
 	cmd.Flags().StringVar(&format, "format", "json", "output format: json or table")
 	cmd.Flags().BoolVar(&refresh, "refresh", false, "refresh from runtime API instead of using materialized manifest")
+	return cmd
+}
+
+func newRuntimeSkillGuideCmd() *cobra.Command {
+	var refresh bool
+	cmd := &cobra.Command{
+		Use:   "skill-guide",
+		Short: "Print the runtime tool skill guide for this agent",
+		RunE: func(cmd *cobra.Command, args []string) error {
+			if !refresh {
+				if path := strings.TrimSpace(os.Getenv(envToolSkillsFile)); path != "" {
+					body, err := os.ReadFile(path)
+					if err == nil {
+						_, err = os.Stdout.Write(append(bytes.TrimRight(body, "\n"), '\n'))
+						return err
+					}
+				}
+			}
+			body, err := runtimeToolsBody(refresh)
+			if err != nil {
+				return err
+			}
+			guide, err := runtimeguide.RenderJSON(body)
+			if err != nil {
+				return err
+			}
+			_, err = os.Stdout.Write([]byte(guide))
+			return err
+		},
+	}
+	cmd.Flags().BoolVar(&refresh, "refresh", false, "refresh from runtime API instead of using materialized guide")
 	return cmd
 }
 
