@@ -13,7 +13,6 @@ import {
   type Connection,
   type Edge,
   type Node,
-  type NodeChange,
   type NodeProps,
   useEdgesState,
   useNodesState,
@@ -255,16 +254,9 @@ export function WorkflowBoard({
     onChange?.(next)
   }
 
-  function handleNodesChange(changes: NodeChange<WorkflowNode>[]) {
-    onNodesChange(changes)
+  function persistNodePositions(nextNodes: WorkflowNode[]) {
     if (!editable || !onChange) return
-    const posByID = new Map<string, { x: number; y: number }>()
-    for (const change of changes) {
-      if (change.type === 'position' && change.position) {
-        posByID.set(change.id, change.position)
-      }
-    }
-    if (posByID.size === 0) return
+    const posByID = new Map(nextNodes.map((node) => [node.id, node.position]))
     updateDefinition({
       ...definition,
       steps: definition.steps.map((step) => {
@@ -373,8 +365,9 @@ export function WorkflowBoard({
           nodes={nodes}
           edges={edges}
           nodeTypes={nodeTypes}
-          onNodesChange={handleNodesChange}
+          onNodesChange={onNodesChange}
           onEdgesChange={onEdgesChange}
+          onNodeDragStop={(_, __, nextNodes) => persistNodePositions(nextNodes as WorkflowNode[])}
           onConnect={handleConnect}
           onNodeClick={(_, node) => {
             setSelectedId(node.id)
