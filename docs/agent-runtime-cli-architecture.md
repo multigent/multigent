@@ -1,6 +1,11 @@
 # Agent Runtime CLI Architecture
 
-Multigent 的长期 Agent 集成方式应该是 **skill + CLI**，而不是把 MCP 作为主路径。MCP 可以作为外部工具生态的一种兼容层，但 Multigent 自己的协作、任务、消息、OKR、审计和权限控制应该通过面向 Agent 的 runtime CLI 完成。
+Multigent 的长期 Agent 集成方式应该拆成两层：
+
+- Multigent 控制面：通过面向 Agent 的 runtime CLI `mga` 完成任务、消息、知识库、OKR、审计和 runtime manifest。
+- 外部工具面：通过 provider runtime adapter 选择最自然的 agent 侧入口，例如平台 CLI + 对应 skill、MCP Gateway、HTTP action 或 skill-only。
+
+MCP 不应该成为 Multigent 内部协作协议，但可以作为外部工具生态的重要接入形态。`mga` 也不应该替代所有外部工具 CLI。
 
 ## 核心判断
 
@@ -10,7 +15,7 @@ Multigent 不是本地优先项目管理工具，而是在线多 Agent 协作平
 
 - 人类用户主要通过 Web 使用 Multigent。
 - 管理员也主要通过 Web 管理 workspace、成员、团队、项目、Agent、连接、权限和审计。
-- Agent 在 sandbox 内通过 `mga` CLI 和 Multigent Server 交互。
+- Agent 在 sandbox 内通过 `mga` CLI 和 Multigent Server 交互，同时通过 provider runtime adapter 使用外部工具。
 - `mga` 所有动作都必须走 Server API，由 Server 做身份鉴权、RBAC、审计和策略判断。
 
 这意味着 CLI 要拆成两个产品面：
@@ -18,11 +23,11 @@ Multigent 不是本地优先项目管理工具，而是在线多 Agent 协作平
 | CLI | 使用者 | 定位 | 是否进入 sandbox |
 | --- | --- | --- | --- |
 | `multigent` | 平台开发者、部署者、少量管理员 | 启动服务、迁移、调试、离线维护 | 否 |
-| `mga` | sandbox 中的 Agent | 任务、消息、OKR、工具调用、运行时上下文 | 是 |
+| `mga` | sandbox 中的 Agent | 任务、消息、OKR、知识库、runtime manifest、受控 action fallback | 是 |
 
 ## 为什么不以 MCP 为主
 
-MCP 的价值是标准化外部工具接入，但它不是 Multigent 的核心协作协议。
+MCP 的价值是标准化外部工具接入，但它不是 Multigent 的核心协作协议，也不应该直接把大量 provider tool 全量塞给 agent。
 
 Agent 在真实工程循环里经常需要：
 
@@ -41,7 +46,7 @@ Agent 在真实工程循环里经常需要：
 - 不需要把大量 tool schema 放进上下文。
 - 能保留和 Web/API 一致的权限、审计和错误码。
 
-MCP 可以保留为兼容层，尤其用于接入第三方工具。但 Multigent 内部的 agent workflow 应以 `mga` 为准。
+MCP 可以保留为兼容层，尤其用于 Figma、浏览器、数据库等第三方工具。对于 GitHub、飞书/Lark 这类已有成熟 CLI 的平台，agent 应优先使用平台 CLI + 对应 skill。Multigent 内部协作 workflow 才以 `mga` 为准。
 
 ## `mga` 的命令边界
 

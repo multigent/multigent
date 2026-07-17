@@ -8,17 +8,18 @@ const (
 )
 
 type Provider struct {
-	Provider    string           `json:"provider"`
-	DisplayName string           `json:"displayName"`
-	Description string           `json:"description,omitempty"`
-	Category    string           `json:"category,omitempty"`
-	AuthTypes   []string         `json:"authTypes"`
-	Fields      []ProviderField  `json:"fields,omitempty"`
-	OAuth       *OAuth2Config    `json:"oauth,omitempty"`
-	Actions     []ProviderAction `json:"actions,omitempty"`
-	Guides      []ProviderGuide  `json:"guides,omitempty"`
-	ComingSoon  bool             `json:"comingSoon,omitempty"`
-	Enabled     bool             `json:"enabled"`
+	Provider        string               `json:"provider"`
+	DisplayName     string               `json:"displayName"`
+	Description     string               `json:"description,omitempty"`
+	Category        string               `json:"category,omitempty"`
+	AuthTypes       []string             `json:"authTypes"`
+	Fields          []ProviderField      `json:"fields,omitempty"`
+	OAuth           *OAuth2Config        `json:"oauth,omitempty"`
+	RuntimeAdapters []ToolRuntimeAdapter `json:"runtimeAdapters,omitempty"`
+	Actions         []ProviderAction     `json:"actions,omitempty"`
+	Guides          []ProviderGuide      `json:"guides,omitempty"`
+	ComingSoon      bool                 `json:"comingSoon,omitempty"`
+	Enabled         bool                 `json:"enabled"`
 }
 
 type ProviderField struct {
@@ -47,6 +48,64 @@ type ProviderAction struct {
 	InputSchema map[string]any `json:"inputSchema,omitempty"`
 }
 
+const (
+	RuntimeAdapterCLI        = "cli"
+	RuntimeAdapterMCPGateway = "mcp_gateway"
+	RuntimeAdapterHTTPAction = "http_action"
+	RuntimeAdapterSkillOnly  = "skill_only"
+
+	CredentialMaterializeServerSide  = "server_side"
+	CredentialMaterializeRuntimeEnv  = "runtime_env"
+	CredentialMaterializeRuntimeFile = "runtime_file"
+)
+
+type ToolRuntimeAdapter struct {
+	Type                  string                 `json:"type"`
+	Priority              int                    `json:"priority"`
+	Description           string                 `json:"description,omitempty"`
+	Skills                []string               `json:"skills,omitempty"`
+	CLI                   *ToolCLIAdapter        `json:"cli,omitempty"`
+	MCPGateway            *ToolMCPGatewayAdapter `json:"mcpGateway,omitempty"`
+	HTTPAction            *ToolHTTPActionAdapter `json:"httpAction,omitempty"`
+	CredentialMaterialize string                 `json:"credentialMaterialize,omitempty"`
+	Audit                 ToolRuntimeAuditPolicy `json:"audit,omitempty"`
+}
+
+type ToolCLIAdapter struct {
+	Binary      string               `json:"binary"`
+	Installer   *ToolInstallerSpec   `json:"installer,omitempty"`
+	ConfigFiles []ToolConfigFileSpec `json:"configFiles,omitempty"`
+}
+
+type ToolInstallerSpec struct {
+	Type    string   `json:"type"`
+	Package string   `json:"package,omitempty"`
+	Version string   `json:"version,omitempty"`
+	Command []string `json:"command,omitempty"`
+	Check   []string `json:"check,omitempty"`
+}
+
+type ToolConfigFileSpec struct {
+	Path        string `json:"path"`
+	Format      string `json:"format,omitempty"`
+	Description string `json:"description,omitempty"`
+}
+
+type ToolMCPGatewayAdapter struct {
+	ToolNamespace string   `json:"toolNamespace"`
+	ServerPackage string   `json:"serverPackage,omitempty"`
+	ServerCommand []string `json:"serverCommand,omitempty"`
+}
+
+type ToolHTTPActionAdapter struct {
+	ActionNames []string `json:"actionNames,omitempty"`
+}
+
+type ToolRuntimeAuditPolicy struct {
+	CommandAudit string `json:"commandAudit,omitempty"`
+	ProxyAudit   string `json:"proxyAudit,omitempty"`
+}
+
 type ProviderGuide struct {
 	Title string              `json:"title"`
 	Body  string              `json:"body"`
@@ -59,7 +118,7 @@ type ProviderGuideLink struct {
 }
 
 func Defaults() []Provider {
-	return []Provider{
+	providers := []Provider{
 		{
 			Provider:    "github",
 			DisplayName: "GitHub",
@@ -238,6 +297,145 @@ func Defaults() []Provider {
 		staticPATProvider("clickup", "ClickUp", "Project Management", "Use ClickUp tasks, lists, spaces, and cross-functional work tracking.", "API token", "Create an API token in ClickUp personal settings. Use workspace-level access carefully.", "ClickUp API token", "https://clickup.com/api", clickUpActions()),
 		staticPATProvider("sentry", "Sentry", "Developer Tools", "Use Sentry issues, releases, error events, and triage signals.", "Auth token", "Create an internal integration or auth token in Sentry settings. Start with org:read, project:read, and event:read scopes.", "Sentry auth tokens", "https://sentry.io/settings/account/api/auth-tokens/", sentryActions()),
 		staticPATProvider("vercel", "Vercel", "Developer Tools", "Use Vercel projects, deployments, checks, and release status.", "Access token", "Create an access token in Vercel account settings. Use team-scoped tokens when possible.", "Vercel access tokens", "https://vercel.com/account/tokens", vercelActions()),
+	}
+	for i := range providers {
+		providers[i].RuntimeAdapters = DefaultRuntimeAdapters(providers[i])
+	}
+	return providers
+}
+
+func DefaultRuntimeAdapters(provider Provider) []ToolRuntimeAdapter {
+	switch provider.Provider {
+	case "feishu", "lark":
+		return []ToolRuntimeAdapter{
+			{
+				Type:        RuntimeAdapterCLI,
+				Priority:    100,
+				Description: "Use lark-cli with bundled collaboration skills for docs, wiki, IM, tasks, calendar, and drive workflows.",
+				Skills:      []string{"lark-doc", "lark-im", "lark-task", "lark-drive", "lark-wiki", "lark-calendar"},
+				CLI: &ToolCLIAdapter{
+					Binary: "lark-cli",
+					Installer: &ToolInstallerSpec{
+						Type:    "script",
+						Version: "latest",
+						Check:   []string{"lark-cli --version"},
+					},
+					ConfigFiles: []ToolConfigFileSpec{
+						{Path: "~/.lark-cli/config.json", Format: "json", Description: "Agent-scoped Lark/Feishu CLI credential config."},
+					},
+				},
+				CredentialMaterialize: CredentialMaterializeRuntimeFile,
+				Audit:                 ToolRuntimeAuditPolicy{CommandAudit: "best_effort", ProxyAudit: "available"},
+			},
+			httpActionAdapter(provider.Actions, 10),
+		}
+	case "github":
+		return []ToolRuntimeAdapter{
+			{
+				Type:        RuntimeAdapterCLI,
+				Priority:    100,
+				Description: "Use GitHub CLI for repositories, issues, pull requests, releases, and workflow runs.",
+				Skills:      []string{"github"},
+				CLI: &ToolCLIAdapter{
+					Binary: "gh",
+					Installer: &ToolInstallerSpec{
+						Type:    "system",
+						Package: "gh",
+						Version: "latest",
+						Check:   []string{"gh --version"},
+					},
+					ConfigFiles: []ToolConfigFileSpec{
+						{Path: "~/.config/gh/hosts.yml", Format: "yaml", Description: "Agent-scoped GitHub CLI host credential config."},
+					},
+				},
+				CredentialMaterialize: CredentialMaterializeRuntimeFile,
+				Audit:                 ToolRuntimeAuditPolicy{CommandAudit: "best_effort", ProxyAudit: "available"},
+			},
+			httpActionAdapter(provider.Actions, 20),
+		}
+	case "gitlab":
+		return []ToolRuntimeAdapter{
+			{
+				Type:        RuntimeAdapterCLI,
+				Priority:    90,
+				Description: "Use GitLab CLI when available for merge requests, issues, pipelines, and repository workflows.",
+				Skills:      []string{"gitlab"},
+				CLI: &ToolCLIAdapter{
+					Binary: "glab",
+					Installer: &ToolInstallerSpec{
+						Type:    "system",
+						Package: "glab",
+						Version: "latest",
+						Check:   []string{"glab --version"},
+					},
+					ConfigFiles: []ToolConfigFileSpec{
+						{Path: "~/.config/glab-cli/config.yml", Format: "yaml", Description: "Agent-scoped GitLab CLI credential config."},
+					},
+				},
+				CredentialMaterialize: CredentialMaterializeRuntimeFile,
+				Audit:                 ToolRuntimeAuditPolicy{CommandAudit: "best_effort", ProxyAudit: "available"},
+			},
+			httpActionAdapter(provider.Actions, 20),
+		}
+	case "figma":
+		return []ToolRuntimeAdapter{
+			{
+				Type:                  RuntimeAdapterMCPGateway,
+				Priority:              100,
+				Description:           "Use Multigent MCP Gateway to discover and call Figma tools without injecting a large native MCP tool list.",
+				Skills:                []string{"figma"},
+				CredentialMaterialize: CredentialMaterializeServerSide,
+				MCPGateway: &ToolMCPGatewayAdapter{
+					ToolNamespace: "figma",
+					ServerPackage: "figma-mcp",
+				},
+				Audit: ToolRuntimeAuditPolicy{ProxyAudit: "required"},
+			},
+			httpActionAdapter(provider.Actions, 20),
+		}
+	case "custom-mcp":
+		return []ToolRuntimeAdapter{
+			{
+				Type:                  RuntimeAdapterMCPGateway,
+				Priority:              100,
+				Description:           "Use Multigent MCP Gateway to call the configured upstream MCP server with scoped runtime authorization.",
+				CredentialMaterialize: CredentialMaterializeServerSide,
+				MCPGateway: &ToolMCPGatewayAdapter{
+					ToolNamespace: "custom-mcp",
+				},
+				Audit: ToolRuntimeAuditPolicy{ProxyAudit: "required"},
+			},
+		}
+	default:
+		if len(provider.Actions) > 0 {
+			return []ToolRuntimeAdapter{httpActionAdapter(provider.Actions, 50)}
+		}
+		return []ToolRuntimeAdapter{
+			{
+				Type:                  RuntimeAdapterSkillOnly,
+				Priority:              10,
+				Description:           "Use bundled skills and provider guidance. No executable runtime adapter is configured yet.",
+				CredentialMaterialize: CredentialMaterializeServerSide,
+				Audit:                 ToolRuntimeAuditPolicy{ProxyAudit: "none"},
+			},
+		}
+	}
+}
+
+func httpActionAdapter(actions []ProviderAction, priority int) ToolRuntimeAdapter {
+	names := make([]string, 0, len(actions))
+	for _, action := range actions {
+		if action.Name != "" {
+			names = append(names, action.Name)
+		}
+	}
+	return ToolRuntimeAdapter{
+		Type:                  RuntimeAdapterHTTPAction,
+		Priority:              priority,
+		Description:           "Use Multigent runtime action proxy for provider API calls. Raw credentials stay server-side.",
+		HTTPAction:            &ToolHTTPActionAdapter{ActionNames: names},
+		CredentialMaterialize: CredentialMaterializeServerSide,
+		Audit:                 ToolRuntimeAuditPolicy{ProxyAudit: "required"},
 	}
 }
 

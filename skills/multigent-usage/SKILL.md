@@ -62,6 +62,8 @@ mga inbox reply <message-id> --body "Reply body"
 
 ## Runtime Tool Connections
 
+Use `mga runtime connections` to inspect the tools granted to this agent. The response includes `tools`, `recommendedAdapter`, adapter details, skills, actions, and connection aliases.
+
 ```bash
 mga runtime connections --format table
 mga runtime action --connection <alias> --data '{"method":"GET","endpoint":"/path"}'
@@ -71,7 +73,12 @@ mga runtime version --check
 
 Rules:
 
-- Use connection aliases from `mga runtime connections`.
+- Prefer the provider's recommended adapter:
+  - `cli`: use the platform CLI and bundled skill, for example `gh` or `lark-cli`.
+  - `mcp_gateway`: use Multigent MCP Gateway tool discovery/calls.
+  - `http_action`: use `mga runtime action`.
+  - `skill_only`: follow the bundled skill; no executable tool is configured.
+- Use connection aliases from `mga runtime connections` when calling runtime proxies.
 - Never ask humans to paste provider secrets into chat.
 - Runtime writes are audited by the Multigent Server.
 - If a needed command is missing, report the missing capability instead of using local workspace files as a control plane.

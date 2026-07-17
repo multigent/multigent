@@ -12,7 +12,7 @@ func runtimeConnectionsGuide() string {
 	return strings.TrimSpace(`
 ## Runtime Connections
 
-Multigent may grant this agent external tool connections such as GitHub, Feishu/Lark, Linear, custom HTTP APIs, or custom MCP servers. Credentials stay inside Multigent; do not ask humans to paste provider secrets into the chat.
+Multigent may grant this agent external tool connections such as GitHub, Feishu/Lark, Figma, Linear, or Notion. Each tool declares its recommended runtime adapter: platform CLI, MCP Gateway, HTTP action, or skill-only. Credentials stay managed by Multigent; do not ask humans to paste provider secrets into the chat.
 
 At runtime, Multigent injects:
 
@@ -31,8 +31,11 @@ mga runtime mcp --connection <alias> --data '{"jsonrpc":"2.0","id":1,"method":"t
 
 Rules:
 
-- Use connection aliases from the manifest or `+"`mga runtime connections`"+`.
-- Do not read or expose raw provider secrets; call through Multigent runtime proxies.
+- First inspect `+"`MULTIGENT_CONNECTIONS_FILE`"+` or `+"`mga runtime connections`"+` to see the `+"`tools`"+`, `+"`recommendedAdapter`"+`, adapter list, skills, and connection aliases.
+- If a tool recommends a platform CLI, use that CLI and its bundled skill, for example `+"`gh`"+` for GitHub or `+"`lark-cli`"+` for Feishu/Lark.
+- If a tool recommends MCP Gateway, use the configured MCP Gateway tools rather than attaching every provider MCP server directly.
+- Use `+"`mga runtime action`"+` only for provider HTTP actions or as the documented fallback path.
+- Do not read or expose raw provider secrets. Use the configured CLI, MCP Gateway, or Multigent runtime proxy.
 - If a needed connection is missing, report the missing provider and target agent instead of inventing credentials.
 `) + "\n"
 }

@@ -23,6 +23,18 @@ type agentRuntimeConnectionResponse struct {
 	Runtime        connectionRuntimeSpec    `json:"runtime"`
 }
 
+type agentRuntimeToolSpec struct {
+	Provider           string                         `json:"provider"`
+	DisplayName        string                         `json:"displayName"`
+	ConnectionID       string                         `json:"connectionId"`
+	ConnectionAlias    string                         `json:"connectionAlias"`
+	ConnectionName     string                         `json:"connectionName"`
+	RecommendedAdapter string                         `json:"recommendedAdapter,omitempty"`
+	Adapters           []connector.ToolRuntimeAdapter `json:"adapters,omitempty"`
+	Skills             []string                       `json:"skills,omitempty"`
+	Actions            []connector.ProviderAction     `json:"actions,omitempty"`
+}
+
 type agentRuntimeConnectionManifest struct {
 	Version               string `json:"version"`
 	ConnectionsFileEnv    string `json:"connectionsFileEnv"`
@@ -35,11 +47,13 @@ type agentRuntimeConnectionManifest struct {
 }
 
 type connectionRuntimeSpec struct {
-	Alias       string                     `json:"alias"`
-	Env         map[string]string          `json:"env"`
-	MCPProxy    connectionRuntimeProxySpec `json:"mcpProxy"`
-	ActionProxy connectionRuntimeProxySpec `json:"actionProxy"`
-	Actions     []connector.ProviderAction `json:"actions,omitempty"`
+	Alias              string                         `json:"alias"`
+	Env                map[string]string              `json:"env"`
+	MCPProxy           connectionRuntimeProxySpec     `json:"mcpProxy"`
+	ActionProxy        connectionRuntimeProxySpec     `json:"actionProxy"`
+	RecommendedAdapter string                         `json:"recommendedAdapter,omitempty"`
+	Adapters           []connector.ToolRuntimeAdapter `json:"adapters,omitempty"`
+	Actions            []connector.ProviderAction     `json:"actions,omitempty"`
 }
 
 type connectionRuntimeProxySpec struct {
@@ -150,11 +164,21 @@ func (s *Server) resolveAgentRuntimeConnections(workspaceID, project, agent stri
 		if len(matched) == 0 && !workspaceConnectionAvailableToAgent(connection, workspaceID) {
 			continue
 		}
-		actions, err := s.runtimeActionsForConnection(connection)
+		provider, ok, err := s.findConnectorProvider(connection.Provider)
 		if err != nil {
 			return nil, err
 		}
-		out = append(out, agentRuntimeConnectionToResponse(connection, matched, actions))
+		if !ok {
+			provider = connector.Provider{
+				Provider:        connection.Provider,
+				DisplayName:     connection.Provider,
+				RuntimeAdapters: connector.DefaultRuntimeAdapters(connector.Provider{Provider: connection.Provider}),
+				Enabled:         true,
+			}
+		}
+		actions := runtimeActionsForProviderConnection(connection, provider)
+		adapters := runtimeAdaptersForProviderConnection(provider, actions)
+		out = append(out, agentRuntimeConnectionToResponse(connection, matched, actions, adapters))
 	}
 	sort.Slice(out, func(i, j int) bool {
 		if out[i].Provider != out[j].Provider {
@@ -174,6 +198,7 @@ func (s *Server) writeAgentRuntimeConnections(w http.ResponseWriter, project, ag
 		"agent":       agent,
 		"manifest":    agentConnectionManifest(),
 		"connections": connections,
+		"tools":       runtimeToolsFromConnections(connections),
 	})
 }
 
@@ -206,7 +231,7 @@ func connectionGrantMatchesAgent(grant controldb.ConnectionGrant, workspaceID, p
 	}
 }
 
-func agentRuntimeConnectionToResponse(connection controldb.Connection, grants []controldb.ConnectionGrant, actions []connector.ProviderAction) agentRuntimeConnectionResponse {
+func agentRuntimeConnectionToResponse(connection controldb.Connection, grants []controldb.ConnectionGrant, actions []connector.ProviderAction, adapters []connector.ToolRuntimeAdapter) agentRuntimeConnectionResponse {
 	profile := map[string]any{}
 	_ = json.Unmarshal([]byte(connection.ProfileJSON), &profile)
 	alias := runtimeConnectionAlias(connection.Provider, connection.ConnectionName)
@@ -220,7 +245,7 @@ func agentRuntimeConnectionToResponse(connection controldb.Connection, grants []
 		Profile:        sanitizeConnectionProfile(connection.Provider, profile),
 		ProfileSummary: summarizeConnectionProfile(connection, profile),
 		MatchedGrants:  grantsToResponse(grants),
-		Runtime:        runtimeSpecForConnection(connection, alias, actions),
+		Runtime:        runtimeSpecForConnection(connection, alias, actions, adapters),
 	}
 }
 
@@ -237,7 +262,7 @@ func agentConnectionManifest() agentRuntimeConnectionManifest {
 	}
 }
 
-func runtimeSpecForConnection(connection controldb.Connection, alias string, actions []connector.ProviderAction) connectionRuntimeSpec {
+func runtimeSpecForConnection(connection controldb.Connection, alias string, actions []connector.ProviderAction, adapters []connector.ToolRuntimeAdapter) connectionRuntimeSpec {
 	manifest := agentConnectionManifest()
 	return connectionRuntimeSpec{
 		Alias: alias,
@@ -274,7 +299,9 @@ func runtimeSpecForConnection(connection controldb.Connection, alias string, act
 			},
 			Description: "Use this action proxy for provider actions. The agent token must authorize the current run.",
 		},
-		Actions: actions,
+		RecommendedAdapter: recommendedRuntimeAdapter(adapters),
+		Adapters:           adapters,
+		Actions:            actions,
 	}
 }
 
@@ -286,13 +313,102 @@ func (s *Server) runtimeActionsForConnection(connection controldb.Connection) ([
 	if !ok || len(provider.Actions) == 0 {
 		return nil, nil
 	}
+	return runtimeActionsForProviderConnection(connection, provider), nil
+}
+
+func runtimeActionsForProviderConnection(connection controldb.Connection, provider connector.Provider) []connector.ProviderAction {
 	out := make([]connector.ProviderAction, 0, len(provider.Actions))
 	for _, action := range provider.Actions {
 		if runtimeProviderActionAllowed(connection, action) {
 			out = append(out, action)
 		}
 	}
-	return out, nil
+	return out
+}
+
+func runtimeAdaptersForProviderConnection(provider connector.Provider, actions []connector.ProviderAction) []connector.ToolRuntimeAdapter {
+	adapters := provider.RuntimeAdapters
+	if len(adapters) == 0 {
+		adapters = connector.DefaultRuntimeAdapters(provider)
+	}
+	allowedActions := make(map[string]bool, len(actions))
+	for _, action := range actions {
+		allowedActions[action.Name] = true
+	}
+	out := make([]connector.ToolRuntimeAdapter, 0, len(adapters))
+	for _, adapter := range adapters {
+		cp := adapter
+		if cp.HTTPAction != nil {
+			names := make([]string, 0, len(cp.HTTPAction.ActionNames))
+			for _, name := range cp.HTTPAction.ActionNames {
+				if allowedActions[name] {
+					names = append(names, name)
+				}
+			}
+			if len(names) == 0 {
+				continue
+			}
+			httpAction := *cp.HTTPAction
+			httpAction.ActionNames = names
+			cp.HTTPAction = &httpAction
+		}
+		out = append(out, cp)
+	}
+	return out
+}
+
+func recommendedRuntimeAdapter(adapters []connector.ToolRuntimeAdapter) string {
+	if len(adapters) == 0 {
+		return ""
+	}
+	best := adapters[0]
+	for _, adapter := range adapters[1:] {
+		if adapter.Priority > best.Priority {
+			best = adapter
+		}
+	}
+	return best.Type
+}
+
+func runtimeToolsFromConnections(connections []agentRuntimeConnectionResponse) []agentRuntimeToolSpec {
+	tools := make([]agentRuntimeToolSpec, 0, len(connections))
+	for _, connection := range connections {
+		skills := runtimeSkillsFromAdapters(connection.Runtime.Adapters)
+		tools = append(tools, agentRuntimeToolSpec{
+			Provider:           connection.Provider,
+			DisplayName:        connectorDisplayName(connection.Provider),
+			ConnectionID:       connection.ID,
+			ConnectionAlias:    connection.Runtime.Alias,
+			ConnectionName:     connection.ConnectionName,
+			RecommendedAdapter: connection.Runtime.RecommendedAdapter,
+			Adapters:           connection.Runtime.Adapters,
+			Skills:             skills,
+			Actions:            connection.Runtime.Actions,
+		})
+	}
+	return tools
+}
+
+func runtimeSkillsFromAdapters(adapters []connector.ToolRuntimeAdapter) []string {
+	seen := map[string]bool{}
+	var out []string
+	for _, adapter := range adapters {
+		for _, skill := range adapter.Skills {
+			if skill == "" || seen[skill] {
+				continue
+			}
+			seen[skill] = true
+			out = append(out, skill)
+		}
+	}
+	return out
+}
+
+func connectorDisplayName(providerID string) string {
+	if provider, ok := defaultConnectorProvider(providerID); ok {
+		return provider.DisplayName
+	}
+	return providerID
 }
 
 func runtimeProviderActionAllowed(connection controldb.Connection, action connector.ProviderAction) bool {

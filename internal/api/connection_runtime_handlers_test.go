@@ -84,7 +84,10 @@ func TestAgentRuntimeConnectionResponseDoesNotExposeSecretValues(t *testing.T) {
 	}
 	resp := agentRuntimeConnectionToResponse(connection, []controldb.ConnectionGrant{
 		{ID: "grant-one", TargetType: ConnectionTargetAgent, TargetID: "sample/dev"},
-	}, []connector.ProviderAction{{Name: "get_authenticated_user", Method: "GET", Endpoint: "/user"}})
+	}, []connector.ProviderAction{{Name: "get_authenticated_user", Method: "GET", Endpoint: "/user"}}, []connector.ToolRuntimeAdapter{
+		{Type: connector.RuntimeAdapterCLI, Priority: 100, Skills: []string{"github"}},
+		{Type: connector.RuntimeAdapterHTTPAction, Priority: 20, HTTPAction: &connector.ToolHTTPActionAdapter{ActionNames: []string{"get_authenticated_user"}}},
+	})
 	raw, err := json.Marshal(resp)
 	if err != nil {
 		t.Fatalf("marshal response: %v", err)
@@ -107,6 +110,12 @@ func TestAgentRuntimeConnectionResponseDoesNotExposeSecretValues(t *testing.T) {
 	if len(resp.Runtime.Actions) != 1 || resp.Runtime.Actions[0].Name != "get_authenticated_user" {
 		t.Fatalf("runtime actions missing: %#v", resp.Runtime.Actions)
 	}
+	if resp.Runtime.RecommendedAdapter != connector.RuntimeAdapterCLI {
+		t.Fatalf("recommended adapter=%q", resp.Runtime.RecommendedAdapter)
+	}
+	if len(resp.Runtime.Adapters) != 2 {
+		t.Fatalf("runtime adapters missing: %#v", resp.Runtime.Adapters)
+	}
 	if resp.Profile["visible"] != "ok" {
 		t.Fatalf("profile not preserved: %#v", resp.Profile)
 	}
@@ -121,6 +130,65 @@ func TestAgentRuntimeConnectionResponseDoesNotExposeSecretValues(t *testing.T) {
 	}
 	if len(resp.MatchedGrants) != 1 || resp.MatchedGrants[0].ID != "grant-one" {
 		t.Fatalf("matched grants not preserved: %#v", resp.MatchedGrants)
+	}
+}
+
+func TestRuntimeAdaptersForProviderConnectionFiltersHTTPActions(t *testing.T) {
+	provider := connector.Provider{
+		Provider: "github",
+		Actions: []connector.ProviderAction{
+			{Name: "allowed", Method: "GET", Endpoint: "/user"},
+			{Name: "blocked", Method: "DELETE", Endpoint: "/repos/{owner}/{repo}"},
+		},
+		RuntimeAdapters: []connector.ToolRuntimeAdapter{
+			{Type: connector.RuntimeAdapterCLI, Priority: 100, CLI: &connector.ToolCLIAdapter{Binary: "gh"}},
+			{Type: connector.RuntimeAdapterHTTPAction, Priority: 20, HTTPAction: &connector.ToolHTTPActionAdapter{ActionNames: []string{"allowed", "blocked"}}},
+		},
+	}
+	connection := controldb.Connection{ProfileJSON: `{"allowedActionMethods":["GET"],"allowedActionEndpoints":["/user"]}`}
+	actions := runtimeActionsForProviderConnection(connection, provider)
+	adapters := runtimeAdaptersForProviderConnection(provider, actions)
+	if len(actions) != 1 || actions[0].Name != "allowed" {
+		t.Fatalf("actions=%#v", actions)
+	}
+	if len(adapters) != 2 {
+		t.Fatalf("adapters=%#v", adapters)
+	}
+	var httpActions []string
+	for _, adapter := range adapters {
+		if adapter.Type == connector.RuntimeAdapterHTTPAction {
+			httpActions = adapter.HTTPAction.ActionNames
+		}
+	}
+	if strings.Join(httpActions, ",") != "allowed" {
+		t.Fatalf("http action adapter was not filtered: %#v", httpActions)
+	}
+}
+
+func TestRuntimeToolsFromConnectionsSummarizesAgentSideEntry(t *testing.T) {
+	connection := agentRuntimeConnectionResponse{
+		ID:             "conn-lark",
+		Provider:       "lark",
+		ConnectionName: "default",
+		Runtime: connectionRuntimeSpec{
+			Alias:              "lark",
+			RecommendedAdapter: connector.RuntimeAdapterCLI,
+			Adapters: []connector.ToolRuntimeAdapter{
+				{Type: connector.RuntimeAdapterCLI, Priority: 100, Skills: []string{"lark-doc", "lark-im"}},
+				{Type: connector.RuntimeAdapterHTTPAction, Priority: 10, HTTPAction: &connector.ToolHTTPActionAdapter{ActionNames: []string{"send_message"}}},
+			},
+			Actions: []connector.ProviderAction{{Name: "send_message", Method: "POST", Endpoint: "/open-apis/im/v1/messages"}},
+		},
+	}
+	tools := runtimeToolsFromConnections([]agentRuntimeConnectionResponse{connection})
+	if len(tools) != 1 {
+		t.Fatalf("tools=%#v", tools)
+	}
+	if tools[0].RecommendedAdapter != connector.RuntimeAdapterCLI || tools[0].ConnectionAlias != "lark" {
+		t.Fatalf("tool summary=%#v", tools[0])
+	}
+	if strings.Join(tools[0].Skills, ",") != "lark-doc,lark-im" {
+		t.Fatalf("tool skills=%#v", tools[0].Skills)
 	}
 }
 

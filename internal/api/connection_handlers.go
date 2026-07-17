@@ -97,6 +97,9 @@ func connectorProviderFromDB(row controldb.ConnectorProvider) (connector.Provide
 	if len(provider.AuthTypes) == 0 {
 		_ = json.Unmarshal([]byte(row.AuthTypesJSON), &provider.AuthTypes)
 	}
+	if len(provider.RuntimeAdapters) == 0 {
+		provider.RuntimeAdapters = connector.DefaultRuntimeAdapters(provider)
+	}
 	return provider, nil
 }
 

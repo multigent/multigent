@@ -31,3 +31,39 @@ func TestDefaultProvidersIncludeActionCatalogs(t *testing.T) {
 		}
 	}
 }
+
+func TestDefaultProvidersIncludeRuntimeAdapters(t *testing.T) {
+	providers := map[string]Provider{}
+	for _, provider := range Defaults() {
+		providers[provider.Provider] = provider
+	}
+	tests := []struct {
+		provider string
+		want     string
+		binary   string
+	}{
+		{provider: "lark", want: RuntimeAdapterCLI, binary: "lark-cli"},
+		{provider: "feishu", want: RuntimeAdapterCLI, binary: "lark-cli"},
+		{provider: "github", want: RuntimeAdapterCLI, binary: "gh"},
+		{provider: "figma", want: RuntimeAdapterMCPGateway},
+		{provider: "notion", want: RuntimeAdapterHTTPAction},
+	}
+	for _, tt := range tests {
+		t.Run(tt.provider, func(t *testing.T) {
+			provider, ok := providers[tt.provider]
+			if !ok {
+				t.Fatalf("provider missing")
+			}
+			if len(provider.RuntimeAdapters) == 0 {
+				t.Fatalf("runtime adapters missing")
+			}
+			got := provider.RuntimeAdapters[0]
+			if got.Type != tt.want {
+				t.Fatalf("first adapter=%q, want %q", got.Type, tt.want)
+			}
+			if tt.binary != "" && (got.CLI == nil || got.CLI.Binary != tt.binary) {
+				t.Fatalf("cli adapter=%#v, want binary %q", got.CLI, tt.binary)
+			}
+		})
+	}
+}
