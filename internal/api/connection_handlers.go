@@ -1,6 +1,7 @@
 package api
 
 import (
+	"context"
 	"crypto/aes"
 	"crypto/cipher"
 	"crypto/rand"
@@ -9,7 +10,9 @@ import (
 	"encoding/hex"
 	"encoding/json"
 	"fmt"
+	"io"
 	"net/http"
+	"net/url"
 	"os"
 	"sort"
 	"strings"
@@ -17,6 +20,8 @@ import (
 
 	"github.com/multigent/multigent/internal/connector"
 	controldb "github.com/multigent/multigent/internal/db"
+	"github.com/multigent/multigent/internal/imbridge"
+	larkbridge "github.com/multigent/multigent/internal/imbridge/lark"
 )
 
 const (
@@ -33,6 +38,8 @@ const (
 	ConnectionAuthCustomCredential = connector.AuthCustomCredential
 	ConnectionAuthOAuth2           = connector.AuthOAuth2
 )
+
+const githubCLIClientID = "178c6fc778ccc68e1d6a"
 
 func (s *Server) handleConnectorProviders(w http.ResponseWriter, r *http.Request) {
 	includeDisabled := s.canAdminCurrentWorkspace(r) && strings.TrimSpace(r.URL.Query().Get("includeDisabled")) == "true"
@@ -126,6 +133,22 @@ type createConnectionRequest struct {
 	AuthType       string            `json:"authType"`
 	Values         map[string]string `json:"values"`
 	Profile        map[string]any    `json:"profile"`
+}
+
+type connectorProviderSetupPollRequest struct {
+	DeviceCode string `json:"deviceCode"`
+	BaseURL    string `json:"baseUrl"`
+}
+
+type connectorProviderSetupBeginResponse struct {
+	Status     string `json:"status,omitempty"`
+	DeviceCode string `json:"deviceCode"`
+	QRURL      string `json:"qrUrl"`
+	UserCode   string `json:"userCode,omitempty"`
+	Interval   int    `json:"interval"`
+	ExpiresIn  int    `json:"expiresIn"`
+	BaseURL    string `json:"baseUrl,omitempty"`
+	Stage      string `json:"stage,omitempty"`
 }
 
 func (s *Server) handleCreateConnection(w http.ResponseWriter, r *http.Request) {
@@ -253,6 +276,576 @@ func (s *Server) handleCreateConnection(w http.ResponseWriter, r *http.Request) 
 	})
 	w.WriteHeader(http.StatusCreated)
 	_ = json.NewEncoder(w).Encode(connectionToResponse(connection, nil))
+}
+
+func (s *Server) handleConnectorProviderSetupBegin(w http.ResponseWriter, r *http.Request) {
+	workspaceID, ok := s.connectionWorkspace(w, r)
+	if !ok {
+		return
+	}
+	cur := s.currentUser(r)
+	if cur == nil || cur.Username == "" || cur.Username == "apikey" {
+		s.jsonErrorCode(w, http.StatusForbidden, ErrCodeAuthenticatedUserRequired, "authenticated user required")
+		return
+	}
+	providerID := strings.TrimSpace(r.PathValue("provider"))
+	provider, exists, err := s.findConnectorProvider(providerID)
+	if err != nil {
+		s.serverError(w, err)
+		return
+	}
+	if !exists || provider.ComingSoon {
+		s.jsonErrorCode(w, http.StatusBadRequest, ErrCodeUnsupportedProvider, "unsupported provider")
+		return
+	}
+	if provider.Provider == "github" {
+		resp, ok := s.beginGitHubDeviceSetup(w, r, workspaceID, provider)
+		if !ok {
+			return
+		}
+		_ = json.NewEncoder(w).Encode(resp)
+		return
+	}
+	setupProvider, ok := imbridge.LookupProvider(provider.Provider)
+	if !ok {
+		s.jsonErrorCode(w, http.StatusBadRequest, ErrCodeUnsupportedProvider, "quick authorization is not supported for this provider")
+		return
+	}
+	ctx, cancel := contextWithRequestTimeout(r, 20*time.Second)
+	defer cancel()
+	resp, err := setupProvider.BeginSetup(ctx)
+	if err != nil {
+		s.jsonErrorCode(w, http.StatusBadGateway, ErrCodeUpstreamError, err.Error())
+		return
+	}
+	s.auditLog(auditLogInput{
+		WorkspaceID:  workspaceID,
+		Action:       "connection.setup_begin",
+		ResourceType: "connector_provider",
+		ResourceID:   provider.Provider,
+		Summary:      "Started connector quick authorization",
+		After: map[string]any{
+			"provider": provider.Provider,
+			"baseUrl":  resp.BaseURL,
+		},
+		Request: r,
+	})
+	_ = json.NewEncoder(w).Encode(resp)
+}
+
+func (s *Server) handleConnectorProviderSetupPoll(w http.ResponseWriter, r *http.Request) {
+	workspaceID, ok := s.connectionWorkspace(w, r)
+	if !ok {
+		return
+	}
+	cur := s.currentUser(r)
+	if cur == nil || cur.Username == "" || cur.Username == "apikey" {
+		s.jsonErrorCode(w, http.StatusForbidden, ErrCodeAuthenticatedUserRequired, "authenticated user required")
+		return
+	}
+	var req connectorProviderSetupPollRequest
+	if err := s.readJSON(w, r, &req); err != nil {
+		s.jsonErrorCode(w, http.StatusBadRequest, ErrCodeInvalidJSON, "invalid JSON body")
+		return
+	}
+	providerID := strings.TrimSpace(r.PathValue("provider"))
+	provider, exists, err := s.findConnectorProvider(providerID)
+	if err != nil {
+		s.serverError(w, err)
+		return
+	}
+	if !exists || provider.ComingSoon {
+		s.jsonErrorCode(w, http.StatusBadRequest, ErrCodeUnsupportedProvider, "unsupported provider")
+		return
+	}
+	if provider.Provider == "github" {
+		resp, ok := s.pollGitHubDeviceSetup(w, r, workspaceID, provider, req.DeviceCode)
+		if !ok {
+			return
+		}
+		_ = json.NewEncoder(w).Encode(resp)
+		return
+	}
+	if session, ok := s.connectorSetupSession(req.DeviceCode); ok {
+		resp, ok := s.pollConnectorAuthorizationSetup(w, r, workspaceID, provider, session, req.DeviceCode)
+		if !ok {
+			return
+		}
+		_ = json.NewEncoder(w).Encode(resp)
+		return
+	}
+	setupProvider, ok := imbridge.LookupProvider(provider.Provider)
+	if !ok {
+		s.jsonErrorCode(w, http.StatusBadRequest, ErrCodeUnsupportedProvider, "quick authorization is not supported for this provider")
+		return
+	}
+	ctx, cancel := contextWithRequestTimeout(r, 20*time.Second)
+	defer cancel()
+	poll, err := setupProvider.PollSetup(ctx, req.DeviceCode, req.BaseURL)
+	if err != nil {
+		s.jsonErrorCode(w, http.StatusBadGateway, ErrCodeUpstreamError, err.Error())
+		return
+	}
+	if poll.Status != "completed" {
+		_ = json.NewEncoder(w).Encode(poll)
+		return
+	}
+	actualProvider := strings.TrimSpace(poll.Provider)
+	if actualProvider == "" {
+		actualProvider = provider.Provider
+	}
+	authBegin, err := s.beginConnectorAuthorization(r, actualProvider, poll)
+	if err != nil {
+		s.serverError(w, err)
+		return
+	}
+	_ = json.NewEncoder(w).Encode(authBegin)
+}
+
+func (s *Server) beginConnectorAuthorization(r *http.Request, providerID string, appPoll imbridge.SetupPollResponse) (connectorProviderSetupBeginResponse, error) {
+	setupProvider, ok := imbridge.LookupProvider(providerID)
+	if !ok {
+		return connectorProviderSetupBeginResponse{}, fmt.Errorf("quick authorization is not supported for this provider")
+	}
+	ctx, cancel := contextWithRequestTimeout(r, 20*time.Second)
+	defer cancel()
+	client := larkRegistrationClient()
+	begin, err := client.BeginAuthorization(ctx, providerID, appPoll.AppID, appPoll.AppSecret, defaultConnectorScopes(providerID))
+	if err != nil {
+		return connectorProviderSetupBeginResponse{}, err
+	}
+	s.putConnectorSetupSession(begin.DeviceCode, connectorDeviceAuthSession{
+		Provider:    setupProvider.Info().ID,
+		AppID:       appPoll.AppID,
+		AppSecret:   appPoll.AppSecret,
+		OwnerOpenID: appPoll.OwnerOpenID,
+		Brand:       providerID,
+		CreatedAt:   time.Now(),
+	})
+	return connectorProviderSetupBeginResponse{
+		Status:     "authorize",
+		DeviceCode: begin.DeviceCode,
+		QRURL:      begin.QRURL,
+		UserCode:   begin.UserCode,
+		Interval:   begin.Interval,
+		ExpiresIn:  begin.ExpiresIn,
+		BaseURL:    begin.BaseURL,
+		Stage:      "authorize",
+	}, nil
+}
+
+func (s *Server) pollConnectorAuthorizationSetup(w http.ResponseWriter, r *http.Request, workspaceID string, provider connector.Provider, session connectorDeviceAuthSession, deviceCode string) (map[string]any, bool) {
+	ctx, cancel := contextWithRequestTimeout(r, 20*time.Second)
+	defer cancel()
+	client := larkRegistrationClient()
+	poll, err := client.PollAuthorization(ctx, session.Provider, session.AppID, session.AppSecret, deviceCode)
+	if err != nil {
+		s.jsonErrorCode(w, http.StatusBadGateway, ErrCodeUpstreamError, err.Error())
+		return nil, false
+	}
+	if poll.Status != "completed" {
+		resp := map[string]any{
+			"status": poll.Status,
+			"stage":  "authorize",
+		}
+		if poll.SlowDown {
+			resp["slowDown"] = true
+		}
+		if poll.Error != "" {
+			resp["error"] = poll.Error
+		}
+		return resp, true
+	}
+	s.deleteConnectorSetupSession(deviceCode)
+	poll.Provider = session.Provider
+	poll.AppID = session.AppID
+	poll.AppSecret = session.AppSecret
+	poll.OwnerOpenID = session.OwnerOpenID
+	connection, err := s.saveConnectorProviderSetupConnection(r, workspaceID, session.Provider, poll)
+	if err != nil {
+		s.serverError(w, err)
+		return nil, false
+	}
+	return map[string]any{
+		"status":     "connected",
+		"baseUrl":    poll.BaseURL,
+		"connection": connectionToResponse(connection, nil),
+	}, true
+}
+
+func larkRegistrationClient() larkbridge.RegistrationClient {
+	return larkbridge.RegistrationClient{}
+}
+
+func defaultConnectorScopes(provider string) []string {
+	switch provider {
+	case "feishu", "lark":
+		return []string{}
+	default:
+		return nil
+	}
+}
+
+func (s *Server) putConnectorSetupSession(deviceCode string, session connectorDeviceAuthSession) {
+	deviceCode = strings.TrimSpace(deviceCode)
+	if deviceCode == "" {
+		return
+	}
+	s.connectorSetupMu.Lock()
+	defer s.connectorSetupMu.Unlock()
+	s.pruneConnectorSetupSessionsLocked(time.Now())
+	s.connectorSetupSessions[deviceCode] = session
+}
+
+func (s *Server) connectorSetupSession(deviceCode string) (connectorDeviceAuthSession, bool) {
+	deviceCode = strings.TrimSpace(deviceCode)
+	if deviceCode == "" {
+		return connectorDeviceAuthSession{}, false
+	}
+	s.connectorSetupMu.Lock()
+	defer s.connectorSetupMu.Unlock()
+	s.pruneConnectorSetupSessionsLocked(time.Now())
+	session, ok := s.connectorSetupSessions[deviceCode]
+	return session, ok
+}
+
+func (s *Server) deleteConnectorSetupSession(deviceCode string) {
+	deviceCode = strings.TrimSpace(deviceCode)
+	if deviceCode == "" {
+		return
+	}
+	s.connectorSetupMu.Lock()
+	defer s.connectorSetupMu.Unlock()
+	delete(s.connectorSetupSessions, deviceCode)
+}
+
+func (s *Server) pruneConnectorSetupSessionsLocked(now time.Time) {
+	for deviceCode, session := range s.connectorSetupSessions {
+		if now.Sub(session.CreatedAt) > 30*time.Minute {
+			delete(s.connectorSetupSessions, deviceCode)
+		}
+	}
+}
+
+func (s *Server) saveConnectorProviderSetupConnection(r *http.Request, workspaceID, providerID string, poll imbridge.SetupPollResponse) (controldb.Connection, error) {
+	provider, exists, err := s.findConnectorProvider(providerID)
+	if err != nil {
+		return controldb.Connection{}, err
+	}
+	if !exists {
+		return controldb.Connection{}, fmt.Errorf("unsupported provider %q", providerID)
+	}
+	openBaseURL, err := imbridge.MustOpenBaseURL(providerID)
+	if err != nil {
+		return controldb.Connection{}, err
+	}
+	cur := s.currentUser(r)
+	ownerType := ConnectionOwnerUser
+	ownerID := ""
+	if cur != nil {
+		ownerID = cur.Username
+	}
+	if s.canAdminWorkspace(r, workspaceID) {
+		ownerType = ConnectionOwnerWorkspace
+		ownerID = workspaceID
+	}
+	connectionName := "default"
+	now := time.Now().UTC().Format(time.RFC3339)
+	connectionID := newConnectionID("conn")
+	createdBy := requestUsername(r)
+	createdAt := now
+	if existing, ok := s.existingConnection(workspaceID, providerID, ownerType, ownerID, connectionName); ok {
+		connectionID = existing.ID
+		createdBy = existing.CreatedBy
+		createdAt = existing.CreatedAt
+	}
+	profileRaw, _ := json.Marshal(map[string]any{
+		"displayName":             provider.DisplayName,
+		"provider":                providerID,
+		"connectionName":          connectionName,
+		"baseUrl":                 openBaseURL,
+		"accountsUrl":             poll.BaseURL,
+		"appId":                   poll.AppID,
+		"ownerOpenId":             poll.OwnerOpenID,
+		"scope":                   strings.Fields(poll.Scope),
+		"createdByQuickAuthorize": true,
+	})
+	connection := controldb.Connection{
+		ID:             connectionID,
+		WorkspaceID:    workspaceID,
+		Provider:       providerID,
+		ConnectionName: connectionName,
+		OwnerType:      ownerType,
+		OwnerID:        ownerID,
+		AuthType:       ConnectionAuthCustomCredential,
+		Status:         "active",
+		ProfileJSON:    string(profileRaw),
+		CreatedBy:      createdBy,
+		CreatedAt:      createdAt,
+		UpdatedAt:      now,
+	}
+	if err := s.controlDB.UpsertConnection(connection); err != nil {
+		return controldb.Connection{}, err
+	}
+	secret, err := sealConnectionSecret(map[string]string{
+		"baseUrl":          openBaseURL,
+		"appId":            poll.AppID,
+		"appSecret":        poll.AppSecret,
+		"accessToken":      poll.AccessToken,
+		"refreshToken":     poll.RefreshToken,
+		"tokenType":        firstNonEmpty(poll.TokenType, "Bearer"),
+		"scope":            poll.Scope,
+		"expiresAt":        expiresAtFromSeconds(poll.ExpiresIn),
+		"refreshExpiresAt": expiresAtFromSeconds(poll.RefreshExpiresIn),
+	})
+	if err != nil {
+		return controldb.Connection{}, err
+	}
+	secret.ConnectionID = connectionID
+	if err := s.controlDB.UpsertConnectionSecret(secret); err != nil {
+		return controldb.Connection{}, err
+	}
+	s.auditLog(auditLogInput{
+		WorkspaceID:  workspaceID,
+		Action:       "connection.connected",
+		ResourceType: "connection",
+		ResourceID:   connection.ID,
+		Summary:      "Connector quick authorization completed",
+		After: map[string]any{
+			"provider":       connection.Provider,
+			"connectionName": connection.ConnectionName,
+			"ownerType":      connection.OwnerType,
+			"ownerId":        connection.OwnerID,
+			"authType":       connection.AuthType,
+			"profile":        sanitizeConnectionProfile(connection.Provider, connectionProfileMap(connection)),
+		},
+		Request: r,
+	})
+	return connection, nil
+}
+
+func (s *Server) beginGitHubDeviceSetup(w http.ResponseWriter, r *http.Request, workspaceID string, provider connector.Provider) (connectorProviderSetupBeginResponse, bool) {
+	clientID, err := s.githubDeviceClientID(workspaceID, provider.Provider)
+	if err != nil {
+		s.serverError(w, err)
+		return connectorProviderSetupBeginResponse{}, false
+	}
+	ctx, cancel := contextWithRequestTimeout(r, 20*time.Second)
+	defer cancel()
+	resp, err := githubDeviceCode(ctx, provider, clientID)
+	if err != nil {
+		s.jsonErrorCode(w, http.StatusBadGateway, ErrCodeUpstreamError, err.Error())
+		return connectorProviderSetupBeginResponse{}, false
+	}
+	s.auditLog(auditLogInput{
+		WorkspaceID:  workspaceID,
+		Action:       "connection.setup_begin",
+		ResourceType: "connector_provider",
+		ResourceID:   provider.Provider,
+		Summary:      "Started GitHub device authorization",
+		Request:      r,
+	})
+	return resp, true
+}
+
+func (s *Server) pollGitHubDeviceSetup(w http.ResponseWriter, r *http.Request, workspaceID string, provider connector.Provider, deviceCode string) (map[string]any, bool) {
+	deviceCode = strings.TrimSpace(deviceCode)
+	if deviceCode == "" {
+		s.jsonErrorCode(w, http.StatusBadRequest, ErrCodeValidationFailed, "deviceCode is required")
+		return nil, false
+	}
+	clientID, err := s.githubDeviceClientID(workspaceID, provider.Provider)
+	if err != nil {
+		s.serverError(w, err)
+		return nil, false
+	}
+	ctx, cancel := contextWithRequestTimeout(r, 20*time.Second)
+	defer cancel()
+	token, status, slowDown, tokenErr, err := githubDeviceToken(ctx, provider, clientID, deviceCode)
+	if err != nil {
+		s.jsonErrorCode(w, http.StatusBadGateway, ErrCodeUpstreamError, err.Error())
+		return nil, false
+	}
+	if status != "completed" {
+		resp := map[string]any{"status": status}
+		if slowDown {
+			resp["slowDown"] = true
+		}
+		if tokenErr != "" {
+			resp["error"] = tokenErr
+		}
+		return resp, true
+	}
+	state := s.deviceOAuthConnectionState(r, workspaceID, provider)
+	connection, err := s.upsertOAuthConnection(state, token)
+	if err != nil {
+		s.serverError(w, err)
+		return nil, false
+	}
+	s.auditLog(auditLogInput{
+		WorkspaceID:  workspaceID,
+		Action:       "connection.connected",
+		ResourceType: "connection",
+		ResourceID:   connection.ID,
+		Summary:      "GitHub device authorization completed",
+		After:        connectionAuditPayload(connection),
+		Request:      r,
+	})
+	return map[string]any{
+		"status":     "connected",
+		"connection": connectionToResponse(connection, nil),
+	}, true
+}
+
+func (s *Server) githubDeviceClientID(workspaceID, provider string) (string, error) {
+	config, configured, err := s.controlDB.OAuthClientConfigByProvider(workspaceID, provider)
+	if err != nil {
+		return "", err
+	}
+	if configured && strings.TrimSpace(config.ClientID) != "" {
+		return strings.TrimSpace(config.ClientID), nil
+	}
+	if provider == "github" && strings.TrimSpace(os.Getenv("MULTIGENT_GITHUB_OAUTH_CLIENT_ID")) != "" {
+		return strings.TrimSpace(os.Getenv("MULTIGENT_GITHUB_OAUTH_CLIENT_ID")), nil
+	}
+	if provider == "github" {
+		return githubCLIClientID, nil
+	}
+	return "", fmt.Errorf("OAuth client is not configured")
+}
+
+func (s *Server) deviceOAuthConnectionState(r *http.Request, workspaceID string, provider connector.Provider) oauthAuthorizationState {
+	ownerType := ConnectionOwnerUser
+	ownerID := currentUsername(s.currentUser(r))
+	if s.canAdminWorkspace(r, workspaceID) {
+		ownerType = ConnectionOwnerWorkspace
+		ownerID = workspaceID
+	}
+	return oauthAuthorizationState{
+		WorkspaceID:    workspaceID,
+		Provider:       provider.Provider,
+		ConnectionName: "default",
+		OwnerType:      ownerType,
+		OwnerID:        ownerID,
+		CreatedBy:      currentUsername(s.currentUser(r)),
+		CreatedAt:      time.Now().UTC().Format(time.RFC3339),
+		Profile: map[string]any{
+			"displayName": provider.DisplayName,
+		},
+	}
+}
+
+func githubDeviceCode(ctx context.Context, provider connector.Provider, clientID string) (connectorProviderSetupBeginResponse, error) {
+	endpoint := "https://github.com/login/device/code"
+	scopes := []string{}
+	if provider.OAuth != nil {
+		endpoint = strings.TrimSpace(provider.OAuth.AuthorizationURL)
+		endpoint = strings.TrimSuffix(endpoint, "/authorize") + "/device/code"
+		scopes = provider.OAuth.Scopes
+	}
+	form := url.Values{}
+	form.Set("client_id", clientID)
+	if len(scopes) > 0 {
+		form.Set("scope", strings.Join(scopes, " "))
+	}
+	payload, err := postFormJSON(ctx, endpoint, form)
+	if err != nil {
+		return connectorProviderSetupBeginResponse{}, err
+	}
+	if errMsg := strings.TrimSpace(stringValue(payload["error"])); errMsg != "" {
+		return connectorProviderSetupBeginResponse{}, fmt.Errorf("%s: %s", errMsg, strings.TrimSpace(stringValue(payload["error_description"])))
+	}
+	deviceCode := strings.TrimSpace(stringValue(payload["device_code"]))
+	verificationURI := strings.TrimSpace(stringValue(payload["verification_uri"]))
+	userCode := strings.TrimSpace(stringValue(payload["user_code"]))
+	if deviceCode == "" || verificationURI == "" || userCode == "" {
+		return connectorProviderSetupBeginResponse{}, fmt.Errorf("GitHub device response is incomplete")
+	}
+	interval := intNumber(payload["interval"])
+	if interval <= 0 {
+		interval = 5
+	}
+	return connectorProviderSetupBeginResponse{
+		DeviceCode: deviceCode,
+		QRURL:      verificationURI,
+		UserCode:   userCode,
+		Interval:   interval,
+		ExpiresIn:  intNumber(payload["expires_in"]),
+		BaseURL:    "https://github.com",
+	}, nil
+}
+
+func githubDeviceToken(ctx context.Context, provider connector.Provider, clientID, deviceCode string) (oauthTokenResponse, string, bool, string, error) {
+	endpoint := "https://github.com/login/oauth/access_token"
+	if provider.OAuth != nil && strings.TrimSpace(provider.OAuth.TokenURL) != "" {
+		endpoint = provider.OAuth.TokenURL
+	}
+	form := url.Values{}
+	form.Set("client_id", clientID)
+	form.Set("device_code", deviceCode)
+	form.Set("grant_type", "urn:ietf:params:oauth:grant-type:device_code")
+	payload, err := postFormJSON(ctx, endpoint, form)
+	if err != nil {
+		return oauthTokenResponse{}, "", false, "", err
+	}
+	if errMsg := strings.TrimSpace(stringValue(payload["error"])); errMsg != "" {
+		desc := strings.TrimSpace(stringValue(payload["error_description"]))
+		switch errMsg {
+		case "authorization_pending":
+			return oauthTokenResponse{}, "pending", false, "", nil
+		case "slow_down":
+			return oauthTokenResponse{}, "pending", true, "", nil
+		case "expired_token":
+			return oauthTokenResponse{}, "expired", false, firstNonEmpty(desc, errMsg), nil
+		case "access_denied":
+			return oauthTokenResponse{}, "denied", false, firstNonEmpty(desc, errMsg), nil
+		default:
+			return oauthTokenResponse{}, "error", false, firstNonEmpty(desc, errMsg), nil
+		}
+	}
+	accessToken := strings.TrimSpace(stringValue(payload["access_token"]))
+	if accessToken == "" {
+		return oauthTokenResponse{}, "pending", false, "", nil
+	}
+	return oauthTokenResponse{
+		AccessToken:  accessToken,
+		TokenType:    strings.TrimSpace(stringValue(payload["token_type"])),
+		RefreshToken: strings.TrimSpace(stringValue(payload["refresh_token"])),
+		ExpiresIn:    intNumber(payload["expires_in"]),
+		Scope:        strings.TrimSpace(stringValue(payload["scope"])),
+		Raw:          payload,
+	}, "completed", false, "", nil
+}
+
+func postFormJSON(ctx context.Context, endpoint string, form url.Values) (map[string]any, error) {
+	req, err := http.NewRequestWithContext(ctx, http.MethodPost, endpoint, strings.NewReader(form.Encode()))
+	if err != nil {
+		return nil, err
+	}
+	req.Header.Set("Accept", "application/json")
+	req.Header.Set("Content-Type", "application/x-www-form-urlencoded")
+	resp, err := http.DefaultClient.Do(req)
+	if err != nil {
+		return nil, err
+	}
+	defer resp.Body.Close()
+	raw, err := io.ReadAll(io.LimitReader(resp.Body, maxJSONBody))
+	if err != nil {
+		return nil, err
+	}
+	payload := map[string]any{}
+	if len(raw) > 0 {
+		if err := json.Unmarshal(raw, &payload); err != nil {
+			return nil, fmt.Errorf("decode response: %w", err)
+		}
+	}
+	if resp.StatusCode < 200 || resp.StatusCode >= 300 {
+		if errMsg := strings.TrimSpace(stringValue(payload["error"])); errMsg != "" {
+			return payload, nil
+		}
+		return nil, fmt.Errorf("HTTP %d", resp.StatusCode)
+	}
+	return payload, nil
 }
 
 func (s *Server) existingConnection(workspaceID, provider, ownerType, ownerID, connectionName string) (controldb.Connection, bool) {
@@ -1013,6 +1606,13 @@ func defaultConnectorProvider(providerID string) (connector.Provider, bool) {
 		}
 	}
 	return connector.Provider{}, false
+}
+
+func expiresAtFromSeconds(seconds int) string {
+	if seconds <= 0 {
+		return ""
+	}
+	return time.Now().UTC().Add(time.Duration(seconds) * time.Second).Format(time.RFC3339)
 }
 
 func newConnectionID(prefix string) string {

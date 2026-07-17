@@ -3,7 +3,7 @@ import { Navigate, Route, Routes } from 'react-router-dom'
 import { useTranslation } from 'react-i18next'
 import { AppShell } from './components/layout/AppShell'
 import { useAuth } from './lib/auth'
-import { apiFetch } from './lib/api'
+import { ApiError, apiFetch } from './lib/api'
 import { WorkspaceAccessProvider, useWorkspaceAccess } from './lib/workspace-access'
 import LoginPage from './pages/LoginPage'
 import WorkspaceOnboardingPage from './pages/WorkspaceOnboardingPage'
@@ -64,8 +64,9 @@ function WorkspaceGate({ children }: { children: ReactNode }) {
         if (cancelled) return
         setState((data.workspaces ?? []).length > 0 ? 'ready' : 'empty')
       })
-      .catch(() => {
-        if (!cancelled) setState('empty')
+      .catch((error) => {
+        if (cancelled) return
+        setState(error instanceof ApiError && error.status === 401 ? 'empty' : 'ready')
       })
     return () => { cancelled = true }
   }, [reloadKey])

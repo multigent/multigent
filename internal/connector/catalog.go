@@ -72,7 +72,7 @@ func Defaults() []Provider {
 			OAuth: &OAuth2Config{
 				AuthorizationURL: "https://github.com/login/oauth/authorize",
 				TokenURL:         "https://github.com/login/oauth/access_token",
-				Scopes:           []string{"repo", "read:user", "user:email"},
+				Scopes:           []string{"repo", "read:org", "gist"},
 				ScopeSeparator:   " ",
 			},
 			Actions: []ProviderAction{
@@ -139,7 +139,7 @@ func Defaults() []Provider {
 		},
 		{
 			Provider:    "feishu",
-			DisplayName: "Feishu / Lark",
+			DisplayName: "Feishu",
 			Description: "Use Feishu OpenAPI for wiki, docs, IM, task, and collaboration workflows in China-region tenants.",
 			Category:    "Communication",
 			AuthTypes:   []string{AuthCustomCredential},

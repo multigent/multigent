@@ -204,6 +204,16 @@
     "oauthNotConfiguredAdmin": "This tool supports OAuth. Configure an OAuth app to let users authorize personal accounts.",
     "oauthHiddenForUsers": "OAuth for this tool has not been enabled by an admin; only available static credential methods are shown.",
     "credentialGuide": "How to get credentials",
+    "quickAuthorize": "Quick authorize",
+    "deviceAuthHint": "Open the authorization page or scan the QR code. Multigent will save the usable credential automatically.",
+    "openAuthorizationPage": "Open authorization",
+    "waitingAuthorization": "Waiting for authorization",
+    "authorizationConnected": "Authorization completed and the connection was created.",
+    "authorizationFailed": "Authorization failed",
+    "deviceAuthDenied": "Authorization was denied",
+    "deviceAuthExpired": "Authorization expired",
+    "deviceAuthError": "Authorization failed",
+    "savedCredentialSummary": "Saved credential summary",
     "advancedSettings": "Advanced settings"
   },
   "projectNav": {

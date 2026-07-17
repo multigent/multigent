@@ -1,4 +1,5 @@
-import { useEffect, useMemo, useState, type ReactNode } from 'react'
+import { useEffect, useMemo, useRef, useState, type ReactNode } from 'react'
+import { QRCodeSVG } from 'qrcode.react'
 import { Link2, Trash2, X } from 'lucide-react'
 import { useSearchParams } from 'react-router-dom'
 import { useTranslation } from 'react-i18next'
@@ -17,6 +18,8 @@ type Provider = {
   displayName: string
   description?: string
   category?: string
+  homepageUrl?: string
+  iconUrl?: string
   authTypes: string[]
   fields?: ProviderField[]
   actions?: ProviderAction[]
@@ -57,6 +60,8 @@ type ConnectionProfileSummary = {
 type ConnectionTestResult = { ok: boolean; status: number; message: string }
 type ConnectionHealthCheckRunResult = { checked: number; skipped: number; results: Array<{ connectionId: string; ok: boolean; status: number; message: string; error?: string }> }
 type OAuthAuthorizationStart = { authorizationUrl: string; state: string }
+type DeviceSetupBegin = { deviceCode: string; qrUrl: string; userCode?: string; interval?: number; expiresIn?: number; baseUrl?: string }
+type DeviceSetupPoll = { status: string; stage?: string; deviceCode?: string; qrUrl?: string; userCode?: string; interval?: number; expiresIn?: number; baseUrl?: string; slowDown?: boolean; error?: string; connection?: Connection }
 type ProjectRow = { name: string }
 type ProjectAgent = { name: string }
 type WorkspaceSummary = { id: string; name: string; currentUserRole?: string; currentUserCanAdmin?: boolean }
@@ -362,21 +367,24 @@ function ExternalToolCard({
   return (
     <section className="rounded-xl border border-neutral-200/80 bg-white p-5 dark:border-zinc-700/60 dark:bg-zinc-900/40">
       <div className="flex items-start justify-between gap-4">
-        <div className="min-w-0">
-          <div className="flex flex-wrap items-center gap-2">
-            <h3 className="text-sm font-semibold text-neutral-900 dark:text-zinc-100">{provider.displayName}</h3>
-            <span className={cn(
-              'rounded-full px-2 py-0.5 text-[11px] font-medium',
-              provider.comingSoon
-                ? 'bg-neutral-100 text-neutral-500 dark:bg-zinc-800 dark:text-zinc-400'
-                : connection
-                  ? 'bg-emerald-100 text-emerald-700 dark:bg-emerald-900/30 dark:text-emerald-300'
-                  : 'bg-amber-100 text-amber-700 dark:bg-amber-900/30 dark:text-amber-300',
-            )}>
-              {statusLabel}
-            </span>
+        <div className="flex min-w-0 items-start gap-3">
+          <ProviderLogo provider={provider} />
+          <div className="min-w-0">
+            <div className="flex flex-wrap items-center gap-2">
+              <h3 className="text-sm font-semibold text-neutral-900 dark:text-zinc-100">{provider.displayName}</h3>
+              <span className={cn(
+                'rounded-full px-2 py-0.5 text-[11px] font-medium',
+                provider.comingSoon
+                  ? 'bg-neutral-100 text-neutral-500 dark:bg-zinc-800 dark:text-zinc-400'
+                  : connection
+                    ? 'bg-emerald-100 text-emerald-700 dark:bg-emerald-900/30 dark:text-emerald-300'
+                    : 'bg-amber-100 text-amber-700 dark:bg-amber-900/30 dark:text-amber-300',
+              )}>
+                {statusLabel}
+              </span>
+            </div>
+            <p className="mt-2 line-clamp-2 text-sm text-neutral-500 dark:text-zinc-400">{provider.description || t('connections.externalToolDefaultDescription')}</p>
           </div>
-          <p className="mt-2 line-clamp-2 text-sm text-neutral-500 dark:text-zinc-400">{provider.description || t('connections.externalToolDefaultDescription')}</p>
         </div>
         <button type="button" onClick={() => connection && canManageConnection ? onEdit(connection) : onConfigure()} disabled={connection ? !canManageConnection : !canConfigure} className={cn(primaryOutlineButton, 'shrink-0 disabled:cursor-not-allowed disabled:opacity-50')}>
           {connection ? t('connections.manageConnection') : t('connections.configureTool')}
@@ -424,6 +432,72 @@ function ToolStat({ label, value }: { label: string; value: string }) {
       <p className="mt-1 truncate text-xs font-medium text-neutral-700 dark:text-zinc-200" title={value}>{value}</p>
     </div>
   )
+}
+
+function ProviderLogo({ provider }: { provider: Provider }) {
+  const [failed, setFailed] = useState(false)
+  const initials = provider.displayName
+    .split(/\s+/)
+    .map(part => part[0])
+    .join('')
+    .slice(0, 2)
+    .toUpperCase() || '?'
+  const logo = failed ? '' : providerLogoURL(provider)
+  return (
+    <span className="flex size-10 shrink-0 items-center justify-center rounded-lg border border-neutral-200 bg-white text-xs font-semibold text-neutral-500 dark:border-zinc-700 dark:bg-zinc-950 dark:text-zinc-400">
+      {logo ? (
+        <img
+          alt=""
+          className="size-6 object-contain"
+          loading="lazy"
+          referrerPolicy="no-referrer"
+          src={logo}
+          onError={() => setFailed(true)}
+        />
+      ) : initials}
+    </span>
+  )
+}
+
+function providerLogoURL(provider: Provider): string {
+  if (provider.iconUrl?.trim()) return provider.iconUrl.trim()
+  const domain = providerHomepageDomain(provider) || providerLogoDomains[provider.provider]
+  if (!domain) return ''
+  return `https://www.google.com/s2/favicons?sz=64&domain=${encodeURIComponent(domain)}`
+}
+
+function providerHomepageDomain(provider: Provider): string {
+  const homepage = provider.homepageUrl?.trim()
+  if (!homepage) return ''
+  try {
+    return new URL(homepage).hostname
+  } catch {
+    return ''
+  }
+}
+
+const providerLogoDomains: Record<string, string> = {
+  github: 'github.com',
+  gitlab: 'gitlab.com',
+  gitee: 'gitee.com',
+  feishu: 'feishu.cn',
+  lark: 'larksuite.com',
+  linear: 'linear.app',
+  jira: 'atlassian.com',
+  notion: 'notion.so',
+  slack: 'slack.com',
+  dingtalk_bot: 'dingtalk.com',
+  figma: 'figma.com',
+  google_drive: 'drive.google.com',
+  google_calendar: 'calendar.google.com',
+  gmail: 'mail.google.com',
+  confluence: 'atlassian.com',
+  trello: 'trello.com',
+  asana: 'asana.com',
+  vercel: 'vercel.com',
+  cloudflare: 'cloudflare.com',
+  stripe: 'stripe.com',
+  sentry: 'sentry.io',
 }
 
 function ConnectionSummary({ connection, canGrant, canEdit, canDelete, testState, onEdit, onGrant, onTest, onDelete }: { connection: Connection; canGrant: boolean; canEdit: boolean; canDelete: boolean; testState?: { loading?: boolean; ok?: boolean; message?: string }; onEdit: () => void; onGrant: () => void; onTest: () => void; onDelete: () => void }) {
@@ -495,27 +569,6 @@ function connectionValidation(connection: Connection, fmtDateTime: (input: strin
   return { ok, status, message, atLabel }
 }
 
-function connectionHealthPolicy(connection: Connection, fmtDateTime: (input: string | number | Date | null | undefined) => string = (input) => formatDateTimeForLanguage(input, undefined)): { enabled: boolean; intervalMinutes: number; nextLabel: string } {
-  const profile = connection.profile ?? {}
-  const enabled = profile.healthCheckEnabled === true
-  const rawInterval = typeof profile.healthCheckIntervalMinutes === 'number' ? profile.healthCheckIntervalMinutes : 360
-  const intervalMinutes = Math.max(5, Math.min(43200, Math.round(rawInterval || 360)))
-  const next = typeof profile.nextHealthCheckAt === 'string' ? profile.nextHealthCheckAt : ''
-  const nextLabel = next ? fmtDateTime(next) : next
-  return { enabled, intervalMinutes, nextLabel }
-}
-
-function profileStringList(profile: Record<string, unknown> | undefined, key: string): string[] {
-  const raw = profile?.[key]
-  if (Array.isArray(raw)) return raw.filter((item): item is string => typeof item === 'string').map(item => item.trim()).filter(Boolean)
-  if (typeof raw === 'string') return raw.split(/[\n,]+/).map(item => item.trim()).filter(Boolean)
-  return []
-}
-
-function parsePolicyList(value: string): string[] {
-  return value.split(/[\n,]+/).map(item => item.trim()).filter(Boolean)
-}
-
 function ConnectionDialog({
   providers,
   oauthConfigs,
@@ -542,23 +595,24 @@ function ConnectionDialog({
     const types = provider?.authTypes ?? []
     return types.filter(type => type !== 'oauth2' || oauthConfig?.configured)
   }, [provider, oauthConfig])
-  const [ownerType, setOwnerType] = useState(connection?.ownerType ?? (isWorkspaceAdmin ? 'workspace' : 'user'))
+  const ownerType = connection?.ownerType ?? (isWorkspaceAdmin ? 'workspace' : 'user')
   const [authType, setAuthType] = useState(connection?.authType ?? availableAuthTypes[0] ?? 'api_key')
-  const [connectionName, setConnectionName] = useState(connection?.connectionName ?? 'default')
-  const [displayName, setDisplayName] = useState(String(connection?.profile?.displayName ?? ''))
-  const [accountId, setAccountId] = useState(String(connection?.profileSummary?.accountId ?? connection?.profile?.accountId ?? ''))
-  const [accountName, setAccountName] = useState(String(connection?.profileSummary?.accountName ?? connection?.profile?.accountName ?? ''))
-  const [accountEmail, setAccountEmail] = useState(String(connection?.profileSummary?.accountEmail ?? connection?.profile?.accountEmail ?? ''))
-  const [scopes, setScopes] = useState((connection?.profileSummary?.scopes ?? profileStringList(connection?.profile, 'scopes')).join('\n'))
-  const [providerPermissions, setProviderPermissions] = useState((connection?.profileSummary?.providerPermissions ?? profileStringList(connection?.profile, 'providerPermissions')).join('\n'))
-  const [healthCheckEnabled, setHealthCheckEnabled] = useState(connection?.profile?.healthCheckEnabled === true)
-  const [healthCheckIntervalMinutes, setHealthCheckIntervalMinutes] = useState(String(connectionHealthPolicy(connection ?? {} as Connection).intervalMinutes))
-  const [allowedActionMethods, setAllowedActionMethods] = useState(profileStringList(connection?.profile, 'allowedActionMethods').join('\n'))
-  const [blockedActionMethods, setBlockedActionMethods] = useState(profileStringList(connection?.profile, 'blockedActionMethods').join('\n'))
-  const [allowedActionEndpoints, setAllowedActionEndpoints] = useState(profileStringList(connection?.profile, 'allowedActionEndpoints').join('\n'))
-  const [blockedActionEndpoints, setBlockedActionEndpoints] = useState(profileStringList(connection?.profile, 'blockedActionEndpoints').join('\n'))
+  const connectionName = connection?.connectionName ?? 'default'
   const [values, setValues] = useState<Record<string, string>>({})
   const [saving, setSaving] = useState(false)
+  const [deviceSetup, setDeviceSetup] = useState<
+    | { step: 'idle' }
+    | { step: 'beginning' }
+    | { step: 'scanning'; deviceCode: string; qrUrl: string; userCode?: string; baseUrl: string; interval: number }
+    | { step: 'connected' }
+    | { step: 'error'; message: string }
+  >({ step: 'idle' })
+  const pollRef = useRef<ReturnType<typeof setInterval> | null>(null)
+  const canQuickAuthorize = !isEditing && (
+    providerId === 'feishu' ||
+    providerId === 'lark' ||
+    providerId === 'github'
+  )
 
   useEffect(() => {
     if (isEditing) return
@@ -566,7 +620,11 @@ function ConnectionDialog({
     const nextAuthTypes = (p?.authTypes ?? []).filter(type => type !== 'oauth2' || oauthConfigs.find(config => config.provider === p?.provider)?.configured)
     setAuthType(nextAuthTypes[0] ?? 'api_key')
     setValues({})
-  }, [providerId, providers, oauthConfigs, isWorkspaceAdmin, isEditing])
+    stopDevicePoll()
+    setDeviceSetup({ step: 'idle' })
+  }, [providerId, providers, oauthConfigs, isEditing])
+
+  useEffect(() => () => stopDevicePoll(), [])
 
   const fields = useMemo(() => {
     if (!provider || authType === 'no_auth') return []
@@ -579,18 +637,7 @@ function ConnectionDialog({
     try {
       const cleanValues = Object.fromEntries(Object.entries(values).filter(([, value]) => value.trim() !== ''))
       const profile = {
-        displayName: displayName.trim() || provider.displayName,
-        accountId: accountId.trim(),
-        accountName: accountName.trim(),
-        accountEmail: accountEmail.trim(),
-        scopes: parsePolicyList(scopes),
-        providerPermissions: parsePolicyList(providerPermissions),
-        healthCheckEnabled,
-        healthCheckIntervalMinutes: Math.max(5, Math.min(43200, Number(healthCheckIntervalMinutes) || 360)),
-        allowedActionMethods: parsePolicyList(allowedActionMethods),
-        blockedActionMethods: parsePolicyList(blockedActionMethods),
-        allowedActionEndpoints: parsePolicyList(allowedActionEndpoints),
-        blockedActionEndpoints: parsePolicyList(blockedActionEndpoints),
+        displayName: provider.displayName,
       }
       if (!connection && authType === 'oauth2') {
         const started = await apiPost<OAuthAuthorizationStart>('/api/v1/oauth/authorizations', {
@@ -621,6 +668,73 @@ function ConnectionDialog({
     }
   }
 
+  function stopDevicePoll() {
+    if (pollRef.current) {
+      clearInterval(pollRef.current)
+      pollRef.current = null
+    }
+  }
+
+  async function beginDeviceSetup() {
+    if (!provider || !canQuickAuthorize) return
+    stopDevicePoll()
+    setDeviceSetup({ step: 'beginning' })
+    try {
+      const res = await apiPost<DeviceSetupBegin>(`/api/v1/connectors/providers/${encodeURIComponent(provider.provider)}/setup/begin`, {})
+      const next = {
+        step: 'scanning' as const,
+        deviceCode: res.deviceCode,
+        qrUrl: res.qrUrl,
+        userCode: res.userCode,
+        baseUrl: res.baseUrl || '',
+        interval: Math.max(3, res.interval || 5),
+      }
+      setDeviceSetup(next)
+      window.open(res.qrUrl, '_blank', 'noopener,noreferrer')
+      startDevicePoll(provider.provider, next)
+    } catch (e) {
+      setDeviceSetup({ step: 'error', message: e instanceof Error ? e.message : String(e) })
+    }
+  }
+
+  function startDevicePoll(providerId: string, setup: Extract<typeof deviceSetup, { step: 'scanning' }>) {
+    let interval = setup.interval
+    const tick = async () => {
+      try {
+        const res = await apiPost<DeviceSetupPoll>(`/api/v1/connectors/providers/${encodeURIComponent(providerId)}/setup/poll`, {
+          deviceCode: setup.deviceCode,
+          baseUrl: setup.baseUrl || undefined,
+        })
+        if (res.slowDown) interval += 5
+        if (res.status === 'authorize' && res.deviceCode && res.qrUrl) {
+          const next = {
+            step: 'scanning' as const,
+            deviceCode: res.deviceCode,
+            qrUrl: res.qrUrl,
+            userCode: res.userCode,
+            baseUrl: res.baseUrl || '',
+            interval: Math.max(3, res.interval || interval),
+          }
+          setDeviceSetup(next)
+          window.open(res.qrUrl, '_blank', 'noopener,noreferrer')
+          stopDevicePoll()
+          startDevicePoll(providerId, next)
+        } else if (res.status === 'connected' && res.connection) {
+          stopDevicePoll()
+          setDeviceSetup({ step: 'connected' })
+          onCreated()
+        } else if (res.status === 'denied' || res.status === 'expired' || res.status === 'error') {
+          stopDevicePoll()
+          setDeviceSetup({ step: 'error', message: res.error || t(`connections.deviceAuth${res.status.charAt(0).toUpperCase()}${res.status.slice(1)}`) })
+        }
+      } catch {
+        // Keep polling through transient network errors.
+      }
+    }
+    pollRef.current = setInterval(() => void tick(), interval * 1000)
+    void tick()
+  }
+
   return (
     <Modal title={isEditing ? t('connections.editConnection') : t('connections.configureToolTitle', { name: provider?.displayName ?? '' })} onClose={onClose}>
       <div className="space-y-4">
@@ -637,21 +751,50 @@ function ConnectionDialog({
             {provider.description}
           </div>
         )}
-        <div className="grid gap-3 sm:grid-cols-2">
-          <label className="block">
-            <span className="text-xs font-medium text-neutral-500 dark:text-zinc-400">{t('connections.owner')}</span>
-            <select className={selectCls} value={ownerType} onChange={e => setOwnerType(e.target.value)} disabled={isEditing}>
-              {isWorkspaceAdmin && <option value="workspace">{t('connections.workspace')}</option>}
-              <option value="user">{t('connections.me')}</option>
-            </select>
-          </label>
-          <label className="block">
-            <span className="text-xs font-medium text-neutral-500 dark:text-zinc-400">{t('connections.authType')}</span>
-            <select className={selectCls} value={authType} onChange={e => setAuthType(e.target.value)}>
-              {availableAuthTypes.map(type => <option key={type} value={type}>{authTypeLabel(type, t)}</option>)}
-            </select>
-          </label>
-        </div>
+        {isEditing && connection && (
+          <SavedConnectionSummary connection={connection} />
+        )}
+        {canQuickAuthorize && (
+          <div className="rounded-lg border border-sky-100 bg-sky-50 p-3 dark:border-sky-900/60 dark:bg-sky-950/20">
+            <div className="flex items-start justify-between gap-3">
+              <div>
+                <p className="text-sm font-medium text-sky-900 dark:text-sky-100">{t('connections.quickAuthorize')}</p>
+                <p className="mt-1 text-xs leading-5 text-sky-700 dark:text-sky-300">{t('connections.deviceAuthHint')}</p>
+              </div>
+              <button type="button" onClick={() => void beginDeviceSetup()} disabled={deviceSetup.step === 'beginning' || deviceSetup.step === 'scanning'} className="shrink-0 rounded-lg border border-sky-600 bg-white px-3 py-2 text-sm font-medium text-sky-700 hover:bg-sky-50 disabled:opacity-50 dark:border-sky-500 dark:bg-zinc-900 dark:text-sky-400 dark:hover:bg-zinc-800">
+                {deviceSetup.step === 'beginning' || deviceSetup.step === 'scanning' ? t('common.loading') : t('connections.openAuthorizationPage')}
+              </button>
+            </div>
+            {deviceSetup.step === 'scanning' && (
+              <div className="mt-3 flex flex-col gap-3 rounded-lg bg-white p-3 dark:bg-zinc-900 sm:flex-row sm:items-center">
+                <div className="rounded bg-white p-2">
+                  <QRCodeSVG value={deviceSetup.qrUrl} size={104} />
+                </div>
+                <div className="min-w-0 flex-1">
+                  <p className="text-sm font-medium text-neutral-900 dark:text-zinc-100">{t('connections.waitingAuthorization')}</p>
+                  {'userCode' in deviceSetup && deviceSetup.userCode ? (
+                    <p className="mt-1 text-lg font-semibold tracking-wide text-neutral-900 dark:text-zinc-100">{deviceSetup.userCode}</p>
+                  ) : null}
+                  <a href={deviceSetup.qrUrl} target="_blank" rel="noreferrer" className="mt-1 block truncate text-xs font-medium text-sky-700 hover:underline dark:text-sky-300">
+                    {deviceSetup.qrUrl}
+                  </a>
+                </div>
+              </div>
+            )}
+            {deviceSetup.step === 'connected' && (
+              <p className="mt-2 text-xs font-medium text-emerald-700 dark:text-emerald-300">{t('connections.authorizationConnected')}</p>
+            )}
+            {deviceSetup.step === 'error' && (
+              <p className="mt-2 text-xs font-medium text-red-700 dark:text-red-300">{deviceSetup.message || t('connections.authorizationFailed')}</p>
+            )}
+          </div>
+        )}
+        <label className="block">
+          <span className="text-xs font-medium text-neutral-500 dark:text-zinc-400">{t('connections.authType')}</span>
+          <select className={selectCls} value={authType} onChange={e => setAuthType(e.target.value)}>
+            {availableAuthTypes.map(type => <option key={type} value={type}>{authTypeLabel(type, t)}</option>)}
+          </select>
+        </label>
         {provider?.authTypes.includes('oauth2') && !oauthConfig?.configured && (
           <p className="rounded-lg bg-amber-50 px-3 py-2 text-xs text-amber-700 dark:bg-amber-950/30 dark:text-amber-300">
             {isWorkspaceAdmin ? t('connections.oauthNotConfiguredAdmin') : t('connections.oauthHiddenForUsers')}
@@ -695,94 +838,41 @@ function ConnectionDialog({
             </div>
           </details>
         )}
-        <details className="rounded-lg border border-neutral-200 p-3 dark:border-zinc-700">
-          <summary className="cursor-pointer text-sm font-medium text-neutral-700 dark:text-zinc-200">{t('connections.advancedSettings')}</summary>
-          <div className="mt-3 grid gap-3 sm:grid-cols-2">
-            <label className="block">
-              <span className="text-xs font-medium text-neutral-500 dark:text-zinc-400">{t('connections.connectionName')}</span>
-              <input className={inputCls} value={connectionName} onChange={e => setConnectionName(e.target.value)} />
-            </label>
-            <label className="block">
-              <span className="text-xs font-medium text-neutral-500 dark:text-zinc-400">{t('connections.displayName')}</span>
-              <input className={inputCls} value={displayName} onChange={e => setDisplayName(e.target.value)} placeholder={provider?.displayName} />
-            </label>
-          </div>
-        </details>
-        <details className="rounded-lg border border-neutral-200 p-3 dark:border-zinc-700">
-          <summary className="cursor-pointer text-sm font-medium text-neutral-700 dark:text-zinc-200">{t('connections.accountProfile')}</summary>
-          <div>
-            <p className="mt-0.5 text-xs text-neutral-400 dark:text-zinc-500">{t('connections.accountProfileHint')}</p>
-          </div>
-          <div className="mt-3 grid gap-3 sm:grid-cols-3">
-            <label className="block">
-              <span className="text-xs font-medium text-neutral-500 dark:text-zinc-400">{t('connections.accountId')}</span>
-              <input className={inputCls} value={accountId} onChange={e => setAccountId(e.target.value)} />
-            </label>
-            <label className="block">
-              <span className="text-xs font-medium text-neutral-500 dark:text-zinc-400">{t('connections.accountName')}</span>
-              <input className={inputCls} value={accountName} onChange={e => setAccountName(e.target.value)} />
-            </label>
-            <label className="block">
-              <span className="text-xs font-medium text-neutral-500 dark:text-zinc-400">{t('connections.accountEmail')}</span>
-              <input className={inputCls} value={accountEmail} onChange={e => setAccountEmail(e.target.value)} />
-            </label>
-          </div>
-          <div className="mt-3 grid gap-3 sm:grid-cols-2">
-            <label className="block">
-              <span className="text-xs font-medium text-neutral-500 dark:text-zinc-400">{t('connections.grantedScopes')}</span>
-              <textarea className={`${inputCls} min-h-20 resize-y`} value={scopes} onChange={e => setScopes(e.target.value)} placeholder={'repo\nread:user'} />
-            </label>
-            <label className="block">
-              <span className="text-xs font-medium text-neutral-500 dark:text-zinc-400">{t('connections.providerPermissions')}</span>
-              <textarea className={`${inputCls} min-h-20 resize-y`} value={providerPermissions} onChange={e => setProviderPermissions(e.target.value)} placeholder={'Issues: read/write\nWiki: read'} />
-            </label>
-          </div>
-        </details>
-        <details className="rounded-lg border border-neutral-200 p-3 dark:border-zinc-700">
-          <summary className="cursor-pointer text-sm font-medium text-neutral-700 dark:text-zinc-200">{t('connections.automaticHealthChecks')}</summary>
-          <label className="flex items-center justify-between gap-3">
-            <span>
-              <span className="block text-xs text-neutral-400 dark:text-zinc-500">{t('connections.automaticHealthChecksHint')}</span>
-            </span>
-            <input type="checkbox" checked={healthCheckEnabled} onChange={e => setHealthCheckEnabled(e.target.checked)} className="size-4 accent-sky-600" />
-          </label>
-          {healthCheckEnabled && (
-            <label className="mt-3 block">
-              <span className="text-xs font-medium text-neutral-500 dark:text-zinc-400">{t('connections.intervalMinutes')}</span>
-              <input type="number" min={5} max={43200} className={inputCls} value={healthCheckIntervalMinutes} onChange={e => setHealthCheckIntervalMinutes(e.target.value)} />
-            </label>
-          )}
-        </details>
-        <details className="rounded-lg border border-neutral-200 p-3 dark:border-zinc-700">
-          <summary className="cursor-pointer text-sm font-medium text-neutral-700 dark:text-zinc-200">{t('connections.runtimeActionPolicy')}</summary>
-          <div>
-            <p className="mt-0.5 text-xs text-neutral-400 dark:text-zinc-500">{t('connections.runtimeActionPolicyHint')} <code>/prefix/*</code>, <code>*</code>.</p>
-          </div>
-          <div className="mt-3 grid gap-3 sm:grid-cols-2">
-            <label className="block">
-              <span className="text-xs font-medium text-neutral-500 dark:text-zinc-400">{t('connections.allowedMethods')}</span>
-              <textarea className={`${inputCls} min-h-20 resize-y`} value={allowedActionMethods} onChange={e => setAllowedActionMethods(e.target.value)} placeholder={'GET\nPOST'} />
-            </label>
-            <label className="block">
-              <span className="text-xs font-medium text-neutral-500 dark:text-zinc-400">{t('connections.blockedMethods')}</span>
-              <textarea className={`${inputCls} min-h-20 resize-y`} value={blockedActionMethods} onChange={e => setBlockedActionMethods(e.target.value)} placeholder={'DELETE'} />
-            </label>
-            <label className="block">
-              <span className="text-xs font-medium text-neutral-500 dark:text-zinc-400">{t('connections.allowedEndpoints')}</span>
-              <textarea className={`${inputCls} min-h-24 resize-y`} value={allowedActionEndpoints} onChange={e => setAllowedActionEndpoints(e.target.value)} placeholder={'/open-apis/wiki/*\n/repos/*'} />
-            </label>
-            <label className="block">
-              <span className="text-xs font-medium text-neutral-500 dark:text-zinc-400">{t('connections.blockedEndpoints')}</span>
-              <textarea className={`${inputCls} min-h-24 resize-y`} value={blockedActionEndpoints} onChange={e => setBlockedActionEndpoints(e.target.value)} placeholder={'/admin/*\n/private'} />
-            </label>
-          </div>
-        </details>
         <div className="flex justify-end gap-2 pt-2">
           <button type="button" onClick={onClose} disabled={saving} className="rounded-lg border border-neutral-300 px-3 py-2 text-sm dark:border-zinc-600">{t('common.cancel')}</button>
           <button type="button" onClick={() => void submit()} disabled={saving || !provider || provider.comingSoon || availableAuthTypes.length === 0} className="rounded-lg bg-sky-600 px-3 py-2 text-sm font-medium text-white disabled:opacity-50">{authType === 'oauth2' && !isEditing ? t('connections.startOAuth') : isEditing ? t('common.save') : t('common.create')}</button>
         </div>
       </div>
     </Modal>
+  )
+}
+
+function SavedConnectionSummary({ connection }: { connection: Connection }) {
+  const { t } = useTranslation()
+  const profile = connection.profile ?? {}
+  const summary = connection.profileSummary
+  const appId = typeof profile.appId === 'string' ? profile.appId : ''
+  const baseUrl = typeof profile.baseUrl === 'string' ? profile.baseUrl : ''
+  const ownerOpenId = typeof profile.ownerOpenId === 'string' ? profile.ownerOpenId : ''
+  const fields = [
+    { label: 'App ID', value: appId },
+    { label: 'Base URL', value: baseUrl },
+    { label: 'Open ID', value: ownerOpenId || summary?.accountId || '' },
+    { label: t('connections.authType'), value: authTypeLabel(connection.authType, t) },
+  ].filter(item => item.value)
+  if (fields.length === 0) return null
+  return (
+    <div className="rounded-lg border border-neutral-200 bg-neutral-50 p-3 dark:border-zinc-700 dark:bg-zinc-900/50">
+      <p className="text-xs font-medium text-neutral-500 dark:text-zinc-400">{t('connections.savedCredentialSummary')}</p>
+      <div className="mt-2 grid gap-2 sm:grid-cols-2">
+        {fields.map(item => (
+          <div key={item.label} className="min-w-0">
+            <p className="text-[11px] text-neutral-400 dark:text-zinc-500">{item.label}</p>
+            <p className="truncate text-xs font-medium text-neutral-700 dark:text-zinc-200" title={item.value}>{item.value}</p>
+          </div>
+        ))}
+      </div>
+    </div>
   )
 }
 

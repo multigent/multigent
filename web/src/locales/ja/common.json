@@ -204,6 +204,16 @@
     "oauthNotConfiguredAdmin": "このツールは OAuth をサポートしています。OAuth アプリを設定すると、ユーザーが個人アカウントを認可できます。",
     "oauthHiddenForUsers": "このツールの OAuth は管理者により有効化されていません。現在利用可能な静的認証方式のみ表示します。",
     "credentialGuide": "認証情報の取得方法",
+    "quickAuthorize": "クイック認可",
+    "deviceAuthHint": "認可ページを開くか QR コードをスキャンしてください。Multigent が利用可能な認証情報を自動保存します。",
+    "openAuthorizationPage": "認可を開く",
+    "waitingAuthorization": "認可完了を待っています",
+    "authorizationConnected": "認可が完了し、接続を作成しました。",
+    "authorizationFailed": "認可に失敗しました",
+    "deviceAuthDenied": "認可が拒否されました",
+    "deviceAuthExpired": "認可の有効期限が切れました",
+    "deviceAuthError": "認可に失敗しました",
+    "savedCredentialSummary": "保存済み認証情報の概要",
     "advancedSettings": "詳細設定"
   },
   "projectNav": {

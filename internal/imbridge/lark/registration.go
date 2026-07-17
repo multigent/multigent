@@ -4,6 +4,7 @@ package lark
 
 import (
 	"context"
+	"encoding/base64"
 	"encoding/json"
 	"fmt"
 	"io"
@@ -28,20 +29,29 @@ type RegistrationClient struct {
 type BeginResponse struct {
 	DeviceCode string `json:"deviceCode"`
 	QRURL      string `json:"qrUrl"`
+	UserCode   string `json:"userCode,omitempty"`
 	Interval   int    `json:"interval"`
 	ExpiresIn  int    `json:"expiresIn"`
 	BaseURL    string `json:"baseUrl"`
+	Stage      string `json:"stage,omitempty"`
 }
 
 type PollResponse struct {
-	Status      string `json:"status"`
-	BaseURL     string `json:"baseUrl"`
-	Provider    string `json:"provider,omitempty"`
-	AppID       string `json:"appId,omitempty"`
-	AppSecret   string `json:"-"`
-	OwnerOpenID string `json:"ownerOpenId,omitempty"`
-	SlowDown    bool   `json:"slowDown,omitempty"`
-	Error       string `json:"error,omitempty"`
+	Status           string `json:"status"`
+	BaseURL          string `json:"baseUrl"`
+	Provider         string `json:"provider,omitempty"`
+	Stage            string `json:"stage,omitempty"`
+	AppID            string `json:"appId,omitempty"`
+	AppSecret        string `json:"-"`
+	AccessToken      string `json:"-"`
+	RefreshToken     string `json:"-"`
+	TokenType        string `json:"tokenType,omitempty"`
+	ExpiresIn        int    `json:"expiresIn,omitempty"`
+	RefreshExpiresIn int    `json:"refreshExpiresIn,omitempty"`
+	Scope            string `json:"scope,omitempty"`
+	OwnerOpenID      string `json:"ownerOpenId,omitempty"`
+	SlowDown         bool   `json:"slowDown,omitempty"`
+	Error            string `json:"error,omitempty"`
 }
 
 func NormalizeProvider(provider string) (string, bool) {
@@ -60,10 +70,11 @@ func (c RegistrationClient) Begin(ctx context.Context, provider string) (BeginRe
 	if !ok {
 		return BeginResponse{}, fmt.Errorf("unsupported provider %q", provider)
 	}
-	baseURL := accountsBaseURL(provider)
+	beginBaseURL := feishuAccountsBaseURL
+	pollBaseURL := accountsBaseURL(provider)
 	client := c.httpClient()
 
-	initResp, err := c.registrationCall(ctx, client, baseURL, "init", nil)
+	initResp, err := c.registrationCall(ctx, client, beginBaseURL, "init", nil)
 	if err != nil {
 		return BeginResponse{}, fmt.Errorf("%s init: %w", provider, err)
 	}
@@ -72,10 +83,10 @@ func (c RegistrationClient) Begin(ctx context.Context, provider string) (BeginRe
 		return BeginResponse{}, fmt.Errorf("%s init: %s: %s", provider, errMsg, desc)
 	}
 
-	beginResp, err := c.registrationCall(ctx, client, baseURL, "begin", map[string]string{
+	beginResp, err := c.registrationCall(ctx, client, beginBaseURL, "begin", map[string]string{
 		"archetype":         "PersonalAgent",
 		"auth_method":       "client_secret",
-		"request_user_info": "open_id",
+		"request_user_info": "open_id tenant_brand",
 	})
 	if err != nil {
 		return BeginResponse{}, fmt.Errorf("%s begin: %w", provider, err)
@@ -86,9 +97,10 @@ func (c RegistrationClient) Begin(ctx context.Context, provider string) (BeginRe
 	}
 
 	deviceCode, _ := beginResp["device_code"].(string)
-	qrURL, _ := beginResp["verification_uri_complete"].(string)
+	userCode, _ := beginResp["user_code"].(string)
+	qrURL := appRegistrationVerificationURL(openBaseURL(provider), userCode)
 	interval, _ := beginResp["interval"].(float64)
-	expiresIn, _ := beginResp["expire_in"].(float64)
+	expiresIn := float64(intFromAny(firstValue(beginResp, "expires_in", "expire_in")))
 	if deviceCode == "" || qrURL == "" {
 		return BeginResponse{}, fmt.Errorf("%s begin: incomplete response", provider)
 	}
@@ -98,9 +110,11 @@ func (c RegistrationClient) Begin(ctx context.Context, provider string) (BeginRe
 	return BeginResponse{
 		DeviceCode: deviceCode,
 		QRURL:      qrURL,
+		UserCode:   userCode,
 		Interval:   int(interval),
 		ExpiresIn:  int(expiresIn),
-		BaseURL:    baseURL,
+		BaseURL:    pollBaseURL,
+		Stage:      "create_app",
 	}, nil
 }
 
@@ -139,6 +153,7 @@ func (c RegistrationClient) Poll(ctx context.Context, provider, deviceCode, base
 		if clientID != "" && clientSecret != "" {
 			result.Status = "completed"
 			result.Provider = provider
+			result.Stage = "create_app"
 			result.AppID = clientID
 			result.AppSecret = clientSecret
 			if userInfo, ok := pollResp["user_info"].(map[string]any); ok {
@@ -173,6 +188,138 @@ func (c RegistrationClient) Poll(ctx context.Context, provider, deviceCode, base
 	}
 
 	return PollResponse{Status: "pending", BaseURL: baseURL}, nil
+}
+
+func (c RegistrationClient) BeginAuthorization(ctx context.Context, provider, clientID, clientSecret string, scopes []string) (BeginResponse, error) {
+	provider, ok := NormalizeProvider(provider)
+	if !ok {
+		return BeginResponse{}, fmt.Errorf("unsupported provider %q", provider)
+	}
+	clientID = strings.TrimSpace(clientID)
+	clientSecret = strings.TrimSpace(clientSecret)
+	if clientID == "" || clientSecret == "" {
+		return BeginResponse{}, fmt.Errorf("client credentials are required")
+	}
+	scopeSet := map[string]bool{"offline_access": true}
+	for _, scope := range scopes {
+		if scope = strings.TrimSpace(scope); scope != "" {
+			scopeSet[scope] = true
+		}
+	}
+	scopeList := make([]string, 0, len(scopeSet))
+	for scope := range scopeSet {
+		scopeList = append(scopeList, scope)
+	}
+	form := url.Values{}
+	form.Set("client_id", clientID)
+	form.Set("scope", strings.Join(scopeList, " "))
+	req, err := http.NewRequestWithContext(ctx, http.MethodPost, strings.TrimRight(accountsBaseURL(provider), "/")+"/oauth/v1/device_authorization", strings.NewReader(form.Encode()))
+	if err != nil {
+		return BeginResponse{}, err
+	}
+	req.Header.Set("Content-Type", "application/x-www-form-urlencoded")
+	req.Header.Set("Authorization", "Basic "+base64.StdEncoding.EncodeToString([]byte(clientID+":"+clientSecret)))
+	body, err := doJSONMap(c.httpClient(), req)
+	if err != nil {
+		return BeginResponse{}, err
+	}
+	if errMsg, _ := body["error"].(string); errMsg != "" {
+		desc, _ := body["error_description"].(string)
+		return BeginResponse{}, fmt.Errorf("%s authorization begin: %s: %s", provider, errMsg, desc)
+	}
+	deviceCode, _ := body["device_code"].(string)
+	userCode, _ := body["user_code"].(string)
+	qrURL := deviceAuthorizationVerificationURL(body, openBaseURL(provider), userCode)
+	interval, _ := body["interval"].(float64)
+	expiresIn, _ := body["expires_in"].(float64)
+	if deviceCode == "" || qrURL == "" {
+		return BeginResponse{}, fmt.Errorf("%s authorization begin: incomplete response", provider)
+	}
+	if interval <= 0 {
+		interval = 5
+	}
+	return BeginResponse{
+		DeviceCode: deviceCode,
+		QRURL:      qrURL,
+		UserCode:   userCode,
+		Interval:   int(interval),
+		ExpiresIn:  int(expiresIn),
+		BaseURL:    accountsBaseURL(provider),
+		Stage:      "authorize",
+	}, nil
+}
+
+func (c RegistrationClient) PollAuthorization(ctx context.Context, provider, clientID, clientSecret, deviceCode string) (PollResponse, error) {
+	provider, ok := NormalizeProvider(provider)
+	if !ok {
+		return PollResponse{}, fmt.Errorf("unsupported provider %q", provider)
+	}
+	form := url.Values{}
+	form.Set("grant_type", "urn:ietf:params:oauth:grant-type:device_code")
+	form.Set("device_code", strings.TrimSpace(deviceCode))
+	form.Set("client_id", strings.TrimSpace(clientID))
+	form.Set("client_secret", strings.TrimSpace(clientSecret))
+	req, err := http.NewRequestWithContext(ctx, http.MethodPost, strings.TrimRight(openBaseURL(provider), "/")+"/open-apis/authen/v2/oauth/token", strings.NewReader(form.Encode()))
+	if err != nil {
+		return PollResponse{}, err
+	}
+	req.Header.Set("Content-Type", "application/x-www-form-urlencoded")
+	body, err := doJSONMap(c.httpClient(), req)
+	if err != nil {
+		return PollResponse{}, err
+	}
+	result := PollResponse{Status: "pending", Provider: provider, BaseURL: accountsBaseURL(provider), Stage: "authorize"}
+	if errCode, _ := body["error"].(string); errCode != "" {
+		switch errCode {
+		case "authorization_pending":
+		case "slow_down":
+			result.SlowDown = true
+		case "access_denied":
+			result.Status = "denied"
+		case "expired_token", "invalid_grant":
+			result.Status = "expired"
+		default:
+			desc, _ := body["error_description"].(string)
+			result.Status = "error"
+			result.Error = strings.TrimSpace(fmt.Sprintf("%s: %s", errCode, desc))
+		}
+		return result, nil
+	}
+	accessToken, _ := body["access_token"].(string)
+	if strings.TrimSpace(accessToken) == "" {
+		return result, nil
+	}
+	result.Status = "completed"
+	result.AccessToken = accessToken
+	result.RefreshToken, _ = body["refresh_token"].(string)
+	result.TokenType, _ = body["token_type"].(string)
+	result.ExpiresIn = intFromAny(body["expires_in"])
+	result.RefreshExpiresIn = intFromAny(body["refresh_token_expires_in"])
+	result.Scope, _ = body["scope"].(string)
+	return result, nil
+}
+
+func doJSONMap(client *http.Client, req *http.Request) (map[string]any, error) {
+	resp, err := client.Do(req)
+	if err != nil {
+		return nil, err
+	}
+	defer resp.Body.Close()
+	body, err := io.ReadAll(io.LimitReader(resp.Body, 1<<20))
+	if err != nil {
+		return nil, err
+	}
+	var result map[string]any
+	if err := json.Unmarshal(body, &result); err != nil {
+		return nil, fmt.Errorf("decode: %w", err)
+	}
+	if resp.StatusCode < 200 || resp.StatusCode >= 300 {
+		if errMsg, _ := result["error"].(string); errMsg != "" {
+			return result, nil
+		}
+		return nil, fmt.Errorf("http %d: %s", resp.StatusCode, string(body))
+	}
+	return result, nil
 }
 
 func (c RegistrationClient) httpClient() *http.Client {
@@ -223,4 +370,57 @@ func accountsBaseURL(provider string) string {
 		return larkAccountsBaseURL
 	}
 	return feishuAccountsBaseURL
+}
+
+func openBaseURL(provider string) string {
+	if provider == ProviderLark {
+		return "https://open.larksuite.com"
+	}
+	return "https://open.feishu.cn"
+}
+
+func appRegistrationVerificationURL(openHost, userCode string) string {
+	if strings.TrimSpace(userCode) == "" {
+		return ""
+	}
+	return strings.TrimRight(openHost, "/") + "/page/cli?user_code=" + url.QueryEscape(userCode)
+}
+
+func deviceAuthorizationVerificationURL(body map[string]any, openHost, userCode string) string {
+	if complete, _ := body["verification_uri_complete"].(string); strings.TrimSpace(complete) != "" {
+		return complete
+	}
+	if uri, _ := body["verification_uri"].(string); strings.TrimSpace(uri) != "" {
+		sep := "?"
+		if strings.Contains(uri, "?") {
+			sep = "&"
+		}
+		return uri + sep + "user_code=" + url.QueryEscape(userCode)
+	}
+	return appRegistrationVerificationURL(openHost, userCode)
+}
+
+func firstValue(m map[string]any, keys ...string) any {
+	for _, key := range keys {
+		if v, ok := m[key]; ok {
+			return v
+		}
+	}
+	return nil
+}
+
+func intFromAny(v any) int {
+	switch x := v.(type) {
+	case int:
+		return x
+	case int64:
+		return int(x)
+	case float64:
+		return int(x)
+	case json.Number:
+		n, _ := x.Int64()
+		return int(n)
+	default:
+		return 0
+	}
 }

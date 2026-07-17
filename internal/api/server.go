@@ -41,6 +41,15 @@ type execProcess struct {
 	started time.Time
 }
 
+type connectorDeviceAuthSession struct {
+	Provider    string
+	AppID       string
+	AppSecret   string
+	OwnerOpenID string
+	Brand       string
+	CreatedAt   time.Time
+}
+
 // Server serves JSON for one workspace root.
 type Server struct {
 	workspaceMu            sync.Mutex
@@ -65,6 +74,8 @@ type Server struct {
 	interactions           *interaction.Manager
 	connectionHealthCancel func()
 	connectionHealthDone   chan struct{}
+	connectorSetupMu       sync.Mutex
+	connectorSetupSessions map[string]connectorDeviceAuthSession
 }
 
 // NewServer builds an API server for the given workspace root.
@@ -83,18 +94,19 @@ func NewServer(root, apiKey string) *Server {
 	tm := newTriggerManager(root, sched.binPath, ts)
 	tm.StartPoller()
 	s := &Server{
-		root:         root,
-		apiKey:       strings.TrimSpace(apiKey),
-		controlDB:    controlDB,
-		st:           store.NewDB(root, controlDB),
-		ts:           ts,
-		users:        newUserStore(controlDB),
-		sched:        sched,
-		triggers:     tm,
-		okrStore:     store.NewOKRStore(root),
-		msStore:      store.NewMilestoneStore(root),
-		execProcs:    make(map[string]*execProcess),
-		interactions: interaction.NewManager(),
+		root:                   root,
+		apiKey:                 strings.TrimSpace(apiKey),
+		controlDB:              controlDB,
+		st:                     store.NewDB(root, controlDB),
+		ts:                     ts,
+		users:                  newUserStore(controlDB),
+		sched:                  sched,
+		triggers:               tm,
+		okrStore:               store.NewOKRStore(root),
+		msStore:                store.NewMilestoneStore(root),
+		execProcs:              make(map[string]*execProcess),
+		interactions:           interaction.NewManager(),
+		connectorSetupSessions: make(map[string]connectorDeviceAuthSession),
 	}
 	go s.restoreDesiredSchedulers()
 	s.startConnectionHealthChecker()
@@ -175,6 +187,8 @@ func (s *Server) Handler() http.Handler {
 	mux.HandleFunc("GET /api/v1/audit/events", s.handleAuditEvents)
 	mux.HandleFunc("GET /api/v1/connectors/providers", s.handleConnectorProviders)
 	mux.HandleFunc("GET /api/v1/connectors/providers/{provider}", s.handleConnectorProvider)
+	mux.HandleFunc("POST /api/v1/connectors/providers/{provider}/setup/begin", s.handleConnectorProviderSetupBegin)
+	mux.HandleFunc("POST /api/v1/connectors/providers/{provider}/setup/poll", s.handleConnectorProviderSetupPoll)
 	mux.HandleFunc("GET /api/v1/oauth/client-configs", s.handleListOAuthClientConfigs)
 	mux.HandleFunc("PUT /api/v1/oauth/client-configs/{provider}", s.handleUpsertOAuthClientConfig)
 	mux.HandleFunc("DELETE /api/v1/oauth/client-configs/{provider}", s.handleDeleteOAuthClientConfig)

@@ -204,6 +204,16 @@
     "oauthNotConfiguredAdmin": "該工具支援 OAuth。設定 OAuth 應用後，使用者可以直接授權個人帳號。",
     "oauthHiddenForUsers": "該工具的 OAuth 尚未由管理員啟用；目前只顯示可用的靜態憑證方式。",
     "credentialGuide": "如何取得憑證",
+    "quickAuthorize": "快速授權",
+    "deviceAuthHint": "開啟授權頁面或掃描 QR Code 完成授權，Multigent 會自動儲存可用憑證。",
+    "openAuthorizationPage": "開啟授權",
+    "waitingAuthorization": "等待授權完成",
+    "authorizationConnected": "授權完成，連線已建立。",
+    "authorizationFailed": "授權失敗",
+    "deviceAuthDenied": "授權已拒絕",
+    "deviceAuthExpired": "授權已過期",
+    "deviceAuthError": "授權失敗",
+    "savedCredentialSummary": "已儲存的憑證摘要",
     "advancedSettings": "進階設定"
   },
   "projectNav": {
