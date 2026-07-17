@@ -85,6 +85,7 @@
     "workspace": "工作区",
     "teams": "团队",
     "projects": "项目",
+    "workflows": "流程",
     "goals": "目标",
     "people": "用户",
     "workbench": "工作台",
@@ -265,6 +266,9 @@
     "settings": "设置"
   },
   "workflows": {
+    "workspaceSubtitle": "选择一个项目，查看或配置它的协作流程白板。",
+    "projectCardHint": "查看这个项目中的流程模板和任务流程运行。",
+    "openProjectWorkflows": "打开流程",
     "subtitle": "用白板视图定义和查看任务可选的协作流程。",
     "taskWorkflow": "任务流程",
     "noWorkflow": "不使用流程",

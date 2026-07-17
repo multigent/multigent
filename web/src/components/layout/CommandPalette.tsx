@@ -7,6 +7,7 @@ import {
   Briefcase,
   Cable,
   CalendarClock,
+  GitBranch,
   MessageSquareText,
   FolderKanban,
   LayoutDashboard,
@@ -93,6 +94,7 @@ export function CommandPalette({
       { id: 'nav-overview', label: t('nav.overview'), group: t('search.groupNav'), icon: LayoutDashboard, to: '/' },
       { id: 'nav-teams', label: t('nav.teams'), group: t('search.groupNav'), icon: Users, to: '/teams' },
       { id: 'nav-projects', label: t('nav.projects'), group: t('search.groupNav'), icon: FolderKanban, to: '/projects' },
+      { id: 'nav-workflows', label: t('nav.workflows'), group: t('search.groupNav'), icon: GitBranch, to: '/workflows' },
       { id: 'nav-workbench', label: t('nav.workbench'), group: t('search.groupNav'), icon: Briefcase, to: '/workbench' },
       { id: 'nav-connections', label: t('nav.connections'), group: t('search.groupNav'), icon: Cable, to: '/connections' },
       { id: 'nav-skills', label: t('nav.skills'), group: t('search.groupNav'), icon: Puzzle, to: '/skills' },
@@ -105,6 +107,7 @@ export function CommandPalette({
       return [
         { id: `p-${p.name}`, label: p.name, group: t('search.groupProjects'), icon: FolderKanban, to: `${base}/tasks`, keywords: `project ${p.name}` },
         { id: `p-${p.name}-tasks`, label: `${p.name} / ${t('projectNav.tasks')}`, group: t('search.groupProjects'), icon: ListTodo, to: `${base}/tasks` },
+        { id: `p-${p.name}-workflows`, label: `${p.name} / ${t('projectNav.workflows')}`, group: t('search.groupProjects'), icon: GitBranch, to: `${base}/workflows` },
         { id: `p-${p.name}-messages`, label: `${p.name} / ${t('projectNav.messages')}`, group: t('search.groupProjects'), icon: MessageSquare, to: `${base}/messages` },
         { id: `p-${p.name}-members`, label: `${p.name} / ${t('projectNav.members')}`, group: t('search.groupProjects'), icon: Users, to: `${base}/members` },
         ...(canAdmin ? [{ id: `p-${p.name}-schedule`, label: `${p.name} / ${t('projectNav.schedule')}`, group: t('search.groupProjects'), icon: CalendarClock, to: `${base}/schedule` }] : []),

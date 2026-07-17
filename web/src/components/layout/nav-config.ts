@@ -26,6 +26,7 @@ export type NavKey =
   | 'workspace'
   | 'teams'
   | 'projects'
+  | 'workflows'
   | 'people'
   | 'workbench'
   | 'connections'
@@ -65,6 +66,7 @@ export const workspaceNav: NavItem[] = [
     icon: FolderKanban,
     activePrefix: '/projects',
   },
+  { to: '/workflows', navKey: 'workflows', icon: GitBranch, activePrefix: '/workflows' },
   { to: '/goals', navKey: 'goals', icon: Target, activePrefix: '/goals' },
   { to: '/people', navKey: 'people', icon: User, activePrefix: '/people', adminOnly: true },
   { to: '/teams', navKey: 'teams', icon: Users, activePrefix: '/teams', adminOnly: true },
@@ -95,6 +97,7 @@ export function navKeyFromPath(pathname: string): NavKey {
     workspace: 'workspace',
     teams: 'teams',
     projects: 'projects',
+    workflows: 'workflows',
     people: 'people',
     goals: 'goals',
     workbench: 'workbench',

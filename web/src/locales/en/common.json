@@ -85,6 +85,7 @@
     "workspace": "Workspace",
     "teams": "Teams",
     "projects": "Projects",
+    "workflows": "Workflows",
     "goals": "Goals",
     "people": "Users",
     "workbench": "Workbench",
@@ -265,6 +266,9 @@
     "settings": "Settings"
   },
   "workflows": {
+    "workspaceSubtitle": "Choose a project to inspect or configure its workflow whiteboard.",
+    "projectCardHint": "View workflow templates and task workflow runs for this project.",
+    "openProjectWorkflows": "Open workflows",
     "subtitle": "Define and inspect task workflows with a whiteboard-style graph.",
     "taskWorkflow": "Task workflow",
     "noWorkflow": "No workflow",

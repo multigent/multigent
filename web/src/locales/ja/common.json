@@ -85,6 +85,7 @@
     "workspace": "ワークスペース",
     "teams": "チーム",
     "projects": "プロジェクト",
+    "workflows": "ワークフロー",
     "goals": "目標",
     "people": "ユーザー",
     "workbench": "ワークベンチ",
@@ -265,6 +266,9 @@
     "settings": "設定"
   },
   "workflows": {
+    "workspaceSubtitle": "プロジェクトを選択して、協業ワークフローのホワイトボードを確認または設定します。",
+    "projectCardHint": "このプロジェクトのワークフローテンプレートとタスク実行を表示します。",
+    "openProjectWorkflows": "ワークフローを開く",
     "subtitle": "ホワイトボード形式のグラフでタスクの協業ワークフローを確認します。",
     "taskWorkflow": "タスクワークフロー",
     "noWorkflow": "ワークフローなし",

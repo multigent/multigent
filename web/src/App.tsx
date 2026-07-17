@@ -9,6 +9,7 @@ import { WorkspaceAccessProvider, useWorkspaceAccess } from './lib/workspace-acc
 import LoginPage from './pages/LoginPage'
 import WorkspaceOnboardingPage from './pages/WorkspaceOnboardingPage'
 import WorkspacePage from './pages/WorkspacePage'
+import WorkflowsPage from './pages/WorkflowsPage'
 import WorkbenchPage from './pages/WorkbenchPage'
 import OverviewPage from './pages/OverviewPage'
 import SettingsPage from './pages/SettingsPage'
@@ -117,6 +118,7 @@ function AuthenticatedRoutes() {
       <Route element={<AppShell />}>
         <Route index element={canAdmin ? <OverviewPage /> : <Navigate to="workbench" replace />} />
         <Route path="workspace" element={<WorkspacePage />} />
+        <Route path="workflows" element={<WorkflowsPage />} />
         {canAdmin && <Route path="teams/:teamId" element={<TeamDetailPage />} />}
         {canAdmin && <Route path="teams" element={<TeamsPage />} />}
         <Route path="projects" element={<ProjectsListPage />} />
