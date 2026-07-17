@@ -720,8 +720,8 @@
   "api": {
     "loading": "加载中…",
     "refresh": "刷新",
-    "loadError": "无法连接 API",
-    "hintServe": "在工作区根目录运行：multigent api serve（默认 127.0.0.1:27893，与 Vite 代理一致）。也可用环境变量 VITE_API_BASE / VITE_API_KEY。",
+    "loadError": "服务暂时不可用",
+    "hintServe": "当前无法连接到 Multigent 服务，请稍后重试或联系管理员检查服务状态。",
     "noProjects": "暂无项目",
     "noTeams": "暂无团队",
     "noTasks": "当前没有进行中的任务队列项。",

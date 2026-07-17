@@ -720,8 +720,8 @@
   "api": {
     "loading": "読み込み中…",
     "refresh": "更新",
-    "loadError": "API に接続できません",
-    "hintServe": "ワークスペースのルートで実行：multigent api serve（既定は 127.0.0.1:27893、Vite プロキシと一致）。環境変数 VITE_API_BASE／VITE_API_KEY も利用できます。",
+    "loadError": "サービスを一時的に利用できません",
+    "hintServe": "現在 Multigent サービスに接続できません。しばらくしてから再試行するか、管理者にサービス状態の確認を依頼してください。",
     "noProjects": "プロジェクトはありません",
     "noTeams": "チームはありません",
     "noTasks": "進行中のタスクキュー項目はありません。",

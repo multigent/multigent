@@ -720,8 +720,8 @@
   "api": {
     "loading": "Loading…",
     "refresh": "Refresh",
-    "loadError": "Could not reach API",
-    "hintServe": "From your workspace root run: multigent api serve (default 127.0.0.1:27893, matches the Vite proxy). Optional: VITE_API_BASE / VITE_API_KEY.",
+    "loadError": "Service temporarily unavailable",
+    "hintServe": "Multigent service is not reachable right now. Try again later or ask an administrator to check the service status.",
     "noProjects": "No projects yet",
     "noTeams": "No teams yet",
     "noTasks": "No active tasks in any agent queue for this project.",

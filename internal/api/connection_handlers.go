@@ -625,14 +625,9 @@ func (s *Server) saveConnectorProviderSetupConnection(r *http.Request, workspace
 }
 
 func (s *Server) beginGitHubDeviceSetup(w http.ResponseWriter, r *http.Request, workspaceID string, provider connector.Provider) (connectorProviderSetupBeginResponse, bool) {
-	clientID, err := s.githubDeviceClientID(workspaceID, provider.Provider)
-	if err != nil {
-		s.serverError(w, err)
-		return connectorProviderSetupBeginResponse{}, false
-	}
 	ctx, cancel := contextWithRequestTimeout(r, 20*time.Second)
 	defer cancel()
-	resp, err := githubDeviceCode(ctx, provider, clientID)
+	resp, err := githubDeviceCode(ctx, provider, githubCLIClientID)
 	if err != nil {
 		s.jsonErrorCode(w, http.StatusBadGateway, ErrCodeUpstreamError, err.Error())
 		return connectorProviderSetupBeginResponse{}, false
@@ -654,14 +649,9 @@ func (s *Server) pollGitHubDeviceSetup(w http.ResponseWriter, r *http.Request, w
 		s.jsonErrorCode(w, http.StatusBadRequest, ErrCodeValidationFailed, "deviceCode is required")
 		return nil, false
 	}
-	clientID, err := s.githubDeviceClientID(workspaceID, provider.Provider)
-	if err != nil {
-		s.serverError(w, err)
-		return nil, false
-	}
 	ctx, cancel := contextWithRequestTimeout(r, 20*time.Second)
 	defer cancel()
-	token, status, slowDown, tokenErr, err := githubDeviceToken(ctx, provider, clientID, deviceCode)
+	token, status, slowDown, tokenErr, err := githubDeviceToken(ctx, provider, githubCLIClientID, deviceCode)
 	if err != nil {
 		s.jsonErrorCode(w, http.StatusBadGateway, ErrCodeUpstreamError, err.Error())
 		return nil, false
@@ -695,23 +685,6 @@ func (s *Server) pollGitHubDeviceSetup(w http.ResponseWriter, r *http.Request, w
 		"status":     "connected",
 		"connection": connectionToResponse(connection, nil),
 	}, true
-}
-
-func (s *Server) githubDeviceClientID(workspaceID, provider string) (string, error) {
-	config, configured, err := s.controlDB.OAuthClientConfigByProvider(workspaceID, provider)
-	if err != nil {
-		return "", err
-	}
-	if configured && strings.TrimSpace(config.ClientID) != "" {
-		return strings.TrimSpace(config.ClientID), nil
-	}
-	if provider == "github" && strings.TrimSpace(os.Getenv("MULTIGENT_GITHUB_OAUTH_CLIENT_ID")) != "" {
-		return strings.TrimSpace(os.Getenv("MULTIGENT_GITHUB_OAUTH_CLIENT_ID")), nil
-	}
-	if provider == "github" {
-		return githubCLIClientID, nil
-	}
-	return "", fmt.Errorf("OAuth client is not configured")
 }
 
 func (s *Server) deviceOAuthConnectionState(r *http.Request, workspaceID string, provider connector.Provider) oauthAuthorizationState {
