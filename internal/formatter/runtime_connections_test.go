@@ -30,6 +30,7 @@ func TestCodexFormatterIncludesRuntimeConnectionGuide(t *testing.T) {
 	for _, want := range []string{
 		"## Runtime Connections",
 		"MULTIGENT_CONNECTIONS_FILE",
+		"MULTIGENT_TOOLS_FILE",
 		"recommendedAdapter",
 		"mga runtime tools --format table",
 		"mga runtime connections --format table",

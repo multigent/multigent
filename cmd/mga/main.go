@@ -19,6 +19,7 @@ const (
 	envAPIURL          = "MULTIGENT_API_URL"
 	envAgentToken      = "MULTIGENT_AGENT_TOKEN"
 	envConnectionsFile = "MULTIGENT_CONNECTIONS_FILE"
+	envToolsFile       = "MULTIGENT_TOOLS_FILE"
 	maxJSONBody        = 1 << 20
 )
 
@@ -93,7 +94,7 @@ func newRuntimeConnectionsCmd() *cobra.Command {
 		Use:   "connections",
 		Short: "List tool connections granted to this agent",
 		RunE: func(cmd *cobra.Command, args []string) error {
-			body, err := runtimeConnectionsBody(refresh)
+			body, err := runtimeToolsBody(refresh)
 			if err != nil {
 				return err
 			}
@@ -595,6 +596,17 @@ func runtimeConnectionsBody(refresh bool) ([]byte, error) {
 		}
 	}
 	return requestJSON(http.MethodGet, "/api/v1/runtime/connections", nil, nil)
+}
+
+func runtimeToolsBody(refresh bool) ([]byte, error) {
+	if !refresh {
+		if path := strings.TrimSpace(os.Getenv(envToolsFile)); path != "" {
+			if body, err := os.ReadFile(path); err == nil && json.Valid(body) {
+				return body, nil
+			}
+		}
+	}
+	return runtimeConnectionsBody(refresh)
 }
 
 func requestJSON(method, path string, query url.Values, body []byte) ([]byte, error) {

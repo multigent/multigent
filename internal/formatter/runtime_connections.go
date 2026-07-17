@@ -17,6 +17,8 @@ Multigent may grant this agent external tool connections such as GitHub, Feishu/
 At runtime, Multigent injects:
 
 - `+"`MULTIGENT_CONNECTIONS_FILE`"+`: JSON manifest of connections granted to this agent.
+- `+"`MULTIGENT_TOOLS_FILE`"+`: JSON tool runtime plan with recommended adapters, skills, actions, and materialized config paths.
+- `+"`MULTIGENT_TOOL_RUNTIME_DIR`"+`: per-run directory for tool adapter config and runtime files.
 - `+"`MULTIGENT_API_URL`"+`: Multigent control API base URL.
 - `+"`MULTIGENT_AGENT_TOKEN`"+`: scoped runtime token for this agent/run.
 - `+"`MULTIGENT_RUN_ID`"+` and `+"`MULTIGENT_WORKSPACE_ID`"+`: run and workspace identifiers.

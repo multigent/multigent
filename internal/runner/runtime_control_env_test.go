@@ -1,6 +1,7 @@
 package runner
 
 import (
+	"encoding/json"
 	"net/http"
 	"net/http/httptest"
 	"os"
@@ -50,6 +51,8 @@ func TestInjectProviderEnvIntoRuntimeSkipsRuntimeControlKeys(t *testing.T) {
 	injectProviderEnvIntoRuntime(cfg, map[string]string{
 		"MULTIGENT_AGENT_TOKEN":   "user-token",
 		runtimeConnectionsFileEnv: "/tmp/connections.json",
+		runtimeToolsFileEnv:       "/tmp/tools.json",
+		runtimeToolDirEnv:         "/tmp/tool-runtime",
 		"MULTIGENT_API_URL":       "http://example.invalid",
 		"OPENAI_API_KEY":          "provider-key",
 	})
@@ -79,8 +82,9 @@ func TestMaterializeRuntimeConnectionsFile(t *testing.T) {
 	env := map[string]string{
 		"MULTIGENT_API_URL":     server.URL,
 		"MULTIGENT_AGENT_TOKEN": token,
+		"MULTIGENT_RUN_ID":      "run-one",
 	}
-	cleanup := (&Runner{}).materializeRuntimeConnectionsFile(agentDir, env)
+	cleanup := (&Runner{}).materializeRuntimeFiles(agentDir, env)
 	if cleanup == nil {
 		t.Fatalf("expected cleanup")
 	}
@@ -99,9 +103,95 @@ func TestMaterializeRuntimeConnectionsFile(t *testing.T) {
 	if strings.Contains(text, token) {
 		t.Fatalf("manifest leaked agent token: %s", text)
 	}
+	toolsPath := env[runtimeToolsFileEnv]
+	if toolsPath != "" {
+		t.Fatalf("did not expect tools file without tools payload: %q", toolsPath)
+	}
 	cleanup()
 	if _, err := os.Stat(path); !os.IsNotExist(err) {
 		t.Fatalf("manifest file should be removed, err=%v", err)
+	}
+}
+
+func TestMaterializeRuntimeFilesWritesToolPlan(t *testing.T) {
+	const token = "agent-runtime-token"
+	body := `{
+		"project":"p",
+		"agent":"a",
+		"manifest":{"version":"multigent.connections.v1"},
+		"connections":[],
+		"tools":[{
+			"provider":"github",
+			"displayName":"GitHub",
+			"connectionId":"conn_gh",
+			"connectionAlias":"github",
+			"connectionName":"default",
+			"recommendedAdapter":"cli",
+			"skills":["github"],
+			"adapters":[{
+				"type":"cli",
+				"priority":100,
+				"skills":["github"],
+				"cli":{
+					"binary":"gh",
+					"configFiles":[{"path":"~/.config/gh/hosts.yml","format":"yaml"}]
+				},
+				"credentialMaterialize":"runtime_file"
+			}]
+		}]
+	}`
+	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		w.Header().Set("Content-Type", "application/json")
+		_, _ = w.Write([]byte(body))
+	}))
+	defer server.Close()
+
+	agentDir := t.TempDir()
+	env := map[string]string{
+		"MULTIGENT_API_URL":     server.URL,
+		"MULTIGENT_AGENT_TOKEN": token,
+		"MULTIGENT_RUN_ID":      "task/123",
+	}
+	cleanup := (&Runner{}).materializeRuntimeFiles(agentDir, env)
+	if cleanup == nil {
+		t.Fatalf("expected cleanup")
+	}
+	defer cleanup()
+	if env[runtimeConnectionsFileEnv] == "" || env[runtimeToolsFileEnv] == "" || env[runtimeToolDirEnv] == "" {
+		t.Fatalf("runtime env missing files: %#v", env)
+	}
+	planBody, err := os.ReadFile(env[runtimeToolsFileEnv])
+	if err != nil {
+		t.Fatalf("read tools file: %v", err)
+	}
+	if strings.Contains(string(planBody), token) {
+		t.Fatalf("tools file leaked token: %s", string(planBody))
+	}
+	var plan struct {
+		Version string `json:"version"`
+		Tools   []struct {
+			Provider string `json:"provider"`
+			Adapters []struct {
+				CLI *struct {
+					ConfigFiles []struct {
+						MaterializedPath string `json:"materializedPath"`
+					} `json:"configFiles"`
+				} `json:"cli"`
+			} `json:"adapters"`
+		} `json:"tools"`
+	}
+	if err := json.Unmarshal(planBody, &plan); err != nil {
+		t.Fatalf("decode tools plan: %v", err)
+	}
+	if plan.Version != "multigent.tools.v1" || len(plan.Tools) != 1 || plan.Tools[0].Provider != "github" {
+		t.Fatalf("unexpected tools plan: %s", string(planBody))
+	}
+	materializedPath := plan.Tools[0].Adapters[0].CLI.ConfigFiles[0].MaterializedPath
+	if materializedPath == "" || !strings.Contains(materializedPath, env[runtimeToolDirEnv]) {
+		t.Fatalf("materialized config path not scoped to runtime dir: %q", materializedPath)
+	}
+	if _, err := os.Stat(env[runtimeToolDirEnv]); err != nil {
+		t.Fatalf("runtime tool dir missing: %v", err)
 	}
 }
 

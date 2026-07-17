@@ -45,6 +45,8 @@ const (
 	SessionSentinel = "MULTIGENT_SESSION_ID:"
 
 	runtimeConnectionsFileEnv = "MULTIGENT_CONNECTIONS_FILE"
+	runtimeToolsFileEnv       = "MULTIGENT_TOOLS_FILE"
+	runtimeToolDirEnv         = "MULTIGENT_TOOL_RUNTIME_DIR"
 	maxRuntimeConnectionsFile = 1 << 20
 )
 
@@ -125,7 +127,7 @@ func (r *Runner) ExecPrompt(project, agentName, prompt, sessionID string) (*RunR
 	model := entity.NormaliseModel(meta.Model)
 	agentEnv := resolveProviderEnv(r.root, meta)
 	runtimeEnv := r.resolveRuntimeControlEnv(project, agentName, "exec-"+time.Now().UTC().Format("20060102-150405"))
-	if cleanup := r.materializeRuntimeConnectionsFile(agentDir, runtimeEnv); cleanup != nil {
+	if cleanup := r.materializeRuntimeFiles(agentDir, runtimeEnv); cleanup != nil {
 		defer cleanup()
 	}
 	effectiveEnv := mergeEnv(os.Environ(), agentEnv)
@@ -322,7 +324,7 @@ func (r *Runner) RunTask(project, agentName string, task *entity.Task, sessionID
 	model := entity.NormaliseModel(meta.Model)
 	agentEnv := resolveProviderEnv(r.root, meta)
 	runtimeEnv := r.resolveRuntimeControlEnv(project, agentName, task.ID)
-	if cleanup := r.materializeRuntimeConnectionsFile(agentDir, runtimeEnv); cleanup != nil {
+	if cleanup := r.materializeRuntimeFiles(agentDir, runtimeEnv); cleanup != nil {
 		defer cleanup()
 	}
 	effectiveEnv := mergeEnv(os.Environ(), agentEnv)
@@ -1107,7 +1109,7 @@ func (r *Runner) resolveRuntimeControlEnv(project, agentName, runID string) map[
 	}
 }
 
-func (r *Runner) materializeRuntimeConnectionsFile(agentDir string, env map[string]string) func() {
+func (r *Runner) materializeRuntimeFiles(agentDir string, env map[string]string) func() {
 	if len(env) == 0 {
 		return nil
 	}
@@ -1125,7 +1127,39 @@ func (r *Runner) materializeRuntimeConnectionsFile(agentDir string, env map[stri
 		return nil
 	}
 	env[runtimeConnectionsFileEnv] = path
-	return func() { _ = os.Remove(path) }
+	toolDir, toolsPath, err := writeRuntimeToolsFile(agentDir, env["MULTIGENT_RUN_ID"], path, body)
+	if err == nil {
+		env[runtimeToolDirEnv] = toolDir
+		env[runtimeToolsFileEnv] = toolsPath
+	}
+	return func() {
+		_ = os.Remove(path)
+		if toolDir != "" {
+			_ = os.RemoveAll(toolDir)
+		}
+	}
+}
+
+// materializeRuntimeConnectionsFile is kept as a narrow helper for tests and
+// callers that only need the raw connection manifest. Agent runs should use
+// materializeRuntimeFiles so the tool adapter plan is available too.
+func (r *Runner) materializeRuntimeConnectionsFile(agentDir string, env map[string]string) func() {
+	if cleanup := r.materializeRuntimeFiles(agentDir, env); cleanup != nil {
+		toolsPath := env[runtimeToolsFileEnv]
+		toolDir := env[runtimeToolDirEnv]
+		delete(env, runtimeToolsFileEnv)
+		delete(env, runtimeToolDirEnv)
+		return func() {
+			if toolsPath != "" {
+				_ = os.Remove(toolsPath)
+			}
+			if toolDir != "" {
+				_ = os.RemoveAll(toolDir)
+			}
+			cleanup()
+		}
+	}
+	return nil
 }
 
 func fetchRuntimeConnectionsManifest(apiURL, token string) ([]byte, error) {
@@ -1177,6 +1211,144 @@ func writeRuntimeConnectionsFile(agentDir string, body []byte) (string, error) {
 		return "", err
 	}
 	return f.Name(), nil
+}
+
+type runtimeToolsPlan struct {
+	Version         string           `json:"version"`
+	GeneratedAt     string           `json:"generatedAt"`
+	RuntimeDir      string           `json:"runtimeDir"`
+	ConnectionsFile string           `json:"connectionsFile"`
+	Tools           []runtimeToolRef `json:"tools"`
+}
+
+type runtimeToolRef struct {
+	Provider           string              `json:"provider"`
+	DisplayName        string              `json:"displayName,omitempty"`
+	ConnectionID       string              `json:"connectionId"`
+	ConnectionAlias    string              `json:"connectionAlias"`
+	ConnectionName     string              `json:"connectionName"`
+	RecommendedAdapter string              `json:"recommendedAdapter,omitempty"`
+	Adapters           []runtimeAdapterRef `json:"adapters,omitempty"`
+	Skills             []string            `json:"skills,omitempty"`
+	Actions            []runtimeActionRef  `json:"actions,omitempty"`
+}
+
+type runtimeAdapterRef struct {
+	Type                  string          `json:"type"`
+	Priority              int             `json:"priority"`
+	Description           string          `json:"description,omitempty"`
+	Skills                []string        `json:"skills,omitempty"`
+	CLI                   *runtimeCLIRef  `json:"cli,omitempty"`
+	MCPGateway            map[string]any  `json:"mcpGateway,omitempty"`
+	HTTPAction            *runtimeHTTPRef `json:"httpAction,omitempty"`
+	CredentialMaterialize string          `json:"credentialMaterialize,omitempty"`
+	Audit                 map[string]any  `json:"audit,omitempty"`
+}
+
+type runtimeCLIRef struct {
+	Binary      string                 `json:"binary"`
+	Installer   map[string]any         `json:"installer,omitempty"`
+	ConfigFiles []runtimeConfigFileRef `json:"configFiles,omitempty"`
+}
+
+type runtimeConfigFileRef struct {
+	Path             string `json:"path"`
+	Format           string `json:"format,omitempty"`
+	Description      string `json:"description,omitempty"`
+	MaterializedPath string `json:"materializedPath,omitempty"`
+}
+
+type runtimeHTTPRef struct {
+	ActionNames []string `json:"actionNames,omitempty"`
+}
+
+type runtimeActionRef struct {
+	Name        string `json:"name"`
+	DisplayName string `json:"displayName,omitempty"`
+	Method      string `json:"method,omitempty"`
+	Endpoint    string `json:"endpoint,omitempty"`
+}
+
+func writeRuntimeToolsFile(agentDir, runID, connectionsPath string, body []byte) (string, string, error) {
+	var manifest struct {
+		Tools []runtimeToolRef `json:"tools"`
+	}
+	if err := json.Unmarshal(body, &manifest); err != nil {
+		return "", "", err
+	}
+	if len(manifest.Tools) == 0 {
+		return "", "", nil
+	}
+	toolDir := filepath.Join(agentDir, ".multigent", "runtime-tools", safeRuntimePathPart(runID))
+	if err := os.MkdirAll(toolDir, 0o700); err != nil {
+		return "", "", err
+	}
+	for ti := range manifest.Tools {
+		for ai := range manifest.Tools[ti].Adapters {
+			adapter := &manifest.Tools[ti].Adapters[ai]
+			if adapter.CLI == nil {
+				continue
+			}
+			for ci := range adapter.CLI.ConfigFiles {
+				cfg := &adapter.CLI.ConfigFiles[ci]
+				cfg.MaterializedPath = filepath.Join(
+					toolDir,
+					"config",
+					safeRuntimePathPart(manifest.Tools[ti].Provider),
+					safeRuntimePathPart(manifest.Tools[ti].ConnectionAlias),
+					safeRuntimePathPart(cfg.Path),
+				)
+				if err := os.MkdirAll(filepath.Dir(cfg.MaterializedPath), 0o700); err != nil {
+					return "", "", err
+				}
+			}
+		}
+	}
+	plan := runtimeToolsPlan{
+		Version:         "multigent.tools.v1",
+		GeneratedAt:     time.Now().UTC().Format(time.RFC3339),
+		RuntimeDir:      toolDir,
+		ConnectionsFile: connectionsPath,
+		Tools:           manifest.Tools,
+	}
+	planBody, err := json.MarshalIndent(plan, "", "  ")
+	if err != nil {
+		return "", "", err
+	}
+	planPath := filepath.Join(toolDir, "tools.json")
+	if err := os.WriteFile(planPath, append(planBody, '\n'), 0o600); err != nil {
+		return "", "", err
+	}
+	return toolDir, planPath, nil
+}
+
+func safeRuntimePathPart(value string) string {
+	value = strings.TrimSpace(value)
+	if value == "" {
+		return "default"
+	}
+	var b strings.Builder
+	lastDash := false
+	for _, r := range strings.ToLower(value) {
+		ok := (r >= 'a' && r <= 'z') || (r >= '0' && r <= '9')
+		if ok {
+			b.WriteRune(r)
+			lastDash = false
+			continue
+		}
+		if !lastDash {
+			b.WriteByte('-')
+			lastDash = true
+		}
+	}
+	out := strings.Trim(b.String(), "-")
+	if out == "" {
+		return "default"
+	}
+	if len(out) > 80 {
+		return out[:80]
+	}
+	return out
 }
 
 func resolveRuntimeAPIURL(root string) string {
@@ -1283,7 +1455,7 @@ func injectRuntimeControlEnvIntoRuntime(cfg *entity.SandboxConfig, env map[strin
 
 func isRuntimeControlEnvKey(key string) bool {
 	switch key {
-	case "MULTIGENT_API_URL", "MULTIGENT_AGENT_TOKEN", "MULTIGENT_RUN_ID", "MULTIGENT_WORKSPACE_ID", runtimeConnectionsFileEnv:
+	case "MULTIGENT_API_URL", "MULTIGENT_AGENT_TOKEN", "MULTIGENT_RUN_ID", "MULTIGENT_WORKSPACE_ID", runtimeConnectionsFileEnv, runtimeToolsFileEnv, runtimeToolDirEnv:
 		return true
 	default:
 		return false

@@ -261,6 +261,24 @@ Agent 侧只看到少量稳定工具：
    - 收集 run log、tool call log、proxy audit。
    - 更新连接 last used、错误状态、调用统计。
 
+## Runtime Files Contract
+
+每次 agent run 都应该注入以下环境变量：
+
+- `MULTIGENT_CONNECTIONS_FILE`: 原始 runtime connection manifest，包含连接、授权、proxy 和工具摘要。
+- `MULTIGENT_TOOLS_FILE`: agent 侧工具运行计划，包含 `tools`、`recommendedAdapter`、adapter 列表、skills、actions 和 CLI config 的 materialized path。
+- `MULTIGENT_TOOL_RUNTIME_DIR`: 本次 run 的工具运行目录。
+
+`MULTIGENT_TOOLS_FILE` 不应该包含第三方原始凭证。它只描述：
+
+- 哪些工具连接可用。
+- 每个工具推荐用 CLI、MCP Gateway、HTTP action 还是 skill-only。
+- CLI config 应该写到哪个 agent-scoped path。
+- MCP Gateway 的 namespace。
+- HTTP action 的 allowlist。
+
+后续 CLI credential materializer 只允许在 `MULTIGENT_TOOL_RUNTIME_DIR` 下写 agent 专属配置，然后通过 sandbox mount/env 映射给对应 CLI。不要写入宿主机全局 `~/.config`、`~/.codex`、`~/.claude` 或 workspace 全局目录。
+
 ## Agent 侧统一体验
 
 虽然底层有多种 adapter，agent 看到的应该是一致的能力说明：
