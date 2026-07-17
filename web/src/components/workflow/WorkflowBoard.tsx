@@ -1,4 +1,19 @@
-import { useMemo, useState } from 'react'
+import { useEffect, useMemo, useState } from 'react'
+import {
+  Background,
+  BackgroundVariant,
+  Controls,
+  Handle,
+  MarkerType,
+  MiniMap,
+  Position,
+  ReactFlow,
+  type Edge,
+  type Node,
+  type NodeProps,
+  useEdgesState,
+  useNodesState,
+} from '@xyflow/react'
 import { cn } from '../../lib/cn'
 
 export type WorkflowPosition = { x: number; y: number }
@@ -69,17 +84,26 @@ type Props = {
   compact?: boolean
 }
 
-const NODE_W = 190
-const NODE_H = 86
-const PAD = 48
+type WorkflowNodeData = {
+  step: WorkflowStep
+  status?: string
+  active: boolean
+}
+
+type WorkflowNode = Node<WorkflowNodeData, 'workflowStep'>
+
+const nodeTypes = { workflowStep: WorkflowStepNode }
 
 const typeClass: Record<string, string> = {
-  agent_task: 'border-sky-200 bg-sky-50/90 text-sky-900 dark:border-sky-900/70 dark:bg-sky-950/45 dark:text-sky-100',
-  human_task: 'border-violet-200 bg-violet-50/90 text-violet-900 dark:border-violet-900/70 dark:bg-violet-950/45 dark:text-violet-100',
-  human_review: 'border-amber-200 bg-amber-50/90 text-amber-900 dark:border-amber-900/70 dark:bg-amber-950/45 dark:text-amber-100',
-  branch: 'border-fuchsia-200 bg-fuchsia-50/90 text-fuchsia-900 dark:border-fuchsia-900/70 dark:bg-fuchsia-950/45 dark:text-fuchsia-100',
-  join: 'border-emerald-200 bg-emerald-50/90 text-emerald-900 dark:border-emerald-900/70 dark:bg-emerald-950/45 dark:text-emerald-100',
-  terminal: 'border-neutral-200 bg-neutral-50/90 text-neutral-800 dark:border-zinc-700 dark:bg-zinc-800/70 dark:text-zinc-200',
+  agent_task: 'border-sky-200 bg-sky-50/95 text-sky-900 dark:border-sky-900/70 dark:bg-sky-950/80 dark:text-sky-100',
+  human_task:
+    'border-violet-200 bg-violet-50/95 text-violet-900 dark:border-violet-900/70 dark:bg-violet-950/80 dark:text-violet-100',
+  human_review:
+    'border-amber-200 bg-amber-50/95 text-amber-900 dark:border-amber-900/70 dark:bg-amber-950/80 dark:text-amber-100',
+  branch:
+    'border-fuchsia-200 bg-fuchsia-50/95 text-fuchsia-900 dark:border-fuchsia-900/70 dark:bg-fuchsia-950/80 dark:text-fuchsia-100',
+  join: 'border-emerald-200 bg-emerald-50/95 text-emerald-900 dark:border-emerald-900/70 dark:bg-emerald-950/80 dark:text-emerald-100',
+  terminal: 'border-neutral-200 bg-neutral-50/95 text-neutral-800 dark:border-zinc-700 dark:bg-zinc-800/90 dark:text-zinc-200',
 }
 
 const statusClass: Record<string, string> = {
@@ -91,82 +115,153 @@ const statusClass: Record<string, string> = {
   failed: 'bg-red-100 text-red-700 dark:bg-red-900/50 dark:text-red-300',
 }
 
+const edgeClass: Record<string, string> = {
+  pending: '#d4d4d8',
+  running: '#0ea5e9',
+  waiting_review: '#f59e0b',
+  completed: '#10b981',
+  failed: '#ef4444',
+}
+
+function WorkflowStepNode({ data, selected }: NodeProps<WorkflowNode>) {
+  const { step, status, active } = data
+  return (
+    <div
+      className={cn(
+        'relative flex h-[88px] w-[198px] flex-col rounded-xl border px-3 py-2 text-left shadow-sm transition-shadow',
+        typeClass[step.type] ?? typeClass.terminal,
+        active && 'ring-2 ring-sky-400 ring-offset-2 ring-offset-white dark:ring-sky-500 dark:ring-offset-zinc-950',
+        selected && 'shadow-lg',
+      )}
+    >
+      <Handle
+        type="target"
+        position={Position.Left}
+        className="!h-2.5 !w-2.5 !border-2 !border-white !bg-neutral-400 dark:!border-zinc-950 dark:!bg-zinc-500"
+      />
+      <Handle
+        type="source"
+        position={Position.Right}
+        className="!h-2.5 !w-2.5 !border-2 !border-white !bg-neutral-400 dark:!border-zinc-950 dark:!bg-zinc-500"
+      />
+      <span className="text-[11px] font-semibold uppercase opacity-60">{step.type.replace('_', ' ')}</span>
+      <span className="mt-1 line-clamp-1 text-sm font-semibold">{step.title}</span>
+      <span className="mt-auto flex w-full items-center justify-between gap-2">
+        <span className="truncate text-xs opacity-60">{step.actorRole || 'system'}</span>
+        {status ? <span className={cn('rounded-full px-2 py-0.5 text-[10px] font-medium', statusClass[status] ?? statusClass.pending)}>{status}</span> : null}
+      </span>
+    </div>
+  )
+}
+
 export function WorkflowBoard({ definition, run, instances = [], compact = false }: Props) {
   const instanceByStep = useMemo(() => new Map(instances.map((inst) => [inst.stepId, inst])), [instances])
   const [selectedId, setSelectedId] = useState(definition.startStepId || definition.steps[0]?.id || '')
   const selected = definition.steps.find((s) => s.id === selectedId) ?? definition.steps[0]
   const selectedInst = selected ? instanceByStep.get(selected.id) : undefined
 
-  const bounds = useMemo(() => {
-    const maxX = Math.max(900, ...definition.steps.map((s) => s.position.x + NODE_W + PAD))
-    const maxY = Math.max(420, ...definition.steps.map((s) => s.position.y + NODE_H + PAD))
-    return { width: maxX, height: maxY }
-  }, [definition.steps])
+  const initialNodes = useMemo<WorkflowNode[]>(
+    () =>
+      definition.steps.map((step) => {
+        const inst = instanceByStep.get(step.id)
+        const active = run?.activeStepId === step.id || inst?.status === 'running'
+        return {
+          id: step.id,
+          type: 'workflowStep',
+          position: step.position,
+          sourcePosition: Position.Right,
+          targetPosition: Position.Left,
+          data: { step, status: inst?.status, active },
+        }
+      }),
+    [definition.steps, instanceByStep, run?.activeStepId],
+  )
 
-  function center(stepId: string) {
-    const step = definition.steps.find((s) => s.id === stepId)
-    if (!step) return { x: 0, y: 0 }
-    return { x: step.position.x + NODE_W / 2, y: step.position.y + NODE_H / 2 }
-  }
+  const initialEdges = useMemo<Edge[]>(
+    () =>
+      definition.edges.map((edge) => {
+        const sourceInst = instanceByStep.get(edge.from)
+        const active = run?.activeStepId === edge.from || sourceInst?.status === 'running'
+        const color = active ? edgeClass.running : sourceInst?.status === 'completed' ? edgeClass.completed : edgeClass.pending
+        return {
+          id: edge.id,
+          source: edge.from,
+          target: edge.to,
+          label: edge.label,
+          type: 'smoothstep',
+          animated: active,
+          markerEnd: { type: MarkerType.ArrowClosed, color },
+          style: { stroke: color, strokeWidth: active ? 2.5 : 2 },
+          labelStyle: { fill: '#71717a', fontSize: 11, fontWeight: 500 },
+          labelBgPadding: [6, 3],
+          labelBgBorderRadius: 6,
+          labelBgStyle: { fill: 'rgba(255,255,255,0.92)' },
+        }
+      }),
+    [definition.edges, instanceByStep, run?.activeStepId],
+  )
+
+  const [nodes, setNodes, onNodesChange] = useNodesState(initialNodes)
+  const [edges, setEdges, onEdgesChange] = useEdgesState(initialEdges)
+
+  useEffect(() => {
+    setNodes(initialNodes)
+  }, [initialNodes, setNodes])
+
+  useEffect(() => {
+    setEdges(initialEdges)
+  }, [initialEdges, setEdges])
+
+  useEffect(() => {
+    if (!definition.steps.some((step) => step.id === selectedId)) {
+      setSelectedId(definition.startStepId || definition.steps[0]?.id || '')
+    }
+  }, [definition.startStepId, definition.steps, selectedId])
 
   return (
     <div className={cn('grid min-h-0 gap-4', compact ? 'grid-cols-1' : 'grid-cols-[minmax(0,1fr)_320px]')}>
-      <div className="relative min-h-[420px] overflow-auto rounded-xl border border-neutral-200/80 bg-[radial-gradient(circle_at_1px_1px,rgba(14,165,233,0.16)_1px,transparent_0)] [background-size:22px_22px] dark:border-zinc-700/60 dark:bg-[radial-gradient(circle_at_1px_1px,rgba(125,211,252,0.12)_1px,transparent_0)]">
-        <div className="relative" style={{ width: bounds.width, height: bounds.height }}>
-          <svg className="pointer-events-none absolute inset-0 h-full w-full">
-            <defs>
-              <marker id="wf-arrow" markerWidth="10" markerHeight="10" refX="8" refY="3" orient="auto" markerUnits="strokeWidth">
-                <path d="M0,0 L0,6 L8,3 z" className="fill-neutral-300 dark:fill-zinc-600" />
-              </marker>
-            </defs>
-            {definition.edges.map((edge) => {
-              const from = center(edge.from)
-              const to = center(edge.to)
-              const midX = (from.x + to.x) / 2
-              const d = `M ${from.x} ${from.y} C ${midX} ${from.y}, ${midX} ${to.y}, ${to.x} ${to.y}`
-              return (
-                <g key={edge.id}>
-                  <path d={d} className="fill-none stroke-neutral-300 dark:stroke-zinc-600" strokeWidth="2" markerEnd="url(#wf-arrow)" />
-                  {edge.label ? (
-                    <text x={midX} y={(from.y + to.y) / 2 - 8} textAnchor="middle" className="fill-neutral-400 text-[11px] dark:fill-zinc-500">
-                      {edge.label}
-                    </text>
-                  ) : null}
-                </g>
-              )
-            })}
-          </svg>
-          {definition.steps.map((step) => {
-            const inst = instanceByStep.get(step.id)
-            const active = run?.activeStepId === step.id || inst?.status === 'running'
-            const selectedNode = selected?.id === step.id
-            return (
-              <button
-                key={step.id}
-                type="button"
-                onClick={() => setSelectedId(step.id)}
-                className={cn(
-                  'absolute flex flex-col items-start rounded-xl border px-3 py-2 text-left shadow-sm transition-all hover:-translate-y-0.5 hover:shadow-md',
-                  typeClass[step.type] ?? typeClass.terminal,
-                  active && 'ring-2 ring-sky-400 ring-offset-2 ring-offset-white dark:ring-sky-500 dark:ring-offset-zinc-950',
-                  selectedNode && 'shadow-lg',
-                )}
-                style={{ left: step.position.x, top: step.position.y, width: NODE_W, height: NODE_H }}
-              >
-                <span className="text-[11px] font-semibold uppercase tracking-wide opacity-60">{step.type.replace('_', ' ')}</span>
-                <span className="mt-1 line-clamp-1 text-sm font-semibold">{step.title}</span>
-                <span className="mt-auto flex w-full items-center justify-between gap-2">
-                  <span className="truncate text-xs opacity-60">{step.actorRole || 'system'}</span>
-                  {inst ? (
-                    <span className={cn('rounded-full px-2 py-0.5 text-[10px] font-medium', statusClass[inst.status] ?? statusClass.pending)}>
-                      {inst.status}
-                    </span>
-                  ) : null}
-                </span>
-              </button>
-            )
-          })}
-        </div>
+      <div
+        className={cn(
+          'relative overflow-hidden rounded-xl border border-neutral-200/80 bg-white dark:border-zinc-700/60 dark:bg-zinc-950',
+          compact ? 'h-[360px]' : 'h-[520px]',
+        )}
+      >
+        <ReactFlow
+          nodes={nodes}
+          edges={edges}
+          nodeTypes={nodeTypes}
+          onNodesChange={onNodesChange}
+          onEdgesChange={onEdgesChange}
+          onNodeClick={(_, node) => setSelectedId(node.id)}
+          fitView
+          fitViewOptions={{ padding: 0.18 }}
+          minZoom={0.25}
+          maxZoom={1.8}
+          panOnScroll
+          zoomOnPinch
+          nodesDraggable
+          nodesConnectable={false}
+          elementsSelectable
+          className="workflow-flow"
+        >
+          <Background variant={BackgroundVariant.Dots} gap={24} size={1.2} color="rgba(14,165,233,0.22)" />
+          <Controls showInteractive={false} position="bottom-left" />
+          {!compact ? (
+            <MiniMap
+              position="bottom-right"
+              pannable
+              zoomable
+              nodeStrokeWidth={3}
+              nodeColor={(node) => {
+                const data = node.data as WorkflowNodeData
+                if (data.active) return '#0ea5e9'
+                if (data.status === 'completed') return '#10b981'
+                if (data.status === 'failed') return '#ef4444'
+                return '#a1a1aa'
+              }}
+            />
+          ) : null}
+        </ReactFlow>
       </div>
       {!compact && selected ? (
         <aside className="min-h-[420px] rounded-xl border border-neutral-200/80 bg-white p-4 dark:border-zinc-700/60 dark:bg-zinc-900">
@@ -206,4 +301,3 @@ function Detail({ label, value, mono = false }: { label: string; value: string; 
     </div>
   )
 }
-
