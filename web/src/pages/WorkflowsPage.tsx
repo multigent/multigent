@@ -106,17 +106,18 @@ export default function WorkflowsPage() {
           <div className="flex min-h-0 flex-1 flex-col gap-4">
             {!fullscreen && (
               <div className="flex shrink-0 flex-wrap items-start justify-between gap-4">
-                <div className="min-w-[360px] flex-1">
+                <div className="min-w-[320px] max-w-3xl flex-1">
                   <input
                     value={draft.name}
                     onChange={(e) => setDraft({ ...draft, name: e.target.value })}
                     className="block w-full rounded-lg border border-transparent bg-transparent px-0 text-xl font-semibold text-neutral-900 outline-none focus:border-neutral-200 focus:bg-white focus:px-3 dark:text-zinc-100 dark:focus:border-zinc-700 dark:focus:bg-zinc-900"
                   />
-                  <input
+                  <textarea
                     value={draft.description || ''}
                     onChange={(e) => setDraft({ ...draft, description: e.target.value })}
                     placeholder={t('workflows.descriptionPlaceholder')}
-                    className="mt-1 block w-full rounded-lg border border-transparent bg-transparent px-0 text-sm text-neutral-500 outline-none focus:border-neutral-200 focus:bg-white focus:px-3 dark:text-zinc-400 dark:focus:border-zinc-700 dark:focus:bg-zinc-900"
+                    rows={2}
+                    className="mt-1 block w-full resize-none whitespace-pre-wrap rounded-lg border border-transparent bg-transparent px-0 py-1 text-sm leading-5 text-neutral-500 outline-none focus:border-neutral-200 focus:bg-white focus:px-3 dark:text-zinc-400 dark:focus:border-zinc-700 dark:focus:bg-zinc-900"
                   />
                 </div>
                 <div className="flex gap-2">
