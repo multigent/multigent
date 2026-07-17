@@ -1,6 +1,7 @@
-import { useEffect, useState, type ReactNode } from 'react'
+import { useEffect, useRef, useState, type ReactNode } from 'react'
 import { Navigate, Route, Routes } from 'react-router-dom'
 import { useTranslation } from 'react-i18next'
+import { Loader2 } from 'lucide-react'
 import { AppShell } from './components/layout/AppShell'
 import { useAuth } from './lib/auth'
 import { ApiError, apiFetch } from './lib/api'
@@ -36,6 +37,13 @@ import ProjectOKRPage from './pages/projects/ProjectOKRPage'
 
 type WorkspaceRef = { id: string; name: string; active?: boolean }
 
+const WORKSPACE_TRANSITION_MIN_MS = 5000
+const WORKSPACE_TRANSITION_STEPS = [
+  'workspace.switchingWorkspaceStepPrepare',
+  'workspace.switchingWorkspaceStepAccess',
+  'workspace.switchingWorkspaceStepReady',
+]
+
 export default function App() {
   const { token, logout } = useAuth()
 
@@ -49,7 +57,14 @@ export default function App() {
     return <LoginPage />
   }
 
-  return <WorkspaceGate><WorkspaceAccessProvider><AuthenticatedRoutes /></WorkspaceAccessProvider></WorkspaceGate>
+  return (
+    <WorkspaceGate>
+      <WorkspaceAccessProvider>
+        <WorkspaceSwitchOverlay />
+        <AuthenticatedRoutes />
+      </WorkspaceAccessProvider>
+    </WorkspaceGate>
+  )
 }
 
 function WorkspaceGate({ children }: { children: ReactNode }) {
@@ -130,5 +145,63 @@ function AuthenticatedRoutes() {
         <Route path="*" element={<Navigate to="/" replace />} />
       </Route>
     </Routes>
+  )
+}
+
+function WorkspaceSwitchOverlay() {
+  const { t } = useTranslation()
+  const { loading: workspaceAccessLoading } = useWorkspaceAccess()
+  const [transitioning, setTransitioning] = useState(false)
+  const [committed, setCommitted] = useState(false)
+  const [step, setStep] = useState(0)
+  const startedAt = useRef(0)
+
+  useEffect(() => {
+    function start() {
+      startedAt.current = Date.now()
+      setStep(0)
+      setCommitted(false)
+      setTransitioning(true)
+    }
+    function finish() {
+      setCommitted(true)
+    }
+    window.addEventListener('workspace-switch-start', start)
+    window.addEventListener('workspace-changed', finish)
+    window.addEventListener('workspace-switch-finish', finish)
+    return () => {
+      window.removeEventListener('workspace-switch-start', start)
+      window.removeEventListener('workspace-changed', finish)
+      window.removeEventListener('workspace-switch-finish', finish)
+    }
+  }, [])
+
+  useEffect(() => {
+    if (!transitioning) return
+    const timers = [
+      window.setTimeout(() => setStep(1), 1600),
+      window.setTimeout(() => setStep(2), 3300),
+    ]
+    return () => timers.forEach((timer) => window.clearTimeout(timer))
+  }, [transitioning])
+
+  useEffect(() => {
+    if (!transitioning || !committed || workspaceAccessLoading) return
+    const elapsed = Date.now() - startedAt.current
+    const remaining = Math.max(WORKSPACE_TRANSITION_MIN_MS - elapsed, 120)
+    const timer = window.setTimeout(() => setTransitioning(false), remaining)
+    return () => window.clearTimeout(timer)
+  }, [committed, transitioning, workspaceAccessLoading])
+
+  if (!transitioning) return null
+
+  return (
+    <div className="fixed inset-0 z-[90] flex items-center justify-center bg-neutral-50/90 backdrop-blur-sm dark:bg-zinc-950/90">
+      <div className="flex min-w-64 flex-col items-center rounded-xl border border-neutral-200 bg-white px-6 py-5 shadow-xl dark:border-zinc-700 dark:bg-zinc-900">
+        <Loader2 className="size-6 animate-spin text-sky-600 dark:text-sky-400" strokeWidth={1.8} />
+        <p className="mt-3 text-sm font-medium text-neutral-900 dark:text-zinc-100">{t('workspace.switchingWorkspace')}</p>
+        <p className="mt-1 text-xs text-neutral-400 dark:text-zinc-500">{t(WORKSPACE_TRANSITION_STEPS[step] ?? WORKSPACE_TRANSITION_STEPS[0])}</p>
+      </div>
+    </div>
   )
 }
