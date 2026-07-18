@@ -8,6 +8,7 @@ import { useTheme } from '../../theme/ThemeProvider'
 import { usePageTabs } from '../../lib/page-tabs'
 import { addQuickLink } from '../../lib/quick-links'
 import { cn } from '../../lib/cn'
+import { apiFetch } from '../../lib/api'
 
 const iconBtn =
   'flex size-7 items-center justify-center rounded-md text-neutral-400 transition-all duration-150 hover:bg-neutral-500/[0.07] hover:text-neutral-700 dark:text-zinc-500 dark:hover:bg-zinc-700/50 dark:hover:text-zinc-300'
@@ -79,7 +80,18 @@ function UserMenu() {
   const { t } = useTranslation()
   const { user, logout } = useAuth()
   const [open, setOpen] = useState(false)
+  const [workspaceRole, setWorkspaceRole] = useState('')
   const ref = useRef<HTMLDivElement>(null)
+
+  const loadWorkspaceRole = useCallback(() => {
+    if (!user) {
+      setWorkspaceRole('')
+      return
+    }
+    apiFetch<{ currentUserRole?: string }>('/api/v1/workspace')
+      .then((workspace) => setWorkspaceRole(workspace.currentUserRole ?? ''))
+      .catch(() => setWorkspaceRole(''))
+  }, [user])
 
   useEffect(() => {
     if (!open) return
@@ -90,7 +102,18 @@ function UserMenu() {
     return () => document.removeEventListener('mousedown', onClick)
   }, [open])
 
-  const initial = (user?.username ?? 'U')[0].toUpperCase()
+  useEffect(() => {
+    loadWorkspaceRole()
+    window.addEventListener('workspace-changed', loadWorkspaceRole)
+    return () => window.removeEventListener('workspace-changed', loadWorkspaceRole)
+  }, [loadWorkspaceRole])
+
+  const displayName = user?.displayName || user?.username || 'User'
+  const secondary = user?.email || (user?.username ? `@${user.username}` : '')
+  const role = workspaceRole || user?.role || ''
+  const roleLabelKey = `people.workspaceRole_${role}`
+  const roleLabel = role ? t(roleLabelKey) : ''
+  const initial = (displayName || 'U')[0].toUpperCase()
 
   return (
     <div ref={ref} className="relative ml-1">
@@ -98,15 +121,22 @@ function UserMenu() {
         type="button"
         onClick={() => setOpen((o) => !o)}
         className="flex size-7 items-center justify-center rounded-full bg-gradient-to-br from-sky-400 to-sky-600 text-xs font-bold text-white ring-2 ring-sky-200/40 transition-shadow hover:ring-sky-300/60 dark:from-sky-500 dark:to-sky-700 dark:ring-sky-800/40"
-        title={user?.username}
+        title={displayName}
       >
         {initial}
       </button>
       {open && (
-        <div className="absolute right-0 top-full z-50 mt-1.5 w-44 rounded-lg border border-neutral-200 bg-white py-1 shadow-lg dark:border-zinc-700 dark:bg-zinc-800">
+        <div className="absolute right-0 top-full z-50 mt-1.5 w-52 rounded-lg border border-neutral-200 bg-white py-1 shadow-lg dark:border-zinc-700 dark:bg-zinc-800">
           <div className="border-b border-neutral-100 px-3 py-2 dark:border-zinc-700">
-            <p className="text-sm font-medium text-neutral-900 dark:text-zinc-100">{user?.username}</p>
-            <p className="text-xs text-neutral-400 dark:text-zinc-500">{user?.role}</p>
+            <p className="truncate text-sm font-medium text-neutral-900 dark:text-zinc-100">{displayName}</p>
+            <div className="mt-1 flex min-w-0 items-center gap-2">
+              {secondary && <p className="min-w-0 flex-1 truncate text-xs text-neutral-400 dark:text-zinc-500">{secondary}</p>}
+              {role && (
+                <span className="shrink-0 rounded-full bg-neutral-100 px-2 py-0.5 text-[11px] font-medium text-neutral-600 dark:bg-zinc-700 dark:text-zinc-300">
+                  {roleLabel === roleLabelKey ? role : roleLabel}
+                </span>
+              )}
+            </div>
           </div>
           <Link
             to="/account"

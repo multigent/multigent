@@ -1,4 +1,4 @@
-import { useState, type FormEvent, type ReactNode } from 'react'
+import { useEffect, useState, type FormEvent, type ReactNode } from 'react'
 import { useTranslation } from 'react-i18next'
 import { Camera, ImagePlus, X } from 'lucide-react'
 import { i18n } from '../i18n'
@@ -41,7 +41,7 @@ function SectionHeader({ title, description }: { title: string; description: str
   )
 }
 
-function ProfileForm({ user }: { user: AuthUser }) {
+function ProfileForm({ user, workspaceRole }: { user: AuthUser; workspaceRole: string }) {
   const { t } = useTranslation()
   const { login } = useAuth()
   const [displayName, setDisplayName] = useState(user.displayName ?? '')
@@ -98,6 +98,9 @@ function ProfileForm({ user }: { user: AuthUser }) {
 
   const label = displayName || user.displayName || user.username
   const initial = (label || 'U').slice(0, 1).toUpperCase()
+  const role = workspaceRole || user.role
+  const roleKey = `people.workspaceRole_${role}`
+  const roleLabel = role ? t(roleKey) : ''
 
   return (
     <form onSubmit={handleSubmit}>
@@ -128,7 +131,11 @@ function ProfileForm({ user }: { user: AuthUser }) {
             <div className="truncate text-sm font-semibold text-neutral-900 dark:text-zinc-100">{label}</div>
             <div className="mt-1 flex flex-wrap items-center gap-2 text-xs text-neutral-500 dark:text-zinc-500">
               <span className="truncate">{user.email || user.username}</span>
-              <span className="rounded-full bg-neutral-100 px-2 py-0.5 font-medium text-neutral-600 dark:bg-zinc-800 dark:text-zinc-400">{user.role}</span>
+              {role && (
+                <span className="rounded-full bg-neutral-100 px-2 py-0.5 font-medium text-neutral-600 dark:bg-zinc-800 dark:text-zinc-400">
+                  {roleLabel === roleKey ? role : roleLabel}
+                </span>
+              )}
             </div>
           </div>
           <label className="mt-4 inline-flex h-8 cursor-pointer items-center gap-1.5 rounded-md border border-neutral-200 bg-white px-3 text-sm font-medium text-neutral-700 transition-colors hover:bg-neutral-50 dark:border-zinc-700 dark:bg-zinc-900 dark:text-zinc-300 dark:hover:bg-zinc-800">
@@ -364,6 +371,19 @@ export default function AccountPage() {
   const { theme, setTheme } = useTheme()
   const { user } = useAuth()
   const lang = currentLanguage()
+  const [workspaceRole, setWorkspaceRole] = useState('')
+
+  useEffect(() => {
+    if (!user) {
+      setWorkspaceRole('')
+      return
+    }
+    let cancelled = false
+    apiFetch<{ currentUserRole?: string }>('/api/v1/workspace')
+      .then((workspace) => { if (!cancelled) setWorkspaceRole(workspace.currentUserRole ?? '') })
+      .catch(() => { if (!cancelled) setWorkspaceRole('') })
+    return () => { cancelled = true }
+  }, [user])
 
   return (
     <div className="animate-fade-in px-8 py-6">
@@ -376,7 +396,7 @@ export default function AccountPage() {
         {user && (
           <section className="mb-4 overflow-hidden rounded-lg border border-neutral-200/80 bg-white dark:border-zinc-700/60 dark:bg-zinc-900/40">
             <SectionHeader title={t('account.profileTitle')} description={t('account.profileDescription')} />
-            <ProfileForm key={`${user.username}:${user.displayName ?? ''}:${user.avatar ?? ''}`} user={user} />
+            <ProfileForm key={`${user.username}:${user.displayName ?? ''}:${user.avatar ?? ''}`} user={user} workspaceRole={workspaceRole} />
           </section>
         )}
 
