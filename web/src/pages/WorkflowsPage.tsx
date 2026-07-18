@@ -1,6 +1,6 @@
 import { useEffect, useMemo, useRef, useState } from 'react'
 import { useTranslation } from 'react-i18next'
-import { useBlocker, useNavigate, useParams } from 'react-router-dom'
+import { useNavigate, useParams } from 'react-router-dom'
 import { GitBranch, X } from 'lucide-react'
 import { PlaceholderCard } from '../components/ui/PlaceholderCard'
 import { confirmDialog } from '../components/ui/ConfirmDialog'
@@ -41,20 +41,15 @@ export default function WorkflowsPage() {
   const [selectedTemplateId, setSelectedTemplateId] = useState('')
   const [workflowName, setWorkflowName] = useState('')
   const descriptionRef = useRef<HTMLTextAreaElement | null>(null)
-  const allowNavigationRef = useRef(false)
 
   useEffect(() => {
     const next = selected ? structuredClone(selected) : null
     setDraft(next)
     setSavedDraft(next ? structuredClone(next) : null)
     setFullscreen(false)
-    allowNavigationRef.current = false
   }, [selected?.id])
 
   const dirty = Boolean(draft && savedDraft && workflowEditableJSON(draft) !== workflowEditableJSON(savedDraft))
-  const blocker = useBlocker(({ currentLocation, nextLocation }) =>
-    dirty && !allowNavigationRef.current && currentLocation.pathname !== nextLocation.pathname,
-  )
 
   useEffect(() => {
     if (!dirty) return
@@ -65,23 +60,6 @@ export default function WorkflowsPage() {
     window.addEventListener('beforeunload', handleBeforeUnload)
     return () => window.removeEventListener('beforeunload', handleBeforeUnload)
   }, [dirty])
-
-  useEffect(() => {
-    if (blocker.state !== 'blocked') return
-    let cancelled = false
-    confirmLeaveIfDirty().then((ok) => {
-      if (cancelled) return
-      if (ok) {
-        allowNavigationRef.current = true
-        blocker.proceed()
-      } else {
-        blocker.reset()
-      }
-    })
-    return () => {
-      cancelled = true
-    }
-  }, [blocker])
 
   useEffect(() => {
     const el = descriptionRef.current
@@ -155,7 +133,6 @@ export default function WorkflowsPage() {
         steps: wf.steps,
         edges: wf.edges,
       })
-      allowNavigationRef.current = true
       navigate(`/workflows/${encodeURIComponent(created.id)}`)
     } finally {
       setSaving(false)
@@ -175,7 +152,6 @@ export default function WorkflowsPage() {
     try {
       await apiDelete(`/api/v1/workflows/${encodeURIComponent(wf.id)}`)
       if (params.workflowId === wf.id) {
-        allowNavigationRef.current = true
         navigate('/workflows')
       }
       setReloadKey((key) => key + 1)
@@ -197,7 +173,6 @@ export default function WorkflowsPage() {
 
   async function backToList() {
     if (!(await confirmLeaveIfDirty())) return
-    allowNavigationRef.current = true
     navigate('/workflows')
   }
 
