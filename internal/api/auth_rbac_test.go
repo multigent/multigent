@@ -2,6 +2,8 @@ package api
 
 import (
 	"context"
+	"encoding/json"
+	"net/http"
 	"net/http/httptest"
 	"path/filepath"
 	"testing"
@@ -175,6 +177,63 @@ func TestWorkspaceMembershipQueriesByUser(t *testing.T) {
 	}
 	if len(memberships) != 1 || memberships[0].WorkspaceID != "ws-one" {
 		t.Fatalf("memberships=%#v", memberships)
+	}
+}
+
+func TestEnsureCurrentUserMembershipDoesNotDowngradeExistingRole(t *testing.T) {
+	users := newTestUserStore(t)
+	if err := users.CreateUser("owner", "pass123", RoleMember, "", "", "", "", ""); err != nil {
+		t.Fatalf("create user: %v", err)
+	}
+	if err := users.db.UpsertWorkspace(controldb.Workspace{
+		ID:        "ws-one",
+		Name:      "One",
+		Slug:      "one",
+		Root:      filepath.Join(t.TempDir(), "one"),
+		CreatedBy: "owner",
+		CreatedAt: "2026-07-15T00:00:00Z",
+	}); err != nil {
+		t.Fatalf("workspace: %v", err)
+	}
+	if err := users.db.UpsertWorkspaceMember("ws-one", "owner", WorkspaceRoleOwner); err != nil {
+		t.Fatalf("seed owner membership: %v", err)
+	}
+	s := &Server{controlDB: users.db, users: users}
+	if err := s.ensureCurrentUserMembership("ws-one", "owner"); err != nil {
+		t.Fatalf("ensure membership: %v", err)
+	}
+	member, ok, err := users.db.WorkspaceMember("ws-one", "owner")
+	if err != nil || !ok {
+		t.Fatalf("workspace member ok=%v err=%v", ok, err)
+	}
+	if member.Role != WorkspaceRoleOwner {
+		t.Fatalf("role downgraded to %q", member.Role)
+	}
+}
+
+func TestListUsersReturnsWorkspaceRole(t *testing.T) {
+	s, _ := newProviderHandlerTestServer(t)
+	rec := httptest.NewRecorder()
+	s.handleListUsers(rec, providerTestRequest(http.MethodGet, "/api/v1/users", "owner", nil))
+	if rec.Code != http.StatusOK {
+		t.Fatalf("list users status=%d body=%s", rec.Code, rec.Body.String())
+	}
+	var rows []struct {
+		Username string `json:"username"`
+		Role     string `json:"role"`
+	}
+	if err := json.Unmarshal(rec.Body.Bytes(), &rows); err != nil {
+		t.Fatalf("decode users: %v", err)
+	}
+	roles := map[string]string{}
+	for _, row := range rows {
+		roles[row.Username] = row.Role
+	}
+	if roles["owner"] != WorkspaceRoleOwner {
+		t.Fatalf("owner role=%q", roles["owner"])
+	}
+	if roles["member"] != WorkspaceRoleMember {
+		t.Fatalf("member role=%q", roles["member"])
 	}
 }
 

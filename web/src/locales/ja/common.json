@@ -81,6 +81,15 @@
     "loadingWorkspace": "ワークスペースを読み込み中…",
     "loadingWorkspaceAccess": "ワークスペース権限を読み込み中…"
   },
+  "workspaceOnboarding": {
+    "title": "ワークスペースを作成",
+    "subtitle": "Agent チームのための共有スペースから始めます。",
+    "name": "ワークスペース名",
+    "description": "説明",
+    "descriptionPlaceholder": "このワークスペースの用途",
+    "create": "ワークスペースを作成",
+    "creating": "作成中…"
+  },
   "nav": {
     "overview": "概要",
     "workspace": "ワークスペース",

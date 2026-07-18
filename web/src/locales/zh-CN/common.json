@@ -81,6 +81,15 @@
     "loadingWorkspace": "正在加载工作区…",
     "loadingWorkspaceAccess": "正在加载工作区权限…"
   },
+  "workspaceOnboarding": {
+    "title": "创建你的工作区",
+    "subtitle": "从一个共享空间开始，组织你的 Agent 团队。",
+    "name": "工作区名称",
+    "description": "描述",
+    "descriptionPlaceholder": "这个工作区用来做什么",
+    "create": "创建工作区",
+    "creating": "正在创建…"
+  },
   "nav": {
     "overview": "概览",
     "workspace": "工作区",

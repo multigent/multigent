@@ -681,6 +681,11 @@ func (s *Server) ensureCurrentUserMembership(workspaceID, username string) error
 	if s.controlDB == nil || username == "" || username == "system" {
 		return nil
 	}
+	if _, ok, err := s.controlDB.WorkspaceMember(workspaceID, username); err != nil {
+		return err
+	} else if ok {
+		return nil
+	}
 	u := s.users.GetUser(username)
 	if u == nil {
 		return nil

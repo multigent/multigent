@@ -81,6 +81,15 @@
     "loadingWorkspace": "正在載入工作區…",
     "loadingWorkspaceAccess": "正在載入工作區權限…"
   },
+  "workspaceOnboarding": {
+    "title": "建立你的工作區",
+    "subtitle": "從一個共享空間開始，組織你的 Agent 團隊。",
+    "name": "工作區名稱",
+    "description": "描述",
+    "descriptionPlaceholder": "這個工作區用來做什麼",
+    "create": "建立工作區",
+    "creating": "正在建立…"
+  },
   "nav": {
     "overview": "概覽",
     "workspace": "工作區",

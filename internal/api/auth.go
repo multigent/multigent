@@ -930,10 +930,17 @@ func (s *Server) handleListUsers(w http.ResponseWriter, r *http.Request) {
 		CreatedAt    string          `json:"createdAt,omitempty"`
 	}
 	out := make([]safeUser, len(users))
+	workspaceID, _ := s.currentWorkspaceID()
 	for i, u := range users {
+		role := u.Role
+		if s.controlDB != nil && workspaceID != "" {
+			if member, ok, err := s.controlDB.WorkspaceMember(workspaceID, u.Username); err == nil && ok && member.Role != "" {
+				role = member.Role
+			}
+		}
 		out[i] = safeUser{
 			Username:     u.Username,
-			Role:         u.Role,
+			Role:         role,
 			DisplayName:  u.DisplayName,
 			Email:        u.Email,
 			Avatar:       u.Avatar,

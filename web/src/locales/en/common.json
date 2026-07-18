@@ -81,6 +81,15 @@
     "loadingWorkspace": "Loading workspace…",
     "loadingWorkspaceAccess": "Loading workspace access…"
   },
+  "workspaceOnboarding": {
+    "title": "Create your workspace",
+    "subtitle": "Start with a shared space for your agent team.",
+    "name": "Workspace name",
+    "description": "Description",
+    "descriptionPlaceholder": "What this workspace is for",
+    "create": "Create workspace",
+    "creating": "Creating…"
+  },
   "nav": {
     "overview": "Overview",
     "workspace": "Workspace",
