@@ -1,6 +1,6 @@
 import { useEffect, useMemo, useRef, useState } from 'react'
 import { useTranslation } from 'react-i18next'
-import { useNavigate, useParams } from 'react-router-dom'
+import { useBlocker, useNavigate, useParams } from 'react-router-dom'
 import { GitBranch, X } from 'lucide-react'
 import { PlaceholderCard } from '../components/ui/PlaceholderCard'
 import { confirmDialog } from '../components/ui/ConfirmDialog'
@@ -33,6 +33,7 @@ export default function WorkflowsPage() {
   const selected = useMemo(() => (params.workflowId && detailState.status === 'ok' ? detailState.data : undefined), [params.workflowId, detailState])
 
   const [draft, setDraft] = useState<WorkflowDefinition | null>(null)
+  const [savedDraft, setSavedDraft] = useState<WorkflowDefinition | null>(null)
   const [saving, setSaving] = useState(false)
   const [fullscreen, setFullscreen] = useState(false)
   const [createOpen, setCreateOpen] = useState(false)
@@ -40,11 +41,47 @@ export default function WorkflowsPage() {
   const [selectedTemplateId, setSelectedTemplateId] = useState('')
   const [workflowName, setWorkflowName] = useState('')
   const descriptionRef = useRef<HTMLTextAreaElement | null>(null)
+  const allowNavigationRef = useRef(false)
 
   useEffect(() => {
-    setDraft(selected ? structuredClone(selected) : null)
+    const next = selected ? structuredClone(selected) : null
+    setDraft(next)
+    setSavedDraft(next ? structuredClone(next) : null)
     setFullscreen(false)
+    allowNavigationRef.current = false
   }, [selected?.id])
+
+  const dirty = Boolean(draft && savedDraft && workflowEditableJSON(draft) !== workflowEditableJSON(savedDraft))
+  const blocker = useBlocker(({ currentLocation, nextLocation }) =>
+    dirty && !allowNavigationRef.current && currentLocation.pathname !== nextLocation.pathname,
+  )
+
+  useEffect(() => {
+    if (!dirty) return
+    function handleBeforeUnload(event: BeforeUnloadEvent) {
+      event.preventDefault()
+      event.returnValue = ''
+    }
+    window.addEventListener('beforeunload', handleBeforeUnload)
+    return () => window.removeEventListener('beforeunload', handleBeforeUnload)
+  }, [dirty])
+
+  useEffect(() => {
+    if (blocker.state !== 'blocked') return
+    let cancelled = false
+    confirmLeaveIfDirty().then((ok) => {
+      if (cancelled) return
+      if (ok) {
+        allowNavigationRef.current = true
+        blocker.proceed()
+      } else {
+        blocker.reset()
+      }
+    })
+    return () => {
+      cancelled = true
+    }
+  }, [blocker])
 
   useEffect(() => {
     const el = descriptionRef.current
@@ -118,6 +155,7 @@ export default function WorkflowsPage() {
         steps: wf.steps,
         edges: wf.edges,
       })
+      allowNavigationRef.current = true
       navigate(`/workflows/${encodeURIComponent(created.id)}`)
     } finally {
       setSaving(false)
@@ -136,11 +174,31 @@ export default function WorkflowsPage() {
     setSaving(true)
     try {
       await apiDelete(`/api/v1/workflows/${encodeURIComponent(wf.id)}`)
-      if (params.workflowId === wf.id) navigate('/workflows')
+      if (params.workflowId === wf.id) {
+        allowNavigationRef.current = true
+        navigate('/workflows')
+      }
       setReloadKey((key) => key + 1)
     } finally {
       setSaving(false)
     }
+  }
+
+  async function confirmLeaveIfDirty() {
+    if (!dirty) return true
+    return confirmDialog({
+      title: t('workflows.unsavedTitle'),
+      description: t('workflows.unsavedDescription'),
+      confirmLabel: t('workflows.discardChanges'),
+      cancelLabel: t('common.cancel'),
+      tone: 'danger',
+    })
+  }
+
+  async function backToList() {
+    if (!(await confirmLeaveIfDirty())) return
+    allowNavigationRef.current = true
+    navigate('/workflows')
   }
 
   async function saveDraft() {
@@ -155,6 +213,7 @@ export default function WorkflowsPage() {
         edges: draft.edges,
       })
       setDraft(saved)
+      setSavedDraft(structuredClone(saved))
     } finally {
       setSaving(false)
     }
@@ -196,7 +255,12 @@ export default function WorkflowsPage() {
                   />
                 </div>
                 <div className="flex gap-2">
-                  <button type="button" onClick={() => navigate('/workflows')} className="rounded-lg border border-neutral-300 bg-white px-3 py-2 text-sm font-medium text-neutral-600 hover:bg-neutral-50 dark:border-zinc-600 dark:bg-zinc-900 dark:text-zinc-300 dark:hover:bg-zinc-800">
+                  {dirty && (
+                    <span className="self-center rounded-full bg-amber-50 px-2.5 py-1 text-xs font-medium text-amber-700 dark:bg-amber-950/30 dark:text-amber-300">
+                      {t('workflows.unsavedBadge')}
+                    </span>
+                  )}
+                  <button type="button" onClick={() => void backToList()} className="rounded-lg border border-neutral-300 bg-white px-3 py-2 text-sm font-medium text-neutral-600 hover:bg-neutral-50 dark:border-zinc-600 dark:bg-zinc-900 dark:text-zinc-300 dark:hover:bg-zinc-800">
                     {t('workflows.backToList')}
                   </button>
                   <button type="button" onClick={() => void duplicateWorkflow(draft)} disabled={saving} className="rounded-lg border border-neutral-300 bg-white px-3 py-2 text-sm font-medium text-neutral-600 hover:bg-neutral-50 disabled:opacity-50 dark:border-zinc-600 dark:bg-zinc-900 dark:text-zinc-300 dark:hover:bg-zinc-800">
@@ -205,7 +269,7 @@ export default function WorkflowsPage() {
                   <button type="button" onClick={() => void deleteWorkflow(draft)} disabled={saving} className="rounded-lg border border-red-300 bg-white px-3 py-2 text-sm font-medium text-red-600 hover:bg-red-50 disabled:opacity-50 dark:border-red-900/70 dark:bg-zinc-900 dark:text-red-400 dark:hover:bg-red-950/30">
                     {t('common.delete')}
                   </button>
-                  <button type="button" onClick={() => void saveDraft()} disabled={saving || !draft.name.trim()} className="rounded-lg border border-sky-600 bg-white px-3 py-2 text-sm font-medium text-sky-700 hover:bg-sky-50 disabled:opacity-50 dark:border-sky-500 dark:bg-zinc-900 dark:text-sky-400 dark:hover:bg-zinc-800">
+                  <button type="button" onClick={() => void saveDraft()} disabled={saving || !dirty || !draft.name.trim()} className="rounded-lg border border-sky-600 bg-white px-3 py-2 text-sm font-medium text-sky-700 hover:bg-sky-50 disabled:opacity-50 dark:border-sky-500 dark:bg-zinc-900 dark:text-sky-400 dark:hover:bg-zinc-800">
                     {saving ? t('common.saving') : t('common.save')}
                   </button>
                 </div>
@@ -342,6 +406,16 @@ export default function WorkflowsPage() {
       )}
     </div>
   )
+}
+
+function workflowEditableJSON(workflow: WorkflowDefinition) {
+  return JSON.stringify({
+    name: workflow.name,
+    description: workflow.description || '',
+    startStepId: workflow.startStepId,
+    steps: workflow.steps,
+    edges: workflow.edges,
+  })
 }
 
 function Loading({ label }: { label: string }) {
