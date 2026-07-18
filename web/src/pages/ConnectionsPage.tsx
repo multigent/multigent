@@ -72,6 +72,7 @@ type OAuthClientConfig = {
   extra?: Record<string, unknown>
   updatedAt?: string
 }
+type TFn = (key: string, options?: Record<string, unknown>) => string
 
 const inputCls = 'w-full rounded-lg border border-neutral-200 bg-white px-3 py-2 text-sm outline-none focus:border-sky-400 dark:border-zinc-700 dark:bg-zinc-950 dark:text-zinc-100'
 const selectCls = 'w-full rounded-lg border border-neutral-200 bg-white px-3 py-2 text-sm outline-none focus:border-sky-400 dark:border-zinc-700 dark:bg-zinc-950 dark:text-zinc-100 dark:[color-scheme:dark]'
@@ -155,7 +156,9 @@ export default function ConnectionsPage() {
         ...prev,
         [connection.id]: {
           ok: result.ok,
-          message: result.ok ? `OK · HTTP ${result.status}` : `${result.message || t('connections.failed')} · HTTP ${result.status}`,
+          message: result.ok
+            ? t('connections.healthOkHttp', { status: result.status })
+            : t('connections.healthFailedHttp', { message: result.message || t('connections.failed'), status: result.status }),
         },
       }))
     } catch (e) {
@@ -357,13 +360,13 @@ function ToolStat({ label, value }: { label: string; value: string }) {
   )
 }
 
-function providerCategoryLabel(category: string, t: (key: string) => string): string {
+function providerCategoryLabel(category: string, t: TFn): string {
   const key = `connections.categories.${categoryKey(category)}`
   const value = t(key)
   return value === key ? category : value
 }
 
-function providerDescription(provider: Provider, t: (key: string) => string): string {
+function providerDescription(provider: Provider, t: TFn): string {
   const key = `connections.providerDescriptions.${provider.provider}`
   const value = t(key)
   if (value !== key) return value
@@ -451,19 +454,47 @@ function primaryConnectionForProvider(connections: Connection[], provider: strin
     })[0]
 }
 
-function formatAuthTypes(authTypes: string[], oauthAvailable: boolean, isWorkspaceAdmin: boolean, t: (key: string) => string): string {
+function formatAuthTypes(authTypes: string[], oauthAvailable: boolean, isWorkspaceAdmin: boolean, t: TFn): string {
   const labels = authTypes
     .filter(type => type !== 'oauth2' || oauthAvailable || isWorkspaceAdmin)
     .map(type => authTypeLabel(type, t))
   return labels.length > 0 ? labels.join(', ') : t('connections.adminSetupRequired')
 }
 
-function authTypeLabel(type: string, t: (key: string) => string): string {
+function authTypeLabel(type: string, t: TFn): string {
   if (type === 'api_key') return t('connections.authApiKey')
   if (type === 'custom_credential') return t('connections.authAppCredential')
   if (type === 'oauth2') return t('connections.authOAuth')
   if (type === 'no_auth') return t('connections.authNoAuth')
   return type
+}
+
+function providerFieldLabel(field: ProviderField, t: TFn): string {
+  const key = `connections.fieldLabels.${field.key}`
+  const value = t(key)
+  return value === key ? field.label : value
+}
+
+function providerGuideTitle(guide: ProviderGuide, t: TFn): string {
+  return translatedProviderText('guideTitles', guide.title, t)
+}
+
+function providerGuideBody(guide: ProviderGuide, t: TFn): string {
+  return translatedProviderText('guideBodies', guide.title, t, guide.body)
+}
+
+function providerGuideLinkLabel(label: string, t: TFn): string {
+  return translatedProviderText('guideLinks', label, t)
+}
+
+function translatedProviderText(group: string, source: string, t: TFn, fallback = source): string {
+  const key = `connections.${group}.${sourceKey(source)}`
+  const value = t(key)
+  return value === key ? fallback : value
+}
+
+function sourceKey(source: string): string {
+  return source.trim().toLowerCase().replace(/[^a-z0-9]+/g, '_').replace(/^_+|_+$/g, '')
 }
 
 function connectionValidation(connection: Connection, fmtDateTime: (input: string | number | Date | null | undefined) => string = (input) => formatDateTimeForLanguage(input, undefined)): { ok: boolean; status?: number; message: string; atLabel: string } | null {
@@ -742,7 +773,7 @@ function ConnectionDialog({
         )}
         {fields.map(field => (
           <label key={field.key} className="block">
-            <span className="text-xs font-medium text-neutral-500 dark:text-zinc-400">{field.label}{field.required ? ' *' : ''}</span>
+            <span className="text-xs font-medium text-neutral-500 dark:text-zinc-400">{providerFieldLabel(field, t)}{field.required ? ' *' : ''}</span>
             <input
               type={field.secret ? 'password' : 'text'}
               className={inputCls}
@@ -763,10 +794,10 @@ function ConnectionDialog({
             <div className="mt-3 space-y-3">
               {(provider?.guides ?? []).map(guide => (
                 <div key={guide.title}>
-                  <p className="text-xs font-medium text-neutral-600 dark:text-zinc-300">{guide.title}</p>
-                  <p className="mt-1 text-xs leading-5 text-neutral-500 dark:text-zinc-400">{guide.body}</p>
+                  <p className="text-xs font-medium text-neutral-600 dark:text-zinc-300">{providerGuideTitle(guide, t)}</p>
+                  <p className="mt-1 text-xs leading-5 text-neutral-500 dark:text-zinc-400">{providerGuideBody(guide, t)}</p>
                   {(guide.links ?? []).map(link => (
-                    <a key={link.url} href={link.url} target="_blank" rel="noreferrer" className="mt-1 inline-block text-xs font-medium text-sky-700 hover:underline dark:text-sky-300">{link.label}</a>
+                    <a key={link.url} href={link.url} target="_blank" rel="noreferrer" className="mt-1 inline-block text-xs font-medium text-sky-700 hover:underline dark:text-sky-300">{providerGuideLinkLabel(link.label, t)}</a>
                   ))}
                 </div>
               ))}
@@ -792,9 +823,9 @@ function SavedConnectionSummary({ connection }: { connection: Connection }) {
   const baseUrl = typeof profile.baseUrl === 'string' ? profile.baseUrl : ''
   const ownerOpenId = typeof profile.ownerOpenId === 'string' ? profile.ownerOpenId : ''
   const fields = [
-    { label: 'App ID', value: appId },
-    { label: 'Base URL', value: baseUrl },
-    { label: 'Open ID', value: ownerOpenId || summary?.accountId || '' },
+    { label: t('connections.appId'), value: appId },
+    { label: t('connections.baseUrl'), value: baseUrl },
+    { label: t('connections.openId'), value: ownerOpenId || summary?.accountId || '' },
     { label: t('connections.authType'), value: authTypeLabel(connection.authType, t) },
   ].filter(item => item.value)
   if (fields.length === 0) return null
