@@ -6,7 +6,6 @@ import { PlaceholderCard } from '../components/ui/PlaceholderCard'
 import { confirmDialog } from '../components/ui/ConfirmDialog'
 import { WorkflowBoard, type WorkflowDefinition, type WorkflowStep } from '../components/workflow/WorkflowBoard'
 import { apiDelete, apiPost, apiPut } from '../lib/api'
-import { useFormatDateTime } from '../lib/format-datetime'
 import { useApiJson } from '../lib/use-api'
 
 type WorkflowListResponse = { workflows: WorkflowDefinition[] }
@@ -24,7 +23,6 @@ export default function WorkflowsPage() {
   const { t, i18n } = useTranslation()
   const navigate = useNavigate()
   const params = useParams()
-  const fmt = useFormatDateTime()
   const [reloadKey, setReloadKey] = useState(0)
   const state = useApiJson<WorkflowListResponse>('/api/v1/workflows', reloadKey)
   const templateLocale = i18n.resolvedLanguage || i18n.language || 'en'
@@ -322,7 +320,7 @@ export default function WorkflowsPage() {
               type="button"
               key={wf.id}
               onClick={() => navigate(`/workflows/${encodeURIComponent(wf.id)}`)}
-              className="group flex min-h-[154px] flex-col justify-between rounded-xl border border-neutral-200/80 bg-white p-5 text-left transition-all duration-150 hover:border-sky-300/60 hover:shadow-md dark:border-zinc-700/60 dark:bg-zinc-900/30 dark:hover:border-sky-800/40"
+              className="group flex min-h-[132px] flex-col rounded-xl border border-neutral-200/80 bg-white p-5 text-left transition-all duration-150 hover:border-sky-300/60 hover:shadow-md dark:border-zinc-700/60 dark:bg-zinc-900/30 dark:hover:border-sky-800/40"
             >
               <div>
                 <div className="flex min-w-0 items-center gap-2.5">
@@ -337,9 +335,6 @@ export default function WorkflowsPage() {
                 <div className="mt-2.5 block w-full text-left">
                   <p className="line-clamp-2 text-sm leading-relaxed text-neutral-500 dark:text-zinc-500">{wf.description || t('workflows.noDescription')}</p>
                 </div>
-              </div>
-              <div className="mt-3 text-xs text-neutral-400 dark:text-zinc-500">
-                {fmt(wf.updatedAt)}
               </div>
             </button>
           ))}

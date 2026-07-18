@@ -27,6 +27,28 @@ function useBreadcrumbs(): BreadcrumbSegment[] {
   const { t } = useTranslation()
   const pid = projectIdFromPath(pathname)
   const pseg = projectNavKeyFromPath(pathname)
+  const workflowMatch = /^\/workflows\/([^/]+)$/.exec(pathname)
+  const workflowId = workflowMatch ? decodeURIComponent(workflowMatch[1]) : ''
+  const [workflowName, setWorkflowName] = useState('')
+
+  useEffect(() => {
+    let cancelled = false
+    if (!workflowId) {
+      setWorkflowName('')
+      return
+    }
+    setWorkflowName('')
+    apiFetch<{ name?: string }>(`/api/v1/workflows/${encodeURIComponent(workflowId)}`)
+      .then((workflow) => {
+        if (!cancelled) setWorkflowName(workflow.name || '')
+      })
+      .catch(() => {
+        if (!cancelled) setWorkflowName('')
+      })
+    return () => {
+      cancelled = true
+    }
+  }, [workflowId])
 
   // Check for agent detail page: /projects/:id/members/:agentName
   const agentChatMatch = /^\/projects\/[^/]+\/members\/([^/]+)\/chat$/.exec(pathname)
@@ -75,11 +97,10 @@ function useBreadcrumbs(): BreadcrumbSegment[] {
     ]
   }
 
-  if (pathname.startsWith('/workflows/') && pathname !== '/workflows') {
-    const id = decodeURIComponent(pathname.split('/')[2] ?? '')
+  if (workflowId) {
     return [
       { label: t('nav.workflows'), to: '/workflows' },
-      { label: id },
+      { label: workflowName || workflowId },
     ]
   }
 
