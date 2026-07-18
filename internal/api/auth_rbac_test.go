@@ -5,11 +5,13 @@ import (
 	"encoding/json"
 	"net/http"
 	"net/http/httptest"
+	"os"
 	"path/filepath"
 	"testing"
 
 	controldb "github.com/multigent/multigent/internal/db"
 	"github.com/multigent/multigent/internal/rbac"
+	"github.com/multigent/multigent/internal/store"
 )
 
 func newTestUserStore(t *testing.T) *UserStore {
@@ -208,6 +210,57 @@ func TestEnsureCurrentUserMembershipDoesNotDowngradeExistingRole(t *testing.T) {
 	}
 	if member.Role != WorkspaceRoleOwner {
 		t.Fatalf("role downgraded to %q", member.Role)
+	}
+}
+
+func TestCurrentWorkspaceAccessAutoSwitchesToUserWorkspace(t *testing.T) {
+	users := newTestUserStore(t)
+	base := t.TempDir()
+	t.Setenv("MULTIGENT_DATA_DIR", base)
+	defaultRoot := filepath.Join(base, "default")
+	userRoot := filepath.Join(base, "user")
+	for _, root := range []string{defaultRoot, userRoot} {
+		if err := os.MkdirAll(filepath.Join(root, ".multigent"), 0o755); err != nil {
+			t.Fatalf("mkdir workspace: %v", err)
+		}
+		if err := os.WriteFile(filepath.Join(root, ".multigent", "agency.yaml"), []byte("name: Test\n"), 0o644); err != nil {
+			t.Fatalf("write agency: %v", err)
+		}
+	}
+	if err := users.CreateUser("admin-2", "pass123", RoleMember, "Admin", "admin@example.test", "", "", ""); err != nil {
+		t.Fatalf("create user: %v", err)
+	}
+	if err := users.db.UpsertWorkspace(controldb.Workspace{
+		ID:        "ws-default",
+		Name:      "Default Workspace",
+		Slug:      "default",
+		Root:      defaultRoot,
+		CreatedBy: "system",
+		CreatedAt: "2026-07-18T00:00:00Z",
+	}); err != nil {
+		t.Fatalf("default workspace: %v", err)
+	}
+	if err := users.db.UpsertWorkspace(controldb.Workspace{
+		ID:        "ws-user",
+		Name:      "User Workspace",
+		Slug:      "user",
+		Root:      userRoot,
+		CreatedBy: "admin-2",
+		CreatedAt: "2026-07-18T00:00:00Z",
+	}); err != nil {
+		t.Fatalf("user workspace: %v", err)
+	}
+	if err := users.db.UpsertWorkspaceMember("ws-user", "admin-2", WorkspaceRoleOwner); err != nil {
+		t.Fatalf("workspace member: %v", err)
+	}
+	s := &Server{root: defaultRoot, controlDB: users.db, users: users, st: store.NewDB(defaultRoot, users.db)}
+	rec := httptest.NewRecorder()
+	req := providerTestRequest(http.MethodGet, "/api/v1/workspace", "admin-2", nil)
+	if !s.checkCurrentWorkspaceAccess(rec, req) {
+		t.Fatalf("workspace access denied status=%d body=%s", rec.Code, rec.Body.String())
+	}
+	if !samePath(s.root, userRoot) {
+		t.Fatalf("root=%q, want %q", s.root, userRoot)
 	}
 }
 

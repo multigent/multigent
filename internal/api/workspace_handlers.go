@@ -535,7 +535,7 @@ func (s *Server) currentWorkspaceID() (string, error) {
 }
 
 func (s *Server) checkCurrentWorkspaceAccess(w http.ResponseWriter, r *http.Request) bool {
-	id, err := s.currentWorkspaceID()
+	id, err := s.ensureCurrentWorkspaceForUser(r)
 	if err != nil {
 		s.serverError(w, err)
 		return false
@@ -570,7 +570,7 @@ func (s *Server) checkWorkspaceAccess(w http.ResponseWriter, r *http.Request, wo
 }
 
 func (s *Server) checkCurrentWorkspaceAdmin(w http.ResponseWriter, r *http.Request) bool {
-	id, err := s.currentWorkspaceID()
+	id, err := s.ensureCurrentWorkspaceForUser(r)
 	if err != nil {
 		s.serverError(w, err)
 		return false
@@ -600,6 +600,47 @@ func (s *Server) checkCurrentWorkspaceAdmin(w http.ResponseWriter, r *http.Reque
 	}
 	s.jsonErrorCode(w, http.StatusForbidden, ErrCodeWorkspaceAdminRequired, "workspace admin access required")
 	return false
+}
+
+func (s *Server) ensureCurrentWorkspaceForUser(r *http.Request) (string, error) {
+	id, err := s.currentWorkspaceID()
+	if err != nil {
+		return "", err
+	}
+	cur := s.currentUser(r)
+	if cur == nil || cur.Username == "" || cur.Username == "apikey" || cur.Role == RoleAdmin || s.controlDB == nil {
+		return id, nil
+	}
+	if _, ok, err := s.controlDB.WorkspaceMember(id, cur.Username); err != nil {
+		return "", err
+	} else if ok {
+		return id, nil
+	}
+	memberships, err := s.controlDB.ListWorkspaceMembersForUser(cur.Username)
+	if err != nil {
+		return "", err
+	}
+	if len(memberships) == 0 {
+		return id, nil
+	}
+	allowed := make(map[string]bool, len(memberships))
+	for _, membership := range memberships {
+		allowed[membership.WorkspaceID] = true
+	}
+	rows, err := s.controlDB.ListWorkspaces()
+	if err != nil {
+		return "", err
+	}
+	for _, row := range rows {
+		if !allowed[row.ID] || !workspaceRootInDataDir(row.Root) {
+			continue
+		}
+		if err := s.switchWorkspaceRoot(row.Root); err != nil {
+			continue
+		}
+		return row.ID, nil
+	}
+	return id, nil
 }
 
 func (s *Server) currentWorkspaceRole(r *http.Request, workspaceID string) (string, bool) {
