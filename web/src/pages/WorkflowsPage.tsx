@@ -316,24 +316,38 @@ export default function WorkflowsPage() {
       )}
 
       {state.status === 'ok' && workflows.length > 0 && (
-        <div className="grid gap-4 md:grid-cols-2 xl:grid-cols-3">
+        <div className="grid gap-4 sm:grid-cols-2 lg:grid-cols-3">
           {workflows.map((wf) => (
-            <article key={wf.id} className="flex min-h-[178px] flex-col rounded-xl border border-neutral-200/80 bg-white p-4 shadow-sm transition-colors hover:border-sky-200 hover:bg-sky-50/40 dark:border-zinc-700/60 dark:bg-zinc-900/40 dark:hover:border-sky-900/70 dark:hover:bg-sky-950/20">
-              <button type="button" onClick={() => navigate(`/workflows/${encodeURIComponent(wf.id)}`)} className="block flex-1 text-left">
-                <h2 className="line-clamp-1 text-base font-semibold text-neutral-900 dark:text-zinc-100">{wf.name}</h2>
-                <p className="mt-2 line-clamp-2 text-sm leading-5 text-neutral-500 dark:text-zinc-400">{wf.description || t('workflows.noDescription')}</p>
-                <div className="mt-4 flex flex-wrap items-center gap-x-3 gap-y-1 text-xs text-neutral-400 dark:text-zinc-500">
-                  <span>{t('workflows.stepCount', { count: wf.steps.length })}</span>
-                  <span>{fmt(wf.updatedAt)}</span>
+            <article
+              key={wf.id}
+              className="group flex min-h-[154px] flex-col justify-between rounded-xl border border-neutral-200/80 bg-white p-5 transition-all duration-150 hover:border-sky-300/60 hover:shadow-md dark:border-zinc-700/60 dark:bg-zinc-900/30 dark:hover:border-sky-800/40"
+            >
+              <div>
+                <div className="flex items-start justify-between gap-3">
+                  <button type="button" onClick={() => navigate(`/workflows/${encodeURIComponent(wf.id)}`)} className="flex min-w-0 flex-1 items-center gap-2.5 text-left">
+                    <div className="flex size-9 shrink-0 items-center justify-center rounded-lg bg-sky-100 dark:bg-sky-900/30">
+                      <GitBranch className="size-4.5 text-sky-600 dark:text-sky-400" strokeWidth={1.8} />
+                    </div>
+                    <div className="min-w-0">
+                      <h2 className="line-clamp-1 text-sm font-semibold text-neutral-900 dark:text-zinc-100">{wf.name}</h2>
+                      <p className="mt-0.5 text-xs text-neutral-400 dark:text-zinc-500">{t('workflows.stepCount', { count: wf.steps.length })}</p>
+                    </div>
+                  </button>
+                  <div className="flex shrink-0 items-center gap-1">
+                    <button type="button" onClick={() => void duplicateWorkflow(wf)} disabled={saving} className="rounded-md px-2 py-1 text-xs font-medium text-neutral-500 hover:bg-neutral-100 hover:text-neutral-700 disabled:opacity-50 dark:text-zinc-400 dark:hover:bg-zinc-800 dark:hover:text-zinc-200">
+                      {t('workflows.duplicate')}
+                    </button>
+                    <button type="button" onClick={() => void deleteWorkflow(wf)} disabled={saving} className="rounded-md px-2 py-1 text-xs font-medium text-red-500 hover:bg-red-50 disabled:opacity-50 dark:text-red-400 dark:hover:bg-red-950/30">
+                      {t('common.delete')}
+                    </button>
+                  </div>
                 </div>
-              </button>
-              <div className="mt-4 flex items-center justify-end gap-2 border-t border-neutral-100 pt-3 dark:border-zinc-800">
-                <button type="button" onClick={() => void deleteWorkflow(wf)} disabled={saving} className="rounded-lg px-2.5 py-1.5 text-xs font-medium text-red-500 hover:bg-red-50 disabled:opacity-50 dark:text-red-400 dark:hover:bg-red-950/30">
-                  {t('common.delete')}
+                <button type="button" onClick={() => navigate(`/workflows/${encodeURIComponent(wf.id)}`)} className="mt-2.5 block w-full text-left">
+                  <p className="line-clamp-2 text-sm leading-relaxed text-neutral-500 dark:text-zinc-500">{wf.description || t('workflows.noDescription')}</p>
                 </button>
-                <button type="button" onClick={() => void duplicateWorkflow(wf)} disabled={saving} className="rounded-lg border border-neutral-300 bg-white px-3 py-1.5 text-xs font-medium text-neutral-600 hover:bg-neutral-50 disabled:opacity-50 dark:border-zinc-600 dark:bg-zinc-900 dark:text-zinc-300 dark:hover:bg-zinc-800">
-                  {t('workflows.duplicate')}
-                </button>
+              </div>
+              <div className="mt-3 text-xs text-neutral-400 dark:text-zinc-500">
+                {fmt(wf.updatedAt)}
               </div>
             </article>
           ))}
