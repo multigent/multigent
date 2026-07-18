@@ -106,6 +106,7 @@ export default function PeoplePage() {
   const [form, setForm] = useState({ email: '', role: 'member' })
   const [lookup, setLookup] = useState<UserLookupResponse | null>(null)
   const [lookupLoading, setLookupLoading] = useState(false)
+  const [currentWorkspaceRole, setCurrentWorkspaceRole] = useState('')
   const [inviteUrl, setInviteUrl] = useState('')
   const [inviteResults, setInviteResults] = useState<{ email: string; inviteUrl?: string; delivery?: string; error?: string }[]>([])
   const [saving, setSaving] = useState(false)
@@ -119,6 +120,9 @@ export default function PeoplePage() {
       ])
       setPeople(data ?? [])
       setInvitations(inviteData.invitations ?? [])
+      apiFetch<{ currentUserRole?: string }>('/api/v1/workspace')
+        .then(workspace => setCurrentWorkspaceRole(workspace.currentUserRole ?? ''))
+        .catch(() => setCurrentWorkspaceRole(''))
     } catch { /* ignore */ }
     finally { setLoading(false) }
   }, [])
@@ -198,6 +202,10 @@ export default function PeoplePage() {
     finally { setSaving(false) }
   }
 
+  const inviteRoleOptions = currentWorkspaceRole === 'owner'
+    ? ['owner', 'admin', 'member', 'guest']
+    : ['admin', 'member', 'guest']
+
   async function revokeInvite(token: string) {
     setErr(null)
     try {
@@ -246,10 +254,18 @@ export default function PeoplePage() {
               {people.map(p => (
                 <tr key={p.username} className={cn('hover:bg-neutral-50 dark:hover:bg-zinc-800/50', p.disabled && 'opacity-60')}>
                   <td className="px-4 py-3">
-                    <span className="font-medium text-neutral-900 dark:text-zinc-100">
-                      {p.displayName || p.username}
-                    </span>
-                    {p.displayName && <p className="mt-0.5 text-xs text-neutral-400 dark:text-zinc-500">{p.username}</p>}
+                    <div className="flex items-center gap-2.5">
+                      {p.avatar ? (
+                        <img src={p.avatar} alt="" className="size-8 rounded-full object-cover ring-1 ring-neutral-200 dark:ring-zinc-700" />
+                      ) : (
+                        <span className="flex size-8 items-center justify-center rounded-full bg-sky-600 text-xs font-semibold text-white">
+                          {(p.displayName || p.email || p.username || 'U').slice(0, 1).toUpperCase()}
+                        </span>
+                      )}
+                      <span className="font-medium text-neutral-900 dark:text-zinc-100">
+                        {p.displayName || p.email || p.username}
+                      </span>
+                    </div>
                   </td>
                   <td className="px-4 py-3 text-neutral-600 dark:text-zinc-400">{p.email || '-'}</td>
                   <td className="px-4 py-3">
@@ -362,9 +378,9 @@ export default function PeoplePage() {
               <label className="flex flex-col gap-1">
                 <span className="text-sm font-medium text-neutral-600 dark:text-zinc-400">{t('people.workspaceRole')}</span>
                 <select value={form.role} onChange={e => setForm({ ...form, role: e.target.value })} className={fieldCls}>
-                  <option value="member">{t('people.workspaceRole_member')}</option>
-                  <option value="admin">{t('people.workspaceRole_admin')}</option>
-                  <option value="guest">{t('people.workspaceRole_guest')}</option>
+                  {inviteRoleOptions.map(role => (
+                    <option key={role} value={role}>{t(`people.workspaceRole_${role}`)}</option>
+                  ))}
                 </select>
               </label>
               {err && <p className="text-sm text-red-600 dark:text-red-400">{err}</p>}

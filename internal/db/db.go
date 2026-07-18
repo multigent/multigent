@@ -29,6 +29,7 @@ type Store interface {
 
 	UpsertWorkspaceMember(workspaceID, username, role string) error
 	WorkspaceMember(workspaceID, username string) (WorkspaceMember, bool, error)
+	ListWorkspaceMembers(workspaceID string) ([]WorkspaceMember, error)
 	ListWorkspaceMembersForUser(username string) ([]WorkspaceMember, error)
 
 	UpsertRecord(table string, workspaceID string, key []string, payload string) error
@@ -131,6 +132,7 @@ type User struct {
 
 type Invitation struct {
 	Token        string
+	WorkspaceID  string
 	Email        string
 	Role         string
 	DisplayName  string

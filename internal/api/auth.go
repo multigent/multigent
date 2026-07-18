@@ -37,6 +37,7 @@ type projectAccess struct {
 
 type invitationRecord struct {
 	Token        string          `json:"token"`
+	WorkspaceID  string          `json:"workspaceId,omitempty"`
 	Email        string          `json:"email"`
 	Role         string          `json:"role"`
 	DisplayName  string          `json:"displayName,omitempty"`
@@ -255,7 +256,7 @@ func (s *UserStore) RegisterByEmail(email, password, displayName string) (*userR
 	return &u, nil
 }
 
-func (s *UserStore) CreateInvitation(email, role, displayName, invitedBy string, projects []projectAccess, linkedAgents []string) (*invitationRecord, error) {
+func (s *UserStore) CreateInvitation(workspaceID, email, role, displayName, invitedBy string, projects []projectAccess, linkedAgents []string) (*invitationRecord, error) {
 	email = normalizeEmail(email)
 	if !validEmail(email) {
 		return nil, fmt.Errorf("valid email required")
@@ -268,6 +269,7 @@ func (s *UserStore) CreateInvitation(email, role, displayName, invitedBy string,
 	now := time.Now().UTC()
 	inv := invitationRecord{
 		Token:        generateToken(24),
+		WorkspaceID:  workspaceID,
 		Email:        email,
 		Role:         role,
 		DisplayName:  displayName,
@@ -299,14 +301,18 @@ func (s *UserStore) Invitation(token string) (*invitationRecord, bool) {
 	return &rec, true
 }
 
-func (s *UserStore) ListInvitations() ([]invitationRecord, error) {
+func (s *UserStore) ListInvitations(workspaceID string) ([]invitationRecord, error) {
 	rows, err := s.db.ListInvitations()
 	if err != nil {
 		return nil, err
 	}
 	out := make([]invitationRecord, 0, len(rows))
 	for _, row := range rows {
-		out = append(out, dbInvitationToRecord(row))
+		rec := dbInvitationToRecord(row)
+		if workspaceID != "" && rec.WorkspaceID != workspaceID {
+			continue
+		}
+		out = append(out, rec)
 	}
 	return out, nil
 }
@@ -544,6 +550,7 @@ func dbInvitationToRecord(inv controldb.Invitation) invitationRecord {
 	_ = json.Unmarshal([]byte(inv.LinkedJSON), &linked)
 	return invitationRecord{
 		Token:        inv.Token,
+		WorkspaceID:  inv.WorkspaceID,
 		Email:        inv.Email,
 		Role:         inv.Role,
 		DisplayName:  inv.DisplayName,
@@ -562,6 +569,7 @@ func recordToDBInvitation(inv invitationRecord) controldb.Invitation {
 	linked, _ := json.Marshal(inv.LinkedAgents)
 	return controldb.Invitation{
 		Token:        inv.Token,
+		WorkspaceID:  inv.WorkspaceID,
 		Email:        normalizeEmail(inv.Email),
 		Role:         inv.Role,
 		DisplayName:  inv.DisplayName,
@@ -915,7 +923,20 @@ func (s *Server) handleListUsers(w http.ResponseWriter, r *http.Request) {
 	if !s.checkCurrentWorkspaceAdmin(w, r) {
 		return
 	}
-	users := s.users.ListUsers()
+	workspaceID, err := s.currentWorkspaceID()
+	if err != nil {
+		s.serverError(w, err)
+		return
+	}
+	if s.controlDB == nil {
+		s.jsonErrorCode(w, http.StatusServiceUnavailable, ErrCodeWorkspaceDatabaseUnavailable, "control database unavailable")
+		return
+	}
+	members, err := s.controlDB.ListWorkspaceMembers(workspaceID)
+	if err != nil {
+		s.serverError(w, err)
+		return
+	}
 	type safeUser struct {
 		Username     string          `json:"username"`
 		Role         string          `json:"role"`
@@ -929,18 +950,15 @@ func (s *Server) handleListUsers(w http.ResponseWriter, r *http.Request) {
 		Disabled     bool            `json:"disabled,omitempty"`
 		CreatedAt    string          `json:"createdAt,omitempty"`
 	}
-	out := make([]safeUser, len(users))
-	workspaceID, _ := s.currentWorkspaceID()
-	for i, u := range users {
-		role := u.Role
-		if s.controlDB != nil && workspaceID != "" {
-			if member, ok, err := s.controlDB.WorkspaceMember(workspaceID, u.Username); err == nil && ok && member.Role != "" {
-				role = member.Role
-			}
+	out := make([]safeUser, 0, len(members))
+	for _, member := range members {
+		u := s.users.GetUser(member.Username)
+		if u == nil {
+			continue
 		}
-		out[i] = safeUser{
+		out = append(out, safeUser{
 			Username:     u.Username,
-			Role:         role,
+			Role:         member.Role,
 			DisplayName:  u.DisplayName,
 			Email:        u.Email,
 			Avatar:       u.Avatar,
@@ -949,8 +967,8 @@ func (s *Server) handleListUsers(w http.ResponseWriter, r *http.Request) {
 			Projects:     u.Projects,
 			LinkedAgents: u.LinkedAgents,
 			Disabled:     u.Disabled,
-			CreatedAt:    u.CreatedAt,
-		}
+			CreatedAt:    member.CreatedAt,
+		})
 	}
 	_ = json.NewEncoder(w).Encode(out)
 }
@@ -983,7 +1001,7 @@ func (s *Server) handleLookupUserByEmail(w http.ResponseWriter, r *http.Request)
 		}
 	}
 	pendingInvite := false
-	invitations, err := s.users.ListInvitations()
+	invitations, err := s.users.ListInvitations(workspaceID)
 	if err != nil {
 		s.serverError(w, err)
 		return
@@ -1084,6 +1102,11 @@ func (s *Server) handleCreateInvitation(w http.ResponseWriter, r *http.Request) 
 	if !s.checkCurrentWorkspaceAdmin(w, r) {
 		return
 	}
+	workspaceID, err := s.currentWorkspaceID()
+	if err != nil {
+		s.serverError(w, err)
+		return
+	}
 	var body struct {
 		Email        string          `json:"email"`
 		Emails       []string        `json:"emails"`
@@ -1100,6 +1123,11 @@ func (s *Server) handleCreateInvitation(w http.ResponseWriter, r *http.Request) 
 	emails := invitationEmails(body.Email, body.Emails)
 	if len(emails) == 0 {
 		s.jsonErrorCode(w, http.StatusBadRequest, ErrCodeValidationFailed, "email is required")
+		return
+	}
+	role, ok := s.allowedInviteRole(r, body.Role)
+	if !ok {
+		s.jsonErrorCode(w, http.StatusForbidden, ErrCodeForbidden, "workspace owner access required for this role")
 		return
 	}
 
@@ -1120,7 +1148,7 @@ func (s *Server) handleCreateInvitation(w http.ResponseWriter, r *http.Request) 
 		delivery = "smtp"
 	}
 	for _, email := range emails {
-		inv, err := s.users.CreateInvitation(email, body.Role, strings.TrimSpace(body.DisplayName), cur.Username, body.Projects, body.LinkedAgents)
+		inv, err := s.users.CreateInvitation(workspaceID, email, role, strings.TrimSpace(body.DisplayName), cur.Username, body.Projects, body.LinkedAgents)
 		if err != nil {
 			errors = append(errors, invitationError{Email: email, Error: err.Error()})
 			continue
@@ -1180,11 +1208,32 @@ func invitationEmails(email string, emails []string) []string {
 	return out
 }
 
+func (s *Server) allowedInviteRole(r *http.Request, requested string) (string, bool) {
+	switch requested {
+	case WorkspaceRoleOwner:
+	case WorkspaceRoleAdmin, WorkspaceRoleMember, WorkspaceRoleGuest:
+		return requested, true
+	default:
+		return WorkspaceRoleMember, true
+	}
+	workspaceID, err := s.currentWorkspaceID()
+	if err != nil {
+		return "", false
+	}
+	role, _ := s.currentWorkspaceRole(r, workspaceID)
+	return WorkspaceRoleOwner, role == WorkspaceRoleOwner
+}
+
 func (s *Server) handleListInvitations(w http.ResponseWriter, r *http.Request) {
 	if !s.checkCurrentWorkspaceAdmin(w, r) {
 		return
 	}
-	invitations, err := s.users.ListInvitations()
+	workspaceID, err := s.currentWorkspaceID()
+	if err != nil {
+		s.serverError(w, err)
+		return
+	}
+	invitations, err := s.users.ListInvitations(workspaceID)
 	if err != nil {
 		s.serverError(w, err)
 		return
@@ -1194,6 +1243,15 @@ func (s *Server) handleListInvitations(w http.ResponseWriter, r *http.Request) {
 
 func (s *Server) handleRevokeInvitation(w http.ResponseWriter, r *http.Request) {
 	if !s.checkCurrentWorkspaceAdmin(w, r) {
+		return
+	}
+	workspaceID, err := s.currentWorkspaceID()
+	if err != nil {
+		s.serverError(w, err)
+		return
+	}
+	if inv, ok := s.users.Invitation(r.PathValue("token")); ok && inv.WorkspaceID != workspaceID {
+		s.jsonErrorCode(w, http.StatusNotFound, ErrCodeInvitationNotFound, "invitation not found")
 		return
 	}
 	inv, err := s.users.SetInvitationStatus(r.PathValue("token"), "revoked")
@@ -1256,8 +1314,8 @@ func (s *Server) handleAcceptInvitation(w http.ResponseWriter, r *http.Request) 
 		s.jsonError(w, http.StatusBadRequest, err.Error())
 		return
 	}
-	if workspaceID, err := s.currentWorkspaceID(); err == nil && workspaceID != "" {
-		if err := s.controlDB.UpsertWorkspaceMember(workspaceID, user.Username, invitationWorkspaceRole(user, token, s.users)); err != nil {
+	if inv, ok := s.users.Invitation(token); ok && inv.WorkspaceID != "" && s.controlDB != nil {
+		if err := s.controlDB.UpsertWorkspaceMember(inv.WorkspaceID, user.Username, invitationWorkspaceRole(user, token, s.users)); err != nil {
 			s.serverError(w, err)
 			return
 		}

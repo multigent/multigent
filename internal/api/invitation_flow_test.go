@@ -132,7 +132,7 @@ func TestBulkInvitations(t *testing.T) {
 
 func TestAcceptInvitationJoinsCurrentWorkspaceAndRejectBlocksAccept(t *testing.T) {
 	s, workspaceID := newConnectionGrantPolicyServer(t)
-	inv, err := s.users.CreateInvitation("accepted@example.com", WorkspaceRoleAdmin, "Accepted", "admin", nil, nil)
+	inv, err := s.users.CreateInvitation(workspaceID, "accepted@example.com", WorkspaceRoleAdmin, "Accepted", "admin", nil, nil)
 	if err != nil {
 		t.Fatalf("create invitation: %v", err)
 	}
@@ -159,7 +159,7 @@ func TestAcceptInvitationJoinsCurrentWorkspaceAndRejectBlocksAccept(t *testing.T
 		t.Fatalf("workspace role=%q", member.Role)
 	}
 
-	rejected, err := s.users.CreateInvitation("rejected@example.com", WorkspaceRoleMember, "Rejected", "admin", nil, nil)
+	rejected, err := s.users.CreateInvitation(workspaceID, "rejected@example.com", WorkspaceRoleMember, "Rejected", "admin", nil, nil)
 	if err != nil {
 		t.Fatalf("create rejected invitation: %v", err)
 	}
@@ -221,7 +221,7 @@ func TestInviteExistingUserByEmail(t *testing.T) {
 		t.Fatalf("bad unregistered lookup=%#v", unregistered)
 	}
 
-	inv, err := s.users.CreateInvitation("existing@example.com", WorkspaceRoleMember, "", "admin", nil, nil)
+	inv, err := s.users.CreateInvitation(workspaceID, "existing@example.com", WorkspaceRoleMember, "", "admin", nil, nil)
 	if err != nil {
 		t.Fatalf("create invitation: %v", err)
 	}

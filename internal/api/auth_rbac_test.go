@@ -72,7 +72,7 @@ func TestUserStoreAcceptInvitationCreatesMemberWithGrants(t *testing.T) {
 	users := newTestUserStore(t)
 	projects := []projectAccess{{Project: "sample", Role: ProjectRoleOperator}}
 
-	inv, err := users.CreateInvitation("Ella@Example.com", RoleMember, "Ella", "admin", projects, []string{"sample/frontend"})
+	inv, err := users.CreateInvitation("ws-one", "Ella@Example.com", RoleMember, "Ella", "admin", projects, []string{"sample/frontend"})
 	if err != nil {
 		t.Fatalf("invite: %v", err)
 	}
@@ -213,6 +213,9 @@ func TestEnsureCurrentUserMembershipDoesNotDowngradeExistingRole(t *testing.T) {
 
 func TestListUsersReturnsWorkspaceRole(t *testing.T) {
 	s, _ := newProviderHandlerTestServer(t)
+	if err := s.users.CreateUser("instance-admin", "pass123", RoleAdmin, "Instance Admin", "instance-admin@example.com", "", "", ""); err != nil {
+		t.Fatalf("create instance admin: %v", err)
+	}
 	rec := httptest.NewRecorder()
 	s.handleListUsers(rec, providerTestRequest(http.MethodGet, "/api/v1/users", "owner", nil))
 	if rec.Code != http.StatusOK {
@@ -234,6 +237,9 @@ func TestListUsersReturnsWorkspaceRole(t *testing.T) {
 	}
 	if roles["member"] != WorkspaceRoleMember {
 		t.Fatalf("member role=%q", roles["member"])
+	}
+	if _, ok := roles["instance-admin"]; ok {
+		t.Fatalf("global instance admin should not be listed as a workspace member: %#v", rows)
 	}
 }
 

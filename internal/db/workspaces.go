@@ -157,6 +157,24 @@ FROM workspace_members WHERE workspace_id = ? AND username = ?`, workspaceID, us
 	return m, true, nil
 }
 
+func (db *SQLiteStore) ListWorkspaceMembers(workspaceID string) ([]WorkspaceMember, error) {
+	rows, err := db.sql.Query(`SELECT workspace_id, username, role, created_at
+FROM workspace_members WHERE workspace_id = ? ORDER BY created_at ASC`, workspaceID)
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+	out := make([]WorkspaceMember, 0)
+	for rows.Next() {
+		var m WorkspaceMember
+		if err := rows.Scan(&m.WorkspaceID, &m.Username, &m.Role, &m.CreatedAt); err != nil {
+			return nil, err
+		}
+		out = append(out, m)
+	}
+	return out, rows.Err()
+}
+
 func (db *SQLiteStore) ListWorkspaceMembersForUser(username string) ([]WorkspaceMember, error) {
 	rows, err := db.sql.Query(`SELECT workspace_id, username, role, created_at
 FROM workspace_members WHERE username = ? ORDER BY created_at ASC`, username)
@@ -193,13 +211,13 @@ func (db *SQLiteStore) CreateInvitation(inv Invitation) error {
 	if inv.CreatedAt == "" {
 		inv.CreatedAt = nowUTC()
 	}
-	_, err := db.sql.Exec(`INSERT INTO invitations (token, email, role, display_name, projects_json, linked_agents_json, invited_by, status, created_at, expires_at, accepted_at)
-VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`, inv.Token, inv.Email, inv.Role, inv.DisplayName, defaultJSON(inv.ProjectsJSON), defaultJSON(inv.LinkedJSON), inv.InvitedBy, inv.Status, inv.CreatedAt, inv.ExpiresAt, inv.AcceptedAt)
+	_, err := db.sql.Exec(`INSERT INTO invitations (token, workspace_id, email, role, display_name, projects_json, linked_agents_json, invited_by, status, created_at, expires_at, accepted_at)
+VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`, inv.Token, inv.WorkspaceID, inv.Email, inv.Role, inv.DisplayName, defaultJSON(inv.ProjectsJSON), defaultJSON(inv.LinkedJSON), inv.InvitedBy, inv.Status, inv.CreatedAt, inv.ExpiresAt, inv.AcceptedAt)
 	return err
 }
 
 func (db *SQLiteStore) InvitationByToken(token string) (Invitation, bool, error) {
-	row := db.sql.QueryRow(`SELECT token, email, role, display_name, projects_json, linked_agents_json, invited_by, status, created_at, expires_at, accepted_at FROM invitations WHERE token = ?`, token)
+	row := db.sql.QueryRow(`SELECT token, workspace_id, email, role, display_name, projects_json, linked_agents_json, invited_by, status, created_at, expires_at, accepted_at FROM invitations WHERE token = ?`, token)
 	inv, err := scanInvitation(row)
 	if errors.Is(err, sql.ErrNoRows) {
 		return Invitation{}, false, nil
@@ -211,7 +229,7 @@ func (db *SQLiteStore) InvitationByToken(token string) (Invitation, bool, error)
 }
 
 func (db *SQLiteStore) ListInvitations() ([]Invitation, error) {
-	rows, err := db.sql.Query(`SELECT token, email, role, display_name, projects_json, linked_agents_json, invited_by, status, created_at, expires_at, accepted_at FROM invitations ORDER BY created_at DESC`)
+	rows, err := db.sql.Query(`SELECT token, workspace_id, email, role, display_name, projects_json, linked_agents_json, invited_by, status, created_at, expires_at, accepted_at FROM invitations ORDER BY created_at DESC`)
 	if err != nil {
 		return nil, err
 	}
@@ -228,8 +246,8 @@ func (db *SQLiteStore) ListInvitations() ([]Invitation, error) {
 }
 
 func (db *SQLiteStore) UpdateInvitation(inv Invitation) error {
-	_, err := db.sql.Exec(`UPDATE invitations SET email = ?, role = ?, display_name = ?, projects_json = ?, linked_agents_json = ?, invited_by = ?, status = ?, created_at = ?, expires_at = ?, accepted_at = ? WHERE token = ?`,
-		inv.Email, inv.Role, inv.DisplayName, defaultJSON(inv.ProjectsJSON), defaultJSON(inv.LinkedJSON), inv.InvitedBy, inv.Status, inv.CreatedAt, inv.ExpiresAt, inv.AcceptedAt, inv.Token)
+	_, err := db.sql.Exec(`UPDATE invitations SET workspace_id = ?, email = ?, role = ?, display_name = ?, projects_json = ?, linked_agents_json = ?, invited_by = ?, status = ?, created_at = ?, expires_at = ?, accepted_at = ? WHERE token = ?`,
+		inv.WorkspaceID, inv.Email, inv.Role, inv.DisplayName, defaultJSON(inv.ProjectsJSON), defaultJSON(inv.LinkedJSON), inv.InvitedBy, inv.Status, inv.CreatedAt, inv.ExpiresAt, inv.AcceptedAt, inv.Token)
 	return err
 }
 
@@ -247,7 +265,7 @@ func scanUser(row userScanner) (User, error) {
 
 func scanInvitation(row userScanner) (Invitation, error) {
 	var inv Invitation
-	err := row.Scan(&inv.Token, &inv.Email, &inv.Role, &inv.DisplayName, &inv.ProjectsJSON, &inv.LinkedJSON, &inv.InvitedBy, &inv.Status, &inv.CreatedAt, &inv.ExpiresAt, &inv.AcceptedAt)
+	err := row.Scan(&inv.Token, &inv.WorkspaceID, &inv.Email, &inv.Role, &inv.DisplayName, &inv.ProjectsJSON, &inv.LinkedJSON, &inv.InvitedBy, &inv.Status, &inv.CreatedAt, &inv.ExpiresAt, &inv.AcceptedAt)
 	return inv, err
 }
 

@@ -44,6 +44,7 @@ func (db *SQLiteStore) migrate() error {
 )`,
 		`CREATE TABLE IF NOT EXISTS invitations (
 	token TEXT PRIMARY KEY,
+	workspace_id TEXT NOT NULL DEFAULT '',
 	email TEXT NOT NULL,
 	role TEXT NOT NULL,
 	display_name TEXT NOT NULL DEFAULT '',
@@ -55,7 +56,9 @@ func (db *SQLiteStore) migrate() error {
 	expires_at TEXT NOT NULL,
 	accepted_at TEXT NOT NULL DEFAULT ''
 )`,
+		`ALTER TABLE invitations ADD COLUMN workspace_id TEXT NOT NULL DEFAULT ''`,
 		`CREATE INDEX IF NOT EXISTS idx_invitations_email_status ON invitations(email, status)`,
+		`CREATE INDEX IF NOT EXISTS idx_invitations_workspace_status ON invitations(workspace_id, status)`,
 		`CREATE TABLE IF NOT EXISTS kv_records (
 	table_name TEXT NOT NULL,
 	workspace_id TEXT NOT NULL REFERENCES workspaces(id) ON DELETE CASCADE,
