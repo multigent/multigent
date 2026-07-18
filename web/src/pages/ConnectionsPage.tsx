@@ -693,7 +693,7 @@ function ConnectionDialog({
         )}
         {provider?.description && (
           <div className="rounded-lg bg-neutral-50 px-3 py-2 text-sm text-neutral-600 dark:bg-zinc-800/50 dark:text-zinc-300">
-            {provider.description}
+            {providerDescription(provider, t)}
           </div>
         )}
         {isEditing && connection && (
