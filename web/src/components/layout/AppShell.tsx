@@ -75,6 +75,14 @@ function useBreadcrumbs(): BreadcrumbSegment[] {
     ]
   }
 
+  if (pathname.startsWith('/workflows/') && pathname !== '/workflows') {
+    const id = decodeURIComponent(pathname.split('/')[2] ?? '')
+    return [
+      { label: t('nav.workflows'), to: '/workflows' },
+      { label: id },
+    ]
+  }
+
   if (pathname === '/account') {
     return [{ label: t('account.title') }]
   }
