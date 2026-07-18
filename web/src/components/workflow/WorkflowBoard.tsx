@@ -186,6 +186,7 @@ const stepTypes = ['agent_task', 'human_task', 'human_review', 'branch', 'join',
 const colorOptions = ['neutral', 'sky', 'violet', 'amber', 'emerald', 'rose']
 const edgeOperators = ['eq', 'neq', 'in', 'exists']
 const ALIGN_THRESHOLD = 28
+const MAX_UNDO_STACK = 50
 
 const fieldClass =
   'mt-1 w-full rounded-lg border border-neutral-300 bg-white px-3 py-2 text-sm text-neutral-900 outline-none transition-colors focus:border-sky-400 dark:border-zinc-600 dark:bg-zinc-800 dark:text-zinc-100'
@@ -248,6 +249,20 @@ function normalizeEdgePatch(edge: WorkflowEdge, patch: Partial<WorkflowEdge>): W
       : undefined,
     inputMapping: Object.fromEntries(Object.entries(next.inputMapping ?? {}).filter(([key, value]) => key.trim() && value.trim())),
   }
+}
+
+function cloneDefinition(definition: WorkflowDefinition): WorkflowDefinition {
+  return JSON.parse(JSON.stringify(definition)) as WorkflowDefinition
+}
+
+function sameDefinition(a: WorkflowDefinition, b: WorkflowDefinition) {
+  return JSON.stringify(a) === JSON.stringify(b)
+}
+
+function isTextEditingTarget(target: EventTarget | null) {
+  if (!(target instanceof HTMLElement)) return false
+  const tag = target.tagName.toLowerCase()
+  return tag === 'input' || tag === 'textarea' || tag === 'select' || target.isContentEditable
 }
 
 function WorkflowStepNode({ data, selected }: NodeProps<WorkflowNode>) {
@@ -316,10 +331,15 @@ export function WorkflowBoard({
   const outgoingEdges = selected ? definition.edges.filter((edge) => edge.from === selected.id) : []
   const selectedInst = selected ? instanceByStep.get(selected.id) : undefined
   const [stepDraft, setStepDraft] = useState<WorkflowStep | null>(selected ?? null)
+  const [undoStack, setUndoStack] = useState<WorkflowDefinition[]>([])
 
   useEffect(() => {
     setStepDraft(selected ? normalizeStepFields(selected) : null)
   }, [selected?.id])
+
+  useEffect(() => {
+    setUndoStack([])
+  }, [definition.id])
 
   const initialNodes = useMemo<WorkflowNode[]>(
     () =>
@@ -382,9 +402,43 @@ export function WorkflowBoard({
     }
   }, [definition.startStepId, definition.steps, selectedId])
 
-  function updateDefinition(next: WorkflowDefinition) {
+  function updateDefinition(next: WorkflowDefinition, options: { recordUndo?: boolean } = {}) {
+    if (editable && options.recordUndo !== false && !sameDefinition(definition, next)) {
+      setUndoStack((current) => {
+        const snapshot = cloneDefinition(definition)
+        const last = current[current.length - 1]
+        if (last && sameDefinition(last, snapshot)) return current
+        return [...current.slice(-(MAX_UNDO_STACK - 1)), snapshot]
+      })
+    }
     onChange?.(next)
   }
+
+  function undoLastChange() {
+    if (!editable || !onChange) return
+    setUndoStack((current) => {
+      const previous = current[current.length - 1]
+      if (!previous) return current
+      onChange(cloneDefinition(previous))
+      if (!previous.steps.some((step) => step.id === selectedId)) {
+        setSelectedId(previous.startStepId || previous.steps[0]?.id || '')
+      }
+      return current.slice(0, -1)
+    })
+  }
+
+  useEffect(() => {
+    if (!editable) return
+    function handleKeyDown(event: KeyboardEvent) {
+      if (isTextEditingTarget(event.target)) return
+      if ((event.metaKey || event.ctrlKey) && !event.shiftKey && event.key.toLowerCase() === 'z') {
+        event.preventDefault()
+        undoLastChange()
+      }
+    }
+    window.addEventListener('keydown', handleKeyDown)
+    return () => window.removeEventListener('keydown', handleKeyDown)
+  }, [editable, onChange, selectedId, undoStack])
 
   function alignedPosition(node: WorkflowNode, allNodes: WorkflowNode[]) {
     let x = Math.round(node.position.x)
