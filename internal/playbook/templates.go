@@ -126,14 +126,14 @@ func startupValidation(locale string) entity.PlaybookTemplate {
 			roleWithPrompt("gstack-release-engineer", "engineering", "release", text(locale, "Release Engineer", "Release Engineer"), text(locale, "Runs gstack /ship to verify readiness, push, open PR, and prepare release evidence.", "执行 gstack /ship：验证发版就绪、推送、创建 PR 并准备发版证据。"), gstackRolePrompt("ship"), []string{"ship"}),
 		},
 		Skills: []entity.PlaybookSkillTemplate{
-			gstackSkill("office-hours", "/office-hours", text(locale, "YC Office Hours diagnostic from gstack. Full upstream SKILL.md is installed.", "gstack 的 YC Office Hours 诊断。安装完整上游 SKILL.md。"), "office-hours"),
-			gstackSkill("plan-ceo-review", "/plan-ceo-review", text(locale, "CEO/founder-mode plan review from gstack. Full upstream SKILL.md is installed.", "gstack 的 CEO/founder-mode 方案评审。安装完整上游 SKILL.md。"), "plan-ceo-review"),
-			gstackSkill("plan-eng-review", "/plan-eng-review", text(locale, "Engineering plan review from gstack. Full upstream SKILL.md is installed.", "gstack 的工程方案评审。安装完整上游 SKILL.md。"), "plan-eng-review"),
-			gstackSkill("plan-design-review", "/plan-design-review", text(locale, "Design plan review from gstack. Full upstream SKILL.md is installed.", "gstack 的设计方案评审。安装完整上游 SKILL.md。"), "plan-design-review"),
-			gstackSkill("spec", "/spec", text(locale, "Spec authoring workflow from gstack. Full upstream SKILL.md is installed.", "gstack 的 spec 编写工作流。安装完整上游 SKILL.md。"), "spec"),
-			gstackSkill("review", "/review", text(locale, "Staff engineer code review from gstack. Full upstream SKILL.md is installed.", "gstack 的 Staff Engineer 代码评审。安装完整上游 SKILL.md。"), "review"),
-			gstackSkill("qa", "/qa", text(locale, "QA workflow from gstack. Full upstream SKILL.md is installed.", "gstack 的 QA 工作流。安装完整上游 SKILL.md。"), "qa"),
-			gstackSkill("ship", "/ship", text(locale, "Release workflow from gstack. Full upstream SKILL.md is installed.", "gstack 的发版工作流。安装完整上游 SKILL.md。"), "ship"),
+			gstackSkill("office-hours", "office-hours", text(locale, "YC Office Hours diagnostic from gstack. Full upstream SKILL.md is installed.", "gstack 的 YC Office Hours 诊断。安装完整上游 SKILL.md。"), "office-hours"),
+			gstackSkill("plan-ceo-review", "plan-ceo-review", text(locale, "CEO/founder-mode plan review from gstack. Full upstream SKILL.md is installed.", "gstack 的 CEO/founder-mode 方案评审。安装完整上游 SKILL.md。"), "plan-ceo-review"),
+			gstackSkill("plan-eng-review", "plan-eng-review", text(locale, "Engineering plan review from gstack. Full upstream SKILL.md is installed.", "gstack 的工程方案评审。安装完整上游 SKILL.md。"), "plan-eng-review"),
+			gstackSkill("plan-design-review", "plan-design-review", text(locale, "Design plan review from gstack. Full upstream SKILL.md is installed.", "gstack 的设计方案评审。安装完整上游 SKILL.md。"), "plan-design-review"),
+			gstackSkill("spec", "spec", text(locale, "Spec authoring workflow from gstack. Full upstream SKILL.md is installed.", "gstack 的 spec 编写工作流。安装完整上游 SKILL.md。"), "spec"),
+			gstackSkill("review", "review", text(locale, "Staff engineer code review from gstack. Full upstream SKILL.md is installed.", "gstack 的 Staff Engineer 代码评审。安装完整上游 SKILL.md。"), "review"),
+			gstackSkill("qa", "qa", text(locale, "QA workflow from gstack. Full upstream SKILL.md is installed.", "gstack 的 QA 工作流。安装完整上游 SKILL.md。"), "qa"),
+			gstackSkill("ship", "ship", text(locale, "Release workflow from gstack. Full upstream SKILL.md is installed.", "gstack 的发版工作流。安装完整上游 SKILL.md。"), "ship"),
 		},
 		Workflows: []entity.PlaybookWorkflowTemplate{
 			workflow("startup-idea-validation", wf, map[string]string{
