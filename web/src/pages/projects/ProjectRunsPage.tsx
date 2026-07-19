@@ -4,7 +4,7 @@ import { useTranslation } from 'react-i18next'
 import { BarChart3, FileText, MessageSquareText, RefreshCw, StopCircle, X } from 'lucide-react'
 import { Pagination } from '../../components/ui/Pagination'
 import { PlaceholderCard } from '../../components/ui/PlaceholderCard'
-import { TechnicalLog } from '../../components/ui/ConversationLog'
+import { ConversationLog, TechnicalLog } from '../../components/ui/ConversationLog'
 import { confirmDialog } from '../../components/ui/ConfirmDialog'
 import { cn } from '../../lib/cn'
 import { useFormatDateTime } from '../../lib/format-datetime'
@@ -564,9 +564,23 @@ function RunDetailModal({ run, onClose }: { run: RunRow; onClose: () => void }) 
               <p className="py-4 text-center text-sm text-neutral-400 dark:text-zinc-500">{t('runs.logNotFound')}</p>
             )}
             {hasLog && logState.status === 'ok' && (
-              <>
+              <div className="space-y-4">
+                <section className="rounded-lg border border-neutral-200/80 bg-white px-4 py-3 dark:border-zinc-700/50 dark:bg-zinc-900/30">
+                  <div className="mb-3 flex items-center gap-1.5">
+                    <MessageSquareText className="size-3.5 text-neutral-400 dark:text-zinc-500" strokeWidth={1.8} />
+                    <span className="text-xs font-semibold uppercase tracking-wider text-neutral-400 dark:text-zinc-500">
+                      {t('runs.viewConversation')}
+                    </span>
+                  </div>
+                  <ConversationLog
+                    content={logState.data.content}
+                    mode="chat"
+                    user={{ name: t('common.user', { defaultValue: 'User' }) }}
+                    assistant={{ name: run.agent }}
+                  />
+                </section>
                 <TechnicalLog content={logState.data.content} truncated={logState.data.truncated} />
-              </>
+              </div>
             )}
             {!hasLog && (
               <p className="py-4 text-center text-sm text-neutral-400 dark:text-zinc-500">{t('runs.noLog')}</p>
