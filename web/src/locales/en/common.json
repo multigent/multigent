@@ -966,6 +966,7 @@
     "cancel": "Cancel",
     "apply": "Apply",
     "save": "Save",
+    "delete": "Delete",
     "saved": "Saved",
     "saving": "Saving…",
     "sending": "Sending…",
@@ -1199,6 +1200,7 @@
     "switchSessionConfirm": "Switch",
     "sessionSwitchHint": "Paste a Session ID created in another terminal or tool; the next message will resume that session.",
     "followingLiveLog": "Following this agent's live run log. A run record will be written when it finishes.",
+    "waiting": "Agent is replying",
     "stopped": "Stopped",
     "error": "Chat execution failed"
   },

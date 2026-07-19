@@ -970,6 +970,7 @@ function ModelCredentialsPanel({ project, agentName, ctx, onChanged }: {
   const [editing, setEditing] = useState(false)
   const [providerOptions, setProviderOptions] = useState<ProviderOption[]>([])
   const selectedProviderInfo = providerOptions.find((p) => p.id === ctx.provider)
+  const providerValue = selectedProviderInfo ? selectedProviderInfo.name : t('agentDetail.noCredential')
   const runtimeModel = ctx.runtimeModel || selectedProviderInfo?.model || t('agentDetail.notConfigured')
 
   useEffect(() => {
@@ -984,7 +985,7 @@ function ModelCredentialsPanel({ project, agentName, ctx, onChanged }: {
           <ReadOnlyField label={t('agentDetail.cliType')} value={ctx.model} valueClassName="font-mono" />
           <ReadOnlyField
             label={t('agentDetail.modelAccount')}
-            value={selectedProviderInfo ? selectedProviderInfo.name : (ctx.provider ? ctx.provider : t('agentDetail.noCredential'))}
+            value={providerValue}
             detail={selectedProviderInfo ? `${selectedProviderInfo.type} · ${selectedProviderInfo.ownerType === 'user' ? t('provider.scopePersonal') : t('provider.scopeWorkspace')}` : undefined}
           />
           <ReadOnlyField label={t('agentDetail.runtimeModel')} value={runtimeModel} valueClassName="font-mono" />
@@ -1342,12 +1343,14 @@ function EnvEditor({ project, agentName, model, initialEnv, initialProvider, ini
   }, [initialEnv, initialProvider, initialRuntimeModel])
 
   const runtimeModelOptions = RUNTIME_MODEL_PRESETS[model] ?? []
+  const selectedProviderExists = Boolean(selectedProvider && providerOptions.some((p) => p.id === selectedProvider))
+  const selectedProviderValue = selectedProviderExists ? selectedProvider : ''
 
   async function save() {
     setBusy(true); setSaved(false)
     try {
       const env = { ...initialEnv }
-      await apiPut(`/api/v1/projects/${encodeURIComponent(project)}/agents/${encodeURIComponent(agentName)}/env`, { env, provider: selectedProvider, runtimeModel })
+      await apiPut(`/api/v1/projects/${encodeURIComponent(project)}/agents/${encodeURIComponent(agentName)}/env`, { env, provider: selectedProviderValue, runtimeModel })
       setSaved(true)
       setTimeout(() => setSaved(false), 2500)
       onChanged()
@@ -1375,7 +1378,7 @@ function EnvEditor({ project, agentName, model, initialEnv, initialProvider, ini
       <div className="grid gap-3 md:grid-cols-2">
         <label className="block">
           <span className="mb-1 block text-xs font-medium text-neutral-600 dark:text-zinc-400">{t('provider.selectLabel')}</span>
-          <select value={selectedProvider} onChange={e => { setSelectedProvider(e.target.value); setSaved(false) }}
+          <select value={selectedProviderValue} onChange={e => { setSelectedProvider(e.target.value); setSaved(false) }}
             className={cn(inputCls, 'w-full text-xs')}>
             <option value="">{providerOptions.length > 0 ? t('provider.none') : t('agentDetail.noCredential')}</option>
             {providerOptions.map(p => (

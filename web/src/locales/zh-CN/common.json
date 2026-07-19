@@ -966,6 +966,7 @@
     "cancel": "取消",
     "apply": "应用",
     "save": "保存",
+    "delete": "删除",
     "saved": "已保存",
     "saving": "保存中…",
     "sending": "发送中…",
@@ -1199,6 +1200,7 @@
     "switchSessionConfirm": "切换",
     "sessionSwitchHint": "可以粘贴在其他终端或工具里产生的 Session ID；发送下一条消息时会用该 Session 继续。",
     "followingLiveLog": "正在跟随该 Agent 的运行日志，运行完成后会写入运行记录。",
+    "waiting": "Agent 正在回复",
     "stopped": "已停止",
     "error": "对话执行失败"
   },

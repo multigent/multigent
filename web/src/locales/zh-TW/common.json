@@ -966,6 +966,7 @@
     "cancel": "取消",
     "apply": "套用",
     "save": "儲存",
+    "delete": "刪除",
     "saved": "已儲存",
     "saving": "儲存中…",
     "sending": "傳送中…",
@@ -1199,6 +1200,7 @@
     "switchSessionConfirm": "切換",
     "sessionSwitchHint": "可以貼上在其他終端或工具裡產生的 Session ID；送出下一則訊息時會用該 Session 繼續。",
     "followingLiveLog": "正在跟隨該 Agent 的執行日誌，執行完成後會寫入執行記錄。",
+    "waiting": "Agent 正在回覆",
     "stopped": "已停止",
     "error": "對話執行失敗"
   },

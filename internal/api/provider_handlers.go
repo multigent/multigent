@@ -196,6 +196,11 @@ func (s *Server) handleDeleteProvider(w http.ResponseWriter, r *http.Request) {
 		s.serverError(w, err)
 		return
 	}
+	clearedAgents, err := s.clearDeletedModelProviderRefs(id)
+	if err != nil {
+		s.serverError(w, err)
+		return
+	}
 	s.auditLog(auditLogInput{
 		WorkspaceID:  workspaceID,
 		Action:       "model_provider.delete",
@@ -203,9 +208,48 @@ func (s *Server) handleDeleteProvider(w http.ResponseWriter, r *http.Request) {
 		ResourceID:   id,
 		Summary:      "Model provider deleted",
 		Before:       modelProviderAuditPayload(*existing),
+		After:        map[string]any{"clearedAgents": clearedAgents},
 		Request:      r,
 	})
-	_ = json.NewEncoder(w).Encode(map[string]any{"ok": true})
+	_ = json.NewEncoder(w).Encode(map[string]any{"ok": true, "clearedAgents": clearedAgents})
+}
+
+func (s *Server) clearDeletedModelProviderRefs(providerID string) ([]string, error) {
+	if s.st == nil {
+		return []string{}, nil
+	}
+	projects, err := s.st.ListProjects()
+	if err != nil {
+		return nil, err
+	}
+	cleared := []string{}
+	for _, project := range projects {
+		if project == nil || strings.TrimSpace(project.Name) == "" {
+			continue
+		}
+		agents, err := s.st.ListAgents(project.Name)
+		if err != nil {
+			return nil, err
+		}
+		for _, agent := range agents {
+			if agent == nil || strings.TrimSpace(agent.Name) == "" {
+				continue
+			}
+			meta, err := s.st.AgentMeta(project.Name, agent.Name)
+			if err != nil {
+				return nil, err
+			}
+			if meta.Provider != providerID {
+				continue
+			}
+			meta.Provider = ""
+			if err := s.st.SaveAgentMeta(project.Name, agent.Name, meta); err != nil {
+				return nil, err
+			}
+			cleared = append(cleared, project.Name+"/"+agent.Name)
+		}
+	}
+	return cleared, nil
 }
 
 func (s *Server) modelProviderWorkspaceMember(w http.ResponseWriter, r *http.Request) (string, error) {

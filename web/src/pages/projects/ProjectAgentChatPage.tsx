@@ -475,7 +475,10 @@ export default function ProjectAgentChatPage() {
             <p className="mt-1 text-xs text-neutral-400 dark:text-zinc-500">{t('agentChat.emptyHint')}</p>
           </div>
         ) : (
-          <ConversationLog content={content} mode="chat" />
+          <div className="space-y-4">
+            <ConversationLog content={content} mode="chat" />
+            {loading && <AgentReplyLoading />}
+          </div>
         )}
       </div>
 
@@ -528,4 +531,25 @@ export default function ProjectAgentChatPage() {
   }
 
   return chatPanel
+}
+
+function AgentReplyLoading() {
+  const { t } = useTranslation()
+  return (
+    <div className="flex gap-2.5">
+      <div className="flex size-6 shrink-0 items-center justify-center rounded-full bg-neutral-100 dark:bg-zinc-800">
+        <Sparkles className="size-3.5 text-sky-600 dark:text-sky-400" strokeWidth={1.8} />
+      </div>
+      <div className="min-w-0 rounded-lg bg-neutral-50 px-3.5 py-2.5 dark:bg-zinc-900/70">
+        <div className="flex items-center gap-2 text-sm text-neutral-500 dark:text-zinc-400">
+          <span>{t('agentChat.waiting')}</span>
+          <span className="flex items-center gap-1" aria-hidden="true">
+            <span className="size-1.5 animate-bounce rounded-full bg-sky-500 [animation-delay:-0.2s]" />
+            <span className="size-1.5 animate-bounce rounded-full bg-sky-500 [animation-delay:-0.1s]" />
+            <span className="size-1.5 animate-bounce rounded-full bg-sky-500" />
+          </span>
+        </div>
+      </div>
+    </div>
+  )
 }
