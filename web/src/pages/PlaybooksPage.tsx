@@ -2,7 +2,7 @@ import { useMemo, useState, type ReactNode } from 'react'
 import type { TFunction } from 'i18next'
 import { useTranslation } from 'react-i18next'
 import { useNavigate, useParams } from 'react-router-dom'
-import { ArrowLeft, CheckCircle2, GitBranch, LibraryBig, ListChecks, Puzzle, ShieldCheck, Users, Wrench } from 'lucide-react'
+import { ArrowLeft, CheckCircle2, GitBranch, LibraryBig, ListChecks, Puzzle, Users, Wrench } from 'lucide-react'
 import { PlaceholderCard } from '../components/ui/PlaceholderCard'
 import { WorkflowBoard, type WorkflowDefinition, type WorkflowStep } from '../components/workflow/WorkflowBoard'
 import { showToast } from '../components/ui/Toast'
@@ -348,21 +348,7 @@ function PlaybookDetail({ playbook, install, onBack, onInstalled }: { playbook: 
         )}
       </Panel>
 
-      <div className="grid gap-5 lg:grid-cols-2">
-        <Panel title={t('playbooks.setupQuestions')} icon={<ShieldCheck className="size-4" strokeWidth={1.8} />}>
-          {(playbook.setupQuestions ?? []).length > 0 ? (
-            <div className="space-y-3">
-              {(playbook.setupQuestions ?? []).map((item) => (
-                <div key={item.id} className="rounded-lg bg-neutral-50 px-3 py-2 dark:bg-zinc-800/50">
-                  <p className="text-sm font-medium text-neutral-800 dark:text-zinc-100">{item.question}</p>
-                  {item.options && item.options.length > 0 && <TagRow values={item.options} className="mt-2" />}
-                </div>
-              ))}
-            </div>
-          ) : (
-            <p className="text-sm text-neutral-400 dark:text-zinc-500">{t('playbooks.none')}</p>
-          )}
-        </Panel>
+      <div>
         <Panel title={t('playbooks.successMetrics')} icon={<CheckCircle2 className="size-4" strokeWidth={1.8} />}>
           {(playbook.successMetrics ?? []).length > 0 ? (
             <div className="space-y-3">
