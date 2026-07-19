@@ -656,7 +656,7 @@ function WorkflowRuntimePanel({
               {previousOutputs.map((item) => (
                 <div key={item.id} className="rounded-lg bg-neutral-50 p-3 dark:bg-zinc-900">
                   <p className="text-xs font-semibold text-neutral-600 dark:text-zinc-300">{stepTitleByID.get(item.stepId) || item.stepId}</p>
-                  <WorkflowValuesOrArtifact values={item.outputValues} artifact={item.outputArtifact || item.summary} compact />
+                  <WorkflowValuesOrArtifact values={item.outputValues} fields={steps.find((candidate) => candidate.id === item.stepId)?.outputFields} artifact={item.outputArtifact || item.summary} compact />
                 </div>
               ))}
             </div>
@@ -706,7 +706,7 @@ function WorkflowRuntimePanel({
               <WorkflowFieldList fields={step.outputFields ?? []} values={outputValues} />
               {Object.keys(outputValues).length > 0
                 ? null
-                : <WorkflowValuesOrArtifact values={instance?.outputValues} artifact={instance?.outputArtifact || instance?.summary} />}
+                : <WorkflowValuesOrArtifact values={instance?.outputValues} fields={step.outputFields} artifact={instance?.outputArtifact || instance?.summary} />}
             </>
           )}
         </WorkflowPanelBlock>
@@ -715,10 +715,10 @@ function WorkflowRuntimePanel({
   )
 }
 
-function WorkflowValuesOrArtifact({ values, artifact, compact = false }: { values?: Record<string, string>; artifact?: string; compact?: boolean }) {
+function WorkflowValuesOrArtifact({ values, fields, artifact, compact = false }: { values?: Record<string, string>; fields?: WorkflowField[]; artifact?: string; compact?: boolean }) {
   const { t } = useTranslation()
   if (values && Object.keys(values).length > 0) {
-    return <WorkflowValueMap values={values} compact={compact} />
+    return <WorkflowValueMap values={values} fields={fields} compact={compact} />
   }
   if (artifact) {
     return <WorkflowArtifact value={artifact} compact={compact} />
@@ -726,19 +726,23 @@ function WorkflowValuesOrArtifact({ values, artifact, compact = false }: { value
   return <p className="text-sm text-neutral-400 dark:text-zinc-600">{t('workflows.detail.notSpecified')}</p>
 }
 
-function WorkflowValueMap({ values, compact = false }: { values: Record<string, string>; compact?: boolean }) {
+function WorkflowValueMap({ values, fields = [], compact = false }: { values: Record<string, string>; fields?: WorkflowField[]; compact?: boolean }) {
   const entries = Object.entries(values).filter(([, value]) => String(value ?? '').trim())
+  const fieldByName = new Map(fields.map((field) => [field.name, field]))
   if (entries.length === 0) return null
   return (
     <div className={cn('space-y-2', compact ? 'max-h-40 overflow-y-auto' : '')}>
-      {entries.map(([key, value]) => (
-        <div key={key} className="rounded-lg bg-neutral-50 p-2.5 dark:bg-zinc-900">
-          <p className="font-mono text-xs font-semibold text-neutral-700 dark:text-zinc-300">{key}</p>
-          <div className="mt-1 whitespace-pre-wrap break-words text-sm text-neutral-700 dark:text-zinc-300">
-            <WorkflowValueText value={String(value)} />
+      {entries.map(([key, value]) => {
+        const field = fieldByName.get(key)
+        return (
+          <div key={key} className="rounded-lg bg-neutral-50 p-2.5 dark:bg-zinc-900">
+            <WorkflowFieldTitle fieldName={key} description={field?.description} />
+            <div className="mt-1 whitespace-pre-wrap break-words text-sm text-neutral-700 dark:text-zinc-300">
+              <WorkflowValueText value={String(value)} />
+            </div>
           </div>
-        </div>
-      ))}
+        )
+      })}
     </div>
   )
 }
@@ -758,8 +762,7 @@ function WorkflowFieldList({ fields, values }: { fields: WorkflowField[]; values
     <div className="mb-2 space-y-2">
       {fields.map((field) => (
         <div key={field.name} className="rounded-lg border border-neutral-100 bg-white p-2.5 dark:border-zinc-800 dark:bg-zinc-950">
-          <p className="font-mono text-xs font-semibold text-neutral-700 dark:text-zinc-300">{field.name}</p>
-          {field.description && <p className="mt-1 text-xs text-neutral-500 dark:text-zinc-500">{field.description}</p>}
+          <WorkflowFieldTitle fieldName={field.name} description={field.description} />
           {values[field.name] && (
             <div className="mt-1.5 whitespace-pre-wrap break-words text-sm text-neutral-800 dark:text-zinc-200">
               <WorkflowValueText value={values[field.name]} />
@@ -767,6 +770,18 @@ function WorkflowFieldList({ fields, values }: { fields: WorkflowField[]; values
           )}
         </div>
       ))}
+    </div>
+  )
+}
+
+function WorkflowFieldTitle({ fieldName, description }: { fieldName: string; description?: string }) {
+  const title = description?.trim() || fieldName
+  return (
+    <div>
+      <p className="text-xs font-semibold text-neutral-700 dark:text-zinc-300" title={fieldName}>{title}</p>
+      {description?.trim() && (
+        <p className="mt-0.5 font-mono text-[10px] text-neutral-400 dark:text-zinc-600">{fieldName}</p>
+      )}
     </div>
   )
 }
