@@ -37,9 +37,11 @@ export default function WorkflowsPage() {
   const [saving, setSaving] = useState(false)
   const [fullscreen, setFullscreen] = useState(false)
   const [createOpen, setCreateOpen] = useState(false)
-  const [createMode, setCreateMode] = useState<'blank' | 'template'>('template')
+  const [createMode, setCreateMode] = useState<'blank' | 'template' | 'json'>('template')
   const [selectedTemplateId, setSelectedTemplateId] = useState('')
   const [workflowName, setWorkflowName] = useState('')
+  const [workflowJSON, setWorkflowJSON] = useState('')
+  const [createError, setCreateError] = useState('')
   const descriptionRef = useRef<HTMLTextAreaElement | null>(null)
 
   useEffect(() => {
@@ -99,11 +101,30 @@ export default function WorkflowsPage() {
     }
   }
 
+  async function createFromJSON(raw: string, fallbackName: string) {
+    const parsed = parseWorkflowJSON(raw)
+    if (parsed.steps.length === 0) {
+      throw new Error(t('workflows.importJSONNoSteps'))
+    }
+    const name = workflowName.trim() || parsed.name || fallbackName || t('workflows.untitledName')
+    const created = await apiPost<WorkflowDefinition>('/api/v1/workflows', {
+      name,
+      description: parsed.description || '',
+      startStepId: parsed.startStepId || parsed.steps[0].id,
+      steps: parsed.steps,
+      edges: parsed.edges,
+    })
+    setCreateOpen(false)
+    navigate(`/workflows/${encodeURIComponent(created.id)}`)
+  }
+
   function openCreateDialog() {
     const firstTemplate = templates[0]
     setCreateMode(firstTemplate ? 'template' : 'blank')
     setSelectedTemplateId(firstTemplate?.id || '')
     setWorkflowName(firstTemplate?.name || t('workflows.untitledName'))
+    setWorkflowJSON('')
+    setCreateError('')
     setCreateOpen(true)
   }
 
@@ -114,13 +135,22 @@ export default function WorkflowsPage() {
   }
 
   async function submitCreate() {
-    if (createMode === 'blank') {
-      await createBlank(workflowName)
-      setCreateOpen(false)
-      return
+    setCreateError('')
+    try {
+      if (createMode === 'blank') {
+        await createBlank(workflowName)
+        setCreateOpen(false)
+        return
+      }
+      if (createMode === 'json') {
+        await createFromJSON(workflowJSON, workflowName)
+        return
+      }
+      if (!selectedTemplateId) return
+      await createFromTemplate(selectedTemplateId, workflowName)
+    } catch (e) {
+      setCreateError(e instanceof Error ? e.message : String(e))
     }
-    if (!selectedTemplateId) return
-    await createFromTemplate(selectedTemplateId, workflowName)
   }
 
   async function duplicateWorkflow(wf: WorkflowDefinition) {
@@ -290,7 +320,7 @@ export default function WorkflowsPage() {
               </button>
             </div>
             <div className="space-y-4 p-5">
-              <div className="grid gap-3 sm:grid-cols-2">
+              <div className="grid gap-3 sm:grid-cols-3">
                 <button type="button" onClick={() => { setCreateMode('blank'); setWorkflowName(t('workflows.untitledName')) }} className={`rounded-xl border p-4 text-left ${createMode === 'blank' ? 'border-sky-500 bg-sky-50 dark:border-sky-500 dark:bg-sky-950/30' : 'border-neutral-200 hover:bg-neutral-50 dark:border-zinc-700 dark:hover:bg-zinc-800'}`}>
                   <p className="font-medium text-neutral-900 dark:text-zinc-100">{t('workflows.blankWorkflow')}</p>
                   <p className="mt-1 text-sm text-neutral-500 dark:text-zinc-400">{t('workflows.blankWorkflowHint')}</p>
@@ -298,6 +328,10 @@ export default function WorkflowsPage() {
                 <button type="button" onClick={() => { setCreateMode('template'); updateSelectedTemplate(selectedTemplateId || templates[0]?.id || '') }} disabled={templates.length === 0} className={`rounded-xl border p-4 text-left disabled:opacity-50 ${createMode === 'template' ? 'border-sky-500 bg-sky-50 dark:border-sky-500 dark:bg-sky-950/30' : 'border-neutral-200 hover:bg-neutral-50 dark:border-zinc-700 dark:hover:bg-zinc-800'}`}>
                   <p className="font-medium text-neutral-900 dark:text-zinc-100">{t('workflows.fromTemplate')}</p>
                   <p className="mt-1 text-sm text-neutral-500 dark:text-zinc-400">{t('workflows.fromTemplateHint')}</p>
+                </button>
+                <button type="button" onClick={() => { setCreateMode('json'); setWorkflowName(workflowName || t('workflows.untitledName')) }} className={`rounded-xl border p-4 text-left ${createMode === 'json' ? 'border-sky-500 bg-sky-50 dark:border-sky-500 dark:bg-sky-950/30' : 'border-neutral-200 hover:bg-neutral-50 dark:border-zinc-700 dark:hover:bg-zinc-800'}`}>
+                  <p className="font-medium text-neutral-900 dark:text-zinc-100">{t('workflows.importJSON')}</p>
+                  <p className="mt-1 text-sm text-neutral-500 dark:text-zinc-400">{t('workflows.importJSONHint')}</p>
                 </button>
               </div>
               {createMode === 'template' ? (
@@ -317,16 +351,29 @@ export default function WorkflowsPage() {
                   ) : null}
                 </div>
               ) : null}
+              {createMode === 'json' ? (
                 <label className="block">
-                  <span className="text-xs font-medium uppercase text-neutral-400 dark:text-zinc-500">{t('workflows.workflowName')}</span>
-                  <input value={workflowName} onChange={(event) => setWorkflowName(event.target.value)} className="mt-1 w-full rounded-lg border border-neutral-300 bg-white px-3 py-2 text-sm text-neutral-900 outline-none focus:border-sky-400 dark:border-zinc-600 dark:bg-zinc-800 dark:text-zinc-100" />
+                  <span className="text-xs font-medium uppercase text-neutral-400 dark:text-zinc-500">{t('workflows.importJSON')}</span>
+                  <textarea
+                    value={workflowJSON}
+                    onChange={(event) => setWorkflowJSON(event.target.value)}
+                    rows={9}
+                    placeholder={t('workflows.importJSONPlaceholder')}
+                    className="mt-1 w-full resize-y rounded-lg border border-neutral-300 bg-white px-3 py-2 font-mono text-xs text-neutral-900 outline-none focus:border-sky-400 dark:border-zinc-600 dark:bg-zinc-800 dark:text-zinc-100"
+                  />
                 </label>
+              ) : null}
+              <label className="block">
+                <span className="text-xs font-medium uppercase text-neutral-400 dark:text-zinc-500">{t('workflows.workflowName')}</span>
+                <input value={workflowName} onChange={(event) => setWorkflowName(event.target.value)} className="mt-1 w-full rounded-lg border border-neutral-300 bg-white px-3 py-2 text-sm text-neutral-900 outline-none focus:border-sky-400 dark:border-zinc-600 dark:bg-zinc-800 dark:text-zinc-100" />
+              </label>
+              {createError ? <p className="rounded-lg border border-red-200 bg-red-50 px-3 py-2 text-sm text-red-700 dark:border-red-900/60 dark:bg-red-950/30 dark:text-red-300">{createError}</p> : null}
             </div>
             <div className="flex justify-end gap-2 border-t border-neutral-200/80 px-5 py-3 dark:border-zinc-700/60">
               <button type="button" onClick={() => setCreateOpen(false)} disabled={saving} className="rounded-lg px-3 py-2 text-sm font-medium text-neutral-600 hover:bg-neutral-100 disabled:opacity-50 dark:text-zinc-400 dark:hover:bg-zinc-800">
                 {t('common.cancel')}
               </button>
-              <button type="button" onClick={() => void submitCreate()} disabled={saving || (createMode === 'template' && !selectedTemplateId) || !workflowName.trim()} className="rounded-lg bg-sky-600 px-3 py-2 text-sm font-medium text-white hover:bg-sky-700 disabled:opacity-50">
+              <button type="button" onClick={() => void submitCreate()} disabled={saving || (createMode === 'template' && !selectedTemplateId) || (createMode !== 'json' && !workflowName.trim()) || (createMode === 'json' && !workflowJSON.trim())} className="rounded-lg bg-sky-600 px-3 py-2 text-sm font-medium text-white hover:bg-sky-700 disabled:opacity-50">
                 {saving ? t('common.saving') : t('common.create')}
               </button>
             </div>
@@ -391,6 +438,124 @@ function workflowEditableJSON(workflow: WorkflowDefinition) {
     steps: workflow.steps,
     edges: workflow.edges,
   })
+}
+
+function parseWorkflowJSON(raw: string): Pick<WorkflowDefinition, 'name' | 'description' | 'startStepId' | 'steps' | 'edges'> {
+  const parsed = JSON.parse(raw) as unknown
+  const source = normalizeWorkflowJSONSource(parsed)
+  if (!source || typeof source !== 'object') {
+    throw new Error('Invalid workflow JSON')
+  }
+  const record = source as Record<string, unknown>
+  const steps = Array.isArray(record.steps) ? record.steps : []
+  const edges = Array.isArray(record.edges) ? record.edges : []
+  return {
+    name: typeof record.name === 'string' ? record.name : '',
+    description: typeof record.description === 'string' ? record.description : '',
+    startStepId: typeof record.startStepId === 'string' ? record.startStepId : '',
+    steps: steps.map((step, index) => normalizeImportedStep(step, index)),
+    edges: edges.map((edge, index) => normalizeImportedEdge(edge, index)).filter((edge): edge is WorkflowDefinition['edges'][number] => Boolean(edge)),
+  }
+}
+
+function normalizeWorkflowJSONSource(value: unknown): unknown {
+  if (!value || typeof value !== 'object') return value
+  const record = value as Record<string, unknown>
+  if (record.workflow) return record.workflow
+  if (record.definition) return record.definition
+  return value
+}
+
+function normalizeImportedStep(value: unknown, index: number): WorkflowStep {
+  if (!value || typeof value !== 'object') {
+    return { id: `step_${index + 1}`, type: 'agent_task', title: `Step ${index + 1}`, actorRole: 'agent', position: { x: 80 + index * 280, y: 180 } }
+  }
+  const record = value as Record<string, unknown>
+  const id = typeof record.id === 'string' && record.id.trim() ? record.id.trim() : `step_${index + 1}`
+  const position = normalizeImportedPosition(record.position, index)
+  return {
+    id,
+    type: record.type === 'human_review' ? 'human_review' : 'agent_task',
+    title: typeof record.title === 'string' && record.title.trim() ? record.title.trim() : id,
+    description: typeof record.description === 'string' ? record.description : '',
+    actorRole: typeof record.actorRole === 'string' ? record.actorRole : typeof record.actor_role === 'string' ? record.actor_role : '',
+    inputFields: normalizeImportedFields(record.inputFields ?? record.input_fields),
+    outputFields: normalizeImportedFields(record.outputFields ?? record.output_fields),
+    reviewPolicy: record.type === 'human_review' ? 'manual' : '',
+    position,
+    config: normalizeImportedConfig(record.config),
+  }
+}
+
+function normalizeImportedPosition(value: unknown, index: number) {
+  if (value && typeof value === 'object') {
+    const record = value as Record<string, unknown>
+    return {
+      x: typeof record.x === 'number' ? record.x : 80 + index * 280,
+      y: typeof record.y === 'number' ? record.y : 180,
+    }
+  }
+  return { x: 80 + index * 280, y: 180 }
+}
+
+function normalizeImportedFields(value: unknown) {
+  if (!Array.isArray(value)) return []
+  return value
+    .map((item) => {
+      if (typeof item === 'string') return { name: item }
+      if (!item || typeof item !== 'object') return null
+      const record = item as Record<string, unknown>
+      const name = typeof record.name === 'string' ? record.name.trim() : ''
+      if (!name) return null
+      return { name, description: typeof record.description === 'string' ? record.description : '' }
+    })
+    .filter((item): item is { name: string; description?: string } => Boolean(item))
+}
+
+function normalizeImportedConfig(value: unknown) {
+  if (!value || typeof value !== 'object') return undefined
+  const out: Record<string, string> = {}
+  for (const [key, val] of Object.entries(value as Record<string, unknown>)) {
+    if (typeof val === 'string') out[key] = val
+  }
+  return Object.keys(out).length > 0 ? out : undefined
+}
+
+function normalizeImportedEdge(value: unknown, index: number): WorkflowDefinition['edges'][number] | null {
+  if (!value || typeof value !== 'object') return null
+  const record = value as Record<string, unknown>
+  const from = typeof record.from === 'string' ? record.from.trim() : typeof record.source === 'string' ? record.source.trim() : ''
+  const to = typeof record.to === 'string' ? record.to.trim() : typeof record.target === 'string' ? record.target.trim() : ''
+  if (!from || !to) return null
+  return {
+    id: typeof record.id === 'string' && record.id.trim() ? record.id.trim() : `edge_${index + 1}`,
+    from,
+    to,
+    label: typeof record.label === 'string' ? record.label : '',
+    condition: normalizeImportedCondition(record.condition),
+    inputMapping: normalizeImportedMapping(record.inputMapping ?? record.input_mapping),
+    isDefault: Boolean(record.isDefault ?? record.is_default),
+  }
+}
+
+function normalizeImportedCondition(value: unknown) {
+  if (!value || typeof value !== 'object') return undefined
+  const record = value as Record<string, unknown>
+  const field = typeof record.field === 'string' ? record.field : ''
+  const operator = typeof record.operator === 'string' ? record.operator : ''
+  const val = typeof record.value === 'string' ? record.value : ''
+  const values = Array.isArray(record.values) ? record.values.filter((item): item is string => typeof item === 'string') : undefined
+  if (!field && !operator && !val && (!values || values.length === 0)) return undefined
+  return { field, operator, value: val, values }
+}
+
+function normalizeImportedMapping(value: unknown) {
+  if (!value || typeof value !== 'object') return undefined
+  const out: Record<string, string> = {}
+  for (const [key, val] of Object.entries(value as Record<string, unknown>)) {
+    if (typeof val === 'string') out[key] = val
+  }
+  return Object.keys(out).length > 0 ? out : undefined
 }
 
 function Loading({ label }: { label: string }) {
