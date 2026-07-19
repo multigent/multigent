@@ -365,7 +365,17 @@
     "optional": "可選",
     "noRequiredTools": "不需要預先設定外部工具。",
     "none": "暫無",
-    "moreSteps": "還有 {{count}} 個節點"
+    "moreSteps": "還有 {{count}} 個節點",
+    "viewContent": "查看內容",
+    "hideContent": "收起內容",
+    "skillPrompt": "Skill 內容",
+    "rolePrompt": "角色 Prompt",
+    "noPromptContent": "暫無可查看內容。",
+    "stepType": "節點類型",
+    "actor": "執行角色",
+    "stepGoal": "節點目標",
+    "inputFields": "輸入欄位",
+    "outputFields": "輸出欄位"
   },
   "workflows": {
     "workspaceSubtitle": "查看和設定工作區通用的協作流程白板，任務建立時可選擇使用。",

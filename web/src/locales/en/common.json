@@ -365,7 +365,17 @@
     "optional": "Optional",
     "noRequiredTools": "No external tools need to be configured first.",
     "none": "None",
-    "moreSteps": "{{count}} more steps"
+    "moreSteps": "{{count}} more steps",
+    "viewContent": "View content",
+    "hideContent": "Hide content",
+    "skillPrompt": "Skill content",
+    "rolePrompt": "Role prompt",
+    "noPromptContent": "No content to preview.",
+    "stepType": "Step type",
+    "actor": "Actor role",
+    "stepGoal": "Step goal",
+    "inputFields": "Input fields",
+    "outputFields": "Output fields"
   },
   "workflows": {
     "workspaceSubtitle": "Inspect and configure workspace-wide workflow whiteboards that tasks can use.",

@@ -31,12 +31,14 @@ type PlaybookRoleTemplate = {
   role: string
   name: string
   description: string
+  prompt?: string
   skills?: string[]
 }
 type PlaybookSkillTemplate = {
   id: string
   name: string
   description: string
+  body?: string
   source?: string
 }
 type PlaybookWorkflowTemplate = {
@@ -216,7 +218,6 @@ function PlaybookDetail({ playbook, install, onBack, onInstalled }: { playbook: 
   const workflows = playbook.workflows ?? []
   const firstWorkflow = workflows[0]
   const steps = firstWorkflow?.definition.steps ?? []
-  const workflowSummary = useMemo(() => steps.slice(0, 6), [steps])
 
   async function handleInstall() {
     if (installing || install) return
@@ -259,14 +260,17 @@ function PlaybookDetail({ playbook, install, onBack, onInstalled }: { playbook: 
       <Panel title={t('playbooks.roles')} icon={<Users className="size-4" strokeWidth={1.8} />}>
         <div className="grid gap-3 md:grid-cols-2 xl:grid-cols-3">
           {(playbook.roles ?? []).map((role) => (
-            <div key={role.id} className="rounded-lg border border-neutral-200/80 bg-neutral-50/60 p-3 dark:border-zinc-700/50 dark:bg-zinc-900/50">
-              <div className="flex items-center justify-between gap-2">
-                <p className="text-sm font-semibold text-neutral-800 dark:text-zinc-100">{role.name}</p>
-                <span className="rounded-full bg-white px-2 py-0.5 text-[11px] text-neutral-400 dark:bg-zinc-800 dark:text-zinc-500">{role.team}/{role.role}</span>
-              </div>
-              <p className="mt-1.5 text-sm leading-relaxed text-neutral-500 dark:text-zinc-500">{role.description}</p>
-              {role.skills && role.skills.length > 0 && <TagRow values={role.skills} className="mt-3" />}
-            </div>
+            <ExpandableArtifactCard
+              key={role.id}
+              title={role.name}
+              subtitle={`${role.team}/${role.role}`}
+              description={role.description}
+              tags={role.skills}
+              contentLabel={t('playbooks.rolePrompt')}
+              emptyLabel={t('playbooks.noPromptContent')}
+            >
+              {role.prompt}
+            </ExpandableArtifactCard>
           ))}
         </div>
       </Panel>
@@ -274,10 +278,15 @@ function PlaybookDetail({ playbook, install, onBack, onInstalled }: { playbook: 
       <Panel title={t('playbooks.skills')} icon={<Puzzle className="size-4" strokeWidth={1.8} />}>
         <div className="grid gap-3 md:grid-cols-2 xl:grid-cols-3">
           {(playbook.skills ?? []).map((skill) => (
-            <div key={skill.id} className="rounded-lg border border-neutral-200/80 bg-neutral-50/60 p-3 dark:border-zinc-700/50 dark:bg-zinc-900/50">
-              <p className="text-sm font-semibold text-neutral-800 dark:text-zinc-100">{skill.name}</p>
-              <p className="mt-1.5 text-sm leading-relaxed text-neutral-500 dark:text-zinc-500">{skill.description}</p>
-            </div>
+            <ExpandableArtifactCard
+              key={skill.id}
+              title={skill.name}
+              description={skill.description}
+              contentLabel={t('playbooks.skillPrompt')}
+              emptyLabel={t('playbooks.noPromptContent')}
+            >
+              {skill.body}
+            </ExpandableArtifactCard>
           ))}
         </div>
       </Panel>
@@ -289,20 +298,11 @@ function PlaybookDetail({ playbook, install, onBack, onInstalled }: { playbook: 
               <p className="text-sm font-semibold text-neutral-800 dark:text-zinc-100">{firstWorkflow.name}</p>
               <p className="mt-1 text-sm leading-relaxed text-neutral-500 dark:text-zinc-500">{firstWorkflow.description}</p>
             </div>
-            <ol className="grid gap-2 lg:grid-cols-2">
-              {workflowSummary.map((step, index) => (
-                <li key={step.id} className="flex gap-3 rounded-lg border border-neutral-200/70 bg-white px-3 py-2 dark:border-zinc-700/50 dark:bg-zinc-900/40">
-                  <span className="flex size-6 shrink-0 items-center justify-center rounded-full bg-sky-50 text-xs font-semibold text-sky-700 dark:bg-sky-950/40 dark:text-sky-300">{index + 1}</span>
-                  <div className="min-w-0">
-                    <p className="text-sm font-medium text-neutral-800 dark:text-zinc-100">{step.title}</p>
-                    <p className="mt-0.5 line-clamp-2 text-xs leading-relaxed text-neutral-500 dark:text-zinc-500">{step.description || step.actorRole}</p>
-                  </div>
-                </li>
+            <ol className="grid gap-3 lg:grid-cols-2">
+              {steps.map((step, index) => (
+                <WorkflowStepCard key={step.id} step={step} index={index} />
               ))}
             </ol>
-            {steps.length > workflowSummary.length && (
-              <p className="mt-2 text-xs text-neutral-400 dark:text-zinc-500">{t('playbooks.moreSteps', { count: steps.length - workflowSummary.length })}</p>
-            )}
           </div>
         ) : (
           <p className="text-sm text-neutral-400 dark:text-zinc-500">{t('playbooks.none')}</p>
@@ -370,6 +370,124 @@ function PlaybookDetail({ playbook, install, onBack, onInstalled }: { playbook: 
           )}
         </Panel>
       </div>
+    </div>
+  )
+}
+
+function ExpandableArtifactCard({
+  title,
+  subtitle,
+  description,
+  tags,
+  contentLabel,
+  emptyLabel,
+  children,
+}: {
+  title: string
+  subtitle?: string
+  description?: string
+  tags?: string[]
+  contentLabel: string
+  emptyLabel: string
+  children?: string
+}) {
+  const { t } = useTranslation()
+  const [expanded, setExpanded] = useState(false)
+  const content = String(children ?? '').trim()
+  return (
+    <div className="rounded-lg border border-neutral-200/80 bg-neutral-50/60 p-3 dark:border-zinc-700/50 dark:bg-zinc-900/50">
+      <div className="flex items-center justify-between gap-2">
+        <p className="min-w-0 truncate text-sm font-semibold text-neutral-800 dark:text-zinc-100">{title}</p>
+        {subtitle && <span className="shrink-0 rounded-full bg-white px-2 py-0.5 text-[11px] text-neutral-400 dark:bg-zinc-800 dark:text-zinc-500">{subtitle}</span>}
+      </div>
+      {description && <p className="mt-1.5 text-sm leading-relaxed text-neutral-500 dark:text-zinc-500">{description}</p>}
+      {tags && tags.length > 0 && <TagRow values={tags} className="mt-3" />}
+      <button
+        type="button"
+        onClick={() => setExpanded((value) => !value)}
+        className="mt-3 rounded-lg border border-neutral-300 bg-white px-3 py-1.5 text-xs font-medium text-neutral-700 hover:bg-neutral-50 dark:border-zinc-700 dark:bg-zinc-900 dark:text-zinc-300 dark:hover:bg-zinc-800"
+      >
+        {expanded ? t('playbooks.hideContent') : t('playbooks.viewContent')}
+      </button>
+      {expanded && (
+        <div className="mt-3 rounded-lg border border-neutral-200 bg-white p-3 dark:border-zinc-700 dark:bg-zinc-950/40">
+          <p className="mb-2 text-xs font-medium text-neutral-400 dark:text-zinc-500">{contentLabel}</p>
+          <pre className="max-h-96 overflow-auto whitespace-pre-wrap break-words text-xs leading-relaxed text-neutral-700 dark:text-zinc-300">{content || emptyLabel}</pre>
+        </div>
+      )}
+    </div>
+  )
+}
+
+function WorkflowStepCard({ step, index }: { step: WorkflowStep; index: number }) {
+  const { t } = useTranslation()
+  const [expanded, setExpanded] = useState(false)
+  return (
+    <li className="rounded-lg border border-neutral-200/70 bg-white px-3 py-2 dark:border-zinc-700/50 dark:bg-zinc-900/40">
+      <div className="flex gap-3">
+        <span className="flex size-6 shrink-0 items-center justify-center rounded-full bg-sky-50 text-xs font-semibold text-sky-700 dark:bg-sky-950/40 dark:text-sky-300">{index + 1}</span>
+        <div className="min-w-0 flex-1">
+          <div className="flex items-start justify-between gap-3">
+            <div className="min-w-0">
+              <p className="text-sm font-medium text-neutral-800 dark:text-zinc-100">{step.title}</p>
+              <p className="mt-0.5 line-clamp-2 text-xs leading-relaxed text-neutral-500 dark:text-zinc-500">{step.description || step.actorRole}</p>
+            </div>
+            <button
+              type="button"
+              onClick={() => setExpanded((value) => !value)}
+              className="shrink-0 rounded-lg border border-neutral-300 bg-white px-2.5 py-1 text-xs font-medium text-neutral-700 hover:bg-neutral-50 dark:border-zinc-700 dark:bg-zinc-900 dark:text-zinc-300 dark:hover:bg-zinc-800"
+            >
+              {expanded ? t('playbooks.hideContent') : t('playbooks.viewContent')}
+            </button>
+          </div>
+          {expanded && (
+            <div className="mt-3 space-y-3 rounded-lg border border-neutral-200 bg-neutral-50/80 p-3 dark:border-zinc-700 dark:bg-zinc-950/30">
+              <div className="grid gap-2 text-xs text-neutral-500 dark:text-zinc-500 sm:grid-cols-2">
+                <MetaLine label={t('playbooks.stepType')} value={t(`workflows.stepTypes.${step.type}`, step.type)} />
+                <MetaLine label={t('playbooks.actor')} value={step.actorRole || t('playbooks.none')} />
+              </div>
+              {step.description && (
+                <div>
+                  <p className="mb-1 text-xs font-medium text-neutral-400 dark:text-zinc-500">{t('playbooks.stepGoal')}</p>
+                  <p className="text-sm leading-relaxed text-neutral-700 dark:text-zinc-300">{step.description}</p>
+                </div>
+              )}
+              <WorkflowFields title={t('playbooks.inputFields')} fields={step.inputFields ?? []} />
+              <WorkflowFields title={t('playbooks.outputFields')} fields={step.outputFields ?? []} />
+            </div>
+          )}
+        </div>
+      </div>
+    </li>
+  )
+}
+
+function MetaLine({ label, value }: { label: string; value: string }) {
+  return (
+    <div className="rounded-md bg-white px-2.5 py-2 dark:bg-zinc-900/70">
+      <p className="text-[11px] text-neutral-400 dark:text-zinc-500">{label}</p>
+      <p className="mt-0.5 truncate font-medium text-neutral-700 dark:text-zinc-300">{value}</p>
+    </div>
+  )
+}
+
+function WorkflowFields({ title, fields }: { title: string; fields: WorkflowField[] }) {
+  const { t } = useTranslation()
+  return (
+    <div>
+      <p className="mb-1.5 text-xs font-medium text-neutral-400 dark:text-zinc-500">{title}</p>
+      {fields.length > 0 ? (
+        <div className="space-y-1.5">
+          {fields.map((field) => (
+            <div key={field.name} className="rounded-md bg-white px-2.5 py-2 dark:bg-zinc-900/70">
+              <p className="text-xs font-medium text-neutral-700 dark:text-zinc-300">{field.description || field.name}</p>
+              {field.description && <p className="mt-0.5 font-mono text-[11px] text-neutral-400 dark:text-zinc-500">{field.name}</p>}
+            </div>
+          ))}
+        </div>
+      ) : (
+        <p className="rounded-md bg-white px-2.5 py-2 text-xs text-neutral-400 dark:bg-zinc-900/70 dark:text-zinc-500">{t('playbooks.none')}</p>
+      )}
     </div>
   )
 }

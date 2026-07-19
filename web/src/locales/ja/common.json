@@ -365,7 +365,17 @@
     "optional": "任意",
     "noRequiredTools": "事前に設定が必要な外部ツールはありません。",
     "none": "なし",
-    "moreSteps": "あと {{count}} ノード"
+    "moreSteps": "あと {{count}} ノード",
+    "viewContent": "内容を見る",
+    "hideContent": "内容を閉じる",
+    "skillPrompt": "Skill 内容",
+    "rolePrompt": "ロール Prompt",
+    "noPromptContent": "プレビューできる内容はありません。",
+    "stepType": "ステップ種別",
+    "actor": "実行ロール",
+    "stepGoal": "ステップ目標",
+    "inputFields": "入力フィールド",
+    "outputFields": "出力フィールド"
   },
   "workflows": {
     "workspaceSubtitle": "タスクで利用できるワークスペース共通のワークフローホワイトボードを確認・設定します。",
