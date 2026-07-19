@@ -89,3 +89,38 @@ func TestWorkbenchTasksExcludeProjectTaskNotAssignedToMember(t *testing.T) {
 		t.Fatalf("project member workbench should only show direct responsibilities, got %#v", rows)
 	}
 }
+
+func TestWorkbenchTasksIncludeAdminDirectAssigneeInAgentQueue(t *testing.T) {
+	s, _ := newConnectionGrantPolicyServer(t)
+
+	now := time.Now().UTC()
+	task := &entity.Task{
+		ID:        "t-admin-review",
+		Title:     "Admin review",
+		Type:      entity.TaskTypeReview,
+		Priority:  2,
+		Assignee:  "admin",
+		CreatedBy: "owner",
+		Status:    entity.TaskStatusAwaitingConfirmation,
+		Prompt:    "Review the workflow output.",
+		CreatedAt: now,
+		UpdatedAt: now,
+	}
+	if err := s.ts.AddTask("sample", "backend", task); err != nil {
+		t.Fatalf("add task: %v", err)
+	}
+
+	rec := httptest.NewRecorder()
+	req := providerTestRequest(http.MethodGet, "/api/v1/workbench/tasks", "admin", nil)
+	s.handleWorkbenchTasks(rec, req)
+	if rec.Code != http.StatusOK {
+		t.Fatalf("status=%d body=%s", rec.Code, rec.Body.String())
+	}
+	var rows []taskRow
+	if err := json.Unmarshal(rec.Body.Bytes(), &rows); err != nil {
+		t.Fatalf("decode rows: %v", err)
+	}
+	if len(rows) != 1 || rows[0].ID != "t-admin-review" {
+		t.Fatalf("expected admin direct review task, got %#v", rows)
+	}
+}

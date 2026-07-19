@@ -237,7 +237,7 @@ export function EditTaskModal({ task, taskOptions = [], onClose, onSaved }: { ta
 
 /* ── Detail modal ─── */
 
-export function TaskDetailModal({ task, onClose, onEdit, canEdit = true }: { task: TaskRow; onClose: () => void; onEdit: (r: TaskRow) => void; canEdit?: boolean }) {
+export function TaskDetailModal({ task, onClose, onEdit, onMutated, canEdit = true }: { task: TaskRow; onClose: () => void; onEdit: (r: TaskRow) => void; onMutated?: () => void; canEdit?: boolean }) {
   const { t } = useTranslation()
   const fmt = useFormatDateTime()
 
@@ -314,6 +314,7 @@ export function TaskDetailModal({ task, onClose, onEdit, canEdit = true }: { tas
       setReviewComments('')
       setReviewOutputs({})
       setWorkflowVersion((v) => v + 1)
+      onMutated?.()
     } catch (e) {
       setReviewErr(e instanceof Error ? e.message : String(e))
     } finally {
@@ -347,7 +348,7 @@ export function TaskDetailModal({ task, onClose, onEdit, canEdit = true }: { tas
           <InfoCell label="ID"><span className="font-mono text-xs">{task.id}</span></InfoCell>
           <InfoCell label={t('tasks.colProject')}><span className="font-mono">{task.project}</span></InfoCell>
           <InfoCell label={t('tasks.colAssignee')}>
-            <span title={task.assignee || `${task.project}/${task.agent}`}>{taskIdentityLabel(task.assignee || `${task.project}/${task.agent}`, task.assigneeLabel)}</span>
+            <span title={task.assignee || `${task.project}/${task.agent}`}>{compactTaskIdentityLabel(task.assignee || `${task.project}/${task.agent}`, task.assigneeLabel)}</span>
           </InfoCell>
           <InfoCell label={t('forms.type')}>{task.type ? t(`forms.taskType.${task.type}`, { defaultValue: task.type }) : '—'}</InfoCell>
           <InfoCell label={t('api.taskColUpdated')}>{fmt(task.updatedAt)}</InfoCell>
@@ -447,7 +448,7 @@ export function TaskDetailModal({ task, onClose, onEdit, canEdit = true }: { tas
           </div>
         )}
 
-        {task.prompt && (
+        {task.prompt && !isWorkflowRuntimePrompt(task.prompt) && (
           <div className="border-b border-neutral-100 px-5 py-3 dark:border-zinc-700/40">
             <span className="text-xs font-semibold uppercase tracking-wider text-neutral-400 dark:text-zinc-500">{t('forms.prompt')}</span>
             <div className="mt-1.5 rounded-lg bg-neutral-50 p-3 text-sm text-neutral-700 dark:bg-zinc-800/50 dark:text-zinc-300">
@@ -738,7 +739,19 @@ function workflowActorLabel(actorType?: string, actorId?: string, labels?: Map<s
   if (!id) return '-'
   const label = labels?.get(id) || id
   if (actorType === 'human') return label
-  return label
+  return compactTaskIdentityLabel(id, label)
+}
+
+function compactTaskIdentityLabel(value?: string, label?: string) {
+  const display = taskIdentityLabel(value, label)
+  if (label && label !== value) return display
+  const raw = value || display
+  const slash = raw.lastIndexOf('/')
+  return slash >= 0 ? raw.slice(slash + 1) : display
+}
+
+function isWorkflowRuntimePrompt(prompt?: string) {
+  return Boolean(prompt?.trimStart().startsWith('Continue this workflow task from the current active step.'))
 }
 
 function WorkflowValuesOrArtifact({ values, fields, artifact, compact = false }: { values?: Record<string, string>; fields?: WorkflowField[]; artifact?: string; compact?: boolean }) {

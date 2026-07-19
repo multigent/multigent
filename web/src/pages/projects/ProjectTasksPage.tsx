@@ -319,7 +319,7 @@ export default function ProjectTasksPage() {
       </div>
 
       {editRow && canMutateTask(editRow) && <EditTaskModal task={editRow} taskOptions={taskOptions} onClose={() => setEditRow(null)} onSaved={reload} />}
-      {detailRow && <TaskDetailModal task={detailRow} canEdit={canMutateTask(detailRow)} onClose={() => setDetailRow(null)} onEdit={(r) => { if (!canMutateTask(r)) return; setDetailRow(null); setEditRow(r) }} />}
+      {detailRow && <TaskDetailModal task={detailRow} canEdit={canMutateTask(detailRow)} onClose={() => setDetailRow(null)} onEdit={(r) => { if (!canMutateTask(r)) return; setDetailRow(null); setEditRow(r) }} onMutated={() => { reload(); setDetailRow(null) }} />}
     </div>
   )
 }

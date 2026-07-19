@@ -677,7 +677,7 @@ function TasksPanel({ projectsAgents, onMutated }: { projectsAgents: ProjectAgen
 
       {/* Detail / Edit modals */}
       {editRow && <EditTaskModal task={editRow} taskOptions={taskOptions} onClose={() => setEditRow(null)} onSaved={reload} />}
-      {detailRow && <TaskDetailModal task={detailRow} onClose={() => setDetailRow(null)} onEdit={(r) => { setDetailRow(null); setEditRow(r) }} />}
+      {detailRow && <TaskDetailModal task={detailRow} onClose={() => setDetailRow(null)} onEdit={(r) => { setDetailRow(null); setEditRow(r) }} onMutated={() => { reload(); setDetailRow(null) }} />}
 
       {/* Kanban view */}
       {view === 'kanban' && (

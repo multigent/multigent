@@ -184,7 +184,7 @@ func (s *Server) handleWorkbenchTasks(w http.ResponseWriter, r *http.Request) {
 				}
 				seenTask[t.ID] = true
 				if cur.Role == RoleAdmin || s.canAdminCurrentWorkspace(r) {
-					if ag != "human" && t.Assignee != "human" {
+					if ag != "human" && t.Assignee != "human" && t.Assignee != cur.Username {
 						continue
 					}
 				} else {
