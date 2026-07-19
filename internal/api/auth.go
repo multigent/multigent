@@ -927,10 +927,7 @@ func (s *Server) checkProjectManager(w http.ResponseWriter, r *http.Request, pro
 // User management handlers
 
 func (s *Server) handleListUsers(w http.ResponseWriter, r *http.Request) {
-	if !s.checkCurrentWorkspaceAdmin(w, r) {
-		return
-	}
-	workspaceID, err := s.currentWorkspaceID()
+	workspaceID, err := s.ensureCurrentWorkspaceForUser(r)
 	if err != nil {
 		s.serverError(w, err)
 		return
@@ -944,6 +941,23 @@ func (s *Server) handleListUsers(w http.ResponseWriter, r *http.Request) {
 		s.serverError(w, err)
 		return
 	}
+	cur := s.currentUser(r)
+	if cur == nil || cur.Username == "" {
+		s.jsonErrorCode(w, http.StatusForbidden, ErrCodeWorkspaceAccessRequired, "workspace access required")
+		return
+	}
+	isMember := cur.Role == RoleAdmin || cur.Username == "apikey"
+	for _, member := range members {
+		if member.Username == cur.Username {
+			isMember = true
+			break
+		}
+	}
+	if !isMember {
+		s.jsonErrorCode(w, http.StatusForbidden, ErrCodeWorkspaceAccessRequired, "workspace access required")
+		return
+	}
+	isAdmin := cur.Role == RoleAdmin || s.canAdminWorkspace(r, workspaceID)
 	type safeUser struct {
 		Username     string          `json:"username"`
 		Role         string          `json:"role"`
@@ -963,19 +977,22 @@ func (s *Server) handleListUsers(w http.ResponseWriter, r *http.Request) {
 		if u == nil {
 			continue
 		}
-		out = append(out, safeUser{
-			Username:     u.Username,
-			Role:         member.Role,
-			DisplayName:  u.DisplayName,
-			Email:        u.Email,
-			Avatar:       u.Avatar,
-			Phone:        u.Phone,
-			Bio:          u.Bio,
-			Projects:     u.Projects,
-			LinkedAgents: u.LinkedAgents,
-			Disabled:     u.Disabled,
-			CreatedAt:    member.CreatedAt,
-		})
+		row := safeUser{
+			Username:    u.Username,
+			Role:        member.Role,
+			DisplayName: u.DisplayName,
+			Email:       u.Email,
+			Avatar:      u.Avatar,
+			CreatedAt:   member.CreatedAt,
+		}
+		if isAdmin || cur.Username == u.Username {
+			row.Phone = u.Phone
+			row.Bio = u.Bio
+			row.Projects = u.Projects
+			row.LinkedAgents = u.LinkedAgents
+			row.Disabled = u.Disabled
+		}
+		out = append(out, row)
 	}
 	_ = json.NewEncoder(w).Encode(out)
 }

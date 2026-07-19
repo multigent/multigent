@@ -466,7 +466,7 @@ function TasksPanel({ projectsAgents, onMutated }: { projectsAgents: ProjectAgen
   const { t } = useTranslation()
   const fmt = useFormatDateTime()
   const [view, setView] = useState<TaskView>('list')
-  const [statusFilter, setStatusFilter] = useState('pending')
+  const [statusFilter, setStatusFilter] = useState('')
   const [projectFilter, setProjectFilter] = useState('')
   const [priorityFilter, setPriorityFilter] = useState<string>('')
   const [taskSort, setTaskSort] = useState<'newest' | 'oldest' | 'priority'>('newest')
@@ -1158,7 +1158,7 @@ export default function WorkbenchPage() {
 
   const msgCount = useApiJson<MessageRow[]>('/api/v1/workbench/messages?direction=inbox&read=unread', badgeKey)
   const unreadMsgs = msgCount.status === 'ok' ? msgCount.data.length : 0
-  const taskCount = useApiJson<TaskRow[]>('/api/v1/workbench/tasks?status=pending', badgeKey)
+  const taskCount = useApiJson<TaskRow[]>('/api/v1/workbench/tasks', badgeKey)
   const pendingTasks = taskCount.status === 'ok' ? taskCount.data.filter((t) => !t.archived).length : 0
   const refreshBadge = useCallback(() => setBadgeKey((k) => k + 1), [])
   const refreshQuickLinks = useCallback(() => setQuickLinksVersion((v) => v + 1), [])

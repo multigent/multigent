@@ -141,7 +141,7 @@ function AuthenticatedRoutes() {
         <Route path="connections" element={<ConnectionsPage />} />
         {canAdmin && <Route path="audit" element={<AuditPage />} />}
         {canAdmin && <Route path="skills" element={<SkillsPage />} />}
-        {canAdmin && <Route path="docs/*" element={<DocsPage />} />}
+        <Route path="docs/*" element={<DocsPage />} />
         <Route path="files" element={<FilesPage />} />
         <Route path="settings" element={<SettingsPage />} />
         <Route path="account" element={<AccountPage />} />

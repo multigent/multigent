@@ -296,6 +296,48 @@ func TestListUsersReturnsWorkspaceRole(t *testing.T) {
 	}
 }
 
+func TestListUsersWorkspaceMemberCanReadSafeDirectory(t *testing.T) {
+	s, _ := newProviderHandlerTestServer(t)
+
+	rec := httptest.NewRecorder()
+	s.handleListUsers(rec, providerTestRequest(http.MethodGet, "/api/v1/users", "member", nil))
+	if rec.Code != http.StatusOK {
+		t.Fatalf("list users status=%d body=%s", rec.Code, rec.Body.String())
+	}
+	var rows []struct {
+		Username     string          `json:"username"`
+		Role         string          `json:"role"`
+		DisplayName  string          `json:"displayName"`
+		Email        string          `json:"email"`
+		Projects     []projectAccess `json:"projects,omitempty"`
+		LinkedAgents []string        `json:"linkedAgents,omitempty"`
+	}
+	if err := json.Unmarshal(rec.Body.Bytes(), &rows); err != nil {
+		t.Fatalf("decode users: %v", err)
+	}
+	if len(rows) == 0 {
+		t.Fatalf("expected workspace directory rows")
+	}
+	seenOwner := false
+	for _, row := range rows {
+		if row.Username == "owner" {
+			seenOwner = true
+			if len(row.Projects) != 0 || len(row.LinkedAgents) != 0 {
+				t.Fatalf("member should not receive other users' management fields: %#v", row)
+			}
+		}
+	}
+	if !seenOwner {
+		t.Fatalf("expected owner in workspace directory: %#v", rows)
+	}
+
+	outsiderRec := httptest.NewRecorder()
+	s.handleListUsers(outsiderRec, providerTestRequest(http.MethodGet, "/api/v1/users", "outsider", nil))
+	if outsiderRec.Code != http.StatusForbidden {
+		t.Fatalf("outsider status=%d body=%s", outsiderRec.Code, outsiderRec.Body.String())
+	}
+}
+
 func TestAuditEventsCanBeCreatedAndFiltered(t *testing.T) {
 	users := newTestUserStore(t)
 	event := controldb.AuditEvent{
