@@ -10,6 +10,7 @@ import (
 const (
 	playbookTemplateVersion       = "1.0.0"
 	gstackPlaybookTemplateVersion = "1.1.0"
+	mattPocockTemplateVersion     = "1.0.0"
 )
 
 func Templates(locale string) []entity.PlaybookTemplate {
@@ -17,6 +18,7 @@ func Templates(locale string) []entity.PlaybookTemplate {
 	return []entity.PlaybookTemplate{
 		softwareDelivery(locale),
 		startupValidation(locale),
+		mattPocockEngineering(locale),
 		bugTriageAndFix(locale),
 		supportKnowledgeLoop(locale),
 	}
@@ -167,6 +169,73 @@ func startupValidation(locale string) entity.PlaybookTemplate {
 		SuccessMetrics: []entity.PlaybookMetric{
 			metric("office_hours_quality", text(locale, "Office-hours quality", "Office-hours 质量"), text(locale, "Whether the problem, status quo, wedge, and demand evidence are specific enough to make a build/no-build decision.", "问题、现状替代方案、切入点和需求证据是否足够具体，能支撑做/不做决策。")),
 			metric("review_rigor", text(locale, "Review rigor", "评审严格度"), text(locale, "Whether CEO, engineering, design, review, QA, and ship gates produce concrete findings and decision records.", "CEO、工程、设计、review、QA 和 ship 门禁是否产出具体发现和决策记录。")),
+		},
+	}
+}
+
+func mattPocockEngineering(locale string) entity.PlaybookTemplate {
+	wf := mattPocockEngineeringWorkflow(locale)
+	return entity.PlaybookTemplate{
+		ID:          "matt-pocock-real-engineering",
+		Version:     mattPocockTemplateVersion,
+		Name:        text(locale, "Matt Pocock Real Engineering", "Matt Pocock 真实工程协作方案"),
+		Description: text(locale, "A pragmatic engineering playbook built from Matt Pocock's Skills for Real Engineers: clarify with pressure, produce specs and tickets, implement with tests, review code, debug, hand off, and preserve reusable engineering knowledge.", "基于 Matt Pocock 的 Skills for Real Engineers 构建的工程协作方案：高压澄清、产出 spec 与 tickets、测试驱动实现、代码审核、排障、交接，并沉淀可复用工程知识。"),
+		Locale:      normalizeLocale(locale),
+		Category:    text(locale, "Engineering", "工程"),
+		Complexity:  text(locale, "Advanced", "高阶"),
+		Tags:        []string{"engineering", "matt-pocock", "skills", "spec", "tdd", "review"},
+		Roles: []entity.PlaybookRoleTemplate{
+			roleWithPrompt("matt-wayfinder", "product", "wayfinder", text(locale, "Matt Pocock Wayfinder", "Matt Pocock Wayfinder"), text(locale, "Clarifies ambiguous work, finds the right tracker item, grills weak requirements, and writes handoff context.", "澄清模糊工作，定位正确的任务入口，追问薄弱需求，并编写交接上下文。"), mattPocockRolePrompt("engineering", "wayfinder"), []string{"wayfinder", "ask-matt", "grill-with-docs", "grill-me", "grilling", "handoff"}),
+			roleWithPrompt("domain-modeler", "product", "domain-modeler", text(locale, "Domain Modeler", "领域建模 Agent"), text(locale, "Builds shared language, domain objects, and executable specs before implementation starts.", "在开发前建立共享语言、领域对象和可执行规格。"), mattPocockRolePrompt("engineering", "domain-modeling"), []string{"domain-modeling", "codebase-design", "to-spec"}),
+			roleWithPrompt("ticket-planner", "engineering", "ticket-planner", text(locale, "Ticket Planner", "任务拆解 Agent"), text(locale, "Turns approved specs into sequenced, dependency-aware tickets that agents can execute.", "把已审核 spec 拆成有顺序和依赖关系、Agent 可执行的 tickets。"), mattPocockRolePrompt("engineering", "to-tickets"), []string{"to-tickets", "triage", "research", "wayfinder"}),
+			roleWithPrompt("implementation-agent", "engineering", "developer", text(locale, "Implementation Agent", "实现 Agent"), text(locale, "Implements from specs and tickets, uses TDD at agreed seams, prototypes when needed, and reports evidence.", "基于 spec 和 tickets 实现，在约定边界使用 TDD，必要时先做原型，并报告证据。"), mattPocockRolePrompt("engineering", "implement"), []string{"implement", "tdd", "prototype", "diagnosing-bugs"}),
+			roleWithPrompt("architecture-reviewer", "engineering", "architecture-reviewer", text(locale, "Architecture Reviewer", "架构审核 Agent"), text(locale, "Reviews architecture, coupling, boundaries, maintainability, and design drift.", "审核架构、耦合、边界、可维护性和设计偏移。"), mattPocockRolePrompt("engineering", "improve-codebase-architecture"), []string{"improve-codebase-architecture", "codebase-design", "code-review"}),
+			roleWithPrompt("review-agent", "engineering", "reviewer", text(locale, "Code Review Agent", "代码审核 Agent"), text(locale, "Reviews implementation quality, asks for changes when needed, and handles merge conflict resolution.", "审核实现质量，必要时要求修改，并处理合并冲突解决。"), mattPocockRolePrompt("engineering", "code-review"), []string{"code-review", "resolving-merge-conflicts"}),
+			roleWithPrompt("learning-writer", "enablement", "knowledge-writer", text(locale, "Learning Writer", "知识沉淀 Agent"), text(locale, "Turns finished work into handoffs, teaching notes, and better reusable skills.", "把完成的工作沉淀成交接、教学说明和更好的可复用 skill。"), mattPocockRolePrompt("productivity", "handoff"), []string{"handoff", "teach", "writing-great-skills"}),
+		},
+		Skills: mattPocockSkills(locale),
+		Workflows: []entity.PlaybookWorkflowTemplate{
+			workflow("matt-pocock-real-engineering", wf, map[string]string{
+				"setup_context":  "matt-wayfinder",
+				"clarify":        "matt-wayfinder",
+				"spec":           "domain-modeler",
+				"tickets":        "ticket-planner",
+				"implementation": "implementation-agent",
+				"architecture":   "architecture-reviewer",
+				"code_review":    "review-agent",
+				"debug_and_fix":  "implementation-agent",
+				"handoff":        "learning-writer",
+			}, map[string][]string{
+				"setup_context":  {"setup-matt-pocock-skills", "wayfinder"},
+				"clarify":        {"grill-with-docs", "grill-me", "grilling", "ask-matt"},
+				"spec":           {"to-spec", "domain-modeling", "codebase-design"},
+				"tickets":        {"to-tickets", "triage", "research"},
+				"implementation": {"implement", "tdd", "prototype"},
+				"architecture":   {"improve-codebase-architecture", "codebase-design"},
+				"code_review":    {"code-review", "resolving-merge-conflicts"},
+				"debug_and_fix":  {"diagnosing-bugs", "tdd", "implement"},
+				"handoff":        {"handoff", "teach", "writing-great-skills"},
+			}),
+		},
+		TaskTemplates: []entity.PlaybookTaskTemplate{
+			task("build-from-spec", text(locale, "Build from a spec", "基于 Spec 交付"), text(locale, "Clarify context, write spec, split tickets, implement with tests, review, fix, and hand off learnings.", "澄清上下文，编写 spec，拆 tickets，测试驱动实现，审核、修复并交接沉淀。"), "matt-pocock-real-engineering"),
+			task("debug-production-issue", text(locale, "Debug an issue", "排查问题"), text(locale, "Use diagnosis, triage, targeted implementation, review, and handoff for a concrete bug or regression.", "针对具体 bug 或回归，执行诊断、分诊、定向实现、审核和交接。"), "matt-pocock-real-engineering"),
+		},
+		RequiredTools: []entity.PlaybookToolRequirement{
+			tool("github", "GitHub", text(locale, "Issue tracker, PR, repository, and CI access.", "Issue、PR、代码仓库和 CI 访问。"), false),
+			tool("gitlab", "GitLab", text(locale, "Repository, merge request, issue, and pipeline access.", "代码仓库、MR、Issue 和流水线访问。"), false),
+			tool("feishu", text(locale, "Feishu", "飞书"), text(locale, "Docs and review collaboration if the team uses Feishu.", "如果团队使用飞书，用于文档和评审协作。"), false),
+			tool("slack", "Slack", text(locale, "Discussion and review collaboration if the team uses Slack.", "如果团队使用 Slack，用于讨论和评审协作。"), false),
+		},
+		SetupQuestions: []entity.PlaybookSetupQuestion{
+			question("tracker", text(locale, "Which tracker should specs and tickets be published to?", "Spec 和 tickets 应发布到哪个任务系统？"), []string{"GitHub Issues", "Linear", "Jira", "Other"}, true),
+			question("test_seams", text(locale, "Which test seams are preferred in this codebase?", "这个代码库优先在哪些边界做测试？"), nil, false),
+			question("domain_glossary", text(locale, "Where is the domain glossary or architecture context?", "领域词汇表或架构上下文在哪里？"), nil, false),
+		},
+		SuccessMetrics: []entity.PlaybookMetric{
+			metric("spec_to_ticket_quality", text(locale, "Spec to ticket quality", "Spec 到 Ticket 质量"), text(locale, "Whether specs and tickets are concrete enough for agents to execute without repeated clarification.", "Spec 和 tickets 是否足够具体，Agent 能否无需反复澄清就执行。")),
+			metric("review_rework_rate", text(locale, "Review rework rate", "审核返工率"), text(locale, "How often implementation returns from review or QA to debugging and fixing.", "实现从审核或 QA 打回排障修复的频率。")),
+			metric("handoff_reuse", text(locale, "Handoff reuse", "交接复用率"), text(locale, "How often finished work creates docs, patterns, or skills that reduce future token and human intervention.", "完成工作后产出的文档、模式或 skill 是否降低后续 token 和人工介入。")),
 		},
 	}
 }
@@ -483,6 +552,62 @@ const prototypeScopeSkillZH = `# Skill: 48 小时原型范围
 - test_plan
 - pass_signal
 - fail_signal`
+
+type mattPocockSkillSpec struct {
+	Category      string
+	ID            string
+	Name          string
+	DescriptionEN string
+	DescriptionZH string
+}
+
+var mattPocockSkillCatalog = []mattPocockSkillSpec{
+	{"engineering", "ask-matt", "ask-matt", "Ask a Matt-style reviewer for engineering judgment, trade-offs, and next action.", "用 Matt 风格的工程判断追问取舍和下一步。"},
+	{"engineering", "grill-with-docs", "grill-with-docs", "Pressure-test ideas against existing docs, domain context, and prior decisions.", "基于已有文档、领域上下文和历史决策对想法做压力测试。"},
+	{"engineering", "triage", "triage", "Classify and route unclear work before implementation starts.", "在开发前对不清晰的工作做分类和分流。"},
+	{"engineering", "improve-codebase-architecture", "improve-codebase-architecture", "Find architectural improvement opportunities without broad rewriting.", "识别架构改进机会，避免无边界重写。"},
+	{"engineering", "setup-matt-pocock-skills", "setup-matt-pocock-skills", "Set up tracker labels, domain glossary, and team conventions required by the skills.", "建立这些 skill 所需的任务标签、领域词汇和团队约定。"},
+	{"engineering", "to-spec", "to-spec", "Synthesize current context into a publishable spec without re-interviewing the user.", "把当前上下文综合成可发布 spec，不重新访谈用户。"},
+	{"engineering", "to-tickets", "to-tickets", "Split a spec into ordered, dependency-aware implementation tickets.", "把 spec 拆成有顺序和依赖关系的实现 tickets。"},
+	{"engineering", "implement", "implement", "Implement work from a spec or tickets with tests and review.", "基于 spec 或 tickets 实现，并配套测试和审核。"},
+	{"engineering", "wayfinder", "wayfinder", "Find the right issue, document, route, or next action in a messy codebase workflow.", "在复杂代码库工作流中找到正确 issue、文档、路径或下一步。"},
+	{"engineering", "prototype", "prototype", "Build a narrow prototype to encode a decision or test an uncertain design.", "构建窄范围原型来表达决策或验证不确定设计。"},
+	{"engineering", "diagnosing-bugs", "diagnosing-bugs", "Diagnose bugs with evidence, reproduction, hypotheses, and targeted fixes.", "用证据、复现、假设和定向修复来排查 bug。"},
+	{"engineering", "research", "research", "Research codebase or technical unknowns and produce decision-ready notes.", "调研代码库或技术未知点，并产出可决策说明。"},
+	{"engineering", "tdd", "tdd", "Use test-driven development at agreed seams and verify external behavior.", "在约定边界使用 TDD，验证外部行为。"},
+	{"engineering", "domain-modeling", "domain-modeling", "Model the domain language and concepts before designing implementation.", "在设计实现前建模领域语言和概念。"},
+	{"engineering", "codebase-design", "codebase-design", "Design codebase changes around seams, ownership, and maintainable boundaries.", "围绕测试边界、职责归属和可维护边界设计代码变更。"},
+	{"engineering", "code-review", "code-review", "Review code quality, behavior, tests, maintainability, and risk.", "审核代码质量、行为、测试、可维护性和风险。"},
+	{"engineering", "resolving-merge-conflicts", "resolving-merge-conflicts", "Resolve merge conflicts while preserving intent and behavior.", "在保留意图和行为的前提下解决合并冲突。"},
+	{"productivity", "grill-me", "grill-me", "Use direct questioning to expose weak assumptions and missing context.", "用直接追问暴露薄弱假设和缺失上下文。"},
+	{"productivity", "handoff", "handoff", "Create useful handoff notes so another agent or human can continue.", "创建有效交接说明，让其他 Agent 或人能继续。"},
+	{"productivity", "teach", "teach", "Turn understanding into a teaching artifact that helps future work.", "把理解转成能帮助后续工作的教学材料。"},
+	{"productivity", "writing-great-skills", "writing-great-skills", "Improve skills so repeated work becomes clearer and more reusable.", "改进 skill，让重复工作更清晰、更可复用。"},
+	{"productivity", "grilling", "grilling", "Run a structured grilling loop to make requirements, reasoning, and evidence sharper.", "运行结构化追问循环，让需求、推理和证据更锋利。"},
+}
+
+func mattPocockSkills(locale string) []entity.PlaybookSkillTemplate {
+	out := make([]entity.PlaybookSkillTemplate, 0, len(mattPocockSkillCatalog))
+	for _, spec := range mattPocockSkillCatalog {
+		out = append(out, mattPocockSkill(spec, text(locale, spec.DescriptionEN, spec.DescriptionZH)))
+	}
+	return out
+}
+
+func mattPocockSkill(spec mattPocockSkillSpec, description string) entity.PlaybookSkillTemplate {
+	return entity.PlaybookSkillTemplate{
+		ID:          spec.ID,
+		Name:        spec.Name,
+		Description: description,
+		Body:        mattPocockSkillBody(spec.Category, spec.ID),
+		Source:      "Vendored from https://github.com/mattpocock/skills:" + spec.Category + "/" + spec.ID,
+		LicenseNote: "MIT License. Copyright (c) 2026 Matt Pocock. See internal/playbook/mattpocock_assets/LICENSE.",
+	}
+}
+
+func mattPocockRolePrompt(category, assetName string) string {
+	return "# Role prompt source\n\nThis role is backed by the full upstream Matt Pocock skill below. Follow it as the primary operating procedure inside Multigent.\n\n" + mattPocockSkillBody(category, assetName)
+}
 
 func role(id, team, roleName, name, description string, skills []string) entity.PlaybookRoleTemplate {
 	return entity.PlaybookRoleTemplate{ID: id, Team: team, Role: roleName, Name: name, Description: description, Skills: skills}

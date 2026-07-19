@@ -276,6 +276,12 @@ func (s *Server) ensurePlaybookSkill(sk entity.PlaybookSkillTemplate) (string, e
 		}
 		return "created", nil
 	}
+	if category, assetName, ok := mattPocockAssetRef(sk.Source); ok {
+		if err := playbookstore.CopyMattPocockSkillAssets(category, assetName, dir); err != nil {
+			return "", err
+		}
+		return "created", nil
+	}
 	if err := os.MkdirAll(dir, 0o755); err != nil {
 		return "", err
 	}
@@ -283,6 +289,23 @@ func (s *Server) ensurePlaybookSkill(sk entity.PlaybookSkillTemplate) (string, e
 		return "", err
 	}
 	return "created", nil
+}
+
+func mattPocockAssetRef(source string) (string, string, bool) {
+	_, rest, ok := strings.Cut(source, "mattpocock/skills:")
+	if !ok {
+		return "", "", false
+	}
+	category, assetName, ok := strings.Cut(strings.TrimSpace(rest), "/")
+	if !ok {
+		return "", "", false
+	}
+	category = strings.TrimSpace(category)
+	assetName = strings.TrimSpace(assetName)
+	if category == "" || assetName == "" {
+		return "", "", false
+	}
+	return category, assetName, true
 }
 
 func (s *Server) ensurePlaybookTeam(teamName string, tmpl entity.PlaybookTemplate) (string, error) {

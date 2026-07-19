@@ -33,14 +33,21 @@ func GstackSkillBody(name string) string {
 }
 
 func CopyGstackSkillAssets(name, dstDir string) error {
-	srcRoot := fmt.Sprintf("gstack_assets/%s", name)
-	if _, err := fs.Stat(gstackAssetFS, srcRoot); err != nil {
+	return copyEmbeddedDir(fmt.Sprintf("gstack_assets/%s", name), dstDir)
+}
+
+func copyEmbeddedDir(srcRoot, dstDir string) error {
+	return copyEmbeddedDirFromFS(gstackAssetFS, srcRoot, dstDir)
+}
+
+func copyEmbeddedDirFromFS(assetFS fs.FS, srcRoot, dstDir string) error {
+	if _, err := fs.Stat(assetFS, srcRoot); err != nil {
 		return err
 	}
 	if err := os.MkdirAll(dstDir, 0o755); err != nil {
 		return err
 	}
-	return fs.WalkDir(gstackAssetFS, srcRoot, func(path string, d fs.DirEntry, err error) error {
+	return fs.WalkDir(assetFS, srcRoot, func(path string, d fs.DirEntry, err error) error {
 		if err != nil {
 			return err
 		}
@@ -53,7 +60,7 @@ func CopyGstackSkillAssets(name, dstDir string) error {
 		if d.IsDir() {
 			return os.MkdirAll(dst, 0o755)
 		}
-		data, err := gstackAssetFS.ReadFile(path)
+		data, err := fs.ReadFile(assetFS, path)
 		if err != nil {
 			return err
 		}
