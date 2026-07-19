@@ -734,7 +734,9 @@ function WorkflowValueMap({ values, compact = false }: { values: Record<string, 
       {entries.map(([key, value]) => (
         <div key={key} className="rounded-lg bg-neutral-50 p-2.5 dark:bg-zinc-900">
           <p className="font-mono text-xs font-semibold text-neutral-700 dark:text-zinc-300">{key}</p>
-          <p className="mt-1 whitespace-pre-wrap break-words text-sm text-neutral-700 dark:text-zinc-300">{String(value)}</p>
+          <div className="mt-1 whitespace-pre-wrap break-words text-sm text-neutral-700 dark:text-zinc-300">
+            <WorkflowValueText value={String(value)} />
+          </div>
         </div>
       ))}
     </div>
@@ -758,10 +760,49 @@ function WorkflowFieldList({ fields, values }: { fields: WorkflowField[]; values
         <div key={field.name} className="rounded-lg border border-neutral-100 bg-white p-2.5 dark:border-zinc-800 dark:bg-zinc-950">
           <p className="font-mono text-xs font-semibold text-neutral-700 dark:text-zinc-300">{field.name}</p>
           {field.description && <p className="mt-1 text-xs text-neutral-500 dark:text-zinc-500">{field.description}</p>}
-          {values[field.name] && <p className="mt-1.5 whitespace-pre-wrap break-words text-sm text-neutral-800 dark:text-zinc-200">{values[field.name]}</p>}
+          {values[field.name] && (
+            <div className="mt-1.5 whitespace-pre-wrap break-words text-sm text-neutral-800 dark:text-zinc-200">
+              <WorkflowValueText value={values[field.name]} />
+            </div>
+          )}
         </div>
       ))}
     </div>
+  )
+}
+
+const docIDPattern = /\bdoc-\d{8}-[a-z0-9]+\b/gi
+
+function WorkflowValueText({ value }: { value: string }) {
+  const text = String(value ?? '')
+  const parts: ReactNode[] = []
+  let lastIndex = 0
+  for (const match of text.matchAll(docIDPattern)) {
+    const docID = match[0]
+    const index = match.index ?? 0
+    if (index > lastIndex) {
+      parts.push(text.slice(lastIndex, index))
+    }
+    parts.push(<DocIDLink key={`${docID}-${index}`} docID={docID} />)
+    lastIndex = index + docID.length
+  }
+  if (lastIndex < text.length) {
+    parts.push(text.slice(lastIndex))
+  }
+  return <>{parts.length > 0 ? parts : text}</>
+}
+
+function DocIDLink({ docID }: { docID: string }) {
+  return (
+    <a
+      href={`/docs/${encodeURIComponent(docID)}`}
+      target="_blank"
+      rel="noreferrer"
+      className="font-medium text-sky-700 underline decoration-sky-300 underline-offset-2 hover:text-sky-800 dark:text-sky-400 dark:decoration-sky-700 dark:hover:text-sky-300"
+      onClick={(e) => e.stopPropagation()}
+    >
+      {docID}
+    </a>
   )
 }
 
