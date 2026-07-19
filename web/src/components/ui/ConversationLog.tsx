@@ -833,7 +833,7 @@ export function ConversationLog({
   const visibleItems = useMemo(() => {
     if (mode !== 'chat') return items
     return items.filter((item) => {
-      if (item.kind === 'human' || item.kind === 'assistant' || item.kind === 'result') return true
+      if (item.kind === 'human' || item.kind === 'assistant' || item.kind === 'thinking' || item.kind === 'result') return true
       if (item.kind === 'tool_result') return item.isError
       return false
     })
@@ -868,7 +868,7 @@ export function ConversationLog({
               <details key={i} className="group">
                 <summary className="flex cursor-pointer items-center gap-2 text-xs text-neutral-400 hover:text-neutral-600 dark:text-zinc-500 dark:hover:text-zinc-400">
                   <BrainCircuit className="size-3.5 shrink-0" strokeWidth={1.5} />
-                  <span>Thinking</span>
+                  <span>{t('runs.thinking')}</span>
                   <span className="text-[10px] opacity-60">({item.text.length} chars)</span>
                 </summary>
                 <div className="ml-5 mt-1 max-h-48 overflow-auto rounded-md border border-neutral-200/60 bg-neutral-50/50 px-3 py-2 text-xs leading-relaxed whitespace-pre-wrap break-words text-neutral-500 dark:border-zinc-700/40 dark:bg-zinc-800/20 dark:text-zinc-500">

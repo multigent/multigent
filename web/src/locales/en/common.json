@@ -1338,6 +1338,7 @@
     "logLineCount": "{{count}} lines",
     "expandLog": "Expand",
     "collapseLog": "Collapse",
+    "thinking": "Thinking",
     "viewRaw": "Raw log",
     "viewConversation": "Conversation",
     "status": {

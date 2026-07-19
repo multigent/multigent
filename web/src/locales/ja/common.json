@@ -1338,6 +1338,7 @@
     "logLineCount": "{{count}} 行",
     "expandLog": "展開",
     "collapseLog": "折りたたむ",
+    "thinking": "思考過程",
     "viewRaw": "生ログ",
     "viewConversation": "会話ビュー",
     "status": {

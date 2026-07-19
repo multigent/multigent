@@ -1338,6 +1338,7 @@
     "logLineCount": "{{count}} 行",
     "expandLog": "展开",
     "collapseLog": "收起",
+    "thinking": "思考过程",
     "viewRaw": "原始日志",
     "viewConversation": "对话视图",
     "status": {
