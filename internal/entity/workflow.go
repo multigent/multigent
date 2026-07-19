@@ -111,6 +111,23 @@ type WorkflowStepInstance struct {
 	OutputValues   map[string]string `json:"outputValues,omitempty" yaml:"output_values,omitempty"`
 }
 
+type WorkflowStepEvent struct {
+	ID             string            `json:"id" yaml:"id"`
+	RunID          string            `json:"runId" yaml:"run_id"`
+	StepID         string            `json:"stepId" yaml:"step_id"`
+	Status         string            `json:"status" yaml:"status"`
+	ActorType      string            `json:"actorType,omitempty" yaml:"actor_type,omitempty"`
+	ActorID        string            `json:"actorId,omitempty" yaml:"actor_id,omitempty"`
+	Summary        string            `json:"summary,omitempty" yaml:"summary,omitempty"`
+	StartedAt      time.Time         `json:"startedAt,omitempty" yaml:"started_at,omitempty"`
+	FinishedAt     time.Time         `json:"finishedAt,omitempty" yaml:"finished_at,omitempty"`
+	InputArtifact  string            `json:"inputArtifact,omitempty" yaml:"input_artifact,omitempty"`
+	OutputArtifact string            `json:"outputArtifact,omitempty" yaml:"output_artifact,omitempty"`
+	InputValues    map[string]string `json:"inputValues,omitempty" yaml:"input_values,omitempty"`
+	OutputValues   map[string]string `json:"outputValues,omitempty" yaml:"output_values,omitempty"`
+	CreatedAt      time.Time         `json:"createdAt" yaml:"created_at"`
+}
+
 func NewWorkflowID() string {
 	return newShortWorkflowID("wf")
 }
@@ -121,6 +138,10 @@ func NewWorkflowRunID() string {
 
 func NewWorkflowStepInstanceID() string {
 	return newShortWorkflowID("wfs")
+}
+
+func NewWorkflowStepEventID() string {
+	return newShortWorkflowID("wfe")
 }
 
 func newShortWorkflowID(prefix string) string {

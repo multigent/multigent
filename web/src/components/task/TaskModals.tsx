@@ -9,7 +9,7 @@ import { useFormatDateTime } from '../../lib/format-datetime'
 import { useApiJson } from '../../lib/use-api'
 import { useAuth } from '../../lib/auth'
 import { formatGoDuration, taskElapsedLabel } from '../../lib/task-duration'
-import { WorkflowBoard, type WorkflowDefinition, type WorkflowField, type WorkflowRun, type WorkflowStep, type WorkflowStepInstance } from '../workflow/WorkflowBoard'
+import { WorkflowBoard, type WorkflowDefinition, type WorkflowField, type WorkflowRun, type WorkflowStep, type WorkflowStepEvent, type WorkflowStepInstance } from '../workflow/WorkflowBoard'
 import { TechnicalLog } from '../ui/ConversationLog'
 
 export type TaskRow = {
@@ -52,8 +52,9 @@ type RunRow = {
 }
 
 type LogData = { content: string; truncated: boolean }
-type TaskWorkflowData = { definition: WorkflowDefinition; run: WorkflowRun; steps: WorkflowStepInstance[] }
+type TaskWorkflowData = { definition: WorkflowDefinition; run: WorkflowRun; steps: WorkflowStepInstance[]; history?: WorkflowStepEvent[] }
 type SafeUser = { username: string; displayName?: string; email?: string }
+type WorkflowRecord = WorkflowStepEvent | WorkflowStepInstance
 
 // Restore real line breaks for descriptions whose upstream author stored literal
 // "\n" / "\r\n" / "\t" sequences (typically agent-generated text that survived a
@@ -278,8 +279,8 @@ export function TaskDetailModal({ task, onClose, onEdit, onMutated, canEdit = tr
   const activeWorkflowInst = workflowState.status === 'ok'
     ? workflowState.data.steps.find((step) => step.stepId === workflowState.data.run.activeStepId)
     : undefined
-  const previousWorkflowOutputs = workflowState.status === 'ok'
-    ? workflowState.data.steps.filter((step) => step.stepId !== workflowState.data.run.activeStepId && (step.outputArtifact || step.summary || Object.keys(step.outputValues ?? {}).length > 0))
+  const workflowRecords = workflowState.status === 'ok'
+    ? workflowHistoryRecords(workflowState.data)
     : []
   const canReviewWorkflow = activeWorkflowStep?.type === 'human_review'
 
@@ -352,18 +353,15 @@ export function TaskDetailModal({ task, onClose, onEdit, onMutated, canEdit = tr
           </InfoCell>
           <InfoCell label={t('forms.type')}>{task.type ? t(`forms.taskType.${task.type}`, { defaultValue: task.type }) : '—'}</InfoCell>
           <InfoCell label={t('api.taskColUpdated')}>{fmt(task.updatedAt)}</InfoCell>
-          {task.estimateDuration && (
-            <InfoCell label={t('tasks.estimateDuration')}>
-              <span className="tabular-nums">{formatGoDuration(task.estimateDuration)}</span>
+          {(task.estimateDuration || taskElapsedLabel(task)) && (
+            <InfoCell label={`${t('tasks.estimateDuration')} / ${t('tasks.elapsed')}`}>
+              <span className="tabular-nums">
+                {task.estimateDuration ? formatGoDuration(task.estimateDuration) : '—'} / {taskElapsedLabel(task) ?? '—'}
+              </span>
             </InfoCell>
           )}
           {task.startedAt && <InfoCell label={t('tasks.startedAt')}>{fmt(task.startedAt)}</InfoCell>}
           {task.finishedAt && <InfoCell label={t('tasks.finishedAt')}>{fmt(task.finishedAt)}</InfoCell>}
-          {taskElapsedLabel(task) && (
-            <InfoCell label={t('tasks.elapsed')}>
-              <span className="tabular-nums">{taskElapsedLabel(task)}</span>
-            </InfoCell>
-          )}
           {task.dueDate && <InfoCell label={t('tasks.dueDate')}><span className="tabular-nums">{task.dueDate}</span></InfoCell>}
           {task.createdBy && <InfoCell label={t('tasks.createdBy')}><span title={task.createdBy}>{taskIdentityLabel(task.createdBy, task.createdByLabel)}</span></InfoCell>}
           {task.parentId && <InfoCell label={t('tasks.parentTask')}><span className="font-mono text-xs">{task.parentId}</span></InfoCell>}
@@ -413,7 +411,9 @@ export function TaskDetailModal({ task, onClose, onEdit, onMutated, canEdit = tr
                   step={activeWorkflowStep}
                   instance={activeWorkflowInst}
                   steps={workflowState.data.definition.steps}
-                  previousOutputs={previousWorkflowOutputs}
+                  records={workflowRecords}
+                  runs={runsState.status === 'ok' ? runsState.data.runs ?? [] : []}
+                  taskID={task.id}
                   actorLabels={actorLabels}
                   canReview={canReviewWorkflow}
                   reviewOutputs={reviewOutputs}
@@ -513,6 +513,32 @@ function InfoCell({ label, children }: { label: string; children: React.ReactNod
   )
 }
 
+function workflowHistoryRecords(data: TaskWorkflowData): WorkflowRecord[] {
+  const history = (data.history ?? [])
+    .filter((item) => workflowRecordHasPayload(item))
+    .sort((a, b) => workflowRecordTimestamp(a) - workflowRecordTimestamp(b))
+  if (history.length > 0) return history
+  return data.steps
+    .filter((item) => item.stepId !== data.run.activeStepId && workflowRecordHasPayload(item))
+    .sort((a, b) => workflowRecordTimestamp(a) - workflowRecordTimestamp(b))
+}
+
+function workflowRecordHasPayload(record: WorkflowRecord) {
+  return Boolean(
+    record.inputArtifact ||
+    record.outputArtifact ||
+    record.summary ||
+    hasWorkflowValues(record.inputValues) ||
+    hasWorkflowValues(record.outputValues),
+  )
+}
+
+function workflowRecordTimestamp(record: WorkflowRecord) {
+  const raw = record.finishedAt || record.startedAt || ('updatedAt' in record ? record.updatedAt : record.createdAt)
+  const ts = Date.parse(raw || '')
+  return Number.isFinite(ts) ? ts : 0
+}
+
 /* ── Task Comments Section ── */
 
 type TaskCommentRow = {
@@ -605,7 +631,9 @@ function WorkflowRuntimePanel({
   step,
   instance,
   steps,
-  previousOutputs,
+  records,
+  runs,
+  taskID,
   actorLabels,
   canReview,
   reviewOutputs,
@@ -619,7 +647,9 @@ function WorkflowRuntimePanel({
   step?: WorkflowStep
   instance?: WorkflowStepInstance
   steps: WorkflowStep[]
-  previousOutputs: WorkflowStepInstance[]
+  records: WorkflowRecord[]
+  runs: RunRow[]
+  taskID: string
   actorLabels: Map<string, string>
   canReview: boolean
   reviewOutputs: Record<string, string>
@@ -636,7 +666,7 @@ function WorkflowRuntimePanel({
   const outputValues = hasWorkflowValues(instance?.outputValues) ? instance!.outputValues! : parsedOutputValues
   const inputValues = hasWorkflowValues(instance?.inputValues) ? instance!.inputValues! : parsedInputValues
   const hasStructuredInput = Object.keys(inputValues).length > 0
-  const stepTitleByID = useMemo(() => new Map(steps.map((item) => [item.id, item.title])), [steps])
+  const stepByIDMap = useMemo(() => new Map(steps.map((item) => [item.id, item])), [steps])
   const actorLabel = workflowActorLabel(instance?.actorType, instance?.actorId, actorLabels)
 
   if (!step) {
@@ -671,15 +701,22 @@ function WorkflowRuntimePanel({
           </WorkflowPanelBlock>
         )}
 
-        {previousOutputs.length > 0 && (
+        {records.length > 0 && (
           <WorkflowPanelBlock title={t('workflows.detail.previousOutputs')}>
             <div className="space-y-3">
-              {previousOutputs.map((item) => (
-                <div key={item.id} className="rounded-lg bg-neutral-50 p-3 dark:bg-zinc-900">
-                  <p className="text-xs font-semibold text-neutral-600 dark:text-zinc-300">{stepTitleByID.get(item.stepId) || item.stepId}</p>
-                  <WorkflowValuesOrArtifact values={item.outputValues} fields={steps.find((candidate) => candidate.id === item.stepId)?.outputFields} artifact={item.outputArtifact || item.summary} compact />
-                </div>
-              ))}
+              {records.map((item) => {
+                const itemStep = stepByIDMap.get(item.stepId)
+                const run = workflowRunForRecord(runs, taskID, item)
+                return (
+                  <WorkflowRecordCard
+                    key={item.id}
+                    record={item}
+                    step={itemStep}
+                    run={run}
+                    actorLabels={actorLabels}
+                  />
+                )
+              })}
             </div>
           </WorkflowPanelBlock>
         )}
@@ -750,6 +787,83 @@ function compactTaskIdentityLabel(value?: string, label?: string) {
   const raw = value || display
   const slash = raw.lastIndexOf('/')
   return slash >= 0 ? raw.slice(slash + 1) : display
+}
+
+function workflowRunForRecord(runs: RunRow[], taskID: string, record: WorkflowRecord): RunRow | null {
+  if (record.actorType !== 'agent' || !record.actorId) return null
+  const candidates = runs.filter((run) => run.taskId === taskID && (`${run.project}/${run.agent}` === record.actorId || run.agent === record.actorId))
+  if (candidates.length === 0) return null
+  const started = Date.parse(record.startedAt || '')
+  const finished = Date.parse(record.finishedAt || '')
+  const hasWindow = Number.isFinite(started) || Number.isFinite(finished)
+  if (!hasWindow) return candidates[0] ?? null
+  return candidates
+    .map((run) => {
+      const runStarted = Date.parse(run.startedAt || '')
+      const runFinished = Date.parse(run.finishedAt || '')
+      const target = Number.isFinite(finished) ? finished : started
+      const runTarget = Number.isFinite(runFinished) ? runFinished : runStarted
+      const distance = Number.isFinite(runTarget) ? Math.abs(runTarget - target) : Number.MAX_SAFE_INTEGER
+      return { run, distance }
+    })
+    .sort((a, b) => a.distance - b.distance)[0]?.run ?? null
+}
+
+function WorkflowRecordCard({ record, step, run, actorLabels }: { record: WorkflowRecord; step?: WorkflowStep; run: RunRow | null; actorLabels: Map<string, string> }) {
+  const { t } = useTranslation()
+  const fmt = useFormatDateTime()
+  const inputValues = hasWorkflowValues(record.inputValues) ? record.inputValues! : parseWorkflowArtifact(record.inputArtifact || '')
+  const outputValues = hasWorkflowValues(record.outputValues) ? record.outputValues! : parseWorkflowArtifact(record.outputArtifact || record.summary || '')
+  const hasInput = hasWorkflowValues(inputValues) || Boolean(record.inputArtifact?.trim())
+  const hasOutput = hasWorkflowValues(outputValues) || Boolean(record.outputArtifact?.trim() || record.summary?.trim())
+  const time = record.finishedAt || record.startedAt || ('updatedAt' in record ? record.updatedAt : record.createdAt)
+
+  return (
+    <div className="rounded-lg bg-neutral-50 p-3 dark:bg-zinc-900">
+      <div className="mb-2 flex items-start justify-between gap-3">
+        <div className="min-w-0">
+          <p className="truncate text-xs font-semibold text-neutral-700 dark:text-zinc-200">{step?.title || record.stepId}</p>
+          <p className="mt-0.5 text-[11px] text-neutral-400 dark:text-zinc-600">
+            {workflowActorLabel(record.actorType, record.actorId, actorLabels)} · {t(`workflows.stepStatus.${record.status}`, { defaultValue: record.status })}
+            {time ? ` · ${fmt(time)}` : ''}
+          </p>
+        </div>
+        <WorkflowRunLink run={run} />
+      </div>
+      <div className="space-y-2">
+        {hasInput && (
+          <div>
+            <p className="mb-1 text-[11px] font-semibold text-neutral-400 dark:text-zinc-600">{t('workflows.detail.input')}</p>
+            <WorkflowValuesOrArtifact values={inputValues} fields={step?.inputFields} artifact={hasWorkflowValues(inputValues) ? undefined : record.inputArtifact} compact />
+          </div>
+        )}
+        {hasOutput && (
+          <div>
+            <p className="mb-1 text-[11px] font-semibold text-neutral-400 dark:text-zinc-600">{t('workflows.detail.output')}</p>
+            <WorkflowValuesOrArtifact values={outputValues} fields={step?.outputFields} artifact={hasWorkflowValues(outputValues) ? undefined : record.outputArtifact || record.summary} compact />
+          </div>
+        )}
+      </div>
+    </div>
+  )
+}
+
+function WorkflowRunLink({ run }: { run: RunRow | null }) {
+  const { t } = useTranslation()
+  if (!run) return null
+  const href = `/projects/${encodeURIComponent(run.project)}/runs?agent=${encodeURIComponent(`${run.project}/${run.agent}`)}`
+  return (
+    <a
+      href={href}
+      target="_blank"
+      rel="noreferrer"
+      className="shrink-0 rounded-md px-2 py-1 text-[11px] font-medium text-sky-700 hover:bg-sky-50 dark:text-sky-400 dark:hover:bg-sky-900/20"
+      title={run.logPath || run.sessionId || undefined}
+      onClick={(e) => e.stopPropagation()}
+    >
+      {t('runs.logTitle')}
+    </a>
+  )
 }
 
 function isWorkflowRuntimePrompt(prompt?: string) {

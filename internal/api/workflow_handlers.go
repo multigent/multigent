@@ -26,6 +26,7 @@ type taskWorkflowResponse struct {
 	Definition entity.WorkflowDefinition     `json:"definition"`
 	Run        entity.WorkflowRun            `json:"run"`
 	Steps      []entity.WorkflowStepInstance `json:"steps"`
+	History    []entity.WorkflowStepEvent    `json:"history,omitempty"`
 }
 
 type workflowReviewBody struct {
@@ -258,7 +259,12 @@ func (s *Server) handleGetTaskWorkflow(w http.ResponseWriter, r *http.Request) {
 		s.serverError(w, err)
 		return
 	}
-	_ = json.NewEncoder(w).Encode(taskWorkflowResponse{Definition: def, Run: run, Steps: steps})
+	history, err := wfStore.ListStepEvents(run.ID)
+	if err != nil {
+		s.serverError(w, err)
+		return
+	}
+	_ = json.NewEncoder(w).Encode(taskWorkflowResponse{Definition: def, Run: run, Steps: steps, History: history})
 }
 
 func (s *Server) handlePostTaskWorkflowReview(w http.ResponseWriter, r *http.Request) {
@@ -330,6 +336,11 @@ func (s *Server) handlePostTaskWorkflowReview(w http.ResponseWriter, r *http.Req
 		s.serverError(w, err)
 		return
 	}
+	history, err := wfStore.ListStepEvents(transition.Run.ID)
+	if err != nil {
+		s.serverError(w, err)
+		return
+	}
 	def, found, err := wfStore.Definition(transition.Run.DefinitionID)
 	if err != nil {
 		s.serverError(w, err)
@@ -339,7 +350,7 @@ func (s *Server) handlePostTaskWorkflowReview(w http.ResponseWriter, r *http.Req
 		s.jsonError(w, http.StatusNotFound, "workflow definition not found")
 		return
 	}
-	_ = json.NewEncoder(w).Encode(taskWorkflowResponse{Definition: def, Run: transition.Run, Steps: steps})
+	_ = json.NewEncoder(w).Encode(taskWorkflowResponse{Definition: def, Run: transition.Run, Steps: steps, History: history})
 }
 
 func formatWorkflowReviewFields(fields map[string]string) string {
@@ -415,5 +426,10 @@ func (s *Server) handleRuntimeTaskWorkflow(w http.ResponseWriter, r *http.Reques
 		s.serverError(w, err)
 		return
 	}
-	_ = json.NewEncoder(w).Encode(taskWorkflowResponse{Definition: def, Run: run, Steps: steps})
+	history, err := wfStore.ListStepEvents(run.ID)
+	if err != nil {
+		s.serverError(w, err)
+		return
+	}
+	_ = json.NewEncoder(w).Encode(taskWorkflowResponse{Definition: def, Run: run, Steps: steps, History: history})
 }

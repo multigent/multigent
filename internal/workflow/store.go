@@ -614,6 +614,23 @@ func (s *Store) SaveStepInstance(inst *entity.WorkflowStepInstance) error {
 	return s.db.UpsertRecord("workflow_step_instances", s.workspaceID, []string{inst.RunID, inst.StepID, inst.ID}, string(raw))
 }
 
+func (s *Store) SaveStepEvent(event *entity.WorkflowStepEvent) error {
+	if event == nil {
+		return fmt.Errorf("workflow step event is nil")
+	}
+	if strings.TrimSpace(event.ID) == "" {
+		event.ID = entity.NewWorkflowStepEventID()
+	}
+	if event.CreatedAt.IsZero() {
+		event.CreatedAt = time.Now().UTC()
+	}
+	raw, err := json.Marshal(event)
+	if err != nil {
+		return err
+	}
+	return s.db.UpsertRecord("workflow_step_events", s.workspaceID, []string{event.RunID, event.ID}, string(raw))
+}
+
 func (s *Store) ListStepInstances(runID string) ([]entity.WorkflowStepInstance, error) {
 	recs, err := s.db.ListRecords("workflow_step_instances", s.workspaceID, []string{runID})
 	if err != nil {
@@ -628,6 +645,33 @@ func (s *Store) ListStepInstances(runID string) ([]entity.WorkflowStepInstance, 
 	}
 	sort.Slice(out, func(i, j int) bool { return out[i].StepID < out[j].StepID })
 	return out, nil
+}
+
+func (s *Store) ListStepEvents(runID string) ([]entity.WorkflowStepEvent, error) {
+	recs, err := s.db.ListRecords("workflow_step_events", s.workspaceID, []string{runID})
+	if err != nil {
+		return nil, err
+	}
+	out := make([]entity.WorkflowStepEvent, 0, len(recs))
+	for _, rec := range recs {
+		var event entity.WorkflowStepEvent
+		if json.Unmarshal([]byte(rec.Payload), &event) == nil {
+			out = append(out, event)
+		}
+	}
+	sort.Slice(out, func(i, j int) bool { return workflowEventSortTime(out[i]).Before(workflowEventSortTime(out[j])) })
+	return out, nil
+}
+
+func workflowEventSortTime(event entity.WorkflowStepEvent) time.Time {
+	switch {
+	case !event.FinishedAt.IsZero():
+		return event.FinishedAt
+	case !event.StartedAt.IsZero():
+		return event.StartedAt
+	default:
+		return event.CreatedAt
+	}
 }
 
 func (s *Store) RecordActiveStepOutput(project, taskID, summary, output, status string) error {
@@ -707,6 +751,21 @@ func (s *Store) CompleteAndAdvance(project, taskID, summary, output string, outp
 		if err := s.SaveStepInstance(&instances[i]); err != nil {
 			return result, err
 		}
+		_ = s.SaveStepEvent(&entity.WorkflowStepEvent{
+			RunID:          instances[i].RunID,
+			StepID:         instances[i].StepID,
+			Status:         instances[i].Status,
+			ActorType:      instances[i].ActorType,
+			ActorID:        instances[i].ActorID,
+			Summary:        instances[i].Summary,
+			StartedAt:      instances[i].StartedAt,
+			FinishedAt:     instances[i].FinishedAt,
+			InputArtifact:  instances[i].InputArtifact,
+			OutputArtifact: instances[i].OutputArtifact,
+			InputValues:    instances[i].InputValues,
+			OutputValues:   instances[i].OutputValues,
+			CreatedAt:      now,
+		})
 		result.Current = instances[i]
 		break
 	}

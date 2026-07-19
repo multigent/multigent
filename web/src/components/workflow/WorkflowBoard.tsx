@@ -104,6 +104,23 @@ export type WorkflowStepInstance = {
   outputValues?: Record<string, string>
 }
 
+export type WorkflowStepEvent = {
+  id: string
+  runId: string
+  stepId: string
+  status: string
+  actorType?: string
+  actorId?: string
+  summary?: string
+  startedAt?: string
+  finishedAt?: string
+  inputArtifact?: string
+  outputArtifact?: string
+  inputValues?: Record<string, string>
+  outputValues?: Record<string, string>
+  createdAt: string
+}
+
 type Props = {
   definition: WorkflowDefinition
   run?: WorkflowRun
