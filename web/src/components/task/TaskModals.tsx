@@ -325,7 +325,7 @@ export function TaskDetailModal({ task, onClose, onEdit, onMutated, canEdit = tr
   return (
     <div className="fixed inset-0 z-50 flex items-start justify-center pt-[3vh]">
       <div className="absolute inset-0 bg-black/30 backdrop-blur-[2px] animate-fade-in dark:bg-black/50" onClick={onClose} />
-      <div className="relative w-full max-w-5xl max-h-[94vh] flex flex-col overflow-hidden rounded-xl border border-neutral-200/80 bg-white shadow-2xl animate-scale-in dark:border-zinc-700/80 dark:bg-zinc-900">
+      <div className="relative w-full max-w-4xl max-h-[94vh] flex flex-col overflow-hidden rounded-xl border border-neutral-200/80 bg-white shadow-2xl animate-scale-in dark:border-zinc-700/80 dark:bg-zinc-900">
         <div className="flex items-center justify-between border-b border-neutral-200/80 px-5 py-3 dark:border-zinc-700/60">
           <div className="flex items-center gap-3 min-w-0">
             <span className={cn('shrink-0 rounded-full px-2.5 py-0.5 text-[11px] font-semibold', sCls)}>{t(`tasks.status.${task.status}`, { defaultValue: task.status })}</span>
@@ -406,7 +406,7 @@ export function TaskDetailModal({ task, onClose, onEdit, onMutated, canEdit = tr
                 {workflowState.data.run.status}
               </span>
             </div>
-            <div className="grid min-h-[520px] gap-4 lg:grid-cols-[minmax(0,1.45fr)_minmax(320px,0.85fr)]">
+            <div className="grid min-h-[520px] gap-4">
               <WorkflowBoard definition={workflowState.data.definition} run={workflowState.data.run} instances={workflowState.data.steps} focusActive compact />
               <div className="flex min-h-0 flex-col rounded-xl border border-neutral-200 bg-white dark:border-zinc-700 dark:bg-zinc-950">
                 <WorkflowRuntimePanel
