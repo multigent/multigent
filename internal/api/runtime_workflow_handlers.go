@@ -399,7 +399,7 @@ func (s *Server) handleRuntimeTaskComplete(w http.ResponseWriter, r *http.Reques
 		return
 	}
 	if s.runtimeTaskHasWorkflow(principal.WorkspaceID, principal.Project, t.ID) {
-		s.jsonError(w, http.StatusBadRequest, "workflow tasks must complete the current workflow step with `mga step done`")
+		s.jsonError(w, http.StatusBadRequest, "workflow tasks must complete the current workflow step with `mga task step done`")
 		return
 	}
 	status := normalizeDoneStatus(body.Status, body.Error)

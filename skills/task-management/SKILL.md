@@ -63,7 +63,7 @@ mga task complete --id <task-id> --status success --summary "What was accomplish
 mga task complete --id <task-id> --status failed --error "Reason"
 
 # Workflow task: complete the current workflow step, not the whole task.
-mga step done --task-id <task-id> --status success \
+mga task step done --id <task-id> --status success \
   --summary "One-line completion summary" \
   --output technical_spec_doc_id="doc-..." \
   --output test_plan_doc_id="doc-..."

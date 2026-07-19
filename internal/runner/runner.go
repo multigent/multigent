@@ -84,7 +84,7 @@ If a regular task cannot be completed, run:
   mga task complete --id %s --status failed --error "reason"
 
 For a workflow task, do not complete the whole task directly. Complete only the current step with:
-  mga step done --task-id %s --status success --output <field>=<value>
+  mga task step done --id %s --status success --output <field>=<value>
 `
 
 // Runner executes tasks for agents using their configured CLI.
@@ -628,7 +628,7 @@ func (r *Runner) workflowPromptContext(project, agentName, taskID string) string
 	}
 	b.WriteString("Instructions:\n")
 	b.WriteString("- Treat the current step as the workflow contract for this task.\n")
-	b.WriteString("- Finish workflow steps with structured outputs using `mga step done --task-id ")
+	b.WriteString("- Finish workflow steps with structured outputs using `mga task step done --id ")
 	b.WriteString(taskID)
 	b.WriteString(" --status success --output <field>=<value>` for every required output field, or use `--output-json '{...}'`.\n")
 	b.WriteString("- Do not put required workflow fields only in natural-language summary; the server validates output field names against the current step spec.\n")

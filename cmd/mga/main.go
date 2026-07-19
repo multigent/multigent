@@ -44,7 +44,6 @@ func main() {
 		newVersionCmd(),
 		newRuntimeCmd(),
 		newTaskCmd(),
-		newStepCmd(),
 		newInboxCmd(),
 		newDocsCmd(),
 		newWorkflowCmd(),
@@ -337,6 +336,7 @@ func newTaskCmd() *cobra.Command {
 		newTaskAddCmd(),
 		newTaskSetCmd(),
 		newTaskCompleteCmd(),
+		newTaskStepCmd(),
 		newTaskCancelCmd(),
 		newTaskConfirmRequestCmd(),
 	)
@@ -536,16 +536,16 @@ func newTaskCompleteCmd() *cobra.Command {
 	return cmd
 }
 
-func newStepCmd() *cobra.Command {
+func newTaskStepCmd() *cobra.Command {
 	cmd := &cobra.Command{
 		Use:   "step",
-		Short: "Complete workflow steps",
+		Short: "Complete the task's current workflow step",
 	}
-	cmd.AddCommand(newStepDoneCmd())
+	cmd.AddCommand(newTaskStepDoneCmd())
 	return cmd
 }
 
-func newStepDoneCmd() *cobra.Command {
+func newTaskStepDoneCmd() *cobra.Command {
 	var taskID, agent, status, summary, errText, outputJSON string
 	var outputPairs []string
 	cmd := &cobra.Command{
@@ -556,7 +556,7 @@ func newStepDoneCmd() *cobra.Command {
 				taskID = args[0]
 			}
 			if strings.TrimSpace(taskID) == "" {
-				return fmt.Errorf("--task-id or task id argument is required")
+				return fmt.Errorf("--id or task id argument is required")
 			}
 			if status == "" {
 				status = "success"
@@ -573,7 +573,7 @@ func newStepDoneCmd() *cobra.Command {
 			return writeJSON(resp)
 		},
 	}
-	cmd.Flags().StringVar(&taskID, "task-id", "", "task id")
+	cmd.Flags().StringVar(&taskID, "id", "", "task id")
 	cmd.Flags().StringVar(&agent, "agent", "", "agent that currently owns the task")
 	cmd.Flags().StringVar(&status, "status", "success", "success or failed")
 	cmd.Flags().StringVar(&summary, "summary", "", "step summary")

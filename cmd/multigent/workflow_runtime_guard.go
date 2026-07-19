@@ -9,7 +9,7 @@ import (
 	workflowstore "github.com/multigent/multigent/internal/workflow"
 )
 
-const workflowStepNotCompletedError = "workflow step was not completed by the agent; use `mga step done --task-id <id>` with every required output field"
+const workflowStepNotCompletedError = "workflow step was not completed by the agent; use `mga task step done --id <id>` with every required output field"
 
 func enforceWorkflowStepCompletion(root, project string, task *entity.Task, result *runner.RunResult) {
 	if task == nil || result == nil || !taskStillInProgress(task) || !taskHasActiveWorkflow(root, project, task.ID) {

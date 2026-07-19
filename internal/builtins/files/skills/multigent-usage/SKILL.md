@@ -43,13 +43,13 @@ mga task complete --id <task-id> --status success --summary "What was actually d
 mga task complete --id <task-id> --status failed --error "Failure reason"
 
 # Workflow tasks must submit every required output field structurally.
-mga step done --task-id <task-id> --status success \
+mga task step done --id <task-id> --status success \
   --summary "One-line completion summary" \
   --output product_spec_doc_id="doc-..." \
   --output acceptance_criteria_doc_id="doc-..."
 
 # For large or many fields, use a JSON object.
-mga step done --task-id <task-id> --status success \
+mga task step done --id <task-id> --status success \
   --output-json '{"summary":"done","product_spec_doc_id":"doc-..."}'
 
 # Ask for human or agent confirmation.

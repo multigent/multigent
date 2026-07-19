@@ -64,7 +64,7 @@ mga task complete --id <task-id> --status failed --error "Reason"
 
 # If the task is inside a workflow, submit every required workflow output field
 # with --output or --output-json. Field names are validated by the server.
-mga step done --task-id <task-id> --status success \
+mga task step done --id <task-id> --status success \
   --summary "One-line completion summary" \
   --output technical_spec_doc_id="doc-..." \
   --output test_plan_doc_id="doc-..."

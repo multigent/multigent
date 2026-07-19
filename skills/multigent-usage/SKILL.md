@@ -43,7 +43,7 @@ mga task complete --id <task-id> --status success --summary "What was actually d
 mga task complete --id <task-id> --status failed --error "Failure reason"
 
 # Complete the current step of a workflow task with structured outputs.
-mga step done --task-id <task-id> --status success \
+mga task step done --id <task-id> --status success \
   --summary "One-line completion summary" \
   --output product_spec_doc_id="doc-..." \
   --output acceptance_criteria_doc_id="doc-..."
