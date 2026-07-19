@@ -275,13 +275,17 @@ export function TaskDetailModal({ task, onClose, onEdit, canEdit = true }: { tas
     setReviewBusy(decision)
     const normalizedDecision = decision === 'approved' ? 'approve' : 'request_changes'
     const outputs: Record<string, string> = { ...reviewOutputs, decision: normalizedDecision }
+    const outputFieldNames = (activeWorkflowStep?.outputFields ?? []).map((field) => field.name).filter(Boolean)
     const comments = (outputs.comments ?? reviewComments).trim()
-    if (decision === 'needs_changes' && comments === '') {
-      setReviewErr(t('workflows.review.commentsRequired'))
+    if (outputFieldNames.includes('comments')) outputs.comments = comments
+    const missingField = outputFieldNames
+      .filter((name) => name !== 'decision')
+      .find((name) => !String(outputs[name] ?? '').trim())
+    if (missingField) {
+      setReviewErr(`${t('forms.fillRequired')} ${missingField}`)
       setReviewBusy(null)
       return
     }
-    if (comments) outputs.comments = comments
     try {
       await apiPost(`/api/v1/projects/${encodeURIComponent(task.project)}/tasks/${encodeURIComponent(task.id)}/workflow/review`, {
         decision,
@@ -667,7 +671,10 @@ function WorkflowRuntimePanel({
               )}
               {editableOutputFields.map((field) => (
                 <label key={field.name} className="block">
-                  <span className="text-xs font-medium text-neutral-500 dark:text-zinc-500">{field.name}</span>
+                  <span className="text-xs font-medium text-neutral-500 dark:text-zinc-500">
+                    {field.name}
+                    <span className="ml-1 text-red-500">*</span>
+                  </span>
                   {field.description && <span className="mt-0.5 block text-xs text-neutral-400 dark:text-zinc-600">{field.description}</span>}
                   <textarea
                     value={field.name === 'comments' ? reviewComments : reviewOutputs[field.name] || ''}

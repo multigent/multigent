@@ -797,13 +797,9 @@ func normalizeWorkflowOutputValues(step entity.WorkflowStep, values map[string]s
 	if failed {
 		return out, nil
 	}
-	reviewRejected := step.Type == "human_review" && strings.EqualFold(strings.TrimSpace(out["decision"]), "request_changes")
 	for _, field := range step.OutputFields {
 		name := strings.TrimSpace(field.Name)
-		if name == "" || name == "comments" {
-			continue
-		}
-		if reviewRejected && name != "decision" {
+		if name == "" {
 			continue
 		}
 		if strings.TrimSpace(out[name]) == "" {
