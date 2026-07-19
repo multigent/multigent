@@ -408,6 +408,8 @@
     "untitledName": "Untitled workflow",
     "copyName": "{{name}} copy",
     "duplicate": "Duplicate",
+    "copyJSON": "Copy JSON",
+    "copyJSONSuccess": "Workflow JSON copied",
     "deleteWorkflow": "Delete workflow",
     "confirmDeleteWorkflow": "Delete workflow \"{{name}}\"? This cannot be undone.",
     "unsavedBadge": "Unsaved changes",

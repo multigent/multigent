@@ -4,6 +4,7 @@ import { useNavigate, useParams } from 'react-router-dom'
 import { GitBranch, X } from 'lucide-react'
 import { PlaceholderCard } from '../components/ui/PlaceholderCard'
 import { confirmDialog } from '../components/ui/ConfirmDialog'
+import { showToast } from '../components/ui/Toast'
 import { WorkflowBoard, type WorkflowDefinition, type WorkflowStep } from '../components/workflow/WorkflowBoard'
 import { apiDelete, apiPost, apiPut } from '../lib/api'
 import { useApiJson } from '../lib/use-api'
@@ -181,6 +182,11 @@ export default function WorkflowsPage() {
     }
   }
 
+  async function copyWorkflowJSON(wf: WorkflowDefinition) {
+    await navigator.clipboard.writeText(workflowExportJSON(wf))
+    showToast(t('workflows.copyJSONSuccess'), 'success')
+  }
+
   async function deleteWorkflow(wf: WorkflowDefinition) {
     const ok = await confirmDialog({
       title: t('workflows.deleteWorkflow'),
@@ -283,6 +289,9 @@ export default function WorkflowsPage() {
                   </button>
                   <button type="button" onClick={() => void duplicateWorkflow(draft)} disabled={saving} className="rounded-lg border border-neutral-300 bg-white px-3 py-2 text-sm font-medium text-neutral-600 hover:bg-neutral-50 disabled:opacity-50 dark:border-zinc-600 dark:bg-zinc-900 dark:text-zinc-300 dark:hover:bg-zinc-800">
                     {t('workflows.duplicate')}
+                  </button>
+                  <button type="button" onClick={() => void copyWorkflowJSON(draft)} disabled={saving} className="rounded-lg border border-neutral-300 bg-white px-3 py-2 text-sm font-medium text-neutral-600 hover:bg-neutral-50 disabled:opacity-50 dark:border-zinc-600 dark:bg-zinc-900 dark:text-zinc-300 dark:hover:bg-zinc-800">
+                    {t('workflows.copyJSON')}
                   </button>
                   <button type="button" onClick={() => void deleteWorkflow(draft)} disabled={saving} className="rounded-lg border border-red-300 bg-white px-3 py-2 text-sm font-medium text-red-600 hover:bg-red-50 disabled:opacity-50 dark:border-red-900/70 dark:bg-zinc-900 dark:text-red-400 dark:hover:bg-red-950/30">
                     {t('common.delete')}
@@ -457,13 +466,21 @@ function ProvenancePill({ name, customized }: { name: string; customized?: boole
 }
 
 function workflowEditableJSON(workflow: WorkflowDefinition) {
-  return JSON.stringify({
+  return JSON.stringify(workflowExportPayload(workflow))
+}
+
+function workflowExportJSON(workflow: WorkflowDefinition) {
+  return JSON.stringify(workflowExportPayload(workflow), null, 2)
+}
+
+function workflowExportPayload(workflow: WorkflowDefinition) {
+  return {
     name: workflow.name,
     description: workflow.description || '',
     startStepId: workflow.startStepId,
     steps: workflow.steps,
     edges: workflow.edges,
-  })
+  }
 }
 
 function parseWorkflowJSON(raw: string): Pick<WorkflowDefinition, 'name' | 'description' | 'startStepId' | 'steps' | 'edges'> {

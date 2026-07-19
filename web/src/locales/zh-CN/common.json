@@ -408,6 +408,8 @@
     "untitledName": "未命名流程",
     "copyName": "{{name}} 副本",
     "duplicate": "复制",
+    "copyJSON": "复制 JSON",
+    "copyJSONSuccess": "流程 JSON 已复制",
     "deleteWorkflow": "删除流程",
     "confirmDeleteWorkflow": "确定删除流程 \"{{name}}\"？删除后无法撤销。",
     "unsavedBadge": "未保存更改",

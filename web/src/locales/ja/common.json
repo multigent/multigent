@@ -408,6 +408,8 @@
     "untitledName": "無題のワークフロー",
     "copyName": "{{name}} のコピー",
     "duplicate": "複製",
+    "copyJSON": "JSON をコピー",
+    "copyJSONSuccess": "ワークフロー JSON をコピーしました",
     "deleteWorkflow": "ワークフローを削除",
     "confirmDeleteWorkflow": "ワークフロー「{{name}}」を削除しますか？この操作は元に戻せません。",
     "unsavedBadge": "未保存の変更",

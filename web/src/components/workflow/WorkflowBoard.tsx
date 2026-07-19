@@ -820,7 +820,7 @@ export function WorkflowBoard({
         </ReactFlow>
       </div>
       {!compact && selected ? (
-        <aside className={cn('rounded-xl border border-neutral-200/80 bg-white p-4 dark:border-zinc-700/60 dark:bg-zinc-900', fill ? 'h-full min-h-[560px] overflow-y-auto' : fullscreen ? 'min-h-[calc(100vh-150px)]' : 'min-h-[420px]')}>
+        <aside className={cn('rounded-xl border border-neutral-200/80 bg-white p-4 dark:border-zinc-700/60 dark:bg-zinc-900', fill ? 'h-full min-h-[560px] overflow-y-auto' : fullscreen ? 'min-h-[calc(100vh-150px)]' : 'min-h-[520px]')}>
           {editable && stepDraft && selected ? (
             <div className="space-y-4 text-sm">
               <label className="block">
