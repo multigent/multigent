@@ -889,6 +889,13 @@ func runAllPendingTasks(ctx context.Context, root, project, agentName string,
 		}
 		result, err := r.RunTask(project, agentName, task, taskSessionID)
 		if err != nil {
+			if handled, handleErr := taskHandledDuringRun(ts, project, agentName, task.ID, runResultLogPath(result)); handleErr != nil {
+				return handleErr
+			} else if handled {
+				taskLog("%s task %s was updated by runtime workflow", colorYellow+"↪", task.ID)
+				tasksProcessed++
+				continue
+			}
 			if interactionLease != nil {
 				interactionLease.Fail(err.Error())
 			}
@@ -909,6 +916,14 @@ func runAllPendingTasks(ctx context.Context, root, project, agentName string,
 				"runtimeSessionId": result.SessionID,
 				"status":           string(result.Status),
 			})
+		}
+
+		if handled, handleErr := taskHandledDuringRun(ts, project, agentName, task.ID, runResultLogPath(result)); handleErr != nil {
+			return handleErr
+		} else if handled {
+			taskLog("%s task %s was updated by runtime workflow", colorYellow+"↪", task.ID)
+			tasksProcessed++
+			continue
 		}
 
 		// Update session ID for the cycle (per-cycle scope by default).
@@ -985,6 +1000,31 @@ func runAllPendingTasks(ctx context.Context, root, project, agentName string,
 		}
 	}
 	return nil
+}
+
+func runResultLogPath(result *runner.RunResult) string {
+	if result == nil {
+		return ""
+	}
+	return result.LogPath
+}
+
+func taskHandledDuringRun(ts taskstore.Store, project, agentName, taskID, logPath string) (bool, error) {
+	fresh, err := ts.GetTask(project, agentName, taskID)
+	if err != nil {
+		if strings.Contains(strings.ToLower(err.Error()), "not found") {
+			return true, nil
+		}
+		return false, err
+	}
+	if fresh.Status == entity.TaskStatusInProgress {
+		return false, nil
+	}
+	if strings.TrimSpace(logPath) != "" && fresh.RunLogPath == "" {
+		fresh.RunLogPath = logPath
+		_ = ts.PersistTask(project, agentName, fresh)
+	}
+	return true, nil
 }
 
 // agentDir returns the filesystem path of an agent's workspace.

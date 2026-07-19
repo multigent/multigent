@@ -100,6 +100,7 @@ func (s *Server) handlePostProjectTask(w http.ResponseWriter, r *http.Request) {
 	if assignee == "" {
 		assignee = name + "/" + agentName
 	}
+	workflowID := strings.TrimSpace(body.WorkflowDefinitionID)
 
 	createdBy := strings.TrimSpace(body.CreatedBy)
 	if createdBy == "" {
@@ -134,6 +135,45 @@ func (s *Server) handlePostProjectTask(w http.ResponseWriter, r *http.Request) {
 		}
 	}
 
+	var workflowStore interface {
+		Definition(string) (entity.WorkflowDefinition, bool, error)
+		StartRun(string, string, string, map[string]entity.WorkflowActorBinding) (entity.WorkflowRun, []entity.WorkflowStepInstance, error)
+	}
+	if workflowID != "" {
+		wfStore, ok := s.workflowStoreForRequest(w, r)
+		if !ok {
+			return
+		}
+		workflowStore = wfStore
+		def, found, err := wfStore.Definition(workflowID)
+		if err != nil {
+			s.serverError(w, err)
+			return
+		}
+		if !found {
+			s.jsonError(w, http.StatusNotFound, "workflow definition not found")
+			return
+		}
+		if step, inst, ok := workflowStartActor(def, body.WorkflowActorBindings); ok {
+			switch inst.ActorType {
+			case "agent":
+				startAgent := strings.TrimSpace(inst.ActorID)
+				if startAgent == "" || !s.agentExistsInProject(name, startAgent) {
+					s.jsonError(w, http.StatusBadRequest, "workflow start agent not found in this project")
+					return
+				}
+				agentName = startAgent
+				assignee = name + "/" + startAgent
+				t.Assignee = assignee
+				t.Prompt = workflowContinuationPrompt(t, *step, *inst)
+			case "human":
+				assignee = "human"
+				t.Assignee = assignee
+				t.Prompt = workflowContinuationPrompt(t, *step, *inst)
+			}
+		}
+	}
+
 	if assignee == "human" {
 		if err := s.ts.AddTask(name, agentName, t); err != nil {
 			s.serverError(w, err)
@@ -161,18 +201,22 @@ func (s *Server) handlePostProjectTask(w http.ResponseWriter, r *http.Request) {
 		}
 	}
 
-	// Fire trigger if configured for this agent.
-	s.triggers.Fire(name, agentName, entity.TriggerOnTask, "task "+t.ID)
-
-	if workflowID := strings.TrimSpace(body.WorkflowDefinitionID); workflowID != "" {
-		wfStore, ok := s.workflowStoreForRequest(w, r)
-		if !ok {
+	if workflowID != "" {
+		if workflowStore == nil {
+			s.serverError(w, fmt.Errorf("workflow store unavailable"))
 			return
 		}
-		if _, _, err := wfStore.StartRun(name, t.ID, workflowID, body.WorkflowActorBindings); err != nil {
+		if _, _, err := workflowStore.StartRun(name, t.ID, workflowID, body.WorkflowActorBindings); err != nil {
 			s.serverError(w, err)
 			return
 		}
+	}
+
+	if assignee != "human" {
+		// Fire trigger if configured for the actual task owner. Workflow tasks
+		// are routed to the start step actor, which can differ from the form's
+		// initially selected agent.
+		s.triggers.Fire(name, agentName, entity.TriggerOnTask, "task "+t.ID)
 	}
 
 	w.WriteHeader(http.StatusCreated)
@@ -181,6 +225,26 @@ func (s *Server) handlePostProjectTask(w http.ResponseWriter, r *http.Request) {
 		"project": name,
 		"agent":   agentName,
 	})
+}
+
+func workflowStartActor(def entity.WorkflowDefinition, bindings map[string]entity.WorkflowActorBinding) (*entity.WorkflowStep, *entity.WorkflowStepInstance, bool) {
+	for i := range def.Steps {
+		if def.Steps[i].ID != def.StartStepID {
+			continue
+		}
+		inst := &entity.WorkflowStepInstance{
+			StepID:    def.Steps[i].ID,
+			Status:    "running",
+			ActorType: "",
+			ActorID:   "",
+		}
+		if binding, ok := bindings[def.Steps[i].ActorRole]; ok {
+			inst.ActorType = strings.TrimSpace(binding.Type)
+			inst.ActorID = strings.TrimSpace(binding.ID)
+		}
+		return &def.Steps[i], inst, true
+	}
+	return nil, nil, false
 }
 
 type taskActionBody struct {

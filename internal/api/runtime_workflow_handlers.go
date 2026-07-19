@@ -473,7 +473,11 @@ func (s *Server) activateNextWorkflowStep(project, previousAgent string, complet
 			completed.Assignee = project + "/" + nextAgent
 			completed.UpdatedAt = now
 			completed.FinishedAt = nil
-			return s.ts.PersistTask(project, nextAgent, completed)
+			if err := s.ts.PersistTask(project, nextAgent, completed); err != nil {
+				return err
+			}
+			s.triggers.Fire(project, nextAgent, entity.TriggerOnTask, "workflow task "+completed.ID)
+			return nil
 		}
 		_ = s.ts.DeleteTask(project, previousAgent, completed.ID)
 		completed.Status = entity.TaskStatusPending
