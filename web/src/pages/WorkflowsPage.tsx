@@ -43,6 +43,7 @@ export default function WorkflowsPage() {
   const [workflowJSON, setWorkflowJSON] = useState('')
   const [createError, setCreateError] = useState('')
   const descriptionRef = useRef<HTMLTextAreaElement | null>(null)
+  const wasWorkflowDetailRef = useRef(false)
 
   useEffect(() => {
     const next = selected ? structuredClone(selected) : null
@@ -50,6 +51,17 @@ export default function WorkflowsPage() {
     setSavedDraft(next ? structuredClone(next) : null)
     setFullscreen(false)
   }, [selected?.id])
+
+  useEffect(() => {
+    if (params.workflowId) {
+      wasWorkflowDetailRef.current = true
+      return
+    }
+    if (wasWorkflowDetailRef.current) {
+      wasWorkflowDetailRef.current = false
+      setReloadKey((key) => key + 1)
+    }
+  }, [params.workflowId])
 
   const dirty = Boolean(draft && savedDraft && workflowEditableJSON(draft) !== workflowEditableJSON(savedDraft))
 
