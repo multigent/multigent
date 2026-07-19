@@ -289,7 +289,19 @@ function WorkflowStepNode({ data, selected }: NodeProps<WorkflowNode>) {
         type="source"
         id="source-right"
         position={Position.Right}
-        className="!h-2.5 !w-2.5 !border-2 !border-white !bg-neutral-400 dark:!border-zinc-950 dark:!bg-zinc-500"
+        className="!h-2.5 !w-2.5 !border-2 !border-white !bg-sky-500 dark:!border-zinc-950 dark:!bg-sky-400"
+      />
+      <Handle
+        type="source"
+        id="source-left"
+        position={Position.Left}
+        className="!h-2.5 !w-2.5 !translate-y-4 !border-2 !border-white !bg-sky-500 dark:!border-zinc-950 dark:!bg-sky-400"
+      />
+      <Handle
+        type="target"
+        id="target-right"
+        position={Position.Right}
+        className="!h-2.5 !w-2.5 !translate-y-4 !border-2 !border-white !bg-neutral-400 dark:!border-zinc-950 dark:!bg-zinc-500"
       />
       <span className="text-[11px] font-semibold uppercase opacity-60">{t(`workflows.stepTypes.${step.type}`, { defaultValue: step.type.replace('_', ' ') })}</span>
       <span className="mt-1 line-clamp-1 text-sm font-semibold">{step.title}</span>
@@ -352,12 +364,15 @@ export function WorkflowBoard({
         const active = run?.activeStepId === edge.from || sourceInst?.status === 'running'
         const color = active ? edgeClass.running : sourceInst?.status === 'completed' ? edgeClass.completed : edgeClass.pending
         const selectedEdge = edge.id === selectedEdgeId
+        const sourceStep = definition.steps.find((step) => step.id === edge.from)
+        const targetStep = definition.steps.find((step) => step.id === edge.to)
+        const backward = Boolean(sourceStep && targetStep && sourceStep.position.x > targetStep.position.x)
         return {
           id: edge.id,
           source: edge.from,
           target: edge.to,
-          sourceHandle: 'source-right',
-          targetHandle: 'target-left',
+          sourceHandle: backward ? 'source-left' : 'source-right',
+          targetHandle: backward ? 'target-right' : 'target-left',
           label: edge.label || conditionLabel(edge),
           type: 'smoothstep',
           animated: active,
@@ -469,14 +484,17 @@ export function WorkflowBoard({
     if (!editable || !connection.source || !connection.target || connection.source === connection.target) return
     const edgeID = `e-${connection.source}-${connection.target}-${Date.now().toString(36)}`
     const nextEdge: WorkflowEdge = { id: edgeID, from: connection.source, to: connection.target }
+    const sourceStep = definition.steps.find((step) => step.id === connection.source)
+    const targetStep = definition.steps.find((step) => step.id === connection.target)
+    const backward = Boolean(sourceStep && targetStep && sourceStep.position.x > targetStep.position.x)
     setEdges((eds) =>
       addEdge(
         {
           id: edgeID,
           source: connection.source,
           target: connection.target,
-          sourceHandle: 'source-right',
-          targetHandle: 'target-left',
+          sourceHandle: backward ? 'source-left' : 'source-right',
+          targetHandle: backward ? 'target-right' : 'target-left',
           type: 'smoothstep',
           markerEnd: { type: MarkerType.ArrowClosed, color: edgeClass.pending },
           style: { stroke: edgeClass.pending, strokeWidth: 2 },
