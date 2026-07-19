@@ -876,6 +876,7 @@ type taskRow struct {
 	Title            string    `json:"title"`
 	Type             string    `json:"type,omitempty"`
 	Assignee         string    `json:"assignee,omitempty"`
+	AssigneeLabel    string    `json:"assigneeLabel,omitempty"`
 	Description      string    `json:"description,omitempty"`
 	Prompt           string    `json:"prompt,omitempty"`
 	Priority         int       `json:"priority"`
@@ -887,6 +888,7 @@ type taskRow struct {
 	ParentID         string    `json:"parentId,omitempty"`
 	Position         float64   `json:"position"`
 	CreatedBy        string    `json:"createdBy,omitempty"`
+	CreatedByLabel   string    `json:"createdByLabel,omitempty"`
 	CreatedAt        time.Time `json:"createdAt"`
 	UpdatedAt        time.Time `json:"updatedAt"`
 	StartedAt        string    `json:"startedAt,omitempty"`
@@ -903,7 +905,7 @@ func taskToRow(t *entity.Task, project, agent string, archived bool) taskRow {
 	r := taskRow{
 		ID: t.ID, Project: project, Agent: agent,
 		Title: t.Title, Type: string(t.Type), Assignee: t.Assignee,
-		Description: t.Description, Prompt: t.Prompt,
+		Description: t.Description, Prompt: userVisibleTaskPrompt(t.Prompt),
 		Priority: t.Priority, Status: string(t.Status),
 		StatusGroup: string(t.Status.Group()),
 		Archived:    archived, Summary: t.Summary,
@@ -922,6 +924,51 @@ func taskToRow(t *entity.Task, project, agent string, archived bool) taskRow {
 		r.DueDate = t.DueDate.UTC().Format("2006-01-02")
 	}
 	return r
+}
+
+func (s *Server) taskToRow(t *entity.Task, project, agent string, archived bool) taskRow {
+	row := taskToRow(t, project, agent, archived)
+	row.AssigneeLabel = s.identityLabel(row.Assignee)
+	row.CreatedByLabel = s.identityLabel(row.CreatedBy)
+	return row
+}
+
+func (s *Server) identityLabel(identity string) string {
+	identity = strings.TrimSpace(identity)
+	if identity == "" {
+		return ""
+	}
+	if strings.Contains(identity, "/") {
+		return identity
+	}
+	if identity == "human" {
+		return "Human"
+	}
+	if s != nil && s.users != nil {
+		if u := s.users.GetUser(identity); u != nil {
+			if label := strings.TrimSpace(u.DisplayName); label != "" {
+				return label
+			}
+			if email := strings.TrimSpace(u.Email); email != "" {
+				return email
+			}
+		}
+	}
+	return identity
+}
+
+func userVisibleTaskPrompt(prompt string) string {
+	prompt = strings.TrimSpace(prompt)
+	const marker = "Original task prompt:"
+	for strings.Contains(prompt, "Continue this workflow task from the current active step.") {
+		before, after, ok := strings.Cut(prompt, marker)
+		_ = before
+		if !ok {
+			break
+		}
+		prompt = strings.TrimSpace(after)
+	}
+	return prompt
 }
 
 func (s *Server) handleProjectTasks(w http.ResponseWriter, r *http.Request) {
@@ -1007,7 +1054,7 @@ func (s *Server) handleProjectTasks(w http.ResponseWriter, r *http.Request) {
 						continue
 					}
 					seenIDs[t.ID] = true
-					rows = append(rows, taskToRow(t, name, ag.Name, false))
+					rows = append(rows, s.taskToRow(t, name, ag.Name, false))
 				}
 			}
 		}
@@ -1019,7 +1066,7 @@ func (s *Server) handleProjectTasks(w http.ResponseWriter, r *http.Request) {
 						continue
 					}
 					seenIDs[t.ID] = true
-					rows = append(rows, taskToRow(t, name, ag.Name, true))
+					rows = append(rows, s.taskToRow(t, name, ag.Name, true))
 				}
 			}
 		}

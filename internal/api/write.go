@@ -104,7 +104,11 @@ func (s *Server) handlePostProjectTask(w http.ResponseWriter, r *http.Request) {
 
 	createdBy := strings.TrimSpace(body.CreatedBy)
 	if createdBy == "" {
-		createdBy = "human"
+		if cur := s.currentUser(r); cur != nil && strings.TrimSpace(cur.Username) != "" {
+			createdBy = cur.Username
+		} else {
+			createdBy = "system"
+		}
 	}
 
 	now := time.Now().UTC()
@@ -154,7 +158,7 @@ func (s *Server) handlePostProjectTask(w http.ResponseWriter, r *http.Request) {
 			s.jsonError(w, http.StatusNotFound, "workflow definition not found")
 			return
 		}
-		if step, inst, ok := workflowStartActor(def, body.WorkflowActorBindings); ok {
+		if _, inst, ok := workflowStartActor(def, body.WorkflowActorBindings); ok {
 			switch inst.ActorType {
 			case "agent":
 				startAgent := strings.TrimSpace(inst.ActorID)
@@ -165,7 +169,6 @@ func (s *Server) handlePostProjectTask(w http.ResponseWriter, r *http.Request) {
 				agentName = startAgent
 				assignee = name + "/" + startAgent
 				t.Assignee = assignee
-				t.Prompt = workflowContinuationPrompt(t, *step, *inst)
 			case "human":
 				reviewer := strings.TrimSpace(inst.ActorID)
 				if reviewer == "" {
@@ -178,7 +181,6 @@ func (s *Server) handlePostProjectTask(w http.ResponseWriter, r *http.Request) {
 				}
 				assignee = reviewer
 				t.Assignee = assignee
-				t.Prompt = workflowContinuationPrompt(t, *step, *inst)
 			}
 		}
 	}

@@ -23,6 +23,7 @@ export type TaskRow = {
   statusGroup: string
   archived: boolean
   assignee?: string
+  assigneeLabel?: string
   description?: string
   prompt?: string
   summary?: string
@@ -30,6 +31,7 @@ export type TaskRow = {
   parentId?: string
   position: number
   createdBy?: string
+  createdByLabel?: string
   createdAt: string
   updatedAt: string
   startedAt?: string
@@ -81,6 +83,10 @@ export const priorityLabel: Record<number, { text: string; cls: string }> = {
 
 export function isTerminal(s: string) {
   return s === 'done_success' || s === 'done_failed' || s === 'cancelled'
+}
+
+export function taskIdentityLabel(value?: string, label?: string) {
+  return label || value || '—'
 }
 
 const fieldCls =
@@ -212,7 +218,7 @@ export function EditTaskModal({ task, taskOptions = [], onClose, onSaved }: { ta
               <textarea value={summary} onChange={(e) => setSummary(e.target.value)} rows={4} placeholder={t('tasks.summaryPlaceholder')} className={cn(fieldCls, 'mt-1')} />
               {task.createdBy && (
                 <p className="mt-1 text-xs text-neutral-400 dark:text-zinc-500">
-                  {t('tasks.willNotifyCreator', { creator: task.createdBy })}
+                  {t('tasks.willNotifyCreator', { creator: taskIdentityLabel(task.createdBy, task.createdByLabel) })}
                 </p>
               )}
             </label>
@@ -328,7 +334,7 @@ export function TaskDetailModal({ task, onClose, onEdit, canEdit = true }: { tas
           <InfoCell label="ID"><span className="font-mono text-xs">{task.id}</span></InfoCell>
           <InfoCell label={t('tasks.colProject')}><span className="font-mono">{task.project}</span></InfoCell>
           <InfoCell label={t('tasks.colAssignee')}>
-            <span className="font-mono">{task.assignee || `${task.project}/${task.agent}`}</span>
+            <span title={task.assignee || `${task.project}/${task.agent}`}>{taskIdentityLabel(task.assignee || `${task.project}/${task.agent}`, task.assigneeLabel)}</span>
           </InfoCell>
           <InfoCell label={t('forms.type')}>{task.type ? t(`forms.taskType.${task.type}`, { defaultValue: task.type }) : '—'}</InfoCell>
           <InfoCell label={t('api.taskColUpdated')}>{fmt(task.updatedAt)}</InfoCell>
@@ -345,7 +351,7 @@ export function TaskDetailModal({ task, onClose, onEdit, canEdit = true }: { tas
             </InfoCell>
           )}
           {task.dueDate && <InfoCell label={t('tasks.dueDate')}><span className="tabular-nums">{task.dueDate}</span></InfoCell>}
-          {task.createdBy && <InfoCell label={t('tasks.createdBy')}><span className="font-mono">{task.createdBy}</span></InfoCell>}
+          {task.createdBy && <InfoCell label={t('tasks.createdBy')}><span title={task.createdBy}>{taskIdentityLabel(task.createdBy, task.createdByLabel)}</span></InfoCell>}
           {task.parentId && <InfoCell label={t('tasks.parentTask')}><span className="font-mono text-xs">{task.parentId}</span></InfoCell>}
           {task.labels && task.labels.length > 0 && (
             <InfoCell label={t('tasks.labels')}>

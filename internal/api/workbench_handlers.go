@@ -200,7 +200,7 @@ func (s *Server) handleWorkbenchTasks(w http.ResponseWriter, r *http.Request) {
 					continue
 				}
 				isArchived := !containsTask(active, t.ID)
-				rows = append(rows, taskToRow(t, proj, ag, isArchived))
+				rows = append(rows, s.taskToRow(t, proj, ag, isArchived))
 			}
 		}
 	}

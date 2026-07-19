@@ -9,6 +9,7 @@ import {
   statusColor,
   priorityLabel,
   isTerminal,
+  taskIdentityLabel,
 } from './TaskModals'
 import { TaskLabel } from './TaskLabel'
 
@@ -157,8 +158,8 @@ export function TaskTable({
                   </td>
                 )}
                 <td className="whitespace-nowrap px-4 py-3 align-middle">
-                  <span className="font-mono text-[13px] text-neutral-700 dark:text-zinc-400">
-                    {row.assignee || `${row.project}/${row.agent}`}
+                  <span className="text-[13px] text-neutral-700 dark:text-zinc-400" title={row.assignee || `${row.project}/${row.agent}`}>
+                    {taskIdentityLabel(row.assignee || `${row.project}/${row.agent}`, row.assigneeLabel)}
                   </span>
                 </td>
                 <td className="whitespace-nowrap px-4 py-3 align-middle">

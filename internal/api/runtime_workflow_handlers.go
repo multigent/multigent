@@ -532,15 +532,12 @@ func (s *Server) activateNextWorkflowStep(project, previousAgent string, complet
 	if completed == nil || transition.Done || transition.Next == nil || transition.NextInst == nil {
 		return nil
 	}
-	next := transition.Next
 	inst := transition.NextInst
 	now := time.Now().UTC()
-	nextPrompt := workflowContinuationPrompt(completed, *next, *inst)
 	if inst.ActorType == "agent" && strings.TrimSpace(inst.ActorID) != "" {
 		nextAgent := strings.TrimSpace(inst.ActorID)
 		if nextAgent == previousAgent {
 			completed.Status = entity.TaskStatusPending
-			completed.Prompt = nextPrompt
 			completed.Assignee = project + "/" + nextAgent
 			completed.UpdatedAt = now
 			completed.FinishedAt = nil
@@ -552,7 +549,6 @@ func (s *Server) activateNextWorkflowStep(project, previousAgent string, complet
 		}
 		_ = s.ts.DeleteTask(project, previousAgent, completed.ID)
 		completed.Status = entity.TaskStatusPending
-		completed.Prompt = nextPrompt
 		completed.Assignee = project + "/" + nextAgent
 		completed.UpdatedAt = now
 		completed.FinishedAt = nil
@@ -571,7 +567,6 @@ func (s *Server) activateNextWorkflowStep(project, previousAgent string, complet
 			return err
 		}
 		completed.Status = entity.TaskStatusAwaitingConfirmation
-		completed.Prompt = nextPrompt
 		completed.Assignee = reviewer
 		completed.UpdatedAt = now
 		completed.FinishedAt = nil
@@ -590,35 +585,6 @@ func (s *Server) activateNextWorkflowStep(project, previousAgent string, complet
 		})
 	}
 	return nil
-}
-
-func workflowContinuationPrompt(task *entity.Task, step entity.WorkflowStep, inst entity.WorkflowStepInstance) string {
-	var b strings.Builder
-	b.WriteString("Continue this workflow task from the current active step.\n\n")
-	b.WriteString("Current step: ")
-	b.WriteString(step.Title)
-	b.WriteString(" (`")
-	b.WriteString(step.ID)
-	b.WriteString("`, type `")
-	b.WriteString(step.Type)
-	b.WriteString("`)\n")
-	if strings.TrimSpace(step.Description) != "" {
-		b.WriteString("Step goal: ")
-		b.WriteString(strings.TrimSpace(step.Description))
-		b.WriteString("\n")
-	}
-	if strings.TrimSpace(inst.InputArtifact) != "" {
-		b.WriteString("\nInput from previous step:\n")
-		b.WriteString(inst.InputArtifact)
-		b.WriteString("\n")
-	}
-	if strings.TrimSpace(task.Prompt) != "" {
-		b.WriteString("\nOriginal task prompt:\n")
-		b.WriteString(task.Prompt)
-		b.WriteString("\n")
-	}
-	b.WriteString("\nFollow the workflow context injected by Multigent and complete only this step.")
-	return b.String()
 }
 
 func normalizeDoneStatus(status, errText string) entity.TaskStatus {
