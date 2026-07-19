@@ -2,6 +2,7 @@ import { useCallback, useEffect, useState } from 'react'
 import { useTranslation } from 'react-i18next'
 import { KeyRound, Plus, Server, Trash2, Pencil, X, Eye, EyeOff, Users, Shield, ShieldCheck, UserPlus, LockKeyhole } from 'lucide-react'
 import { useAuth } from '../lib/auth'
+import { useWorkspaceAccess } from '../lib/workspace-access'
 import { apiFetch, apiPost, apiPut, apiDelete } from '../lib/api'
 import { cn } from '../lib/cn'
 import { confirmDialog } from '../components/ui/ConfirmDialog'
@@ -937,8 +938,9 @@ type ProviderDraft = Partial<ProviderRow> & { apiKey?: string; accountMode?: Mod
 function ProvidersSection() {
   const { t } = useTranslation()
   const { user } = useAuth()
+  const { canAdmin } = useWorkspaceAccess()
   const [workspace, setWorkspace] = useState<WorkspaceAccessSummary | null>(null)
-  const canCreateWorkspaceProvider = workspace?.currentUserCanAdmin ?? (!user || user.role === 'admin')
+  const canCreateWorkspaceProvider = workspace?.currentUserCanAdmin ?? canAdmin
   const [providers, setProviders] = useState<ProviderRow[]>([])
   const [loading, setLoading] = useState(true)
   const [editing, setEditing] = useState<ProviderDraft | null>(null)
@@ -1552,6 +1554,7 @@ function SecretsSection() {
 export default function SettingsPage() {
   const { t } = useTranslation()
   const { user } = useAuth()
+  const { canAdmin } = useWorkspaceAccess()
 
   return (
     <div className="animate-fade-in px-8 py-6">
@@ -1562,13 +1565,13 @@ export default function SettingsPage() {
 
       <div className="space-y-5">
         {/* RBAC Model (admin only) */}
-        {user?.role === 'admin' && <RBACSection />}
+        {canAdmin && <RBACSection />}
 
         {/* Model accounts */}
         <ProvidersSection />
 
         {/* External tool OAuth apps (admin only) */}
-        {user?.role === 'admin' && <ExternalToolOAuthSection />}
+        {canAdmin && <ExternalToolOAuthSection />}
 
         {/* Workspace Secrets (admin only) */}
         {user?.role === 'admin' && <SecretsSection />}

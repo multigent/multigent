@@ -1432,6 +1432,84 @@ func (s *Server) handleUpdateUser(w http.ResponseWriter, r *http.Request) {
 	})
 }
 
+func (s *Server) handleUpdateWorkspaceMemberRole(w http.ResponseWriter, r *http.Request) {
+	if !s.checkCurrentWorkspaceAdmin(w, r) {
+		return
+	}
+	workspaceID, err := s.currentWorkspaceID()
+	if err != nil {
+		s.serverError(w, err)
+		return
+	}
+	target := strings.TrimSpace(r.PathValue("username"))
+	if target == "" {
+		s.jsonErrorCode(w, http.StatusBadRequest, ErrCodeValidationFailed, "username required")
+		return
+	}
+	var body struct {
+		Role string `json:"role"`
+	}
+	if err := s.readJSON(w, r, &body); err != nil {
+		s.jsonErrorCode(w, http.StatusBadRequest, ErrCodeInvalidRequestBody, "invalid request body")
+		return
+	}
+	nextRole := strings.TrimSpace(body.Role)
+	switch nextRole {
+	case WorkspaceRoleOwner, WorkspaceRoleAdmin, WorkspaceRoleMember, WorkspaceRoleGuest:
+	default:
+		s.jsonErrorCode(w, http.StatusBadRequest, ErrCodeValidationFailed, "unsupported workspace role")
+		return
+	}
+	currentRole, _ := s.currentWorkspaceRole(r, workspaceID)
+	member, ok, err := s.controlDB.WorkspaceMember(workspaceID, target)
+	if err != nil {
+		s.serverError(w, err)
+		return
+	}
+	if !ok {
+		s.jsonErrorCode(w, http.StatusNotFound, ErrCodeUserNotFound, "workspace member not found")
+		return
+	}
+	if currentRole != WorkspaceRoleOwner {
+		if nextRole == WorkspaceRoleOwner || member.Role == WorkspaceRoleOwner {
+			s.jsonErrorCode(w, http.StatusForbidden, ErrCodeForbidden, "workspace owner access required")
+			return
+		}
+	}
+	if member.Role == WorkspaceRoleOwner && nextRole != WorkspaceRoleOwner {
+		members, err := s.controlDB.ListWorkspaceMembers(workspaceID)
+		if err != nil {
+			s.serverError(w, err)
+			return
+		}
+		ownerCount := 0
+		for _, m := range members {
+			if m.Role == WorkspaceRoleOwner {
+				ownerCount++
+			}
+		}
+		if ownerCount <= 1 {
+			s.jsonErrorCode(w, http.StatusBadRequest, ErrCodeValidationFailed, "workspace must keep at least one owner")
+			return
+		}
+	}
+	if err := s.controlDB.UpsertWorkspaceMember(workspaceID, target, nextRole); err != nil {
+		s.serverError(w, err)
+		return
+	}
+	s.auditLog(auditLogInput{
+		WorkspaceID:  workspaceID,
+		Action:       "workspace_member.role.update",
+		ResourceType: "workspace_member",
+		ResourceID:   target,
+		Summary:      "Workspace member role updated",
+		Before:       map[string]any{"role": member.Role},
+		After:        map[string]any{"role": nextRole},
+		Request:      r,
+	})
+	_ = json.NewEncoder(w).Encode(map[string]any{"ok": true, "username": target, "role": nextRole})
+}
+
 func (s *Server) handleDeleteUser(w http.ResponseWriter, r *http.Request) {
 	if !s.requireAdmin(w, r) {
 		return

@@ -345,6 +345,7 @@ func (s *Server) Handler() http.Handler {
 	mux.HandleFunc("POST /api/v1/invitations/{token}/revoke", s.handleRevokeInvitation)
 	mux.HandleFunc("GET /api/v1/users/{username}", s.handleGetUser)
 	mux.HandleFunc("PUT /api/v1/users/{username}", s.handleUpdateUser)
+	mux.HandleFunc("PUT /api/v1/users/{username}/workspace-role", s.handleUpdateWorkspaceMemberRole)
 	mux.HandleFunc("DELETE /api/v1/users/{username}", s.handleDeleteUser)
 
 	// ── Goals (OKR + Milestones) ──

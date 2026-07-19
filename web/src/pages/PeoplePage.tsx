@@ -1,7 +1,7 @@
 import { useCallback, useEffect, useState } from 'react'
 import { useTranslation } from 'react-i18next'
 import { User, X, Copy } from 'lucide-react'
-import { apiFetch, apiPost } from '../lib/api'
+import { apiFetch, apiPost, apiPut } from '../lib/api'
 import { cn } from '../lib/cn'
 import { useFormatDateTime } from '../lib/format-datetime'
 
@@ -216,6 +216,16 @@ export default function PeoplePage() {
     }
   }
 
+  async function updateMemberRole(username: string, role: string) {
+    setErr(null)
+    try {
+      await apiPut(`/api/v1/users/${encodeURIComponent(username)}/workspace-role`, { role })
+      await refresh()
+    } catch (e) {
+      setErr(e instanceof Error ? e.message : String(e))
+    }
+  }
+
   return (
     <div className="animate-fade-in px-8 py-6">
       <div className="flex items-center justify-between pb-5">
@@ -269,7 +279,16 @@ export default function PeoplePage() {
                   </td>
                   <td className="px-4 py-3 text-neutral-600 dark:text-zinc-400">{p.email || '-'}</td>
                   <td className="px-4 py-3">
-                    <span className="rounded-full bg-neutral-100 px-2 py-0.5 text-xs font-medium text-neutral-600 dark:bg-zinc-800 dark:text-zinc-300">{t(roleKey(p.role))}</span>
+                    <select
+                      value={p.role}
+                      onChange={(e) => void updateMemberRole(p.username, e.target.value)}
+                      disabled={p.role === 'owner' && currentWorkspaceRole !== 'owner'}
+                      className="rounded-md border border-neutral-200 bg-white px-2 py-1 text-xs font-medium text-neutral-700 outline-none focus:border-sky-400 disabled:opacity-60 dark:border-zinc-700 dark:bg-zinc-900 dark:text-zinc-300 dark:[color-scheme:dark]"
+                    >
+                      {(currentWorkspaceRole === 'owner' ? ['owner', 'admin', 'member', 'guest'] : p.role === 'owner' ? ['owner'] : ['admin', 'member', 'guest']).map(role => (
+                        <option key={role} value={role}>{t(roleKey(role))}</option>
+                      ))}
+                    </select>
                   </td>
                   <td className="px-4 py-3 text-neutral-600 dark:text-zinc-400">{p.projects?.length ?? 0}</td>
                   <td className="px-4 py-3 text-neutral-500 dark:text-zinc-500">{fmtDateTime(p.createdAt)}</td>
@@ -289,7 +308,6 @@ export default function PeoplePage() {
         <section className="mt-6">
           <div className="mb-3 flex items-center justify-between">
             <h2 className="text-base font-semibold text-neutral-900 dark:text-zinc-100">{t('people.invitations')}</h2>
-            <span className="text-xs text-neutral-400 dark:text-zinc-500">{invitations.length}</span>
           </div>
           <div className="overflow-x-auto rounded-xl border border-neutral-200/80 bg-white dark:border-zinc-700/60 dark:bg-zinc-900/40">
             <table className="w-full text-left text-sm">
