@@ -167,14 +167,23 @@ func (s *Server) handlePostProjectTask(w http.ResponseWriter, r *http.Request) {
 				t.Assignee = assignee
 				t.Prompt = workflowContinuationPrompt(t, *step, *inst)
 			case "human":
-				assignee = "human"
+				reviewer := strings.TrimSpace(inst.ActorID)
+				if reviewer == "" {
+					s.jsonError(w, http.StatusBadRequest, "workflow start reviewer is required")
+					return
+				}
+				if err := s.validateIdentity(reviewer, "workflow start reviewer"); err != nil {
+					s.jsonError(w, http.StatusBadRequest, err.Error())
+					return
+				}
+				assignee = reviewer
 				t.Assignee = assignee
 				t.Prompt = workflowContinuationPrompt(t, *step, *inst)
 			}
 		}
 	}
 
-	if assignee == "human" {
+	if assignee == "human" || !strings.Contains(assignee, "/") {
 		if err := s.ts.AddTask(name, agentName, t); err != nil {
 			s.serverError(w, err)
 			return
@@ -183,6 +192,7 @@ func (s *Server) handlePostProjectTask(w http.ResponseWriter, r *http.Request) {
 			TaskID:  t.ID,
 			Project: name,
 			Agent:   agentName,
+			To:      assignee,
 			Title:   t.Title,
 			Summary: promptText,
 		}

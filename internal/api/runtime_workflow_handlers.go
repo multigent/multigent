@@ -492,9 +492,16 @@ func (s *Server) activateNextWorkflowStep(project, previousAgent string, complet
 		return nil
 	}
 	if inst.ActorType == "human" {
+		reviewer := strings.TrimSpace(inst.ActorID)
+		if reviewer == "" {
+			return fmt.Errorf("workflow human review step %q has no assigned user", inst.StepID)
+		}
+		if err := s.validateIdentity(reviewer, "workflow reviewer"); err != nil {
+			return err
+		}
 		completed.Status = entity.TaskStatusAwaitingConfirmation
 		completed.Prompt = nextPrompt
-		completed.Assignee = "human"
+		completed.Assignee = reviewer
 		completed.UpdatedAt = now
 		completed.FinishedAt = nil
 		if err := s.ts.PersistTask(project, previousAgent, completed); err != nil {
@@ -504,7 +511,7 @@ func (s *Server) activateNextWorkflowStep(project, previousAgent string, complet
 			TaskID:      completed.ID,
 			Project:     project,
 			Agent:       previousAgent,
-			To:          strings.TrimSpace(inst.ActorID),
+			To:          reviewer,
 			Title:       completed.Title,
 			Summary:     strings.TrimSpace(inst.InputArtifact),
 			ActionHint:  "Review the workflow step and choose approved or needs_changes.",

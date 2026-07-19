@@ -504,7 +504,8 @@ const (
 
 // OnSuccessTrigger describes a task to auto-create when this task completes.
 type OnSuccessTrigger struct {
-	// Assignee is "<project>/<agent-name>" or "human".
+	// Assignee is "<project>/<agent-name>" for agents or a workspace username
+	// for human owners/reviewers.
 	Assignee string `yaml:"assignee"`
 	Title    string `yaml:"title"`
 	Type     string `yaml:"type,omitempty"`
@@ -588,7 +589,7 @@ type Task struct {
 	Title     string     `yaml:"title"`
 	Type      TaskType   `yaml:"type,omitempty"`
 	Priority  int        `yaml:"priority"` // 0=critical 1=high 2=normal 3=low
-	Assignee  string     `yaml:"assignee"` // "<project>/<agent>" or "human"
+	Assignee  string     `yaml:"assignee"` // "<project>/<agent>" or workspace username
 	CreatedBy string     `yaml:"created_by,omitempty"`
 	Status    TaskStatus `yaml:"status"`
 

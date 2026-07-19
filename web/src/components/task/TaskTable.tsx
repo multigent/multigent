@@ -156,12 +156,10 @@ export function TaskTable({
                     <span className="ml-2 font-mono text-[12px] text-neutral-400 dark:text-zinc-500">{row.agent}</span>
                   </td>
                 )}
-                <td className="whitespace-nowrap px-4 py-3 align-middle font-mono text-[13px] text-neutral-700 dark:text-zinc-400">
-                  {row.assignee === 'human' ? (
-                    <span className="rounded bg-violet-50 px-1.5 py-0.5 text-violet-700 dark:bg-violet-900/30 dark:text-violet-400">human</span>
-                  ) : (
-                    row.agent
-                  )}
+                <td className="whitespace-nowrap px-4 py-3 align-middle">
+                  <span className="font-mono text-[13px] text-neutral-700 dark:text-zinc-400">
+                    {row.assignee || `${row.project}/${row.agent}`}
+                  </span>
                 </td>
                 <td className="whitespace-nowrap px-4 py-3 align-middle">
                   <span className={cn('inline-block rounded-full px-2.5 py-0.5 text-[11px] font-semibold', sCls)}>

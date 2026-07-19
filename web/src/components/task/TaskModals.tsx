@@ -299,7 +299,9 @@ export function TaskDetailModal({ task, onClose, onEdit, canEdit = true }: { tas
         <div className="shrink-0 grid grid-cols-2 gap-x-6 gap-y-2.5 border-b border-neutral-100 px-5 py-3 text-sm dark:border-zinc-700/40 sm:grid-cols-3">
           <InfoCell label="ID"><span className="font-mono text-xs">{task.id}</span></InfoCell>
           <InfoCell label={t('tasks.colProject')}><span className="font-mono">{task.project}</span></InfoCell>
-          <InfoCell label={t('tasks.colAssignee')}>{task.assignee === 'human' ? <span className="rounded bg-violet-50 px-1.5 py-0.5 text-violet-700 dark:bg-violet-900/30 dark:text-violet-400">human</span> : <span className="font-mono">{task.agent}</span>}</InfoCell>
+          <InfoCell label={t('tasks.colAssignee')}>
+            <span className="font-mono">{task.assignee || `${task.project}/${task.agent}`}</span>
+          </InfoCell>
           <InfoCell label={t('forms.type')}>{task.type ? t(`forms.taskType.${task.type}`, { defaultValue: task.type }) : '—'}</InfoCell>
           <InfoCell label={t('api.taskColUpdated')}>{fmt(task.updatedAt)}</InfoCell>
           {task.estimateDuration && (
