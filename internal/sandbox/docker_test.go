@@ -36,6 +36,9 @@ func TestBuildArgsBinPATHKeepsToolchainPaths(t *testing.T) {
 }
 
 func TestImageForManagedModelsUsesRuntimeBase(t *testing.T) {
+	restore := dockerImageExists
+	dockerImageExists = func(string) bool { return false }
+	t.Cleanup(func() { dockerImageExists = restore })
 	for _, model := range []entity.AgentModel{entity.ModelCodex, entity.ModelClaudeCode, entity.ModelGemini, entity.ModelQoder} {
 		if got := ImageForModel(model); got != BaseImage {
 			t.Fatalf("ImageForModel(%s) = %q, want %q", model, got, BaseImage)
@@ -43,8 +46,21 @@ func TestImageForManagedModelsUsesRuntimeBase(t *testing.T) {
 	}
 }
 
-func TestEffectiveImageNormalizesPublishedDefault(t *testing.T) {
-	cfg := &entity.DockerSandboxConfig{Image: "multigent/runtime-base:latest"}
+func TestEffectiveImagePrefersLocalRuntimeBaseWhenPresent(t *testing.T) {
+	restore := dockerImageExists
+	dockerImageExists = func(image string) bool { return image == LocalBaseImage }
+	t.Cleanup(func() { dockerImageExists = restore })
+	cfg := &entity.DockerSandboxConfig{Image: BaseImage}
+	if got := EffectiveImage(entity.ModelCodex, cfg); got != LocalBaseImage {
+		t.Fatalf("EffectiveImage() = %q, want %q", got, LocalBaseImage)
+	}
+}
+
+func TestEffectiveImageUsesPublishedRuntimeBaseWhenLocalMissing(t *testing.T) {
+	restore := dockerImageExists
+	dockerImageExists = func(string) bool { return false }
+	t.Cleanup(func() { dockerImageExists = restore })
+	cfg := &entity.DockerSandboxConfig{Image: LocalBaseImage}
 	if got := EffectiveImage(entity.ModelCodex, cfg); got != BaseImage {
 		t.Fatalf("EffectiveImage() = %q, want %q", got, BaseImage)
 	}

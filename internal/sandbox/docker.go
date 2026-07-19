@@ -33,6 +33,11 @@ const (
 	// Image registry prefix for multigent-provided sandbox images.
 	imagePrefix = "ghcr.io/multigent/multigent"
 
+	// LocalBaseImage is the image tag created by local builds. Prefer it when it
+	// exists so development and self-hosted installs do not accidentally pull
+	// from an unavailable registry package.
+	LocalBaseImage = "multigent/runtime-base:latest"
+
 	// BaseImage is the published runtime image used by default. Agent CLI binaries
 	// are installed at runtime into a persistent toolchain cache, so CLI version
 	// bumps do not require rebuilding this image.
@@ -59,6 +64,8 @@ var defaultImages = map[entity.AgentModel]string{
 	entity.ModelCursor:     imagePrefix + "/sandbox-claudecode:latest",
 	entity.ModelQoder:      BaseImage,
 }
+
+var dockerImageExists = imageExists
 
 // Default credential/session mounts are scoped to one agent directory. Do not
 // mount host-global ~/.claude, ~/.codex, ~/.ssh, or ~/.config/gh by default:
@@ -265,7 +272,10 @@ func resolveImage(model entity.AgentModel, cfg *entity.DockerSandboxConfig) stri
 }
 
 func normalizeDefaultImage(image string) string {
-	if image == "multigent/runtime-base:latest" {
+	if image == LocalBaseImage || image == BaseImage {
+		if dockerImageExists(LocalBaseImage) {
+			return LocalBaseImage
+		}
 		return BaseImage
 	}
 	return image

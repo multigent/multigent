@@ -781,11 +781,12 @@ func detectSetupHint(errText string) string {
 
 	switch {
 	// Docker image not found / pull denied
-	case strings.Contains(lower, "unable to find image") && strings.Contains(lower, "denied"):
+	case strings.Contains(lower, "unable to find image") && (strings.Contains(lower, "denied") || strings.Contains(lower, "unauthorized")):
 		return `[hint] Docker 镜像拉取失败。请确认：
 1. Docker 已安装并运行：docker info
-2. 如果是私有镜像，先登录：docker login ghcr.io
-3. 或在成员详情页 → 沙箱配置中指定自定义镜像`
+2. 本地是否已有镜像：docker image inspect multigent/runtime-base:latest
+3. 没有本地镜像时，在项目根目录执行：docker build -t multigent/runtime-base:latest -f docker/runtime-base/Dockerfile .
+4. 或在成员详情页 → 沙箱配置中指定可访问的自定义镜像`
 
 	// Docker not installed or daemon not running
 	case strings.Contains(lower, "docker") && (strings.Contains(lower, "not found") || strings.Contains(lower, "cannot connect") || strings.Contains(lower, "daemon")):
