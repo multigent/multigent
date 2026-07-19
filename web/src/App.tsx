@@ -10,6 +10,7 @@ import LoginPage from './pages/LoginPage'
 import WorkspaceOnboardingPage from './pages/WorkspaceOnboardingPage'
 import WorkspacePage from './pages/WorkspacePage'
 import WorkflowsPage from './pages/WorkflowsPage'
+import PlaybooksPage from './pages/PlaybooksPage'
 import WorkbenchPage from './pages/WorkbenchPage'
 import OverviewPage from './pages/OverviewPage'
 import SettingsPage from './pages/SettingsPage'
@@ -119,6 +120,8 @@ function AuthenticatedRoutes() {
         <Route path="workspace" element={<WorkspacePage />} />
         <Route path="workflows" element={<WorkflowsPage />} />
         <Route path="workflows/:workflowId" element={<WorkflowsPage />} />
+        {canAdmin && <Route path="playbooks" element={<PlaybooksPage />} />}
+        {canAdmin && <Route path="playbooks/:playbookId" element={<PlaybooksPage />} />}
         {canAdmin && <Route path="teams/:teamId" element={<TeamDetailPage />} />}
         {canAdmin && <Route path="teams" element={<TeamsPage />} />}
         <Route path="projects" element={<ProjectsListPage />} />

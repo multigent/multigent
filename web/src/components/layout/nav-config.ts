@@ -7,6 +7,7 @@ import {
   FolderKanban,
   FolderOpen,
   GitBranch,
+  LibraryBig,
   LayoutDashboard,
   ListTodo,
   Milestone,
@@ -27,6 +28,7 @@ export type NavKey =
   | 'teams'
   | 'projects'
   | 'workflows'
+  | 'playbooks'
   | 'people'
   | 'workbench'
   | 'connections'
@@ -67,6 +69,7 @@ export const workspaceNav: NavItem[] = [
     activePrefix: '/projects',
   },
   { to: '/workflows', navKey: 'workflows', icon: GitBranch, activePrefix: '/workflows' },
+  { to: '/playbooks', navKey: 'playbooks', icon: LibraryBig, activePrefix: '/playbooks', adminOnly: true },
   { to: '/goals', navKey: 'goals', icon: Target, activePrefix: '/goals' },
   { to: '/people', navKey: 'people', icon: User, activePrefix: '/people', adminOnly: true },
   { to: '/teams', navKey: 'teams', icon: Users, activePrefix: '/teams', adminOnly: true },
@@ -97,6 +100,7 @@ export function navKeyFromPath(pathname: string): NavKey {
     teams: 'teams',
     projects: 'projects',
     workflows: 'workflows',
+    playbooks: 'playbooks',
     people: 'people',
     goals: 'goals',
     workbench: 'workbench',
