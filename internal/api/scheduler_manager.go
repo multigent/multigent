@@ -5,6 +5,7 @@ import (
 	"encoding/hex"
 	"encoding/json"
 	"fmt"
+	"log"
 	"net/http"
 	"os"
 	"os/exec"
@@ -364,13 +365,34 @@ func (s *Server) handleSchedulerWakeup(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	args := []string{"--dir", s.sched.root, "scheduler", "wakeup", "--project", project, "--agent", agent}
-	cmd := exec.Command(s.sched.binPath, args...)
-	out, err := cmd.CombinedOutput()
-	if err != nil {
-		s.jsonErrorCode(w, http.StatusInternalServerError, ErrCodeSchedulerWakeupFailed, fmt.Sprintf("wakeup failed: %v\n%s", err, string(out)))
+	hb, err := s.ts.GetHeartbeat(project, agent)
+	if err != nil || hb == nil {
+		s.jsonErrorCode(w, http.StatusNotFound, ErrCodeValidationFailed, "heartbeat not found")
 		return
 	}
+	if hb.PID > 0 && hb.LastWakeupStatus == "running" && processAlive(hb.PID) {
+		s.jsonErrorCode(w, http.StatusConflict, ErrCodeSchedulerWakeupFailed, fmt.Sprintf("agent %s/%s is already running", project, agent))
+		return
+	}
+
+	args := []string{"--dir", s.sched.root, "scheduler", "wakeup", "--project", project, "--agent", agent}
+	cmd := exec.Command(s.sched.binPath, args...)
+	cmd.Stdout = os.Stdout
+	cmd.Stderr = os.Stderr
+	setProcGroup(cmd)
+	if err := cmd.Start(); err != nil {
+		s.jsonErrorCode(w, http.StatusInternalServerError, ErrCodeSchedulerWakeupFailed, fmt.Sprintf("start wakeup failed: %v", err))
+		return
+	}
+	pid := 0
+	if cmd.Process != nil {
+		pid = cmd.Process.Pid
+	}
+	go func() {
+		if err := cmd.Wait(); err != nil {
+			log.Printf("scheduler wakeup %s/%s exited with error: %v", project, agent, err)
+		}
+	}()
 	s.auditLog(auditLogInput{
 		Action:       "scheduler.wakeup",
 		ResourceType: "agent",
@@ -382,7 +404,7 @@ func (s *Server) handleSchedulerWakeup(w http.ResponseWriter, r *http.Request) {
 		},
 		Request: r,
 	})
-	_ = json.NewEncoder(w).Encode(map[string]any{"ok": true, "output": string(out)})
+	_ = json.NewEncoder(w).Encode(map[string]any{"ok": true, "pid": pid, "status": "started"})
 }
 
 func (s *Server) handleSchedulerStop(w http.ResponseWriter, r *http.Request) {

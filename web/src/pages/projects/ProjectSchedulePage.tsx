@@ -114,7 +114,7 @@ export default function ProjectSchedulePage() {
         {state.status === 'error' && <PlaceholderCard title={t('api.loadError')}><p>{state.error.message}</p></PlaceholderCard>}
         {state.status === 'ok' && tab === 'heartbeat' && <HeartbeatTab agents={agents} projectId={projectId!} canManage={canManage} onChanged={reload} />}
         {state.status === 'ok' && tab === 'cron' && <CronTab agents={agents} projectId={projectId!} canManage={canManage} onChanged={reload} />}
-        {state.status === 'ok' && tab === 'runtime' && <RuntimeTab agents={agents} projectId={projectId!} canManage={canManage} />}
+        {state.status === 'ok' && tab === 'runtime' && <RuntimeTab agents={agents} projectId={projectId!} canManage={canManage} onChanged={reload} />}
       </div>
     </div>
   )
@@ -976,7 +976,7 @@ function ContextUsageBar({ usage }: { usage: SessionUsage }) {
   )
 }
 
-function RuntimeTab({ agents, projectId, canManage }: { agents: AgentSchedule[]; projectId: string; canManage: boolean }) {
+function RuntimeTab({ agents, projectId, canManage, onChanged }: { agents: AgentSchedule[]; projectId: string; canManage: boolean; onChanged: () => void }) {
   const { t } = useTranslation()
   const fmt = useFormatDateTime()
   const [waking, setWaking] = useState<string | null>(null)
@@ -994,6 +994,8 @@ function RuntimeTab({ agents, projectId, canManage }: { agents: AgentSchedule[];
     setWaking(agentName)
     try {
       await apiPost('/api/v1/scheduler/wakeup', { project: projectId, agent: agentName })
+      onChanged()
+      window.setTimeout(onChanged, 800)
     } catch { /* toast handled by apiFetch */ }
     finally { setWaking(null) }
   }

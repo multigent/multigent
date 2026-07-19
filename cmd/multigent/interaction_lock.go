@@ -54,6 +54,23 @@ func acquireCLIInteraction(root, project, agent, sourceKind, sourceChannel, acto
 	}
 	if err := db.CreateInteractionSession(session); err != nil {
 		if active, found, lookupErr := db.ActiveInteractionSession(workspaceID, project, agent); lookupErr == nil && found {
+			if shouldRecoverStaleCLIInteraction(active, sourceKind, reason) {
+				active.Status = "failed"
+				active.UpdatedAt = now
+				active.LastActivityAt = now
+				active.CompletedAt = now
+				_ = db.UpdateInteractionSession(active)
+				if retryErr := db.CreateInteractionSession(session); retryErr == nil {
+					lease := &cliInteractionLease{db: db, session: session}
+					_ = lease.event("system", session.ActorID, session.SourceChannel, "session_acquired", "", map[string]any{
+						"sourceKind":    session.SourceKind,
+						"sourceChannel": session.SourceChannel,
+						"lockReason":    session.LockReason,
+						"recoveredFrom": active.ID,
+					})
+					return lease, false, nil
+				}
+			}
 			_ = db.Close()
 			return &cliInteractionLease{session: active}, true, nil
 		}
@@ -67,6 +84,24 @@ func acquireCLIInteraction(root, project, agent, sourceKind, sourceChannel, acto
 		"lockReason":    session.LockReason,
 	})
 	return lease, false, nil
+}
+
+func shouldRecoverStaleCLIInteraction(active controldb.InteractionSession, sourceKind, reason string) bool {
+	if strings.TrimSpace(sourceKind) != "scheduler" || strings.TrimSpace(reason) != "running_task" {
+		return false
+	}
+	if strings.TrimSpace(active.SourceKind) != "scheduler" || strings.TrimSpace(active.LockReason) != "running_task" {
+		return false
+	}
+	lastRaw := strings.TrimSpace(active.LastActivityAt)
+	if lastRaw == "" {
+		lastRaw = strings.TrimSpace(active.UpdatedAt)
+	}
+	last, err := time.Parse(time.RFC3339, lastRaw)
+	if err != nil {
+		return false
+	}
+	return time.Since(last) > 2*time.Minute
 }
 
 func (l *cliInteractionLease) Release() {

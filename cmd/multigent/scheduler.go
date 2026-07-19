@@ -685,9 +685,6 @@ func runAllPendingTasks(ctx context.Context, root, project, agentName string,
 	sessionID := hb.SessionID
 	i18n := wakeupStrings(agencyLang(s))
 	sourceChannel := "scheduler"
-	if hb != nil && hb.LastWakeupStatus == "running" {
-		sourceChannel = "heartbeat"
-	}
 	interactionLease, busy, err := acquireCLIInteraction(root, project, agentName, "scheduler", sourceChannel, "scheduler", "running_task")
 	if err != nil {
 		return err

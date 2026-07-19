@@ -194,6 +194,7 @@ func (tm *triggerManager) Fire(project, agent string, triggerType entity.Trigger
 		cmd := exec.Command(tm.binPath, args...)
 		cmd.Stdout = os.Stdout
 		cmd.Stderr = os.Stderr
+		setProcGroup(cmd)
 		if err := cmd.Run(); err != nil {
 			fmt.Fprintf(os.Stderr, "[trigger] %s/%s: wakeup command failed: %v\n", project, agent, err)
 		}
