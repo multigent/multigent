@@ -10,6 +10,7 @@ import { cn } from '../../lib/cn'
 import { useFormatDateTime } from '../../lib/format-datetime'
 import { useApiJson } from '../../lib/use-api'
 import { apiPost } from '../../lib/api'
+import { useAuth } from '../../lib/auth'
 
 type Summary = {
   runs: number
@@ -445,9 +446,14 @@ export default function ProjectRunsPage() {
 
 function RunDetailModal({ run, onClose }: { run: RunRow; onClose: () => void }) {
   const { t } = useTranslation()
+  const { user } = useAuth()
   const fmt = useFormatDateTime()
   const rk = resolveKind(run)
   const kl = kindStyles[rk] ?? { text: rk, cls: 'bg-neutral-100 text-neutral-600' }
+  const userParticipant = {
+    name: user?.displayName || user?.username || t('common.user', { defaultValue: 'User' }),
+    avatar: user?.avatar,
+  }
 
   const hasLog = Boolean(run.logPath)
   const logQuery = hasLog ? `/api/v1/telemetry/log?path=${encodeURIComponent(run.logPath!)}` : null
@@ -575,7 +581,7 @@ function RunDetailModal({ run, onClose }: { run: RunRow; onClose: () => void }) 
                   <ConversationLog
                     content={logState.data.content}
                     mode="chat"
-                    user={{ name: t('common.user', { defaultValue: 'User' }) }}
+                    user={userParticipant}
                     assistant={{ name: run.agent }}
                   />
                 </section>
