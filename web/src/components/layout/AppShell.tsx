@@ -24,12 +24,15 @@ export type BreadcrumbSegment = {
 
 function useBreadcrumbs(): BreadcrumbSegment[] {
   const { pathname } = useLocation()
-  const { t } = useTranslation()
+  const { t, i18n } = useTranslation()
   const pid = projectIdFromPath(pathname)
   const pseg = projectNavKeyFromPath(pathname)
   const workflowMatch = /^\/workflows\/([^/]+)$/.exec(pathname)
   const workflowId = workflowMatch ? decodeURIComponent(workflowMatch[1]) : ''
   const [workflowName, setWorkflowName] = useState('')
+  const playbookMatch = /^\/playbooks\/([^/]+)$/.exec(pathname)
+  const playbookId = playbookMatch ? decodeURIComponent(playbookMatch[1]) : ''
+  const [playbookName, setPlaybookName] = useState('')
 
   useEffect(() => {
     let cancelled = false
@@ -49,6 +52,26 @@ function useBreadcrumbs(): BreadcrumbSegment[] {
       cancelled = true
     }
   }, [workflowId])
+
+  useEffect(() => {
+    let cancelled = false
+    if (!playbookId) {
+      setPlaybookName('')
+      return
+    }
+    const locale = i18n.resolvedLanguage || i18n.language || 'en'
+    setPlaybookName('')
+    apiFetch<{ name?: string }>(`/api/v1/playbook-templates/${encodeURIComponent(playbookId)}?locale=${encodeURIComponent(locale)}`)
+      .then((playbook) => {
+        if (!cancelled) setPlaybookName(playbook.name || '')
+      })
+      .catch(() => {
+        if (!cancelled) setPlaybookName('')
+      })
+    return () => {
+      cancelled = true
+    }
+  }, [playbookId, i18n.resolvedLanguage, i18n.language])
 
   // Check for agent detail page: /projects/:id/members/:agentName
   const agentChatMatch = /^\/projects\/[^/]+\/members\/([^/]+)\/chat$/.exec(pathname)
@@ -101,6 +124,13 @@ function useBreadcrumbs(): BreadcrumbSegment[] {
     return [
       { label: t('nav.workflows'), to: '/workflows' },
       { label: workflowName || workflowId },
+    ]
+  }
+
+  if (playbookId) {
+    return [
+      { label: t('nav.playbooks'), to: '/playbooks' },
+      { label: playbookName || playbookId },
     ]
   }
 
