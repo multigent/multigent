@@ -64,10 +64,26 @@ export function CreateTaskDialog({ projectId: defaultProjectId, agents: defaultA
   const currentAgentActors = useMemo(() => currentAgents.filter((a) => a.model !== 'human'), [currentAgents])
   const currentHumanMembers = useMemo(() => currentAgents.filter((a) => a.model === 'human'), [currentAgents])
 
-  const allAgentsFlat = useMemo(() => {
-    if (!allProjectsAgents) return defaultAgents.map((a) => ({ projectId: defaultProjectId, name: a.name }))
-    return allProjectsAgents.flatMap((p) => p.agents.map((a) => ({ projectId: p.projectId, name: a.name })))
+  const allAgentAssignees = useMemo(() => {
+    if (!allProjectsAgents) return defaultAgents.filter((a) => a.model !== 'human').map((a) => ({ projectId: defaultProjectId, name: a.name }))
+    return allProjectsAgents.flatMap((p) => p.agents.filter((a) => a.model !== 'human').map((a) => ({ projectId: p.projectId, name: a.name })))
   }, [allProjectsAgents, defaultAgents, defaultProjectId])
+
+  const humanAssignees = useMemo(() => {
+    const byID = new Map<string, { id: string; label: string }>()
+    for (const member of currentHumanMembers) {
+      if (!member.name) continue
+      byID.set(member.name, { id: member.name, label: member.name })
+    }
+    for (const person of people) {
+      if (!person.username) continue
+      byID.set(person.username, {
+        id: person.username,
+        label: person.displayName ? `${person.displayName} (${person.username})` : person.username,
+      })
+    }
+    return Array.from(byID.values())
+  }, [currentHumanMembers, people])
 
   function reset() {
     setSelectedProject(defaultProjectId)
@@ -174,7 +190,7 @@ export function CreateTaskDialog({ projectId: defaultProjectId, agents: defaultA
       const weak = currentAgentActors.find((a) => role.includes(a.name) || a.name.includes(role.replace(/-agent$/, '')))
       return { type: 'agent', id: exact?.name || weak?.name || currentAgentActors[0]?.name || '' }
     }
-    return { type: 'human', id: currentHumanMembers[0]?.name || people[0]?.username || 'human' }
+    return { type: 'human', id: currentHumanMembers[0]?.name || people[0]?.username || '' }
   }
 
   function onWorkflowChange(id: string) {
@@ -196,7 +212,7 @@ export function CreateTaskDialog({ projectId: defaultProjectId, agents: defaultA
       const nextType = patch.type ?? prev.type
       let nextID = patch.id ?? prev.id
       if (patch.type && patch.type !== prev.type) {
-        nextID = patch.type === 'agent' ? currentAgentActors[0]?.name || '' : currentHumanMembers[0]?.name || people[0]?.username || 'human'
+        nextID = patch.type === 'agent' ? currentAgentActors[0]?.name || '' : currentHumanMembers[0]?.name || people[0]?.username || ''
       }
       return { ...current, [role]: { type: nextType, id: nextID } }
     })
@@ -255,8 +271,10 @@ export function CreateTaskDialog({ projectId: defaultProjectId, agents: defaultA
                 <span className="text-neutral-600 dark:text-zinc-400">{t('tasks.colAssignee')}</span>
                 <select value={assignee} onChange={(e) => setAssignee(e.target.value)} className={fieldCls}>
                   <option value="">{t('tasks.assignDefault')}</option>
-                  <option value="human">human</option>
-                  {allAgentsFlat.map((a) => (
+                  {humanAssignees.map((person) => (
+                    <option key={`user:${person.id}`} value={person.id}>{person.label}</option>
+                  ))}
+                  {allAgentAssignees.map((a) => (
                     <option key={`${a.projectId}/${a.name}`} value={`${a.projectId}/${a.name}`}>
                       {a.projectId}/{a.name}
                     </option>
@@ -346,14 +364,7 @@ export function CreateTaskDialog({ projectId: defaultProjectId, agents: defaultA
                   <div className="mt-3 space-y-2">
                     {workflowActorSlots.map((slot) => {
                       const binding = actorBindings[slot.role] ?? { type: slot.preferredType, id: '' }
-                      const humanOptions = [
-                        { id: 'human', label: 'human' },
-                        ...currentHumanMembers.map((member) => ({ id: member.name, label: member.name })),
-                        ...people
-                          .filter((person) => !currentHumanMembers.some((member) => member.name === person.username))
-                          .map((p) => ({ id: p.username, label: p.displayName ? `${p.displayName} (${p.username})` : p.username })),
-                      ]
-                      const options = binding.type === 'agent' ? currentAgentActors.map((a) => ({ id: a.name, label: a.name })) : humanOptions
+                      const options = binding.type === 'agent' ? currentAgentActors.map((a) => ({ id: a.name, label: a.name })) : humanAssignees
                       return (
                         <div key={slot.role} className="rounded-md border border-neutral-200 bg-white p-2 dark:border-zinc-700 dark:bg-zinc-900">
                           <div className="flex items-start justify-between gap-2">
