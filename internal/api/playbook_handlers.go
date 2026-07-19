@@ -29,7 +29,11 @@ func (s *Server) handleListPlaybookTemplates(w http.ResponseWriter, r *http.Requ
 		return
 	}
 	locale := strings.TrimSpace(r.URL.Query().Get("locale"))
-	_ = json.NewEncoder(w).Encode(map[string]any{"templates": playbookstore.Templates(locale)})
+	templates := playbookstore.Templates(locale)
+	for i := range templates {
+		templates[i] = playbookTemplateSummary(templates[i])
+	}
+	_ = json.NewEncoder(w).Encode(map[string]any{"templates": templates})
 }
 
 func (s *Server) handleListPlaybookInstalls(w http.ResponseWriter, r *http.Request) {
@@ -65,6 +69,16 @@ func (s *Server) handleGetPlaybookTemplate(w http.ResponseWriter, r *http.Reques
 		return
 	}
 	_ = json.NewEncoder(w).Encode(tmpl)
+}
+
+func playbookTemplateSummary(tmpl entity.PlaybookTemplate) entity.PlaybookTemplate {
+	for i := range tmpl.Roles {
+		tmpl.Roles[i].Prompt = ""
+	}
+	for i := range tmpl.Skills {
+		tmpl.Skills[i].Body = ""
+	}
+	return tmpl
 }
 
 type installPlaybookRequest struct {
@@ -241,17 +255,27 @@ func (s *Server) ensurePlaybookSkill(sk entity.PlaybookSkillTemplate) (string, e
 		body = fmt.Sprintf("# Skill: %s\n\n%s\n", sk.Name, strings.TrimSpace(sk.Description))
 	}
 	var sb strings.Builder
-	sb.WriteString("---\n")
-	sb.WriteString(fmt.Sprintf("name: %s\n", name))
-	if strings.TrimSpace(sk.Description) != "" {
-		sb.WriteString(fmt.Sprintf("description: %q\n", strings.TrimSpace(sk.Description)))
+	if strings.HasPrefix(body, "---") {
+		sb.WriteString(body)
+	} else {
+		sb.WriteString("---\n")
+		sb.WriteString(fmt.Sprintf("name: %s\n", name))
+		if strings.TrimSpace(sk.Description) != "" {
+			sb.WriteString(fmt.Sprintf("description: %q\n", strings.TrimSpace(sk.Description)))
+		}
+		sb.WriteString("---\n\n")
+		sb.WriteString(body)
 	}
-	sb.WriteString("---\n\n")
-	sb.WriteString(body)
 	if !strings.HasSuffix(body, "\n") {
 		sb.WriteString("\n")
 	}
 	dir := s.st.SkillDir(name)
+	if strings.Contains(sk.Source, "garrytan/gstack") {
+		if err := playbookstore.CopyGstackSkillAssets(name, dir); err != nil {
+			return "", err
+		}
+		return "created", nil
+	}
 	if err := os.MkdirAll(dir, 0o755); err != nil {
 		return "", err
 	}

@@ -7,7 +7,10 @@ import (
 	workflowstore "github.com/multigent/multigent/internal/workflow"
 )
 
-const playbookTemplateVersion = "1.0.0"
+const (
+	playbookTemplateVersion       = "1.0.0"
+	gstackPlaybookTemplateVersion = "1.1.0"
+)
 
 func Templates(locale string) []entity.PlaybookTemplate {
 	locale = normalizeLocale(locale)
@@ -103,52 +106,67 @@ func softwareDelivery(locale string) entity.PlaybookTemplate {
 
 func startupValidation(locale string) entity.PlaybookTemplate {
 	wf := startupValidationWorkflow(locale)
-	advisorPrompt := text(locale, ycAdvisorPromptEN, ycAdvisorPromptZH)
-	researchPrompt := text(locale, marketResearchPromptEN, marketResearchPromptZH)
-	prototypePrompt := text(locale, prototypeScopePromptEN, prototypeScopePromptZH)
 	return entity.PlaybookTemplate{
 		ID:          "garry-startup-validation",
-		Version:     playbookTemplateVersion,
+		Version:     gstackPlaybookTemplateVersion,
 		Name:        text(locale, "YC Garry Startup Validation", "YC Garry 创业验证协作方案"),
-		Description: text(locale, "A startup idea validation playbook inspired by YC-style office hours: test demand reality, status quo, pain intensity, wedge, and prototype scope before building.", "参考 YC office hours 思路的创业项目验证协作方案：先判断真实需求、现有替代方案、痛点强度、切入点和原型范围，再决定是否开发。"),
+		Description: text(locale, "A startup and product validation playbook built from the actual gstack skill sources: office hours, CEO review, engineering review, design review, spec, review, QA, and ship.", "基于 gstack 原始 Skill 文件构建的创业与产品验证协作方案：包含 office hours、CEO review、工程评审、设计评审、spec、review、QA 和 ship。"),
 		Locale:      normalizeLocale(locale),
 		Category:    text(locale, "Strategy", "战略验证"),
-		Complexity:  text(locale, "Intermediate", "中阶"),
-		Tags:        []string{"startup", "market", "yc", "strategy"},
+		Complexity:  text(locale, "Advanced", "高阶"),
+		Tags:        []string{"startup", "market", "yc", "strategy", "gstack"},
 		Roles: []entity.PlaybookRoleTemplate{
-			roleWithPrompt("yc-office-hours-advisor", "business", "advisor", text(locale, "YC Office Hours Advisor", "YC Office Hours 顾问"), text(locale, "Challenges startup ideas through demand reality, status quo, desperate user signal, wedge, and future-fit questions.", "通过真实需求、现有替代方案、强痛点用户信号、最小切入点和未来适配性来挑战创业想法。"), advisorPrompt, []string{"market-value-evaluation", "status-quo-analysis", "desperate-user-signal"}),
-			roleWithPrompt("market-research-agent", "business", "market-research", text(locale, "Market Research Agent", "市场调研 Agent"), text(locale, "Collects evidence about buyers, current alternatives, urgency, and willingness to switch.", "收集买方、当前替代方案、紧迫性和迁移意愿证据。"), researchPrompt, []string{"market-value-evaluation", "status-quo-analysis", "desperate-user-signal"}),
-			roleWithPrompt("prototype-scope-reviewer", "product", "prototype", text(locale, "Prototype Scope Reviewer", "原型范围评审"), text(locale, "Turns the strongest validated wedge into a concrete 48-hour prototype scope.", "把最强切入点转成可执行的 48 小时原型范围。"), prototypePrompt, []string{"prototype-scope"}),
+			roleWithPrompt("yc-office-hours-partner", "business", "office-hours", text(locale, "YC Office Hours Partner", "YC Office Hours Partner"), text(locale, "Runs gstack /office-hours: diagnose demand reality, status quo, specificity, wedge, observation, and future fit before implementation.", "执行 gstack /office-hours：在实现前诊断真实需求、现状替代方案、具体痛点、切入点、观察证据和未来适配。"), gstackRolePrompt("office-hours"), []string{"office-hours"}),
+			roleWithPrompt("yc-founder-reviewer", "business", "founder-review", text(locale, "CEO / Founder Reviewer", "CEO / Founder Reviewer"), text(locale, "Runs gstack /plan-ceo-review: challenge scope, find the 10-star version, and choose expansion, reduction, or hold-scope mode.", "执行 gstack /plan-ceo-review：挑战范围，寻找 10-star 版本，并选择扩张、缩减或保持范围。"), gstackRolePrompt("plan-ceo-review"), []string{"plan-ceo-review"}),
+			roleWithPrompt("gstack-eng-reviewer", "engineering", "engineering-review", text(locale, "Engineering Reviewer", "工程评审"), text(locale, "Runs gstack /plan-eng-review to lock architecture, data flow, failure paths, tests, and observability before build.", "执行 gstack /plan-eng-review：在开发前锁定架构、数据流、失败路径、测试和可观测性。"), gstackRolePrompt("plan-eng-review"), []string{"plan-eng-review"}),
+			roleWithPrompt("gstack-design-reviewer", "product", "design-review", text(locale, "Design Reviewer", "设计评审"), text(locale, "Runs gstack /plan-design-review to catch UX, hierarchy, empty states, edge cases, and AI slop before implementation.", "执行 gstack /plan-design-review：在实现前检查 UX、层级、空状态、边界情况和 AI slop。"), gstackRolePrompt("plan-design-review"), []string{"plan-design-review"}),
+			roleWithPrompt("gstack-spec-author", "product", "spec", text(locale, "Spec Author", "Spec Author"), text(locale, "Runs gstack /spec to turn vague intent into a precise executable spec with quality gates.", "执行 gstack /spec：把模糊意图转成带质量门禁的精确可执行 spec。"), gstackRolePrompt("spec"), []string{"spec"}),
+			roleWithPrompt("gstack-staff-reviewer", "engineering", "staff-review", text(locale, "Staff Engineer Reviewer", "Staff Engineer Reviewer"), text(locale, "Runs gstack /review to find production-grade issues and verify code quality.", "执行 gstack /review：发现生产级问题并验证代码质量。"), gstackRolePrompt("review"), []string{"review"}),
+			roleWithPrompt("gstack-qa-lead", "engineering", "qa", text(locale, "QA Lead", "QA Lead"), text(locale, "Runs gstack /qa to test real user flows, report bugs, and verify fixes.", "执行 gstack /qa：测试真实用户流程、报告问题并验证修复。"), gstackRolePrompt("qa"), []string{"qa"}),
+			roleWithPrompt("gstack-release-engineer", "engineering", "release", text(locale, "Release Engineer", "Release Engineer"), text(locale, "Runs gstack /ship to verify readiness, push, open PR, and prepare release evidence.", "执行 gstack /ship：验证发版就绪、推送、创建 PR 并准备发版证据。"), gstackRolePrompt("ship"), []string{"ship"}),
 		},
 		Skills: []entity.PlaybookSkillTemplate{
-			skillWithBody("market-value-evaluation", text(locale, "Market Value Evaluation", "市场价值判断"), text(locale, "Evaluate whether the idea has a painful, specific, reachable market rather than a vague nice-to-have.", "判断想法是否有具体、强痛点、可触达的市场，而不是泛泛的锦上添花。"), text(locale, marketValueSkillEN, marketValueSkillZH)),
-			skillWithBody("status-quo-analysis", text(locale, "Status Quo Analysis", "现状替代方案分析"), text(locale, "Treat the user's current workaround as the real competitor and identify switching pressure.", "把用户当前土办法视为真正竞品，识别迁移动力。"), text(locale, statusQuoSkillEN, statusQuoSkillZH)),
-			skillWithBody("desperate-user-signal", text(locale, "Desperate User Signal", "强痛点用户信号"), text(locale, "Look for evidence that a narrow group urgently needs the product now.", "寻找某个窄人群现在就迫切需要产品的证据。"), text(locale, desperateSignalSkillEN, desperateSignalSkillZH)),
-			skillWithBody("prototype-scope", text(locale, "48-hour Prototype Scope", "48 小时原型范围"), text(locale, "Define the smallest prototype that tests the riskiest premise.", "定义能验证最大风险假设的最小原型。"), text(locale, prototypeScopeSkillEN, prototypeScopeSkillZH)),
+			gstackSkill("office-hours", "/office-hours", text(locale, "YC Office Hours diagnostic from gstack. Full upstream SKILL.md is installed.", "gstack 的 YC Office Hours 诊断。安装完整上游 SKILL.md。"), "office-hours"),
+			gstackSkill("plan-ceo-review", "/plan-ceo-review", text(locale, "CEO/founder-mode plan review from gstack. Full upstream SKILL.md is installed.", "gstack 的 CEO/founder-mode 方案评审。安装完整上游 SKILL.md。"), "plan-ceo-review"),
+			gstackSkill("plan-eng-review", "/plan-eng-review", text(locale, "Engineering plan review from gstack. Full upstream SKILL.md is installed.", "gstack 的工程方案评审。安装完整上游 SKILL.md。"), "plan-eng-review"),
+			gstackSkill("plan-design-review", "/plan-design-review", text(locale, "Design plan review from gstack. Full upstream SKILL.md is installed.", "gstack 的设计方案评审。安装完整上游 SKILL.md。"), "plan-design-review"),
+			gstackSkill("spec", "/spec", text(locale, "Spec authoring workflow from gstack. Full upstream SKILL.md is installed.", "gstack 的 spec 编写工作流。安装完整上游 SKILL.md。"), "spec"),
+			gstackSkill("review", "/review", text(locale, "Staff engineer code review from gstack. Full upstream SKILL.md is installed.", "gstack 的 Staff Engineer 代码评审。安装完整上游 SKILL.md。"), "review"),
+			gstackSkill("qa", "/qa", text(locale, "QA workflow from gstack. Full upstream SKILL.md is installed.", "gstack 的 QA 工作流。安装完整上游 SKILL.md。"), "qa"),
+			gstackSkill("ship", "/ship", text(locale, "Release workflow from gstack. Full upstream SKILL.md is installed.", "gstack 的发版工作流。安装完整上游 SKILL.md。"), "ship"),
 		},
 		Workflows: []entity.PlaybookWorkflowTemplate{
 			workflow("startup-idea-validation", wf, map[string]string{
-				"idea_intake":        "yc-office-hours-advisor",
-				"market_evidence":    "market-research-agent",
-				"validation_review":  "yc-office-hours-advisor",
-				"prototype_decision": "prototype-scope-reviewer",
+				"office_hours":       "yc-office-hours-partner",
+				"ceo_review":         "yc-founder-reviewer",
+				"spec_authoring":     "gstack-spec-author",
+				"engineering_review": "gstack-eng-reviewer",
+				"design_review":      "gstack-design-reviewer",
+				"staff_review":       "gstack-staff-reviewer",
+				"qa":                 "gstack-qa-lead",
+				"ship":               "gstack-release-engineer",
 			}, map[string][]string{
-				"idea_intake":        {"market-value-evaluation", "status-quo-analysis"},
-				"market_evidence":    {"market-value-evaluation", "desperate-user-signal"},
-				"prototype_decision": {"prototype-scope"},
+				"office_hours":       {"office-hours"},
+				"ceo_review":         {"plan-ceo-review"},
+				"spec_authoring":     {"spec"},
+				"engineering_review": {"plan-eng-review"},
+				"design_review":      {"plan-design-review"},
+				"staff_review":       {"review"},
+				"qa":                 {"qa"},
+				"ship":               {"ship"},
 			}),
 		},
 		TaskTemplates: []entity.PlaybookTaskTemplate{
-			task("validate-startup-idea", text(locale, "Validate a startup idea", "验证一个创业想法"), text(locale, "Pressure-test a raw idea before committing build time.", "在投入开发前对原始想法进行压力测试。"), "startup-idea-validation"),
-			task("prototype-scope", text(locale, "Create prototype scope", "制定原型范围"), text(locale, "Produce a 48-hour prototype scope from validated evidence.", "基于验证证据输出 48 小时原型范围。"), "startup-idea-validation"),
+			task("validate-and-ship-with-gstack", text(locale, "Validate and ship with gstack", "用 gstack 验证并交付"), text(locale, "Run a full gstack-style path: office hours, CEO review, spec, engineering/design review, implementation review, QA, and ship.", "运行完整 gstack 风格路径：office hours、CEO review、spec、工程/设计评审、实现评审、QA 和发版。"), "startup-idea-validation"),
+			task("validate-startup-idea", text(locale, "Validate a startup idea", "验证一个创业想法"), text(locale, "Pressure-test a raw idea with the full gstack office-hours and CEO review loop before committing build time.", "投入开发前，用完整 gstack office-hours 和 CEO review 闭环对原始想法做压力测试。"), "startup-idea-validation"),
 		},
 		SetupQuestions: []entity.PlaybookSetupQuestion{
 			question("target_user", text(locale, "Who is the narrow first user?", "第一批窄用户是谁？"), nil, true),
 			question("current_status_quo", text(locale, "What do they do today without this product?", "没有这个产品时他们现在怎么解决？"), nil, true),
 		},
 		SuccessMetrics: []entity.PlaybookMetric{
-			metric("evidence_quality", text(locale, "Evidence quality", "证据质量"), text(locale, "How specific and uncomfortable the demand evidence is.", "需求证据是否具体且足够尖锐。")),
-			metric("prototype_clarity", text(locale, "Prototype clarity", "原型清晰度"), text(locale, "Whether the prototype scope tests one risky premise clearly.", "原型是否清晰验证一个关键风险假设。")),
+			metric("office_hours_quality", text(locale, "Office-hours quality", "Office-hours 质量"), text(locale, "Whether the problem, status quo, wedge, and demand evidence are specific enough to make a build/no-build decision.", "问题、现状替代方案、切入点和需求证据是否足够具体，能支撑做/不做决策。")),
+			metric("review_rigor", text(locale, "Review rigor", "评审严格度"), text(locale, "Whether CEO, engineering, design, review, QA, and ship gates produce concrete findings and decision records.", "CEO、工程、设计、review、QA 和 ship 门禁是否产出具体发现和决策记录。")),
 		},
 	}
 }
@@ -480,6 +498,21 @@ func skill(id, name, description string) entity.PlaybookSkillTemplate {
 
 func skillWithBody(id, name, description, body string) entity.PlaybookSkillTemplate {
 	return entity.PlaybookSkillTemplate{ID: id, Name: name, Description: description, Body: body, Source: "Inspired by gstack office-hours, plan review, and startup diagnostic patterns."}
+}
+
+func gstackSkill(id, name, description, assetName string) entity.PlaybookSkillTemplate {
+	return entity.PlaybookSkillTemplate{
+		ID:          id,
+		Name:        name,
+		Description: description,
+		Body:        gstackSkillBody(assetName),
+		Source:      "Vendored from https://github.com/garrytan/gstack",
+		LicenseNote: "MIT License. Copyright (c) 2026 Garry Tan. See internal/playbook/gstack_assets/LICENSE.",
+	}
+}
+
+func gstackRolePrompt(assetName string) string {
+	return "# Role prompt source\n\nThis role is backed by the full upstream gstack skill below. Follow it as the primary operating procedure inside Multigent.\n\n" + gstackSkillBody(assetName)
 }
 
 func task(id, title, description, workflowID string) entity.PlaybookTaskTemplate {
