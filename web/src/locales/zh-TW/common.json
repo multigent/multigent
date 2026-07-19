@@ -1202,6 +1202,7 @@
     "followingLiveLog": "正在跟隨該 Agent 的執行日誌，執行完成後會寫入執行記錄。",
     "waiting": "Agent 正在回覆",
     "stopped": "已停止",
+    "protocolError": "對話流格式異常",
     "error": "對話執行失敗"
   },
   "context": {

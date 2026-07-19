@@ -1202,6 +1202,7 @@
     "followingLiveLog": "この Agent の実行ログを追跡しています。完了後に実行記録へ書き込まれます。",
     "waiting": "エージェントが返信中",
     "stopped": "停止しました",
+    "protocolError": "チャットストリーム形式が不正です",
     "error": "チャット実行に失敗しました"
   },
   "context": {

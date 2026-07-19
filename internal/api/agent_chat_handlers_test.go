@@ -1,6 +1,7 @@
 package api
 
 import (
+	"encoding/json"
 	"testing"
 
 	"github.com/multigent/multigent/internal/entity"
@@ -8,17 +9,16 @@ import (
 
 func TestChatSSELineKeepsCodexTranscriptRaw(t *testing.T) {
 	line := "codex"
-	got := chatSSELine(line, entity.ModelCodex)
-	if got != line {
-		t.Fatalf("chatSSELine() = %q, want %q", got, line)
+	got := decodeChatSSEPayload(t, chatSSEPayload(line, entity.ModelCodex))
+	if got["type"] != "chat_event" || got["payload"] != line || got["payloadType"] != "cli" {
+		t.Fatalf("chatSSEPayload() = %#v", got)
 	}
 }
 
 func TestChatSSELineWrapsPlainGenericStatus(t *testing.T) {
-	got := chatSSELine("plain status", entity.ModelClaudeCode)
-	want := "=== plain status ==="
-	if got != want {
-		t.Fatalf("chatSSELine() = %q, want %q", got, want)
+	got := decodeChatSSEPayload(t, chatSSEPayload("plain status", entity.ModelClaudeCode))
+	if got["type"] != "chat_event" || got["payload"] != "=== plain status ===" || got["payloadType"] != "log" {
+		t.Fatalf("chatSSEPayload() = %#v", got)
 	}
 }
 
@@ -52,4 +52,13 @@ func TestExtractAgentChatSessionID(t *testing.T) {
 			}
 		})
 	}
+}
+
+func decodeChatSSEPayload(t *testing.T, raw string) map[string]any {
+	t.Helper()
+	var got map[string]any
+	if err := json.Unmarshal([]byte(raw), &got); err != nil {
+		t.Fatalf("payload is not JSON: %v\n%s", err, raw)
+	}
+	return got
 }

@@ -1202,6 +1202,7 @@
     "followingLiveLog": "正在跟随该 Agent 的运行日志，运行完成后会写入运行记录。",
     "waiting": "Agent 正在回复",
     "stopped": "已停止",
+    "protocolError": "对话流格式异常",
     "error": "对话执行失败"
   },
   "context": {

@@ -334,7 +334,7 @@ func (s *Server) handleAgentChat(w http.ResponseWriter, r *http.Request) {
 		if clientGone {
 			continue
 		}
-		payload := chatSSELine(line, agentModel)
+		payload := chatSSEPayload(line, agentModel)
 		if _, err := fmt.Fprintf(w, "data: %s\n\n", payload); err != nil {
 			log.Printf("[chat] %s/%s: client gone after %d lines (write err: %v)", project, agent, lineCount, err)
 			clientGone = true
@@ -421,16 +421,39 @@ func (s *Server) handleAgentChatStop(w http.ResponseWriter, r *http.Request) {
 	_ = json.NewEncoder(w).Encode(map[string]any{"ok": true, "pid": pid})
 }
 
-func chatSSELine(line string, model entity.AgentModel) string {
+func chatSSEPayload(line string, model entity.AgentModel) string {
 	trimmed := strings.TrimSpace(line)
+	payloadType := "text"
+	normalized := line
 	if model == entity.ModelCodex || model == entity.ModelQoder {
-		return line
-	}
-	if strings.HasPrefix(trimmed, "{") || strings.HasPrefix(trimmed, "===") ||
+		payloadType = "cli"
+	} else if strings.HasPrefix(trimmed, "{") {
+		payloadType = "cli"
+	} else if strings.HasPrefix(trimmed, "===") ||
 		strings.HasPrefix(trimmed, "Command:") || strings.HasPrefix(trimmed, "Started:") {
-		return line
+		payloadType = "log"
+	} else {
+		payloadType = "log"
+		normalized = "=== " + line + " ==="
 	}
-	return "=== " + line + " ==="
+	out := map[string]any{
+		"type":        "chat_event",
+		"payloadType": payloadType,
+		"payload":     normalized,
+	}
+	if sid := extractAgentChatSessionID(line); sid != "" {
+		out["session_id"] = sid
+	}
+	raw, err := json.Marshal(out)
+	if err != nil {
+		fallback, _ := json.Marshal(map[string]any{
+			"type":        "chat_event",
+			"payloadType": "log",
+			"payload":     "=== failed to encode chat event ===",
+		})
+		return string(fallback)
+	}
+	return string(raw)
 }
 
 func extractAgentChatSessionID(line string) string {

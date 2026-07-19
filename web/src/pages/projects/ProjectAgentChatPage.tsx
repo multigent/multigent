@@ -31,11 +31,6 @@ type ProviderOption = {
   model?: string
 }
 
-type LiveLogResp = {
-  content: string
-  finished: boolean
-}
-
 function appendLog(prev: string, line: string): string {
   return prev ? `${prev}\n${line}` : line
 }
@@ -78,11 +73,6 @@ export default function ProjectAgentChatPage() {
   const [providers, setProviders] = useState<ProviderOption[]>([])
   const [sessionEditorOpen, setSessionEditorOpen] = useState(false)
   const [sessionDraft, setSessionDraft] = useState(initialSessionId)
-  const [followingLiveLog, setFollowingLiveLog] = useState(false)
-  const [stopped, setStopped] = useState(false)
-  // Ref to track whether SSE has ever started; prevents in-flight live-log
-  // polls (sent before SSE) from overwriting SSE-streamed content.
-  const sseActiveRef = useRef(false)
   const scrollRef = useRef<HTMLDivElement>(null)
   const inputRef = useRef<HTMLTextAreaElement>(null)
   const abortRef = useRef<AbortController | null>(null)
@@ -146,7 +136,7 @@ export default function ProjectAgentChatPage() {
     requestAnimationFrame(() => {
       if (scrollRef.current) scrollRef.current.scrollTop = scrollRef.current.scrollHeight
     })
-  }, [content, loading, followingLiveLog])
+  }, [content, loading])
 
   useEffect(() => {
     if (!draftKey) return
@@ -165,43 +155,6 @@ export default function ProjectAgentChatPage() {
     el.style.height = Math.min(el.scrollHeight, 128) + 'px'
   }, [input])
 
-  // Live-log polling: only runs when SSE is NOT active (loading=false).
-  // SSE is the primary real-time source; live-log is a fallback for initial
-  // content when SSE delivers nothing. Guard inside poll to handle in-flight
-  // requests that arrive after SSE starts.
-  useEffect(() => {
-    if (!projectId || !agentName || loading || stopped) return
-    let cancelled = false
-    let timer: number | null = null
-
-    const poll = async () => {
-      try {
-        const data = await apiFetch<LiveLogResp>(
-          `/api/v1/projects/${encodeURIComponent(projectId)}/agents/${encodeURIComponent(agentName)}/live-log`,
-        )
-        // Guard: if SSE has taken over (loading became true) OR an in-flight poll
-        // arrived after SSE started, don't overwrite SSE content.
-        if (cancelled || loading || sseActiveRef.current) return
-        if (data.content && !data.finished) {
-          setContent(data.content)
-          setFollowingLiveLog(true)
-        }
-        if (data.finished) {
-          setFollowingLiveLog(false)
-        }
-      } catch {
-        if (!cancelled && !loading && !sseActiveRef.current) setFollowingLiveLog(false)
-      }
-      if (!cancelled && !loading && !sseActiveRef.current) timer = window.setTimeout(poll, 2000)
-    }
-
-    void poll()
-    return () => {
-      cancelled = true
-      if (timer != null) window.clearTimeout(timer)
-    }
-  }, [projectId, agentName, loading, stopped])
-
   useEffect(() => {
     if (!focusMode) return
     const prev = document.body.style.overflow
@@ -219,13 +172,10 @@ export default function ProjectAgentChatPage() {
     resetTextareaHeight(inputRef.current)
     setError(null)
     setLoading(true)
-    setStopped(false)
-    sseActiveRef.current = true
     setContent((prev) => appendLog(prev, JSON.stringify({ type: 'human', content: text })))
 
     const controller = new AbortController()
     abortRef.current = controller
-    let processReplaced = false
     try {
       const headers: Record<string, string> = {
         'Content-Type': 'application/json',
@@ -266,6 +216,13 @@ export default function ProjectAgentChatPage() {
           if (!data) continue
           try {
             const evt = JSON.parse(data)
+            if (evt.type === 'chat_event') {
+              if (evt.session_id) updateSessionId(String(evt.session_id))
+              if (typeof evt.payload === 'string' && evt.payload) {
+                setContent((prev) => appendLog(prev, evt.payload))
+              }
+              continue
+            }
             if (evt.type === 'chat_done') {
               if (evt.session_id) updateSessionId(evt.session_id)
               continue
@@ -277,10 +234,11 @@ export default function ProjectAgentChatPage() {
               continue
             }
             if (evt.session_id) updateSessionId(evt.session_id)
-          } catch {
-            // Non-JSON status lines are still useful in the raw log.
+          } catch (e) {
+            const msg = e instanceof Error ? e.message : String(e)
+            setError(`${t('agentChat.protocolError')}: ${msg}`)
+            continue
           }
-          setContent((prev) => appendLog(prev, data))
         }
       }
     } catch (e) {
@@ -288,21 +246,12 @@ export default function ProjectAgentChatPage() {
       const msg = stopped ? t('agentChat.stopped') : (e instanceof Error ? e.message : String(e))
       setError(stopped ? null : msg)
       setContent((prev) => appendLog(prev, `=== ${msg} ===`))
-      // Flag for finally: if SSE ended for any reason other than user abort
-      // (i.e. another process took over the log), keep sseActiveRef=true so
-      // live-log polling stays suppressed (the log now belongs to the newer
-      // process and must not overwrite this conversation's content).
-      processReplaced = !stopped
       // Re-throw so finally runs after catch propagates.
       throw e
     } finally {
       abortRef.current = null
       setFreshNext(false)
       setLoading(false)
-      // Only reset sseActiveRef if the SSE ended cleanly (user stopped or
-      // normal completion). If processReplaced=true, a newer SSE is owning the
-      // log file — leave sseActiveRef=true to block live-log polling.
-      if (!processReplaced) sseActiveRef.current = false
       inputRef.current?.focus()
     }
   }
@@ -316,7 +265,6 @@ export default function ProjectAgentChatPage() {
 
   function stopChat() {
     abortRef.current?.abort()
-    setStopped(true)
     if (projectId && agentName) {
       void apiDelete(`/api/v1/projects/${encodeURIComponent(projectId)}/agents/${encodeURIComponent(agentName)}/chat`)
     }
@@ -328,7 +276,6 @@ export default function ProjectAgentChatPage() {
     setContent('')
     setError(null)
     setFreshNext(true)
-    setStopped(false)
     resetTextareaHeight(inputRef.current)
     inputRef.current?.focus()
   }
@@ -432,9 +379,6 @@ export default function ProjectAgentChatPage() {
         </div>
         {historyTruncated && (
           <p className="mt-2 text-xs text-amber-600 dark:text-amber-400">{t('agentChat.historyTruncated')}</p>
-        )}
-        {followingLiveLog && !loading && (
-          <p className="mt-2 text-xs text-sky-600 dark:text-sky-400">{t('agentChat.followingLiveLog')}</p>
         )}
         {sessionEditorOpen && (
           <div className="mt-3 rounded-xl border border-sky-200/70 bg-sky-50/40 p-3 dark:border-sky-800/50 dark:bg-sky-950/20">
