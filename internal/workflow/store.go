@@ -888,6 +888,7 @@ func (s *Store) SaveDefinition(def *entity.WorkflowDefinition) error {
 	if def.Scope == "" {
 		def.Scope = "project"
 	}
+	def.Provenance = nil
 	raw, err := json.Marshal(def)
 	if err != nil {
 		return err

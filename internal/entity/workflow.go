@@ -7,17 +7,18 @@ import (
 )
 
 type WorkflowDefinition struct {
-	ID          string         `json:"id" yaml:"id"`
-	Name        string         `json:"name" yaml:"name"`
-	Description string         `json:"description,omitempty" yaml:"description,omitempty"`
-	Version     int            `json:"version" yaml:"version"`
-	Scope       string         `json:"scope,omitempty" yaml:"scope,omitempty"` // workspace or project
-	Project     string         `json:"project,omitempty" yaml:"project,omitempty"`
-	StartStepID string         `json:"startStepId" yaml:"start_step_id"`
-	Steps       []WorkflowStep `json:"steps" yaml:"steps"`
-	Edges       []WorkflowEdge `json:"edges" yaml:"edges"`
-	CreatedAt   time.Time      `json:"createdAt" yaml:"created_at"`
-	UpdatedAt   time.Time      `json:"updatedAt" yaml:"updated_at"`
+	ID          string                    `json:"id" yaml:"id"`
+	Name        string                    `json:"name" yaml:"name"`
+	Description string                    `json:"description,omitempty" yaml:"description,omitempty"`
+	Version     int                       `json:"version" yaml:"version"`
+	Scope       string                    `json:"scope,omitempty" yaml:"scope,omitempty"` // workspace or project
+	Project     string                    `json:"project,omitempty" yaml:"project,omitempty"`
+	StartStepID string                    `json:"startStepId" yaml:"start_step_id"`
+	Steps       []WorkflowStep            `json:"steps" yaml:"steps"`
+	Edges       []WorkflowEdge            `json:"edges" yaml:"edges"`
+	CreatedAt   time.Time                 `json:"createdAt" yaml:"created_at"`
+	UpdatedAt   time.Time                 `json:"updatedAt" yaml:"updated_at"`
+	Provenance  *PlaybookObjectProvenance `json:"provenance,omitempty" yaml:"-"`
 }
 
 type WorkflowTemplate struct {

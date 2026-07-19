@@ -8,11 +8,14 @@ import (
 	"path/filepath"
 	"sort"
 	"strings"
+
+	"github.com/multigent/multigent/internal/entity"
 )
 
 type skillRow struct {
-	Name        string `json:"name"`
-	Description string `json:"description,omitempty"`
+	Name        string                           `json:"name"`
+	Description string                           `json:"description,omitempty"`
+	Provenance  *entity.PlaybookObjectProvenance `json:"provenance,omitempty"`
 }
 
 type createSkillBody struct {
@@ -21,18 +24,25 @@ type createSkillBody struct {
 	Content     string `json:"content"`
 }
 
-func (s *Server) handleListSkills(w http.ResponseWriter, _ *http.Request) {
+func (s *Server) handleListSkills(w http.ResponseWriter, r *http.Request) {
 	skills, err := s.st.ListSkills()
 	if err != nil {
 		s.serverError(w, err)
 		return
 	}
+	workspaceID, _ := s.currentWorkspaceID()
+	provenance, _ := s.playbookProvenanceMap(workspaceID, "skill")
 	out := make([]skillRow, 0, len(skills))
 	for _, sk := range skills {
 		if sk == nil {
 			continue
 		}
-		out = append(out, skillRow{Name: sk.Name, Description: sk.Description})
+		var prov *entity.PlaybookObjectProvenance
+		if p, ok := provenance[playbookProvenanceKey("", sk.Name)]; ok {
+			cp := p
+			prov = &cp
+		}
+		out = append(out, skillRow{Name: sk.Name, Description: sk.Description, Provenance: prov})
 	}
 	sort.Slice(out, func(i, j int) bool { return out[i].Name < out[j].Name })
 	_ = json.NewEncoder(w).Encode(out)
@@ -59,6 +69,7 @@ func (s *Server) handleGetSkillDetail(w http.ResponseWriter, r *http.Request) {
 		"description": sk.Description,
 		"prompt":      prompt,
 		"dir":         s.st.SkillDir(name),
+		"provenance":  s.playbookObjectProvenanceForRequest(r, "skill", "", name),
 	})
 }
 

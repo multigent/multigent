@@ -9,8 +9,9 @@ import { useApiJson } from '../lib/use-api'
 import { apiPost, apiPut } from '../lib/api'
 import { primaryOutlineButton } from '../lib/button-styles'
 
-type SkillRow = { name: string; description?: string }
-type SkillDetail = { name: string; description?: string; prompt: string }
+type Provenance = { playbookId: string; playbookName: string }
+type SkillRow = { name: string; description?: string; provenance?: Provenance }
+type SkillDetail = { name: string; description?: string; prompt: string; provenance?: Provenance }
 
 function SkillItem({ skill, defaultOpen }: { skill: SkillRow; defaultOpen?: boolean }) {
   const { t } = useTranslation()
@@ -62,6 +63,7 @@ function SkillItem({ skill, defaultOpen }: { skill: SkillRow; defaultOpen?: bool
           {skill.description && (
             <p className="mt-1 line-clamp-2 text-xs leading-relaxed text-neutral-400 dark:text-zinc-500">{skill.description}</p>
           )}
+          {skill.provenance && <ProvenanceBadge provenance={skill.provenance} className="mt-2" />}
         </div>
       </button>
       {open && (
@@ -74,6 +76,7 @@ function SkillItem({ skill, defaultOpen }: { skill: SkillRow; defaultOpen?: bool
                 {skill.description && (
                   <p className="mt-0.5 truncate text-xs text-neutral-400 dark:text-zinc-500">{skill.description}</p>
                 )}
+                {detailState.status === 'ok' && detailState.data.provenance && <ProvenanceBadge provenance={detailState.data.provenance} className="mt-1.5" />}
               </div>
               <button
                 type="button"
@@ -145,6 +148,17 @@ function SkillItem({ skill, defaultOpen }: { skill: SkillRow; defaultOpen?: bool
         </div>
       )}
     </div>
+  )
+}
+
+function ProvenanceBadge({ provenance, className }: { provenance: Provenance; className?: string }) {
+  const { t } = useTranslation()
+  return (
+    <span
+      className={cn('inline-flex w-fit rounded-full bg-emerald-50 px-2 py-0.5 text-[11px] font-medium text-emerald-700 hover:bg-emerald-100 dark:bg-emerald-950/30 dark:text-emerald-300 dark:hover:bg-emerald-950/50', className)}
+    >
+      {t('playbooks.fromPlaybook', { name: provenance.playbookName })}
+    </span>
   )
 }
 

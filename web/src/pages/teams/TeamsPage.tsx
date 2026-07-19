@@ -14,6 +14,7 @@ type TeamRow = {
   owners?: string[]
   defaultContextPack?: string
   skills?: string[]
+  provenance?: { playbookId: string; playbookName: string }
 }
 
 type TeamTemplate = {
@@ -82,7 +83,14 @@ export default function TeamsPage() {
                   </div>
                   <div className="min-w-0">
                     <h3 className="text-sm font-semibold text-neutral-900 dark:text-zinc-100">{row.name}</h3>
-                    <p className="font-mono text-xs text-neutral-400 dark:text-zinc-500">{row.path}</p>
+                    <div className="mt-0.5 flex flex-wrap items-center gap-1.5">
+                      <p className="font-mono text-xs text-neutral-400 dark:text-zinc-500">{row.path}</p>
+                      {row.provenance && (
+                        <span className="rounded-full bg-emerald-50 px-2 py-0.5 text-[11px] font-medium text-emerald-700 dark:bg-emerald-950/30 dark:text-emerald-300">
+                          {t('playbooks.fromPlaybook', { name: row.provenance.playbookName })}
+                        </span>
+                      )}
+                    </div>
                   </div>
                 </div>
                 {row.description && (

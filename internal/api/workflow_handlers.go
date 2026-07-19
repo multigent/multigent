@@ -57,6 +57,14 @@ func (s *Server) handleListWorkflows(w http.ResponseWriter, r *http.Request) {
 		s.serverError(w, err)
 		return
 	}
+	workspaceID, _ := s.currentWorkspaceID()
+	provenance, _ := s.playbookProvenanceMap(workspaceID, "workflow")
+	for i := range defs {
+		if p, ok := provenance[playbookProvenanceKey("", defs[i].ID)]; ok {
+			cp := p
+			defs[i].Provenance = &cp
+		}
+	}
 	_ = json.NewEncoder(w).Encode(map[string]any{"workflows": defs})
 }
 
@@ -82,6 +90,7 @@ func (s *Server) handleGetWorkflow(w http.ResponseWriter, r *http.Request) {
 		s.jsonError(w, http.StatusNotFound, "workflow not found")
 		return
 	}
+	def.Provenance = s.playbookObjectProvenanceForRequest(r, "workflow", "", def.ID)
 	_ = json.NewEncoder(w).Encode(def)
 }
 

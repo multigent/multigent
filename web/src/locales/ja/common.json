@@ -343,6 +343,7 @@
     "installSoon": "カスタム協業プランは今後利用可能になります。",
     "installRecord": "インストール記録",
     "installedBy": "{{user}} がインストールしました。生成されたオブジェクトには出所メタデータが残ります。",
+    "fromPlaybook": "{{name}} 由来",
     "objects": "件のオブジェクト",
     "objectTypes": {
       "skill": "Skill",

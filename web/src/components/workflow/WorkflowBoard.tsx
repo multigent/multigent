@@ -71,6 +71,7 @@ export type WorkflowDefinition = {
   edges: WorkflowEdge[]
   createdAt?: string
   updatedAt?: string
+  provenance?: { playbookId: string; playbookName: string }
 }
 
 export type WorkflowRun = {

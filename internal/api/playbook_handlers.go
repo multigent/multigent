@@ -343,3 +343,42 @@ func (s *Server) savePlaybookObjectProvenance(workspaceID string, prov entity.Pl
 	key := []string{prov.ObjectType, prov.ParentID, prov.ObjectID, prov.InstallID}
 	return s.controlDB.UpsertRecord(playbookProvenanceTable, workspaceID, key, string(raw))
 }
+
+func (s *Server) playbookProvenanceMap(workspaceID, objectType string) (map[string]entity.PlaybookObjectProvenance, error) {
+	recs, err := s.controlDB.ListRecords(playbookProvenanceTable, workspaceID, []string{objectType})
+	if err != nil {
+		return nil, err
+	}
+	out := map[string]entity.PlaybookObjectProvenance{}
+	for _, rec := range recs {
+		var prov entity.PlaybookObjectProvenance
+		if err := json.Unmarshal([]byte(rec.Payload), &prov); err != nil {
+			continue
+		}
+		key := playbookProvenanceKey(prov.ParentID, prov.ObjectID)
+		prev, ok := out[key]
+		if !ok || prov.InstalledAt.After(prev.InstalledAt) {
+			out[key] = prov
+		}
+	}
+	return out, nil
+}
+
+func playbookProvenanceKey(parentID, objectID string) string {
+	return strings.TrimSpace(parentID) + "\x00" + strings.TrimSpace(objectID)
+}
+
+func (s *Server) playbookObjectProvenanceForRequest(_ *http.Request, objectType, parentID, objectID string) *entity.PlaybookObjectProvenance {
+	workspaceID, err := s.currentWorkspaceID()
+	if err != nil {
+		return nil
+	}
+	provenance, err := s.playbookProvenanceMap(workspaceID, objectType)
+	if err != nil {
+		return nil
+	}
+	if p, ok := provenance[playbookProvenanceKey(parentID, objectID)]; ok {
+		return &p
+	}
+	return nil
+}

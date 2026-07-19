@@ -343,6 +343,7 @@
     "installSoon": "自訂協作方案會在後續開放。",
     "installRecord": "安裝記錄",
     "installedBy": "由 {{user}} 安裝，生成物件會保留來源記錄。",
+    "fromPlaybook": "來自 {{name}}",
     "objects": "個物件",
     "objectTypes": {
       "skill": "Skill",

@@ -343,6 +343,7 @@
     "installSoon": "Custom playbooks will be available in a later phase.",
     "installRecord": "Install record",
     "installedBy": "Installed by {{user}}. Generated objects keep provenance metadata.",
+    "fromPlaybook": "From {{name}}",
     "objects": "objects",
     "objectTypes": {
       "skill": "Skill",

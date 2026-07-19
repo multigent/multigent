@@ -590,11 +590,18 @@ func (s *Server) handleTeams(w http.ResponseWriter, _ *http.Request) {
 		s.serverError(w, err)
 		return
 	}
+	workspaceID, _ := s.currentWorkspaceID()
+	provenance, _ := s.playbookProvenanceMap(workspaceID, "team")
 	sort.Slice(entries, func(i, j int) bool { return entries[i].Path < entries[j].Path })
 	out := make([]map[string]any, 0, len(entries))
 	for _, e := range entries {
 		if e.Team == nil {
 			continue
+		}
+		var prov *entity.PlaybookObjectProvenance
+		if p, ok := provenance[playbookProvenanceKey("", e.Path)]; ok {
+			cp := p
+			prov = &cp
 		}
 		out = append(out, map[string]any{
 			"path":               e.Path,
@@ -604,6 +611,7 @@ func (s *Server) handleTeams(w http.ResponseWriter, _ *http.Request) {
 			"defaultContextPack": e.Team.DefaultContextPack,
 			"skills":             e.Team.Skills,
 			"goals":              e.Team.Goals,
+			"provenance":         prov,
 		})
 	}
 	_ = json.NewEncoder(w).Encode(out)
@@ -629,6 +637,8 @@ func (s *Server) handleTeamDetail(w http.ResponseWriter, r *http.Request) {
 		s.serverError(w, err)
 		return
 	}
+	workspaceID, _ := s.currentWorkspaceID()
+	roleProvenance, _ := s.playbookProvenanceMap(workspaceID, "role")
 	sort.Slice(roles, func(i, j int) bool { return roles[i].Name < roles[j].Name })
 	roleOut := make([]map[string]any, 0, len(roles))
 	for _, re := range roles {
@@ -639,10 +649,16 @@ func (s *Server) handleTeamDetail(w http.ResponseWriter, r *http.Request) {
 		if sk == nil {
 			sk = []string{}
 		}
+		var prov *entity.PlaybookObjectProvenance
+		if p, ok := roleProvenance[playbookProvenanceKey(path, re.Name)]; ok {
+			cp := p
+			prov = &cp
+		}
 		roleOut = append(roleOut, map[string]any{
 			"name":        re.Name,
 			"description": re.Role.Description,
 			"skills":      sk,
+			"provenance":  prov,
 		})
 	}
 	_ = json.NewEncoder(w).Encode(map[string]any{
@@ -654,6 +670,7 @@ func (s *Server) handleTeamDetail(w http.ResponseWriter, r *http.Request) {
 		"skills":             t.Skills,
 		"goals":              t.Goals,
 		"roles":              roleOut,
+		"provenance":         s.playbookObjectProvenanceForRequest(r, "team", "", path),
 	})
 }
 

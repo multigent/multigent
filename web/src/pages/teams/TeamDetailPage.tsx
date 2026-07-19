@@ -12,11 +12,13 @@ import { apiTeamPath, apiPut, apiPost, apiDelete } from '../../lib/api'
 import { useApiJson } from '../../lib/use-api'
 
 type SkillRow = { name: string; description?: string }
+type Provenance = { playbookId: string; playbookName: string }
 
 type RoleRow = {
   name: string
   description?: string
   skills?: string[]
+  provenance?: Provenance
 }
 
 type TeamDetail = {
@@ -28,6 +30,7 @@ type TeamDetail = {
   skills?: string[]
   goals?: string[]
   roles: RoleRow[]
+  provenance?: Provenance
 }
 
 type PromptData = { content: string }
@@ -116,6 +119,15 @@ function InlinePromptEditor({
         />
       )}
     </div>
+  )
+}
+
+function ProvenanceBadge({ provenance, className }: { provenance: Provenance; className?: string }) {
+  const { t } = useTranslation()
+  return (
+    <span className={cn('inline-flex w-fit rounded-full bg-emerald-50 px-2 py-0.5 text-[11px] font-medium text-emerald-700 dark:bg-emerald-950/30 dark:text-emerald-300', className)}>
+      {t('playbooks.fromPlaybook', { name: provenance.playbookName })}
+    </span>
   )
 }
 
@@ -263,6 +275,7 @@ function RolePromptRow({
                   {localSkills.length} {t('skill.skills')}
                 </span>
               )}
+              {role.provenance && <ProvenanceBadge provenance={role.provenance} />}
             </div>
             {role.description && (
               <p className="mt-0.5 text-xs text-neutral-400 dark:text-zinc-500">{role.description}</p>
@@ -411,6 +424,7 @@ export default function TeamDetailPage() {
             {/* Team info */}
             <div className="rounded-lg border border-neutral-200/80 bg-white p-4 dark:border-zinc-700/60 dark:bg-zinc-900/40">
               <h2 className="text-base font-semibold text-neutral-900 dark:text-zinc-100">{state.data.name}</h2>
+              {state.data.provenance && <ProvenanceBadge provenance={state.data.provenance} className="mt-2" />}
               {state.data.description && (
                 <p className="mt-1.5 text-sm text-neutral-500 dark:text-zinc-500">{state.data.description}</p>
               )}
