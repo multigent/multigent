@@ -598,6 +598,32 @@ function isDiffLike(text: string): boolean {
   return (hasHunk || hasFileMarkers) && changed >= 3
 }
 
+function comparableText(text: string): string {
+  return text.replace(/\s+/g, ' ').trim()
+}
+
+function assistantText(item: ConversationItem): string {
+  if (item.kind !== 'assistant') return ''
+  return item.blocks
+    .filter((block): block is { type: 'text'; text: string } => block.type === 'text')
+    .map((block) => block.text)
+    .join('\n')
+}
+
+function isDuplicateSuccessResult(items: ConversationItem[], index: number, item: ConversationItem): boolean {
+  if (item.kind !== 'result' || item.isError || !item.text.trim()) return false
+  const resultText = comparableText(item.text)
+  if (!resultText) return false
+  for (let i = index - 1; i >= 0; i--) {
+    const prev = items[i]
+    if (prev.kind === 'assistant') {
+      return comparableText(assistantText(prev)) === resultText
+    }
+    if (prev.kind === 'human') return false
+  }
+  return false
+}
+
 function findDiffStart(text: string): number {
   const lines = text.split('\n')
   return lines.findIndex((line) => line.startsWith('diff --git ') || line.startsWith('Index: '))
@@ -832,8 +858,9 @@ export function ConversationLog({
   const items = useMemo(() => parseLog(content), [content])
   const visibleItems = useMemo(() => {
     if (mode !== 'chat') return items
-    return items.filter((item) => {
-      if (item.kind === 'human' || item.kind === 'assistant' || item.kind === 'thinking' || item.kind === 'result') return true
+    return items.filter((item, index) => {
+      if (item.kind === 'result') return !isDuplicateSuccessResult(items, index, item)
+      if (item.kind === 'human' || item.kind === 'assistant' || item.kind === 'thinking') return true
       if (item.kind === 'tool_result') return item.isError
       return false
     })
