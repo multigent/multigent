@@ -291,18 +291,6 @@ function WorkflowStepNode({ data, selected }: NodeProps<WorkflowNode>) {
         position={Position.Right}
         className="!h-2.5 !w-2.5 !border-2 !border-white !bg-neutral-400 dark:!border-zinc-950 dark:!bg-zinc-500"
       />
-      <Handle
-        type="source"
-        id="source-left"
-        position={Position.Left}
-        className="!h-2.5 !w-2.5 !border-2 !border-white !bg-neutral-400 dark:!border-zinc-950 dark:!bg-zinc-500"
-      />
-      <Handle
-        type="target"
-        id="target-right"
-        position={Position.Right}
-        className="!h-2.5 !w-2.5 !border-2 !border-white !bg-neutral-400 dark:!border-zinc-950 dark:!bg-zinc-500"
-      />
       <span className="text-[11px] font-semibold uppercase opacity-60">{t(`workflows.stepTypes.${step.type}`, { defaultValue: step.type.replace('_', ' ') })}</span>
       <span className="mt-1 line-clamp-1 text-sm font-semibold">{step.title}</span>
       <span className="mt-auto flex w-full items-center justify-between gap-2">
@@ -327,6 +315,7 @@ export function WorkflowBoard({
   const { t } = useTranslation()
   const instanceByStep = useMemo(() => new Map(instances.map((inst) => [inst.stepId, inst])), [instances])
   const [selectedId, setSelectedId] = useState(definition.startStepId || definition.steps[0]?.id || '')
+  const [selectedEdgeId, setSelectedEdgeId] = useState('')
   const selected = definition.steps.find((s) => s.id === selectedId) ?? definition.steps[0]
   const outgoingEdges = selected ? definition.edges.filter((edge) => edge.from === selected.id) : []
   const selectedInst = selected ? instanceByStep.get(selected.id) : undefined
@@ -362,27 +351,26 @@ export function WorkflowBoard({
         const sourceInst = instanceByStep.get(edge.from)
         const active = run?.activeStepId === edge.from || sourceInst?.status === 'running'
         const color = active ? edgeClass.running : sourceInst?.status === 'completed' ? edgeClass.completed : edgeClass.pending
-        const sourceStep = definition.steps.find((step) => step.id === edge.from)
-        const targetStep = definition.steps.find((step) => step.id === edge.to)
-        const backward = Boolean(sourceStep && targetStep && sourceStep.position.x > targetStep.position.x)
+        const selectedEdge = edge.id === selectedEdgeId
         return {
           id: edge.id,
           source: edge.from,
           target: edge.to,
-          sourceHandle: backward ? 'source-left' : 'source-right',
-          targetHandle: backward ? 'target-right' : 'target-left',
+          sourceHandle: 'source-right',
+          targetHandle: 'target-left',
           label: edge.label || conditionLabel(edge),
           type: 'smoothstep',
           animated: active,
-          markerEnd: { type: MarkerType.ArrowClosed, color },
-          style: { stroke: color, strokeWidth: active ? 2.5 : 2 },
+          selected: selectedEdge,
+          markerEnd: { type: MarkerType.ArrowClosed, color: selectedEdge ? '#0284c7' : color },
+          style: { stroke: selectedEdge ? '#0284c7' : color, strokeWidth: selectedEdge ? 3 : active ? 2.5 : 2 },
           labelStyle: { fill: '#71717a', fontSize: 11, fontWeight: 500 },
           labelBgPadding: [6, 3],
           labelBgBorderRadius: 6,
           labelBgStyle: { fill: 'rgba(255,255,255,0.92)' },
         }
       }),
-    [definition.edges, definition.steps, instanceByStep, run?.activeStepId],
+    [definition.edges, instanceByStep, run?.activeStepId, selectedEdgeId],
   )
 
   const [nodes, setNodes, onNodesChange] = useNodesState(initialNodes)
@@ -401,6 +389,12 @@ export function WorkflowBoard({
       setSelectedId(definition.startStepId || definition.steps[0]?.id || '')
     }
   }, [definition.startStepId, definition.steps, selectedId])
+
+  useEffect(() => {
+    if (selectedEdgeId && !definition.edges.some((edge) => edge.id === selectedEdgeId)) {
+      setSelectedEdgeId('')
+    }
+  }, [definition.edges, selectedEdgeId])
 
   function updateDefinition(next: WorkflowDefinition, options: { recordUndo?: boolean } = {}) {
     if (editable && options.recordUndo !== false && !sameDefinition(definition, next)) {
@@ -435,10 +429,14 @@ export function WorkflowBoard({
         event.preventDefault()
         undoLastChange()
       }
+      if (!event.metaKey && !event.ctrlKey && !event.altKey && (event.key === 'Delete' || event.key === 'Backspace')) {
+        event.preventDefault()
+        deleteSelectedElement()
+      }
     }
     window.addEventListener('keydown', handleKeyDown)
     return () => window.removeEventListener('keydown', handleKeyDown)
-  }, [editable, onChange, selectedId, undoStack])
+  }, [editable, onChange, selectedId, selectedEdgeId, undoStack])
 
   function alignedPosition(node: WorkflowNode, allNodes: WorkflowNode[]) {
     let x = Math.round(node.position.x)
@@ -470,11 +468,15 @@ export function WorkflowBoard({
   function handleConnect(connection: Connection) {
     if (!editable || !connection.source || !connection.target || connection.source === connection.target) return
     const edgeID = `e-${connection.source}-${connection.target}-${Date.now().toString(36)}`
+    const nextEdge: WorkflowEdge = { id: edgeID, from: connection.source, to: connection.target }
     setEdges((eds) =>
       addEdge(
         {
-          ...connection,
           id: edgeID,
+          source: connection.source,
+          target: connection.target,
+          sourceHandle: 'source-right',
+          targetHandle: 'target-left',
           type: 'smoothstep',
           markerEnd: { type: MarkerType.ArrowClosed, color: edgeClass.pending },
           style: { stroke: edgeClass.pending, strokeWidth: 2 },
@@ -482,9 +484,11 @@ export function WorkflowBoard({
         eds,
       ),
     )
+    setSelectedEdgeId(edgeID)
+    setSelectedId(connection.source)
     updateDefinition({
       ...definition,
-      edges: [...definition.edges, { id: edgeID, from: connection.source, to: connection.target }],
+      edges: [...definition.edges, nextEdge],
     })
   }
 
@@ -501,6 +505,7 @@ export function WorkflowBoard({
       position: { x: (base?.position.x ?? 80) + 280, y: base?.position.y ?? 180 },
     }
     setSelectedId(id)
+    setSelectedEdgeId('')
     updateDefinition({
       ...definition,
       startStepId: definition.startStepId || id,
@@ -508,12 +513,21 @@ export function WorkflowBoard({
     })
   }
 
-  function deleteSelected() {
+  function deleteSelectedElement() {
     if (!editable) return
+    if (selectedEdgeId) {
+      setSelectedEdgeId('')
+      updateDefinition({
+        ...definition,
+        edges: definition.edges.filter((edge) => edge.id !== selectedEdgeId),
+      })
+      return
+    }
     if (!selected || definition.steps.length <= 1) return
     const nextSteps = definition.steps.filter((step) => step.id !== selected.id)
     const nextSelected = nextSteps[0]?.id || ''
     setSelectedId(nextSelected)
+    setSelectedEdgeId('')
     updateDefinition({
       ...definition,
       startStepId: definition.startStepId === selected.id ? nextSelected : definition.startStepId,
@@ -575,8 +589,8 @@ export function WorkflowBoard({
                 <button type="button" onClick={addNode} className="rounded-lg border border-sky-600 bg-white px-3 py-1.5 text-xs font-medium text-sky-700 shadow-sm hover:bg-sky-50 dark:border-sky-500 dark:bg-zinc-900 dark:text-sky-400 dark:hover:bg-zinc-800">
                   {t('workflows.addNode')}
                 </button>
-                <button type="button" onClick={deleteSelected} disabled={!selected} className="rounded-lg border border-neutral-300 bg-white px-3 py-1.5 text-xs font-medium text-neutral-600 shadow-sm hover:bg-neutral-50 disabled:opacity-40 dark:border-zinc-600 dark:bg-zinc-900 dark:text-zinc-300 dark:hover:bg-zinc-800">
-                  {t('workflows.deleteNode')}
+                <button type="button" onClick={deleteSelectedElement} disabled={!selectedEdgeId && (!selected || definition.steps.length <= 1)} className="rounded-lg border border-neutral-300 bg-white px-3 py-1.5 text-xs font-medium text-neutral-600 shadow-sm hover:bg-neutral-50 disabled:opacity-40 dark:border-zinc-600 dark:bg-zinc-900 dark:text-zinc-300 dark:hover:bg-zinc-800">
+                  {selectedEdgeId ? t('workflows.deleteEdge') : t('workflows.deleteNode')}
                 </button>
               </>
             ) : null}
@@ -597,10 +611,13 @@ export function WorkflowBoard({
           onConnect={handleConnect}
           onNodeClick={(_, node) => {
             setSelectedId(node.id)
+            setSelectedEdgeId('')
           }}
           onEdgeClick={(_, edge) => {
+            setSelectedEdgeId(edge.id)
             setSelectedId(edge.source)
           }}
+          onPaneClick={() => setSelectedEdgeId('')}
           fitView
           fitViewOptions={{ padding: 0.18 }}
           minZoom={0.25}

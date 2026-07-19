@@ -369,6 +369,7 @@
     "stepCount": "{{count}} steps",
     "addNode": "Add node",
     "deleteNode": "Delete node",
+    "deleteEdge": "Delete edge",
     "fullscreen": "Fullscreen",
     "exitFullscreen": "Exit fullscreen",
     "newStepTitle": "New step",

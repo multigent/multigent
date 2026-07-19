@@ -369,6 +369,7 @@
     "stepCount": "{{count}} 個節點",
     "addNode": "新增節點",
     "deleteNode": "刪除節點",
+    "deleteEdge": "刪除連線",
     "fullscreen": "全螢幕",
     "exitFullscreen": "退出全螢幕",
     "newStepTitle": "新節點",

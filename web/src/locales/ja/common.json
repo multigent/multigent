@@ -369,6 +369,7 @@
     "stepCount": "{{count}} ノード",
     "addNode": "ノードを追加",
     "deleteNode": "ノードを削除",
+    "deleteEdge": "線を削除",
     "fullscreen": "全画面",
     "exitFullscreen": "全画面を終了",
     "newStepTitle": "新しいノード",
