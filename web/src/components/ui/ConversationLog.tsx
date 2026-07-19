@@ -364,8 +364,13 @@ function parseLog(content: string): ConversationItem[] {
   }
 
   for (const raw of lines) {
-    const line = raw.trim()
+    let line = raw.trim()
     if (!line) continue
+
+    if (line.startsWith('data:')) {
+      line = line.slice(5).trim()
+      if (!line) continue
+    }
 
     if (line.startsWith('===')) {
       flushThinking()

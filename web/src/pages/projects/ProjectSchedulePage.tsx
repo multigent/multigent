@@ -6,7 +6,7 @@ import {
   MessageSquareText, Trash2, X, Zap,
 } from 'lucide-react'
 import { PlaceholderCard } from '../../components/ui/PlaceholderCard'
-import { TechnicalLog } from '../../components/ui/ConversationLog'
+import { ConversationLog, TechnicalLog } from '../../components/ui/ConversationLog'
 import { confirmDialog } from '../../components/ui/ConfirmDialog'
 import { cn } from '../../lib/cn'
 import { apiFetch, apiDelete, apiPatch, apiPost, apiPut } from '../../lib/api'
@@ -1231,7 +1231,22 @@ function LiveLogModal({ projectId, agentName, onClose }: { projectId: string; ag
           <button type="button" onClick={onClose} className="rounded-md p-1 text-neutral-400 hover:bg-neutral-100 dark:text-zinc-500 dark:hover:bg-zinc-800"><X className="size-4" /></button>
         </div>
         <div ref={scrollRef} className="flex-1 overflow-auto px-5 py-4">
-          {content ? <TechnicalLog content={content} /> : <p className="py-8 text-center text-sm text-neutral-400 dark:text-zinc-500">{t('schedule.noLogYet')}</p>}
+          {content ? (
+            <div className="space-y-4">
+              <section className="rounded-lg border border-neutral-200/80 bg-white px-4 py-3 dark:border-zinc-700/50 dark:bg-zinc-900/30">
+                <div className="mb-3 flex items-center gap-1.5">
+                  <MessageSquareText className="size-3.5 text-neutral-400 dark:text-zinc-500" strokeWidth={1.8} />
+                  <span className="text-xs font-semibold uppercase tracking-wider text-neutral-400 dark:text-zinc-500">
+                    {t('runs.viewConversation')}
+                  </span>
+                </div>
+                <ConversationLog content={content} mode="chat" assistant={{ name: agentName }} />
+              </section>
+              <TechnicalLog content={content} />
+            </div>
+          ) : (
+            <p className="py-8 text-center text-sm text-neutral-400 dark:text-zinc-500">{t('schedule.noLogYet')}</p>
+          )}
         </div>
       </div>
     </div>
