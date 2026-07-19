@@ -109,7 +109,11 @@ func (ds *DocsStore) AddManagedContent(e *DocEntry, content, sourceName string) 
 	}
 	ext := strings.ToLower(filepath.Ext(sourceName))
 	if ext == "" {
-		ext = ".md"
+		if looksLikeHTML(content) {
+			ext = ".html"
+		} else {
+			ext = ".md"
+		}
 	}
 	if !safeDocExt(ext) {
 		ext = ".txt"
@@ -135,11 +139,18 @@ func (ds *DocsStore) AddManagedContent(e *DocEntry, content, sourceName string) 
 
 func safeDocExt(ext string) bool {
 	switch ext {
-	case ".md", ".markdown", ".txt", ".json", ".yaml", ".yml", ".csv", ".log":
+	case ".md", ".markdown", ".txt", ".html", ".htm", ".json", ".yaml", ".yml", ".csv", ".log":
 		return true
 	default:
 		return false
 	}
+}
+
+func looksLikeHTML(content string) bool {
+	trimmed := strings.TrimSpace(strings.ToLower(content))
+	return strings.HasPrefix(trimmed, "<!doctype html") ||
+		strings.HasPrefix(trimmed, "<html") ||
+		(strings.Contains(trimmed, "<body") && strings.Contains(trimmed, "</html>"))
 }
 
 var unsafeDocFilenameChars = regexp.MustCompile(`[^a-zA-Z0-9._-]+`)

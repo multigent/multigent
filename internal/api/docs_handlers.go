@@ -261,7 +261,11 @@ func (s *Server) handleDocsDownload(w http.ResponseWriter, r *http.Request) {
 		s.serverError(w, err)
 		return
 	}
-	data, err := os.ReadFile(doc.FilePath)
+	filePath := doc.FilePath
+	if !filepath.IsAbs(filePath) {
+		filePath = filepath.Join(s.root, filePath)
+	}
+	data, err := os.ReadFile(filePath)
 	if err != nil {
 		s.serverError(w, err)
 		return

@@ -406,8 +406,8 @@ export function TaskDetailModal({ task, onClose, onEdit, onMutated, canEdit = tr
                 {workflowState.data.run.status}
               </span>
             </div>
-            <div className="grid min-h-[520px] gap-4 lg:grid-cols-[minmax(0,1.45fr)_minmax(320px,0.85fr)]">
-              <WorkflowBoard definition={workflowState.data.definition} run={workflowState.data.run} instances={workflowState.data.steps} focusActive />
+            <div className="grid min-h-[520px] gap-4">
+              <WorkflowBoard definition={workflowState.data.definition} run={workflowState.data.run} instances={workflowState.data.steps} focusActive compact />
               <div className="flex min-h-0 flex-col rounded-xl border border-neutral-200 bg-white dark:border-zinc-700 dark:bg-zinc-950">
                 <WorkflowRuntimePanel
                   step={activeWorkflowStep}
@@ -631,8 +631,10 @@ function WorkflowRuntimePanel({
   onSubmitReview: (decision: 'approved' | 'needs_changes') => void
 }) {
   const { t } = useTranslation()
-  const outputValues = instance?.outputValues ?? parseWorkflowArtifact(instance?.outputArtifact || instance?.summary || '')
-  const inputValues = instance?.inputValues ?? parseWorkflowArtifact(instance?.inputArtifact || '')
+  const parsedOutputValues = parseWorkflowArtifact(instance?.outputArtifact || instance?.summary || '')
+  const parsedInputValues = parseWorkflowArtifact(instance?.inputArtifact || '')
+  const outputValues = hasWorkflowValues(instance?.outputValues) ? instance!.outputValues! : parsedOutputValues
+  const inputValues = hasWorkflowValues(instance?.inputValues) ? instance!.inputValues! : parsedInputValues
   const hasStructuredInput = Object.keys(inputValues).length > 0
   const stepTitleByID = useMemo(() => new Map(steps.map((item) => [item.id, item.title])), [steps])
   const actorLabel = workflowActorLabel(instance?.actorType, instance?.actorId, actorLabels)
@@ -765,6 +767,10 @@ function WorkflowValuesOrArtifact({ values, fields, artifact, compact = false }:
   return <p className="text-sm text-neutral-400 dark:text-zinc-600">{t('workflows.detail.notSpecified')}</p>
 }
 
+function hasWorkflowValues(values?: Record<string, string>) {
+  return Boolean(values && Object.values(values).some((value) => String(value ?? '').trim()))
+}
+
 function WorkflowValueMap({ values, fields = [], compact = false }: { values: Record<string, string>; fields?: WorkflowField[]; compact?: boolean }) {
   const entries = Object.entries(values).filter(([, value]) => String(value ?? '').trim())
   const fieldByName = new Map(fields.map((field) => [field.name, field]))
@@ -877,10 +883,16 @@ function parseWorkflowArtifact(value: string): Record<string, string> {
     const parsed = JSON.parse(unescaped)
     if (parsed && typeof parsed === 'object' && !Array.isArray(parsed)) {
       const record = parsed as Record<string, unknown>
-      const wrappedValues = record.inputs && typeof record.inputs === 'object' && !Array.isArray(record.inputs)
-        ? record.inputs
-        : record.outputs && typeof record.outputs === 'object' && !Array.isArray(record.outputs)
-          ? record.outputs
+      const inputs = record.inputs && typeof record.inputs === 'object' && !Array.isArray(record.inputs)
+        ? record.inputs as Record<string, unknown>
+        : undefined
+      const outputs = record.outputs && typeof record.outputs === 'object' && !Array.isArray(record.outputs)
+        ? record.outputs as Record<string, unknown>
+        : undefined
+      const wrappedValues = inputs && Object.keys(inputs).length > 0
+        ? inputs
+        : outputs && Object.keys(outputs).length > 0
+          ? outputs
           : record
       for (const [key, raw] of Object.entries(wrappedValues as Record<string, unknown>)) {
         if (typeof raw === 'string') out[key] = raw

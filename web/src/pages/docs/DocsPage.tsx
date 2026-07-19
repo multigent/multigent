@@ -49,6 +49,13 @@ type DocEntry = {
 type DocRefs = { refs: DocEntry[]; backrefs: DocEntry[] }
 type TreeNode = { name: string; children?: TreeNode[]; docs?: DocEntry[] }
 
+function isHTMLDoc(doc: DocEntry, content?: string): boolean {
+  const path = doc.filePath.toLowerCase()
+  if (path.endsWith('.html') || path.endsWith('.htm')) return true
+  const trimmed = (content ?? '').trimStart().toLowerCase()
+  return trimmed.startsWith('<!doctype html') || trimmed.startsWith('<html')
+}
+
 const btn = 'inline-flex items-center gap-1.5 rounded-lg px-3 py-1.5 text-sm font-medium transition-colors'
 const btnPrimary = `${btn} bg-sky-600 text-white hover:bg-sky-700`
 const btnGhost = `${btn} text-neutral-500 hover:bg-neutral-100 dark:text-zinc-400 dark:hover:bg-zinc-800`
@@ -708,6 +715,19 @@ function CopyBtn({ text }: { text: string }) {
   )
 }
 
+function HTMLDocFrame({ title, content, fullscreen = false }: { title: string; content: string; fullscreen?: boolean }) {
+  return (
+    <div className="overflow-hidden rounded-xl border border-neutral-200 bg-white shadow-sm dark:border-zinc-700 dark:bg-zinc-900">
+      <iframe
+        title={title}
+        srcDoc={content}
+        sandbox=""
+        className={fullscreen ? 'h-[calc(100vh-112px)] w-full bg-white' : 'h-[72vh] min-h-[560px] w-full bg-white'}
+      />
+    </div>
+  )
+}
+
 function DocViewer({ doc, content, onBack, onRemove, onUpdated, onOpenDoc, sidebarOpen, onToggleSidebar, onTagClick }: {
   doc: DocEntry; content: string; onBack: () => void; onRemove: () => void; onUpdated: () => void
   onOpenDoc?: (d: DocEntry) => void
@@ -725,7 +745,8 @@ function DocViewer({ doc, content, onBack, onRemove, onUpdated, onOpenDoc, sideb
   const [addingRef, setAddingRef] = useState(false)
   const [refInput, setRefInput] = useState('')
   const scrollRef = useRef<HTMLDivElement>(null)
-  const tocItems = useMemo(() => parseHeadings(content), [content])
+  const htmlDoc = isHTMLDoc(doc, content)
+  const tocItems = useMemo(() => htmlDoc ? [] : parseHeadings(content), [content, htmlDoc])
   const mdComponents = useMemo(() => createMdComponents(), [content])
 
   const loadRefs = useCallback(async () => {
@@ -806,14 +827,18 @@ function DocViewer({ doc, content, onBack, onRemove, onUpdated, onOpenDoc, sideb
         </div>
         <div className="flex-1 overflow-y-auto" ref={scrollRef}>
           <div className="flex justify-center">
-            <article className="w-full max-w-4xl px-10 py-10">
-              <ReactMarkdown
-                remarkPlugins={[remarkGfm]}
-                rehypePlugins={[rehypeHighlight]}
-                components={mdComponents}
-              >
-                {stripFrontmatter(content)}
-              </ReactMarkdown>
+            <article className={htmlDoc ? 'w-full px-6 py-6' : 'w-full max-w-4xl px-10 py-10'}>
+              {htmlDoc ? (
+                <HTMLDocFrame title={doc.title} content={content} fullscreen />
+              ) : (
+                <ReactMarkdown
+                  remarkPlugins={[remarkGfm]}
+                  rehypePlugins={[rehypeHighlight]}
+                  components={mdComponents}
+                >
+                  {stripFrontmatter(content)}
+                </ReactMarkdown>
+              )}
             </article>
             {tocItems.length > 1 && (
               <aside className="hidden xl:block w-56 shrink-0 py-10 pr-6">
@@ -911,14 +936,18 @@ function DocViewer({ doc, content, onBack, onRemove, onUpdated, onOpenDoc, sideb
       {/* Document body */}
       <div className="flex-1 overflow-y-auto" ref={scrollRef}>
         <div className="flex justify-center">
-          <article className="w-full max-w-5xl px-8 py-8">
-            <ReactMarkdown
-              remarkPlugins={[remarkGfm]}
-              rehypePlugins={[rehypeHighlight]}
-              components={mdComponents}
-            >
-              {stripFrontmatter(content)}
-            </ReactMarkdown>
+          <article className={htmlDoc ? 'w-full px-6 py-6' : 'w-full max-w-5xl px-8 py-8'}>
+            {htmlDoc ? (
+              <HTMLDocFrame title={doc.title} content={content} />
+            ) : (
+              <ReactMarkdown
+                remarkPlugins={[remarkGfm]}
+                rehypePlugins={[rehypeHighlight]}
+                components={mdComponents}
+              >
+                {stripFrontmatter(content)}
+              </ReactMarkdown>
+            )}
 
             {/* References panel */}
             {(refs && ((refs.refs?.length ?? 0) > 0 || (refs.backrefs?.length ?? 0) > 0 || !editing)) && (
@@ -1087,7 +1116,7 @@ function AddDocModal({ allDocs, onClose, onAdded }: { allDocs: DocEntry[]; onClo
             <span className="text-sm text-neutral-600 dark:text-zinc-400">{t('docs.uploadFile')}</span>
             <label className="flex cursor-pointer items-center justify-between rounded-lg border border-dashed border-neutral-300 px-3 py-2 text-sm text-neutral-500 hover:bg-neutral-50 dark:border-zinc-700 dark:text-zinc-400 dark:hover:bg-zinc-800">
               <span className="inline-flex items-center gap-2"><Upload className="size-4" /> {sourceName || t('docs.selectFile')}</span>
-              <input className="hidden" type="file" accept=".md,.markdown,.txt,.json,.yaml,.yml,.csv,.log,text/*" onChange={e => void onFileChange(e.target.files?.[0])} />
+              <input className="hidden" type="file" accept=".md,.markdown,.html,.htm,.txt,.json,.yaml,.yml,.csv,.log,text/*" onChange={e => void onFileChange(e.target.files?.[0])} />
             </label>
           </label>
           <div className="grid grid-cols-2 gap-3">
@@ -1125,7 +1154,7 @@ function AddDocModal({ allDocs, onClose, onAdded }: { allDocs: DocEntry[]; onClo
             <span className="text-sm text-neutral-600 dark:text-zinc-400">{t('docs.content')} *</span>
             <textarea required value={content} onChange={e => setContent(e.target.value)}
               rows={10}
-              placeholder="# Markdown"
+              placeholder="# Markdown or <!doctype html>"
               className={`${inputCls} font-mono`} />
           </label>
         </div>
