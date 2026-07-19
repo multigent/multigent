@@ -1,9 +1,13 @@
 package api
 
 import (
+	"encoding/json"
 	"net/http"
 	"net/http/httptest"
+	"os"
+	"os/exec"
 	"testing"
+	"time"
 )
 
 func TestGlobalSchedulerActionsRequireWorkspaceAdmin(t *testing.T) {
@@ -29,5 +33,31 @@ func TestGlobalSchedulerActionsRequireWorkspaceAdmin(t *testing.T) {
 	}
 	if adminRec.Code != http.StatusNotFound {
 		t.Fatalf("workspace admin global stop should reach scheduler layer, status=%d body=%s", adminRec.Code, adminRec.Body.String())
+	}
+}
+
+func TestWorkspaceAdminCanSeeSchedulerStatus(t *testing.T) {
+	s, _ := newConnectionGrantPolicyServer(t)
+	s.sched = newSchedulerManager(s.root)
+	s.sched.procs["sample"] = &schedulerProcess{
+		cmd:       &exec.Cmd{Process: &os.Process{Pid: 12345}},
+		project:   "sample",
+		startedAt: time.Now().UTC(),
+		doneCh:    make(chan struct{}),
+	}
+
+	rec := httptest.NewRecorder()
+	s.handleSchedulerStatus(rec, providerTestRequest(http.MethodGet, "/api/v1/scheduler/status", "admin", nil))
+	if rec.Code != http.StatusOK {
+		t.Fatalf("status=%d body=%s", rec.Code, rec.Body.String())
+	}
+	var body struct {
+		Schedulers []schedStatus `json:"schedulers"`
+	}
+	if err := json.Unmarshal(rec.Body.Bytes(), &body); err != nil {
+		t.Fatalf("decode status: %v", err)
+	}
+	if len(body.Schedulers) != 1 || body.Schedulers[0].Key != "sample" || !body.Schedulers[0].Running {
+		t.Fatalf("unexpected schedulers: %#v", body.Schedulers)
 	}
 }

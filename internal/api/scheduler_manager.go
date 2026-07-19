@@ -278,7 +278,7 @@ func (m *SchedulerManager) Cleanup() {
 func (s *Server) handleSchedulerStatus(w http.ResponseWriter, r *http.Request) {
 	statuses := s.sched.Status()
 	cur := s.currentUser(r)
-	if cur.Role != RoleAdmin {
+	if cur.Role != RoleAdmin && !s.canAdminCurrentWorkspace(r) {
 		filtered := make([]schedStatus, 0, len(statuses))
 		for _, st := range statuses {
 			if st.Project == "" {
