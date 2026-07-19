@@ -7,6 +7,7 @@ import (
 	"text/tabwriter"
 	"time"
 
+	"github.com/multigent/multigent/internal/agentcli"
 	"github.com/multigent/multigent/internal/ctxbuild"
 	"github.com/multigent/multigent/internal/entity"
 	"github.com/multigent/multigent/internal/formatter"
@@ -391,7 +392,7 @@ func hireAgentFromSpec(root, project string, spec entity.AgentSpec,
 		}
 	}
 
-	// Build sandbox config if specified in the blueprint.
+	// Build sandbox config. Non-human CLI agents default to Docker isolation.
 	var sandboxCfg *entity.SandboxConfig
 	if spec.Sandbox != nil {
 		if err := sandbox.CheckDocker(); err != nil {
@@ -404,6 +405,18 @@ func hireAgentFromSpec(root, project string, spec entity.AgentSpec,
 		}
 		if sandboxCfg.Docker != nil && sandboxCfg.Docker.Image == "" {
 			sandboxCfg.Docker.Image = sandbox.ImageForModel(agentModel)
+		}
+		if sandboxCfg.Image == "" {
+			sandboxCfg.Image = sandbox.ImageForModel(agentModel)
+		}
+		if sandboxCfg.AgentCLI == nil {
+			sandboxCfg.AgentCLI = agentcli.DefaultForModel(agentModel)
+		}
+	} else {
+		var err error
+		sandboxCfg, err = buildDefaultSandboxConfig(agentModel, string(entity.SandboxDocker), "", "bridge", 0, 0, false)
+		if err != nil {
+			return fmt.Errorf("default sandbox: %w", err)
 		}
 	}
 

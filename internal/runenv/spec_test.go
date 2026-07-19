@@ -14,8 +14,8 @@ func TestDockerProviderWrapsManagedAgentCLI(t *testing.T) {
 	dir := t.TempDir()
 	runtime := &entity.SandboxConfig{
 		Provider: entity.SandboxDocker,
-		Image:    sandbox.BaseImage,
-		Docker:   &entity.DockerSandboxConfig{Image: sandbox.BaseImage},
+		Image:    "example/runtime-base:test",
+		Docker:   &entity.DockerSandboxConfig{Image: "example/runtime-base:test"},
 	}
 	cli := &entity.AgentCLIConfig{
 		Vendor:         "codex",
@@ -41,7 +41,7 @@ func TestDockerProviderWrapsManagedAgentCLI(t *testing.T) {
 		"multigent-toolchains:" + agentcli.ToolchainHome,
 		"PATH=" + runtimecli.BinDir,
 		agentcli.ToolchainBin,
-		sandbox.BaseImage,
+		"example/runtime-base:test",
 		"npm install -g @openai/codex@1.2.3",
 	} {
 		if !strings.Contains(joined, want) {

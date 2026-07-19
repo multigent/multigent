@@ -252,8 +252,8 @@ type AgentMeta struct {
 	// Example: "my-agent --input {prompt_file}"
 	RunCommand string `yaml:"run_command,omitempty"`
 
-	// Sandbox configures isolated container execution for this agent.
-	// When nil the agent runs directly on the host (default behaviour).
+	// Sandbox configures isolated execution for this agent.
+	// Non-human CLI agents are provisioned with Docker by default.
 	Sandbox *SandboxConfig `yaml:"sandbox,omitempty"`
 
 	// HTTPAgent configures an HTTP LLM backend for this agent.
@@ -540,8 +540,8 @@ type AgentSpec struct {
 	Team  string `yaml:"team,omitempty"` // team the role belongs to
 	Model string `yaml:"model"`          // e.g. claudecode, codex, gemini
 
-	// Sandbox configures isolated container execution for this agent.
-	// When nil the agent runs directly on the host (default behaviour).
+	// Sandbox configures isolated execution for this agent.
+	// Non-human CLI agents are provisioned with Docker by default.
 	// Example YAML:
 	//   sandbox:
 	//     provider: docker

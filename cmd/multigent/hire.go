@@ -189,36 +189,9 @@ To switch an existing agent to another runtime (e.g. claudecode → codex), use
 				return fmt.Errorf("%s: format context: %w", use, err)
 			}
 
-			// Build sandbox config if requested.
-			var sandboxCfg *entity.SandboxConfig
-			if sandboxProvider != "" {
-				provider := entity.SandboxProvider(sandboxProvider)
-				switch provider {
-				case entity.SandboxDocker:
-					// Verify docker is reachable now so we fail fast at hire time.
-					if err := sandbox.CheckDocker(); err != nil {
-						return err
-					}
-					dockerCfg := &entity.DockerSandboxConfig{
-						Image:             sandboxImage,
-						NetworkMode:       sandboxNetwork,
-						MemoryMB:          sandboxMemoryMB,
-						CPUs:              sandboxCPUs,
-						NoAutoCredentials: sandboxNoAutoCreds,
-					}
-					if sandboxImage == "" {
-						sandboxImage = sandbox.ImageForModel(agentModel)
-						dockerCfg.Image = sandboxImage
-					}
-					sandboxCfg = &entity.SandboxConfig{
-						Provider: entity.SandboxDocker,
-						Image:    sandboxImage,
-						AgentCLI: agentcli.DefaultForModel(agentModel),
-						Docker:   dockerCfg,
-					}
-				default:
-					return fmt.Errorf("unknown sandbox provider %q (supported: docker)", sandboxProvider)
-				}
+			sandboxCfg, err := buildDefaultSandboxConfig(agentModel, sandboxProvider, sandboxImage, sandboxNetwork, sandboxMemoryMB, sandboxCPUs, sandboxNoAutoCreds)
+			if err != nil {
+				return err
 			}
 
 			// Automatically include the project's code repository as an
@@ -299,7 +272,7 @@ To switch an existing agent to another runtime (e.g. claudecode → codex), use
 	cmd.Flags().BoolVar(&force, "force", false, "overwrite existing agent directory")
 	cmd.Flags().BoolVar(&ifNotExists, "if-not-exists", false, "skip silently if the agent already exists (idempotent)")
 
-	cmd.Flags().StringVar(&sandboxProvider, "sandbox", "", "Sandbox provider: docker (default: none, runs on host)")
+	cmd.Flags().StringVar(&sandboxProvider, "sandbox", "docker", "Sandbox provider: docker (default) or none")
 	cmd.Flags().StringVar(&sandboxImage, "sandbox-image", "", "Runtime image override (default: ghcr.io/multigent/multigent/runtime-base:latest for managed CLIs)")
 	cmd.Flags().StringVar(&sandboxNetwork, "sandbox-network", "bridge", "Docker network mode: bridge|none|host")
 	cmd.Flags().IntVar(&sandboxMemoryMB, "sandbox-memory", 0, "Container memory limit in MiB (0 = no limit)")
@@ -320,6 +293,45 @@ To switch an existing agent to another runtime (e.g. claudecode → codex), use
 	_ = cmd.MarkFlagRequired("name")
 
 	return cmd
+}
+
+func buildDefaultSandboxConfig(agentModel entity.AgentModel, providerName, image, network string, memoryMB int, cpus float64, noAutoCreds bool) (*entity.SandboxConfig, error) {
+	agentModel = entity.NormaliseModel(agentModel)
+	if agentModel == entity.ModelHuman || agentModel == entity.ModelHTTPAgent {
+		return nil, nil
+	}
+	providerName = strings.TrimSpace(providerName)
+	if providerName == "" {
+		providerName = string(entity.SandboxDocker)
+	}
+	if providerName == "none" {
+		return nil, nil
+	}
+	provider := entity.SandboxProvider(providerName)
+	switch provider {
+	case entity.SandboxDocker:
+		if err := sandbox.CheckDocker(); err != nil {
+			return nil, err
+		}
+		if image == "" {
+			image = sandbox.ImageForModel(agentModel)
+		}
+		dockerCfg := &entity.DockerSandboxConfig{
+			Image:             image,
+			NetworkMode:       network,
+			MemoryMB:          memoryMB,
+			CPUs:              cpus,
+			NoAutoCredentials: noAutoCreds,
+		}
+		return &entity.SandboxConfig{
+			Provider: entity.SandboxDocker,
+			Image:    image,
+			AgentCLI: agentcli.DefaultForModel(agentModel),
+			Docker:   dockerCfg,
+		}, nil
+	default:
+		return nil, fmt.Errorf("unknown sandbox provider %q (supported: docker, none)", providerName)
+	}
 }
 
 func printHireSuccess(agentDir string, model entity.AgentModel, mc *ctxbuild.MergedContext, project, agentName string, sbx *entity.SandboxConfig) {
