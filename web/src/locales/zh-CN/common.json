@@ -388,6 +388,7 @@
     "review": {
       "title": "人工审核",
       "commentsPlaceholder": "填写审核意见。打回时必须说明需要修改什么；通过时可以留空。",
+      "commentsRequired": "打回修改时必须填写修改意见。",
       "approve": "通过",
       "requestChanges": "打回修改"
     },
@@ -396,6 +397,9 @@
       "defaultRole": "默认执行角色",
       "input": "输入",
       "output": "输出",
+      "currentStep": "当前节点",
+      "goal": "目标",
+      "previousOutputs": "上游输出",
       "childTask": "子任务",
       "summary": "总结",
       "notSpecified": "未指定",

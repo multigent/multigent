@@ -388,6 +388,7 @@
     "review": {
       "title": "人工審核",
       "commentsPlaceholder": "填寫審核意見。打回時必須說明需要修改什麼；通過時可以留空。",
+      "commentsRequired": "打回修改時必須填寫修改意見。",
       "approve": "通過",
       "requestChanges": "打回修改"
     },
@@ -396,6 +397,9 @@
       "defaultRole": "預設執行角色",
       "input": "輸入",
       "output": "輸出",
+      "currentStep": "目前節點",
+      "goal": "目標",
+      "previousOutputs": "上游輸出",
       "childTask": "子任務",
       "summary": "總結",
       "notSpecified": "未指定",

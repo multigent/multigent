@@ -388,6 +388,7 @@
     "review": {
       "title": "人のレビュー",
       "commentsPlaceholder": "レビューコメントを入力します。差し戻す場合は修正内容を書いてください。承認時は空でも構いません。",
+      "commentsRequired": "修正依頼時はレビューコメントが必要です。",
       "approve": "承認",
       "requestChanges": "修正依頼"
     },
@@ -396,6 +397,9 @@
       "defaultRole": "既定の担当ロール",
       "input": "入力",
       "output": "出力",
+      "currentStep": "現在のノード",
+      "goal": "目的",
+      "previousOutputs": "前段階の出力",
       "childTask": "子タスク",
       "summary": "概要",
       "notSpecified": "未指定",

@@ -1,4 +1,4 @@
-import { useCallback, useMemo, useState } from 'react'
+import { useCallback, useEffect, useMemo, useState, type ReactNode } from 'react'
 import { useTranslation } from 'react-i18next'
 import ReactMarkdown from 'react-markdown'
 import remarkGfm from 'remark-gfm'
@@ -9,7 +9,7 @@ import { useFormatDateTime } from '../../lib/format-datetime'
 import { useApiJson } from '../../lib/use-api'
 import { useAuth } from '../../lib/auth'
 import { formatGoDuration, taskElapsedLabel } from '../../lib/task-duration'
-import { WorkflowBoard, type WorkflowDefinition, type WorkflowRun, type WorkflowStepInstance } from '../workflow/WorkflowBoard'
+import { WorkflowBoard, type WorkflowDefinition, type WorkflowField, type WorkflowRun, type WorkflowStep, type WorkflowStepInstance } from '../workflow/WorkflowBoard'
 import { TechnicalLog } from '../ui/ConversationLog'
 
 export type TaskRow = {
@@ -238,6 +238,7 @@ export function TaskDetailModal({ task, onClose, onEdit, canEdit = true }: { tas
   const sCls = statusColor[task.status] ?? statusColor.pending
   const [workflowVersion, setWorkflowVersion] = useState(0)
   const [reviewComments, setReviewComments] = useState('')
+  const [reviewOutputs, setReviewOutputs] = useState<Record<string, string>>({})
   const [reviewBusy, setReviewBusy] = useState<'approved' | 'needs_changes' | null>(null)
   const [reviewErr, setReviewErr] = useState<string | null>(null)
 
@@ -255,17 +256,40 @@ export function TaskDetailModal({ task, onClose, onEdit, canEdit = true }: { tas
   const activeWorkflowStep = workflowState.status === 'ok'
     ? workflowState.data.definition.steps.find((step) => step.id === workflowState.data.run.activeStepId)
     : undefined
+  const activeWorkflowInst = workflowState.status === 'ok'
+    ? workflowState.data.steps.find((step) => step.stepId === workflowState.data.run.activeStepId)
+    : undefined
+  const previousWorkflowOutputs = workflowState.status === 'ok'
+    ? workflowState.data.steps.filter((step) => step.stepId !== workflowState.data.run.activeStepId && (step.outputArtifact || step.summary))
+    : []
   const canReviewWorkflow = activeWorkflowStep?.type === 'human_review'
+
+  useEffect(() => {
+    setReviewComments('')
+    setReviewOutputs({})
+    setReviewErr(null)
+  }, [activeWorkflowStep?.id])
 
   async function submitWorkflowReview(decision: 'approved' | 'needs_changes') {
     setReviewErr(null)
     setReviewBusy(decision)
+    const normalizedDecision = decision === 'approved' ? 'approve' : 'request_changes'
+    const outputs: Record<string, string> = { ...reviewOutputs, decision: normalizedDecision }
+    const comments = (outputs.comments ?? reviewComments).trim()
+    if (decision === 'needs_changes' && comments === '') {
+      setReviewErr(t('workflows.review.commentsRequired'))
+      setReviewBusy(null)
+      return
+    }
+    if (comments) outputs.comments = comments
     try {
       await apiPost(`/api/v1/projects/${encodeURIComponent(task.project)}/tasks/${encodeURIComponent(task.id)}/workflow/review`, {
         decision,
-        comments: reviewComments.trim(),
+        comments,
+        outputs,
       })
       setReviewComments('')
+      setReviewOutputs({})
       setWorkflowVersion((v) => v + 1)
     } catch (e) {
       setReviewErr(e instanceof Error ? e.message : String(e))
@@ -277,7 +301,7 @@ export function TaskDetailModal({ task, onClose, onEdit, canEdit = true }: { tas
   return (
     <div className="fixed inset-0 z-50 flex items-start justify-center pt-[3vh]">
       <div className="absolute inset-0 bg-black/30 backdrop-blur-[2px] animate-fade-in dark:bg-black/50" onClick={onClose} />
-      <div className="relative w-full max-w-4xl max-h-[94vh] flex flex-col overflow-hidden rounded-xl border border-neutral-200/80 bg-white shadow-2xl animate-scale-in dark:border-zinc-700/80 dark:bg-zinc-900">
+      <div className="relative w-full max-w-6xl max-h-[94vh] flex flex-col overflow-hidden rounded-xl border border-neutral-200/80 bg-white shadow-2xl animate-scale-in dark:border-zinc-700/80 dark:bg-zinc-900">
         <div className="flex items-center justify-between border-b border-neutral-200/80 px-5 py-3 dark:border-zinc-700/60">
           <div className="flex items-center gap-3 min-w-0">
             <span className={cn('shrink-0 rounded-full px-2.5 py-0.5 text-[11px] font-semibold', sCls)}>{t(`tasks.status.${task.status}`, { defaultValue: task.status })}</span>
@@ -358,34 +382,28 @@ export function TaskDetailModal({ task, onClose, onEdit, canEdit = true }: { tas
                 {workflowState.data.run.status}
               </span>
             </div>
-            <WorkflowBoard definition={workflowState.data.definition} run={workflowState.data.run} instances={workflowState.data.steps} />
-            {canReviewWorkflow && (
-              <div className="mt-3 rounded-xl border border-amber-200 bg-amber-50/60 p-3 dark:border-amber-900/60 dark:bg-amber-950/20">
-                <div className="flex items-start justify-between gap-3">
-                  <div>
-                    <p className="text-sm font-medium text-amber-900 dark:text-amber-100">{t('workflows.review.title')}</p>
-                    <p className="mt-0.5 text-xs text-amber-700/80 dark:text-amber-300/80">{activeWorkflowStep.title}</p>
-                  </div>
-                  <span className="rounded-full bg-white px-2 py-0.5 text-xs font-medium text-amber-700 dark:bg-zinc-900 dark:text-amber-300">{t('workflows.stepTypes.human_review')}</span>
-                </div>
-                <textarea
-                  value={reviewComments}
-                  onChange={(e) => setReviewComments(e.target.value)}
-                  rows={3}
-                  placeholder={t('workflows.review.commentsPlaceholder')}
-                  className="mt-3 w-full resize-y rounded-lg border border-amber-200 bg-white px-3 py-2 text-sm text-neutral-900 outline-none focus:border-amber-400 dark:border-amber-900/60 dark:bg-zinc-900 dark:text-zinc-100"
+            <div className="grid min-h-[520px] gap-4 lg:grid-cols-[minmax(0,1.45fr)_minmax(320px,0.85fr)]">
+              <WorkflowBoard definition={workflowState.data.definition} run={workflowState.data.run} instances={workflowState.data.steps} focusActive />
+              <div className="flex min-h-0 flex-col rounded-xl border border-neutral-200 bg-white dark:border-zinc-700 dark:bg-zinc-950">
+                <WorkflowRuntimePanel
+                  step={activeWorkflowStep}
+                  instance={activeWorkflowInst}
+                  steps={workflowState.data.definition.steps}
+                  previousOutputs={previousWorkflowOutputs}
+                  canReview={canReviewWorkflow}
+                  reviewOutputs={reviewOutputs}
+                  reviewComments={reviewComments}
+                  reviewBusy={reviewBusy}
+                  reviewErr={reviewErr}
+                  onChangeOutput={(name, value) => {
+                    setReviewOutputs((current) => ({ ...current, [name]: value }))
+                    if (name === 'comments') setReviewComments(value)
+                  }}
+                  onChangeComments={setReviewComments}
+                  onSubmitReview={(decision) => void submitWorkflowReview(decision)}
                 />
-                {reviewErr && <p className="mt-2 text-sm text-red-600 dark:text-red-400">{reviewErr}</p>}
-                <div className="mt-3 flex justify-end gap-2">
-                  <button type="button" onClick={() => void submitWorkflowReview('needs_changes')} disabled={Boolean(reviewBusy)} className="rounded-lg border border-neutral-300 bg-white px-3 py-2 text-sm font-medium text-neutral-600 hover:bg-neutral-50 disabled:opacity-50 dark:border-zinc-600 dark:bg-zinc-900 dark:text-zinc-300 dark:hover:bg-zinc-800">
-                    {reviewBusy === 'needs_changes' ? t('forms.working') : t('workflows.review.requestChanges')}
-                  </button>
-                  <button type="button" onClick={() => void submitWorkflowReview('approved')} disabled={Boolean(reviewBusy)} className="rounded-lg border border-sky-600 bg-white px-3 py-2 text-sm font-medium text-sky-700 hover:bg-sky-50 disabled:opacity-50 dark:border-sky-500 dark:bg-zinc-900 dark:text-sky-400 dark:hover:bg-zinc-800">
-                    {reviewBusy === 'approved' ? t('forms.working') : t('workflows.review.approve')}
-                  </button>
-                </div>
               </div>
-            )}
+            </div>
           </div>
         )}
         {workflowState.status === 'error' && (workflowState.error as { status?: number }).status !== 404 && (
@@ -556,6 +574,175 @@ function TaskCommentsSection({ project, agent, taskId }: { project: string; agen
       </div>
     </div>
   )
+}
+
+function WorkflowRuntimePanel({
+  step,
+  instance,
+  steps,
+  previousOutputs,
+  canReview,
+  reviewOutputs,
+  reviewComments,
+  reviewBusy,
+  reviewErr,
+  onChangeOutput,
+  onChangeComments,
+  onSubmitReview,
+}: {
+  step?: WorkflowStep
+  instance?: WorkflowStepInstance
+  steps: WorkflowStep[]
+  previousOutputs: WorkflowStepInstance[]
+  canReview: boolean
+  reviewOutputs: Record<string, string>
+  reviewComments: string
+  reviewBusy: 'approved' | 'needs_changes' | null
+  reviewErr: string | null
+  onChangeOutput: (name: string, value: string) => void
+  onChangeComments: (value: string) => void
+  onSubmitReview: (decision: 'approved' | 'needs_changes') => void
+}) {
+  const { t } = useTranslation()
+  const outputValues = parseWorkflowArtifact(instance?.outputArtifact || instance?.summary || '')
+  const inputValues = parseWorkflowArtifact(instance?.inputArtifact || '')
+  const stepTitleByID = useMemo(() => new Map(steps.map((item) => [item.id, item.title])), [steps])
+
+  if (!step) {
+    return (
+      <div className="p-4 text-sm text-neutral-500 dark:text-zinc-500">{t('workflows.detail.notSpecified')}</div>
+    )
+  }
+
+  const editableOutputFields = (step.outputFields ?? []).filter((field) => field.name !== 'decision')
+  const hasInput = Boolean(instance?.inputArtifact?.trim()) || (step.inputFields ?? []).length > 0
+
+  return (
+    <div className="flex min-h-0 flex-1 flex-col">
+      <div className="shrink-0 border-b border-neutral-100 px-4 py-3 dark:border-zinc-800">
+        <p className="text-xs font-semibold uppercase tracking-wider text-neutral-400 dark:text-zinc-500">{t('workflows.detail.currentStep')}</p>
+        <h4 className="mt-1 text-sm font-semibold text-neutral-900 dark:text-zinc-100">{step.title}</h4>
+        <p className="mt-1 text-xs text-neutral-500 dark:text-zinc-500">
+          {t(`workflows.stepTypes.${step.type}`, { defaultValue: step.type })} · {instance?.actorType || '-'}:{instance?.actorId || '-'}
+        </p>
+      </div>
+      <div className="min-h-0 flex-1 space-y-4 overflow-y-auto p-4">
+        {step.description && (
+          <WorkflowPanelBlock title={t('workflows.detail.goal')}>
+            <p className="text-sm text-neutral-700 dark:text-zinc-300">{step.description}</p>
+          </WorkflowPanelBlock>
+        )}
+
+        {hasInput && (
+          <WorkflowPanelBlock title={t('workflows.detail.input')}>
+            <WorkflowFieldList fields={step.inputFields ?? []} values={inputValues} />
+            {instance?.inputArtifact && <WorkflowArtifact value={instance.inputArtifact} />}
+          </WorkflowPanelBlock>
+        )}
+
+        {previousOutputs.length > 0 && (
+          <WorkflowPanelBlock title={t('workflows.detail.previousOutputs')}>
+            <div className="space-y-3">
+              {previousOutputs.map((item) => (
+                <div key={item.id} className="rounded-lg bg-neutral-50 p-3 dark:bg-zinc-900">
+                  <p className="text-xs font-semibold text-neutral-600 dark:text-zinc-300">{stepTitleByID.get(item.stepId) || item.stepId}</p>
+                  {item.outputArtifact ? <WorkflowArtifact value={item.outputArtifact} compact /> : item.summary ? <WorkflowArtifact value={item.summary} compact /> : null}
+                </div>
+              ))}
+            </div>
+          </WorkflowPanelBlock>
+        )}
+
+        <WorkflowPanelBlock title={t('workflows.detail.output')}>
+          {canReview ? (
+            <div className="space-y-3">
+              {editableOutputFields.length === 0 && (
+                <textarea
+                  value={reviewComments}
+                  onChange={(e) => onChangeComments(e.target.value)}
+                  rows={4}
+                  placeholder={t('workflows.review.commentsPlaceholder')}
+                  className="w-full resize-y rounded-lg border border-neutral-300 bg-white px-3 py-2 text-sm text-neutral-900 outline-none focus:border-sky-400 dark:border-zinc-700 dark:bg-zinc-900 dark:text-zinc-100"
+                />
+              )}
+              {editableOutputFields.map((field) => (
+                <label key={field.name} className="block">
+                  <span className="text-xs font-medium text-neutral-500 dark:text-zinc-500">{field.name}</span>
+                  {field.description && <span className="mt-0.5 block text-xs text-neutral-400 dark:text-zinc-600">{field.description}</span>}
+                  <textarea
+                    value={field.name === 'comments' ? reviewComments : reviewOutputs[field.name] || ''}
+                    onChange={(e) => onChangeOutput(field.name, e.target.value)}
+                    rows={field.name === 'comments' ? 3 : 2}
+                    placeholder={field.description || field.name}
+                    className="mt-1 w-full resize-y rounded-lg border border-neutral-300 bg-white px-3 py-2 text-sm text-neutral-900 outline-none focus:border-sky-400 dark:border-zinc-700 dark:bg-zinc-900 dark:text-zinc-100"
+                  />
+                </label>
+              ))}
+              {reviewErr && <p className="text-sm text-red-600 dark:text-red-400">{reviewErr}</p>}
+              <div className="flex justify-end gap-2">
+                <button type="button" onClick={() => onSubmitReview('needs_changes')} disabled={Boolean(reviewBusy)} className="rounded-lg border border-neutral-300 bg-white px-3 py-2 text-sm font-medium text-neutral-600 hover:bg-neutral-50 disabled:opacity-50 dark:border-zinc-600 dark:bg-zinc-900 dark:text-zinc-300 dark:hover:bg-zinc-800">
+                  {reviewBusy === 'needs_changes' ? t('forms.working') : t('workflows.review.requestChanges')}
+                </button>
+                <button type="button" onClick={() => onSubmitReview('approved')} disabled={Boolean(reviewBusy)} className="rounded-lg border border-sky-600 bg-white px-3 py-2 text-sm font-medium text-sky-700 hover:bg-sky-50 disabled:opacity-50 dark:border-sky-500 dark:bg-zinc-900 dark:text-sky-400 dark:hover:bg-zinc-800">
+                  {reviewBusy === 'approved' ? t('forms.working') : t('workflows.review.approve')}
+                </button>
+              </div>
+            </div>
+          ) : (
+            <>
+              <WorkflowFieldList fields={step.outputFields ?? []} values={outputValues} />
+              {instance?.outputArtifact ? <WorkflowArtifact value={instance.outputArtifact} /> : instance?.summary ? <WorkflowArtifact value={instance.summary} /> : <p className="text-sm text-neutral-400 dark:text-zinc-600">{t('workflows.detail.notSpecified')}</p>}
+            </>
+          )}
+        </WorkflowPanelBlock>
+      </div>
+    </div>
+  )
+}
+
+function WorkflowPanelBlock({ title, children }: { title: string; children: ReactNode }) {
+  return (
+    <section>
+      <h5 className="mb-2 text-xs font-semibold uppercase tracking-wider text-neutral-400 dark:text-zinc-500">{title}</h5>
+      {children}
+    </section>
+  )
+}
+
+function WorkflowFieldList({ fields, values }: { fields: WorkflowField[]; values: Record<string, string> }) {
+  if (fields.length === 0) return null
+  return (
+    <div className="mb-2 space-y-2">
+      {fields.map((field) => (
+        <div key={field.name} className="rounded-lg border border-neutral-100 bg-white p-2.5 dark:border-zinc-800 dark:bg-zinc-950">
+          <p className="font-mono text-xs font-semibold text-neutral-700 dark:text-zinc-300">{field.name}</p>
+          {field.description && <p className="mt-1 text-xs text-neutral-500 dark:text-zinc-500">{field.description}</p>}
+          {values[field.name] && <p className="mt-1.5 whitespace-pre-wrap break-words text-sm text-neutral-800 dark:text-zinc-200">{values[field.name]}</p>}
+        </div>
+      ))}
+    </div>
+  )
+}
+
+function WorkflowArtifact({ value, compact = false }: { value: string; compact?: boolean }) {
+  return (
+    <div className={cn('rounded-lg bg-neutral-50 p-3 text-sm text-neutral-700 dark:bg-zinc-900 dark:text-zinc-300', compact ? 'max-h-40 overflow-y-auto' : 'max-h-64 overflow-y-auto')}>
+      <div className="prose prose-sm max-w-none dark:prose-invert">
+        <ReactMarkdown remarkPlugins={[remarkGfm]}>{unescapeBreaks(value)}</ReactMarkdown>
+      </div>
+    </div>
+  )
+}
+
+function parseWorkflowArtifact(value: string): Record<string, string> {
+  const out: Record<string, string> = {}
+  const lines = unescapeBreaks(value).split('\n')
+  for (const line of lines) {
+    const match = line.match(/^\s*(?:[-*]\s*)?`?([A-Za-z0-9_.-]+)`?\s*[:：]\s*(.+?)\s*$/)
+    if (!match) continue
+    out[match[1]] = match[2]
+  }
+  return out
 }
 
 function fmtNum(n: number): string {

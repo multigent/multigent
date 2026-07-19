@@ -4,6 +4,7 @@ import (
 	"encoding/json"
 	"errors"
 	"net/http"
+	"sort"
 	"strings"
 	"time"
 
@@ -28,8 +29,9 @@ type taskWorkflowResponse struct {
 }
 
 type workflowReviewBody struct {
-	Decision string `json:"decision"`
-	Comments string `json:"comments"`
+	Decision string            `json:"decision"`
+	Comments string            `json:"comments"`
+	Outputs  map[string]string `json:"outputs"`
 }
 
 func (s *Server) workflowStoreForRequest(w http.ResponseWriter, r *http.Request) (*workflowstore.Store, bool) {
@@ -290,11 +292,20 @@ func (s *Server) handlePostTaskWorkflowReview(w http.ResponseWriter, r *http.Req
 	if !ok {
 		return
 	}
-	summary := "decision: " + decision
-	if strings.TrimSpace(body.Comments) != "" {
-		summary += "\ncomments: " + strings.TrimSpace(body.Comments)
+	outputs := body.Outputs
+	if outputs == nil {
+		outputs = map[string]string{}
 	}
-	transition, err := wfStore.CompleteAndAdvance(project, taskID, summary, summary, "completed", decision, body.Comments)
+	outputs["decision"] = decision
+	comments := strings.TrimSpace(body.Comments)
+	if comments == "" {
+		comments = strings.TrimSpace(outputs["comments"])
+	}
+	if comments != "" {
+		outputs["comments"] = comments
+	}
+	summary := formatWorkflowReviewFields(outputs)
+	transition, err := wfStore.CompleteAndAdvance(project, taskID, summary, summary, "completed", decision, "")
 	if err != nil {
 		s.serverError(w, err)
 		return
@@ -329,6 +340,31 @@ func (s *Server) handlePostTaskWorkflowReview(w http.ResponseWriter, r *http.Req
 		return
 	}
 	_ = json.NewEncoder(w).Encode(taskWorkflowResponse{Definition: def, Run: transition.Run, Steps: steps})
+}
+
+func formatWorkflowReviewFields(fields map[string]string) string {
+	keys := make([]string, 0, len(fields))
+	for key := range fields {
+		key = strings.TrimSpace(key)
+		if key != "" {
+			keys = append(keys, key)
+		}
+	}
+	sort.Strings(keys)
+	var b strings.Builder
+	for _, key := range keys {
+		value := strings.TrimSpace(fields[key])
+		if value == "" {
+			continue
+		}
+		if b.Len() > 0 {
+			b.WriteString("\n")
+		}
+		b.WriteString(key)
+		b.WriteString(": ")
+		b.WriteString(value)
+	}
+	return b.String()
 }
 
 func (s *Server) findTaskInProject(project, taskID string) (*entity.Task, string, error) {

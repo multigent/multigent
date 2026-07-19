@@ -112,6 +112,7 @@ type Props = {
   onChange?: (definition: WorkflowDefinition) => void
   fullscreen?: boolean
   onToggleFullscreen?: () => void
+  focusActive?: boolean
 }
 
 const EMPTY_INSTANCES: WorkflowStepInstance[] = []
@@ -345,6 +346,7 @@ export function WorkflowBoard({
   onChange,
   fullscreen = false,
   onToggleFullscreen,
+  focusActive = false,
 }: Props) {
   const { t } = useTranslation()
   const instanceByStep = useMemo(() => new Map(instances.map((inst) => [inst.stepId, inst])), [instances])
@@ -428,6 +430,13 @@ export function WorkflowBoard({
       setSelectedId(definition.startStepId || definition.steps[0]?.id || '')
     }
   }, [definition.startStepId, definition.steps, selectedId])
+
+  useEffect(() => {
+    if (focusActive && run?.activeStepId) {
+      setSelectedId(run.activeStepId)
+      setSelectedNodeIds([run.activeStepId])
+    }
+  }, [focusActive, run?.activeStepId])
 
   useEffect(() => {
     if (selectedEdgeId && !definition.edges.some((edge) => edge.id === selectedEdgeId)) {
@@ -754,7 +763,7 @@ export function WorkflowBoard({
             setSelectedNodeIds([])
           }}
           fitView
-          fitViewOptions={{ padding: 0.18 }}
+          fitViewOptions={focusActive && run?.activeStepId ? { padding: 0.7, nodes: [{ id: run.activeStepId }] } : { padding: 0.18 }}
           minZoom={0.25}
           maxZoom={1.8}
           snapToGrid={editable}

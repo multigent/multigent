@@ -388,6 +388,7 @@
     "review": {
       "title": "Human review",
       "commentsPlaceholder": "Add review notes. Required when requesting changes; optional when approving.",
+      "commentsRequired": "Review notes are required when requesting changes.",
       "approve": "Approve",
       "requestChanges": "Request changes"
     },
@@ -396,6 +397,9 @@
       "defaultRole": "Default role",
       "input": "Input",
       "output": "Output",
+      "currentStep": "Current step",
+      "goal": "Goal",
+      "previousOutputs": "Previous outputs",
       "childTask": "Child task",
       "summary": "Summary",
       "notSpecified": "Not specified",
