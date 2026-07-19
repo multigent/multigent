@@ -344,6 +344,7 @@
     "installRecord": "安裝記錄",
     "installedBy": "由 {{user}} 安裝，生成物件會保留來源記錄。",
     "fromPlaybook": "來自 {{name}}",
+    "customized": "已自訂",
     "objects": "個物件",
     "objectTypes": {
       "skill": "Skill",

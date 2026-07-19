@@ -9,7 +9,7 @@ import { useApiJson } from '../lib/use-api'
 import { apiPost, apiPut } from '../lib/api'
 import { primaryOutlineButton } from '../lib/button-styles'
 
-type Provenance = { playbookId: string; playbookName: string }
+type Provenance = { playbookId: string; playbookName: string; templateVersion?: string; customized?: boolean }
 type SkillRow = { name: string; description?: string; provenance?: Provenance }
 type SkillDetail = { name: string; description?: string; prompt: string; provenance?: Provenance }
 
@@ -158,6 +158,7 @@ function ProvenanceBadge({ provenance, className }: { provenance: Provenance; cl
       className={cn('inline-flex w-fit rounded-full bg-emerald-50 px-2 py-0.5 text-[11px] font-medium text-emerald-700 hover:bg-emerald-100 dark:bg-emerald-950/30 dark:text-emerald-300 dark:hover:bg-emerald-950/50', className)}
     >
       {t('playbooks.fromPlaybook', { name: provenance.playbookName })}
+      {provenance.customized ? ` · ${t('playbooks.customized')}` : ''}
     </span>
   )
 }

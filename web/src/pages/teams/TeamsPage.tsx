@@ -14,7 +14,7 @@ type TeamRow = {
   owners?: string[]
   defaultContextPack?: string
   skills?: string[]
-  provenance?: { playbookId: string; playbookName: string }
+  provenance?: { playbookId: string; playbookName: string; templateVersion?: string; customized?: boolean }
 }
 
 type TeamTemplate = {
@@ -88,6 +88,7 @@ export default function TeamsPage() {
                       {row.provenance && (
                         <span className="rounded-full bg-emerald-50 px-2 py-0.5 text-[11px] font-medium text-emerald-700 dark:bg-emerald-950/30 dark:text-emerald-300">
                           {t('playbooks.fromPlaybook', { name: row.provenance.playbookName })}
+                          {row.provenance.customized ? ` · ${t('playbooks.customized')}` : ''}
                         </span>
                       )}
                     </div>

@@ -80,6 +80,9 @@ func TestInstallPlaybookTemplateCreatesObjectsAndRecordsProvenance(t *testing.T)
 	if body.Install.PlaybookID != "bug-triage-and-fix" || len(body.Install.Objects) == 0 {
 		t.Fatalf("unexpected install=%#v", body.Install)
 	}
+	if body.Install.TemplateVersion == "" {
+		t.Fatalf("template version was not recorded: %#v", body.Install)
+	}
 	if _, err := s.st.Skill("root-cause-investigation"); err != nil {
 		t.Fatalf("installed skill missing: %v", err)
 	}
@@ -101,6 +104,17 @@ func TestInstallPlaybookTemplateCreatesObjectsAndRecordsProvenance(t *testing.T)
 	}
 	if !foundWorkflow {
 		t.Fatalf("expected workflow object in install=%#v", body.Install.Objects)
+	}
+	updateSkillReq := providerTestRequest(http.MethodPut, "/api/v1/skills/root-cause-investigation", "admin", promptSaveBody{Content: "# Updated skill\n"})
+	updateSkillReq.SetPathValue("name", "root-cause-investigation")
+	updateSkillRec := httptest.NewRecorder()
+	s.handlePutSkillPrompt(updateSkillRec, updateSkillReq)
+	if updateSkillRec.Code != http.StatusOK {
+		t.Fatalf("update skill status=%d body=%s", updateSkillRec.Code, updateSkillRec.Body.String())
+	}
+	prov := s.playbookObjectProvenanceForRequest(updateSkillReq, "skill", "", "root-cause-investigation")
+	if prov == nil || !prov.Customized || prov.CustomizedBy != "admin" || prov.TemplateVersion == "" {
+		t.Fatalf("skill provenance not customized: %#v", prov)
 	}
 
 	dupReq := providerTestRequest(http.MethodPost, "/api/v1/playbook-templates/bug-triage-and-fix/install", "admin", installPlaybookRequest{Locale: "zh-CN"})

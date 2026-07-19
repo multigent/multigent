@@ -344,6 +344,7 @@
     "installRecord": "Install record",
     "installedBy": "Installed by {{user}}. Generated objects keep provenance metadata.",
     "fromPlaybook": "From {{name}}",
+    "customized": "Customized",
     "objects": "objects",
     "objectTypes": {
       "skill": "Skill",

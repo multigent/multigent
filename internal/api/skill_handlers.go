@@ -192,6 +192,7 @@ func (s *Server) handlePutSkillPrompt(w http.ResponseWriter, r *http.Request) {
 		s.serverError(w, err)
 		return
 	}
+	s.markPlaybookObjectCustomized(r, "skill", "", name)
 	_ = json.NewEncoder(w).Encode(map[string]bool{"ok": true})
 }
 
@@ -260,6 +261,7 @@ func (s *Server) handlePostRoleSkillBind(w http.ResponseWriter, r *http.Request)
 		s.serverError(w, err)
 		return
 	}
+	s.markPlaybookObjectCustomized(r, "role", teamPath, roleName)
 	_ = json.NewEncoder(w).Encode(map[string]any{"ok": true, "skills": role.Skills})
 }
 
@@ -322,5 +324,6 @@ func (s *Server) handlePostTeamSkillBind(w http.ResponseWriter, r *http.Request)
 		s.serverError(w, err)
 		return
 	}
+	s.markPlaybookObjectCustomized(r, "team", "", teamPath)
 	_ = json.NewEncoder(w).Encode(map[string]any{"ok": true, "skills": team.Skills})
 }

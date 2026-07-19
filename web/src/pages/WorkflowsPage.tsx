@@ -270,7 +270,7 @@ export default function WorkflowsPage() {
                     rows={1}
                     className="mt-1 block w-full resize-none overflow-hidden whitespace-pre-wrap rounded-lg border border-transparent bg-transparent px-0 py-0.5 text-sm leading-5 text-neutral-500 outline-none focus:border-neutral-200 focus:bg-white focus:px-3 dark:text-zinc-400 dark:focus:border-zinc-700 dark:focus:bg-zinc-900"
                   />
-                  {draft.provenance && <ProvenancePill name={draft.provenance.playbookName} />}
+                  {draft.provenance && <ProvenancePill name={draft.provenance.playbookName} customized={draft.provenance.customized} />}
                 </div>
                 <div className="flex gap-2">
                   {dirty && (
@@ -430,7 +430,7 @@ export default function WorkflowsPage() {
                     <h2 className="line-clamp-1 text-sm font-semibold text-neutral-900 dark:text-zinc-100">{wf.name}</h2>
                     <div className="mt-0.5 flex flex-wrap items-center gap-1.5">
                       <p className="text-xs text-neutral-400 dark:text-zinc-500">{t('workflows.stepCount', { count: wf.steps.length })}</p>
-                      {wf.provenance && <ProvenancePill name={wf.provenance.playbookName} />}
+                      {wf.provenance && <ProvenancePill name={wf.provenance.playbookName} customized={wf.provenance.customized} />}
                     </div>
                   </div>
                 </div>
@@ -446,11 +446,12 @@ export default function WorkflowsPage() {
   )
 }
 
-function ProvenancePill({ name }: { name: string }) {
+function ProvenancePill({ name, customized }: { name: string; customized?: boolean }) {
   const { t } = useTranslation()
   return (
     <span className="rounded-full bg-emerald-50 px-2 py-0.5 text-[11px] font-medium text-emerald-700 dark:bg-emerald-950/30 dark:text-emerald-300">
       {t('playbooks.fromPlaybook', { name })}
+      {customized ? ` · ${t('playbooks.customized')}` : ''}
     </span>
   )
 }

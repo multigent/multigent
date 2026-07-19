@@ -12,7 +12,7 @@ import { apiTeamPath, apiPut, apiPost, apiDelete } from '../../lib/api'
 import { useApiJson } from '../../lib/use-api'
 
 type SkillRow = { name: string; description?: string }
-type Provenance = { playbookId: string; playbookName: string }
+type Provenance = { playbookId: string; playbookName: string; templateVersion?: string; customized?: boolean }
 
 type RoleRow = {
   name: string
@@ -127,6 +127,7 @@ function ProvenanceBadge({ provenance, className }: { provenance: Provenance; cl
   return (
     <span className={cn('inline-flex w-fit rounded-full bg-emerald-50 px-2 py-0.5 text-[11px] font-medium text-emerald-700 dark:bg-emerald-950/30 dark:text-emerald-300', className)}>
       {t('playbooks.fromPlaybook', { name: provenance.playbookName })}
+      {provenance.customized ? ` · ${t('playbooks.customized')}` : ''}
     </span>
   )
 }

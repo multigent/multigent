@@ -4,6 +4,7 @@ import "time"
 
 type PlaybookTemplate struct {
 	ID             string                     `json:"id" yaml:"id"`
+	Version        string                     `json:"version" yaml:"version"`
 	Name           string                     `json:"name" yaml:"name"`
 	Description    string                     `json:"description" yaml:"description"`
 	Locale         string                     `json:"locale" yaml:"locale"`
@@ -78,13 +79,14 @@ type PlaybookMetric struct {
 }
 
 type PlaybookInstall struct {
-	ID           string                    `json:"id"`
-	PlaybookID   string                    `json:"playbookId"`
-	PlaybookName string                    `json:"playbookName"`
-	Locale       string                    `json:"locale"`
-	CreatedBy    string                    `json:"createdBy"`
-	CreatedAt    time.Time                 `json:"createdAt"`
-	Objects      []PlaybookInstalledObject `json:"objects"`
+	ID              string                    `json:"id"`
+	PlaybookID      string                    `json:"playbookId"`
+	PlaybookName    string                    `json:"playbookName"`
+	TemplateVersion string                    `json:"templateVersion"`
+	Locale          string                    `json:"locale"`
+	CreatedBy       string                    `json:"createdBy"`
+	CreatedAt       time.Time                 `json:"createdAt"`
+	Objects         []PlaybookInstalledObject `json:"objects"`
 }
 
 type PlaybookInstalledObject struct {
@@ -96,13 +98,17 @@ type PlaybookInstalledObject struct {
 }
 
 type PlaybookObjectProvenance struct {
-	ObjectType   string    `json:"objectType"`
-	ObjectID     string    `json:"objectId"`
-	ParentID     string    `json:"parentId,omitempty"`
-	PlaybookID   string    `json:"playbookId"`
-	PlaybookName string    `json:"playbookName"`
-	InstallID    string    `json:"installId"`
-	InstalledBy  string    `json:"installedBy"`
-	InstalledAt  time.Time `json:"installedAt"`
-	Status       string    `json:"status"`
+	ObjectType      string    `json:"objectType"`
+	ObjectID        string    `json:"objectId"`
+	ParentID        string    `json:"parentId,omitempty"`
+	PlaybookID      string    `json:"playbookId"`
+	PlaybookName    string    `json:"playbookName"`
+	TemplateVersion string    `json:"templateVersion,omitempty"`
+	InstallID       string    `json:"installId"`
+	InstalledBy     string    `json:"installedBy"`
+	InstalledAt     time.Time `json:"installedAt"`
+	Status          string    `json:"status"`
+	Customized      bool      `json:"customized,omitempty"`
+	CustomizedBy    string    `json:"customizedBy,omitempty"`
+	CustomizedAt    time.Time `json:"customizedAt,omitempty"`
 }

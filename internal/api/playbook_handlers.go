@@ -132,25 +132,27 @@ func (s *Server) handleInstallPlaybookTemplate(w http.ResponseWriter, r *http.Re
 func (s *Server) installPlaybookTemplate(workspaceID string, tmpl entity.PlaybookTemplate, username string) (entity.PlaybookInstall, error) {
 	now := time.Now().UTC()
 	install := entity.PlaybookInstall{
-		ID:           fmt.Sprintf("pbi-%d", now.UnixNano()),
-		PlaybookID:   tmpl.ID,
-		PlaybookName: tmpl.Name,
-		Locale:       tmpl.Locale,
-		CreatedBy:    username,
-		CreatedAt:    now,
+		ID:              fmt.Sprintf("pbi-%d", now.UnixNano()),
+		PlaybookID:      tmpl.ID,
+		PlaybookName:    tmpl.Name,
+		TemplateVersion: tmpl.Version,
+		Locale:          tmpl.Locale,
+		CreatedBy:       username,
+		CreatedAt:       now,
 	}
 	addObject := func(obj entity.PlaybookInstalledObject) error {
 		install.Objects = append(install.Objects, obj)
 		return s.savePlaybookObjectProvenance(workspaceID, entity.PlaybookObjectProvenance{
-			ObjectType:   obj.Type,
-			ObjectID:     obj.ID,
-			ParentID:     obj.ParentID,
-			PlaybookID:   tmpl.ID,
-			PlaybookName: tmpl.Name,
-			InstallID:    install.ID,
-			InstalledBy:  username,
-			InstalledAt:  now,
-			Status:       obj.Status,
+			ObjectType:      obj.Type,
+			ObjectID:        obj.ID,
+			ParentID:        obj.ParentID,
+			PlaybookID:      tmpl.ID,
+			PlaybookName:    tmpl.Name,
+			TemplateVersion: tmpl.Version,
+			InstallID:       install.ID,
+			InstalledBy:     username,
+			InstalledAt:     now,
+			Status:          obj.Status,
 		})
 	}
 
@@ -342,6 +344,28 @@ func (s *Server) savePlaybookObjectProvenance(workspaceID string, prov entity.Pl
 	}
 	key := []string{prov.ObjectType, prov.ParentID, prov.ObjectID, prov.InstallID}
 	return s.controlDB.UpsertRecord(playbookProvenanceTable, workspaceID, key, string(raw))
+}
+
+func (s *Server) markPlaybookObjectCustomized(r *http.Request, objectType, parentID, objectID string) {
+	workspaceID, err := s.currentWorkspaceID()
+	if err != nil {
+		return
+	}
+	provenance, err := s.playbookProvenanceMap(workspaceID, objectType)
+	if err != nil {
+		return
+	}
+	prov, ok := provenance[playbookProvenanceKey(parentID, objectID)]
+	if !ok || prov.Customized {
+		return
+	}
+	prov.Customized = true
+	prov.CustomizedBy = requestUsername(r)
+	prov.CustomizedAt = time.Now().UTC()
+	if err := s.savePlaybookObjectProvenance(workspaceID, prov); err != nil {
+		// Customization provenance is advisory; never fail the user's actual edit.
+		return
+	}
 }
 
 func (s *Server) playbookProvenanceMap(workspaceID, objectType string) (map[string]entity.PlaybookObjectProvenance, error) {

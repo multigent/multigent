@@ -82,6 +82,7 @@ func (s *Server) handlePutTeamPrompt(w http.ResponseWriter, r *http.Request) {
 		s.serverError(w, err)
 		return
 	}
+	s.markPlaybookObjectCustomized(r, "team", "", path)
 	_ = json.NewEncoder(w).Encode(map[string]bool{"ok": true})
 }
 
@@ -122,6 +123,7 @@ func (s *Server) handlePutRolePrompt(w http.ResponseWriter, r *http.Request) {
 		s.serverError(w, err)
 		return
 	}
+	s.markPlaybookObjectCustomized(r, "role", teamPath, roleName)
 	_ = json.NewEncoder(w).Encode(map[string]bool{"ok": true})
 }
 

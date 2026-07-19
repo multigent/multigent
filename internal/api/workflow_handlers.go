@@ -207,6 +207,8 @@ func (s *Server) handleUpdateWorkflow(w http.ResponseWriter, r *http.Request) {
 		s.serverError(w, err)
 		return
 	}
+	s.markPlaybookObjectCustomized(r, "workflow", "", workflowID)
+	existing.Provenance = s.playbookObjectProvenanceForRequest(r, "workflow", "", workflowID)
 	_ = json.NewEncoder(w).Encode(existing)
 }
 

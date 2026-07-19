@@ -7,6 +7,8 @@ import (
 	workflowstore "github.com/multigent/multigent/internal/workflow"
 )
 
+const playbookTemplateVersion = "1.0.0"
+
 func Templates(locale string) []entity.PlaybookTemplate {
 	locale = normalizeLocale(locale)
 	return []entity.PlaybookTemplate{
@@ -45,6 +47,7 @@ func softwareDelivery(locale string) entity.PlaybookTemplate {
 	wf, _ := workflowstore.Template("agentic-software-delivery", locale)
 	return entity.PlaybookTemplate{
 		ID:          "agentic-software-delivery",
+		Version:     playbookTemplateVersion,
 		Name:        text(locale, "Agentic Software Delivery", "Agentic 研发交付协作方案"),
 		Description: text(locale, "A practical delivery playbook for product, engineering, QA, and release work with agent-first execution and human review gates.", "面向产品、研发、QA 和发版的实用协作方案：Agent 主动执行，人类在关键节点审核。"),
 		Locale:      normalizeLocale(locale),
@@ -105,6 +108,7 @@ func startupValidation(locale string) entity.PlaybookTemplate {
 	prototypePrompt := text(locale, prototypeScopePromptEN, prototypeScopePromptZH)
 	return entity.PlaybookTemplate{
 		ID:          "garry-startup-validation",
+		Version:     playbookTemplateVersion,
 		Name:        text(locale, "YC Garry Startup Validation", "YC Garry 创业验证协作方案"),
 		Description: text(locale, "A startup idea validation playbook inspired by YC-style office hours: test demand reality, status quo, pain intensity, wedge, and prototype scope before building.", "参考 YC office hours 思路的创业项目验证协作方案：先判断真实需求、现有替代方案、痛点强度、切入点和原型范围，再决定是否开发。"),
 		Locale:      normalizeLocale(locale),
@@ -153,6 +157,7 @@ func bugTriageAndFix(locale string) entity.PlaybookTemplate {
 	wf, _ := workflowstore.Template("agentic-bug-triage-loop", locale)
 	return entity.PlaybookTemplate{
 		ID:          "bug-triage-and-fix",
+		Version:     playbookTemplateVersion,
 		Name:        text(locale, "Bug Triage and Fix", "Bug 分诊与修复协作方案"),
 		Description: text(locale, "A focused loop for reproducing, diagnosing, fixing, and verifying bugs with explicit escalation when evidence is weak.", "用于 Bug 复现、定位、修复和验证的聚焦闭环；证据不足时明确升级。"),
 		Locale:      normalizeLocale(locale),
@@ -179,6 +184,7 @@ func supportKnowledgeLoop(locale string) entity.PlaybookTemplate {
 	wf := supportKnowledgeWorkflow(locale)
 	return entity.PlaybookTemplate{
 		ID:          "support-knowledge-loop",
+		Version:     playbookTemplateVersion,
 		Name:        text(locale, "Customer Support Knowledge Loop", "客服知识库循环协作方案"),
 		Description: text(locale, "Turn repeated support questions into reviewed answers, reusable knowledge docs, and product feedback.", "把重复客服问题转成已审核答复、可复用知识库文档和产品反馈。"),
 		Locale:      normalizeLocale(locale),
