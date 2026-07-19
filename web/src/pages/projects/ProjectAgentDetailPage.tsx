@@ -1342,7 +1342,6 @@ function EnvEditor({ project, agentName, model, initialEnv, initialProvider, ini
   }, [initialEnv, initialProvider, initialRuntimeModel])
 
   const runtimeModelOptions = RUNTIME_MODEL_PRESETS[model] ?? []
-  const selectedProviderInfo = providerOptions.find((p) => p.id === selectedProvider)
 
   async function save() {
     setBusy(true); setSaved(false)
@@ -1386,7 +1385,7 @@ function EnvEditor({ project, agentName, model, initialEnv, initialProvider, ini
             ))}
           </select>
         </label>
-        {providerOptions.length === 0 ? (
+        {providerOptions.length === 0 && (
           <div className="flex items-end">
             <Link
               to="/settings#model-accounts"
@@ -1395,12 +1394,6 @@ function EnvEditor({ project, agentName, model, initialEnv, initialProvider, ini
               {t('agentDetail.addCredential')}
             </Link>
           </div>
-        ) : (
-          selectedProviderInfo && (
-            <div className="rounded-md bg-neutral-50 px-3 py-2 text-xs text-neutral-500 dark:bg-zinc-800/40 dark:text-zinc-400">
-              {selectedProviderInfo.type}{selectedProviderInfo.model ? ` · ${selectedProviderInfo.model}` : ''} · {selectedProviderInfo.ownerType === 'user' ? t('provider.scopePersonal') : t('provider.scopeWorkspace')}
-            </div>
-          )
         )}
         <label className="block">
           <span className="mb-1 block text-xs font-medium text-neutral-600 dark:text-zinc-400">{t('provider.runtimeModelLabel')}</span>
