@@ -225,6 +225,22 @@ function schemaFieldsFor(step: WorkflowStep, kind: 'input' | 'output'): Workflow
   return legacyFields(kind === 'input' ? step.inputSchema : step.outputSchema)
 }
 
+function edgeHandles(sourceStep?: WorkflowStep, targetStep?: WorkflowStep) {
+  if (!sourceStep || !targetStep) {
+    return { sourceHandle: 'source-right', targetHandle: 'target-left' }
+  }
+  const dx = targetStep.position.x - sourceStep.position.x
+  const dy = targetStep.position.y - sourceStep.position.y
+  if (Math.abs(dx) >= Math.abs(dy)) {
+    return dx < 0
+      ? { sourceHandle: 'source-left', targetHandle: 'target-right' }
+      : { sourceHandle: 'source-right', targetHandle: 'target-left' }
+  }
+  return dy < 0
+    ? { sourceHandle: 'source-top', targetHandle: 'target-bottom' }
+    : { sourceHandle: 'source-bottom', targetHandle: 'target-top' }
+}
+
 function normalizeStepFields(step: WorkflowStep): WorkflowStep {
   const inputFields = schemaFieldsFor(step, 'input').map(({ name, description }) => ({ name, description }))
   const outputFields = schemaFieldsFor(step, 'output').map(({ name, description }) => ({ name, description }))
@@ -346,6 +362,30 @@ function WorkflowStepNode({ data, selected }: NodeProps<WorkflowNode>) {
         position={Position.Right}
         className="!h-2.5 !w-2.5 !translate-y-4 !border-2 !border-white !bg-neutral-400 dark:!border-zinc-950 dark:!bg-zinc-500"
       />
+      <Handle
+        type="source"
+        id="source-top"
+        position={Position.Top}
+        className="!h-2.5 !w-2.5 !-translate-x-4 !border-2 !border-white !bg-sky-500 dark:!border-zinc-950 dark:!bg-sky-400"
+      />
+      <Handle
+        type="target"
+        id="target-top"
+        position={Position.Top}
+        className="!h-2.5 !w-2.5 !translate-x-4 !border-2 !border-white !bg-neutral-400 dark:!border-zinc-950 dark:!bg-zinc-500"
+      />
+      <Handle
+        type="source"
+        id="source-bottom"
+        position={Position.Bottom}
+        className="!h-2.5 !w-2.5 !-translate-x-4 !border-2 !border-white !bg-sky-500 dark:!border-zinc-950 dark:!bg-sky-400"
+      />
+      <Handle
+        type="target"
+        id="target-bottom"
+        position={Position.Bottom}
+        className="!h-2.5 !w-2.5 !translate-x-4 !border-2 !border-white !bg-neutral-400 dark:!border-zinc-950 dark:!bg-zinc-500"
+      />
       <span className="text-[11px] font-semibold uppercase opacity-60">{t(`workflows.stepTypes.${step.type}`, { defaultValue: step.type.replace('_', ' ') })}</span>
       <span className="mt-1 line-clamp-1 text-sm font-semibold">{step.title}</span>
       <span className="mt-auto flex w-full items-center justify-between gap-2">
@@ -412,13 +452,13 @@ export function WorkflowBoard({
         const selectedEdge = edge.id === selectedEdgeId
         const sourceStep = definition.steps.find((step) => step.id === edge.from)
         const targetStep = definition.steps.find((step) => step.id === edge.to)
-        const backward = Boolean(sourceStep && targetStep && sourceStep.position.x > targetStep.position.x)
+        const handles = edgeHandles(sourceStep, targetStep)
         return {
           id: edge.id,
           source: edge.from,
           target: edge.to,
-          sourceHandle: backward ? 'source-left' : 'source-right',
-          targetHandle: backward ? 'target-right' : 'target-left',
+          sourceHandle: handles.sourceHandle,
+          targetHandle: handles.targetHandle,
           label: edge.label || conditionLabel(edge),
           type: 'smoothstep',
           animated: active,
@@ -567,8 +607,8 @@ export function WorkflowBoard({
           id: edgeID,
           source: connection.source,
           target: connection.target,
-          sourceHandle: backward ? 'source-left' : 'source-right',
-          targetHandle: backward ? 'target-right' : 'target-left',
+          sourceHandle: connection.sourceHandle || edgeHandles(sourceStep, targetStep).sourceHandle,
+          targetHandle: connection.targetHandle || edgeHandles(sourceStep, targetStep).targetHandle,
           label: nextEdge.label || '',
           type: 'smoothstep',
           markerEnd: { type: MarkerType.ArrowClosed, color: edgeClass.pending },
