@@ -4,7 +4,7 @@ import { useTranslation } from 'react-i18next'
 import { Edit3, Maximize2, Minimize2, RefreshCw, Send, Sparkles, Square } from 'lucide-react'
 import { ConversationLog } from '../../components/ui/ConversationLog'
 import { apiFetch, apiDelete, apiUrl } from '../../lib/api'
-import { getStoredToken } from '../../lib/auth'
+import { getStoredToken, useAuth } from '../../lib/auth'
 import { cn } from '../../lib/cn'
 
 type HistoryResp = {
@@ -15,6 +15,8 @@ type HistoryResp = {
 }
 
 type AgentContext = {
+  name?: string
+  avatar?: string
   model: string
   runtimeModel?: string
   provider?: string
@@ -59,6 +61,7 @@ function readAgentChatDraft(projectId?: string, agentName?: string) {
 
 export default function ProjectAgentChatPage() {
   const { t } = useTranslation()
+  const { user } = useAuth()
   const { projectId, agentName } = useParams<{ projectId: string; agentName: string }>()
   const [searchParams, setSearchParams] = useSearchParams()
   const initialSessionId = searchParams.get('sessionId') ?? ''
@@ -355,6 +358,14 @@ export default function ProjectAgentChatPage() {
     env.CURSOR_MODEL ||
     providerModel ||
     ''
+  const userParticipant = {
+    name: user?.displayName || user?.username || t('common.user', { defaultValue: 'User' }),
+    avatar: user?.avatar,
+  }
+  const assistantParticipant = {
+    name: agentContext?.name || agentName,
+    avatar: agentContext?.avatar,
+  }
 
   const chatPanel = (
     <div className={cn(
@@ -476,7 +487,7 @@ export default function ProjectAgentChatPage() {
           </div>
         ) : (
           <div className="space-y-4">
-            <ConversationLog content={content} mode="chat" />
+            <ConversationLog content={content} mode="chat" user={userParticipant} assistant={assistantParticipant} />
             {loading && <AgentReplyLoading />}
           </div>
         )}
@@ -534,21 +545,16 @@ export default function ProjectAgentChatPage() {
 }
 
 function AgentReplyLoading() {
-  const { t } = useTranslation()
   return (
     <div className="flex gap-2.5">
-      <div className="flex size-6 shrink-0 items-center justify-center rounded-full bg-neutral-100 dark:bg-zinc-800">
-        <Sparkles className="size-3.5 text-sky-600 dark:text-sky-400" strokeWidth={1.8} />
+      <div className="relative flex size-6 shrink-0 items-center justify-center rounded-full bg-neutral-100 dark:bg-zinc-800">
+        <span className="absolute size-5 animate-ping rounded-full bg-sky-400/20" />
+        <Sparkles className="relative size-3.5 text-sky-600 dark:text-sky-400" strokeWidth={1.8} />
       </div>
-      <div className="min-w-0 rounded-lg bg-neutral-50 px-3.5 py-2.5 dark:bg-zinc-900/70">
-        <div className="flex items-center gap-2 text-sm text-neutral-500 dark:text-zinc-400">
-          <span>{t('agentChat.waiting')}</span>
-          <span className="flex items-center gap-1" aria-hidden="true">
-            <span className="size-1.5 animate-bounce rounded-full bg-sky-500 [animation-delay:-0.2s]" />
-            <span className="size-1.5 animate-bounce rounded-full bg-sky-500 [animation-delay:-0.1s]" />
-            <span className="size-1.5 animate-bounce rounded-full bg-sky-500" />
-          </span>
-        </div>
+      <div className="flex h-10 items-center gap-1.5 rounded-lg bg-neutral-50 px-3.5 dark:bg-zinc-900/70" aria-label="loading">
+        <span className="h-2 w-1 animate-[pulse_1.1s_ease-in-out_infinite] rounded-full bg-sky-500/70" />
+        <span className="h-4 w-1 animate-[pulse_1.1s_ease-in-out_infinite_120ms] rounded-full bg-sky-500/80" />
+        <span className="h-2.5 w-1 animate-[pulse_1.1s_ease-in-out_infinite_240ms] rounded-full bg-sky-500/70" />
       </div>
     </div>
   )

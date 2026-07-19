@@ -220,6 +220,7 @@ func (r *Runner) ExecPrompt(project, agentName, prompt, sessionID string) (*RunR
 	fmt.Fprintf(logFile, "=== multigent exec: %s/%s sandbox=%s ===\n", project, agentName, sandboxLabel)
 	fmt.Fprintf(logFile, "Command: %s\n", telemetry.FormatExecCommand(executable, args))
 	fmt.Fprintf(logFile, "Started: %s\n\n", time.Now().UTC().Format(time.RFC3339))
+	writePromptMessageToLog(logFile, prompt)
 
 	// Stream output to stdout AND the log file simultaneously.
 	cmd := exec.Command(executable, args...)
@@ -993,6 +994,21 @@ func parseLineSentinel(output, prefix string) string {
 		}
 	}
 	return ""
+}
+
+func writePromptMessageToLog(w io.Writer, prompt string) {
+	prompt = strings.TrimSpace(prompt)
+	if prompt == "" {
+		return
+	}
+	raw, err := json.Marshal(map[string]string{
+		"type":    "human",
+		"content": prompt,
+	})
+	if err != nil {
+		return
+	}
+	fmt.Fprintln(w, string(raw))
 }
 
 // cloneDockerCfg returns a shallow copy of cfg (or a fresh struct if nil)

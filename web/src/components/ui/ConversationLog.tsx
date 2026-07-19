@@ -62,6 +62,11 @@ type ConversationItem =
   | { kind: 'result'; text: string; cost?: number; turns?: number; isError: boolean }
   | { kind: 'usage'; text: string }
 
+type ConversationParticipant = {
+  name: string
+  avatar?: string
+}
+
 function pushAssistantText(items: ConversationItem[], text: string) {
   if (!text.trim()) return
   const last = items[items.length - 1]
@@ -746,6 +751,35 @@ function ToolInputDisplay({ input }: { input: unknown }) {
   )
 }
 
+function MessageAvatar({
+  participant,
+  fallbackName,
+  tone,
+  icon,
+}: {
+  participant?: ConversationParticipant
+  fallbackName: string
+  tone: 'user' | 'assistant'
+  icon: React.ReactNode
+}) {
+  const name = participant?.name || fallbackName
+  const initial = [...name.trim()][0]?.toUpperCase()
+  const toneCls = tone === 'user'
+    ? 'bg-sky-100 text-sky-700 dark:bg-sky-900/30 dark:text-sky-400'
+    : 'bg-neutral-100 text-sky-700 dark:bg-zinc-800 dark:text-sky-400'
+  return (
+    <div className={cn('flex size-6 shrink-0 items-center justify-center overflow-hidden rounded-full text-[11px] font-semibold', toneCls)}>
+      {participant?.avatar ? (
+        <img src={participant.avatar} alt="" className="size-full object-cover" />
+      ) : initial ? (
+        initial
+      ) : (
+        icon
+      )}
+    </div>
+  )
+}
+
 export function TechnicalLog({ content, truncated }: { content: string; truncated?: boolean }) {
   const { t } = useTranslation()
   const lineCount = useMemo(() => content.split('\n').filter((line) => line.trim()).length, [content])
@@ -783,7 +817,17 @@ export function TechnicalLog({ content, truncated }: { content: string; truncate
   )
 }
 
-export function ConversationLog({ content, mode = 'log' }: { content: string; mode?: 'log' | 'chat' }) {
+export function ConversationLog({
+  content,
+  mode = 'log',
+  user,
+  assistant,
+}: {
+  content: string
+  mode?: 'log' | 'chat'
+  user?: ConversationParticipant
+  assistant?: ConversationParticipant
+}) {
   const { t } = useTranslation()
   const items = useMemo(() => parseLog(content), [content])
   const visibleItems = useMemo(() => {
@@ -836,11 +880,9 @@ export function ConversationLog({ content, mode = 'log' }: { content: string; mo
           case 'human':
             return (
               <div key={i} className="flex gap-2.5">
-                <div className="flex size-6 shrink-0 items-center justify-center rounded-full bg-sky-100 dark:bg-sky-900/30">
-                  <User className="size-3.5 text-sky-700 dark:text-sky-400" strokeWidth={2} />
-                </div>
+                <MessageAvatar participant={user} fallbackName={t('common.user', { defaultValue: 'User' })} tone="user" icon={<User className="size-3.5" strokeWidth={2} />} />
                 <div className="min-w-0 flex-1 rounded-lg bg-sky-50 px-3.5 py-2.5 dark:bg-sky-900/15">
-                  <p className="mb-1 text-xs font-medium text-sky-800 dark:text-sky-300">User</p>
+                  <p className="mb-1 text-xs font-medium text-sky-800 dark:text-sky-300">{user?.name || t('common.user', { defaultValue: 'User' })}</p>
                   <MdBlock text={item.text} />
                 </div>
               </div>
@@ -849,11 +891,9 @@ export function ConversationLog({ content, mode = 'log' }: { content: string; mo
           case 'assistant':
             return (
               <div key={i} className="flex gap-2.5">
-                <div className="flex size-6 shrink-0 items-center justify-center rounded-full bg-sky-100 dark:bg-sky-900/30">
-                  <Bot className="size-3.5 text-sky-700 dark:text-sky-400" strokeWidth={2} />
-                </div>
+                <MessageAvatar participant={assistant} fallbackName={t('common.assistant', { defaultValue: 'Assistant' })} tone="assistant" icon={<Bot className="size-3.5" strokeWidth={2} />} />
                 <div className="min-w-0 flex-1 space-y-2">
-                  <p className="text-xs font-medium text-sky-700 dark:text-sky-400">Assistant</p>
+                  <p className="text-xs font-medium text-sky-700 dark:text-sky-400">{assistant?.name || t('common.assistant', { defaultValue: 'Assistant' })}</p>
                   {item.blocks.map((block, bi) => {
                     if (block.type === 'text') {
                       return <MdBlock key={bi} text={block.text} />
