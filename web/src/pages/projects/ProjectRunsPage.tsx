@@ -4,7 +4,7 @@ import { useTranslation } from 'react-i18next'
 import { BarChart3, FileText, MessageSquareText, RefreshCw, StopCircle, X } from 'lucide-react'
 import { Pagination } from '../../components/ui/Pagination'
 import { PlaceholderCard } from '../../components/ui/PlaceholderCard'
-import { ConversationLog } from '../../components/ui/ConversationLog'
+import { TechnicalLog } from '../../components/ui/ConversationLog'
 import { confirmDialog } from '../../components/ui/ConfirmDialog'
 import { cn } from '../../lib/cn'
 import { useFormatDateTime } from '../../lib/format-datetime'
@@ -565,10 +565,7 @@ function RunDetailModal({ run, onClose }: { run: RunRow; onClose: () => void }) 
             )}
             {hasLog && logState.status === 'ok' && (
               <>
-                <ConversationLog content={logState.data.content} />
-                {logState.data.truncated && (
-                  <p className="mt-2 text-xs text-amber-600 dark:text-amber-400">{t('runs.logTruncated')}</p>
-                )}
+                <TechnicalLog content={logState.data.content} truncated={logState.data.truncated} />
               </>
             )}
             {!hasLog && (

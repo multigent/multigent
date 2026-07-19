@@ -1331,6 +1331,10 @@
     "logTruncated": "Log truncated (too large to display in full).",
     "logEmpty": "(empty log)",
     "rawLogDetails": "Run log · {{count}} entries",
+    "technicalLog": "Technical log",
+    "logLineCount": "{{count}} lines",
+    "expandLog": "Expand",
+    "collapseLog": "Collapse",
     "viewRaw": "Raw log",
     "viewConversation": "Conversation",
     "status": {

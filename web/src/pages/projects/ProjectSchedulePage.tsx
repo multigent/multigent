@@ -6,7 +6,7 @@ import {
   MessageSquareText, Trash2, X, Zap,
 } from 'lucide-react'
 import { PlaceholderCard } from '../../components/ui/PlaceholderCard'
-import { ConversationLog } from '../../components/ui/ConversationLog'
+import { TechnicalLog } from '../../components/ui/ConversationLog'
 import { confirmDialog } from '../../components/ui/ConfirmDialog'
 import { cn } from '../../lib/cn'
 import { apiFetch, apiDelete, apiPatch, apiPost, apiPut } from '../../lib/api'
@@ -1229,7 +1229,7 @@ function LiveLogModal({ projectId, agentName, onClose }: { projectId: string; ag
           <button type="button" onClick={onClose} className="rounded-md p-1 text-neutral-400 hover:bg-neutral-100 dark:text-zinc-500 dark:hover:bg-zinc-800"><X className="size-4" /></button>
         </div>
         <div ref={scrollRef} className="flex-1 overflow-auto px-5 py-4">
-          {content ? <ConversationLog content={content} /> : <p className="py-8 text-center text-sm text-neutral-400 dark:text-zinc-500">{t('schedule.noLogYet')}</p>}
+          {content ? <TechnicalLog content={content} /> : <p className="py-8 text-center text-sm text-neutral-400 dark:text-zinc-500">{t('schedule.noLogYet')}</p>}
         </div>
       </div>
     </div>

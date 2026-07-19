@@ -10,6 +10,7 @@ import { useApiJson } from '../../lib/use-api'
 import { useAuth } from '../../lib/auth'
 import { formatGoDuration, taskElapsedLabel } from '../../lib/task-duration'
 import { WorkflowBoard, type WorkflowDefinition, type WorkflowRun, type WorkflowStepInstance } from '../workflow/WorkflowBoard'
+import { TechnicalLog } from '../ui/ConversationLog'
 
 export type TaskRow = {
   id: string
@@ -385,7 +386,7 @@ export function TaskDetailModal({ task, onClose, onEdit, canEdit = true }: { tas
                   </div>
                 )}
                 {hasLog && logState.status === 'error' && <p className="py-4 text-center text-sm text-neutral-400">{t('runs.logNotFound')}</p>}
-                {hasLog && logState.status === 'ok' && <ConversationLog content={logState.data.content} />}
+                {hasLog && logState.status === 'ok' && <TechnicalLog content={logState.data.content} />}
                 {!hasLog && <p className="py-4 text-center text-sm text-neutral-400 dark:text-zinc-500">{t('runs.noLog')}</p>}
               </div>
             </>
@@ -411,47 +412,6 @@ function InfoCell({ label, children }: { label: string; children: React.ReactNod
     <div>
       <span className="text-xs font-medium text-neutral-400 dark:text-zinc-500">{label}</span>
       <p className="text-neutral-800 dark:text-zinc-200">{children}</p>
-    </div>
-  )
-}
-
-interface ConvMsg { role: 'user' | 'assistant' | 'system'; text: string }
-
-function parseConversation(raw: string): ConvMsg[] {
-  const msgs: ConvMsg[] = []
-  for (const line of raw.split('\n')) {
-    const trimmed = line.trim()
-    if (!trimmed) continue
-    try {
-      const obj = JSON.parse(trimmed)
-      if (obj.type === 'user' && typeof obj.message?.content === 'string') {
-        msgs.push({ role: 'user', text: obj.message.content })
-      } else if (obj.type === 'assistant' && typeof obj.message?.content === 'string') {
-        msgs.push({ role: 'assistant', text: obj.message.content })
-      } else if (obj.type === 'assistant' && Array.isArray(obj.message?.content)) {
-        const texts = obj.message.content.filter((b: any) => b.type === 'text').map((b: any) => b.text)
-        if (texts.length > 0) msgs.push({ role: 'assistant', text: texts.join('\n\n') })
-      } else if (obj.type === 'system' && typeof obj.message?.content === 'string') {
-        msgs.push({ role: 'system', text: obj.message.content })
-      }
-    } catch { /* skip non-JSON */ }
-  }
-  return msgs
-}
-
-function ConversationLog({ content }: { content: string }) {
-  const msgs = useMemo(() => parseConversation(content), [content])
-  if (msgs.length === 0) return <p className="py-4 text-center text-sm text-neutral-400 dark:text-zinc-500">No conversation data</p>
-  return (
-    <div className="space-y-3">
-      {msgs.map((m, i) => (
-        <div key={i} className={cn('rounded-lg px-4 py-3 text-sm', m.role === 'user' ? 'bg-sky-50 dark:bg-sky-900/20' : m.role === 'system' ? 'bg-amber-50 dark:bg-amber-900/20' : 'bg-neutral-50 dark:bg-zinc-800/40')}>
-          <span className={cn('mb-1 block text-[11px] font-semibold uppercase tracking-wider', m.role === 'user' ? 'text-sky-600 dark:text-sky-400' : m.role === 'system' ? 'text-amber-600 dark:text-amber-400' : 'text-neutral-400 dark:text-zinc-500')}>{m.role}</span>
-          <div className="prose prose-sm max-w-none dark:prose-invert prose-p:my-1 prose-pre:my-1.5">
-            <ReactMarkdown remarkPlugins={[remarkGfm]}>{m.text}</ReactMarkdown>
-          </div>
-        </div>
-      ))}
     </div>
   )
 }

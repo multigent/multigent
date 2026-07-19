@@ -1331,6 +1331,10 @@
     "logTruncated": "ログが長いため、表示を省略しました。",
     "logEmpty": "（ログは空です）",
     "rawLogDetails": "実行ログ · {{count}} 件",
+    "technicalLog": "技術ログ",
+    "logLineCount": "{{count}} 行",
+    "expandLog": "展開",
+    "collapseLog": "折りたたむ",
     "viewRaw": "生ログ",
     "viewConversation": "会話ビュー",
     "status": {

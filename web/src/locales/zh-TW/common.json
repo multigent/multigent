@@ -1331,6 +1331,10 @@
     "logTruncated": "日誌過長，已截斷顯示。",
     "logEmpty": "（日誌為空）",
     "rawLogDetails": "執行日誌 · {{count}} 條",
+    "technicalLog": "技術日誌",
+    "logLineCount": "{{count}} 行",
+    "expandLog": "展開",
+    "collapseLog": "收起",
     "viewRaw": "原始日誌",
     "viewConversation": "對話檢視",
     "status": {

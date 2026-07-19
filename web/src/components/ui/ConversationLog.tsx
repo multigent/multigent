@@ -746,6 +746,43 @@ function ToolInputDisplay({ input }: { input: unknown }) {
   )
 }
 
+export function TechnicalLog({ content, truncated }: { content: string; truncated?: boolean }) {
+  const { t } = useTranslation()
+  const lineCount = useMemo(() => content.split('\n').filter((line) => line.trim()).length, [content])
+
+  if (!content.trim()) {
+    return <p className="py-4 text-center text-sm text-neutral-400 dark:text-zinc-500">{t('runs.logEmpty')}</p>
+  }
+
+  return (
+    <details className="group rounded-lg border border-neutral-200/80 bg-neutral-50/70 dark:border-zinc-700/50 dark:bg-zinc-900/40">
+      <summary className="flex cursor-pointer list-none items-center gap-2 px-3.5 py-2.5 text-sm font-medium text-neutral-600 transition-colors hover:bg-neutral-100/80 dark:text-zinc-400 dark:hover:bg-zinc-800/70">
+        <Terminal className="size-4 shrink-0 text-neutral-400 dark:text-zinc-500" strokeWidth={1.7} />
+        <span>{t('runs.technicalLog')}</span>
+        <span className="text-xs font-normal text-neutral-400 dark:text-zinc-500">
+          {t('runs.logLineCount', { count: lineCount })}
+        </span>
+        <span className="ml-auto text-xs font-normal text-neutral-400 group-open:hidden dark:text-zinc-500">
+          {t('runs.expandLog')}
+        </span>
+        <span className="ml-auto hidden text-xs font-normal text-neutral-400 group-open:inline dark:text-zinc-500">
+          {t('runs.collapseLog')}
+        </span>
+      </summary>
+      <div className="border-t border-neutral-200/80 dark:border-zinc-700/50">
+        <pre className="max-h-[52vh] overflow-auto whitespace-pre-wrap break-words bg-white/80 px-3.5 py-3 font-mono text-xs leading-relaxed text-neutral-600 dark:bg-zinc-950/70 dark:text-zinc-400">
+          {content}
+        </pre>
+        {truncated && (
+          <p className="border-t border-neutral-200/70 px-3.5 py-2 text-xs text-amber-600 dark:border-zinc-800 dark:text-amber-400">
+            {t('runs.logTruncated')}
+          </p>
+        )}
+      </div>
+    </details>
+  )
+}
+
 export function ConversationLog({ content, mode = 'log' }: { content: string; mode?: 'log' | 'chat' }) {
   const { t } = useTranslation()
   const items = useMemo(() => parseLog(content), [content])
@@ -757,7 +794,6 @@ export function ConversationLog({ content, mode = 'log' }: { content: string; mo
       return false
     })
   }, [items, mode])
-  const hiddenCount = items.length - visibleItems.length
 
   if (visibleItems.length === 0) {
     return <p className="py-4 text-center text-sm text-neutral-400 dark:text-zinc-500">{t('runs.logEmpty')}</p>
@@ -765,16 +801,6 @@ export function ConversationLog({ content, mode = 'log' }: { content: string; mo
 
   return (
     <div className="space-y-3 overflow-x-hidden">
-      {mode === 'chat' && hiddenCount > 0 && (
-        <details className="rounded-lg border border-neutral-200/70 bg-neutral-50/70 px-3 py-2 dark:border-zinc-700/50 dark:bg-zinc-900/40">
-          <summary className="cursor-pointer text-xs font-medium text-neutral-500 hover:text-neutral-700 dark:text-zinc-500 dark:hover:text-zinc-300">
-            {t('runs.rawLogDetails', { count: hiddenCount })}
-          </summary>
-          <div className="mt-3 max-h-80 overflow-auto border-t border-neutral-200/70 pt-3 dark:border-zinc-800">
-            <ConversationLog content={content} mode="log" />
-          </div>
-        </details>
-      )}
       {visibleItems.map((item, i) => {
         switch (item.kind) {
           case 'header':
