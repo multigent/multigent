@@ -12,6 +12,7 @@ import { apiPost, apiPut } from '../../lib/api'
 import { canManageProject, canOperateAgent, useAuth } from '../../lib/auth'
 import { cn } from '../../lib/cn'
 import { useApiJson } from '../../lib/use-api'
+import { useWorkspaceAccess } from '../../lib/workspace-access'
 import {
   EditTaskModal,
   TaskDetailModal,
@@ -41,6 +42,7 @@ const selectCls =
 export default function ProjectTasksPage() {
   const { t } = useTranslation()
   const { user } = useAuth()
+  const { canAdmin } = useWorkspaceAccess()
   const { projectId } = useParams<{ projectId: string }>()
   const base =
     projectId != null && projectId !== ''
@@ -65,11 +67,11 @@ export default function ProjectTasksPage() {
   const agentsState = useApiJson<AgentRow[]>(agentsPath, reloadKey)
   const tasks = state.status === 'ok' ? (state.data ?? []) : []
   const agents = agentsState.status === 'ok' ? (agentsState.data ?? []) : []
-  const canMutateTask = useCallback((row: TaskRow) => canOperateAgent(user, row.project, row.agent), [user])
-  const canDeleteTask = useCallback((row: TaskRow) => canManageProject(user, row.project), [user])
+  const canMutateTask = useCallback((row: TaskRow) => canAdmin || canOperateAgent(user, row.project, row.agent), [canAdmin, user])
+  const canDeleteTask = useCallback((row: TaskRow) => canAdmin || canManageProject(user, row.project), [canAdmin, user])
   const operableAgents = useMemo(
-    () => agents.filter((agent) => projectId != null && projectId !== '' && canOperateAgent(user, projectId, agent.name)),
-    [agents, projectId, user],
+    () => agents.filter((agent) => projectId != null && projectId !== '' && (canAdmin || canOperateAgent(user, projectId, agent.name))),
+    [agents, canAdmin, projectId, user],
   )
   const taskOptions = useMemo(
     () => tasks.map((r) => ({ id: r.id, title: r.title, project: r.project })),

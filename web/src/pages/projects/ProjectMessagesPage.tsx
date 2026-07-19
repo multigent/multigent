@@ -15,6 +15,7 @@ import { canOperateAgent, isSystemAdmin, useAuth } from '../../lib/auth'
 import { cn } from '../../lib/cn'
 import { useFormatDateTime } from '../../lib/format-datetime'
 import { useApiJson } from '../../lib/use-api'
+import { useWorkspaceAccess } from '../../lib/workspace-access'
 
 type MessageRow = MessageDetailModel
 type AgentRow = { name: string }
@@ -50,6 +51,7 @@ export default function ProjectMessagesPage() {
   const { t } = useTranslation()
   const fmt = useFormatDateTime()
   const { user } = useAuth()
+  const { canAdmin } = useWorkspaceAccess()
   const { projectId } = useParams<{ projectId: string }>()
   const base =
     projectId != null && projectId !== ''
@@ -73,14 +75,14 @@ export default function ProjectMessagesPage() {
   const messages = state.status === 'ok' ? (state.data ?? []) : []
   const agents = agentsState.status === 'ok' ? (agentsState.data ?? []) : []
   const operableAgents = useMemo(
-    () => agents.filter((agent) => projectId != null && projectId !== '' && canOperateAgent(user, projectId, agent.name)),
-    [agents, projectId, user],
+    () => agents.filter((agent) => projectId != null && projectId !== '' && (canAdmin || canOperateAgent(user, projectId, agent.name))),
+    [agents, canAdmin, projectId, user],
   )
   const canMutateMailbox = useCallback((mailbox: string) => {
-    if (mailbox === 'human') return isSystemAdmin(user)
+    if (mailbox === 'human') return canAdmin || isSystemAdmin(user)
     const [project, agent] = mailbox.split('/', 2)
-    return Boolean(project && agent && canOperateAgent(user, project, agent))
-  }, [user])
+    return Boolean(project && agent && (canAdmin || canOperateAgent(user, project, agent)))
+  }, [canAdmin, user])
 
   const totalMsgPages = Math.ceil(messages.length / msgsPerPage)
   const pagedMessages = useMemo(() => {
