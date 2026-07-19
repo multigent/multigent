@@ -281,6 +281,8 @@ func (s *Server) Handler() http.Handler {
 	mux.HandleFunc("POST /api/v1/workflows", s.handleCreateWorkflow)
 	mux.HandleFunc("GET /api/v1/workflow-templates", s.handleListWorkflowTemplates)
 	mux.HandleFunc("GET /api/v1/playbook-templates", s.handleListPlaybookTemplates)
+	mux.HandleFunc("GET /api/v1/playbook-installs", s.handleListPlaybookInstalls)
+	mux.HandleFunc("POST /api/v1/playbook-templates/{playbookId}/install", s.handleInstallPlaybookTemplate)
 	mux.HandleFunc("GET /api/v1/playbook-templates/{playbookId}", s.handleGetPlaybookTemplate)
 	mux.HandleFunc("GET /api/v1/workflows/{workflowId}", s.handleGetWorkflow)
 	mux.HandleFunc("PUT /api/v1/workflows/{workflowId}", s.handleUpdateWorkflow)

@@ -1,5 +1,7 @@
 package entity
 
+import "time"
+
 type PlaybookTemplate struct {
 	ID             string                     `json:"id" yaml:"id"`
 	Name           string                     `json:"name" yaml:"name"`
@@ -73,4 +75,34 @@ type PlaybookMetric struct {
 	ID          string `json:"id" yaml:"id"`
 	Name        string `json:"name" yaml:"name"`
 	Description string `json:"description" yaml:"description"`
+}
+
+type PlaybookInstall struct {
+	ID           string                    `json:"id"`
+	PlaybookID   string                    `json:"playbookId"`
+	PlaybookName string                    `json:"playbookName"`
+	Locale       string                    `json:"locale"`
+	CreatedBy    string                    `json:"createdBy"`
+	CreatedAt    time.Time                 `json:"createdAt"`
+	Objects      []PlaybookInstalledObject `json:"objects"`
+}
+
+type PlaybookInstalledObject struct {
+	Type     string `json:"type"`
+	ID       string `json:"id"`
+	Name     string `json:"name"`
+	ParentID string `json:"parentId,omitempty"`
+	Status   string `json:"status"` // created or existing
+}
+
+type PlaybookObjectProvenance struct {
+	ObjectType   string    `json:"objectType"`
+	ObjectID     string    `json:"objectId"`
+	ParentID     string    `json:"parentId,omitempty"`
+	PlaybookID   string    `json:"playbookId"`
+	PlaybookName string    `json:"playbookName"`
+	InstallID    string    `json:"installId"`
+	InstalledBy  string    `json:"installedBy"`
+	InstalledAt  time.Time `json:"installedAt"`
+	Status       string    `json:"status"`
 }

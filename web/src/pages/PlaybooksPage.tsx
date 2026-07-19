@@ -1,8 +1,10 @@
-import { useMemo, type ReactNode } from 'react'
+import { useMemo, useState, type ReactNode } from 'react'
 import { useTranslation } from 'react-i18next'
 import { useNavigate, useParams } from 'react-router-dom'
 import { ArrowLeft, CheckCircle2, GitBranch, LibraryBig, ListChecks, Puzzle, ShieldCheck, Users, Wrench } from 'lucide-react'
 import { PlaceholderCard } from '../components/ui/PlaceholderCard'
+import { showToast } from '../components/ui/Toast'
+import { apiPost } from '../lib/api'
 import { cn } from '../lib/cn'
 import { useApiJson } from '../lib/use-api'
 
@@ -85,8 +87,26 @@ type PlaybookTemplate = {
   setupQuestions?: PlaybookSetupQuestion[]
   successMetrics?: PlaybookMetric[]
 }
+type PlaybookInstalledObject = {
+  type: string
+  id: string
+  name: string
+  parentId?: string
+  status: 'created' | 'existing'
+}
+type PlaybookInstall = {
+  id: string
+  playbookId: string
+  playbookName: string
+  locale: string
+  createdBy: string
+  createdAt: string
+  objects: PlaybookInstalledObject[]
+}
 
 type PlaybookListResponse = { templates: PlaybookTemplate[] }
+type PlaybookInstallsResponse = { installs: PlaybookInstall[] }
+type PlaybookInstallResponse = { install: PlaybookInstall; alreadyInstalled?: boolean }
 
 const primaryButtonCls = 'rounded-lg border border-sky-600 bg-white px-3 py-2 text-sm font-medium text-sky-700 hover:bg-sky-50 disabled:opacity-50 dark:border-sky-500 dark:bg-zinc-900 dark:text-sky-400 dark:hover:bg-zinc-800'
 
@@ -96,12 +116,16 @@ export default function PlaybooksPage() {
   const params = useParams()
   const locale = i18n.resolvedLanguage || i18n.language || 'en'
   const listState = useApiJson<PlaybookListResponse>(`/api/v1/playbook-templates?locale=${encodeURIComponent(locale)}`, 0)
+  const [installReloadKey, setInstallReloadKey] = useState(0)
+  const installState = useApiJson<PlaybookInstallsResponse>('/api/v1/playbook-installs', installReloadKey)
   const detailState = useApiJson<PlaybookTemplate>(
     params.playbookId ? `/api/v1/playbook-templates/${encodeURIComponent(params.playbookId)}?locale=${encodeURIComponent(locale)}` : null,
     0,
   )
   const templates = listState.status === 'ok' ? listState.data.templates : []
   const selected = params.playbookId && detailState.status === 'ok' ? detailState.data : undefined
+  const installs = installState.status === 'ok' ? installState.data.installs : []
+  const installedByPlaybook = useMemo(() => new Map(installs.map((install) => [install.playbookId, install])), [installs])
 
   if (params.playbookId) {
     return (
@@ -112,7 +136,14 @@ export default function PlaybooksPage() {
             <p className="text-[13px]">{detailState.error.message}</p>
           </PlaceholderCard>
         )}
-        {selected && <PlaybookDetail playbook={selected} onBack={() => navigate('/playbooks')} />}
+        {selected && (
+          <PlaybookDetail
+            playbook={selected}
+            install={installedByPlaybook.get(selected.id)}
+            onInstalled={() => setInstallReloadKey((v) => v + 1)}
+            onBack={() => navigate('/playbooks')}
+          />
+        )}
       </div>
     )
   }
@@ -161,6 +192,9 @@ export default function PlaybooksPage() {
                     <div className="flex flex-wrap items-center gap-2">
                       <h2 className="line-clamp-1 text-sm font-semibold text-neutral-900 dark:text-zinc-100">{playbook.name}</h2>
                       <span className="rounded-full bg-neutral-100 px-2 py-0.5 text-[11px] font-medium text-neutral-500 dark:bg-zinc-800 dark:text-zinc-400">{playbook.category}</span>
+                      {installedByPlaybook.has(playbook.id) && (
+                        <span className="rounded-full bg-emerald-50 px-2 py-0.5 text-[11px] font-medium text-emerald-700 dark:bg-emerald-950/40 dark:text-emerald-300">{t('playbooks.installed')}</span>
+                      )}
                     </div>
                     <p className="mt-1 text-xs text-neutral-400 dark:text-zinc-500">{playbook.complexity}</p>
                   </div>
@@ -176,12 +210,27 @@ export default function PlaybooksPage() {
   )
 }
 
-function PlaybookDetail({ playbook, onBack }: { playbook: PlaybookTemplate; onBack: () => void }) {
-  const { t } = useTranslation()
+function PlaybookDetail({ playbook, install, onBack, onInstalled }: { playbook: PlaybookTemplate; install?: PlaybookInstall; onBack: () => void; onInstalled: () => void }) {
+  const { t, i18n } = useTranslation()
+  const [installing, setInstalling] = useState(false)
   const workflows = playbook.workflows ?? []
   const firstWorkflow = workflows[0]
   const steps = firstWorkflow?.definition.steps ?? []
   const workflowSummary = useMemo(() => steps.slice(0, 6), [steps])
+
+  async function handleInstall() {
+    if (installing || install) return
+    setInstalling(true)
+    try {
+      const res = await apiPost<PlaybookInstallResponse>(`/api/v1/playbook-templates/${encodeURIComponent(playbook.id)}/install`, {
+        locale: i18n.resolvedLanguage || i18n.language || 'en',
+      })
+      showToast(res.alreadyInstalled ? t('playbooks.alreadyInstalled') : t('playbooks.installSuccess'), 'success')
+      onInstalled()
+    } finally {
+      setInstalling(false)
+    }
+  }
 
   return (
     <div className="space-y-5">
@@ -196,10 +245,12 @@ function PlaybookDetail({ playbook, onBack }: { playbook: PlaybookTemplate; onBa
           <h1 className="text-xl font-semibold text-neutral-900 dark:text-zinc-100">{playbook.name}</h1>
           <p className="mt-1 max-w-4xl text-sm leading-relaxed text-neutral-500 dark:text-zinc-500">{playbook.description}</p>
         </div>
-        <button type="button" disabled className={primaryButtonCls} title={t('playbooks.installSoon')}>
-          {t('playbooks.install')}
+        <button type="button" disabled={installing || Boolean(install)} onClick={handleInstall} className={primaryButtonCls}>
+          {install ? t('playbooks.installed') : installing ? t('playbooks.installing') : t('playbooks.install')}
         </button>
       </div>
+
+      {install && <InstallSummary install={install} />}
 
       <div className="rounded-xl border border-neutral-200/80 bg-white p-5 dark:border-zinc-700/60 dark:bg-zinc-900/30">
         <PlaybookStats playbook={playbook} />
@@ -320,6 +371,41 @@ function PlaybookDetail({ playbook, onBack }: { playbook: PlaybookTemplate; onBa
         </Panel>
       </div>
     </div>
+  )
+}
+
+function InstallSummary({ install }: { install: PlaybookInstall }) {
+  const { t } = useTranslation()
+  const grouped = useMemo(() => {
+    const out = new Map<string, PlaybookInstalledObject[]>()
+    for (const obj of install.objects ?? []) {
+      const items = out.get(obj.type) ?? []
+      items.push(obj)
+      out.set(obj.type, items)
+    }
+    return Array.from(out.entries())
+  }, [install.objects])
+  return (
+    <section className="rounded-xl border border-emerald-200/80 bg-emerald-50/60 p-4 dark:border-emerald-900/60 dark:bg-emerald-950/20">
+      <div className="flex flex-wrap items-center justify-between gap-3">
+        <div>
+          <p className="text-sm font-semibold text-emerald-900 dark:text-emerald-100">{t('playbooks.installRecord')}</p>
+          <p className="mt-1 text-xs text-emerald-700/80 dark:text-emerald-300/80">
+            {t('playbooks.installedBy', { user: install.createdBy || 'system' })}
+          </p>
+        </div>
+        <span className="rounded-full bg-white px-2.5 py-1 text-xs font-medium text-emerald-700 ring-1 ring-emerald-200 dark:bg-emerald-950/30 dark:text-emerald-200 dark:ring-emerald-900">
+          {install.objects?.length ?? 0} {t('playbooks.objects')}
+        </span>
+      </div>
+      <div className="mt-3 flex flex-wrap gap-2">
+        {grouped.map(([type, objects]) => (
+          <span key={type} className="rounded-full bg-white px-2.5 py-1 text-xs text-emerald-800 ring-1 ring-emerald-200 dark:bg-zinc-900/40 dark:text-emerald-200 dark:ring-emerald-900/70">
+            {t(`playbooks.objectTypes.${type}`, type)} · {objects.length}
+          </span>
+        ))}
+      </div>
+    </section>
   )
 }
 
