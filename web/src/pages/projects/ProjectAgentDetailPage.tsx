@@ -14,6 +14,7 @@ import { useFormatDateTime } from '../../lib/format-datetime'
 import { useApiJson } from '../../lib/use-api'
 import { apiDelete, apiFetch, apiPost, apiPut, apiPatch } from '../../lib/api'
 import { canConfigureAgent, canManageProject, canOperateAgent, useAuth } from '../../lib/auth'
+import { useWorkspaceAccess } from '../../lib/workspace-access'
 import { Pagination } from '../../components/ui/Pagination'
 import { AgentChannelPanel } from '../../components/project/AgentChannelPanel'
 
@@ -382,6 +383,7 @@ function ModelSelector({ project, agentName, currentModel, currentHttpAgent, onC
 export default function ProjectAgentDetailPage() {
   const { t } = useTranslation()
   const { user } = useAuth()
+  const { canAdmin: canAdminWorkspace } = useWorkspaceAccess()
   const navigate = useNavigate()
   const { projectId, agentName } = useParams<{ projectId: string; agentName: string }>()
 
@@ -434,9 +436,9 @@ export default function ProjectAgentDetailPage() {
 
   if (!projectId || !agentName) return null
 
-  const canManageThisProject = canManageProject(user, projectId)
-  const canConfigureThisAgent = canConfigureAgent(user, projectId, agentName)
-  const canRunThisAgent = canOperateAgent(user, projectId, agentName)
+  const canManageThisProject = canAdminWorkspace || canManageProject(user, projectId)
+  const canConfigureThisAgent = canAdminWorkspace || canConfigureAgent(user, projectId, agentName)
+  const canRunThisAgent = canAdminWorkspace || canOperateAgent(user, projectId, agentName)
   const isHuman = ctxState.status === 'ok' && ctxState.data.model === 'human'
   const modelCls = MODEL_COLORS[ctxState.status === 'ok' ? ctxState.data.model : ''] ?? ''
   const HeaderIcon = isHuman ? User : Bot

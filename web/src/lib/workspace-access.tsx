@@ -55,7 +55,7 @@ export function WorkspaceAccessProvider({ children }: { children: ReactNode }) {
 
   const value = useMemo(() => {
     const role = workspace?.currentUserRole ?? ''
-    const canAdmin = workspace?.currentUserCanAdmin ?? (!user || user.role === 'admin')
+    const canAdmin = workspace?.currentUserCanAdmin ?? Boolean(user && user.role === 'admin')
     return {
       loading,
       workspace,

@@ -1,13 +1,15 @@
 import { useEffect, useMemo, useState } from 'react'
 import { useTranslation } from 'react-i18next'
 import { Lock, LogIn, Mail, UserPlus } from 'lucide-react'
-import { apiLoginPost, apiPublicFetch } from '../lib/api'
+import { apiLoginPost, apiPublicFetch, apiUrl } from '../lib/api'
 import { useAuth, type AuthUser } from '../lib/auth'
 
 type LoginResponse = {
   token: string
   username: string
   role: string
+  workspaceRole?: string
+  currentUserCanAdmin?: boolean
   displayName?: string
   email?: string
   avatar?: string
@@ -52,17 +54,31 @@ export default function LoginPage() {
       .catch((err) => setError(err instanceof Error ? err.message : String(err)))
   }, [inviteToken])
 
-  function finishLogin(res: LoginResponse) {
+  async function finishLogin(res: LoginResponse) {
     const user: AuthUser = {
       username: res.username,
       role: res.role,
+      workspaceRole: res.workspaceRole,
+      currentUserCanAdmin: res.currentUserCanAdmin,
       displayName: res.displayName,
       email: res.email,
       avatar: res.avatar,
       projects: res.projects,
       linkedAgents: res.linkedAgents,
     }
-    login(res.token, user)
+    let hydrated = user
+    try {
+      const me = await fetch(apiUrl('/api/v1/auth/me'), {
+        headers: {
+          Accept: 'application/json',
+          Authorization: `Bearer ${res.token}`,
+        },
+      })
+      if (me.ok) hydrated = await me.json() as AuthUser
+    } catch {
+      // Keep the login response if the workspace summary is not available yet.
+    }
+    login(res.token, hydrated)
     if (inviteToken) {
       window.history.replaceState(null, '', '/')
     }
@@ -75,13 +91,13 @@ export default function LoginPage() {
     try {
       if (mode === 'register') {
         const res = await apiLoginPost<LoginResponse>('/api/v1/auth/register', { email, password, displayName })
-        finishLogin(res)
+        await finishLogin(res)
       } else if (mode === 'invite') {
         const res = await apiLoginPost<LoginResponse>(`/api/v1/invitations/${encodeURIComponent(inviteToken)}/accept`, { password, displayName })
-        finishLogin(res)
+        await finishLogin(res)
       } else {
         const res = await apiLoginPost<LoginResponse>('/api/v1/auth/login', { username: email, password })
-        finishLogin(res)
+        await finishLogin(res)
       }
     } catch (err) {
       setError(err instanceof Error ? err.message : String(err))

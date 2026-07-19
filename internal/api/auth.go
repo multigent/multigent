@@ -805,14 +805,21 @@ func (s *Server) handleAuthMe(w http.ResponseWriter, r *http.Request) {
 		s.jsonErrorCode(w, http.StatusNotFound, ErrCodeUserNotFound, "user not found")
 		return
 	}
+	workspaceRole := ""
+	currentUserCanAdmin := false
+	if workspaceID, err := s.ensureCurrentWorkspaceForUser(r); err == nil && workspaceID != "" {
+		workspaceRole, currentUserCanAdmin = s.currentWorkspaceRole(r, workspaceID)
+	}
 	_ = json.NewEncoder(w).Encode(map[string]any{
-		"username":     user.Username,
-		"role":         user.Role,
-		"displayName":  user.DisplayName,
-		"email":        user.Email,
-		"avatar":       user.Avatar,
-		"projects":     user.Projects,
-		"linkedAgents": user.LinkedAgents,
+		"username":            user.Username,
+		"role":                user.Role,
+		"workspaceRole":       workspaceRole,
+		"currentUserCanAdmin": currentUserCanAdmin,
+		"displayName":         user.DisplayName,
+		"email":               user.Email,
+		"avatar":              user.Avatar,
+		"projects":            user.Projects,
+		"linkedAgents":        user.LinkedAgents,
 	})
 }
 

@@ -11,6 +11,8 @@ export type ProjectAccess = {
 export type AuthUser = {
   username: string
   role: string // admin | member
+  workspaceRole?: string
+  currentUserCanAdmin?: boolean
   displayName?: string
   email?: string
   avatar?: string
@@ -88,11 +90,15 @@ const projectRolePower: Record<string, number> = {
 }
 
 export function isSystemAdmin(user: AuthUser | null | undefined): boolean {
-  return !user || user.role === 'admin'
+  return Boolean(user && user.role === 'admin')
+}
+
+export function isWorkspaceAdmin(user: AuthUser | null | undefined): boolean {
+  return Boolean(user?.currentUserCanAdmin || user?.workspaceRole === 'owner' || user?.workspaceRole === 'admin' || isSystemAdmin(user))
 }
 
 export function projectRole(user: AuthUser | null | undefined, project: string): string | null {
-  if (isSystemAdmin(user)) return 'manager'
+  if (isWorkspaceAdmin(user)) return 'manager'
   return user?.projects?.find((p) => p.project === project)?.role ?? null
 }
 
