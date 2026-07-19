@@ -616,6 +616,7 @@ function WorkflowRuntimePanel({
   const { t } = useTranslation()
   const outputValues = instance?.outputValues ?? parseWorkflowArtifact(instance?.outputArtifact || instance?.summary || '')
   const inputValues = instance?.inputValues ?? parseWorkflowArtifact(instance?.inputArtifact || '')
+  const hasStructuredInput = Object.keys(inputValues).length > 0
   const stepTitleByID = useMemo(() => new Map(steps.map((item) => [item.id, item.title])), [steps])
 
   if (!step) {
@@ -646,7 +647,7 @@ function WorkflowRuntimePanel({
         {hasInput && (
           <WorkflowPanelBlock title={t('workflows.detail.input')}>
             <WorkflowFieldList fields={step.inputFields ?? []} values={inputValues} />
-            {instance?.inputArtifact && <WorkflowArtifact value={instance.inputArtifact} />}
+            {instance?.inputArtifact && !hasStructuredInput && <WorkflowArtifact value={instance.inputArtifact} />}
           </WorkflowPanelBlock>
         )}
 
@@ -837,7 +838,13 @@ function parseWorkflowArtifact(value: string): Record<string, string> {
   try {
     const parsed = JSON.parse(unescaped)
     if (parsed && typeof parsed === 'object' && !Array.isArray(parsed)) {
-      for (const [key, raw] of Object.entries(parsed)) {
+      const record = parsed as Record<string, unknown>
+      const wrappedValues = record.inputs && typeof record.inputs === 'object' && !Array.isArray(record.inputs)
+        ? record.inputs
+        : record.outputs && typeof record.outputs === 'object' && !Array.isArray(record.outputs)
+          ? record.outputs
+          : record
+      for (const [key, raw] of Object.entries(wrappedValues as Record<string, unknown>)) {
         if (typeof raw === 'string') out[key] = raw
         else out[key] = JSON.stringify(raw)
       }
