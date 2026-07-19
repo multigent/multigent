@@ -26,6 +26,7 @@ import (
 	"os"
 	"os/exec"
 	"path/filepath"
+	"sort"
 	"strings"
 	"time"
 
@@ -607,6 +608,11 @@ func (r *Runner) workflowPromptContext(project, agentName, taskID string) string
 		b.WriteString("Current step input artifact:\n")
 		fmt.Fprintf(&b, "%s\n\n", indentWorkflowBlock(limitWorkflowText(inst.InputArtifact, 3000)))
 	}
+	if len(inst.InputValues) > 0 {
+		b.WriteString("Current step structured inputs:\n")
+		writeWorkflowValues(&b, inst.InputValues)
+		b.WriteString("\n")
+	}
 	if len(step.OutputFields) > 0 {
 		b.WriteString("Required output fields:\n")
 		writeWorkflowFields(&b, step.OutputFields)
@@ -619,7 +625,10 @@ func (r *Runner) workflowPromptContext(project, agentName, taskID string) string
 	}
 	b.WriteString("Instructions:\n")
 	b.WriteString("- Treat the current step as the workflow contract for this task.\n")
-	b.WriteString("- Produce the required output fields explicitly in your task summary or artifact.\n")
+	b.WriteString("- Finish workflow steps with structured outputs using `mga task done --id ")
+	b.WriteString(taskID)
+	b.WriteString(" --status success --output <field>=<value>` for every required output field, or use `--output-json '{...}'`.\n")
+	b.WriteString("- Do not put required workflow fields only in natural-language summary; the server validates output field names against the current step spec.\n")
 	b.WriteString("- If this step needs human review or clarification, use `mga task confirm-request` instead of blocking silently.\n")
 	b.WriteString("- To inspect the full workflow run, run `mga workflow current --task-id ")
 	b.WriteString(taskID)
@@ -662,6 +671,21 @@ func writeWorkflowFields(b *strings.Builder, fields []entity.WorkflowField) {
 	}
 }
 
+func writeWorkflowValues(b *strings.Builder, values map[string]string) {
+	keys := make([]string, 0, len(values))
+	for key := range values {
+		keys = append(keys, key)
+	}
+	sort.Strings(keys)
+	for _, key := range keys {
+		value := strings.TrimSpace(values[key])
+		if value == "" {
+			continue
+		}
+		fmt.Fprintf(b, "- `%s`: %s\n", key, limitWorkflowText(value, 1200))
+	}
+}
+
 func workflowPreviousOutputs(steps []entity.WorkflowStep, instances []entity.WorkflowStepInstance, activeStepID string) string {
 	titleByID := make(map[string]string, len(steps))
 	for _, step := range steps {
@@ -674,7 +698,7 @@ func workflowPreviousOutputs(steps []entity.WorkflowStep, instances []entity.Wor
 		}
 		summary := strings.TrimSpace(inst.Summary)
 		output := strings.TrimSpace(inst.OutputArtifact)
-		if summary == "" && output == "" {
+		if summary == "" && output == "" && len(inst.OutputValues) == 0 {
 			continue
 		}
 		title := titleByID[inst.StepID]
@@ -687,6 +711,9 @@ func workflowPreviousOutputs(steps []entity.WorkflowStep, instances []entity.Wor
 		}
 		if output != "" {
 			fmt.Fprintf(&b, "  - Output: %s\n", limitWorkflowText(strings.ReplaceAll(output, "\n", " "), 1600))
+		}
+		if len(inst.OutputValues) > 0 {
+			writeWorkflowValues(&b, inst.OutputValues)
 		}
 	}
 	return b.String()

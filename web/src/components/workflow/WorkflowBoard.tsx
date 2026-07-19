@@ -100,6 +100,8 @@ export type WorkflowStepInstance = {
   finishedAt?: string
   inputArtifact?: string
   outputArtifact?: string
+  inputValues?: Record<string, string>
+  outputValues?: Record<string, string>
 }
 
 type Props = {

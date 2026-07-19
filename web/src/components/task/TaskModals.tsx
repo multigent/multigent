@@ -260,7 +260,7 @@ export function TaskDetailModal({ task, onClose, onEdit, canEdit = true }: { tas
     ? workflowState.data.steps.find((step) => step.stepId === workflowState.data.run.activeStepId)
     : undefined
   const previousWorkflowOutputs = workflowState.status === 'ok'
-    ? workflowState.data.steps.filter((step) => step.stepId !== workflowState.data.run.activeStepId && (step.outputArtifact || step.summary))
+    ? workflowState.data.steps.filter((step) => step.stepId !== workflowState.data.run.activeStepId && (step.outputArtifact || step.summary || Object.keys(step.outputValues ?? {}).length > 0))
     : []
   const canReviewWorkflow = activeWorkflowStep?.type === 'human_review'
 
@@ -604,8 +604,8 @@ function WorkflowRuntimePanel({
   onSubmitReview: (decision: 'approved' | 'needs_changes') => void
 }) {
   const { t } = useTranslation()
-  const outputValues = parseWorkflowArtifact(instance?.outputArtifact || instance?.summary || '')
-  const inputValues = parseWorkflowArtifact(instance?.inputArtifact || '')
+  const outputValues = instance?.outputValues ?? parseWorkflowArtifact(instance?.outputArtifact || instance?.summary || '')
+  const inputValues = instance?.inputValues ?? parseWorkflowArtifact(instance?.inputArtifact || '')
   const stepTitleByID = useMemo(() => new Map(steps.map((item) => [item.id, item.title])), [steps])
 
   if (!step) {
@@ -646,7 +646,7 @@ function WorkflowRuntimePanel({
               {previousOutputs.map((item) => (
                 <div key={item.id} className="rounded-lg bg-neutral-50 p-3 dark:bg-zinc-900">
                   <p className="text-xs font-semibold text-neutral-600 dark:text-zinc-300">{stepTitleByID.get(item.stepId) || item.stepId}</p>
-                  {item.outputArtifact ? <WorkflowArtifact value={item.outputArtifact} compact /> : item.summary ? <WorkflowArtifact value={item.summary} compact /> : null}
+                  <WorkflowValuesOrArtifact values={item.outputValues} artifact={item.outputArtifact || item.summary} compact />
                 </div>
               ))}
             </div>
@@ -691,11 +691,39 @@ function WorkflowRuntimePanel({
           ) : (
             <>
               <WorkflowFieldList fields={step.outputFields ?? []} values={outputValues} />
-              {instance?.outputArtifact ? <WorkflowArtifact value={instance.outputArtifact} /> : instance?.summary ? <WorkflowArtifact value={instance.summary} /> : <p className="text-sm text-neutral-400 dark:text-zinc-600">{t('workflows.detail.notSpecified')}</p>}
+              {Object.keys(outputValues).length > 0
+                ? null
+                : <WorkflowValuesOrArtifact values={instance?.outputValues} artifact={instance?.outputArtifact || instance?.summary} />}
             </>
           )}
         </WorkflowPanelBlock>
       </div>
+    </div>
+  )
+}
+
+function WorkflowValuesOrArtifact({ values, artifact, compact = false }: { values?: Record<string, string>; artifact?: string; compact?: boolean }) {
+  const { t } = useTranslation()
+  if (values && Object.keys(values).length > 0) {
+    return <WorkflowValueMap values={values} compact={compact} />
+  }
+  if (artifact) {
+    return <WorkflowArtifact value={artifact} compact={compact} />
+  }
+  return <p className="text-sm text-neutral-400 dark:text-zinc-600">{t('workflows.detail.notSpecified')}</p>
+}
+
+function WorkflowValueMap({ values, compact = false }: { values: Record<string, string>; compact?: boolean }) {
+  const entries = Object.entries(values).filter(([, value]) => String(value ?? '').trim())
+  if (entries.length === 0) return null
+  return (
+    <div className={cn('space-y-2', compact ? 'max-h-40 overflow-y-auto' : '')}>
+      {entries.map(([key, value]) => (
+        <div key={key} className="rounded-lg bg-neutral-50 p-2.5 dark:bg-zinc-900">
+          <p className="font-mono text-xs font-semibold text-neutral-700 dark:text-zinc-300">{key}</p>
+          <p className="mt-1 whitespace-pre-wrap break-words text-sm text-neutral-700 dark:text-zinc-300">{String(value)}</p>
+        </div>
+      ))}
     </div>
   )
 }
@@ -736,7 +764,20 @@ function WorkflowArtifact({ value, compact = false }: { value: string; compact?:
 
 function parseWorkflowArtifact(value: string): Record<string, string> {
   const out: Record<string, string> = {}
-  const lines = unescapeBreaks(value).split('\n')
+  const unescaped = unescapeBreaks(value)
+  try {
+    const parsed = JSON.parse(unescaped)
+    if (parsed && typeof parsed === 'object' && !Array.isArray(parsed)) {
+      for (const [key, raw] of Object.entries(parsed)) {
+        if (typeof raw === 'string') out[key] = raw
+        else out[key] = JSON.stringify(raw)
+      }
+      return out
+    }
+  } catch {
+    // Fall back to old field: value snippets for incomplete historical runs.
+  }
+  const lines = unescaped.split('\n')
   for (const line of lines) {
     const match = line.match(/^\s*(?:[-*]\s*)?`?([A-Za-z0-9_.-]+)`?\s*[:：]\s*(.+?)\s*$/)
     if (!match) continue

@@ -305,9 +305,9 @@ func (s *Server) handlePostTaskWorkflowReview(w http.ResponseWriter, r *http.Req
 		outputs["comments"] = comments
 	}
 	summary := formatWorkflowReviewFields(outputs)
-	transition, err := wfStore.CompleteAndAdvance(project, taskID, summary, summary, "completed", decision, "")
+	transition, err := wfStore.CompleteAndAdvance(project, taskID, summary, "", outputs, "completed")
 	if err != nil {
-		s.serverError(w, err)
+		s.jsonError(w, http.StatusBadRequest, err.Error())
 		return
 	}
 	_ = s.ts.RemoveFromInbox(taskID)

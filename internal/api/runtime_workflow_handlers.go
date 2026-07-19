@@ -46,10 +46,11 @@ type runtimeTaskUpdateBody struct {
 }
 
 type runtimeTaskDoneBody struct {
-	Agent   string `json:"agent"`
-	Status  string `json:"status"`
-	Summary string `json:"summary"`
-	Error   string `json:"error"`
+	Agent   string            `json:"agent"`
+	Status  string            `json:"status"`
+	Summary string            `json:"summary"`
+	Error   string            `json:"error"`
+	Outputs map[string]string `json:"outputs"`
 }
 
 type runtimeConfirmRequestBody struct {
@@ -405,12 +406,18 @@ func (s *Server) handleRuntimeTaskDone(w http.ResponseWriter, r *http.Request) {
 	t.LastError = strings.TrimSpace(body.Error)
 	t.UpdatedAt = now
 	entity.ApplyStatusTimestamps(t, prev, now)
-	if err := s.ts.PersistTask(principal.Project, agent, t); err != nil {
-		s.serverError(w, err)
+	transition, transitioned, err := s.recordRuntimeTaskWorkflowOutput(principal.WorkspaceID, principal.Project, agent, t, body.Outputs)
+	if err != nil {
+		s.jsonError(w, http.StatusBadRequest, err.Error())
 		return
 	}
-	transition, transitioned := s.recordRuntimeTaskWorkflowOutput(principal.WorkspaceID, principal.Project, agent, t)
-	if transitioned {
+	if !transitioned || transition.Done {
+		if err := s.ts.PersistTask(principal.Project, agent, t); err != nil {
+			s.serverError(w, err)
+			return
+		}
+	}
+	if transitioned && !transition.Done {
 		if err := s.activateNextWorkflowStep(principal.Project, agent, t, transition); err != nil {
 			s.serverError(w, err)
 			return
@@ -433,28 +440,28 @@ func (s *Server) handleRuntimeTaskDone(w http.ResponseWriter, r *http.Request) {
 	_ = json.NewEncoder(w).Encode(taskToRow(t, principal.Project, agent, true))
 }
 
-func (s *Server) recordRuntimeTaskWorkflowOutput(workspaceID, project, agent string, t *entity.Task) (workflowstore.TransitionResult, bool) {
+func (s *Server) recordRuntimeTaskWorkflowOutput(workspaceID, project, agent string, t *entity.Task, outputs map[string]string) (workflowstore.TransitionResult, bool, error) {
 	var result workflowstore.TransitionResult
 	if s == nil || s.controlDB == nil || t == nil || strings.TrimSpace(workspaceID) == "" {
-		return result, false
+		return result, false, nil
 	}
 	stepStatus := "completed"
 	if t.Status == entity.TaskStatusDoneFailed {
 		stepStatus = "failed"
 	}
 	if t.Status != entity.TaskStatusDoneSuccess && t.Status != entity.TaskStatusDoneFailed {
-		return result, false
+		return result, false, nil
 	}
 	wfStore := workflowstore.NewStore(s.controlDB, workspaceID)
 	output := strings.TrimSpace(t.Summary)
 	if output == "" {
 		output = strings.TrimSpace(t.LastError)
 	}
-	result, err := wfStore.CompleteAndAdvance(project, t.ID, t.Summary, output, stepStatus, "", "")
+	result, err := wfStore.CompleteAndAdvance(project, t.ID, t.Summary, output, outputs, stepStatus)
 	if err != nil {
-		return result, false
+		return result, false, err
 	}
-	return result, result.Next != nil || result.Done
+	return result, result.Next != nil || result.Done, nil
 }
 
 func (s *Server) activateNextWorkflowStep(project, previousAgent string, completed *entity.Task, transition workflowstore.TransitionResult) error {

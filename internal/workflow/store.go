@@ -2,6 +2,7 @@ package workflow
 
 import (
 	"encoding/json"
+	"fmt"
 	"sort"
 	"strings"
 	"time"
@@ -60,7 +61,7 @@ func DefinitionFromTemplate(templateID, locale, name string) (entity.WorkflowDef
 func (s *Store) SeedDefaults() error {
 	if def, ok, err := s.Definition("software-delivery-v1"); err != nil {
 		return err
-	} else if ok && def.Scope == "workspace" && def.Project == "" && def.Version >= 3 && def.StartStepID == "requirement_draft" {
+	} else if ok && def.Scope == "workspace" && def.Project == "" && def.Version >= 4 && def.StartStepID == "requirement_draft" {
 		return nil
 	}
 	now := time.Now().UTC()
@@ -68,7 +69,7 @@ func (s *Store) SeedDefaults() error {
 		ID:          "software-delivery-v1",
 		Name:        "Agentic Software Delivery",
 		Description: "A configurable human-agent delivery workflow. Agents draft artifacts, humans review only the decision gates, and rejected outputs loop back with structured feedback.",
-		Version:     3,
+		Version:     4,
 		Scope:       "workspace",
 		StartStepID: "requirement_draft",
 		CreatedAt:   now,
@@ -181,7 +182,7 @@ func (s *Store) SeedDefaults() error {
 		},
 		Edges: []entity.WorkflowEdge{
 			edge("e-req-to-review", "requirement_draft", "requirement_review", "", nil, nil, true),
-			edge("e-req-review-approve", "requirement_review", "prd_draft", "approved", cond("decision", "eq", "approve"), map[string]string{"approved_requirement": "$output.requirement_draft"}, false),
+			edge("e-req-review-approve", "requirement_review", "prd_draft", "approved", cond("decision", "eq", "approve"), map[string]string{"approved_requirement": "$input.requirement_draft"}, false),
 			edge("e-req-review-rework", "requirement_review", "requirement_draft", "changes requested", cond("decision", "eq", "request_changes"), map[string]string{"review_comments": "$output.comments", "previous_draft": "$input.requirement_draft"}, false),
 			edge("e-prd-to-review", "prd_draft", "prd_review", "", nil, nil, true),
 			edge("e-prd-review-approve", "prd_review", "tech_spec_draft", "approved", cond("decision", "eq", "approve"), map[string]string{"approved_prd": "$output.approved_prd"}, false),
@@ -262,7 +263,7 @@ func softwareDeliveryTemplate(locale string) entity.WorkflowTemplate {
 		},
 		Edges: []entity.WorkflowEdge{
 			edge("e-req-to-review", "requirement_draft", "requirement_review", "", nil, nil, true),
-			edge("e-req-review-approve", "requirement_review", "prd_draft", text["approved"], cond("decision", "eq", "approve"), map[string]string{"approved_requirement": "$output.requirement_draft"}, false),
+			edge("e-req-review-approve", "requirement_review", "prd_draft", text["approved"], cond("decision", "eq", "approve"), map[string]string{"approved_requirement": "$input.requirement_draft"}, false),
 			edge("e-req-review-rework", "requirement_review", "requirement_draft", text["changesRequested"], cond("decision", "eq", "request_changes"), map[string]string{"review_comments": "$output.comments", "previous_draft": "$input.requirement_draft"}, false),
 			edge("e-prd-to-review", "prd_draft", "prd_review", "", nil, nil, true),
 			edge("e-prd-review-approve", "prd_review", "tech_spec_draft", text["approved"], cond("decision", "eq", "approve"), map[string]string{"approved_prd": "$output.approved_prd"}, false),
@@ -663,7 +664,7 @@ type TransitionResult struct {
 	Done     bool
 }
 
-func (s *Store) CompleteAndAdvance(project, taskID, summary, output, status, decision, comments string) (TransitionResult, error) {
+func (s *Store) CompleteAndAdvance(project, taskID, summary, output string, outputValues map[string]string, status string) (TransitionResult, error) {
 	var result TransitionResult
 	run, ok, err := s.RunForTask(project, taskID)
 	if err != nil || !ok {
@@ -682,15 +683,13 @@ func (s *Store) CompleteAndAdvance(project, taskID, summary, output, status, dec
 		return result, nil
 	}
 	now := time.Now().UTC()
-	output = strings.TrimSpace(output)
-	if output == "" {
-		output = strings.TrimSpace(summary)
+	values, err := normalizeWorkflowOutputValues(currentStep, outputValues, summary, output, strings.TrimSpace(status) == "failed")
+	if err != nil {
+		return result, err
 	}
-	if strings.TrimSpace(decision) != "" || strings.TrimSpace(comments) != "" {
-		output = strings.TrimSpace(output + "\n\n" + formatReviewOutput(decision, comments))
-		if summary == "" {
-			summary = formatReviewOutput(decision, comments)
-		}
+	output = workflowValuesJSON(values)
+	if strings.TrimSpace(summary) == "" {
+		summary = workflowSummaryFromValues(values)
 	}
 	for i := range instances {
 		if instances[i].StepID != run.ActiveStepID {
@@ -698,6 +697,7 @@ func (s *Store) CompleteAndAdvance(project, taskID, summary, output, status, dec
 		}
 		instances[i].Summary = strings.TrimSpace(summary)
 		instances[i].OutputArtifact = output
+		instances[i].OutputValues = values
 		instances[i].Status = strings.TrimSpace(status)
 		if instances[i].Status == "" {
 			instances[i].Status = "completed"
@@ -710,7 +710,7 @@ func (s *Store) CompleteAndAdvance(project, taskID, summary, output, status, dec
 		result.Current = instances[i]
 		break
 	}
-	edge, hasNext := chooseNextEdge(def.Edges, currentStep.ID, decision, output)
+	edge, hasNext := chooseNextEdge(def.Edges, currentStep.ID, values, output)
 	if !hasNext {
 		run.Status = "completed"
 		run.ActiveStepID = ""
@@ -748,7 +748,8 @@ func (s *Store) CompleteAndAdvance(project, taskID, summary, output, status, dec
 		instances[i].Status = "running"
 		instances[i].StartedAt = now
 		instances[i].UpdatedAt = now
-		instances[i].InputArtifact = buildNextInputArtifact(currentStep, result.Current, nextStep, edge, output)
+		instances[i].InputValues = buildNextInputValues(result.Current, nextStep, edge)
+		instances[i].InputArtifact = buildNextInputArtifact(currentStep, result.Current, nextStep, edge)
 		if err := s.SaveStepInstance(&instances[i]); err != nil {
 			return result, err
 		}
@@ -760,6 +761,103 @@ func (s *Store) CompleteAndAdvance(project, taskID, summary, output, status, dec
 	return result, nil
 }
 
+func normalizeWorkflowOutputValues(step entity.WorkflowStep, values map[string]string, summary, output string, failed bool) (map[string]string, error) {
+	out := make(map[string]string)
+	for key, value := range values {
+		key = strings.TrimSpace(key)
+		if key == "" {
+			continue
+		}
+		out[key] = strings.TrimSpace(value)
+	}
+	if len(step.OutputFields) == 0 {
+		if strings.TrimSpace(output) != "" {
+			out["output"] = strings.TrimSpace(output)
+		}
+		if strings.TrimSpace(summary) != "" {
+			out["summary"] = strings.TrimSpace(summary)
+		}
+		return out, nil
+	}
+	allowed := make(map[string]entity.WorkflowField, len(step.OutputFields))
+	for _, field := range step.OutputFields {
+		name := strings.TrimSpace(field.Name)
+		if name != "" {
+			allowed[name] = field
+		}
+	}
+	if len(out) == 0 && !failed {
+		return nil, fmt.Errorf("workflow step %q requires structured outputs: %s", step.Title, strings.Join(workflowFieldNames(step.OutputFields), ", "))
+	}
+	for key := range out {
+		if _, ok := allowed[key]; !ok {
+			return nil, fmt.Errorf("workflow output field %q is not defined on step %q", key, step.Title)
+		}
+	}
+	if failed {
+		return out, nil
+	}
+	reviewRejected := step.Type == "human_review" && strings.EqualFold(strings.TrimSpace(out["decision"]), "request_changes")
+	for _, field := range step.OutputFields {
+		name := strings.TrimSpace(field.Name)
+		if name == "" || name == "comments" {
+			continue
+		}
+		if reviewRejected && name != "decision" {
+			continue
+		}
+		if strings.TrimSpace(out[name]) == "" {
+			return nil, fmt.Errorf("workflow output field %q is required for step %q", name, step.Title)
+		}
+	}
+	return out, nil
+}
+
+func workflowFieldNames(fields []entity.WorkflowField) []string {
+	names := make([]string, 0, len(fields))
+	for _, field := range fields {
+		if name := strings.TrimSpace(field.Name); name != "" {
+			names = append(names, name)
+		}
+	}
+	sort.Strings(names)
+	return names
+}
+
+func workflowValuesJSON(values map[string]string) string {
+	if len(values) == 0 {
+		return "{}"
+	}
+	raw, err := json.MarshalIndent(values, "", "  ")
+	if err != nil {
+		return "{}"
+	}
+	return string(raw)
+}
+
+func workflowSummaryFromValues(values map[string]string) string {
+	if v := strings.TrimSpace(values["summary"]); v != "" {
+		return v
+	}
+	keys := make([]string, 0, len(values))
+	for key := range values {
+		keys = append(keys, key)
+	}
+	sort.Strings(keys)
+	items := make([]string, 0, len(keys))
+	for _, key := range keys {
+		value := strings.TrimSpace(values[key])
+		if value == "" {
+			continue
+		}
+		if len(value) > 80 {
+			value = value[:77] + "..."
+		}
+		items = append(items, key+": "+value)
+	}
+	return strings.Join(items, "; ")
+}
+
 func stepByID(steps []entity.WorkflowStep, id string) (entity.WorkflowStep, bool) {
 	for _, step := range steps {
 		if step.ID == id {
@@ -769,7 +867,7 @@ func stepByID(steps []entity.WorkflowStep, id string) (entity.WorkflowStep, bool
 	return entity.WorkflowStep{}, false
 }
 
-func chooseNextEdge(edges []entity.WorkflowEdge, from, decision, output string) (entity.WorkflowEdge, bool) {
+func chooseNextEdge(edges []entity.WorkflowEdge, from string, outputValues map[string]string, output string) (entity.WorkflowEdge, bool) {
 	var fallback *entity.WorkflowEdge
 	for i := range edges {
 		edge := edges[i]
@@ -782,7 +880,7 @@ func chooseNextEdge(edges []entity.WorkflowEdge, from, decision, output string) 
 			}
 			continue
 		}
-		if workflowConditionMatches(edge.Condition, decision, output) {
+		if workflowConditionMatches(edge.Condition, outputValues, output) {
 			return edge, true
 		}
 	}
@@ -792,14 +890,16 @@ func chooseNextEdge(edges []entity.WorkflowEdge, from, decision, output string) 
 	return entity.WorkflowEdge{}, false
 }
 
-func workflowConditionMatches(cond *entity.WorkflowEdgeCondition, decision, output string) bool {
+func workflowConditionMatches(cond *entity.WorkflowEdgeCondition, outputValues map[string]string, output string) bool {
 	if cond == nil {
 		return true
 	}
 	field := strings.TrimSpace(cond.Field)
 	value := strings.TrimSpace(cond.Value)
-	if strings.EqualFold(field, "decision") || strings.EqualFold(field, "review_result") {
-		return compareWorkflowValue(decision, cond.Operator, value, cond.Values)
+	if field != "" {
+		if actual, ok := outputValues[field]; ok {
+			return compareWorkflowValue(actual, cond.Operator, value, cond.Values)
+		}
 	}
 	return compareWorkflowValue(output, cond.Operator, value, cond.Values)
 }
@@ -828,68 +928,56 @@ func compareWorkflowValue(actual, op, value string, values []string) bool {
 	}
 }
 
-func formatReviewOutput(decision, comments string) string {
-	var b strings.Builder
-	if strings.TrimSpace(decision) != "" {
-		b.WriteString("decision: ")
-		b.WriteString(strings.TrimSpace(decision))
-	}
-	if strings.TrimSpace(comments) != "" {
-		if b.Len() > 0 {
-			b.WriteString("\n")
+func buildNextInputValues(currentInst entity.WorkflowStepInstance, next entity.WorkflowStep, edge entity.WorkflowEdge) map[string]string {
+	out := make(map[string]string)
+	resolve := func(expr string) string {
+		expr = strings.TrimSpace(expr)
+		switch {
+		case strings.HasPrefix(expr, "$output."):
+			return currentInst.OutputValues[strings.TrimPrefix(expr, "$output.")]
+		case strings.HasPrefix(expr, "$input."):
+			return currentInst.InputValues[strings.TrimPrefix(expr, "$input.")]
+		default:
+			return expr
 		}
-		b.WriteString("comments: ")
-		b.WriteString(strings.TrimSpace(comments))
-	}
-	return b.String()
-}
-
-func buildNextInputArtifact(current entity.WorkflowStep, currentInst entity.WorkflowStepInstance, next entity.WorkflowStep, edge entity.WorkflowEdge, output string) string {
-	var b strings.Builder
-	b.WriteString("Previous step output:\n")
-	b.WriteString("- Step: ")
-	b.WriteString(current.Title)
-	b.WriteString(" (`")
-	b.WriteString(current.ID)
-	b.WriteString("`)\n")
-	if strings.TrimSpace(currentInst.Summary) != "" {
-		b.WriteString("- Summary: ")
-		b.WriteString(strings.TrimSpace(currentInst.Summary))
-		b.WriteString("\n")
-	}
-	if strings.TrimSpace(output) != "" {
-		b.WriteString("\n")
-		b.WriteString(output)
-		b.WriteString("\n")
 	}
 	if len(edge.InputMapping) > 0 {
-		b.WriteString("\nInput mapping:\n")
-		keys := make([]string, 0, len(edge.InputMapping))
-		for key := range edge.InputMapping {
-			keys = append(keys, key)
-		}
-		sort.Strings(keys)
-		for _, key := range keys {
-			b.WriteString("- ")
-			b.WriteString(key)
-			b.WriteString(": ")
-			b.WriteString(edge.InputMapping[key])
-			b.WriteString("\n")
-		}
-	} else if len(next.InputFields) > 0 {
-		b.WriteString("\nExpected input fields for next step:\n")
-		for _, field := range next.InputFields {
-			if strings.TrimSpace(field.Name) == "" {
+		for key, expr := range edge.InputMapping {
+			key = strings.TrimSpace(key)
+			if key == "" {
 				continue
 			}
-			b.WriteString("- ")
-			b.WriteString(field.Name)
-			if strings.TrimSpace(field.Description) != "" {
-				b.WriteString(": ")
-				b.WriteString(field.Description)
-			}
-			b.WriteString("\n")
+			out[key] = strings.TrimSpace(resolve(expr))
+		}
+		return out
+	}
+	for _, field := range next.InputFields {
+		name := strings.TrimSpace(field.Name)
+		if name == "" {
+			continue
+		}
+		if v := strings.TrimSpace(currentInst.OutputValues[name]); v != "" {
+			out[name] = v
 		}
 	}
-	return strings.TrimSpace(b.String())
+	return out
+}
+
+func buildNextInputArtifact(current entity.WorkflowStep, currentInst entity.WorkflowStepInstance, next entity.WorkflowStep, edge entity.WorkflowEdge) string {
+	payload := map[string]any{
+		"previous_step": map[string]string{
+			"id":    current.ID,
+			"title": current.Title,
+		},
+		"outputs": currentInst.OutputValues,
+		"inputs":  buildNextInputValues(currentInst, next, edge),
+	}
+	if len(next.InputFields) > 0 {
+		payload["expected_input_fields"] = workflowFieldNames(next.InputFields)
+	}
+	raw, err := json.MarshalIndent(payload, "", "  ")
+	if err != nil {
+		return ""
+	}
+	return string(raw)
 }

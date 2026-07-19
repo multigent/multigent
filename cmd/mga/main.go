@@ -508,7 +508,8 @@ func newTaskCancelCmd() *cobra.Command {
 }
 
 func newTaskDoneCmd() *cobra.Command {
-	var id, agent, status, summary, errText string
+	var id, agent, status, summary, errText, outputJSON string
+	var outputPairs []string
 	cmd := &cobra.Command{
 		Use:   "done",
 		Short: "Mark a task completed or failed",
@@ -519,7 +520,11 @@ func newTaskDoneCmd() *cobra.Command {
 			if status == "" {
 				status = "success"
 			}
-			body, _ := json.Marshal(map[string]any{"agent": agent, "status": status, "summary": summary, "error": errText})
+			outputs, err := parseTaskDoneOutputs(outputPairs, outputJSON)
+			if err != nil {
+				return err
+			}
+			body, _ := json.Marshal(map[string]any{"agent": agent, "status": status, "summary": summary, "error": errText, "outputs": outputs})
 			resp, err := requestJSON(http.MethodPost, "/api/v1/runtime/tasks/"+url.PathEscape(id)+"/done", nil, body)
 			if err != nil {
 				return err
@@ -532,7 +537,43 @@ func newTaskDoneCmd() *cobra.Command {
 	cmd.Flags().StringVar(&status, "status", "success", "success or failed")
 	cmd.Flags().StringVar(&summary, "summary", "", "completion summary")
 	cmd.Flags().StringVar(&errText, "error", "", "failure reason")
+	cmd.Flags().StringArrayVar(&outputPairs, "output", nil, "structured workflow output as field=value, repeatable")
+	cmd.Flags().StringVar(&outputJSON, "output-json", "", "structured workflow outputs as a JSON object")
 	return cmd
+}
+
+func parseTaskDoneOutputs(pairs []string, rawJSON string) (map[string]string, error) {
+	out := map[string]string{}
+	if strings.TrimSpace(rawJSON) != "" {
+		var decoded map[string]any
+		if err := json.Unmarshal([]byte(rawJSON), &decoded); err != nil {
+			return nil, fmt.Errorf("--output-json must be a JSON object: %w", err)
+		}
+		for key, value := range decoded {
+			key = strings.TrimSpace(key)
+			if key == "" {
+				continue
+			}
+			switch v := value.(type) {
+			case string:
+				out[key] = strings.TrimSpace(v)
+			default:
+				raw, _ := json.Marshal(v)
+				out[key] = strings.TrimSpace(string(raw))
+			}
+		}
+	}
+	for _, pair := range pairs {
+		key, value, ok := strings.Cut(pair, "=")
+		if !ok || strings.TrimSpace(key) == "" {
+			return nil, fmt.Errorf("--output must use field=value")
+		}
+		out[strings.TrimSpace(key)] = strings.TrimSpace(value)
+	}
+	if len(out) == 0 {
+		return nil, nil
+	}
+	return out, nil
 }
 
 func newTaskConfirmRequestCmd() *cobra.Command {
