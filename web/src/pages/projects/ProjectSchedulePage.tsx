@@ -2,7 +2,7 @@ import { useCallback, useEffect, useMemo, useRef, useState } from 'react'
 import { Link, useParams } from 'react-router-dom'
 import { useTranslation } from 'react-i18next'
 import {
-  CalendarClock, ClipboardCopy, Heart, Pause, Pencil, Play, Plus, Power,
+  CalendarClock, ClipboardCopy, Heart, Pause, Pencil, Play, Power,
   MessageSquareText, Trash2, X, Zap,
 } from 'lucide-react'
 import { PlaceholderCard } from '../../components/ui/PlaceholderCard'
@@ -256,7 +256,7 @@ function HeartbeatTab({ agents, projectId, canManage, onChanged }: { agents: Age
                     {(hb.wakeupCountToday ?? 0) > 0 && <span className="ml-1 text-neutral-400 dark:text-zinc-500">({hb.wakeupCountToday} {t('schedule.today')})</span>}
                   </td>
                   <td className={cn(tdCls, tdSticky)}>
-                    <div className="flex items-center justify-center gap-1 opacity-0 transition-opacity group-hover:opacity-100">
+                    <div className="flex items-center justify-center gap-1">
                       {canManage && (
                         <button type="button" onClick={() => setEditing({ name: ag.name, hb })} className={cn(smallBtn, 'text-neutral-500 hover:bg-neutral-100 hover:text-neutral-700 dark:text-zinc-500 dark:hover:bg-zinc-800')} title={t('tasks.edit')}>
                           <Pencil className="size-3.5" strokeWidth={1.8} />
@@ -623,8 +623,8 @@ function CronTab({ agents, projectId, canManage, onChanged }: { agents: AgentSch
           {allCrons.length} {t('schedule.cronJobs')}
         </span>
         {canManage && !adding && agentOptions.length > 0 && (
-          <button type="button" onClick={() => setAdding(agentOptions[0])} className="inline-flex items-center gap-1 rounded-lg border border-sky-600 bg-white px-3 py-2 text-sm font-medium text-sky-700 hover:bg-sky-50 dark:border-sky-500 dark:bg-zinc-900 dark:text-sky-400 dark:hover:bg-zinc-800">
-            <Plus className="size-3.5" strokeWidth={2} />{t('schedule.addCron')}
+          <button type="button" onClick={() => setAdding(agentOptions[0])} className="rounded-lg border border-sky-600 bg-white px-3 py-2 text-sm font-medium text-sky-700 hover:bg-sky-50 dark:border-sky-500 dark:bg-zinc-900 dark:text-sky-400 dark:hover:bg-zinc-800">
+            {t('schedule.addCron')}
           </button>
         )}
       </div>
@@ -686,7 +686,7 @@ function CronTab({ agents, projectId, canManage, onChanged }: { agents: AgentSch
                   <td className={cn(tdCls, 'tabular-nums')}>{c.runCount ?? 0}</td>
                   <td className={cn(tdCls, tdSticky)}>
                     {canManage && (
-                      <div className="flex items-center justify-center gap-1 opacity-0 transition-opacity group-hover:opacity-100">
+                      <div className="flex items-center justify-center gap-1">
                         <button type="button" onClick={() => setEditing({ agent, cron: c })} className={cn(smallBtn, 'text-sky-600 hover:bg-sky-50 dark:text-sky-400 dark:hover:bg-sky-900/30')} title={t('schedule.editCron')}>
                           <Pencil className="size-3.5" strokeWidth={1.8} />
                         </button>
@@ -705,8 +705,6 @@ function CronTab({ agents, projectId, canManage, onChanged }: { agents: AgentSch
           </table>
         </div>
       )}
-      <p className="mt-3 text-xs text-neutral-400 dark:text-zinc-500">{t('schedule.restartHint')}</p>
-
       {canManage && editing && (
         <EditCronModal projectId={projectId} agent={editing.agent} cron={editing.cron} onClose={() => setEditing(null)} onSaved={() => { setEditing(null); onChanged() }} />
       )}
