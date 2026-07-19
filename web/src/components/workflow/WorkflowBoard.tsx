@@ -123,6 +123,10 @@ type WorkflowNodeData = {
 }
 
 type WorkflowNode = Node<WorkflowNodeData, 'workflowStep'>
+type WorkflowClipboard = {
+  steps: WorkflowStep[]
+  edges: WorkflowEdge[]
+}
 
 const nodeTypes = { workflowStep: WorkflowStepNode }
 
@@ -259,6 +263,10 @@ function sameDefinition(a: WorkflowDefinition, b: WorkflowDefinition) {
   return JSON.stringify(a) === JSON.stringify(b)
 }
 
+function sameStringArray(a: string[], b: string[]) {
+  return a.length === b.length && a.every((item, index) => item === b[index])
+}
+
 function isTextEditingTarget(target: EventTarget | null) {
   if (!(target instanceof HTMLElement)) return false
   const tag = target.tagName.toLowerCase()
@@ -328,6 +336,8 @@ export function WorkflowBoard({
   const instanceByStep = useMemo(() => new Map(instances.map((inst) => [inst.stepId, inst])), [instances])
   const [selectedId, setSelectedId] = useState(definition.startStepId || definition.steps[0]?.id || '')
   const [selectedEdgeId, setSelectedEdgeId] = useState('')
+  const [selectedNodeIds, setSelectedNodeIds] = useState<string[]>([])
+  const [clipboard, setClipboard] = useState<WorkflowClipboard | null>(null)
   const selected = definition.steps.find((s) => s.id === selectedId) ?? definition.steps[0]
   const outgoingEdges = selected ? definition.edges.filter((edge) => edge.from === selected.id) : []
   const selectedInst = selected ? instanceByStep.get(selected.id) : undefined
@@ -444,6 +454,14 @@ export function WorkflowBoard({
         event.preventDefault()
         undoLastChange()
       }
+      if ((event.metaKey || event.ctrlKey) && !event.shiftKey && event.key.toLowerCase() === 'c') {
+        event.preventDefault()
+        copySelectedElements()
+      }
+      if ((event.metaKey || event.ctrlKey) && !event.shiftKey && event.key.toLowerCase() === 'v') {
+        event.preventDefault()
+        pasteCopiedElements()
+      }
       if (!event.metaKey && !event.ctrlKey && !event.altKey && (event.key === 'Delete' || event.key === 'Backspace')) {
         event.preventDefault()
         deleteSelectedElement()
@@ -451,7 +469,7 @@ export function WorkflowBoard({
     }
     window.addEventListener('keydown', handleKeyDown)
     return () => window.removeEventListener('keydown', handleKeyDown)
-  }, [editable, onChange, selectedId, selectedEdgeId, undoStack])
+  }, [clipboard, editable, onChange, selectedId, selectedEdgeId, selectedNodeIds, undoStack])
 
   function alignedPosition(node: WorkflowNode, allNodes: WorkflowNode[]) {
     let x = Math.round(node.position.x)
@@ -524,6 +542,7 @@ export function WorkflowBoard({
     }
     setSelectedId(id)
     setSelectedEdgeId('')
+    setSelectedNodeIds([id])
     updateDefinition({
       ...definition,
       startStepId: definition.startStepId || id,
@@ -541,16 +560,61 @@ export function WorkflowBoard({
       })
       return
     }
-    if (!selected || definition.steps.length <= 1) return
-    const nextSteps = definition.steps.filter((step) => step.id !== selected.id)
+    const ids = new Set(selectedNodeIds.length > 0 ? selectedNodeIds : selected ? [selected.id] : [])
+    if (ids.size === 0 || definition.steps.length <= 1) return
+    const nextSteps = definition.steps.filter((step) => !ids.has(step.id))
+    if (nextSteps.length === 0) return
     const nextSelected = nextSteps[0]?.id || ''
     setSelectedId(nextSelected)
     setSelectedEdgeId('')
+    setSelectedNodeIds(nextSelected ? [nextSelected] : [])
     updateDefinition({
       ...definition,
-      startStepId: definition.startStepId === selected.id ? nextSelected : definition.startStepId,
+      startStepId: ids.has(definition.startStepId) ? nextSelected : definition.startStepId,
       steps: nextSteps,
-      edges: definition.edges.filter((edge) => edge.from !== selected.id && edge.to !== selected.id),
+      edges: definition.edges.filter((edge) => !ids.has(edge.from) && !ids.has(edge.to)),
+    })
+  }
+
+  function copySelectedElements() {
+    if (!editable) return
+    const ids = new Set(selectedNodeIds.length > 0 ? selectedNodeIds : selected ? [selected.id] : [])
+    if (ids.size === 0) return
+    const steps = definition.steps.filter((step) => ids.has(step.id)).map((step) => structuredClone(step))
+    const edges = definition.edges
+      .filter((edge) => ids.has(edge.from) && ids.has(edge.to))
+      .map((edge) => ({ ...normalizeEdge(edge) }))
+    setClipboard({ steps, edges })
+  }
+
+  function pasteCopiedElements() {
+    if (!editable || !clipboard || clipboard.steps.length === 0) return
+    const stamp = Date.now().toString(36)
+    const idMap = new Map<string, string>()
+    const nextSteps = clipboard.steps.map((step, index) => {
+      const id = `step_${stamp}_${index}`
+      idMap.set(step.id, id)
+      return {
+        ...normalizeStepFields(step),
+        id,
+        position: { x: Math.round(step.position.x + 56), y: Math.round(step.position.y + 56) },
+      }
+    })
+    const nextEdges = clipboard.edges
+      .map((edge, index) => {
+        const from = idMap.get(edge.from)
+        const to = idMap.get(edge.to)
+        if (!from || !to) return null
+        return { ...normalizeEdge(edge), id: `e-${from}-${to}-${stamp}-${index}`, from, to }
+      })
+      .filter((edge): edge is WorkflowEdge => Boolean(edge))
+    setSelectedId(nextSteps[0]?.id || '')
+    setSelectedEdgeId('')
+    setSelectedNodeIds(nextSteps.map((step) => step.id))
+    updateDefinition({
+      ...definition,
+      steps: [...definition.steps, ...nextSteps],
+      edges: [...definition.edges, ...nextEdges],
     })
   }
 
@@ -607,7 +671,7 @@ export function WorkflowBoard({
                 <button type="button" onClick={addNode} className="rounded-lg border border-sky-600 bg-white px-3 py-1.5 text-xs font-medium text-sky-700 shadow-sm hover:bg-sky-50 dark:border-sky-500 dark:bg-zinc-900 dark:text-sky-400 dark:hover:bg-zinc-800">
                   {t('workflows.addNode')}
                 </button>
-                <button type="button" onClick={deleteSelectedElement} disabled={!selectedEdgeId && (!selected || definition.steps.length <= 1)} className="rounded-lg border border-neutral-300 bg-white px-3 py-1.5 text-xs font-medium text-neutral-600 shadow-sm hover:bg-neutral-50 disabled:opacity-40 dark:border-zinc-600 dark:bg-zinc-900 dark:text-zinc-300 dark:hover:bg-zinc-800">
+                <button type="button" onClick={deleteSelectedElement} disabled={!selectedEdgeId && (definition.steps.length <= 1 || (selectedNodeIds.length === 0 && !selected))} className="rounded-lg border border-neutral-300 bg-white px-3 py-1.5 text-xs font-medium text-neutral-600 shadow-sm hover:bg-neutral-50 disabled:opacity-40 dark:border-zinc-600 dark:bg-zinc-900 dark:text-zinc-300 dark:hover:bg-zinc-800">
                   {selectedEdgeId ? t('workflows.deleteEdge') : t('workflows.deleteNode')}
                 </button>
               </>
@@ -630,12 +694,28 @@ export function WorkflowBoard({
           onNodeClick={(_, node) => {
             setSelectedId(node.id)
             setSelectedEdgeId('')
+            setSelectedNodeIds([node.id])
           }}
           onEdgeClick={(_, edge) => {
             setSelectedEdgeId(edge.id)
+            setSelectedNodeIds([])
             setSelectedId(edge.source)
           }}
-          onPaneClick={() => setSelectedEdgeId('')}
+          onSelectionChange={({ nodes: selectedNodes, edges: selectedEdges }) => {
+            const nodeIDs = selectedNodes.map((node) => node.id)
+            const edgeID = selectedEdges[0]?.id || ''
+            setSelectedNodeIds((current) => (sameStringArray(current, nodeIDs) ? current : nodeIDs))
+            setSelectedEdgeId(edgeID)
+            if (nodeIDs.length === 1) setSelectedId(nodeIDs[0])
+            else if (edgeID) {
+              const edge = definition.edges.find((item) => item.id === edgeID)
+              if (edge) setSelectedId(edge.from)
+            }
+          }}
+          onPaneClick={() => {
+            setSelectedEdgeId('')
+            setSelectedNodeIds([])
+          }}
           fitView
           fitViewOptions={{ padding: 0.18 }}
           minZoom={0.25}
@@ -647,6 +727,9 @@ export function WorkflowBoard({
           nodesDraggable={editable}
           nodesConnectable={editable}
           elementsSelectable
+          selectionOnDrag={editable}
+          selectionKeyCode="Shift"
+          multiSelectionKeyCode={['Meta', 'Control', 'Shift']}
           deleteKeyCode={null}
           className="workflow-flow"
         >
