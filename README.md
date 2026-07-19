@@ -1,72 +1,209 @@
+<p align="center">
+  <img src="docs/banner.svg" alt="Multigent" width="100%">
+</p>
+
+<div align="center">
+
 # Multigent
 
-Multigent is an Agent Collaboration and Execution Platform for teams that want to keep using their existing tools while making their agent workforce easier to coordinate, observe, and improve.
+**Agent collaboration infrastructure for teams that want agents to actually deliver.**
 
-It started from `multigent`, but the product direction is different:
+Multigent helps teams turn prompts, tools, workflows, and human reviews into a coordinated agent workforce. Keep your existing project tools and chat tools; use Multigent as the control plane that gives agents shared context, structured tasks, safe execution, and observable handoffs.
 
-- Keep humans, Linear/Jira/ONES, Feishu/Lark, GitHub, and local agent tools in the loop.
-- Centralize agent-friendly context, roles, tasks, reviews, run history, and cost signals.
-- Use local workers to execute jobs close to repos, credentials, sandboxes, and existing CLI agents.
-- Move humans from synchronous drivers to role owners, reviewers, and process designers.
+[Documentation](docs/) · [Architecture](docs/distributed-architecture.md) · [Workflow Engine](docs/collaboration-workflow-state-machine.md) · [Roadmap](docs/roadmap.md)
 
-The product model is intentionally simple:
+</div>
 
-```text
-Workspace -> Team -> Project -> Agent + Task
-```
+---
 
-Workspace is the company/tenant boundary. Project is the agent collaboration context. Task is the execution unit for features, bugs, QA, release, research, and reviews. Multigent does not add a separate workstream layer; complex initiatives should be represented with task graphs, labels, milestones, owners, assignees, and reviewers.
+## Why Multigent
 
-## Current Status
+Most teams already have docs, task boards, repos, chats, meetings, and local coding agents. The hard part is not creating another chat box. The hard part is making agents understand the same context, follow the same process, use the right tools, ask for review at the right moment, and continue work without a human synchronously driving every step.
 
-This repository is the first Multigent codebase bootstrap from multigent.
+Multigent is built around that operating model:
 
-Already changed:
+- **Shared agent context**: workspace, team, role, project, task, docs, skills, tools, and workflow state are managed in one place.
+- **Agent-ready task execution**: tasks can bind to workflows, carry structured inputs and outputs, and move between agents and humans.
+- **Human review without human blocking**: humans act as owners, reviewers, and process designers instead of being the mandatory runtime loop.
+- **External tools as capabilities**: GitHub, Feishu/Lark, Slack, Linear-style project systems, web search, design tools, and other services are modeled as workspace tools that agents can use through controlled runtime adapters.
+- **Observable agent work**: runs, chat sessions, workflow steps, task history, tokens, logs, and audit events are visible from the web console.
+- **Sandbox-first execution**: agents run in isolated environments with explicit credentials and tool access instead of reading the whole workspace by default.
 
-- Go module: `github.com/multigent/multigent`
-- CLI binary: `multigent`
-- Local metadata directory: `.multigent`
-- NPM package name: `@multigent/multigent`
-- Initial local worker boundary: `multigent worker inspect`
-
-The current local workspace workflow is still available, but the architecture is being reshaped around:
+## Product Model
 
 ```text
-SaaS Control Plane  <->  Local Worker  <->  Local Agent Runtimes
+Workspace
+  -> Teams and roles
+  -> Projects
+  -> Agents and humans
+  -> Tasks
+  -> Workflows
+  -> Docs, skills, model accounts, and external tools
 ```
 
-## Build
+Multigent does not try to replace every existing system on day one. A company can keep using Jira, Linear, Plane, Huly, GitHub, Feishu/Lark, Slack, local agent CLIs, and internal docs. Multigent provides the agent-native coordination layer across those systems.
+
+<p align="center">
+  <img src="docs/multigent.png" alt="Multigent web console" width="860">
+</p>
+
+## Core Features
+
+### Agent Workforce
+
+Create agent teammates with a role, model account, CLI runtime, sandbox, skills, and external tool access. Agents can work through web chat, scheduled wakeups, tasks, and workflow steps.
+
+### Workflow Engine
+
+Design reusable workspace-level workflows on a visual board. A workflow defines steps, actors, required inputs, required outputs, review loops, branch conditions, and handoffs. Tasks can then choose a workflow and assign each actor to a human or an agent.
+
+### Playbooks
+
+Install opinionated collaboration packages that bundle teams, roles, skills, and workflows. Playbooks help new workspaces start with a proven process instead of an empty canvas.
+
+### External Tools
+
+Configure tools once at the workspace level and expose them to selected agents. Multigent is designed to support multiple access patterns: platform CLIs, MCP gateways, API keys, OAuth apps, and runtime materialization.
+
+### Knowledge Base
+
+Store and reference documents by doc ID. Agents can create and read docs through the runtime CLI so workflow outputs can point to durable knowledge instead of ephemeral chat text.
+
+### Scheduling and Runs
+
+Use task-triggered wakeups, heartbeat schedules, cron jobs, and manual wakeups. Run records capture status, runtime session IDs, token usage where available, logs, and workflow step outputs.
+
+### RBAC and Audit
+
+Workspace roles, project membership, task visibility, user invitations, and audit events are first-class concepts. Humans and agents are treated as principals with scoped permissions.
+
+## Quick Start
+
+### Prerequisites
+
+- Go 1.26+
+- Node.js 20+
+- npm or pnpm
+- Docker, for sandboxed agent execution
+
+### Build
 
 ```bash
-make web
-make build-go
+make build
 ./dist/multigent --help
 ```
 
-## Worker
+### Run the Web Console
 
-Inspect local worker configuration:
+The production-style command serves the API and embedded frontend from one binary:
 
 ```bash
+./dist/multigent --dir ./data start --addr 127.0.0.1:27892 --open
+```
+
+For frontend development with Vite hot reload:
+
+```bash
+./dist/multigent --dir ./data api serve --addr 127.0.0.1:27893
+cd web
+npm install
+npm run dev
+```
+
+Open the Vite URL shown in the terminal, usually `http://127.0.0.1:27894`.
+
+## First Journey
+
+1. Register the first user.
+2. Create a workspace.
+3. Invite members or continue alone.
+4. Create or install teams, roles, and playbooks.
+5. Add a project.
+6. Add agents to the project.
+7. Configure model accounts and external tools.
+8. Create a workflow or use a built-in workflow.
+9. Create a task and bind it to the workflow.
+10. Watch the task move between agents and humans, with structured outputs recorded at every step.
+
+## Architecture
+
+```text
+┌─────────────────────────┐
+│      Web Console        │
+│  React + workflow UI    │
+└───────────┬─────────────┘
+            │ HTTP / SSE
+┌───────────▼─────────────┐
+│      Go API Server      │
+│ auth, RBAC, tasks, docs │
+│ workflows, tools, runs  │
+└───────────┬─────────────┘
+            │
+┌───────────▼─────────────┐
+│      Storage Layer      │
+│ SQLite today, interface │
+│ ready for other DBs     │
+└───────────┬─────────────┘
+            │
+┌───────────▼─────────────┐
+│   Runtime Materializer  │
+│ sandbox, CLI, skills,   │
+│ credentials, tools      │
+└───────────┬─────────────┘
+            │
+┌───────────▼─────────────┐
+│  Isolated Agent Runtime │
+│ Codex, Claude Code,     │
+│ Cursor, tool CLIs, MCP  │
+└─────────────────────────┘
+```
+
+See the deeper design notes:
+
+- [Agent runtime CLI architecture](docs/agent-runtime-cli-architecture.md)
+- [Runtime sandbox research and model](docs/runtime-sandbox-research-and-model.md)
+- [Agent isolation and permission architecture](docs/agent-isolation-and-permission-architecture.md)
+- [SQLite storage architecture](docs/sqlite-storage-architecture.md)
+- [External tools connection redesign](docs/external-tools-connection-redesign-plan.md)
+- [Product tour and example workspaces](docs/product-tour-and-example-workspaces.md)
+
+## Development
+
+```bash
+make test
+make web
+make build-go
+```
+
+Useful commands:
+
+```bash
+# Start API only
+./dist/multigent --dir ./data api serve --addr 127.0.0.1:27893
+
+# Start API + embedded web
+./dist/multigent --dir ./data start --addr 127.0.0.1:27892
+
+# Inspect worker/runtime configuration
 ./dist/multigent worker inspect
 ```
 
-Preview a worker start config without contacting a control plane:
+Configuration can be supplied through CLI flags, environment variables, or a TOML file. See [configuration and logging](docs/configuration-and-logging.md).
 
-```bash
-./dist/multigent worker start --dry-run \
-  --id local-dev \
-  --control-plane-url https://app.multigent.ai \
-  --token test-token \
-  --workspace /tmp/multigent-worker
-```
+## Current Status
 
-Worker protocol implementation is intentionally not faked yet. See:
+Multigent is under active product development. The repository already includes the web console, workspace model, users and invitations, teams and roles, agents, model accounts, external tools, tasks, workflow definitions, scheduler, sandbox runtime abstraction, docs, playbooks, and telemetry.
 
-- `docs/local-worker-architecture.md`
+The near-term focus is making the end-to-end journey production-grade:
+
+- smoother onboarding and example workspaces;
+- stronger sandbox isolation and runtime materialization;
+- richer workflow execution and visual observability;
+- better external tool adapters;
+- cleaner product packaging for self-hosted and commercial deployments.
 
 ## License
 
-Multigent is source-available under the PolyForm Noncommercial License 1.0.0.
-Commercial use is not permitted without a separate written commercial license
-from the copyright holder. See [LICENSE](LICENSE).
+Multigent is source-available under the [PolyForm Noncommercial License 1.0.0](LICENSE).
+
+Commercial use is not permitted without a separate written commercial license from the copyright holder.
