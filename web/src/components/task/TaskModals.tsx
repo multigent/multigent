@@ -406,7 +406,7 @@ export function TaskDetailModal({ task, onClose, onEdit, onMutated, canEdit = tr
                 {workflowState.data.run.status}
               </span>
             </div>
-            <div className="grid min-h-[520px] gap-4">
+            <div className="grid min-h-[520px] gap-4 lg:grid-cols-[minmax(0,1.55fr)_minmax(340px,0.85fr)]">
               <WorkflowBoard definition={workflowState.data.definition} run={workflowState.data.run} instances={workflowState.data.steps} focusActive compact />
               <div className="flex min-h-0 flex-col rounded-xl border border-neutral-200 bg-white dark:border-zinc-700 dark:bg-zinc-950">
                 <WorkflowRuntimePanel
