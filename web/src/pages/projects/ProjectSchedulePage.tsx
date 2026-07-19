@@ -13,6 +13,7 @@ import { apiFetch, apiDelete, apiPatch, apiPost, apiPut } from '../../lib/api'
 import { canManageProject, useAuth } from '../../lib/auth'
 import { useFormatDateTime } from '../../lib/format-datetime'
 import { useApiJson } from '../../lib/use-api'
+import { useWorkspaceAccess } from '../../lib/workspace-access'
 
 /* ─── types ─── */
 
@@ -64,6 +65,7 @@ type Tab = 'runtime' | 'heartbeat' | 'cron'
 export default function ProjectSchedulePage() {
   const { t } = useTranslation()
   const { user } = useAuth()
+  const { canAdmin } = useWorkspaceAccess()
   const { projectId } = useParams<{ projectId: string }>()
   const path = projectId ? `/api/v1/projects/${encodeURIComponent(projectId)}/schedule` : null
   const [reloadKey, setReloadKey] = useState(0)
@@ -71,7 +73,7 @@ export default function ProjectSchedulePage() {
   const state = useApiJson<ScheduleResp>(path, reloadKey)
   const reload = useCallback(() => setReloadKey((k) => k + 1), [])
   const agents = state.status === 'ok' ? state.data.agents : []
-  const canManage = projectId ? canManageProject(user, projectId) : false
+  const canManage = projectId ? canAdmin || canManageProject(user, projectId) : false
 
   useEffect(() => {
     if (tab !== 'runtime') return
