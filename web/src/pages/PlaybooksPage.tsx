@@ -4,28 +4,12 @@ import { useTranslation } from 'react-i18next'
 import { useNavigate, useParams } from 'react-router-dom'
 import { ArrowLeft, CheckCircle2, GitBranch, LibraryBig, ListChecks, Puzzle, ShieldCheck, Users, Wrench } from 'lucide-react'
 import { PlaceholderCard } from '../components/ui/PlaceholderCard'
+import { WorkflowBoard, type WorkflowDefinition, type WorkflowStep } from '../components/workflow/WorkflowBoard'
 import { showToast } from '../components/ui/Toast'
 import { apiPost } from '../lib/api'
 import { cn } from '../lib/cn'
 import { useApiJson } from '../lib/use-api'
 
-type WorkflowField = { name: string; description?: string }
-type WorkflowStep = {
-  id: string
-  type: string
-  title: string
-  description?: string
-  actorRole?: string
-  inputFields?: WorkflowField[]
-  outputFields?: WorkflowField[]
-}
-type WorkflowTemplate = {
-  id: string
-  name: string
-  description?: string
-  steps: WorkflowStep[]
-  edges: unknown[]
-}
 type PlaybookRoleTemplate = {
   id: string
   team: string
@@ -46,7 +30,7 @@ type PlaybookWorkflowTemplate = {
   id: string
   name: string
   description: string
-  definition: WorkflowTemplate
+  definition: WorkflowDefinition
   roleBindings?: Record<string, string>
   skillBindings?: Record<string, string[]>
 }
@@ -308,6 +292,9 @@ function PlaybookDetail({ playbook, install, onBack, onInstalled }: { playbook: 
             <div className="mb-3 rounded-lg bg-neutral-50 px-3 py-2 dark:bg-zinc-800/50">
               <p className="text-sm font-semibold text-neutral-800 dark:text-zinc-100">{firstWorkflow.name}</p>
               <p className="mt-1 text-sm leading-relaxed text-neutral-500 dark:text-zinc-500">{firstWorkflow.description}</p>
+            </div>
+            <div className="mb-4">
+              <WorkflowBoard definition={firstWorkflow.definition} />
             </div>
             <ol className="grid gap-3 lg:grid-cols-2">
               {steps.map((step, index) => (
