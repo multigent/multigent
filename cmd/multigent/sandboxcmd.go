@@ -131,12 +131,13 @@ func newSandboxShowCmd() *cobra.Command {
 			fmt.Printf("  -v %s\n", wsMount)
 
 			// Agent runtime CLI mount (auto, so agents can call back into Multigent).
-			multigentBin, _ := os.Executable()
-			if real, err2 := filepath.EvalSymlinks(multigentBin); err2 == nil {
-				multigentBin = real
-			}
 			fmt.Printf("\nAgent runtime CLI mount (auto, enables `mga` inside container):\n")
-			fmt.Printf("  -v %s:%s:ro\n", multigentBin, runtimecli.BinaryPath)
+			mgaMount := runtimecli.ResolveHostBinaryMount()
+			if mgaMount == "" {
+				fmt.Printf("  not available (build `mga` or set %s)\n", runtimecli.HostBinaryEnv)
+			} else {
+				fmt.Printf("  -v %s\n", mgaMount)
+			}
 
 			// Preview the actual docker run command (include all auto mounts)
 			previewCfg := sbxCloneDockerCfg(dockerCfg)
@@ -144,9 +145,8 @@ func newSandboxShowCmd() *cobra.Command {
 				previewCfg.ExtraVolumes = append(previewCfg.ExtraVolumes, repoMount)
 			}
 			previewCfg.ExtraVolumes = append(previewCfg.ExtraVolumes, wsMount)
-			if multigentBin != "" {
-				previewCfg.ExtraVolumes = append(previewCfg.ExtraVolumes,
-					multigentBin+":"+runtimecli.BinaryPath+":ro")
+			if mgaMount != "" {
+				previewCfg.ExtraVolumes = append(previewCfg.ExtraVolumes, mgaMount)
 			}
 			innerArgs := agentInnerArgs(meta.Model)
 			dockerArgs, err := sandbox.BuildArgs(agentDir, meta.Model, previewCfg, innerArgs)

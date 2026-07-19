@@ -35,6 +35,14 @@ func ResolveHostBinaryMount() string {
 		binPath = found
 	} else if exe, err := os.Executable(); err == nil && filepath.Base(exe) == BinaryName {
 		binPath = exe
+	} else if exe, err := os.Executable(); err == nil {
+		// Development and packaged installs often place `multigent` and `mga`
+		// side by side. The sandbox must mount the agent-scoped `mga` binary,
+		// never the human/admin `multigent` binary under an alias.
+		sibling := filepath.Join(filepath.Dir(exe), BinaryName)
+		if _, err := os.Stat(sibling); err == nil {
+			binPath = sibling
+		}
 	}
 	if binPath == "" {
 		return ""

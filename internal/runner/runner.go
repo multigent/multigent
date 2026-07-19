@@ -22,6 +22,7 @@ import (
 	"io"
 	"net"
 	"net/http"
+	"net/url"
 	"os"
 	"os/exec"
 	"path/filepath"
@@ -163,8 +164,10 @@ func (r *Runner) ExecPrompt(project, agentName, prompt, sessionID string) (*RunR
 		}
 		runtimeCfg := cloneRuntimeCfg(meta.Sandbox)
 		agentCLI := agentcli.Effective(model, runtimeCfg.AgentCLI)
+		processRuntimeEnv := runtimeControlEnvForProvider(runtimeEnv, meta.Sandbox.Provider)
+		effectiveEnv = mergeEnv(effectiveEnv, processRuntimeEnv)
 		injectProviderEnvIntoRuntime(runtimeCfg, agentEnv)
-		injectRuntimeControlEnvIntoRuntime(runtimeCfg, runtimeEnv)
+		injectRuntimeControlEnvIntoRuntime(runtimeCfg, processRuntimeEnv)
 		mounts := append([]entity.RuntimeMount(nil), runtimeCfg.Mounts...)
 		for _, addDir := range meta.AddDirs {
 			mounts = runenv.AddPathMount(mounts, addDir, "repo", runenv.MountModeReadWrite)
@@ -367,8 +370,10 @@ func (r *Runner) RunTask(project, agentName string, task *entity.Task, sessionID
 
 		runtimeCfg := cloneRuntimeCfg(meta.Sandbox)
 		agentCLI := agentcli.Effective(model, runtimeCfg.AgentCLI)
+		processRuntimeEnv := runtimeControlEnvForProvider(runtimeEnv, meta.Sandbox.Provider)
+		effectiveEnv = mergeEnv(effectiveEnv, processRuntimeEnv)
 		injectProviderEnvIntoRuntime(runtimeCfg, agentEnv)
-		injectRuntimeControlEnvIntoRuntime(runtimeCfg, runtimeEnv)
+		injectRuntimeControlEnvIntoRuntime(runtimeCfg, processRuntimeEnv)
 		mounts := append([]entity.RuntimeMount(nil), runtimeCfg.Mounts...)
 
 		// Auto-mount the project's code repository at the same absolute path
@@ -2129,6 +2134,48 @@ func normalizeRuntimeAPIURL(value string) string {
 		return "http://" + net.JoinHostPort(host, port)
 	}
 	return "http://" + strings.TrimRight(value, "/")
+}
+
+func runtimeControlEnvForProvider(env map[string]string, provider entity.SandboxProvider) map[string]string {
+	if len(env) == 0 {
+		return env
+	}
+	if provider != entity.SandboxDocker {
+		return env
+	}
+	out := make(map[string]string, len(env))
+	for k, v := range env {
+		out[k] = v
+	}
+	if apiURL := dockerReachableRuntimeAPIURL(env["MULTIGENT_API_URL"]); apiURL != "" {
+		out["MULTIGENT_API_URL"] = apiURL
+	}
+	return out
+}
+
+func dockerReachableRuntimeAPIURL(raw string) string {
+	raw = strings.TrimSpace(raw)
+	if raw == "" {
+		return ""
+	}
+	u, err := url.Parse(raw)
+	if err != nil || u.Scheme == "" || u.Host == "" {
+		return ""
+	}
+	host := u.Hostname()
+	if host != "127.0.0.1" && host != "localhost" && host != "::1" {
+		return strings.TrimRight(raw, "/")
+	}
+	port := u.Port()
+	if port == "" {
+		if u.Scheme == "https" {
+			port = "443"
+		} else {
+			port = "80"
+		}
+	}
+	u.Host = net.JoinHostPort("host.docker.internal", port)
+	return strings.TrimRight(u.String(), "/")
 }
 
 func resolveRuntimeWorkspaceID(root string, controlDB controldb.Store) string {

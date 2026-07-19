@@ -109,6 +109,9 @@ func BuildArgs(agentDir string, model entity.AgentModel, cfg *entity.DockerSandb
 		networkMode = cfg.NetworkMode
 	}
 	args = append(args, "--network="+networkMode)
+	if networkMode == "bridge" {
+		args = append(args, "--add-host=host.docker.internal:host-gateway")
+	}
 
 	// ── Workspace mount ──────────────────────────────────────────────────────
 	// Mount the agent directory at its REAL path inside the container (not just

@@ -437,3 +437,17 @@ func TestMaterializeRuntimeConnectionsFileSkipsWithoutRuntimeEnv(t *testing.T) {
 		t.Fatalf("unexpected manifest path: %q", env[runtimeConnectionsFileEnv])
 	}
 }
+
+func TestDockerRuntimeControlEnvUsesHostGateway(t *testing.T) {
+	env := map[string]string{
+		"MULTIGENT_API_URL":     "http://127.0.0.1:27893",
+		"MULTIGENT_AGENT_TOKEN": "token",
+	}
+	got := runtimeControlEnvForProvider(env, entity.SandboxDocker)
+	if got["MULTIGENT_API_URL"] != "http://host.docker.internal:27893" {
+		t.Fatalf("MULTIGENT_API_URL=%q", got["MULTIGENT_API_URL"])
+	}
+	if env["MULTIGENT_API_URL"] != "http://127.0.0.1:27893" {
+		t.Fatalf("mutated source env: %q", env["MULTIGENT_API_URL"])
+	}
+}
