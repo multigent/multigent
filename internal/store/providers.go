@@ -146,29 +146,29 @@ func (ps *ProviderStore) ResolveEnv(id string) (map[string]string, error) {
 	if err != nil {
 		return nil, err
 	}
+	return ProviderEnv(*p), nil
+}
+
+// ResolveEnvForModel returns environment variables for a provider as consumed
+// by the concrete agent CLI. The same workspace model account can be used by
+// different CLIs, so runtime materialization is based on the agent model first,
+// not only on the provider's stored type.
+func (ps *ProviderStore) ResolveEnvForModel(id string, model entity.AgentModel) (map[string]string, error) {
+	p, err := ps.Get(id)
+	if err != nil {
+		return nil, err
+	}
+	return ProviderEnvForModel(*p, model), nil
+}
+
+func ProviderEnv(p entity.APIProvider) map[string]string {
 	env := make(map[string]string)
 	for k, v := range p.Env {
 		env[k] = v
 	}
 	switch p.Type {
 	case "anthropic":
-		if p.APIKey != "" {
-			env["ANTHROPIC_API_KEY"] = p.APIKey
-			// Clear the host's ANTHROPIC_AUTH_TOKEN so it does not leak into
-			// Docker containers and conflict with the provider's API key.
-			// ANTHROPIC_AUTH_TOKEN (an OAuth bearer token) takes precedence over
-			// ANTHROPIC_API_KEY in Claude Code; custom API providers (e.g. proxies)
-			// only accept the X-API-Key header, so a stale host token causes 401.
-			if _, already := env["ANTHROPIC_AUTH_TOKEN"]; !already {
-				env["ANTHROPIC_AUTH_TOKEN"] = ""
-			}
-		}
-		if p.BaseURL != "" {
-			env["ANTHROPIC_BASE_URL"] = p.BaseURL
-		}
-		if p.Model != "" {
-			env["ANTHROPIC_MODEL"] = p.Model
-		}
+		applyClaudeCodeProviderEnv(env, p)
 	case "openai":
 		if p.APIKey != "" {
 			env["OPENAI_API_KEY"] = p.APIKey
@@ -191,7 +191,69 @@ func (ps *ProviderStore) ResolveEnv(id string) (map[string]string, error) {
 			env["CURSOR_API_KEY"] = p.APIKey
 		}
 	}
-	return env, nil
+	return env
+}
+
+func ProviderEnvForModel(p entity.APIProvider, model entity.AgentModel) map[string]string {
+	env := make(map[string]string)
+	for k, v := range p.Env {
+		env[k] = v
+	}
+	switch entity.NormaliseModel(model) {
+	case entity.ModelClaudeCode:
+		applyClaudeCodeProviderEnv(env, p)
+	case entity.ModelCodex, entity.ModelOpenCode:
+		if p.APIKey != "" {
+			env["OPENAI_API_KEY"] = p.APIKey
+		}
+		if p.BaseURL != "" {
+			env["OPENAI_BASE_URL"] = p.BaseURL
+		}
+		if p.Model != "" {
+			env["OPENAI_MODEL"] = p.Model
+		}
+	case entity.ModelGemini:
+		if p.APIKey != "" {
+			env["GEMINI_API_KEY"] = p.APIKey
+		}
+		if p.BaseURL != "" {
+			env["GOOGLE_API_BASE"] = p.BaseURL
+		}
+		if p.Model != "" {
+			env["GEMINI_MODEL"] = p.Model
+			env["GOOGLE_MODEL"] = p.Model
+		}
+	case entity.ModelCursor:
+		if p.APIKey != "" {
+			env["CURSOR_API_KEY"] = p.APIKey
+		}
+		if p.Model != "" {
+			env["CURSOR_MODEL"] = p.Model
+		}
+	default:
+		return ProviderEnv(p)
+	}
+	return env
+}
+
+func applyClaudeCodeProviderEnv(env map[string]string, p entity.APIProvider) {
+	if p.APIKey != "" {
+		// Claude Code compatible gateways commonly use ANTHROPIC_AUTH_TOKEN,
+		// while official Anthropic SDK-style clients use ANTHROPIC_API_KEY.
+		// Set both so users do not need to understand that distinction.
+		env["ANTHROPIC_AUTH_TOKEN"] = p.APIKey
+		env["ANTHROPIC_API_KEY"] = p.APIKey
+	}
+	if p.BaseURL != "" {
+		env["ANTHROPIC_BASE_URL"] = p.BaseURL
+	}
+	if p.Model != "" {
+		env["ANTHROPIC_MODEL"] = p.Model
+		env["CLAUDE_MODEL"] = p.Model
+		env["ANTHROPIC_DEFAULT_HAIKU_MODEL"] = p.Model
+		env["ANTHROPIC_DEFAULT_SONNET_MODEL"] = p.Model
+		env["ANTHROPIC_DEFAULT_OPUS_MODEL"] = p.Model
+	}
 }
 
 func (ps *ProviderStore) openWorkspaceDB() (controldb.Store, string, func(), error) {

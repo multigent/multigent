@@ -1207,7 +1207,7 @@ func resolveProviderEnv(root string, meta *entity.AgentMeta) map[string]string {
 	// 3: API provider env
 	if meta.Provider != "" {
 		ps := store.NewProviderStore(root)
-		if provEnv, err := ps.ResolveEnv(meta.Provider); err == nil {
+		if provEnv, err := ps.ResolveEnvForModel(meta.Provider, meta.Model); err == nil {
 			for k, v := range provEnv {
 				merged[k] = v
 			}
