@@ -60,7 +60,7 @@ func DefinitionFromTemplate(templateID, locale, name string) (entity.WorkflowDef
 func (s *Store) SeedDefaults() error {
 	if def, ok, err := s.Definition("software-delivery-v1"); err != nil {
 		return err
-	} else if ok && def.Scope == "workspace" && def.Project == "" && def.Version >= 2 && def.StartStepID == "requirement_draft" {
+	} else if ok && def.Scope == "workspace" && def.Project == "" && def.Version >= 3 && def.StartStepID == "requirement_draft" {
 		return nil
 	}
 	now := time.Now().UTC()
@@ -68,7 +68,7 @@ func (s *Store) SeedDefaults() error {
 		ID:          "software-delivery-v1",
 		Name:        "Agentic Software Delivery",
 		Description: "A configurable human-agent delivery workflow. Agents draft artifacts, humans review only the decision gates, and rejected outputs loop back with structured feedback.",
-		Version:     2,
+		Version:     3,
 		Scope:       "workspace",
 		StartStepID: "requirement_draft",
 		CreatedAt:   now,
@@ -178,7 +178,6 @@ func (s *Store) SeedDefaults() error {
 				Position:     entity.WorkflowPosition{X: 2880, Y: 180},
 				Config:       map[string]string{"color": "emerald"},
 			},
-			{ID: "done", Type: "terminal", Title: "Done", Description: "Workflow completed with artifacts and metrics ready for retrospective.", Position: entity.WorkflowPosition{X: 3160, Y: 180}},
 		},
 		Edges: []entity.WorkflowEdge{
 			edge("e-req-to-review", "requirement_draft", "requirement_review", "", nil, nil, true),
@@ -196,7 +195,6 @@ func (s *Store) SeedDefaults() error {
 			edge("e-qa-to-review", "qa", "qa_review", "", nil, nil, true),
 			edge("e-qa-review-approve", "qa_review", "release", "approved", cond("decision", "eq", "approve"), map[string]string{"release_candidate": "$output.release_candidate"}, false),
 			edge("e-qa-review-rework", "qa_review", "qa", "changes requested", cond("decision", "eq", "request_changes"), map[string]string{"review_comments": "$output.comments", "previous_report": "$input.test_report"}, false),
-			edge("e-release-done", "release", "done", "", nil, nil, true),
 		},
 	}
 	return s.SaveDefinition(&def)
@@ -261,7 +259,6 @@ func softwareDeliveryTemplate(locale string) entity.WorkflowTemplate {
 			step("qa", "agent_task", "qaTitle", "qaDesc", "qa-agent", "rose", 2320, []entity.WorkflowField{field("approved_change", "approvedChangeInputField")}, []entity.WorkflowField{field("test_cases", "testCasesField"), field("test_report", "testReportField")}),
 			step("qa_review", "human_review", "qaReviewTitle", "qaReviewDesc", "qa-owner", "amber", 2600, []entity.WorkflowField{field("test_report", "testReportReviewField")}, []entity.WorkflowField{field("decision", "decisionField"), field("comments", "commentsField"), field("release_candidate", "releaseCandidateField")}),
 			step("release", "agent_task", "releaseTitle", "releaseDesc", "release-agent", "emerald", 2880, []entity.WorkflowField{field("release_candidate", "releaseCandidateInputField")}, []entity.WorkflowField{field("release_report", "releaseReportField")}),
-			step("done", "terminal", "doneTitle", "doneDesc", "", "", 3160, nil, nil),
 		},
 		Edges: []entity.WorkflowEdge{
 			edge("e-req-to-review", "requirement_draft", "requirement_review", "", nil, nil, true),
@@ -279,7 +276,6 @@ func softwareDeliveryTemplate(locale string) entity.WorkflowTemplate {
 			edge("e-qa-to-review", "qa", "qa_review", "", nil, nil, true),
 			edge("e-qa-review-approve", "qa_review", "release", text["approved"], cond("decision", "eq", "approve"), map[string]string{"release_candidate": "$output.release_candidate"}, false),
 			edge("e-qa-review-rework", "qa_review", "qa", text["changesRequested"], cond("decision", "eq", "request_changes"), map[string]string{"review_comments": "$output.comments", "previous_report": "$input.test_report"}, false),
-			edge("e-release-done", "release", "done", "", nil, nil, true),
 		},
 	}
 }
@@ -657,4 +653,243 @@ func (s *Store) RecordActiveStepOutput(project, taskID, summary, output, status 
 		return s.SaveStepInstance(&inst)
 	}
 	return nil
+}
+
+type TransitionResult struct {
+	Run      entity.WorkflowRun
+	Current  entity.WorkflowStepInstance
+	Next     *entity.WorkflowStep
+	NextInst *entity.WorkflowStepInstance
+	Done     bool
+}
+
+func (s *Store) CompleteAndAdvance(project, taskID, summary, output, status, decision, comments string) (TransitionResult, error) {
+	var result TransitionResult
+	run, ok, err := s.RunForTask(project, taskID)
+	if err != nil || !ok {
+		return result, err
+	}
+	def, ok, err := s.Definition(run.DefinitionID)
+	if err != nil || !ok {
+		return result, err
+	}
+	instances, err := s.ListStepInstances(run.ID)
+	if err != nil {
+		return result, err
+	}
+	currentStep, ok := stepByID(def.Steps, run.ActiveStepID)
+	if !ok {
+		return result, nil
+	}
+	now := time.Now().UTC()
+	output = strings.TrimSpace(output)
+	if output == "" {
+		output = strings.TrimSpace(summary)
+	}
+	if strings.TrimSpace(decision) != "" || strings.TrimSpace(comments) != "" {
+		output = strings.TrimSpace(output + "\n\n" + formatReviewOutput(decision, comments))
+		if summary == "" {
+			summary = formatReviewOutput(decision, comments)
+		}
+	}
+	for i := range instances {
+		if instances[i].StepID != run.ActiveStepID {
+			continue
+		}
+		instances[i].Summary = strings.TrimSpace(summary)
+		instances[i].OutputArtifact = output
+		instances[i].Status = strings.TrimSpace(status)
+		if instances[i].Status == "" {
+			instances[i].Status = "completed"
+		}
+		instances[i].FinishedAt = now
+		instances[i].UpdatedAt = now
+		if err := s.SaveStepInstance(&instances[i]); err != nil {
+			return result, err
+		}
+		result.Current = instances[i]
+		break
+	}
+	edge, hasNext := chooseNextEdge(def.Edges, currentStep.ID, decision, output)
+	if !hasNext {
+		run.Status = "completed"
+		run.ActiveStepID = ""
+		run.UpdatedAt = now
+		run.FinishedAt = now
+		if err := s.SaveRun(&run); err != nil {
+			return result, err
+		}
+		result.Run = run
+		result.Done = true
+		return result, nil
+	}
+	nextStep, ok := stepByID(def.Steps, edge.To)
+	if !ok {
+		run.Status = "completed"
+		run.ActiveStepID = ""
+		run.UpdatedAt = now
+		run.FinishedAt = now
+		if err := s.SaveRun(&run); err != nil {
+			return result, err
+		}
+		result.Run = run
+		result.Done = true
+		return result, nil
+	}
+	run.ActiveStepID = nextStep.ID
+	run.UpdatedAt = now
+	if err := s.SaveRun(&run); err != nil {
+		return result, err
+	}
+	for i := range instances {
+		if instances[i].StepID != nextStep.ID {
+			continue
+		}
+		instances[i].Status = "running"
+		instances[i].StartedAt = now
+		instances[i].UpdatedAt = now
+		instances[i].InputArtifact = buildNextInputArtifact(currentStep, result.Current, nextStep, edge, output)
+		if err := s.SaveStepInstance(&instances[i]); err != nil {
+			return result, err
+		}
+		result.NextInst = &instances[i]
+		break
+	}
+	result.Run = run
+	result.Next = &nextStep
+	return result, nil
+}
+
+func stepByID(steps []entity.WorkflowStep, id string) (entity.WorkflowStep, bool) {
+	for _, step := range steps {
+		if step.ID == id {
+			return step, true
+		}
+	}
+	return entity.WorkflowStep{}, false
+}
+
+func chooseNextEdge(edges []entity.WorkflowEdge, from, decision, output string) (entity.WorkflowEdge, bool) {
+	var fallback *entity.WorkflowEdge
+	for i := range edges {
+		edge := edges[i]
+		if edge.From != from {
+			continue
+		}
+		if edge.IsDefault || edge.Condition == nil {
+			if fallback == nil {
+				fallback = &edge
+			}
+			continue
+		}
+		if workflowConditionMatches(edge.Condition, decision, output) {
+			return edge, true
+		}
+	}
+	if fallback != nil {
+		return *fallback, true
+	}
+	return entity.WorkflowEdge{}, false
+}
+
+func workflowConditionMatches(cond *entity.WorkflowEdgeCondition, decision, output string) bool {
+	if cond == nil {
+		return true
+	}
+	field := strings.TrimSpace(cond.Field)
+	value := strings.TrimSpace(cond.Value)
+	if strings.EqualFold(field, "decision") || strings.EqualFold(field, "review_result") {
+		return compareWorkflowValue(decision, cond.Operator, value, cond.Values)
+	}
+	return compareWorkflowValue(output, cond.Operator, value, cond.Values)
+}
+
+func compareWorkflowValue(actual, op, value string, values []string) bool {
+	actual = strings.TrimSpace(strings.ToLower(actual))
+	value = strings.TrimSpace(strings.ToLower(value))
+	op = strings.TrimSpace(strings.ToLower(op))
+	switch op {
+	case "", "eq":
+		return actual == value || strings.Contains(actual, value)
+	case "neq":
+		return actual != value && !strings.Contains(actual, value)
+	case "exists":
+		return actual != ""
+	case "in":
+		for _, item := range values {
+			item = strings.TrimSpace(strings.ToLower(item))
+			if actual == item || strings.Contains(actual, item) {
+				return true
+			}
+		}
+		return false
+	default:
+		return false
+	}
+}
+
+func formatReviewOutput(decision, comments string) string {
+	var b strings.Builder
+	if strings.TrimSpace(decision) != "" {
+		b.WriteString("decision: ")
+		b.WriteString(strings.TrimSpace(decision))
+	}
+	if strings.TrimSpace(comments) != "" {
+		if b.Len() > 0 {
+			b.WriteString("\n")
+		}
+		b.WriteString("comments: ")
+		b.WriteString(strings.TrimSpace(comments))
+	}
+	return b.String()
+}
+
+func buildNextInputArtifact(current entity.WorkflowStep, currentInst entity.WorkflowStepInstance, next entity.WorkflowStep, edge entity.WorkflowEdge, output string) string {
+	var b strings.Builder
+	b.WriteString("Previous step output:\n")
+	b.WriteString("- Step: ")
+	b.WriteString(current.Title)
+	b.WriteString(" (`")
+	b.WriteString(current.ID)
+	b.WriteString("`)\n")
+	if strings.TrimSpace(currentInst.Summary) != "" {
+		b.WriteString("- Summary: ")
+		b.WriteString(strings.TrimSpace(currentInst.Summary))
+		b.WriteString("\n")
+	}
+	if strings.TrimSpace(output) != "" {
+		b.WriteString("\n")
+		b.WriteString(output)
+		b.WriteString("\n")
+	}
+	if len(edge.InputMapping) > 0 {
+		b.WriteString("\nInput mapping:\n")
+		keys := make([]string, 0, len(edge.InputMapping))
+		for key := range edge.InputMapping {
+			keys = append(keys, key)
+		}
+		sort.Strings(keys)
+		for _, key := range keys {
+			b.WriteString("- ")
+			b.WriteString(key)
+			b.WriteString(": ")
+			b.WriteString(edge.InputMapping[key])
+			b.WriteString("\n")
+		}
+	} else if len(next.InputFields) > 0 {
+		b.WriteString("\nExpected input fields for next step:\n")
+		for _, field := range next.InputFields {
+			if strings.TrimSpace(field.Name) == "" {
+				continue
+			}
+			b.WriteString("- ")
+			b.WriteString(field.Name)
+			if strings.TrimSpace(field.Description) != "" {
+				b.WriteString(": ")
+				b.WriteString(field.Description)
+			}
+			b.WriteString("\n")
+		}
+	}
+	return strings.TrimSpace(b.String())
 }

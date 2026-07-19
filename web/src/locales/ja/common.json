@@ -375,11 +375,17 @@
     "newStepTitle": "新しいノード",
     "stepTypes": {
       "agent_task": "Agent タスク",
-      "human_task": "人のタスク",
       "human_review": "人のレビュー",
+      "human_task": "人のタスク",
       "branch": "分岐",
       "join": "結合",
       "terminal": "終了"
+    },
+    "review": {
+      "title": "人のレビュー",
+      "commentsPlaceholder": "レビューコメントを入力します。差し戻す場合は修正内容を書いてください。承認時は空でも構いません。",
+      "approve": "承認",
+      "requestChanges": "修正依頼"
     },
     "detail": {
       "actor": "担当",

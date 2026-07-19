@@ -375,11 +375,17 @@
     "newStepTitle": "新节点",
     "stepTypes": {
       "agent_task": "Agent 任务",
-      "human_task": "人工任务",
       "human_review": "人工审核",
+      "human_task": "人工任务",
       "branch": "分支",
       "join": "汇合",
       "terminal": "结束"
+    },
+    "review": {
+      "title": "人工审核",
+      "commentsPlaceholder": "填写审核意见。打回时必须说明需要修改什么；通过时可以留空。",
+      "approve": "通过",
+      "requestChanges": "打回修改"
     },
     "detail": {
       "actor": "执行者",

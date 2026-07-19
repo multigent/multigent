@@ -2,6 +2,7 @@ package api
 
 import (
 	"encoding/json"
+	"errors"
 	"net/http"
 	"strings"
 	"time"
@@ -24,6 +25,11 @@ type taskWorkflowResponse struct {
 	Definition entity.WorkflowDefinition     `json:"definition"`
 	Run        entity.WorkflowRun            `json:"run"`
 	Steps      []entity.WorkflowStepInstance `json:"steps"`
+}
+
+type workflowReviewBody struct {
+	Decision string `json:"decision"`
+	Comments string `json:"comments"`
 }
 
 func (s *Server) workflowStoreForRequest(w http.ResponseWriter, r *http.Request) (*workflowstore.Store, bool) {
@@ -251,6 +257,92 @@ func (s *Server) handleGetTaskWorkflow(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	_ = json.NewEncoder(w).Encode(taskWorkflowResponse{Definition: def, Run: run, Steps: steps})
+}
+
+func (s *Server) handlePostTaskWorkflowReview(w http.ResponseWriter, r *http.Request) {
+	project := r.PathValue("name")
+	taskID := r.PathValue("taskId")
+	if !s.checkProjectAccess(w, r, project) {
+		return
+	}
+	var body workflowReviewBody
+	if err := s.readJSON(w, r, &body); err != nil {
+		s.jsonError(w, http.StatusBadRequest, "invalid JSON body")
+		return
+	}
+	decision := strings.TrimSpace(body.Decision)
+	switch decision {
+	case "approved":
+		decision = "approve"
+	case "needs_changes":
+		decision = "request_changes"
+	}
+	if decision != "approve" && decision != "request_changes" {
+		s.jsonError(w, http.StatusBadRequest, "decision must be approved or needs_changes")
+		return
+	}
+	t, agent, err := s.findTaskInProject(project, taskID)
+	if err != nil {
+		s.jsonError(w, http.StatusNotFound, "task not found")
+		return
+	}
+	wfStore, ok := s.workflowStoreForRequest(w, r)
+	if !ok {
+		return
+	}
+	summary := "decision: " + decision
+	if strings.TrimSpace(body.Comments) != "" {
+		summary += "\ncomments: " + strings.TrimSpace(body.Comments)
+	}
+	transition, err := wfStore.CompleteAndAdvance(project, taskID, summary, summary, "completed", decision, body.Comments)
+	if err != nil {
+		s.serverError(w, err)
+		return
+	}
+	_ = s.ts.RemoveFromInbox(taskID)
+	if transition.Done {
+		now := time.Now().UTC()
+		t.Status = entity.TaskStatusDoneSuccess
+		t.Summary = summary
+		t.UpdatedAt = now
+		t.FinishedAt = &now
+		if err := s.ts.PersistTask(project, agent, t); err != nil {
+			s.serverError(w, err)
+			return
+		}
+	} else if err := s.activateNextWorkflowStep(project, agent, t, transition); err != nil {
+		s.serverError(w, err)
+		return
+	}
+	steps, err := wfStore.ListStepInstances(transition.Run.ID)
+	if err != nil {
+		s.serverError(w, err)
+		return
+	}
+	def, found, err := wfStore.Definition(transition.Run.DefinitionID)
+	if err != nil {
+		s.serverError(w, err)
+		return
+	}
+	if !found {
+		s.jsonError(w, http.StatusNotFound, "workflow definition not found")
+		return
+	}
+	_ = json.NewEncoder(w).Encode(taskWorkflowResponse{Definition: def, Run: transition.Run, Steps: steps})
+}
+
+func (s *Server) findTaskInProject(project, taskID string) (*entity.Task, string, error) {
+	agents, err := s.st.ListAgents(project)
+	if err != nil {
+		return nil, "", err
+	}
+	for _, agent := range agents {
+		t, err := s.ts.GetTask(project, agent.Name, taskID)
+		if err == nil {
+			return t, agent.Name, nil
+		}
+	}
+	return nil, "", errors.New("task not found")
 }
 
 func (s *Server) handleRuntimeTaskWorkflow(w http.ResponseWriter, r *http.Request) {

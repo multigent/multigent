@@ -132,14 +132,8 @@ const nodeTypes = { workflowStep: WorkflowStepNode }
 
 const typeClass: Record<string, string> = {
   agent_task: 'border-sky-200 bg-sky-50/95 text-sky-900 dark:border-sky-900/70 dark:bg-sky-950/80 dark:text-sky-100',
-  human_task:
-    'border-violet-200 bg-violet-50/95 text-violet-900 dark:border-violet-900/70 dark:bg-violet-950/80 dark:text-violet-100',
   human_review:
     'border-amber-200 bg-amber-50/95 text-amber-900 dark:border-amber-900/70 dark:bg-amber-950/80 dark:text-amber-100',
-  branch:
-    'border-fuchsia-200 bg-fuchsia-50/95 text-fuchsia-900 dark:border-fuchsia-900/70 dark:bg-fuchsia-950/80 dark:text-fuchsia-100',
-  join: 'border-emerald-200 bg-emerald-50/95 text-emerald-900 dark:border-emerald-900/70 dark:bg-emerald-950/80 dark:text-emerald-100',
-  terminal: 'border-neutral-200 bg-neutral-50/95 text-neutral-800 dark:border-zinc-700 dark:bg-zinc-800/90 dark:text-zinc-200',
 }
 
 const colorClass: Record<string, string> = {
@@ -186,7 +180,7 @@ const edgeClass: Record<string, string> = {
   failed: '#ef4444',
 }
 
-const stepTypes = ['agent_task', 'human_task', 'human_review', 'branch', 'join', 'terminal']
+const stepTypes = ['agent_task', 'human_review']
 const colorOptions = ['neutral', 'sky', 'violet', 'amber', 'emerald', 'rose']
 const edgeOperators = ['eq', 'neq', 'in', 'exists']
 const ALIGN_THRESHOLD = 28
@@ -217,6 +211,26 @@ function normalizeStepFields(step: WorkflowStep): WorkflowStep {
     ...step,
     inputFields,
     outputFields,
+  }
+}
+
+function stepPatchForType(type: string): Partial<WorkflowStep> {
+  if (type === 'human_review') {
+    return {
+      type,
+      actorRole: 'reviewer',
+      reviewPolicy: 'manual',
+      outputFields: [
+        { name: 'decision', description: 'approve or request_changes' },
+        { name: 'comments', description: 'Review notes passed to the next step or back to the previous step.' },
+      ],
+      config: { color: 'amber' },
+    }
+  }
+  return {
+    type: 'agent_task',
+    actorRole: 'agent',
+    reviewPolicy: '',
   }
 }
 
@@ -276,7 +290,7 @@ function isTextEditingTarget(target: EventTarget | null) {
 function WorkflowStepNode({ data, selected }: NodeProps<WorkflowNode>) {
   const { t } = useTranslation()
   const { step, status, active } = data
-  const nodeClass = colorClass[step.config?.color || ''] ?? typeClass[step.type] ?? typeClass.terminal
+  const nodeClass = colorClass[step.config?.color || ''] ?? typeClass[step.type] ?? colorClass.neutral
   return (
     <div
       className={cn(
@@ -501,10 +515,23 @@ export function WorkflowBoard({
   function handleConnect(connection: Connection) {
     if (!editable || !connection.source || !connection.target || connection.source === connection.target) return
     const edgeID = `e-${connection.source}-${connection.target}-${Date.now().toString(36)}`
-    const nextEdge: WorkflowEdge = { id: edgeID, from: connection.source, to: connection.target }
     const sourceStep = definition.steps.find((step) => step.id === connection.source)
     const targetStep = definition.steps.find((step) => step.id === connection.target)
     const backward = Boolean(sourceStep && targetStep && sourceStep.position.x > targetStep.position.x)
+    const reviewEdgePatch: Partial<WorkflowEdge> = sourceStep?.type === 'human_review'
+      ? backward
+        ? {
+            label: 'request changes',
+            condition: { field: 'decision', operator: 'eq', value: 'request_changes' },
+            inputMapping: { review_comments: '$output.comments' },
+          }
+        : {
+            label: 'approved',
+            condition: { field: 'decision', operator: 'eq', value: 'approve' },
+            inputMapping: { approval: '$output.decision' },
+          }
+      : {}
+    const nextEdge: WorkflowEdge = { id: edgeID, from: connection.source, to: connection.target, ...reviewEdgePatch }
     setEdges((eds) =>
       addEdge(
         {
@@ -513,6 +540,7 @@ export function WorkflowBoard({
           target: connection.target,
           sourceHandle: backward ? 'source-left' : 'source-right',
           targetHandle: backward ? 'target-right' : 'target-left',
+          label: nextEdge.label || '',
           type: 'smoothstep',
           markerEnd: { type: MarkerType.ArrowClosed, color: edgeClass.pending },
           style: { stroke: edgeClass.pending, strokeWidth: 2 },
@@ -522,8 +550,17 @@ export function WorkflowBoard({
     )
     setSelectedEdgeId(edgeID)
     setSelectedId(connection.source)
+    const sourceOutputs = sourceStep ? schemaFieldsFor(sourceStep, 'output') : []
     updateDefinition({
       ...definition,
+      steps: definition.steps.map((step) => {
+        if (step.id !== connection.target || schemaFieldsFor(step, 'input').length > 0 || sourceOutputs.length === 0) return step
+        return {
+          ...step,
+          inputFields: sourceOutputs.map(({ name, description }) => ({ name, description })),
+          inputSchema: '',
+        }
+      }),
       edges: [...definition.edges, nextEdge],
     })
   }
@@ -763,7 +800,7 @@ export function WorkflowBoard({
               </label>
               <label className="block">
                 <span className="text-xs font-medium uppercase text-neutral-400 dark:text-zinc-500">{t('workflows.detail.type')}</span>
-                <select value={stepDraft.type} onChange={(event) => updateStepDraft({ type: event.target.value })} className={fieldClass}>
+                <select value={stepDraft.type} onChange={(event) => updateStepDraft(stepPatchForType(event.target.value))} className={fieldClass}>
                   {stepTypes.map((type) => (
                     <option key={type} value={type}>
                       {t(`workflows.stepTypes.${type}`, { defaultValue: type.replace('_', ' ') })}

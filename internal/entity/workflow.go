@@ -33,7 +33,7 @@ type WorkflowTemplate struct {
 
 type WorkflowStep struct {
 	ID           string            `json:"id" yaml:"id"`
-	Type         string            `json:"type" yaml:"type"` // agent_task, human_review, branch, join, terminal
+	Type         string            `json:"type" yaml:"type"` // agent_task, human_review
 	Title        string            `json:"title" yaml:"title"`
 	Description  string            `json:"description,omitempty" yaml:"description,omitempty"`
 	ActorRole    string            `json:"actorRole,omitempty" yaml:"actor_role,omitempty"`

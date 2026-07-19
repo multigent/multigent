@@ -375,11 +375,17 @@
     "newStepTitle": "New step",
     "stepTypes": {
       "agent_task": "Agent task",
-      "human_task": "Human task",
       "human_review": "Human review",
+      "human_task": "Human task",
       "branch": "Branch",
       "join": "Join",
       "terminal": "Terminal"
+    },
+    "review": {
+      "title": "Human review",
+      "commentsPlaceholder": "Add review notes. Required when requesting changes; optional when approving.",
+      "approve": "Approve",
+      "requestChanges": "Request changes"
     },
     "detail": {
       "actor": "Actor",

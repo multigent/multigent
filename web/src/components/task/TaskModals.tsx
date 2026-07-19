@@ -236,6 +236,10 @@ export function TaskDetailModal({ task, onClose, onEdit, canEdit = true }: { tas
 
   const prio = priorityLabel[task.priority] ?? priorityLabel[2]
   const sCls = statusColor[task.status] ?? statusColor.pending
+  const [workflowVersion, setWorkflowVersion] = useState(0)
+  const [reviewComments, setReviewComments] = useState('')
+  const [reviewBusy, setReviewBusy] = useState<'approved' | 'needs_changes' | null>(null)
+  const [reviewErr, setReviewErr] = useState<string | null>(null)
 
   const runsQuery = `/api/v1/telemetry/runs?allTime=1&project=${encodeURIComponent(task.project)}`
   const runsState = useApiJson<{ runs: RunRow[] }>(runsQuery, 0)
@@ -247,7 +251,28 @@ export function TaskDetailModal({ task, onClose, onEdit, canEdit = true }: { tas
   const hasLog = Boolean(matchingRun?.logPath)
   const logQuery = hasLog ? `/api/v1/telemetry/log?path=${encodeURIComponent(matchingRun!.logPath!)}` : null
   const logState = useApiJson<LogData>(logQuery, 0)
-  const workflowState = useApiJson<TaskWorkflowData>(`/api/v1/projects/${encodeURIComponent(task.project)}/tasks/${encodeURIComponent(task.id)}/workflow`, 0)
+  const workflowState = useApiJson<TaskWorkflowData>(`/api/v1/projects/${encodeURIComponent(task.project)}/tasks/${encodeURIComponent(task.id)}/workflow`, workflowVersion)
+  const activeWorkflowStep = workflowState.status === 'ok'
+    ? workflowState.data.definition.steps.find((step) => step.id === workflowState.data.run.activeStepId)
+    : undefined
+  const canReviewWorkflow = activeWorkflowStep?.type === 'human_review'
+
+  async function submitWorkflowReview(decision: 'approved' | 'needs_changes') {
+    setReviewErr(null)
+    setReviewBusy(decision)
+    try {
+      await apiPost(`/api/v1/projects/${encodeURIComponent(task.project)}/tasks/${encodeURIComponent(task.id)}/workflow/review`, {
+        decision,
+        comments: reviewComments.trim(),
+      })
+      setReviewComments('')
+      setWorkflowVersion((v) => v + 1)
+    } catch (e) {
+      setReviewErr(e instanceof Error ? e.message : String(e))
+    } finally {
+      setReviewBusy(null)
+    }
+  }
 
   return (
     <div className="fixed inset-0 z-50 flex items-start justify-center pt-[3vh]">
@@ -332,6 +357,33 @@ export function TaskDetailModal({ task, onClose, onEdit, canEdit = true }: { tas
               </span>
             </div>
             <WorkflowBoard definition={workflowState.data.definition} run={workflowState.data.run} instances={workflowState.data.steps} />
+            {canReviewWorkflow && (
+              <div className="mt-3 rounded-xl border border-amber-200 bg-amber-50/60 p-3 dark:border-amber-900/60 dark:bg-amber-950/20">
+                <div className="flex items-start justify-between gap-3">
+                  <div>
+                    <p className="text-sm font-medium text-amber-900 dark:text-amber-100">{t('workflows.review.title')}</p>
+                    <p className="mt-0.5 text-xs text-amber-700/80 dark:text-amber-300/80">{activeWorkflowStep.title}</p>
+                  </div>
+                  <span className="rounded-full bg-white px-2 py-0.5 text-xs font-medium text-amber-700 dark:bg-zinc-900 dark:text-amber-300">{t('workflows.stepTypes.human_review')}</span>
+                </div>
+                <textarea
+                  value={reviewComments}
+                  onChange={(e) => setReviewComments(e.target.value)}
+                  rows={3}
+                  placeholder={t('workflows.review.commentsPlaceholder')}
+                  className="mt-3 w-full resize-y rounded-lg border border-amber-200 bg-white px-3 py-2 text-sm text-neutral-900 outline-none focus:border-amber-400 dark:border-amber-900/60 dark:bg-zinc-900 dark:text-zinc-100"
+                />
+                {reviewErr && <p className="mt-2 text-sm text-red-600 dark:text-red-400">{reviewErr}</p>}
+                <div className="mt-3 flex justify-end gap-2">
+                  <button type="button" onClick={() => void submitWorkflowReview('needs_changes')} disabled={Boolean(reviewBusy)} className="rounded-lg border border-neutral-300 bg-white px-3 py-2 text-sm font-medium text-neutral-600 hover:bg-neutral-50 disabled:opacity-50 dark:border-zinc-600 dark:bg-zinc-900 dark:text-zinc-300 dark:hover:bg-zinc-800">
+                    {reviewBusy === 'needs_changes' ? t('forms.working') : t('workflows.review.requestChanges')}
+                  </button>
+                  <button type="button" onClick={() => void submitWorkflowReview('approved')} disabled={Boolean(reviewBusy)} className="rounded-lg border border-sky-600 bg-white px-3 py-2 text-sm font-medium text-sky-700 hover:bg-sky-50 disabled:opacity-50 dark:border-sky-500 dark:bg-zinc-900 dark:text-sky-400 dark:hover:bg-zinc-800">
+                    {reviewBusy === 'approved' ? t('forms.working') : t('workflows.review.approve')}
+                  </button>
+                </div>
+              </div>
+            )}
           </div>
         )}
         {workflowState.status === 'error' && (workflowState.error as { status?: number }).status !== 404 && (

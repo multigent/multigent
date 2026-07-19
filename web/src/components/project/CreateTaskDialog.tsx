@@ -115,7 +115,7 @@ export function CreateTaskDialog({ projectId: defaultProjectId, agents: defaultA
     for (const step of steps) {
       const role = step.actorRole?.trim()
       if (!role) continue
-      const preferredType = step.type === 'human_review' || step.type === 'human_task' ? 'human' : 'agent'
+      const preferredType = step.type === 'human_review' ? 'human' : 'agent'
       const existing = byRole.get(role)
       if (existing) {
         existing.titles.push(step.title)
@@ -184,7 +184,7 @@ export function CreateTaskDialog({ projectId: defaultProjectId, agents: defaultA
     for (const step of workflow?.steps ?? []) {
       const role = step.actorRole?.trim()
       if (!role || next[role]) continue
-      const preferredType = step.type === 'human_review' || step.type === 'human_task' ? 'human' : 'agent'
+      const preferredType = step.type === 'human_review' ? 'human' : 'agent'
       next[role] = autoBindingFor(role, preferredType)
     }
     setActorBindings(next)

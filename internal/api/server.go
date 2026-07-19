@@ -284,6 +284,7 @@ func (s *Server) Handler() http.Handler {
 	mux.HandleFunc("PUT /api/v1/workflows/{workflowId}", s.handleUpdateWorkflow)
 	mux.HandleFunc("DELETE /api/v1/workflows/{workflowId}", s.handleDeleteWorkflow)
 	mux.HandleFunc("GET /api/v1/projects/{name}/tasks/{taskId}/workflow", s.handleGetTaskWorkflow)
+	mux.HandleFunc("POST /api/v1/projects/{name}/tasks/{taskId}/workflow/review", s.handlePostTaskWorkflowReview)
 	mux.HandleFunc("GET /api/v1/prompts/agency", s.handleGetAgencyPrompt)
 	mux.HandleFunc("PUT /api/v1/prompts/agency", s.handlePutAgencyPrompt)
 	mux.HandleFunc("GET /api/v1/prompts/teams/{teamPath...}", s.handleGetTeamPrompt)

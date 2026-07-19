@@ -409,7 +409,13 @@ func (s *Server) handleRuntimeTaskDone(w http.ResponseWriter, r *http.Request) {
 		s.serverError(w, err)
 		return
 	}
-	s.recordRuntimeTaskWorkflowOutput(principal.WorkspaceID, principal.Project, t)
+	transition, transitioned := s.recordRuntimeTaskWorkflowOutput(principal.WorkspaceID, principal.Project, agent, t)
+	if transitioned {
+		if err := s.activateNextWorkflowStep(principal.Project, agent, t, transition); err != nil {
+			s.serverError(w, err)
+			return
+		}
+	}
 	if t.CreatedBy != "" {
 		s.notifyTaskDone(t, principal.Project, agent)
 	}
@@ -427,23 +433,110 @@ func (s *Server) handleRuntimeTaskDone(w http.ResponseWriter, r *http.Request) {
 	_ = json.NewEncoder(w).Encode(taskToRow(t, principal.Project, agent, true))
 }
 
-func (s *Server) recordRuntimeTaskWorkflowOutput(workspaceID, project string, t *entity.Task) {
+func (s *Server) recordRuntimeTaskWorkflowOutput(workspaceID, project, agent string, t *entity.Task) (workflowstore.TransitionResult, bool) {
+	var result workflowstore.TransitionResult
 	if s == nil || s.controlDB == nil || t == nil || strings.TrimSpace(workspaceID) == "" {
-		return
+		return result, false
 	}
 	stepStatus := "completed"
 	if t.Status == entity.TaskStatusDoneFailed {
 		stepStatus = "failed"
 	}
 	if t.Status != entity.TaskStatusDoneSuccess && t.Status != entity.TaskStatusDoneFailed {
-		return
+		return result, false
 	}
 	wfStore := workflowstore.NewStore(s.controlDB, workspaceID)
 	output := strings.TrimSpace(t.Summary)
 	if output == "" {
 		output = strings.TrimSpace(t.LastError)
 	}
-	_ = wfStore.RecordActiveStepOutput(project, t.ID, t.Summary, output, stepStatus)
+	result, err := wfStore.CompleteAndAdvance(project, t.ID, t.Summary, output, stepStatus, "", "")
+	if err != nil {
+		return result, false
+	}
+	return result, result.Next != nil || result.Done
+}
+
+func (s *Server) activateNextWorkflowStep(project, previousAgent string, completed *entity.Task, transition workflowstore.TransitionResult) error {
+	if completed == nil || transition.Done || transition.Next == nil || transition.NextInst == nil {
+		return nil
+	}
+	next := transition.Next
+	inst := transition.NextInst
+	now := time.Now().UTC()
+	nextPrompt := workflowContinuationPrompt(completed, *next, *inst)
+	if inst.ActorType == "agent" && strings.TrimSpace(inst.ActorID) != "" {
+		nextAgent := strings.TrimSpace(inst.ActorID)
+		if nextAgent == previousAgent {
+			completed.Status = entity.TaskStatusPending
+			completed.Prompt = nextPrompt
+			completed.Assignee = project + "/" + nextAgent
+			completed.UpdatedAt = now
+			completed.FinishedAt = nil
+			return s.ts.PersistTask(project, nextAgent, completed)
+		}
+		_ = s.ts.DeleteTask(project, previousAgent, completed.ID)
+		completed.Status = entity.TaskStatusPending
+		completed.Prompt = nextPrompt
+		completed.Assignee = project + "/" + nextAgent
+		completed.UpdatedAt = now
+		completed.FinishedAt = nil
+		if err := s.ts.AddTask(project, nextAgent, completed); err != nil {
+			return err
+		}
+		s.triggers.Fire(project, nextAgent, entity.TriggerOnTask, "workflow task "+completed.ID)
+		return nil
+	}
+	if inst.ActorType == "human" {
+		completed.Status = entity.TaskStatusAwaitingConfirmation
+		completed.Prompt = nextPrompt
+		completed.Assignee = "human"
+		completed.UpdatedAt = now
+		completed.FinishedAt = nil
+		if err := s.ts.PersistTask(project, previousAgent, completed); err != nil {
+			return err
+		}
+		return s.ts.AddToInbox(&entity.InboxItem{
+			TaskID:      completed.ID,
+			Project:     project,
+			Agent:       previousAgent,
+			To:          strings.TrimSpace(inst.ActorID),
+			Title:       completed.Title,
+			Summary:     strings.TrimSpace(inst.InputArtifact),
+			ActionHint:  "Review the workflow step and choose approved or needs_changes.",
+			ActionItems: []string{"Open the task workflow panel.", "Review the previous step output.", "Approve or request changes with clear comments."},
+		})
+	}
+	return nil
+}
+
+func workflowContinuationPrompt(task *entity.Task, step entity.WorkflowStep, inst entity.WorkflowStepInstance) string {
+	var b strings.Builder
+	b.WriteString("Continue this workflow task from the current active step.\n\n")
+	b.WriteString("Current step: ")
+	b.WriteString(step.Title)
+	b.WriteString(" (`")
+	b.WriteString(step.ID)
+	b.WriteString("`, type `")
+	b.WriteString(step.Type)
+	b.WriteString("`)\n")
+	if strings.TrimSpace(step.Description) != "" {
+		b.WriteString("Step goal: ")
+		b.WriteString(strings.TrimSpace(step.Description))
+		b.WriteString("\n")
+	}
+	if strings.TrimSpace(inst.InputArtifact) != "" {
+		b.WriteString("\nInput from previous step:\n")
+		b.WriteString(inst.InputArtifact)
+		b.WriteString("\n")
+	}
+	if strings.TrimSpace(task.Prompt) != "" {
+		b.WriteString("\nOriginal task prompt:\n")
+		b.WriteString(task.Prompt)
+		b.WriteString("\n")
+	}
+	b.WriteString("\nFollow the workflow context injected by Multigent and complete only this step.")
+	return b.String()
 }
 
 func normalizeDoneStatus(status, errText string) entity.TaskStatus {

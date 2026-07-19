@@ -375,11 +375,17 @@
     "newStepTitle": "新節點",
     "stepTypes": {
       "agent_task": "Agent 任務",
-      "human_task": "人工任務",
       "human_review": "人工審核",
+      "human_task": "人工任務",
       "branch": "分支",
       "join": "匯合",
       "terminal": "結束"
+    },
+    "review": {
+      "title": "人工審核",
+      "commentsPlaceholder": "填寫審核意見。打回時必須說明需要修改什麼；通過時可以留空。",
+      "approve": "通過",
+      "requestChanges": "打回修改"
     },
     "detail": {
       "actor": "執行者",
