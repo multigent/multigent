@@ -53,3 +53,39 @@ func TestWorkbenchTasksIncludeDirectHumanAssigneeWithoutProjectAccess(t *testing
 		t.Fatalf("assignee label=%q", rows[0].AssigneeLabel)
 	}
 }
+
+func TestWorkbenchTasksExcludeProjectTaskNotAssignedToMember(t *testing.T) {
+	s, workspaceID := newConnectionGrantPolicyServer(t)
+	grantProjectRoleForTest(t, s, workspaceID, "member1", ProjectRoleViewer)
+
+	now := time.Now().UTC()
+	task := &entity.Task{
+		ID:        "t-agent",
+		Title:     "PM rework",
+		Type:      entity.TaskTypeChore,
+		Priority:  2,
+		Assignee:  "sample/pm",
+		CreatedBy: "owner",
+		Status:    entity.TaskStatusPending,
+		Prompt:    "Revise the spec.",
+		CreatedAt: now,
+		UpdatedAt: now,
+	}
+	if err := s.ts.AddTask("sample", "pm", task); err != nil {
+		t.Fatalf("add task: %v", err)
+	}
+
+	rec := httptest.NewRecorder()
+	req := providerTestRequest(http.MethodGet, "/api/v1/workbench/tasks", "member1", nil)
+	s.handleWorkbenchTasks(rec, req)
+	if rec.Code != http.StatusOK {
+		t.Fatalf("status=%d body=%s", rec.Code, rec.Body.String())
+	}
+	var rows []taskRow
+	if err := json.Unmarshal(rec.Body.Bytes(), &rows); err != nil {
+		t.Fatalf("decode rows: %v", err)
+	}
+	if len(rows) != 0 {
+		t.Fatalf("project member workbench should only show direct responsibilities, got %#v", rows)
+	}
+}

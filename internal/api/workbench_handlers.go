@@ -166,7 +166,6 @@ func (s *Server) handleWorkbenchTasks(w http.ResponseWriter, r *http.Request) {
 		if projectFilter != "" && proj != projectFilter {
 			continue
 		}
-		canAccessProject := s.canAccessProject(r, proj)
 		agents, err := s.ts.ListAgents(proj)
 		if err != nil {
 			continue
@@ -189,8 +188,7 @@ func (s *Server) handleWorkbenchTasks(w http.ResponseWriter, r *http.Request) {
 						continue
 					}
 				} else {
-					agentID := proj + "/" + ag
-					if !canAccessProject && !linkedSet[agentID] && t.Assignee != cur.Username {
+					if t.Assignee != cur.Username && !linkedSet[t.Assignee] {
 						continue
 					}
 				}
