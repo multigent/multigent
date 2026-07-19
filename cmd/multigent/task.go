@@ -30,7 +30,7 @@ func newTaskCmd() *cobra.Command {
 		newTaskFindCmd(),
 		newTaskSetCmd(),
 		newTaskStatsCmd(),
-		newTaskDoneCmd(),
+		newTaskCompleteCmd(),
 		newTaskConfirmRequestCmd(),
 		newTaskRetryCmd(),
 		newTaskCancelCmd(),
@@ -521,7 +521,7 @@ func newTaskSetCmd() *cobra.Command {
 		Long: `Update one or more fields on an existing task.
 
 Only flags you pass are changed. Omit --project/--agent to auto-locate the task
-across the workspace (same as task done).
+across the workspace.
 
 Clear optional fields with an empty value:
   --due-date ""
@@ -660,9 +660,9 @@ func taskSetAnyChanged(cmd *cobra.Command) bool {
 	return false
 }
 
-// ── task done ─────────────────────────────────────────────────────────────────
+// ── task complete ─────────────────────────────────────────────────────────────
 
-func newTaskDoneCmd() *cobra.Command {
+func newTaskCompleteCmd() *cobra.Command {
 	var (
 		taskID   string
 		status   string
@@ -671,15 +671,13 @@ func newTaskDoneCmd() *cobra.Command {
 	)
 
 	cmd := &cobra.Command{
-		Use:   "done",
-		Short: "Mark a task as done (success or failed)",
-		Long: `Intended to be called BY the agent itself from inside its prompt:
+		Use:   "complete",
+		Short: "Complete a regular task",
+		Long: `Complete a regular task as success or failed:
 
-  multigent task done --id <task-id> --status success
-  multigent task done --id <task-id> --status success --summary "PR #42 opened at https://..."
-  multigent task done --id <task-id> --status failed --error "reason"
-
-The --summary value is passed to the next step via workflow routing ({{task.summary}}).`,
+  multigent task complete --id <task-id> --status success
+  multigent task complete --id <task-id> --status success --summary "PR #42 opened at https://..."
+  multigent task complete --id <task-id> --status failed --error "reason"`,
 		RunE: func(cmd *cobra.Command, args []string) error {
 			root, err := resolveRoot()
 			if err != nil {
@@ -744,7 +742,7 @@ The --summary value is passed to the next step via workflow routing ({{task.summ
 	cmd.Flags().StringVar(&taskID, "id", "", "task ID")
 	cmd.Flags().StringVar(&status, "status", "", "success or failed")
 	cmd.Flags().StringVar(&errorMsg, "error", "", "error message (for failed status)")
-	cmd.Flags().StringVar(&summary, "summary", "", "what was accomplished (passed to next workflow step via {{task.summary}})")
+	cmd.Flags().StringVar(&summary, "summary", "", "what was accomplished")
 	return cmd
 }
 
@@ -965,7 +963,7 @@ func newTaskCancelCmd() *cobra.Command {
 // ── helpers ───────────────────────────────────────────────────────────────────
 
 // resolveTaskOwner searches all projects/agents in the workspace for the task.
-// This allows callers (agents) to omit --project/--agent when using task done/
+// This allows callers to omit --project/--agent when using task complete/
 // confirm-request from within their working directory.
 func resolveTaskOwner(root, taskID string) (project, agent string, err error) {
 	ts := mustTaskStore(root)

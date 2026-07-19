@@ -166,6 +166,7 @@ This is a one-shot manual trigger. For recurring automated runs, use
 				fmt.Printf("↪ Task %s was updated by runtime workflow\n", task.ID)
 				return nil
 			}
+			enforceWorkflowStepCompletion(root, project, task, result)
 
 			task.RunLogPath = result.LogPath
 			finished := time.Now().UTC()

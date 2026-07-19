@@ -67,7 +67,7 @@ mga task list
 mga task show <id>
 mga task add
 mga task update <id>
-mga task done --id <id> --status success
+mga task complete --id <id> --status success
 mga task confirm-request --id <id> --summary "..."
 mga message list
 mga message send
@@ -140,7 +140,7 @@ Server 可以在发 token 时收窄 capability。每个 mutating command 都必�
 正确写法：
 
 ```bash
-mga task done --id "$TASK_ID" --status success --summary "..."
+mga task complete --id "$TASK_ID" --status success --summary "..."
 mga message send --to project/agent --subject "..." --body "..."
 mga okr update <okr-id> --status on_track
 ```

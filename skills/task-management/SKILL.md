@@ -59,8 +59,14 @@ Supported statuses:
 ## Complete
 
 ```bash
-mga task done --id <task-id> --status success --summary "What was accomplished"
-mga task done --id <task-id> --status failed --error "Reason"
+mga task complete --id <task-id> --status success --summary "What was accomplished"
+mga task complete --id <task-id> --status failed --error "Reason"
+
+# Workflow task: complete the current workflow step, not the whole task.
+mga step done --task-id <task-id> --status success \
+  --summary "One-line completion summary" \
+  --output technical_spec_doc_id="doc-..." \
+  --output test_plan_doc_id="doc-..."
 ```
 
 Completion summaries must describe actual output, produced files/links, residual risks, and whether human follow-up is needed.

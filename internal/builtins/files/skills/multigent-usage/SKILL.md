@@ -38,18 +38,18 @@ mga task add --agent <agent> --title "Title" --prompt "Detailed instructions" --
 mga task set <task-id> --status in_progress
 mga task set <task-id> --summary "Current progress"
 
-# Mark completion.
-mga task done --id <task-id> --status success --summary "What was actually done"
-mga task done --id <task-id> --status failed --error "Failure reason"
+# Complete a regular non-workflow task.
+mga task complete --id <task-id> --status success --summary "What was actually done"
+mga task complete --id <task-id> --status failed --error "Failure reason"
 
 # Workflow tasks must submit every required output field structurally.
-mga task done --id <task-id> --status success \
+mga step done --task-id <task-id> --status success \
   --summary "One-line completion summary" \
   --output product_spec_doc_id="doc-..." \
   --output acceptance_criteria_doc_id="doc-..."
 
 # For large or many fields, use a JSON object.
-mga task done --id <task-id> --status success \
+mga step done --task-id <task-id> --status success \
   --output-json '{"summary":"done","product_spec_doc_id":"doc-..."}'
 
 # Ask for human or agent confirmation.

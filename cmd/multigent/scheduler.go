@@ -925,6 +925,7 @@ func runAllPendingTasks(ctx context.Context, root, project, agentName string,
 			tasksProcessed++
 			continue
 		}
+		enforceWorkflowStepCompletion(root, project, task, result)
 
 		// Update session ID for the cycle (per-cycle scope by default).
 		if result.SessionID != "" {

@@ -73,15 +73,18 @@ const systemMetaFooter = `
 Task ID : %s
 Agent   : %s/%s
 
-When complete successfully, run:
-  mga task done --id %s --status success
+For a regular task with no Workflow Context, complete the whole task with:
+  mga task complete --id %s --status success
 
 If human confirmation needed, run:
   mga task confirm-request --id %s --summary "one-line explanation"
   (then exit 0)
 
-If unable to complete, run:
-  mga task done --id %s --status failed --error "reason"
+If a regular task cannot be completed, run:
+  mga task complete --id %s --status failed --error "reason"
+
+For a workflow task, do not complete the whole task directly. Complete only the current step with:
+  mga step done --task-id %s --status success --output <field>=<value>
 `
 
 // Runner executes tasks for agents using their configured CLI.
@@ -328,7 +331,7 @@ func (r *Runner) RunTask(project, agentName string, task *entity.Task, sessionID
 	}
 
 	fullPrompt := r.taskPromptWithWorkflowContext(project, agentName, task) + fmt.Sprintf(systemMetaFooter,
-		task.ID, project, agentName, task.ID, task.ID, task.ID)
+		task.ID, project, agentName, task.ID, task.ID, task.ID, task.ID)
 
 	// Write prompt to a temp file (avoids shell escaping issues).
 	promptFile, err := writeTempPrompt(agentDir, fullPrompt)
@@ -625,7 +628,7 @@ func (r *Runner) workflowPromptContext(project, agentName, taskID string) string
 	}
 	b.WriteString("Instructions:\n")
 	b.WriteString("- Treat the current step as the workflow contract for this task.\n")
-	b.WriteString("- Finish workflow steps with structured outputs using `mga task done --id ")
+	b.WriteString("- Finish workflow steps with structured outputs using `mga step done --task-id ")
 	b.WriteString(taskID)
 	b.WriteString(" --status success --output <field>=<value>` for every required output field, or use `--output-json '{...}'`.\n")
 	b.WriteString("- Do not put required workflow fields only in natural-language summary; the server validates output field names against the current step spec.\n")
@@ -1092,7 +1095,7 @@ func (r *Runner) runTaskHTTP(project, agentName, agentDir string, meta *entity.A
 	}
 
 	userPrompt := r.taskPromptWithWorkflowContext(project, agentName, task) + fmt.Sprintf(systemMetaFooter,
-		task.ID, project, agentName, task.ID, task.ID, task.ID)
+		task.ID, project, agentName, task.ID, task.ID, task.ID, task.ID)
 
 	logDir, err := r.ts.RunLogDir(project, agentName)
 	if err != nil {

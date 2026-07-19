@@ -44,6 +44,7 @@ func main() {
 		newVersionCmd(),
 		newRuntimeCmd(),
 		newTaskCmd(),
+		newStepCmd(),
 		newInboxCmd(),
 		newDocsCmd(),
 		newWorkflowCmd(),
@@ -335,7 +336,7 @@ func newTaskCmd() *cobra.Command {
 		newTaskShowCmd(),
 		newTaskAddCmd(),
 		newTaskSetCmd(),
-		newTaskDoneCmd(),
+		newTaskCompleteCmd(),
 		newTaskCancelCmd(),
 		newTaskConfirmRequestCmd(),
 	)
@@ -507,12 +508,11 @@ func newTaskCancelCmd() *cobra.Command {
 	return cmd
 }
 
-func newTaskDoneCmd() *cobra.Command {
-	var id, agent, status, summary, errText, outputJSON string
-	var outputPairs []string
+func newTaskCompleteCmd() *cobra.Command {
+	var id, agent, status, summary, errText string
 	cmd := &cobra.Command{
-		Use:   "done",
-		Short: "Mark a task completed or failed",
+		Use:   "complete",
+		Short: "Complete a non-workflow task",
 		RunE: func(cmd *cobra.Command, args []string) error {
 			if id == "" {
 				return fmt.Errorf("--id is required")
@@ -520,12 +520,8 @@ func newTaskDoneCmd() *cobra.Command {
 			if status == "" {
 				status = "success"
 			}
-			outputs, err := parseTaskDoneOutputs(outputPairs, outputJSON)
-			if err != nil {
-				return err
-			}
-			body, _ := json.Marshal(map[string]any{"agent": agent, "status": status, "summary": summary, "error": errText, "outputs": outputs})
-			resp, err := requestJSON(http.MethodPost, "/api/v1/runtime/tasks/"+url.PathEscape(id)+"/done", nil, body)
+			body, _ := json.Marshal(map[string]any{"agent": agent, "status": status, "summary": summary, "error": errText})
+			resp, err := requestJSON(http.MethodPost, "/api/v1/runtime/tasks/"+url.PathEscape(id)+"/complete", nil, body)
 			if err != nil {
 				return err
 			}
@@ -537,12 +533,57 @@ func newTaskDoneCmd() *cobra.Command {
 	cmd.Flags().StringVar(&status, "status", "success", "success or failed")
 	cmd.Flags().StringVar(&summary, "summary", "", "completion summary")
 	cmd.Flags().StringVar(&errText, "error", "", "failure reason")
+	return cmd
+}
+
+func newStepCmd() *cobra.Command {
+	cmd := &cobra.Command{
+		Use:   "step",
+		Short: "Complete workflow steps",
+	}
+	cmd.AddCommand(newStepDoneCmd())
+	return cmd
+}
+
+func newStepDoneCmd() *cobra.Command {
+	var taskID, agent, status, summary, errText, outputJSON string
+	var outputPairs []string
+	cmd := &cobra.Command{
+		Use:   "done",
+		Short: "Complete the current workflow step",
+		RunE: func(cmd *cobra.Command, args []string) error {
+			if taskID == "" && len(args) > 0 {
+				taskID = args[0]
+			}
+			if strings.TrimSpace(taskID) == "" {
+				return fmt.Errorf("--task-id or task id argument is required")
+			}
+			if status == "" {
+				status = "success"
+			}
+			outputs, err := parseStructuredOutputs(outputPairs, outputJSON)
+			if err != nil {
+				return err
+			}
+			body, _ := json.Marshal(map[string]any{"agent": agent, "status": status, "summary": summary, "error": errText, "outputs": outputs})
+			resp, err := requestJSON(http.MethodPost, "/api/v1/runtime/tasks/"+url.PathEscape(taskID)+"/workflow/step/complete", nil, body)
+			if err != nil {
+				return err
+			}
+			return writeJSON(resp)
+		},
+	}
+	cmd.Flags().StringVar(&taskID, "task-id", "", "task id")
+	cmd.Flags().StringVar(&agent, "agent", "", "agent that currently owns the task")
+	cmd.Flags().StringVar(&status, "status", "success", "success or failed")
+	cmd.Flags().StringVar(&summary, "summary", "", "step summary")
+	cmd.Flags().StringVar(&errText, "error", "", "failure reason")
 	cmd.Flags().StringArrayVar(&outputPairs, "output", nil, "structured workflow output as field=value, repeatable")
 	cmd.Flags().StringVar(&outputJSON, "output-json", "", "structured workflow outputs as a JSON object")
 	return cmd
 }
 
-func parseTaskDoneOutputs(pairs []string, rawJSON string) (map[string]string, error) {
+func parseStructuredOutputs(pairs []string, rawJSON string) (map[string]string, error) {
 	out := map[string]string{}
 	if strings.TrimSpace(rawJSON) != "" {
 		var decoded map[string]any

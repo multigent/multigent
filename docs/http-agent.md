@@ -11,7 +11,7 @@ Execution is **HTTP-only**: there is no subprocess, no Docker-wrapped CLI, and n
 On each `multigent run` / `multigent exec`:
 
 1. **System message** — contents of the agent’s merged context file. After hire, this is normally `context.md` in the agent directory (same layout as `generic-cli`: agency → team → role → project layers plus skills). If that file is missing, the runner falls back to `AGENTS.md`, `CLAUDE.md`, `GEMINI.md`, `OPENCODE.md`, or `IFLOW.md` so older workspaces still work.
-2. **User message** — the task prompt (for queued tasks) or your raw prompt (`exec`), plus multigent’s **system metadata footer** (task id, `multigent task done`, `confirm-request`, etc.).
+2. **User message** — the task prompt (for queued tasks) or your raw prompt (`exec`), plus multigent’s **system metadata footer** (task id, `multigent task complete`, `confirm-request`, etc.).
 
 The request body matches the common **chat completions** shape:
 

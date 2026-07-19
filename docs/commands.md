@@ -131,8 +131,8 @@ multigent task stop-all --project P [--agent A | --all-agents] \
 multigent task tokens --project P [--agent A | --all-agents] [--all]
 
 # Called by the agent inside its prompt:
-multigent task done --id <id> --status success --summary "what was done"
-multigent task done --id <id> --status failed  --error "reason"
+multigent task complete --id <id> --status success --summary "what was done"
+multigent task complete --id <id> --status failed  --error "reason"
 
 # Route to human inbox for a decision (blocks current task until human responds):
 multigent task confirm-request --id <id> --summary "PR ready" \

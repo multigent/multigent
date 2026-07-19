@@ -171,7 +171,7 @@ Workspace-level:
     1. Check code quality, security, and correctness
     2. Run the test suite mentally (or via CI links)
     3. Post a review comment on GitHub with your findings
-    4. If you approve: mark this task done_success
+    4. If you approve: mark this task complete_success
     5. If changes are needed: call `task confirm-request` to archive task and notify human via inbox
 
   context: {}               # optional extra key-value context injected alongside prompt
@@ -284,7 +284,7 @@ qa-reviewer wakes up
 [Later: qa-reviewer picks up review task]
       │
       ├── Reviews PR → all good
-      │         └── multigent task done --id t-xxx --status success
+      │         └── multigent task complete --id t-xxx --status success
       │                   → triggers: create task for dev-claude "Address minor nits"
       │
       └── Reviews PR → security concern found
@@ -333,7 +333,7 @@ pm-agent wakes up
       │
       ├── Works on the fix
       ├── Opens a PR
-      └── multigent task done --id t-xxx --status success \
+      └── multigent task complete --id t-xxx --status success \
               --on-success-trigger qa-reviewer:"Review PR #55 for fix to issue #77"
               → auto-creates review task for qa-reviewer
 
@@ -409,8 +409,8 @@ multigent run --project cc-connect --agent qa-reviewer --task <task-id>
 multigent run --project cc-connect --agent qa-reviewer
 
 # Mark done (usually called by the agent itself inside the prompt)
-multigent task done --id <task-id> --status success
-multigent task done --id <task-id> --status failed --error "reason"
+multigent task complete --id <task-id> --status success
+multigent task complete --id <task-id> --status failed --error "reason"
 
 # Route to human confirmation
 multigent task confirm-request --id <task-id> --summary "..."
@@ -558,14 +558,14 @@ Task ID: t-20260316-001
 Agent:   cc-connect/qa-reviewer
 
 When you complete successfully, run:
-  multigent task done --id t-20260316-001 --status success
+  multigent task complete --id t-20260316-001 --status success
 
 If you need human confirmation, run:
   multigent task confirm-request --id t-20260316-001 --summary "one-line explanation"
   (Then exit 0)
 
 If you cannot complete this task, run:
-  multigent task done --id t-20260316-001 --status failed --error "reason"
+  multigent task complete --id t-20260316-001 --status failed --error "reason"
 ```
 
 ---
@@ -764,7 +764,7 @@ session_scope: cycle   # cycle | task
 Deliverables:
 - `internal/taskstore/` — read/write `tasks.yaml`, `tasks_archive.yaml`, `heartbeat.yaml`
 - `internal/runner/` — shell exec wrapper, output parser, sentinel + session ID detection
-- `cmd/multigent/task.go` — `task add/list/show/set/done/confirm-request/retry/cancel`
+- `cmd/multigent/task.go` — `task add/list/show/set/complete/confirm-request/retry/cancel`
 - `cmd/multigent/run.go` — `run` command (manual trigger)
 - `cmd/multigent/inbox.go` — `inbox list/show/confirm/reject/comment`
 - `cmd/multigent/session.go` — `session set/reset/show`
