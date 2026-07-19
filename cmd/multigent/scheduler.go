@@ -2212,7 +2212,7 @@ func checkWakeupPreset(preset string, ts taskstore.Store, project, agentName str
 	tasks, err := ts.ListTasks(project, agentName)
 	if err == nil {
 		for _, t := range tasks {
-			if !t.Status.IsTerminal() {
+			if t.Status == entity.TaskStatusPending {
 				hasTasks = true
 				break
 			}
@@ -2228,7 +2228,7 @@ func checkWakeupPreset(preset string, ts taskstore.Store, project, agentName str
 	switch preset {
 	case "require_tasks":
 		if !hasTasks {
-			return false, "no incomplete tasks"
+			return false, "no pending tasks"
 		}
 	case "require_messages":
 		if !hasMessages {
@@ -2236,7 +2236,7 @@ func checkWakeupPreset(preset string, ts taskstore.Store, project, agentName str
 		}
 	case "require_any":
 		if !hasTasks && !hasMessages {
-			return false, "no incomplete tasks and no unread messages"
+			return false, "no pending tasks and no unread messages"
 		}
 	}
 	return true, ""

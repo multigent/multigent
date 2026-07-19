@@ -3,6 +3,10 @@ package main
 import (
 	"strings"
 	"testing"
+	"time"
+
+	"github.com/multigent/multigent/internal/entity"
+	"github.com/multigent/multigent/internal/taskstore"
 )
 
 func TestValidateWakeupCondition(t *testing.T) {
@@ -238,5 +242,44 @@ func TestValidateWakeupCondition(t *testing.T) {
 				}
 			}
 		})
+	}
+}
+
+func TestCheckWakeupPresetRequireTasksOnlyCountsPending(t *testing.T) {
+	root := t.TempDir()
+	ts := taskstore.New(root)
+	now := time.Now().UTC()
+
+	if err := ts.AddTask("project", "qa", &entity.Task{
+		ID:        "review-waiting",
+		Title:     "Review waiting",
+		Status:    entity.TaskStatusAwaitingConfirmation,
+		CreatedAt: now,
+		UpdatedAt: now,
+	}); err != nil {
+		t.Fatalf("add awaiting task: %v", err)
+	}
+
+	met, reason := checkWakeupPreset("require_tasks", ts, "project", "qa")
+	if met {
+		t.Fatalf("require_tasks should ignore awaiting_confirmation tasks")
+	}
+	if reason != "no pending tasks" {
+		t.Fatalf("unexpected reason: %q", reason)
+	}
+
+	if err := ts.AddTask("project", "qa", &entity.Task{
+		ID:        "pending-work",
+		Title:     "Pending work",
+		Status:    entity.TaskStatusPending,
+		CreatedAt: now.Add(time.Second),
+		UpdatedAt: now.Add(time.Second),
+	}); err != nil {
+		t.Fatalf("add pending task: %v", err)
+	}
+
+	met, reason = checkWakeupPreset("require_tasks", ts, "project", "qa")
+	if !met {
+		t.Fatalf("require_tasks should pass with a pending task, reason=%q", reason)
 	}
 }
