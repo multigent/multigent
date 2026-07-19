@@ -1039,10 +1039,17 @@ func (s *Server) handleProjectTasks(w http.ResponseWriter, r *http.Request) {
 
 	rows := make([]taskRow, 0)
 	seenIDs := make(map[string]bool)
-	for _, ag := range agents {
-		if qAgent != "" && ag.Name != qAgent {
-			continue
+	matchesAssigneeFilter := func(t *entity.Task) bool {
+		if qAgent == "" {
+			return true
 		}
+		assignee := strings.TrimSpace(t.Assignee)
+		if qAgent == "human" {
+			return assignee == "human"
+		}
+		return assignee == qAgent || assignee == name+"/"+qAgent
+	}
+	for _, ag := range agents {
 		if !s.canAccessAgent(r, name, ag.Name) {
 			continue
 		}
@@ -1050,7 +1057,7 @@ func (s *Server) handleProjectTasks(w http.ResponseWriter, r *http.Request) {
 			tasks, err := s.ts.ListTasks(name, ag.Name)
 			if err == nil {
 				for _, t := range tasks {
-					if !matchFilter(t) || seenIDs[t.ID] {
+					if !matchFilter(t) || !matchesAssigneeFilter(t) || seenIDs[t.ID] {
 						continue
 					}
 					seenIDs[t.ID] = true
@@ -1062,7 +1069,7 @@ func (s *Server) handleProjectTasks(w http.ResponseWriter, r *http.Request) {
 			archived, err := s.ts.ListArchivedTasks(name, ag.Name)
 			if err == nil {
 				for _, t := range archived {
-					if !matchFilter(t) || seenIDs[t.ID] {
+					if !matchFilter(t) || !matchesAssigneeFilter(t) || seenIDs[t.ID] {
 						continue
 					}
 					seenIDs[t.ID] = true

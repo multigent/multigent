@@ -277,6 +277,53 @@ func TestLinkedAgentProjectViewsAreFilteredToLinkedAgents(t *testing.T) {
 	}
 }
 
+func TestProjectTasksAgentFilterMatchesAssigneeNotQueue(t *testing.T) {
+	s, _ := newConnectionGrantPolicyServer(t)
+	now := time.Now().UTC()
+	cases := []struct {
+		queue    string
+		id       string
+		title    string
+		assignee string
+	}{
+		{queue: "pm", id: "task-queued-pm-assigned-backend", title: "Queued PM assigned backend", assignee: "sample/backend"},
+		{queue: "backend", id: "task-queued-backend-assigned-pm", title: "Queued backend assigned PM", assignee: "sample/pm"},
+		{queue: "backend", id: "task-queued-backend-assigned-human", title: "Queued backend assigned human", assignee: "human"},
+	}
+	for _, tc := range cases {
+		if err := s.ts.AddTask("sample", tc.queue, &entity.Task{
+			ID:        tc.id,
+			Title:     tc.title,
+			Prompt:    tc.title,
+			Status:    entity.TaskStatusPending,
+			Priority:  2,
+			Assignee:  tc.assignee,
+			CreatedAt: now,
+			UpdatedAt: now,
+		}); err != nil {
+			t.Fatalf("add task %s: %v", tc.id, err)
+		}
+	}
+
+	req := providerTestRequest(http.MethodGet, "/api/v1/projects/sample/tasks?scope=all&agent=pm", "admin", nil)
+	req.SetPathValue("name", "sample")
+	rec := httptest.NewRecorder()
+	s.handleProjectTasks(rec, req)
+	if rec.Code != http.StatusOK {
+		t.Fatalf("task list status=%d body=%s", rec.Code, rec.Body.String())
+	}
+	var rows []taskRow
+	if err := json.Unmarshal(rec.Body.Bytes(), &rows); err != nil {
+		t.Fatalf("decode tasks: %v", err)
+	}
+	if len(rows) != 1 {
+		t.Fatalf("expected 1 PM-assigned task, got %#v", rows)
+	}
+	if rows[0].ID != "task-queued-backend-assigned-pm" || rows[0].Agent != "backend" || rows[0].Assignee != "sample/pm" {
+		t.Fatalf("unexpected filtered task: %#v", rows[0])
+	}
+}
+
 func containsAll(s string, substr string) bool {
 	return strings.Contains(s, substr)
 }
