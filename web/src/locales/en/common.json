@@ -1330,6 +1330,7 @@
     "logNotFound": "Log file not found or cleaned up",
     "logTruncated": "Log truncated (too large to display in full).",
     "logEmpty": "(empty log)",
+    "rawLogDetails": "Run log · {{count}} entries",
     "viewRaw": "Raw log",
     "viewConversation": "Conversation",
     "status": {

@@ -746,17 +746,36 @@ function ToolInputDisplay({ input }: { input: unknown }) {
   )
 }
 
-export function ConversationLog({ content }: { content: string }) {
+export function ConversationLog({ content, mode = 'log' }: { content: string; mode?: 'log' | 'chat' }) {
   const { t } = useTranslation()
   const items = useMemo(() => parseLog(content), [content])
+  const visibleItems = useMemo(() => {
+    if (mode !== 'chat') return items
+    return items.filter((item) => {
+      if (item.kind === 'human' || item.kind === 'assistant' || item.kind === 'result') return true
+      if (item.kind === 'tool_result') return item.isError
+      return false
+    })
+  }, [items, mode])
+  const hiddenCount = items.length - visibleItems.length
 
-  if (items.length === 0) {
+  if (visibleItems.length === 0) {
     return <p className="py-4 text-center text-sm text-neutral-400 dark:text-zinc-500">{t('runs.logEmpty')}</p>
   }
 
   return (
     <div className="space-y-3 overflow-x-hidden">
-      {items.map((item, i) => {
+      {mode === 'chat' && hiddenCount > 0 && (
+        <details className="rounded-lg border border-neutral-200/70 bg-neutral-50/70 px-3 py-2 dark:border-zinc-700/50 dark:bg-zinc-900/40">
+          <summary className="cursor-pointer text-xs font-medium text-neutral-500 hover:text-neutral-700 dark:text-zinc-500 dark:hover:text-zinc-300">
+            {t('runs.rawLogDetails', { count: hiddenCount })}
+          </summary>
+          <div className="mt-3 max-h-80 overflow-auto border-t border-neutral-200/70 pt-3 dark:border-zinc-800">
+            <ConversationLog content={content} mode="log" />
+          </div>
+        </details>
+      )}
+      {visibleItems.map((item, i) => {
         switch (item.kind) {
           case 'header':
             return (

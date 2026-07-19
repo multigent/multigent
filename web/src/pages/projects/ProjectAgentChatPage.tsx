@@ -475,7 +475,7 @@ export default function ProjectAgentChatPage() {
             <p className="mt-1 text-xs text-neutral-400 dark:text-zinc-500">{t('agentChat.emptyHint')}</p>
           </div>
         ) : (
-          <ConversationLog content={content} />
+          <ConversationLog content={content} mode="chat" />
         )}
       </div>
 

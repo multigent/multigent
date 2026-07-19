@@ -1330,6 +1330,7 @@
     "logNotFound": "ログファイルが存在しないか削除されました",
     "logTruncated": "ログが長いため、表示を省略しました。",
     "logEmpty": "（ログは空です）",
+    "rawLogDetails": "実行ログ · {{count}} 件",
     "viewRaw": "生ログ",
     "viewConversation": "会話ビュー",
     "status": {
