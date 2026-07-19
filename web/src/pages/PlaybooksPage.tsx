@@ -205,95 +205,89 @@ function PlaybookDetail({ playbook, onBack }: { playbook: PlaybookTemplate; onBa
         <PlaybookStats playbook={playbook} />
       </div>
 
-      <div className="grid gap-5 xl:grid-cols-[1.05fr_0.95fr]">
-        <section className="space-y-5">
-          <Panel title={t('playbooks.roles')} icon={<Users className="size-4" strokeWidth={1.8} />}>
-            <div className="grid gap-3 sm:grid-cols-2">
-              {(playbook.roles ?? []).map((role) => (
-                <div key={role.id} className="rounded-lg border border-neutral-200/80 bg-neutral-50/60 p-3 dark:border-zinc-700/50 dark:bg-zinc-900/50">
-                  <div className="flex items-center justify-between gap-2">
-                    <p className="text-sm font-semibold text-neutral-800 dark:text-zinc-100">{role.name}</p>
-                    <span className="rounded-full bg-white px-2 py-0.5 text-[11px] text-neutral-400 dark:bg-zinc-800 dark:text-zinc-500">{role.team}/{role.role}</span>
-                  </div>
-                  <p className="mt-1.5 text-sm leading-relaxed text-neutral-500 dark:text-zinc-500">{role.description}</p>
-                  {role.skills && role.skills.length > 0 && <TagRow values={role.skills} className="mt-3" />}
-                </div>
-              ))}
-            </div>
-          </Panel>
-
-          <Panel title={t('playbooks.skills')} icon={<Puzzle className="size-4" strokeWidth={1.8} />}>
-            <div className="grid gap-3 sm:grid-cols-2">
-              {(playbook.skills ?? []).map((skill) => (
-                <div key={skill.id} className="rounded-lg border border-neutral-200/80 bg-neutral-50/60 p-3 dark:border-zinc-700/50 dark:bg-zinc-900/50">
-                  <p className="text-sm font-semibold text-neutral-800 dark:text-zinc-100">{skill.name}</p>
-                  <p className="mt-1.5 text-sm leading-relaxed text-neutral-500 dark:text-zinc-500">{skill.description}</p>
-                </div>
-              ))}
-            </div>
-          </Panel>
-        </section>
-
-        <section className="space-y-5">
-          <Panel title={t('playbooks.workflow')} icon={<GitBranch className="size-4" strokeWidth={1.8} />}>
-            {firstWorkflow ? (
-              <div>
-                <div className="mb-3 rounded-lg bg-neutral-50 px-3 py-2 dark:bg-zinc-800/50">
-                  <p className="text-sm font-semibold text-neutral-800 dark:text-zinc-100">{firstWorkflow.name}</p>
-                  <p className="mt-1 text-sm leading-relaxed text-neutral-500 dark:text-zinc-500">{firstWorkflow.description}</p>
-                </div>
-                <ol className="space-y-2">
-                  {workflowSummary.map((step, index) => (
-                    <li key={step.id} className="flex gap-3 rounded-lg border border-neutral-200/70 bg-white px-3 py-2 dark:border-zinc-700/50 dark:bg-zinc-900/40">
-                      <span className="flex size-6 shrink-0 items-center justify-center rounded-full bg-sky-50 text-xs font-semibold text-sky-700 dark:bg-sky-950/40 dark:text-sky-300">{index + 1}</span>
-                      <div className="min-w-0">
-                        <p className="text-sm font-medium text-neutral-800 dark:text-zinc-100">{step.title}</p>
-                        <p className="mt-0.5 line-clamp-2 text-xs leading-relaxed text-neutral-500 dark:text-zinc-500">{step.description || step.actorRole}</p>
-                      </div>
-                    </li>
-                  ))}
-                </ol>
-                {steps.length > workflowSummary.length && (
-                  <p className="mt-2 text-xs text-neutral-400 dark:text-zinc-500">{t('playbooks.moreSteps', { count: steps.length - workflowSummary.length })}</p>
-                )}
+      <Panel title={t('playbooks.roles')} icon={<Users className="size-4" strokeWidth={1.8} />}>
+        <div className="grid gap-3 md:grid-cols-2 xl:grid-cols-3">
+          {(playbook.roles ?? []).map((role) => (
+            <div key={role.id} className="rounded-lg border border-neutral-200/80 bg-neutral-50/60 p-3 dark:border-zinc-700/50 dark:bg-zinc-900/50">
+              <div className="flex items-center justify-between gap-2">
+                <p className="text-sm font-semibold text-neutral-800 dark:text-zinc-100">{role.name}</p>
+                <span className="rounded-full bg-white px-2 py-0.5 text-[11px] text-neutral-400 dark:bg-zinc-800 dark:text-zinc-500">{role.team}/{role.role}</span>
               </div>
-            ) : (
-              <p className="text-sm text-neutral-400 dark:text-zinc-500">{t('playbooks.none')}</p>
-            )}
-          </Panel>
-
-          <Panel title={t('playbooks.taskTemplates')} icon={<ListChecks className="size-4" strokeWidth={1.8} />}>
-            <div className="space-y-2">
-              {(playbook.taskTemplates ?? []).map((task) => (
-                <div key={task.id} className="rounded-lg border border-neutral-200/80 bg-neutral-50/60 p-3 dark:border-zinc-700/50 dark:bg-zinc-900/50">
-                  <p className="text-sm font-semibold text-neutral-800 dark:text-zinc-100">{task.title}</p>
-                  <p className="mt-1 text-sm leading-relaxed text-neutral-500 dark:text-zinc-500">{task.description}</p>
-                </div>
-              ))}
+              <p className="mt-1.5 text-sm leading-relaxed text-neutral-500 dark:text-zinc-500">{role.description}</p>
+              {role.skills && role.skills.length > 0 && <TagRow values={role.skills} className="mt-3" />}
             </div>
-          </Panel>
+          ))}
+        </div>
+      </Panel>
 
-          <Panel title={t('playbooks.requiredTools')} icon={<Wrench className="size-4" strokeWidth={1.8} />}>
-            {(playbook.requiredTools ?? []).length > 0 ? (
-              <div className="space-y-2">
-                {(playbook.requiredTools ?? []).map((tool) => (
-                  <div key={tool.provider} className="flex items-start justify-between gap-3 rounded-lg border border-neutral-200/80 bg-neutral-50/60 p-3 dark:border-zinc-700/50 dark:bg-zinc-900/50">
-                    <div>
-                      <p className="text-sm font-semibold text-neutral-800 dark:text-zinc-100">{tool.name}</p>
-                      <p className="mt-1 text-sm leading-relaxed text-neutral-500 dark:text-zinc-500">{tool.description}</p>
-                    </div>
-                    <span className="shrink-0 rounded-full bg-white px-2 py-0.5 text-[11px] text-neutral-400 dark:bg-zinc-800 dark:text-zinc-500">
-                      {tool.required ? t('playbooks.required') : t('playbooks.optional')}
-                    </span>
+      <Panel title={t('playbooks.skills')} icon={<Puzzle className="size-4" strokeWidth={1.8} />}>
+        <div className="grid gap-3 md:grid-cols-2 xl:grid-cols-3">
+          {(playbook.skills ?? []).map((skill) => (
+            <div key={skill.id} className="rounded-lg border border-neutral-200/80 bg-neutral-50/60 p-3 dark:border-zinc-700/50 dark:bg-zinc-900/50">
+              <p className="text-sm font-semibold text-neutral-800 dark:text-zinc-100">{skill.name}</p>
+              <p className="mt-1.5 text-sm leading-relaxed text-neutral-500 dark:text-zinc-500">{skill.description}</p>
+            </div>
+          ))}
+        </div>
+      </Panel>
+
+      <Panel title={t('playbooks.workflow')} icon={<GitBranch className="size-4" strokeWidth={1.8} />}>
+        {firstWorkflow ? (
+          <div>
+            <div className="mb-3 rounded-lg bg-neutral-50 px-3 py-2 dark:bg-zinc-800/50">
+              <p className="text-sm font-semibold text-neutral-800 dark:text-zinc-100">{firstWorkflow.name}</p>
+              <p className="mt-1 text-sm leading-relaxed text-neutral-500 dark:text-zinc-500">{firstWorkflow.description}</p>
+            </div>
+            <ol className="grid gap-2 lg:grid-cols-2">
+              {workflowSummary.map((step, index) => (
+                <li key={step.id} className="flex gap-3 rounded-lg border border-neutral-200/70 bg-white px-3 py-2 dark:border-zinc-700/50 dark:bg-zinc-900/40">
+                  <span className="flex size-6 shrink-0 items-center justify-center rounded-full bg-sky-50 text-xs font-semibold text-sky-700 dark:bg-sky-950/40 dark:text-sky-300">{index + 1}</span>
+                  <div className="min-w-0">
+                    <p className="text-sm font-medium text-neutral-800 dark:text-zinc-100">{step.title}</p>
+                    <p className="mt-0.5 line-clamp-2 text-xs leading-relaxed text-neutral-500 dark:text-zinc-500">{step.description || step.actorRole}</p>
                   </div>
-                ))}
-              </div>
-            ) : (
-              <p className="text-sm text-neutral-400 dark:text-zinc-500">{t('playbooks.noRequiredTools')}</p>
+                </li>
+              ))}
+            </ol>
+            {steps.length > workflowSummary.length && (
+              <p className="mt-2 text-xs text-neutral-400 dark:text-zinc-500">{t('playbooks.moreSteps', { count: steps.length - workflowSummary.length })}</p>
             )}
-          </Panel>
-        </section>
-      </div>
+          </div>
+        ) : (
+          <p className="text-sm text-neutral-400 dark:text-zinc-500">{t('playbooks.none')}</p>
+        )}
+      </Panel>
+
+      <Panel title={t('playbooks.taskTemplates')} icon={<ListChecks className="size-4" strokeWidth={1.8} />}>
+        <div className="grid gap-3 md:grid-cols-2 xl:grid-cols-3">
+          {(playbook.taskTemplates ?? []).map((task) => (
+            <div key={task.id} className="rounded-lg border border-neutral-200/80 bg-neutral-50/60 p-3 dark:border-zinc-700/50 dark:bg-zinc-900/50">
+              <p className="text-sm font-semibold text-neutral-800 dark:text-zinc-100">{task.title}</p>
+              <p className="mt-1 text-sm leading-relaxed text-neutral-500 dark:text-zinc-500">{task.description}</p>
+            </div>
+          ))}
+        </div>
+      </Panel>
+
+      <Panel title={t('playbooks.requiredTools')} icon={<Wrench className="size-4" strokeWidth={1.8} />}>
+        {(playbook.requiredTools ?? []).length > 0 ? (
+          <div className="grid gap-3 md:grid-cols-2">
+            {(playbook.requiredTools ?? []).map((tool) => (
+              <div key={tool.provider} className="flex items-start justify-between gap-3 rounded-lg border border-neutral-200/80 bg-neutral-50/60 p-3 dark:border-zinc-700/50 dark:bg-zinc-900/50">
+                <div>
+                  <p className="text-sm font-semibold text-neutral-800 dark:text-zinc-100">{tool.name}</p>
+                  <p className="mt-1 text-sm leading-relaxed text-neutral-500 dark:text-zinc-500">{tool.description}</p>
+                </div>
+                <span className="shrink-0 rounded-full bg-white px-2 py-0.5 text-[11px] text-neutral-400 dark:bg-zinc-800 dark:text-zinc-500">
+                  {tool.required ? t('playbooks.required') : t('playbooks.optional')}
+                </span>
+              </div>
+            ))}
+          </div>
+        ) : (
+          <p className="text-sm text-neutral-400 dark:text-zinc-500">{t('playbooks.noRequiredTools')}</p>
+        )}
+      </Panel>
 
       <div className="grid gap-5 lg:grid-cols-2">
         <Panel title={t('playbooks.setupQuestions')} icon={<ShieldCheck className="size-4" strokeWidth={1.8} />}>

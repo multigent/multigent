@@ -102,7 +102,7 @@ func startupValidation(locale string) entity.PlaybookTemplate {
 	wf := startupValidationWorkflow(locale)
 	return entity.PlaybookTemplate{
 		ID:          "garry-startup-validation",
-		Name:        text(locale, "Garry Startup Validation", "Garry 创业验证协作方案"),
+		Name:        text(locale, "YC Garry Startup Validation", "YC Garry 创业验证协作方案"),
 		Description: text(locale, "A startup idea validation playbook inspired by YC-style office hours: test demand reality, status quo, pain intensity, wedge, and prototype scope before building.", "参考 YC office hours 思路的创业项目验证协作方案：先判断真实需求、现有替代方案、痛点强度、切入点和原型范围，再决定是否开发。"),
 		Locale:      normalizeLocale(locale),
 		Category:    text(locale, "Strategy", "战略验证"),
