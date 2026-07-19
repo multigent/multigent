@@ -22,7 +22,13 @@ func NewStore(db controldb.Store, workspaceID string) *Store {
 }
 
 func Templates(locale string) []entity.WorkflowTemplate {
-	return []entity.WorkflowTemplate{softwareDeliveryTemplate(locale)}
+	return []entity.WorkflowTemplate{
+		softwareDeliveryTemplate(locale),
+		garryStyleDeliveryTemplate(locale),
+		mattPocockStyleEngineeringTemplate(locale),
+		tddReviewLoopTemplate(locale),
+		bugTriageLoopTemplate(locale),
+	}
 }
 
 func Template(id, locale string) (entity.WorkflowTemplate, bool) {
@@ -279,6 +285,394 @@ func softwareDeliveryTemplate(locale string) entity.WorkflowTemplate {
 			edge("e-qa-review-rework", "qa_review", "qa", text["changesRequested"], cond("decision", "eq", "request_changes"), map[string]string{"review_comments": "$output.comments", "previous_report": "$input.test_report"}, false),
 		},
 	}
+}
+
+func garryStyleDeliveryTemplate(locale string) entity.WorkflowTemplate {
+	locale = normalizeTemplateLocale(locale)
+	text := localizedTemplateText(locale, map[string]string{
+		"name":               "Garry-style Completeness Delivery",
+		"description":        "A completeness-first workflow: agents do the full sweep, humans tune the plan and review gates, and the loop keeps going until the artifact is genuinely shippable.",
+		"approved":           "approved",
+		"changesRequested":   "changes requested",
+		"intakeTitle":        "Intent and Success Frame",
+		"intakeDesc":         "Convert the raw request into a crisp success frame, constraints, non-goals, and what complete means.",
+		"planTitle":          "Completeness Plan",
+		"planDesc":           "Create a broad plan that covers implementation, QA, docs, edge cases, release risk, and follow-up checks.",
+		"planReviewTitle":    "Plan Tune Review",
+		"planReviewDesc":     "A human tunes scope, question sensitivity, and acceptable completeness before execution starts.",
+		"buildTitle":         "Build the Complete Slice",
+		"buildDesc":          "Implement the smallest complete slice with all required behavior, tests, and visible polish.",
+		"qaTitle":            "QA Sweep",
+		"qaDesc":             "Run systematic QA, classify findings by severity, and fix high-signal issues in-loop when allowed.",
+		"qaReviewTitle":      "QA Gate",
+		"qaReviewDesc":       "Human reviews the QA report and decides whether to fix more issues or move forward.",
+		"docsTitle":          "Post-ship Documentation",
+		"docsDesc":           "Update user-facing docs, architecture notes, changelog, and handoff material to match what shipped.",
+		"shipReviewTitle":    "Ship Review",
+		"shipReviewDesc":     "Human reviews final evidence and decides whether this is ready to release or needs another loop.",
+		"observeTitle":       "Observe and Learn",
+		"observeDesc":        "Check post-release signals, record learnings, and propose improvements for the next run.",
+		"requestField":       "Raw request, business context, or user problem.",
+		"successField":       "Definition of complete, constraints, and non-goals.",
+		"planField":          "Plan docID covering build, QA, docs, risks, and release checks.",
+		"decisionField":      "approve or request_changes.",
+		"commentsField":      "Review comments and tuning guidance.",
+		"buildField":         "PR, patch, artifact, or implementation summary.",
+		"testsField":         "Tests executed and evidence.",
+		"qaReportField":      "QA report docID with findings and fixes.",
+		"shipCandidateField": "Approved release candidate or artifact summary.",
+		"docsField":          "Documentation update docID or changed docs summary.",
+		"releaseField":       "Release decision, release notes, and monitoring checks.",
+		"learnField":         "Learning record docID and future workflow improvements.",
+	}, map[string]string{
+		"name":               "Garry-style 完整性交付流程",
+		"description":        "一套完整性优先的流程：Agent 尽可能把实现、测试、文档和风险一次扫全，人类只在计划和关键关口做调校与审核。",
+		"approved":           "通过",
+		"changesRequested":   "需要修改",
+		"intakeTitle":        "目标与完成标准",
+		"intakeDesc":         "把原始需求整理成清晰目标、约束、非目标，以及什么叫真正完成。",
+		"planTitle":          "完整性交付计划",
+		"planDesc":           "制定覆盖实现、QA、文档、边界情况、发布风险和后续检查的完整计划。",
+		"planReviewTitle":    "计划调校审核",
+		"planReviewDesc":     "人类审核范围、问题敏感度和完成标准，确认后再进入执行。",
+		"buildTitle":         "完整切片实现",
+		"buildDesc":          "实现一个最小但完整的交付切片，包含行为、测试和必要的体验打磨。",
+		"qaTitle":            "QA 全面扫描",
+		"qaDesc":             "系统化测试并按严重程度分类问题，在允许范围内循环修复高价值问题。",
+		"qaReviewTitle":      "QA 准出审核",
+		"qaReviewDesc":       "人类审核 QA 报告，决定继续修复还是进入下一阶段。",
+		"docsTitle":          "发布后文档同步",
+		"docsDesc":           "同步用户文档、架构说明、变更日志和交接材料，确保文档与实际交付一致。",
+		"shipReviewTitle":    "发布审核",
+		"shipReviewDesc":     "人类审核最终证据，决定是否发布或继续回环。",
+		"observeTitle":       "观察与学习沉淀",
+		"observeDesc":        "检查上线后信号，记录经验，并提出下次流程可优化点。",
+		"requestField":       "原始需求、业务背景或用户问题。",
+		"successField":       "完成定义、约束和非目标。",
+		"planField":          "覆盖实现、QA、文档、风险和发布检查的计划 docID。",
+		"decisionField":      "approve 或 request_changes。",
+		"commentsField":      "审核意见和调校建议。",
+		"buildField":         "PR、补丁、产物或实现摘要。",
+		"testsField":         "已执行测试和证据。",
+		"qaReportField":      "包含问题与修复情况的 QA 报告 docID。",
+		"shipCandidateField": "审核通过的发布候选或产物摘要。",
+		"docsField":          "文档更新 docID 或变更文档摘要。",
+		"releaseField":       "发布决策、发布说明和监控检查。",
+		"learnField":         "经验沉淀 docID 和后续流程优化建议。",
+	})
+	field := func(name, descKey string) entity.WorkflowField {
+		return entity.WorkflowField{Name: name, Description: text[descKey]}
+	}
+	return templateFromParts("garry-style-completeness-delivery", text["name"], text["description"], locale, "intent_frame",
+		[]entity.WorkflowStep{
+			tmplStep("intent_frame", "agent_task", text["intakeTitle"], text["intakeDesc"], "pm-agent", "sky", 80, []entity.WorkflowField{field("request", "requestField")}, []entity.WorkflowField{field("success_frame_doc_id", "successField")}),
+			tmplStep("completeness_plan", "agent_task", text["planTitle"], text["planDesc"], "delivery-agent", "violet", 360, []entity.WorkflowField{field("success_frame_doc_id", "successField")}, []entity.WorkflowField{field("plan_doc_id", "planField")}),
+			tmplStep("plan_tune_review", "human_review", text["planReviewTitle"], text["planReviewDesc"], "owner", "amber", 640, []entity.WorkflowField{field("plan_doc_id", "planField")}, []entity.WorkflowField{field("decision", "decisionField"), field("comments", "commentsField")}),
+			tmplStep("complete_slice", "agent_task", text["buildTitle"], text["buildDesc"], "developer-agent", "emerald", 920, []entity.WorkflowField{field("plan_doc_id", "planField")}, []entity.WorkflowField{field("implementation_artifact", "buildField"), field("tests_run", "testsField")}),
+			tmplStep("qa_sweep", "agent_task", text["qaTitle"], text["qaDesc"], "qa-agent", "rose", 1200, []entity.WorkflowField{field("implementation_artifact", "buildField")}, []entity.WorkflowField{field("qa_report_doc_id", "qaReportField")}),
+			tmplStep("qa_gate", "human_review", text["qaReviewTitle"], text["qaReviewDesc"], "qa-owner", "amber", 1480, []entity.WorkflowField{field("qa_report_doc_id", "qaReportField")}, []entity.WorkflowField{field("decision", "decisionField"), field("comments", "commentsField"), field("ship_candidate", "shipCandidateField")}),
+			tmplStep("post_ship_docs", "agent_task", text["docsTitle"], text["docsDesc"], "docs-agent", "sky", 1760, []entity.WorkflowField{field("ship_candidate", "shipCandidateField")}, []entity.WorkflowField{field("docs_update_doc_id", "docsField")}),
+			tmplStep("ship_review", "human_review", text["shipReviewTitle"], text["shipReviewDesc"], "owner", "amber", 2040, []entity.WorkflowField{field("docs_update_doc_id", "docsField")}, []entity.WorkflowField{field("decision", "decisionField"), field("comments", "commentsField"), field("release_report_doc_id", "releaseField")}),
+			tmplStep("observe_learn", "agent_task", text["observeTitle"], text["observeDesc"], "ops-agent", "emerald", 2320, []entity.WorkflowField{field("release_report_doc_id", "releaseField")}, []entity.WorkflowField{field("learning_doc_id", "learnField")}),
+		},
+		[]entity.WorkflowEdge{
+			edge("e-intent-plan", "intent_frame", "completeness_plan", "", nil, nil, true),
+			edge("e-plan-review", "completeness_plan", "plan_tune_review", "", nil, nil, true),
+			edge("e-plan-approved", "plan_tune_review", "complete_slice", text["approved"], cond("decision", "eq", "approve"), map[string]string{"plan_doc_id": "$input.plan_doc_id"}, false),
+			edge("e-plan-rework", "plan_tune_review", "completeness_plan", text["changesRequested"], cond("decision", "eq", "request_changes"), map[string]string{"review_comments": "$output.comments", "previous_plan_doc_id": "$input.plan_doc_id"}, false),
+			edge("e-build-qa", "complete_slice", "qa_sweep", "", nil, nil, true),
+			edge("e-qa-gate", "qa_sweep", "qa_gate", "", nil, nil, true),
+			edge("e-qa-approved", "qa_gate", "post_ship_docs", text["approved"], cond("decision", "eq", "approve"), map[string]string{"ship_candidate": "$output.ship_candidate"}, false),
+			edge("e-qa-rework", "qa_gate", "complete_slice", text["changesRequested"], cond("decision", "eq", "request_changes"), map[string]string{"qa_comments": "$output.comments", "qa_report_doc_id": "$input.qa_report_doc_id"}, false),
+			edge("e-docs-review", "post_ship_docs", "ship_review", "", nil, nil, true),
+			edge("e-ship-approved", "ship_review", "observe_learn", text["approved"], cond("decision", "eq", "approve"), map[string]string{"release_report_doc_id": "$output.release_report_doc_id"}, false),
+			edge("e-ship-rework", "ship_review", "post_ship_docs", text["changesRequested"], cond("decision", "eq", "request_changes"), map[string]string{"ship_comments": "$output.comments", "docs_update_doc_id": "$input.docs_update_doc_id"}, false),
+		})
+}
+
+func mattPocockStyleEngineeringTemplate(locale string) entity.WorkflowTemplate {
+	locale = normalizeTemplateLocale(locale)
+	text := localizedTemplateText(locale, map[string]string{
+		"name":             "Matt Pocock-style Spec Engineering",
+		"description":      "A spec-first engineering workflow: clarify the problem, design test seams, implement in slices, then review against both the spec and code standards.",
+		"approved":         "approved",
+		"changesRequested": "changes requested",
+		"triageTitle":      "Triage and Scope",
+		"triageDesc":       "Classify the request, identify the real user problem, and mark out-of-scope items before writing the spec.",
+		"specTitle":        "Spec Draft",
+		"specDesc":         "Turn the conversation into a spec with problem statement, solution, stories, decisions, tests, and out-of-scope notes.",
+		"specReviewTitle":  "Spec Review",
+		"specReviewDesc":   "Human reviews whether the spec captures the expected behavior and leaves no important ambiguity.",
+		"seamTitle":        "Test Seam Design",
+		"seamDesc":         "Choose the highest useful public seam for testing and record why it is enough.",
+		"seamReviewTitle":  "Seam Review",
+		"seamReviewDesc":   "Human confirms the chosen testing seam before implementation starts.",
+		"implTitle":        "Vertical Slice Implementation",
+		"implDesc":         "Implement one behavior slice at a time, keeping tests behavior-focused and avoiding speculative abstraction.",
+		"reviewTitle":      "Two-axis Code Review",
+		"reviewDesc":       "Review the change against the spec and against engineering standards or code smells.",
+		"handoffTitle":     "Handoff and Learning",
+		"handoffDesc":      "Summarize shipped behavior, test evidence, decisions, risks, and next useful follow-up.",
+		"requestField":     "Original request and known context.",
+		"triageField":      "Triage result, priority, scope, and out-of-scope docID.",
+		"specField":        "Spec docID.",
+		"decisionField":    "approve or request_changes.",
+		"commentsField":    "Review comments.",
+		"seamField":        "Testing seam decision docID.",
+		"changeField":      "PR, patch, or implementation summary.",
+		"testsField":       "Behavior tests and command output.",
+		"reviewField":      "Code review report docID.",
+		"handoffField":     "Handoff or learning docID.",
+	}, map[string]string{
+		"name":             "Matt Pocock-style 规格驱动工程流程",
+		"description":      "一套规格优先的工程流程：先澄清问题和范围，再确认测试边界，按行为切片实现，最后同时按规格和代码标准审核。",
+		"approved":         "通过",
+		"changesRequested": "需要修改",
+		"triageTitle":      "需求分流与范围判断",
+		"triageDesc":       "分类需求、识别真实用户问题，并在写规格前明确非目标。",
+		"specTitle":        "规格文档草稿",
+		"specDesc":         "把讨论转为规格文档：问题、方案、用户故事、实现决策、测试决策和非目标。",
+		"specReviewTitle":  "规格审核",
+		"specReviewDesc":   "人类审核规格是否覆盖预期行为，是否仍存在关键歧义。",
+		"seamTitle":        "测试边界设计",
+		"seamDesc":         "选择最高价值的公共测试边界，并说明为什么足够。",
+		"seamReviewTitle":  "测试边界审核",
+		"seamReviewDesc":   "人类在实现前确认测试边界选择。",
+		"implTitle":        "垂直切片实现",
+		"implDesc":         "按行为切片实现，保持测试关注外部行为，避免提前抽象。",
+		"reviewTitle":      "双轴代码审核",
+		"reviewDesc":       "同时按规格符合度和工程标准/代码坏味道审核变更。",
+		"handoffTitle":     "交接与经验沉淀",
+		"handoffDesc":      "总结已交付行为、测试证据、关键决策、风险和后续建议。",
+		"requestField":     "原始需求和已知上下文。",
+		"triageField":      "需求分类、优先级、范围和非目标 docID。",
+		"specField":        "规格文档 docID。",
+		"decisionField":    "approve 或 request_changes。",
+		"commentsField":    "审核意见。",
+		"seamField":        "测试边界决策 docID。",
+		"changeField":      "PR、补丁或实现摘要。",
+		"testsField":       "行为测试和命令输出。",
+		"reviewField":      "代码审核报告 docID。",
+		"handoffField":     "交接或经验沉淀 docID。",
+	})
+	field := func(name, descKey string) entity.WorkflowField {
+		return entity.WorkflowField{Name: name, Description: text[descKey]}
+	}
+	return templateFromParts("matt-pocock-style-spec-engineering", text["name"], text["description"], locale, "triage_scope",
+		[]entity.WorkflowStep{
+			tmplStep("triage_scope", "agent_task", text["triageTitle"], text["triageDesc"], "pm-agent", "sky", 80, []entity.WorkflowField{field("request", "requestField")}, []entity.WorkflowField{field("triage_doc_id", "triageField")}),
+			tmplStep("spec_draft", "agent_task", text["specTitle"], text["specDesc"], "pm-agent", "sky", 360, []entity.WorkflowField{field("triage_doc_id", "triageField")}, []entity.WorkflowField{field("spec_doc_id", "specField")}),
+			tmplStep("spec_review", "human_review", text["specReviewTitle"], text["specReviewDesc"], "product-owner", "amber", 640, []entity.WorkflowField{field("spec_doc_id", "specField")}, []entity.WorkflowField{field("decision", "decisionField"), field("comments", "commentsField")}),
+			tmplStep("test_seams", "agent_task", text["seamTitle"], text["seamDesc"], "developer-agent", "violet", 920, []entity.WorkflowField{field("spec_doc_id", "specField")}, []entity.WorkflowField{field("test_seam_doc_id", "seamField")}),
+			tmplStep("seam_review", "human_review", text["seamReviewTitle"], text["seamReviewDesc"], "tech-lead", "amber", 1200, []entity.WorkflowField{field("test_seam_doc_id", "seamField")}, []entity.WorkflowField{field("decision", "decisionField"), field("comments", "commentsField")}),
+			tmplStep("vertical_slice", "agent_task", text["implTitle"], text["implDesc"], "developer-agent", "emerald", 1480, []entity.WorkflowField{field("test_seam_doc_id", "seamField")}, []entity.WorkflowField{field("change_artifact", "changeField"), field("tests_run", "testsField")}),
+			tmplStep("two_axis_review", "human_review", text["reviewTitle"], text["reviewDesc"], "owner-engineer", "amber", 1760, []entity.WorkflowField{field("change_artifact", "changeField"), field("tests_run", "testsField")}, []entity.WorkflowField{field("decision", "decisionField"), field("comments", "commentsField"), field("review_report_doc_id", "reviewField")}),
+			tmplStep("handoff_learning", "agent_task", text["handoffTitle"], text["handoffDesc"], "delivery-agent", "emerald", 2040, []entity.WorkflowField{field("review_report_doc_id", "reviewField")}, []entity.WorkflowField{field("handoff_doc_id", "handoffField")}),
+		},
+		[]entity.WorkflowEdge{
+			edge("e-triage-spec", "triage_scope", "spec_draft", "", nil, nil, true),
+			edge("e-spec-review", "spec_draft", "spec_review", "", nil, nil, true),
+			edge("e-spec-approved", "spec_review", "test_seams", text["approved"], cond("decision", "eq", "approve"), map[string]string{"spec_doc_id": "$input.spec_doc_id"}, false),
+			edge("e-spec-rework", "spec_review", "spec_draft", text["changesRequested"], cond("decision", "eq", "request_changes"), map[string]string{"review_comments": "$output.comments", "previous_spec_doc_id": "$input.spec_doc_id"}, false),
+			edge("e-seams-review", "test_seams", "seam_review", "", nil, nil, true),
+			edge("e-seams-approved", "seam_review", "vertical_slice", text["approved"], cond("decision", "eq", "approve"), map[string]string{"test_seam_doc_id": "$input.test_seam_doc_id"}, false),
+			edge("e-seams-rework", "seam_review", "test_seams", text["changesRequested"], cond("decision", "eq", "request_changes"), map[string]string{"review_comments": "$output.comments", "previous_test_seam_doc_id": "$input.test_seam_doc_id"}, false),
+			edge("e-slice-review", "vertical_slice", "two_axis_review", "", nil, nil, true),
+			edge("e-review-approved", "two_axis_review", "handoff_learning", text["approved"], cond("decision", "eq", "approve"), map[string]string{"review_report_doc_id": "$output.review_report_doc_id"}, false),
+			edge("e-review-rework", "two_axis_review", "vertical_slice", text["changesRequested"], cond("decision", "eq", "request_changes"), map[string]string{"review_comments": "$output.comments", "previous_change_artifact": "$input.change_artifact"}, false),
+		})
+}
+
+func tddReviewLoopTemplate(locale string) entity.WorkflowTemplate {
+	locale = normalizeTemplateLocale(locale)
+	text := localizedTemplateText(locale, map[string]string{
+		"name":             "TDD Review Loop",
+		"description":      "A compact workflow for behavior-first implementation: agree the seam, write failing tests, implement, and review the evidence.",
+		"approved":         "approved",
+		"changesRequested": "changes requested",
+		"seamTitle":        "Choose Test Seam",
+		"seamDesc":         "Identify the public behavior boundary to test and define one small vertical slice.",
+		"reviewTitle":      "Seam Review",
+		"reviewDesc":       "Human confirms the test seam and slice before implementation starts.",
+		"testTitle":        "Write Failing Test",
+		"testDesc":         "Add the smallest failing behavior test with independent expected values.",
+		"implTitle":        "Make It Pass",
+		"implDesc":         "Implement only enough behavior to pass the agreed test, then run the targeted checks.",
+		"finalTitle":       "Evidence Review",
+		"finalDesc":        "Review behavior, test output, and any remaining risk before marking the task done.",
+		"requestField":     "Requested behavior and constraints.",
+		"seamField":        "Test seam and vertical slice docID.",
+		"decisionField":    "approve or request_changes.",
+		"commentsField":    "Review comments.",
+		"testField":        "Failing test description, file, and observed failure.",
+		"changeField":      "Implementation artifact and test command output.",
+		"reportField":      "Final evidence report docID.",
+	}, map[string]string{
+		"name":             "TDD 审核循环",
+		"description":      "一套行为优先的轻量流程：先确认测试边界，再写失败测试、实现通过、审核证据。",
+		"approved":         "通过",
+		"changesRequested": "需要修改",
+		"seamTitle":        "选择测试边界",
+		"seamDesc":         "确定要测试的公共行为边界，并定义一个小的垂直切片。",
+		"reviewTitle":      "测试边界审核",
+		"reviewDesc":       "人类在实现前确认测试边界和切片范围。",
+		"testTitle":        "编写失败测试",
+		"testDesc":         "添加最小的行为失败测试，预期值必须独立于实现。",
+		"implTitle":        "实现通过测试",
+		"implDesc":         "只实现足够通过约定测试的行为，然后运行目标检查。",
+		"finalTitle":       "证据审核",
+		"finalDesc":        "审核行为、测试输出和剩余风险，再决定任务是否完成。",
+		"requestField":     "期望行为和约束。",
+		"seamField":        "测试边界和垂直切片 docID。",
+		"decisionField":    "approve 或 request_changes。",
+		"commentsField":    "审核意见。",
+		"testField":        "失败测试说明、文件和失败现象。",
+		"changeField":      "实现产物和测试命令输出。",
+		"reportField":      "最终证据报告 docID。",
+	})
+	field := func(name, descKey string) entity.WorkflowField {
+		return entity.WorkflowField{Name: name, Description: text[descKey]}
+	}
+	return templateFromParts("tdd-review-loop", text["name"], text["description"], locale, "choose_seam",
+		[]entity.WorkflowStep{
+			tmplStep("choose_seam", "agent_task", text["seamTitle"], text["seamDesc"], "developer-agent", "violet", 80, []entity.WorkflowField{field("request", "requestField")}, []entity.WorkflowField{field("test_seam_doc_id", "seamField")}),
+			tmplStep("seam_review", "human_review", text["reviewTitle"], text["reviewDesc"], "tech-lead", "amber", 360, []entity.WorkflowField{field("test_seam_doc_id", "seamField")}, []entity.WorkflowField{field("decision", "decisionField"), field("comments", "commentsField")}),
+			tmplStep("failing_test", "agent_task", text["testTitle"], text["testDesc"], "developer-agent", "rose", 640, []entity.WorkflowField{field("test_seam_doc_id", "seamField")}, []entity.WorkflowField{field("failing_test", "testField")}),
+			tmplStep("make_pass", "agent_task", text["implTitle"], text["implDesc"], "developer-agent", "emerald", 920, []entity.WorkflowField{field("failing_test", "testField")}, []entity.WorkflowField{field("change_artifact", "changeField")}),
+			tmplStep("evidence_review", "human_review", text["finalTitle"], text["finalDesc"], "owner-engineer", "amber", 1200, []entity.WorkflowField{field("change_artifact", "changeField")}, []entity.WorkflowField{field("decision", "decisionField"), field("comments", "commentsField"), field("evidence_report_doc_id", "reportField")}),
+		},
+		[]entity.WorkflowEdge{
+			edge("e-seam-review", "choose_seam", "seam_review", "", nil, nil, true),
+			edge("e-seam-approved", "seam_review", "failing_test", text["approved"], cond("decision", "eq", "approve"), map[string]string{"test_seam_doc_id": "$input.test_seam_doc_id"}, false),
+			edge("e-seam-rework", "seam_review", "choose_seam", text["changesRequested"], cond("decision", "eq", "request_changes"), map[string]string{"review_comments": "$output.comments", "previous_test_seam_doc_id": "$input.test_seam_doc_id"}, false),
+			edge("e-test-impl", "failing_test", "make_pass", "", nil, nil, true),
+			edge("e-impl-review", "make_pass", "evidence_review", "", nil, nil, true),
+			edge("e-review-rework", "evidence_review", "make_pass", text["changesRequested"], cond("decision", "eq", "request_changes"), map[string]string{"review_comments": "$output.comments", "previous_change_artifact": "$input.change_artifact"}, false),
+		})
+}
+
+func bugTriageLoopTemplate(locale string) entity.WorkflowTemplate {
+	locale = normalizeTemplateLocale(locale)
+	text := localizedTemplateText(locale, map[string]string{
+		"name":             "Agentic Bug Triage Loop",
+		"description":      "A focused bug workflow: reproduce first, diagnose with evidence, fix only after review, then prove the regression is covered.",
+		"approved":         "approved",
+		"changesRequested": "changes requested",
+		"intakeTitle":      "Bug Intake",
+		"intakeDesc":       "Normalize the report into symptoms, environment, expected behavior, actual behavior, and suspected impact.",
+		"reproTitle":       "Reproduce and Minimize",
+		"reproDesc":        "Find the smallest reliable reproduction and preserve the exact commands or user path.",
+		"diagTitle":        "Diagnosis",
+		"diagDesc":         "Identify likely root cause with evidence, affected modules, and fix options.",
+		"reviewTitle":      "Fix Plan Review",
+		"reviewDesc":       "Human confirms the root cause and fix direction before code changes.",
+		"fixTitle":         "Fix and Regression Test",
+		"fixDesc":          "Apply the fix, add or update regression coverage, and run targeted checks.",
+		"qaTitle":          "Bug QA Review",
+		"qaDesc":           "Review reproduction, fix evidence, regression coverage, and remaining risk.",
+		"closeTitle":       "Close Report",
+		"closeDesc":        "Write the final bug receipt with root cause, fix, tests, and prevention notes.",
+		"requestField":     "Original bug report and context.",
+		"reproField":       "Minimal reproduction docID or exact steps.",
+		"diagField":        "Diagnosis docID with evidence and candidate fixes.",
+		"decisionField":    "approve or request_changes.",
+		"commentsField":    "Review comments.",
+		"fixField":         "Fix artifact, regression test, and command output.",
+		"qaField":          "QA evidence and risk summary.",
+		"closeField":       "Bug receipt docID.",
+	}, map[string]string{
+		"name":             "Agent 缺陷分流修复流程",
+		"description":      "一套聚焦缺陷的流程：先复现，再基于证据诊断，审核后修复，最后证明回归覆盖。",
+		"approved":         "通过",
+		"changesRequested": "需要修改",
+		"intakeTitle":      "缺陷接收",
+		"intakeDesc":       "把报告整理为症状、环境、预期行为、实际行为和影响范围。",
+		"reproTitle":       "复现与最小化",
+		"reproDesc":        "找到最小可靠复现，并保留精确命令或用户路径。",
+		"diagTitle":        "根因诊断",
+		"diagDesc":         "基于证据识别可能根因、影响模块和修复选项。",
+		"reviewTitle":      "修复方案审核",
+		"reviewDesc":       "人类在代码修改前确认根因和修复方向。",
+		"fixTitle":         "修复与回归测试",
+		"fixDesc":          "完成修复，补充或更新回归覆盖，并运行目标检查。",
+		"qaTitle":          "缺陷 QA 审核",
+		"qaDesc":           "审核复现、修复证据、回归覆盖和剩余风险。",
+		"closeTitle":       "关闭报告",
+		"closeDesc":        "记录最终缺陷回执：根因、修复、测试和预防建议。",
+		"requestField":     "原始缺陷报告和上下文。",
+		"reproField":       "最小复现 docID 或精确步骤。",
+		"diagField":        "包含证据和候选修复的诊断 docID。",
+		"decisionField":    "approve 或 request_changes。",
+		"commentsField":    "审核意见。",
+		"fixField":         "修复产物、回归测试和命令输出。",
+		"qaField":          "QA 证据和风险摘要。",
+		"closeField":       "缺陷回执 docID。",
+	})
+	field := func(name, descKey string) entity.WorkflowField {
+		return entity.WorkflowField{Name: name, Description: text[descKey]}
+	}
+	return templateFromParts("agentic-bug-triage-loop", text["name"], text["description"], locale, "bug_intake",
+		[]entity.WorkflowStep{
+			tmplStep("bug_intake", "agent_task", text["intakeTitle"], text["intakeDesc"], "qa-agent", "rose", 80, []entity.WorkflowField{field("bug_report", "requestField")}, []entity.WorkflowField{field("normalized_bug_doc_id", "requestField")}),
+			tmplStep("reproduce", "agent_task", text["reproTitle"], text["reproDesc"], "qa-agent", "rose", 360, []entity.WorkflowField{field("normalized_bug_doc_id", "requestField")}, []entity.WorkflowField{field("reproduction_doc_id", "reproField")}),
+			tmplStep("diagnosis", "agent_task", text["diagTitle"], text["diagDesc"], "developer-agent", "violet", 640, []entity.WorkflowField{field("reproduction_doc_id", "reproField")}, []entity.WorkflowField{field("diagnosis_doc_id", "diagField")}),
+			tmplStep("fix_plan_review", "human_review", text["reviewTitle"], text["reviewDesc"], "owner-engineer", "amber", 920, []entity.WorkflowField{field("diagnosis_doc_id", "diagField")}, []entity.WorkflowField{field("decision", "decisionField"), field("comments", "commentsField")}),
+			tmplStep("fix_regression", "agent_task", text["fixTitle"], text["fixDesc"], "developer-agent", "emerald", 1200, []entity.WorkflowField{field("diagnosis_doc_id", "diagField")}, []entity.WorkflowField{field("fix_artifact", "fixField")}),
+			tmplStep("bug_qa_review", "human_review", text["qaTitle"], text["qaDesc"], "qa-owner", "amber", 1480, []entity.WorkflowField{field("fix_artifact", "fixField")}, []entity.WorkflowField{field("decision", "decisionField"), field("comments", "commentsField"), field("qa_evidence", "qaField")}),
+			tmplStep("close_report", "agent_task", text["closeTitle"], text["closeDesc"], "qa-agent", "sky", 1760, []entity.WorkflowField{field("qa_evidence", "qaField")}, []entity.WorkflowField{field("bug_receipt_doc_id", "closeField")}),
+		},
+		[]entity.WorkflowEdge{
+			edge("e-intake-repro", "bug_intake", "reproduce", "", nil, nil, true),
+			edge("e-repro-diag", "reproduce", "diagnosis", "", nil, nil, true),
+			edge("e-diag-review", "diagnosis", "fix_plan_review", "", nil, nil, true),
+			edge("e-plan-approved", "fix_plan_review", "fix_regression", text["approved"], cond("decision", "eq", "approve"), map[string]string{"diagnosis_doc_id": "$input.diagnosis_doc_id"}, false),
+			edge("e-plan-rework", "fix_plan_review", "diagnosis", text["changesRequested"], cond("decision", "eq", "request_changes"), map[string]string{"review_comments": "$output.comments", "previous_diagnosis_doc_id": "$input.diagnosis_doc_id"}, false),
+			edge("e-fix-qa", "fix_regression", "bug_qa_review", "", nil, nil, true),
+			edge("e-qa-approved", "bug_qa_review", "close_report", text["approved"], cond("decision", "eq", "approve"), map[string]string{"qa_evidence": "$output.qa_evidence"}, false),
+			edge("e-qa-rework", "bug_qa_review", "fix_regression", text["changesRequested"], cond("decision", "eq", "request_changes"), map[string]string{"review_comments": "$output.comments", "previous_fix_artifact": "$input.fix_artifact"}, false),
+		})
+}
+
+func templateFromParts(id, name, description, locale, startStepID string, steps []entity.WorkflowStep, edges []entity.WorkflowEdge) entity.WorkflowTemplate {
+	return entity.WorkflowTemplate{
+		ID:          id,
+		Name:        name,
+		Description: description,
+		Version:     1,
+		Locale:      locale,
+		StartStepID: startStepID,
+		Steps:       steps,
+		Edges:       edges,
+	}
+}
+
+func tmplStep(id, typ, title, description, role, color string, x int, inputs, outputs []entity.WorkflowField) entity.WorkflowStep {
+	cfg := map[string]string{}
+	if color != "" {
+		cfg["color"] = color
+	}
+	return entity.WorkflowStep{
+		ID:           id,
+		Type:         typ,
+		Title:        title,
+		Description:  description,
+		ActorRole:    role,
+		InputFields:  inputs,
+		OutputFields: outputs,
+		ReviewPolicy: reviewPolicyForType(typ),
+		Position:     entity.WorkflowPosition{X: x, Y: 180},
+		Config:       cfg,
+	}
+}
+
+func localizedTemplateText(locale string, en, zhCN map[string]string) map[string]string {
+	if locale == "zh-CN" {
+		return mergeText(en, zhCN)
+	}
+	if locale == "zh-TW" {
+		return mergeText(en, zhCN)
+	}
+	return en
 }
 
 func reviewPolicyForType(typ string) string {
