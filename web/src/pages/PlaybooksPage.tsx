@@ -1,4 +1,5 @@
 import { useMemo, useState, type ReactNode } from 'react'
+import type { TFunction } from 'i18next'
 import { useTranslation } from 'react-i18next'
 import { useNavigate, useParams } from 'react-router-dom'
 import { ArrowLeft, CheckCircle2, GitBranch, LibraryBig, ListChecks, Puzzle, ShieldCheck, Users, Wrench } from 'lucide-react'
@@ -104,6 +105,12 @@ type PlaybookInstall = {
   createdBy: string
   createdAt: string
   objects: PlaybookInstalledObject[]
+}
+type ContentPreview = {
+  title: string
+  subtitle?: string
+  label: string
+  body: string
 }
 
 type PlaybookListResponse = { templates: PlaybookTemplate[] }
@@ -215,6 +222,7 @@ export default function PlaybooksPage() {
 function PlaybookDetail({ playbook, install, onBack, onInstalled }: { playbook: PlaybookTemplate; install?: PlaybookInstall; onBack: () => void; onInstalled: () => void }) {
   const { t, i18n } = useTranslation()
   const [installing, setInstalling] = useState(false)
+  const [preview, setPreview] = useState<ContentPreview | null>(null)
   const workflows = playbook.workflows ?? []
   const firstWorkflow = workflows[0]
   const steps = firstWorkflow?.definition.steps ?? []
@@ -266,11 +274,13 @@ function PlaybookDetail({ playbook, install, onBack, onInstalled }: { playbook: 
               subtitle={`${role.team}/${role.role}`}
               description={role.description}
               tags={role.skills}
-              contentLabel={t('playbooks.rolePrompt')}
-              emptyLabel={t('playbooks.noPromptContent')}
-            >
-              {role.prompt}
-            </ExpandableArtifactCard>
+              onPreview={() => setPreview({
+                title: role.name,
+                subtitle: `${role.team}/${role.role}`,
+                label: t('playbooks.rolePrompt'),
+                body: String(role.prompt ?? '').trim() || t('playbooks.noPromptContent'),
+              })}
+            />
           ))}
         </div>
       </Panel>
@@ -282,11 +292,12 @@ function PlaybookDetail({ playbook, install, onBack, onInstalled }: { playbook: 
               key={skill.id}
               title={skill.name}
               description={skill.description}
-              contentLabel={t('playbooks.skillPrompt')}
-              emptyLabel={t('playbooks.noPromptContent')}
-            >
-              {skill.body}
-            </ExpandableArtifactCard>
+              onPreview={() => setPreview({
+                title: skill.name,
+                label: t('playbooks.skillPrompt'),
+                body: String(skill.body ?? '').trim() || t('playbooks.noPromptContent'),
+              })}
+            />
           ))}
         </div>
       </Panel>
@@ -300,7 +311,17 @@ function PlaybookDetail({ playbook, install, onBack, onInstalled }: { playbook: 
             </div>
             <ol className="grid gap-3 lg:grid-cols-2">
               {steps.map((step, index) => (
-                <WorkflowStepCard key={step.id} step={step} index={index} />
+                <WorkflowStepCard
+                  key={step.id}
+                  step={step}
+                  index={index}
+                  onPreview={() => setPreview({
+                    title: step.title,
+                    subtitle: `${t(`workflows.stepTypes.${step.type}`, step.type)} · ${step.actorRole || t('playbooks.none')}`,
+                    label: t('playbooks.workflowStepContent'),
+                    body: formatWorkflowStepPreview(step, t),
+                  })}
+                />
               ))}
             </ol>
           </div>
@@ -370,6 +391,7 @@ function PlaybookDetail({ playbook, install, onBack, onInstalled }: { playbook: 
           )}
         </Panel>
       </div>
+      {preview && <ContentPreviewModal preview={preview} onClose={() => setPreview(null)} />}
     </div>
   )
 }
@@ -379,21 +401,15 @@ function ExpandableArtifactCard({
   subtitle,
   description,
   tags,
-  contentLabel,
-  emptyLabel,
-  children,
+  onPreview,
 }: {
   title: string
   subtitle?: string
   description?: string
   tags?: string[]
-  contentLabel: string
-  emptyLabel: string
-  children?: string
+  onPreview: () => void
 }) {
   const { t } = useTranslation()
-  const [expanded, setExpanded] = useState(false)
-  const content = String(children ?? '').trim()
   return (
     <div className="rounded-lg border border-neutral-200/80 bg-neutral-50/60 p-3 dark:border-zinc-700/50 dark:bg-zinc-900/50">
       <div className="flex items-center justify-between gap-2">
@@ -404,24 +420,17 @@ function ExpandableArtifactCard({
       {tags && tags.length > 0 && <TagRow values={tags} className="mt-3" />}
       <button
         type="button"
-        onClick={() => setExpanded((value) => !value)}
+        onClick={onPreview}
         className="mt-3 rounded-lg border border-neutral-300 bg-white px-3 py-1.5 text-xs font-medium text-neutral-700 hover:bg-neutral-50 dark:border-zinc-700 dark:bg-zinc-900 dark:text-zinc-300 dark:hover:bg-zinc-800"
       >
-        {expanded ? t('playbooks.hideContent') : t('playbooks.viewContent')}
+        {t('playbooks.viewContent')}
       </button>
-      {expanded && (
-        <div className="mt-3 rounded-lg border border-neutral-200 bg-white p-3 dark:border-zinc-700 dark:bg-zinc-950/40">
-          <p className="mb-2 text-xs font-medium text-neutral-400 dark:text-zinc-500">{contentLabel}</p>
-          <pre className="max-h-96 overflow-auto whitespace-pre-wrap break-words text-xs leading-relaxed text-neutral-700 dark:text-zinc-300">{content || emptyLabel}</pre>
-        </div>
-      )}
     </div>
   )
 }
 
-function WorkflowStepCard({ step, index }: { step: WorkflowStep; index: number }) {
+function WorkflowStepCard({ step, index, onPreview }: { step: WorkflowStep; index: number; onPreview: () => void }) {
   const { t } = useTranslation()
-  const [expanded, setExpanded] = useState(false)
   return (
     <li className="rounded-lg border border-neutral-200/70 bg-white px-3 py-2 dark:border-zinc-700/50 dark:bg-zinc-900/40">
       <div className="flex gap-3">
@@ -434,62 +443,70 @@ function WorkflowStepCard({ step, index }: { step: WorkflowStep; index: number }
             </div>
             <button
               type="button"
-              onClick={() => setExpanded((value) => !value)}
+              onClick={onPreview}
               className="shrink-0 rounded-lg border border-neutral-300 bg-white px-2.5 py-1 text-xs font-medium text-neutral-700 hover:bg-neutral-50 dark:border-zinc-700 dark:bg-zinc-900 dark:text-zinc-300 dark:hover:bg-zinc-800"
             >
-              {expanded ? t('playbooks.hideContent') : t('playbooks.viewContent')}
+              {t('playbooks.viewContent')}
             </button>
           </div>
-          {expanded && (
-            <div className="mt-3 space-y-3 rounded-lg border border-neutral-200 bg-neutral-50/80 p-3 dark:border-zinc-700 dark:bg-zinc-950/30">
-              <div className="grid gap-2 text-xs text-neutral-500 dark:text-zinc-500 sm:grid-cols-2">
-                <MetaLine label={t('playbooks.stepType')} value={t(`workflows.stepTypes.${step.type}`, step.type)} />
-                <MetaLine label={t('playbooks.actor')} value={step.actorRole || t('playbooks.none')} />
-              </div>
-              {step.description && (
-                <div>
-                  <p className="mb-1 text-xs font-medium text-neutral-400 dark:text-zinc-500">{t('playbooks.stepGoal')}</p>
-                  <p className="text-sm leading-relaxed text-neutral-700 dark:text-zinc-300">{step.description}</p>
-                </div>
-              )}
-              <WorkflowFields title={t('playbooks.inputFields')} fields={step.inputFields ?? []} />
-              <WorkflowFields title={t('playbooks.outputFields')} fields={step.outputFields ?? []} />
-            </div>
-          )}
         </div>
       </div>
     </li>
   )
 }
 
-function MetaLine({ label, value }: { label: string; value: string }) {
+function ContentPreviewModal({ preview, onClose }: { preview: ContentPreview; onClose: () => void }) {
+  const { t } = useTranslation()
   return (
-    <div className="rounded-md bg-white px-2.5 py-2 dark:bg-zinc-900/70">
-      <p className="text-[11px] text-neutral-400 dark:text-zinc-500">{label}</p>
-      <p className="mt-0.5 truncate font-medium text-neutral-700 dark:text-zinc-300">{value}</p>
+    <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/45 p-4" onClick={onClose}>
+      <div
+        className="flex max-h-[82vh] w-full max-w-3xl flex-col rounded-xl border border-neutral-200 bg-white shadow-xl dark:border-zinc-700 dark:bg-zinc-900"
+        role="dialog"
+        aria-modal="true"
+        onClick={(e) => e.stopPropagation()}
+      >
+        <div className="border-b border-neutral-100 px-5 py-4 dark:border-zinc-800">
+          <div className="flex items-start justify-between gap-4">
+            <div className="min-w-0">
+              <h2 className="truncate text-base font-semibold text-neutral-900 dark:text-zinc-100">{preview.title}</h2>
+              {preview.subtitle && <p className="mt-1 text-xs text-neutral-400 dark:text-zinc-500">{preview.subtitle}</p>}
+            </div>
+            <button
+              type="button"
+              onClick={onClose}
+              className="rounded-lg border border-neutral-300 bg-white px-3 py-1.5 text-xs font-medium text-neutral-700 hover:bg-neutral-50 dark:border-zinc-700 dark:bg-zinc-900 dark:text-zinc-300 dark:hover:bg-zinc-800"
+            >
+              {t('common.close')}
+            </button>
+          </div>
+        </div>
+        <div className="min-h-0 flex-1 overflow-auto p-5">
+          <p className="mb-2 text-xs font-medium text-neutral-400 dark:text-zinc-500">{preview.label}</p>
+          <pre className="whitespace-pre-wrap break-words rounded-lg border border-neutral-200 bg-neutral-50/80 p-4 text-xs leading-relaxed text-neutral-700 dark:border-zinc-700 dark:bg-zinc-950/30 dark:text-zinc-300">{preview.body}</pre>
+        </div>
+      </div>
     </div>
   )
 }
 
-function WorkflowFields({ title, fields }: { title: string; fields: WorkflowField[] }) {
-  const { t } = useTranslation()
-  return (
-    <div>
-      <p className="mb-1.5 text-xs font-medium text-neutral-400 dark:text-zinc-500">{title}</p>
-      {fields.length > 0 ? (
-        <div className="space-y-1.5">
-          {fields.map((field) => (
-            <div key={field.name} className="rounded-md bg-white px-2.5 py-2 dark:bg-zinc-900/70">
-              <p className="text-xs font-medium text-neutral-700 dark:text-zinc-300">{field.description || field.name}</p>
-              {field.description && <p className="mt-0.5 font-mono text-[11px] text-neutral-400 dark:text-zinc-500">{field.name}</p>}
-            </div>
-          ))}
-        </div>
-      ) : (
-        <p className="rounded-md bg-white px-2.5 py-2 text-xs text-neutral-400 dark:bg-zinc-900/70 dark:text-zinc-500">{t('playbooks.none')}</p>
-      )}
-    </div>
-  )
+function formatWorkflowStepPreview(step: WorkflowStep, t: TFunction) {
+  const renderFields = (fields: WorkflowField[] | undefined) => {
+    if (!fields || fields.length === 0) return t('playbooks.none')
+    return fields.map((field) => `- ${field.description || field.name}${field.description ? ` (${field.name})` : ''}`).join('\n')
+  }
+  return [
+    `${t('playbooks.stepType')}: ${t(`workflows.stepTypes.${step.type}`, step.type)}`,
+    `${t('playbooks.actor')}: ${step.actorRole || t('playbooks.none')}`,
+    '',
+    `${t('playbooks.stepGoal')}:`,
+    step.description || t('playbooks.none'),
+    '',
+    `${t('playbooks.inputFields')}:`,
+    renderFields(step.inputFields),
+    '',
+    `${t('playbooks.outputFields')}:`,
+    renderFields(step.outputFields),
+  ].join('\n')
 }
 
 function InstallSummary({ install }: { install: PlaybookInstall }) {

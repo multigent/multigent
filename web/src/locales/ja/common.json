@@ -375,7 +375,8 @@
     "actor": "実行ロール",
     "stepGoal": "ステップ目標",
     "inputFields": "入力フィールド",
-    "outputFields": "出力フィールド"
+    "outputFields": "出力フィールド",
+    "workflowStepContent": "ワークフローステップ内容"
   },
   "workflows": {
     "workspaceSubtitle": "タスクで利用できるワークスペース共通のワークフローホワイトボードを確認・設定します。",

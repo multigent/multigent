@@ -375,7 +375,8 @@
     "actor": "执行角色",
     "stepGoal": "节点目标",
     "inputFields": "输入字段",
-    "outputFields": "输出字段"
+    "outputFields": "输出字段",
+    "workflowStepContent": "流程节点内容"
   },
   "workflows": {
     "workspaceSubtitle": "查看和配置工作区通用的协作流程白板，任务创建时可选择使用。",

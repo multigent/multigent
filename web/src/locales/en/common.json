@@ -375,7 +375,8 @@
     "actor": "Actor role",
     "stepGoal": "Step goal",
     "inputFields": "Input fields",
-    "outputFields": "Output fields"
+    "outputFields": "Output fields",
+    "workflowStepContent": "Workflow step content"
   },
   "workflows": {
     "workspaceSubtitle": "Inspect and configure workspace-wide workflow whiteboards that tasks can use.",

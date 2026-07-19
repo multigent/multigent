@@ -375,7 +375,8 @@
     "actor": "執行角色",
     "stepGoal": "節點目標",
     "inputFields": "輸入欄位",
-    "outputFields": "輸出欄位"
+    "outputFields": "輸出欄位",
+    "workflowStepContent": "流程節點內容"
   },
   "workflows": {
     "workspaceSubtitle": "查看和設定工作區通用的協作流程白板，任務建立時可選擇使用。",
