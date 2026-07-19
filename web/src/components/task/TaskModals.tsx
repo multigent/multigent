@@ -53,6 +53,7 @@ type RunRow = {
 
 type LogData = { content: string; truncated: boolean }
 type TaskWorkflowData = { definition: WorkflowDefinition; run: WorkflowRun; steps: WorkflowStepInstance[] }
+type SafeUser = { username: string; displayName?: string; email?: string }
 
 // Restore real line breaks for descriptions whose upstream author stored literal
 // "\n" / "\r\n" / "\t" sequences (typically agent-generated text that survived a
@@ -259,6 +260,18 @@ export function TaskDetailModal({ task, onClose, onEdit, canEdit = true }: { tas
   const logQuery = hasLog ? `/api/v1/telemetry/log?path=${encodeURIComponent(matchingRun!.logPath!)}` : null
   const logState = useApiJson<LogData>(logQuery, 0)
   const workflowState = useApiJson<TaskWorkflowData>(`/api/v1/projects/${encodeURIComponent(task.project)}/tasks/${encodeURIComponent(task.id)}/workflow`, workflowVersion)
+  const usersState = useApiJson<SafeUser[]>('/api/v1/users', 0)
+  const actorLabels = useMemo(() => {
+    const labels = new Map<string, string>()
+    if (usersState.status === 'ok') {
+      for (const user of usersState.data ?? []) {
+        labels.set(user.username, user.displayName || user.email || user.username)
+      }
+    }
+    if (task.assignee && task.assigneeLabel) labels.set(task.assignee, task.assigneeLabel)
+    if (task.createdBy && task.createdByLabel) labels.set(task.createdBy, task.createdByLabel)
+    return labels
+  }, [task.assignee, task.assigneeLabel, task.createdBy, task.createdByLabel, usersState])
   const activeWorkflowStep = workflowState.status === 'ok'
     ? workflowState.data.definition.steps.find((step) => step.id === workflowState.data.run.activeStepId)
     : undefined
@@ -400,6 +413,7 @@ export function TaskDetailModal({ task, onClose, onEdit, canEdit = true }: { tas
                   instance={activeWorkflowInst}
                   steps={workflowState.data.definition.steps}
                   previousOutputs={previousWorkflowOutputs}
+                  actorLabels={actorLabels}
                   canReview={canReviewWorkflow}
                   reviewOutputs={reviewOutputs}
                   reviewComments={reviewComments}
@@ -591,6 +605,7 @@ function WorkflowRuntimePanel({
   instance,
   steps,
   previousOutputs,
+  actorLabels,
   canReview,
   reviewOutputs,
   reviewComments,
@@ -604,6 +619,7 @@ function WorkflowRuntimePanel({
   instance?: WorkflowStepInstance
   steps: WorkflowStep[]
   previousOutputs: WorkflowStepInstance[]
+  actorLabels: Map<string, string>
   canReview: boolean
   reviewOutputs: Record<string, string>
   reviewComments: string
@@ -618,6 +634,7 @@ function WorkflowRuntimePanel({
   const inputValues = instance?.inputValues ?? parseWorkflowArtifact(instance?.inputArtifact || '')
   const hasStructuredInput = Object.keys(inputValues).length > 0
   const stepTitleByID = useMemo(() => new Map(steps.map((item) => [item.id, item.title])), [steps])
+  const actorLabel = workflowActorLabel(instance?.actorType, instance?.actorId, actorLabels)
 
   if (!step) {
     return (
@@ -634,7 +651,7 @@ function WorkflowRuntimePanel({
         <p className="text-xs font-semibold uppercase tracking-wider text-neutral-400 dark:text-zinc-500">{t('workflows.detail.currentStep')}</p>
         <h4 className="mt-1 text-sm font-semibold text-neutral-900 dark:text-zinc-100">{step.title}</h4>
         <p className="mt-1 text-xs text-neutral-500 dark:text-zinc-500">
-          {t(`workflows.stepTypes.${step.type}`, { defaultValue: step.type })} · {instance?.actorType || '-'}:{instance?.actorId || '-'}
+          {t(`workflows.stepTypes.${step.type}`, { defaultValue: step.type })} · {actorLabel}
         </p>
       </div>
       <div className="min-h-0 flex-1 space-y-4 overflow-y-auto p-4">
@@ -714,6 +731,14 @@ function WorkflowRuntimePanel({
       </div>
     </div>
   )
+}
+
+function workflowActorLabel(actorType?: string, actorId?: string, labels?: Map<string, string>) {
+  const id = actorId?.trim()
+  if (!id) return '-'
+  const label = labels?.get(id) || id
+  if (actorType === 'human') return label
+  return label
 }
 
 function WorkflowValuesOrArtifact({ values, fields, artifact, compact = false }: { values?: Record<string, string>; fields?: WorkflowField[]; artifact?: string; compact?: boolean }) {
