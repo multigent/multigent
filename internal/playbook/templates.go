@@ -12,6 +12,7 @@ const (
 	gstackPlaybookTemplateVersion = "1.1.0"
 	mattPocockTemplateVersion     = "1.0.0"
 	openSpecTemplateVersion       = "1.0.0"
+	videoStudioTemplateVersion    = "1.0.0"
 )
 
 func Templates(locale string) []entity.PlaybookTemplate {
@@ -19,6 +20,7 @@ func Templates(locale string) []entity.PlaybookTemplate {
 	return []entity.PlaybookTemplate{
 		softwareDelivery(locale),
 		openSpecArtifactGuidedDelivery(locale),
+		videoProductionStudio(locale),
 		startupValidation(locale),
 		mattPocockEngineering(locale),
 		bugTriageAndFix(locale),
@@ -164,6 +166,95 @@ func openSpecArtifactGuidedDelivery(locale string) entity.PlaybookTemplate {
 			metric("first_pass_acceptance", text(locale, "First-pass acceptance", "一次通过率"), text(locale, "How often implementation passes verification without rework.", "实现无需返工就通过验证的比例。")),
 			metric("artifact_completeness", text(locale, "Artifact completeness", "产物完整度"), text(locale, "Whether required proposal, spec, design, task, verification, and archive docIDs are produced.", "是否产出了必需的 proposal、spec、design、task、verification 和 archive docID。")),
 			metric("cycle_time", text(locale, "Cycle time", "流程耗时"), text(locale, "Elapsed time from raw request to archived change.", "从原始需求到变更归档的总耗时。")),
+		},
+	}
+}
+
+func videoProductionStudio(locale string) entity.PlaybookTemplate {
+	wf := videoProductionStudioWorkflow(locale)
+	return entity.PlaybookTemplate{
+		ID:          "video-production-studio",
+		Version:     videoStudioTemplateVersion,
+		Name:        text(locale, "Video Production Studio", "视频制作工作室协作方案"),
+		Description: text(locale, "An original Multigent playbook for agent-assisted video production: intake, reference analysis, proposal, script, storyboard, assets, edit plan, render QA, and publish package with human approval gates.", "Multigent 原创的视频制作协作方案：覆盖需求收集、参考分析、提案、脚本、分镜、素材、剪辑方案、成片质检和发布包，并带关键人工审核门禁。"),
+		Locale:      normalizeLocale(locale),
+		Category:    text(locale, "Creative Production", "创意制作"),
+		Complexity:  text(locale, "Intermediate", "中阶"),
+		Tags:        []string{"video", "content", "creative", "marketing", "production"},
+		Roles: []entity.PlaybookRoleTemplate{
+			roleWithPrompt("video-producer", "creative", "producer", text(locale, "Producer", "制片 Agent"), text(locale, "Owns the brief, audience, budget, approval gates, and final delivery shape.", "负责需求简报、受众、预算、审核门禁和最终交付形式。"), videoProducerPrompt(locale), []string{"video-creative-intake", "video-production-checkpoint"}),
+			roleWithPrompt("creative-director", "creative", "creative-director", text(locale, "Creative Director", "创意导演 Agent"), text(locale, "Turns the brief and references into a concrete concept, style direction, and production path.", "把需求和参考转成具体创意方案、风格方向和制作路径。"), creativeDirectorPrompt(locale), []string{"video-reference-analysis", "video-proposal"}),
+			roleWithPrompt("script-writer", "creative", "script-writer", text(locale, "Script Writer", "脚本 Agent"), text(locale, "Writes the script, narration, pacing, and message hierarchy for the approved concept.", "为已审核创意编写脚本、旁白、节奏和信息层级。"), scriptWriterPrompt(locale), []string{"video-script-writing"}),
+			roleWithPrompt("storyboard-planner", "creative", "storyboard-planner", text(locale, "Storyboard Planner", "分镜 Agent"), text(locale, "Converts script into scenes, asset requirements, visual beats, and reviewable storyboard docs.", "把脚本转成场景、素材需求、视觉节拍和可审核分镜文档。"), storyboardPlannerPrompt(locale), []string{"video-storyboard-planning"}),
+			roleWithPrompt("asset-director", "creative", "asset-director", text(locale, "Asset Director", "素材导演 Agent"), text(locale, "Plans and produces image, video, audio, music, and subtitle assets with provenance and cost notes.", "规划并产出图片、视频、音频、音乐和字幕素材，记录来源和成本。"), assetDirectorPrompt(locale), []string{"video-asset-manifest", "video-tool-selection"}),
+			roleWithPrompt("editor-composer", "creative", "editor-composer", text(locale, "Editor / Composer", "剪辑合成 Agent"), text(locale, "Builds edit decisions, composition plan, render package, and technical validation evidence.", "产出剪辑决策、合成方案、渲染包和技术校验证据。"), editorComposerPrompt(locale), []string{"video-edit-plan", "video-render-qa"}),
+			roleWithPrompt("production-reviewer", "creative", "reviewer", text(locale, "Production Reviewer", "制作审核 Agent"), text(locale, "Reviews brand fit, content accuracy, visual quality, audio quality, delivery promise, and publish readiness.", "审核品牌一致性、内容准确性、画面质量、音频质量、交付承诺和发布就绪度。"), productionReviewerPrompt(locale), []string{"video-production-review"}),
+		},
+		Skills: []entity.PlaybookSkillTemplate{
+			videoSkill("video-creative-intake", text(locale, "Creative Intake", "创意需求收集"), text(locale, "Turn a vague video request into target audience, message, format, constraints, and approval policy.", "把模糊视频需求整理成目标受众、核心信息、格式、约束和审核策略。"), videoCreativeIntakeSkill(locale)),
+			videoSkill("video-reference-analysis", text(locale, "Reference Analysis", "参考分析"), text(locale, "Analyze reference videos or examples without copying them; extract structure, pacing, style, and production implications.", "分析参考视频或案例但不照搬，提取结构、节奏、风格和制作含义。"), videoReferenceAnalysisSkill(locale)),
+			videoSkill("video-proposal", text(locale, "Video Proposal", "视频提案"), text(locale, "Create 2-3 differentiated concepts with tool path, budget range, risk, and recommendation.", "产出 2-3 个差异化创意方案，包含工具路径、预算区间、风险和推荐选择。"), videoProposalSkill(locale)),
+			videoSkill("video-script-writing", text(locale, "Script Writing", "脚本写作"), text(locale, "Write a timed script with hook, beats, narration, screen text, and constraints for downstream scenes.", "编写带时长的脚本，包含开场钩子、节拍、旁白、屏幕文字和下游分镜约束。"), videoScriptWritingSkill(locale)),
+			videoSkill("video-storyboard-planning", text(locale, "Storyboard Planning", "分镜规划"), text(locale, "Turn script into reviewable scenes, shot intent, asset needs, and acceptance criteria.", "把脚本转成可审核场景、镜头意图、素材需求和验收标准。"), videoStoryboardPlanningSkill(locale)),
+			videoSkill("video-asset-manifest", text(locale, "Asset Manifest", "素材清单"), text(locale, "Produce an asset manifest with source, license, generation prompt, cost, quality status, and docID references.", "产出素材清单，包含来源、授权、生成提示、成本、质量状态和 docID 引用。"), videoAssetManifestSkill(locale)),
+			videoSkill("video-tool-selection", text(locale, "Tool Selection", "工具选择"), text(locale, "Choose providers and tools based on quality, cost, speed, credentials, and approval policy.", "按质量、成本、速度、凭证和审核策略选择 provider 与工具。"), videoToolSelectionSkill(locale)),
+			videoSkill("video-edit-plan", text(locale, "Edit Plan", "剪辑方案"), text(locale, "Create timeline, captions, music, transitions, and render instructions from approved assets.", "基于已审核素材创建时间线、字幕、音乐、转场和渲染说明。"), videoEditPlanSkill(locale)),
+			videoSkill("video-render-qa", text(locale, "Render QA", "成片质检"), text(locale, "Check output format, duration, audio, subtitles, readability, visual defects, and delivery promise.", "检查输出格式、时长、音频、字幕、可读性、画面缺陷和交付承诺。"), videoRenderQASkill(locale)),
+			videoSkill("video-production-checkpoint", text(locale, "Production Checkpoint", "制作检查点"), text(locale, "Use checkpoint docs to support resume, review, cost tracking, and audit trail.", "用检查点文档支持恢复、审核、成本跟踪和审计记录。"), videoCheckpointSkill(locale)),
+			videoSkill("video-production-review", text(locale, "Production Review", "制作审核"), text(locale, "Review creative quality and production readiness with explicit approve/request_changes decisions.", "用明确的 approve/request_changes 决策审核创意质量和制作就绪度。"), videoProductionReviewSkill(locale)),
+		},
+		Workflows: []entity.PlaybookWorkflowTemplate{
+			workflow("video-production-studio", wf, map[string]string{
+				"intake":            "video-producer",
+				"reference":         "creative-director",
+				"proposal":          "creative-director",
+				"proposal_review":   "request-owner",
+				"script":            "script-writer",
+				"script_review":     "request-owner",
+				"storyboard":        "storyboard-planner",
+				"storyboard_review": "request-owner",
+				"assets":            "asset-director",
+				"asset_review":      "request-owner",
+				"edit_plan":         "editor-composer",
+				"compose":           "editor-composer",
+				"qa_review":         "production-reviewer",
+				"publish_package":   "video-producer",
+			}, map[string][]string{
+				"intake":          {"video-creative-intake", "video-production-checkpoint"},
+				"reference":       {"video-reference-analysis"},
+				"proposal":        {"video-proposal", "video-tool-selection"},
+				"script":          {"video-script-writing"},
+				"storyboard":      {"video-storyboard-planning"},
+				"assets":          {"video-asset-manifest", "video-tool-selection"},
+				"edit_plan":       {"video-edit-plan"},
+				"compose":         {"video-render-qa"},
+				"qa_review":       {"video-production-review", "video-render-qa"},
+				"publish_package": {"video-production-checkpoint"},
+			}),
+		},
+		TaskTemplates: []entity.PlaybookTaskTemplate{
+			task("create-short-video", text(locale, "Create a short video", "制作短视频"), text(locale, "Produce a short video from a clear business, education, or marketing brief. Use docIDs for long scripts, storyboard, asset manifest, QA report, and publish package.", "基于清晰的业务、教育或营销 brief 制作短视频。长脚本、分镜、素材清单、QA 报告和发布包都使用 docID。"), "video-production-studio"),
+			task("repurpose-reference-video", text(locale, "Repurpose from a reference", "基于参考视频改编"), text(locale, "Analyze a reference video, create a differentiated concept, and produce a new video package without copying protected creative expression.", "分析参考视频，产出差异化创意，并制作新的视频交付包，不复制受保护的创意表达。"), "video-production-studio"),
+			task("make-campaign-video-package", text(locale, "Create a campaign video package", "制作活动视频包"), text(locale, "Create the main video plus script, storyboard, asset manifest, QA report, and platform-specific publishing notes.", "制作主视频，并输出脚本、分镜、素材清单、QA 报告和平台发布说明。"), "video-production-studio"),
+		},
+		RequiredTools: []entity.PlaybookToolRequirement{
+			tool("web_search", text(locale, "Web Search", "网页搜索"), text(locale, "Research topic, references, audience language, and factual claims.", "调研主题、参考、受众语言和事实陈述。"), false),
+			tool("object_storage", text(locale, "Object Storage", "对象存储"), text(locale, "Store generated media assets and final renders.", "保存生成媒体素材和最终成片。"), false),
+			tool("image_generation", text(locale, "Image Generation", "图片生成"), text(locale, "Generate stills, title cards, diagrams, or visual assets.", "生成静帧、标题卡、图解或视觉素材。"), false),
+			tool("video_generation", text(locale, "Video Generation", "视频生成"), text(locale, "Generate motion clips when the approved concept requires them.", "当已审核创意需要动态片段时生成视频素材。"), false),
+			tool("tts", text(locale, "Text-to-Speech", "语音合成"), text(locale, "Generate narration or voiceover when required.", "按需生成旁白或配音。"), false),
+			tool("ffmpeg", "FFmpeg", text(locale, "Local or sandbox media validation, audio mixing, subtitles, and encoding.", "在沙箱内做媒体校验、音频混合、字幕和编码。"), false),
+		},
+		SetupQuestions: []entity.PlaybookSetupQuestion{
+			question("default_video_type", text(locale, "What video format should this workspace start with?", "这个工作区默认先做哪类视频？"), []string{text(locale, "Short-form social video", "短视频"), text(locale, "Product explainer", "产品介绍"), text(locale, "Training / internal video", "培训/内部视频"), text(locale, "Campaign asset", "营销素材")}, true),
+			question("approval_policy", text(locale, "Which gates require human approval?", "哪些节点必须人工审核？"), []string{text(locale, "Proposal + script + storyboard + final QA", "提案 + 脚本 + 分镜 + 最终 QA"), text(locale, "Proposal + final QA", "提案 + 最终 QA"), text(locale, "Every creative gate", "每个创意门禁")}, true),
+			question("brand_rules", text(locale, "Where are brand, tone, and visual rules stored?", "品牌、语气和视觉规范存在哪里？"), []string{text(locale, "Multigent Docs", "Multigent 知识库"), text(locale, "Feishu / Lark Docs", "飞书/Lark 文档"), text(locale, "Notion", "Notion"), text(locale, "No formal rules yet", "还没有正式规范")}, false),
+		},
+		SuccessMetrics: []entity.PlaybookMetric{
+			metric("approval_rounds", text(locale, "Approval rounds", "审核轮次"), text(locale, "How many times proposal, script, storyboard, assets, or final output are returned.", "提案、脚本、分镜、素材或最终成片被打回的次数。")),
+			metric("production_cycle_time", text(locale, "Production cycle time", "制作周期"), text(locale, "Elapsed time from intake to publish package.", "从需求收集到发布包完成的总耗时。")),
+			metric("asset_reuse_rate", text(locale, "Asset reuse rate", "素材复用率"), text(locale, "How often scripts, style notes, assets, or review rubrics are reused in future videos.", "脚本、风格说明、素材或审核标准在后续视频中的复用频率。")),
+			metric("human_edit_distance", text(locale, "Human edit distance", "人工改动幅度"), text(locale, "How much humans need to rewrite or replace agent-produced creative artifacts.", "人类需要重写或替换 Agent 创意产物的程度。")),
 		},
 	}
 }
@@ -359,6 +450,623 @@ func supportKnowledgeLoop(locale string) entity.PlaybookTemplate {
 			tool("slack", "Slack", text(locale, "Support channels and internal review.", "客服频道和内部评审。"), false),
 		},
 	}
+}
+
+func videoSkill(id, name, description, body string) entity.PlaybookSkillTemplate {
+	return entity.PlaybookSkillTemplate{
+		ID:          id,
+		Name:        name,
+		Description: description,
+		Body:        body,
+		Source:      "Original Multigent playbook content. Structure inspired by public agentic production workflow patterns, not copied from upstream OpenMontage assets.",
+		LicenseNote: "Copyright Multigent contributors. Original content.",
+	}
+}
+
+func videoProducerPrompt(locale string) string {
+	return text(locale, `# Role: Video Producer
+
+You own production clarity. Your job is to turn a vague video request into a brief that other agents can execute without guessing.
+
+Rules:
+- Do not start creative work until the audience, channel, duration, delivery shape, and approval policy are clear.
+- Push back on vague goals like "make it exciting" by converting them into observable acceptance criteria.
+- Track budget, tool requirements, and human gates before expensive generation starts.
+- Large artifacts must be written to knowledge docs and returned by docID.
+- Every stage should leave a checkpoint: what changed, what was approved, what is still risky.
+
+Output discipline:
+- brief_doc_id
+- delivery_shape
+- approval_policy
+- budget_or_cost_limit
+- open_risks`, `# Role: 视频制片 Agent
+
+你负责让制作流程变清楚。你的工作是把模糊视频需求转成其他 Agent 可以执行的 brief。
+
+规则：
+- 在受众、渠道、时长、交付形式和审核策略明确前，不进入创意制作。
+- 遇到“做得精彩一点”这类模糊目标，要转成可观察验收标准。
+- 在昂贵生成开始前，先确认预算、工具需求和人工审核门禁。
+- 大段产物必须写入知识库，并返回 docID。
+- 每个阶段都要留下 checkpoint：变了什么、通过了什么、还有什么风险。
+
+输出纪律：
+- brief_doc_id
+- delivery_shape
+- approval_policy
+- budget_or_cost_limit
+- open_risks`)
+}
+
+func creativeDirectorPrompt(locale string) string {
+	return text(locale, `# Role: Creative Director
+
+You turn a brief into a production direction. Your value is taste, differentiation, and choosing a feasible path.
+
+Rules:
+- Do not copy references. Extract abstract structure, pacing, composition, and emotional mechanics.
+- Always propose 2-3 differentiated options before recommending one.
+- Explain tradeoffs: quality, cost, speed, tool availability, and review risk.
+- If a provider/tool choice affects style or budget, ask for approval before generation.
+- Make the recommended concept specific enough for script and storyboard agents to execute.
+
+Outputs:
+- reference_analysis_doc_id
+- proposal_doc_id
+- tool_plan_doc_id
+- recommended_concept
+- risk_notes`, `# Role: 创意导演 Agent
+
+你负责把 brief 转成制作方向。你的价值在于审美、差异化和选择可执行路径。
+
+规则：
+- 不复制参考。只提取抽象结构、节奏、构图和情绪机制。
+- 推荐前必须给 2-3 个差异化方案。
+- 说明取舍：质量、成本、速度、工具可用性和审核风险。
+- 如果 provider 或工具选择会影响风格或预算，生成前必须先审核。
+- 推荐方案必须具体到脚本和分镜 Agent 可以执行。
+
+输出：
+- reference_analysis_doc_id
+- proposal_doc_id
+- tool_plan_doc_id
+- recommended_concept
+- risk_notes`)
+}
+
+func scriptWriterPrompt(locale string) string {
+	return text(locale, `# Role: Script Writer
+
+You write scripts that can be produced, reviewed, and verified.
+
+Rules:
+- Start from the approved concept, not from your own new idea.
+- Write timing, narration, on-screen text, and visual intent separately.
+- Mark factual claims that need verification.
+- Keep the script aligned to channel constraints: duration, aspect ratio, audience, and call to action.
+- If the concept is weak, report the weakness instead of hiding it in polished language.
+
+Outputs:
+- script_doc_id
+- claim_check_doc_id
+- estimated_duration
+- tone_notes`, `# Role: 脚本 Agent
+
+你负责写可制作、可审核、可验证的脚本。
+
+规则：
+- 从已审核创意出发，不重新发明一个新方案。
+- 分开写时长、旁白、屏幕文字和视觉意图。
+- 标记需要核查的事实陈述。
+- 保持符合渠道约束：时长、画幅、受众和行动号召。
+- 如果创意本身薄弱，要指出，不要用漂亮语言掩盖。
+
+输出：
+- script_doc_id
+- claim_check_doc_id
+- estimated_duration
+- tone_notes`)
+}
+
+func storyboardPlannerPrompt(locale string) string {
+	return text(locale, `# Role: Storyboard Planner
+
+You convert script into a production-ready scene plan.
+
+Rules:
+- Every script beat needs a scene, shot, or visual treatment.
+- Define the required assets per scene before generation starts.
+- Avoid impossible or overly expensive shots unless the proposal approved them.
+- Make the storyboard reviewable without requiring the human to inspect raw prompts.
+- Use docIDs for full storyboard and asset requirements.
+
+Outputs:
+- storyboard_doc_id
+- asset_requirements_doc_id
+- visual_acceptance_doc_id`, `# Role: 分镜 Agent
+
+你负责把脚本转成可制作的场景计划。
+
+规则：
+- 脚本里的每个节拍都要对应场景、镜头或视觉处理。
+- 在生成开始前定义每个场景需要的素材。
+- 除非提案已批准，否则避免不现实或成本过高的镜头。
+- 分镜要可审核，不要求人类直接看原始提示词。
+- 完整分镜和素材需求使用 docID。
+
+输出：
+- storyboard_doc_id
+- asset_requirements_doc_id
+- visual_acceptance_doc_id`)
+}
+
+func assetDirectorPrompt(locale string) string {
+	return text(locale, `# Role: Asset Director
+
+You create or source production assets with provenance, cost, and reviewability.
+
+Rules:
+- Never generate assets before storyboard approval.
+- Record each asset's source, prompt, provider, cost, license status, quality status, and scene mapping.
+- Prefer review packages that let humans approve quickly: contact sheets, thumbnails, short samples, or doc summaries.
+- If credentials or providers are missing, produce a fallback plan and ask before changing the production path.
+
+Outputs:
+- asset_manifest_doc_id
+- asset_review_doc_id
+- cost_snapshot
+- blocked_reason`, `# Role: 素材导演 Agent
+
+你负责创建或收集带来源、成本和可审核性的制作素材。
+
+规则：
+- 分镜审核通过前，不生成正式素材。
+- 记录每个素材的来源、提示词、provider、成本、授权状态、质量状态和场景映射。
+- 优先提供方便人类快速审核的包：contact sheet、缩略图、短样片或文档摘要。
+- 如果凭证或 provider 缺失，先产出兜底方案，改变制作路径前要审核。
+
+输出：
+- asset_manifest_doc_id
+- asset_review_doc_id
+- cost_snapshot
+- blocked_reason`)
+}
+
+func editorComposerPrompt(locale string) string {
+	return text(locale, `# Role: Editor / Composer
+
+You turn approved assets into a coherent timeline and render package.
+
+Rules:
+- Do not change approved creative direction silently.
+- Edit decisions must reference approved script, storyboard, and assets.
+- Check captions, audio levels, duration, resolution, aspect ratio, pacing, and readability.
+- If the final render cannot be produced, return a clear render report and recommended fix path.
+
+Outputs:
+- edit_decisions_doc_id
+- render_plan_doc_id
+- render_ref
+- render_report_doc_id
+- known_issues`, `# Role: 剪辑合成 Agent
+
+你负责把已审核素材转成连贯时间线和渲染包。
+
+规则：
+- 不静默改变已审核创意方向。
+- 剪辑决策必须引用已审核脚本、分镜和素材。
+- 检查字幕、音量、时长、分辨率、画幅、节奏和可读性。
+- 如果无法产出最终成片，要返回清晰的渲染报告和建议修复路径。
+
+输出：
+- edit_decisions_doc_id
+- render_plan_doc_id
+- render_ref
+- render_report_doc_id
+- known_issues`)
+}
+
+func productionReviewerPrompt(locale string) string {
+	return text(locale, `# Role: Production Reviewer
+
+You review whether the video is ready to be used.
+
+Rules:
+- Review against the original brief and approved gates, not against personal taste alone.
+- Separate critical blockers from polish suggestions.
+- Check message accuracy, brand fit, audio quality, subtitle readability, visual defects, platform fit, and delivery promise.
+- Use explicit decisions: pass, request_changes, or stop.
+
+Outputs:
+- qa_report_doc_id
+- decision
+- comments
+- follow_up_items`, `# Role: 制作审核 Agent
+
+你负责审核视频是否已经可用。
+
+规则：
+- 按原始 brief 和已审核门禁审核，不只凭个人喜好。
+- 区分 critical blocker 和 polish suggestion。
+- 检查信息准确性、品牌一致性、音频质量、字幕可读性、画面缺陷、平台适配和交付承诺。
+- 使用明确决策：pass、request_changes 或 stop。
+
+输出：
+- qa_report_doc_id
+- decision
+- comments
+- follow_up_items`)
+}
+
+func videoCreativeIntakeSkill(locale string) string {
+	return text(locale, `# Skill: Creative Intake
+
+Use this before any video production work starts.
+
+Collect:
+1. Goal: why this video exists.
+2. Audience: who watches, in what situation, and what they should do next.
+3. Delivery shape: channel, aspect ratio, duration, language, deadline.
+4. Constraints: brand, legal, facts, budget, tools, assets available.
+5. Approval policy: which stages require human review.
+
+Output fields:
+- brief_doc_id
+- audience
+- delivery_shape
+- approval_policy
+- open_risks`, `# Skill: 创意需求收集
+
+在任何视频制作工作开始前使用。
+
+收集：
+1. 目标：为什么要做这个视频。
+2. 受众：谁会看，在什么场景看，看完要做什么。
+3. 交付形式：渠道、画幅、时长、语言、截止时间。
+4. 约束：品牌、法务、事实、预算、工具、已有素材。
+5. 审核策略：哪些阶段需要人类审核。
+
+输出字段：
+- brief_doc_id
+- audience
+- delivery_shape
+- approval_policy
+- open_risks`)
+}
+
+func videoReferenceAnalysisSkill(locale string) string {
+	return text(locale, `# Skill: Reference Analysis
+
+Use this when the request includes a video, ad, landing page, competitor, or style reference.
+
+Analyze:
+- Structure: hook, setup, beats, payoff, CTA.
+- Pacing: shot length, density, silence, rhythm.
+- Visual language: composition, typography, color, motion.
+- Audio: voice, music, SFX, ducking, captions.
+- What can be reused as abstract principles.
+- What must not be copied.
+
+Output fields:
+- reference_analysis_doc_id
+- reuse_principles
+- avoid_copying_notes`, `# Skill: 参考分析
+
+当需求包含视频、广告、落地页、竞品或风格参考时使用。
+
+分析：
+- 结构：钩子、铺垫、节拍、收束、行动号召。
+- 节奏：镜头长度、信息密度、留白、韵律。
+- 视觉语言：构图、字体、颜色、动效。
+- 音频：人声、音乐、音效、压低、人声字幕。
+- 哪些能作为抽象原则复用。
+- 哪些不能复制。
+
+输出字段：
+- reference_analysis_doc_id
+- reuse_principles
+- avoid_copying_notes`)
+}
+
+func videoProposalSkill(locale string) string {
+	return text(locale, `# Skill: Video Proposal
+
+Create 2-3 differentiated concepts before recommending one.
+
+Each concept must include:
+- One-line promise.
+- Structure.
+- Visual treatment.
+- Tool path.
+- Cost/risk estimate.
+- Why it fits the brief.
+
+Do not hide tool uncertainty. If credentials or providers are missing, call it out.
+
+Output fields:
+- proposal_doc_id
+- recommended_concept
+- tool_plan_doc_id
+- decision`, `# Skill: 视频提案
+
+推荐前先创建 2-3 个差异化创意方案。
+
+每个方案必须包含：
+- 一句话承诺。
+- 结构。
+- 视觉处理。
+- 工具路径。
+- 成本/风险估算。
+- 为什么符合 brief。
+
+不要隐藏工具不确定性。如果缺少凭证或 provider，要明确写出。
+
+输出字段：
+- proposal_doc_id
+- recommended_concept
+- tool_plan_doc_id
+- decision`)
+}
+
+func videoScriptWritingSkill(locale string) string {
+	return text(locale, `# Skill: Script Writing
+
+Write a script that downstream agents can produce.
+
+Include:
+- Timing by section or beat.
+- Narration.
+- On-screen text.
+- Visual intent.
+- Claims that require checking.
+- Tone and pacing notes.
+
+Output fields:
+- script_doc_id
+- claim_check_doc_id
+- estimated_duration`, `# Skill: 脚本写作
+
+编写下游 Agent 可以制作的脚本。
+
+包含：
+- 按段落或节拍的时间。
+- 旁白。
+- 屏幕文字。
+- 视觉意图。
+- 需要核查的事实陈述。
+- 语气和节奏说明。
+
+输出字段：
+- script_doc_id
+- claim_check_doc_id
+- estimated_duration`)
+}
+
+func videoStoryboardPlanningSkill(locale string) string {
+	return text(locale, `# Skill: Storyboard Planning
+
+Convert approved script into scenes.
+
+For each scene:
+- Scene goal.
+- Visual treatment.
+- Required assets.
+- Motion or transition.
+- Text/caption requirements.
+- Acceptance criteria.
+
+Output fields:
+- storyboard_doc_id
+- asset_requirements_doc_id
+- visual_acceptance_doc_id`, `# Skill: 分镜规划
+
+把已审核脚本转成场景。
+
+每个场景包含：
+- 场景目标。
+- 视觉处理。
+- 所需素材。
+- 动效或转场。
+- 文字/字幕要求。
+- 验收标准。
+
+输出字段：
+- storyboard_doc_id
+- asset_requirements_doc_id
+- visual_acceptance_doc_id`)
+}
+
+func videoAssetManifestSkill(locale string) string {
+	return text(locale, `# Skill: Asset Manifest
+
+Every asset must be traceable.
+
+Record:
+- Scene ID.
+- Asset type.
+- Provider or source.
+- Prompt or search query.
+- License / usage note.
+- Cost.
+- Status: draft, approved, rejected, replaced.
+- Storage reference or docID.
+
+Output fields:
+- asset_manifest_doc_id
+- asset_review_doc_id
+- cost_snapshot`, `# Skill: 素材清单
+
+每个素材都必须可追溯。
+
+记录：
+- 场景 ID。
+- 素材类型。
+- Provider 或来源。
+- 提示词或搜索词。
+- 授权/使用说明。
+- 成本。
+- 状态：draft、approved、rejected、replaced。
+- 存储引用或 docID。
+
+输出字段：
+- asset_manifest_doc_id
+- asset_review_doc_id
+- cost_snapshot`)
+}
+
+func videoToolSelectionSkill(locale string) string {
+	return text(locale, `# Skill: Tool Selection
+
+Choose tools by production need, not novelty.
+
+Evaluate:
+- Quality fit.
+- Credential availability.
+- Cost and budget.
+- Latency.
+- Failure fallback.
+- Whether user approval is required before paid generation.
+
+Output a tool plan with explicit chosen path and fallback path.`, `# Skill: 工具选择
+
+按制作需求选择工具，不按新鲜感选择。
+
+评估：
+- 质量匹配。
+- 凭证可用性。
+- 成本和预算。
+- 延迟。
+- 失败兜底路径。
+- 付费生成前是否需要用户审核。
+
+输出明确的工具方案，包含主路径和兜底路径。`)
+}
+
+func videoEditPlanSkill(locale string) string {
+	return text(locale, `# Skill: Edit Plan
+
+Create a timeline from approved script, storyboard, and assets.
+
+Include:
+- Cut list.
+- Asset mapping.
+- Caption style and placement.
+- Music/SFX plan.
+- Audio ducking notes.
+- Render settings.
+- Validation plan.
+
+Output fields:
+- edit_decisions_doc_id
+- render_plan_doc_id`, `# Skill: 剪辑方案
+
+基于已审核脚本、分镜和素材创建时间线。
+
+包含：
+- 剪辑列表。
+- 素材映射。
+- 字幕样式和位置。
+- 音乐/音效方案。
+- 音频压低说明。
+- 渲染设置。
+- 校验方案。
+
+输出字段：
+- edit_decisions_doc_id
+- render_plan_doc_id`)
+}
+
+func videoRenderQASkill(locale string) string {
+	return text(locale, `# Skill: Render QA
+
+Validate the rendered output.
+
+Check:
+- Duration and frame rate.
+- Resolution and aspect ratio.
+- Audio levels and silence.
+- Subtitle timing and readability.
+- Text safe area.
+- Visual defects.
+- Claim and brand consistency.
+- Delivery promise from the brief.
+
+Output fields:
+- render_report_doc_id
+- qa_report_doc_id
+- decision
+- comments`, `# Skill: 成片质检
+
+校验渲染输出。
+
+检查：
+- 时长和帧率。
+- 分辨率和画幅。
+- 音量和静音。
+- 字幕时序和可读性。
+- 文字安全区。
+- 画面缺陷。
+- 事实和品牌一致性。
+- brief 中的交付承诺。
+
+输出字段：
+- render_report_doc_id
+- qa_report_doc_id
+- decision
+- comments`)
+}
+
+func videoCheckpointSkill(locale string) string {
+	return text(locale, `# Skill: Production Checkpoint
+
+After each stage, write down:
+- Stage status.
+- Produced docIDs or artifact refs.
+- Human decision if any.
+- Cost snapshot.
+- Known risks.
+- Next step.
+
+Checkpoints allow another agent or human to resume without reading the whole conversation.`, `# Skill: 制作检查点
+
+每个阶段后记录：
+- 阶段状态。
+- 产出的 docID 或 artifact 引用。
+- 如有，记录人工决策。
+- 成本快照。
+- 已知风险。
+- 下一步。
+
+检查点让另一个 Agent 或人类不需要阅读完整对话也能接手。`)
+}
+
+func videoProductionReviewSkill(locale string) string {
+	return text(locale, `# Skill: Production Review
+
+Review the output against approved artifacts.
+
+Separate:
+- Critical blockers: cannot publish/use.
+- Required changes: should fix before delivery.
+- Polish suggestions: useful but not blocking.
+
+Return one decision:
+- pass
+- request_changes
+- stop`, `# Skill: 制作审核
+
+按已审核产物审核输出。
+
+区分：
+- Critical blockers：不能发布/不能使用。
+- Required changes：交付前应该修。
+- Polish suggestions：有用但不阻塞。
+
+返回一个决策：
+- pass
+- request_changes
+- stop`)
 }
 
 const ycAdvisorPromptEN = `# Role: YC Office Hours Advisor

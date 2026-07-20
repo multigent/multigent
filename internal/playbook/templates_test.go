@@ -59,6 +59,66 @@ func TestOpenSpecPlaybookTemplate(t *testing.T) {
 	}
 }
 
+func TestVideoProductionStudioPlaybookTemplate(t *testing.T) {
+	tmpl, ok := Template("video-production-studio", "zh-CN")
+	if !ok {
+		t.Fatal("video production studio playbook template missing")
+	}
+	if tmpl.Locale != "zh-CN" {
+		t.Fatalf("locale=%q", tmpl.Locale)
+	}
+	if tmpl.Category == "" || tmpl.Complexity == "" || len(tmpl.Tags) == 0 {
+		t.Fatalf("incomplete template metadata: %#v", tmpl)
+	}
+	if len(tmpl.Roles) < 7 {
+		t.Fatalf("expected production roles, got %d", len(tmpl.Roles))
+	}
+	if len(tmpl.Skills) < 10 {
+		t.Fatalf("expected production skills, got %d", len(tmpl.Skills))
+	}
+	foundOriginalSkill := false
+	for _, sk := range tmpl.Skills {
+		if sk.ID == "video-proposal" && sk.Body != "" {
+			foundOriginalSkill = true
+			if !containsAll(sk.Body, "2-3", "proposal_doc_id", "tool_plan_doc_id") {
+				t.Fatalf("video-proposal skill is too thin: %q", sk.Body)
+			}
+		}
+	}
+	if !foundOriginalSkill {
+		t.Fatalf("video-proposal skill missing")
+	}
+	if len(tmpl.Workflows) != 1 {
+		t.Fatalf("expected one workflow, got %d", len(tmpl.Workflows))
+	}
+	wf := tmpl.Workflows[0]
+	if wf.Definition.StartStepID != "intake" {
+		t.Fatalf("start step=%q", wf.Definition.StartStepID)
+	}
+	if len(wf.Definition.Steps) < 14 || len(wf.Definition.Edges) < 18 {
+		t.Fatalf("workflow too small: steps=%d edges=%d", len(wf.Definition.Steps), len(wf.Definition.Edges))
+	}
+	if wf.RoleBindings["assets"] != "asset-director" {
+		t.Fatalf("unexpected role bindings=%#v", wf.RoleBindings)
+	}
+	foundAssetGate := false
+	foundQARework := false
+	for _, edge := range wf.Definition.Edges {
+		if edge.From == "asset_review" && edge.To == "assets" {
+			foundAssetGate = true
+		}
+		if edge.From == "qa_review" && edge.To == "edit_plan" {
+			foundQARework = true
+		}
+	}
+	if !foundAssetGate {
+		t.Fatalf("expected asset review rework edge")
+	}
+	if !foundQARework {
+		t.Fatalf("expected QA rework edge")
+	}
+}
+
 func containsAll(s string, needles ...string) bool {
 	for _, needle := range needles {
 		if !strings.Contains(s, needle) {

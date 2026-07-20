@@ -258,6 +258,273 @@ func openSpecWorkflow(locale string) entity.WorkflowTemplate {
 	}
 }
 
+func videoProductionStudioWorkflow(locale string) entity.WorkflowTemplate {
+	field := func(name, en, zh string) entity.WorkflowField {
+		return entity.WorkflowField{Name: name, Description: text(locale, en, zh)}
+	}
+	return entity.WorkflowTemplate{
+		ID:          "video-production-studio",
+		Name:        text(locale, "Video Production Studio", "视频制作工作室"),
+		Description: text(locale, "A creative production workflow from brief to publish package, with structured artifacts and human gates for concept, script, storyboard, assets, and final QA.", "从需求简报到发布包的创意制作流程，使用结构化产物，并在创意、脚本、分镜、素材和最终 QA 设置人工门禁。"),
+		Version:     1,
+		Locale:      normalizeLocale(locale),
+		StartStepID: "intake",
+		Steps: []entity.WorkflowStep{
+			{
+				ID: "intake", Type: "agent_task", Title: text(locale, "Creative Intake", "创意需求收集"),
+				Description: text(locale, "Clarify goal, audience, channel, duration, constraints, claims, brand rules, and approval policy. Long details must be written to docs and returned as docIDs.", "澄清目标、受众、渠道、时长、约束、事实陈述、品牌规则和审核策略。长内容必须写入知识库并返回 docID。"),
+				ActorRole:   "video-producer",
+				InputFields: []entity.WorkflowField{
+					field("raw_request", "Raw video request, campaign goal, reference, or stakeholder note.", "原始视频需求、活动目标、参考或干系人说明。"),
+					field("brand_context_doc_id", "Optional docID for brand, tone, legal, or product context.", "可选，品牌、语气、法务或产品上下文 docID。"),
+				},
+				OutputFields: []entity.WorkflowField{
+					field("brief_doc_id", "docID for the production brief.", "制作 brief 的 docID。"),
+					field("audience", "Target audience and situation.", "目标受众和具体场景。"),
+					field("delivery_shape", "Format, duration, channel, aspect ratio, and deadline.", "格式、时长、渠道、画幅和截止时间。"),
+					field("approval_policy", "Which gates require human approval.", "哪些节点需要人工审核。"),
+				},
+				Position: entity.WorkflowPosition{X: 80, Y: 220},
+				Config:   map[string]string{"color": "sky"},
+			},
+			{
+				ID: "reference", Type: "agent_task", Title: text(locale, "Reference Analysis", "参考分析"),
+				Description: text(locale, "Analyze references or market examples. Extract reusable structure and taste notes without copying protected expression.", "分析参考或市场案例，提取可复用结构和审美说明，但不复制受保护表达。"),
+				ActorRole:   "creative-director",
+				InputFields: []entity.WorkflowField{
+					field("brief_doc_id", "Production brief docID.", "制作 brief docID。"),
+					field("reference_links", "Reference URLs, uploaded files, or example descriptions.", "参考链接、上传文件或案例描述。"),
+				},
+				OutputFields: []entity.WorkflowField{
+					field("reference_analysis_doc_id", "docID for structure, pacing, visual language, and risks found in references.", "参考的结构、节奏、视觉语言和风险分析 docID。"),
+					field("reuse_principles", "What may be reused as abstract principles.", "可作为抽象原则复用的内容。"),
+					field("avoid_copying_notes", "What must not be copied.", "必须避免复制的内容。"),
+				},
+				Position: entity.WorkflowPosition{X: 360, Y: 220},
+				Config:   map[string]string{"color": "violet"},
+			},
+			{
+				ID: "proposal", Type: "agent_task", Title: text(locale, "Concept Proposal", "创意提案"),
+				Description: text(locale, "Create differentiated concepts, production paths, rough cost, tool needs, risks, and recommendation.", "产出差异化创意方案、制作路径、粗略成本、工具需求、风险和推荐选择。"),
+				ActorRole:   "creative-director",
+				InputFields: []entity.WorkflowField{
+					field("brief_doc_id", "Production brief docID.", "制作 brief docID。"),
+					field("reference_analysis_doc_id", "Reference analysis docID.", "参考分析 docID。"),
+				},
+				OutputFields: []entity.WorkflowField{
+					field("proposal_doc_id", "docID for 2-3 concept options and recommendation.", "2-3 个创意方案和推荐选择的 docID。"),
+					field("recommended_concept", "Selected recommendation and rationale.", "推荐方案和理由。"),
+					field("tool_plan_doc_id", "docID for required providers, credentials, cost range, and fallback path.", "所需 provider、凭证、成本区间和兜底路径 docID。"),
+					field("decision", "ready_for_review or blocked.", "ready_for_review 或 blocked。"),
+				},
+				Position: entity.WorkflowPosition{X: 640, Y: 220},
+				Config:   map[string]string{"color": "purple"},
+			},
+			{
+				ID: "proposal_review", Type: "human_review", Title: text(locale, "Proposal Review", "提案审核"),
+				Description: text(locale, "Human approves one concept, requests changes, or stops before expensive generation starts.", "人类在昂贵生成开始前批准一个方案、要求修改或停止。"),
+				ActorRole:   "request-owner",
+				InputFields: []entity.WorkflowField{
+					field("proposal_doc_id", "Proposal docID.", "提案 docID。"),
+					field("tool_plan_doc_id", "Tool plan docID.", "工具方案 docID。"),
+				},
+				OutputFields: []entity.WorkflowField{
+					field("decision", "approve, request_changes, or stop.", "approve、request_changes 或 stop。"),
+					field("approved_concept", "Approved concept ID or description.", "已批准方案 ID 或描述。"),
+					field("comments", "Creative constraints, budget limits, or changes.", "创意约束、预算限制或修改意见。"),
+				},
+				ReviewPolicy: "manual",
+				Position:     entity.WorkflowPosition{X: 920, Y: 220},
+				Config:       map[string]string{"color": "amber"},
+			},
+			{
+				ID: "script", Type: "agent_task", Title: text(locale, "Write Script", "编写脚本"),
+				Description: text(locale, "Write timed script, narration, on-screen text, key beats, and factual claim checklist.", "编写带时长的脚本、旁白、屏幕文字、关键节拍和事实核查清单。"),
+				ActorRole:   "script-writer",
+				InputFields: []entity.WorkflowField{
+					field("brief_doc_id", "Production brief docID.", "制作 brief docID。"),
+					field("proposal_doc_id", "Approved proposal docID.", "已审核提案 docID。"),
+					field("approved_concept", "Approved concept.", "已批准创意方案。"),
+					field("comments", "Proposal review comments.", "提案审核意见。"),
+				},
+				OutputFields: []entity.WorkflowField{
+					field("script_doc_id", "docID for full timed script.", "完整带时长脚本 docID。"),
+					field("claim_check_doc_id", "docID for factual claims and required verification.", "事实陈述和所需核查 docID。"),
+					field("estimated_duration", "Estimated video duration.", "预计视频时长。"),
+				},
+				Position: entity.WorkflowPosition{X: 1200, Y: 220},
+				Config:   map[string]string{"color": "emerald"},
+			},
+			{
+				ID: "script_review", Type: "human_review", Title: text(locale, "Script Review", "脚本审核"),
+				Description: text(locale, "Human reviews message, claim safety, tone, pacing, and whether the script matches the approved concept.", "人类审核信息、事实安全、语气、节奏，以及脚本是否匹配已批准创意。"),
+				ActorRole:   "request-owner",
+				InputFields: []entity.WorkflowField{
+					field("script_doc_id", "Script docID.", "脚本 docID。"),
+					field("claim_check_doc_id", "Claim check docID.", "事实核查 docID。"),
+				},
+				OutputFields: []entity.WorkflowField{
+					field("decision", "approve, request_changes, or stop.", "approve、request_changes 或 stop。"),
+					field("comments", "Script edits or constraints.", "脚本修改意见或约束。"),
+				},
+				ReviewPolicy: "manual",
+				Position:     entity.WorkflowPosition{X: 1480, Y: 220},
+				Config:       map[string]string{"color": "amber"},
+			},
+			{
+				ID: "storyboard", Type: "agent_task", Title: text(locale, "Storyboard", "分镜"),
+				Description: text(locale, "Turn script into scene plan, shot intent, visual treatment, asset requirements, and storyboard acceptance criteria.", "把脚本转成场景计划、镜头意图、视觉处理、素材需求和分镜验收标准。"),
+				ActorRole:   "storyboard-planner",
+				InputFields: []entity.WorkflowField{
+					field("script_doc_id", "Approved script docID.", "已审核脚本 docID。"),
+					field("comments", "Script review comments.", "脚本审核意见。"),
+				},
+				OutputFields: []entity.WorkflowField{
+					field("storyboard_doc_id", "docID for storyboard and scene list.", "分镜和场景列表 docID。"),
+					field("asset_requirements_doc_id", "docID for required assets by scene.", "按场景列出的素材需求 docID。"),
+					field("visual_acceptance_doc_id", "docID for visual acceptance criteria.", "视觉验收标准 docID。"),
+				},
+				Position: entity.WorkflowPosition{X: 1760, Y: 220},
+				Config:   map[string]string{"color": "blue"},
+			},
+			{
+				ID: "storyboard_review", Type: "human_review", Title: text(locale, "Storyboard Review", "分镜审核"),
+				Description: text(locale, "Human approves scene direction before asset generation starts.", "人类在素材生成前审核场景方向。"),
+				ActorRole:   "request-owner",
+				InputFields: []entity.WorkflowField{
+					field("storyboard_doc_id", "Storyboard docID.", "分镜 docID。"),
+					field("asset_requirements_doc_id", "Asset requirements docID.", "素材需求 docID。"),
+				},
+				OutputFields: []entity.WorkflowField{
+					field("decision", "approve, request_changes, or stop.", "approve、request_changes 或 stop。"),
+					field("comments", "Storyboard changes, scene removals, or asset constraints.", "分镜修改、场景删除或素材约束。"),
+				},
+				ReviewPolicy: "manual",
+				Position:     entity.WorkflowPosition{X: 2040, Y: 220},
+				Config:       map[string]string{"color": "amber"},
+			},
+			{
+				ID: "assets", Type: "agent_task", Title: text(locale, "Produce Assets", "制作素材"),
+				Description: text(locale, "Generate or collect assets, write asset manifest with source/provenance/cost, and prepare review contact sheet.", "生成或收集素材，编写包含来源/溯源/成本的素材清单，并准备审核用 contact sheet。"),
+				ActorRole:   "asset-director",
+				InputFields: []entity.WorkflowField{
+					field("storyboard_doc_id", "Approved storyboard docID.", "已审核分镜 docID。"),
+					field("asset_requirements_doc_id", "Asset requirements docID.", "素材需求 docID。"),
+					field("comments", "Storyboard review comments.", "分镜审核意见。"),
+				},
+				OutputFields: []entity.WorkflowField{
+					field("asset_manifest_doc_id", "docID for asset manifest with provenance, prompts, cost, and status.", "包含溯源、提示词、成本和状态的素材清单 docID。"),
+					field("asset_review_doc_id", "docID for contact sheet or asset review package.", "contact sheet 或素材审核包 docID。"),
+					field("cost_snapshot", "Current spend or estimated spend.", "当前花费或估算花费。"),
+				},
+				Position: entity.WorkflowPosition{X: 2320, Y: 220},
+				Config:   map[string]string{"color": "cyan"},
+			},
+			{
+				ID: "asset_review", Type: "human_review", Title: text(locale, "Asset Review", "素材审核"),
+				Description: text(locale, "Human approves assets before editing and composition. Bad assets should be caught here, not after final render.", "人类在剪辑合成前审核素材。坏素材应该在这里发现，而不是最终渲染后才发现。"),
+				ActorRole:   "request-owner",
+				InputFields: []entity.WorkflowField{
+					field("asset_manifest_doc_id", "Asset manifest docID.", "素材清单 docID。"),
+					field("asset_review_doc_id", "Asset review package docID.", "素材审核包 docID。"),
+				},
+				OutputFields: []entity.WorkflowField{
+					field("decision", "approve, request_changes, or stop.", "approve、request_changes 或 stop。"),
+					field("comments", "Asset replacement, style, or quality feedback.", "素材替换、风格或质量意见。"),
+				},
+				ReviewPolicy: "manual",
+				Position:     entity.WorkflowPosition{X: 2600, Y: 220},
+				Config:       map[string]string{"color": "amber"},
+			},
+			{
+				ID: "edit_plan", Type: "agent_task", Title: text(locale, "Edit Plan", "剪辑方案"),
+				Description: text(locale, "Create timeline, cut decisions, subtitles, music, transitions, and render instructions.", "创建时间线、剪辑决策、字幕、音乐、转场和渲染说明。"),
+				ActorRole:   "editor-composer",
+				InputFields: []entity.WorkflowField{
+					field("script_doc_id", "Script docID.", "脚本 docID。"),
+					field("storyboard_doc_id", "Storyboard docID.", "分镜 docID。"),
+					field("asset_manifest_doc_id", "Approved asset manifest docID.", "已审核素材清单 docID。"),
+				},
+				OutputFields: []entity.WorkflowField{
+					field("edit_decisions_doc_id", "docID for timeline and edit decisions.", "时间线和剪辑决策 docID。"),
+					field("render_plan_doc_id", "docID for render settings and validation plan.", "渲染设置和校验方案 docID。"),
+				},
+				Position: entity.WorkflowPosition{X: 2880, Y: 220},
+				Config:   map[string]string{"color": "slate"},
+			},
+			{
+				ID: "compose", Type: "agent_task", Title: text(locale, "Compose / Render", "合成渲染"),
+				Description: text(locale, "Render the approved edit plan and produce technical validation evidence.", "按已审核剪辑方案渲染成片，并产出技术校验证据。"),
+				ActorRole:   "editor-composer",
+				InputFields: []entity.WorkflowField{
+					field("edit_decisions_doc_id", "Edit decisions docID.", "剪辑决策 docID。"),
+					field("render_plan_doc_id", "Render plan docID.", "渲染方案 docID。"),
+				},
+				OutputFields: []entity.WorkflowField{
+					field("render_ref", "Final render or draft render reference.", "最终或草稿成片引用。"),
+					field("render_report_doc_id", "docID for ffprobe, audio, subtitle, duration, and visual QA evidence.", "ffprobe、音频、字幕、时长和视觉 QA 证据 docID。"),
+					field("known_issues", "Known issues or empty string.", "已知问题或空字符串。"),
+				},
+				Position: entity.WorkflowPosition{X: 3160, Y: 220},
+				Config:   map[string]string{"color": "indigo"},
+			},
+			{
+				ID: "qa_review", Type: "agent_task", Title: text(locale, "Production QA", "制作 QA"),
+				Description: text(locale, "Review final output against brief, script, storyboard, asset approvals, audio/subtitle quality, brand fit, and delivery promise.", "按 brief、脚本、分镜、素材审核、音频/字幕质量、品牌一致性和交付承诺审核最终输出。"),
+				ActorRole:   "production-reviewer",
+				InputFields: []entity.WorkflowField{
+					field("render_ref", "Render reference.", "成片引用。"),
+					field("render_report_doc_id", "Render report docID.", "渲染报告 docID。"),
+					field("brief_doc_id", "Brief docID.", "brief docID。"),
+				},
+				OutputFields: []entity.WorkflowField{
+					field("qa_report_doc_id", "docID for final QA report.", "最终 QA 报告 docID。"),
+					field("decision", "pass, request_changes, or stop.", "pass、request_changes 或 stop。"),
+					field("comments", "Final production notes or blocking issues.", "最终制作意见或阻塞问题。"),
+				},
+				Position: entity.WorkflowPosition{X: 3440, Y: 220},
+				Config:   map[string]string{"color": "orange"},
+			},
+			{
+				ID: "publish_package", Type: "agent_task", Title: text(locale, "Publish Package", "发布包"),
+				Description: text(locale, "Prepare title, description, platform copy, thumbnail notes, version summary, reuse notes, and archive handoff.", "准备标题、描述、平台文案、封面说明、版本总结、复用说明和归档交接。"),
+				ActorRole:   "video-producer",
+				InputFields: []entity.WorkflowField{
+					field("render_ref", "Approved render reference.", "已通过审核的成片引用。"),
+					field("qa_report_doc_id", "Final QA report docID.", "最终 QA 报告 docID。"),
+				},
+				OutputFields: []entity.WorkflowField{
+					field("publish_package_doc_id", "docID for publish copy, platform notes, and final handoff.", "发布文案、平台说明和最终交接 docID。"),
+					field("archive_summary_doc_id", "docID for reusable production learnings and assets.", "可复用制作经验和素材归档 docID。"),
+					field("completion_decision", "ready_to_publish, published, or follow_up_needed.", "ready_to_publish、published 或 follow_up_needed。"),
+				},
+				Position: entity.WorkflowPosition{X: 3720, Y: 220},
+				Config:   map[string]string{"color": "emerald"},
+			},
+		},
+		Edges: []entity.WorkflowEdge{
+			edge("e-intake-reference", "intake", "reference", "", nil, nil, true),
+			edge("e-reference-proposal", "reference", "proposal", "", nil, nil, true),
+			edge("e-proposal-review", "proposal", "proposal_review", text(locale, "ready", "待审核"), cond("decision", "eq", "ready_for_review"), nil, false),
+			edge("e-proposal-script", "proposal_review", "script", text(locale, "approved", "通过"), cond("decision", "eq", "approve"), map[string]string{"approved_concept": "$output.approved_concept", "comments": "$output.comments"}, false),
+			edge("e-proposal-rework", "proposal_review", "proposal", text(locale, "needs changes", "需要修改"), cond("decision", "eq", "request_changes"), map[string]string{"review_comments": "$output.comments"}, false),
+			edge("e-script-review", "script", "script_review", "", nil, nil, true),
+			edge("e-script-storyboard", "script_review", "storyboard", text(locale, "approved", "通过"), cond("decision", "eq", "approve"), map[string]string{"comments": "$output.comments"}, false),
+			edge("e-script-rework", "script_review", "script", text(locale, "needs changes", "需要修改"), cond("decision", "eq", "request_changes"), map[string]string{"review_comments": "$output.comments"}, false),
+			edge("e-storyboard-review", "storyboard", "storyboard_review", "", nil, nil, true),
+			edge("e-storyboard-assets", "storyboard_review", "assets", text(locale, "approved", "通过"), cond("decision", "eq", "approve"), map[string]string{"comments": "$output.comments"}, false),
+			edge("e-storyboard-rework", "storyboard_review", "storyboard", text(locale, "needs changes", "需要修改"), cond("decision", "eq", "request_changes"), map[string]string{"review_comments": "$output.comments"}, false),
+			edge("e-assets-review", "assets", "asset_review", "", nil, nil, true),
+			edge("e-assets-edit", "asset_review", "edit_plan", text(locale, "approved", "通过"), cond("decision", "eq", "approve"), map[string]string{"comments": "$output.comments"}, false),
+			edge("e-assets-rework", "asset_review", "assets", text(locale, "needs changes", "需要修改"), cond("decision", "eq", "request_changes"), map[string]string{"review_comments": "$output.comments"}, false),
+			edge("e-edit-compose", "edit_plan", "compose", "", nil, nil, true),
+			edge("e-compose-qa", "compose", "qa_review", "", nil, nil, true),
+			edge("e-qa-publish", "qa_review", "publish_package", text(locale, "passed", "通过"), cond("decision", "eq", "pass"), nil, false),
+			edge("e-qa-rework", "qa_review", "edit_plan", text(locale, "needs changes", "需要修改"), cond("decision", "eq", "request_changes"), map[string]string{"review_comments": "$output.comments", "qa_report_doc_id": "$output.qa_report_doc_id"}, false),
+		},
+	}
+}
+
 func mattPocockEngineeringWorkflow(locale string) entity.WorkflowTemplate {
 	field := func(name, en, zh string) entity.WorkflowField {
 		return entity.WorkflowField{Name: name, Description: text(locale, en, zh)}
