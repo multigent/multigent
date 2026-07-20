@@ -10,6 +10,10 @@ on:
       tag:
         description: "Release tag to build, for example v0.1.0"
         required: true
+      publish_npm:
+        description: "Publish npm wrapper package"
+        required: false
+        default: "false"
 
 permissions:
   contents: write
@@ -346,6 +350,7 @@ jobs:
   npm:
     needs: [verify, binaries]
     runs-on: ubuntu-latest
+    if: github.event_name == 'workflow_dispatch' && github.event.inputs.publish_npm == 'true'
     permissions:
       contents: read
       id-token: write
