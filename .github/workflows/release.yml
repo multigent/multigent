@@ -1,0 +1,381 @@
+name: Release
+
+on:
+  push:
+    tags:
+      - "v*.*.*"
+      - "!v*-dirty*"
+  workflow_dispatch:
+    inputs:
+      tag:
+        description: "Release tag to build, for example v0.1.0"
+        required: true
+
+permissions:
+  contents: write
+  packages: write
+
+env:
+  GO_VERSION_FILE: go.mod
+  NODE_VERSION: "22"
+
+jobs:
+  verify:
+    runs-on: ubuntu-latest
+    outputs:
+      tag_name: ${{ steps.meta.outputs.tag_name }}
+      is_stable: ${{ steps.meta.outputs.is_stable }}
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+          ref: ${{ github.event.inputs.tag || github.ref }}
+
+      - name: Validate tag
+        id: meta
+        shell: bash
+        run: |
+          tag="${{ github.event.inputs.tag || github.ref_name }}"
+          echo "Triggered by tag: $tag"
+          if [[ ! "$tag" =~ ^v[0-9]+\.[0-9]+\.[0-9]+(-[0-9A-Za-z.-]+)?$ ]]; then
+            echo "::error::Release tags must look like vX.Y.Z or vX.Y.Z-suffix; got '$tag'."
+            exit 1
+          fi
+          if [[ "$tag" == *-dirty* ]]; then
+            echo "::error::Refusing to release from dirty tag '$tag'."
+            exit 1
+          fi
+          echo "tag_name=$tag" >> "$GITHUB_OUTPUT"
+          if [[ "$tag" == *-* ]]; then
+            echo "is_stable=false" >> "$GITHUB_OUTPUT"
+          else
+            echo "is_stable=true" >> "$GITHUB_OUTPUT"
+          fi
+
+      - name: Setup Go
+        uses: actions/setup-go@v5
+        with:
+          go-version-file: ${{ env.GO_VERSION_FILE }}
+          cache-dependency-path: go.sum
+
+      - name: Setup Node
+        uses: actions/setup-node@v4
+        with:
+          node-version: ${{ env.NODE_VERSION }}
+          cache: npm
+          cache-dependency-path: web/package-lock.json
+
+      - name: Install web dependencies
+        working-directory: web
+        run: npm ci
+
+      - name: Build web
+        working-directory: web
+        run: npm run build
+
+      - name: Test Go
+        run: go test ./...
+
+      - name: Check installer syntax
+        run: |
+          bash -n scripts/install.sh
+          pwsh -NoLogo -NoProfile -Command '$null = [scriptblock]::Create((Get-Content scripts/install.ps1 -Raw))'
+
+      - name: Check npm wrapper version
+        env:
+          RELEASE_TAG: ${{ steps.meta.outputs.tag_name }}
+        run: |
+          node -e '
+            const pkg = require("./npm/package.json");
+            const want = process.env.RELEASE_TAG.replace(/^v/, "");
+            if (pkg.version !== want) {
+              console.error(`npm/package.json version ${pkg.version} does not match release tag ${process.env.RELEASE_TAG}`);
+              process.exit(1);
+            }
+          '
+
+  binaries:
+    needs: verify
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+          ref: ${{ github.event.inputs.tag || github.ref }}
+
+      - name: Setup Go
+        uses: actions/setup-go@v5
+        with:
+          go-version-file: ${{ env.GO_VERSION_FILE }}
+          cache-dependency-path: go.sum
+
+      - name: Setup Node
+        uses: actions/setup-node@v4
+        with:
+          node-version: ${{ env.NODE_VERSION }}
+          cache: npm
+          cache-dependency-path: web/package-lock.json
+
+      - name: Build release archives
+        env:
+          GO: go
+          VERSION: ${{ needs.verify.outputs.tag_name }}
+          COMMIT: ${{ github.sha }}
+        run: make release
+
+      - name: Generate checksums
+        working-directory: dist
+        run: sha256sum *.tar.gz *.zip > checksums.txt
+
+      - name: Publish GitHub release
+        uses: softprops/action-gh-release@v2
+        with:
+          tag_name: ${{ needs.verify.outputs.tag_name }}
+          generate_release_notes: true
+          prerelease: ${{ needs.verify.outputs.is_stable != 'true' }}
+          files: |
+            dist/*.tar.gz
+            dist/*.zip
+            dist/checksums.txt
+
+  runtime-images:
+    needs: verify
+    runs-on: ubuntu-latest
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - name: runtime-base
+            file: docker/runtime-base/Dockerfile
+          - name: sandbox-codex
+            file: docker/sandbox-codex/Dockerfile
+          - name: sandbox-claudecode
+            file: docker/sandbox-claudecode/Dockerfile
+          - name: sandbox-gemini
+            file: docker/sandbox-gemini/Dockerfile
+          - name: sandbox-generic
+            file: docker/sandbox-generic/Dockerfile
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+        with:
+          ref: ${{ github.event.inputs.tag || github.ref }}
+
+      - name: Setup Docker Buildx
+        uses: docker/setup-buildx-action@v3
+
+      - name: Login to GHCR
+        uses: docker/login-action@v3
+        with:
+          registry: ghcr.io
+          username: ${{ github.actor }}
+          password: ${{ secrets.GITHUB_TOKEN }}
+
+      - name: Docker metadata
+        id: meta
+        uses: docker/metadata-action@v5
+        with:
+          images: ghcr.io/${{ github.repository }}/${{ matrix.name }}
+          flavor: |
+            latest=false
+          tags: |
+            type=raw,value=latest,enable=${{ needs.verify.outputs.is_stable == 'true' }}
+            type=raw,value=${{ needs.verify.outputs.tag_name }}
+            type=sha,prefix=sha-
+
+      - name: Build and push ${{ matrix.name }}
+        uses: docker/build-push-action@v6
+        with:
+          context: .
+          file: ${{ matrix.file }}
+          push: true
+          platforms: linux/amd64
+          tags: ${{ steps.meta.outputs.tags }}
+          labels: ${{ steps.meta.outputs.labels }}
+          cache-from: type=gha,scope=${{ matrix.name }}
+          cache-to: type=gha,mode=max,scope=${{ matrix.name }}
+
+  app-image:
+    needs: verify
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+        with:
+          ref: ${{ github.event.inputs.tag || github.ref }}
+
+      - name: Setup Docker Buildx
+        uses: docker/setup-buildx-action@v3
+
+      - name: Login to GHCR
+        uses: docker/login-action@v3
+        with:
+          registry: ghcr.io
+          username: ${{ github.actor }}
+          password: ${{ secrets.GITHUB_TOKEN }}
+
+      - name: Docker metadata
+        id: meta
+        uses: docker/metadata-action@v5
+        with:
+          images: ghcr.io/${{ github.repository }}
+          flavor: |
+            latest=false
+          tags: |
+            type=raw,value=latest,enable=${{ needs.verify.outputs.is_stable == 'true' }}
+            type=raw,value=${{ needs.verify.outputs.tag_name }}
+            type=sha,prefix=sha-
+
+      - name: Build date
+        id: build_date
+        run: echo "value=$(date -u +%Y-%m-%dT%H:%M:%SZ)" >> "$GITHUB_OUTPUT"
+
+      - name: Build and push Multigent app image
+        uses: docker/build-push-action@v6
+        with:
+          context: .
+          file: Dockerfile
+          push: true
+          platforms: linux/amd64
+          tags: ${{ steps.meta.outputs.tags }}
+          labels: ${{ steps.meta.outputs.labels }}
+          build-args: |
+            VERSION=${{ needs.verify.outputs.tag_name }}
+            COMMIT=${{ github.sha }}
+            BUILD_DATE=${{ steps.build_date.outputs.value }}
+          cache-from: type=gha,scope=multigent-app
+          cache-to: type=gha,mode=max,scope=multigent-app
+
+  homebrew:
+    needs: [verify, binaries]
+    runs-on: ubuntu-latest
+    steps:
+      - name: Check Homebrew tap token
+        id: tap_token
+        env:
+          TAP_TOKEN: ${{ secrets.HOMEBREW_TAP_GITHUB_TOKEN }}
+        run: |
+          if [ -n "$TAP_TOKEN" ]; then
+            echo "publish=true" >> "$GITHUB_OUTPUT"
+          else
+            echo "publish=false" >> "$GITHUB_OUTPUT"
+            echo "HOMEBREW_TAP_GITHUB_TOKEN is not configured; skipping Homebrew tap update."
+          fi
+
+      - name: Download release archives
+        if: steps.tap_token.outputs.publish == 'true'
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          TAG: ${{ needs.verify.outputs.tag_name }}
+        run: |
+          mkdir -p /tmp/multigent-release
+          gh release download "$TAG" \
+            --repo "${{ github.repository }}" \
+            --dir /tmp/multigent-release \
+            --pattern "multigent-${TAG}-darwin-*.tar.gz" \
+            --pattern "multigent-${TAG}-linux-*.tar.gz"
+
+      - name: Generate Homebrew formula
+        if: steps.tap_token.outputs.publish == 'true'
+        env:
+          TAG: ${{ needs.verify.outputs.tag_name }}
+        run: |
+          cd /tmp/multigent-release
+          version="${TAG#v}"
+          sha_darwin_amd64="$(sha256sum "multigent-${TAG}-darwin-amd64.tar.gz" | awk '{print $1}')"
+          sha_darwin_arm64="$(sha256sum "multigent-${TAG}-darwin-arm64.tar.gz" | awk '{print $1}')"
+          sha_linux_amd64="$(sha256sum "multigent-${TAG}-linux-amd64.tar.gz" | awk '{print $1}')"
+          sha_linux_arm64="$(sha256sum "multigent-${TAG}-linux-arm64.tar.gz" | awk '{print $1}')"
+          cat > multigent.rb <<EOF
+          class Multigent < Formula
+            desc "Agent collaboration infrastructure for teams"
+            homepage "https://github.com/multigent/multigent"
+            license "PolyForm-Noncommercial-1.0.0"
+            version "${version}"
+
+            on_macos do
+              if Hardware::CPU.arm?
+                url "https://github.com/multigent/multigent/releases/download/${TAG}/multigent-${TAG}-darwin-arm64.tar.gz"
+                sha256 "${sha_darwin_arm64}"
+              else
+                url "https://github.com/multigent/multigent/releases/download/${TAG}/multigent-${TAG}-darwin-amd64.tar.gz"
+                sha256 "${sha_darwin_amd64}"
+              end
+            end
+
+            on_linux do
+              if Hardware::CPU.arm?
+                url "https://github.com/multigent/multigent/releases/download/${TAG}/multigent-${TAG}-linux-arm64.tar.gz"
+                sha256 "${sha_linux_arm64}"
+              else
+                url "https://github.com/multigent/multigent/releases/download/${TAG}/multigent-${TAG}-linux-amd64.tar.gz"
+                sha256 "${sha_linux_amd64}"
+              end
+            end
+
+            def install
+              bin.install "multigent"
+              bin.install "mga"
+            end
+
+            test do
+              system "#{bin}/multigent", "version"
+              system "#{bin}/mga", "version"
+            end
+          end
+          EOF
+
+      - name: Publish Homebrew formula
+        if: steps.tap_token.outputs.publish == 'true'
+        env:
+          TAP_TOKEN: ${{ secrets.HOMEBREW_TAP_GITHUB_TOKEN }}
+          TAG: ${{ needs.verify.outputs.tag_name }}
+        run: |
+          git config --global user.name "github-actions[bot]"
+          git config --global user.email "41898282+github-actions[bot]@users.noreply.github.com"
+          git clone "https://x-access-token:${TAP_TOKEN}@github.com/multigent/homebrew-tap.git" /tmp/homebrew-tap
+          mkdir -p /tmp/homebrew-tap/Formula
+          cp /tmp/multigent-release/multigent.rb /tmp/homebrew-tap/Formula/multigent.rb
+          cd /tmp/homebrew-tap
+          git add Formula/multigent.rb
+          git commit -m "multigent ${TAG}" || exit 0
+          git push
+
+  npm:
+    needs: [verify, binaries]
+    runs-on: ubuntu-latest
+    permissions:
+      contents: read
+      id-token: write
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+        with:
+          ref: ${{ github.event.inputs.tag || github.ref }}
+
+      - name: Setup Node
+        uses: actions/setup-node@v4
+        with:
+          node-version: ${{ env.NODE_VERSION }}
+          registry-url: https://registry.npmjs.org
+
+      - name: Check npm token
+        id: npm_token
+        env:
+          NODE_AUTH_TOKEN: ${{ secrets.NPM_TOKEN }}
+        run: |
+          if [ -n "$NODE_AUTH_TOKEN" ]; then
+            echo "publish=true" >> "$GITHUB_OUTPUT"
+          else
+            echo "publish=false" >> "$GITHUB_OUTPUT"
+            echo "NPM_TOKEN is not configured; skipping npm publish."
+          fi
+
+      - name: Publish npm binary wrapper
+        if: steps.npm_token.outputs.publish == 'true'
+        working-directory: npm
+        env:
+          NODE_AUTH_TOKEN: ${{ secrets.NPM_TOKEN }}
+        run: npm publish --access public

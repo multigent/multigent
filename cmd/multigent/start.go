@@ -70,8 +70,11 @@ remote server. For local development with hot-reload, use
 			}
 			defer logCloser()
 
-			root, err := resolveRoot()
+			dataRoot, root, err := resolveAPIServeRoots(cfg)
 			if err != nil {
+				return err
+			}
+			if err := os.Setenv("MULTIGENT_DATA_DIR", dataRoot); err != nil {
 				return err
 			}
 			key := api.ResolveAPIKey(apiKey)

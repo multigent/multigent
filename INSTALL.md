@@ -54,23 +54,62 @@ The role prompt is the most important — spend the most time on it. See Steps 1
 
 ## 1. Install
 
-### npm (recommended — no Go required)
+### macOS / Linux install script (recommended)
+
+```bash
+curl -fsSL https://raw.githubusercontent.com/multigent/multigent/main/scripts/install.sh | bash
+multigent version
+mga version
+```
+
+The script installs both:
+
+- `multigent` — human/admin CLI and self-hosted web server.
+- `mga` — scoped runtime CLI mounted into agent sandboxes.
+
+### Homebrew
+
+```bash
+brew install multigent/tap/multigent
+multigent version
+```
+
+### Windows PowerShell
+
+```powershell
+irm https://raw.githubusercontent.com/multigent/multigent/main/scripts/install.ps1 | iex
+multigent version
+```
+
+### npm wrapper
 
 ```bash
 npm install -g @multigent/multigent
 multigent version
 ```
 
-### Go
+### Docker self-host
+
+```bash
+docker run --rm -p 27892:27892 \
+  -v multigent-data:/data \
+  -v /var/run/docker.sock:/var/run/docker.sock \
+  ghcr.io/multigent/multigent:latest
+```
+
+Open `http://127.0.0.1:27892`.
+
+### Go install (developer fallback)
 
 ```bash
 go install github.com/multigent/multigent/cmd/multigent@latest
+go install github.com/multigent/multigent/cmd/mga@latest
 multigent version
 ```
 
 ### Pre-built binary
 
-Download from [github.com/multigent/multigent/releases](https://github.com/multigent/multigent/releases) and move to a directory on your `PATH`.
+Download from [github.com/multigent/multigent/releases](https://github.com/multigent/multigent/releases) and move both `multigent` and `mga` to a directory on your `PATH`.
 
 ### From source (includes web console)
 
@@ -81,7 +120,7 @@ make build      # builds web frontend + Go binary → dist/multigent
 make install    # builds and installs to $GOPATH/bin
 ```
 
-> **Requires:** Go 1.22+, Node.js 18+ (for building the web frontend).
+> **Requires:** Go 1.26+, Node.js 20+ (for building the web frontend).
 
 ---
 

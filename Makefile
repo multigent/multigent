@@ -1,6 +1,8 @@
 BINARY     := multigent
+AGENT_BINARY := mga
 BUILD_DIR  := dist
 MAIN       := ./cmd/multigent
+AGENT_MAIN := ./cmd/mga
 NPM_DIR    := npm
 WEB_DIR    := web
 
@@ -27,7 +29,7 @@ PLATFORMS := \
 	windows/amd64 \
 	windows/arm64
 
-.PHONY: build build-go install deploy clean test lint release release-all web web-install web-dev $(PLATFORMS)
+.PHONY: build build-go install deploy clean clean-release test lint release release-all web web-install web-dev $(PLATFORMS)
 
 # ── Local deploy paths ────────────────────────────────────────────────────────
 INSTALL_BIN ?= /root/.local/bin/multigent
@@ -52,7 +54,9 @@ web-dev: web-install
 build-go:
 	@mkdir -p $(BUILD_DIR)
 	$(GO) build -ldflags "$(LDFLAGS)" -o $(BUILD_DIR)/$(BINARY) $(MAIN)
+	$(GO) build -ldflags "$(LDFLAGS)" -o $(BUILD_DIR)/$(AGENT_BINARY) $(AGENT_MAIN)
 	@echo "  ✓ $(BUILD_DIR)/$(BINARY)  ($(VERSION))"
+	@echo "  ✓ $(BUILD_DIR)/$(AGENT_BINARY)  ($(VERSION))"
 
 build: web build-go
 	@echo ""
@@ -61,6 +65,7 @@ build: web build-go
 
 install: web
 	$(GO) install -ldflags "$(LDFLAGS)" $(MAIN)
+	$(GO) install -ldflags "$(LDFLAGS)" $(AGENT_MAIN)
 	@echo "Installed $(BINARY) $(VERSION) (with web console)"
 
 # ── One-step local deploy (build → install → restart supervisor) ──────────────
@@ -84,24 +89,35 @@ $(PLATFORMS): web
 	$(eval OS   := $(word 1,$(subst /, ,$@)))
 	$(eval ARCH := $(word 2,$(subst /, ,$@)))
 	$(eval EXT  := $(if $(filter windows,$(OS)),.exe,))
-	$(eval NAME := $(BINARY)-$(VERSION)-$(OS)-$(ARCH)$(EXT))
+	$(eval PKG  := $(BINARY)-$(VERSION)-$(OS)-$(ARCH))
 	@mkdir -p $(BUILD_DIR)
+	@rm -rf $(BUILD_DIR)/$(PKG)
+	@mkdir -p $(BUILD_DIR)/$(PKG)
 	GOOS=$(OS) GOARCH=$(ARCH) $(GO) build \
 		-ldflags "$(LDFLAGS)" \
-		-o $(BUILD_DIR)/$(NAME) \
+		-o $(BUILD_DIR)/$(PKG)/$(BINARY)$(EXT) \
 		$(MAIN)
-	@echo "  ✓ $(BUILD_DIR)/$(NAME)"
+	GOOS=$(OS) GOARCH=$(ARCH) $(GO) build \
+		-ldflags "$(LDFLAGS)" \
+		-o $(BUILD_DIR)/$(PKG)/$(AGENT_BINARY)$(EXT) \
+		$(AGENT_MAIN)
+	@echo "  ✓ $(BUILD_DIR)/$(PKG)/$(BINARY)$(EXT)"
+	@echo "  ✓ $(BUILD_DIR)/$(PKG)/$(AGENT_BINARY)$(EXT)"
+
+clean-release:
+	@rm -rf $(BUILD_DIR)/$(BINARY)-$(VERSION)-*
 
 # Build + archive every platform
-release: $(PLATFORMS)
+release: clean-release $(PLATFORMS)
 	@echo ""
 	@echo "── Packaging archives ───────────────────────────────────────────────"
-	@cd $(BUILD_DIR) && for f in $(BINARY)-$(VERSION)-*; do \
-		case "$$f" in \
+	@cd $(BUILD_DIR) && for d in $(BINARY)-$(VERSION)-*; do \
+		[ -d "$$d" ] || continue; \
+		case "$$d" in \
 		  *windows*) \
-		    zip -q "$$f.zip" "$$f" && echo "  ✓ $$f.zip" ;; \
+		    (cd "$$d" && zip -q "../$$d.zip" *) && echo "  ✓ $$d.zip" ;; \
 		  *) \
-		    tar czf "$$f.tar.gz" "$$f" && echo "  ✓ $$f.tar.gz" ;; \
+		    tar czf "$$d.tar.gz" -C "$$d" . && echo "  ✓ $$d.tar.gz" ;; \
 		esac; \
 	done
 	@echo ""

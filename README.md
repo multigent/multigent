@@ -79,31 +79,62 @@ Workspace roles, project membership, task visibility, user invitations, and audi
 
 ## Quick Start
 
-### Prerequisites
+### Install
 
-- Go 1.26+
-- Node.js 20+
-- npm or pnpm
-- Docker, for sandboxed agent execution
-
-### Build
+macOS and Linux:
 
 ```bash
-make build
-./dist/multigent --help
+curl -fsSL https://raw.githubusercontent.com/multigent/multigent/main/scripts/install.sh | bash
+multigent version
 ```
+
+Homebrew:
+
+```bash
+brew install multigent/tap/multigent
+```
+
+Windows PowerShell:
+
+```powershell
+irm https://raw.githubusercontent.com/multigent/multigent/main/scripts/install.ps1 | iex
+```
+
+npm wrapper:
+
+```bash
+npm install -g @multigent/multigent
+```
+
+Docker self-host:
+
+```bash
+docker run --rm -p 27892:27892 \
+  -v multigent-data:/data \
+  -v /var/run/docker.sock:/var/run/docker.sock \
+  ghcr.io/multigent/multigent:latest
+```
+
+Open `http://127.0.0.1:27892`.
+
+### Prerequisites for Agent Runs
+
+- Docker, for sandboxed agent execution
+
+Multigent publishes the default runtime image at `ghcr.io/multigent/multigent/runtime-base:latest`. The `multigent` and `mga` binaries are installed together so Docker sandboxes can mount the agent-scoped runtime CLI automatically.
 
 ### Run the Web Console
 
 The production-style command serves the API and embedded frontend from one binary:
 
 ```bash
-./dist/multigent --dir ./data start --addr 127.0.0.1:27892 --open
+multigent --dir ./data start --addr 127.0.0.1:27892 --open
 ```
 
 For frontend development with Vite hot reload:
 
 ```bash
+make build
 ./dist/multigent --dir ./data api serve --addr 127.0.0.1:27893
 cd web
 npm install
@@ -166,6 +197,7 @@ See the deeper design notes:
 - [SQLite storage architecture](docs/sqlite-storage-architecture.md)
 - [External tools connection redesign](docs/external-tools-connection-redesign-plan.md)
 - [Product tour and example workspaces](docs/product-tour-and-example-workspaces.md)
+- [Release and distribution](docs/release-distribution.md)
 
 ## Development
 
