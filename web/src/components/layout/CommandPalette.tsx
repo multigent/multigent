@@ -38,6 +38,8 @@ type SearchItem = {
   keywords?: string
 }
 
+const EMPTY_PROJECTS: ProjectRow[] = []
+
 export function CommandPalette({
   open,
   onOpenChange,
@@ -66,13 +68,14 @@ export function CommandPalette({
   }, [open, onOpenChange])
 
   const projectsState = useApiJson<ProjectRow[]>('/api/v1/projects', 0)
-  const projects = projectsState.status === 'ok' ? (projectsState.data ?? []) : []
+  const projects = projectsState.status === 'ok' ? (projectsState.data ?? EMPTY_PROJECTS) : EMPTY_PROJECTS
+  const projectsKey = useMemo(() => projects.map((project) => project.name).join('\u001f'), [projects])
   const [projectAgents, setProjectAgents] = useState<ProjectAgents[]>([])
 
   useEffect(() => {
     let cancelled = false
     if (projects.length === 0) {
-      setProjectAgents([])
+      setProjectAgents((current) => (current.length === 0 ? current : []))
       return
     }
     ;(async () => {
@@ -88,7 +91,7 @@ export function CommandPalette({
       if (!cancelled) setProjectAgents(rows)
     })()
     return () => { cancelled = true }
-  }, [projects])
+  }, [projectsKey])
 
   const items = useMemo<SearchItem[]>(() => {
     const nav: SearchItem[] = [
