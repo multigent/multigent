@@ -198,6 +198,7 @@ See the deeper design notes:
 - [External tools connection redesign](docs/external-tools-connection-redesign-plan.md)
 - [Product tour and example workspaces](docs/product-tour-and-example-workspaces.md)
 - [Release and distribution](docs/release-distribution.md)
+- [Customer onboarding, playbook generation, and agent improvement](docs/customer-onboarding-playbook-generation-and-agent-improvement.md)
 
 ## Development
 
