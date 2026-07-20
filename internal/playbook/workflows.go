@@ -114,6 +114,188 @@ func startupValidationWorkflow(locale string) entity.WorkflowTemplate {
 	}
 }
 
+func openSpecWorkflow(locale string) entity.WorkflowTemplate {
+	field := func(name, en, zh string) entity.WorkflowField {
+		return entity.WorkflowField{Name: name, Description: text(locale, en, zh)}
+	}
+	return entity.WorkflowTemplate{
+		ID:          "openspec-artifact-guided-delivery",
+		Name:        text(locale, "OpenSpec Artifact-Guided Delivery", "OpenSpec 规格化交付闭环"),
+		Description: text(locale, "A lightweight OpenSpec-style loop: explore intent, draft proposal, write behavior specs, review, design tasks, implement, verify, and archive reusable knowledge.", "轻量 OpenSpec 风格闭环：探索意图、起草 proposal、编写行为 spec、评审、设计任务、实现、验证，并归档可复用知识。"),
+		Version:     1,
+		Locale:      normalizeLocale(locale),
+		StartStepID: "explore",
+		Steps: []entity.WorkflowStep{
+			{
+				ID: "explore", Type: "agent_task", Title: text(locale, "Explore Intent", "探索意图"),
+				Description: text(locale, "Clarify the raw request, inspect available context, and decide whether this should become a scoped change. Large findings must be saved as docs and returned by docID.", "澄清原始请求，检查已有上下文，并判断是否值得形成有边界的变更。大段发现必须写入知识库并返回 docID。"),
+				ActorRole:   "openspec-explorer",
+				InputFields: []entity.WorkflowField{
+					field("raw_request", "Raw idea, bug, customer request, process problem, or change intent.", "原始想法、Bug、客户请求、流程问题或变更意图。"),
+					field("known_context_doc_id", "Optional docID for existing context, meeting notes, issue, or customer signal.", "可选，已有上下文、会议纪要、Issue 或客户信号的 docID。"),
+				},
+				OutputFields: []entity.WorkflowField{
+					field("exploration_doc_id", "docID for explored facts, assumptions, risks, and open questions.", "探索事实、假设、风险和未决问题的 docID。"),
+					field("change_candidate", "One-sentence scoped change candidate.", "一句话描述的有边界变更候选。"),
+					field("decision", "propose, clarify_more, or stop.", "propose、clarify_more 或 stop。"),
+				},
+				Position: entity.WorkflowPosition{X: 80, Y: 220},
+				Config:   map[string]string{"color": "sky"},
+			},
+			{
+				ID: "proposal", Type: "agent_task", Title: text(locale, "Draft Proposal", "起草 Proposal"),
+				Description: text(locale, "Draft a proposal that states why the change matters, what is in scope, what is out of scope, expected impact, and risks.", "起草 proposal，说明为什么要改、做什么、不做什么、预期影响和风险。"),
+				ActorRole:   "openspec-explorer",
+				InputFields: []entity.WorkflowField{
+					field("exploration_doc_id", "Exploration docID.", "探索文档 docID。"),
+					field("change_candidate", "Scoped change candidate.", "有边界变更候选。"),
+				},
+				OutputFields: []entity.WorkflowField{
+					field("proposal_doc_id", "docID for proposal artifact.", "proposal 产物 docID。"),
+					field("scope_summary", "Concise scope summary.", "简洁范围摘要。"),
+					field("risk_summary", "Material risks, dependencies, or rollout concerns.", "关键风险、依赖或上线顾虑。"),
+				},
+				Position: entity.WorkflowPosition{X: 360, Y: 220},
+				Config:   map[string]string{"color": "violet"},
+			},
+			{
+				ID: "proposal_review", Type: "human_review", Title: text(locale, "Review Proposal", "审核 Proposal"),
+				Description: text(locale, "Human reviewer confirms this is the right problem, scope, and review level before behavior specs are written.", "人类审核人确认问题、范围和评审级别是否正确，然后再进入行为 spec。"),
+				ActorRole:   "request-owner",
+				InputFields: []entity.WorkflowField{
+					field("proposal_doc_id", "Proposal docID.", "proposal docID。"),
+					field("scope_summary", "Scope summary.", "范围摘要。"),
+					field("risk_summary", "Risk summary.", "风险摘要。"),
+				},
+				OutputFields: []entity.WorkflowField{
+					field("decision", "approve, request_changes, or stop.", "approve、request_changes 或 stop。"),
+					field("comments", "Review comments, constraints, or rejection reason.", "审核意见、约束或拒绝原因。"),
+				},
+				ReviewPolicy: "manual",
+				Position:     entity.WorkflowPosition{X: 640, Y: 220},
+				Config:       map[string]string{"color": "amber"},
+			},
+			{
+				ID: "specs", Type: "agent_task", Title: text(locale, "Write Behavior Specs", "编写行为 Spec"),
+				Description: text(locale, "Write behavior-first requirements and scenarios. Requirements should describe externally observable behavior; implementation details belong in design.", "编写以行为为中心的需求与场景。需求只描述外部可观察行为；实现细节放到 design。"),
+				ActorRole:   "openspec-spec-author",
+				InputFields: []entity.WorkflowField{
+					field("proposal_doc_id", "Approved proposal docID.", "已审核 proposal docID。"),
+					field("comments", "Proposal review comments or constraints.", "proposal 审核意见或约束。"),
+				},
+				OutputFields: []entity.WorkflowField{
+					field("behavior_spec_doc_id", "docID for behavior requirements.", "行为需求 docID。"),
+					field("acceptance_scenarios_doc_id", "docID for acceptance scenarios and edge cases.", "验收场景和边界情况 docID。"),
+					field("spec_delta_summary", "Summary of added, modified, or removed behavior.", "新增、修改或删除行为的摘要。"),
+				},
+				Position: entity.WorkflowPosition{X: 920, Y: 220},
+				Config:   map[string]string{"color": "emerald"},
+			},
+			{
+				ID: "spec_review", Type: "human_review", Title: text(locale, "Review Specs", "审核 Spec"),
+				Description: text(locale, "Human reviewer checks whether the behavior spec is observable, right-sized, and testable before implementation design starts.", "人类审核 spec 是否可观察、范围合适、可测试，然后再进入实现设计。"),
+				ActorRole:   "request-owner",
+				InputFields: []entity.WorkflowField{
+					field("behavior_spec_doc_id", "Behavior spec docID.", "行为 spec docID。"),
+					field("acceptance_scenarios_doc_id", "Acceptance scenarios docID.", "验收场景 docID。"),
+					field("spec_delta_summary", "Behavior delta summary.", "行为变化摘要。"),
+				},
+				OutputFields: []entity.WorkflowField{
+					field("decision", "approve or request_changes.", "approve 或 request_changes。"),
+					field("comments", "Concrete spec changes needed, or approval notes.", "具体 spec 修改意见或通过说明。"),
+				},
+				ReviewPolicy: "manual",
+				Position:     entity.WorkflowPosition{X: 1200, Y: 220},
+				Config:       map[string]string{"color": "amber"},
+			},
+			{
+				ID: "design_tasks", Type: "agent_task", Title: text(locale, "Design And Tasks", "设计与任务"),
+				Description: text(locale, "Write implementation design and an execution checklist. Keep design choices, dependencies, rollout notes, and task order outside the behavior spec.", "编写实现设计和执行清单。把设计选择、依赖、上线说明和任务顺序放在行为 spec 之外。"),
+				ActorRole:   "openspec-design-planner",
+				InputFields: []entity.WorkflowField{
+					field("behavior_spec_doc_id", "Approved behavior spec docID.", "已审核行为 spec docID。"),
+					field("acceptance_scenarios_doc_id", "Acceptance scenarios docID.", "验收场景 docID。"),
+					field("comments", "Spec review comments if any.", "如有，spec 审核意见。"),
+				},
+				OutputFields: []entity.WorkflowField{
+					field("design_doc_id", "docID for implementation design.", "实现设计 docID。"),
+					field("task_plan_doc_id", "docID for ordered task checklist.", "有序任务清单 docID。"),
+					field("execution_risks", "Dependencies, rollout risks, and verification risks.", "依赖、上线风险和验证风险。"),
+				},
+				Position: entity.WorkflowPosition{X: 1480, Y: 220},
+				Config:   map[string]string{"color": "blue"},
+			},
+			{
+				ID: "implementation", Type: "agent_task", Title: text(locale, "Implement Change", "实现变更"),
+				Description: text(locale, "Execute the approved task plan. If implementation discovers changed assumptions, update artifacts instead of silently diverging.", "执行已审核任务计划。如果实现中发现假设变化，更新产物而不是静默偏离。"),
+				ActorRole:   "openspec-implementation-agent",
+				InputFields: []entity.WorkflowField{
+					field("design_doc_id", "Implementation design docID.", "实现设计 docID。"),
+					field("task_plan_doc_id", "Task plan docID.", "任务计划 docID。"),
+					field("execution_risks", "Risks and constraints from design.", "设计阶段的风险和约束。"),
+					field("review_comments", "Verification comments when this is a rework pass.", "返工时的验证意见。"),
+				},
+				OutputFields: []entity.WorkflowField{
+					field("implementation_summary_doc_id", "docID for implementation summary.", "实现总结 docID。"),
+					field("change_artifact_ref", "PR, patch, deployment, document, or other delivery reference.", "PR、补丁、部署、文档或其他交付引用。"),
+					field("test_evidence_doc_id", "docID for test commands, checks, screenshots, or other evidence.", "测试命令、检查、截图或其他证据 docID。"),
+				},
+				Position: entity.WorkflowPosition{X: 1760, Y: 220},
+				Config:   map[string]string{"color": "cyan"},
+			},
+			{
+				ID: "verify", Type: "agent_task", Title: text(locale, "Verify Against Specs", "按 Spec 验证"),
+				Description: text(locale, "Verify delivered work against the proposal, behavior specs, scenarios, design, tasks, and evidence.", "按 proposal、行为 spec、场景、设计、任务和证据验证交付。"),
+				ActorRole:   "openspec-verifier",
+				InputFields: []entity.WorkflowField{
+					field("proposal_doc_id", "Proposal docID.", "proposal docID。"),
+					field("behavior_spec_doc_id", "Behavior spec docID.", "行为 spec docID。"),
+					field("acceptance_scenarios_doc_id", "Acceptance scenarios docID.", "验收场景 docID。"),
+					field("implementation_summary_doc_id", "Implementation summary docID.", "实现总结 docID。"),
+					field("test_evidence_doc_id", "Test evidence docID.", "测试证据 docID。"),
+				},
+				OutputFields: []entity.WorkflowField{
+					field("verification_report_doc_id", "docID for verification report.", "验证报告 docID。"),
+					field("decision", "pass or fail.", "pass 或 fail。"),
+					field("remaining_risks", "Remaining risks or manual checks.", "剩余风险或人工检查点。"),
+				},
+				Position: entity.WorkflowPosition{X: 2040, Y: 220},
+				Config:   map[string]string{"color": "orange"},
+			},
+			{
+				ID: "archive", Type: "agent_task", Title: text(locale, "Archive Knowledge", "归档知识"),
+				Description: text(locale, "Archive the completed change into durable docs and extract reusable skills, workflow improvements, or spec conventions.", "把已完成变更归档为长期文档，并提炼可复用 skill、流程改进或 spec 约定。"),
+				ActorRole:   "openspec-archivist",
+				InputFields: []entity.WorkflowField{
+					field("proposal_doc_id", "Proposal docID.", "proposal docID。"),
+					field("behavior_spec_doc_id", "Behavior spec docID.", "行为 spec docID。"),
+					field("design_doc_id", "Design docID.", "设计 docID。"),
+					field("verification_report_doc_id", "Verification report docID.", "验证报告 docID。"),
+				},
+				OutputFields: []entity.WorkflowField{
+					field("archive_doc_id", "docID for archived final change record.", "最终变更归档 docID。"),
+					field("skill_candidates_doc_id", "docID for reusable skill or process improvement candidates.", "可复用 skill 或流程改进候选 docID。"),
+				},
+				Position: entity.WorkflowPosition{X: 2320, Y: 220},
+				Config:   map[string]string{"color": "emerald"},
+			},
+		},
+		Edges: []entity.WorkflowEdge{
+			edge("e-explore-proposal", "explore", "proposal", text(locale, "propose", "进入 proposal"), cond("decision", "eq", "propose"), nil, false),
+			edge("e-proposal-review", "proposal", "proposal_review", "", nil, nil, true),
+			edge("e-proposal-approved", "proposal_review", "specs", text(locale, "approved", "通过"), cond("decision", "eq", "approve"), map[string]string{"proposal_doc_id": "$input.proposal_doc_id", "comments": "$output.comments"}, false),
+			edge("e-proposal-rework", "proposal_review", "proposal", text(locale, "needs changes", "需要修改"), cond("decision", "eq", "request_changes"), map[string]string{"proposal_doc_id": "$input.proposal_doc_id", "review_comments": "$output.comments"}, false),
+			edge("e-specs-review", "specs", "spec_review", "", nil, nil, true),
+			edge("e-spec-approved", "spec_review", "design_tasks", text(locale, "approved", "通过"), cond("decision", "eq", "approve"), map[string]string{"behavior_spec_doc_id": "$input.behavior_spec_doc_id", "acceptance_scenarios_doc_id": "$input.acceptance_scenarios_doc_id", "comments": "$output.comments"}, false),
+			edge("e-spec-rework", "spec_review", "specs", text(locale, "needs changes", "需要修改"), cond("decision", "eq", "request_changes"), map[string]string{"behavior_spec_doc_id": "$input.behavior_spec_doc_id", "acceptance_scenarios_doc_id": "$input.acceptance_scenarios_doc_id", "review_comments": "$output.comments"}, false),
+			edge("e-design-implementation", "design_tasks", "implementation", "", nil, nil, true),
+			edge("e-implementation-verify", "implementation", "verify", "", nil, nil, true),
+			edge("e-verify-archive", "verify", "archive", text(locale, "passed", "通过"), cond("decision", "eq", "pass"), nil, false),
+			edge("e-verify-rework", "verify", "implementation", text(locale, "failed", "失败"), cond("decision", "eq", "fail"), map[string]string{"review_comments": "$output.remaining_risks", "verification_report_doc_id": "$output.verification_report_doc_id"}, false),
+		},
+	}
+}
+
 func mattPocockEngineeringWorkflow(locale string) entity.WorkflowTemplate {
 	field := func(name, en, zh string) entity.WorkflowField {
 		return entity.WorkflowField{Name: name, Description: text(locale, en, zh)}

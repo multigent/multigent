@@ -11,12 +11,14 @@ const (
 	playbookTemplateVersion       = "1.0.0"
 	gstackPlaybookTemplateVersion = "1.1.0"
 	mattPocockTemplateVersion     = "1.0.0"
+	openSpecTemplateVersion       = "1.0.0"
 )
 
 func Templates(locale string) []entity.PlaybookTemplate {
 	locale = normalizeLocale(locale)
 	return []entity.PlaybookTemplate{
 		softwareDelivery(locale),
+		openSpecArtifactGuidedDelivery(locale),
 		startupValidation(locale),
 		mattPocockEngineering(locale),
 		bugTriageAndFix(locale),
@@ -102,6 +104,80 @@ func softwareDelivery(locale string) entity.PlaybookTemplate {
 		SuccessMetrics: []entity.PlaybookMetric{
 			metric("human_interventions", text(locale, "Human interventions", "人工介入次数"), text(locale, "How many times humans had to unblock or correct the workflow.", "人类需要解除阻塞或纠偏的次数。")),
 			metric("cycle_time", text(locale, "Cycle time", "流程耗时"), text(locale, "Elapsed time from task creation to workflow completion.", "从任务创建到流程完成的总耗时。")),
+		},
+	}
+}
+
+func openSpecArtifactGuidedDelivery(locale string) entity.PlaybookTemplate {
+	wf := openSpecWorkflow(locale)
+	return entity.PlaybookTemplate{
+		ID:          "openspec-artifact-guided-delivery",
+		Version:     openSpecTemplateVersion,
+		Name:        text(locale, "OpenSpec Artifact-Guided Delivery", "OpenSpec 规格化交付协作方案"),
+		Description: text(locale, "A playbook inspired by OpenSpec: turn vague intent into proposal, behavior specs, design notes, task plans, implementation evidence, verification, and archive-ready knowledge.", "受 OpenSpec 启发的协作方案：把模糊意图转成 proposal、行为 spec、设计说明、任务计划、实现证据、验证报告和可归档知识。"),
+		Locale:      normalizeLocale(locale),
+		Category:    text(locale, "Spec-Driven Work", "规格化协作"),
+		Complexity:  text(locale, "Intermediate", "中阶"),
+		Tags:        []string{"openspec", "spec", "proposal", "artifact", "review", "brownfield"},
+		Roles: []entity.PlaybookRoleTemplate{
+			roleWithPrompt("openspec-explorer", "product", "explorer", text(locale, "OpenSpec Explorer", "OpenSpec 探索 Agent"), text(locale, "Clarifies ambiguous intent and turns it into a scoped change candidate before artifacts are drafted.", "在起草产物前澄清模糊意图，并整理成边界清晰的变更候选。"), openSpecRolePrompt("explorer", locale), []string{"openspec-explore", "openspec-proposal"}),
+			roleWithPrompt("openspec-spec-author", "product", "spec-author", text(locale, "Behavior Spec Author", "行为规格 Agent"), text(locale, "Writes behavior-first specs, requirements, and scenarios that humans and agents can verify.", "编写以行为为中心、可被人和 Agent 验证的需求与场景。"), openSpecRolePrompt("spec-author", locale), []string{"openspec-writing-specs", "openspec-review-change", "multigent-docs"}),
+			roleWithPrompt("openspec-design-planner", "engineering", "design-planner", text(locale, "Design Planner", "设计与计划 Agent"), text(locale, "Separates implementation design and execution tasks from behavior requirements.", "把实现设计和执行任务从行为需求中分离出来。"), openSpecRolePrompt("design-planner", locale), []string{"openspec-design-tasks", "task-management"}),
+			roleWithPrompt("openspec-implementation-agent", "engineering", "developer", text(locale, "Implementation Agent", "实现 Agent"), text(locale, "Implements only from approved artifacts and keeps evidence attached to the change.", "只基于已审核产物执行实现，并把证据绑定到变更上。"), openSpecRolePrompt("implementation", locale), []string{"openspec-apply", "task-management"}),
+			roleWithPrompt("openspec-verifier", "engineering", "verifier", text(locale, "Verification Agent", "验证 Agent"), text(locale, "Checks delivered work against proposal, specs, design, task list, and acceptance scenarios.", "按 proposal、spec、design、tasks 和验收场景验证交付。"), openSpecRolePrompt("verifier", locale), []string{"openspec-verify", "multigent-docs"}),
+			roleWithPrompt("openspec-archivist", "enablement", "archivist", text(locale, "Archive Steward", "归档沉淀 Agent"), text(locale, "Archives completed changes into durable knowledge and extracts reusable process improvements.", "把完成的变更归档为长期知识，并提炼可复用流程改进。"), openSpecRolePrompt("archivist", locale), []string{"openspec-archive", "multigent-docs"}),
+		},
+		Skills: []entity.PlaybookSkillTemplate{
+			openSpecSkill("openspec-explore", text(locale, "OpenSpec Explore", "OpenSpec 探索"), text(locale, "Turn a vague problem into a scoped change candidate without writing implementation yet.", "把模糊问题整理成有边界的变更候选，但暂不进入实现。"), openSpecExploreSkill(locale)),
+			openSpecSkill("openspec-proposal", text(locale, "OpenSpec Proposal", "OpenSpec Proposal"), text(locale, "Write proposal artifacts that explain why this change matters, what is in scope, and what is intentionally out of scope.", "编写 proposal 产物，说明为什么要改、范围是什么、哪些明确不做。"), openSpecProposalSkill(locale)),
+			openSpecSkill("openspec-writing-specs", text(locale, "OpenSpec Writing Specs", "OpenSpec 规格编写"), text(locale, "Write behavior contracts with observable requirements and concrete scenarios.", "用可观察需求和具体场景编写行为契约。"), openSpecWritingSpecsSkill(locale)),
+			openSpecSkill("openspec-design-tasks", text(locale, "OpenSpec Design And Tasks", "OpenSpec 设计与任务"), text(locale, "Keep implementation design and execution checklist separate from behavior specs.", "把实现设计和执行清单从行为 spec 中分离出来。"), openSpecDesignTasksSkill(locale)),
+			openSpecSkill("openspec-review-change", text(locale, "OpenSpec Review Change", "OpenSpec 变更评审"), text(locale, "Review proposal, specs, design, and tasks before expensive implementation starts.", "在昂贵实现开始前评审 proposal、spec、design 和 tasks。"), openSpecReviewSkill(locale)),
+			openSpecSkill("openspec-apply", text(locale, "OpenSpec Apply", "OpenSpec 执行"), text(locale, "Implement approved artifacts while keeping evidence and changed assumptions visible.", "基于已批准产物执行，并保持证据和假设变化可见。"), openSpecApplySkill(locale)),
+			openSpecSkill("openspec-verify", text(locale, "OpenSpec Verify", "OpenSpec 验证"), text(locale, "Verify delivery against requirements, scenarios, tasks, and remaining risks.", "按需求、场景、任务和剩余风险验证交付。"), openSpecVerifySkill(locale)),
+			openSpecSkill("openspec-archive", text(locale, "OpenSpec Archive", "OpenSpec 归档"), text(locale, "Archive completed changes into durable specs and reusable Multigent knowledge.", "把已完成变更归档为长期 spec 和可复用 Multigent 知识。"), openSpecArchiveSkill(locale)),
+		},
+		Workflows: []entity.PlaybookWorkflowTemplate{
+			workflow("openspec-artifact-guided-delivery", wf, map[string]string{
+				"explore":         "openspec-explorer",
+				"proposal":        "openspec-explorer",
+				"proposal_review": "request-owner",
+				"specs":           "openspec-spec-author",
+				"spec_review":     "request-owner",
+				"design_tasks":    "openspec-design-planner",
+				"implementation":  "openspec-implementation-agent",
+				"verify":          "openspec-verifier",
+				"archive":         "openspec-archivist",
+			}, map[string][]string{
+				"explore":        {"openspec-explore", "multigent-docs"},
+				"proposal":       {"openspec-proposal", "openspec-explore"},
+				"specs":          {"openspec-writing-specs", "openspec-review-change", "multigent-docs"},
+				"design_tasks":   {"openspec-design-tasks", "task-management"},
+				"implementation": {"openspec-apply", "task-management"},
+				"verify":         {"openspec-verify", "multigent-docs"},
+				"archive":        {"openspec-archive", "multigent-docs"},
+			}),
+		},
+		TaskTemplates: []entity.PlaybookTaskTemplate{
+			task("scope-change-with-openspec", text(locale, "Scope a change with OpenSpec", "用 OpenSpec 梳理变更范围"), text(locale, "Explore a vague request, draft proposal and behavior specs, then stop for review before implementation.", "探索模糊需求，起草 proposal 和行为 spec，并在实现前停下来评审。"), "openspec-artifact-guided-delivery"),
+			task("deliver-change-with-openspec", text(locale, "Deliver a change with OpenSpec", "用 OpenSpec 交付变更"), text(locale, "Use the complete OpenSpec loop: explore, proposal, spec, review, design, implementation, verification, and archive.", "使用完整 OpenSpec 闭环：探索、proposal、spec、评审、设计、实现、验证和归档。"), "openspec-artifact-guided-delivery"),
+			task("verify-and-archive-openspec-change", text(locale, "Verify and archive a change", "验证并归档变更"), text(locale, "Verify delivered work against specs and scenarios, then archive reusable knowledge and improvement candidates.", "按 spec 和场景验证已交付工作，然后归档可复用知识和改进候选。"), "openspec-artifact-guided-delivery"),
+		},
+		RequiredTools: []entity.PlaybookToolRequirement{
+			tool("github", "GitHub", text(locale, "Optional repository, PR, and issue context for code-backed changes.", "可选，用于代码类变更的仓库、PR 和 Issue 上下文。"), false),
+			tool("gitlab", "GitLab", text(locale, "Optional repository, merge request, and issue context.", "可选，用于仓库、MR 和 Issue 上下文。"), false),
+			tool("feishu", text(locale, "Feishu", "飞书"), text(locale, "Optional docs and stakeholder review channel.", "可选，用于文档和干系人评审。"), false),
+		},
+		SetupQuestions: []entity.PlaybookSetupQuestion{
+			question("artifact_home", text(locale, "Where should proposal/spec/design artifacts live?", "proposal、spec、design 这些产物应存在哪里？"), []string{"Multigent Docs", "Feishu Docs", "Git repository", "Other"}, true),
+			question("review_policy", text(locale, "Which artifacts require human review before implementation?", "哪些产物在实现前必须人工审核？"), []string{"Proposal + Spec", "Spec only", "High-risk changes only"}, true),
+			question("change_scope", text(locale, "What kinds of changes should use this playbook?", "哪些变更应该使用这个协作方案？"), []string{"Product and engineering changes", "Operational process changes", "All non-trivial changes"}, false),
+		},
+		SuccessMetrics: []entity.PlaybookMetric{
+			metric("review_rounds", text(locale, "Review rounds", "评审轮次"), text(locale, "How many times proposal or specs are returned before approval.", "proposal 或 spec 在通过前被打回的次数。")),
+			metric("first_pass_acceptance", text(locale, "First-pass acceptance", "一次通过率"), text(locale, "How often implementation passes verification without rework.", "实现无需返工就通过验证的比例。")),
+			metric("artifact_completeness", text(locale, "Artifact completeness", "产物完整度"), text(locale, "Whether required proposal, spec, design, task, verification, and archive docIDs are produced.", "是否产出了必需的 proposal、spec、design、task、verification 和 archive docID。")),
+			metric("cycle_time", text(locale, "Cycle time", "流程耗时"), text(locale, "Elapsed time from raw request to archived change.", "从原始需求到变更归档的总耗时。")),
 		},
 	}
 }
@@ -552,6 +628,480 @@ const prototypeScopeSkillZH = `# Skill: 48 小时原型范围
 - test_plan
 - pass_signal
 - fail_signal`
+
+func openSpecSkill(id, name, description, body string) entity.PlaybookSkillTemplate {
+	return entity.PlaybookSkillTemplate{
+		ID:          id,
+		Name:        name,
+		Description: description,
+		Body:        body,
+		Source:      "Adapted for Multigent from OpenSpec concepts and workflow documentation: https://github.com/openspec/openspec",
+		LicenseNote: "MIT License. Copyright (c) 2024 OpenSpec Contributors.",
+	}
+}
+
+func openSpecRolePrompt(roleID, locale string) string {
+	switch roleID {
+	case "explorer":
+		return text(locale, openSpecExplorerRoleEN, openSpecExplorerRoleZH)
+	case "spec-author":
+		return text(locale, openSpecSpecAuthorRoleEN, openSpecSpecAuthorRoleZH)
+	case "design-planner":
+		return text(locale, openSpecDesignPlannerRoleEN, openSpecDesignPlannerRoleZH)
+	case "implementation":
+		return text(locale, openSpecImplementationRoleEN, openSpecImplementationRoleZH)
+	case "verifier":
+		return text(locale, openSpecVerifierRoleEN, openSpecVerifierRoleZH)
+	case "archivist":
+		return text(locale, openSpecArchivistRoleEN, openSpecArchivistRoleZH)
+	default:
+		return text(locale, openSpecCommonRoleEN, openSpecCommonRoleZH)
+	}
+}
+
+func openSpecExploreSkill(locale string) string {
+	return text(locale, openSpecExploreSkillEN, openSpecExploreSkillZH)
+}
+
+func openSpecProposalSkill(locale string) string {
+	return text(locale, openSpecProposalSkillEN, openSpecProposalSkillZH)
+}
+
+func openSpecWritingSpecsSkill(locale string) string {
+	return text(locale, openSpecWritingSpecsSkillEN, openSpecWritingSpecsSkillZH)
+}
+
+func openSpecDesignTasksSkill(locale string) string {
+	return text(locale, openSpecDesignTasksSkillEN, openSpecDesignTasksSkillZH)
+}
+
+func openSpecReviewSkill(locale string) string {
+	return text(locale, openSpecReviewSkillEN, openSpecReviewSkillZH)
+}
+
+func openSpecApplySkill(locale string) string {
+	return text(locale, openSpecApplySkillEN, openSpecApplySkillZH)
+}
+
+func openSpecVerifySkill(locale string) string {
+	return text(locale, openSpecVerifySkillEN, openSpecVerifySkillZH)
+}
+
+func openSpecArchiveSkill(locale string) string {
+	return text(locale, openSpecArchiveSkillEN, openSpecArchiveSkillZH)
+}
+
+const openSpecCommonRoleEN = `# OpenSpec Operating Rules
+
+Use artifacts to make change explicit before execution. Keep behavior specs, implementation design, task plan, verification evidence, and archived knowledge separate. Prefer docID references over long inline text. Do not expose local filesystem paths to users.`
+
+const openSpecCommonRoleZH = `# OpenSpec 工作规则
+
+用产物把变更显性化，再进入执行。行为 spec、实现设计、任务计划、验证证据和归档知识要分开。大段内容优先用 docID 引用，不向用户暴露本地文件路径。`
+
+const openSpecExplorerRoleEN = `# Role: OpenSpec Explorer
+
+You clarify ambiguous work before it becomes an execution task.
+
+Responsibilities:
+- Identify the problem, intent, stakeholder, scope boundary, and non-goals.
+- Inspect available docs, issues, meeting notes, and current behavior before drafting artifacts.
+- Decide whether the request should proceed to proposal, needs more clarification, or should stop.
+- Save long exploration notes as a Multigent doc and output the docID.
+
+Never start implementation from raw intent.`
+
+const openSpecExplorerRoleZH = `# Role: OpenSpec 探索 Agent
+
+你负责在工作进入执行前澄清模糊需求。
+
+职责：
+- 识别问题、意图、干系人、范围边界和非目标。
+- 在起草产物前检查已有文档、Issue、会议纪要和当前行为。
+- 判断请求应该进入 proposal、继续澄清，还是停止。
+- 大段探索记录必须写入 Multigent 知识库，并输出 docID。
+
+不要从原始意图直接开始实现。`
+
+const openSpecSpecAuthorRoleEN = `# Role: Behavior Spec Author
+
+You turn approved proposals into behavior contracts.
+
+Rules:
+- Specs describe observable behavior, not internal implementation.
+- Requirements should use clear MUST/SHALL language when non-negotiable.
+- Scenarios should be concrete enough to test with GIVEN / WHEN / THEN.
+- Keep libraries, tables, classes, file paths, and step-by-step implementation in design or tasks, not specs.
+- Save full specs as docs and return docIDs.`
+
+const openSpecSpecAuthorRoleZH = `# Role: 行为规格 Agent
+
+你负责把已审核 proposal 转成行为契约。
+
+规则：
+- Spec 描述可观察行为，不描述内部实现。
+- 不可协商的需求使用清晰的 MUST/SHALL 语义。
+- 场景要具体到可以用 GIVEN / WHEN / THEN 验证。
+- 库、表、类、文件路径和逐步实现细节放到 design 或 tasks，不放进 spec。
+- 完整 spec 写入知识库并返回 docID。`
+
+const openSpecDesignPlannerRoleEN = `# Role: Design Planner
+
+You translate approved behavior specs into implementation design and executable tasks.
+
+Responsibilities:
+- Explain approach, dependencies, rollout concerns, data migration, security, privacy, and observability when relevant.
+- Split work into ordered checklist items that agents can execute.
+- Keep task items verifiable; avoid vague items such as "improve quality".
+- If implementation risk changes behavior, send the work back to spec review.`
+
+const openSpecDesignPlannerRoleZH = `# Role: 设计与计划 Agent
+
+你负责把已审核行为 spec 转成实现设计和可执行任务。
+
+职责：
+- 在相关时说明方案、依赖、上线顾虑、数据迁移、安全、隐私和可观测性。
+- 把工作拆成 Agent 可执行的有序清单。
+- 任务项必须可验证，避免“提升质量”这种模糊表达。
+- 如果实现风险会改变外部行为，要把工作打回 spec 审核。`
+
+const openSpecImplementationRoleEN = `# Role: Implementation Agent
+
+You implement approved artifacts.
+
+Rules:
+- Read proposal, specs, design, and task plan before acting.
+- Do not silently change behavior. If behavior changes are needed, report the assumption and request spec update.
+- Produce evidence: changed artifact reference, tests/checks, screenshots/logs when relevant, and risk notes.
+- Report structured outputs with docIDs and references, not local paths.`
+
+const openSpecImplementationRoleZH = `# Role: 实现 Agent
+
+你负责基于已审核产物执行实现。
+
+规则：
+- 执行前读取 proposal、spec、design 和 task plan。
+- 不要静默改变行为。如果必须改行为，报告假设并请求更新 spec。
+- 产出证据：变更引用、测试/检查、必要的截图/日志，以及风险说明。
+- 结构化输出使用 docID 和引用，不使用本地路径。`
+
+const openSpecVerifierRoleEN = `# Role: Verification Agent
+
+You verify delivery against the approved artifacts.
+
+Check:
+- Does the result match the proposal's scope and non-goals?
+- Does each behavior requirement have evidence?
+- Are key scenarios tested or explicitly marked as manual checks?
+- Are design and task checklist items complete?
+- Are remaining risks clear enough for a human decision?
+
+Output pass/fail and a verification report docID.`
+
+const openSpecVerifierRoleZH = `# Role: 验证 Agent
+
+你负责按已审核产物验证交付。
+
+检查：
+- 结果是否符合 proposal 的范围和非目标？
+- 每条行为需求是否有证据？
+- 关键场景是否已测试，或明确标记为人工检查？
+- design 和 task checklist 是否完成？
+- 剩余风险是否足够清楚，能让人类决策？
+
+输出 pass/fail 和验证报告 docID。`
+
+const openSpecArchivistRoleEN = `# Role: Archive Steward
+
+You turn completed changes into reusable organizational memory.
+
+Responsibilities:
+- Create an archive doc that links proposal, specs, design, tasks, implementation evidence, and verification report.
+- Extract changes to durable specs, conventions, prompts, skills, or workflow improvements.
+- Identify repeated human interventions and suggest automation or better skill coverage.
+- Keep the archive useful for the next similar change, not just for audit.`
+
+const openSpecArchivistRoleZH = `# Role: 归档沉淀 Agent
+
+你负责把完成的变更转成可复用组织记忆。
+
+职责：
+- 创建归档文档，链接 proposal、spec、design、tasks、实现证据和验证报告。
+- 提炼可沉淀的长期 spec、约定、prompt、skill 或流程改进。
+- 识别重复人工介入，并建议自动化或补充 skill。
+- 归档不只是审计，更要帮助下一次类似变更。`
+
+const openSpecExploreSkillEN = `# Skill: OpenSpec Explore
+
+Use this when a request is still vague.
+
+Process:
+1. Restate the raw request in one sentence.
+2. Identify the stakeholder, current behavior, desired behavior, and non-goals.
+3. Inspect available docs, tasks, issues, and prior decisions before proposing a change.
+4. List assumptions and unresolved questions.
+5. Decide: propose / clarify_more / stop.
+
+Output fields:
+- exploration_doc_id
+- change_candidate
+- decision`
+
+const openSpecExploreSkillZH = `# Skill: OpenSpec 探索
+
+用于请求仍然模糊时。
+
+流程：
+1. 用一句话复述原始请求。
+2. 识别干系人、当前行为、期望行为和非目标。
+3. 在提出变更前检查已有文档、任务、Issue 和历史决策。
+4. 列出假设和未决问题。
+5. 决策：propose / clarify_more / stop。
+
+输出字段：
+- exploration_doc_id
+- change_candidate
+- decision`
+
+const openSpecProposalSkillEN = `# Skill: OpenSpec Proposal
+
+Use this to draft the proposal artifact.
+
+Proposal structure:
+- Problem: what is wrong or missing today.
+- Goal: what changes if this succeeds.
+- Scope: what is included.
+- Non-goals: what is explicitly excluded.
+- User/business impact: why this matters now.
+- Risks and dependencies.
+- Review policy: who must approve before implementation.
+
+Output fields:
+- proposal_doc_id
+- scope_summary
+- risk_summary`
+
+const openSpecProposalSkillZH = `# Skill: OpenSpec Proposal
+
+用于起草 proposal 产物。
+
+Proposal 结构：
+- Problem：当前哪里有问题或缺失。
+- Goal：成功后会发生什么变化。
+- Scope：包含哪些内容。
+- Non-goals：明确不做什么。
+- User/business impact：为什么现在值得做。
+- Risks and dependencies：风险和依赖。
+- Review policy：实现前谁必须审核。
+
+输出字段：
+- proposal_doc_id
+- scope_summary
+- risk_summary`
+
+const openSpecWritingSpecsSkillEN = `# Skill: OpenSpec Writing Specs
+
+Use this to write behavior specs.
+
+Rules:
+- A spec is a behavior contract, not an implementation plan.
+- Each requirement should describe one observable behavior.
+- Use MUST/SHALL for hard requirements.
+- Each important requirement needs concrete scenarios.
+- Use ADDED / MODIFIED / REMOVED semantics when describing behavior deltas.
+- Keep implementation details in design.md or task plan.
+
+Output fields:
+- behavior_spec_doc_id
+- acceptance_scenarios_doc_id
+- spec_delta_summary`
+
+const openSpecWritingSpecsSkillZH = `# Skill: OpenSpec 规格编写
+
+用于编写行为 spec。
+
+规则：
+- Spec 是行为契约，不是实现计划。
+- 每条 requirement 描述一个可观察行为。
+- 硬性需求使用 MUST/SHALL 语义。
+- 重要 requirement 都要有具体 scenario。
+- 描述行为变化时使用 ADDED / MODIFIED / REMOVED 语义。
+- 实现细节放到 design.md 或 task plan。
+
+输出字段：
+- behavior_spec_doc_id
+- acceptance_scenarios_doc_id
+- spec_delta_summary`
+
+const openSpecDesignTasksSkillEN = `# Skill: OpenSpec Design And Tasks
+
+Use this after behavior specs are approved.
+
+Design should cover:
+- Approach and alternatives considered.
+- Dependencies and impacted systems.
+- Data, migration, security, privacy, rollout, and observability when relevant.
+- Open risks and fallback plan.
+
+Tasks should be:
+- Ordered.
+- Concrete.
+- Verifiable.
+- Small enough for one agent or one human owner to execute.
+
+Output fields:
+- design_doc_id
+- task_plan_doc_id
+- execution_risks`
+
+const openSpecDesignTasksSkillZH = `# Skill: OpenSpec 设计与任务
+
+用于行为 spec 审核通过后。
+
+Design 应覆盖：
+- 方案和考虑过的替代方案。
+- 依赖和受影响系统。
+- 相关时包含数据、迁移、安全、隐私、上线和可观测性。
+- 未决风险和兜底方案。
+
+Tasks 应该：
+- 有顺序。
+- 具体。
+- 可验证。
+- 足够小，能由一个 Agent 或一个人负责执行。
+
+输出字段：
+- design_doc_id
+- task_plan_doc_id
+- execution_risks`
+
+const openSpecReviewSkillEN = `# Skill: OpenSpec Review Change
+
+Use this before expensive implementation starts.
+
+Review checklist:
+- Is this one change, or should it split?
+- Is the problem real and the scope worth doing?
+- Are non-goals explicit?
+- Are requirements observable and testable?
+- Are scenarios concrete and representative?
+- Are implementation details kept out of behavior specs?
+- Are risks clear enough to approve, rework, or stop?
+
+Output fields:
+- decision
+- comments`
+
+const openSpecReviewSkillZH = `# Skill: OpenSpec 变更评审
+
+用于昂贵实现开始前。
+
+评审清单：
+- 这是一个变更，还是应该拆分？
+- 问题是否真实，范围是否值得做？
+- 非目标是否明确？
+- 需求是否可观察、可测试？
+- 场景是否具体且有代表性？
+- 实现细节是否没有混入行为 spec？
+- 风险是否清楚到可以通过、打回或停止？
+
+输出字段：
+- decision
+- comments`
+
+const openSpecApplySkillEN = `# Skill: OpenSpec Apply
+
+Use this to execute an approved change.
+
+Rules:
+- Read the approved proposal, behavior specs, design, and task plan first.
+- Work through tasks in order unless a dependency requires reordering.
+- If implementation contradicts a spec, stop and report the mismatch.
+- Keep tests and evidence tied to the spec scenarios.
+- Do not hide changed assumptions; send them back to review.
+
+Output fields:
+- implementation_summary_doc_id
+- change_artifact_ref
+- test_evidence_doc_id`
+
+const openSpecApplySkillZH = `# Skill: OpenSpec 执行
+
+用于执行已审核变更。
+
+规则：
+- 先读取已审核 proposal、行为 spec、design 和 task plan。
+- 默认按任务顺序执行，除非依赖要求重新排序。
+- 如果实现与 spec 冲突，停止并报告不一致。
+- 测试和证据要关联到 spec 场景。
+- 不隐藏已变化的假设，把它们打回评审。
+
+输出字段：
+- implementation_summary_doc_id
+- change_artifact_ref
+- test_evidence_doc_id`
+
+const openSpecVerifySkillEN = `# Skill: OpenSpec Verify
+
+Use this to decide whether the change is actually done.
+
+Verify:
+- Proposal scope and non-goals.
+- Each behavior requirement.
+- Each acceptance scenario.
+- Task checklist completion.
+- Evidence quality.
+- Remaining manual checks and rollout risks.
+
+Output fields:
+- verification_report_doc_id
+- decision
+- remaining_risks`
+
+const openSpecVerifySkillZH = `# Skill: OpenSpec 验证
+
+用于判断变更是否真的完成。
+
+验证：
+- Proposal 范围和非目标。
+- 每条行为需求。
+- 每个验收场景。
+- 任务清单完成情况。
+- 证据质量。
+- 剩余人工检查和上线风险。
+
+输出字段：
+- verification_report_doc_id
+- decision
+- remaining_risks`
+
+const openSpecArchiveSkillEN = `# Skill: OpenSpec Archive
+
+Use this after verification passes.
+
+Archive:
+- Link proposal, behavior specs, design, task plan, implementation evidence, and verification report.
+- Extract durable behavior facts into knowledge docs.
+- Record decisions that future agents should not relitigate.
+- Identify repeated review comments or failures that should become skills, prompts, or workflow changes.
+
+Output fields:
+- archive_doc_id
+- skill_candidates_doc_id`
+
+const openSpecArchiveSkillZH = `# Skill: OpenSpec 归档
+
+用于验证通过后。
+
+归档：
+- 链接 proposal、行为 spec、design、task plan、实现证据和验证报告。
+- 把长期行为事实提炼到知识库。
+- 记录后续 Agent 不应重复争论的决策。
+- 识别重复评审意见或失败模式，并建议沉淀成 skill、prompt 或流程变化。
+
+输出字段：
+- archive_doc_id
+- skill_candidates_doc_id`
 
 type mattPocockSkillSpec struct {
 	Category      string
