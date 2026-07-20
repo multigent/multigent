@@ -42,73 +42,221 @@ export default function ProductTour({ workspaceId, example = false, open, onClos
   const { pathname } = useLocation()
   const [index, setIndex] = useState(0)
   const [targetRect, setTargetRect] = useState<TargetRect | null>(null)
-  const steps = useMemo<TourStep[]>(() => [
-    {
-      title: t(example ? 'productTour.steps.welcome.title' : 'productTour.blankSteps.welcome.title'),
-      body: t(example ? 'productTour.steps.welcome.body' : 'productTour.blankSteps.welcome.body'),
-      path: '/',
-      placement: 'floating',
-    },
-    {
-      title: t('productTour.steps.models.title'),
-      body: t('productTour.steps.models.body'),
-      path: '/settings',
-      selector: '[data-tour-nav="settings"]',
-      placement: 'right',
-    },
-    {
-      title: t('productTour.steps.modelAccounts.title'),
-      body: t('productTour.steps.modelAccounts.body'),
-      path: '/settings',
-      selector: '[data-tour-provider-section]',
-      placement: 'bottom',
-    },
-    {
-      title: t('productTour.steps.addModelAccount.title'),
-      body: t('productTour.steps.addModelAccount.body'),
-      path: '/settings',
-      selector: '[data-tour-provider-add]',
-      placement: 'bottom',
-    },
-    {
-      title: t('productTour.steps.team.title'),
-      body: t(example ? 'productTour.steps.team.body' : 'productTour.blankSteps.team.body'),
-      path: '/teams',
-      selector: '[data-tour-nav="teams"]',
-      placement: 'right',
-    },
-    {
-      title: t('productTour.steps.agents.title'),
-      body: t(example ? 'productTour.steps.agents.body' : 'productTour.blankSteps.agents.body'),
-      path: example ? '/projects/hello-world-relay/members' : '/projects',
-      selector: '[data-tour-nav="projects"]',
-      placement: 'right',
-    },
-    {
-      title: t('productTour.steps.workflow.title'),
-      body: t(example ? 'productTour.steps.workflow.body' : 'productTour.blankSteps.workflow.body'),
-      path: example ? '/workflows/wf-example-hello-world-relay' : '/workflows',
-      selector: '[data-tour-nav="workflows"]',
-      placement: 'right',
-    },
-    {
-      title: t('productTour.steps.task.title'),
-      body: t(example ? 'productTour.steps.task.body' : 'productTour.blankSteps.task.body'),
-      path: example ? '/projects/hello-world-relay/tasks' : '/projects',
-      selector: '[data-tour-nav="workbench"]',
-      placement: 'right',
-    },
-    {
-      title: t('productTour.steps.docs.title'),
-      body: t('productTour.steps.docs.body'),
-      path: '/docs',
-      selector: '[data-tour-nav="docs"]',
-      placement: 'right',
-    },
-  ], [t, example])
+  const steps = useMemo<TourStep[]>(() => {
+    if (!example) {
+      return [
+        {
+          title: t('productTour.blankSteps.welcome.title'),
+          body: t('productTour.blankSteps.welcome.body'),
+          path: '/',
+          placement: 'floating',
+        },
+        {
+          title: t('productTour.steps.models.title'),
+          body: t('productTour.steps.models.body'),
+          path: '/settings',
+          selector: '[data-tour-nav="settings"]',
+          placement: 'right',
+        },
+        {
+          title: t('productTour.steps.modelAccounts.title'),
+          body: t('productTour.steps.modelAccounts.body'),
+          path: '/settings',
+          selector: '[data-tour-provider-section]',
+          placement: 'bottom',
+        },
+        {
+          title: t('productTour.steps.team.title'),
+          body: t('productTour.blankSteps.team.body'),
+          path: '/teams',
+          selector: '[data-tour-nav="teams"]',
+          placement: 'right',
+        },
+        {
+          title: t('productTour.steps.workflow.title'),
+          body: t('productTour.blankSteps.workflow.body'),
+          path: '/workflows',
+          selector: '[data-tour-nav="workflows"]',
+          placement: 'right',
+        },
+      ]
+    }
+    return [
+      {
+        title: t('productTour.steps.welcome.title'),
+        body: t('productTour.steps.welcome.body'),
+        path: '/',
+        placement: 'floating',
+      },
+      {
+        title: t('productTour.steps.models.title'),
+        body: t('productTour.steps.models.body'),
+        path: '/settings',
+        selector: '[data-tour-nav="settings"]',
+        placement: 'right',
+      },
+      {
+        title: t('productTour.steps.modelAccounts.title'),
+        body: t('productTour.steps.modelAccounts.body'),
+        path: '/settings',
+        selector: '[data-tour-provider-section]',
+        placement: 'bottom',
+      },
+      {
+        title: t('productTour.steps.addModelAccount.title'),
+        body: t('productTour.steps.addModelAccount.body'),
+        path: '/settings',
+        selector: '[data-tour-provider-add]',
+        placement: 'bottom',
+      },
+      {
+        title: t('productTour.steps.team.title'),
+        body: t('productTour.steps.team.body'),
+        path: '/teams',
+        selector: '[data-tour-nav="teams"]',
+        placement: 'right',
+      },
+      {
+        title: t('productTour.steps.teamCreate.title'),
+        body: t('productTour.steps.teamCreate.body'),
+        path: '/teams',
+        selector: '[data-tour-team-create]',
+        placement: 'bottom',
+      },
+      {
+        title: t('productTour.steps.exampleTeam.title'),
+        body: t('productTour.steps.exampleTeam.body'),
+        path: '/teams',
+        selector: '[data-tour-team-card="collaboration-demo"]',
+        placement: 'bottom',
+      },
+      {
+        title: t('productTour.steps.teamRoles.title'),
+        body: t('productTour.steps.teamRoles.body'),
+        path: '/teams/collaboration-demo',
+        selector: '[data-tour-team-roles]',
+        placement: 'bottom',
+      },
+      {
+        title: t('productTour.steps.projects.title'),
+        body: t('productTour.steps.projects.body'),
+        path: '/projects',
+        selector: '[data-tour-nav="projects"]',
+        placement: 'right',
+      },
+      {
+        title: t('productTour.steps.projectCreate.title'),
+        body: t('productTour.steps.projectCreate.body'),
+        path: '/projects',
+        selector: '[data-tour-project-create]',
+        placement: 'bottom',
+      },
+      {
+        title: t('productTour.steps.exampleProject.title'),
+        body: t('productTour.steps.exampleProject.body'),
+        path: '/projects',
+        selector: '[data-tour-project-card="hello-world-relay"]',
+        placement: 'bottom',
+      },
+      {
+        title: t('productTour.steps.projectMembers.title'),
+        body: t('productTour.steps.projectMembers.body'),
+        path: '/projects/hello-world-relay/members',
+        selector: '[data-tour-project-nav="members"]',
+        placement: 'bottom',
+      },
+      {
+        title: t('productTour.steps.addAgent.title'),
+        body: t('productTour.steps.addAgent.body'),
+        path: '/projects/hello-world-relay/members',
+        selector: '[data-tour-member-add]',
+        placement: 'bottom',
+      },
+      {
+        title: t('productTour.steps.exampleAgent.title'),
+        body: t('productTour.steps.exampleAgent.body'),
+        path: '/projects/hello-world-relay/members',
+        selector: '[data-tour-member-card="greeter-agent"]',
+        placement: 'bottom',
+      },
+      {
+        title: t('productTour.steps.workflow.title'),
+        body: t('productTour.steps.workflow.body'),
+        path: '/workflows',
+        selector: '[data-tour-nav="workflows"]',
+        placement: 'right',
+      },
+      {
+        title: t('productTour.steps.workflowCreate.title'),
+        body: t('productTour.steps.workflowCreate.body'),
+        path: '/workflows',
+        selector: '[data-tour-workflow-create]',
+        placement: 'bottom',
+      },
+      {
+        title: t('productTour.steps.exampleWorkflow.title'),
+        body: t('productTour.steps.exampleWorkflow.body'),
+        path: '/workflows',
+        selector: '[data-tour-workflow-card="wf-example-hello-world-relay"]',
+        placement: 'bottom',
+      },
+      {
+        title: t('productTour.steps.workflowBoard.title'),
+        body: t('productTour.steps.workflowBoard.body'),
+        path: '/workflows/wf-example-hello-world-relay',
+        selector: '[data-tour-workflow-board]',
+        placement: 'bottom',
+      },
+      {
+        title: t('productTour.steps.taskCreate.title'),
+        body: t('productTour.steps.taskCreate.body'),
+        path: '/projects/hello-world-relay/tasks',
+        selector: '[data-tour-task-create]',
+        placement: 'bottom',
+      },
+      {
+        title: t('productTour.steps.scheduleControl.title'),
+        body: t('productTour.steps.scheduleControl.body'),
+        path: '/projects/hello-world-relay/schedule',
+        selector: '[data-tour-scheduler-control]',
+        placement: 'bottom',
+      },
+      {
+        title: t('productTour.steps.runtimeSchedule.title'),
+        body: t('productTour.steps.runtimeSchedule.body'),
+        path: '/projects/hello-world-relay/schedule',
+        selector: '[data-tour-runtime-table]',
+        placement: 'bottom',
+      },
+      {
+        title: t('productTour.steps.docs.title'),
+        body: t('productTour.steps.docs.body'),
+        path: '/docs',
+        selector: '[data-tour-nav="docs"]',
+        placement: 'right',
+      },
+      {
+        title: t('productTour.steps.docsAdd.title'),
+        body: t('productTour.steps.docsAdd.body'),
+        path: '/docs',
+        selector: '[data-tour-doc-add]',
+        placement: 'bottom',
+      },
+      {
+        title: t('productTour.steps.finish.title'),
+        body: t('productTour.steps.finish.body'),
+        path: '/',
+        placement: 'floating',
+      },
+    ]
+  }, [t, example])
 
   const current = steps[index]
   const isLast = index === steps.length - 1
+
+  useEffect(() => {
+    if (open) setIndex(0)
+  }, [open])
 
   useEffect(() => {
     if (!open) return undefined
@@ -133,10 +281,14 @@ export default function ProductTour({ workspaceId, example = false, open, onClos
     const el = current?.selector ? document.querySelector(current.selector) : null
     el?.scrollIntoView({ block: 'center', inline: 'nearest', behavior: 'smooth' })
     const timer = window.setTimeout(updateTarget, 180)
+    const retry = window.setInterval(updateTarget, 250)
+    const stopRetry = window.setTimeout(() => window.clearInterval(retry), 1500)
     window.addEventListener('resize', updateTarget)
     window.addEventListener('scroll', updateTarget, true)
     return () => {
       window.clearTimeout(timer)
+      window.clearTimeout(stopRetry)
+      window.clearInterval(retry)
       window.removeEventListener('resize', updateTarget)
       window.removeEventListener('scroll', updateTarget, true)
     }

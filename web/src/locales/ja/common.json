@@ -1859,11 +1859,79 @@
         "title": "Model account area",
         "body": "ここで再利用可能な model account を追加します。Agent は API key や環境変数を直接扱わず、この account を選択します。"
       },
-      "addModelAccount": {
-        "title": "Model account を追加",
-        "body": "このボタンで最初の model provider account を追加します。CLI family を選び、official API key または gateway endpoint と key を入力します。"
-      }
+    "addModelAccount": {
+      "title": "Model account を追加",
+      "body": "このボタンで最初の model provider account を追加します。CLI family を選び、official API key または gateway endpoint と key を入力します。"
     },
+    "teamCreate": {
+      "title": "自分の Team も作成できます",
+      "body": "Team template から作成することも、blank で始めることもできます。Team は具体的な project ではなく、再利用可能な roles と behavior standards を定義します。"
+    },
+    "exampleTeam": {
+      "title": "Example team を開く",
+      "body": "Example team には 3 つの中立的な role が用意されています。Agent 同士の relay と human review の位置を確認できます。"
+    },
+    "teamRoles": {
+      "title": "Role が Agent の基本動作を決めます",
+      "body": "Role prompt、default skills、team standards は Agent の baseline context になります。本番利用前に、実際のチームの働き方に合わせて調整します。"
+    },
+    "projects": {
+      "title": "Project は人と Agent を同じ実行 context にまとめます",
+      "body": "Teams は role capabilities を提供します。Projects は実際の people、agents、tasks、workflows をまとめます。"
+    },
+    "projectCreate": {
+      "title": "実際の Project を作成",
+      "body": "Project 作成で local path を入力する必要はありません。Multigent が workspace 内で runtime directory と isolation を管理します。"
+    },
+    "exampleProject": {
+      "title": "Hello World relay project を開く",
+      "body": "この project は engineering、sales、operations に依存しません。start、review、relay、record という最小 collaboration loop だけを示します。"
+    },
+    "projectMembers": {
+      "title": "Project members は人でも Agent でも構いません",
+      "body": "同じ project に real user と Agent を入れられます。Workflow steps は担当の person または agent に作業を route します。"
+    },
+    "addAgent": {
+      "title": "Member または Agent を追加",
+      "body": "実運用ではここで project members を追加します。Agent 追加後、CLI type、model、model account を設定します。"
+    },
+    "exampleAgent": {
+      "title": "Example Agent を確認",
+      "body": "Example Agent は role と workflow step に紐づいています。利用可能な model account を設定すれば test できます。"
+    },
+    "workflowCreate": {
+      "title": "Reusable workflow を作成",
+      "body": "Workflows は workspace に属し、複数 project で再利用できます。Actors、inputs、outputs、return paths を定義します。"
+    },
+    "exampleWorkflow": {
+      "title": "Example workflow を開く",
+      "body": "この workflow には agent step、human review step、return loop が含まれ、structured handoff を検証できます。"
+    },
+    "workflowBoard": {
+      "title": "Board は workflow の control surface です",
+      "body": "Nodes は collaboration steps、edges は allowed transitions です。Step outputs は downstream inputs になり、docID は knowledge base documents を指します。"
+    },
+    "taskCreate": {
+      "title": "Workflow task を作成・実行",
+      "body": "Tasks は実際に実行される work item です。作成時に workflow を選び、各 step の person または agent を指定すると、Multigent が graph に沿って route します。"
+    },
+    "scheduleControl": {
+      "title": "Scheduler が自動実行の入口です",
+      "body": "ここで project scheduler を開始します。有効化すると、Agent は task、heartbeat、schedule によって wake され、手動呼び出しだけに依存しません。"
+    },
+    "runtimeSchedule": {
+      "title": "Agent の trigger 方法を設定",
+      "body": "各 Agent は task 到着時、heartbeat、manual wakeup で実行できます。本番利用前に model account と tool permissions を確認します。"
+    },
+    "docsAdd": {
+      "title": "Knowledge base document を追加",
+      "body": "重要な context と step artifacts は knowledge base に保存します。Workflow outputs は docID を参照し、後続 Agent が同じ source を読めます。"
+    },
+    "finish": {
+      "title": "最小 collaboration loop を確認しました",
+      "body": "次に model account を 1 つ設定し、example agents に割り当て、test task を作成して、task が Agent と人の間でどう流れるか確認してください。"
+    }
+  },
     "blankSteps": {
       "welcome": {
         "title": "Multigent へようこそ",

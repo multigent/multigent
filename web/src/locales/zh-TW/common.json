@@ -1859,11 +1859,79 @@
         "title": "模型帳號區域",
         "body": "這裡用於加入可重用的模型帳號。後續 Agent 只需要選擇帳號，不需要直接接觸 API Key 或環境變數。"
       },
-      "addModelAccount": {
-        "title": "新增模型帳號",
-        "body": "點擊這裡加入第一個模型廠商帳號。先選擇 CLI 類型，再填寫官方 API Key，或填寫第三方閘道的地址和 Key。"
-      }
+    "addModelAccount": {
+      "title": "新增模型帳號",
+      "body": "點擊這裡加入第一個模型廠商帳號。先選擇 CLI 類型，再填寫官方 API Key，或填寫第三方閘道的地址和 Key。"
     },
+    "teamCreate": {
+      "title": "也可以建立自己的團隊",
+      "body": "這裡可以從團隊模板建立，也可以空白建立。團隊定義的是角色和行為規範，不是具體專案。"
+    },
+    "exampleTeam": {
+      "title": "進入範例團隊",
+      "body": "範例團隊已經準備好三個中性角色，用來示範 Agent 之間如何接力，以及人類如何介入審核。"
+    },
+    "teamRoles": {
+      "title": "角色決定 Agent 的預設行為",
+      "body": "角色 prompt、預設 Skill 和團隊規範會沉澱成 Agent 的基礎上下文。真正上線前，管理員需要把這些內容調到符合團隊習慣。"
+    },
+    "projects": {
+      "title": "專案把人和 Agent 放到同一個執行場景",
+      "body": "團隊提供角色能力，專案負責把具體的人、Agent、任務和流程組織起來。"
+    },
+    "projectCreate": {
+      "title": "建立真實專案",
+      "body": "這裡建立專案時不需要填寫本機路徑。Multigent 會在工作區內部管理執行目錄和隔離環境。"
+    },
+    "exampleProject": {
+      "title": "進入 Hello World 接力專案",
+      "body": "這個專案沒有綁定研發、銷售或營運場景，只示範最小協作閉環：發起、審核、接力、記錄。"
+    },
+    "projectMembers": {
+      "title": "專案成員包含人和 Agent",
+      "body": "同一個專案裡可以有真實用戶，也可以有 Agent。流程節點會把任務流轉給具體負責人。"
+    },
+    "addAgent": {
+      "title": "加入成員或 Agent",
+      "body": "真實使用時，在這裡加入專案成員。加入 Agent 後，需要設定 CLI 類型、模型和模型帳號。"
+    },
+    "exampleAgent": {
+      "title": "查看範例 Agent",
+      "body": "範例 Agent 已經綁定角色和流程節點。你只需要給它設定可用模型帳號，就可以開始測試。"
+    },
+    "workflowCreate": {
+      "title": "建立可重用流程",
+      "body": "流程屬於工作區，可以被多個專案重用。它定義每一步的執行人、輸入、輸出和打回路徑。"
+    },
+    "exampleWorkflow": {
+      "title": "進入範例流程",
+      "body": "這個流程包含 Agent 節點、人類審核節點和打回循環，用來驗證人和 Agent 之間是否能按結構化產物流轉。"
+    },
+    "workflowBoard": {
+      "title": "白板是流程的控制面",
+      "body": "節點代表協作步驟，連線代表可走的流轉路徑。節點輸出會作為下游輸入，docID 用來指向知識庫文件。"
+    },
+    "taskCreate": {
+      "title": "建立或執行流程任務",
+      "body": "任務是真正執行的對象。建立任務時選擇流程，再指定每個節點的人或 Agent，後續系統會根據節點流轉推進。"
+    },
+    "scheduleControl": {
+      "title": "調度器是自動執行入口",
+      "body": "這裡啟動專案調度器。開啟後，Agent 會按任務、心跳和定時計畫被喚醒，而不是等人一直手動呼叫。"
+    },
+    "runtimeSchedule": {
+      "title": "設定 Agent 的觸發方式",
+      "body": "每個 Agent 可以設定有任務時觸發、心跳間隔和手動喚醒。上線前要確保模型帳號和工具權限都已設定好。"
+    },
+    "docsAdd": {
+      "title": "新增知識庫文件",
+      "body": "重要上下文和階段產物應該進入知識庫。流程輸出裡引用 docID，後續 Agent 就能穩定查到同一份資料。"
+    },
+    "finish": {
+      "title": "你已經走完最小協作閉環",
+      "body": "接下來可以設定一個模型帳號，綁定到範例 Agent，建立一條測試任務，然後觀察任務如何在 Agent 和人之間流轉。"
+    }
+  },
     "blankSteps": {
       "welcome": {
         "title": "歡迎使用 Multigent",

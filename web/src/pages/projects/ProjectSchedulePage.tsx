@@ -90,7 +90,9 @@ export default function ProjectSchedulePage() {
             <h1 className="text-xl font-semibold text-neutral-900 dark:text-zinc-100">{t('projectNav.schedule')}</h1>
             <p className="mt-0.5 text-sm text-neutral-500 dark:text-zinc-500">{t('schedule.subtitle')}</p>
           </div>
-          {projectId && canManage && <SchedulerControl projectId={projectId} onAction={reload} />}
+          <div data-tour-scheduler-control>
+            {projectId && canManage && <SchedulerControl projectId={projectId} onAction={reload} />}
+          </div>
         </div>
       </div>
 
@@ -214,7 +216,7 @@ function HeartbeatTab({ agents, projectId, canManage, onChanged }: { agents: Age
 
   return (
     <>
-      <div className="overflow-x-auto rounded-lg border border-neutral-200/80 dark:border-zinc-700/60">
+      <div data-tour-runtime-table className="overflow-x-auto rounded-lg border border-neutral-200/80 dark:border-zinc-700/60">
         <table className="min-w-[1040px] w-full">
           <thead>
             <tr className="border-b border-neutral-200/80 bg-neutral-50/80 dark:border-zinc-700/60 dark:bg-zinc-900/40">
@@ -1148,7 +1150,7 @@ function RuntimeTab({ agents, projectId, canManage, onChanged }: { agents: Agent
                   <td className={cn(tdCls, tdSticky)}>
                     <div className="flex items-center justify-center gap-1">
                       {canManage && (
-                        <button type="button" disabled={isRunningNow || waking === ag.name} onClick={() => void doWakeup(ag.name)}
+                        <button type="button" data-tour-wakeup-now={ag.name} disabled={isRunningNow || waking === ag.name} onClick={() => void doWakeup(ag.name)}
                           className="cursor-pointer rounded-md px-2 py-1 text-xs font-medium text-sky-700 opacity-0 transition-all hover:bg-sky-50 disabled:opacity-40 group-hover:opacity-100 dark:text-sky-400 dark:hover:bg-sky-900/20">
                           {waking === ag.name ? t('schedule.wakingUp') : t('schedule.wakeupNow')}
                         </button>

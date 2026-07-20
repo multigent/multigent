@@ -261,7 +261,7 @@ function RolePromptRow({
   }, [teamPath, role.name, onDeleted])
 
   return (
-    <div className="border-b border-neutral-100 last:border-b-0 dark:border-zinc-700/40">
+    <div data-tour-role-card={role.name} className="border-b border-neutral-100 last:border-b-0 dark:border-zinc-700/40">
       <div className="flex items-center gap-2 px-4 py-3 transition-colors hover:bg-neutral-50/80 dark:hover:bg-zinc-800/30">
         <button
           type="button"
@@ -468,7 +468,7 @@ export default function TeamDetailPage() {
             )}
 
             {/* Roles with prompts & skills */}
-            <div>
+            <div data-tour-team-roles>
               <div className="mb-2 flex items-center justify-between">
                 <h3 className="text-xs font-semibold uppercase tracking-wider text-neutral-400 dark:text-zinc-500">
                   {t('prompt.roles')}

@@ -74,6 +74,7 @@ export default function TeamsPage() {
             <Link
               key={row.path}
               to={`/teams/${encodeURIComponent(row.path)}`}
+              data-tour-team-card={row.path}
               className="group flex flex-col justify-between rounded-xl border border-neutral-200/80 bg-white p-5 transition-all duration-150 hover:border-sky-300/60 hover:shadow-md dark:border-zinc-700/60 dark:bg-zinc-900/30 dark:hover:border-sky-800/40"
             >
               <div>
@@ -197,6 +198,7 @@ function CreateTeamDialog({ templates, locale, onCreated }: { templates: TeamTem
     <>
       <button
         type="button"
+        data-tour-team-create
         onClick={openDialog}
         className={primaryOutlineButton}
       >

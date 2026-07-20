@@ -28,6 +28,7 @@ export default function ProjectsListPage() {
         </div>
         <button
           type="button"
+          data-tour-project-create
           onClick={() => setCreateOpen(true)}
           className={primaryOutlineButton}
         >
@@ -62,6 +63,7 @@ export default function ProjectsListPage() {
             <Link
               key={p.name}
               to={`/projects/${encodeURIComponent(p.name)}/tasks`}
+              data-tour-project-card={p.name}
               className="group flex flex-col justify-between rounded-xl border border-neutral-200/80 bg-white p-5 transition-all duration-150 hover:border-sky-300/60 hover:shadow-md dark:border-zinc-700/60 dark:bg-zinc-900/30 dark:hover:border-sky-800/40"
             >
               <div>

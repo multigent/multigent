@@ -71,7 +71,7 @@ export default function App() {
 
 function WorkspaceGate({ children }: { children: ReactNode }) {
   const { t } = useTranslation()
-  const [state, setState] = useState<'loading' | 'ready' | 'empty'>('loading')
+  const [state, setState] = useState<'loading' | 'ready' | 'empty' | 'creatingExample'>('loading')
   const [reloadKey, setReloadKey] = useState(0)
 
   useEffect(() => {
@@ -79,7 +79,24 @@ function WorkspaceGate({ children }: { children: ReactNode }) {
     apiFetch<{ workspaces: WorkspaceRef[] }>('/api/v1/workspaces')
       .then((data) => {
         if (cancelled) return
-        setState((data.workspaces ?? []).length > 0 ? 'ready' : 'empty')
+        if ((data.workspaces ?? []).length > 0) {
+          setState('ready')
+          return
+        }
+        setState('creatingExample')
+        apiFetch<WorkspaceRef>('/api/v1/workspaces/example', {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json', Accept: 'application/json' },
+          body: '{}',
+        })
+          .then(() => {
+            if (cancelled) return
+            window.dispatchEvent(new Event('workspace-changed'))
+            setState('ready')
+          })
+          .catch(() => {
+            if (!cancelled) setState('empty')
+          })
       })
       .catch((error) => {
         if (cancelled) return
@@ -88,10 +105,10 @@ function WorkspaceGate({ children }: { children: ReactNode }) {
     return () => { cancelled = true }
   }, [reloadKey])
 
-  if (state === 'loading') {
+  if (state === 'loading' || state === 'creatingExample') {
     return (
       <div className="flex min-h-screen items-center justify-center bg-white text-sm text-neutral-500 dark:bg-zinc-950 dark:text-zinc-400">
-        {t('app.loadingWorkspace')}
+        {state === 'creatingExample' ? t('workspaceOnboarding.creatingExample') : t('app.loadingWorkspace')}
       </div>
     )
   }

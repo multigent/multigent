@@ -212,7 +212,7 @@ export function AppShell() {
           const scope = d.id || d.name || 'default'
           setWorkspaceScope(scope)
           setWorkspaceName(d.name || '')
-          if (!hasSeenProductTour(scope)) {
+          if (d.name === 'Example Collaboration Lab' && !hasSeenProductTour(scope)) {
             window.setTimeout(() => setTourOpen(true), 500)
           }
         }
@@ -227,7 +227,7 @@ export function AppShell() {
       cancelled = true
       window.removeEventListener('workspace-changed', loadWorkspaceScope)
     }
-  }, [pathname])
+  }, [])
 
   useEffect(() => {
     function startTour() {

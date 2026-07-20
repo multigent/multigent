@@ -134,6 +134,7 @@ export default function ProjectMembersPage() {
               return (
                 <div
                   key={row.name}
+                  data-tour-member-card={row.name}
                   className="group relative flex flex-col rounded-xl border border-neutral-200/80 bg-white p-4 transition-all duration-150 hover:border-neutral-300 hover:shadow-sm dark:border-zinc-700/60 dark:bg-zinc-900/40 dark:hover:border-zinc-700"
                 >
                   <Link

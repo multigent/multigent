@@ -302,6 +302,7 @@ export function Sidebar({ collapsed, onToggle }: { collapsed: boolean; onToggle:
                         <NavLink
                           key={segment}
                           to={subTo}
+                          data-tour-project-nav={segment}
                           className={cn(
                             subLinkBase,
                             subActiveState ? subActive : subLinkIdle,

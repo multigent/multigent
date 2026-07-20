@@ -302,6 +302,7 @@ export default function WorkflowsPage() {
                 </div>
               </div>
             )}
+            <div data-tour-workflow-board className="min-h-0 flex-1">
             <WorkflowBoard
               definition={draft}
               editable
@@ -310,6 +311,7 @@ export default function WorkflowsPage() {
               onToggleFullscreen={() => setFullscreen((v) => !v)}
               onChange={setDraft}
             />
+            </div>
           </div>
         )}
       </div>
@@ -323,7 +325,7 @@ export default function WorkflowsPage() {
           <h1 className="text-xl font-semibold text-neutral-900 dark:text-zinc-100">{t('nav.workflows')}</h1>
           <p className="mt-0.5 text-sm text-neutral-500 dark:text-zinc-500">{t('workflows.workspaceSubtitle')}</p>
         </div>
-        <button type="button" onClick={openCreateDialog} disabled={saving} className="rounded-lg border border-sky-600 bg-white px-3 py-2 text-sm font-medium text-sky-700 hover:bg-sky-50 disabled:opacity-50 dark:border-sky-500 dark:bg-zinc-900 dark:text-sky-400 dark:hover:bg-zinc-800">
+        <button type="button" data-tour-workflow-create onClick={openCreateDialog} disabled={saving} className="rounded-lg border border-sky-600 bg-white px-3 py-2 text-sm font-medium text-sky-700 hover:bg-sky-50 disabled:opacity-50 dark:border-sky-500 dark:bg-zinc-900 dark:text-sky-400 dark:hover:bg-zinc-800">
           {t('workflows.createBlank')}
         </button>
       </div>
@@ -427,6 +429,7 @@ export default function WorkflowsPage() {
             <button
               type="button"
               key={wf.id}
+              data-tour-workflow-card={wf.id}
               onClick={() => navigate(`/workflows/${encodeURIComponent(wf.id)}`)}
               className="group flex min-h-[132px] flex-col rounded-xl border border-neutral-200/80 bg-white p-5 text-left transition-all duration-150 hover:border-sky-300/60 hover:shadow-md dark:border-zinc-700/60 dark:bg-zinc-900/30 dark:hover:border-sky-800/40"
             >
