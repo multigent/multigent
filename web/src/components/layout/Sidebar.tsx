@@ -259,6 +259,7 @@ export function Sidebar({ collapsed, onToggle }: { collapsed: boolean; onToggle:
                 key={to}
                 to={to}
                 end={end}
+                data-tour-nav={navKey}
                 className={cn(
                   linkCollapsed,
                   active
@@ -277,6 +278,7 @@ export function Sidebar({ collapsed, onToggle }: { collapsed: boolean; onToggle:
               <NavLink
                 to={to}
                 end={end}
+                data-tour-nav={navKey}
                 className={cn(linkBase, active ? linkActive : linkIdle)}
               >
                 <Icon className="size-4 shrink-0 opacity-80" strokeWidth={1.8} />

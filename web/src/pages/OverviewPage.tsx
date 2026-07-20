@@ -112,7 +112,7 @@ export default function OverviewPage() {
         ))}
       </div>
 
-      <div className="mt-6 rounded-lg border border-sky-100 bg-sky-50/70 p-5 dark:border-sky-900/40 dark:bg-sky-950/20">
+      <div data-tour-overview-card className="mt-6 rounded-lg border border-sky-100 bg-sky-50/70 p-5 dark:border-sky-900/40 dark:bg-sky-950/20">
         <div className="flex flex-wrap items-start justify-between gap-4">
           <div>
             <h2 className="text-base font-semibold text-neutral-900 dark:text-zinc-100">{t('productTour.cardTitle')}</h2>
