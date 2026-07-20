@@ -702,14 +702,63 @@ Outputs:
 func videoCreativeIntakeSkill(locale string) string {
 	return text(locale, `# Skill: Creative Intake
 
-Use this before any video production work starts.
+Use this before any video production work starts. Your job is to make the request executable, not to make it sound polished.
 
-Collect:
-1. Goal: why this video exists.
-2. Audience: who watches, in what situation, and what they should do next.
-3. Delivery shape: channel, aspect ratio, duration, language, deadline.
-4. Constraints: brand, legal, facts, budget, tools, assets available.
-5. Approval policy: which stages require human review.
+## Trigger
+
+Use when the user says anything like:
+- "make a video"
+- "turn this into a short"
+- "create a launch video"
+- "repurpose this reference"
+- "we need a campaign asset"
+
+## Process
+
+1. Restate the production goal in one sentence.
+   - What business or communication outcome should the video create?
+   - What should the viewer think, feel, know, or do afterward?
+
+2. Identify the viewer and viewing context.
+   - Role or audience segment.
+   - Where they will see it: social feed, landing page, sales call, internal training, conference screen.
+   - Prior knowledge level.
+   - Attention level: actively watching or casually scrolling.
+
+3. Define delivery shape.
+   - Channel.
+   - Aspect ratio.
+   - Target duration.
+   - Language.
+   - Deadline.
+   - Required deliverables: final video, captions, thumbnail notes, platform copy, source package.
+
+4. Gather constraints.
+   - Brand voice, visual rules, forbidden claims, legal/compliance limits.
+   - Facts that must be true and sources that must be used.
+   - Existing assets, references, screenshots, logos, footage, product docs.
+   - Budget or provider limits.
+
+5. Set approval policy.
+   - Proposal approval before expensive generation.
+   - Script approval before storyboard.
+   - Storyboard approval before asset generation.
+   - Asset approval before edit/render.
+   - Final QA before publish package.
+
+## Quality Bar
+
+- A downstream creative director can propose concepts without asking basic questions.
+- The brief includes non-goals, so the concept does not expand silently.
+- Long context is stored in docs and referenced by docID.
+- The brief names uncertain facts instead of pretending they are confirmed.
+
+## Common Failure Modes
+
+- Accepting "make it premium" without defining what premium means visually.
+- Skipping audience and channel, which makes pacing impossible to judge.
+- Starting with tools before the message and viewer are clear.
+- Mixing the brief with a full script or storyboard too early.
 
 Output fields:
 - brief_doc_id
@@ -718,14 +767,63 @@ Output fields:
 - approval_policy
 - open_risks`, `# Skill: 创意需求收集
 
-在任何视频制作工作开始前使用。
+在任何视频制作工作开始前使用。你的工作是把需求变成可执行，而不是把它润色得好听。
 
-收集：
-1. 目标：为什么要做这个视频。
-2. 受众：谁会看，在什么场景看，看完要做什么。
-3. 交付形式：渠道、画幅、时长、语言、截止时间。
-4. 约束：品牌、法务、事实、预算、工具、已有素材。
-5. 审核策略：哪些阶段需要人类审核。
+## 触发场景
+
+当用户说以下类似需求时使用：
+- “做个视频”
+- “把这个改成短视频”
+- “做一个发布视频”
+- “参考这个视频做一个”
+- “我们需要一个活动素材”
+
+## 流程
+
+1. 用一句话重述制作目标。
+   - 这个视频要创造什么业务或沟通结果？
+   - 观众看完后应该想什么、感受什么、知道什么或做什么？
+
+2. 识别观众和观看场景。
+   - 角色或受众分层。
+   - 出现场景：社交 feed、落地页、销售会议、内部培训、会议大屏。
+   - 观众已有认知水平。
+   - 注意力状态：主动观看还是随手划到。
+
+3. 定义交付形式。
+   - 渠道。
+   - 画幅。
+   - 目标时长。
+   - 语言。
+   - 截止时间。
+   - 必需交付物：成片、字幕、封面说明、平台文案、源文件包。
+
+4. 收集约束。
+   - 品牌语气、视觉规范、禁止陈述、法务/合规边界。
+   - 必须真实的事实和必须使用的来源。
+   - 已有素材、参考、截图、logo、视频、产品文档。
+   - 预算或 provider 限制。
+
+5. 设置审核策略。
+   - 昂贵生成前审核提案。
+   - 分镜前审核脚本。
+   - 素材生成前审核分镜。
+   - 剪辑/渲染前审核素材。
+   - 发布包前最终 QA。
+
+## 质量标准
+
+- 下游创意导演不用追问基础问题就能提案。
+- brief 包含非目标，避免范围静默膨胀。
+- 长上下文写入知识库并用 docID 引用。
+- 对不确定事实明确标注，而不是假装确认。
+
+## 常见失败
+
+- 接受“做得高级一点”，但没有定义高级在视觉上意味着什么。
+- 跳过受众和渠道，导致无法判断节奏。
+- 先讨论工具，而不是先明确消息和观众。
+- 过早把 brief 写成完整脚本或分镜。
 
 输出字段：
 - brief_doc_id
@@ -740,13 +838,65 @@ func videoReferenceAnalysisSkill(locale string) string {
 
 Use this when the request includes a video, ad, landing page, competitor, or style reference.
 
-Analyze:
-- Structure: hook, setup, beats, payoff, CTA.
-- Pacing: shot length, density, silence, rhythm.
-- Visual language: composition, typography, color, motion.
-- Audio: voice, music, SFX, ducking, captions.
-- What can be reused as abstract principles.
-- What must not be copied.
+## Principle
+
+A reference is not a template to copy. It is evidence for what kind of structure, pacing, taste, and production promise the user likes.
+
+## Process
+
+1. Identify the reference type.
+   - Direct inspiration.
+   - Competitor example.
+   - Anti-example.
+   - Existing brand asset.
+   - Platform-native trend.
+
+2. Break down the structure.
+   - Hook.
+   - Setup.
+   - Beat sequence.
+   - Payoff.
+   - Call to action.
+   - Where the viewer is expected to emotionally shift.
+
+3. Break down pacing.
+   - Average shot length.
+   - Information density.
+   - Visual change frequency.
+   - Silence, pause, or breathing room.
+   - Whether captions carry the rhythm.
+
+4. Break down visual language.
+   - Composition.
+   - Typography.
+   - Palette.
+   - Motion.
+   - Texture.
+   - Camera or screen treatment.
+   - Use of product, people, diagrams, b-roll, UI, or abstract imagery.
+
+5. Break down audio.
+   - Voice style.
+   - Music energy.
+   - Sound effects.
+   - Ducking.
+   - Caption timing.
+
+6. Convert observations into reusable principles.
+   - "Fast pattern interrupt in first 2 seconds" is reusable.
+   - "Same joke, same line, same shot" is not.
+   - "Warm paper texture + calm narration" is reusable.
+   - "Their exact character, layout, or branded scene" is not.
+
+## Output Format
+
+Write the full analysis as a doc. Include:
+- Reference summary.
+- What works.
+- What does not fit our brief.
+- Reusable principles.
+- Do-not-copy notes.
+- Implications for concept, script, storyboard, tools, and budget.
 
 Output fields:
 - reference_analysis_doc_id
@@ -755,13 +905,65 @@ Output fields:
 
 当需求包含视频、广告、落地页、竞品或风格参考时使用。
 
-分析：
-- 结构：钩子、铺垫、节拍、收束、行动号召。
-- 节奏：镜头长度、信息密度、留白、韵律。
-- 视觉语言：构图、字体、颜色、动效。
-- 音频：人声、音乐、音效、压低、人声字幕。
-- 哪些能作为抽象原则复用。
-- 哪些不能复制。
+## 原则
+
+参考不是用来照抄的模板，而是用户喜欢什么结构、节奏、审美和制作承诺的证据。
+
+## 流程
+
+1. 判断参考类型。
+   - 直接灵感。
+   - 竞品案例。
+   - 反例。
+   - 已有品牌素材。
+   - 平台原生趋势。
+
+2. 拆结构。
+   - 钩子。
+   - 铺垫。
+   - 节拍顺序。
+   - 收束。
+   - 行动号召。
+   - 观众情绪在什么地方发生变化。
+
+3. 拆节奏。
+   - 平均镜头长度。
+   - 信息密度。
+   - 画面变化频率。
+   - 静音、停顿或呼吸感。
+   - 字幕是否承担节奏。
+
+4. 拆视觉语言。
+   - 构图。
+   - 字体。
+   - 色彩。
+   - 动效。
+   - 质感。
+   - 摄影或屏幕处理方式。
+   - 产品、人物、图解、b-roll、UI 或抽象图像的使用方式。
+
+5. 拆音频。
+   - 人声风格。
+   - 音乐能量。
+   - 音效。
+   - 压低。
+   - 字幕时序。
+
+6. 把观察转成可复用原则。
+   - “前 2 秒快速 pattern interrupt”可以复用。
+   - “同一个笑话、同一句台词、同一个镜头”不能复用。
+   - “温暖纸张质感 + 平静旁白”可以复用。
+   - “对方的具体角色、布局或品牌场景”不能复用。
+
+## 输出格式
+
+完整分析写入文档，包含：
+- 参考摘要。
+- 它为什么有效。
+- 哪些不适合我们的 brief。
+- 可复用原则。
+- 禁止复制说明。
+- 对创意、脚本、分镜、工具和预算的影响。
 
 输出字段：
 - reference_analysis_doc_id
@@ -774,13 +976,60 @@ func videoProposalSkill(locale string) string {
 
 Create 2-3 differentiated concepts before recommending one.
 
-Each concept must include:
-- One-line promise.
-- Structure.
-- Visual treatment.
-- Tool path.
-- Cost/risk estimate.
-- Why it fits the brief.
+## Goal
+
+Make it easy for a human to choose a creative direction before expensive work begins.
+
+## Process
+
+1. Read the brief and reference analysis.
+   - Extract target viewer, channel, duration, constraints, and approval policy.
+   - Extract reusable reference principles and do-not-copy constraints.
+
+2. Check tool feasibility.
+   - Which model/provider credentials are available?
+   - Is web search available?
+   - Can we generate images, video, narration, music, subtitles, or only docs?
+   - If a tool is missing, do not pretend the concept is still feasible.
+
+3. Create 2-3 differentiated concepts.
+   Each concept must differ in more than title. Vary at least two of:
+   - narrative structure
+   - visual treatment
+   - tone
+   - production complexity
+   - channel fit
+   - cost profile
+
+4. For each concept include:
+   - One-line promise.
+   - Hook.
+   - Viewer payoff.
+   - Narrative structure.
+   - Visual treatment.
+   - Audio direction.
+   - Tool path.
+   - Estimated cost range or effort level.
+   - Risks.
+   - Why it fits the brief.
+   - What it deliberately does not do.
+
+5. Recommend one option.
+   - Do not just list options.
+   - Make a clear recommendation with tradeoffs.
+   - If the recommended option is expensive or risky, say why it is still worth it.
+
+6. Prepare review packet.
+   - Proposal docID.
+   - Tool plan docID.
+   - Suggested approval decision.
+
+## Quality Bar
+
+- Concepts are materially different, not three variants of the same idea.
+- Tool path is honest.
+- Budget/cost risk is visible before generation.
+- Human can approve, reject, or request changes without reading the whole chat.
 
 Do not hide tool uncertainty. If credentials or providers are missing, call it out.
 
@@ -792,13 +1041,60 @@ Output fields:
 
 推荐前先创建 2-3 个差异化创意方案。
 
-每个方案必须包含：
-- 一句话承诺。
-- 结构。
-- 视觉处理。
-- 工具路径。
-- 成本/风险估算。
-- 为什么符合 brief。
+## 目标
+
+在人类批准昂贵制作前，让他容易选择一个创意方向。
+
+## 流程
+
+1. 阅读 brief 和参考分析。
+   - 提取目标观众、渠道、时长、约束和审核策略。
+   - 提取可复用参考原则和禁止复制约束。
+
+2. 检查工具可行性。
+   - 哪些模型/provider 凭证可用？
+   - 是否可用网页搜索？
+   - 是否能生成图片、视频、旁白、音乐、字幕，还是只能产出文档？
+   - 工具缺失时，不要假装方案仍然可行。
+
+3. 创建 2-3 个差异化创意。
+   每个方案不能只是标题不同。至少变化其中两项：
+   - 叙事结构。
+   - 视觉处理。
+   - 语气。
+   - 制作复杂度。
+   - 渠道适配。
+   - 成本结构。
+
+4. 每个方案包含：
+   - 一句话承诺。
+   - 开场钩子。
+   - 观众收益。
+   - 叙事结构。
+   - 视觉处理。
+   - 音频方向。
+   - 工具路径。
+   - 预计成本区间或工作量。
+   - 风险。
+   - 为什么符合 brief。
+   - 明确不做什么。
+
+5. 推荐一个方案。
+   - 不只罗列选项。
+   - 给出明确推荐和取舍。
+   - 如果推荐方案成本高或风险高，要说明为什么仍值得。
+
+6. 准备审核包。
+   - Proposal docID。
+   - Tool plan docID。
+   - 建议审核决策。
+
+## 质量标准
+
+- 方案之间有实质差异，不是同一个想法的三个变体。
+- 工具路径诚实。
+- 生成前能看到预算/成本风险。
+- 人类不用读完整聊天就能批准、拒绝或要求修改。
 
 不要隐藏工具不确定性。如果缺少凭证或 provider，要明确写出。
 
@@ -814,13 +1110,52 @@ func videoScriptWritingSkill(locale string) string {
 
 Write a script that downstream agents can produce.
 
-Include:
-- Timing by section or beat.
-- Narration.
-- On-screen text.
-- Visual intent.
-- Claims that require checking.
-- Tone and pacing notes.
+## Process
+
+1. Read the approved concept.
+   - Do not invent a different video.
+   - Preserve the approved promise, audience, tone, and channel.
+
+2. Set word budget.
+   - 30s: about 65-75 words.
+   - 60s: about 130-150 words.
+   - 90s: about 195-225 words.
+   - 120s: about 260-300 words.
+   Adjust down for complex topics or heavy visuals.
+
+3. Plan the arc before writing.
+   - Hook: first 3-5 seconds.
+   - Setup: why the viewer should care.
+   - Build: 2-5 progressive beats.
+   - Payoff: the moment the message clicks.
+   - Landing: recap and CTA, no new ideas.
+
+4. Write by timed section.
+   Each section should include:
+   - section ID
+   - start/end seconds
+   - narration
+   - on-screen text
+   - visual intent
+   - tone/delivery cue
+   - factual claims to verify
+
+5. Mark claims.
+   - Any statistic, date, comparison, quote, product claim, legal claim, or customer promise must be listed in the claim check doc.
+   - If the claim cannot be verified, rewrite it as a softer statement or flag it for human review.
+
+6. Prepare for downstream storyboard.
+   - Every 8-10 seconds should have a visual change cue.
+   - Avoid dense paragraphs that cannot be visualized.
+   - Do not write narration that exceeds the time slot.
+
+## Quality Bar
+
+- The hook creates a real reason to keep watching.
+- The script can be read aloud naturally.
+- Every important claim is traceable.
+- Downstream storyboard can map each beat to a scene.
+- The CTA matches the original brief.
 
 Output fields:
 - script_doc_id
@@ -829,13 +1164,52 @@ Output fields:
 
 编写下游 Agent 可以制作的脚本。
 
-包含：
-- 按段落或节拍的时间。
-- 旁白。
-- 屏幕文字。
-- 视觉意图。
-- 需要核查的事实陈述。
-- 语气和节奏说明。
+## 流程
+
+1. 阅读已批准创意。
+   - 不要发明另一个视频。
+   - 保留已批准的承诺、受众、语气和渠道。
+
+2. 设定字数预算。
+   - 30 秒：约 65-75 个英文词，中文按语速折算。
+   - 60 秒：约 130-150 个英文词。
+   - 90 秒：约 195-225 个英文词。
+   - 120 秒：约 260-300 个英文词。
+   复杂主题或重视觉视频要再少一点。
+
+3. 写正文前先规划叙事弧线。
+   - Hook：前 3-5 秒。
+   - Setup：为什么观众要关心。
+   - Build：2-5 个递进节拍。
+   - Payoff：信息真正成立的时刻。
+   - Landing：总结和 CTA，不引入新信息。
+
+4. 按时间段写脚本。
+   每段包含：
+   - 段落 ID。
+   - 起止秒数。
+   - 旁白。
+   - 屏幕文字。
+   - 视觉意图。
+   - 语气/朗读提示。
+   - 需要核查的事实陈述。
+
+5. 标记事实。
+   - 任何统计、日期、比较、引用、产品承诺、法务相关陈述，都要写入 claim check 文档。
+   - 无法核查的事实，要改写成更稳妥表达，或交给人类审核。
+
+6. 为下游分镜做准备。
+   - 每 8-10 秒至少有一次视觉变化提示。
+   - 避免无法视觉化的大段文字。
+   - 不写超过时长槽的旁白。
+
+## 质量标准
+
+- 开场钩子让观众有继续看的理由。
+- 脚本自然可朗读。
+- 重要事实可追溯。
+- 下游分镜能把每个节拍映射成场景。
+- CTA 符合原始 brief。
 
 输出字段：
 - script_doc_id
@@ -848,13 +1222,58 @@ func videoStoryboardPlanningSkill(locale string) string {
 
 Convert approved script into scenes.
 
-For each scene:
-- Scene goal.
-- Visual treatment.
-- Required assets.
-- Motion or transition.
-- Text/caption requirements.
-- Acceptance criteria.
+## Process
+
+1. Read the approved script and concept.
+   - Do not redesign the concept silently.
+   - Treat script timing as the primary timeline.
+
+2. Split into scenes.
+   - Each scene should represent one visual idea.
+   - Long script sections can become 2-3 scenes.
+   - Short sections may share one scene if the visual stays coherent.
+
+3. Define every scene.
+   For each scene specify:
+   - scene_id
+   - script section mapping
+   - start/end seconds
+   - scene goal
+   - visual treatment
+   - subject
+   - subject motion or diagram progression
+   - layout/framing
+   - overlays and captions
+   - transition in/out
+   - required assets
+   - acceptance criteria
+
+4. Choose visual techniques.
+   Use the simplest technique that communicates the message:
+   - title card for opening or section break
+   - stat card for numbers
+   - comparison for before/after
+   - diagram for system/process
+   - UI/screen demo for product flow
+   - generated still/video when the visual world matters
+   - b-roll when realism matters
+
+5. Check feasibility.
+   - Do not require unavailable tools.
+   - Do not ask for too many expensive generated clips.
+   - If a scene is expensive, mark it for explicit approval.
+
+6. Create reviewable storyboard docs.
+   - Full storyboard.
+   - Asset requirements by scene.
+   - Visual acceptance criteria.
+
+## Quality Bar
+
+- Full script duration is covered.
+- No scene is decorative without advancing understanding or emotion.
+- Asset requirements are specific enough for the asset director.
+- Human can approve scene direction before generation starts.
 
 Output fields:
 - storyboard_doc_id
@@ -863,13 +1282,58 @@ Output fields:
 
 把已审核脚本转成场景。
 
-每个场景包含：
-- 场景目标。
-- 视觉处理。
-- 所需素材。
-- 动效或转场。
-- 文字/字幕要求。
-- 验收标准。
+## 流程
+
+1. 阅读已审核脚本和创意。
+   - 不要静默重做创意。
+   - 把脚本时间作为主时间线。
+
+2. 拆成场景。
+   - 每个场景表达一个视觉想法。
+   - 长脚本段可以拆成 2-3 个场景。
+   - 如果视觉保持一致，短段落可以共用一个场景。
+
+3. 定义每个场景。
+   每个场景说明：
+   - scene_id。
+   - 对应脚本段。
+   - 起止秒数。
+   - 场景目标。
+   - 视觉处理。
+   - 主体。
+   - 主体运动或图解推进方式。
+   - 布局/构图。
+   - 覆盖文字和字幕。
+   - 进出转场。
+   - 所需素材。
+   - 验收标准。
+
+4. 选择视觉技术。
+   使用能传达信息的最简单技术：
+   - 标题卡用于开场或分节。
+   - 数据卡用于数字。
+   - 对比卡用于前后/左右对比。
+   - 图解用于系统/流程。
+   - UI/录屏用于产品流程。
+   - 当视觉世界很重要时使用生成静帧/视频。
+   - 需要真实感时使用 b-roll。
+
+5. 检查可行性。
+   - 不要求不可用工具。
+   - 不安排过多昂贵生成片段。
+   - 昂贵场景必须标记为需要明确审核。
+
+6. 创建可审核分镜文档。
+   - 完整分镜。
+   - 按场景列出的素材需求。
+   - 视觉验收标准。
+
+## 质量标准
+
+- 覆盖完整脚本时长。
+- 没有只装饰、不推进理解或情绪的场景。
+- 素材需求具体到素材导演可执行。
+- 人类能在生成前审核场景方向。
 
 输出字段：
 - storyboard_doc_id
@@ -882,15 +1346,57 @@ func videoAssetManifestSkill(locale string) string {
 
 Every asset must be traceable.
 
-Record:
-- Scene ID.
-- Asset type.
-- Provider or source.
-- Prompt or search query.
-- License / usage note.
-- Cost.
-- Status: draft, approved, rejected, replaced.
-- Storage reference or docID.
+## Process
+
+1. Inventory required assets.
+   Read storyboard and asset requirements. Create one asset task per required item:
+   - narration
+   - image
+   - video clip
+   - diagram
+   - screen recording
+   - music
+   - SFX
+   - subtitles
+   - thumbnail or cover
+
+2. Group by provider/tool.
+   - This reduces repeated setup and lets you estimate cost.
+   - Do not call a provider before checking credentials and budget.
+
+3. Produce samples before batches when cost or taste risk is high.
+   - Voice sample.
+   - One representative image/video sample.
+   - Music mood sample.
+   If rejected, adjust before batch production.
+
+4. Generate or source assets.
+   For each asset record:
+   - Scene ID.
+   - Asset type.
+   - Provider or source.
+   - Prompt, query, or capture method.
+   - License / usage note.
+   - Cost.
+   - Status: draft, approved, rejected, replaced.
+   - Storage reference or docID.
+   - Quality notes.
+
+5. Prepare the review package.
+   - Contact sheet or thumbnail list.
+   - Scene-to-asset mapping.
+   - Rejected/replaced assets if relevant.
+   - Cost snapshot.
+
+6. Stop for asset review when configured.
+   Bad assets should be caught before edit and render, not after final output.
+
+## Quality Bar
+
+- Every scene has the required assets or a clearly documented fallback.
+- Every generated asset has provenance.
+- Costs and unavailable tools are visible.
+- Human can review quickly without opening raw provider logs.
 
 Output fields:
 - asset_manifest_doc_id
@@ -899,15 +1405,57 @@ Output fields:
 
 每个素材都必须可追溯。
 
-记录：
-- 场景 ID。
-- 素材类型。
-- Provider 或来源。
-- 提示词或搜索词。
-- 授权/使用说明。
-- 成本。
-- 状态：draft、approved、rejected、replaced。
-- 存储引用或 docID。
+## 流程
+
+1. 盘点所需素材。
+   阅读分镜和素材需求。每个所需项目创建一个素材任务：
+   - 旁白。
+   - 图片。
+   - 视频片段。
+   - 图解。
+   - 屏幕录制。
+   - 音乐。
+   - 音效。
+   - 字幕。
+   - 封面。
+
+2. 按 provider/tool 分组。
+   - 减少重复设置，并方便估算成本。
+   - 检查凭证和预算前，不调用 provider。
+
+3. 成本或审美风险高时先做样片。
+   - 语音样片。
+   - 一张代表性图片/一段代表性视频。
+   - 音乐氛围样片。
+   如果被拒绝，先调整，再批量制作。
+
+4. 生成或收集素材。
+   每个素材记录：
+   - 场景 ID。
+   - 素材类型。
+   - Provider 或来源。
+   - 提示词、查询词或采集方法。
+   - 授权/使用说明。
+   - 成本。
+   - 状态：draft、approved、rejected、replaced。
+   - 存储引用或 docID。
+   - 质量说明。
+
+5. 准备审核包。
+   - Contact sheet 或缩略图列表。
+   - 场景到素材映射。
+   - 如有，被拒绝/替换的素材。
+   - 成本快照。
+
+6. 配置要求时停在素材审核。
+   坏素材应该在剪辑渲染前发现，而不是最终成片后发现。
+
+## 质量标准
+
+- 每个场景都有所需素材，或有明确记录的兜底方案。
+- 每个生成素材都有来源记录。
+- 成本和不可用工具可见。
+- 人类不用打开原始 provider 日志也能快速审核。
 
 输出字段：
 - asset_manifest_doc_id
@@ -920,25 +1468,101 @@ func videoToolSelectionSkill(locale string) string {
 
 Choose tools by production need, not novelty.
 
-Evaluate:
-- Quality fit.
+## Decision Criteria
+
+Evaluate every tool choice by:
+- Output quality fit for this brief.
 - Credential availability.
 - Cost and budget.
 - Latency.
-- Failure fallback.
-- Whether user approval is required before paid generation.
+- Reliability.
+- Data/privacy implications.
+- Whether paid generation needs explicit approval.
+- Fallback path if it fails.
+
+## Process
+
+1. List required capabilities.
+   Example: web research, image generation, TTS, video generation, captions, storage, render validation.
+
+2. Check available connections and credentials.
+   - If not configured, say what is missing in product language.
+   - Do not expose raw environment variable names to non-technical users unless in technical logs.
+
+3. Pick the simplest viable path.
+   - Text/diagram/card video may not need video generation.
+   - A product walkthrough may need screen capture more than AI video.
+   - A social ad may need stronger TTS/music/visual provider.
+
+4. Create a fallback path.
+   - If video generation fails, can still images + motion graphics work?
+   - If TTS is missing, can script-only package be delivered?
+   - If web search is missing, which docIDs must the user provide?
+
+5. Ask before consequential changes.
+   - Provider switch that changes quality, cost, or style.
+   - Any paid batch generation.
+   - Dropping promised asset types.
+
+## Output
+
+Write a tool plan doc containing:
+- selected path
+- required credentials
+- missing connections
+- estimated cost or effort
+- fallback path
+- decisions requiring approval
 
 Output a tool plan with explicit chosen path and fallback path.`, `# Skill: 工具选择
 
 按制作需求选择工具，不按新鲜感选择。
 
-评估：
-- 质量匹配。
-- 凭证可用性。
+## 决策标准
+
+每个工具选择都按以下维度评估：
+- 输出质量是否适合这个 brief。
+- 凭证是否可用。
 - 成本和预算。
 - 延迟。
-- 失败兜底路径。
-- 付费生成前是否需要用户审核。
+- 稳定性。
+- 数据/隐私影响。
+- 付费生成是否需要明确审核。
+- 失败后的兜底路径。
+
+## 流程
+
+1. 列出所需能力。
+   例如：网页调研、图片生成、TTS、视频生成、字幕、存储、渲染校验。
+
+2. 检查已有连接和凭证。
+   - 未配置时，用产品语言说明缺什么。
+   - 除非在技术日志中，否则不要向非技术用户暴露原始环境变量名。
+
+3. 选择最简单可行路径。
+   - 文本/图解/卡片视频未必需要视频生成。
+   - 产品演示可能更需要屏幕采集，而不是 AI 视频。
+   - 社交广告可能更依赖强 TTS、音乐和视觉 provider。
+
+4. 创建兜底路径。
+   - 视频生成失败时，静帧 + 动效是否可行？
+   - TTS 缺失时，是否能先交付脚本包？
+   - 网页搜索缺失时，需要用户提供哪些 docID？
+
+5. 关键变化前要求审核。
+   - 会改变质量、成本或风格的 provider 切换。
+   - 任何付费批量生成。
+   - 放弃已承诺的素材类型。
+
+## 输出
+
+工具方案文档包含：
+- 已选路径。
+- 所需凭证。
+- 缺失连接。
+- 预计成本或工作量。
+- 兜底路径。
+- 需要审核的决策。
 
 输出明确的工具方案，包含主路径和兜底路径。`)
 }
@@ -948,14 +1572,68 @@ func videoEditPlanSkill(locale string) string {
 
 Create a timeline from approved script, storyboard, and assets.
 
-Include:
-- Cut list.
-- Asset mapping.
-- Caption style and placement.
-- Music/SFX plan.
-- Audio ducking notes.
-- Render settings.
-- Validation plan.
+## Inputs
+
+Required:
+- script_doc_id
+- storyboard_doc_id
+- asset_manifest_doc_id
+
+Optional:
+- brand_context_doc_id
+- asset review comments
+- platform requirements
+
+## Process
+
+1. Load approved artifacts.
+   - Do not use rejected assets.
+   - Do not silently change approved script, storyboard, or concept.
+
+2. Build the timeline.
+   For every scene define:
+   - in/out time.
+   - primary visual asset.
+   - narration or silence.
+   - captions.
+   - overlays.
+   - transition in/out.
+   - music/SFX cue.
+
+3. Check pacing.
+   - Opening should establish value quickly.
+   - Dense sections need visual breathing room.
+   - Captions should not compete with important visual text.
+   - No scene should stay static longer than the channel can tolerate.
+
+4. Plan audio.
+   - Narration track.
+   - Music mood and volume.
+   - Ducking rules.
+   - Sound effects.
+   - Silence moments.
+
+5. Plan captions.
+   - Style.
+   - Placement.
+   - Safe area.
+   - Whether captions are burned in or delivered separately.
+   - Words that must not be split awkwardly.
+
+6. Create render plan.
+   - Aspect ratio.
+   - Resolution.
+   - FPS.
+   - Codec/container.
+   - Output variants.
+   - Validation checks to run after render.
+
+## Quality Bar
+
+- The edit plan can be executed without guessing.
+- Every asset is mapped to a scene or explicitly unused.
+- Captions, music, and overlays are planned before rendering.
+- Render validation criteria are defined before rendering.
 
 Output fields:
 - edit_decisions_doc_id
@@ -963,14 +1641,68 @@ Output fields:
 
 基于已审核脚本、分镜和素材创建时间线。
 
-包含：
-- 剪辑列表。
-- 素材映射。
-- 字幕样式和位置。
-- 音乐/音效方案。
-- 音频压低说明。
-- 渲染设置。
-- 校验方案。
+## 输入
+
+必需：
+- script_doc_id
+- storyboard_doc_id
+- asset_manifest_doc_id
+
+可选：
+- brand_context_doc_id
+- 素材审核意见
+- 平台要求
+
+## 流程
+
+1. 加载已审核产物。
+   - 不使用被拒绝素材。
+   - 不静默改变已审核脚本、分镜或创意。
+
+2. 构建时间线。
+   每个场景定义：
+   - 入点/出点。
+   - 主视觉素材。
+   - 旁白或静音。
+   - 字幕。
+   - 覆盖文字。
+   - 进出转场。
+   - 音乐/音效提示。
+
+3. 检查节奏。
+   - 开场应快速建立价值。
+   - 高密度段落需要视觉呼吸。
+   - 字幕不能和关键画面文字打架。
+   - 没有场景应静止超过渠道可接受范围。
+
+4. 规划音频。
+   - 旁白轨。
+   - 音乐氛围和音量。
+   - 压低规则。
+   - 音效。
+   - 静音时刻。
+
+5. 规划字幕。
+   - 样式。
+   - 位置。
+   - 安全区。
+   - 烧录字幕还是单独交付。
+   - 哪些词不能被拆得很奇怪。
+
+6. 创建渲染方案。
+   - 画幅。
+   - 分辨率。
+   - FPS。
+   - 编码/容器。
+   - 输出变体。
+   - 渲染后的校验检查。
+
+## 质量标准
+
+- 剪辑方案不需要猜测就能执行。
+- 每个素材都映射到场景，或明确未使用。
+- 渲染前规划好字幕、音乐和覆盖文字。
+- 渲染前定义好校验标准。
 
 输出字段：
 - edit_decisions_doc_id
@@ -982,15 +1714,58 @@ func videoRenderQASkill(locale string) string {
 
 Validate the rendered output.
 
-Check:
-- Duration and frame rate.
-- Resolution and aspect ratio.
-- Audio levels and silence.
-- Subtitle timing and readability.
-- Text safe area.
-- Visual defects.
-- Claim and brand consistency.
-- Delivery promise from the brief.
+## Process
+
+1. Technical validation.
+   - File exists and can be opened.
+   - Duration matches target tolerance.
+   - FPS and resolution match render plan.
+   - Aspect ratio matches channel.
+   - Codec/container are acceptable.
+   - No obvious blank frames, corrupt frames, or frozen sections.
+
+2. Audio validation.
+   - Narration is audible.
+   - Music does not overpower speech.
+   - No unexpected silence.
+   - No clipping or harsh level jumps.
+   - Voice matches approved direction.
+
+3. Caption validation.
+   - Captions sync with narration.
+   - Captions stay inside safe area.
+   - Caption length is readable.
+   - Captions do not cover important UI, faces, or product details.
+
+4. Visual validation.
+   - Scene order matches edit plan.
+   - Text is readable on mobile-sized viewport.
+   - Visual style remains consistent.
+   - No generated asset breaks brand or factual meaning.
+   - No watermarks, accidental UI, or provider artifacts.
+
+5. Content validation.
+   - Claims match claim_check_doc_id.
+   - The video delivers the brief promise.
+   - CTA and platform copy do not overpromise.
+
+6. Decision.
+   - pass: ready for publish package.
+   - request_changes: return to edit plan with specific fixes.
+   - stop: fundamental mismatch or unsafe content.
+
+## Report Format
+
+Write a QA doc with:
+- technical checks
+- audio checks
+- caption checks
+- visual checks
+- content checks
+- screenshots or refs when useful
+- decision
+- blocking issues
+- polish suggestions
 
 Output fields:
 - render_report_doc_id
@@ -1000,15 +1775,58 @@ Output fields:
 
 校验渲染输出。
 
-检查：
-- 时长和帧率。
-- 分辨率和画幅。
-- 音量和静音。
-- 字幕时序和可读性。
-- 文字安全区。
-- 画面缺陷。
-- 事实和品牌一致性。
-- brief 中的交付承诺。
+## 流程
+
+1. 技术校验。
+   - 文件存在且能打开。
+   - 时长符合目标容差。
+   - FPS 和分辨率符合渲染方案。
+   - 画幅符合渠道。
+   - 编码/容器可接受。
+   - 没有明显空白帧、损坏帧或卡住片段。
+
+2. 音频校验。
+   - 旁白可听清。
+   - 音乐没有压过人声。
+   - 没有意外静音。
+   - 没有爆音或突兀音量跳变。
+   - 人声符合已审核方向。
+
+3. 字幕校验。
+   - 字幕和旁白同步。
+   - 字幕在安全区内。
+   - 字幕长度可读。
+   - 字幕不遮挡重要 UI、人物脸部或产品细节。
+
+4. 视觉校验。
+   - 场景顺序符合剪辑方案。
+   - 文字在手机尺寸也可读。
+   - 视觉风格保持一致。
+   - 没有生成素材破坏品牌或事实含义。
+   - 没有水印、意外 UI 或 provider 痕迹。
+
+5. 内容校验。
+   - 事实陈述匹配 claim_check_doc_id。
+   - 视频兑现 brief 的承诺。
+   - CTA 和平台文案不过度承诺。
+
+6. 决策。
+   - pass：进入发布包。
+   - request_changes：带具体修复项回到剪辑方案。
+   - stop：存在根本性不匹配或不安全内容。
+
+## 报告格式
+
+QA 文档包含：
+- 技术检查。
+- 音频检查。
+- 字幕检查。
+- 视觉检查。
+- 内容检查。
+- 必要时附截图或引用。
+- 决策。
+- 阻塞问题。
+- 打磨建议。
 
 输出字段：
 - render_report_doc_id
@@ -1020,25 +1838,93 @@ Output fields:
 func videoCheckpointSkill(locale string) string {
 	return text(locale, `# Skill: Production Checkpoint
 
-After each stage, write down:
-- Stage status.
-- Produced docIDs or artifact refs.
-- Human decision if any.
-- Cost snapshot.
-- Known risks.
-- Next step.
+Use checkpoints so another agent or human can resume without reading the full chat.
 
-Checkpoints allow another agent or human to resume without reading the whole conversation.`, `# Skill: 制作检查点
+## When to Write
 
-每个阶段后记录：
-- 阶段状态。
-- 产出的 docID 或 artifact 引用。
-- 如有，记录人工决策。
-- 成本快照。
+Write a checkpoint after every workflow step:
+- agent output completed
+- human approval received
+- human requested changes
+- provider/tool failure
+- production path changed
+- cost or scope changed
+
+## Minimum Checkpoint
+
+Each checkpoint should include:
+- workflow step ID and title
+- status: in_progress, awaiting_review, approved, request_changes, failed, skipped, completed
+- input docIDs/artifact refs
+- output docIDs/artifact refs
+- human decision if any
+- cost snapshot if generation happened
+- provider/tool choices if relevant
+- known risks
+- next step
+
+## Versioning
+
+When a stage is revised:
+- Do not overwrite the prior decision in the narrative.
+- Record the new version.
+- Link back to the previous docID or artifact.
+- Include what changed and why.
+
+## Handoff Discipline
+
+A checkpoint is good when a different agent can answer:
+- What am I supposed to do next?
+- What has already been approved?
+- What must not be changed?
+- Which docs/assets should I read?
+- What risks remain?
+
+Checkpoints are part of the production artifact, not private scratch notes.`, `# Skill: 制作检查点
+
+使用检查点，让另一个 Agent 或人类不需要阅读完整聊天也能接手。
+
+## 什么时候写
+
+每个流程节点后都写 checkpoint：
+- Agent 输出完成。
+- 收到人工审核通过。
+- 人工要求修改。
+- provider/tool 失败。
+- 制作路径改变。
+- 成本或范围改变。
+
+## 最小检查点
+
+每个 checkpoint 包含：
+- workflow step ID 和标题。
+- 状态：in_progress、awaiting_review、approved、request_changes、failed、skipped、completed。
+- 输入 docID/artifact 引用。
+- 输出 docID/artifact 引用。
+- 如有，人工决策。
+- 如发生生成，记录成本快照。
+- 如相关，记录 provider/tool 选择。
 - 已知风险。
 - 下一步。
 
-检查点让另一个 Agent 或人类不需要阅读完整对话也能接手。`)
+## 版本
+
+当阶段被修改：
+- 不要覆盖原来的决策叙述。
+- 记录新版本。
+- 链接前一个 docID 或 artifact。
+- 说明改了什么以及为什么改。
+
+## 交接纪律
+
+好的 checkpoint 应该让另一个 Agent 能回答：
+- 我下一步应该做什么？
+- 哪些已经审核通过？
+- 哪些不能改？
+- 我应该读哪些文档/素材？
+- 还有哪些风险？
+
+Checkpoint 是制作产物的一部分，不是私人草稿。`)
 }
 
 func videoProductionReviewSkill(locale string) string {
@@ -1046,10 +1932,52 @@ func videoProductionReviewSkill(locale string) string {
 
 Review the output against approved artifacts.
 
-Separate:
-- Critical blockers: cannot publish/use.
-- Required changes: should fix before delivery.
-- Polish suggestions: useful but not blocking.
+## Review Inputs
+
+Read:
+- brief_doc_id
+- proposal_doc_id
+- script_doc_id
+- storyboard_doc_id
+- asset_manifest_doc_id
+- render_ref
+- render_report_doc_id
+
+## Review Method
+
+1. Brief fit.
+   - Does the video solve the original communication goal?
+   - Is the target audience still clear?
+   - Does the output match channel, duration, and format?
+
+2. Message quality.
+   - Is the hook strong?
+   - Is the core message clear after one watch?
+   - Are claims accurate and supported?
+   - Is the CTA safe and specific?
+
+3. Creative quality.
+   - Does the video have a coherent taste direction?
+   - Are visuals doing real work, not just decoration?
+   - Are pacing, captions, voice, and music aligned?
+   - Does it avoid obvious AI slop?
+
+4. Production quality.
+   - Technical render checks passed.
+   - Audio and captions are usable.
+   - No brand, legal, or platform blockers.
+
+5. Decision.
+   Separate issues into:
+   - Critical blockers: cannot publish/use.
+   - Required changes: should fix before delivery.
+   - Polish suggestions: useful but not blocking.
+
+## Decision Rules
+
+- pass: no critical blockers, required changes are either resolved or explicitly accepted.
+- request_changes: fixable issues remain.
+- stop: concept is fundamentally wrong, unsafe, or no longer worth continuing.
 
 Return one decision:
 - pass
@@ -1058,10 +1986,52 @@ Return one decision:
 
 按已审核产物审核输出。
 
-区分：
-- Critical blockers：不能发布/不能使用。
-- Required changes：交付前应该修。
-- Polish suggestions：有用但不阻塞。
+## 审核输入
+
+阅读：
+- brief_doc_id
+- proposal_doc_id
+- script_doc_id
+- storyboard_doc_id
+- asset_manifest_doc_id
+- render_ref
+- render_report_doc_id
+
+## 审核方法
+
+1. Brief 匹配。
+   - 视频是否解决原始沟通目标？
+   - 目标受众是否仍然清楚？
+   - 输出是否符合渠道、时长和格式？
+
+2. 信息质量。
+   - 开场钩子是否有效？
+   - 看一遍后核心信息是否清楚？
+   - 事实陈述是否准确且有依据？
+   - CTA 是否安全且具体？
+
+3. 创意质量。
+   - 视频是否有一致的审美方向？
+   - 视觉是否真的承担信息，而不是纯装饰？
+   - 节奏、字幕、人声、音乐是否一致？
+   - 是否避免明显 AI 味和粗糙感？
+
+4. 制作质量。
+   - 技术渲染检查通过。
+   - 音频和字幕可用。
+   - 没有品牌、法务或平台阻塞。
+
+5. 决策。
+   把问题分成：
+   - Critical blockers：不能发布/不能使用。
+   - Required changes：交付前应该修。
+   - Polish suggestions：有用但不阻塞。
+
+## 决策规则
+
+- pass：没有 critical blocker，required changes 已解决或被明确接受。
+- request_changes：仍有可修复问题。
+- stop：创意根本不对、不安全，或不值得继续。
 
 返回一个决策：
 - pass
