@@ -206,13 +206,13 @@ export function AppShell() {
   useEffect(() => {
     let cancelled = false
     const loadWorkspaceScope = () => {
-      apiFetch<{ id?: string; name?: string }>('/api/v1/workspace')
+      apiFetch<{ id?: string; name?: string; projects?: number }>('/api/v1/workspace')
       .then((d) => {
         if (!cancelled) {
           const scope = d.id || d.name || 'default'
           setWorkspaceScope(scope)
           setWorkspaceName(d.name || '')
-          if (d.name === 'Example Workspace' && !hasSeenProductTour(scope)) {
+          if (d.name === 'Example Workspace' && (d.projects ?? 0) <= 1 && !hasSeenProductTour(scope)) {
             window.setTimeout(() => setTourOpen(true), 500)
           }
         }

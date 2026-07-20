@@ -180,6 +180,20 @@ export default function ProductTour({ workspaceId, example = false, open, onClos
         placement: 'bottom',
       },
       {
+        title: t('productTour.steps.agentModelConfig.title'),
+        body: t('productTour.steps.agentModelConfig.body'),
+        path: '/projects/hello-world-relay/members/greeter-agent',
+        selector: '[data-tour-agent-model-config]',
+        placement: 'bottom',
+      },
+      {
+        title: t('productTour.steps.agentWakeupPrompt.title'),
+        body: t('productTour.steps.agentWakeupPrompt.body'),
+        path: '/projects/hello-world-relay/members/greeter-agent',
+        selector: '[data-tour-agent-wakeup-prompt]',
+        placement: 'bottom',
+      },
+      {
         title: t('productTour.steps.workflow.title'),
         body: t('productTour.steps.workflow.body'),
         path: '/workflows',

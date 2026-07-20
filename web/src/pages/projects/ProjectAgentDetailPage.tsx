@@ -574,7 +574,7 @@ export default function ProjectAgentDetailPage() {
           return (
             <div className="space-y-8">
               {canConfigureThisAgent && (
-                <section>
+                <section data-tour-agent-model-config>
                   <SectionHeader icon={Settings2} title={t('agentDetail.modelCredentials')} />
                   <p className="mt-1 text-sm text-neutral-500 dark:text-zinc-500">{t('agentDetail.modelCredentialsHint')}</p>
                   <ModelCredentialsPanel
@@ -586,7 +586,7 @@ export default function ProjectAgentDetailPage() {
                 </section>
               )}
 
-              <section>
+              <section data-tour-agent-wakeup-prompt>
                 <SectionHeader icon={Activity} title={t('agentDetail.connectAndChat')} />
                 <p className="mt-1 text-sm text-neutral-500 dark:text-zinc-500">{t('agentDetail.connectAndChatHint')}</p>
                 <div className="mt-3 space-y-4">

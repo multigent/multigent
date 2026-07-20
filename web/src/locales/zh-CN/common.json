@@ -1859,79 +1859,87 @@
         "title": "模型账号区域",
         "body": "这里用于添加可复用的模型账号。后续 Agent 只需要选择账号，不需要直接接触 API Key 或环境变量。"
       },
-    "addModelAccount": {
-      "title": "新增模型账号",
-      "body": "点击这里添加第一个模型厂商账号。先选择 CLI 类型，再填写官方 API Key，或填写第三方网关的地址和 Key。"
+      "addModelAccount": {
+        "title": "新增模型账号",
+        "body": "点击这里添加第一个模型厂商账号。先选择 CLI 类型，再填写官方 API Key，或填写第三方网关的地址和 Key。"
+      },
+      "teamCreate": {
+        "title": "也可以新建自己的团队",
+        "body": "这里可以从团队模板创建，也可以空白创建。团队定义的是角色和行为规范，不是具体项目。"
+      },
+      "exampleTeam": {
+        "title": "进入示例团队",
+        "body": "示例团队已经准备好三个中性角色，用来演示 Agent 之间如何接力，以及人类如何介入审核。"
+      },
+      "teamRoles": {
+        "title": "角色决定 Agent 的默认行为",
+        "body": "角色 prompt、默认 Skill 和团队规范会沉淀成 Agent 的基础上下文。真正上线前，管理员需要把这些内容调到符合团队习惯。"
+      },
+      "projects": {
+        "title": "项目把人和 Agent 放到同一个执行场景",
+        "body": "团队提供角色能力，项目负责把具体的人、Agent、任务和流程组织起来。"
+      },
+      "projectCreate": {
+        "title": "创建真实项目",
+        "body": "这里创建项目时不需要填写本地路径。Multigent 会在工作区内部管理运行目录和隔离环境。"
+      },
+      "exampleProject": {
+        "title": "进入 Hello World 接力项目",
+        "body": "这个项目没有绑定研发、销售或运营场景，只演示最小协作闭环：发起、审核、接力、记录。"
+      },
+      "projectMembers": {
+        "title": "项目成员包含人和 Agent",
+        "body": "同一个项目里可以有真实用户，也可以有 Agent。流程节点会把任务流转给具体负责人。"
+      },
+      "addAgent": {
+        "title": "添加成员或 Agent",
+        "body": "真实使用时，在这里添加项目成员。添加 Agent 后，需要配置 CLI 类型、模型和模型账号。"
+      },
+      "exampleAgent": {
+        "title": "查看示例 Agent",
+        "body": "示例 Agent 已经绑定角色和流程节点。你只需要给它配置可用模型账号，就可以开始测试。"
+      },
+      "workflowCreate": {
+        "title": "创建可复用流程",
+        "body": "流程属于工作区，可以被多个项目复用。它定义每一步的执行人、输入、输出和打回路径。"
+      },
+      "exampleWorkflow": {
+        "title": "进入示例流程",
+        "body": "这个流程包含 Agent 节点、人类审核节点和打回循环，用来验证人和 Agent 之间是否能按结构化产物流转。"
+      },
+      "workflowBoard": {
+        "title": "白板是流程的控制面",
+        "body": "节点代表协作步骤，连线代表可走的流转路径。节点输出会作为下游输入，docID 用来指向知识库文档。"
+      },
+      "taskCreate": {
+        "title": "创建或运行流程任务",
+        "body": "任务是真正运行的对象。创建任务时选择流程，再指定每个节点的人或 Agent，后续系统会根据节点流转推进。"
+      },
+      "scheduleControl": {
+        "title": "调度器是自动执行入口",
+        "body": "这里启动项目调度器。开启后，Agent 会按任务、心跳和定时计划被唤醒，而不是等人一直手动调用。"
+      },
+      "runtimeSchedule": {
+        "title": "配置 Agent 的触发方式",
+        "body": "每个 Agent 可以设置有任务时触发、心跳间隔和手动唤醒。上线前要确保模型账号和工具权限都已配置好。"
+      },
+      "docsAdd": {
+        "title": "新增知识库文档",
+        "body": "重要上下文和阶段产物应该进入知识库。流程输出里引用 docID，后续 Agent 就能稳定查到同一份资料。"
+      },
+      "finish": {
+        "title": "你已经走完最小协作闭环",
+        "body": "接下来可以配置一个模型账号，绑定到示例 Agent，创建一条测试任务，然后观察任务如何在 Agent 和人之间流转。"
+      },
+      "agentModelConfig": {
+        "title": "配置模型与凭证",
+        "body": "进入 Agent 详情页后，先在这里选择 CLI 类型、运行模型和模型账号。没有模型账号时，先回到设置页添加一个可复用账号。"
+      },
+      "agentWakeupPrompt": {
+        "title": "设置 Wakeup Prompt",
+        "body": "Wakeup Prompt 是 Agent 被调度器唤醒时的默认例程。示例里已经写了一个模板：先查任务和流程节点，再读取输入，最后按流程要求提交结构化输出。"
+      }
     },
-    "teamCreate": {
-      "title": "也可以新建自己的团队",
-      "body": "这里可以从团队模板创建，也可以空白创建。团队定义的是角色和行为规范，不是具体项目。"
-    },
-    "exampleTeam": {
-      "title": "进入示例团队",
-      "body": "示例团队已经准备好三个中性角色，用来演示 Agent 之间如何接力，以及人类如何介入审核。"
-    },
-    "teamRoles": {
-      "title": "角色决定 Agent 的默认行为",
-      "body": "角色 prompt、默认 Skill 和团队规范会沉淀成 Agent 的基础上下文。真正上线前，管理员需要把这些内容调到符合团队习惯。"
-    },
-    "projects": {
-      "title": "项目把人和 Agent 放到同一个执行场景",
-      "body": "团队提供角色能力，项目负责把具体的人、Agent、任务和流程组织起来。"
-    },
-    "projectCreate": {
-      "title": "创建真实项目",
-      "body": "这里创建项目时不需要填写本地路径。Multigent 会在工作区内部管理运行目录和隔离环境。"
-    },
-    "exampleProject": {
-      "title": "进入 Hello World 接力项目",
-      "body": "这个项目没有绑定研发、销售或运营场景，只演示最小协作闭环：发起、审核、接力、记录。"
-    },
-    "projectMembers": {
-      "title": "项目成员包含人和 Agent",
-      "body": "同一个项目里可以有真实用户，也可以有 Agent。流程节点会把任务流转给具体负责人。"
-    },
-    "addAgent": {
-      "title": "添加成员或 Agent",
-      "body": "真实使用时，在这里添加项目成员。添加 Agent 后，需要配置 CLI 类型、模型和模型账号。"
-    },
-    "exampleAgent": {
-      "title": "查看示例 Agent",
-      "body": "示例 Agent 已经绑定角色和流程节点。你只需要给它配置可用模型账号，就可以开始测试。"
-    },
-    "workflowCreate": {
-      "title": "创建可复用流程",
-      "body": "流程属于工作区，可以被多个项目复用。它定义每一步的执行人、输入、输出和打回路径。"
-    },
-    "exampleWorkflow": {
-      "title": "进入示例流程",
-      "body": "这个流程包含 Agent 节点、人类审核节点和打回循环，用来验证人和 Agent 之间是否能按结构化产物流转。"
-    },
-    "workflowBoard": {
-      "title": "白板是流程的控制面",
-      "body": "节点代表协作步骤，连线代表可走的流转路径。节点输出会作为下游输入，docID 用来指向知识库文档。"
-    },
-    "taskCreate": {
-      "title": "创建或运行流程任务",
-      "body": "任务是真正运行的对象。创建任务时选择流程，再指定每个节点的人或 Agent，后续系统会根据节点流转推进。"
-    },
-    "scheduleControl": {
-      "title": "调度器是自动执行入口",
-      "body": "这里启动项目调度器。开启后，Agent 会按任务、心跳和定时计划被唤醒，而不是等人一直手动调用。"
-    },
-    "runtimeSchedule": {
-      "title": "配置 Agent 的触发方式",
-      "body": "每个 Agent 可以设置有任务时触发、心跳间隔和手动唤醒。上线前要确保模型账号和工具权限都已配置好。"
-    },
-    "docsAdd": {
-      "title": "新增知识库文档",
-      "body": "重要上下文和阶段产物应该进入知识库。流程输出里引用 docID，后续 Agent 就能稳定查到同一份资料。"
-    },
-    "finish": {
-      "title": "你已经走完最小协作闭环",
-      "body": "接下来可以配置一个模型账号，绑定到示例 Agent，创建一条测试任务，然后观察任务如何在 Agent 和人之间流转。"
-    }
-  },
     "blankSteps": {
       "welcome": {
         "title": "欢迎使用 Multigent",

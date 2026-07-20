@@ -1859,79 +1859,87 @@
         "title": "Model account area",
         "body": "This section is where workspace admins add reusable model accounts. Agents later select one of these accounts instead of handling API keys directly."
       },
-    "addModelAccount": {
-      "title": "Add a model account",
-      "body": "Use this button to add the first model provider account. Choose the CLI family first, then enter the official API key or a third-party gateway endpoint and key."
+      "addModelAccount": {
+        "title": "Add a model account",
+        "body": "Use this button to add the first model provider account. Choose the CLI family first, then enter the official API key or a third-party gateway endpoint and key."
+      },
+      "teamCreate": {
+        "title": "Create your own team too",
+        "body": "Create from a team template or start blank. A team defines reusable roles and behavior standards, not a specific project."
+      },
+      "exampleTeam": {
+        "title": "Open the example team",
+        "body": "The example team already includes three neutral roles that show how agents relay work and where humans review the output."
+      },
+      "teamRoles": {
+        "title": "Roles shape default agent behavior",
+        "body": "Role prompts, default skills, and team standards become the agent's baseline context. Before production use, tune these until they match how your team actually works."
+      },
+      "projects": {
+        "title": "Projects bring people and agents into one execution context",
+        "body": "Teams provide role capabilities. Projects assemble the actual people, agents, tasks, and workflows needed to get work done."
+      },
+      "projectCreate": {
+        "title": "Create real projects",
+        "body": "Project creation does not ask for local paths. Multigent manages runtime directories and isolation inside the workspace."
+      },
+      "exampleProject": {
+        "title": "Open the Hello World relay project",
+        "body": "This project is not tied to engineering, sales, or operations. It only demonstrates the smallest collaboration loop: start, review, relay, and record."
+      },
+      "projectMembers": {
+        "title": "Project members can be humans or agents",
+        "body": "A project can contain real users and agents. Workflow steps route work to the responsible person or agent."
+      },
+      "addAgent": {
+        "title": "Add members or agents",
+        "body": "In real work, add project members here. After adding an agent, configure its CLI type, model, and model account."
+      },
+      "exampleAgent": {
+        "title": "Inspect the example agent",
+        "body": "The example agent is already attached to a role and workflow step. Configure a usable model account and it is ready to test."
+      },
+      "workflowCreate": {
+        "title": "Create reusable workflows",
+        "body": "Workflows belong to the workspace and can be reused by multiple projects. They define actors, inputs, outputs, and return paths."
+      },
+      "exampleWorkflow": {
+        "title": "Open the example workflow",
+        "body": "This workflow includes agent steps, a human review step, and a return loop so you can verify structured handoffs between humans and agents."
+      },
+      "workflowBoard": {
+        "title": "The board is the workflow control surface",
+        "body": "Nodes are collaboration steps and edges are allowed transitions. Step outputs become downstream inputs, and docIDs point to knowledge base documents."
+      },
+      "taskCreate": {
+        "title": "Create or run workflow tasks",
+        "body": "Tasks are the running work items. Choose a workflow when creating a task, assign each step to a person or agent, and Multigent routes the work through the graph."
+      },
+      "scheduleControl": {
+        "title": "The scheduler starts automatic execution",
+        "body": "Start the project scheduler here. Once enabled, agents wake from tasks, heartbeats, and schedules instead of waiting for manual calls."
+      },
+      "runtimeSchedule": {
+        "title": "Configure how each agent is triggered",
+        "body": "Each agent can run when tasks arrive, on a heartbeat, or through manual wakeup. Before production use, make sure its model account and tool permissions are configured."
+      },
+      "docsAdd": {
+        "title": "Add knowledge base documents",
+        "body": "Important context and step artifacts should live in the knowledge base. Workflow outputs reference docIDs so later agents can read the same source."
+      },
+      "finish": {
+        "title": "You have seen the smallest collaboration loop",
+        "body": "Next, configure one model account, attach it to the example agents, create a test task, and watch the task move between agents and humans."
+      },
+      "agentModelConfig": {
+        "title": "Configure model and credentials",
+        "body": "On the agent detail page, start here: choose the CLI type, runtime model, and model account. If no account exists, add a reusable model account in Settings first."
+      },
+      "agentWakeupPrompt": {
+        "title": "Set the wakeup prompt",
+        "body": "The wakeup prompt is the default routine used when the scheduler wakes this agent. The example includes a template: check tasks and workflow step, read inputs, then submit structured outputs."
+      }
     },
-    "teamCreate": {
-      "title": "Create your own team too",
-      "body": "Create from a team template or start blank. A team defines reusable roles and behavior standards, not a specific project."
-    },
-    "exampleTeam": {
-      "title": "Open the example team",
-      "body": "The example team already includes three neutral roles that show how agents relay work and where humans review the output."
-    },
-    "teamRoles": {
-      "title": "Roles shape default agent behavior",
-      "body": "Role prompts, default skills, and team standards become the agent's baseline context. Before production use, tune these until they match how your team actually works."
-    },
-    "projects": {
-      "title": "Projects bring people and agents into one execution context",
-      "body": "Teams provide role capabilities. Projects assemble the actual people, agents, tasks, and workflows needed to get work done."
-    },
-    "projectCreate": {
-      "title": "Create real projects",
-      "body": "Project creation does not ask for local paths. Multigent manages runtime directories and isolation inside the workspace."
-    },
-    "exampleProject": {
-      "title": "Open the Hello World relay project",
-      "body": "This project is not tied to engineering, sales, or operations. It only demonstrates the smallest collaboration loop: start, review, relay, and record."
-    },
-    "projectMembers": {
-      "title": "Project members can be humans or agents",
-      "body": "A project can contain real users and agents. Workflow steps route work to the responsible person or agent."
-    },
-    "addAgent": {
-      "title": "Add members or agents",
-      "body": "In real work, add project members here. After adding an agent, configure its CLI type, model, and model account."
-    },
-    "exampleAgent": {
-      "title": "Inspect the example agent",
-      "body": "The example agent is already attached to a role and workflow step. Configure a usable model account and it is ready to test."
-    },
-    "workflowCreate": {
-      "title": "Create reusable workflows",
-      "body": "Workflows belong to the workspace and can be reused by multiple projects. They define actors, inputs, outputs, and return paths."
-    },
-    "exampleWorkflow": {
-      "title": "Open the example workflow",
-      "body": "This workflow includes agent steps, a human review step, and a return loop so you can verify structured handoffs between humans and agents."
-    },
-    "workflowBoard": {
-      "title": "The board is the workflow control surface",
-      "body": "Nodes are collaboration steps and edges are allowed transitions. Step outputs become downstream inputs, and docIDs point to knowledge base documents."
-    },
-    "taskCreate": {
-      "title": "Create or run workflow tasks",
-      "body": "Tasks are the running work items. Choose a workflow when creating a task, assign each step to a person or agent, and Multigent routes the work through the graph."
-    },
-    "scheduleControl": {
-      "title": "The scheduler starts automatic execution",
-      "body": "Start the project scheduler here. Once enabled, agents wake from tasks, heartbeats, and schedules instead of waiting for manual calls."
-    },
-    "runtimeSchedule": {
-      "title": "Configure how each agent is triggered",
-      "body": "Each agent can run when tasks arrive, on a heartbeat, or through manual wakeup. Before production use, make sure its model account and tool permissions are configured."
-    },
-    "docsAdd": {
-      "title": "Add knowledge base documents",
-      "body": "Important context and step artifacts should live in the knowledge base. Workflow outputs reference docIDs so later agents can read the same source."
-    },
-    "finish": {
-      "title": "You have seen the smallest collaboration loop",
-      "body": "Next, configure one model account, attach it to the example agents, create a test task, and watch the task move between agents and humans."
-    }
-  },
     "blankSteps": {
       "welcome": {
         "title": "Welcome to Multigent",

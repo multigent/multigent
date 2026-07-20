@@ -150,6 +150,9 @@ func seedExampleWorkspace(root, workspaceID, username string, spec exampleLocale
 	if err := seedExampleDocs(root, username, spec); err != nil {
 		return fmt.Errorf("seed example docs: %w", err)
 	}
+	if err := seedExampleWakeupPrompts(st, spec); err != nil {
+		return fmt.Errorf("seed example wakeup prompts: %w", err)
+	}
 	if err := seedExampleSchedules(ts, spec); err != nil {
 		return fmt.Errorf("seed example schedules: %w", err)
 	}
@@ -348,9 +351,31 @@ The Schedule page also contains examples:
 
 Keep the output neutral and easy to inspect. Use docs for the required document outputs, then finish the current workflow step with structured output fields exactly as specified by the workflow context.`,
 		Schedules: exampleScheduleText{
-			GreeterWakeup:       "Check whether there is an active workflow task assigned to you. If there is one, continue exactly from the current workflow step and return structured outputs.",
-			ResponderWakeup:     "Check for workflow tasks or unread messages. Continue only when the upstream handoff is available.",
-			RecorderWakeup:      "Check for completed upstream relay outputs and record them as durable docs. Do not invent missing upstream context.",
+			GreeterWakeup: `# Wakeup Routine
+
+When you wake up:
+1. Check whether there is an active workflow task assigned to you.
+2. Read the current workflow step, required inputs, and expected output fields.
+3. If there is no task, do nothing except briefly report that the queue is empty.
+4. If there is a task, create the required docs, then finish the step with exactly the structured output fields requested by the workflow.
+
+Keep the relay neutral and easy to inspect.`,
+			ResponderWakeup: `# Wakeup Routine
+
+When you wake up:
+1. Check for workflow tasks or unread messages.
+2. Continue only when the upstream handoff is available.
+3. Read upstream docIDs before responding.
+4. Return the required structured outputs and do not invent missing context.`,
+			RecorderWakeup: `# Wakeup Routine
+
+When you wake up:
+1. Check for completed upstream relay outputs.
+2. Read the referenced docs and summarize what happened.
+3. Store final notes as workspace docs.
+4. Return docIDs in the workflow output fields.
+
+Call out where human intervention happened and whether it could be reduced next time.`,
 			DailyReviewTitle:    "Weekday demo queue review",
 			DailyReviewPrompt:   "Review the example project queue. Summarize pending workflow tasks and whether any human review is blocking progress.",
 			WeeklySummaryTitle:  "Friday relay summary",
@@ -474,9 +499,31 @@ func exampleZHSpec(traditional bool) exampleLocaleSpec {
 		TaskDesc:   "使用内置流程，让一个小任务从一个 Agent 流转到另一个 Agent，中间经过人类审核。",
 		TaskPrompt: "运行 Hello World 协作接力。\n\n保持输出中性、简短、方便检查。必要文档写入知识库，并按当前流程节点要求提交结构化输出字段。",
 		Schedules: exampleScheduleText{
-			GreeterWakeup:       "检查是否有分配给你的活动流程任务。有的话，严格从当前流程节点继续，并返回结构化输出。",
-			ResponderWakeup:     "检查是否有流程任务或未读消息。只有拿到上游交接内容时才继续。",
-			RecorderWakeup:      "检查是否已有上游接力输出，把过程整理成可长期保存的知识库文档。不要编造缺失上下文。",
+			GreeterWakeup: `# Wakeup Routine
+
+每次被唤醒时：
+1. 检查是否有分配给你的活动流程任务。
+2. 读取当前流程节点、必需输入和期望输出字段。
+3. 如果没有任务，只需要简短说明队列为空。
+4. 如果有任务，先创建必需文档，再严格按流程要求提交结构化输出字段。
+
+保持接力内容中性、简短、方便检查。`,
+			ResponderWakeup: `# Wakeup Routine
+
+每次被唤醒时：
+1. 检查是否有流程任务或未读消息。
+2. 只有拿到上游交接内容时才继续。
+3. 先读取上游 docID 对应的文档，再开始回应。
+4. 返回流程要求的结构化输出，不要编造缺失上下文。`,
+			RecorderWakeup: `# Wakeup Routine
+
+每次被唤醒时：
+1. 检查是否已有上游接力输出。
+2. 读取引用的文档，总结发生了什么。
+3. 把最终记录写入工作区知识库。
+4. 在流程输出字段中返回 docID。
+
+需要指出人类在哪里介入，以及下次是否可以减少这类介入。`,
 			DailyReviewTitle:    "工作日演示队列回顾",
 			DailyReviewPrompt:   "回顾示例项目队列，简要总结待处理流程任务，以及是否有人类审核正在阻塞进展。",
 			WeeklySummaryTitle:  "周五接力总结",
@@ -628,13 +675,31 @@ func seedExampleDocs(root, username string, spec exampleLocaleSpec) error {
 	}, spec.DocBody, "hello-world-relay-guide.md")
 }
 
+func seedExampleWakeupPrompts(st store.Store, spec exampleLocaleSpec) error {
+	for agent, prompt := range map[string]string{
+		"greeter-agent":   spec.Schedules.GreeterWakeup,
+		"responder-agent": spec.Schedules.ResponderWakeup,
+		"recorder-agent":  spec.Schedules.RecorderWakeup,
+	} {
+		wakeupDir := filepath.Join(st.AgentDir(exampleProjectName, agent), ".multigent", "context")
+		if err := os.MkdirAll(wakeupDir, 0o755); err != nil {
+			return fmt.Errorf("create wakeup dir %s: %w", agent, err)
+		}
+		if err := os.WriteFile(filepath.Join(wakeupDir, "wakeup.md"), []byte(prompt), 0o644); err != nil {
+			return fmt.Errorf("write wakeup prompt %s: %w", agent, err)
+		}
+	}
+	return nil
+}
+
 func seedExampleSchedules(ts taskstore.Store, spec exampleLocaleSpec) error {
+	const wakeupFile = "@.multigent/context/wakeup.md"
 	heartbeats := map[string]*entity.HeartbeatConfig{
 		"greeter-agent": {
 			Enabled:          true,
 			Interval:         "30m",
 			WakeupPreset:     "require_tasks",
-			WakeupPrompt:     spec.Schedules.GreeterWakeup,
+			WakeupPrompt:     wakeupFile,
 			Triggers:         []entity.TriggerType{entity.TriggerOnTask, entity.TriggerOnMessage},
 			TriggerDebounce:  "1m",
 			SessionScope:     entity.SessionScopeCycle,
@@ -645,7 +710,7 @@ func seedExampleSchedules(ts taskstore.Store, spec exampleLocaleSpec) error {
 			Enabled:          true,
 			Interval:         "1h",
 			WakeupPreset:     "require_any",
-			WakeupPrompt:     spec.Schedules.ResponderWakeup,
+			WakeupPrompt:     wakeupFile,
 			Triggers:         []entity.TriggerType{entity.TriggerOnTask, entity.TriggerOnMessage},
 			TriggerDebounce:  "2m",
 			SessionScope:     entity.SessionScopeCycle,
@@ -656,7 +721,7 @@ func seedExampleSchedules(ts taskstore.Store, spec exampleLocaleSpec) error {
 			Enabled:          true,
 			Interval:         "2h",
 			WakeupPreset:     "require_any",
-			WakeupPrompt:     spec.Schedules.RecorderWakeup,
+			WakeupPrompt:     wakeupFile,
 			Triggers:         []entity.TriggerType{entity.TriggerOnTask, entity.TriggerOnMessage},
 			TriggerDebounce:  "5m",
 			SessionScope:     entity.SessionScopeCycle,
