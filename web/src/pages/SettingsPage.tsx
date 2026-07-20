@@ -1067,13 +1067,13 @@ function ProvidersSection() {
   const fieldCls = 'w-full rounded-md border border-neutral-200/80 bg-neutral-50/50 px-3 py-2 text-sm outline-none transition-colors focus:border-sky-400 dark:border-zinc-700/60 dark:bg-zinc-800/50 dark:text-zinc-200 dark:[color-scheme:dark]'
 
   return (
-    <section id="model-accounts" className="scroll-mt-6 rounded-xl border border-neutral-200/80 bg-white p-5 dark:border-zinc-700/60 dark:bg-zinc-900/40">
+    <section id="model-accounts" data-tour-provider-section className="scroll-mt-6 rounded-xl border border-neutral-200/80 bg-white p-5 dark:border-zinc-700/60 dark:bg-zinc-900/40">
       <div className="flex items-center justify-between pb-3">
         <div className="flex items-center gap-2">
           <Server className="size-4 text-neutral-500 dark:text-zinc-500" strokeWidth={1.8} />
           <h3 className="text-base font-semibold text-neutral-900 dark:text-zinc-100">{t('provider.title')}</h3>
         </div>
-        <button type="button" onClick={openNew}
+        <button type="button" data-tour-provider-add onClick={openNew}
           className="flex items-center gap-1 rounded-lg bg-sky-600 px-3 py-1.5 text-xs font-medium text-white transition-colors hover:bg-sky-700">
           <Plus className="size-3.5" /> {t('provider.add')}
         </button>
@@ -1558,9 +1558,18 @@ export default function SettingsPage() {
 
   return (
     <div className="animate-fade-in px-8 py-6">
-      <div className="pb-5">
-        <h1 className="text-xl font-semibold text-neutral-900 dark:text-zinc-100">{t('settings.title')}</h1>
-        <p className="mt-0.5 text-sm text-neutral-500 dark:text-zinc-500">{t('settings.intro')}</p>
+      <div className="flex items-start justify-between gap-4 pb-5">
+        <div>
+          <h1 className="text-xl font-semibold text-neutral-900 dark:text-zinc-100">{t('settings.title')}</h1>
+          <p className="mt-0.5 text-sm text-neutral-500 dark:text-zinc-500">{t('settings.intro')}</p>
+        </div>
+        <button
+          type="button"
+          onClick={() => window.dispatchEvent(new Event('product-tour-start'))}
+          className="rounded-lg border border-neutral-200 bg-white px-3 py-2 text-sm font-medium text-neutral-600 hover:bg-neutral-50 dark:border-zinc-700 dark:bg-zinc-900 dark:text-zinc-300 dark:hover:bg-zinc-800"
+        >
+          {t('productTour.start')}
+        </button>
       </div>
 
       <div className="space-y-5">

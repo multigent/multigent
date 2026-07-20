@@ -1854,6 +1854,14 @@
       "docs": {
         "title": "查看長期產物",
         "body": "示範說明和 Agent 生成的文件都會進入知識庫。流程輸出應該引用 docID，而不是本機路徑。"
+      },
+      "modelAccounts": {
+        "title": "模型帳號區域",
+        "body": "這裡用於加入可重用的模型帳號。後續 Agent 只需要選擇帳號，不需要直接接觸 API Key 或環境變數。"
+      },
+      "addModelAccount": {
+        "title": "新增模型帳號",
+        "body": "點擊這裡加入第一個模型廠商帳號。先選擇 CLI 類型，再填寫官方 API Key，或填寫第三方閘道的地址和 Key。"
       }
     },
     "blankSteps": {

@@ -1854,6 +1854,14 @@
       "docs": {
         "title": "永続的な成果物を確認",
         "body": "Demo guide と Agent が生成した artifact は knowledge base に保存されます。Workflow outputs は local path ではなく docID を参照します。"
+      },
+      "modelAccounts": {
+        "title": "Model account area",
+        "body": "ここで再利用可能な model account を追加します。Agent は API key や環境変数を直接扱わず、この account を選択します。"
+      },
+      "addModelAccount": {
+        "title": "Model account を追加",
+        "body": "このボタンで最初の model provider account を追加します。CLI family を選び、official API key または gateway endpoint と key を入力します。"
       }
     },
     "blankSteps": {

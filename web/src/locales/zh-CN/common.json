@@ -1854,6 +1854,14 @@
       "docs": {
         "title": "查看长期产物",
         "body": "演示说明和 Agent 生成的文档都会进入知识库。流程输出应该引用 docID，而不是本地路径。"
+      },
+      "modelAccounts": {
+        "title": "模型账号区域",
+        "body": "这里用于添加可复用的模型账号。后续 Agent 只需要选择账号，不需要直接接触 API Key 或环境变量。"
+      },
+      "addModelAccount": {
+        "title": "新增模型账号",
+        "body": "点击这里添加第一个模型厂商账号。先选择 CLI 类型，再填写官方 API Key，或填写第三方网关的地址和 Key。"
       }
     },
     "blankSteps": {

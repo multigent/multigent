@@ -1854,6 +1854,14 @@
       "docs": {
         "title": "Read durable outputs",
         "body": "The demo guide and agent-produced artifacts live in the knowledge base. Workflow outputs should reference docs by docID instead of local paths."
+      },
+      "modelAccounts": {
+        "title": "Model account area",
+        "body": "This section is where workspace admins add reusable model accounts. Agents later select one of these accounts instead of handling API keys directly."
+      },
+      "addModelAccount": {
+        "title": "Add a model account",
+        "body": "Use this button to add the first model provider account. Choose the CLI family first, then enter the official API key or a third-party gateway endpoint and key."
       }
     },
     "blankSteps": {

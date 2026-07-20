@@ -16,6 +16,7 @@ import {
 import AssistantWidget from '../assistant/AssistantWidget'
 import { ToastContainer } from '../ui/Toast'
 import { ConfirmDialogHost } from '../ui/ConfirmDialog'
+import ProductTour, { hasSeenProductTour } from '../onboarding/ProductTour'
 
 export type BreadcrumbSegment = {
   label: string
@@ -188,6 +189,8 @@ export function AppShell() {
   const [appVersion, setAppVersion] = useState('…')
   const [updateInfo, setUpdateInfo] = useState<{ hasUpdate: boolean; latestVersion?: string } | null>(null)
   const [workspaceScope, setWorkspaceScope] = useState('default')
+  const [workspaceName, setWorkspaceName] = useState('')
+  const [tourOpen, setTourOpen] = useState(false)
   const autoCollapsedSidebar = useRef(false)
 
   useEffect(() => {
@@ -205,7 +208,14 @@ export function AppShell() {
     const loadWorkspaceScope = () => {
       apiFetch<{ id?: string; name?: string }>('/api/v1/workspace')
       .then((d) => {
-        if (!cancelled) setWorkspaceScope(d.id || d.name || 'default')
+        if (!cancelled) {
+          const scope = d.id || d.name || 'default'
+          setWorkspaceScope(scope)
+          setWorkspaceName(d.name || '')
+          if (!hasSeenProductTour(scope)) {
+            window.setTimeout(() => setTourOpen(true), 500)
+          }
+        }
       })
       .catch(() => {
         if (!cancelled) setWorkspaceScope('default')
@@ -218,6 +228,14 @@ export function AppShell() {
       window.removeEventListener('workspace-changed', loadWorkspaceScope)
     }
   }, [pathname])
+
+  useEffect(() => {
+    function startTour() {
+      setTourOpen(true)
+    }
+    window.addEventListener('product-tour-start', startTour)
+    return () => window.removeEventListener('product-tour-start', startTour)
+  }, [])
 
   function toggleSidebar() {
     setCollapsed((v) => {
@@ -310,6 +328,12 @@ export function AppShell() {
             </footer>
           </div>
           <CommandPalette open={searchOpen} onOpenChange={setSearchOpen} />
+          <ProductTour
+            workspaceId={workspaceScope}
+            example={workspaceName === 'Example Collaboration Lab'}
+            open={tourOpen}
+            onClose={() => setTourOpen(false)}
+          />
         </div>
         <AssistantWidget hidden={assistantHidden} onHide={() => setAssistantHiddenState(true)} />
         <ConfirmDialogHost />

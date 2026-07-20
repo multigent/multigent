@@ -1,5 +1,6 @@
 import { useEffect, useMemo, useState, type CSSProperties } from 'react'
 import { useTranslation } from 'react-i18next'
+import { useLocation, useNavigate } from 'react-router-dom'
 
 type ProductTourProps = {
   workspaceId?: string
@@ -11,6 +12,7 @@ type ProductTourProps = {
 type TourStep = {
   title: string
   body: string
+  path?: string
   selector?: string
   placement?: 'right' | 'bottom' | 'floating'
 }
@@ -36,48 +38,70 @@ export function markProductTourDone(workspaceId?: string) {
 
 export default function ProductTour({ workspaceId, example = false, open, onClose }: ProductTourProps) {
   const { t } = useTranslation()
+  const navigate = useNavigate()
+  const { pathname } = useLocation()
   const [index, setIndex] = useState(0)
   const [targetRect, setTargetRect] = useState<TargetRect | null>(null)
   const steps = useMemo<TourStep[]>(() => [
     {
       title: t(example ? 'productTour.steps.welcome.title' : 'productTour.blankSteps.welcome.title'),
       body: t(example ? 'productTour.steps.welcome.body' : 'productTour.blankSteps.welcome.body'),
-      selector: '[data-tour-overview-card]',
-      placement: 'bottom',
+      path: '/',
+      placement: 'floating',
     },
     {
       title: t('productTour.steps.models.title'),
       body: t('productTour.steps.models.body'),
+      path: '/settings',
       selector: '[data-tour-nav="settings"]',
       placement: 'right',
     },
     {
+      title: t('productTour.steps.modelAccounts.title'),
+      body: t('productTour.steps.modelAccounts.body'),
+      path: '/settings',
+      selector: '[data-tour-provider-section]',
+      placement: 'bottom',
+    },
+    {
+      title: t('productTour.steps.addModelAccount.title'),
+      body: t('productTour.steps.addModelAccount.body'),
+      path: '/settings',
+      selector: '[data-tour-provider-add]',
+      placement: 'bottom',
+    },
+    {
       title: t('productTour.steps.team.title'),
       body: t(example ? 'productTour.steps.team.body' : 'productTour.blankSteps.team.body'),
+      path: '/teams',
       selector: '[data-tour-nav="teams"]',
       placement: 'right',
     },
     {
       title: t('productTour.steps.agents.title'),
       body: t(example ? 'productTour.steps.agents.body' : 'productTour.blankSteps.agents.body'),
+      path: example ? '/projects/hello-world-relay/members' : '/projects',
       selector: '[data-tour-nav="projects"]',
       placement: 'right',
     },
     {
       title: t('productTour.steps.workflow.title'),
       body: t(example ? 'productTour.steps.workflow.body' : 'productTour.blankSteps.workflow.body'),
+      path: example ? '/workflows/wf-example-hello-world-relay' : '/workflows',
       selector: '[data-tour-nav="workflows"]',
       placement: 'right',
     },
     {
       title: t('productTour.steps.task.title'),
       body: t(example ? 'productTour.steps.task.body' : 'productTour.blankSteps.task.body'),
+      path: example ? '/projects/hello-world-relay/tasks' : '/projects',
       selector: '[data-tour-nav="workbench"]',
       placement: 'right',
     },
     {
       title: t('productTour.steps.docs.title'),
       body: t('productTour.steps.docs.body'),
+      path: '/docs',
       selector: '[data-tour-nav="docs"]',
       placement: 'right',
     },
@@ -106,20 +130,30 @@ export default function ProductTour({ workspaceId, example = false, open, onClos
         height: rect.height,
       })
     }
-    updateTarget()
+    const el = current?.selector ? document.querySelector(current.selector) : null
+    el?.scrollIntoView({ block: 'center', inline: 'nearest', behavior: 'smooth' })
+    const timer = window.setTimeout(updateTarget, 180)
     window.addEventListener('resize', updateTarget)
     window.addEventListener('scroll', updateTarget, true)
     return () => {
+      window.clearTimeout(timer)
       window.removeEventListener('resize', updateTarget)
       window.removeEventListener('scroll', updateTarget, true)
     }
-  }, [current?.selector, open])
+  }, [current?.selector, open, pathname])
 
   if (!open) return null
 
   const finish = () => {
     markProductTourDone(workspaceId)
     onClose()
+  }
+  const goStep = (nextIndex: number) => {
+    const next = steps[nextIndex]
+    if (next?.path && next.path !== pathname) {
+      navigate(next.path)
+    }
+    setIndex(nextIndex)
   }
   const highlightStyle = targetRect
     ? {
@@ -139,7 +173,7 @@ export default function ProductTour({ workspaceId, example = false, open, onClos
         />
       ) : null}
       <div
-        className="pointer-events-auto absolute w-[min(25rem,calc(100vw-2rem))] rounded-xl border border-neutral-200 bg-white p-5 shadow-xl transition-all duration-200 dark:border-zinc-800 dark:bg-zinc-900"
+        className="pointer-events-auto absolute w-[min(25rem,calc(100vw-2rem))] rounded-xl border border-sky-300 bg-sky-950 p-5 text-white shadow-2xl shadow-sky-950/20 transition-all duration-200 dark:border-sky-500/50 dark:bg-zinc-50 dark:text-zinc-950"
         style={floatingCardStyle(targetRect, current.placement)}
       >
         <div className="flex items-start justify-between gap-4">
@@ -147,21 +181,21 @@ export default function ProductTour({ workspaceId, example = false, open, onClos
             <p className="text-xs font-medium uppercase tracking-wider text-sky-600 dark:text-sky-400">
               {t('productTour.stepCount', { current: index + 1, total: steps.length })}
             </p>
-            <h2 className="mt-1 text-lg font-semibold text-neutral-900 dark:text-zinc-100">{current.title}</h2>
+            <h2 className="mt-1 text-lg font-semibold">{current.title}</h2>
           </div>
           <button
             type="button"
             onClick={finish}
-            className="rounded-md px-2 py-1 text-sm text-neutral-500 hover:bg-neutral-100 dark:text-zinc-400 dark:hover:bg-zinc-800"
+            className="rounded-md px-2 py-1 text-sm text-sky-100 hover:bg-white/10 dark:text-zinc-500 dark:hover:bg-zinc-200/70"
             aria-label={t('forms.close')}
           >
             ×
           </button>
         </div>
-        <p className="mt-4 text-sm leading-6 text-neutral-600 dark:text-zinc-300">{current.body}</p>
-        <div className="mt-5 h-1.5 overflow-hidden rounded-full bg-neutral-100 dark:bg-zinc-800">
+        <p className="mt-4 text-sm leading-6 text-sky-50 dark:text-zinc-700">{current.body}</p>
+        <div className="mt-5 h-1.5 overflow-hidden rounded-full bg-white/15 dark:bg-zinc-200">
           <div
-            className="h-full rounded-full bg-sky-600 transition-all dark:bg-sky-400"
+            className="h-full rounded-full bg-white transition-all dark:bg-sky-600"
             style={{ width: `${((index + 1) / steps.length) * 100}%` }}
           />
         </div>
@@ -169,16 +203,16 @@ export default function ProductTour({ workspaceId, example = false, open, onClos
           <button
             type="button"
             onClick={finish}
-            className="rounded-lg border border-neutral-200 bg-white px-3 py-2 text-sm font-medium text-neutral-600 hover:bg-neutral-50 dark:border-zinc-700 dark:bg-zinc-900 dark:text-zinc-300 dark:hover:bg-zinc-800"
+            className="rounded-lg border border-white/20 bg-transparent px-3 py-2 text-sm font-medium text-sky-50 hover:bg-white/10 dark:border-zinc-300 dark:text-zinc-600 dark:hover:bg-zinc-100"
           >
             {t('productTour.skip')}
           </button>
           <div className="flex items-center gap-2">
             <button
               type="button"
-              onClick={() => setIndex(Math.max(0, index - 1))}
+              onClick={() => goStep(Math.max(0, index - 1))}
               disabled={index === 0}
-              className="rounded-lg border border-neutral-200 bg-white px-3 py-2 text-sm font-medium text-neutral-600 hover:bg-neutral-50 disabled:cursor-not-allowed disabled:opacity-40 dark:border-zinc-700 dark:bg-zinc-900 dark:text-zinc-300 dark:hover:bg-zinc-800"
+              className="rounded-lg border border-white/20 bg-transparent px-3 py-2 text-sm font-medium text-sky-50 hover:bg-white/10 disabled:cursor-not-allowed disabled:opacity-40 dark:border-zinc-300 dark:text-zinc-600 dark:hover:bg-zinc-100"
             >
               {t('productTour.previous')}
             </button>
@@ -186,9 +220,9 @@ export default function ProductTour({ workspaceId, example = false, open, onClos
               type="button"
               onClick={() => {
                 if (isLast) finish()
-                else setIndex(index + 1)
+                else goStep(index + 1)
               }}
-              className="rounded-lg border border-sky-600 bg-white px-3 py-2 text-sm font-medium text-sky-700 hover:bg-sky-50 dark:border-sky-500 dark:bg-zinc-900 dark:text-sky-400 dark:hover:bg-zinc-800"
+              className="rounded-lg border border-white bg-white px-3 py-2 text-sm font-medium text-sky-800 hover:bg-sky-50 dark:border-sky-600 dark:bg-sky-600 dark:text-white dark:hover:bg-sky-700"
             >
               {isLast ? t('productTour.finish') : t('productTour.next')}
             </button>
