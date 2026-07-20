@@ -1828,7 +1828,7 @@
     "stepCount": "Step {{current}} / {{total}}",
     "steps": {
       "welcome": {
-        "title": "Welcome to the example lab",
+        "title": "Welcome to the example workspace",
         "body": "This workspace contains a pure Hello World relay: one agent starts, a human reviews, another agent continues, and a recorder agent summarizes the collaboration."
       },
       "models": {

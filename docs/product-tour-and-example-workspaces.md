@@ -314,7 +314,7 @@ UI 上可以有一个醒目的标识：
 
 内容：
 
-- 一个 workspace：`Example Collaboration Lab`。
+- 一个 workspace：`Example Workspace`。
 - 一个项目：`hello-world-relay`。
 - 三个 Agent：
   - Greeter Agent
@@ -403,7 +403,7 @@ Example Workspace v1 建议内置以下数据。
 Workspace：
 
 ```text
-name: Example Collaboration Lab
+name: Example Workspace
 description: 用于体验 Multigent Agent 协作流程的示例工作区。
 kind: example
 resettable: true

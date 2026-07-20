@@ -1828,7 +1828,7 @@
     "stepCount": "第 {{current}} / {{total}} 步",
     "steps": {
       "welcome": {
-        "title": "欢迎来到示例实验室",
+        "title": "欢迎来到示例工作区",
         "body": "这个工作区包含一个纯粹的 Hello World 接力：一个 Agent 发起，人类审核，另一个 Agent 接力，最后由记录 Agent 总结协作过程。"
       },
       "models": {

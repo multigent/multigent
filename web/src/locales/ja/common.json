@@ -1828,7 +1828,7 @@
     "stepCount": "Step {{current}} / {{total}}",
     "steps": {
       "welcome": {
-        "title": "Example lab へようこそ",
+        "title": "Example workspace へようこそ",
         "body": "この workspace は純粋な Hello World relay です。Agent が開始し、人がレビューし、別の Agent が続け、recorder Agent がまとめます。"
       },
       "models": {
