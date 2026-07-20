@@ -586,7 +586,7 @@ export default function ProjectAgentDetailPage() {
                 </section>
               )}
 
-              <section data-tour-agent-wakeup-prompt>
+              <section>
                 <SectionHeader icon={Activity} title={t('agentDetail.connectAndChat')} />
                 <p className="mt-1 text-sm text-neutral-500 dark:text-zinc-500">{t('agentDetail.connectAndChatHint')}</p>
                 <div className="mt-3 space-y-4">
@@ -618,7 +618,7 @@ export default function ProjectAgentDetailPage() {
                 </>
               )}
 
-              <section>
+              <section data-tour-agent-wakeup-prompt>
                 <SectionHeader icon={BookOpen} title={t('agentDetail.promptContext')} />
                 <p className="mt-1 text-sm text-neutral-500 dark:text-zinc-500">{t('agentDetail.promptContextHint')}</p>
                 <div className="mt-3 space-y-4">
