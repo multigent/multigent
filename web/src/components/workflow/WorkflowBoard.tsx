@@ -409,7 +409,20 @@ export function WorkflowBoard({
   focusActive = false,
 }: Props) {
   const { t } = useTranslation()
-  const instanceByStep = useMemo(() => new Map(instances.map((inst) => [inst.stepId, inst])), [instances])
+  const instancesKey = useMemo(
+    () => instances.map((inst) => [
+      inst.stepId,
+      inst.status,
+      inst.actorType,
+      inst.actorId,
+      inst.inputArtifact,
+      inst.outputArtifact,
+      JSON.stringify(inst.inputValues ?? {}),
+      JSON.stringify(inst.outputValues ?? {}),
+    ].join('\u001f')).join('\u001e'),
+    [instances],
+  )
+  const instanceByStep = useMemo(() => new Map(instances.map((inst) => [inst.stepId, inst])), [instancesKey])
   const [selectedId, setSelectedId] = useState(definition.startStepId || definition.steps[0]?.id || '')
   const [selectedEdgeId, setSelectedEdgeId] = useState('')
   const [selectedNodeIds, setSelectedNodeIds] = useState<string[]>([])
@@ -471,18 +484,18 @@ export function WorkflowBoard({
           labelBgStyle: { fill: 'rgba(255,255,255,0.92)' },
         }
       }),
-    [definition.edges, instanceByStep, run?.activeStepId, selectedEdgeId],
+    [definition.edges, definition.steps, instanceByStep, run?.activeStepId, selectedEdgeId],
   )
 
   const [nodes, setNodes, onNodesChange] = useNodesState(initialNodes)
   const [edges, setEdges, onEdgesChange] = useEdgesState(initialEdges)
 
   useEffect(() => {
-    setNodes(initialNodes)
+    setNodes((current) => (sameWorkflowNodes(current, initialNodes) ? current : initialNodes))
   }, [initialNodes, setNodes])
 
   useEffect(() => {
-    setEdges(initialEdges)
+    setEdges((current) => (sameWorkflowEdges(current, initialEdges) ? current : initialEdges))
   }, [initialEdges, setEdges])
 
   useEffect(() => {
@@ -1114,6 +1127,47 @@ function OutgoingBranches({
       </div>
     </div>
   )
+}
+
+function sameWorkflowNodes(a: WorkflowNode[], b: WorkflowNode[]) {
+  if (a.length !== b.length) return false
+  for (let i = 0; i < a.length; i += 1) {
+    const left = a[i]
+    const right = b[i]
+    if (
+      left.id !== right.id ||
+      left.type !== right.type ||
+      Math.round(left.position.x) !== Math.round(right.position.x) ||
+      Math.round(left.position.y) !== Math.round(right.position.y)
+    ) {
+      return false
+    }
+    if (JSON.stringify(left.data) !== JSON.stringify(right.data)) return false
+  }
+  return true
+}
+
+function sameWorkflowEdges(a: Edge[], b: Edge[]) {
+  if (a.length !== b.length) return false
+  for (let i = 0; i < a.length; i += 1) {
+    const left = a[i]
+    const right = b[i]
+    if (
+      left.id !== right.id ||
+      left.source !== right.source ||
+      left.target !== right.target ||
+      left.sourceHandle !== right.sourceHandle ||
+      left.targetHandle !== right.targetHandle ||
+      left.label !== right.label ||
+      left.animated !== right.animated ||
+      left.selected !== right.selected ||
+      JSON.stringify(left.style ?? {}) !== JSON.stringify(right.style ?? {}) ||
+      JSON.stringify(left.markerEnd ?? {}) !== JSON.stringify(right.markerEnd ?? {})
+    ) {
+      return false
+    }
+  }
+  return true
 }
 
 function FieldSummary({ label, fields, fallback }: { label: string; fields: WorkflowField[]; fallback: string }) {
