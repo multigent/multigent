@@ -2,6 +2,7 @@ package api
 
 import (
 	"encoding/json"
+	"fmt"
 	"net/http"
 	"os"
 	"path/filepath"
@@ -105,7 +106,7 @@ func (s *Server) handleCreateExampleWorkspace(w http.ResponseWriter, r *http.Req
 
 func seedExampleWorkspace(root, workspaceID, username string, st store.Store, ts taskstore.Store, db controldb.Store) error {
 	if err := st.SaveAgencyPrompt(exampleAgencyPrompt()); err != nil {
-		return err
+		return fmt.Errorf("save agency prompt: %w", err)
 	}
 	if err := st.SaveTeam(exampleTeamName, &entity.Team{
 		Name:        exampleTeamName,
@@ -117,17 +118,17 @@ func seedExampleWorkspace(root, workspaceID, username string, st store.Store, ts
 			"Store durable outputs in the workspace docs.",
 		},
 	}); err != nil {
-		return err
+		return fmt.Errorf("save example team: %w", err)
 	}
 	if err := st.SaveTeamPrompt(exampleTeamName, exampleTeamPrompt()); err != nil {
-		return err
+		return fmt.Errorf("save example team prompt: %w", err)
 	}
 	for _, role := range exampleRoles(username) {
 		if err := st.SaveRole(exampleTeamName, role.Name, role.Role); err != nil {
-			return err
+			return fmt.Errorf("save example role %s: %w", role.Name, err)
 		}
 		if err := st.SaveRolePrompt(exampleTeamName, role.Name, role.Prompt); err != nil {
-			return err
+			return fmt.Errorf("save example role prompt %s: %w", role.Name, err)
 		}
 	}
 	if err := st.SaveProject(exampleProjectName, &entity.Project{
@@ -135,30 +136,30 @@ func seedExampleWorkspace(root, workspaceID, username string, st store.Store, ts
 		Description: "A Hello World relay project that proves Multigent can route one task across agents and humans.",
 		Owners:      []string{username},
 	}); err != nil {
-		return err
+		return fmt.Errorf("save example project: %w", err)
 	}
 	if err := st.SaveProjectPrompt(exampleProjectName, exampleProjectPrompt()); err != nil {
-		return err
+		return fmt.Errorf("save example project prompt: %w", err)
 	}
 	for _, agent := range exampleAgents(username) {
 		if err := os.MkdirAll(st.AgentDir(exampleProjectName, agent.Name), 0o755); err != nil {
-			return err
+			return fmt.Errorf("create example agent dir %s: %w", agent.Name, err)
 		}
 		if err := st.SaveAgentMeta(exampleProjectName, agent.Name, agent); err != nil {
-			return err
+			return fmt.Errorf("save example agent %s: %w", agent.Name, err)
 		}
 	}
 	if err := seedExampleDocs(root, username); err != nil {
-		return err
+		return fmt.Errorf("seed example docs: %w", err)
 	}
 	wfStore := workflowstore.NewStore(db, workspaceID)
 	def := exampleWorkflowDefinition()
 	if err := wfStore.SaveDefinition(&def); err != nil {
-		return err
+		return fmt.Errorf("save example workflow definition: %w", err)
 	}
 	task := exampleTask(username)
 	if err := ts.AddTask(exampleProjectName, "greeter-agent", task); err != nil {
-		return err
+		return fmt.Errorf("add example task: %w", err)
 	}
 	_, _, err := wfStore.StartRun(exampleProjectName, task.ID, def.ID, map[string]entity.WorkflowActorBinding{
 		"greeter":        {Type: "agent", ID: "greeter-agent"},
@@ -167,7 +168,10 @@ func seedExampleWorkspace(root, workspaceID, username string, st store.Store, ts
 		"recorder":       {Type: "agent", ID: "recorder-agent"},
 		"finalReview":    {Type: "human", ID: username},
 	})
-	return err
+	if err != nil {
+		return fmt.Errorf("start example workflow run: %w", err)
+	}
+	return nil
 }
 
 type exampleRoleSeed struct {

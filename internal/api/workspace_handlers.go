@@ -450,7 +450,7 @@ func (s *Server) upsertWorkspaceRef(ref workspaceRef) error {
 	return s.controlDB.UpsertWorkspace(controldb.Workspace{
 		ID:           ref.ID,
 		Name:         ref.Name,
-		Slug:         slugifyWorkspaceName(ref.Name),
+		Slug:         uniqueWorkspaceSlug(ref.Name, ref.ID),
 		Description:  ref.Description,
 		Root:         ref.Root,
 		CreatedBy:    ref.CreatedBy,
@@ -750,6 +750,18 @@ func slugifyWorkspaceName(name string) string {
 		slug = "workspace"
 	}
 	return slug
+}
+
+func uniqueWorkspaceSlug(name, id string) string {
+	slug := slugifyWorkspaceName(name)
+	shortID := strings.ToLower(strings.TrimSpace(id))
+	if len(shortID) > 8 {
+		shortID = shortID[:8]
+	}
+	if shortID == "" {
+		return slug
+	}
+	return slug + "-" + shortID
 }
 
 func samePath(a, b string) bool {
