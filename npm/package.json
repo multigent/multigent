@@ -1,7 +1,7 @@
 {
   "name": "@multigent/multigent",
-  "version": "0.6.0",
-  "description": "AI agent organisation and context management — hire agents into teams, assign tasks, and automate workflows",
+  "version": "0.1.0",
+  "description": "Agent collaboration infrastructure for teams that want agents to actually deliver",
   "keywords": [
     "ai-agent",
     "claude-code",
