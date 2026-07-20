@@ -1855,6 +1855,24 @@
         "title": "永続的な成果物を確認",
         "body": "Demo guide と Agent が生成した artifact は knowledge base に保存されます。Workflow outputs は local path ではなく docID を参照します。"
       }
+    },
+    "blankSteps": {
+      "welcome": {
+        "title": "Multigent へようこそ",
+        "body": "この tour は、空の workspace から Agent collaboration loop を動かすまでの最短経路を示します。モデルアカウント、team roles、project、agents、workflow、tasks、docs を順に確認します。"
+      },
+      "team": {
+        "body": "Teams は再利用可能な roles と期待値を定義します。まずは 1 つの functional team、数個の roles、明確な role prompt から始めます。"
+      },
+      "agents": {
+        "body": "Projects は人と Agent をまとめます。Project members を追加し、各 Agent に CLI type、model、model account を設定します。"
+      },
+      "workflow": {
+        "body": "Workflows は workspace-level の collaboration map です。誰が実行するか、各 step の input/output、人の review loop を定義します。"
+      },
+      "task": {
+        "body": "Tasks は実際に動く work item です。Task 作成時に workflow と最初の actor を指定すると、Multigent が step ごとに routing します。"
+      }
     }
   }
 }

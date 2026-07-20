@@ -76,16 +76,16 @@ export default function OverviewPage() {
   const isExampleWorkspace = workspace?.name === 'Example Collaboration Lab'
 
   useEffect(() => {
-    if (workspace && isExampleWorkspace && !hasSeenProductTour(workspace.id)) {
+    if (workspace && !hasSeenProductTour(workspace.id)) {
       const timer = window.setTimeout(() => setTourOpen(true), 500)
       return () => window.clearTimeout(timer)
     }
     return undefined
-  }, [workspace?.id, isExampleWorkspace])
+  }, [workspace?.id])
 
   return (
     <div className="animate-fade-in px-8 py-6">
-      <ProductTour workspaceId={workspace?.id} open={tourOpen} onClose={() => setTourOpen(false)} />
+      <ProductTour workspaceId={workspace?.id} example={isExampleWorkspace} open={tourOpen} onClose={() => setTourOpen(false)} />
       {(statsState.status === 'error' || agencyState.status === 'error') && (
         <div className="mb-5">
           <p className="rounded-md bg-amber-50 px-3 py-2 text-xs text-amber-700 dark:bg-amber-900/20 dark:text-amber-400">

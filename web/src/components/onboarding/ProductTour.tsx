@@ -4,12 +4,13 @@ import { useNavigate } from 'react-router-dom'
 
 type ProductTourProps = {
   workspaceId?: string
+  example?: boolean
   open: boolean
   onClose: () => void
 }
 
 export function productTourStorageKey(workspaceId?: string) {
-  return `multigent.product-tour.v1.${workspaceId || 'default'}`
+  return `multigent.product-tour.v2.${workspaceId || 'default'}`
 }
 
 export function hasSeenProductTour(workspaceId?: string) {
@@ -20,19 +21,19 @@ export function markProductTourDone(workspaceId?: string) {
   localStorage.setItem(productTourStorageKey(workspaceId), 'done')
 }
 
-export default function ProductTour({ workspaceId, open, onClose }: ProductTourProps) {
+export default function ProductTour({ workspaceId, example = false, open, onClose }: ProductTourProps) {
   const { t } = useTranslation()
   const navigate = useNavigate()
   const [index, setIndex] = useState(0)
   const steps = useMemo(() => [
-    { title: t('productTour.steps.welcome.title'), body: t('productTour.steps.welcome.body'), path: '/' },
+    { title: t(example ? 'productTour.steps.welcome.title' : 'productTour.blankSteps.welcome.title'), body: t(example ? 'productTour.steps.welcome.body' : 'productTour.blankSteps.welcome.body'), path: '/' },
     { title: t('productTour.steps.models.title'), body: t('productTour.steps.models.body'), path: '/settings' },
-    { title: t('productTour.steps.team.title'), body: t('productTour.steps.team.body'), path: '/teams' },
-    { title: t('productTour.steps.agents.title'), body: t('productTour.steps.agents.body'), path: '/projects/hello-world-relay/members' },
-    { title: t('productTour.steps.workflow.title'), body: t('productTour.steps.workflow.body'), path: '/workflows/wf-example-hello-world-relay' },
-    { title: t('productTour.steps.task.title'), body: t('productTour.steps.task.body'), path: '/projects/hello-world-relay/tasks' },
+    { title: t('productTour.steps.team.title'), body: t(example ? 'productTour.steps.team.body' : 'productTour.blankSteps.team.body'), path: '/teams' },
+    { title: t('productTour.steps.agents.title'), body: t(example ? 'productTour.steps.agents.body' : 'productTour.blankSteps.agents.body'), path: example ? '/projects/hello-world-relay/members' : '/projects' },
+    { title: t('productTour.steps.workflow.title'), body: t(example ? 'productTour.steps.workflow.body' : 'productTour.blankSteps.workflow.body'), path: example ? '/workflows/wf-example-hello-world-relay' : '/workflows' },
+    { title: t('productTour.steps.task.title'), body: t(example ? 'productTour.steps.task.body' : 'productTour.blankSteps.task.body'), path: example ? '/projects/hello-world-relay/tasks' : '/projects' },
     { title: t('productTour.steps.docs.title'), body: t('productTour.steps.docs.body'), path: '/docs' },
-  ], [t])
+  ], [t, example])
   if (!open) return null
 
   const current = steps[index]

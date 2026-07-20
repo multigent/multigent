@@ -1855,6 +1855,24 @@
         "title": "Read durable outputs",
         "body": "The demo guide and agent-produced artifacts live in the knowledge base. Workflow outputs should reference docs by docID instead of local paths."
       }
+    },
+    "blankSteps": {
+      "welcome": {
+        "title": "Welcome to Multigent",
+        "body": "This tour shows the shortest path from an empty workspace to a running agent collaboration loop: configure a model account, add team roles, create a project, attach agents, define a workflow, then run tasks and read durable docs."
+      },
+      "team": {
+        "body": "Teams define reusable roles and expectations. Start simple: one functional team, a few roles, and clear prompts that explain how those roles should behave."
+      },
+      "agents": {
+        "body": "Projects bring humans and agents together. Add project members, then configure each agent with a CLI type, model, and model account."
+      },
+      "workflow": {
+        "body": "Workflows are workspace-level reusable collaboration maps. They describe who acts, what each step needs as input, what it must output, and where human review can send work back."
+      },
+      "task": {
+        "body": "Tasks are the running work items. When you create a task, you can bind a workflow and assign the first actor so Multigent can route the work from step to step."
+      }
     }
   }
 }
