@@ -282,6 +282,12 @@ func (s *Server) ensurePlaybookSkill(sk entity.PlaybookSkillTemplate) (string, e
 		}
 		return "created", nil
 	}
+	if name, ok := openSpecAssetRef(sk.Source); ok {
+		if err := playbookstore.CopyOpenSpecSkillAssets(name, dir); err != nil {
+			return "", err
+		}
+		return "created", nil
+	}
 	if err := os.MkdirAll(dir, 0o755); err != nil {
 		return "", err
 	}
@@ -289,6 +295,18 @@ func (s *Server) ensurePlaybookSkill(sk entity.PlaybookSkillTemplate) (string, e
 		return "", err
 	}
 	return "created", nil
+}
+
+func openSpecAssetRef(source string) (string, bool) {
+	_, rest, ok := strings.Cut(source, "Fission-AI/OpenSpec/tree/main/skills/")
+	if !ok {
+		return "", false
+	}
+	name := strings.TrimSpace(rest)
+	if name == "" || strings.Contains(name, "/") {
+		return "", false
+	}
+	return name, true
 }
 
 func mattPocockAssetRef(source string) (string, string, bool) {
