@@ -213,9 +213,9 @@ workspace_onboarding_state
 
 建议提供几个小任务模板：
 
-- 让 PM Agent 根据一句话需求产出需求 Spec。
-- 让 Dev Agent 实现一个非常小的独立页面或脚本。
-- 让 QA Agent 根据已有输出写测试清单。
+- 让第一个 Agent 写一段问候和协作目标。
+- 让第二个 Agent 读取上游输出并回应。
+- 让第三个 Agent 总结这次协作过程。
 
 这个任务必须足够小，避免用户第一次运行就陷入长时间等待或失败。
 
@@ -310,28 +310,28 @@ UI 上可以有一个醒目的标识：
 
 ### Example Workspace 应包含什么
 
-第一版建议内置一个研发交付示例。
+第一版建议内置一个纯协作 Hello World 示例，而不是任何垂直业务示例。
 
 内容：
 
-- 一个 workspace：`Example Product Lab`。
-- 一个项目：`base64-tool-demo`。
+- 一个 workspace：`Example Collaboration Lab`。
+- 一个项目：`hello-world-relay`。
 - 三个 Agent：
-  - PM Agent
-  - Dev Agent
-  - QA Agent
+  - Greeter Agent
+  - Responder Agent
+  - Recorder Agent
 - 一个流程：
-  - 需求整理
+  - 发起问候
   - 人工审核
-  - 开发实现
-  - QA 测试
-  - 交付总结
+  - 接力回应
+  - 协作总结
+  - 最终确认
 - 一些知识库文档：
-  - 项目背景。
-  - 需求示例。
-  - 验收标准示例。
+  - 示例说明。
+  - 协作规则。
+  - 输出示例。
 - 一个待运行任务：
-  - 交付一个纯前端 Base64 编解码页面。
+  - 让三个 Agent 完成一次 Hello World 协作接力。
 
 用户只需要配置模型账号并绑定给 Agent，就能点击运行。
 
@@ -347,15 +347,445 @@ UI 上可以有一个醒目的标识：
 
 建议示例：
 
-> 创建一个单文件 HTML Base64 编解码工具。页面包含输入框、编码按钮、解码按钮、输出区域和错误提示。无需构建工具，无需外部依赖。
+> 让三个 Agent 完成一次 Hello World 协作接力：第一个 Agent 写问候和目标，人工审核后，第二个 Agent 基于上游内容回应，第三个 Agent 总结整个协作过程。最终产出一份“协作记录”。
 
 这个任务足够小，但能验证：
 
-- PM Agent 能整理需求和验收标准。
+- Greeter Agent 能创建第一份结构化输出。
 - Human review 能打回或通过。
-- Dev Agent 能实现。
-- QA Agent 能输出测试报告。
+- Responder Agent 能读取上游输出并继续接力。
+- Recorder Agent 能汇总前面所有输出。
 - 流程能在多个 Agent 和人之间流转。
+
+### Example Workspace 的核心体验目标
+
+Example Workspace 不是为了展示“我们有很多功能”，而是为了让用户在 10 分钟内理解 Multigent 的核心价值：
+
+```text
+任务不是直接丢给一个 Agent 聊天。
+任务会进入一个清晰流程。
+流程中的每一步有输入、输出、负责人和审核规则。
+Agent 负责产出，人负责校准，系统负责流转和记录。
+```
+
+第一版示例必须优先验证这个闭环，而不是做复杂项目。
+
+衡量标准：
+
+- 用户能看懂 workspace、项目、团队、Agent、流程、任务之间的关系。
+- 用户能完成一次“Agent 输出 -> 人工 Review -> 下一个 Agent 接手”的流转。
+- 用户能在任务详情里看到上游输出、当前节点、下一步流向和运行记录。
+- 用户不需要接入 GitHub、飞书、Slack 等外部工具也能跑通。
+- 用户只需要配置一个模型账号，或使用 demo 模式，就能体验最小闭环。
+
+### 推荐示例场景
+
+第一版推荐采用“Hello World Relay”场景，而不是研发、营销、销售、设计等垂直场景。
+
+原因：
+
+- 单纯传递消息太轻，无法体现 Multigent 和普通群聊/Agent Chat 的差异。
+- 垂直任务会暗示 Multigent 只适合某个部门或行业，降低通用性。
+- Hello World Relay 足够抽象，任何用户都能理解，不需要业务背景或技术背景。
+- 这个场景仍然能展示输入输出、人工审核、打回、上下文传递和最终交付。
+- 任务足够小，可以避免用户第一次体验就等太久。
+
+示例任务：
+
+> 请三个 Agent 完成一次 Hello World 协作接力。第一个 Agent 写一段问候并说明协作目标；人类审核通过后，第二个 Agent 读取第一步输出并做回应；第三个 Agent 汇总前两步内容，生成一份清晰的协作记录。
+
+这个任务不属于任何专业领域，它只展示“多个 Agent 如何围绕同一个简单目标协作、交接和接受人类审核”。
+
+### 示例数据规格
+
+Example Workspace v1 建议内置以下数据。
+
+Workspace：
+
+```text
+name: Example Collaboration Lab
+description: 用于体验 Multigent Agent 协作流程的示例工作区。
+kind: example
+resettable: true
+```
+
+Project：
+
+```text
+name: hello-world-relay
+description: 一个用于演示 Agent 协作接力的 Hello World 项目。
+```
+
+Team：
+
+```text
+name: collaboration-demo
+description: 一个最小协作演示团队，包含发起、回应和记录三个角色。
+```
+
+Roles：
+
+| Role | 作用 | 关键约束 |
+| --- | --- | --- |
+| greeter | 发起 Hello World 协作，写第一段问候和目标 | 输出必须清晰、简短，并写入知识库 |
+| responder | 读取上游输出，做出回应并补充下一步 | 必须引用上游 docID，不能重新发明上下文 |
+| recorder | 汇总前面输出，形成完整协作记录 | 必须说明每个 Agent 做了什么 |
+
+Agents：
+
+| Agent | Role | 默认模型配置 |
+| --- | --- | --- |
+| greeter-agent | greeter | 待用户绑定 |
+| responder-agent | responder | 待用户绑定 |
+| recorder-agent | recorder | 待用户绑定 |
+
+Humans：
+
+```text
+workspace creator -> owner/admin
+greeting reviewer -> workspace creator
+final reviewer -> workspace creator
+```
+
+Docs：
+
+| Doc ID 建议 | 标题 | 内容 |
+| --- | --- | --- |
+| demo-intro | 示例说明 | 说明这是一个纯协作 Hello World 示例 |
+| demo-rules | 协作规则 | 每个 Agent 必须读取上游 docID，并输出结构化结果 |
+| demo-output-sample | 输出示例 | 给用户参考流程输出应该如何展示 |
+
+Workflow：
+
+```text
+发起问候 -> 人工审核 -> 接力回应 -> 协作总结 -> 最终确认
+```
+
+节点定义：
+
+| 节点 | 执行者 | 输入 | 输出 |
+| --- | --- | --- | --- |
+| 发起问候 | greeter-agent | original_goal, rules_doc_id | greeting_doc_id, handoff_note_doc_id, summary |
+| 人工审核 | workspace creator | greeting_doc_id, handoff_note_doc_id | decision, comments |
+| 接力回应 | responder-agent | greeting_doc_id, handoff_note_doc_id, review_comments | response_doc_id, next_handoff_doc_id, summary |
+| 协作总结 | recorder-agent | greeting_doc_id, response_doc_id, next_handoff_doc_id | collaboration_record_doc_id, learnings_doc_id, summary |
+| 最终确认 | workspace creator | collaboration_record_doc_id, learnings_doc_id | decision, comments |
+
+分支：
+
+```text
+人工审核 decision=approve -> 接力回应
+人工审核 decision=request_changes -> 发起问候
+最终确认 decision=approve -> 完成
+最终确认 decision=request_changes -> 协作总结
+```
+
+注意：
+
+- 输出字段只定义字段名和说明，不要求用户理解字段类型。
+- 对用户展示时优先展示字段说明；字段名只作为高级信息或 hover 说明。
+- docID 应渲染为可点击的知识库文档链接。
+
+Task：
+
+```text
+title: 完成一次 Hello World 协作接力
+description: 用于演示多个 Agent 与人工审核之间的协作流转。
+prompt:
+  请完成一次 Hello World 协作接力。
+  目标：
+  1. Greeter Agent 写一段简短问候，并说明这次协作的目标。
+  2. 人类审核这段问候，可以通过或打回修改。
+  3. Responder Agent 读取 Greeter 的输出，做出回应，并补充下一步交接说明。
+  4. Recorder Agent 汇总前两位 Agent 的输出，生成一份协作记录。
+  5. 大段产物和说明写入知识库文档，并在流程输出中返回 docID。
+workflow: demo-hello-world-relay
+actor bindings:
+  greeter -> greeter-agent
+  greeting-reviewer -> workspace creator
+  responder -> responder-agent
+  recorder -> recorder-agent
+  final-reviewer -> workspace creator
+```
+
+### Demo Mode 与真实模型模式
+
+Example Workspace 最好支持两种体验方式。
+
+#### Demo Mode
+
+Demo Mode 不调用真实模型，而是使用内置的示例输出驱动流程。
+
+适合：
+
+- 用户没有 API Key。
+- 销售演示。
+- 文档教程截图。
+- 端到端 UI 验证。
+
+Demo Mode 的行为：
+
+- 点击“运行示例”后，系统按固定节奏模拟 Agent 输出。
+- 每个 Agent 节点生成预置知识库文档和结构化输出。
+- 人工 Review 节点仍然需要用户点击通过或打回。
+- 页面明确标注“Demo Mode，不消耗模型 Token”。
+
+Demo Mode 的价值是让用户先理解产品，再要求他配置模型账号。
+
+#### Real Run
+
+Real Run 使用用户配置的模型账号和真实 sandbox 运行。
+
+适合：
+
+- 用户已经有模型账号。
+- 用户想验证真实 Agent 执行能力。
+- 内部 QA 检查 runtime、CLI、sandbox、workflow 是否连通。
+
+Real Run 的前置条件：
+
+- 至少一个可用模型账号。
+- 三个示例 Agent 都绑定模型账号，或者允许一键将同一个模型账号绑定到全部示例 Agent。
+- Sandbox runtime 可用。
+
+建议交互：
+
+```text
+运行示例
+-> 选择 Demo Mode / Real Run
+-> 如果选 Real Run 且未配置模型账号，引导去配置
+-> 支持“一键绑定给全部示例 Agent”
+```
+
+### Example Workspace 的 Product Tour 脚本
+
+Tour 不应该是纯说明文字，而应该跟随用户在真实页面上完成一次体验。
+
+#### Tour 0：进入示例工作区
+
+页面：workspace switcher 或首页。
+
+说明：
+
+> 这是一个可重置的示例工作区。它不会影响你的真实 workspace。我们会用一次 Hello World 协作接力演示 Multigent 如何让 Agent 和人协作。
+
+动作：
+
+- 下一步
+- 跳过
+- 复制为我的 workspace
+
+#### Tour 1：查看团队和角色
+
+页面：Teams。
+
+说明：
+
+> 团队表示职能分工，角色定义 Agent 的长期职责。示例中只有发起、回应、记录三个角色，不绑定任何行业或部门。
+
+高亮：
+
+- `collaboration-demo` team。
+- greeter / responder / recorder roles。
+
+用户动作：
+
+- 点击团队卡片。
+- 查看角色列表。
+
+#### Tour 2：查看 Agent
+
+页面：Project members 或 Agent detail。
+
+说明：
+
+> Agent 是项目里的可执行成员。每个 Agent 会继承 workspace、团队、角色、项目、Skill 和任务上下文。
+
+高亮：
+
+- greeter-agent。
+- responder-agent。
+- recorder-agent。
+
+用户动作：
+
+- 打开 responder-agent。
+- 查看模型与凭证状态。
+
+#### Tour 3：配置模型账号
+
+页面：Model Accounts 或 Agent detail。
+
+说明：
+
+> 真实运行需要模型账号。你可以先配置一个账号，并一键绑定给示例 Agent；也可以选择 Demo Mode 先体验流程。
+
+用户动作：
+
+- 配置模型账号。
+- 或点击“使用 Demo Mode”。
+
+#### Tour 4：查看流程白板
+
+页面：Workflows -> demo hello world relay。
+
+说明：
+
+> 流程定义了任务如何在人和 Agent 之间流转。每个节点都有输入、输出和执行者。人工审核节点可以通过，也可以带意见打回上一步。
+
+高亮：
+
+- 发起问候节点。
+- 人工审核节点。
+- 接力回应节点。
+- 协作总结节点。
+- 打回连线。
+
+用户动作：
+
+- 点击节点查看输入输出。
+- 点击分支连线查看条件。
+
+#### Tour 5：创建或打开示例任务
+
+页面：Tasks。
+
+说明：
+
+> 任务是流程运行的载体。这里的任务会沿着刚才的流程推进，并把每个阶段的输出记录下来。
+
+用户动作：
+
+- 点击“运行示例任务”。
+- 或打开已预置的示例任务。
+
+#### Tour 6：观察 Greeter Agent 输出
+
+页面：Task detail。
+
+说明：
+
+> Greeter Agent 会先写一段问候，并说明这次协作目标。大段内容会写入知识库，流程输出只保存 docID 和摘要。
+
+高亮：
+
+- 当前节点。
+- 上游输入。
+- 节点输出。
+- 运行记录链接。
+
+用户动作：
+
+- 等待 Greeter 节点完成。
+- 点击 docID 查看文档。
+
+#### Tour 7：人工审核与打回
+
+页面：Task detail 的人工审核区。
+
+说明：
+
+> 人不是同步驱动 Agent 的人，而是关键节点的审核者。你可以通过，也可以填写意见打回，让 Agent 根据意见重做。
+
+用户动作：
+
+- 第一次建议点击“打回”，填写一条修改意见。
+- 观察任务回到 Greeter Agent。
+- 第二次点击“通过”。
+
+这里是整个示例最关键的教学点：用户能直观看到 review loop。
+
+#### Tour 8：Responder Agent 与 Recorder Agent 接手
+
+页面：Task detail。
+
+说明：
+
+> 流程通过后会自动切换到下一个 Agent。下游 Agent 不需要人重新解释上下文，它可以读取上游输出和知识库文档。
+
+用户动作：
+
+- 观察负责人从 greeter-agent 切换到 responder-agent，再切换到 recorder-agent。
+- 查看每个节点的结构化输出。
+
+#### Tour 9：最终确认
+
+页面：Task detail。
+
+说明：
+
+> 最终，人只需要 Review 这份协作记录。所有中间过程都已经被记录，可以回溯，也可以沉淀为后续流程优化依据。
+
+用户动作：
+
+- 点击最终通过。
+- 查看任务完成状态。
+
+#### Tour 10：下一步
+
+页面：首页。
+
+说明：
+
+> 你已经跑完一次示例流程。下一步可以复制这个流程到真实 workspace，或用 Product Tour 创建自己的项目和 Agent。
+
+动作：
+
+- 复制流程到我的 workspace。
+- 创建真实项目。
+- 邀请团队成员。
+- 配置外部工具。
+
+### Tour 展示方式
+
+建议使用“轻量浮层 + 页面内高亮 + 底部进度”的方式，而不是全屏教学页。
+
+组件：
+
+```text
+TourOverlay
+  step title
+  short explanation
+  target selector
+  progress
+  primary action
+  secondary action
+  skip
+```
+
+交互原则：
+
+- 每一步只解释一个概念。
+- 文案控制在 2-3 句话。
+- 必须允许跳过。
+- 跳过后首页 checklist 仍保留“继续 Tour”入口。
+- 用户主动操作完成后自动进入下一步，不要求每步都点“下一步”。
+
+### Example Workspace 的重置与复制
+
+Example Workspace 应支持：
+
+- 重置示例数据。
+- 删除示例 workspace。
+- 复制流程到真实 workspace。
+- 复制协作方案到真实 workspace。
+
+不建议第一版支持“把示例任务运行历史复制到真实 workspace”。运行历史属于体验数据，不应污染真实 workspace。
+
+### Example Workspace 的权限规则
+
+示例 workspace 中：
+
+- 创建者是 owner/admin。
+- 其他被邀请用户默认可以查看示例数据。
+- 只有 owner/admin 可以重置示例。
+- 如果用户在示例 workspace 配置了模型账号，应清楚标记该凭证作用域。
+
+如果未来支持公共只读示例：
+
+- 只读示例不能运行 Agent。
+- 只读示例不能配置凭证。
+- 用户点击运行时必须复制为自己的示例副本。
 
 ### Example Workspace 与真实 Workspace 的关系
 
@@ -409,11 +839,15 @@ Example Workspace 不应该内置任何真实凭证。
 
 ### Example Workspace v1
 
-- 内置一个研发交付示例模板。
+- 内置一个通用协作示例模板。
 - 创建用户专属示例 workspace 副本。
 - 示例 workspace 有明显标识。
 - 包含示例项目、Agent、流程、知识库和待运行任务。
 - 用户配置模型账号后可运行。
+- 支持 Demo Mode，允许无模型账号跑通固定示例流程。
+- 支持一键绑定同一个模型账号给示例 Agent。
+- 支持重置示例 workspace。
+- Product Tour 可以逐步高亮团队、Agent、流程、任务、人工审核和输出记录。
 
 ### 暂不做
 
@@ -422,6 +856,8 @@ Example Workspace 不应该内置任何真实凭证。
 - 多个行业级示例 workspace。
 - 示例 workspace 的多人协作演示。
 - 一键把 example workspace 全量迁移为正式生产空间。
+- 真实外部工具接入演示。
+- 让示例 workspace 自动读取用户真实仓库或真实企业文档。
 
 ## 后续演进
 
@@ -450,6 +886,42 @@ Example Workspace 不应该内置任何真实凭证。
 - 让人确认后安装。
 
 这会让 Multigent 从“模板产品”升级成“帮助企业迁移到 Agent 协作架构的系统”。
+
+### 从历史 Agent 对话生成流程
+
+用户后续可以导入历史 Codex / Claude Code / Cursor Agent 对话记录。系统分析这些对话，提取：
+
+- 常见任务类型。
+- 人类反复补充的背景。
+- Agent 经常缺失的输入。
+- 成功交付时的步骤。
+- 失败或返工时的原因。
+
+这些信息可以用于生成：
+
+- 项目 prompt。
+- 角色 prompt。
+- workflow 节点。
+- task template。
+- review checklist。
+
+这会把 Example Workspace 的教学路径延伸到真实企业迁移路径。
+
+### 流程运行指标
+
+Example Workspace 也应该演示 Multigent 如何衡量流程质量。
+
+建议指标：
+
+- 总耗时。
+- 每个节点耗时。
+- 人工 Review 次数。
+- 打回次数。
+- Agent token 消耗。
+- 节点失败次数。
+- 任务完成率。
+
+这些指标能帮助用户理解：Multigent 不是只让流程“看起来可控”，还要持续降低人工介入和 token 消耗。
 
 ## 结论
 

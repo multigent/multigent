@@ -183,6 +183,7 @@ func (s *Server) Handler() http.Handler {
 	mux.HandleFunc("PUT /api/v1/workspace", s.handlePutWorkspace)
 	mux.HandleFunc("GET /api/v1/workspaces", s.handleListWorkspaces)
 	mux.HandleFunc("POST /api/v1/workspaces", s.handleCreateWorkspace)
+	mux.HandleFunc("POST /api/v1/workspaces/example", s.handleCreateExampleWorkspace)
 	mux.HandleFunc("POST /api/v1/workspaces/{id}/switch", s.handleSwitchWorkspace)
 	mux.HandleFunc("GET /api/v1/audit/events", s.handleAuditEvents)
 	mux.HandleFunc("GET /api/v1/connectors/providers", s.handleConnectorProviders)

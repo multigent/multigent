@@ -88,7 +88,11 @@
     "description": "描述",
     "descriptionPlaceholder": "这个工作区用来做什么",
     "create": "创建工作区",
-    "creating": "正在创建…"
+    "creating": "正在创建…",
+    "exampleTitle": "试用示例工作区",
+    "exampleHint": "创建一个中性的 Hello World 协作实验室，内置演示 Agent、流程、初始任务和产品引导。",
+    "createExample": "创建示例工作区",
+    "creatingExample": "正在创建示例…"
   },
   "nav": {
     "overview": "概览",
@@ -847,10 +851,22 @@
       "description": "负责指标定义、仪表盘、实验分析、研究综合和决策支持。"
     },
     "roles": {
-      "product-strategist": { "name": "产品策略", "description": "负责产品方向、机会定义、路线图取舍和战略对齐。" },
-      "user-researcher": { "name": "用户研究", "description": "负责用户访谈、可用性发现、证据质量和洞察综合。" },
-      "product-analyst": { "name": "产品分析", "description": "负责产品指标、漏斗分析、分群趋势和实验解读。" },
-      "prd-writer": { "name": "PRD 撰写", "description": "把产品决策转化为清晰的 PRD、验收标准、非目标和发布说明。" },
+      "product-strategist": {
+        "name": "产品策略",
+        "description": "负责产品方向、机会定义、路线图取舍和战略对齐。"
+      },
+      "user-researcher": {
+        "name": "用户研究",
+        "description": "负责用户访谈、可用性发现、证据质量和洞察综合。"
+      },
+      "product-analyst": {
+        "name": "产品分析",
+        "description": "负责产品指标、漏斗分析、分群趋势和实验解读。"
+      },
+      "prd-writer": {
+        "name": "PRD 撰写",
+        "description": "把产品决策转化为清晰的 PRD、验收标准、非目标和发布说明。"
+      },
       "product-manager": {
         "name": "产品经理",
         "description": "负责问题定义、范围控制、验收标准、发布节奏和干系人对齐。"
@@ -875,22 +891,70 @@
         "name": "代码评审",
         "description": "从正确性、可维护性、安全性、性能和测试缺口角度评审代码。"
       },
-      "growth-marketer": { "name": "增长营销", "description": "负责获客实验、活动计划、信息测试和渠道表现。" },
-      "sales-operator": { "name": "销售运营", "description": "负责 CRM 维护、线索筛选、跟进、pipeline 报告和销售交接。" },
-      "partnership-manager": { "name": "合作经理", "description": "负责合作方研究、触达计划、合作方案和关系跟踪。" },
-      "revenue-analyst": { "name": "收入分析", "description": "负责定价分析、收入指标、转化跟踪和商业实验解读。" },
-      "support-specialist": { "name": "支持专员", "description": "负责支持分流、客户回复、问题分类和升级质量。" },
-      "onboarding-specialist": { "name": "客户 onboarding", "description": "负责客户 onboarding 流程、设置清单、采用阻塞和早期成功信号。" },
-      "knowledge-manager": { "name": "知识库管理", "description": "负责帮助中心内容、内部 runbook、FAQ 质量和文档新鲜度。" },
-      "incident-communicator": { "name": "事故沟通", "description": "负责客户侧事故更新、状态说明、复盘摘要和沟通节奏。" },
-      "agent-ops-manager": { "name": "Agent 运营", "description": "负责 Agent 编制、职责、唤醒例程、升级规则和运行节奏。" },
-      "prompt-engineer": { "name": "提示词工程", "description": "负责角色提示词、流程提示词、提示词测试和版本管理。" },
-      "skill-builder": { "name": "技能构建", "description": "负责可复用技能、工具封装、MCP 集成和面向 Agent 的文档。" },
-      "eval-engineer": { "name": "评估工程", "description": "负责 Agent 评估案例、输出评审标准、回归检查和质量指标。" },
-      "data-analyst": { "name": "数据分析", "description": "负责指标定义、SQL 分析、仪表盘解读和决策说明。" },
-      "analytics-engineer": { "name": "分析工程", "description": "负责数据建模、转换质量、指标管线和数据可靠性检查。" },
-      "experiment-analyst": { "name": "实验分析", "description": "负责实验设计评审、结果分析、统计 caveat 和建议质量。" },
-      "research-synthesizer": { "name": "研究综合", "description": "负责综合定性记录、市场研究、支持信号和产品数据。" }
+      "growth-marketer": {
+        "name": "增长营销",
+        "description": "负责获客实验、活动计划、信息测试和渠道表现。"
+      },
+      "sales-operator": {
+        "name": "销售运营",
+        "description": "负责 CRM 维护、线索筛选、跟进、pipeline 报告和销售交接。"
+      },
+      "partnership-manager": {
+        "name": "合作经理",
+        "description": "负责合作方研究、触达计划、合作方案和关系跟踪。"
+      },
+      "revenue-analyst": {
+        "name": "收入分析",
+        "description": "负责定价分析、收入指标、转化跟踪和商业实验解读。"
+      },
+      "support-specialist": {
+        "name": "支持专员",
+        "description": "负责支持分流、客户回复、问题分类和升级质量。"
+      },
+      "onboarding-specialist": {
+        "name": "客户 onboarding",
+        "description": "负责客户 onboarding 流程、设置清单、采用阻塞和早期成功信号。"
+      },
+      "knowledge-manager": {
+        "name": "知识库管理",
+        "description": "负责帮助中心内容、内部 runbook、FAQ 质量和文档新鲜度。"
+      },
+      "incident-communicator": {
+        "name": "事故沟通",
+        "description": "负责客户侧事故更新、状态说明、复盘摘要和沟通节奏。"
+      },
+      "agent-ops-manager": {
+        "name": "Agent 运营",
+        "description": "负责 Agent 编制、职责、唤醒例程、升级规则和运行节奏。"
+      },
+      "prompt-engineer": {
+        "name": "提示词工程",
+        "description": "负责角色提示词、流程提示词、提示词测试和版本管理。"
+      },
+      "skill-builder": {
+        "name": "技能构建",
+        "description": "负责可复用技能、工具封装、MCP 集成和面向 Agent 的文档。"
+      },
+      "eval-engineer": {
+        "name": "评估工程",
+        "description": "负责 Agent 评估案例、输出评审标准、回归检查和质量指标。"
+      },
+      "data-analyst": {
+        "name": "数据分析",
+        "description": "负责指标定义、SQL 分析、仪表盘解读和决策说明。"
+      },
+      "analytics-engineer": {
+        "name": "分析工程",
+        "description": "负责数据建模、转换质量、指标管线和数据可靠性检查。"
+      },
+      "experiment-analyst": {
+        "name": "实验分析",
+        "description": "负责实验设计评审、结果分析、统计 caveat 和建议质量。"
+      },
+      "research-synthesizer": {
+        "name": "研究综合",
+        "description": "负责综合定性记录、市场研究、支持信号和产品数据。"
+      }
     }
   },
   "workbench": {
@@ -1571,86 +1635,6 @@
     "perPage": "每页"
   },
   "okr": {
-    "title": "OKR",
-    "subtitle": "当前季度的目标与关键结果。",
-    "newOKR": "新建 OKR",
-    "currentQuarter": "当前季度",
-    "overallProgress": "总体进度",
-    "objective": "目标",
-    "owner": "负责人",
-    "quarter": "季度",
-    "status": "状态",
-    "progress": "进度",
-    "keyResults": "关键结果",
-    "noKeyResults": "暂无关键结果。",
-    "addKR": "添加关键结果",
-    "description": "描述",
-    "metricType": "度量类型",
-    "metricPercentage": "百分比",
-    "metricNumber": "数值",
-    "metricBoolean": "是 / 否",
-    "metricCurrency": "金额",
-    "targetValue": "目标值",
-    "currentValue": "当前值",
-    "unit": "单位",
-    "edit": "编辑",
-    "delete": "删除",
-    "save": "保存",
-    "cancel": "取消",
-    "saving": "保存中…",
-    "create": "创建",
-    "updateOKR": "编辑 OKR",
-    "createOKR": "创建 OKR",
-    "confirmDelete": "确定删除该 OKR？此操作不可撤销。",
-    "empty": "本季度尚无 OKR。",
-    "emptyHint": "创建一个目标以开始。",
-    "statusOnTrack": "正常",
-    "statusAtRisk": "有风险",
-    "statusOffTrack": "偏离",
-    "statusAchieved": "已达成",
-    "booleanDone": "已完成",
-    "booleanNotDone": "未完成",
-    "expand": "展开关键结果",
-    "collapse": "收起关键结果"
-  },
-  "milestone": {
-    "heading": "里程碑",
-    "new": "新建里程碑",
-    "loading": "加载里程碑中…",
-    "empty": "暂无里程碑。",
-    "retry": "重试",
-    "owner": "负责人",
-    "dueDate": "截止日期",
-    "progress": "进度",
-    "criteria": "完成标准",
-    "showCriteria": "展开标准",
-    "hideCriteria": "收起标准",
-    "taskLabels": "关联标签",
-    "linkedKR": "关联关键结果",
-    "title": "标题",
-    "description": "描述",
-    "status": "状态",
-    "status_planned": "计划中",
-    "status_in_progress": "进行中",
-    "status_completed": "已完成",
-    "status_cancelled": "已取消",
-    "createTitle": "创建里程碑",
-    "editTitle": "编辑里程碑",
-    "save": "保存",
-    "cancel": "取消",
-    "delete": "删除",
-    "confirmDelete": "确定删除该里程碑？此操作不可撤销。",
-    "criteriaHint": "每行一条完成标准。",
-    "taskLabelsHint": "多个标签用英文逗号分隔。",
-    "linkedKRHint": "多个 KR 标识用英文逗号分隔。",
-    "dueNone": "未设截止",
-    "dueToday": "今日到期",
-    "dueTomorrow": "明日到期",
-    "dueInDays": "{{count}} 天后到期",
-    "dueOverdue": "已逾期 {{count}} 天",
-    "editProgressAria": "编辑进度百分比"
-  },
-  "okr": {
     "title": "OKR 目标管理",
     "newOKR": "新建 OKR",
     "objective": "目标",
@@ -1831,5 +1815,46 @@
     "presetTwiceDaily": "每天 9:00 和 18:00",
     "presetWeeklyMonday": "每周一 9:00",
     "presetMonthly1st": "每月1日 9:00"
+  },
+  "productTour": {
+    "cardTitle": "产品引导",
+    "cardBody": "从模型账号配置到流程执行，完整走一遍示例工作区。这个演示刻意保持中性，让你专注理解 Agent、人、任务、文档和流程交接如何协同。",
+    "start": "开始引导",
+    "skip": "跳过",
+    "previous": "上一步",
+    "next": "下一步",
+    "finish": "完成",
+    "openStep": "打开这一步",
+    "stepCount": "第 {{current}} / {{total}} 步",
+    "steps": {
+      "welcome": {
+        "title": "欢迎来到示例实验室",
+        "body": "这个工作区包含一个纯粹的 Hello World 接力：一个 Agent 发起，人类审核，另一个 Agent 接力，最后由记录 Agent 总结协作过程。"
+      },
+      "models": {
+        "title": "先配置模型账号",
+        "body": "Agent 需要模型账号才能运行。先在设置里添加官方 API Key 或第三方模型供应商，再绑定到每个演示 Agent。后续可以支持从 cc-switch 导入，减少手动配置。"
+      },
+      "team": {
+        "title": "查看演示团队",
+        "body": "collaboration-demo 团队只定义中性的协作角色，不绑定某个垂直业务流程，方便你先理解协作机制。"
+      },
+      "agents": {
+        "title": "检查三个 Agent",
+        "body": "进入项目成员页，查看 greeter-agent、responder-agent 和 recorder-agent。三个 Agent 可以共用同一个模型账号，也可以分别配置。"
+      },
+      "workflow": {
+        "title": "查看流程白板",
+        "body": "流程图展示了接力路径、人工审核循环、结构化输出，以及每个节点之间用 docID 交接文档。"
+      },
+      "task": {
+        "title": "运行初始任务",
+        "body": "项目里已经有一条绑定流程的任务。给 Agent 配好模型账号后，可以手动唤醒第一个 Agent，或让任务触发自动执行。"
+      },
+      "docs": {
+        "title": "查看长期产物",
+        "body": "演示说明和 Agent 生成的文档都会进入知识库。流程输出应该引用 docID，而不是本地路径。"
+      }
+    }
   }
 }

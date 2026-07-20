@@ -88,7 +88,11 @@
     "description": "描述",
     "descriptionPlaceholder": "這個工作區用來做什麼",
     "create": "建立工作區",
-    "creating": "正在建立…"
+    "creating": "正在建立…",
+    "exampleTitle": "試用範例工作區",
+    "exampleHint": "建立一個中性的 Hello World 協作實驗室，內建示範 Agent、流程、初始任務和產品導覽。",
+    "createExample": "建立範例工作區",
+    "creatingExample": "正在建立範例…"
   },
   "nav": {
     "overview": "概覽",
@@ -847,10 +851,22 @@
       "description": "負責指標定義、儀表板、實驗分析、研究綜合和決策支援。"
     },
     "roles": {
-      "product-strategist": { "name": "產品策略", "description": "負責產品方向、機會定義、路線圖取捨和戰略對齊。" },
-      "user-researcher": { "name": "使用者研究", "description": "負責使用者訪談、可用性發現、證據品質和洞察綜合。" },
-      "product-analyst": { "name": "產品分析", "description": "負責產品指標、漏斗分析、分群趨勢和實驗解讀。" },
-      "prd-writer": { "name": "PRD 撰寫", "description": "把產品決策轉化為清晰的 PRD、驗收標準、非目標和發布說明。" },
+      "product-strategist": {
+        "name": "產品策略",
+        "description": "負責產品方向、機會定義、路線圖取捨和戰略對齊。"
+      },
+      "user-researcher": {
+        "name": "使用者研究",
+        "description": "負責使用者訪談、可用性發現、證據品質和洞察綜合。"
+      },
+      "product-analyst": {
+        "name": "產品分析",
+        "description": "負責產品指標、漏斗分析、分群趨勢和實驗解讀。"
+      },
+      "prd-writer": {
+        "name": "PRD 撰寫",
+        "description": "把產品決策轉化為清晰的 PRD、驗收標準、非目標和發布說明。"
+      },
       "product-manager": {
         "name": "產品經理",
         "description": "負責問題定義、範圍控制、驗收標準、發布節奏和利害關係人對齊。"
@@ -875,22 +891,70 @@
         "name": "程式碼評審",
         "description": "從正確性、可維護性、安全性、效能和測試缺口角度評審程式碼。"
       },
-      "growth-marketer": { "name": "成長行銷", "description": "負責獲客實驗、活動計畫、訊息測試和渠道表現。" },
-      "sales-operator": { "name": "銷售營運", "description": "負責 CRM 維護、線索篩選、跟進、pipeline 報告和銷售交接。" },
-      "partnership-manager": { "name": "合作經理", "description": "負責合作方研究、觸達計畫、合作方案和關係追蹤。" },
-      "revenue-analyst": { "name": "收入分析", "description": "負責定價分析、收入指標、轉化追蹤和商業實驗解讀。" },
-      "support-specialist": { "name": "支援專員", "description": "負責支援分流、客戶回覆、問題分類和升級品質。" },
-      "onboarding-specialist": { "name": "客戶 onboarding", "description": "負責客戶 onboarding 流程、設定清單、採用阻塞和早期成功訊號。" },
-      "knowledge-manager": { "name": "知識庫管理", "description": "負責說明中心內容、內部 runbook、FAQ 品質和文件新鮮度。" },
-      "incident-communicator": { "name": "事故溝通", "description": "負責客戶側事故更新、狀態說明、復盤摘要和溝通節奏。" },
-      "agent-ops-manager": { "name": "Agent 營運", "description": "負責 Agent 編制、職責、喚醒例程、升級規則和運行節奏。" },
-      "prompt-engineer": { "name": "提示詞工程", "description": "負責角色提示詞、流程提示詞、提示詞測試和版本管理。" },
-      "skill-builder": { "name": "技能構建", "description": "負責可複用技能、工具封裝、MCP 整合和面向 Agent 的文件。" },
-      "eval-engineer": { "name": "評估工程", "description": "負責 Agent 評估案例、輸出評審標準、回歸檢查和品質指標。" },
-      "data-analyst": { "name": "資料分析", "description": "負責指標定義、SQL 分析、儀表板解讀和決策說明。" },
-      "analytics-engineer": { "name": "分析工程", "description": "負責資料建模、轉換品質、指標管線和資料可靠性檢查。" },
-      "experiment-analyst": { "name": "實驗分析", "description": "負責實驗設計評審、結果分析、統計 caveat 和建議品質。" },
-      "research-synthesizer": { "name": "研究綜合", "description": "負責綜合定性記錄、市場研究、支援訊號和產品資料。" }
+      "growth-marketer": {
+        "name": "成長行銷",
+        "description": "負責獲客實驗、活動計畫、訊息測試和渠道表現。"
+      },
+      "sales-operator": {
+        "name": "銷售營運",
+        "description": "負責 CRM 維護、線索篩選、跟進、pipeline 報告和銷售交接。"
+      },
+      "partnership-manager": {
+        "name": "合作經理",
+        "description": "負責合作方研究、觸達計畫、合作方案和關係追蹤。"
+      },
+      "revenue-analyst": {
+        "name": "收入分析",
+        "description": "負責定價分析、收入指標、轉化追蹤和商業實驗解讀。"
+      },
+      "support-specialist": {
+        "name": "支援專員",
+        "description": "負責支援分流、客戶回覆、問題分類和升級品質。"
+      },
+      "onboarding-specialist": {
+        "name": "客戶 onboarding",
+        "description": "負責客戶 onboarding 流程、設定清單、採用阻塞和早期成功訊號。"
+      },
+      "knowledge-manager": {
+        "name": "知識庫管理",
+        "description": "負責說明中心內容、內部 runbook、FAQ 品質和文件新鮮度。"
+      },
+      "incident-communicator": {
+        "name": "事故溝通",
+        "description": "負責客戶側事故更新、狀態說明、復盤摘要和溝通節奏。"
+      },
+      "agent-ops-manager": {
+        "name": "Agent 營運",
+        "description": "負責 Agent 編制、職責、喚醒例程、升級規則和運行節奏。"
+      },
+      "prompt-engineer": {
+        "name": "提示詞工程",
+        "description": "負責角色提示詞、流程提示詞、提示詞測試和版本管理。"
+      },
+      "skill-builder": {
+        "name": "技能構建",
+        "description": "負責可複用技能、工具封裝、MCP 整合和面向 Agent 的文件。"
+      },
+      "eval-engineer": {
+        "name": "評估工程",
+        "description": "負責 Agent 評估案例、輸出評審標準、回歸檢查和品質指標。"
+      },
+      "data-analyst": {
+        "name": "資料分析",
+        "description": "負責指標定義、SQL 分析、儀表板解讀和決策說明。"
+      },
+      "analytics-engineer": {
+        "name": "分析工程",
+        "description": "負責資料建模、轉換品質、指標管線和資料可靠性檢查。"
+      },
+      "experiment-analyst": {
+        "name": "實驗分析",
+        "description": "負責實驗設計評審、結果分析、統計 caveat 和建議品質。"
+      },
+      "research-synthesizer": {
+        "name": "研究綜合",
+        "description": "負責綜合定性記錄、市場研究、支援訊號和產品資料。"
+      }
     }
   },
   "workbench": {
@@ -1571,86 +1635,6 @@
     "perPage": "每頁"
   },
   "okr": {
-    "title": "OKR",
-    "subtitle": "當前季度的目標與關鍵結果。",
-    "newOKR": "新增 OKR",
-    "currentQuarter": "當前季度",
-    "overallProgress": "總體進度",
-    "objective": "目標",
-    "owner": "負責人",
-    "quarter": "季度",
-    "status": "狀態",
-    "progress": "進度",
-    "keyResults": "關鍵結果",
-    "noKeyResults": "尚無關鍵結果。",
-    "addKR": "新增關鍵結果",
-    "description": "描述",
-    "metricType": "度量類型",
-    "metricPercentage": "百分比",
-    "metricNumber": "數值",
-    "metricBoolean": "是 / 否",
-    "metricCurrency": "金額",
-    "targetValue": "目標值",
-    "currentValue": "目前值",
-    "unit": "單位",
-    "edit": "編輯",
-    "delete": "刪除",
-    "save": "儲存",
-    "cancel": "取消",
-    "saving": "儲存中…",
-    "create": "建立",
-    "updateOKR": "編輯 OKR",
-    "createOKR": "建立 OKR",
-    "confirmDelete": "確定刪除此 OKR？此操作無法復原。",
-    "empty": "本季度尚無 OKR。",
-    "emptyHint": "建立一個目標以開始。",
-    "statusOnTrack": "正常",
-    "statusAtRisk": "有風險",
-    "statusOffTrack": "偏離",
-    "statusAchieved": "已達成",
-    "booleanDone": "已完成",
-    "booleanNotDone": "未完成",
-    "expand": "展開關鍵結果",
-    "collapse": "收合關鍵結果"
-  },
-  "milestone": {
-    "heading": "里程碑",
-    "new": "新增里程碑",
-    "loading": "載入里程碑中…",
-    "empty": "尚無里程碑。",
-    "retry": "重試",
-    "owner": "負責人",
-    "dueDate": "截止日期",
-    "progress": "進度",
-    "criteria": "完成標準",
-    "showCriteria": "展開標準",
-    "hideCriteria": "收合標準",
-    "taskLabels": "關聯標籤",
-    "linkedKR": "關聯關鍵結果",
-    "title": "標題",
-    "description": "描述",
-    "status": "狀態",
-    "status_planned": "計劃中",
-    "status_in_progress": "進行中",
-    "status_completed": "已完成",
-    "status_cancelled": "已取消",
-    "createTitle": "建立里程碑",
-    "editTitle": "編輯里程碑",
-    "save": "儲存",
-    "cancel": "取消",
-    "delete": "刪除",
-    "confirmDelete": "確定刪除此里程碑？此操作無法復原。",
-    "criteriaHint": "每行一條完成標準。",
-    "taskLabelsHint": "多個標籤以英文逗號分隔。",
-    "linkedKRHint": "多個 KR 識別碼以英文逗號分隔。",
-    "dueNone": "未設截止",
-    "dueToday": "今日到期",
-    "dueTomorrow": "明日到期",
-    "dueInDays": "{{count}} 天後到期",
-    "dueOverdue": "已逾期 {{count}} 天",
-    "editProgressAria": "編輯進度百分比"
-  },
-  "okr": {
     "title": "OKR 目標管理",
     "newOKR": "新建 OKR",
     "objective": "目標",
@@ -1831,5 +1815,46 @@
     "presetTwiceDaily": "每天 9:00 和 18:00",
     "presetWeeklyMonday": "每週一 9:00",
     "presetMonthly1st": "每月1日 9:00"
+  },
+  "productTour": {
+    "cardTitle": "產品導覽",
+    "cardBody": "從模型帳號設定到流程執行，完整走一遍範例工作區。這個示範刻意保持中性，讓你專注理解 Agent、人、任務、文件和流程交接如何協同。",
+    "start": "開始導覽",
+    "skip": "跳過",
+    "previous": "上一步",
+    "next": "下一步",
+    "finish": "完成",
+    "openStep": "打開這一步",
+    "stepCount": "第 {{current}} / {{total}} 步",
+    "steps": {
+      "welcome": {
+        "title": "歡迎來到範例實驗室",
+        "body": "這個工作區包含一個純粹的 Hello World 接力：一個 Agent 發起，人類審核，另一個 Agent 接力，最後由記錄 Agent 總結協作過程。"
+      },
+      "models": {
+        "title": "先設定模型帳號",
+        "body": "Agent 需要模型帳號才能執行。先在設定裡新增官方 API Key 或第三方模型供應商，再綁定到每個示範 Agent。後續可以支援從 cc-switch 匯入，減少手動設定。"
+      },
+      "team": {
+        "title": "查看示範團隊",
+        "body": "collaboration-demo 團隊只定義中性的協作角色，不綁定某個垂直業務流程，方便你先理解協作機制。"
+      },
+      "agents": {
+        "title": "檢查三個 Agent",
+        "body": "進入專案成員頁，查看 greeter-agent、responder-agent 和 recorder-agent。三個 Agent 可以共用同一個模型帳號，也可以分別設定。"
+      },
+      "workflow": {
+        "title": "查看流程白板",
+        "body": "流程圖展示了接力路徑、人工審核循環、結構化輸出，以及每個節點之間用 docID 交接文件。"
+      },
+      "task": {
+        "title": "執行初始任務",
+        "body": "專案裡已經有一條綁定流程的任務。給 Agent 配好模型帳號後，可以手動喚醒第一個 Agent，或讓任務觸發自動執行。"
+      },
+      "docs": {
+        "title": "查看長期產物",
+        "body": "示範說明和 Agent 生成的文件都會進入知識庫。流程輸出應該引用 docID，而不是本機路徑。"
+      }
+    }
   }
 }

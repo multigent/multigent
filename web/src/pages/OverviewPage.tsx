@@ -1,8 +1,10 @@
+import { useEffect, useState } from 'react'
 import { useTranslation } from 'react-i18next'
 import { Link } from 'react-router-dom'
 import { Zap, ListTodo, Activity, Clock } from 'lucide-react'
 import { useApiJson } from '../lib/use-api'
 import { getRecentVisits } from '../lib/recent-visits'
+import ProductTour, { hasSeenProductTour } from '../components/onboarding/ProductTour'
 
 type Stats = {
   pendingTasks: number
@@ -14,6 +16,12 @@ type Agency = {
   name: string
   description?: string
   lang?: string
+}
+
+type WorkspaceSummary = {
+  id: string
+  name: string
+  description?: string
 }
 
 type TelemetrySummaryBlock = {
@@ -44,8 +52,10 @@ function timeAgo(ts: number, t: (k: string, o?: Record<string, string>) => strin
 
 export default function OverviewPage() {
   const { t } = useTranslation()
+  const [tourOpen, setTourOpen] = useState(false)
   const statsState = useApiJson<Stats>('/api/v1/stats')
   const agencyState = useApiJson<Agency>('/api/v1/agency')
+  const workspaceState = useApiJson<WorkspaceSummary>('/api/v1/workspace')
   const telemetryState = useApiJson<TelemetrySummaryResponse>('/api/v1/telemetry/summary?since=7d', 0)
 
   const pending =
@@ -62,9 +72,20 @@ export default function OverviewPage() {
   ]
 
   const recentVisits = getRecentVisits().filter((v) => v.path !== '/')
+  const workspace = workspaceState.status === 'ok' ? workspaceState.data : null
+  const isExampleWorkspace = workspace?.name === 'Example Collaboration Lab'
+
+  useEffect(() => {
+    if (workspace && isExampleWorkspace && !hasSeenProductTour(workspace.id)) {
+      const timer = window.setTimeout(() => setTourOpen(true), 500)
+      return () => window.clearTimeout(timer)
+    }
+    return undefined
+  }, [workspace?.id, isExampleWorkspace])
 
   return (
     <div className="animate-fade-in px-8 py-6">
+      <ProductTour workspaceId={workspace?.id} open={tourOpen} onClose={() => setTourOpen(false)} />
       {(statsState.status === 'error' || agencyState.status === 'error') && (
         <div className="mb-5">
           <p className="rounded-md bg-amber-50 px-3 py-2 text-xs text-amber-700 dark:bg-amber-900/20 dark:text-amber-400">
@@ -89,6 +110,22 @@ export default function OverviewPage() {
             <p className="mt-1 text-xs text-neutral-400 dark:text-zinc-500">{t(`overview.${hint}`)}</p>
           </div>
         ))}
+      </div>
+
+      <div className="mt-6 rounded-lg border border-sky-100 bg-sky-50/70 p-5 dark:border-sky-900/40 dark:bg-sky-950/20">
+        <div className="flex flex-wrap items-start justify-between gap-4">
+          <div>
+            <h2 className="text-base font-semibold text-neutral-900 dark:text-zinc-100">{t('productTour.cardTitle')}</h2>
+            <p className="mt-1 max-w-2xl text-sm leading-6 text-neutral-600 dark:text-zinc-400">{t('productTour.cardBody')}</p>
+          </div>
+          <button
+            type="button"
+            onClick={() => setTourOpen(true)}
+            className="rounded-lg border border-sky-600 bg-white px-3 py-2 text-sm font-medium text-sky-700 hover:bg-sky-50 dark:border-sky-500 dark:bg-zinc-900 dark:text-sky-400 dark:hover:bg-zinc-800"
+          >
+            {t('productTour.start')}
+          </button>
+        </div>
       </div>
 
       <div className="mt-6 rounded-lg border border-neutral-200/80 bg-white p-5 dark:border-zinc-700/60 dark:bg-zinc-900/40">

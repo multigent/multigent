@@ -88,7 +88,11 @@
     "description": "Description",
     "descriptionPlaceholder": "What this workspace is for",
     "create": "Create workspace",
-    "creating": "Creating…"
+    "creating": "Creating…",
+    "exampleTitle": "Try the example workspace",
+    "exampleHint": "Create a neutral Hello World collaboration lab with demo agents, a workflow, a seeded task, and a short product tour.",
+    "createExample": "Create example workspace",
+    "creatingExample": "Creating example…"
   },
   "nav": {
     "overview": "Overview",
@@ -847,10 +851,22 @@
       "description": "Analytics team for metrics, dashboards, experiment analysis, research synthesis, and decision support."
     },
     "roles": {
-      "product-strategist": { "name": "Product Strategist", "description": "Owns product direction, opportunity framing, roadmap trade-offs, and strategic alignment." },
-      "user-researcher": { "name": "User Researcher", "description": "Owns customer interviews, usability findings, evidence quality, and insight synthesis." },
-      "product-analyst": { "name": "Product Analyst", "description": "Owns product metrics, funnel analysis, cohort trends, and experiment readouts." },
-      "prd-writer": { "name": "PRD Writer", "description": "Turns product decisions into clear PRDs, acceptance criteria, non-goals, and launch notes." },
+      "product-strategist": {
+        "name": "Product Strategist",
+        "description": "Owns product direction, opportunity framing, roadmap trade-offs, and strategic alignment."
+      },
+      "user-researcher": {
+        "name": "User Researcher",
+        "description": "Owns customer interviews, usability findings, evidence quality, and insight synthesis."
+      },
+      "product-analyst": {
+        "name": "Product Analyst",
+        "description": "Owns product metrics, funnel analysis, cohort trends, and experiment readouts."
+      },
+      "prd-writer": {
+        "name": "PRD Writer",
+        "description": "Turns product decisions into clear PRDs, acceptance criteria, non-goals, and launch notes."
+      },
       "product-manager": {
         "name": "Product Manager",
         "description": "Owns problem framing, scope, acceptance criteria, rollout, and stakeholder alignment."
@@ -875,22 +891,70 @@
         "name": "Code Reviewer",
         "description": "Reviews changes for correctness, maintainability, security, performance, and test gaps."
       },
-      "growth-marketer": { "name": "Growth Marketer", "description": "Owns acquisition experiments, campaign planning, messaging tests, and channel performance." },
-      "sales-operator": { "name": "Sales Operator", "description": "Owns CRM hygiene, lead qualification, follow-ups, pipeline reporting, and sales handoffs." },
-      "partnership-manager": { "name": "Partnership Manager", "description": "Owns partner research, outreach plans, collaboration proposals, and relationship tracking." },
-      "revenue-analyst": { "name": "Revenue Analyst", "description": "Owns pricing analysis, revenue metrics, conversion tracking, and business experiment readouts." },
-      "support-specialist": { "name": "Support Specialist", "description": "Owns support triage, customer replies, issue classification, and escalation quality." },
-      "onboarding-specialist": { "name": "Onboarding Specialist", "description": "Owns customer onboarding flows, setup checklists, adoption blockers, and early success signals." },
-      "knowledge-manager": { "name": "Knowledge Manager", "description": "Owns help center content, internal runbooks, FAQ quality, and documentation freshness." },
-      "incident-communicator": { "name": "Incident Communicator", "description": "Owns customer-facing incident updates, status notes, postmortem summaries, and communication timing." },
-      "agent-ops-manager": { "name": "Agent Ops Manager", "description": "Owns agent staffing, responsibilities, wakeup routines, escalation rules, and operating cadence." },
-      "prompt-engineer": { "name": "Prompt Engineer", "description": "Owns role prompts, workflow prompts, prompt tests, and prompt versioning." },
-      "skill-builder": { "name": "Skill Builder", "description": "Owns reusable skills, tool wrappers, MCP integrations, and agent-facing documentation." },
-      "eval-engineer": { "name": "Eval Engineer", "description": "Owns agent evaluation cases, output review rubrics, regression checks, and quality metrics." },
-      "data-analyst": { "name": "Data Analyst", "description": "Owns metric definitions, SQL analysis, dashboard interpretation, and decision notes." },
-      "analytics-engineer": { "name": "Analytics Engineer", "description": "Owns data modeling, transformation quality, metric pipelines, and data reliability checks." },
-      "experiment-analyst": { "name": "Experiment Analyst", "description": "Owns experiment design review, result analysis, statistical caveats, and recommendation quality." },
-      "research-synthesizer": { "name": "Research Synthesizer", "description": "Owns synthesis across qualitative notes, market research, support signals, and product data." }
+      "growth-marketer": {
+        "name": "Growth Marketer",
+        "description": "Owns acquisition experiments, campaign planning, messaging tests, and channel performance."
+      },
+      "sales-operator": {
+        "name": "Sales Operator",
+        "description": "Owns CRM hygiene, lead qualification, follow-ups, pipeline reporting, and sales handoffs."
+      },
+      "partnership-manager": {
+        "name": "Partnership Manager",
+        "description": "Owns partner research, outreach plans, collaboration proposals, and relationship tracking."
+      },
+      "revenue-analyst": {
+        "name": "Revenue Analyst",
+        "description": "Owns pricing analysis, revenue metrics, conversion tracking, and business experiment readouts."
+      },
+      "support-specialist": {
+        "name": "Support Specialist",
+        "description": "Owns support triage, customer replies, issue classification, and escalation quality."
+      },
+      "onboarding-specialist": {
+        "name": "Onboarding Specialist",
+        "description": "Owns customer onboarding flows, setup checklists, adoption blockers, and early success signals."
+      },
+      "knowledge-manager": {
+        "name": "Knowledge Manager",
+        "description": "Owns help center content, internal runbooks, FAQ quality, and documentation freshness."
+      },
+      "incident-communicator": {
+        "name": "Incident Communicator",
+        "description": "Owns customer-facing incident updates, status notes, postmortem summaries, and communication timing."
+      },
+      "agent-ops-manager": {
+        "name": "Agent Ops Manager",
+        "description": "Owns agent staffing, responsibilities, wakeup routines, escalation rules, and operating cadence."
+      },
+      "prompt-engineer": {
+        "name": "Prompt Engineer",
+        "description": "Owns role prompts, workflow prompts, prompt tests, and prompt versioning."
+      },
+      "skill-builder": {
+        "name": "Skill Builder",
+        "description": "Owns reusable skills, tool wrappers, MCP integrations, and agent-facing documentation."
+      },
+      "eval-engineer": {
+        "name": "Eval Engineer",
+        "description": "Owns agent evaluation cases, output review rubrics, regression checks, and quality metrics."
+      },
+      "data-analyst": {
+        "name": "Data Analyst",
+        "description": "Owns metric definitions, SQL analysis, dashboard interpretation, and decision notes."
+      },
+      "analytics-engineer": {
+        "name": "Analytics Engineer",
+        "description": "Owns data modeling, transformation quality, metric pipelines, and data reliability checks."
+      },
+      "experiment-analyst": {
+        "name": "Experiment Analyst",
+        "description": "Owns experiment design review, result analysis, statistical caveats, and recommendation quality."
+      },
+      "research-synthesizer": {
+        "name": "Research Synthesizer",
+        "description": "Owns synthesis across qualitative notes, market research, support signals, and product data."
+      }
     }
   },
   "workbench": {
@@ -1571,86 +1635,6 @@
     "perPage": "Per page"
   },
   "okr": {
-    "title": "OKRs",
-    "subtitle": "Objectives and key results for the current quarter.",
-    "newOKR": "New OKR",
-    "currentQuarter": "Current quarter",
-    "overallProgress": "Overall progress",
-    "objective": "Objective",
-    "owner": "Owner",
-    "quarter": "Quarter",
-    "status": "Status",
-    "progress": "Progress",
-    "keyResults": "Key results",
-    "noKeyResults": "No key results yet.",
-    "addKR": "Add key result",
-    "description": "Description",
-    "metricType": "Metric type",
-    "metricPercentage": "Percentage",
-    "metricNumber": "Number",
-    "metricBoolean": "Yes / No",
-    "metricCurrency": "Currency",
-    "targetValue": "Target",
-    "currentValue": "Current",
-    "unit": "Unit",
-    "edit": "Edit",
-    "delete": "Delete",
-    "save": "Save",
-    "cancel": "Cancel",
-    "saving": "Saving…",
-    "create": "Create",
-    "updateOKR": "Edit OKR",
-    "createOKR": "Create OKR",
-    "confirmDelete": "Delete this OKR? This cannot be undone.",
-    "empty": "No OKRs for this quarter.",
-    "emptyHint": "Create an objective to get started.",
-    "statusOnTrack": "On track",
-    "statusAtRisk": "At risk",
-    "statusOffTrack": "Off track",
-    "statusAchieved": "Achieved",
-    "booleanDone": "Done",
-    "booleanNotDone": "Not done",
-    "expand": "Show key results",
-    "collapse": "Hide key results"
-  },
-  "milestone": {
-    "heading": "Milestones",
-    "new": "New milestone",
-    "loading": "Loading milestones…",
-    "empty": "No milestones yet.",
-    "retry": "Retry",
-    "owner": "Owner",
-    "dueDate": "Due date",
-    "progress": "Progress",
-    "criteria": "Completion criteria",
-    "showCriteria": "Show criteria",
-    "hideCriteria": "Hide criteria",
-    "taskLabels": "Task labels",
-    "linkedKR": "Linked key results",
-    "title": "Title",
-    "description": "Description",
-    "status": "Status",
-    "status_planned": "Planned",
-    "status_in_progress": "In progress",
-    "status_completed": "Completed",
-    "status_cancelled": "Cancelled",
-    "createTitle": "Create milestone",
-    "editTitle": "Edit milestone",
-    "save": "Save",
-    "cancel": "Cancel",
-    "delete": "Delete",
-    "confirmDelete": "Delete this milestone? This cannot be undone.",
-    "criteriaHint": "One criterion per line.",
-    "taskLabelsHint": "Comma-separated labels.",
-    "linkedKRHint": "Comma-separated KR identifiers.",
-    "dueNone": "No due date",
-    "dueToday": "Due today",
-    "dueTomorrow": "Due tomorrow",
-    "dueInDays": "Due in {{count}} days",
-    "dueOverdue": "{{count}} days overdue",
-    "editProgressAria": "Edit progress percent"
-  },
-  "okr": {
     "title": "OKR Management",
     "newOKR": "New OKR",
     "objective": "Objective",
@@ -1831,5 +1815,46 @@
     "presetTwiceDaily": "Daily 9:00 & 18:00",
     "presetWeeklyMonday": "Monday 9:00",
     "presetMonthly1st": "1st of month 9:00"
+  },
+  "productTour": {
+    "cardTitle": "Product tour",
+    "cardBody": "Walk through the example workspace from model account setup to workflow execution. The demo stays intentionally neutral so you can focus on how agents, people, tasks, docs, and workflow handoffs fit together.",
+    "start": "Start tour",
+    "skip": "Skip",
+    "previous": "Previous",
+    "next": "Next",
+    "finish": "Finish",
+    "openStep": "Open this step",
+    "stepCount": "Step {{current}} / {{total}}",
+    "steps": {
+      "welcome": {
+        "title": "Welcome to the example lab",
+        "body": "This workspace contains a pure Hello World relay: one agent starts, a human reviews, another agent continues, and a recorder agent summarizes the collaboration."
+      },
+      "models": {
+        "title": "Configure a model account first",
+        "body": "Agents need a model account before they can run. Add an official API key or third-party provider in Settings, then attach it to each demo agent. A cc-switch import helper can make this easier in a later step."
+      },
+      "team": {
+        "title": "Inspect the demo team",
+        "body": "The collaboration-demo team defines neutral roles instead of a vertical business workflow. This keeps the example focused on coordination mechanics."
+      },
+      "agents": {
+        "title": "Check the three agents",
+        "body": "Open the project members page to review greeter-agent, responder-agent, and recorder-agent. Each agent can use the same model account or a different one."
+      },
+      "workflow": {
+        "title": "Review the workflow graph",
+        "body": "The workflow shows the relay path, human review loops, structured outputs, and docID handoffs between steps."
+      },
+      "task": {
+        "title": "Run the seeded task",
+        "body": "The project already has a task bound to the workflow. After the agents have model accounts, wake the first agent or let the task trigger run it."
+      },
+      "docs": {
+        "title": "Read durable outputs",
+        "body": "The demo guide and agent-produced artifacts live in the knowledge base. Workflow outputs should reference docs by docID instead of local paths."
+      }
+    }
   }
 }

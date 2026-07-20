@@ -8,6 +8,7 @@ export default function WorkspaceOnboardingPage({ onCreated }: { onCreated: () =
   const [name, setName] = useState('')
   const [description, setDescription] = useState('')
   const [busy, setBusy] = useState(false)
+  const [exampleBusy, setExampleBusy] = useState(false)
 
   async function submit(e: FormEvent) {
     e.preventDefault()
@@ -24,6 +25,17 @@ export default function WorkspaceOnboardingPage({ onCreated }: { onCreated: () =
       onCreated()
     } finally {
       setBusy(false)
+    }
+  }
+
+  async function createExample() {
+    setExampleBusy(true)
+    try {
+      await apiPost('/api/v1/workspaces/example', {})
+      window.dispatchEvent(new Event('workspace-changed'))
+      onCreated()
+    } finally {
+      setExampleBusy(false)
     }
   }
 
@@ -70,6 +82,19 @@ export default function WorkspaceOnboardingPage({ onCreated }: { onCreated: () =
             {busy ? t('workspaceOnboarding.creating') : t('workspaceOnboarding.create')}
           </button>
         </form>
+
+        <div className="mt-5 rounded-lg border border-sky-100 bg-sky-50/70 p-4 dark:border-sky-900/40 dark:bg-sky-950/20">
+          <h2 className="text-sm font-semibold text-neutral-900 dark:text-zinc-100">{t('workspaceOnboarding.exampleTitle')}</h2>
+          <p className="mt-1 text-sm leading-6 text-neutral-600 dark:text-zinc-400">{t('workspaceOnboarding.exampleHint')}</p>
+          <button
+            type="button"
+            onClick={createExample}
+            disabled={exampleBusy}
+            className="mt-3 w-full rounded-lg border border-sky-600 bg-white px-3 py-2 text-sm font-medium text-sky-700 hover:bg-sky-50 disabled:cursor-not-allowed disabled:opacity-50 dark:border-sky-500 dark:bg-zinc-900 dark:text-sky-400 dark:hover:bg-zinc-800"
+          >
+            {exampleBusy ? t('workspaceOnboarding.creatingExample') : t('workspaceOnboarding.createExample')}
+          </button>
+        </div>
       </div>
     </div>
   )
