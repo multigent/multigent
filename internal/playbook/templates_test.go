@@ -80,13 +80,28 @@ func TestVideoProductionStudioPlaybookTemplate(t *testing.T) {
 	for _, sk := range tmpl.Skills {
 		if sk.ID == "video-proposal" && sk.Body != "" {
 			foundOriginalSkill = true
-			if !containsAll(sk.Body, "2-3", "proposal_doc_id", "tool_plan_doc_id") {
+			if !containsAll(sk.Body, "Multigent Adapter", "Proposal Director", "approval gate", "research_brief") {
 				t.Fatalf("video-proposal skill is too thin: %q", sk.Body)
+			}
+			if !strings.Contains(sk.LicenseNote, "AGPLv3") {
+				t.Fatalf("expected OpenMontage license note, got %q", sk.LicenseNote)
 			}
 		}
 	}
 	if !foundOriginalSkill {
 		t.Fatalf("video-proposal skill missing")
+	}
+	foundRichRole := false
+	for _, role := range tmpl.Roles {
+		if role.ID == "creative-director" {
+			foundRichRole = true
+			if !containsAll(role.Prompt, "Multigent 角色适配", "OpenMontage Procedure: proposal-director", "OpenMontage Procedure: video-reference-analyst", "OpenMontage Procedure: taste-direction") {
+				t.Fatalf("creative director role prompt is too thin")
+			}
+		}
+	}
+	if !foundRichRole {
+		t.Fatalf("creative-director role missing")
 	}
 	if len(tmpl.Workflows) != 1 {
 		t.Fatalf("expected one workflow, got %d", len(tmpl.Workflows))

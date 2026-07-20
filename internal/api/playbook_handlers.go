@@ -288,6 +288,12 @@ func (s *Server) ensurePlaybookSkill(sk entity.PlaybookSkillTemplate) (string, e
 		}
 		return "created", nil
 	}
+	if name, ok := openMontageAssetRef(sk.Source); ok {
+		if err := playbookstore.CopyOpenMontageSkillAssets(name, dir); err != nil {
+			return "", err
+		}
+		return "created", nil
+	}
 	if err := os.MkdirAll(dir, 0o755); err != nil {
 		return "", err
 	}
@@ -295,6 +301,18 @@ func (s *Server) ensurePlaybookSkill(sk entity.PlaybookSkillTemplate) (string, e
 		return "", err
 	}
 	return "created", nil
+}
+
+func openMontageAssetRef(source string) (string, bool) {
+	_, rest, ok := strings.Cut(source, "calesthio/OpenMontage skills/")
+	if !ok {
+		return "", false
+	}
+	name := strings.TrimSpace(rest)
+	if name == "" || strings.Contains(name, "/") {
+		return "", false
+	}
+	return name, true
 }
 
 func openSpecAssetRef(source string) (string, bool) {
