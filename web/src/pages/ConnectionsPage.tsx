@@ -899,13 +899,22 @@ function ConnectionDialog({
         {fields.map(field => (
           <label key={field.key} className="block">
             <span className="text-xs font-medium text-neutral-500 dark:text-zinc-400">{providerFieldLabel(field, t)}{field.required ? ' *' : ''}</span>
-            <input
-              type={field.secret ? 'password' : 'text'}
-              className={inputCls}
-              value={values[field.key] ?? ''}
-              onChange={e => setValues(v => ({ ...v, [field.key]: e.target.value }))}
-              placeholder={isEditing ? t('connections.keepCurrentValue') : ''}
-            />
+            {field.inputType === 'textarea' ? (
+              <textarea
+                className={cn(inputCls, 'min-h-28 resize-y font-mono text-xs leading-5')}
+                value={values[field.key] ?? ''}
+                onChange={e => setValues(v => ({ ...v, [field.key]: e.target.value }))}
+                placeholder={isEditing ? t('connections.keepCurrentValue') : ''}
+              />
+            ) : (
+              <input
+                type={field.secret ? 'password' : field.inputType === 'url' ? 'url' : 'text'}
+                className={inputCls}
+                value={values[field.key] ?? ''}
+                onChange={e => setValues(v => ({ ...v, [field.key]: e.target.value }))}
+                placeholder={isEditing ? t('connections.keepCurrentValue') : ''}
+              />
+            )}
           </label>
         ))}
         {isEditing && authType !== 'no_auth' && (

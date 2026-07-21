@@ -196,6 +196,10 @@ func Defaults() []Provider {
 			Actions: giteeActions(),
 			Enabled: true,
 		},
+		sshKeyProvider(),
+		gitSSHProvider(),
+		npmRegistryProvider(),
+		dockerRegistryProvider(),
 		{
 			Provider:    "feishu",
 			DisplayName: "Feishu",
@@ -308,6 +312,92 @@ func Defaults() []Provider {
 
 func DefaultRuntimeAdapters(provider Provider) []ToolRuntimeAdapter {
 	switch provider.Provider {
+	case "ssh_key":
+		return []ToolRuntimeAdapter{{
+			Type:        RuntimeAdapterCLI,
+			Priority:    100,
+			Description: "Materialize an agent-scoped SSH private key and known_hosts file for command-line tools that need SSH.",
+			Skills:      []string{"ssh"},
+			CLI: &ToolCLIAdapter{
+				Binary: "ssh",
+				Installer: &ToolInstallerSpec{
+					Type:    "system",
+					Package: "openssh-client",
+					Version: "latest",
+					Check:   []string{"ssh -V >/dev/null 2>&1 || true"},
+				},
+				ConfigFiles: []ToolConfigFileSpec{
+					{Path: "~/.ssh/id_multigent", Format: "pem", Description: "Agent-scoped SSH private key."},
+					{Path: "~/.ssh/known_hosts", Format: "text", Description: "Agent-scoped SSH known_hosts entries."},
+				},
+			},
+			CredentialMaterialize: CredentialMaterializeRuntimeFile,
+			Audit:                 ToolRuntimeAuditPolicy{CommandAudit: "best_effort", ProxyAudit: "none"},
+		}}
+	case "git_ssh":
+		return []ToolRuntimeAdapter{{
+			Type:        RuntimeAdapterCLI,
+			Priority:    100,
+			Description: "Use Git over SSH with an agent-scoped private key, known_hosts, and GIT_SSH_COMMAND.",
+			Skills:      []string{"git"},
+			CLI: &ToolCLIAdapter{
+				Binary: "git",
+				Installer: &ToolInstallerSpec{
+					Type:    "system",
+					Package: "git",
+					Version: "latest",
+					Check:   []string{"git --version"},
+				},
+				ConfigFiles: []ToolConfigFileSpec{
+					{Path: "~/.ssh/id_git_multigent", Format: "pem", Description: "Agent-scoped Git SSH private key."},
+					{Path: "~/.ssh/known_hosts", Format: "text", Description: "Agent-scoped Git SSH known_hosts entries."},
+				},
+			},
+			CredentialMaterialize: CredentialMaterializeRuntimeFile,
+			Audit:                 ToolRuntimeAuditPolicy{CommandAudit: "best_effort", ProxyAudit: "none"},
+		}}
+	case "npm_registry":
+		return []ToolRuntimeAdapter{{
+			Type:        RuntimeAdapterCLI,
+			Priority:    100,
+			Description: "Use npm with an agent-scoped .npmrc for private registries and package publishing.",
+			Skills:      []string{"npm"},
+			CLI: &ToolCLIAdapter{
+				Binary: "npm",
+				Installer: &ToolInstallerSpec{
+					Type:    "system",
+					Package: "npm",
+					Version: "latest",
+					Check:   []string{"npm --version"},
+				},
+				ConfigFiles: []ToolConfigFileSpec{
+					{Path: "~/.npmrc", Format: "ini", Description: "Agent-scoped npm registry auth config."},
+				},
+			},
+			CredentialMaterialize: CredentialMaterializeRuntimeFile,
+			Audit:                 ToolRuntimeAuditPolicy{CommandAudit: "best_effort", ProxyAudit: "none"},
+		}}
+	case "docker_registry":
+		return []ToolRuntimeAdapter{{
+			Type:        RuntimeAdapterCLI,
+			Priority:    100,
+			Description: "Use Docker-compatible registry credentials with an agent-scoped Docker config.json.",
+			Skills:      []string{"docker"},
+			CLI: &ToolCLIAdapter{
+				Binary: "docker",
+				Installer: &ToolInstallerSpec{
+					Type:    "system",
+					Package: "docker-cli",
+					Version: "latest",
+					Check:   []string{"docker --version"},
+				},
+				ConfigFiles: []ToolConfigFileSpec{
+					{Path: "~/.docker/config.json", Format: "json", Description: "Agent-scoped Docker registry credential config."},
+				},
+			},
+			CredentialMaterialize: CredentialMaterializeRuntimeFile,
+			Audit:                 ToolRuntimeAuditPolicy{CommandAudit: "best_effort", ProxyAudit: "none"},
+		}}
 	case "feishu", "lark":
 		return []ToolRuntimeAdapter{
 			{
@@ -456,6 +546,85 @@ func staticPATProvider(provider, displayName, category, description, fieldLabel,
 			credentialGuide(fieldLabel, guideBody, linkLabel, linkURL),
 		},
 		Actions: actions,
+		Enabled: true,
+	}
+}
+
+func sshKeyProvider() Provider {
+	return Provider{
+		Provider:    "ssh_key",
+		DisplayName: "SSH Key",
+		Description: "Provide a reusable SSH private key for agents that need to access private hosts or SSH-based tools.",
+		Category:    "Developer Tools",
+		AuthTypes:   []string{AuthCustomCredential},
+		Fields: []ProviderField{
+			{Key: "privateKey", Label: "Private key", InputType: "textarea", Required: true, Secret: true},
+			{Key: "passphrase", Label: "Passphrase", InputType: "password", Secret: true},
+			{Key: "knownHosts", Label: "Known hosts", InputType: "textarea"},
+		},
+		Guides: []ProviderGuide{
+			credentialGuide("SSH key", "Paste a dedicated private key for Multigent agents. Prefer deploy keys or service-account keys with the smallest possible scope. Add known_hosts entries when strict host verification is required.", "OpenSSH key guide", "https://www.ssh.com/academy/ssh/keygen"),
+		},
+		Enabled: true,
+	}
+}
+
+func gitSSHProvider() Provider {
+	return Provider{
+		Provider:    "git_ssh",
+		DisplayName: "Git SSH",
+		Description: "Let agents clone, fetch, and push Git repositories over SSH using an agent-scoped key.",
+		Category:    "Developer Tools",
+		AuthTypes:   []string{AuthCustomCredential},
+		Fields: []ProviderField{
+			{Key: "host", Label: "Git host", InputType: "text", Required: true},
+			{Key: "username", Label: "SSH username", InputType: "text"},
+			{Key: "privateKey", Label: "Private key", InputType: "textarea", Required: true, Secret: true},
+			{Key: "passphrase", Label: "Passphrase", InputType: "password", Secret: true},
+			{Key: "knownHosts", Label: "Known hosts", InputType: "textarea"},
+		},
+		Guides: []ProviderGuide{
+			credentialGuide("Git SSH key", "Create a repository deploy key or service-account SSH key, grant only the repositories agents need, and paste the private key here. Use read-only keys unless agents must push branches or tags.", "GitHub deploy keys", "https://docs.github.com/authentication/connecting-to-github-with-ssh/managing-deploy-keys"),
+		},
+		Enabled: true,
+	}
+}
+
+func npmRegistryProvider() Provider {
+	return Provider{
+		Provider:    "npm_registry",
+		DisplayName: "npm",
+		Description: "Use private npm registries and package publishing credentials from agent sandboxes.",
+		Category:    "Developer Tools",
+		AuthTypes:   []string{AuthCustomCredential},
+		Fields: []ProviderField{
+			{Key: "registryUrl", Label: "Registry URL", InputType: "url", Required: true},
+			{Key: "scope", Label: "Package scope", InputType: "text"},
+			{Key: "authToken", Label: "Auth token", InputType: "password", Required: true, Secret: true},
+			{Key: "alwaysAuth", Label: "Always auth", InputType: "text"},
+		},
+		Guides: []ProviderGuide{
+			credentialGuide("npm token", "Create an npm automation token or a private-registry token. Use read-only tokens for install-only agents and automation tokens only for publishing workflows.", "npm access tokens", "https://docs.npmjs.com/creating-and-viewing-access-tokens"),
+		},
+		Enabled: true,
+	}
+}
+
+func dockerRegistryProvider() Provider {
+	return Provider{
+		Provider:    "docker_registry",
+		DisplayName: "Docker Registry",
+		Description: "Use Docker-compatible registry credentials for pulling or pushing images from agent sandboxes.",
+		Category:    "Developer Tools",
+		AuthTypes:   []string{AuthCustomCredential},
+		Fields: []ProviderField{
+			{Key: "registryUrl", Label: "Registry URL", InputType: "text", Required: true},
+			{Key: "username", Label: "Username", InputType: "text"},
+			{Key: "password", Label: "Password or token", InputType: "password", Required: true, Secret: true},
+		},
+		Guides: []ProviderGuide{
+			credentialGuide("Registry token", "Create a registry-scoped access token for Docker Hub, GHCR, Harbor, ECR, or another OCI-compatible registry. Prefer pull-only tokens unless the agent must publish images.", "Docker login docs", "https://docs.docker.com/reference/cli/docker/login/"),
+		},
 		Enabled: true,
 	}
 }

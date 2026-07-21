@@ -344,11 +344,59 @@ func (s *Server) testConnection(r *http.Request, connection controldb.Connection
 	switch connection.Provider {
 	case "custom-mcp":
 		return s.testCustomMCPConnection(r, connection)
+	case "ssh_key", "git_ssh", "npm_registry", "docker_registry":
+		return s.testStaticRuntimeCredentialConnection(connection)
 	case "custom-http", "github", "gitlab", "gitee", "linear", "notion", "figma", "airtable", "asana", "clickup", "sentry", "vercel", "exa", "brave_search", "feishu", "lark", "dingtalk_bot":
 		return s.testHTTPConnection(r, connection, body)
 	default:
 		return testConnectionResult{}, fmt.Errorf("connection test is not supported for provider %q", connection.Provider)
 	}
+}
+
+func (s *Server) testStaticRuntimeCredentialConnection(connection controldb.Connection) (testConnectionResult, error) {
+	secret, ok, err := s.controlDB.ConnectionSecret(connection.ID)
+	if err != nil {
+		return testConnectionResult{}, err
+	}
+	if !ok {
+		return testConnectionResult{}, fmt.Errorf("connection secret not found")
+	}
+	values, err := openConnectionSecret(secret)
+	if err != nil {
+		return testConnectionResult{}, err
+	}
+	switch connection.Provider {
+	case "ssh_key":
+		if normalizePrivateCredential(values["privateKey"]) == "" {
+			return testConnectionResult{}, fmt.Errorf("privateKey is required")
+		}
+	case "git_ssh":
+		if strings.TrimSpace(values["host"]) == "" {
+			return testConnectionResult{}, fmt.Errorf("host is required")
+		}
+		if normalizePrivateCredential(values["privateKey"]) == "" {
+			return testConnectionResult{}, fmt.Errorf("privateKey is required")
+		}
+	case "npm_registry":
+		if strings.TrimSpace(values["registryUrl"]) == "" {
+			return testConnectionResult{}, fmt.Errorf("registryUrl is required")
+		}
+		if strings.TrimSpace(firstNonEmpty(values["authToken"], values["apiKey"], values["token"])) == "" {
+			return testConnectionResult{}, fmt.Errorf("authToken is required")
+		}
+	case "docker_registry":
+		if strings.TrimSpace(values["registryUrl"]) == "" {
+			return testConnectionResult{}, fmt.Errorf("registryUrl is required")
+		}
+		if strings.TrimSpace(firstNonEmpty(values["password"], values["authToken"], values["apiKey"], values["token"])) == "" {
+			return testConnectionResult{}, fmt.Errorf("password is required")
+		}
+	}
+	return testConnectionResult{OK: true, Status: http.StatusOK, Message: "credential format looks valid"}, nil
+}
+
+func normalizePrivateCredential(value string) string {
+	return strings.TrimSpace(strings.ReplaceAll(value, "\r\n", "\n"))
 }
 
 func (s *Server) testCustomMCPConnection(r *http.Request, connection controldb.Connection) (testConnectionResult, error) {

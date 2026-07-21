@@ -10,6 +10,7 @@ func TestDefaultProvidersIncludeActionCatalogs(t *testing.T) {
 	for _, providerID := range []string{
 		"github", "gitlab", "gitee", "feishu", "lark", "linear", "notion", "dingtalk_bot",
 		"figma", "airtable", "asana", "clickup", "sentry", "vercel", "exa", "brave_search",
+		"ssh_key", "git_ssh", "npm_registry", "docker_registry",
 	} {
 		provider, ok := providers[providerID]
 		if !ok {
@@ -18,7 +19,7 @@ func TestDefaultProvidersIncludeActionCatalogs(t *testing.T) {
 		if provider.ComingSoon {
 			t.Fatalf("provider %q should be available", providerID)
 		}
-		if len(provider.Actions) == 0 {
+		if len(provider.Actions) == 0 && provider.Provider != "ssh_key" && provider.Provider != "git_ssh" && provider.Provider != "npm_registry" && provider.Provider != "docker_registry" {
 			t.Fatalf("provider %q has no actions", providerID)
 		}
 		for _, action := range provider.Actions {
@@ -45,6 +46,10 @@ func TestDefaultProvidersIncludeRuntimeAdapters(t *testing.T) {
 		{provider: "lark", want: RuntimeAdapterCLI, binary: "lark-cli"},
 		{provider: "feishu", want: RuntimeAdapterCLI, binary: "lark-cli"},
 		{provider: "github", want: RuntimeAdapterCLI, binary: "gh"},
+		{provider: "ssh_key", want: RuntimeAdapterCLI, binary: "ssh"},
+		{provider: "git_ssh", want: RuntimeAdapterCLI, binary: "git"},
+		{provider: "npm_registry", want: RuntimeAdapterCLI, binary: "npm"},
+		{provider: "docker_registry", want: RuntimeAdapterCLI, binary: "docker"},
 		{provider: "figma", want: RuntimeAdapterMCPGateway},
 		{provider: "notion", want: RuntimeAdapterHTTPAction},
 	}

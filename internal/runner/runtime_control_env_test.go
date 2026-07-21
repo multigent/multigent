@@ -1,6 +1,7 @@
 package runner
 
 import (
+	"encoding/base64"
 	"encoding/json"
 	"net/http"
 	"net/http/httptest"
@@ -444,6 +445,133 @@ func TestWriteRuntimeToolsFileMaterializesLarkCLIConfig(t *testing.T) {
 	bootstrapText := string(bootstrapBody)
 	if !strings.Contains(bootstrapText, "npm install -g '@larksuite/cli'") || !strings.Contains(bootstrapText, "lark-cli --version") || !strings.Contains(bootstrapText, filepath.Join(workspaceRoot, ".multigent", "tool-cache", "npm")) {
 		t.Fatalf("unexpected bootstrap script: %s", bootstrapText)
+	}
+}
+
+func TestWriteRuntimeToolsFileMaterializesBasicExternalToolCredentials(t *testing.T) {
+	body := []byte(`{
+		"tools":[
+			{
+				"provider":"git_ssh",
+				"connectionId":"conn_git",
+				"connectionAlias":"git-ssh",
+				"connectionName":"Git SSH",
+				"adapters":[{
+					"type":"cli",
+					"priority":100,
+					"cli":{
+						"binary":"git",
+						"configFiles":[
+							{"path":"~/.ssh/id_git_multigent","format":"pem"},
+							{"path":"~/.ssh/known_hosts","format":"text"}
+						]
+					},
+					"credentialMaterialize":"runtime_file"
+				}]
+			},
+			{
+				"provider":"npm_registry",
+				"connectionId":"conn_npm",
+				"connectionAlias":"npm",
+				"connectionName":"npm",
+				"adapters":[{
+					"type":"cli",
+					"priority":100,
+					"cli":{"binary":"npm","configFiles":[{"path":"~/.npmrc","format":"ini"}]},
+					"credentialMaterialize":"runtime_file"
+				}]
+			},
+			{
+				"provider":"docker_registry",
+				"connectionId":"conn_docker",
+				"connectionAlias":"docker",
+				"connectionName":"Docker",
+				"adapters":[{
+					"type":"cli",
+					"priority":100,
+					"cli":{"binary":"docker","configFiles":[{"path":"~/.docker/config.json","format":"json"}]},
+					"credentialMaterialize":"runtime_file"
+				}]
+			}
+		]
+	}`)
+	agentDir := t.TempDir()
+	toolDir, toolsPath, env, err := writeRuntimeToolsFile("", agentDir, "run-basic-tools", "/tmp/connections.json", body, func(connectionID string) (map[string]string, bool, error) {
+		switch connectionID {
+		case "conn_git":
+			return map[string]string{
+				"privateKey": "-----BEGIN OPENSSH PRIVATE KEY-----\nkey-body\n-----END OPENSSH PRIVATE KEY-----",
+				"knownHosts": "github.com ssh-ed25519 AAAATEST",
+			}, true, nil
+		case "conn_npm":
+			return map[string]string{
+				"registryUrl": "https://registry.npmjs.org/",
+				"scope":       "@acme",
+				"authToken":   "npm-secret-token",
+				"alwaysAuth":  "true",
+			}, true, nil
+		case "conn_docker":
+			return map[string]string{
+				"registryUrl": "ghcr.io",
+				"username":    "octo",
+				"password":    "docker-secret-token",
+			}, true, nil
+		default:
+			t.Fatalf("unexpected connectionID=%q", connectionID)
+			return nil, false, nil
+		}
+	})
+	if err != nil {
+		t.Fatalf("write tools file: %v", err)
+	}
+	if toolDir == "" || toolsPath == "" {
+		t.Fatalf("toolDir=%q toolsPath=%q", toolDir, toolsPath)
+	}
+	if env["GIT_SSH_COMMAND"] == "" || !strings.Contains(env["GIT_SSH_COMMAND"], "id_git_multigent") {
+		t.Fatalf("GIT_SSH_COMMAND=%q", env["GIT_SSH_COMMAND"])
+	}
+	gitKey := env["MULTIGENT_GIT_SSH_KEY_FILE"]
+	if gitKey == "" {
+		t.Fatalf("git key env missing: %#v", env)
+	}
+	keyBody, err := os.ReadFile(gitKey)
+	if err != nil {
+		t.Fatalf("read git key: %v", err)
+	}
+	if !strings.Contains(string(keyBody), "BEGIN OPENSSH PRIVATE KEY") {
+		t.Fatalf("unexpected key body: %s", string(keyBody))
+	}
+	knownHostsBody, err := os.ReadFile(filepath.Join(filepath.Dir(gitKey), "known_hosts"))
+	if err != nil {
+		t.Fatalf("read known_hosts: %v", err)
+	}
+	if !strings.Contains(string(knownHostsBody), "github.com ssh-ed25519") {
+		t.Fatalf("unexpected known_hosts: %s", string(knownHostsBody))
+	}
+	npmrcPath := env["NPM_CONFIG_USERCONFIG"]
+	npmrcBody, err := os.ReadFile(npmrcPath)
+	if err != nil {
+		t.Fatalf("read npmrc: %v", err)
+	}
+	if !strings.Contains(string(npmrcBody), "@acme:registry=https://registry.npmjs.org/") || !strings.Contains(string(npmrcBody), "_authToken=npm-secret-token") {
+		t.Fatalf("unexpected npmrc: %s", string(npmrcBody))
+	}
+	dockerConfigPath := filepath.Join(env["DOCKER_CONFIG"], "config.json")
+	dockerBody, err := os.ReadFile(dockerConfigPath)
+	if err != nil {
+		t.Fatalf("read docker config: %v", err)
+	}
+	if !strings.Contains(string(dockerBody), "ghcr.io") || !strings.Contains(string(dockerBody), base64.StdEncoding.EncodeToString([]byte("octo:docker-secret-token"))) {
+		t.Fatalf("unexpected docker config: %s", string(dockerBody))
+	}
+	toolsBody, err := os.ReadFile(toolsPath)
+	if err != nil {
+		t.Fatalf("read tools plan: %v", err)
+	}
+	for _, secret := range []string{"npm-secret-token", "docker-secret-token", "key-body"} {
+		if strings.Contains(string(toolsBody), secret) {
+			t.Fatalf("tools file leaked %q: %s", secret, string(toolsBody))
+		}
 	}
 }
 

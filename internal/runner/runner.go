@@ -1789,6 +1789,14 @@ func materializeCLIConfig(tool runtimeToolRef, adapter runtimeAdapterRef, cfg ru
 		return materializeGitHubCLIConfig(adapter, cfg, secretValues)
 	case "feishu", "lark":
 		return materializeLarkCLIConfig(tool, adapter, cfg, secretValues)
+	case "ssh_key":
+		return materializeSSHKeyConfig(cfg, secretValues, "id_multigent", "MULTIGENT_SSH_KEY_FILE")
+	case "git_ssh":
+		return materializeGitSSHConfig(cfg, secretValues)
+	case "npm_registry":
+		return materializeNPMRegistryConfig(cfg, secretValues)
+	case "docker_registry":
+		return materializeDockerRegistryConfig(cfg, secretValues)
 	default:
 		return nil, nil
 	}
@@ -1906,6 +1914,115 @@ func materializeGitHubCLIConfig(adapter runtimeAdapterRef, cfg runtimeConfigFile
 		return nil, err
 	}
 	return map[string]string{"GH_CONFIG_DIR": filepath.Dir(cfg.MaterializedPath)}, nil
+}
+
+func materializeSSHKeyConfig(cfg runtimeConfigFileRef, secretValues map[string]string, keyBaseName, envKey string) (map[string]string, error) {
+	path := strings.TrimSpace(cfg.Path)
+	if cfg.MaterializedPath == "" {
+		return nil, nil
+	}
+	if strings.HasSuffix(path, "known_hosts") {
+		knownHosts := strings.TrimSpace(secretValues["knownHosts"])
+		if knownHosts == "" {
+			return nil, nil
+		}
+		if err := os.WriteFile(cfg.MaterializedPath, []byte(knownHosts+"\n"), 0o600); err != nil {
+			return nil, err
+		}
+		return nil, nil
+	}
+	if !strings.HasSuffix(path, keyBaseName) {
+		return nil, nil
+	}
+	privateKey := normalizePrivateKey(secretValues["privateKey"])
+	if privateKey == "" {
+		return nil, nil
+	}
+	if err := os.WriteFile(cfg.MaterializedPath, []byte(privateKey), 0o600); err != nil {
+		return nil, err
+	}
+	if envKey == "" {
+		return nil, nil
+	}
+	return map[string]string{envKey: cfg.MaterializedPath}, nil
+}
+
+func materializeGitSSHConfig(cfg runtimeConfigFileRef, secretValues map[string]string) (map[string]string, error) {
+	path := strings.TrimSpace(cfg.Path)
+	if strings.HasSuffix(path, "known_hosts") {
+		return materializeSSHKeyConfig(cfg, secretValues, "", "")
+	}
+	env, err := materializeSSHKeyConfig(cfg, secretValues, "id_git_multigent", "MULTIGENT_GIT_SSH_KEY_FILE")
+	if err != nil || len(env) == 0 {
+		return env, err
+	}
+	knownHostsPath := filepath.Join(filepath.Dir(cfg.MaterializedPath), "known_hosts")
+	command := []string{
+		"ssh",
+		"-i", cfg.MaterializedPath,
+		"-o", "IdentitiesOnly=yes",
+		"-o", "StrictHostKeyChecking=accept-new",
+		"-o", "UserKnownHostsFile=" + knownHostsPath,
+	}
+	env["GIT_SSH_COMMAND"] = strings.Join(command, " ")
+	return env, nil
+}
+
+func materializeNPMRegistryConfig(cfg runtimeConfigFileRef, secretValues map[string]string) (map[string]string, error) {
+	if cfg.MaterializedPath == "" || !strings.HasSuffix(strings.TrimSpace(cfg.Path), ".npmrc") {
+		return nil, nil
+	}
+	registryURL := firstNonEmpty(secretValues["registryUrl"], "https://registry.npmjs.org/")
+	authToken := firstNonEmpty(secretValues["authToken"], secretValues["apiKey"], secretValues["token"])
+	if authToken == "" {
+		return nil, nil
+	}
+	registryURL = strings.TrimRight(registryURL, "/") + "/"
+	authKey := npmRegistryAuthKey(registryURL)
+	var lines []string
+	if scope := strings.TrimSpace(secretValues["scope"]); scope != "" {
+		if !strings.HasPrefix(scope, "@") {
+			scope = "@" + scope
+		}
+		lines = append(lines, scope+":registry="+registryURL)
+	} else {
+		lines = append(lines, "registry="+registryURL)
+	}
+	lines = append(lines, authKey+":_authToken="+authToken)
+	if value := strings.TrimSpace(secretValues["alwaysAuth"]); value != "" {
+		lines = append(lines, "always-auth="+value)
+	}
+	if err := os.WriteFile(cfg.MaterializedPath, []byte(strings.Join(lines, "\n")+"\n"), 0o600); err != nil {
+		return nil, err
+	}
+	return map[string]string{"NPM_CONFIG_USERCONFIG": cfg.MaterializedPath}, nil
+}
+
+func materializeDockerRegistryConfig(cfg runtimeConfigFileRef, secretValues map[string]string) (map[string]string, error) {
+	if cfg.MaterializedPath == "" || !strings.HasSuffix(strings.TrimSpace(cfg.Path), ".docker/config.json") {
+		return nil, nil
+	}
+	registry := firstNonEmpty(secretValues["registryUrl"], "https://index.docker.io/v1/")
+	username := firstNonEmpty(secretValues["username"], "token")
+	password := firstNonEmpty(secretValues["password"], secretValues["authToken"], secretValues["apiKey"], secretValues["token"])
+	if password == "" {
+		return nil, nil
+	}
+	auth := base64.StdEncoding.EncodeToString([]byte(username + ":" + password))
+	body, err := json.MarshalIndent(map[string]any{
+		"auths": map[string]any{
+			dockerRegistryConfigKey(registry): map[string]any{
+				"auth": auth,
+			},
+		},
+	}, "", "  ")
+	if err != nil {
+		return nil, err
+	}
+	if err := os.WriteFile(cfg.MaterializedPath, append(body, '\n'), 0o600); err != nil {
+		return nil, err
+	}
+	return map[string]string{"DOCKER_CONFIG": filepath.Dir(cfg.MaterializedPath)}, nil
 }
 
 func materializeLarkCLIConfig(tool runtimeToolRef, adapter runtimeAdapterRef, cfg runtimeConfigFileRef, secretValues map[string]string) (map[string]string, error) {
@@ -2071,6 +2188,43 @@ func yamlQuote(value string) string {
 	escaped := strings.ReplaceAll(value, "\\", "\\\\")
 	escaped = strings.ReplaceAll(escaped, `"`, `\"`)
 	return `"` + escaped + `"`
+}
+
+func normalizePrivateKey(value string) string {
+	value = strings.TrimSpace(strings.ReplaceAll(value, "\r\n", "\n"))
+	if value == "" {
+		return ""
+	}
+	return value + "\n"
+}
+
+func npmRegistryAuthKey(registryURL string) string {
+	raw := strings.TrimSpace(registryURL)
+	parsed, err := url.Parse(raw)
+	if err == nil && parsed.Host != "" {
+		path := strings.TrimRight(parsed.EscapedPath(), "/")
+		if path != "" {
+			return "//" + parsed.Host + path + "/"
+		}
+		return "//" + parsed.Host + "/"
+	}
+	raw = strings.TrimPrefix(strings.TrimPrefix(raw, "https://"), "http://")
+	raw = strings.TrimRight(raw, "/")
+	return "//" + raw + "/"
+}
+
+func dockerRegistryConfigKey(registry string) string {
+	raw := strings.TrimSpace(registry)
+	if raw == "" {
+		return "https://index.docker.io/v1/"
+	}
+	if parsed, err := url.Parse(raw); err == nil && parsed.Host != "" {
+		if parsed.Host == "registry-1.docker.io" || parsed.Host == "docker.io" {
+			return "https://index.docker.io/v1/"
+		}
+		return parsed.Host
+	}
+	return strings.TrimRight(raw, "/")
 }
 
 func newRuntimeConnectionSecretResolver() (runtimeConnectionSecretResolver, func()) {
