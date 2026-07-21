@@ -493,7 +493,8 @@
       "amber": "アンバー",
       "emerald": "グリーン",
       "rose": "ローズ"
-    }
+    },
+    "autoLayout": "自動整列"
   },
   "projectSettings": {
     "subtitle": "プロジェクト設定とプロンプト管理。",

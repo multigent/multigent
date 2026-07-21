@@ -493,7 +493,8 @@
       "amber": "琥珀",
       "emerald": "綠色",
       "rose": "玫紅"
-    }
+    },
+    "autoLayout": "一鍵整理"
   },
   "projectSettings": {
     "subtitle": "專案設定與提示詞管理。",

@@ -206,6 +206,10 @@ const colorOptions = ['neutral', 'sky', 'violet', 'amber', 'emerald', 'rose']
 const edgeOperators = ['eq', 'neq', 'in', 'exists']
 const ALIGN_THRESHOLD = 28
 const MAX_UNDO_STACK = 50
+const AUTO_LAYOUT_X_GAP = 420
+const AUTO_LAYOUT_Y_GAP = 164
+const AUTO_LAYOUT_START_X = 80
+const AUTO_LAYOUT_START_Y = 80
 
 const fieldClass =
   'mt-1 w-full rounded-lg border border-neutral-300 bg-white px-3 py-2 text-sm text-neutral-900 outline-none transition-colors focus:border-sky-400 dark:border-zinc-600 dark:bg-zinc-800 dark:text-zinc-100'
@@ -316,6 +320,84 @@ function sameDefinition(a: WorkflowDefinition, b: WorkflowDefinition) {
 
 function sameStringArray(a: string[], b: string[]) {
   return a.length === b.length && a.every((item, index) => item === b[index])
+}
+
+function autoLayoutWorkflow(definition: WorkflowDefinition): WorkflowDefinition {
+  const steps = definition.steps
+  if (steps.length <= 1) return definition
+
+  const stepIDs = new Set(steps.map((step) => step.id))
+  const outgoing = new Map<string, string[]>()
+  const incomingCount = new Map<string, number>()
+  for (const step of steps) {
+    outgoing.set(step.id, [])
+    incomingCount.set(step.id, 0)
+  }
+  for (const edge of definition.edges) {
+    if (!stepIDs.has(edge.from) || !stepIDs.has(edge.to)) continue
+    outgoing.get(edge.from)?.push(edge.to)
+    incomingCount.set(edge.to, (incomingCount.get(edge.to) ?? 0) + 1)
+  }
+
+  const orderedRoots = [
+    definition.startStepId,
+    ...steps.filter((step) => (incomingCount.get(step.id) ?? 0) === 0).map((step) => step.id),
+    ...steps.map((step) => step.id),
+  ].filter((id, index, list) => id && stepIDs.has(id) && list.indexOf(id) === index)
+
+  const layerByID = new Map<string, number>()
+  const queue: string[] = []
+  for (const root of orderedRoots) {
+    if (!layerByID.has(root)) {
+      layerByID.set(root, root === definition.startStepId ? 0 : Math.max(0, layerByID.size === 0 ? 0 : 1))
+      queue.push(root)
+    }
+    while (queue.length > 0) {
+      const current = queue.shift()!
+      const currentLayer = layerByID.get(current) ?? 0
+      for (const target of outgoing.get(current) ?? []) {
+        if (!layerByID.has(target)) {
+          layerByID.set(target, currentLayer + 1)
+          queue.push(target)
+        }
+      }
+    }
+  }
+
+  const maxLayer = Math.max(0, ...Array.from(layerByID.values()))
+  for (const step of steps) {
+    if (!layerByID.has(step.id)) layerByID.set(step.id, maxLayer + 1)
+  }
+
+  const layers = new Map<number, WorkflowStep[]>()
+  for (const step of steps) {
+    const layer = layerByID.get(step.id) ?? 0
+    layers.set(layer, [...(layers.get(layer) ?? []), step])
+  }
+  for (const layerSteps of layers.values()) {
+    layerSteps.sort((a, b) => {
+      if (Math.abs(a.position.y - b.position.y) > 8) return a.position.y - b.position.y
+      return steps.findIndex((step) => step.id === a.id) - steps.findIndex((step) => step.id === b.id)
+    })
+  }
+
+  const maxRows = Math.max(1, ...Array.from(layers.values()).map((layerSteps) => layerSteps.length))
+  const canvasMid = AUTO_LAYOUT_START_Y + ((maxRows - 1) * AUTO_LAYOUT_Y_GAP) / 2
+  const positionByID = new Map<string, WorkflowPosition>()
+  for (const [layer, layerSteps] of Array.from(layers.entries()).sort(([a], [b]) => a - b)) {
+    const layerStartY = canvasMid - ((layerSteps.length - 1) * AUTO_LAYOUT_Y_GAP) / 2
+    layerSteps.forEach((step, index) => {
+      positionByID.set(step.id, {
+        x: AUTO_LAYOUT_START_X + layer * AUTO_LAYOUT_X_GAP,
+        y: Math.round(layerStartY + index * AUTO_LAYOUT_Y_GAP),
+      })
+    })
+  }
+
+  return {
+    ...definition,
+    steps: steps.map((step) => ({ ...step, position: positionByID.get(step.id) ?? step.position })),
+  }
 }
 
 function isTextEditingTarget(target: EventTarget | null) {
@@ -735,6 +817,14 @@ export function WorkflowBoard({
     })
   }
 
+  function arrangeLayout() {
+    if (!editable) return
+    const next = autoLayoutWorkflow(definition)
+    updateDefinition(next)
+    setSelectedEdgeId('')
+    setSelectedNodeIds(selectedId ? [selectedId] : [])
+  }
+
   function updateStepDraft(patch: Partial<WorkflowStep>) {
     setStepDraft((current) => (current ? { ...current, ...patch } : current))
   }
@@ -787,6 +877,9 @@ export function WorkflowBoard({
               <>
                 <button type="button" onClick={addNode} className="rounded-lg border border-sky-600 bg-white px-3 py-1.5 text-xs font-medium text-sky-700 shadow-sm hover:bg-sky-50 dark:border-sky-500 dark:bg-zinc-900 dark:text-sky-400 dark:hover:bg-zinc-800">
                   {t('workflows.addNode')}
+                </button>
+                <button type="button" onClick={arrangeLayout} disabled={definition.steps.length <= 1} className="rounded-lg border border-neutral-300 bg-white px-3 py-1.5 text-xs font-medium text-neutral-600 shadow-sm hover:bg-neutral-50 disabled:opacity-40 dark:border-zinc-600 dark:bg-zinc-900 dark:text-zinc-300 dark:hover:bg-zinc-800">
+                  {t('workflows.autoLayout')}
                 </button>
                 <button type="button" onClick={deleteSelectedElement} disabled={!selectedEdgeId && (definition.steps.length <= 1 || (selectedNodeIds.length === 0 && !selected))} className="rounded-lg border border-neutral-300 bg-white px-3 py-1.5 text-xs font-medium text-neutral-600 shadow-sm hover:bg-neutral-50 disabled:opacity-40 dark:border-zinc-600 dark:bg-zinc-900 dark:text-zinc-300 dark:hover:bg-zinc-800">
                   {selectedEdgeId ? t('workflows.deleteEdge') : t('workflows.deleteNode')}

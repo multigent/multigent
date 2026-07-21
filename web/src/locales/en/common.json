@@ -493,7 +493,8 @@
       "amber": "Amber",
       "emerald": "Green",
       "rose": "Rose"
-    }
+    },
+    "autoLayout": "Auto layout"
   },
   "projectSettings": {
     "subtitle": "Project configuration and prompts.",
