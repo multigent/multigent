@@ -300,6 +300,7 @@ func (s *Server) Handler() http.Handler {
 	mux.HandleFunc("GET /api/v1/skills", s.handleListSkills)
 	mux.HandleFunc("POST /api/v1/skills", s.handleCreateSkill)
 	mux.HandleFunc("POST /api/v1/skills/install", s.handleInstallSkill)
+	mux.HandleFunc("GET /api/v1/skill-registry", s.handleListSkillRegistry)
 	mux.HandleFunc("GET /api/v1/skills/{name}", s.handleGetSkillDetail)
 	mux.HandleFunc("PUT /api/v1/skills/{name}", s.handlePutSkillPrompt)
 	mux.HandleFunc("GET /api/v1/skills/{name}/files", s.handleGetSkillFiles)

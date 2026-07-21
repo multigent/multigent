@@ -14,6 +14,7 @@ import (
 	"time"
 
 	"github.com/multigent/multigent/internal/entity"
+	"github.com/multigent/multigent/internal/errs"
 	"gopkg.in/yaml.v3"
 )
 
@@ -50,6 +51,21 @@ type skillInstallBody struct {
 	Name        string `json:"name,omitempty"`
 	Description string `json:"description,omitempty"`
 	Managed     *bool  `json:"managed,omitempty"`
+}
+
+type skillPackageRow struct {
+	Name        string `json:"name"`
+	Description string `json:"description,omitempty"`
+	Source      string `json:"source,omitempty"`
+	SourceType  string `json:"sourceType,omitempty"`
+	SourceRef   string `json:"sourceRef,omitempty"`
+	Version     string `json:"version"`
+	Managed     bool   `json:"managed,omitempty"`
+	Dirty       bool   `json:"dirty,omitempty"`
+	InstalledAt string `json:"installedAt,omitempty"`
+	UpdatedAt   string `json:"updatedAt,omitempty"`
+	Path        string `json:"path,omitempty"`
+	Installed   bool   `json:"installed,omitempty"`
 }
 
 type skillPublishBody struct {
@@ -122,7 +138,7 @@ func (s *Server) handleGetSkillDetail(w http.ResponseWriter, r *http.Request) {
 		"dir":         s.st.SkillDir(name),
 		"provenance":  s.playbookObjectProvenanceForRequest(r, "skill", "", name),
 		"registry":    s.skillRegistryMeta(name),
-		"packageDir":  s.skillPackageDir(name, s.skillRegistryMeta(name).Version),
+		"packageDir":  s.skillPackageDirForMeta(name, s.skillRegistryMeta(name)),
 	})
 }
 
@@ -145,6 +161,31 @@ func (s *Server) handleGetSkillFiles(w http.ResponseWriter, r *http.Request) {
 		"name":  name,
 		"files": files,
 	})
+}
+
+func (s *Server) handleListSkillRegistry(w http.ResponseWriter, r *http.Request) {
+	packages, err := s.listSkillRegistryPackages()
+	if err != nil {
+		s.serverError(w, err)
+		return
+	}
+	installed := map[string]bool{}
+	if skills, err := s.st.ListSkills(); err == nil {
+		for _, sk := range skills {
+			if sk == nil {
+				continue
+			}
+			meta := s.skillRegistryMeta(sk.Name)
+			version := firstNonEmpty(meta.Version, sk.Version)
+			if version != "" {
+				installed[sk.Name+"@"+version] = true
+			}
+		}
+	}
+	for i := range packages {
+		packages[i].Installed = installed[packages[i].Name+"@"+packages[i].Version]
+	}
+	_ = json.NewEncoder(w).Encode(packages)
 }
 
 func (s *Server) handleCreateSkill(w http.ResponseWriter, r *http.Request) {
@@ -248,6 +289,28 @@ func (s *Server) handleInstallSkill(w http.ResponseWriter, r *http.Request) {
 		managed = *body.Managed
 	}
 
+	if registryName, registryVersion, ok := parseRegistrySkillSource(source); ok {
+		if err := s.installSkillPackageReference(registryName, registryVersion, strings.TrimSpace(body.Name)); err != nil {
+			if isNotFoundErr(err) {
+				s.jsonErrorCode(w, http.StatusNotFound, ErrCodeNotFound, err.Error())
+				return
+			}
+			s.serverError(w, err)
+			return
+		}
+		s.auditLog(auditLogInput{
+			Action:       "skill.install",
+			ResourceType: "skill",
+			ResourceID:   firstNonEmpty(strings.TrimSpace(body.Name), registryName),
+			Summary:      "Skill installed from registry",
+			After:        map[string]any{"name": firstNonEmpty(strings.TrimSpace(body.Name), registryName), "source": source, "version": registryVersion},
+			Request:      r,
+		})
+		w.WriteHeader(http.StatusCreated)
+		_ = json.NewEncoder(w).Encode(map[string]any{"ok": true, "skill": firstNonEmpty(strings.TrimSpace(body.Name), registryName), "version": registryVersion})
+		return
+	}
+
 	tmp := ""
 	srcDir := source
 	sourceType := "local"
@@ -312,6 +375,12 @@ func (s *Server) handleInstallSkill(w http.ResponseWriter, r *http.Request) {
 	if err := s.snapshotSkillPackage(dst, meta); err != nil {
 		s.serverError(w, err)
 		return
+	}
+	if managed {
+		if err := s.installSkillPackageReference(name, version, name); err != nil {
+			s.serverError(w, err)
+			return
+		}
 	}
 	s.auditLog(auditLogInput{
 		Action:       "skill.install",
@@ -490,6 +559,170 @@ func (s *Server) snapshotSkillPackage(skillDir string, meta entity.Skill) error 
 	return copyDir(skillDir, dst)
 }
 
+func (s *Server) listSkillRegistryPackages() ([]skillPackageRow, error) {
+	root := s.skillRegistryRoot()
+	entries, err := os.ReadDir(root)
+	if os.IsNotExist(err) {
+		return nil, nil
+	}
+	if err != nil {
+		return nil, err
+	}
+	var out []skillPackageRow
+	for _, skillEntry := range entries {
+		if !skillEntry.IsDir() {
+			continue
+		}
+		name := skillEntry.Name()
+		versionEntries, err := os.ReadDir(filepath.Join(root, name))
+		if err != nil {
+			continue
+		}
+		for _, versionEntry := range versionEntries {
+			if !versionEntry.IsDir() {
+				continue
+			}
+			version := versionEntry.Name()
+			dir := filepath.Join(root, name, version)
+			meta := readSkillMetaFromDir(dir)
+			if meta.Name == "" {
+				meta.Name = name
+			}
+			if meta.Version == "" {
+				meta.Version = version
+			}
+			out = append(out, skillPackageRow{
+				Name:        meta.Name,
+				Description: meta.Description,
+				Source:      meta.Source,
+				SourceType:  meta.SourceType,
+				SourceRef:   meta.SourceRef,
+				Version:     meta.Version,
+				Managed:     meta.Managed,
+				Dirty:       meta.Dirty,
+				InstalledAt: meta.InstalledAt,
+				UpdatedAt:   meta.UpdatedAt,
+				Path:        dir,
+			})
+		}
+	}
+	sort.Slice(out, func(i, j int) bool {
+		if strings.ToLower(out[i].Name) == strings.ToLower(out[j].Name) {
+			return out[i].Version > out[j].Version
+		}
+		return strings.ToLower(out[i].Name) < strings.ToLower(out[j].Name)
+	})
+	return out, nil
+}
+
+func readSkillMetaFromDir(dir string) entity.Skill {
+	raw, err := os.ReadFile(filepath.Join(dir, "skill.yaml"))
+	if err == nil {
+		var meta entity.Skill
+		if yaml.Unmarshal(raw, &meta) == nil {
+			return meta
+		}
+	}
+	sk, _, err := parseSkillMDForInstall(filepath.Join(dir, "SKILL.md"))
+	if err != nil {
+		return entity.Skill{}
+	}
+	return sk
+}
+
+func parseRegistrySkillSource(source string) (string, string, bool) {
+	source = strings.TrimSpace(source)
+	source = strings.TrimPrefix(source, "registry://")
+	source = strings.TrimPrefix(source, "registry:")
+	if source == "" {
+		return "", "", false
+	}
+	name, version, ok := strings.Cut(source, "@")
+	name = strings.TrimSpace(name)
+	version = strings.TrimSpace(version)
+	return name, version, ok && name != "" && version != ""
+}
+
+func (s *Server) installSkillPackageReference(packageName, version, alias string) error {
+	packageName = safeSkillPackagePathPart(packageName)
+	version = safeSkillPackagePathPart(version)
+	if packageName == "" || version == "" {
+		return fmt.Errorf("invalid registry package reference")
+	}
+	src := s.skillPackageDir(packageName, version)
+	if info, err := os.Stat(src); err != nil || !info.IsDir() {
+		return errs.NotFound("skill package", packageName+"@"+version)
+	}
+	meta := readSkillMetaFromDir(src)
+	if meta.Name == "" {
+		meta.Name = packageName
+	}
+	if meta.Version == "" {
+		meta.Version = version
+	}
+	name := firstNonEmpty(strings.TrimSpace(alias), meta.Name, packageName)
+	if err := validateWorkspaceObjectName("skill", name); err != nil {
+		return err
+	}
+	dst := s.st.SkillDir(name)
+	if err := os.RemoveAll(dst); err != nil {
+		return err
+	}
+	if err := os.MkdirAll(filepath.Dir(dst), 0o755); err != nil {
+		return err
+	}
+	if err := os.Symlink(src, dst); err == nil {
+		return nil
+	}
+	// Some filesystems or deployment environments disallow symlinks; fall back
+	// to a managed copy while keeping the package metadata.
+	if err := copyDir(src, dst); err != nil {
+		return err
+	}
+	return writeSkillRegistryMeta(dst, meta)
+}
+
+func (s *Server) ensureSkillWritableCopy(name string) error {
+	dir := s.st.SkillDir(name)
+	info, err := os.Lstat(dir)
+	if err != nil {
+		return err
+	}
+	if info.Mode()&os.ModeSymlink == 0 {
+		return nil
+	}
+	target, err := os.Readlink(dir)
+	if err != nil {
+		return err
+	}
+	if !filepath.IsAbs(target) {
+		target = filepath.Join(filepath.Dir(dir), target)
+	}
+	tmp := dir + ".forking"
+	_ = os.RemoveAll(tmp)
+	if err := copyDir(target, tmp); err != nil {
+		return err
+	}
+	if err := os.Remove(dir); err != nil {
+		_ = os.RemoveAll(tmp)
+		return err
+	}
+	if err := os.Rename(tmp, dir); err != nil {
+		_ = os.RemoveAll(tmp)
+		return err
+	}
+	meta := s.skillRegistryMeta(name)
+	if meta.Name == "" {
+		meta.Name = name
+	}
+	meta.Source = "registry:" + meta.Name + "@" + meta.Version
+	meta.SourceType = "workspace"
+	meta.Managed = false
+	meta.Dirty = true
+	meta.UpdatedAt = time.Now().UTC().Format(time.RFC3339)
+	return writeSkillRegistryMeta(dir, meta)
+}
+
 func (s *Server) skillPackageDir(name, version string) string {
 	name = safeSkillPackagePathPart(name)
 	version = safeSkillPackagePathPart(version)
@@ -497,6 +730,21 @@ func (s *Server) skillPackageDir(name, version string) string {
 		return ""
 	}
 	return filepath.Join(s.skillRegistryRoot(), name, version)
+}
+
+func (s *Server) skillPackageDirForMeta(fallbackName string, meta entity.Skill) string {
+	name := fallbackName
+	version := meta.Version
+	if sourceName, sourceVersion, ok := parseRegistrySkillSource(meta.Source); ok {
+		name = sourceName
+		if version == "" {
+			version = sourceVersion
+		}
+	}
+	if meta.Name != "" && meta.SourceType != "workspace" {
+		name = meta.Name
+	}
+	return s.skillPackageDir(name, version)
 }
 
 func (s *Server) skillRegistryRoot() string {
@@ -555,8 +803,14 @@ func isHexish(value string) bool {
 }
 
 func skillFileTree(root string, includeContent bool) ([]skillFileEntry, error) {
+	walkRoot := root
+	if resolved, err := filepath.EvalSymlinks(root); err == nil {
+		if info, err := os.Stat(resolved); err == nil && info.IsDir() {
+			walkRoot = resolved
+		}
+	}
 	var files []skillFileEntry
-	err := filepath.WalkDir(root, func(path string, d fs.DirEntry, err error) error {
+	err := filepath.WalkDir(walkRoot, func(path string, d fs.DirEntry, err error) error {
 		if err != nil {
 			return err
 		}
@@ -567,7 +821,7 @@ func skillFileTree(root string, includeContent bool) ([]skillFileEntry, error) {
 			}
 			return nil
 		}
-		rel, err := filepath.Rel(root, path)
+		rel, err := filepath.Rel(walkRoot, path)
 		if err != nil {
 			return err
 		}
@@ -806,6 +1060,10 @@ func (s *Server) handlePutSkillPrompt(w http.ResponseWriter, r *http.Request) {
 		}
 	}
 
+	if err := s.ensureSkillWritableCopy(name); err != nil {
+		s.serverError(w, err)
+		return
+	}
 	skillMD := filepath.Join(s.st.SkillDir(name), "SKILL.md")
 	if err := os.WriteFile(skillMD, []byte(sb.String()), 0o644); err != nil {
 		s.serverError(w, err)

@@ -34,6 +34,12 @@ type SkillRegistry = {
 type SkillDetail = { name: string; description?: string; prompt: string; provenance?: Provenance; registry?: SkillRegistry; packageDir?: string }
 type SkillFileTree = { name: string; files: SkillFile[] }
 type SkillFile = { path: string; size: number; mode?: string; content?: string; encoding?: string }
+type SkillPackageRow = SkillRegistry & {
+  name: string
+  description?: string
+  path?: string
+  installed?: boolean
+}
 
 function SkillItem({ skill, defaultOpen }: { skill: SkillRow; defaultOpen?: boolean }) {
   const { t } = useTranslation()
@@ -323,6 +329,9 @@ function InstallSkillDialog({ onClose, onInstalled }: { onClose: () => void; onI
   const [source, setSource] = useState('')
   const [name, setName] = useState('')
   const [saving, setSaving] = useState(false)
+  const [installingPackage, setInstallingPackage] = useState('')
+  const registryState = useApiJson<SkillPackageRow[]>('/api/v1/skill-registry', 0)
+  const packages = registryState.status === 'ok' ? (registryState.data ?? []) : []
 
   async function install() {
     const src = source.trim()
@@ -336,10 +345,22 @@ function InstallSkillDialog({ onClose, onInstalled }: { onClose: () => void; onI
     }
   }
 
+  async function installPackage(pkg: SkillPackageRow) {
+    if (!pkg.name || !pkg.version || pkg.installed) return
+    const ref = `registry:${pkg.name}@${pkg.version}`
+    setInstallingPackage(ref)
+    try {
+      await apiPost('/api/v1/skills/install', { source: ref, managed: true })
+      onInstalled()
+    } finally {
+      setInstallingPackage('')
+    }
+  }
+
   return (
     <div className="fixed inset-0 z-50 flex items-start justify-center px-4 pt-[12vh]">
       <div className="absolute inset-0 bg-black/30 backdrop-blur-[2px] dark:bg-black/50" onClick={onClose} />
-      <div className="relative w-full max-w-xl overflow-hidden rounded-xl border border-neutral-200/80 bg-white shadow-2xl dark:border-zinc-700/80 dark:bg-zinc-900">
+      <div className="relative max-h-[78vh] w-full max-w-2xl overflow-hidden rounded-xl border border-neutral-200/80 bg-white shadow-2xl dark:border-zinc-700/80 dark:bg-zinc-900">
         <div className="flex items-center justify-between border-b border-neutral-200/80 px-5 py-3 dark:border-zinc-700/60">
           <div>
             <h2 className="text-sm font-semibold text-neutral-900 dark:text-zinc-100">{t('skill.installTitle')}</h2>
@@ -349,7 +370,7 @@ function InstallSkillDialog({ onClose, onInstalled }: { onClose: () => void; onI
             <X className="size-4" strokeWidth={2} />
           </button>
         </div>
-        <div className="space-y-4 p-5">
+        <div className="max-h-[58vh] space-y-5 overflow-auto p-5">
           <label className="block">
             <span className="text-xs font-medium text-neutral-600 dark:text-zinc-400">{t('skill.source')}</span>
             <input
@@ -363,6 +384,49 @@ function InstallSkillDialog({ onClose, onInstalled }: { onClose: () => void; onI
             <span className="text-xs font-medium text-neutral-600 dark:text-zinc-400">{t('skill.nameOverride')}</span>
             <input value={name} onChange={(e) => setName(e.target.value)} className="mt-1 w-full rounded-lg border border-neutral-200 bg-white px-3 py-2 text-sm outline-none focus:border-sky-400 dark:border-zinc-700 dark:bg-zinc-950 dark:text-zinc-100" />
           </label>
+          <div className="rounded-lg border border-neutral-200/80 bg-neutral-50/70 dark:border-zinc-700/60 dark:bg-zinc-950/40">
+            <div className="border-b border-neutral-200/80 px-3 py-2 dark:border-zinc-700/60">
+              <p className="text-xs font-semibold text-neutral-700 dark:text-zinc-300">{t('skill.registryPackages')}</p>
+              <p className="mt-0.5 text-xs leading-relaxed text-neutral-500 dark:text-zinc-500">{t('skill.registryPackagesHint')}</p>
+            </div>
+            <div className="max-h-56 overflow-auto p-2">
+              {registryState.status === 'loading' && <p className="px-2 py-3 text-sm text-neutral-400">{t('api.loading')}</p>}
+              {registryState.status === 'error' && <p className="px-2 py-3 text-sm text-red-500">{registryState.error.message}</p>}
+              {registryState.status === 'ok' && packages.length === 0 && (
+                <p className="px-2 py-3 text-sm text-neutral-400 dark:text-zinc-500">{t('skill.noRegistryPackages')}</p>
+              )}
+              {packages.map((pkg) => {
+                const ref = `registry:${pkg.name}@${pkg.version}`
+                const busy = installingPackage === ref
+                return (
+                  <div key={ref} className="flex items-center justify-between gap-3 rounded-lg px-2 py-2 hover:bg-white dark:hover:bg-zinc-900/70">
+                    <div className="min-w-0">
+                      <div className="flex min-w-0 items-center gap-2">
+                        <p className="truncate font-mono text-sm font-medium text-neutral-800 dark:text-zinc-100">{pkg.name}</p>
+                        <span className="shrink-0 rounded-full bg-neutral-100 px-2 py-0.5 text-[11px] font-medium text-neutral-500 dark:bg-zinc-800 dark:text-zinc-400">
+                          v {pkg.version}
+                        </span>
+                        {pkg.installed && (
+                          <span className="shrink-0 rounded-full bg-emerald-50 px-2 py-0.5 text-[11px] font-medium text-emerald-700 dark:bg-emerald-950/30 dark:text-emerald-300">
+                            {t('skill.installed')}
+                          </span>
+                        )}
+                      </div>
+                      {pkg.description && <p className="mt-0.5 line-clamp-1 text-xs text-neutral-400 dark:text-zinc-500">{pkg.description}</p>}
+                    </div>
+                    <button
+                      type="button"
+                      onClick={() => void installPackage(pkg)}
+                      disabled={busy || !!pkg.installed}
+                      className="shrink-0 rounded-lg border border-sky-600 bg-white px-3 py-1.5 text-xs font-medium text-sky-700 hover:bg-sky-50 disabled:border-neutral-200 disabled:text-neutral-300 dark:border-sky-500 dark:bg-zinc-900 dark:text-sky-400 dark:hover:bg-zinc-800 dark:disabled:border-zinc-700 dark:disabled:text-zinc-600"
+                    >
+                      {busy ? t('api.loading') : pkg.installed ? t('skill.installed') : t('skill.installFromRegistry')}
+                    </button>
+                  </div>
+                )
+              })}
+            </div>
+          </div>
           <div className="rounded-lg bg-neutral-50 px-3 py-2 text-xs leading-relaxed text-neutral-500 dark:bg-zinc-950/50 dark:text-zinc-500">
             {t('skill.installRegistryHint')}
           </div>

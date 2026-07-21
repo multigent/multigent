@@ -412,6 +412,12 @@ func (s *fsStore) ListSkills() ([]*entity.Skill, error) {
 	var skills []*entity.Skill
 	for _, e := range entries {
 		if !e.IsDir() {
+			info, err := os.Stat(filepath.Join(base, e.Name()))
+			if err != nil || !info.IsDir() {
+				continue
+			}
+		}
+		if strings.HasPrefix(e.Name(), ".") {
 			continue
 		}
 		sk, err := s.Skill(e.Name())
