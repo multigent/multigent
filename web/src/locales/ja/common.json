@@ -1968,6 +1968,7 @@
     "title": "タスクテンプレート",
     "projectSubtitle": "この project で再利用する task 作成テンプレートです。workflow、actor bindings、input variables、default prompt を含みます。",
     "create": "タスクテンプレートを作成",
+    "edit": "タスクテンプレートを編集",
     "name": "テンプレート名",
     "emptyTitle": "タスクテンプレートはまだありません",
     "emptyHint": "よく使う workflow 用のテンプレートを作ると、PM、QA、Agent が一貫した task を作成できます。",

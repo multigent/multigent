@@ -5,7 +5,7 @@ import { Copy, FileText, Trash2 } from 'lucide-react'
 import { confirmDialog } from '../../components/ui/ConfirmDialog'
 import { PlaceholderCard } from '../../components/ui/PlaceholderCard'
 import { showToast } from '../../components/ui/Toast'
-import { apiDelete, apiPost } from '../../lib/api'
+import { apiDelete, apiPost, apiPut } from '../../lib/api'
 import { cn } from '../../lib/cn'
 import { useApiJson } from '../../lib/use-api'
 
@@ -72,6 +72,7 @@ export default function ProjectTaskTemplatesPage() {
   const { projectId } = useParams<{ projectId: string }>()
   const [reloadKey, setReloadKey] = useState(0)
   const [open, setOpen] = useState(false)
+  const [editingTemplate, setEditingTemplate] = useState<TaskTemplate | null>(null)
   const [form, setForm] = useState<FormState>(emptyForm)
   const [busy, setBusy] = useState(false)
   const [err, setErr] = useState<string | null>(null)
@@ -170,6 +171,32 @@ export default function ProjectTaskTemplatesPage() {
     setReloadKey((key) => key + 1)
   }
 
+  function openCreateDialog() {
+    setEditingTemplate(null)
+    setForm(emptyForm)
+    setErr(null)
+    setOpen(true)
+  }
+
+  function openEditDialog(template: TaskTemplate) {
+    setEditingTemplate(template)
+    setForm({
+      name: template.name,
+      description: template.description ?? '',
+      type: template.type || 'chore',
+      priority: template.priority ?? 2,
+      labels: (template.labels ?? []).join(', '),
+      titleTemplate: template.titleTemplate,
+      descriptionTemplate: template.descriptionTemplate ?? '',
+      promptTemplate: template.promptTemplate,
+      workflowDefinitionId: template.workflowDefinitionId ?? '',
+      workflowActorBindings: template.workflowActorBindings ?? {},
+      variables: template.variables ?? [],
+    })
+    setErr(null)
+    setOpen(true)
+  }
+
   async function onSubmit(e: FormEvent) {
     e.preventDefault()
     setErr(null)
@@ -184,7 +211,7 @@ export default function ProjectTaskTemplatesPage() {
     }
     setBusy(true)
     try {
-      await apiPost<TaskTemplate>(`/api/v1/projects/${encodeURIComponent(project)}/task-templates`, {
+      const body = {
         name: form.name.trim(),
         description: form.description.trim(),
         type: form.type,
@@ -203,8 +230,17 @@ export default function ProjectTaskTemplatesPage() {
             default: variable.default?.trim() ?? '',
           }))
           .filter((variable) => variable.name),
-      })
+      }
+      if (editingTemplate) {
+        await apiPut<TaskTemplate>(`/api/v1/task-templates/${encodeURIComponent(editingTemplate.id)}`, {
+          ...body,
+          project,
+        })
+      } else {
+        await apiPost<TaskTemplate>(`/api/v1/projects/${encodeURIComponent(project)}/task-templates`, body)
+      }
       setOpen(false)
+      setEditingTemplate(null)
       setForm(emptyForm)
       setReloadKey((key) => key + 1)
     } catch (e) {
@@ -222,7 +258,7 @@ export default function ProjectTaskTemplatesPage() {
             <h1 className="text-xl font-semibold text-neutral-900 dark:text-zinc-100">{t('projectNav.taskTemplates')}</h1>
             <p className="mt-0.5 text-sm text-neutral-500 dark:text-zinc-500">{t('taskTemplates.projectSubtitle')}</p>
           </div>
-          <button type="button" onClick={() => { setForm(emptyForm); setOpen(true) }} className={buttonCls}>
+          <button type="button" onClick={openCreateDialog} className={buttonCls}>
             {t('taskTemplates.create')}
           </button>
         </div>
@@ -253,7 +289,7 @@ export default function ProjectTaskTemplatesPage() {
                   <th className="whitespace-nowrap px-4 py-2 text-left text-xs font-medium text-neutral-500 dark:text-zinc-500">{t('taskTemplates.templateId')}</th>
                   <th className="px-4 py-2 text-left text-xs font-medium text-neutral-500 dark:text-zinc-500">{t('workflows.taskWorkflow')}</th>
                   <th className="px-4 py-2 text-left text-xs font-medium text-neutral-500 dark:text-zinc-500">{t('taskTemplates.variables')}</th>
-                  <th className="sticky right-0 w-24 whitespace-nowrap bg-neutral-50 px-4 py-2 text-right text-xs font-medium text-neutral-500 dark:bg-zinc-950 dark:text-zinc-500">{t('common.actions')}</th>
+                  <th className="sticky right-0 w-32 whitespace-nowrap bg-neutral-50 px-4 py-2 text-right text-xs font-medium text-neutral-500 dark:bg-zinc-950 dark:text-zinc-500">{t('common.actions')}</th>
                 </tr>
               </thead>
               <tbody className="divide-y divide-neutral-100 dark:divide-zinc-800/80">
@@ -282,7 +318,10 @@ export default function ProjectTaskTemplatesPage() {
                       <td className="px-4 py-3 text-sm text-neutral-600 dark:text-zinc-400">
                         {(template.variables ?? []).map((variable) => variable.name).join(', ') || '—'}
                       </td>
-                      <td className="sticky right-0 w-24 whitespace-nowrap bg-white px-4 py-3 text-right dark:bg-zinc-900">
+                      <td className="sticky right-0 w-32 whitespace-nowrap bg-white px-4 py-3 text-right dark:bg-zinc-900">
+                        <button type="button" onClick={() => openEditDialog(template)} className="whitespace-nowrap rounded-md px-2 py-1 text-sm text-neutral-600 hover:bg-neutral-100 dark:text-zinc-300 dark:hover:bg-zinc-800">
+                          {t('common.edit')}
+                        </button>
                         <button type="button" onClick={() => void deleteTemplate(template)} className="whitespace-nowrap rounded-md px-2 py-1 text-sm text-red-600 hover:bg-red-50 dark:text-red-400 dark:hover:bg-red-950/40">
                           {t('common.delete')}
                         </button>
@@ -300,7 +339,7 @@ export default function ProjectTaskTemplatesPage() {
         <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/45 p-4" role="presentation" onClick={() => !busy && setOpen(false)}>
           <div className="max-h-[min(92vh,820px)] w-full max-w-3xl overflow-y-auto rounded-xl border border-neutral-200 bg-white shadow-lg dark:border-zinc-700 dark:bg-zinc-900 animate-scale-in" onClick={(e) => e.stopPropagation()} role="dialog">
             <div className="border-b border-neutral-200 px-4 py-3 dark:border-zinc-700">
-              <h2 className="text-base font-semibold text-neutral-900 dark:text-zinc-100">{t('taskTemplates.create')}</h2>
+              <h2 className="text-base font-semibold text-neutral-900 dark:text-zinc-100">{editingTemplate ? t('taskTemplates.edit') : t('taskTemplates.create')}</h2>
             </div>
             <form onSubmit={onSubmit} className="space-y-4 px-4 py-3">
               <div className="grid gap-3 sm:grid-cols-2">
