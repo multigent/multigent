@@ -62,6 +62,8 @@ type OAuthAuthorizationStart = { authorizationUrl: string; state: string }
 type DeviceSetupBegin = { deviceCode: string; qrUrl: string; userCode?: string; interval?: number; expiresIn?: number; baseUrl?: string }
 type DeviceSetupPoll = { status: string; stage?: string; deviceCode?: string; qrUrl?: string; userCode?: string; interval?: number; expiresIn?: number; baseUrl?: string; slowDown?: boolean; error?: string; connection?: Connection }
 type WorkspaceSummary = { id: string; name: string; currentUserRole?: string; currentUserCanAdmin?: boolean }
+type ProjectSummary = { name: string; description?: string }
+type ProjectToolInstallResult = { ok: boolean; installed: number; skipped: number; provider: string; connectionId: string }
 type OAuthClientConfig = {
   provider: string
   displayName: string
@@ -90,6 +92,8 @@ export default function ConnectionsPage() {
   const [editing, setEditing] = useState<Connection | null>(null)
   const [testResults, setTestResults] = useState<Record<string, { loading?: boolean; ok?: boolean; message?: string }>>({})
   const [oauthMessage, setOauthMessage] = useState<{ kind: 'success' | 'error'; text: string } | null>(null)
+  const [installingConnection, setInstallingConnection] = useState<Connection | null>(null)
+  const [installMessage, setInstallMessage] = useState<{ kind: 'success' | 'error'; text: string } | null>(null)
   const [reloadKey, setReloadKey] = useState(0)
   const [searchParams, setSearchParams] = useSearchParams()
 
@@ -224,7 +228,7 @@ export default function ConnectionsPage() {
               </div>
               <div className="grid gap-4 xl:grid-cols-2">
                 {items.map(provider => (
-                  <ExternalToolCard
+              <ExternalToolCard
                     key={provider.provider}
                     provider={provider}
                     connection={primaryConnectionForProvider(connections, provider.provider)}
@@ -234,6 +238,7 @@ export default function ConnectionsPage() {
                     testResults={testResults}
                     onConfigure={() => setCreatingProvider(provider.provider)}
                     onEdit={setEditing}
+                    onInstallToProject={() => setInstallingConnection(primaryConnectionForProvider(connections, provider.provider) ?? null)}
                   />
                 ))}
               </div>
@@ -265,6 +270,30 @@ export default function ConnectionsPage() {
           onCreated={() => { setEditing(null); setReloadKey(k => k + 1) }}
         />
       )}
+      {installingConnection && (
+        <InstallToolToProjectDialog
+          connection={installingConnection}
+          onClose={() => setInstallingConnection(null)}
+          onInstalled={(result) => {
+            setInstallingConnection(null)
+            setInstallMessage({
+              kind: 'success',
+              text: t('connections.installToProjectSuccess', { count: result.installed, skipped: result.skipped }),
+            })
+            setReloadKey(k => k + 1)
+          }}
+        />
+      )}
+      {installMessage && (
+        <div className={cn(
+          'fixed bottom-5 right-5 z-50 max-w-sm rounded-lg border px-4 py-3 text-sm shadow-lg',
+          installMessage.kind === 'success'
+            ? 'border-emerald-200 bg-white text-emerald-700 dark:border-emerald-900/50 dark:bg-zinc-900 dark:text-emerald-300'
+            : 'border-rose-200 bg-white text-rose-700 dark:border-rose-900/50 dark:bg-zinc-900 dark:text-rose-300',
+        )}>
+          {installMessage.text}
+        </div>
+      )}
     </div>
   )
 }
@@ -278,6 +307,7 @@ function ExternalToolCard({
   testResults,
   onConfigure,
   onEdit,
+  onInstallToProject,
 }: {
   provider: Provider
   connection?: Connection
@@ -287,6 +317,7 @@ function ExternalToolCard({
   testResults: Record<string, { loading?: boolean; ok?: boolean; message?: string }>
   onConfigure: () => void
   onEdit: (connection: Connection) => void
+  onInstallToProject: () => void
 }) {
   const { t } = useTranslation()
   const fmtDateTime = useFormatDateTime()
@@ -325,9 +356,16 @@ function ExternalToolCard({
             <p className="mt-2 line-clamp-2 text-sm text-neutral-500 dark:text-zinc-400">{providerDescription(provider, t)}</p>
           </div>
         </div>
-        <button type="button" onClick={() => connection && canManageConnection ? onEdit(connection) : onConfigure()} disabled={connection ? !canManageConnection : !canConfigure} className={cn(primaryOutlineButton, 'shrink-0 disabled:cursor-not-allowed disabled:opacity-50')}>
-          {connection ? t('connections.manageConnection') : t('connections.configureTool')}
-        </button>
+        <div className="flex shrink-0 flex-col gap-2">
+          <button type="button" onClick={() => connection && canManageConnection ? onEdit(connection) : onConfigure()} disabled={connection ? !canManageConnection : !canConfigure} className={cn(primaryOutlineButton, 'justify-center disabled:cursor-not-allowed disabled:opacity-50')}>
+            {connection ? t('connections.manageConnection') : t('connections.configureTool')}
+          </button>
+          {connection && canManageConnection && connection.ownerType === 'workspace' && (
+            <button type="button" onClick={onInstallToProject} className="rounded-lg border border-neutral-300 bg-white px-3 py-2 text-sm font-medium text-neutral-700 hover:bg-neutral-50 dark:border-zinc-600 dark:bg-zinc-900 dark:text-zinc-200 dark:hover:bg-zinc-800">
+              {t('connections.installToProject')}
+            </button>
+          )}
+        </div>
       </div>
       <div className="mt-4 grid gap-3 sm:grid-cols-3">
         <ToolStat label={t('connections.authMethods')} value={formatAuthTypes(provider.authTypes, oauthAvailable, isWorkspaceAdmin, t)} />
@@ -348,6 +386,87 @@ function ExternalToolCard({
         </p>
       )}
     </section>
+  )
+}
+
+function InstallToolToProjectDialog({
+  connection,
+  onClose,
+  onInstalled,
+}: {
+  connection: Connection
+  onClose: () => void
+  onInstalled: (result: ProjectToolInstallResult) => void
+}) {
+  const { t } = useTranslation()
+  const [projects, setProjects] = useState<ProjectSummary[]>([])
+  const [project, setProject] = useState('')
+  const [loading, setLoading] = useState(true)
+  const [saving, setSaving] = useState(false)
+
+  useEffect(() => {
+    let cancelled = false
+    async function load() {
+      setLoading(true)
+      try {
+        const data = await apiFetch<ProjectSummary[]>('/api/v1/projects')
+        if (cancelled) return
+        setProjects(data)
+        setProject(data[0]?.name ?? '')
+      } finally {
+        if (!cancelled) setLoading(false)
+      }
+    }
+    void load()
+    return () => { cancelled = true }
+  }, [])
+
+  async function submit() {
+    if (!project) return
+    setSaving(true)
+    try {
+      const result = await apiPost<ProjectToolInstallResult>(`/api/v1/projects/${encodeURIComponent(project)}/tool-bindings/install`, {
+        connectionId: connection.id,
+      })
+      onInstalled(result)
+    } finally {
+      setSaving(false)
+    }
+  }
+
+  return (
+    <Modal title={t('connections.installToProjectTitle')} onClose={onClose}>
+      <div className="space-y-4">
+        <div className="rounded-lg bg-neutral-50 px-3 py-2 text-sm text-neutral-600 dark:bg-zinc-800/50 dark:text-zinc-300">
+          {t('connections.installToProjectHint', { tool: connection.provider, connection: connection.connectionName })}
+        </div>
+        {loading ? (
+          <div className="flex items-center gap-2 py-6 text-sm text-neutral-500">
+            <div className="size-5 animate-spin rounded-full border-2 border-neutral-300 border-t-sky-600 dark:border-zinc-600 dark:border-t-sky-400" />
+            {t('common.loading')}
+          </div>
+        ) : projects.length === 0 ? (
+          <p className="rounded-lg bg-neutral-50 px-3 py-3 text-sm text-neutral-500 dark:bg-zinc-800/50 dark:text-zinc-400">
+            {t('connections.installToProjectNoProjects')}
+          </p>
+        ) : (
+          <label className="block">
+            <span className="text-xs font-medium text-neutral-500 dark:text-zinc-400">{t('connections.project')}</span>
+            <select className={selectCls} value={project} onChange={e => setProject(e.target.value)}>
+              {projects.map(item => (
+                <option key={item.name} value={item.name}>{item.name}</option>
+              ))}
+            </select>
+          </label>
+        )}
+        <div className="flex justify-end gap-2 pt-2">
+          <button type="button" onClick={onClose} disabled={saving} className="rounded-lg border border-neutral-300 px-3 py-2 text-sm dark:border-zinc-600">{t('common.cancel')}</button>
+          <button type="button" onClick={() => void submit()} disabled={saving || loading || !project} className="rounded-lg bg-sky-600 px-3 py-2 text-sm font-medium text-white disabled:opacity-50">
+            {saving ? t('common.saving') : t('connections.installToProjectConfirm')}
+          </button>
+        </div>
+      </div>
+    </Modal>
   )
 }
 

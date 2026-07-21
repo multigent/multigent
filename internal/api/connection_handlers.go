@@ -1598,6 +1598,9 @@ func (s *Server) prepareConnectorToolCacheAsync(provider connector.Provider) {
 	if strings.TrimSpace(s.root) == "" {
 		return
 	}
+	if connectorToolCachePrewarmDisabled() {
+		return
+	}
 	adapters := provider.RuntimeAdapters
 	if len(adapters) == 0 {
 		adapters = connector.DefaultRuntimeAdapters(provider)
@@ -1628,6 +1631,13 @@ func (s *Server) prepareConnectorToolCacheAsync(provider connector.Provider) {
 			}
 		}
 	}()
+}
+
+func connectorToolCachePrewarmDisabled() bool {
+	if strings.TrimSpace(os.Getenv("MULTIGENT_DISABLE_TOOL_CACHE_PREPARE")) == "1" {
+		return true
+	}
+	return strings.HasSuffix(os.Args[0], ".test")
 }
 
 func prepareNPMRuntimeTool(workspaceRoot string, installer connector.ToolInstallerSpec) error {
