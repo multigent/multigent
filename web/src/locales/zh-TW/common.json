@@ -797,7 +797,7 @@
     "projectPrompt": "專案 Prompt",
     "teamPrompt": "團隊 Prompt",
     "rolePrompt": "角色 Prompt: {{name}}",
-    "wakeup": "Wakeup Prompt (喚醒例程)",
+    "wakeup": "喚醒例程",
     "mergedContext": "合併後的上下文",
     "contextFile": "上下文檔案",
     "team": "團隊",

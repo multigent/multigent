@@ -788,7 +788,7 @@
     "projectPrompt": "プロジェクトプロンプト",
     "teamPrompt": "チームプロンプト",
     "rolePrompt": "ロールプロンプト: {{name}}",
-    "wakeup": "Wakeup プロンプト（起動ルーチン）",
+    "wakeup": "起動ルーチン",
     "mergedContext": "マージ後のコンテキスト",
     "contextFile": "コンテキストファイル",
     "team": "チーム",

@@ -158,6 +158,8 @@ function PromptEditor({ label, icon: Icon, apiPath, initialContent, canEdit = tr
     setEditing(false)
     setPreview(false)
   }
+  const lineCount = value ? value.split('\n').length : 0
+  const editorRows = Math.max(8, Math.min(36, lineCount + 3))
   return (
     <div className="rounded-lg border border-neutral-200/80 bg-white dark:border-zinc-700/60 dark:bg-zinc-900/40">
       <div className="flex items-center justify-between border-b border-neutral-100 px-4 py-2.5 dark:border-zinc-700/40">
@@ -191,13 +193,13 @@ function PromptEditor({ label, icon: Icon, apiPath, initialContent, canEdit = tr
         </div>
       </div>
       {!editing || preview ? (
-        <div className={cn('prose prose-sm prose-neutral dark:prose-invert max-w-none p-4 text-sm leading-relaxed', !editing && 'max-h-56 overflow-auto')}>
+        <div className={cn('prose prose-sm prose-neutral dark:prose-invert max-w-none p-4 text-sm leading-relaxed', !editing && 'max-h-[34rem] overflow-auto')}>
           <Markdown remarkPlugins={[remarkGfm]}>{value || '*（空）*'}</Markdown>
         </div>
       ) : (
         <textarea value={value} readOnly={!canEdit} onChange={(e) => { if (!canEdit) return; setValue(e.target.value); setDirty(true); setSaved(false) }}
           className="block w-full resize-y bg-transparent p-4 font-mono text-[13px] leading-relaxed text-neutral-800 outline-none placeholder:text-neutral-300 dark:text-zinc-200 dark:placeholder:text-zinc-700"
-          rows={Math.max(6, Math.min(20, value.split('\n').length + 1))} placeholder="Markdown prompt..." />
+          rows={editorRows} placeholder="Markdown prompt..." />
       )}
     </div>
   )
