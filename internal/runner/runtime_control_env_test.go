@@ -9,6 +9,7 @@ import (
 	"strings"
 	"testing"
 
+	"github.com/multigent/multigent/internal/daemon"
 	"github.com/multigent/multigent/internal/entity"
 )
 
@@ -25,6 +26,21 @@ func TestNormalizeRuntimeAPIURL(t *testing.T) {
 				t.Fatalf("normalizeRuntimeAPIURL(%q)=%q, want %q", input, got, want)
 			}
 		})
+	}
+}
+
+func TestResolveRuntimeAPIURLFallsBackToDaemonAcrossWorkspaces(t *testing.T) {
+	dataDir := t.TempDir()
+	t.Setenv("MULTIGENT_DATA_DIR", dataDir)
+	t.Setenv("MULTIGENT_API_URL", "")
+	if err := daemon.SaveMeta(&daemon.Meta{
+		WorkDir: t.TempDir(),
+		Addr:    "0.0.0.0:27892",
+	}); err != nil {
+		t.Fatal(err)
+	}
+	if got := resolveRuntimeAPIURL(filepath.Join(dataDir, "another-workspace")); got != "http://127.0.0.1:27892" {
+		t.Fatalf("resolveRuntimeAPIURL()=%q", got)
 	}
 }
 

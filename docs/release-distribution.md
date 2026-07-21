@@ -75,7 +75,7 @@ The critical image for first-run agent execution is:
 ghcr.io/multigent/multigent/runtime-base:latest
 ```
 
-It must remain public before announcing a release; otherwise new users will fail on their first Docker sandbox run.
+It must remain public before announcing a release; otherwise new users will fail on their first Docker sandbox run. Both runtime-image workflows log out of GHCR and verify anonymous manifest access after publishing, so a private package fails CI instead of shipping a broken installation path. GitHub defaults newly created GHCR packages to private; set each new package to **Public** in the organization package settings once.
 
 ## Release Steps
 

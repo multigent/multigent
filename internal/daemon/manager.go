@@ -4,8 +4,10 @@ import (
 	"crypto/sha256"
 	"encoding/json"
 	"fmt"
+	"net"
 	"os"
 	"path/filepath"
+	"strings"
 	"time"
 )
 
@@ -145,6 +147,29 @@ func LoadWebRuntimeMeta(workDir string) (*WebRuntimeMeta, error) {
 
 func RemoveWebRuntimeMeta(workDir string) {
 	os.Remove(webRuntimeMetaPath(workDir))
+}
+
+// RuntimeAPIURL converts a server listen address into a URL that local runtime
+// clients can use. Wildcard listen hosts are intentionally mapped to loopback.
+func RuntimeAPIURL(addr string) string {
+	addr = strings.TrimSpace(addr)
+	if addr == "" {
+		return ""
+	}
+	if strings.HasPrefix(addr, "http://") || strings.HasPrefix(addr, "https://") {
+		return strings.TrimRight(addr, "/")
+	}
+	if strings.HasPrefix(addr, ":") {
+		return "http://127.0.0.1" + addr
+	}
+	host, port, err := net.SplitHostPort(addr)
+	if err == nil {
+		if host == "" || host == "0.0.0.0" || host == "::" || host == "[::]" {
+			host = "127.0.0.1"
+		}
+		return "http://" + net.JoinHostPort(host, port)
+	}
+	return "http://" + strings.TrimRight(addr, "/")
 }
 
 func NowISO() string {

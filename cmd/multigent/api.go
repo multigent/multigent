@@ -74,6 +74,9 @@ Authorization: Bearer <key>.`,
 			if err := os.Setenv("MULTIGENT_DATA_DIR", dataRoot); err != nil {
 				return err
 			}
+			if err := configureRuntimeAPIURL(addr); err != nil {
+				return err
+			}
 			logCloser, err := initServiceLogger(resolveServiceLogOptions(cfg, logFile, logLevel, logFormat, logMaxSizeMB, cmd.Flags().Changed), "api")
 			if err != nil {
 				return fmt.Errorf("init logger: %w", err)

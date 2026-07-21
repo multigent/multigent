@@ -167,14 +167,14 @@ Skill 文档必须和 `mga` 的实际命令同步。
 
 1. 创建隔离 sandbox。
 2. 注入 runtime env。
-3. 安装或挂载 `mga`。
+3. 使用 runtime image 内置的目标平台 `mga`，或显式安装兼容版本。
 4. 安装模型 CLI，例如 Codex/Claude/Gemini。
 5. materialize 当前 run 的上下文、skills、授权连接 manifest。
 6. 执行 Agent CLI。
 
 ## CLI 更新策略
 
-`mga` 也应该被当成 toolchain 管理，而不是长期固化在 runtime base image。
+长期来看，`mga` 应该被当成 toolchain 管理；当前 runtime base image 会内置与该镜像源码版本匹配的 Linux `mga`，避免宿主机与容器平台不兼容。
 
 推荐模型：
 
@@ -214,6 +214,7 @@ mga runtime version --check
 
 - Docker sandbox 内默认把 `mga` 暴露到 `/opt/multigent/mga/bin/`。
 - sandbox PATH 默认包含 `/opt/multigent/mga/bin`。
+- runtime base image 针对 linux/amd64 和 linux/arm64 分别构建 `mga`；不会自动挂载宿主机原生二进制。
 - 内置 prompt/skill 使用 `mga` 作为 Agent 侧命令。
 - `mga` 已拆成独立 `cmd/mga`，只调用 scoped runtime API。
 - Server 已提供 runtime task/message/connections/actions/mcp API，并基于 runtime token capability 做鉴权。
@@ -222,5 +223,5 @@ mga runtime version --check
 
 1. Runtime CLI 增加版本校验。
 2. 补齐 OKR/context/tool call API。
-3. Docker provider 从“挂载当前二进制”升级为“安装指定版本 runtime CLI 到 toolchain cache”。
+3. Docker provider 从“镜像内置同版本二进制”升级为“安装指定版本 runtime CLI 到 toolchain cache”。
 4. 将 task/message runtime capability 进一步细化成自己、同项目、跨项目等策略。

@@ -51,7 +51,7 @@ const (
 	// ContainerDefaultPATH mirrors the tool locations provided by the sandbox
 	// images. Keep Go paths here because Docker -e PATH=... replaces the image
 	// ENV PATH instead of expanding it.
-	ContainerDefaultPATH = "/usr/local/go/bin:/root/go/bin:/usr/local/sbin:/usr/local/bin:/usr/sbin:/usr/bin:/sbin:/bin"
+	ContainerDefaultPATH = "/opt/multigent/mga/bin:/usr/local/go/bin:/root/go/bin:/usr/local/sbin:/usr/local/bin:/usr/sbin:/usr/bin:/sbin:/bin"
 )
 
 // defaultImages keeps temporary compatibility for CLIs that do not yet have a

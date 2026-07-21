@@ -1,8 +1,8 @@
 package runtimecli
 
 import (
+	"encoding/binary"
 	"os"
-	"os/exec"
 	"path/filepath"
 )
 
@@ -22,28 +22,16 @@ const (
 	HostBinaryEnv = "MULTIGENT_AGENT_CLI"
 )
 
-// ResolveHostBinaryMount returns a read-only Docker volume mount for the
-// host agent runtime binary as the sandbox agent runtime CLI.
+// ResolveHostBinaryMount returns a read-only Docker volume mount for an
+// explicitly configured Linux agent runtime binary.
 //
-// It deliberately refuses to mount the human/admin multigent binary as mga.
-// Use MULTIGENT_AGENT_CLI or put a real mga binary on PATH in development.
+// Published runtime images already contain a target-platform mga binary. Do
+// not auto-discover the native host binary here: on macOS and Windows that
+// would shadow the Linux binary in the image and fail with exec format error.
+// MULTIGENT_AGENT_CLI remains available for development and local image
+// overrides, but the configured binary must be an ELF executable.
 func ResolveHostBinaryMount() string {
-	binPath := ""
-	if override := os.Getenv(HostBinaryEnv); override != "" {
-		binPath = override
-	} else if found, err := exec.LookPath(BinaryName); err == nil {
-		binPath = found
-	} else if exe, err := os.Executable(); err == nil && filepath.Base(exe) == BinaryName {
-		binPath = exe
-	} else if exe, err := os.Executable(); err == nil {
-		// Development and packaged installs often place `multigent` and `mga`
-		// side by side. The sandbox must mount the agent-scoped `mga` binary,
-		// never the human/admin `multigent` binary under an alias.
-		sibling := filepath.Join(filepath.Dir(exe), BinaryName)
-		if _, err := os.Stat(sibling); err == nil {
-			binPath = sibling
-		}
-	}
+	binPath := os.Getenv(HostBinaryEnv)
 	if binPath == "" {
 		return ""
 	}
@@ -57,5 +45,21 @@ func ResolveHostBinaryMount() string {
 	if _, err := os.Stat(resolved); err != nil {
 		return ""
 	}
+	if !isELFExecutable(resolved) {
+		return ""
+	}
 	return resolved + ":" + BinaryPath + ":ro"
+}
+
+func isELFExecutable(path string) bool {
+	f, err := os.Open(path)
+	if err != nil {
+		return false
+	}
+	defer f.Close()
+	var magic uint32
+	if err := binary.Read(f, binary.BigEndian, &magic); err != nil {
+		return false
+	}
+	return magic == 0x7f454c46
 }

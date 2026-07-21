@@ -77,6 +77,9 @@ remote server. For local development with hot-reload, use
 			if err := os.Setenv("MULTIGENT_DATA_DIR", dataRoot); err != nil {
 				return err
 			}
+			if err := configureRuntimeAPIURL(addr); err != nil {
+				return err
+			}
 			key := api.ResolveAPIKey(apiKey)
 			srv := api.NewServer(root, key)
 			srv.SetVersion(version)

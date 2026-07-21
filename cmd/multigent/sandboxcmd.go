@@ -130,11 +130,11 @@ func newSandboxShowCmd() *cobra.Command {
 			fmt.Printf("\nWorkspace root mount (auto, enables inter-agent coordination):\n")
 			fmt.Printf("  -v %s\n", wsMount)
 
-			// Agent runtime CLI mount (auto, so agents can call back into Multigent).
-			fmt.Printf("\nAgent runtime CLI mount (auto, enables `mga` inside container):\n")
+			// Optional agent runtime CLI override; published images bundle mga.
+			fmt.Printf("\nAgent runtime CLI mount (optional development override):\n")
 			mgaMount := runtimecli.ResolveHostBinaryMount()
 			if mgaMount == "" {
-				fmt.Printf("  not available (build `mga` or set %s)\n", runtimecli.HostBinaryEnv)
+				fmt.Printf("  using the `mga` bundled in the runtime image (set %s to override with a Linux ELF binary)\n", runtimecli.HostBinaryEnv)
 			} else {
 				fmt.Printf("  -v %s\n", mgaMount)
 			}

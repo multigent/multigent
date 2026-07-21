@@ -121,7 +121,7 @@ Open `http://127.0.0.1:27892`.
 
 - Docker, for sandboxed agent execution
 
-Multigent publishes the default runtime image at `ghcr.io/multigent/multigent/runtime-base:latest`. The `multigent` and `mga` binaries are installed together so Docker sandboxes can mount the agent-scoped runtime CLI automatically.
+Multigent publishes the default multi-architecture runtime image at `ghcr.io/multigent/multigent/runtime-base:latest`. The image bundles the matching Linux `mga` runtime CLI; native macOS and Windows binaries are never mounted into Linux sandboxes. The published GHCR package is public and does not require `docker login`.
 
 ### Run the Web Console
 

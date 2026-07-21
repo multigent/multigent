@@ -1,6 +1,7 @@
 # multigent stable runtime base image
 #
-# This image contains stable OS and language dependencies only. Fast-moving
+# This image contains stable OS and language dependencies plus the Linux
+# runtime-control CLI (`mga`) built from the same source revision. Fast-moving
 # agent CLIs such as Codex, Claude Code, and Gemini are installed by the
 # Multigent runtime toolchain bootstrap into /opt/multigent/toolchains.
 #
@@ -13,10 +14,31 @@
 #                -t multigent/runtime-base:latest \
 #                -f docker/runtime-base/Dockerfile .
 
+FROM --platform=$BUILDPLATFORM golang:1.26.4 AS runtime-cli-builder
+
+ARG TARGETOS
+ARG TARGETARCH
+ARG CN_MIRROR=0
+ARG GO_MODULE_PROXY=""
+
+WORKDIR /src
+COPY go.mod go.sum ./
+RUN if [ -n "$GO_MODULE_PROXY" ]; then \
+      go env -w GOPROXY="$GO_MODULE_PROXY"; \
+    elif [ "$CN_MIRROR" = "1" ]; then \
+      go env -w GOPROXY=https://goproxy.cn,direct GONOSUMDB='*'; \
+    fi
+RUN go mod download
+COPY cmd/mga ./cmd/mga
+COPY internal ./internal
+RUN CGO_ENABLED=0 GOOS=$TARGETOS GOARCH=$TARGETARCH \
+    go build -trimpath -ldflags="-s -w" -o /out/mga ./cmd/mga
+
 FROM ubuntu:24.04
 
 ARG CN_MIRROR=0
 ARG GO_VERSION=1.26.4
+ARG TARGETARCH
 
 ENV DEBIAN_FRONTEND=noninteractive \
     NODE_VERSION=22 \
@@ -63,13 +85,16 @@ RUN if [ "$CN_MIRROR" = "1" ]; then \
       npm config set registry https://registry.npmmirror.com; \
     fi
 
-RUN if [ "$CN_MIRROR" = "1" ]; then \
-      curl -fsSL "https://mirrors.aliyun.com/golang/go${GO_VERSION}.linux-amd64.tar.gz" \
-        | tar -C /usr/local -xzf -; \
+RUN case "$TARGETARCH" in \
+      amd64|arm64) go_arch="$TARGETARCH" ;; \
+      *) echo "unsupported Go architecture: $TARGETARCH" >&2; exit 1 ;; \
+    esac; \
+    if [ "$CN_MIRROR" = "1" ]; then \
+      go_url="https://mirrors.aliyun.com/golang/go${GO_VERSION}.linux-${go_arch}.tar.gz"; \
     else \
-      curl -fsSL "https://go.dev/dl/go${GO_VERSION}.linux-amd64.tar.gz" \
-        | tar -C /usr/local -xzf -; \
-    fi
+      go_url="https://go.dev/dl/go${GO_VERSION}.linux-${go_arch}.tar.gz"; \
+    fi; \
+    curl -fsSL "$go_url" | tar -C /usr/local -xzf -
 
 ENV PATH="/opt/multigent/toolchains/npm/bin:/usr/local/go/bin:/root/go/bin:/usr/local/sbin:/usr/local/bin:/usr/sbin:/usr/bin:/sbin:/bin" \
     GOPATH="/root/go" \
@@ -91,9 +116,16 @@ RUN curl -fsSL https://cli.github.com/packages/githubcli-archive-keyring.gpg \
     && rm -rf /var/lib/apt/lists/*
 
 RUN mkdir -p /opt/multigent/toolchains/npm /opt/multigent/toolchains/markers \
+        /opt/multigent/mga/bin \
     && printf '#!/bin/sh\necho "multigent: binary not mounted" >&2\nexit 1\n' \
         > /usr/local/bin/multigent \
     && chmod +x /usr/local/bin/multigent
+
+COPY --from=runtime-cli-builder /out/mga /opt/multigent/mga/bin/mga
+RUN chmod 0755 /opt/multigent/mga/bin/mga \
+    && /opt/multigent/mga/bin/mga version
+
+ENV PATH="/opt/multigent/mga/bin:${PATH}"
 
 WORKDIR /workspace
 

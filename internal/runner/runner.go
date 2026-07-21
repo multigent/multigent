@@ -396,8 +396,8 @@ func (r *Runner) RunTask(project, agentName string, task *entity.Task, sessionID
 			runtimeCfg.Docker.ExtraVolumes = append(runtimeCfg.Docker.ExtraVolumes, wsMount)
 		}
 
-		// Auto-mount the multigent binary itself (read-only) so agents can
-		// invoke `multigent` inside the container.
+		// Development override only. Published images carry their own Linux
+		// mga; mounting a native macOS/Windows binary would shadow it.
 		if binMount := runtimecli.ResolveHostBinaryMount(); binMount != "" {
 			runtimeCfg.Docker.ExtraVolumes = append(runtimeCfg.Docker.ExtraVolumes, binMount)
 		}
@@ -818,11 +818,11 @@ func detectSetupHint(errText string) string {
 	switch {
 	// Docker image not found / pull denied
 	case strings.Contains(lower, "unable to find image") && (strings.Contains(lower, "denied") || strings.Contains(lower, "unauthorized")):
-		return `[hint] Docker 镜像拉取失败。请确认：
+		return `[hint] 官方 Runtime 镜像无法匿名拉取。这通常表示发布包被错误设置为私有，而不是用户需要登录 GHCR。请确认：
 1. Docker 已安装并运行：docker info
 2. 本地是否已有镜像：docker image inspect multigent/runtime-base:latest
 3. 没有本地镜像时，在项目根目录执行：docker build -t multigent/runtime-base:latest -f docker/runtime-base/Dockerfile .
-4. 或在成员详情页 → 沙箱配置中指定可访问的自定义镜像`
+4. 维护者应将 ghcr.io/multigent/multigent/runtime-base 包设为 Public；用户也可以在成员详情页 → 沙箱配置中指定可访问的自定义镜像`
 
 	// Docker not installed or daemon not running
 	case strings.Contains(lower, "docker") && (strings.Contains(lower, "not found") || strings.Contains(lower, "cannot connect") || strings.Contains(lower, "daemon")):
@@ -2139,10 +2139,18 @@ func resolveRuntimeAPIURL(root string) string {
 		return normalizeRuntimeAPIURL(value)
 	}
 	meta, err := daemon.LoadWebRuntimeMeta(root)
-	if err != nil || meta == nil || strings.TrimSpace(meta.Addr) == "" {
-		return ""
+	if err == nil && meta != nil && strings.TrimSpace(meta.Addr) != "" {
+		return normalizeRuntimeAPIURL(meta.Addr)
 	}
-	return normalizeRuntimeAPIURL(meta.Addr)
+	// A daemon serves all workspaces beneath its data directory, while legacy
+	// web runtime metadata is keyed only by the workspace active at startup.
+	// Fall back to daemon metadata so switching workspaces does not silently
+	// drop MULTIGENT_API_URL and MULTIGENT_AGENT_TOKEN from agent runs.
+	daemonMeta, err := daemon.LoadMeta()
+	if err == nil && daemonMeta != nil && strings.TrimSpace(daemonMeta.Addr) != "" {
+		return normalizeRuntimeAPIURL(daemonMeta.Addr)
+	}
+	return ""
 }
 
 func normalizeRuntimeAPIURL(value string) string {

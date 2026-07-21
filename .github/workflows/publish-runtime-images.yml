@@ -26,14 +26,19 @@ jobs:
         include:
           - name: runtime-base
             file: docker/runtime-base/Dockerfile
+            platforms: linux/amd64,linux/arm64
           - name: sandbox-codex
             file: docker/sandbox-codex/Dockerfile
+            platforms: linux/amd64
           - name: sandbox-claudecode
             file: docker/sandbox-claudecode/Dockerfile
+            platforms: linux/amd64
           - name: sandbox-gemini
             file: docker/sandbox-gemini/Dockerfile
+            platforms: linux/amd64
           - name: sandbox-generic
             file: docker/sandbox-generic/Dockerfile
+            platforms: linux/amd64
 
     steps:
       - name: Checkout
@@ -65,8 +70,18 @@ jobs:
           context: .
           file: ${{ matrix.file }}
           push: true
-          platforms: linux/amd64
+          platforms: ${{ matrix.platforms }}
           tags: ${{ steps.meta.outputs.tags }}
           labels: ${{ steps.meta.outputs.labels }}
           cache-from: type=gha,scope=${{ matrix.name }}
           cache-to: type=gha,mode=max,scope=${{ matrix.name }}
+
+      # GHCR packages are private on first publication. Runtime images are a
+      # public installation dependency, so never let a private package look
+      # like a successful release. Set the package visibility to Public in the
+      # organization package settings when this check fails.
+      - name: Verify anonymous image access
+        run: |
+          image="$(printf '%s\n' '${{ steps.meta.outputs.tags }}' | head -n 1)"
+          docker logout "${{ env.REGISTRY }}"
+          docker manifest inspect "$image" >/dev/null
