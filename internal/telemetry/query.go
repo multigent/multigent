@@ -86,6 +86,15 @@ func OpenReadOnly(root string) (*sql.DB, error) {
 		return nil, err
 	}
 	db.SetMaxOpenConns(1)
+	var tableName string
+	err = db.QueryRow(`SELECT name FROM sqlite_master WHERE type = 'table' AND name = 'agent_runs'`).Scan(&tableName)
+	if err != nil {
+		_ = db.Close()
+		if errors.Is(err, sql.ErrNoRows) {
+			return nil, ErrNoDatabase
+		}
+		return nil, err
+	}
 	return db, nil
 }
 
