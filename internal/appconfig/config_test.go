@@ -33,6 +33,12 @@ stderr = false
 
 [sandbox.e2b]
 api_url = "http://127.0.0.1:49999"
+
+[playbooks]
+registry_urls = [
+  "file:///tmp/playbooks.json",
+  "https://example.com/registry.json",
+]
 `
 	if err := os.WriteFile(path, []byte(body), 0o644); err != nil {
 		t.Fatal(err)
@@ -52,5 +58,8 @@ api_url = "http://127.0.0.1:49999"
 	}
 	if cfg.Sandbox.E2B.APIURL == "" {
 		t.Fatalf("e2b api url missing")
+	}
+	if len(cfg.Playbooks.RegistryURLs) != 2 || cfg.Playbooks.RegistryURLs[0] != "file:///tmp/playbooks.json" || cfg.Playbooks.RegistryURLs[1] != "https://example.com/registry.json" {
+		t.Fatalf("playbook registry urls not loaded: %#v", cfg.Playbooks.RegistryURLs)
 	}
 }

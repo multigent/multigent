@@ -38,3 +38,8 @@ stderr = true      # also mirror service logs to stderr
 # Optional self-hosted E2B-compatible API endpoint.
 # E2B is selectable only when this is configured and /dev/kvm is available.
 api_url = ""
+
+[playbooks]
+# Optional remote playbook registries. Each URL should return registry JSON.
+# Environment variable MULTIGENT_PLAYBOOK_REGISTRY_URLS takes precedence.
+registry_urls = []

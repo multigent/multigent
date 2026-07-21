@@ -32,6 +32,7 @@ Currently covered by config:
 - SMTP invitation delivery
 - service logging
 - self-hosted E2B API URL
+- remote playbook registries
 
 ## Logging Policy
 
@@ -102,3 +103,7 @@ SMTP:
 Sandbox:
 
 - `MULTIGENT_E2B_API_URL`
+
+Playbooks:
+
+- `MULTIGENT_PLAYBOOK_REGISTRY_URLS`

@@ -4,9 +4,12 @@ import (
 	"encoding/json"
 	"net/http"
 	"net/http/httptest"
+	"os"
+	"path/filepath"
 	"testing"
 
 	"github.com/multigent/multigent/internal/entity"
+	playbookstore "github.com/multigent/multigent/internal/playbook"
 )
 
 func TestPlaybookTemplateHandlers(t *testing.T) {
@@ -52,6 +55,67 @@ func TestPlaybookTemplateHandlers(t *testing.T) {
 	s.handleGetPlaybookTemplate(missingRec, missingReq)
 	if missingRec.Code != http.StatusNotFound {
 		t.Fatalf("missing status=%d body=%s", missingRec.Code, missingRec.Body.String())
+	}
+}
+
+func TestPlaybookTemplateHandlersIncludeRemoteRegistry(t *testing.T) {
+	s, _ := newConnectionGrantPolicyServer(t)
+	registryPath := writePlaybookRegistry(t, playbookstore.RemoteRegistry{
+		SchemaVersion: 1,
+		Templates: []entity.PlaybookTemplate{
+			{
+				ID:          "remote-onboarding",
+				Version:     "0.1.0",
+				Name:        "Remote Onboarding",
+				Description: "Fetched from remote registry",
+				Category:    "Demo",
+				Complexity:  "Easy",
+				Skills: []entity.PlaybookSkillTemplate{
+					{ID: "remote-skill", Name: "Remote Skill", Body: "Remote body"},
+				},
+			},
+		},
+	})
+	t.Setenv(playbookstore.EnvRegistryURLs, "file://"+registryPath)
+
+	listReq := providerTestRequest(http.MethodGet, "/api/v1/playbook-templates?locale=en", "owner", nil)
+	listRec := httptest.NewRecorder()
+	s.handleListPlaybookTemplates(listRec, listReq)
+	if listRec.Code != http.StatusOK {
+		t.Fatalf("list status=%d body=%s", listRec.Code, listRec.Body.String())
+	}
+	var listBody struct {
+		Templates []entity.PlaybookTemplate `json:"templates"`
+	}
+	if err := json.Unmarshal(listRec.Body.Bytes(), &listBody); err != nil {
+		t.Fatalf("decode list: %v", err)
+	}
+	found := false
+	for _, tmpl := range listBody.Templates {
+		if tmpl.ID == "remote-onboarding" {
+			found = true
+			if len(tmpl.Skills) != 1 || tmpl.Skills[0].Body != "" {
+				t.Fatalf("list should return summary without skill body: %#v", tmpl)
+			}
+		}
+	}
+	if !found {
+		t.Fatalf("remote template missing from list: %#v", listBody.Templates)
+	}
+
+	detailReq := providerTestRequest(http.MethodGet, "/api/v1/playbook-templates/remote-onboarding?locale=en", "owner", nil)
+	detailReq.SetPathValue("playbookId", "remote-onboarding")
+	detailRec := httptest.NewRecorder()
+	s.handleGetPlaybookTemplate(detailRec, detailReq)
+	if detailRec.Code != http.StatusOK {
+		t.Fatalf("detail status=%d body=%s", detailRec.Code, detailRec.Body.String())
+	}
+	var detail entity.PlaybookTemplate
+	if err := json.Unmarshal(detailRec.Body.Bytes(), &detail); err != nil {
+		t.Fatalf("decode detail: %v", err)
+	}
+	if detail.ID != "remote-onboarding" || len(detail.Skills) != 1 || detail.Skills[0].Body != "Remote body" {
+		t.Fatalf("unexpected remote detail=%#v", detail)
 	}
 }
 
@@ -131,4 +195,17 @@ func TestInstallPlaybookTemplateCreatesObjectsAndRecordsProvenance(t *testing.T)
 	if !dupBody.AlreadyInstalled || dupBody.Install.ID != body.Install.ID {
 		t.Fatalf("duplicate not idempotent: %#v", dupBody)
 	}
+}
+
+func writePlaybookRegistry(t *testing.T, registry playbookstore.RemoteRegistry) string {
+	t.Helper()
+	body, err := json.Marshal(registry)
+	if err != nil {
+		t.Fatal(err)
+	}
+	path := filepath.Join(t.TempDir(), "playbooks.json")
+	if err := os.WriteFile(path, body, 0o644); err != nil {
+		t.Fatal(err)
+	}
+	return path
 }

@@ -15,6 +15,7 @@ type Config struct {
 	SMTP      SMTPConfig
 	Logging   LoggingConfig
 	Sandbox   SandboxConfig
+	Playbooks PlaybooksConfig
 }
 
 type WorkspaceConfig struct {
@@ -51,6 +52,10 @@ type SandboxConfig struct {
 	E2B E2BConfig
 }
 
+type PlaybooksConfig struct {
+	RegistryURLs []string
+}
+
 type E2BConfig struct {
 	APIURL string
 }
@@ -82,7 +87,11 @@ func Load(path string) (*Config, error) {
 		if !ok {
 			return nil, fmt.Errorf("%s:%d: expected key = value", path, lineNo)
 		}
-		if err := setValue(cfg, section, strings.TrimSpace(key), strings.TrimSpace(raw)); err != nil {
+		raw = strings.TrimSpace(raw)
+		if strings.HasPrefix(raw, "[") && !strings.Contains(raw, "]") {
+			raw = collectMultilineArray(sc, &lineNo, raw)
+		}
+		if err := setValue(cfg, section, strings.TrimSpace(key), raw); err != nil {
 			return nil, fmt.Errorf("%s:%d: %w", path, lineNo, err)
 		}
 	}
@@ -90,6 +99,24 @@ func Load(path string) (*Config, error) {
 		return nil, err
 	}
 	return cfg, nil
+}
+
+func collectMultilineArray(sc *bufio.Scanner, lineNo *int, firstLine string) string {
+	var b strings.Builder
+	b.WriteString(firstLine)
+	for sc.Scan() {
+		(*lineNo)++
+		line := stripComment(strings.TrimSpace(sc.Text()))
+		if line == "" {
+			continue
+		}
+		b.WriteString(" ")
+		b.WriteString(line)
+		if strings.Contains(line, "]") {
+			break
+		}
+	}
+	return b.String()
 }
 
 func setValue(cfg *Config, section, key, raw string) error {
@@ -141,6 +168,10 @@ func setValue(cfg *Config, section, key, raw string) error {
 		if key == "api_url" {
 			cfg.Sandbox.E2B.APIURL = stringValue(raw)
 		}
+	case "playbooks":
+		if key == "registry_urls" {
+			cfg.Playbooks.RegistryURLs = stringSliceValue(raw)
+		}
 	}
 	return nil
 }
@@ -168,6 +199,65 @@ func stringValue(raw string) string {
 		return strings.Trim(raw, `"`)
 	}
 	return raw
+}
+
+func stringSliceValue(raw string) []string {
+	raw = strings.TrimSpace(raw)
+	if raw == "" {
+		return nil
+	}
+	if strings.HasPrefix(raw, "[") && strings.HasSuffix(raw, "]") {
+		raw = strings.TrimSpace(strings.TrimSuffix(strings.TrimPrefix(raw, "["), "]"))
+		if raw == "" {
+			return nil
+		}
+		parts := splitCSV(raw)
+		out := make([]string, 0, len(parts))
+		for _, part := range parts {
+			v := stringValue(strings.TrimSpace(part))
+			if v != "" {
+				out = append(out, v)
+			}
+		}
+		return out
+	}
+	v := stringValue(raw)
+	if v == "" {
+		return nil
+	}
+	return []string{v}
+}
+
+func splitCSV(raw string) []string {
+	var out []string
+	var cur strings.Builder
+	inString := false
+	escaped := false
+	for _, r := range raw {
+		if escaped {
+			cur.WriteRune(r)
+			escaped = false
+			continue
+		}
+		if r == '\\' && inString {
+			cur.WriteRune(r)
+			escaped = true
+			continue
+		}
+		if r == '"' {
+			inString = !inString
+			cur.WriteRune(r)
+			continue
+		}
+		if r == ',' && !inString {
+			out = append(out, cur.String())
+			cur.Reset()
+			continue
+		}
+		cur.WriteRune(r)
+	}
+	out = append(out, cur.String())
+	return out
 }
 
 func intValue(raw string) int {

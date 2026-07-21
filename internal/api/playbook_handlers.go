@@ -29,7 +29,7 @@ func (s *Server) handleListPlaybookTemplates(w http.ResponseWriter, r *http.Requ
 		return
 	}
 	locale := strings.TrimSpace(r.URL.Query().Get("locale"))
-	templates := playbookstore.Templates(locale)
+	templates := playbookstore.TemplatesWithRemote(r.Context(), locale, playbookstore.RegistryURLsFromEnv())
 	for i := range templates {
 		templates[i] = playbookTemplateSummary(templates[i])
 	}
@@ -63,7 +63,7 @@ func (s *Server) handleGetPlaybookTemplate(w http.ResponseWriter, r *http.Reques
 		return
 	}
 	locale := strings.TrimSpace(r.URL.Query().Get("locale"))
-	tmpl, ok := playbookstore.Template(r.PathValue("playbookId"), locale)
+	tmpl, ok := playbookstore.TemplateWithRemote(r.Context(), r.PathValue("playbookId"), locale, playbookstore.RegistryURLsFromEnv())
 	if !ok {
 		s.jsonError(w, http.StatusNotFound, "playbook template not found")
 		return
@@ -110,7 +110,7 @@ func (s *Server) handleInstallPlaybookTemplate(w http.ResponseWriter, r *http.Re
 	if locale == "" {
 		locale = strings.TrimSpace(r.URL.Query().Get("locale"))
 	}
-	tmpl, ok := playbookstore.Template(r.PathValue("playbookId"), locale)
+	tmpl, ok := playbookstore.TemplateWithRemote(r.Context(), r.PathValue("playbookId"), locale, playbookstore.RegistryURLsFromEnv())
 	if !ok {
 		s.jsonErrorCode(w, http.StatusNotFound, ErrCodeNotFound, "playbook template not found")
 		return
