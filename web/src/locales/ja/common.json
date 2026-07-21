@@ -204,7 +204,7 @@
     "externalToolDefaultDescription": "この外部ツールを接続し、Agent が Multigent 経由で安全に呼び出せるようにします。",
     "configureTool": "設定",
     "manageTool": "管理",
-    "manageConnection": "接続を管理",
+    "manageConnection": "管理",
     "installToProject": "プロジェクトへインストール",
     "installToProjectTitle": "プロジェクトへインストール",
     "installToProjectHint": "{{tool}}/{{connection}} を選択したプロジェクト内のすべての Agent にインストールします。Multigent がプロジェクト権限を付与し、必要なランタイムツールを自動で準備します。",

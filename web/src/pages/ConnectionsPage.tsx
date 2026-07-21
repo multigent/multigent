@@ -238,7 +238,6 @@ export default function ConnectionsPage() {
                     testResults={testResults}
                     onConfigure={() => setCreatingProvider(provider.provider)}
                     onEdit={setEditing}
-                    onInstallToProject={() => setInstallingConnection(primaryConnectionForProvider(connections, provider.provider) ?? null)}
                   />
                 ))}
               </div>
@@ -266,6 +265,7 @@ export default function ConnectionsPage() {
           testState={testResults[editing.id]}
           onTest={connection => void testConnection(connection)}
           onDelete={connection => void removeConnection(connection)}
+          onInstallToProject={connection => { setEditing(null); setInstallingConnection(connection) }}
           onClose={() => setEditing(null)}
           onCreated={() => { setEditing(null); setReloadKey(k => k + 1) }}
         />
@@ -307,7 +307,6 @@ function ExternalToolCard({
   testResults,
   onConfigure,
   onEdit,
-  onInstallToProject,
 }: {
   provider: Provider
   connection?: Connection
@@ -317,7 +316,6 @@ function ExternalToolCard({
   testResults: Record<string, { loading?: boolean; ok?: boolean; message?: string }>
   onConfigure: () => void
   onEdit: (connection: Connection) => void
-  onInstallToProject: () => void
 }) {
   const { t } = useTranslation()
   const fmtDateTime = useFormatDateTime()
@@ -356,16 +354,9 @@ function ExternalToolCard({
             <p className="mt-2 line-clamp-2 text-sm text-neutral-500 dark:text-zinc-400">{providerDescription(provider, t)}</p>
           </div>
         </div>
-        <div className="flex shrink-0 flex-col gap-2">
-          <button type="button" onClick={() => connection && canManageConnection ? onEdit(connection) : onConfigure()} disabled={connection ? !canManageConnection : !canConfigure} className={cn(primaryOutlineButton, 'justify-center disabled:cursor-not-allowed disabled:opacity-50')}>
-            {connection ? t('connections.manageConnection') : t('connections.configureTool')}
-          </button>
-          {connection && canManageConnection && connection.ownerType === 'workspace' && (
-            <button type="button" onClick={onInstallToProject} className="rounded-lg border border-neutral-300 bg-white px-3 py-2 text-sm font-medium text-neutral-700 hover:bg-neutral-50 dark:border-zinc-600 dark:bg-zinc-900 dark:text-zinc-200 dark:hover:bg-zinc-800">
-              {t('connections.installToProject')}
-            </button>
-          )}
-        </div>
+        <button type="button" onClick={() => connection && canManageConnection ? onEdit(connection) : onConfigure()} disabled={connection ? !canManageConnection : !canConfigure} className={cn(primaryOutlineButton, 'shrink-0 justify-center disabled:cursor-not-allowed disabled:opacity-50')}>
+          {connection ? t('connections.manageConnection') : t('connections.configureTool')}
+        </button>
       </div>
       <div className="mt-4 grid gap-3 sm:grid-cols-3">
         <ToolStat label={t('connections.authMethods')} value={formatAuthTypes(provider.authTypes, oauthAvailable, isWorkspaceAdmin, t)} />
@@ -636,6 +627,7 @@ function ConnectionDialog({
   testState,
   onTest,
   onDelete,
+  onInstallToProject,
   onClose,
   onCreated,
 }: {
@@ -647,6 +639,7 @@ function ConnectionDialog({
   testState?: { loading?: boolean; ok?: boolean; message?: string }
   onTest?: (connection: Connection) => void
   onDelete?: (connection: Connection) => void
+  onInstallToProject?: (connection: Connection) => void
   onClose: () => void
   onCreated: () => void
 }) {
@@ -842,6 +835,9 @@ function ConnectionDialog({
             <div className="flex justify-between gap-2 pt-2">
               <button type="button" onClick={onClose} className="rounded-lg border border-neutral-300 px-3 py-2 text-sm dark:border-zinc-600">{t('common.close')}</button>
               <div className="flex gap-2">
+                {isWorkspaceAdmin && connection.ownerType === 'workspace' && (
+                  <button type="button" onClick={() => onInstallToProject?.(connection)} className="rounded-lg border border-neutral-300 px-3 py-2 text-sm font-medium text-neutral-700 hover:bg-neutral-50 dark:border-zinc-600 dark:text-zinc-200 dark:hover:bg-zinc-800">{t('connections.installToProject')}</button>
+                )}
                 <button type="button" onClick={() => onTest?.(connection)} disabled={testState?.loading} className="rounded-lg border border-neutral-300 px-3 py-2 text-sm font-medium text-neutral-700 hover:bg-neutral-50 disabled:opacity-50 dark:border-zinc-600 dark:text-zinc-200 dark:hover:bg-zinc-800">{t('connections.test')}</button>
                 <button type="button" onClick={() => onDelete?.(connection)} className="rounded-lg border border-red-200 px-3 py-2 text-sm font-medium text-red-600 hover:bg-red-50 dark:border-red-900/60 dark:text-red-300 dark:hover:bg-red-900/20">{t('connections.disconnect')}</button>
               </div>

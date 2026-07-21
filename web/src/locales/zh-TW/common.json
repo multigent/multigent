@@ -204,7 +204,7 @@
     "externalToolDefaultDescription": "連接該外部工具，讓 Agent 透過 Multigent 安全呼叫。",
     "configureTool": "設定",
     "manageTool": "管理",
-    "manageConnection": "管理連線",
+    "manageConnection": "管理",
     "installToProject": "安裝到專案",
     "installToProjectTitle": "安裝到專案",
     "installToProjectHint": "將 {{tool}}/{{connection}} 安裝到所選專案下所有 Agent。系統會自動開通專案授權，並在 Agent 執行環境中準備需要的工具。",

@@ -204,7 +204,7 @@
     "externalToolDefaultDescription": "Connect this external tool so agents can call it safely through Multigent.",
     "configureTool": "Configure",
     "manageTool": "Manage",
-    "manageConnection": "Manage connection",
+    "manageConnection": "Manage",
     "installToProject": "Install to project",
     "installToProjectTitle": "Install to project",
     "installToProjectHint": "Install {{tool}}/{{connection}} for every agent in the selected project. Multigent grants project access and prepares required runtime tools automatically.",
