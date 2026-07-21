@@ -92,95 +92,101 @@ export default function WorkspacePage() {
       )}
 
       {state.status === 'ok' && (
-        <div className="grid gap-5 lg:grid-cols-[minmax(0,1.2fr)_minmax(320px,0.8fr)]">
-          <section className="rounded-xl border border-neutral-200/80 bg-white p-5 dark:border-zinc-700/60 dark:bg-zinc-900/30">
-            <div className="flex items-start gap-3">
-              <div className="flex size-10 shrink-0 items-center justify-center rounded-lg bg-sky-100 dark:bg-sky-900/30">
-                <Building2 className="size-5 text-sky-600 dark:text-sky-400" strokeWidth={1.8} />
+        <div className="space-y-5">
+          <div className="grid gap-5 lg:grid-cols-[minmax(0,1.2fr)_minmax(320px,0.8fr)]">
+            <section className="rounded-xl border border-neutral-200/80 bg-white p-5 dark:border-zinc-700/60 dark:bg-zinc-900/30">
+              <div className="flex items-start gap-3">
+                <div className="flex size-10 shrink-0 items-center justify-center rounded-lg bg-sky-100 dark:bg-sky-900/30">
+                  <Building2 className="size-5 text-sky-600 dark:text-sky-400" strokeWidth={1.8} />
+                </div>
+                <div className="min-w-0">
+                  <h2 className="truncate text-base font-semibold text-neutral-900 dark:text-zinc-100">{state.data.name}</h2>
+                  <p className="mt-1 text-sm leading-relaxed text-neutral-500 dark:text-zinc-500">
+                    {state.data.description || t('workspace.noDescription')}
+                  </p>
+                </div>
               </div>
-              <div className="min-w-0">
-                <h2 className="truncate text-base font-semibold text-neutral-900 dark:text-zinc-100">{state.data.name}</h2>
-                <p className="mt-1 text-sm leading-relaxed text-neutral-500 dark:text-zinc-500">
-                  {state.data.description || t('workspace.noDescription')}
-                </p>
+
+              <div className="mt-5 grid gap-3 sm:grid-cols-2">
+                <Info icon={UserRound} label={t('workspace.createdBy')} value={state.data.createdBy || '-'} />
+                <Info icon={CalendarDays} label={t('workspace.createdAt')} value={fmtDateTime(state.data.createdAt)} />
+                <Info icon={RefreshCw} label={t('workspace.updatedAt')} value={fmtDateTime(state.data.updatedAt)} />
+                <Info icon={Hash} label="Workspace ID" value={state.data.id} mono />
               </div>
-            </div>
 
-            <div className="mt-5 grid gap-3 sm:grid-cols-2">
-              <Info icon={UserRound} label={t('workspace.createdBy')} value={state.data.createdBy || '-'} />
-              <Info icon={CalendarDays} label={t('workspace.createdAt')} value={fmtDateTime(state.data.createdAt)} />
-              <Info icon={RefreshCw} label={t('workspace.updatedAt')} value={fmtDateTime(state.data.updatedAt)} />
-              <Info icon={Hash} label="Workspace ID" value={state.data.id} mono />
-            </div>
+              <div className="mt-5 grid grid-cols-2 gap-3 sm:grid-cols-4">
+                <Metric label={t('nav.teams')} value={state.data.teams} />
+                <Metric label={t('nav.projects')} value={state.data.projects} />
+                <Metric label="Agents" value={state.data.agents} />
+                <Metric label="Tasks" value={state.data.tasks} />
+              </div>
+            </section>
 
-            <div className="mt-5 grid grid-cols-2 gap-3 sm:grid-cols-4">
-              <Metric label={t('nav.teams')} value={state.data.teams} />
-              <Metric label={t('nav.projects')} value={state.data.projects} />
-              <Metric label="Agents" value={state.data.agents} />
-              <Metric label="Tasks" value={state.data.tasks} />
-            </div>
-          </section>
-
-          <section className="rounded-xl border border-neutral-200/80 bg-white p-5 dark:border-zinc-700/60 dark:bg-zinc-900/30">
-            <h2 className="text-sm font-semibold text-neutral-900 dark:text-zinc-100">{t('workspace.editTitle')}</h2>
-            <form onSubmit={onSubmit} className="mt-4 space-y-4">
-              <label className="block">
-                <span className="text-xs font-medium text-neutral-500 dark:text-zinc-400">{t('workspace.name')}</span>
-                <input
-                  value={name}
-                  onChange={e => setName(e.target.value)}
-                  className="mt-1 w-full rounded-lg border border-neutral-200 bg-white px-3 py-2 text-sm text-neutral-900 outline-none focus:border-sky-400 dark:border-zinc-700 dark:bg-zinc-950 dark:text-zinc-100"
-                />
-              </label>
-              <label className="block">
-                <span className="text-xs font-medium text-neutral-500 dark:text-zinc-400">{t('workspace.description')}</span>
-                <textarea
-                  value={description}
-                  onChange={e => setDescription(e.target.value)}
-                  rows={4}
-                  className="mt-1 w-full resize-none rounded-lg border border-neutral-200 bg-white px-3 py-2 text-sm text-neutral-900 outline-none focus:border-sky-400 dark:border-zinc-700 dark:bg-zinc-950 dark:text-zinc-100"
-                />
-              </label>
-              <button
-                type="submit"
-                disabled={saving || name.trim() === ''}
-                className="inline-flex items-center gap-2 rounded-lg bg-sky-600 px-3 py-2 text-sm font-medium text-white transition-colors hover:bg-sky-700 disabled:cursor-not-allowed disabled:opacity-50"
-              >
-                <Save className="size-4" strokeWidth={1.8} />
-                {saving ? t('workspace.saving') : t('common.save')}
-              </button>
-            </form>
-
-            <div className="mt-6 border-t border-neutral-200/70 pt-5 dark:border-zinc-700/60">
-              <h3 className="text-sm font-semibold text-neutral-900 dark:text-zinc-100">{t('workspace.switchTitle')}</h3>
-              <p className="mt-1.5 text-sm leading-relaxed text-neutral-500 dark:text-zinc-500">{t('workspace.switchHint')}</p>
-              <div className="mt-3 flex flex-wrap gap-2">
-                <button type="button" disabled className="inline-flex cursor-not-allowed items-center gap-2 rounded-lg border border-neutral-200 px-3 py-2 text-sm font-medium text-neutral-400 dark:border-zinc-700 dark:text-zinc-500">
-                  <Plus className="size-4" strokeWidth={1.8} />
-                  {t('workspace.createWorkspace')}
+            <section className="rounded-xl border border-neutral-200/80 bg-white p-5 dark:border-zinc-700/60 dark:bg-zinc-900/30">
+              <h2 className="text-sm font-semibold text-neutral-900 dark:text-zinc-100">{t('workspace.editTitle')}</h2>
+              <form onSubmit={onSubmit} className="mt-4 space-y-4">
+                <label className="block">
+                  <span className="text-xs font-medium text-neutral-500 dark:text-zinc-400">{t('workspace.name')}</span>
+                  <input
+                    value={name}
+                    onChange={e => setName(e.target.value)}
+                    className="mt-1 w-full rounded-lg border border-neutral-200 bg-white px-3 py-2 text-sm text-neutral-900 outline-none focus:border-sky-400 dark:border-zinc-700 dark:bg-zinc-950 dark:text-zinc-100"
+                  />
+                </label>
+                <label className="block">
+                  <span className="text-xs font-medium text-neutral-500 dark:text-zinc-400">{t('workspace.description')}</span>
+                  <textarea
+                    value={description}
+                    onChange={e => setDescription(e.target.value)}
+                    rows={4}
+                    className="mt-1 w-full resize-none rounded-lg border border-neutral-200 bg-white px-3 py-2 text-sm text-neutral-900 outline-none focus:border-sky-400 dark:border-zinc-700 dark:bg-zinc-950 dark:text-zinc-100"
+                  />
+                </label>
+                <button
+                  type="submit"
+                  disabled={saving || name.trim() === ''}
+                  className="inline-flex items-center gap-2 rounded-lg bg-sky-600 px-3 py-2 text-sm font-medium text-white transition-colors hover:bg-sky-700 disabled:cursor-not-allowed disabled:opacity-50"
+                >
+                  <Save className="size-4" strokeWidth={1.8} />
+                  {saving ? t('workspace.saving') : t('common.save')}
                 </button>
-                <button type="button" disabled className="inline-flex cursor-not-allowed items-center gap-2 rounded-lg border border-neutral-200 px-3 py-2 text-sm font-medium text-neutral-400 dark:border-zinc-700 dark:text-zinc-500">
-                  <Lock className="size-4" strokeWidth={1.8} />
-                  {t('workspace.switchWorkspace')}
-                </button>
-              </div>
-            </div>
+              </form>
 
-            {state.data.currentUserCanAdmin && (
-              <div className="mt-6 border-t border-red-100 pt-5 dark:border-red-900/40">
-                <h3 className="text-sm font-semibold text-red-700 dark:text-red-400">{t('workspace.dangerTitle')}</h3>
-                <p className="mt-1.5 text-sm leading-relaxed text-neutral-500 dark:text-zinc-500">{t('workspace.dangerHint')}</p>
+              <div className="mt-6 border-t border-neutral-200/70 pt-5 dark:border-zinc-700/60">
+                <h3 className="text-sm font-semibold text-neutral-900 dark:text-zinc-100">{t('workspace.switchTitle')}</h3>
+                <p className="mt-1.5 text-sm leading-relaxed text-neutral-500 dark:text-zinc-500">{t('workspace.switchHint')}</p>
+                <div className="mt-3 flex flex-wrap gap-2">
+                  <button type="button" disabled className="inline-flex cursor-not-allowed items-center gap-2 rounded-lg border border-neutral-200 px-3 py-2 text-sm font-medium text-neutral-400 dark:border-zinc-700 dark:text-zinc-500">
+                    <Plus className="size-4" strokeWidth={1.8} />
+                    {t('workspace.createWorkspace')}
+                  </button>
+                  <button type="button" disabled className="inline-flex cursor-not-allowed items-center gap-2 rounded-lg border border-neutral-200 px-3 py-2 text-sm font-medium text-neutral-400 dark:border-zinc-700 dark:text-zinc-500">
+                    <Lock className="size-4" strokeWidth={1.8} />
+                    {t('workspace.switchWorkspace')}
+                  </button>
+                </div>
+              </div>
+            </section>
+          </div>
+
+          {state.data.currentUserCanAdmin && (
+            <section className="rounded-xl border border-red-100 bg-red-50/40 p-5 dark:border-red-900/40 dark:bg-red-950/10">
+              <div className="flex flex-col gap-4 sm:flex-row sm:items-center sm:justify-between">
+                <div>
+                  <h2 className="text-sm font-semibold text-red-700 dark:text-red-400">{t('workspace.dangerTitle')}</h2>
+                  <p className="mt-1.5 max-w-3xl text-sm leading-relaxed text-neutral-500 dark:text-zinc-500">{t('workspace.dangerHint')}</p>
+                </div>
                 <button
                   type="button"
                   disabled={deleting}
                   onClick={() => void onDeleteWorkspace()}
-                  className="mt-3 rounded-lg border border-red-200 bg-white px-3 py-2 text-sm font-medium text-red-700 transition-colors hover:bg-red-50 disabled:cursor-not-allowed disabled:opacity-50 dark:border-red-900/70 dark:bg-zinc-900 dark:text-red-400 dark:hover:bg-red-950/30"
+                  className="shrink-0 rounded-lg border border-red-200 bg-white px-3 py-2 text-sm font-medium text-red-700 transition-colors hover:bg-red-50 disabled:cursor-not-allowed disabled:opacity-50 dark:border-red-900/70 dark:bg-zinc-900 dark:text-red-400 dark:hover:bg-red-950/30"
                 >
                   {deleting ? t('workspace.deleting') : t('workspace.deleteWorkspace')}
                 </button>
               </div>
-            )}
-          </section>
+            </section>
+          )}
         </div>
       )}
     </div>
