@@ -199,6 +199,7 @@ See the deeper design notes:
 - [Product tour and example workspaces](docs/product-tour-and-example-workspaces.md)
 - [Release and distribution](docs/release-distribution.md)
 - [Customer onboarding, playbook generation, and agent improvement](docs/customer-onboarding-playbook-generation-and-agent-improvement.md)
+- [Product launch and growth TODO](docs/product-launch-and-growth-todo.md)
 
 ## Development
 

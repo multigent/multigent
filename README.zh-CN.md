@@ -199,6 +199,7 @@ npm run dev
 - [Product Tour 与 Example Workspace](docs/product-tour-and-example-workspaces.md)
 - [发布与分发](docs/release-distribution.md)
 - [客户上手、协作方案生成与 Agent 改进](docs/customer-onboarding-playbook-generation-and-agent-improvement.md)
+- [产品发布与增长 TODO](docs/product-launch-and-growth-todo.md)
 
 ## 开发
 
