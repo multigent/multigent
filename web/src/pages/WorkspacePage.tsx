@@ -4,7 +4,6 @@ import { useTranslation } from 'react-i18next'
 import { Building2, CalendarDays, Hash, Lock, Plus, RefreshCw, Save, UserRound } from 'lucide-react'
 import type { LucideIcon } from 'lucide-react'
 import { PlaceholderCard } from '../components/ui/PlaceholderCard'
-import { confirmDialog } from '../components/ui/ConfirmDialog'
 import { apiDelete, apiPut } from '../lib/api'
 import { useApiJson } from '../lib/use-api'
 import { useFormatDateTime } from '../lib/format-datetime'
@@ -32,6 +31,8 @@ export default function WorkspacePage() {
   const [description, setDescription] = useState('')
   const [saving, setSaving] = useState(false)
   const [deleting, setDeleting] = useState(false)
+  const [deleteModalOpen, setDeleteModalOpen] = useState(false)
+  const [deleteConfirmName, setDeleteConfirmName] = useState('')
 
   useEffect(() => {
     if (state.status === 'ok') {
@@ -53,14 +54,7 @@ export default function WorkspacePage() {
 
   async function onDeleteWorkspace() {
     if (state.status !== 'ok') return
-    const ok = await confirmDialog({
-      title: t('workspace.deleteTitle'),
-      description: t('workspace.deleteDescription', { name: state.data.name }),
-      confirmLabel: t('workspace.deleteConfirm'),
-      cancelLabel: t('common.cancel'),
-      tone: 'danger',
-    })
-    if (!ok) return
+    if (deleteConfirmName !== state.data.name) return
     setDeleting(true)
     try {
       await apiDelete(`/api/v1/workspaces/${encodeURIComponent(state.data.id)}`)
@@ -179,7 +173,10 @@ export default function WorkspacePage() {
                 <button
                   type="button"
                   disabled={deleting}
-                  onClick={() => void onDeleteWorkspace()}
+                  onClick={() => {
+                    setDeleteConfirmName('')
+                    setDeleteModalOpen(true)
+                  }}
                   className="shrink-0 rounded-lg border border-red-200 bg-white px-3 py-2 text-sm font-medium text-red-700 transition-colors hover:bg-red-50 disabled:cursor-not-allowed disabled:opacity-50 dark:border-red-900/70 dark:bg-zinc-900 dark:text-red-400 dark:hover:bg-red-950/30"
                 >
                   {deleting ? t('workspace.deleting') : t('workspace.deleteWorkspace')}
@@ -187,6 +184,64 @@ export default function WorkspacePage() {
               </div>
             </section>
           )}
+        </div>
+      )}
+
+      {state.status === 'ok' && deleteModalOpen && (
+        <div
+          className="fixed inset-0 z-[80] flex items-center justify-center bg-black/45 p-4 backdrop-blur-[1px]"
+          role="presentation"
+          onClick={() => {
+            if (!deleting) setDeleteModalOpen(false)
+          }}
+        >
+          <div
+            className="w-full max-w-lg animate-scale-in rounded-xl border border-neutral-200 bg-white shadow-xl dark:border-zinc-700 dark:bg-zinc-900"
+            role="dialog"
+            aria-modal="true"
+            aria-labelledby="delete-workspace-title"
+            onClick={(e) => e.stopPropagation()}
+          >
+            <div className="border-b border-neutral-100 px-5 py-4 dark:border-zinc-800">
+              <h2 id="delete-workspace-title" className="text-base font-semibold text-red-700 dark:text-red-400">{t('workspace.deleteTitle')}</h2>
+              <p className="mt-1.5 text-sm leading-relaxed text-neutral-500 dark:text-zinc-400">
+                {t('workspace.deleteDescription', { name: state.data.name })}
+              </p>
+            </div>
+            <div className="space-y-4 px-5 py-4">
+              <div className="rounded-lg border border-red-100 bg-red-50 px-3 py-2.5 text-sm text-red-700 dark:border-red-900/50 dark:bg-red-950/20 dark:text-red-300">
+                {t('workspace.deleteNamePrompt', { name: state.data.name })}
+              </div>
+              <label className="block">
+                <span className="text-xs font-medium text-neutral-500 dark:text-zinc-400">{t('workspace.deleteNameLabel')}</span>
+                <input
+                  value={deleteConfirmName}
+                  onChange={(e) => setDeleteConfirmName(e.target.value)}
+                  autoFocus
+                  disabled={deleting}
+                  className="mt-1 w-full rounded-lg border border-neutral-200 bg-white px-3 py-2 text-sm text-neutral-900 outline-none focus:border-red-400 dark:border-zinc-700 dark:bg-zinc-950 dark:text-zinc-100"
+                />
+              </label>
+            </div>
+            <div className="flex justify-end gap-2 border-t border-neutral-100 px-5 py-4 dark:border-zinc-800">
+              <button
+                type="button"
+                disabled={deleting}
+                onClick={() => setDeleteModalOpen(false)}
+                className="rounded-lg border border-neutral-300 bg-white px-3 py-2 text-sm font-medium text-neutral-700 transition-colors hover:bg-neutral-50 disabled:opacity-50 dark:border-zinc-600 dark:bg-zinc-900 dark:text-zinc-200 dark:hover:bg-zinc-800"
+              >
+                {t('common.cancel')}
+              </button>
+              <button
+                type="button"
+                disabled={deleting || deleteConfirmName !== state.data.name}
+                onClick={() => void onDeleteWorkspace()}
+                className="rounded-lg bg-red-600 px-3 py-2 text-sm font-medium text-white transition-colors hover:bg-red-700 disabled:cursor-not-allowed disabled:opacity-50"
+              >
+                {deleting ? t('workspace.deleting') : t('workspace.deleteConfirm')}
+              </button>
+            </div>
+          </div>
         </div>
       )}
     </div>

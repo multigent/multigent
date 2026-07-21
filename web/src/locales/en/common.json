@@ -634,6 +634,8 @@
     "deleting": "Deleting...",
     "deleteTitle": "Delete workspace?",
     "deleteDescription": "Delete \"{{name}}\"? All data in this workspace will be removed permanently.",
+    "deleteNamePrompt": "Type the workspace name \"{{name}}\" to confirm deletion.",
+    "deleteNameLabel": "Workspace name",
     "deleteConfirm": "Delete",
     "switchingWorkspace": "Switching workspace",
     "switchingWorkspaceStepPrepare": "Preparing the new workspace context…",

@@ -634,6 +634,8 @@
     "deleting": "刪除中...",
     "deleteTitle": "刪除工作區？",
     "deleteDescription": "確定刪除「{{name}}」嗎？該工作區下的所有資料都會被移除，無法復原。",
+    "deleteNamePrompt": "請輸入工作區名稱「{{name}}」以確認刪除。",
+    "deleteNameLabel": "工作區名稱",
     "deleteConfirm": "確認刪除",
     "switchingWorkspace": "正在切換工作區",
     "switchingWorkspaceStepPrepare": "正在準備新的工作區上下文…",
