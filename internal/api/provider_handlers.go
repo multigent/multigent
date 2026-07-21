@@ -1,8 +1,13 @@
 package api
 
 import (
+	"database/sql"
 	"encoding/json"
+	"fmt"
 	"net/http"
+	"os"
+	"path/filepath"
+	"runtime"
 	"strings"
 
 	"github.com/multigent/multigent/internal/entity"
@@ -20,6 +25,29 @@ type providerBody struct {
 	APIKey    string            `json:"apiKey"`
 	Model     string            `json:"model"`
 	Env       map[string]string `json:"env,omitempty"`
+}
+
+type ccSwitchProviderRow struct {
+	ID             string
+	AppType        string
+	Name           string
+	SettingsConfig string
+	IsCurrent      int
+}
+
+type ccSwitchProviderPreview struct {
+	ID        string `json:"id"`
+	Name      string `json:"name"`
+	CLI       string `json:"cli"`
+	Type      string `json:"type"`
+	BaseURL   string `json:"baseUrl,omitempty"`
+	Model     string `json:"model,omitempty"`
+	HasKey    bool   `json:"hasKey"`
+	IsCurrent bool   `json:"isCurrent"`
+}
+
+type ccSwitchImportBody struct {
+	IDs []string `json:"ids"`
 }
 
 func (b providerBody) toEntity() entity.APIProvider {
@@ -214,6 +242,123 @@ func (s *Server) handleDeleteProvider(w http.ResponseWriter, r *http.Request) {
 	_ = json.NewEncoder(w).Encode(map[string]any{"ok": true, "clearedAgents": clearedAgents})
 }
 
+func (s *Server) handleListCCSwitchProviders(w http.ResponseWriter, r *http.Request) {
+	if !s.checkCurrentWorkspaceAccess(w, r) {
+		return
+	}
+	rows, dbPath, err := listCCSwitchProviderRows()
+	if err != nil {
+		_ = json.NewEncoder(w).Encode(map[string]any{
+			"available": false,
+			"providers": []ccSwitchProviderPreview{},
+			"searched":  ccSwitchDBCandidates(),
+			"error":     err.Error(),
+		})
+		return
+	}
+	out := make([]ccSwitchProviderPreview, 0, len(rows))
+	for _, row := range rows {
+		prov, cli, err := convertCCSwitchModelProvider(row)
+		if err != nil {
+			continue
+		}
+		out = append(out, ccSwitchProviderPreview{
+			ID:        row.ID,
+			Name:      prov.Name,
+			CLI:       cli,
+			Type:      prov.Type,
+			BaseURL:   prov.BaseURL,
+			Model:     prov.Model,
+			HasKey:    prov.APIKey != "" || len(prov.Env) > 0,
+			IsCurrent: row.IsCurrent == 1,
+		})
+	}
+	_ = json.NewEncoder(w).Encode(map[string]any{
+		"available": true,
+		"dbPath":    dbPath,
+		"providers": out,
+	})
+}
+
+func (s *Server) handleImportCCSwitchProviders(w http.ResponseWriter, r *http.Request) {
+	workspaceID, err := s.modelProviderWorkspaceMember(w, r)
+	if err != nil {
+		return
+	}
+	rows, _, err := listCCSwitchProviderRows()
+	if err != nil {
+		s.jsonError(w, http.StatusNotFound, err.Error())
+		return
+	}
+	var body ccSwitchImportBody
+	if err := s.readJSON(w, r, &body); err != nil {
+		s.jsonError(w, http.StatusBadRequest, "invalid JSON body")
+		return
+	}
+	want := map[string]bool{}
+	for _, id := range body.IDs {
+		id = strings.TrimSpace(id)
+		if id != "" {
+			want[id] = true
+		}
+	}
+	if len(want) == 0 {
+		s.jsonError(w, http.StatusBadRequest, "ids are required")
+		return
+	}
+	existing, err := s.providerStore().List()
+	if err != nil {
+		s.serverError(w, err)
+		return
+	}
+	existingByNameType := map[string]bool{}
+	for _, provider := range existing {
+		existingByNameType[providerNameTypeKey(provider)] = true
+	}
+	imported := []map[string]any{}
+	skipped := []map[string]string{}
+	for _, row := range rows {
+		if !want[row.ID] {
+			continue
+		}
+		prov, cli, err := convertCCSwitchModelProvider(row)
+		if err != nil {
+			skipped = append(skipped, map[string]string{"id": row.ID, "name": row.Name, "reason": err.Error()})
+			continue
+		}
+		if !s.prepareNewModelProvider(w, r, workspaceID, &prov) {
+			return
+		}
+		key := providerNameTypeKey(prov)
+		if existingByNameType[key] {
+			skipped = append(skipped, map[string]string{"id": row.ID, "name": prov.Name, "reason": "already imported"})
+			continue
+		}
+		created, err := s.providerStore().Add(prov)
+		if err != nil {
+			skipped = append(skipped, map[string]string{"id": row.ID, "name": prov.Name, "reason": err.Error()})
+			continue
+		}
+		existingByNameType[key] = true
+		s.auditLog(auditLogInput{
+			WorkspaceID:  workspaceID,
+			Action:       "model_provider.import_cc_switch",
+			ResourceType: "model_provider",
+			ResourceID:   created.ID,
+			Summary:      "Model provider imported from cc-switch",
+			After:        modelProviderAuditPayload(*created),
+			Request:      r,
+		})
+		payload := providerToJSON(*created)
+		payload["cli"] = cli
+		imported = append(imported, payload)
+	}
+	_ = json.NewEncoder(w).Encode(map[string]any{
+		"imported": imported,
+		"skipped":  skipped,
+	})
+}
+
 func (s *Server) clearDeletedModelProviderRefs(providerID string) ([]string, error) {
 	if s.st == nil {
 		return []string{}, nil
@@ -348,4 +493,203 @@ func modelProviderAuditPayload(p entity.APIProvider) map[string]any {
 		"model":     p.Model,
 		"hasKey":    p.APIKey != "",
 	}
+}
+
+func listCCSwitchProviderRows() ([]ccSwitchProviderRow, string, error) {
+	dbPath := findCCSwitchDB()
+	if dbPath == "" {
+		return nil, "", fmt.Errorf("cc-switch database not found")
+	}
+	rows, err := queryCCSwitchDB(dbPath)
+	return rows, dbPath, err
+}
+
+func queryCCSwitchDB(dbPath string) ([]ccSwitchProviderRow, error) {
+	db, err := sql.Open("sqlite", dbPath+"?mode=ro")
+	if err != nil {
+		return nil, fmt.Errorf("open cc-switch db: %w", err)
+	}
+	defer db.Close()
+	rows, err := db.Query("SELECT id, app_type, name, settings_config, is_current FROM providers")
+	if err != nil {
+		return nil, fmt.Errorf("query cc-switch db: %w", err)
+	}
+	defer rows.Close()
+	out := []ccSwitchProviderRow{}
+	for rows.Next() {
+		var row ccSwitchProviderRow
+		if err := rows.Scan(&row.ID, &row.AppType, &row.Name, &row.SettingsConfig, &row.IsCurrent); err != nil {
+			continue
+		}
+		out = append(out, row)
+	}
+	return out, rows.Err()
+}
+
+func convertCCSwitchModelProvider(row ccSwitchProviderRow) (entity.APIProvider, string, error) {
+	var settings map[string]any
+	if err := json.Unmarshal([]byte(row.SettingsConfig), &settings); err != nil {
+		return entity.APIProvider{}, "", fmt.Errorf("invalid settings_config JSON: %w", err)
+	}
+	prov := entity.APIProvider{
+		Name: strings.TrimSpace(row.Name),
+	}
+	if prov.Name == "" {
+		prov.Name = row.AppType + " provider"
+	}
+	switch strings.ToLower(strings.TrimSpace(row.AppType)) {
+	case "claude":
+		prov.Type = "anthropic"
+		if err := fillClaudeCCSwitchProvider(&prov, settings); err != nil {
+			return entity.APIProvider{}, "", err
+		}
+		return prov, "claudecode", nil
+	case "codex":
+		prov.Type = "openai"
+		if err := fillCodexCCSwitchProvider(&prov, settings); err != nil {
+			return entity.APIProvider{}, "", err
+		}
+		return prov, "codex", nil
+	default:
+		return entity.APIProvider{}, "", fmt.Errorf("unsupported app_type %q", row.AppType)
+	}
+}
+
+func fillClaudeCCSwitchProvider(prov *entity.APIProvider, settings map[string]any) error {
+	env, _ := settings["env"].(map[string]any)
+	if env == nil {
+		return fmt.Errorf("no env in settings_config")
+	}
+	if key := firstStringFromMap(env, "ANTHROPIC_AUTH_TOKEN", "ANTHROPIC_API_KEY"); key != "" {
+		prov.APIKey = key
+	}
+	if baseURL := firstStringFromMap(env, "ANTHROPIC_BASE_URL"); baseURL != "" {
+		prov.BaseURL = baseURL
+	}
+	if model := firstStringFromMap(env, "ANTHROPIC_MODEL", "CLAUDE_MODEL"); model != "" {
+		prov.Model = model
+	}
+	extra := map[string]string{}
+	known := map[string]bool{
+		"ANTHROPIC_AUTH_TOKEN": true,
+		"ANTHROPIC_API_KEY":    true,
+		"ANTHROPIC_BASE_URL":   true,
+		"ANTHROPIC_MODEL":      true,
+		"CLAUDE_MODEL":         true,
+	}
+	for key, value := range env {
+		if known[key] {
+			continue
+		}
+		if s, ok := value.(string); ok && strings.TrimSpace(s) != "" {
+			extra[key] = s
+		}
+	}
+	if len(extra) > 0 {
+		prov.Env = extra
+	}
+	if prov.APIKey == "" && len(prov.Env) == 0 {
+		return fmt.Errorf("no API key or env found")
+	}
+	return nil
+}
+
+func fillCodexCCSwitchProvider(prov *entity.APIProvider, settings map[string]any) error {
+	if auth, ok := settings["auth"].(map[string]any); ok {
+		prov.APIKey = firstStringFromMap(auth, "OPENAI_API_KEY")
+	}
+	if cfg, ok := settings["config"].(string); ok {
+		prov.BaseURL, prov.Model = parseCodexProviderConfig(cfg)
+	}
+	if env, ok := settings["env"].(map[string]any); ok {
+		if prov.APIKey == "" {
+			prov.APIKey = firstStringFromMap(env, "OPENAI_API_KEY")
+		}
+		if prov.BaseURL == "" {
+			prov.BaseURL = firstStringFromMap(env, "OPENAI_BASE_URL", "OPENAI_API_BASE")
+		}
+		if prov.Model == "" {
+			prov.Model = firstStringFromMap(env, "OPENAI_MODEL")
+		}
+	}
+	if prov.APIKey == "" {
+		return fmt.Errorf("no OPENAI_API_KEY found")
+	}
+	return nil
+}
+
+func parseCodexProviderConfig(config string) (baseURL, model string) {
+	for _, line := range strings.Split(config, "\n") {
+		key, value, ok := parseSimpleTOMLKV(line)
+		if !ok {
+			continue
+		}
+		switch key {
+		case "base_url":
+			if baseURL == "" {
+				baseURL = value
+			}
+		case "model":
+			if model == "" {
+				model = value
+			}
+		}
+	}
+	return baseURL, model
+}
+
+func parseSimpleTOMLKV(line string) (key, value string, ok bool) {
+	line = strings.TrimSpace(line)
+	if line == "" || strings.HasPrefix(line, "#") || strings.HasPrefix(line, "[") {
+		return "", "", false
+	}
+	key, value, ok = strings.Cut(line, "=")
+	if !ok {
+		return "", "", false
+	}
+	key = strings.TrimSpace(key)
+	value = strings.TrimSpace(value)
+	value = strings.Trim(value, `"'`)
+	return key, value, key != ""
+}
+
+func firstStringFromMap(values map[string]any, keys ...string) string {
+	for _, key := range keys {
+		if value, ok := values[key].(string); ok && strings.TrimSpace(value) != "" {
+			return strings.TrimSpace(value)
+		}
+	}
+	return ""
+}
+
+func findCCSwitchDB() string {
+	for _, candidate := range ccSwitchDBCandidates() {
+		if _, err := os.Stat(candidate); err == nil {
+			return candidate
+		}
+	}
+	return ""
+}
+
+func ccSwitchDBCandidates() []string {
+	home, err := os.UserHomeDir()
+	if err != nil {
+		return nil
+	}
+	candidates := []string{filepath.Join(home, ".cc-switch", "cc-switch.db")}
+	switch runtime.GOOS {
+	case "linux":
+		dataHome := strings.TrimSpace(os.Getenv("XDG_DATA_HOME"))
+		if dataHome == "" {
+			dataHome = filepath.Join(home, ".local", "share")
+		}
+		candidates = append(candidates, filepath.Join(dataHome, "cc-switch", "cc-switch.db"))
+	case "darwin":
+		candidates = append(candidates, filepath.Join(home, "Library", "Application Support", "cc-switch", "cc-switch.db"))
+	}
+	return candidates
+}
+
+func providerNameTypeKey(provider entity.APIProvider) string {
+	return strings.ToLower(strings.TrimSpace(provider.Name)) + "\x00" + strings.ToLower(strings.TrimSpace(provider.Type))
 }

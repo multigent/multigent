@@ -934,6 +934,8 @@ const GATEWAY_ACCOUNT_PRESETS: ProviderPreset[] = [
 ]
 
 type ProviderDraft = Partial<ProviderRow> & { apiKey?: string; accountMode?: ModelAccountMode; cli?: ModelAccountCLI }
+type CCSwitchProviderPreview = { id: string; name: string; cli: string; type: string; baseUrl?: string; model?: string; hasKey: boolean; isCurrent: boolean }
+type CCSwitchProviderResponse = { available: boolean; dbPath?: string; providers: CCSwitchProviderPreview[]; searched?: string[]; error?: string }
 
 function ProvidersSection() {
   const { t } = useTranslation()
@@ -944,6 +946,10 @@ function ProvidersSection() {
   const [providers, setProviders] = useState<ProviderRow[]>([])
   const [loading, setLoading] = useState(true)
   const [editing, setEditing] = useState<ProviderDraft | null>(null)
+  const [ccSwitch, setCCSwitch] = useState<CCSwitchProviderResponse | null>(null)
+  const [ccSwitchLoading, setCCSwitchLoading] = useState(false)
+  const [ccSwitchImporting, setCCSwitchImporting] = useState(false)
+  const [ccSwitchSelected, setCCSwitchSelected] = useState<string[]>([])
   const [saving, setSaving] = useState(false)
   const [err, setErr] = useState<string | null>(null)
   const [showKey, setShowKey] = useState(false)
@@ -966,6 +972,42 @@ function ProvidersSection() {
     setEditing({ accountMode: 'official', cli: 'codex', ownerType: canCreateWorkspaceProvider ? 'workspace' : 'user', name: providerOfficialName('codex'), type: providerTypeForCLI('codex'), baseUrl: '', model: '', apiKey: '' })
     setShowKey(false)
     setErr(null)
+  }
+
+  async function openCCSwitchImport() {
+    setCCSwitch({ available: false, providers: [] })
+    setCCSwitchSelected([])
+    setCCSwitchLoading(true)
+    setErr(null)
+    try {
+      const data = await apiFetch<CCSwitchProviderResponse>('/api/v1/providers/cc-switch')
+      setCCSwitch(data)
+      setCCSwitchSelected((data.providers ?? []).filter(p => p.isCurrent).map(p => p.id))
+    } catch (e) {
+      setCCSwitch({ available: false, providers: [], error: e instanceof Error ? e.message : String(e) })
+    } finally {
+      setCCSwitchLoading(false)
+    }
+  }
+
+  function toggleCCSwitchProvider(id: string) {
+    setCCSwitchSelected(prev => prev.includes(id) ? prev.filter(item => item !== id) : [...prev, id])
+  }
+
+  async function importCCSwitchProviders() {
+    if (ccSwitchSelected.length === 0) return
+    setCCSwitchImporting(true)
+    setErr(null)
+    try {
+      await apiPost('/api/v1/providers/cc-switch/import', { ids: ccSwitchSelected })
+      setCCSwitch(null)
+      setCCSwitchSelected([])
+      await refresh()
+    } catch (e) {
+      setErr(e instanceof Error ? e.message : String(e))
+    } finally {
+      setCCSwitchImporting(false)
+    }
   }
 
   function openEdit(p: ProviderRow) {
@@ -1073,10 +1115,16 @@ function ProvidersSection() {
           <Server className="size-4 text-neutral-500 dark:text-zinc-500" strokeWidth={1.8} />
           <h3 className="text-base font-semibold text-neutral-900 dark:text-zinc-100">{t('provider.title')}</h3>
         </div>
-        <button type="button" data-tour-provider-add onClick={openNew}
-          className="flex items-center gap-1 rounded-lg bg-sky-600 px-3 py-1.5 text-xs font-medium text-white transition-colors hover:bg-sky-700">
-          <Plus className="size-3.5" /> {t('provider.add')}
-        </button>
+        <div className="flex items-center gap-2">
+          <button type="button" onClick={() => void openCCSwitchImport()}
+            className="rounded-lg border border-sky-600 bg-white px-3 py-1.5 text-xs font-medium text-sky-700 hover:bg-sky-50 dark:border-sky-500 dark:bg-zinc-900 dark:text-sky-400 dark:hover:bg-zinc-800">
+            {t('provider.importCCSwitch')}
+          </button>
+          <button type="button" data-tour-provider-add onClick={openNew}
+            className="rounded-lg border border-sky-600 bg-white px-3 py-1.5 text-xs font-medium text-sky-700 hover:bg-sky-50 dark:border-sky-500 dark:bg-zinc-900 dark:text-sky-400 dark:hover:bg-zinc-800">
+            {t('provider.add')}
+          </button>
+        </div>
       </div>
       <p className="mb-3 text-xs text-neutral-400 dark:text-zinc-500">{t('provider.desc')}</p>
 
@@ -1234,6 +1282,71 @@ function ProvidersSection() {
               <div className="flex justify-end gap-2 pt-1">
                 <button type="button" onClick={() => setEditing(null)} disabled={saving} className="rounded-lg border border-neutral-300 px-3 py-1.5 text-sm dark:border-zinc-600">{t('forms.cancel')}</button>
                 <button type="button" onClick={() => void handleSave()} disabled={saving || !editing.name?.trim()} className="rounded-lg bg-sky-600 px-3 py-1.5 text-sm font-medium text-white disabled:opacity-50">{saving ? t('forms.saving') : t('forms.save')}</button>
+              </div>
+            </div>
+          </div>
+        </div>
+      )}
+      {ccSwitch && (
+        <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/45 p-4" onClick={() => !ccSwitchImporting && setCCSwitch(null)}>
+          <div className="w-full max-w-2xl rounded-xl border border-neutral-200 bg-white shadow-lg dark:border-zinc-700 dark:bg-zinc-900 animate-scale-in" onClick={e => e.stopPropagation()}>
+            <div className="flex items-center justify-between border-b border-neutral-200 px-5 py-3 dark:border-zinc-700">
+              <div>
+                <h2 className="text-base font-semibold text-neutral-900 dark:text-zinc-100">{t('provider.importCCSwitchTitle')}</h2>
+                <p className="mt-1 text-xs text-neutral-400 dark:text-zinc-500">{t('provider.importCCSwitchHint')}</p>
+              </div>
+              <button type="button" onClick={() => setCCSwitch(null)} className="rounded-md p-1 text-neutral-400 hover:bg-neutral-100 dark:text-zinc-500 dark:hover:bg-zinc-800"><X className="size-4" /></button>
+            </div>
+            <div className="px-5 py-4">
+              {ccSwitchLoading ? (
+                <p className="py-8 text-center text-sm text-neutral-400">{t('forms.loading')}</p>
+              ) : !ccSwitch.available ? (
+                <div className="rounded-lg border border-amber-200 bg-amber-50 px-3 py-2 text-sm text-amber-700 dark:border-amber-900/50 dark:bg-amber-900/20 dark:text-amber-300">
+                  <p>{t('provider.ccSwitchUnavailable')}</p>
+                  {ccSwitch.error && <p className="mt-1 font-mono text-xs opacity-80">{ccSwitch.error}</p>}
+                </div>
+              ) : ccSwitch.providers.length === 0 ? (
+                <p className="py-8 text-center text-sm text-neutral-400">{t('provider.ccSwitchEmpty')}</p>
+              ) : (
+                <div className="overflow-hidden rounded-lg border border-neutral-200 dark:border-zinc-700">
+                  <table className="min-w-full divide-y divide-neutral-200 text-sm dark:divide-zinc-700">
+                    <thead className="bg-neutral-50 dark:bg-zinc-800/70">
+                      <tr>
+                        <th className="w-10 px-3 py-2"></th>
+                        <th className="px-3 py-2 text-left font-medium text-neutral-500 dark:text-zinc-400">{t('provider.nameLabel')}</th>
+                        <th className="px-3 py-2 text-left font-medium text-neutral-500 dark:text-zinc-400">{t('provider.cliLabel')}</th>
+                        <th className="px-3 py-2 text-left font-medium text-neutral-500 dark:text-zinc-400">{t('provider.defaultModelLabel')}</th>
+                      </tr>
+                    </thead>
+                    <tbody className="divide-y divide-neutral-100 dark:divide-zinc-800">
+                      {ccSwitch.providers.map(provider => (
+                        <tr key={provider.id} className="bg-white dark:bg-zinc-900/40">
+                          <td className="px-3 py-2">
+                            <input type="checkbox" checked={ccSwitchSelected.includes(provider.id)} onChange={() => toggleCCSwitchProvider(provider.id)} className="rounded border-neutral-300 text-sky-600 focus:ring-sky-500 dark:border-zinc-600 dark:bg-zinc-800" />
+                          </td>
+                          <td className="px-3 py-2">
+                            <div className="flex flex-col">
+                              <span className="font-medium text-neutral-800 dark:text-zinc-200">{provider.name}</span>
+                              <span className="text-xs text-neutral-400 dark:text-zinc-500">{provider.isCurrent ? t('provider.ccSwitchCurrent') : ''}{provider.hasKey ? ` · ${t('provider.keyConfigured')}` : ''}</span>
+                            </div>
+                          </td>
+                          <td className="px-3 py-2 text-neutral-500 dark:text-zinc-400">{providerCLILabel(provider.cli as ModelAccountCLI)}</td>
+                          <td className="px-3 py-2">
+                            <div className="flex flex-col text-xs text-neutral-500 dark:text-zinc-400">
+                              <span className="font-mono">{provider.model || '-'}</span>
+                              {provider.baseUrl && <span className="max-w-xs truncate font-mono text-neutral-400">{provider.baseUrl}</span>}
+                            </div>
+                          </td>
+                        </tr>
+                      ))}
+                    </tbody>
+                  </table>
+                </div>
+              )}
+              {err && <p className="mt-3 text-sm text-red-600 dark:text-red-400">{err}</p>}
+              <div className="mt-4 flex justify-end gap-2">
+                <button type="button" onClick={() => setCCSwitch(null)} disabled={ccSwitchImporting} className="rounded-lg border border-neutral-300 px-3 py-1.5 text-sm dark:border-zinc-600">{t('forms.cancel')}</button>
+                <button type="button" onClick={() => void importCCSwitchProviders()} disabled={ccSwitchImporting || !ccSwitch.available || ccSwitchSelected.length === 0} className="rounded-lg bg-sky-600 px-3 py-1.5 text-sm font-medium text-white disabled:opacity-50">{ccSwitchImporting ? t('forms.saving') : t('provider.importSelected')}</button>
               </div>
             </div>
           </div>

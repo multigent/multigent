@@ -335,6 +335,8 @@ func (s *Server) Handler() http.Handler {
 
 	mux.HandleFunc("GET /api/v1/providers", s.handleListProviders)
 	mux.HandleFunc("POST /api/v1/providers", s.handleAddProvider)
+	mux.HandleFunc("GET /api/v1/providers/cc-switch", s.handleListCCSwitchProviders)
+	mux.HandleFunc("POST /api/v1/providers/cc-switch/import", s.handleImportCCSwitchProviders)
 	mux.HandleFunc("PUT /api/v1/providers/{id}", s.handleUpdateProvider)
 	mux.HandleFunc("DELETE /api/v1/providers/{id}", s.handleDeleteProvider)
 

@@ -3,15 +3,18 @@ package api
 import (
 	"bytes"
 	"context"
+	"database/sql"
 	"encoding/json"
 	"net/http"
 	"net/http/httptest"
+	"os"
 	"path/filepath"
 	"strings"
 	"testing"
 	"time"
 
 	controldb "github.com/multigent/multigent/internal/db"
+	"github.com/multigent/multigent/internal/entity"
 )
 
 func newProviderHandlerTestServer(t *testing.T) (*Server, string) {
@@ -177,6 +180,69 @@ func TestModelProviderHandlersAuditWithoutSecrets(t *testing.T) {
 	}
 }
 
+func TestCCSwitchProviderPreviewAndImport(t *testing.T) {
+	s, _ := newProviderHandlerTestServer(t)
+	home := t.TempDir()
+	t.Setenv("HOME", home)
+	dbPath := filepath.Join(home, ".cc-switch", "cc-switch.db")
+	writeCCSwitchTestDB(t, dbPath)
+
+	listRec := httptest.NewRecorder()
+	s.handleListCCSwitchProviders(listRec, providerTestRequest(http.MethodGet, "/api/v1/providers/cc-switch", "owner", nil))
+	if listRec.Code != http.StatusOK {
+		t.Fatalf("list cc-switch status=%d body=%s", listRec.Code, listRec.Body.String())
+	}
+	if strings.Contains(listRec.Body.String(), "sk-codex") || strings.Contains(listRec.Body.String(), "sk-claude") {
+		t.Fatalf("preview leaked provider keys: %s", listRec.Body.String())
+	}
+	var preview struct {
+		Available bool                      `json:"available"`
+		Providers []ccSwitchProviderPreview `json:"providers"`
+	}
+	if err := json.Unmarshal(listRec.Body.Bytes(), &preview); err != nil {
+		t.Fatalf("decode preview: %v", err)
+	}
+	if !preview.Available || len(preview.Providers) != 2 {
+		t.Fatalf("unexpected preview: %#v", preview)
+	}
+
+	importRec := httptest.NewRecorder()
+	s.handleImportCCSwitchProviders(importRec, providerTestRequest(http.MethodPost, "/api/v1/providers/cc-switch/import", "owner", ccSwitchImportBody{IDs: []string{"codex-one", "claude-one"}}))
+	if importRec.Code != http.StatusOK {
+		t.Fatalf("import status=%d body=%s", importRec.Code, importRec.Body.String())
+	}
+	if strings.Contains(importRec.Body.String(), "sk-codex") || strings.Contains(importRec.Body.String(), "sk-claude") {
+		t.Fatalf("import response leaked provider keys: %s", importRec.Body.String())
+	}
+	providers, err := s.providerStore().List()
+	if err != nil {
+		t.Fatalf("list providers: %v", err)
+	}
+	if len(providers) != 2 {
+		t.Fatalf("providers=%#v", providers)
+	}
+	byName := map[string]entity.APIProvider{}
+	for _, provider := range providers {
+		byName[provider.Name] = provider
+		stored, ok, err := s.controlDB.ModelProviderByID("ws-one", provider.ID)
+		if err != nil || !ok {
+			t.Fatalf("stored provider %s ok=%v err=%v", provider.ID, ok, err)
+		}
+		if !strings.HasPrefix(stored.APIKey, "sealed:") {
+			t.Fatalf("provider key was not sealed: %#v", stored)
+		}
+	}
+	if byName["Kimi Codex"].Type != "openai" || byName["Kimi Codex"].BaseURL != "https://api.kimi.com/coding/v1" || byName["Kimi Codex"].Model != "kimi-for-coding" {
+		t.Fatalf("codex provider not imported correctly: %#v", byName["Kimi Codex"])
+	}
+	if byName["Claude Gateway"].Type != "anthropic" || byName["Claude Gateway"].BaseURL != "https://example.com/anthropic" || byName["Claude Gateway"].Model != "claude-test" {
+		t.Fatalf("claude provider not imported correctly: %#v", byName["Claude Gateway"])
+	}
+	if byName["Kimi Codex"].OwnerType != ConnectionOwnerWorkspace || byName["Claude Gateway"].OwnerID != "ws-one" {
+		t.Fatalf("owner import should create workspace providers: %#v", providers)
+	}
+}
+
 func TestModelProviderListRequiresWorkspaceMembership(t *testing.T) {
 	s, _ := newProviderHandlerTestServer(t)
 	req := providerTestRequest(http.MethodGet, "/api/v1/providers", "outsider", nil)
@@ -310,5 +376,60 @@ func TestModelProviderAgentScopedListRequiresAgentManagementAccess(t *testing.T)
 	s.handleListProviders(rec, providerTestRequest(http.MethodGet, "/api/v1/providers?project=sample&agent=pm", "viewer", nil))
 	if rec.Code != http.StatusForbidden {
 		t.Fatalf("viewer agent-scoped list status=%d body=%s", rec.Code, rec.Body.String())
+	}
+}
+
+func writeCCSwitchTestDB(t *testing.T, path string) {
+	t.Helper()
+	if err := os.MkdirAll(filepath.Dir(path), 0o755); err != nil {
+		t.Fatal(err)
+	}
+	db, err := sql.Open("sqlite", path)
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer db.Close()
+	if _, err := db.Exec(`CREATE TABLE providers (
+id TEXT PRIMARY KEY,
+app_type TEXT NOT NULL,
+name TEXT NOT NULL,
+settings_config TEXT NOT NULL,
+is_current INTEGER NOT NULL DEFAULT 0
+)`); err != nil {
+		t.Fatal(err)
+	}
+	rows := []struct {
+		id, appType, name, settings string
+		current                     int
+	}{
+		{
+			id:      "codex-one",
+			appType: "codex",
+			name:    "Kimi Codex",
+			settings: `{
+				"auth": {"OPENAI_API_KEY": "sk-codex"},
+				"config": "model = \"kimi-for-coding\"\nbase_url = \"https://api.kimi.com/coding/v1\"\n"
+			}`,
+			current: 1,
+		},
+		{
+			id:      "claude-one",
+			appType: "claude",
+			name:    "Claude Gateway",
+			settings: `{
+				"env": {
+					"ANTHROPIC_AUTH_TOKEN": "sk-claude",
+					"ANTHROPIC_BASE_URL": "https://example.com/anthropic",
+					"ANTHROPIC_MODEL": "claude-test",
+					"ANTHROPIC_SMALL_FAST_MODEL": "claude-haiku"
+				}
+			}`,
+			current: 0,
+		},
+	}
+	for _, row := range rows {
+		if _, err := db.Exec(`INSERT INTO providers (id, app_type, name, settings_config, is_current) VALUES (?, ?, ?, ?, ?)`, row.id, row.appType, row.name, row.settings, row.current); err != nil {
+			t.Fatal(err)
+		}
 	}
 }
