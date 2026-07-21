@@ -36,6 +36,29 @@ Multigent 下一阶段要解决的核心问题：
 - [ ] 支持 task template 与 playbook 安装来源关联，方便用户知道模板来自哪里。
 - [ ] 在 agent wakeup prompt 示例里加入“发现常见事件后用 task template 创建任务”的标准写法。
 
+## P0：在线 Wakeup Gate
+
+当前从旧系统迁移过来的 `wakeup_condition` 曾经依赖本地 shell 脚本，例如 `$AGENCY_DIR/scripts/wakeup-conditions/...`。这不符合 Multigent 的 SaaS 产品形态：用户不应该感知本地路径，也不应该为了判断是否唤醒 agent 而启动完整 sandbox。
+
+目标：把“是否值得唤醒 agent”的判断收敛为 server-side 在线配置，由 Multigent 调度层通过受控的外部工具连接做轻量判断。
+
+- [ ] 将 Wakeup Gate 定义为在线配置对象，而不是本地脚本路径。
+- [ ] 第一批内置 Gate：`has_pending_tasks`、`has_unread_messages`、`github_issue_queue`、`github_pr_queue`、`manual_only`。
+- [ ] Gate 配置支持参数：外部工具、连接、仓库、队列视图、最小数量、冷却时间、失败处理策略。
+- [ ] `github_issue_queue` 支持类似 PM issue inbox 的判断，例如 `pm`、`new`、`false-complete`。
+- [ ] `github_pr_queue` 支持类似 QA PR inbox 的判断，例如 `qa`、`ready`、`ci-failing`。
+- [ ] Gate 判断运行在 server/worker 侧，使用 workspace connection grant，不在 agent sandbox 里执行。
+- [ ] Gate 执行必须有短超时、只读优先、审计日志和可见的 skip reason。
+- [ ] 计划页面 UI 不展示脚本/路径，展示为“当 GitHub Issue 队列有 PM 待处理项时唤醒”。
+- [ ] Playbook / task template 可以声明推荐 Gate；安装后生成可审阅的 agent 调度配置。
+- [ ] 后续设计 Gate Plugin Registry，让高级团队安装受信任的自定义 Gate package，但不允许普通用户直接填写 shell script。
+
+短期策略：
+
+- [x] 当前迁移的 cc-connect 先移除 `$AGENCY_DIR/scripts/...` 本地脚本条件。
+- [ ] cc-connect PM 暂时按 `2h + active_hours + require_any` 唤醒，醒来后由 wakeup prompt 使用 GitHub skill/工具检查 issue 队列。
+- [ ] 等 `github_issue_queue` / `github_pr_queue` server-side Gate 完成后，再把 cc-connect PM/QA 恢复为“队列为空则不唤醒”的省资源模式。
+
 ## P0：外部工具
 
 - [ ] 扩展第一批外部工具覆盖面，优先支持研发、文档、IM、任务系统和搜索。
