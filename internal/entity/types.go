@@ -162,8 +162,16 @@ type Project struct {
 // Stored at <root>/skills/<name>/SKILL.md.
 // Legacy layout (skill.yaml + prompt.md) is still recognised as a fallback.
 type Skill struct {
-	Name        string `yaml:"name"`
-	Description string `yaml:"description,omitempty"`
+	Name        string `json:"name" yaml:"name"`
+	Description string `json:"description,omitempty" yaml:"description,omitempty"`
+	Source      string `json:"source,omitempty" yaml:"source,omitempty"`
+	SourceType  string `json:"sourceType,omitempty" yaml:"source_type,omitempty"`
+	SourceRef   string `json:"sourceRef,omitempty" yaml:"source_ref,omitempty"`
+	Version     string `json:"version,omitempty" yaml:"version,omitempty"`
+	Managed     bool   `json:"managed,omitempty" yaml:"managed,omitempty"`
+	Dirty       bool   `json:"dirty,omitempty" yaml:"dirty,omitempty"`
+	InstalledAt string `json:"installedAt,omitempty" yaml:"installed_at,omitempty"`
+	UpdatedAt   string `json:"updatedAt,omitempty" yaml:"updated_at,omitempty"`
 }
 
 // Role is a reusable job definition that lives under a team.

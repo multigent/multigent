@@ -3,12 +3,15 @@ package main
 import (
 	"bufio"
 	"bytes"
+	"encoding/base64"
 	"encoding/json"
 	"fmt"
 	"io"
+	"io/fs"
 	"net/http"
 	"net/url"
 	"os"
+	"path/filepath"
 	"strconv"
 	"strings"
 	"text/tabwriter"
@@ -46,12 +49,168 @@ func main() {
 		newTaskCmd(),
 		newInboxCmd(),
 		newDocsCmd(),
+		newSkillCmd(),
 		newWorkflowCmd(),
 	)
 	if err := root.Execute(); err != nil {
 		fmt.Fprintln(os.Stderr, "Error:", err)
 		os.Exit(1)
 	}
+}
+
+func newSkillCmd() *cobra.Command {
+	cmd := &cobra.Command{
+		Use:   "skill",
+		Short: "Publish agent-created skills to the workspace registry",
+	}
+	cmd.AddCommand(newSkillPublishCmd())
+	return cmd
+}
+
+func newSkillPublishCmd() *cobra.Command {
+	var name, description, source, sourceRef string
+	var managed bool
+	cmd := &cobra.Command{
+		Use:   "publish <skill-dir>",
+		Short: "Publish a local skill directory to the Multigent skill registry",
+		Args:  cobra.ExactArgs(1),
+		RunE: func(cmd *cobra.Command, args []string) error {
+			dir := args[0]
+			info, err := os.Stat(dir)
+			if err != nil {
+				return err
+			}
+			if !info.IsDir() {
+				return fmt.Errorf("skill path must be a directory")
+			}
+			if _, err := os.Stat(filepath.Join(dir, "SKILL.md")); err != nil {
+				return fmt.Errorf("SKILL.md is required in %s", dir)
+			}
+			files, inferredName, inferredDesc, err := collectSkillPublishFiles(dir)
+			if err != nil {
+				return err
+			}
+			if strings.TrimSpace(name) == "" {
+				name = inferredName
+			}
+			if strings.TrimSpace(description) == "" {
+				description = inferredDesc
+			}
+			if strings.TrimSpace(name) == "" {
+				return fmt.Errorf("--name is required when SKILL.md has no name")
+			}
+			raw, _ := json.Marshal(map[string]any{
+				"name":        name,
+				"description": description,
+				"source":      source,
+				"sourceType":  "agent",
+				"sourceRef":   sourceRef,
+				"managed":     managed,
+				"files":       files,
+			})
+			resp, err := requestJSON(http.MethodPost, "/api/v1/runtime/skills/publish", nil, raw)
+			if err != nil {
+				return err
+			}
+			return writeJSON(resp)
+		},
+	}
+	cmd.Flags().StringVar(&name, "name", "", "registry skill name")
+	cmd.Flags().StringVar(&description, "description", "", "skill description")
+	cmd.Flags().StringVar(&source, "source", "", "optional source URL or note")
+	cmd.Flags().StringVar(&sourceRef, "source-ref", "", "optional source version, commit, or revision")
+	cmd.Flags().BoolVar(&managed, "managed", false, "mark as managed by its source")
+	return cmd
+}
+
+func collectSkillPublishFiles(root string) ([]map[string]any, string, string, error) {
+	var files []map[string]any
+	var skillName, skillDesc string
+	err := filepath.WalkDir(root, func(path string, d fs.DirEntry, err error) error {
+		if err != nil {
+			return err
+		}
+		if d.IsDir() {
+			name := d.Name()
+			if name == ".git" || name == "node_modules" || name == "__pycache__" {
+				return filepath.SkipDir
+			}
+			return nil
+		}
+		rel, err := filepath.Rel(root, path)
+		if err != nil {
+			return err
+		}
+		rel = filepath.ToSlash(rel)
+		if strings.HasPrefix(rel, "../") || rel == ".." {
+			return fmt.Errorf("invalid file path %s", rel)
+		}
+		raw, err := os.ReadFile(path)
+		if err != nil {
+			return err
+		}
+		info, err := d.Info()
+		if err != nil {
+			return err
+		}
+		encoding := "text"
+		content := string(raw)
+		if !isLikelyTextBytes(raw) {
+			encoding = "base64"
+			content = base64.StdEncoding.EncodeToString(raw)
+		}
+		if rel == "SKILL.md" {
+			skillName, skillDesc = parseSkillFrontmatter(raw)
+		}
+		files = append(files, map[string]any{
+			"path":     rel,
+			"size":     info.Size(),
+			"mode":     info.Mode().String(),
+			"content":  content,
+			"encoding": encoding,
+		})
+		return nil
+	})
+	if err != nil {
+		return nil, "", "", err
+	}
+	return files, skillName, skillDesc, nil
+}
+
+func isLikelyTextBytes(raw []byte) bool {
+	for _, b := range raw {
+		if b == 0 {
+			return false
+		}
+	}
+	return true
+}
+
+func parseSkillFrontmatter(raw []byte) (string, string) {
+	text := string(raw)
+	if !strings.HasPrefix(text, "---") {
+		return "", ""
+	}
+	rest := text[3:]
+	idx := strings.Index(rest, "\n---")
+	if idx == -1 {
+		return "", ""
+	}
+	var name, description string
+	for _, line := range strings.Split(rest[:idx], "\n") {
+		key, value, ok := strings.Cut(line, ":")
+		if !ok {
+			continue
+		}
+		value = strings.Trim(strings.TrimSpace(value), `"'`)
+		switch strings.TrimSpace(key) {
+		case "name":
+			name = value
+		case "description":
+			description = value
+		}
+	}
+	return name, description
 }
 
 func newWorkflowCmd() *cobra.Command {
