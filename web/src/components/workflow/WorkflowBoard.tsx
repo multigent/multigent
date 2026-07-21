@@ -462,7 +462,6 @@ export function WorkflowBoard({
         const sourceInst = instanceByStep.get(edge.from)
         const active = run?.activeStepId === edge.from || sourceInst?.status === 'running'
         const color = active ? edgeClass.running : sourceInst?.status === 'completed' ? edgeClass.completed : edgeClass.pending
-        const selectedEdge = edge.id === selectedEdgeId
         const sourceStep = definition.steps.find((step) => step.id === edge.from)
         const targetStep = definition.steps.find((step) => step.id === edge.to)
         const handles = edgeHandles(sourceStep, targetStep)
@@ -475,16 +474,15 @@ export function WorkflowBoard({
           label: edge.label || conditionLabel(edge),
           type: 'smoothstep',
           animated: active,
-          selected: selectedEdge,
-          markerEnd: { type: MarkerType.ArrowClosed, color: selectedEdge ? '#0284c7' : color },
-          style: { stroke: selectedEdge ? '#0284c7' : color, strokeWidth: selectedEdge ? 3 : active ? 2.5 : 2 },
+          markerEnd: { type: MarkerType.ArrowClosed, color },
+          style: { stroke: color, strokeWidth: active ? 2.5 : 2 },
           labelStyle: { fill: '#71717a', fontSize: 11, fontWeight: 500 },
           labelBgPadding: [6, 3],
           labelBgBorderRadius: 6,
           labelBgStyle: { fill: 'rgba(255,255,255,0.92)' },
         }
       }),
-    [definition.edges, definition.steps, instanceByStep, run?.activeStepId, selectedEdgeId],
+    [definition.edges, definition.steps, instanceByStep, run?.activeStepId],
   )
 
   const [nodes, setNodes, onNodesChange] = useNodesState(initialNodes)
@@ -1160,7 +1158,6 @@ function sameWorkflowEdges(a: Edge[], b: Edge[]) {
       left.targetHandle !== right.targetHandle ||
       left.label !== right.label ||
       left.animated !== right.animated ||
-      left.selected !== right.selected ||
       JSON.stringify(left.style ?? {}) !== JSON.stringify(right.style ?? {}) ||
       JSON.stringify(left.markerEnd ?? {}) !== JSON.stringify(right.markerEnd ?? {})
     ) {
