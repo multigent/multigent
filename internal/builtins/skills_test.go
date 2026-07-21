@@ -7,7 +7,7 @@ import (
 	"testing"
 )
 
-func TestEnsureSkillsCopiesBuiltinsWithoutOverwrite(t *testing.T) {
+func TestEnsureSkillsWritesManagedBuiltins(t *testing.T) {
 	root := t.TempDir()
 	if err := EnsureSkills(root); err != nil {
 		t.Fatalf("EnsureSkills: %v", err)
@@ -34,7 +34,7 @@ func TestEnsureSkillsCopiesBuiltinsWithoutOverwrite(t *testing.T) {
 	if err != nil {
 		t.Fatalf("read custom skill: %v", err)
 	}
-	if string(data) != "custom" {
-		t.Fatalf("builtin skill was overwritten: %q", string(data))
+	if string(data) == "custom" {
+		t.Fatalf("builtin skill was not updated")
 	}
 }

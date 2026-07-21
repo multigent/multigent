@@ -36,3 +36,25 @@ func TestResolveHostBinaryMountRequiresExplicitLinuxBinary(t *testing.T) {
 		t.Fatalf("ELF mount=%q", got)
 	}
 }
+
+func TestResolveAvailableBinaryMountUsesWorkspaceDist(t *testing.T) {
+	t.Setenv(HostBinaryEnv, "")
+	root := t.TempDir()
+	bin := filepath.Join(root, "dist", BinaryName)
+	if err := os.MkdirAll(filepath.Dir(bin), 0o755); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.WriteFile(bin, []byte{0x7f, 'L', 'F'}, 0o755); err != nil {
+		t.Fatal(err)
+	}
+	if got := ResolveAvailableBinaryMount(root); got != "" {
+		t.Fatalf("invalid ELF must not be mounted: %q", got)
+	}
+	if err := os.WriteFile(bin, []byte{0x7f, 'E', 'L', 'F', 2, 1, 1}, 0o755); err != nil {
+		t.Fatal(err)
+	}
+	got := ResolveAvailableBinaryMount(root)
+	if !strings.HasPrefix(got, bin+":") || !strings.HasSuffix(got, ":"+BinaryPath+":ro") {
+		t.Fatalf("workspace dist mount=%q", got)
+	}
+}

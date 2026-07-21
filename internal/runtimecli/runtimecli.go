@@ -35,6 +35,42 @@ func ResolveHostBinaryMount() string {
 	if binPath == "" {
 		return ""
 	}
+	return binaryMountForPath(binPath)
+}
+
+// ResolveAvailableBinaryMount returns a read-only Docker mount for an available
+// Linux mga binary. It first honors MULTIGENT_AGENT_CLI, then checks common
+// development build locations so local runtime-base images do not need to be
+// rebuilt just because mga changed or was missing from an older image.
+func ResolveAvailableBinaryMount(searchRoots ...string) string {
+	if mount := ResolveHostBinaryMount(); mount != "" {
+		return mount
+	}
+	candidates := []string{}
+	if exe, err := os.Executable(); err == nil && exe != "" {
+		candidates = append(candidates, filepath.Join(filepath.Dir(exe), BinaryName))
+	}
+	if cwd, err := os.Getwd(); err == nil && cwd != "" {
+		candidates = append(candidates, filepath.Join(cwd, "dist", BinaryName))
+	}
+	for _, root := range searchRoots {
+		if root == "" {
+			continue
+		}
+		candidates = append(candidates,
+			filepath.Join(root, "dist", BinaryName),
+			filepath.Join(filepath.Dir(root), "dist", BinaryName),
+		)
+	}
+	for _, candidate := range candidates {
+		if mount := binaryMountForPath(candidate); mount != "" {
+			return mount
+		}
+	}
+	return ""
+}
+
+func binaryMountForPath(binPath string) string {
 	resolved, err := filepath.EvalSymlinks(binPath)
 	if err != nil {
 		return ""

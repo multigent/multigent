@@ -14,8 +14,10 @@ var skillFiles embed.FS
 
 const skillRoot = "files/skills"
 
-// EnsureSkills copies bundled Multigent skills into a workspace if they are
-// missing. Existing user-edited skills are left untouched.
+// EnsureSkills writes bundled Multigent skills into a workspace. Builtin skills
+// are managed system assets and should track the running Multigent version;
+// user-installed/custom skills live in the registry and should not shadow these
+// core runtime instructions.
 func EnsureSkills(workspaceRoot string) error {
 	entries, err := skillFiles.ReadDir(skillRoot)
 	if err != nil {
@@ -35,11 +37,6 @@ func EnsureSkills(workspaceRoot string) error {
 func ensureSkill(workspaceRoot, name string) error {
 	destDir := filepath.Join(workspaceRoot, "skills", name)
 	dest := filepath.Join(destDir, "SKILL.md")
-	if _, err := os.Stat(dest); err == nil {
-		return nil
-	} else if !os.IsNotExist(err) {
-		return fmt.Errorf("builtins: stat skill %q: %w", name, err)
-	}
 	if err := os.MkdirAll(destDir, 0o755); err != nil {
 		return fmt.Errorf("builtins: create skill dir %q: %w", name, err)
 	}

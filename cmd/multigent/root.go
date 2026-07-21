@@ -4,9 +4,11 @@ import (
 	"errors"
 	"fmt"
 	"os"
+	"path/filepath"
 	"strings"
 
 	"github.com/multigent/multigent/internal/appconfig"
+	controldb "github.com/multigent/multigent/internal/db"
 	"github.com/multigent/multigent/internal/errs"
 	"github.com/multigent/multigent/internal/playbook"
 	"github.com/multigent/multigent/internal/workspace"
@@ -112,16 +114,64 @@ func init() {
 // If --dir is set it searches from that path; otherwise it searches from CWD.
 func resolveRoot() (string, error) {
 	if globalDir != "" {
-		return workspace.FindRoot(globalDir)
+		return resolveRootFromStart(globalDir)
 	}
 	cfg, err := loadAppConfig()
 	if err != nil {
 		return "", err
 	}
 	if cfg.Workspace.Dir != "" {
-		return workspace.FindRoot(cfg.Workspace.Dir)
+		return resolveRootFromStart(cfg.Workspace.Dir)
 	}
-	return workspace.FindRootFromCWD()
+	cwd, err := os.Getwd()
+	if err != nil {
+		return "", fmt.Errorf("workspace: get cwd: %w", err)
+	}
+	return resolveRootFromStart(cwd)
+}
+
+func resolveRootFromStart(start string) (string, error) {
+	absStart, err := filepath.Abs(start)
+	if err != nil {
+		return "", fmt.Errorf("workspace: resolve path: %w", err)
+	}
+	if root, err := workspace.FindRoot(absStart); err == nil {
+		setCLIDataDirForWorkspace(root)
+		return root, nil
+	}
+
+	// In SaaS-style local deployments --dir often points to the data root that
+	// contains multiple UUID workspace directories. Match the API server: select
+	// an existing workspace under that data root and open its shared DB.
+	if err := os.Setenv("MULTIGENT_DATA_DIR", absStart); err != nil {
+		return "", err
+	}
+	db, err := controldb.OpenDefault()
+	if err != nil {
+		return "", err
+	}
+	defer db.Close()
+	rows, err := db.ListWorkspaces()
+	if err != nil {
+		return "", err
+	}
+	for _, row := range rows {
+		if row.Root != "" && workspaceRootBelongsToDataRoot(absStart, row.Root) && hasAgency(row.Root) {
+			return row.Root, nil
+		}
+	}
+	return "", fmt.Errorf(
+		"not inside an multigent workspace and no workspace found under data root %q",
+		absStart,
+	)
+}
+
+func setCLIDataDirForWorkspace(root string) {
+	absRoot, err := filepath.Abs(root)
+	if err != nil {
+		absRoot = root
+	}
+	_ = os.Setenv("MULTIGENT_DATA_DIR", filepath.Dir(absRoot))
 }
 
 func loadAppConfig() (*appconfig.Config, error) {

@@ -86,6 +86,8 @@ If a regular task cannot be completed, run:
 
 For a workflow task, do not complete the whole task directly. Complete only the current step with:
   mga task step done --id %s --status success --output <field>=<value>
+
+Important: do not use Claude Code built-in Task, TaskUpdate, or Todo tools to update Multigent task/workflow state. They are model-local planning tools and do not change Multigent records. Use mga task ... only.
 `
 
 // Runner executes tasks for agents using their configured CLI.
@@ -180,7 +182,7 @@ func (r *Runner) ExecPrompt(project, agentName, prompt, sessionID string) (*RunR
 		if wsMount := r.root + ":" + r.root; r.root != "" {
 			runtimeCfg.Docker.ExtraVolumes = append(runtimeCfg.Docker.ExtraVolumes, wsMount)
 		}
-		if binMount := runtimecli.ResolveHostBinaryMount(); binMount != "" {
+		if binMount := runtimecli.ResolveAvailableBinaryMount(r.root); binMount != "" {
 			runtimeCfg.Docker.ExtraVolumes = append(runtimeCfg.Docker.ExtraVolumes, binMount)
 		}
 		containerPromptFile := agentDir + "/" + filepath.Base(promptFile)
@@ -399,7 +401,7 @@ func (r *Runner) RunTask(project, agentName string, task *entity.Task, sessionID
 
 		// Development override only. Published images carry their own Linux
 		// mga; mounting a native macOS/Windows binary would shadow it.
-		if binMount := runtimecli.ResolveHostBinaryMount(); binMount != "" {
+		if binMount := runtimecli.ResolveAvailableBinaryMount(r.root); binMount != "" {
 			runtimeCfg.Docker.ExtraVolumes = append(runtimeCfg.Docker.ExtraVolumes, binMount)
 		}
 

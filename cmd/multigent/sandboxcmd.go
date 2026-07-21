@@ -132,7 +132,7 @@ func newSandboxShowCmd() *cobra.Command {
 
 			// Optional agent runtime CLI override; published images bundle mga.
 			fmt.Printf("\nAgent runtime CLI mount (optional development override):\n")
-			mgaMount := runtimecli.ResolveHostBinaryMount()
+			mgaMount := runtimecli.ResolveAvailableBinaryMount(root)
 			if mgaMount == "" {
 				fmt.Printf("  using the `mga` bundled in the runtime image (set %s to override with a Linux ELF binary)\n", runtimecli.HostBinaryEnv)
 			} else {
