@@ -17,7 +17,18 @@ import (
 )
 
 const EnvRegistryURLs = "MULTIGENT_PLAYBOOK_REGISTRY_URLS"
-const DefaultRegistryURL = "https://raw.githubusercontent.com/multigent/playbooks/main/registry.json"
+
+const (
+	GitHubRegistryURL = "https://raw.githubusercontent.com/multigent/playbooks/main/registry.json"
+	GiteeRegistryURL  = "https://gitee.com/multigent/playbooks/raw/main/registry.json"
+)
+
+var DefaultRegistryURLs = []string{
+	GitHubRegistryURL,
+	GiteeRegistryURL,
+}
+
+const DefaultRegistryURL = GitHubRegistryURL
 
 type RemoteRegistry struct {
 	SchemaVersion int                       `json:"schemaVersion"`
@@ -80,7 +91,11 @@ func TemplateWithRemote(ctx context.Context, id, locale string, urls []string) (
 }
 
 func RemoteTemplates(ctx context.Context, locale string, urls []string) ([]entity.PlaybookTemplate, error) {
+	if isDefaultRegistryMirrorSet(urls) {
+		return firstSuccessfulRemoteTemplates(ctx, locale, urls)
+	}
 	var out []entity.PlaybookTemplate
+	var lastErr error
 	for _, url := range urls {
 		url = strings.TrimSpace(url)
 		if url == "" {
@@ -88,11 +103,50 @@ func RemoteTemplates(ctx context.Context, locale string, urls []string) ([]entit
 		}
 		templates, err := remoteTemplatesFromURL(ctx, locale, url)
 		if err != nil {
-			return out, err
+			lastErr = err
+			continue
 		}
 		out = append(out, templates...)
 	}
+	if len(out) == 0 && lastErr != nil {
+		return out, lastErr
+	}
 	return out, nil
+}
+
+func firstSuccessfulRemoteTemplates(ctx context.Context, locale string, urls []string) ([]entity.PlaybookTemplate, error) {
+	type result struct {
+		templates []entity.PlaybookTemplate
+		err       error
+	}
+	ctx, cancel := context.WithCancel(ctx)
+	defer cancel()
+	ch := make(chan result, len(urls))
+	started := 0
+	for _, registryURL := range urls {
+		registryURL = strings.TrimSpace(registryURL)
+		if registryURL == "" {
+			continue
+		}
+		started++
+		go func(url string) {
+			templates, err := remoteTemplatesFromURL(ctx, locale, url)
+			ch <- result{templates: templates, err: err}
+		}(registryURL)
+	}
+	var lastErr error
+	for i := 0; i < started; i++ {
+		res := <-ch
+		if res.err == nil {
+			cancel()
+			return res.templates, nil
+		}
+		lastErr = res.err
+	}
+	if lastErr != nil {
+		return nil, lastErr
+	}
+	return nil, nil
 }
 
 func remoteTemplatesFromURL(ctx context.Context, locale, url string) ([]entity.PlaybookTemplate, error) {
@@ -122,32 +176,78 @@ func remoteTemplatesFromURL(ctx context.Context, locale, url string) ([]entity.P
 }
 
 func remoteTemplateByID(ctx context.Context, id, locale string, urls []string) (entity.PlaybookTemplate, bool) {
+	if isDefaultRegistryMirrorSet(urls) {
+		return firstSuccessfulTemplateByID(ctx, id, locale, urls)
+	}
 	for _, registryURL := range urls {
-		body, err := readRemoteFile(ctx, strings.TrimSpace(registryURL), "")
-		if err != nil {
-			continue
-		}
-		var registry RemoteRegistry
-		if err := json.Unmarshal(body, &registry); err != nil {
-			continue
-		}
-		for _, tmpl := range registry.Templates {
-			if tmpl.ID == id {
-				return normalizeRemoteTemplate(tmpl, locale), true
-			}
-		}
-		for _, entry := range registry.Playbooks {
-			if entry.ID != id {
-				continue
-			}
-			tmpl, ok, err := templateFromRegistryEntry(ctx, locale, registryURL, entry, true)
-			if err != nil || !ok {
-				continue
-			}
+		tmpl, ok, err := remoteTemplateByIDFromURL(ctx, id, locale, registryURL)
+		if err == nil && ok {
 			return tmpl, true
 		}
 	}
 	return entity.PlaybookTemplate{}, false
+}
+
+func firstSuccessfulTemplateByID(ctx context.Context, id, locale string, urls []string) (entity.PlaybookTemplate, bool) {
+	type result struct {
+		template entity.PlaybookTemplate
+		ok       bool
+	}
+	ctx, cancel := context.WithCancel(ctx)
+	defer cancel()
+	ch := make(chan result, len(urls))
+	started := 0
+	for _, registryURL := range urls {
+		registryURL = strings.TrimSpace(registryURL)
+		if registryURL == "" {
+			continue
+		}
+		started++
+		go func(url string) {
+			tmpl, ok, err := remoteTemplateByIDFromURL(ctx, id, locale, url)
+			if err != nil {
+				ch <- result{}
+				return
+			}
+			ch <- result{template: tmpl, ok: ok}
+		}(registryURL)
+	}
+	for i := 0; i < started; i++ {
+		res := <-ch
+		if res.ok {
+			cancel()
+			return res.template, true
+		}
+	}
+	return entity.PlaybookTemplate{}, false
+}
+
+func remoteTemplateByIDFromURL(ctx context.Context, id, locale, registryURL string) (entity.PlaybookTemplate, bool, error) {
+	registryURL = strings.TrimSpace(registryURL)
+	body, err := readRemoteFile(ctx, registryURL, "")
+	if err != nil {
+		return entity.PlaybookTemplate{}, false, err
+	}
+	var registry RemoteRegistry
+	if err := json.Unmarshal(body, &registry); err != nil {
+		return entity.PlaybookTemplate{}, false, err
+	}
+	for _, tmpl := range registry.Templates {
+		if tmpl.ID == id {
+			return normalizeRemoteTemplate(tmpl, locale), true, nil
+		}
+	}
+	for _, entry := range registry.Playbooks {
+		if entry.ID != id {
+			continue
+		}
+		tmpl, ok, err := templateFromRegistryEntry(ctx, locale, registryURL, entry, true)
+		if err != nil || !ok {
+			return entity.PlaybookTemplate{}, false, err
+		}
+		return tmpl, true, nil
+	}
+	return entity.PlaybookTemplate{}, false, nil
 }
 
 func templateFromRegistryEntry(ctx context.Context, locale, registryURL string, entry RemoteRegistryPlaybook, full bool) (entity.PlaybookTemplate, bool, error) {
@@ -323,4 +423,23 @@ func mergeTemplates(base, remote []entity.PlaybookTemplate) []entity.PlaybookTem
 		out = append(out, tmpl)
 	}
 	return out
+}
+
+func isDefaultRegistryMirrorSet(urls []string) bool {
+	seen := map[string]bool{}
+	for _, registryURL := range urls {
+		registryURL = strings.TrimSpace(registryURL)
+		if registryURL != "" {
+			seen[registryURL] = true
+		}
+	}
+	if len(seen) != len(DefaultRegistryURLs) {
+		return false
+	}
+	for _, registryURL := range DefaultRegistryURLs {
+		if !seen[registryURL] {
+			return false
+		}
+	}
+	return true
 }

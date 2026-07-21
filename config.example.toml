@@ -41,6 +41,6 @@ api_url = ""
 
 [playbooks]
 # Optional remote playbook registries. If empty, the multigent binary uses
-# the official registry: https://raw.githubusercontent.com/multigent/playbooks/main/registry.json
+# the official GitHub + Gitee registry mirrors.
 # Environment variable MULTIGENT_PLAYBOOK_REGISTRY_URLS takes precedence.
 registry_urls = []

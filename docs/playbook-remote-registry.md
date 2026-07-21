@@ -5,10 +5,11 @@
 
 Multigent supports loading playbook templates from remote registry JSON in addition to the built-in templates.
 
-The official registry is:
+The official registries are:
 
 ```text
 https://raw.githubusercontent.com/multigent/playbooks/main/registry.json
+https://gitee.com/multigent/playbooks/raw/main/registry.json
 ```
 
 The runtime can also load private registries for customer-specific playbooks.
@@ -18,19 +19,20 @@ The runtime can also load private registries for customer-specific playbooks.
 Environment variable:
 
 ```bash
-export MULTIGENT_PLAYBOOK_REGISTRY_URLS="https://raw.githubusercontent.com/multigent/playbooks/main/registry.json"
+export MULTIGENT_PLAYBOOK_REGISTRY_URLS="https://raw.githubusercontent.com/multigent/playbooks/main/registry.json,https://gitee.com/multigent/playbooks/raw/main/registry.json"
 ```
 
 Multiple registries can be separated by comma, semicolon, or newline.
 
-If no custom registry is configured, the `multigent` binary sets the official registry URL at startup. Built-in templates remain available even if the remote registry is unreachable.
+If no custom registry is configured, the `multigent` binary sets both official registry mirrors at startup. For the official mirror set, Multigent uses the first successful response, so users in regions where GitHub is slow can fall back to Gitee automatically. Built-in templates remain available even if every remote registry is unreachable.
 
 TOML:
 
 ```toml
 [playbooks]
 registry_urls = [
-  "https://raw.githubusercontent.com/multigent/playbooks/main/registry.json"
+  "https://raw.githubusercontent.com/multigent/playbooks/main/registry.json",
+  "https://gitee.com/multigent/playbooks/raw/main/registry.json"
 ]
 ```
 
@@ -109,6 +111,8 @@ The registry also accepts inline templates for local experiments:
 - Built-in templates are always available.
 - Remote catalog metadata is fetched on list requests.
 - Full remote templates are fetched on detail/install requests.
+- Official GitHub and Gitee mirrors race/fallback to the first successful source.
+- Custom registry lists merge all reachable registries and skip failed ones.
 - If a remote template has the same ID as a built-in template, the remote template wins.
 - If remote fetch fails, built-in templates still work.
 - Template file checksums are verified when `sha256ByLocale` or `sha256` is provided.

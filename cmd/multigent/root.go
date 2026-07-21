@@ -166,7 +166,7 @@ func applyConfigEnv(cfg *appconfig.Config) {
 	if len(cfg.Playbooks.RegistryURLs) > 0 {
 		setEnvIfEmpty(playbook.EnvRegistryURLs, strings.Join(cfg.Playbooks.RegistryURLs, ","))
 	} else {
-		setEnvIfEmpty(playbook.EnvRegistryURLs, playbook.DefaultRegistryURL)
+		setEnvIfEmpty(playbook.EnvRegistryURLs, strings.Join(playbook.DefaultRegistryURLs, ","))
 	}
 }
 

@@ -51,6 +51,31 @@ func TestRemoteTemplatesFromFileRegistry(t *testing.T) {
 	}
 }
 
+func TestRemoteTemplatesSkipsFailedRegistry(t *testing.T) {
+	registryPath := writeRegistry(t, RemoteRegistry{
+		SchemaVersion: 1,
+		Templates: []entity.PlaybookTemplate{
+			{
+				ID:          "fallback-template",
+				Version:     "0.1.0",
+				Name:        "Fallback Template",
+				Description: "Loaded after the first registry failed",
+			},
+		},
+	})
+
+	templates, err := RemoteTemplates(context.Background(), "en", []string{
+		filepath.Join(t.TempDir(), "missing.json"),
+		"file://" + registryPath,
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if len(templates) != 1 || templates[0].ID != "fallback-template" {
+		t.Fatalf("unexpected fallback templates=%#v", templates)
+	}
+}
+
 func TestRemotePlaybookWrapperLocalizesMetadata(t *testing.T) {
 	registryPath := writeRegistry(t, RemoteRegistry{
 		SchemaVersion: 1,
