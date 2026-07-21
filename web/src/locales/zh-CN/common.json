@@ -11,6 +11,7 @@
     "confirm": "确认",
     "add": "添加",
     "done": "完成",
+    "loading": "加载中…",
     "creating": "创建中…",
     "saving": "保存中…"
   },

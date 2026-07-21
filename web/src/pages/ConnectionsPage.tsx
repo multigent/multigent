@@ -552,7 +552,8 @@ function ConnectionDialog({
     | { step: 'connected' }
     | { step: 'error'; message: string }
   >({ step: 'idle' })
-  const pollRef = useRef<ReturnType<typeof setInterval> | null>(null)
+  const pollRef = useRef<ReturnType<typeof setTimeout> | null>(null)
+  const pollGenerationRef = useRef(0)
   const canQuickAuthorize = !isEditing && (
     providerId === 'feishu' ||
     providerId === 'lark' ||
@@ -614,8 +615,9 @@ function ConnectionDialog({
   }
 
   function stopDevicePoll() {
+    pollGenerationRef.current += 1
     if (pollRef.current) {
-      clearInterval(pollRef.current)
+      clearTimeout(pollRef.current)
       pollRef.current = null
     }
   }
@@ -644,13 +646,19 @@ function ConnectionDialog({
 
   function startDevicePoll(providerId: string, setup: Extract<typeof deviceSetup, { step: 'scanning' }>) {
     let interval = setup.interval
+    const generation = pollGenerationRef.current
+    const schedule = () => {
+      if (pollGenerationRef.current !== generation) return
+      pollRef.current = setTimeout(() => void tick(), interval * 1000)
+    }
     const tick = async () => {
+      if (pollGenerationRef.current !== generation) return
       try {
         const res = await apiPost<DeviceSetupPoll>(`/api/v1/connectors/providers/${encodeURIComponent(providerId)}/setup/poll`, {
           deviceCode: setup.deviceCode,
           baseUrl: setup.baseUrl || undefined,
         })
-        if (res.slowDown) interval += 5
+        if (res.slowDown) interval = Math.min(interval + 5, 30)
         if (res.status === 'authorize' && res.deviceCode && res.qrUrl) {
           const next = {
             step: 'scanning' as const,
@@ -671,13 +679,15 @@ function ConnectionDialog({
         } else if (res.status === 'denied' || res.status === 'expired' || res.status === 'error') {
           stopDevicePoll()
           setDeviceSetup({ step: 'error', message: res.error || t(`connections.deviceAuth${res.status.charAt(0).toUpperCase()}${res.status.slice(1)}`) })
+        } else {
+          schedule()
         }
       } catch {
         // Keep polling through transient network errors.
+        schedule()
       }
     }
-    pollRef.current = setInterval(() => void tick(), interval * 1000)
-    void tick()
+    schedule()
   }
 
   return (

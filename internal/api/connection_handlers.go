@@ -715,8 +715,6 @@ func githubDeviceCode(ctx context.Context, provider connector.Provider, clientID
 	endpoint := "https://github.com/login/device/code"
 	scopes := []string{}
 	if provider.OAuth != nil {
-		endpoint = strings.TrimSpace(provider.OAuth.AuthorizationURL)
-		endpoint = strings.TrimSuffix(endpoint, "/authorize") + "/device/code"
 		scopes = provider.OAuth.Scopes
 	}
 	form := url.Values{}
