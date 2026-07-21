@@ -295,7 +295,8 @@ export function Sidebar({ collapsed, onToggle }: { collapsed: boolean; onToggle:
                   </p>
                   <div className="space-y-px">
                     {projectSubNav.filter(item => !item.adminOnly || canAdmin).map(({ segment, icon: SubIcon }) => {
-                      const subTo = `/projects/${encodeURIComponent(projectId)}/${segment}`
+                      const pathSegment = segment === 'taskTemplates' ? 'task-templates' : segment
+                      const subTo = `/projects/${encodeURIComponent(projectId)}/${pathSegment}`
                       const subActiveState =
                         pathname === subTo || pathname.startsWith(`${subTo}/`)
                       return (

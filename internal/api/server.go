@@ -253,6 +253,8 @@ func (s *Server) Handler() http.Handler {
 	mux.HandleFunc("POST /api/v1/tasks/{project}/{agent}/{taskId}/comments", s.handlePostComment)
 	mux.HandleFunc("DELETE /api/v1/tasks/{project}/{agent}/{taskId}/comments/{commentId}", s.handleDeleteComment)
 	mux.HandleFunc("GET /api/v1/projects/{name}/tasks", s.handleProjectTasks)
+	mux.HandleFunc("GET /api/v1/projects/{name}/task-templates", s.handleListProjectTaskTemplates)
+	mux.HandleFunc("POST /api/v1/projects/{name}/task-templates", s.handleCreateProjectTaskTemplate)
 	mux.HandleFunc("GET /api/v1/projects/{name}/messages", s.handleProjectMessages)
 	mux.HandleFunc("GET /api/v1/projects/{name}/agents", s.handleProjectAgents)
 	mux.HandleFunc("PATCH /api/v1/projects/{name}/agents/{agent}", s.handlePatchAgent)

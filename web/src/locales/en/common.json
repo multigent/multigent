@@ -326,6 +326,7 @@
   },
   "projectNav": {
     "tasks": "Tasks",
+    "taskTemplates": "Task templates",
     "workflows": "Workflows",
     "goals": "OKR",
     "milestones": "Milestones",
@@ -1995,8 +1996,27 @@
   },
   "taskTemplates": {
     "title": "Task template",
+    "projectSubtitle": "Reusable task creation templates for this project, including workflow, actor bindings, input variables, and default prompts.",
+    "create": "New task template",
+    "emptyTitle": "No task templates yet",
+    "emptyHint": "Create templates for common workflows so PMs, QA, or agents can create consistent tasks.",
+    "templateId": "Template ID",
+    "copyId": "Copy template ID",
+    "idCopied": "Template ID copied",
+    "deleteTitle": "Delete task template",
+    "deleteConfirm": "Delete \"{{name}}\"? This cannot be undone.",
+    "namePlaceholder": "Example: GitHub issue development loop",
+    "titleTemplate": "Title template",
+    "descriptionTemplate": "Description template",
+    "promptTemplate": "Task prompt template",
+    "promptPlaceholder": "Use {{variable_name}} placeholders, for example: handle issue #{{issue_number}}.",
     "none": "No template",
     "variables": "Template variables",
+    "variablesHint": "These values are filled when creating a task and replace {{variable_name}} placeholders.",
+    "variableName": "Variable name",
+    "variableDescription": "Variable description",
+    "humanActor": "Human member",
+    "required": "Required",
     "variableRequired": "Fill template variable: {{name}}"
   }
 }

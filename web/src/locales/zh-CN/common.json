@@ -326,6 +326,7 @@
   },
   "projectNav": {
     "tasks": "任务",
+    "taskTemplates": "任务模板",
     "workflows": "流程",
     "goals": "OKR",
     "milestones": "里程碑",
@@ -1995,8 +1996,27 @@
   },
   "taskTemplates": {
     "title": "任务模板",
+    "projectSubtitle": "本项目可复用的任务创建模板，包含流程、负责人绑定、输入参数和默认任务说明。",
+    "create": "新建任务模板",
+    "emptyTitle": "暂无任务模板",
+    "emptyHint": "为常见流程创建模板，让 PM、QA 或 Agent 可以稳定地按模板创建任务。",
+    "templateId": "模板 ID",
+    "copyId": "复制模板 ID",
+    "idCopied": "模板 ID 已复制",
+    "deleteTitle": "删除任务模板",
+    "deleteConfirm": "确定删除「{{name}}」吗？此操作不可撤销。",
+    "namePlaceholder": "例如：GitHub Issue 协作开发",
+    "titleTemplate": "标题模板",
+    "descriptionTemplate": "描述模板",
+    "promptTemplate": "任务说明模板",
+    "promptPlaceholder": "可以使用 {{变量名}} 占位，例如：处理 issue #{{issue_number}}。",
     "none": "不使用模板",
     "variables": "模板参数",
+    "variablesHint": "这些参数会在创建任务时填写，并替换模板中的 {{变量名}}。",
+    "variableName": "变量名",
+    "variableDescription": "变量说明",
+    "humanActor": "人类成员",
+    "required": "必填",
     "variableRequired": "请填写模板参数：{{name}}"
   }
 }

@@ -326,6 +326,7 @@
   },
   "projectNav": {
     "tasks": "タスク",
+    "taskTemplates": "タスクテンプレート",
     "workflows": "ワークフロー",
     "goals": "OKR",
     "milestones": "マイルストーン",
@@ -1964,8 +1965,27 @@
   },
   "taskTemplates": {
     "title": "タスクテンプレート",
+    "projectSubtitle": "この project で再利用する task 作成テンプレートです。workflow、actor bindings、input variables、default prompt を含みます。",
+    "create": "タスクテンプレートを作成",
+    "emptyTitle": "タスクテンプレートはまだありません",
+    "emptyHint": "よく使う workflow 用のテンプレートを作ると、PM、QA、Agent が一貫した task を作成できます。",
+    "templateId": "テンプレート ID",
+    "copyId": "テンプレート ID をコピー",
+    "idCopied": "テンプレート ID をコピーしました",
+    "deleteTitle": "タスクテンプレートを削除",
+    "deleteConfirm": "\"{{name}}\" を削除しますか？この操作は取り消せません。",
+    "namePlaceholder": "例: GitHub issue development loop",
+    "titleTemplate": "タイトルテンプレート",
+    "descriptionTemplate": "説明テンプレート",
+    "promptTemplate": "タスクプロンプトテンプレート",
+    "promptPlaceholder": "{{variable_name}} のような placeholder を使えます。例: issue #{{issue_number}} を処理する。",
     "none": "テンプレートなし",
     "variables": "テンプレート変数",
+    "variablesHint": "これらの値は task 作成時に入力され、{{variable_name}} placeholder を置換します。",
+    "variableName": "変数名",
+    "variableDescription": "変数の説明",
+    "humanActor": "人のメンバー",
+    "required": "必須",
     "variableRequired": "テンプレート変数を入力してください: {{name}}"
   }
 }

@@ -212,7 +212,7 @@ func (s *Server) handleRuntimeTaskTemplates(w http.ResponseWriter, r *http.Reque
 	}
 	filtered := make([]entity.TaskTemplate, 0, len(templates))
 	for _, template := range templates {
-		if template.Project == "" || template.Project == principal.Project {
+		if template.Project == principal.Project {
 			filtered = append(filtered, template)
 		}
 	}

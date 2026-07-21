@@ -326,6 +326,7 @@
   },
   "projectNav": {
     "tasks": "任務",
+    "taskTemplates": "任務模板",
     "workflows": "流程",
     "goals": "OKR",
     "milestones": "里程碑",
@@ -1974,8 +1975,27 @@
   },
   "taskTemplates": {
     "title": "任務模板",
+    "projectSubtitle": "本專案可重用的任務建立模板，包含流程、負責人綁定、輸入參數和預設任務說明。",
+    "create": "新增任務模板",
+    "emptyTitle": "暫無任務模板",
+    "emptyHint": "為常見流程建立模板，讓 PM、QA 或 Agent 可以穩定地按模板建立任務。",
+    "templateId": "模板 ID",
+    "copyId": "複製模板 ID",
+    "idCopied": "模板 ID 已複製",
+    "deleteTitle": "刪除任務模板",
+    "deleteConfirm": "確定刪除「{{name}}」嗎？此操作無法復原。",
+    "namePlaceholder": "例如：GitHub Issue 協作開發",
+    "titleTemplate": "標題模板",
+    "descriptionTemplate": "描述模板",
+    "promptTemplate": "任務說明模板",
+    "promptPlaceholder": "可以使用 {{變數名}} 佔位，例如：處理 issue #{{issue_number}}。",
     "none": "不使用模板",
     "variables": "模板參數",
+    "variablesHint": "這些參數會在建立任務時填寫，並替換模板中的 {{變數名}}。",
+    "variableName": "變數名",
+    "variableDescription": "變數說明",
+    "humanActor": "人類成員",
+    "required": "必填",
     "variableRequired": "請填寫模板參數：{{name}}"
   }
 }

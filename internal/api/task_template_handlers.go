@@ -68,6 +68,29 @@ func (s *Server) handleListTaskTemplates(w http.ResponseWriter, r *http.Request)
 	_ = json.NewEncoder(w).Encode(map[string]any{"templates": templates})
 }
 
+func (s *Server) handleListProjectTaskTemplates(w http.ResponseWriter, r *http.Request) {
+	project := r.PathValue("name")
+	if !s.checkProjectAccess(w, r, project) {
+		return
+	}
+	store, ok := s.taskTemplateStoreForRequest(w, r)
+	if !ok {
+		return
+	}
+	templates, err := store.List()
+	if err != nil {
+		s.serverError(w, err)
+		return
+	}
+	filtered := make([]entity.TaskTemplate, 0, len(templates))
+	for _, template := range templates {
+		if template.Project == project {
+			filtered = append(filtered, template)
+		}
+	}
+	_ = json.NewEncoder(w).Encode(map[string]any{"templates": filtered})
+}
+
 func (s *Server) handleCreateTaskTemplate(w http.ResponseWriter, r *http.Request) {
 	if !s.checkCurrentWorkspaceAdmin(w, r) {
 		return
@@ -77,6 +100,33 @@ func (s *Server) handleCreateTaskTemplate(w http.ResponseWriter, r *http.Request
 		s.jsonError(w, http.StatusBadRequest, "invalid JSON body")
 		return
 	}
+	template, ok := taskTemplateFromBody(w, s, body, "")
+	if !ok {
+		return
+	}
+	store, ok := s.taskTemplateStoreForRequest(w, r)
+	if !ok {
+		return
+	}
+	if err := store.Save(&template); err != nil {
+		s.serverError(w, err)
+		return
+	}
+	w.WriteHeader(http.StatusCreated)
+	_ = json.NewEncoder(w).Encode(template)
+}
+
+func (s *Server) handleCreateProjectTaskTemplate(w http.ResponseWriter, r *http.Request) {
+	project := r.PathValue("name")
+	if !s.checkProjectManager(w, r, project) {
+		return
+	}
+	var body taskTemplateCreateBody
+	if err := s.readJSON(w, r, &body); err != nil {
+		s.jsonError(w, http.StatusBadRequest, "invalid JSON body")
+		return
+	}
+	body.Project = project
 	template, ok := taskTemplateFromBody(w, s, body, "")
 	if !ok {
 		return
@@ -289,7 +339,7 @@ func (s *Server) handlePostProjectTaskFromTemplate(w http.ResponseWriter, r *htt
 		s.jsonError(w, http.StatusNotFound, "task template not found")
 		return
 	}
-	if template.Project != "" && template.Project != project {
+	if template.Project != project {
 		s.jsonError(w, http.StatusBadRequest, "task template is not available for this project")
 		return
 	}

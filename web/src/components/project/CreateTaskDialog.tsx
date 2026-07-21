@@ -70,12 +70,13 @@ export function CreateTaskDialog({ projectId: defaultProjectId, agents: defaultA
   const multiProject = Boolean(allProjectsAgents && allProjectsAgents.length > 1)
   const workflowPath = open ? '/api/v1/workflows' : null
   const workflowsState = useApiJson<WorkflowListResponse>(workflowPath, 0)
-  const templatesState = useApiJson<TaskTemplateListResponse>(open ? '/api/v1/task-templates' : null, 0)
+  const templatesState = useApiJson<TaskTemplateListResponse>(
+    open && selectedProject ? `/api/v1/projects/${encodeURIComponent(selectedProject)}/task-templates` : null,
+    0,
+  )
   const usersState = useApiJson<UserListResponse>(open ? '/api/v1/users' : null, 0)
   const workflows = workflowsState.status === 'ok' ? workflowsState.data.workflows : []
-  const taskTemplates = templatesState.status === 'ok'
-    ? templatesState.data.templates.filter((template) => !template.project || template.project === selectedProject)
-    : []
+  const taskTemplates = templatesState.status === 'ok' ? templatesState.data.templates : []
   const people = usersState.status === 'ok' ? usersState.data.filter((p) => !p.disabled) : []
   const selectedWorkflow = workflows.find((wf) => wf.id === workflowDefinitionId)
   const selectedTemplate = taskTemplates.find((template) => template.id === taskTemplateId)
