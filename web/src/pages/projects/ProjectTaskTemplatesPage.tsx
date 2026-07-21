@@ -253,7 +253,7 @@ export default function ProjectTaskTemplatesPage() {
                   <th className="whitespace-nowrap px-4 py-2 text-left text-xs font-medium text-neutral-500 dark:text-zinc-500">{t('taskTemplates.templateId')}</th>
                   <th className="px-4 py-2 text-left text-xs font-medium text-neutral-500 dark:text-zinc-500">{t('workflows.taskWorkflow')}</th>
                   <th className="px-4 py-2 text-left text-xs font-medium text-neutral-500 dark:text-zinc-500">{t('taskTemplates.variables')}</th>
-                  <th className="sticky right-0 bg-neutral-50 px-4 py-2 text-right text-xs font-medium text-neutral-500 dark:bg-zinc-950 dark:text-zinc-500">{t('common.actions')}</th>
+                  <th className="sticky right-0 w-24 whitespace-nowrap bg-neutral-50 px-4 py-2 text-right text-xs font-medium text-neutral-500 dark:bg-zinc-950 dark:text-zinc-500">{t('common.actions')}</th>
                 </tr>
               </thead>
               <tbody className="divide-y divide-neutral-100 dark:divide-zinc-800/80">
@@ -282,8 +282,8 @@ export default function ProjectTaskTemplatesPage() {
                       <td className="px-4 py-3 text-sm text-neutral-600 dark:text-zinc-400">
                         {(template.variables ?? []).map((variable) => variable.name).join(', ') || '—'}
                       </td>
-                      <td className="sticky right-0 bg-white px-4 py-3 text-right dark:bg-zinc-900">
-                        <button type="button" onClick={() => void deleteTemplate(template)} className="rounded-md px-2 py-1 text-sm text-red-600 hover:bg-red-50 dark:text-red-400 dark:hover:bg-red-950/40">
+                      <td className="sticky right-0 w-24 whitespace-nowrap bg-white px-4 py-3 text-right dark:bg-zinc-900">
+                        <button type="button" onClick={() => void deleteTemplate(template)} className="whitespace-nowrap rounded-md px-2 py-1 text-sm text-red-600 hover:bg-red-50 dark:text-red-400 dark:hover:bg-red-950/40">
                           {t('common.delete')}
                         </button>
                       </td>
