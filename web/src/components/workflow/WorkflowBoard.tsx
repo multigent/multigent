@@ -1,5 +1,6 @@
 import { useEffect, useMemo, useState } from 'react'
 import { useTranslation } from 'react-i18next'
+import type { ELK, ElkNode } from 'elkjs'
 import {
   addEdge,
   Background,
@@ -210,6 +211,10 @@ const AUTO_LAYOUT_X_GAP = 420
 const AUTO_LAYOUT_Y_GAP = 164
 const AUTO_LAYOUT_START_X = 80
 const AUTO_LAYOUT_START_Y = 80
+const WORKFLOW_NODE_WIDTH = 198
+const WORKFLOW_NODE_HEIGHT = 88
+
+let elkInstance: ELK | null = null
 
 const fieldClass =
   'mt-1 w-full rounded-lg border border-neutral-300 bg-white px-3 py-2 text-sm text-neutral-900 outline-none transition-colors focus:border-sky-400 dark:border-zinc-600 dark:bg-zinc-800 dark:text-zinc-100'
@@ -400,6 +405,66 @@ function autoLayoutWorkflow(definition: WorkflowDefinition): WorkflowDefinition 
   }
 }
 
+async function getElk() {
+  if (elkInstance) return elkInstance
+  const mod = await import('elkjs/lib/elk.bundled.js')
+  elkInstance = new mod.default()
+  return elkInstance
+}
+
+async function elkLayoutWorkflow(definition: WorkflowDefinition): Promise<WorkflowDefinition> {
+  if (definition.steps.length <= 1) return definition
+  const elk = await getElk()
+  const stepIDs = new Set(definition.steps.map((step) => step.id))
+  const graph: ElkNode = {
+    id: 'workflow',
+    layoutOptions: {
+      'elk.algorithm': 'layered',
+      'elk.direction': 'RIGHT',
+      'elk.spacing.nodeNode': '80',
+      'elk.layered.spacing.nodeNodeBetweenLayers': '170',
+      'elk.layered.spacing.edgeNodeBetweenLayers': '80',
+      'elk.layered.spacing.edgeEdgeBetweenLayers': '32',
+      'elk.layered.nodePlacement.strategy': 'BRANDES_KOEPF',
+      'elk.layered.nodePlacement.bk.fixedAlignment': 'BALANCED',
+      'elk.layered.crossingMinimization.strategy': 'LAYER_SWEEP',
+      'elk.layered.crossingMinimization.semiInteractive': 'true',
+      'elk.layered.cycleBreaking.strategy': 'GREEDY',
+      'elk.layered.mergeEdges': 'false',
+      'elk.edgeRouting': 'ORTHOGONAL',
+      'elk.padding': '[top=80,left=80,bottom=80,right=80]',
+    },
+    children: definition.steps.map((step) => ({
+      id: step.id,
+      width: WORKFLOW_NODE_WIDTH,
+      height: WORKFLOW_NODE_HEIGHT,
+      x: step.position.x,
+      y: step.position.y,
+    })),
+    edges: definition.edges
+      .filter((edge) => stepIDs.has(edge.from) && stepIDs.has(edge.to))
+      .map((edge) => ({
+        id: edge.id,
+        sources: [edge.from],
+        targets: [edge.to],
+      })),
+  }
+  const layouted = await elk.layout(graph)
+  const positionByID = new Map<string, WorkflowPosition>()
+  for (const child of layouted.children ?? []) {
+    if (typeof child.x !== 'number' || typeof child.y !== 'number') continue
+    positionByID.set(child.id, { x: Math.round(child.x), y: Math.round(child.y) })
+  }
+  if (positionByID.size === 0) return autoLayoutWorkflow(definition)
+  return {
+    ...definition,
+    steps: definition.steps.map((step) => ({
+      ...step,
+      position: positionByID.get(step.id) ?? step.position,
+    })),
+  }
+}
+
 function isTextEditingTarget(target: EventTarget | null) {
   if (!(target instanceof HTMLElement)) return false
   const tag = target.tagName.toLowerCase()
@@ -509,6 +574,7 @@ export function WorkflowBoard({
   const [selectedEdgeId, setSelectedEdgeId] = useState('')
   const [selectedNodeIds, setSelectedNodeIds] = useState<string[]>([])
   const [clipboard, setClipboard] = useState<WorkflowClipboard | null>(null)
+  const [layouting, setLayouting] = useState(false)
   const selected = definition.steps.find((s) => s.id === selectedId) ?? definition.steps[0]
   const outgoingEdges = selected ? definition.edges.filter((edge) => edge.from === selected.id) : []
   const selectedInst = selected ? instanceByStep.get(selected.id) : undefined
@@ -554,7 +620,7 @@ export function WorkflowBoard({
           sourceHandle: handles.sourceHandle,
           targetHandle: handles.targetHandle,
           label: edge.label || conditionLabel(edge),
-          type: 'smoothstep',
+          type: 'step',
           animated: active,
           markerEnd: { type: MarkerType.ArrowClosed, color },
           style: { stroke: color, strokeWidth: active ? 2.5 : 2 },
@@ -703,7 +769,7 @@ export function WorkflowBoard({
           sourceHandle: connection.sourceHandle || edgeHandles(sourceStep, targetStep).sourceHandle,
           targetHandle: connection.targetHandle || edgeHandles(sourceStep, targetStep).targetHandle,
           label: nextEdge.label || '',
-          type: 'smoothstep',
+          type: 'step',
           markerEnd: { type: MarkerType.ArrowClosed, color: edgeClass.pending },
           style: { stroke: edgeClass.pending, strokeWidth: 2 },
         },
@@ -817,12 +883,22 @@ export function WorkflowBoard({
     })
   }
 
-  function arrangeLayout() {
-    if (!editable) return
-    const next = autoLayoutWorkflow(definition)
-    updateDefinition(next)
-    setSelectedEdgeId('')
-    setSelectedNodeIds(selectedId ? [selectedId] : [])
+  async function arrangeLayout() {
+    if (!editable || layouting) return
+    setLayouting(true)
+    try {
+      const next = await elkLayoutWorkflow(definition)
+      updateDefinition(next)
+      setSelectedEdgeId('')
+      setSelectedNodeIds(selectedId ? [selectedId] : [])
+    } catch {
+      const next = autoLayoutWorkflow(definition)
+      updateDefinition(next)
+      setSelectedEdgeId('')
+      setSelectedNodeIds(selectedId ? [selectedId] : [])
+    } finally {
+      setLayouting(false)
+    }
   }
 
   function updateStepDraft(patch: Partial<WorkflowStep>) {
@@ -878,8 +954,8 @@ export function WorkflowBoard({
                 <button type="button" onClick={addNode} className="rounded-lg border border-sky-600 bg-white px-3 py-1.5 text-xs font-medium text-sky-700 shadow-sm hover:bg-sky-50 dark:border-sky-500 dark:bg-zinc-900 dark:text-sky-400 dark:hover:bg-zinc-800">
                   {t('workflows.addNode')}
                 </button>
-                <button type="button" onClick={arrangeLayout} disabled={definition.steps.length <= 1} className="rounded-lg border border-neutral-300 bg-white px-3 py-1.5 text-xs font-medium text-neutral-600 shadow-sm hover:bg-neutral-50 disabled:opacity-40 dark:border-zinc-600 dark:bg-zinc-900 dark:text-zinc-300 dark:hover:bg-zinc-800">
-                  {t('workflows.autoLayout')}
+                <button type="button" onClick={() => void arrangeLayout()} disabled={layouting || definition.steps.length <= 1} className="rounded-lg border border-neutral-300 bg-white px-3 py-1.5 text-xs font-medium text-neutral-600 shadow-sm hover:bg-neutral-50 disabled:opacity-40 dark:border-zinc-600 dark:bg-zinc-900 dark:text-zinc-300 dark:hover:bg-zinc-800">
+                  {layouting ? t('common.loading') : t('workflows.autoLayout')}
                 </button>
                 <button type="button" onClick={deleteSelectedElement} disabled={!selectedEdgeId && (definition.steps.length <= 1 || (selectedNodeIds.length === 0 && !selected))} className="rounded-lg border border-neutral-300 bg-white px-3 py-1.5 text-xs font-medium text-neutral-600 shadow-sm hover:bg-neutral-50 disabled:opacity-40 dark:border-zinc-600 dark:bg-zinc-900 dark:text-zinc-300 dark:hover:bg-zinc-800">
                   {selectedEdgeId ? t('workflows.deleteEdge') : t('workflows.deleteNode')}
