@@ -63,6 +63,11 @@ func (db *SQLiteStore) MarkWorkspaceOpened(id string) error {
 	return err
 }
 
+func (db *SQLiteStore) DeleteWorkspace(id string) error {
+	_, err := db.sql.Exec(`DELETE FROM workspaces WHERE id = ?`, id)
+	return err
+}
+
 func (db *SQLiteStore) UpsertUser(u User) error {
 	if u.CreatedAt == "" {
 		u.CreatedAt = nowUTC()

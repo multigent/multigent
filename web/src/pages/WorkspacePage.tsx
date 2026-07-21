@@ -4,7 +4,8 @@ import { useTranslation } from 'react-i18next'
 import { Building2, CalendarDays, Hash, Lock, Plus, RefreshCw, Save, UserRound } from 'lucide-react'
 import type { LucideIcon } from 'lucide-react'
 import { PlaceholderCard } from '../components/ui/PlaceholderCard'
-import { apiPut } from '../lib/api'
+import { confirmDialog } from '../components/ui/ConfirmDialog'
+import { apiDelete, apiPut } from '../lib/api'
 import { useApiJson } from '../lib/use-api'
 import { useFormatDateTime } from '../lib/format-datetime'
 
@@ -15,6 +16,7 @@ type WorkspaceSummary = {
   createdBy: string
   createdAt: string
   updatedAt?: string
+  currentUserCanAdmin?: boolean
   teams: number
   projects: number
   agents: number
@@ -29,6 +31,7 @@ export default function WorkspacePage() {
   const [name, setName] = useState('')
   const [description, setDescription] = useState('')
   const [saving, setSaving] = useState(false)
+  const [deleting, setDeleting] = useState(false)
 
   useEffect(() => {
     if (state.status === 'ok') {
@@ -45,6 +48,26 @@ export default function WorkspacePage() {
       setReloadKey(v => v + 1)
     } finally {
       setSaving(false)
+    }
+  }
+
+  async function onDeleteWorkspace() {
+    if (state.status !== 'ok') return
+    const ok = await confirmDialog({
+      title: t('workspace.deleteTitle'),
+      description: t('workspace.deleteDescription', { name: state.data.name }),
+      confirmLabel: t('workspace.deleteConfirm'),
+      cancelLabel: t('common.cancel'),
+      tone: 'danger',
+    })
+    if (!ok) return
+    setDeleting(true)
+    try {
+      await apiDelete(`/api/v1/workspaces/${encodeURIComponent(state.data.id)}`)
+      window.dispatchEvent(new Event('workspace-changed'))
+      window.location.assign('/')
+    } finally {
+      setDeleting(false)
     }
   }
 
@@ -142,6 +165,21 @@ export default function WorkspacePage() {
                 </button>
               </div>
             </div>
+
+            {state.data.currentUserCanAdmin && (
+              <div className="mt-6 border-t border-red-100 pt-5 dark:border-red-900/40">
+                <h3 className="text-sm font-semibold text-red-700 dark:text-red-400">{t('workspace.dangerTitle')}</h3>
+                <p className="mt-1.5 text-sm leading-relaxed text-neutral-500 dark:text-zinc-500">{t('workspace.dangerHint')}</p>
+                <button
+                  type="button"
+                  disabled={deleting}
+                  onClick={() => void onDeleteWorkspace()}
+                  className="mt-3 rounded-lg border border-red-200 bg-white px-3 py-2 text-sm font-medium text-red-700 transition-colors hover:bg-red-50 disabled:cursor-not-allowed disabled:opacity-50 dark:border-red-900/70 dark:bg-zinc-900 dark:text-red-400 dark:hover:bg-red-950/30"
+                >
+                  {deleting ? t('workspace.deleting') : t('workspace.deleteWorkspace')}
+                </button>
+              </div>
+            )}
           </section>
         </div>
       )}

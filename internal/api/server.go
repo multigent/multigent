@@ -185,6 +185,7 @@ func (s *Server) Handler() http.Handler {
 	mux.HandleFunc("POST /api/v1/workspaces", s.handleCreateWorkspace)
 	mux.HandleFunc("POST /api/v1/workspaces/example", s.handleCreateExampleWorkspace)
 	mux.HandleFunc("POST /api/v1/workspaces/{id}/switch", s.handleSwitchWorkspace)
+	mux.HandleFunc("DELETE /api/v1/workspaces/{id}", s.handleDeleteWorkspace)
 	mux.HandleFunc("GET /api/v1/audit/events", s.handleAuditEvents)
 	mux.HandleFunc("GET /api/v1/connectors/providers", s.handleConnectorProviders)
 	mux.HandleFunc("GET /api/v1/connectors/providers/{provider}", s.handleConnectorProvider)

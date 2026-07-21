@@ -266,6 +266,71 @@ func (s *Server) handleSwitchWorkspace(w http.ResponseWriter, r *http.Request) {
 	_ = json.NewEncoder(w).Encode(workspaceRefFromDB(row, s.root))
 }
 
+func (s *Server) handleDeleteWorkspace(w http.ResponseWriter, r *http.Request) {
+	id := strings.TrimSpace(r.PathValue("id"))
+	if id == "" {
+		s.jsonErrorCode(w, http.StatusBadRequest, ErrCodeValidationFailed, "workspace id is required")
+		return
+	}
+	if s.controlDB == nil {
+		s.jsonErrorCode(w, http.StatusServiceUnavailable, ErrCodeWorkspaceDatabaseUnavailable, "control database unavailable")
+		return
+	}
+	row, ok, err := s.controlDB.WorkspaceByID(id)
+	if err != nil {
+		s.serverError(w, err)
+		return
+	}
+	if !ok || !workspaceRootInDataDir(row.Root) {
+		s.jsonErrorCode(w, http.StatusNotFound, ErrCodeWorkspaceNotFound, "workspace not found")
+		return
+	}
+	if !s.canDeleteWorkspace(w, r, id) {
+		return
+	}
+
+	wasActive := samePath(row.Root, s.root)
+	if wasActive {
+		next, ok, err := s.nextAccessibleWorkspace(r, id)
+		if err != nil {
+			s.serverError(w, err)
+			return
+		}
+		if ok {
+			if err := s.switchWorkspaceRoot(next.Root); err != nil {
+				s.serverError(w, err)
+				return
+			}
+		} else {
+			s.clearActiveWorkspaceRoot()
+		}
+	}
+
+	s.auditLog(auditLogInput{
+		WorkspaceID:  row.ID,
+		Action:       "workspace.delete",
+		ResourceType: "workspace",
+		ResourceID:   row.ID,
+		Summary:      "Workspace deleted",
+		Before: map[string]any{
+			"id":          row.ID,
+			"name":        row.Name,
+			"description": row.Description,
+			"createdBy":   row.CreatedBy,
+		},
+		Request: r,
+	})
+	if err := s.controlDB.DeleteWorkspace(id); err != nil {
+		s.serverError(w, err)
+		return
+	}
+	if err := os.RemoveAll(row.Root); err != nil {
+		s.serverError(w, err)
+		return
+	}
+	w.WriteHeader(http.StatusNoContent)
+}
+
 func (s *Server) handlePutWorkspace(w http.ResponseWriter, r *http.Request) {
 	if !s.checkCurrentWorkspaceAdmin(w, r) {
 		return
@@ -362,7 +427,7 @@ func workspaceFileTime(root string) string {
 }
 
 func (s *Server) listWorkspaceRefs(r *http.Request) ([]workspaceRef, error) {
-	if err := s.ensureCurrentWorkspaceRegistered(); err != nil {
+	if err := s.ensureCurrentWorkspaceRegistered(); err != nil && workspaceAgencyFileExists(s.root) {
 		return nil, err
 	}
 	if s.controlDB == nil {
@@ -493,6 +558,26 @@ func (s *Server) switchWorkspaceRoot(root string) error {
 	return s.markWorkspaceOpened(absRoot)
 }
 
+func (s *Server) clearActiveWorkspaceRoot() {
+	s.workspaceMu.Lock()
+	defer s.workspaceMu.Unlock()
+
+	if s.triggers != nil {
+		s.triggers.StopPoller()
+	}
+	if s.sched != nil {
+		s.sched.Cleanup()
+	}
+	root, _ := filepath.Abs(defaultWorkspaceDataDir())
+	s.root = root
+	s.st = store.NewDB(root, s.controlDB)
+	s.ts = taskstore.NewDB(root, s.controlDB)
+	s.sched = newSchedulerManager(root)
+	s.triggers = newTriggerManager(root, s.sched.binPath, s.ts)
+	s.okrStore = store.NewOKRStore(root)
+	s.msStore = store.NewMilestoneStore(root)
+}
+
 func (s *Server) markWorkspaceOpened(root string) error {
 	if s.controlDB == nil {
 		return nil
@@ -602,6 +687,52 @@ func (s *Server) checkCurrentWorkspaceAdmin(w http.ResponseWriter, r *http.Reque
 	return false
 }
 
+func (s *Server) canDeleteWorkspace(w http.ResponseWriter, r *http.Request, workspaceID string) bool {
+	cur := s.currentUser(r)
+	if cur == nil || cur.Username == "" || cur.Username == "apikey" {
+		s.jsonErrorCode(w, http.StatusForbidden, ErrCodeWorkspaceAdminRequired, "workspace admin access required")
+		return false
+	}
+	if cur.Role == RoleAdmin {
+		return true
+	}
+	member, ok, err := s.controlDB.WorkspaceMember(workspaceID, cur.Username)
+	if err != nil {
+		s.serverError(w, err)
+		return false
+	}
+	if ok && (member.Role == WorkspaceRoleOwner || member.Role == WorkspaceRoleAdmin) {
+		return true
+	}
+	s.jsonErrorCode(w, http.StatusForbidden, ErrCodeWorkspaceAdminRequired, "workspace admin access required")
+	return false
+}
+
+func (s *Server) nextAccessibleWorkspace(r *http.Request, excludeID string) (controldb.Workspace, bool, error) {
+	rows, err := s.controlDB.ListWorkspaces()
+	if err != nil {
+		return controldb.Workspace{}, false, err
+	}
+	cur := s.currentUser(r)
+	for _, row := range rows {
+		if row.ID == excludeID || !workspaceRootInDataDir(row.Root) {
+			continue
+		}
+		if cur != nil && cur.Role == RoleAdmin {
+			return row, true, nil
+		}
+		if cur == nil || cur.Username == "" || cur.Username == "apikey" {
+			continue
+		}
+		if _, ok, err := s.controlDB.WorkspaceMember(row.ID, cur.Username); err != nil {
+			return controldb.Workspace{}, false, err
+		} else if ok {
+			return row, true, nil
+		}
+	}
+	return controldb.Workspace{}, false, nil
+}
+
 func (s *Server) ensureCurrentWorkspaceForUser(r *http.Request) (string, error) {
 	id, err := s.currentWorkspaceID()
 	if err != nil {
@@ -698,6 +829,11 @@ func workspaceRootInDataDir(root string) bool {
 		return false
 	}
 	return filepath.Dir(absRoot) == absData && filepath.Base(absRoot) != ".multigent"
+}
+
+func workspaceAgencyFileExists(root string) bool {
+	_, err := os.Stat(filepath.Join(root, ".multigent", "agency.yaml"))
+	return err == nil
 }
 
 func workspaceRefFromDB(row controldb.Workspace, currentRoot string) workspaceRef {

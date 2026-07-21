@@ -959,6 +959,7 @@ function OverviewPanel() {
               <KanbanSquare className="size-7 text-neutral-400 dark:text-zinc-500" strokeWidth={1.5} />
             </div>
             <p className="text-lg font-medium text-neutral-600 dark:text-zinc-400">{t('workbench.noProjects')}</p>
+            <p className="mt-1.5 max-w-md text-sm text-neutral-400 dark:text-zinc-500">{t('workbench.noProjectsHint')}</p>
           </div>
         )}
         {state.status === 'ok' && projects.length > 0 && (

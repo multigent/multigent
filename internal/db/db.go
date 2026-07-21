@@ -17,6 +17,7 @@ type Store interface {
 	ListWorkspaces() ([]Workspace, error)
 	WorkspaceByID(id string) (Workspace, bool, error)
 	MarkWorkspaceOpened(id string) error
+	DeleteWorkspace(id string) error
 
 	GetSetting(key string) (string, bool, error)
 	SetSetting(key, value string) error
