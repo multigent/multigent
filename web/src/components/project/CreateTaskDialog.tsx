@@ -13,6 +13,23 @@ type ProjectAgentsOpt = { projectId: string; agents: AgentOpt[] }
 type WorkflowStepOpt = { id: string; type: string; title: string; actorRole?: string }
 type WorkflowOpt = { id: string; name: string; steps?: WorkflowStepOpt[] }
 type WorkflowListResponse = { workflows: WorkflowOpt[] }
+type TaskTemplateVariable = { name: string; description?: string; required?: boolean; default?: string }
+type TaskTemplateOpt = {
+  id: string
+  name: string
+  description?: string
+  project?: string
+  type?: string
+  priority: number
+  labels?: string[]
+  titleTemplate: string
+  descriptionTemplate?: string
+  promptTemplate: string
+  workflowDefinitionId?: string
+  workflowActorBindings?: Record<string, ActorBinding>
+  variables?: TaskTemplateVariable[]
+}
+type TaskTemplateListResponse = { templates: TaskTemplateOpt[] }
 type PersonOpt = { username: string; displayName?: string; disabled?: boolean }
 type UserListResponse = PersonOpt[]
 type ActorBinding = { type: 'agent' | 'human'; id: string }
@@ -45,16 +62,23 @@ export function CreateTaskDialog({ projectId: defaultProjectId, agents: defaultA
   const [estimateDuration, setEstimateDuration] = useState('')
   const [workflowDefinitionId, setWorkflowDefinitionId] = useState('')
   const [actorBindings, setActorBindings] = useState<Record<string, ActorBinding>>({})
+  const [taskTemplateId, setTaskTemplateId] = useState('')
+  const [templateInputs, setTemplateInputs] = useState<Record<string, string>>({})
   const [busy, setBusy] = useState(false)
   const [err, setErr] = useState<string | null>(null)
 
   const multiProject = Boolean(allProjectsAgents && allProjectsAgents.length > 1)
   const workflowPath = open ? '/api/v1/workflows' : null
   const workflowsState = useApiJson<WorkflowListResponse>(workflowPath, 0)
+  const templatesState = useApiJson<TaskTemplateListResponse>(open ? '/api/v1/task-templates' : null, 0)
   const usersState = useApiJson<UserListResponse>(open ? '/api/v1/users' : null, 0)
   const workflows = workflowsState.status === 'ok' ? workflowsState.data.workflows : []
+  const taskTemplates = templatesState.status === 'ok'
+    ? templatesState.data.templates.filter((template) => !template.project || template.project === selectedProject)
+    : []
   const people = usersState.status === 'ok' ? usersState.data.filter((p) => !p.disabled) : []
   const selectedWorkflow = workflows.find((wf) => wf.id === workflowDefinitionId)
+  const selectedTemplate = taskTemplates.find((template) => template.id === taskTemplateId)
 
   const currentAgents = useMemo(() => {
     if (!allProjectsAgents) return defaultAgents
@@ -100,6 +124,8 @@ export function CreateTaskDialog({ projectId: defaultProjectId, agents: defaultA
     setEstimateDuration('')
     setWorkflowDefinitionId('')
     setActorBindings({})
+    setTaskTemplateId('')
+    setTemplateInputs({})
     setErr(null)
   }
 
@@ -119,6 +145,8 @@ export function CreateTaskDialog({ projectId: defaultProjectId, agents: defaultA
     const projAgents = allProjectsAgents?.find((p) => p.projectId === proj)?.agents ?? []
     setAgent(projAgents.find((a) => a.model !== 'human')?.name ?? '')
     setActorBindings({})
+    setTaskTemplateId('')
+    setTemplateInputs({})
   }
 
   const parentChoices = useMemo(() => {
@@ -154,12 +182,36 @@ export function CreateTaskDialog({ projectId: defaultProjectId, agents: defaultA
       setErr(t('workflows.actorBindingsRequired'))
       return
     }
+    if (selectedTemplate) {
+      for (const variable of selectedTemplate.variables ?? []) {
+        if (variable.required && !templateInputs[variable.name]?.trim()) {
+          setErr(t('taskTemplates.variableRequired', { name: variable.name }))
+          return
+        }
+      }
+    }
     setBusy(true)
     try {
       const labels = labelsStr.split(',').map(l => l.trim()).filter(Boolean)
-      await apiPost<{ id: string }>(
-        `/api/v1/projects/${encodeURIComponent(selectedProject)}/tasks`,
-        {
+      if (selectedTemplate) {
+        await apiPost<{ id: string }>(
+          `/api/v1/projects/${encodeURIComponent(selectedProject)}/tasks/from-template`,
+          {
+            templateId: selectedTemplate.id,
+            inputs: templateInputs,
+            agent: agent.trim(),
+            ...(assignee ? { assignee } : {}),
+            ...(labels.length > 0 ? { labels } : {}),
+            ...(dueDate ? { dueDate } : {}),
+            ...(parentId ? { parentId } : {}),
+            ...(estimateDuration.trim() ? { estimateDuration: estimateDuration.trim() } : {}),
+            workflowActorBindings: actorBindings,
+          },
+        )
+      } else {
+        await apiPost<{ id: string }>(
+          `/api/v1/projects/${encodeURIComponent(selectedProject)}/tasks`,
+          {
           agent: agent.trim(),
           title: title.trim(),
           description: description.trim(),
@@ -173,8 +225,9 @@ export function CreateTaskDialog({ projectId: defaultProjectId, agents: defaultA
           ...(estimateDuration.trim() ? { estimateDuration: estimateDuration.trim() } : {}),
           ...(workflowDefinitionId ? { workflowDefinitionId } : {}),
           ...(workflowDefinitionId ? { workflowActorBindings: actorBindings } : {}),
-        },
-      )
+          },
+        )
+      }
       setOpen(false)
       onCreated()
     } catch (e) {
@@ -204,6 +257,42 @@ export function CreateTaskDialog({ projectId: defaultProjectId, agents: defaultA
       next[role] = autoBindingFor(role, preferredType)
     }
     setActorBindings(next)
+  }
+
+  function onTemplateChange(id: string) {
+    setTaskTemplateId(id)
+    const template = taskTemplates.find((item) => item.id === id)
+    if (!template) {
+      setTemplateInputs({})
+      return
+    }
+    setTaskType(template.type || 'chore')
+    setPriority(template.priority ?? 2)
+    setLabelsStr((template.labels ?? []).join(', '))
+    setTitle(template.titleTemplate)
+    setDescription(template.descriptionTemplate || '')
+    setPrompt(template.promptTemplate)
+    const inputs: Record<string, string> = {}
+    for (const variable of template.variables ?? []) {
+      inputs[variable.name] = variable.default || ''
+    }
+    setTemplateInputs(inputs)
+    if (template.workflowDefinitionId) {
+      setWorkflowDefinitionId(template.workflowDefinitionId)
+      if (template.workflowActorBindings && Object.keys(template.workflowActorBindings).length > 0) {
+        setActorBindings(template.workflowActorBindings)
+      } else {
+        const workflow = workflows.find((wf) => wf.id === template.workflowDefinitionId)
+        const next: Record<string, ActorBinding> = {}
+        for (const step of workflow?.steps ?? []) {
+          const role = step.actorRole?.trim()
+          if (!role || next[role]) continue
+          const preferredType = step.type === 'human_review' ? 'human' : 'agent'
+          next[role] = autoBindingFor(role, preferredType)
+        }
+        setActorBindings(next)
+      }
+    }
   }
 
   function updateActorBinding(role: string, patch: Partial<ActorBinding>) {
@@ -260,6 +349,38 @@ export function CreateTaskDialog({ projectId: defaultProjectId, agents: defaultA
               {currentAgentActors.length === 0 && (
                 <p className="text-sm text-amber-800 dark:text-amber-400">{t('forms.needAgentsForTask')}</p>
               )}
+
+              {taskTemplates.length > 0 ? (
+                <label className="block text-sm">
+                  <span className="text-neutral-600 dark:text-zinc-400">{t('taskTemplates.title')}</span>
+                  <select value={taskTemplateId} onChange={(e) => onTemplateChange(e.target.value)} className={fieldCls}>
+                    <option value="">{t('taskTemplates.none')}</option>
+                    {taskTemplates.map((template) => <option key={template.id} value={template.id}>{template.name}</option>)}
+                  </select>
+                  {selectedTemplate?.description ? <p className="mt-0.5 text-xs text-neutral-400 dark:text-zinc-500">{selectedTemplate.description}</p> : null}
+                </label>
+              ) : null}
+
+              {selectedTemplate && (selectedTemplate.variables?.length ?? 0) > 0 ? (
+                <div className="rounded-lg border border-neutral-200 bg-neutral-50 p-3 dark:border-zinc-700 dark:bg-zinc-950/40">
+                  <div className="text-sm font-medium text-neutral-700 dark:text-zinc-300">{t('taskTemplates.variables')}</div>
+                  <div className="mt-2 grid gap-2">
+                    {selectedTemplate.variables!.map((variable) => (
+                      <label key={variable.name} className="block text-sm">
+                        <span className="text-neutral-600 dark:text-zinc-400">
+                          {variable.name}{variable.required ? ' *' : ''}
+                        </span>
+                        <input
+                          value={templateInputs[variable.name] ?? ''}
+                          onChange={(e) => setTemplateInputs((current) => ({ ...current, [variable.name]: e.target.value }))}
+                          className={fieldCls}
+                          placeholder={variable.description || variable.default || ''}
+                        />
+                      </label>
+                    ))}
+                  </div>
+                </div>
+              ) : null}
 
               <label className="block text-sm">
                 <span className="text-neutral-600 dark:text-zinc-400">{t('forms.agent')}</span>

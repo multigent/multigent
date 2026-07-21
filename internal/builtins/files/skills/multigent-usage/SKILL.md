@@ -34,6 +34,14 @@ mga task show <task-id>
 # Create a task for yourself or another agent in the same project.
 mga task add --agent <agent> --title "Title" --prompt "Detailed instructions" --priority 2 --type chore
 
+# Prefer task templates for standard workflow tasks. Templates bind the workflow,
+# actor routing, labels, priority, and prompt shape so agents do not pick the
+# wrong workflow or assignee.
+mga task templates --format table
+mga task create-from-template <template-id> \
+  --input repo=owner/repo \
+  --input issue_number=123
+
 # Update task state or metadata.
 mga task set <task-id> --status in_progress
 mga task set <task-id> --summary "Current progress"

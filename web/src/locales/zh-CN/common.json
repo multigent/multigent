@@ -1992,5 +1992,11 @@
         "body": "任务是真正运行的工作项。创建任务时可以绑定流程并指定第一个执行者，让 Multigent 按步骤流转。"
       }
     }
+  },
+  "taskTemplates": {
+    "title": "任务模板",
+    "none": "不使用模板",
+    "variables": "模板参数",
+    "variableRequired": "请填写模板参数：{{name}}"
   }
 }

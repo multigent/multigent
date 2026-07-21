@@ -1961,5 +1961,11 @@
         "body": "Tasks は実際に動く work item です。Task 作成時に workflow と最初の actor を指定すると、Multigent が step ごとに routing します。"
       }
     }
+  },
+  "taskTemplates": {
+    "title": "タスクテンプレート",
+    "none": "テンプレートなし",
+    "variables": "テンプレート変数",
+    "variableRequired": "テンプレート変数を入力してください: {{name}}"
   }
 }

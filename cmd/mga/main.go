@@ -492,13 +492,36 @@ func newTaskCmd() *cobra.Command {
 	cmd.AddCommand(
 		newTaskListCmd(),
 		newTaskShowCmd(),
+		newTaskTemplatesCmd(),
 		newTaskAddCmd(),
+		newTaskCreateFromTemplateCmd(),
 		newTaskSetCmd(),
 		newTaskCompleteCmd(),
 		newTaskStepCmd(),
 		newTaskCancelCmd(),
 		newTaskConfirmRequestCmd(),
 	)
+	return cmd
+}
+
+func newTaskTemplatesCmd() *cobra.Command {
+	var format string
+	cmd := &cobra.Command{
+		Use:   "templates",
+		Short: "List task templates available to this runtime project",
+		RunE: func(cmd *cobra.Command, args []string) error {
+			body, err := requestJSON(http.MethodGet, "/api/v1/runtime/task-templates", nil, nil)
+			if err != nil {
+				return err
+			}
+			if format == "table" {
+				return printTaskTemplatesTable(body)
+			}
+			return writeJSON(body)
+		},
+	}
+	cmd.Flags().StringVar(&format, "format", "json", "output format: json or table")
+	cmd.Flags().Bool("json", false, "print JSON output")
 	return cmd
 }
 
@@ -586,6 +609,87 @@ func newTaskAddCmd() *cobra.Command {
 	cmd.Flags().StringVar(&description, "description", "", "human-readable description")
 	cmd.Flags().StringVar(&assignee, "assignee", "", "assignee identity")
 	cmd.Flags().IntVar(&priority, "priority", 2, "priority 0-3")
+	return cmd
+}
+
+func newTaskCreateFromTemplateCmd() *cobra.Command {
+	var templateID, agent, assignee, dueDate, estimateDuration, parentID, outputFormat string
+	var priority int
+	var setPriority bool
+	var inputs, labels, actorPairs []string
+	cmd := &cobra.Command{
+		Use:     "create-from-template <template-id>",
+		Aliases: []string{"new-from-template", "from-template"},
+		Short:   "Create a workflow task from a task template",
+		Args:    cobra.MaximumNArgs(1),
+		RunE: func(cmd *cobra.Command, args []string) error {
+			if templateID == "" && len(args) > 0 {
+				templateID = args[0]
+			}
+			if strings.TrimSpace(templateID) == "" {
+				return fmt.Errorf("template id is required")
+			}
+			inputMap, err := parseStringPairs(inputs, "--input")
+			if err != nil {
+				return err
+			}
+			actorBindings, err := parseActorBindings(actorPairs)
+			if err != nil {
+				return err
+			}
+			body := map[string]any{
+				"templateId": strings.TrimSpace(templateID),
+				"inputs":     inputMap,
+			}
+			if agent != "" {
+				body["agent"] = agent
+			}
+			if assignee != "" {
+				body["assignee"] = assignee
+			}
+			if setPriority {
+				body["priority"] = priority
+			}
+			if dueDate != "" {
+				body["dueDate"] = dueDate
+			}
+			if estimateDuration != "" {
+				body["estimateDuration"] = estimateDuration
+			}
+			if parentID != "" {
+				body["parentId"] = parentID
+			}
+			if len(labels) > 0 {
+				body["labels"] = labels
+			}
+			if len(actorBindings) > 0 {
+				body["workflowActorBindings"] = actorBindings
+			}
+			raw, _ := json.Marshal(body)
+			resp, err := requestJSON(http.MethodPost, "/api/v1/runtime/tasks/from-template", nil, raw)
+			if err != nil {
+				return err
+			}
+			if outputFormat == "table" {
+				return printTasksTable(resp)
+			}
+			return writeJSON(resp)
+		},
+	}
+	cmd.Flags().StringVar(&templateID, "template", "", "task template id")
+	cmd.Flags().StringArrayVar(&inputs, "input", nil, "template variable as key=value, repeatable")
+	cmd.Flags().StringArrayVar(&actorPairs, "actor", nil, "workflow actor binding as role=agent:<name> or role=human:<username>, repeatable")
+	cmd.Flags().StringVar(&agent, "agent", "", "fallback target agent, defaults to template workflow start actor")
+	cmd.Flags().StringVar(&assignee, "assignee", "", "override task assignee")
+	cmd.Flags().IntVar(&priority, "priority", 2, "priority 0-3")
+	cmd.Flags().StringArrayVar(&labels, "label", nil, "extra task label, repeatable")
+	cmd.Flags().StringVar(&dueDate, "due-date", "", "due date YYYY-MM-DD")
+	cmd.Flags().StringVar(&estimateDuration, "estimate-duration", "", "estimated duration, e.g. 30m")
+	cmd.Flags().StringVar(&parentID, "parent", "", "parent task id")
+	cmd.Flags().StringVar(&outputFormat, "format", "json", "output format: json or table")
+	cmd.PreRun = func(cmd *cobra.Command, args []string) {
+		setPriority = cmd.Flags().Changed("priority")
+	}
 	return cmd
 }
 
@@ -772,6 +876,38 @@ func parseStructuredOutputs(pairs []string, rawJSON string) (map[string]string, 
 	}
 	if len(out) == 0 {
 		return nil, nil
+	}
+	return out, nil
+}
+
+func parseStringPairs(pairs []string, flagName string) (map[string]string, error) {
+	out := map[string]string{}
+	for _, pair := range pairs {
+		key, value, ok := strings.Cut(pair, "=")
+		if !ok || strings.TrimSpace(key) == "" {
+			return nil, fmt.Errorf("%s must use key=value", flagName)
+		}
+		out[strings.TrimSpace(key)] = strings.TrimSpace(value)
+	}
+	return out, nil
+}
+
+func parseActorBindings(pairs []string) (map[string]map[string]string, error) {
+	out := map[string]map[string]string{}
+	for _, pair := range pairs {
+		role, value, ok := strings.Cut(pair, "=")
+		role = strings.TrimSpace(role)
+		value = strings.TrimSpace(value)
+		if !ok || role == "" || value == "" {
+			return nil, fmt.Errorf("--actor must use role=agent:<name> or role=human:<username>")
+		}
+		typ, id, ok := strings.Cut(value, ":")
+		typ = strings.TrimSpace(typ)
+		id = strings.TrimSpace(id)
+		if !ok || (typ != "agent" && typ != "human") || id == "" {
+			return nil, fmt.Errorf("--actor must use role=agent:<name> or role=human:<username>")
+		}
+		out[role] = map[string]string{"type": typ, "id": id}
 	}
 	return out, nil
 }
@@ -1395,12 +1531,64 @@ func printTasksTable(body []byte) error {
 		Priority int    `json:"priority"`
 	}
 	if err := json.Unmarshal(body, &rows); err != nil {
-		return err
+		var row struct {
+			ID       string `json:"id"`
+			Agent    string `json:"agent"`
+			Status   string `json:"status"`
+			Title    string `json:"title"`
+			Priority int    `json:"priority"`
+		}
+		if err := json.Unmarshal(body, &row); err != nil {
+			return err
+		}
+		rows = append(rows, row)
 	}
 	tw := tabwriter.NewWriter(os.Stdout, 0, 4, 2, ' ', 0)
 	fmt.Fprintln(tw, "ID\tAGENT\tSTATUS\tP\tTITLE")
 	for _, r := range rows {
 		fmt.Fprintf(tw, "%s\t%s\t%s\t%d\t%s\n", r.ID, r.Agent, r.Status, r.Priority, r.Title)
+	}
+	return tw.Flush()
+}
+
+func printTaskTemplatesTable(body []byte) error {
+	var doc struct {
+		Templates []struct {
+			ID                   string `json:"id"`
+			Name                 string `json:"name"`
+			Project              string `json:"project"`
+			Type                 string `json:"type"`
+			Priority             int    `json:"priority"`
+			WorkflowDefinitionID string `json:"workflowDefinitionId"`
+			Variables            []struct {
+				Name     string `json:"name"`
+				Required bool   `json:"required"`
+			} `json:"variables"`
+		} `json:"templates"`
+	}
+	if err := json.Unmarshal(body, &doc); err != nil {
+		return err
+	}
+	tw := tabwriter.NewWriter(os.Stdout, 0, 4, 2, ' ', 0)
+	fmt.Fprintln(tw, "ID\tNAME\tPROJECT\tTYPE\tP\tWORKFLOW\tVARIABLES")
+	for _, tmpl := range doc.Templates {
+		vars := make([]string, 0, len(tmpl.Variables))
+		for _, variable := range tmpl.Variables {
+			name := variable.Name
+			if variable.Required {
+				name += "*"
+			}
+			vars = append(vars, name)
+		}
+		fmt.Fprintf(tw, "%s\t%s\t%s\t%s\t%d\t%s\t%s\n",
+			tmpl.ID,
+			tmpl.Name,
+			tmpl.Project,
+			tmpl.Type,
+			tmpl.Priority,
+			tmpl.WorkflowDefinitionID,
+			strings.Join(vars, ","),
+		)
 	}
 	return tw.Flush()
 }

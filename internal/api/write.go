@@ -48,6 +48,15 @@ type postTaskBody struct {
 
 func (s *Server) handlePostProjectTask(w http.ResponseWriter, r *http.Request) {
 	name := r.PathValue("name")
+	var body postTaskBody
+	if err := s.readJSON(w, r, &body); err != nil {
+		s.jsonError(w, http.StatusBadRequest, "invalid JSON body")
+		return
+	}
+	s.createProjectTaskFromBody(w, r, name, body)
+}
+
+func (s *Server) createProjectTaskFromBody(w http.ResponseWriter, r *http.Request, name string, body postTaskBody) {
 	if !s.checkProjectAccess(w, r, name) {
 		return
 	}
@@ -60,11 +69,6 @@ func (s *Server) handlePostProjectTask(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	var body postTaskBody
-	if err := s.readJSON(w, r, &body); err != nil {
-		s.jsonError(w, http.StatusBadRequest, "invalid JSON body")
-		return
-	}
 	agentName := strings.TrimSpace(body.Agent)
 	title := strings.TrimSpace(body.Title)
 	promptText := strings.TrimSpace(body.Prompt)

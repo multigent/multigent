@@ -10,6 +10,7 @@ import (
 
 	"github.com/multigent/multigent/internal/entity"
 	"github.com/multigent/multigent/internal/taskstore"
+	"github.com/multigent/multigent/internal/tasktemplate"
 	workflowstore "github.com/multigent/multigent/internal/workflow"
 )
 
@@ -198,6 +199,26 @@ func (s *Server) handleRuntimeTask(w http.ResponseWriter, r *http.Request) {
 	_ = json.NewEncoder(w).Encode(taskToRow(t, principal.Project, agent, archived))
 }
 
+func (s *Server) handleRuntimeTaskTemplates(w http.ResponseWriter, r *http.Request) {
+	principal, ok := s.runtimeRequireCapability(w, r, "task.use")
+	if !ok {
+		return
+	}
+	store := tasktemplate.NewStore(s.controlDB, principal.WorkspaceID)
+	templates, err := store.List()
+	if err != nil {
+		s.serverError(w, err)
+		return
+	}
+	filtered := make([]entity.TaskTemplate, 0, len(templates))
+	for _, template := range templates {
+		if template.Project == "" || template.Project == principal.Project {
+			filtered = append(filtered, template)
+		}
+	}
+	_ = json.NewEncoder(w).Encode(map[string]any{"templates": filtered})
+}
+
 func (s *Server) handleRuntimePostTask(w http.ResponseWriter, r *http.Request) {
 	principal, ok := s.runtimeRequireCapability(w, r, "task.use")
 	if !ok {
@@ -282,6 +303,183 @@ func (s *Server) handleRuntimePostTask(w http.ResponseWriter, r *http.Request) {
 		ResourceType: "task",
 		ResourceID:   principal.Project + "/" + agent + "/" + t.ID,
 		Summary:      "Runtime agent created task",
+		After:        taskToRow(t, principal.Project, agent, false),
+		Request:      r,
+	})
+	w.WriteHeader(http.StatusCreated)
+	_ = json.NewEncoder(w).Encode(taskToRow(t, principal.Project, agent, false))
+}
+
+func (s *Server) handleRuntimePostTaskFromTemplate(w http.ResponseWriter, r *http.Request) {
+	principal, ok := s.runtimeRequireCapability(w, r, "task.use")
+	if !ok {
+		return
+	}
+	var body taskFromTemplateBody
+	if err := s.readJSON(w, r, &body); err != nil {
+		s.jsonErrorCode(w, http.StatusBadRequest, ErrCodeInvalidJSON, "invalid JSON body")
+		return
+	}
+	store := tasktemplate.NewStore(s.controlDB, principal.WorkspaceID)
+	template, found, err := store.Get(strings.TrimSpace(body.TemplateID))
+	if err != nil {
+		s.serverError(w, err)
+		return
+	}
+	if !found {
+		s.jsonError(w, http.StatusNotFound, "task template not found")
+		return
+	}
+	if template.Project != "" && template.Project != principal.Project {
+		s.jsonError(w, http.StatusBadRequest, "task template is not available for this project")
+		return
+	}
+	taskBody, err := instantiateTaskTemplate(template, body)
+	if err != nil {
+		s.jsonError(w, http.StatusBadRequest, err.Error())
+		return
+	}
+	if taskBody.Agent == "" {
+		taskBody.Agent = firstTemplateAgentBinding(taskBody.WorkflowActorBindings)
+	}
+	s.createRuntimeTaskFromBody(w, r, principal, taskBody)
+}
+
+func (s *Server) createRuntimeTaskFromBody(w http.ResponseWriter, r *http.Request, principal runtimeAgentPrincipal, body postTaskBody) {
+	agent, ok := s.runtimeTargetAgent(w, principal, body.Agent)
+	if !ok {
+		return
+	}
+	title := strings.TrimSpace(body.Title)
+	prompt := strings.TrimSpace(body.Prompt)
+	if title == "" || prompt == "" {
+		s.jsonError(w, http.StatusBadRequest, "title and prompt are required")
+		return
+	}
+	taskType := strings.TrimSpace(body.Type)
+	if taskType == "" {
+		taskType = string(entity.TaskTypeChore)
+	}
+	if !validTaskType(taskType) {
+		s.jsonError(w, http.StatusBadRequest, "invalid task type")
+		return
+	}
+	priority := body.Priority
+	if priority < 0 || priority > 3 {
+		s.jsonError(w, http.StatusBadRequest, "priority must be 0-3")
+		return
+	}
+	assignee := strings.TrimSpace(body.Assignee)
+	if assignee == "" {
+		assignee = principal.Project + "/" + agent
+	}
+	workflowID := strings.TrimSpace(body.WorkflowDefinitionID)
+	var workflowStore interface {
+		Definition(string) (entity.WorkflowDefinition, bool, error)
+		StartRun(string, string, string, map[string]entity.WorkflowActorBinding) (entity.WorkflowRun, []entity.WorkflowStepInstance, error)
+	}
+	if workflowID != "" {
+		wfStore := workflowstore.NewStore(s.controlDB, principal.WorkspaceID)
+		workflowStore = wfStore
+		def, found, err := wfStore.Definition(workflowID)
+		if err != nil {
+			s.serverError(w, err)
+			return
+		}
+		if !found {
+			s.jsonError(w, http.StatusNotFound, "workflow definition not found")
+			return
+		}
+		if _, inst, ok := workflowStartActor(def, body.WorkflowActorBindings); ok {
+			switch inst.ActorType {
+			case "agent":
+				startAgent := strings.TrimSpace(inst.ActorID)
+				if startAgent == "" || !s.agentExistsInProject(principal.Project, startAgent) {
+					s.jsonError(w, http.StatusBadRequest, "workflow start agent not found in this project")
+					return
+				}
+				agent = startAgent
+				assignee = principal.Project + "/" + startAgent
+			case "human":
+				reviewer := strings.TrimSpace(inst.ActorID)
+				if reviewer == "" {
+					s.jsonError(w, http.StatusBadRequest, "workflow start reviewer is required")
+					return
+				}
+				if err := s.validateIdentity(reviewer, "workflow start reviewer"); err != nil {
+					s.jsonError(w, http.StatusBadRequest, err.Error())
+					return
+				}
+				assignee = reviewer
+			}
+		}
+	}
+	if err := s.validateIdentity(assignee, "assignee"); err != nil {
+		s.jsonError(w, http.StatusBadRequest, err.Error())
+		return
+	}
+	now := time.Now().UTC()
+	t := &entity.Task{
+		ID:          entity.NewTaskID(),
+		Title:       title,
+		Description: strings.TrimSpace(body.Description),
+		Type:        entity.TaskType(taskType),
+		Priority:    priority,
+		Assignee:    assignee,
+		CreatedBy:   runtimeAgentAddress(principal),
+		Status:      entity.TaskStatusPending,
+		Prompt:      prompt,
+		Labels:      body.Labels,
+		ParentID:    strings.TrimSpace(body.ParentID),
+		CreatedAt:   now,
+		UpdatedAt:   now,
+	}
+	if est, err := entity.NormalizeEstimateDuration(body.EstimateDuration); err != nil {
+		s.jsonError(w, http.StatusBadRequest, err.Error())
+		return
+	} else {
+		t.EstimateDuration = est
+	}
+	if body.DueDate != "" {
+		dd, err := time.Parse("2006-01-02", body.DueDate)
+		if err != nil {
+			s.jsonError(w, http.StatusBadRequest, "invalid due date, use YYYY-MM-DD")
+			return
+		}
+		t.DueDate = &dd
+	}
+	if err := s.ts.AddTask(principal.Project, agent, t); err != nil {
+		s.serverError(w, err)
+		return
+	}
+	if !strings.Contains(assignee, "/") {
+		item := &entity.InboxItem{TaskID: t.ID, Project: principal.Project, Agent: agent, To: assignee, Title: t.Title, Summary: prompt}
+		if err := s.ts.AddToInbox(item); err != nil {
+			s.serverError(w, err)
+			return
+		}
+	}
+	if workflowID != "" {
+		if workflowStore == nil {
+			s.serverError(w, fmt.Errorf("workflow store unavailable"))
+			return
+		}
+		if _, _, err := workflowStore.StartRun(principal.Project, t.ID, workflowID, body.WorkflowActorBindings); err != nil {
+			s.serverError(w, err)
+			return
+		}
+	}
+	if strings.Contains(assignee, "/") {
+		s.triggers.Fire(principal.Project, agent, entity.TriggerOnTask, "task "+t.ID)
+	}
+	s.auditLog(auditLogInput{
+		WorkspaceID:  principal.WorkspaceID,
+		ActorType:    "agent",
+		ActorID:      runtimeAgentAddress(principal),
+		Action:       "runtime.task.create_from_template",
+		ResourceType: "task",
+		ResourceID:   principal.Project + "/" + agent + "/" + t.ID,
+		Summary:      "Runtime agent created task from template",
 		After:        taskToRow(t, principal.Project, agent, false),
 		Request:      r,
 	})

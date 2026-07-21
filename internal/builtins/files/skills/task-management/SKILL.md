@@ -38,6 +38,17 @@ mga task add \
 
 If `--agent` is omitted, the task is assigned to the current agent. Agents may create tasks for other agents in the same project.
 
+For standard workflow tasks, prefer task templates instead of manually choosing a workflow and assignees:
+
+```bash
+mga task templates --format table
+mga task create-from-template <template-id> \
+  --input repo=owner/repo \
+  --input issue_number=123
+```
+
+Templates are maintained by the workspace and include the workflow definition, actor bindings, labels, priority, and prompt shape.
+
 ## Update
 
 ```bash

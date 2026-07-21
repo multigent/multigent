@@ -1971,5 +1971,11 @@
         "body": "任務是真正執行的工作項。建立任務時可以綁定流程並指定第一個執行者，讓 Multigent 按步驟流轉。"
       }
     }
+  },
+  "taskTemplates": {
+    "title": "任務模板",
+    "none": "不使用模板",
+    "variables": "模板參數",
+    "variableRequired": "請填寫模板參數：{{name}}"
   }
 }
