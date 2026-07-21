@@ -444,7 +444,9 @@
       "commentsPlaceholder": "Add review notes. Required when requesting changes; optional when approving.",
       "commentsRequired": "Review notes are required when requesting changes.",
       "approve": "Approve",
-      "requestChanges": "Request changes"
+      "requestChanges": "Request changes",
+      "selectDecision": "Select decision",
+      "submit": "Submit"
     },
     "detail": {
       "actor": "Actor",

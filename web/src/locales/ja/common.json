@@ -444,7 +444,9 @@
       "commentsPlaceholder": "レビューコメントを入力します。差し戻す場合は修正内容を書いてください。承認時は空でも構いません。",
       "commentsRequired": "修正依頼時はレビューコメントが必要です。",
       "approve": "承認",
-      "requestChanges": "修正依頼"
+      "requestChanges": "修正依頼",
+      "selectDecision": "判断を選択",
+      "submit": "送信"
     },
     "detail": {
       "actor": "担当",

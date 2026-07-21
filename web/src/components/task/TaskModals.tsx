@@ -247,7 +247,7 @@ export function TaskDetailModal({ task, onClose, onEdit, onMutated, canEdit = tr
   const [workflowVersion, setWorkflowVersion] = useState(0)
   const [reviewComments, setReviewComments] = useState('')
   const [reviewOutputs, setReviewOutputs] = useState<Record<string, string>>({})
-  const [reviewBusy, setReviewBusy] = useState<'approved' | 'needs_changes' | null>(null)
+  const [reviewBusy, setReviewBusy] = useState<string | null>(null)
   const [reviewErr, setReviewErr] = useState<string | null>(null)
 
   const runsQuery = `/api/v1/telemetry/runs?allTime=1&project=${encodeURIComponent(task.project)}`
@@ -290,16 +290,16 @@ export function TaskDetailModal({ task, onClose, onEdit, onMutated, canEdit = tr
     setReviewErr(null)
   }, [activeWorkflowStep?.id])
 
-  async function submitWorkflowReview(decision: 'approved' | 'needs_changes') {
+  async function submitWorkflowReview(decision?: string) {
     setReviewErr(null)
-    setReviewBusy(decision)
-    const normalizedDecision = decision === 'approved' ? 'approve' : 'request_changes'
-    const outputs: Record<string, string> = { ...reviewOutputs, decision: normalizedDecision }
+    const normalizedDecision = normalizeReviewDecision(decision || reviewOutputs.decision || '')
+    setReviewBusy(normalizedDecision || 'submit')
+    const outputs: Record<string, string> = { ...reviewOutputs }
+    if (normalizedDecision) outputs.decision = normalizedDecision
     const outputFieldNames = (activeWorkflowStep?.outputFields ?? []).map((field) => field.name).filter(Boolean)
     const comments = (outputs.comments ?? reviewComments).trim()
     if (outputFieldNames.includes('comments')) outputs.comments = comments
     const missingField = outputFieldNames
-      .filter((name) => name !== 'decision')
       .find((name) => !String(outputs[name] ?? '').trim())
     if (missingField) {
       setReviewErr(`${t('forms.fillRequired')} ${missingField}`)
@@ -654,11 +654,11 @@ function WorkflowRuntimePanel({
   canReview: boolean
   reviewOutputs: Record<string, string>
   reviewComments: string
-  reviewBusy: 'approved' | 'needs_changes' | null
+  reviewBusy: string | null
   reviewErr: string | null
   onChangeOutput: (name: string, value: string) => void
   onChangeComments: (value: string) => void
-  onSubmitReview: (decision: 'approved' | 'needs_changes') => void
+  onSubmitReview: (decision?: string) => void
 }) {
   const { t } = useTranslation()
   const parsedOutputValues = parseWorkflowArtifact(instance?.outputArtifact || instance?.summary || '')
@@ -675,6 +675,9 @@ function WorkflowRuntimePanel({
     )
   }
 
+  const decisionField = (step.outputFields ?? []).find((field) => field.name === 'decision')
+  const decisionOptions = decisionField ? workflowDecisionOptions(decisionField.description) : []
+  const usesDefaultReviewButtons = !decisionField || decisionOptions.length === 0 || sameStringSet(decisionOptions, ['approve', 'request_changes'])
   const editableOutputFields = (step.outputFields ?? []).filter((field) => field.name !== 'decision')
   const hasInput = Boolean(instance?.inputArtifact?.trim()) || (step.inputFields ?? []).length > 0
 
@@ -733,6 +736,25 @@ function WorkflowRuntimePanel({
                   className="w-full resize-y rounded-lg border border-neutral-300 bg-white px-3 py-2 text-sm text-neutral-900 outline-none focus:border-sky-400 dark:border-zinc-700 dark:bg-zinc-900 dark:text-zinc-100"
                 />
               )}
+              {decisionField && !usesDefaultReviewButtons && (
+                <label className="block">
+                  <span className="text-xs font-medium text-neutral-500 dark:text-zinc-500">
+                    {decisionField.name}
+                    <span className="ml-1 text-red-500">*</span>
+                  </span>
+                  {decisionField.description && <span className="mt-0.5 block text-xs text-neutral-400 dark:text-zinc-600">{decisionField.description}</span>}
+                  <select
+                    value={reviewOutputs.decision || ''}
+                    onChange={(e) => onChangeOutput('decision', e.target.value)}
+                    className="mt-1 w-full rounded-lg border border-neutral-300 bg-white px-3 py-2 text-sm text-neutral-900 outline-none focus:border-sky-400 dark:border-zinc-700 dark:bg-zinc-900 dark:text-zinc-100"
+                  >
+                    <option value="">{t('workflows.review.selectDecision')}</option>
+                    {decisionOptions.map((item) => (
+                      <option key={item} value={item}>{workflowDecisionLabel(item)}</option>
+                    ))}
+                  </select>
+                </label>
+              )}
               {editableOutputFields.map((field) => (
                 <label key={field.name} className="block">
                   <span className="text-xs font-medium text-neutral-500 dark:text-zinc-500">
@@ -751,12 +773,20 @@ function WorkflowRuntimePanel({
               ))}
               {reviewErr && <p className="text-sm text-red-600 dark:text-red-400">{reviewErr}</p>}
               <div className="flex justify-end gap-2">
-                <button type="button" onClick={() => onSubmitReview('needs_changes')} disabled={Boolean(reviewBusy)} className="rounded-lg border border-neutral-300 bg-white px-3 py-2 text-sm font-medium text-neutral-600 hover:bg-neutral-50 disabled:opacity-50 dark:border-zinc-600 dark:bg-zinc-900 dark:text-zinc-300 dark:hover:bg-zinc-800">
-                  {reviewBusy === 'needs_changes' ? t('forms.working') : t('workflows.review.requestChanges')}
-                </button>
-                <button type="button" onClick={() => onSubmitReview('approved')} disabled={Boolean(reviewBusy)} className="rounded-lg border border-sky-600 bg-white px-3 py-2 text-sm font-medium text-sky-700 hover:bg-sky-50 disabled:opacity-50 dark:border-sky-500 dark:bg-zinc-900 dark:text-sky-400 dark:hover:bg-zinc-800">
-                  {reviewBusy === 'approved' ? t('forms.working') : t('workflows.review.approve')}
-                </button>
+                {usesDefaultReviewButtons ? (
+                  <>
+                    <button type="button" onClick={() => onSubmitReview('needs_changes')} disabled={Boolean(reviewBusy)} className="rounded-lg border border-neutral-300 bg-white px-3 py-2 text-sm font-medium text-neutral-600 hover:bg-neutral-50 disabled:opacity-50 dark:border-zinc-600 dark:bg-zinc-900 dark:text-zinc-300 dark:hover:bg-zinc-800">
+                      {reviewBusy === 'request_changes' ? t('forms.working') : t('workflows.review.requestChanges')}
+                    </button>
+                    <button type="button" onClick={() => onSubmitReview('approved')} disabled={Boolean(reviewBusy)} className="rounded-lg border border-sky-600 bg-white px-3 py-2 text-sm font-medium text-sky-700 hover:bg-sky-50 disabled:opacity-50 dark:border-sky-500 dark:bg-zinc-900 dark:text-sky-400 dark:hover:bg-zinc-800">
+                      {reviewBusy === 'approve' ? t('forms.working') : t('workflows.review.approve')}
+                    </button>
+                  </>
+                ) : (
+                  <button type="button" onClick={() => onSubmitReview()} disabled={Boolean(reviewBusy)} className="rounded-lg border border-sky-600 bg-white px-3 py-2 text-sm font-medium text-sky-700 hover:bg-sky-50 disabled:opacity-50 dark:border-sky-500 dark:bg-zinc-900 dark:text-sky-400 dark:hover:bg-zinc-800">
+                    {reviewBusy ? t('forms.working') : t('workflows.review.submit')}
+                  </button>
+                )}
               </div>
             </div>
           ) : (
@@ -943,6 +973,37 @@ function WorkflowFieldTitle({ fieldName, description }: { fieldName: string; des
       )}
     </div>
   )
+}
+
+function normalizeReviewDecision(decision: string) {
+  switch (decision.trim()) {
+    case 'approved':
+      return 'approve'
+    case 'needs_changes':
+      return 'request_changes'
+    default:
+      return decision.trim()
+  }
+}
+
+function workflowDecisionOptions(description?: string) {
+  const text = String(description || '')
+  const match = /(?:决策|決策|decision)\s*[:：]\s*([^。.;；]+)/i.exec(text)
+  if (!match) return []
+  return match[1]
+    .split(/[、,，/|]/)
+    .map((item) => item.trim())
+    .filter(Boolean)
+}
+
+function sameStringSet(a: string[], b: string[]) {
+  if (a.length !== b.length) return false
+  const set = new Set(a)
+  return b.every((item) => set.has(item))
+}
+
+function workflowDecisionLabel(value: string) {
+  return value.replaceAll('_', ' ')
 }
 
 const docIDPattern = /\bdoc-\d{8}-[a-z0-9]+\b/gi

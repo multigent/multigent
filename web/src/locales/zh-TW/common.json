@@ -444,7 +444,9 @@
       "commentsPlaceholder": "填寫審核意見。打回時必須說明需要修改什麼；通過時可以留空。",
       "commentsRequired": "打回修改時必須填寫修改意見。",
       "approve": "通過",
-      "requestChanges": "打回修改"
+      "requestChanges": "打回修改",
+      "selectDecision": "選擇決策",
+      "submit": "提交"
     },
     "detail": {
       "actor": "執行者",

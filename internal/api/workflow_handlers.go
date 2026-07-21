@@ -289,17 +289,7 @@ func (s *Server) handlePostTaskWorkflowReview(w http.ResponseWriter, r *http.Req
 		s.jsonError(w, http.StatusBadRequest, "invalid JSON body")
 		return
 	}
-	decision := strings.TrimSpace(body.Decision)
-	switch decision {
-	case "approved":
-		decision = "approve"
-	case "needs_changes":
-		decision = "request_changes"
-	}
-	if decision != "approve" && decision != "request_changes" {
-		s.jsonError(w, http.StatusBadRequest, "decision must be approved or needs_changes")
-		return
-	}
+	decision := normalizeWorkflowReviewDecision(body.Decision)
 	t, agent, err := s.findTaskInProject(project, taskID)
 	if err != nil {
 		s.jsonError(w, http.StatusNotFound, "task not found")
@@ -313,7 +303,11 @@ func (s *Server) handlePostTaskWorkflowReview(w http.ResponseWriter, r *http.Req
 	if outputs == nil {
 		outputs = map[string]string{}
 	}
-	outputs["decision"] = decision
+	if outputDecision := normalizeWorkflowReviewDecision(outputs["decision"]); outputDecision != "" {
+		outputs["decision"] = outputDecision
+	} else if decision != "" {
+		outputs["decision"] = decision
+	}
 	comments := strings.TrimSpace(body.Comments)
 	if comments == "" {
 		comments = strings.TrimSpace(outputs["comments"])
@@ -387,6 +381,17 @@ func formatWorkflowReviewFields(fields map[string]string) string {
 		b.WriteString(value)
 	}
 	return b.String()
+}
+
+func normalizeWorkflowReviewDecision(decision string) string {
+	switch strings.TrimSpace(decision) {
+	case "approved":
+		return "approve"
+	case "needs_changes":
+		return "request_changes"
+	default:
+		return strings.TrimSpace(decision)
+	}
 }
 
 func (s *Server) findTaskInProject(project, taskID string) (*entity.Task, string, error) {

@@ -444,7 +444,9 @@
       "commentsPlaceholder": "填写审核意见。打回时必须说明需要修改什么；通过时可以留空。",
       "commentsRequired": "打回修改时必须填写修改意见。",
       "approve": "通过",
-      "requestChanges": "打回修改"
+      "requestChanges": "打回修改",
+      "selectDecision": "选择决策",
+      "submit": "提交"
     },
     "detail": {
       "actor": "执行者",
