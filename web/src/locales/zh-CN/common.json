@@ -1621,6 +1621,7 @@
     "noSubject": "（无主题）",
     "selectPerson": "选择用户…",
     "createFirst": "请先在「用户管理」页面添加用户。",
+    "noAvailablePeople": "没有可添加的用户。",
     "edit": "编辑用户",
     "bio": "个人简介",
     "newPassword": "新密码",
@@ -1998,6 +1999,7 @@
     "title": "任务模板",
     "projectSubtitle": "本项目可复用的任务创建模板，包含流程、负责人绑定、输入参数和默认任务说明。",
     "create": "新建任务模板",
+    "name": "模板名称",
     "emptyTitle": "暂无任务模板",
     "emptyHint": "为常见流程创建模板，让 PM、QA 或 Agent 可以稳定地按模板创建任务。",
     "templateId": "模板 ID",
@@ -2007,6 +2009,7 @@
     "deleteConfirm": "确定删除「{{name}}」吗？此操作不可撤销。",
     "namePlaceholder": "例如：GitHub Issue 协作开发",
     "titleTemplate": "标题模板",
+    "titlePlaceholder": "例如：处理 Issue #{{issue_number}}",
     "descriptionTemplate": "描述模板",
     "promptTemplate": "任务说明模板",
     "promptPlaceholder": "可以使用 {{变量名}} 占位，例如：处理 issue #{{issue_number}}。",
@@ -2016,6 +2019,8 @@
     "variableName": "变量名",
     "variableDescription": "变量说明",
     "humanActor": "人类成员",
+    "noHumanActors": "本项目暂无人类成员",
+    "noAgentActors": "本项目暂无 Agent",
     "required": "必填",
     "variableRequired": "请填写模板参数：{{name}}"
   }

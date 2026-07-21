@@ -17,7 +17,7 @@ const MODELS = [
 
 type TeamInfo = { path: string; name: string }
 type TeamDetail = { roles: { name: string; description?: string }[] }
-type PersonRow = { username: string; displayName?: string; linkedAgents?: string[] }
+type PersonRow = { username: string; displayName?: string; role?: string; linkedAgents?: string[]; disabled?: boolean }
 
 type Props = {
   projectId: string
@@ -47,7 +47,7 @@ export function HireAgentDialog({ projectId, onHired }: Props) {
     if (!open) return
     apiFetch<TeamInfo[]>('/api/v1/teams').then(setTeams).catch(() => {})
     apiFetch<PersonRow[]>('/api/v1/users')
-      .then(users => setPeople((users ?? []).filter(u => (u as any).role === 'member')))
+      .then(users => setPeople((users ?? []).filter(u => !u.disabled)))
       .catch(() => {})
   }, [open])
 
@@ -174,6 +174,9 @@ export function HireAgentDialog({ projectId, onHired }: Props) {
                           {p.displayName ? `${p.displayName} (@${p.username})` : p.username}
                         </option>
                       ))}
+                    {people.filter(p => !p.linkedAgents?.some(la => la.startsWith(projectId + '/'))).length === 0 && (
+                      <option value="" disabled>{t('people.noAvailablePeople')}</option>
+                    )}
                   </select>
                   {people.length === 0 && (
                     <p className="mt-1 text-xs text-amber-600 dark:text-amber-400">{t('people.createFirst')}</p>

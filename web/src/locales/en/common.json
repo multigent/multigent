@@ -1621,6 +1621,7 @@
     "noSubject": "(no subject)",
     "selectPerson": "Select user…",
     "createFirst": "Add a user in User Management first.",
+    "noAvailablePeople": "No users available to add.",
     "edit": "Edit User",
     "bio": "Bio",
     "newPassword": "New Password",
@@ -1998,6 +1999,7 @@
     "title": "Task template",
     "projectSubtitle": "Reusable task creation templates for this project, including workflow, actor bindings, input variables, and default prompts.",
     "create": "New task template",
+    "name": "Template name",
     "emptyTitle": "No task templates yet",
     "emptyHint": "Create templates for common workflows so PMs, QA, or agents can create consistent tasks.",
     "templateId": "Template ID",
@@ -2007,6 +2009,7 @@
     "deleteConfirm": "Delete \"{{name}}\"? This cannot be undone.",
     "namePlaceholder": "Example: GitHub issue development loop",
     "titleTemplate": "Title template",
+    "titlePlaceholder": "Example: Handle issue #{{issue_number}}",
     "descriptionTemplate": "Description template",
     "promptTemplate": "Task prompt template",
     "promptPlaceholder": "Use {{variable_name}} placeholders, for example: handle issue #{{issue_number}}.",
@@ -2016,6 +2019,8 @@
     "variableName": "Variable name",
     "variableDescription": "Variable description",
     "humanActor": "Human member",
+    "noHumanActors": "No human members in this project",
+    "noAgentActors": "No agents in this project",
     "required": "Required",
     "variableRequired": "Fill template variable: {{name}}"
   }

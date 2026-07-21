@@ -245,15 +245,15 @@ export default function ProjectTaskTemplatesPage() {
           </div>
         )}
         {templatesState.status === 'ok' && templates.length > 0 && (
-          <div className="overflow-hidden rounded-xl border border-neutral-200 bg-white dark:border-zinc-700 dark:bg-zinc-900">
+          <div className="overflow-x-auto rounded-lg border border-neutral-200 bg-white dark:border-zinc-700 dark:bg-zinc-900">
             <table className="min-w-full divide-y divide-neutral-200 dark:divide-zinc-800">
               <thead className="bg-neutral-50 dark:bg-zinc-950/50">
                 <tr>
-                  <th className="px-4 py-2 text-left text-xs font-medium text-neutral-500 dark:text-zinc-500">{t('forms.name')}</th>
-                  <th className="px-4 py-2 text-left text-xs font-medium text-neutral-500 dark:text-zinc-500">{t('taskTemplates.templateId')}</th>
+                  <th className="px-4 py-2 text-left text-xs font-medium text-neutral-500 dark:text-zinc-500">{t('taskTemplates.name')}</th>
+                  <th className="whitespace-nowrap px-4 py-2 text-left text-xs font-medium text-neutral-500 dark:text-zinc-500">{t('taskTemplates.templateId')}</th>
                   <th className="px-4 py-2 text-left text-xs font-medium text-neutral-500 dark:text-zinc-500">{t('workflows.taskWorkflow')}</th>
                   <th className="px-4 py-2 text-left text-xs font-medium text-neutral-500 dark:text-zinc-500">{t('taskTemplates.variables')}</th>
-                  <th className="px-4 py-2 text-right text-xs font-medium text-neutral-500 dark:text-zinc-500">{t('common.actions')}</th>
+                  <th className="sticky right-0 bg-neutral-50 px-4 py-2 text-right text-xs font-medium text-neutral-500 dark:bg-zinc-950 dark:text-zinc-500">{t('common.actions')}</th>
                 </tr>
               </thead>
               <tbody className="divide-y divide-neutral-100 dark:divide-zinc-800/80">
@@ -265,11 +265,11 @@ export default function ProjectTaskTemplatesPage() {
                         <div className="font-medium text-neutral-900 dark:text-zinc-100">{template.name}</div>
                         {template.description ? <div className="mt-0.5 text-xs text-neutral-400 dark:text-zinc-500">{template.description}</div> : null}
                       </td>
-                      <td className="px-4 py-3">
+                      <td className="whitespace-nowrap px-4 py-3">
                         <button
                           type="button"
                           onClick={() => void copyID(template.id)}
-                          className="inline-flex items-center gap-1 rounded-md bg-neutral-100 px-2 py-1 font-mono text-xs text-neutral-600 hover:bg-neutral-200 dark:bg-zinc-800 dark:text-zinc-300 dark:hover:bg-zinc-700"
+                          className="inline-flex whitespace-nowrap items-center gap-1 rounded-md bg-neutral-100 px-2 py-1 font-mono text-xs text-neutral-600 hover:bg-neutral-200 dark:bg-zinc-800 dark:text-zinc-300 dark:hover:bg-zinc-700"
                           title={t('taskTemplates.copyId')}
                         >
                           {template.id}
@@ -282,7 +282,7 @@ export default function ProjectTaskTemplatesPage() {
                       <td className="px-4 py-3 text-sm text-neutral-600 dark:text-zinc-400">
                         {(template.variables ?? []).map((variable) => variable.name).join(', ') || '—'}
                       </td>
-                      <td className="px-4 py-3 text-right">
+                      <td className="sticky right-0 bg-white px-4 py-3 text-right dark:bg-zinc-900">
                         <button type="button" onClick={() => void deleteTemplate(template)} className="rounded-md px-2 py-1 text-sm text-red-600 hover:bg-red-50 dark:text-red-400 dark:hover:bg-red-950/40">
                           {t('common.delete')}
                         </button>
@@ -304,7 +304,7 @@ export default function ProjectTaskTemplatesPage() {
             </div>
             <form onSubmit={onSubmit} className="space-y-4 px-4 py-3">
               <div className="grid gap-3 sm:grid-cols-2">
-                <Field label={t('forms.name')}>
+                <Field label={t('taskTemplates.name')}>
                   <input value={form.name} onChange={(e) => patchForm({ name: e.target.value })} className={fieldCls} placeholder={t('taskTemplates.namePlaceholder')} />
                 </Field>
                 <Field label={t('forms.priority')}>
@@ -328,7 +328,7 @@ export default function ProjectTaskTemplatesPage() {
               </div>
 
               <Field label={t('taskTemplates.titleTemplate')}>
-                <input value={form.titleTemplate} onChange={(e) => patchForm({ titleTemplate: e.target.value })} className={fieldCls} placeholder="Handle issue #{{issue_number}}" />
+                <input value={form.titleTemplate} onChange={(e) => patchForm({ titleTemplate: e.target.value })} className={fieldCls} placeholder={t('taskTemplates.titlePlaceholder')} />
               </Field>
               <Field label={t('taskTemplates.descriptionTemplate')}>
                 <textarea value={form.descriptionTemplate} onChange={(e) => patchForm({ descriptionTemplate: e.target.value })} rows={2} className={cn(fieldCls, 'resize-y')} />
@@ -363,6 +363,9 @@ export default function ProjectTaskTemplatesPage() {
                           </select>
                           <select value={binding.id} onChange={(e) => updateBinding(slot.role, { id: e.target.value })} className={fieldCls}>
                             {options.map((member) => <option key={member.name} value={member.name}>{member.name}</option>)}
+                            {options.length === 0 && (
+                              <option value="" disabled>{binding.type === 'human' ? t('taskTemplates.noHumanActors') : t('taskTemplates.noAgentActors')}</option>
+                            )}
                           </select>
                         </div>
                       )

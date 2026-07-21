@@ -1600,6 +1600,7 @@
     "noSubject": "（無主題）",
     "selectPerson": "選擇使用者…",
     "createFirst": "請先在「使用者管理」頁面新增使用者。",
+    "noAvailablePeople": "沒有可新增的使用者。",
     "edit": "編輯使用者",
     "bio": "個人簡介",
     "newPassword": "新密碼",
@@ -1977,6 +1978,7 @@
     "title": "任務模板",
     "projectSubtitle": "本專案可重用的任務建立模板，包含流程、負責人綁定、輸入參數和預設任務說明。",
     "create": "新增任務模板",
+    "name": "模板名稱",
     "emptyTitle": "暫無任務模板",
     "emptyHint": "為常見流程建立模板，讓 PM、QA 或 Agent 可以穩定地按模板建立任務。",
     "templateId": "模板 ID",
@@ -1986,6 +1988,7 @@
     "deleteConfirm": "確定刪除「{{name}}」嗎？此操作無法復原。",
     "namePlaceholder": "例如：GitHub Issue 協作開發",
     "titleTemplate": "標題模板",
+    "titlePlaceholder": "例如：處理 Issue #{{issue_number}}",
     "descriptionTemplate": "描述模板",
     "promptTemplate": "任務說明模板",
     "promptPlaceholder": "可以使用 {{變數名}} 佔位，例如：處理 issue #{{issue_number}}。",
@@ -1995,6 +1998,8 @@
     "variableName": "變數名",
     "variableDescription": "變數說明",
     "humanActor": "人類成員",
+    "noHumanActors": "本專案暫無人類成員",
+    "noAgentActors": "本專案暫無 Agent",
     "required": "必填",
     "variableRequired": "請填寫模板參數：{{name}}"
   }
