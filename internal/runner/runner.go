@@ -56,6 +56,7 @@ const (
 	runtimeToolsFileEnv       = "MULTIGENT_TOOLS_FILE"
 	runtimeToolDirEnv         = "MULTIGENT_TOOL_RUNTIME_DIR"
 	runtimeToolBinDirEnv      = "MULTIGENT_TOOL_BIN_DIR"
+	runtimeToolCacheBinDirEnv = "MULTIGENT_TOOL_CACHE_BIN_DIR"
 	runtimeToolBootstrapEnv   = "MULTIGENT_TOOL_BOOTSTRAP_FILE"
 	runtimeToolSkillsFileEnv  = "MULTIGENT_TOOL_SKILLS_FILE"
 	runtimeToolCLIAuditEnv    = "MULTIGENT_TOOL_CLI_AUDIT_FILE"
@@ -1363,12 +1364,17 @@ func (r *Runner) materializeRuntimeFiles(agentDir string, env map[string]string)
 	if closeResolver != nil {
 		defer closeResolver()
 	}
-	toolDir, toolsPath, extraEnv, err := writeRuntimeToolsFile(agentDir, env["MULTIGENT_RUN_ID"], path, body, secretResolver)
+	toolDir, toolsPath, extraEnv, err := writeRuntimeToolsFile(r.root, agentDir, env["MULTIGENT_RUN_ID"], path, body, secretResolver)
 	if err == nil && toolDir != "" && toolsPath != "" {
 		env[runtimeToolDirEnv] = toolDir
 		env[runtimeToolsFileEnv] = toolsPath
 		env[runtimeToolBinDirEnv] = filepath.Join(toolDir, "bin")
-		env["PATH"] = filepath.Join(toolDir, "bin") + string(os.PathListSeparator) + os.Getenv("PATH")
+		if cacheBin := workspaceToolCacheBinDir(r.root); cacheBin != "" {
+			env[runtimeToolCacheBinDirEnv] = cacheBin
+			env["PATH"] = filepath.Join(toolDir, "bin") + string(os.PathListSeparator) + cacheBin + string(os.PathListSeparator) + os.Getenv("PATH")
+		} else {
+			env["PATH"] = filepath.Join(toolDir, "bin") + string(os.PathListSeparator) + os.Getenv("PATH")
+		}
 		if bootstrap := filepath.Join(toolDir, "bootstrap-tools.sh"); fileExists(bootstrap) {
 			env[runtimeToolBootstrapEnv] = bootstrap
 		}
@@ -1380,6 +1386,7 @@ func (r *Runner) materializeRuntimeFiles(agentDir string, env map[string]string)
 	}
 	return func() {
 		_ = os.Remove(path)
+		delete(env, runtimeToolCacheBinDirEnv)
 		if toolDir != "" {
 			_ = os.RemoveAll(toolDir)
 		}
@@ -1630,7 +1637,7 @@ type runtimeActionRef struct {
 
 type runtimeConnectionSecretResolver func(connectionID string) (map[string]string, bool, error)
 
-func writeRuntimeToolsFile(agentDir, runID, connectionsPath string, body []byte, secretResolver runtimeConnectionSecretResolver) (string, string, map[string]string, error) {
+func writeRuntimeToolsFile(workspaceRoot, agentDir, runID, connectionsPath string, body []byte, secretResolver runtimeConnectionSecretResolver) (string, string, map[string]string, error) {
 	var manifest struct {
 		Tools []runtimeToolRef `json:"tools"`
 	}
@@ -1667,7 +1674,7 @@ func writeRuntimeToolsFile(agentDir, runID, connectionsPath string, body []byte,
 			if adapter.CLI == nil {
 				continue
 			}
-			bootstrapSteps = append(bootstrapSteps, runtimeCLIInstallerScript(manifest.Tools[ti], *adapter)...)
+			bootstrapSteps = append(bootstrapSteps, runtimeCLIInstallerScript(workspaceRoot, manifest.Tools[ti], *adapter)...)
 			for ci := range adapter.CLI.ConfigFiles {
 				cfg := &adapter.CLI.ConfigFiles[ci]
 				cfg.MaterializedPath = runtimeConfigMaterializedPath(toolDir, manifest.Tools[ti], cfg.Path)
@@ -1787,7 +1794,7 @@ func materializeCLIConfig(tool runtimeToolRef, adapter runtimeAdapterRef, cfg ru
 	}
 }
 
-func runtimeCLIInstallerScript(tool runtimeToolRef, adapter runtimeAdapterRef) []string {
+func runtimeCLIInstallerScript(workspaceRoot string, tool runtimeToolRef, adapter runtimeAdapterRef) []string {
 	if adapter.CLI == nil {
 		return nil
 	}
@@ -1802,11 +1809,17 @@ func runtimeCLIInstallerScript(tool runtimeToolRef, adapter runtimeAdapterRef) [
 	label := firstNonEmpty(tool.Provider, tool.ConnectionAlias, binary)
 	var lines []string
 	lines = append(lines, fmt.Sprintf("echo %s >&2", shellQuote("multigent: preparing runtime tool "+label)))
+	npmPrefix := agentcli.ToolchainHome + "/npm"
+	markerDir := agentcli.ToolchainHome + "/markers"
+	if cacheRoot := workspaceToolCacheRoot(workspaceRoot); cacheRoot != "" {
+		npmPrefix = filepath.Join(cacheRoot, "npm")
+		markerDir = filepath.Join(cacheRoot, "markers")
+	}
 	lines = append(lines,
 		"export MULTIGENT_TOOLCHAIN_HOME="+shellQuote(agentcli.ToolchainHome),
-		"export NPM_CONFIG_PREFIX=\"$MULTIGENT_TOOLCHAIN_HOME/npm\"",
+		"export NPM_CONFIG_PREFIX="+shellQuote(npmPrefix),
 		"export PATH=\"$NPM_CONFIG_PREFIX/bin:$PATH\"",
-		"mkdir -p \"$NPM_CONFIG_PREFIX\" \"$MULTIGENT_TOOLCHAIN_HOME/markers\"",
+		"mkdir -p \"$NPM_CONFIG_PREFIX\" "+shellQuote(markerDir),
 	)
 	switch strings.TrimSpace(installer.Type) {
 	case "npm":
@@ -1819,7 +1832,7 @@ func runtimeCLIInstallerScript(tool runtimeToolRef, adapter runtimeAdapterRef) [
 		if version != "" && version != "latest" {
 			installPkg += "@" + version
 		}
-		marker := runtimeToolInstallerMarker(*installer, binary)
+		marker := runtimeToolInstallerMarker(markerDir, *installer, binary)
 		lines = append(lines,
 			fmt.Sprintf("if [ ! -f %s ] || [ \"${MULTIGENT_TOOL_FORCE_INSTALL:-}\" = \"1\" ]; then", shellQuote(marker)),
 			fmt.Sprintf("  npm install -g %s", shellQuote(installPkg)),
@@ -1863,7 +1876,7 @@ func materializeCLIWrapper(toolDir string, tool runtimeToolRef, adapter runtimeA
 	return os.WriteFile(wrapperPath, []byte(runtimeCLIWrapperScript(binary, tool, nil)), 0o700)
 }
 
-func runtimeToolInstallerMarker(installer runtimeInstallerRef, binary string) string {
+func runtimeToolInstallerMarker(markerDir string, installer runtimeInstallerRef, binary string) string {
 	key := strings.Join([]string{
 		strings.TrimSpace(installer.Type),
 		strings.TrimSpace(installer.Package),
@@ -1871,7 +1884,10 @@ func runtimeToolInstallerMarker(installer runtimeInstallerRef, binary string) st
 		strings.TrimSpace(binary),
 	}, "\x00")
 	sum := sha256.Sum256([]byte(key))
-	return agentcli.ToolchainHome + "/markers/tool-" + hex.EncodeToString(sum[:8])
+	if markerDir == "" {
+		markerDir = agentcli.ToolchainHome + "/markers"
+	}
+	return filepath.Join(markerDir, "tool-"+hex.EncodeToString(sum[:8]))
 }
 
 func materializeGitHubCLIConfig(adapter runtimeAdapterRef, cfg runtimeConfigFileRef, secretValues map[string]string) (map[string]string, error) {
@@ -2024,6 +2040,22 @@ func fileExists(path string) bool {
 	}
 	_, err := os.Stat(path)
 	return err == nil
+}
+
+func workspaceToolCacheRoot(workspaceRoot string) string {
+	root := strings.TrimSpace(workspaceRoot)
+	if root == "" {
+		return ""
+	}
+	return filepath.Join(root, ".multigent", "tool-cache")
+}
+
+func workspaceToolCacheBinDir(workspaceRoot string) string {
+	root := workspaceToolCacheRoot(workspaceRoot)
+	if root == "" {
+		return ""
+	}
+	return filepath.Join(root, "npm", "bin")
 }
 
 func firstNonEmpty(values ...string) string {
@@ -2282,7 +2314,7 @@ func injectRuntimeControlEnvIntoRuntime(cfg *entity.SandboxConfig, env map[strin
 		if k == "" {
 			continue
 		}
-		if k == runtimeToolBinDirEnv || k == runtimeToolBootstrapEnv || k == runtimeToolSkillsFileEnv || k == runtimeToolCLIAuditEnv || k == "PATH" {
+		if k == runtimeToolBinDirEnv || k == runtimeToolCacheBinDirEnv || k == runtimeToolBootstrapEnv || k == runtimeToolSkillsFileEnv || k == runtimeToolCLIAuditEnv || k == "PATH" {
 			cfg.Env = append(cfg.Env, entity.RuntimeEnvVar{Name: k, Value: v})
 			continue
 		}
@@ -2292,7 +2324,7 @@ func injectRuntimeControlEnvIntoRuntime(cfg *entity.SandboxConfig, env map[strin
 
 func isRuntimeControlEnvKey(key string) bool {
 	switch key {
-	case "MULTIGENT_API_URL", "MULTIGENT_AGENT_TOKEN", "MULTIGENT_RUN_ID", "MULTIGENT_WORKSPACE_ID", runtimeConnectionsFileEnv, runtimeToolsFileEnv, runtimeToolDirEnv, runtimeToolBinDirEnv, runtimeToolBootstrapEnv, runtimeToolSkillsFileEnv, runtimeToolCLIAuditEnv:
+	case "MULTIGENT_API_URL", "MULTIGENT_AGENT_TOKEN", "MULTIGENT_RUN_ID", "MULTIGENT_WORKSPACE_ID", runtimeConnectionsFileEnv, runtimeToolsFileEnv, runtimeToolDirEnv, runtimeToolBinDirEnv, runtimeToolCacheBinDirEnv, runtimeToolBootstrapEnv, runtimeToolSkillsFileEnv, runtimeToolCLIAuditEnv:
 		return true
 	default:
 		return false

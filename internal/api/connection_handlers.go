@@ -11,9 +11,12 @@ import (
 	"encoding/json"
 	"fmt"
 	"io"
+	"log"
 	"net/http"
 	"net/url"
 	"os"
+	"os/exec"
+	"path/filepath"
 	"sort"
 	"strings"
 	"time"
@@ -277,6 +280,7 @@ func (s *Server) handleCreateConnection(w http.ResponseWriter, r *http.Request) 
 		},
 		Request: r,
 	})
+	s.prepareConnectorToolCacheAsync(provider)
 	w.WriteHeader(http.StatusCreated)
 	_ = json.NewEncoder(w).Encode(connectionToResponse(connection, nil))
 }
@@ -624,6 +628,7 @@ func (s *Server) saveConnectorProviderSetupConnection(r *http.Request, workspace
 		},
 		Request: r,
 	})
+	s.prepareConnectorToolCacheAsync(provider)
 	return connection, nil
 }
 
@@ -684,6 +689,7 @@ func (s *Server) pollGitHubDeviceSetup(w http.ResponseWriter, r *http.Request, w
 		After:        connectionAuditPayload(connection),
 		Request:      r,
 	})
+	s.prepareConnectorToolCacheAsync(provider)
 	return map[string]any{
 		"status":     "connected",
 		"connection": connectionToResponse(connection, nil),
@@ -958,6 +964,7 @@ func (s *Server) handleUpdateConnection(w http.ResponseWriter, r *http.Request) 
 		After:        connectionAuditPayload(updated),
 		Request:      r,
 	})
+	s.prepareConnectorToolCacheAsync(provider)
 	grants, _ := s.controlDB.ListConnectionGrants(updated.ID)
 	_ = json.NewEncoder(w).Encode(connectionToResponse(updated, grants))
 }
@@ -1585,6 +1592,97 @@ func defaultConnectorProvider(providerID string) (connector.Provider, bool) {
 		}
 	}
 	return connector.Provider{}, false
+}
+
+func (s *Server) prepareConnectorToolCacheAsync(provider connector.Provider) {
+	if strings.TrimSpace(s.root) == "" {
+		return
+	}
+	adapters := provider.RuntimeAdapters
+	if len(adapters) == 0 {
+		adapters = connector.DefaultRuntimeAdapters(provider)
+	}
+	var installers []connector.ToolInstallerSpec
+	for _, adapter := range adapters {
+		if adapter.CLI == nil || adapter.CLI.Installer == nil {
+			continue
+		}
+		installer := *adapter.CLI.Installer
+		if strings.TrimSpace(installer.Type) != "npm" {
+			continue
+		}
+		if strings.TrimSpace(installer.Package) == "" {
+			continue
+		}
+		installers = append(installers, installer)
+	}
+	if len(installers) == 0 {
+		return
+	}
+	root := s.root
+	providerID := provider.Provider
+	go func() {
+		for _, installer := range installers {
+			if err := prepareNPMRuntimeTool(root, installer); err != nil {
+				log.Printf("connector tool cache prepare failed provider=%s package=%s: %v", providerID, installer.Package, err)
+			}
+		}
+	}()
+}
+
+func prepareNPMRuntimeTool(workspaceRoot string, installer connector.ToolInstallerSpec) error {
+	cacheRoot := filepath.Join(strings.TrimSpace(workspaceRoot), ".multigent", "tool-cache")
+	if strings.TrimSpace(workspaceRoot) == "" {
+		return nil
+	}
+	npmPrefix := filepath.Join(cacheRoot, "npm")
+	markerDir := filepath.Join(cacheRoot, "markers")
+	if err := os.MkdirAll(npmPrefix, 0o755); err != nil {
+		return err
+	}
+	if err := os.MkdirAll(markerDir, 0o755); err != nil {
+		return err
+	}
+	binary := ""
+	if len(installer.Check) > 0 {
+		binary = strings.Fields(installer.Check[0])[0]
+	}
+	marker := connectorToolInstallerMarker(markerDir, installer, binary)
+	if connectionFileExists(marker) && strings.TrimSpace(os.Getenv("MULTIGENT_TOOL_FORCE_INSTALL")) == "" {
+		return nil
+	}
+	pkg := strings.TrimSpace(installer.Package)
+	if version := strings.TrimSpace(installer.Version); version != "" && version != "latest" {
+		pkg += "@" + version
+	}
+	ctx, cancel := context.WithTimeout(context.Background(), 3*time.Minute)
+	defer cancel()
+	cmd := exec.CommandContext(ctx, "npm", "install", "-g", pkg)
+	cmd.Env = append(os.Environ(), "NPM_CONFIG_PREFIX="+npmPrefix)
+	out, err := cmd.CombinedOutput()
+	if err != nil {
+		return fmt.Errorf("%w: %s", err, strings.TrimSpace(string(out)))
+	}
+	return os.WriteFile(marker, []byte(time.Now().UTC().Format(time.RFC3339)+"\n"), 0o644)
+}
+
+func connectorToolInstallerMarker(markerDir string, installer connector.ToolInstallerSpec, binary string) string {
+	key := strings.Join([]string{
+		strings.TrimSpace(installer.Type),
+		strings.TrimSpace(installer.Package),
+		strings.TrimSpace(installer.Version),
+		strings.TrimSpace(binary),
+	}, "\x00")
+	sum := sha256.Sum256([]byte(key))
+	return filepath.Join(markerDir, "tool-"+hex.EncodeToString(sum[:8]))
+}
+
+func connectionFileExists(path string) bool {
+	if path == "" {
+		return false
+	}
+	_, err := os.Stat(path)
+	return err == nil
 }
 
 func expiresAtFromSeconds(seconds int) string {

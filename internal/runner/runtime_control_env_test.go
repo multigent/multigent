@@ -308,7 +308,7 @@ func TestWriteRuntimeToolsFileMaterializesGitHubCLIConfig(t *testing.T) {
 		}]
 	}`)
 	agentDir := t.TempDir()
-	toolDir, toolsPath, env, err := writeRuntimeToolsFile(agentDir, "run-gh", "/tmp/connections.json", body, func(connectionID string) (map[string]string, bool, error) {
+	toolDir, toolsPath, env, err := writeRuntimeToolsFile("", agentDir, "run-gh", "/tmp/connections.json", body, func(connectionID string) (map[string]string, bool, error) {
 		if connectionID != "conn_gh" {
 			t.Fatalf("connectionID=%q", connectionID)
 		}
@@ -364,8 +364,12 @@ func TestWriteRuntimeToolsFileMaterializesLarkCLIConfig(t *testing.T) {
 			}]
 		}]
 	}`)
-	agentDir := t.TempDir()
-	toolDir, toolsPath, env, err := writeRuntimeToolsFile(agentDir, "run-lark", "/tmp/connections.json", body, func(connectionID string) (map[string]string, bool, error) {
+	workspaceRoot := t.TempDir()
+	agentDir := filepath.Join(workspaceRoot, "projects", "sample", "agents", "pm")
+	if err := os.MkdirAll(agentDir, 0o755); err != nil {
+		t.Fatalf("mkdir agent dir: %v", err)
+	}
+	toolDir, toolsPath, env, err := writeRuntimeToolsFile(workspaceRoot, agentDir, "run-lark", "/tmp/connections.json", body, func(connectionID string) (map[string]string, bool, error) {
 		if connectionID != "conn_feishu" {
 			t.Fatalf("connectionID=%q", connectionID)
 		}
@@ -438,7 +442,7 @@ func TestWriteRuntimeToolsFileMaterializesLarkCLIConfig(t *testing.T) {
 		t.Fatalf("read bootstrap-tools.sh: %v", err)
 	}
 	bootstrapText := string(bootstrapBody)
-	if !strings.Contains(bootstrapText, "npm install -g '@larksuite/cli'") || !strings.Contains(bootstrapText, "lark-cli --version") {
+	if !strings.Contains(bootstrapText, "npm install -g '@larksuite/cli'") || !strings.Contains(bootstrapText, "lark-cli --version") || !strings.Contains(bootstrapText, filepath.Join(workspaceRoot, ".multigent", "tool-cache", "npm")) {
 		t.Fatalf("unexpected bootstrap script: %s", bootstrapText)
 	}
 }

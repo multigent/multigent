@@ -61,6 +61,9 @@ func (DockerProvider) Command(spec ProcessSpec) (string, []string, error) {
 	if toolBin := runtimeEnvValue(spec.Runtime, "MULTIGENT_TOOL_BIN_DIR"); toolBin != "" {
 		pathParts = append(pathParts, toolBin)
 	}
+	if toolCacheBin := runtimeEnvValue(spec.Runtime, "MULTIGENT_TOOL_CACHE_BIN_DIR"); toolCacheBin != "" {
+		pathParts = append(pathParts, toolCacheBin)
+	}
 	pathParts = append(pathParts, runtimecli.BinDir, agentcli.ToolchainBin, sandbox.UserBin, sandbox.ContainerDefaultPATH)
 	cfg.ExtraEnv = append(cfg.ExtraEnv, "PATH="+strings.Join(pathParts, ":"))
 	for _, mount := range spec.Mounts {

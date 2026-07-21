@@ -58,6 +58,7 @@ func TestDockerProviderPrependsRuntimeToolBin(t *testing.T) {
 		Docker:   &entity.DockerSandboxConfig{Image: sandbox.BaseImage},
 		Env: []entity.RuntimeEnvVar{
 			{Name: "MULTIGENT_TOOL_BIN_DIR", Value: "/agent/.multigent/runtime-tools/run/bin"},
+			{Name: "MULTIGENT_TOOL_CACHE_BIN_DIR", Value: "/workspace/.multigent/tool-cache/npm/bin"},
 		},
 	}
 
@@ -72,7 +73,7 @@ func TestDockerProviderPrependsRuntimeToolBin(t *testing.T) {
 	}
 
 	joined := strings.Join(args, "\n")
-	want := "PATH=/agent/.multigent/runtime-tools/run/bin:" + runtimecli.BinDir
+	want := "PATH=/agent/.multigent/runtime-tools/run/bin:/workspace/.multigent/tool-cache/npm/bin:" + runtimecli.BinDir
 	if !strings.Contains(joined, want) {
 		t.Fatalf("docker args missing tool bin path %q:\n%s", want, joined)
 	}
