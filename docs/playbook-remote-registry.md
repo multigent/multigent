@@ -1,11 +1,17 @@
 # Playbook Remote Registry
 
 > Status: v1 implementation  
-> Scope: remote registry fetch, inline playbook templates, future bundle migration
+> Scope: official remote registry, catalog metadata, per-locale template files
 
 Multigent supports loading playbook templates from remote registry JSON in addition to the built-in templates.
 
-The first implementation intentionally supports inline templates only. Bundle download, signing, and external asset packages should be added after the registry path is proven.
+The official registry is:
+
+```text
+https://raw.githubusercontent.com/multigent/playbooks/main/registry.json
+```
+
+The runtime can also load private registries for customer-specific playbooks.
 
 ## Configuration
 
@@ -16,6 +22,8 @@ export MULTIGENT_PLAYBOOK_REGISTRY_URLS="https://raw.githubusercontent.com/multi
 ```
 
 Multiple registries can be separated by comma, semicolon, or newline.
+
+If no custom registry is configured, the `multigent` binary sets the official registry URL at startup. Built-in templates remain available even if the remote registry is unreachable.
 
 TOML:
 
@@ -39,33 +47,7 @@ Recommended v1 shape:
 ```json
 {
   "schemaVersion": 1,
-  "templates": [
-    {
-      "id": "example-remote-playbook",
-      "version": "1.0.0",
-      "name": "Example Remote Playbook",
-      "description": "Loaded from a remote registry.",
-      "locale": "en",
-      "category": "Example",
-      "complexity": "Basic",
-      "tags": ["example"],
-      "roles": [],
-      "skills": [],
-      "workflows": [],
-      "taskTemplates": [],
-      "requiredTools": [],
-      "setupQuestions": [],
-      "successMetrics": []
-    }
-  ]
-}
-```
-
-The registry also accepts this wrapper shape, which leaves room for bundle metadata later:
-
-```json
-{
-  "schemaVersion": 1,
+  "generatedBy": "multigent tools/export-playbooks",
   "playbooks": [
     {
       "id": "example-remote-playbook",
@@ -87,13 +69,36 @@ The registry also accepts this wrapper shape, which leaves room for bundle metad
         "zh-CN": "基础"
       },
       "tags": ["example"],
-      "template": {
-        "id": "example-remote-playbook",
-        "version": "1.0.0",
-        "roles": [],
-        "skills": [],
-        "workflows": []
+      "templateUrls": {
+        "en": "playbooks/example-remote-playbook/en.json",
+        "zh-CN": "playbooks/example-remote-playbook/zh-CN.json"
+      },
+      "sha256ByLocale": {
+        "en": "0123456789abcdef0123456789abcdef0123456789abcdef0123456789abcdef",
+        "zh-CN": "abcdef0123456789abcdef0123456789abcdef0123456789abcdef0123456789"
       }
+    }
+  ]
+}
+```
+
+Each template file is a full `PlaybookTemplate` JSON object. Keeping templates outside `registry.json` keeps list requests small while still allowing large skill prompts and workflow definitions.
+
+The registry also accepts inline templates for local experiments:
+
+```json
+{
+  "schemaVersion": 1,
+  "templates": [
+    {
+      "id": "example-remote-playbook",
+      "version": "1.0.0",
+      "name": "Example Remote Playbook",
+      "description": "Loaded from a remote registry.",
+      "locale": "en",
+      "roles": [],
+      "skills": [],
+      "workflows": []
     }
   ]
 }
@@ -102,33 +107,20 @@ The registry also accepts this wrapper shape, which leaves room for bundle metad
 ## Runtime Behavior
 
 - Built-in templates are always available.
-- Remote templates are fetched on list/detail/install requests.
+- Remote catalog metadata is fetched on list requests.
+- Full remote templates are fetched on detail/install requests.
 - If a remote template has the same ID as a built-in template, the remote template wins.
 - If remote fetch fails, built-in templates still work.
+- Template file checksums are verified when `sha256ByLocale` or `sha256` is provided.
 - HTTP responses are limited to 20 MB.
 - HTTP registry fetch has a 5 second timeout.
 
-## Next Phase
+## Updating the Official Registry
 
-The next phase should add bundles:
+From the `multigent` repository:
 
-```json
-{
-  "id": "video-production-studio",
-  "version": "1.0.0",
-  "bundle": {
-    "url": "https://github.com/multigent/playbooks/releases/download/video-production-studio-v1.0.0/video-production-studio.tar.gz",
-    "sha256": "..."
-  }
-}
+```bash
+go run ./tools/export-playbooks --out ../playbooks
 ```
 
-Bundle support should include:
-
-- checksum verification
-- source and license metadata
-- schema validation
-- local cache
-- update policy
-- install provenance
-- optional signature verification
+Then review and commit the generated changes in `multigent/playbooks`.

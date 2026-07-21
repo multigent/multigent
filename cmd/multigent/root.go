@@ -165,6 +165,8 @@ func applyConfigEnv(cfg *appconfig.Config) {
 	setEnvIfEmpty("MULTIGENT_E2B_API_URL", cfg.Sandbox.E2B.APIURL)
 	if len(cfg.Playbooks.RegistryURLs) > 0 {
 		setEnvIfEmpty(playbook.EnvRegistryURLs, strings.Join(cfg.Playbooks.RegistryURLs, ","))
+	} else {
+		setEnvIfEmpty(playbook.EnvRegistryURLs, playbook.DefaultRegistryURL)
 	}
 }
 

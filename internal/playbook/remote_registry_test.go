@@ -2,7 +2,9 @@ package playbook
 
 import (
 	"context"
+	"crypto/sha256"
 	"encoding/json"
+	"fmt"
 	"os"
 	"path/filepath"
 	"reflect"
@@ -79,6 +81,68 @@ func TestRemotePlaybookWrapperLocalizesMetadata(t *testing.T) {
 	}
 	if tmpl.Version != "1.2.3" || tmpl.Locale != "zh-CN" || len(tmpl.Skills) != 1 {
 		t.Fatalf("unexpected wrapped template=%#v", tmpl)
+	}
+}
+
+func TestRemotePlaybookWrapperLoadsTemplateURL(t *testing.T) {
+	dir := t.TempDir()
+	template := entity.PlaybookTemplate{
+		ID:          "template-url-playbook",
+		Version:     "2.0.0",
+		Name:        "Template URL Playbook",
+		Description: "Loaded lazily from a template URL",
+		Skills: []entity.PlaybookSkillTemplate{
+			{ID: "lazy-skill", Name: "Lazy Skill", Body: "Full body from template file"},
+		},
+	}
+	templateBody, err := json.Marshal(template)
+	if err != nil {
+		t.Fatal(err)
+	}
+	templatePath := filepath.Join(dir, "playbooks", "template-url-playbook.json")
+	if err := os.MkdirAll(filepath.Dir(templatePath), 0o755); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.WriteFile(templatePath, templateBody, 0o644); err != nil {
+		t.Fatal(err)
+	}
+	sum := sha256.Sum256(templateBody)
+	registryPath := filepath.Join(dir, "registry.json")
+	registry := RemoteRegistry{
+		SchemaVersion: 1,
+		Playbooks: []RemoteRegistryPlaybook{
+			{
+				ID:             "template-url-playbook",
+				Version:        "2.0.0",
+				Name:           map[string]string{"zh-CN": "模板 URL 方案"},
+				Description:    map[string]string{"zh-CN": "从独立模板文件加载"},
+				TemplateURLs:   map[string]string{"zh-CN": "playbooks/template-url-playbook.json"},
+				SHA256ByLocale: map[string]string{"zh-CN": fmt.Sprintf("%x", sum[:])},
+			},
+		},
+	}
+	registryBody, err := json.Marshal(registry)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if err := os.WriteFile(registryPath, registryBody, 0o644); err != nil {
+		t.Fatal(err)
+	}
+
+	summaries, err := RemoteTemplates(context.Background(), "zh-CN", []string{"file://" + registryPath})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if len(summaries) != 1 || summaries[0].Name != "模板 URL 方案" || len(summaries[0].Skills) != 0 {
+		t.Fatalf("summary should use registry metadata without loading full template: %#v", summaries)
+	}
+
+	tmpl, ok := TemplateWithRemote(context.Background(), "template-url-playbook", "zh-CN", []string{"file://" + registryPath})
+	if !ok {
+		t.Fatal("template URL playbook not found")
+	}
+	if tmpl.Name != "Template URL Playbook" || len(tmpl.Skills) != 1 || tmpl.Skills[0].Body != "Full body from template file" {
+		t.Fatalf("unexpected full template=%#v", tmpl)
 	}
 }
 
