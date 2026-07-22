@@ -1529,6 +1529,7 @@
     "logNotFound": "Log file not found or cleaned up",
     "logTruncated": "Log truncated (too large to display in full).",
     "logEmpty": "(empty log)",
+    "conversationPreparing": "Preparing conversation view...",
     "rawLogDetails": "Run log · {{count}} entries",
     "technicalLog": "Technical log",
     "logLineCount": "{{count}} lines",

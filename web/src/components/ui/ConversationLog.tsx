@@ -98,7 +98,18 @@ function pushAssistantBlocks(items: ConversationItem[], blocks: ContentBlock[]) 
 }
 
 function normalizeRawLogLine(line: string): string {
-  return line.replace(/^\[raw\]\s?/, '')
+  return line
+    .replace(/^\[raw\]\s?/, '')
+    .replace(/\x1b\[[0-9;?]*[ -/]*[@-~]/g, '')
+    .replace(/\r$/, '')
+}
+
+function normalizeStreamLogLine(raw: string): string {
+  let line = normalizeRawLogLine(raw).trim()
+  if (line.startsWith('data:')) {
+    line = normalizeRawLogLine(line.slice(5)).trim()
+  }
+  return line
 }
 
 function collapseConsecutiveDuplicateLines(text: string): string {
@@ -365,13 +376,8 @@ function parseLog(content: string): ConversationItem[] {
   }
 
   for (const raw of lines) {
-    let line = raw.trim()
+    const line = normalizeStreamLogLine(raw)
     if (!line) continue
-
-    if (line.startsWith('data:')) {
-      line = line.slice(5).trim()
-      if (!line) continue
-    }
 
     if (line.startsWith('===')) {
       flushThinking()
@@ -891,13 +897,18 @@ export function ConversationLog({
     return items.filter((item, index) => {
       if (item.kind === 'result') return !isDuplicateSuccessResult(items, index, item)
       if (item.kind === 'human' || item.kind === 'assistant' || item.kind === 'thinking') return true
-      if (item.kind === 'tool_result') return item.isError
+      if (item.kind === 'tool_result') return item.isError || !items.some((candidate) => candidate.kind === 'assistant' || candidate.kind === 'thinking' || candidate.kind === 'result')
       return false
     })
   }, [items, mode])
 
   if (visibleItems.length === 0) {
-    return <p className="py-4 text-center text-sm text-neutral-400 dark:text-zinc-500">{t('runs.logEmpty')}</p>
+    const hasRawContent = content.trim().length > 0
+    return (
+      <p className="py-4 text-center text-sm text-neutral-400 dark:text-zinc-500">
+        {hasRawContent ? t('runs.conversationPreparing', { defaultValue: 'Preparing conversation view...' }) : t('runs.logEmpty')}
+      </p>
+    )
   }
 
   return (

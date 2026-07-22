@@ -1529,6 +1529,7 @@
     "logNotFound": "日志文件不存在或已清理",
     "logTruncated": "日志过长，已截断显示。",
     "logEmpty": "（日志为空）",
+    "conversationPreparing": "正在整理对话视图…",
     "rawLogDetails": "运行日志 · {{count}} 条",
     "technicalLog": "技术日志",
     "logLineCount": "{{count}} 行",
