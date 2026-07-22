@@ -277,7 +277,7 @@ export function TaskDetailModal({ task, onClose, onEdit, onMutated, canEdit = tr
     ? workflowState.data.definition.steps.find((step) => step.id === workflowState.data.run.activeStepId)
     : undefined
   const activeWorkflowInst = workflowState.status === 'ok'
-    ? workflowState.data.steps.find((step) => step.stepId === workflowState.data.run.activeStepId)
+    ? activeWorkflowStepInstance(workflowState.data)
     : undefined
   const workflowRecords = workflowState.status === 'ok'
     ? workflowHistoryRecords(workflowState.data)
@@ -523,6 +523,20 @@ function workflowHistoryRecords(data: TaskWorkflowData): WorkflowRecord[] {
     .sort((a, b) => workflowRecordTimestamp(a) - workflowRecordTimestamp(b))
 }
 
+function activeWorkflowStepInstance(data: TaskWorkflowData): WorkflowStepInstance | undefined {
+  const activeStepID = data.run.activeStepId
+  if (!activeStepID) return undefined
+  const candidates = data.steps
+    .filter((item) => item.stepId === activeStepID)
+    .sort((a, b) => workflowRecordTimestamp(b) - workflowRecordTimestamp(a))
+  return candidates.find((item) => isWorkflowStepOpen(item.status)) ?? candidates[0]
+}
+
+function isWorkflowStepOpen(status?: string) {
+  const normalized = String(status || '').trim()
+  return normalized === '' || normalized === 'pending' || normalized === 'running' || normalized === 'in_progress'
+}
+
 function workflowRecordHasPayload(record: WorkflowRecord) {
   return Boolean(
     record.inputArtifact ||
@@ -680,6 +694,10 @@ function WorkflowRuntimePanel({
   const usesDefaultReviewButtons = !decisionField || decisionOptions.length === 0 || sameStringSet(decisionOptions, ['approve', 'request_changes'])
   const editableOutputFields = (step.outputFields ?? []).filter((field) => field.name !== 'decision')
   const hasInput = Boolean(instance?.inputArtifact?.trim()) || (step.inputFields ?? []).length > 0
+  const showReadonlyOutput = !canReview && !isWorkflowStepOpen(instance?.status) && (
+    Object.keys(outputValues).length > 0 ||
+    Boolean(instance?.outputArtifact?.trim() || instance?.summary?.trim())
+  )
 
   return (
     <div className="flex min-h-0 flex-1 flex-col">
@@ -724,9 +742,10 @@ function WorkflowRuntimePanel({
           </WorkflowPanelBlock>
         )}
 
-        <WorkflowPanelBlock title={t('workflows.detail.output')}>
-          {canReview ? (
-            <div className="space-y-3">
+        {(canReview || showReadonlyOutput) && (
+          <WorkflowPanelBlock title={t('workflows.detail.output')}>
+            {canReview ? (
+              <div className="space-y-3">
               {editableOutputFields.length === 0 && (
                 <textarea
                   value={reviewComments}
@@ -788,16 +807,17 @@ function WorkflowRuntimePanel({
                   </button>
                 )}
               </div>
-            </div>
-          ) : (
-            <>
-              <WorkflowFieldList fields={step.outputFields ?? []} values={outputValues} />
-              {Object.keys(outputValues).length > 0
-                ? null
-                : <WorkflowValuesOrArtifact values={instance?.outputValues} fields={step.outputFields} artifact={instance?.outputArtifact || instance?.summary} />}
-            </>
-          )}
-        </WorkflowPanelBlock>
+              </div>
+            ) : (
+              <>
+                <WorkflowFieldList fields={step.outputFields ?? []} values={outputValues} />
+                {Object.keys(outputValues).length > 0
+                  ? null
+                  : <WorkflowValuesOrArtifact values={instance?.outputValues} fields={step.outputFields} artifact={instance?.outputArtifact || instance?.summary} />}
+              </>
+            )}
+          </WorkflowPanelBlock>
+        )}
       </div>
     </div>
   )
@@ -842,39 +862,68 @@ function workflowRunForRecord(runs: RunRow[], taskID: string, record: WorkflowRe
 function WorkflowRecordCard({ record, step, run, actorLabels }: { record: WorkflowRecord; step?: WorkflowStep; run: RunRow | null; actorLabels: Map<string, string> }) {
   const { t } = useTranslation()
   const fmt = useFormatDateTime()
+  const [open, setOpen] = useState(false)
   const inputValues = hasWorkflowValues(record.inputValues) ? record.inputValues! : parseWorkflowArtifact(record.inputArtifact || '')
   const outputValues = hasWorkflowValues(record.outputValues) ? record.outputValues! : parseWorkflowArtifact(record.outputArtifact || record.summary || '')
   const hasInput = hasWorkflowValues(inputValues) || Boolean(record.inputArtifact?.trim())
   const hasOutput = hasWorkflowValues(outputValues) || Boolean(record.outputArtifact?.trim() || record.summary?.trim())
   const time = record.finishedAt || record.startedAt || ('updatedAt' in record ? record.updatedAt : record.createdAt)
+  const inputCount = Object.keys(inputValues).filter((key) => String(inputValues[key] ?? '').trim()).length
+  const outputCount = Object.keys(outputValues).filter((key) => String(outputValues[key] ?? '').trim()).length
 
   return (
-    <div className="rounded-lg bg-neutral-50 p-3 dark:bg-zinc-900">
-      <div className="mb-2 flex items-start justify-between gap-3">
-        <div className="min-w-0">
-          <p className="truncate text-xs font-semibold text-neutral-700 dark:text-zinc-200">{step?.title || record.stepId}</p>
-          <p className="mt-0.5 text-[11px] text-neutral-400 dark:text-zinc-600">
-            {workflowActorLabel(record.actorType, record.actorId, actorLabels)} · {t(`workflows.stepStatus.${record.status}`, { defaultValue: record.status })}
-            {time ? ` · ${fmt(time)}` : ''}
-          </p>
+    <div className={cn('overflow-hidden rounded-lg border transition-colors', open ? 'border-sky-200 bg-white dark:border-sky-900/70 dark:bg-zinc-950' : 'border-neutral-100 bg-neutral-50 dark:border-zinc-800 dark:bg-zinc-900')}>
+      <div className="flex items-stretch">
+        <button
+          type="button"
+          onClick={() => setOpen((value) => !value)}
+          className="min-w-0 flex-1 px-3 py-2.5 text-left transition-colors hover:bg-neutral-100 dark:hover:bg-zinc-800/80"
+          aria-expanded={open}
+        >
+          <div className="flex min-w-0 items-start gap-2">
+            <span className={cn('mt-0.5 inline-flex size-5 shrink-0 items-center justify-center rounded-full text-xs font-semibold transition-colors', open ? 'bg-sky-100 text-sky-700 dark:bg-sky-900/50 dark:text-sky-300' : 'bg-white text-neutral-400 dark:bg-zinc-950 dark:text-zinc-500')}>
+              {open ? '−' : '+'}
+            </span>
+            <div className="min-w-0 flex-1">
+              <p className="truncate text-sm font-semibold text-neutral-800 dark:text-zinc-100">{step?.title || record.stepId}</p>
+              <p className="mt-0.5 truncate text-xs text-neutral-500 dark:text-zinc-500">
+                {workflowActorLabel(record.actorType, record.actorId, actorLabels)} · {t(`workflows.stepStatus.${record.status}`, { defaultValue: record.status })}
+                {time ? ` · ${fmt(time)}` : ''}
+              </p>
+              <div className="mt-1.5 flex flex-wrap gap-1.5">
+                {hasInput && <WorkflowPayloadBadge label={t('workflows.detail.input')} count={inputCount} />}
+                {hasOutput && <WorkflowPayloadBadge label={t('workflows.detail.output')} count={outputCount} />}
+              </div>
+            </div>
+          </div>
+        </button>
+        <div className="flex shrink-0 items-start px-2 py-2">
+          <WorkflowRunLink run={run} />
         </div>
-        <WorkflowRunLink run={run} />
       </div>
-      <div className="space-y-2">
+      {open && <div className="space-y-3 border-t border-neutral-100 p-3 dark:border-zinc-800">
         {hasInput && (
           <div>
-            <p className="mb-1 text-[11px] font-semibold text-neutral-400 dark:text-zinc-600">{t('workflows.detail.input')}</p>
-            <WorkflowValuesOrArtifact values={inputValues} fields={step?.inputFields} artifact={hasWorkflowValues(inputValues) ? undefined : record.inputArtifact} compact />
+            <p className="mb-1.5 text-xs font-semibold uppercase tracking-wider text-neutral-400 dark:text-zinc-500">{t('workflows.detail.input')}</p>
+            <WorkflowValuesOrArtifact values={inputValues} fields={step?.inputFields} artifact={hasWorkflowValues(inputValues) ? undefined : record.inputArtifact} />
           </div>
         )}
         {hasOutput && (
           <div>
-            <p className="mb-1 text-[11px] font-semibold text-neutral-400 dark:text-zinc-600">{t('workflows.detail.output')}</p>
-            <WorkflowValuesOrArtifact values={outputValues} fields={step?.outputFields} artifact={hasWorkflowValues(outputValues) ? undefined : record.outputArtifact || record.summary} compact />
+            <p className="mb-1.5 text-xs font-semibold uppercase tracking-wider text-neutral-400 dark:text-zinc-500">{t('workflows.detail.output')}</p>
+            <WorkflowValuesOrArtifact values={outputValues} fields={step?.outputFields} artifact={hasWorkflowValues(outputValues) ? undefined : record.outputArtifact || record.summary} />
           </div>
         )}
-      </div>
+      </div>}
     </div>
+  )
+}
+
+function WorkflowPayloadBadge({ label, count }: { label: string; count: number }) {
+  return (
+    <span className="rounded-full border border-neutral-200 bg-white px-2 py-0.5 text-[11px] font-medium text-neutral-500 dark:border-zinc-700 dark:bg-zinc-950 dark:text-zinc-400">
+      {count > 0 ? `${label} ${count}` : label}
+    </span>
   )
 }
 
@@ -920,13 +969,13 @@ function WorkflowValueMap({ values, fields = [], compact = false }: { values: Re
   const fieldByName = new Map(fields.map((field) => [field.name, field]))
   if (entries.length === 0) return null
   return (
-    <div className={cn('space-y-2', compact ? 'max-h-40 overflow-y-auto' : '')}>
+    <div className={cn('space-y-2', compact ? 'max-h-56 overflow-y-auto' : '')}>
       {entries.map(([key, value]) => {
         const field = fieldByName.get(key)
         return (
-          <div key={key} className="rounded-lg bg-neutral-50 p-2.5 dark:bg-zinc-900">
+          <div key={key} className="rounded-lg border border-neutral-100 bg-white p-3 dark:border-zinc-800 dark:bg-zinc-950">
             <WorkflowFieldTitle fieldName={key} description={field?.description} />
-            <div className="mt-1 whitespace-pre-wrap break-words text-sm text-neutral-700 dark:text-zinc-300">
+            <div className="mt-2 rounded-md bg-neutral-50 px-3 py-2 whitespace-pre-wrap break-words text-sm leading-relaxed text-neutral-800 dark:bg-zinc-900 dark:text-zinc-200">
               <WorkflowValueText value={String(value)} />
             </div>
           </div>
@@ -967,9 +1016,9 @@ function WorkflowFieldTitle({ fieldName, description }: { fieldName: string; des
   const title = description?.trim() || fieldName
   return (
     <div>
-      <p className="text-xs font-semibold text-neutral-700 dark:text-zinc-300" title={fieldName}>{title}</p>
+      <p className="text-sm font-semibold leading-snug text-neutral-800 dark:text-zinc-200" title={fieldName}>{title}</p>
       {description?.trim() && (
-        <p className="mt-0.5 font-mono text-[10px] text-neutral-400 dark:text-zinc-600">{fieldName}</p>
+        <p className="mt-0.5 font-mono text-[10px] uppercase tracking-wide text-neutral-400 dark:text-zinc-600">{fieldName}</p>
       )}
     </div>
   )

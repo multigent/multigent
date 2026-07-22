@@ -14,10 +14,12 @@ import (
 	"syscall"
 	"time"
 
+	controldb "github.com/multigent/multigent/internal/db"
 	"github.com/multigent/multigent/internal/entity"
 	"github.com/multigent/multigent/internal/runner"
 	"github.com/multigent/multigent/internal/store"
 	"github.com/multigent/multigent/internal/taskstore"
+	workflowstore "github.com/multigent/multigent/internal/workflow"
 	"github.com/robfig/cron/v3"
 	"github.com/spf13/cobra"
 )
@@ -827,7 +829,7 @@ func runAllPendingTasks(ctx context.Context, root, project, agentName string,
 							"status":           string(result.Status),
 						})
 					}
-					if handled, handleErr := taskHandledDuringRun(ts, project, agentName, wakeupTask.ID, runResultLogPath(result)); handleErr != nil {
+					if handled, handleErr := taskHandledDuringRun(root, ts, project, agentName, wakeupTask.ID, runResultLogPath(result)); handleErr != nil {
 						return handleErr
 					} else if handled {
 						taskLog("%s wakeup task %s was updated by runtime", colorYellow+"↪", wakeupTask.ID)
@@ -895,7 +897,7 @@ func runAllPendingTasks(ctx context.Context, root, project, agentName string,
 		}
 		result, err := r.RunTask(project, agentName, task, taskSessionID)
 		if err != nil {
-			if handled, handleErr := taskHandledDuringRun(ts, project, agentName, task.ID, runResultLogPath(result)); handleErr != nil {
+			if handled, handleErr := taskHandledDuringRun(root, ts, project, agentName, task.ID, runResultLogPath(result)); handleErr != nil {
 				return handleErr
 			} else if handled {
 				taskLog("%s task %s was updated by runtime workflow", colorYellow+"↪", task.ID)
@@ -924,7 +926,7 @@ func runAllPendingTasks(ctx context.Context, root, project, agentName string,
 			})
 		}
 
-		if handled, handleErr := taskHandledDuringRun(ts, project, agentName, task.ID, runResultLogPath(result)); handleErr != nil {
+		if handled, handleErr := taskHandledDuringRun(root, ts, project, agentName, task.ID, runResultLogPath(result)); handleErr != nil {
 			return handleErr
 		} else if handled {
 			taskLog("%s task %s was updated by runtime workflow", colorYellow+"↪", task.ID)
@@ -1016,13 +1018,18 @@ func runResultLogPath(result *runner.RunResult) string {
 	return result.LogPath
 }
 
-func taskHandledDuringRun(ts taskstore.Store, project, agentName, taskID, logPath string) (bool, error) {
+func taskHandledDuringRun(root string, ts taskstore.Store, project, agentName, taskID, logPath string) (bool, error) {
 	fresh, err := ts.GetTask(project, agentName, taskID)
 	if err != nil {
 		if strings.Contains(strings.ToLower(err.Error()), "not found") {
 			return true, nil
 		}
 		return false, err
+	}
+	if handled, handleErr := syncWorkflowHandledDuringRun(root, ts, project, agentName, fresh, logPath); handleErr != nil {
+		return false, handleErr
+	} else if handled {
+		return true, nil
 	}
 	if fresh.Status == entity.TaskStatusInProgress {
 		return false, nil
@@ -1032,6 +1039,81 @@ func taskHandledDuringRun(ts taskstore.Store, project, agentName, taskID, logPat
 		_ = ts.PersistTask(project, agentName, fresh)
 	}
 	return true, nil
+}
+
+func syncWorkflowHandledDuringRun(root string, ts taskstore.Store, project, agentName string, fresh *entity.Task, logPath string) (bool, error) {
+	if fresh == nil || strings.TrimSpace(fresh.ID) == "" {
+		return false, nil
+	}
+	db, err := controldb.OpenDefault()
+	if err != nil {
+		return false, nil
+	}
+	defer db.Close()
+	workspaceID, err := workspaceIDForRoot(db, root)
+	if err != nil || strings.TrimSpace(workspaceID) == "" {
+		return false, nil
+	}
+	wfStore := workflowstore.NewStore(db, workspaceID)
+	run, ok, err := wfStore.RunForTask(project, fresh.ID)
+	if err != nil || !ok {
+		return false, nil
+	}
+	if strings.TrimSpace(run.Status) == "completed" || strings.TrimSpace(run.ActiveStepID) == "" {
+		return true, nil
+	}
+	instances, err := wfStore.ListStepInstances(run.ID)
+	if err != nil {
+		return false, err
+	}
+	for _, inst := range instances {
+		if inst.StepID != run.ActiveStepID {
+			continue
+		}
+		now := time.Now().UTC()
+		if strings.TrimSpace(logPath) != "" && fresh.RunLogPath == "" {
+			fresh.RunLogPath = logPath
+		}
+		fresh.LastError = ""
+		fresh.FinishedAt = nil
+		fresh.UpdatedAt = now
+		if inst.ActorType != "agent" {
+			reviewer := strings.TrimSpace(inst.ActorID)
+			if reviewer == "" {
+				return true, nil
+			}
+			fresh.Status = entity.TaskStatusAwaitingConfirmation
+			fresh.Assignee = reviewer
+			if err := ts.PersistTask(project, agentName, fresh); err != nil {
+				return false, err
+			}
+			_ = ts.RemoveFromInbox(fresh.ID)
+			_ = ts.AddToInbox(&entity.InboxItem{
+				TaskID:  fresh.ID,
+				Project: project,
+				Agent:   agentName,
+				To:      reviewer,
+				Title:   fresh.Title,
+				Summary: strings.TrimSpace(fresh.Summary),
+				LogPath: fresh.RunLogPath,
+			})
+			return true, nil
+		}
+		activeAgent := strings.TrimSpace(inst.ActorID)
+		if activeAgent == "" || activeAgent == agentName || activeAgent == project+"/"+agentName {
+			return false, nil
+		}
+		fresh.Status = entity.TaskStatusPending
+		fresh.Assignee = project + "/" + activeAgent
+		if err := ts.DeleteTask(project, agentName, fresh.ID); err != nil {
+			return false, err
+		}
+		if err := ts.AddTask(project, activeAgent, fresh); err != nil {
+			return false, err
+		}
+		return true, nil
+	}
+	return false, nil
 }
 
 // agentDir returns the filesystem path of an agent's workspace.

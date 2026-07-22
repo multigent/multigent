@@ -124,7 +124,7 @@ This is a one-shot manual trigger. For recurring automated runs, use
 			}
 			result, err := r.RunTask(project, agentName, task, hb.SessionID)
 			if err != nil {
-				if handled, handleErr := taskHandledDuringRun(ts, project, agentName, task.ID, runResultLogPath(result)); handleErr != nil {
+				if handled, handleErr := taskHandledDuringRun(root, ts, project, agentName, task.ID, runResultLogPath(result)); handleErr != nil {
 					return handleErr
 				} else if handled {
 					fmt.Printf("↪ Task %s was updated by runtime workflow\n", task.ID)
@@ -160,7 +160,7 @@ This is a one-shot manual trigger. For recurring automated runs, use
 				_ = ts.SaveHeartbeat(project, agentName, hb)
 			}
 
-			if handled, handleErr := taskHandledDuringRun(ts, project, agentName, task.ID, result.LogPath); handleErr != nil {
+			if handled, handleErr := taskHandledDuringRun(root, ts, project, agentName, task.ID, result.LogPath); handleErr != nil {
 				return handleErr
 			} else if handled {
 				fmt.Printf("↪ Task %s was updated by runtime workflow\n", task.ID)

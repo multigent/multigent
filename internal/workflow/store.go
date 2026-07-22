@@ -1202,6 +1202,10 @@ func (s *Store) CompleteAndAdvance(project, taskID, summary, output string, outp
 		instances[i].Status = "running"
 		instances[i].StartedAt = now
 		instances[i].UpdatedAt = now
+		instances[i].FinishedAt = time.Time{}
+		instances[i].Summary = ""
+		instances[i].OutputArtifact = ""
+		instances[i].OutputValues = nil
 		instances[i].InputValues = buildNextInputValues(result.Current, nextStep, edge)
 		instances[i].InputArtifact = buildNextInputArtifact(currentStep, result.Current, nextStep, edge)
 		if err := s.SaveStepInstance(&instances[i]); err != nil {
