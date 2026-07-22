@@ -827,6 +827,7 @@ function ConnectionDialog({
     providerId === 'lark' ||
     providerId === 'github'
   )
+  const readonlyConnection = isEditing && connection?.authType === 'oauth2'
 
   useEffect(() => {
     if (isEditing) return
@@ -990,7 +991,7 @@ function ConnectionDialog({
         {isEditing && connection && (
           <SavedConnectionSummary connection={connection} />
         )}
-        {isEditing && connection ? (
+        {readonlyConnection && connection ? (
           <>
             <div className="rounded-lg border border-neutral-200 bg-white p-3 dark:border-zinc-700 dark:bg-zinc-900/40">
               <p className="text-sm font-medium text-neutral-900 dark:text-zinc-100">{t('connections.connected')}</p>
@@ -1014,6 +1015,23 @@ function ConnectionDialog({
           </>
         ) : (
           <>
+        {isEditing && connection && (
+          <div className="flex flex-wrap items-center justify-between gap-2 rounded-lg border border-neutral-200 bg-white p-3 dark:border-zinc-700 dark:bg-zinc-900/40">
+            <p className="text-xs leading-5 text-neutral-500 dark:text-zinc-400">{t('connections.credentialsHiddenHint')}</p>
+            <div className="flex flex-wrap gap-2">
+              {isWorkspaceAdmin && connection.ownerType === 'workspace' && (
+                <button type="button" onClick={() => onInstallToProject?.(connection)} className="rounded-lg border border-neutral-300 px-3 py-2 text-sm font-medium text-neutral-700 hover:bg-neutral-50 dark:border-zinc-600 dark:text-zinc-200 dark:hover:bg-zinc-800">{t('connections.installToProject')}</button>
+              )}
+              <button type="button" onClick={() => onTest?.(connection)} disabled={testState?.loading} className="rounded-lg border border-neutral-300 px-3 py-2 text-sm font-medium text-neutral-700 hover:bg-neutral-50 disabled:opacity-50 dark:border-zinc-600 dark:text-zinc-200 dark:hover:bg-zinc-800">{t('connections.test')}</button>
+              <button type="button" onClick={() => onDelete?.(connection)} className="rounded-lg border border-red-200 px-3 py-2 text-sm font-medium text-red-600 hover:bg-red-50 dark:border-red-900/60 dark:text-red-300 dark:hover:bg-red-900/20">{t('connections.disconnect')}</button>
+            </div>
+            {testState?.message && (
+              <p className={cn('w-full truncate text-xs', testState.ok ? 'text-emerald-600 dark:text-emerald-300' : 'text-red-600 dark:text-red-300')}>
+                {testState.message}
+              </p>
+            )}
+          </div>
+        )}
         {canQuickAuthorize && (
           <div className="rounded-lg border border-sky-100 bg-sky-50 p-3 dark:border-sky-900/60 dark:bg-sky-950/20">
             <div className="flex items-start justify-between gap-3">
@@ -1088,11 +1106,6 @@ function ConnectionDialog({
             )}
           </label>
         ))}
-        {isEditing && authType !== 'no_auth' && (
-          <p className="rounded-lg bg-neutral-50 px-3 py-2 text-xs text-neutral-500 dark:bg-zinc-800/50 dark:text-zinc-400">
-            {t('connections.credentialsHiddenHint')}
-          </p>
-        )}
         {(provider?.guides?.length ?? 0) > 0 && (
           <details className="rounded-lg border border-neutral-200 p-3 dark:border-zinc-700" open={!isEditing}>
             <summary className="cursor-pointer text-sm font-medium text-neutral-700 dark:text-zinc-200">{t('connections.credentialGuide')}</summary>
