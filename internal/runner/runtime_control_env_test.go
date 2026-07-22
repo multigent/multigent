@@ -540,6 +540,7 @@ func TestWriteRuntimeToolsFileMaterializesBasicExternalToolCredentials(t *testin
 				"privateKey":   "-----BEGIN OPENSSH PRIVATE KEY-----\nkey-body\n-----END OPENSSH PRIVATE KEY-----",
 				"gitUserName":  "Multigent Agent",
 				"gitUserEmail": "agent@example.test",
+				"proxyJump":    "root@120.79.164.240",
 				"knownHosts":   "github.com ssh-ed25519 AAAATEST",
 			}, true, nil
 		case "conn_npm":
@@ -589,6 +590,9 @@ func TestWriteRuntimeToolsFileMaterializesBasicExternalToolCredentials(t *testin
 	}
 	if env["GIT_SSH_COMMAND"] == "" || !strings.Contains(env["GIT_SSH_COMMAND"], "id_git_multigent") {
 		t.Fatalf("GIT_SSH_COMMAND=%q", env["GIT_SSH_COMMAND"])
+	}
+	if !strings.Contains(env["GIT_SSH_COMMAND"], "-J root@120.79.164.240") {
+		t.Fatalf("GIT_SSH_COMMAND missing ProxyJump: %q", env["GIT_SSH_COMMAND"])
 	}
 	gitKey := env["MULTIGENT_GIT_SSH_KEY_FILE"]
 	if gitKey == "" {

@@ -1978,6 +1978,9 @@ func materializeGitSSHConfig(cfg runtimeConfigFileRef, secretValues map[string]s
 		"-o", "StrictHostKeyChecking=accept-new",
 		"-o", "UserKnownHostsFile=" + knownHostsPath,
 	}
+	if proxyJump := strings.TrimSpace(secretValues["proxyJump"]); proxyJump != "" {
+		command = append(command, "-J", proxyJump)
+	}
 	env["GIT_SSH_COMMAND"] = strings.Join(command, " ")
 	return env, nil
 }
