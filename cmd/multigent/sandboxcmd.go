@@ -4,13 +4,11 @@ import (
 	"fmt"
 	"os"
 	"os/exec"
-	"path/filepath"
 	"strings"
 
 	"github.com/multigent/multigent/internal/entity"
 	"github.com/multigent/multigent/internal/runtimecli"
 	"github.com/multigent/multigent/internal/sandbox"
-	"github.com/multigent/multigent/internal/store"
 	"github.com/spf13/cobra"
 )
 
@@ -87,15 +85,7 @@ func newSandboxShowCmd() *cobra.Command {
 			fmt.Printf("Network : %s\n", network)
 			fmt.Printf("Memory  : %d MiB\n", memMB)
 
-			// Repo mount (auto-detected from project.yaml)
-			repoMount := sbxResolveRepoMount(s, root, project)
-			if repoMount != "" {
-				fmt.Printf("\nRepo mount (auto, same path as host):\n")
-				fmt.Printf("  -v %s\n", repoMount)
-				fmt.Printf("  Agent can read/write/commit at: %s\n", strings.SplitN(repoMount, ":", 2)[0])
-			} else {
-				fmt.Printf("\nRepo mount : none (project has no repo configured in project.yaml)\n")
-			}
+			fmt.Printf("\nRepo mount : none (agents only receive their own workspace directory)\n")
 
 			// Credential mounts
 			mounts := sandbox.ResolveCredentialMounts(meta.Model, dockerCfg)
@@ -125,10 +115,8 @@ func newSandboxShowCmd() *cobra.Command {
 				}
 			}
 
-			// Workspace root mount (auto, enables inter-agent task assignment)
-			wsMount := root + ":" + root
-			fmt.Printf("\nWorkspace root mount (auto, enables inter-agent coordination):\n")
-			fmt.Printf("  -v %s\n", wsMount)
+			fmt.Printf("\nWorkspace isolation:\n")
+			fmt.Printf("  workspace root is not mounted; agents coordinate through the runtime API\n")
 
 			// Optional agent runtime CLI override; published images bundle mga.
 			fmt.Printf("\nAgent runtime CLI mount (optional development override):\n")
@@ -141,10 +129,6 @@ func newSandboxShowCmd() *cobra.Command {
 
 			// Preview the actual docker run command (include all auto mounts)
 			previewCfg := sbxCloneDockerCfg(dockerCfg)
-			if repoMount != "" {
-				previewCfg.ExtraVolumes = append(previewCfg.ExtraVolumes, repoMount)
-			}
-			previewCfg.ExtraVolumes = append(previewCfg.ExtraVolumes, wsMount)
 			if mgaMount != "" {
 				previewCfg.ExtraVolumes = append(previewCfg.ExtraVolumes, mgaMount)
 			}
@@ -306,27 +290,6 @@ func sbxExpandHome(path string) string {
 func sbxIsProxyKey(k string) bool {
 	k = strings.ToUpper(k)
 	return k == "HTTPS_PROXY" || k == "HTTP_PROXY" || k == "NO_PROXY"
-}
-
-// sbxResolveRepoMount looks up the project's repo field and returns a
-// "host_path:host_path" volume string for same-path container mounting.
-func sbxResolveRepoMount(s store.Store, root, project string) string {
-	proj, err := s.Project(project)
-	if err != nil || proj.Repo == "" {
-		return ""
-	}
-	repoPath := proj.Repo
-	if !filepath.IsAbs(repoPath) {
-		repoPath = filepath.Join(root, repoPath)
-	}
-	repoPath, err = filepath.Abs(repoPath)
-	if err != nil {
-		return ""
-	}
-	if _, err := os.Stat(repoPath); err != nil {
-		return ""
-	}
-	return repoPath + ":" + repoPath
 }
 
 // sbxCloneDockerCfg returns a shallow copy so we can mutate ExtraVolumes.

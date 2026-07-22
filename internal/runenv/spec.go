@@ -3,8 +3,6 @@ package runenv
 
 import (
 	"fmt"
-	"os"
-	"path/filepath"
 	"strings"
 
 	"github.com/multigent/multigent/internal/agentcli"
@@ -188,24 +186,4 @@ func DockerVolume(m entity.RuntimeMount) string {
 		mode = MountModeReadWrite
 	}
 	return m.Source + ":" + target + ":" + mode
-}
-
-// AddPathMount appends an existing host path as a runtime mount.
-func AddPathMount(mounts []entity.RuntimeMount, path, kind, mode string) []entity.RuntimeMount {
-	if path == "" {
-		return mounts
-	}
-	abs, err := filepath.Abs(path)
-	if err != nil {
-		return mounts
-	}
-	if _, err := os.Stat(abs); err != nil {
-		return mounts
-	}
-	return append(mounts, entity.RuntimeMount{
-		Source: abs,
-		Target: abs,
-		Mode:   mode,
-		Kind:   kind,
-	})
 }

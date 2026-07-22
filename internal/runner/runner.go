@@ -176,15 +176,7 @@ func (r *Runner) ExecPrompt(project, agentName, prompt, sessionID string) (*RunR
 		injectProviderEnvIntoRuntime(runtimeCfg, agentEnv)
 		injectRuntimeControlEnvIntoRuntime(runtimeCfg, processRuntimeEnv)
 		mounts := append([]entity.RuntimeMount(nil), runtimeCfg.Mounts...)
-		for _, addDir := range meta.AddDirs {
-			mounts = runenv.AddPathMount(mounts, addDir, "repo", runenv.MountModeReadWrite)
-		}
-		if wsMount := r.root + ":" + r.root; r.root != "" {
-			runtimeCfg.Docker.ExtraVolumes = append(runtimeCfg.Docker.ExtraVolumes, wsMount)
-		}
-		if binMount := runtimecli.ResolveAvailableBinaryMount(r.root); binMount != "" {
-			runtimeCfg.Docker.ExtraVolumes = append(runtimeCfg.Docker.ExtraVolumes, binMount)
-		}
+		r.addRuntimeDockerSystemMounts(runtimeCfg)
 		containerPromptFile := agentDir + "/" + filepath.Base(promptFile)
 		remappedInner := remapPromptFile(innerArgs, promptFile, containerPromptFile)
 		var err error
@@ -383,27 +375,7 @@ func (r *Runner) RunTask(project, agentName string, task *entity.Task, sessionID
 		injectRuntimeControlEnvIntoRuntime(runtimeCfg, processRuntimeEnv)
 		mounts := append([]entity.RuntimeMount(nil), runtimeCfg.Mounts...)
 
-		// Auto-mount the project's code repository at the same absolute path
-		// inside the container. This lets the agent read/write/commit code at
-		// the exact path it expects (e.g. /root/code/cc-connect), matching
-		// what is written in CLAUDE.md / the project prompt.
-		for _, addDir := range meta.AddDirs {
-			mounts = runenv.AddPathMount(mounts, addDir, "repo", runenv.MountModeReadWrite)
-		}
-
-		// Auto-mount the workspace root at the same path so agents can use
-		// `multigent task add --agent other-agent` to assign tasks to peers.
-		// This enables PM agents to coordinate dev/qa agents without human
-		// intervention.
-		if wsMount := r.root + ":" + r.root; r.root != "" {
-			runtimeCfg.Docker.ExtraVolumes = append(runtimeCfg.Docker.ExtraVolumes, wsMount)
-		}
-
-		// Development override only. Published images carry their own Linux
-		// mga; mounting a native macOS/Windows binary would shadow it.
-		if binMount := runtimecli.ResolveAvailableBinaryMount(r.root); binMount != "" {
-			runtimeCfg.Docker.ExtraVolumes = append(runtimeCfg.Docker.ExtraVolumes, binMount)
-		}
+		r.addRuntimeDockerSystemMounts(runtimeCfg)
 
 		// The prompt file path inside the container.
 		// innerArgs reference the host promptFile path — remap it to the real agent path.
@@ -1085,6 +1057,17 @@ func cloneRuntimeCfg(cfg *entity.SandboxConfig) *entity.SandboxConfig {
 		cp.E2B = &e2b
 	}
 	return &cp
+}
+
+func (r *Runner) addRuntimeDockerSystemMounts(runtimeCfg *entity.SandboxConfig) {
+	if runtimeCfg == nil || runtimeCfg.Docker == nil {
+		return
+	}
+	// Development override only. Published images carry their own Linux mga;
+	// mounting a native macOS/Windows binary would shadow it.
+	if binMount := runtimecli.ResolveAvailableBinaryMount(r.root); binMount != "" {
+		runtimeCfg.Docker.ExtraVolumes = append(runtimeCfg.Docker.ExtraVolumes, binMount)
+	}
 }
 
 // ── HTTP agent task/exec methods ───────────────────────────────────────────────

@@ -82,6 +82,21 @@ func TestInjectProviderEnvIntoRuntimeSkipsRuntimeControlKeys(t *testing.T) {
 	}
 }
 
+func TestRuntimeDockerSystemMountsDoNotExposeWorkspaceRoot(t *testing.T) {
+	root := t.TempDir()
+	cfg := &entity.SandboxConfig{
+		Docker: &entity.DockerSandboxConfig{
+			ExtraVolumes: []string{"/already:/already:ro"},
+		},
+	}
+	(&Runner{root: root}).addRuntimeDockerSystemMounts(cfg)
+	for _, volume := range cfg.Docker.ExtraVolumes {
+		if volume == root+":"+root || strings.HasPrefix(volume, root+":"+root+":") {
+			t.Fatalf("workspace root leaked into docker mounts: %#v", cfg.Docker.ExtraVolumes)
+		}
+	}
+}
+
 func TestMaterializeRuntimeConnectionsFile(t *testing.T) {
 	const token = "agent-runtime-token"
 	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
