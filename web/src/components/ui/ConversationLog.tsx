@@ -669,6 +669,30 @@ function isDuplicateSuccessResult(items: ConversationItem[], index: number, item
   return false
 }
 
+function fallbackResultFromRawLog(content: string): ConversationItem[] {
+  const items: ConversationItem[] = []
+  for (const raw of content.split('\n')) {
+    const line = normalizeStreamLogLine(raw)
+    const jsonLine = extractJSONLogLine(line)
+    if (!jsonLine) continue
+    try {
+      const ev = JSON.parse(jsonLine) as StreamEvent
+      if (ev.type === 'result' && (ev.result || ev.is_error)) {
+        items.push({
+          kind: 'result',
+          text: ev.result || (ev.is_error ? ev.error || 'Error' : 'Completed'),
+          cost: ev.total_cost_usd ?? ev.cost_usd,
+          turns: ev.num_turns,
+          isError: ev.is_error ?? false,
+        })
+      }
+    } catch {
+      continue
+    }
+  }
+  return items
+}
+
 function findDiffStart(text: string): number {
   const lines = text.split('\n')
   return lines.findIndex((line) => line.startsWith('diff --git ') || line.startsWith('Index: '))
@@ -902,14 +926,15 @@ export function ConversationLog({
   const { t } = useTranslation()
   const items = useMemo(() => parseLog(content), [content])
   const visibleItems = useMemo(() => {
-    if (mode !== 'chat') return items
-    return items.filter((item, index) => {
+    const filtered = mode !== 'chat' ? items : items.filter((item, index) => {
       if (item.kind === 'result') return !isDuplicateSuccessResult(items, index, item)
       if (item.kind === 'human' || item.kind === 'assistant' || item.kind === 'thinking') return true
       if (item.kind === 'tool_result') return item.isError || !items.some((candidate) => candidate.kind === 'assistant' || candidate.kind === 'thinking' || candidate.kind === 'result')
       return false
     })
-  }, [items, mode])
+    if (filtered.length > 0 || mode !== 'chat') return filtered
+    return fallbackResultFromRawLog(content)
+  }, [items, mode, content])
 
   if (visibleItems.length === 0) {
     const hasRawContent = content.trim().length > 0
