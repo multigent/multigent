@@ -48,6 +48,7 @@ type SkillDef struct {
 	// Prompt is the Markdown body of the skill's SKILL.md (after frontmatter).
 	Prompt string
 	// Files holds any extra files found in the skill's source directory
-	// (everything except SKILL.md, skill.yaml, and prompt.md). Typically shell scripts.
+	// (everything except SKILL.md, prompt.md, and obsolete definition files).
+	// Typically shell scripts.
 	Files []SkillFile
 }

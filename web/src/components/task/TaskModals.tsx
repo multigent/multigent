@@ -757,11 +757,7 @@ function WorkflowRuntimePanel({
               )}
               {decisionField && !usesDefaultReviewButtons && (
                 <label className="block">
-                  <span className="text-xs font-medium text-neutral-500 dark:text-zinc-500">
-                    {decisionField.name}
-                    <span className="ml-1 text-red-500">*</span>
-                  </span>
-                  {decisionField.description && <span className="mt-0.5 block text-xs text-neutral-400 dark:text-zinc-600">{decisionField.description}</span>}
+                  <WorkflowFieldTitle fieldName={decisionField.name} description={decisionField.description} required />
                   <select
                     value={reviewOutputs.decision || ''}
                     onChange={(e) => onChangeOutput('decision', e.target.value)}
@@ -776,11 +772,7 @@ function WorkflowRuntimePanel({
               )}
               {editableOutputFields.map((field) => (
                 <label key={field.name} className="block">
-                  <span className="text-xs font-medium text-neutral-500 dark:text-zinc-500">
-                    {field.name}
-                    <span className="ml-1 text-red-500">*</span>
-                  </span>
-                  {field.description && <span className="mt-0.5 block text-xs text-neutral-400 dark:text-zinc-600">{field.description}</span>}
+                  <WorkflowFieldTitle fieldName={field.name} description={field.description} required />
                   <textarea
                     value={field.name === 'comments' ? reviewComments : reviewOutputs[field.name] || ''}
                     onChange={(e) => onChangeOutput(field.name, e.target.value)}
@@ -1012,11 +1004,14 @@ function WorkflowFieldList({ fields, values }: { fields: WorkflowField[]; values
   )
 }
 
-function WorkflowFieldTitle({ fieldName, description }: { fieldName: string; description?: string }) {
+function WorkflowFieldTitle({ fieldName, description, required = false }: { fieldName: string; description?: string; required?: boolean }) {
   const title = description?.trim() || fieldName
   return (
     <div>
-      <p className="text-sm font-semibold leading-snug text-neutral-800 dark:text-zinc-200" title={fieldName}>{title}</p>
+      <p className="text-sm font-semibold leading-snug text-neutral-800 dark:text-zinc-200" title={fieldName}>
+        {title}
+        {required && <span className="ml-1 text-red-500">*</span>}
+      </p>
       {description?.trim() && (
         <p className="mt-0.5 font-mono text-[10px] uppercase tracking-wide text-neutral-400 dark:text-zinc-600">{fieldName}</p>
       )}
@@ -1055,25 +1050,39 @@ function workflowDecisionLabel(value: string) {
   return value.replaceAll('_', ' ')
 }
 
-const docIDPattern = /\bdoc-\d{8}-[a-z0-9]+\b/gi
+const workflowLinkPattern = /https?:\/\/[^\s<>"']+|\bdoc-\d{8}-[a-z0-9]+\b/gi
+const trailingURLPunctuationPattern = /[),.;:!?，。；：！？）】\]]+$/
 
 function WorkflowValueText({ value }: { value: string }) {
   const text = String(value ?? '')
   const parts: ReactNode[] = []
   let lastIndex = 0
-  for (const match of text.matchAll(docIDPattern)) {
-    const docID = match[0]
+  for (const match of text.matchAll(workflowLinkPattern)) {
+    const raw = match[0]
     const index = match.index ?? 0
     if (index > lastIndex) {
       parts.push(text.slice(lastIndex, index))
     }
-    parts.push(<DocIDLink key={`${docID}-${index}`} docID={docID} />)
-    lastIndex = index + docID.length
+    if (raw.startsWith('http://') || raw.startsWith('https://')) {
+      const { href, trailing } = splitURLTrailingPunctuation(raw)
+      parts.push(<ExternalURLLink key={`${href}-${index}`} href={href} />)
+      if (trailing) parts.push(trailing)
+    } else {
+      parts.push(<DocIDLink key={`${raw}-${index}`} docID={raw} />)
+    }
+    lastIndex = index + raw.length
   }
   if (lastIndex < text.length) {
     parts.push(text.slice(lastIndex))
   }
   return <>{parts.length > 0 ? parts : text}</>
+}
+
+function splitURLTrailingPunctuation(raw: string) {
+  const match = trailingURLPunctuationPattern.exec(raw)
+  if (!match) return { href: raw, trailing: '' }
+  const trailing = match[0]
+  return { href: raw.slice(0, -trailing.length), trailing }
 }
 
 function DocIDLink({ docID }: { docID: string }) {
@@ -1086,6 +1095,20 @@ function DocIDLink({ docID }: { docID: string }) {
       onClick={(e) => e.stopPropagation()}
     >
       {docID}
+    </a>
+  )
+}
+
+function ExternalURLLink({ href }: { href: string }) {
+  return (
+    <a
+      href={href}
+      target="_blank"
+      rel="noreferrer"
+      className="font-medium text-sky-700 underline decoration-sky-300 underline-offset-2 hover:text-sky-800 dark:text-sky-400 dark:decoration-sky-700 dark:hover:text-sky-300"
+      onClick={(e) => e.stopPropagation()}
+    >
+      {href}
     </a>
   )
 }

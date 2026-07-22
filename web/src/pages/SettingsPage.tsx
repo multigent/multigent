@@ -936,6 +936,16 @@ const GATEWAY_ACCOUNT_PRESETS: ProviderPreset[] = [
 type ProviderDraft = Partial<ProviderRow> & { apiKey?: string; accountMode?: ModelAccountMode; cli?: ModelAccountCLI }
 type CCSwitchProviderPreview = { id: string; name: string; cli: string; type: string; baseUrl?: string; model?: string; hasKey: boolean; isCurrent: boolean }
 type CCSwitchProviderResponse = { available: boolean; dbPath?: string; providers: CCSwitchProviderPreview[]; searched?: string[]; error?: string }
+type AssistantStatus = {
+  enabled: boolean
+  mode: string
+  configured: boolean
+  canUse: boolean
+  canAdmin: boolean
+  modelProviderId?: string
+  modelProviderName?: string
+  reason?: string
+}
 
 function ProvidersSection() {
   const { t } = useTranslation()
@@ -951,17 +961,23 @@ function ProvidersSection() {
   const [ccSwitchImporting, setCCSwitchImporting] = useState(false)
   const [ccSwitchSelected, setCCSwitchSelected] = useState<string[]>([])
   const [saving, setSaving] = useState(false)
+  const [assistantStatus, setAssistantStatus] = useState<AssistantStatus | null>(null)
+  const [assistantProviderId, setAssistantProviderId] = useState('')
+  const [assistantSaving, setAssistantSaving] = useState(false)
   const [err, setErr] = useState<string | null>(null)
   const [showKey, setShowKey] = useState(false)
 
   const refresh = useCallback(async () => {
     try {
-      const [workspaceData, data] = await Promise.all([
+      const [workspaceData, data, assistantData] = await Promise.all([
         apiFetch<WorkspaceAccessSummary>('/api/v1/workspace').catch(() => null),
         apiFetch<ProviderRow[]>('/api/v1/providers'),
+        apiFetch<AssistantStatus>('/api/v1/assistant/status').catch(() => null),
       ])
       setWorkspace(workspaceData)
       setProviders(data ?? [])
+      setAssistantStatus(assistantData)
+      setAssistantProviderId(assistantData?.modelProviderId ?? '')
     } catch { /* ignore */ }
     finally { setLoading(false) }
   }, [])
@@ -1054,6 +1070,23 @@ function ProvidersSection() {
     } catch { /* ignore */ }
   }
 
+  async function saveAssistantSettings() {
+    setAssistantSaving(true)
+    setErr(null)
+    try {
+      const data = await apiPut<AssistantStatus>('/api/v1/assistant/settings', {
+        enabled: true,
+        modelProviderId: assistantProviderId,
+      })
+      setAssistantStatus(data)
+      setAssistantProviderId(data.modelProviderId ?? '')
+    } catch (e) {
+      setErr(e instanceof Error ? e.message : String(e))
+    } finally {
+      setAssistantSaving(false)
+    }
+  }
+
   function applyPreset(presetID: string) {
     const preset = GATEWAY_ACCOUNT_PRESETS.find(p => p.id === presetID)
     if (!preset) return
@@ -1107,68 +1140,70 @@ function ProvidersSection() {
   }
 
   const fieldCls = 'w-full rounded-md border border-neutral-200/80 bg-neutral-50/50 px-3 py-2 text-sm outline-none transition-colors focus:border-sky-400 dark:border-zinc-700/60 dark:bg-zinc-800/50 dark:text-zinc-200 dark:[color-scheme:dark]'
+  const assistantProviderOptions = providers.filter(p => (p.ownerType ?? 'workspace') === 'workspace' && p.hasKey)
 
   return (
-    <section id="model-accounts" data-tour-provider-section className="scroll-mt-6 rounded-xl border border-neutral-200/80 bg-white p-5 dark:border-zinc-700/60 dark:bg-zinc-900/40">
-      <div className="flex items-center justify-between pb-3">
-        <div className="flex items-center gap-2">
-          <Server className="size-4 text-neutral-500 dark:text-zinc-500" strokeWidth={1.8} />
-          <h3 className="text-base font-semibold text-neutral-900 dark:text-zinc-100">{t('provider.title')}</h3>
+    <>
+      <section id="model-accounts" data-tour-provider-section className="scroll-mt-6 rounded-xl border border-neutral-200/80 bg-white p-5 dark:border-zinc-700/60 dark:bg-zinc-900/40">
+        <div className="flex items-center justify-between pb-3">
+          <div className="flex items-center gap-2">
+            <Server className="size-4 text-neutral-500 dark:text-zinc-500" strokeWidth={1.8} />
+            <h3 className="text-base font-semibold text-neutral-900 dark:text-zinc-100">{t('provider.title')}</h3>
+          </div>
+          <div className="flex items-center gap-2">
+            <button type="button" onClick={() => void openCCSwitchImport()}
+              className="rounded-lg border border-sky-600 bg-white px-3 py-1.5 text-xs font-medium text-sky-700 hover:bg-sky-50 dark:border-sky-500 dark:bg-zinc-900 dark:text-sky-400 dark:hover:bg-zinc-800">
+              {t('provider.importCCSwitch')}
+            </button>
+            <button type="button" data-tour-provider-add onClick={openNew}
+              className="rounded-lg border border-sky-600 bg-white px-3 py-1.5 text-xs font-medium text-sky-700 hover:bg-sky-50 dark:border-sky-500 dark:bg-zinc-900 dark:text-sky-400 dark:hover:bg-zinc-800">
+              {t('provider.add')}
+            </button>
+          </div>
         </div>
-        <div className="flex items-center gap-2">
-          <button type="button" onClick={() => void openCCSwitchImport()}
-            className="rounded-lg border border-sky-600 bg-white px-3 py-1.5 text-xs font-medium text-sky-700 hover:bg-sky-50 dark:border-sky-500 dark:bg-zinc-900 dark:text-sky-400 dark:hover:bg-zinc-800">
-            {t('provider.importCCSwitch')}
-          </button>
-          <button type="button" data-tour-provider-add onClick={openNew}
-            className="rounded-lg border border-sky-600 bg-white px-3 py-1.5 text-xs font-medium text-sky-700 hover:bg-sky-50 dark:border-sky-500 dark:bg-zinc-900 dark:text-sky-400 dark:hover:bg-zinc-800">
-            {t('provider.add')}
-          </button>
-        </div>
-      </div>
-      <p className="mb-3 text-xs text-neutral-400 dark:text-zinc-500">{t('provider.desc')}</p>
+        <p className="mb-3 text-xs text-neutral-400 dark:text-zinc-500">{t('provider.desc')}</p>
 
-      {loading ? (
-        <p className="py-4 text-center text-sm text-neutral-400">{t('forms.loading')}</p>
-      ) : providers.length === 0 && !editing ? (
-        <p className="py-4 text-center text-sm text-neutral-400 dark:text-zinc-500">{t('provider.empty')}</p>
-      ) : (
-        <div className="space-y-2">
-          {providers.map(p => (
-            <div key={p.id} className="flex items-center justify-between rounded-lg border border-neutral-200/80 bg-neutral-50/30 px-4 py-2.5 dark:border-zinc-700/60 dark:bg-zinc-800/30">
-              <div className="flex flex-col">
-                <span className="text-sm font-medium text-neutral-800 dark:text-zinc-200">{p.name}</span>
-                <span className="text-xs text-neutral-400 dark:text-zinc-500">
-                  {inferModelAccountMode(p) === 'official' ? t('provider.officialBadge') : t('provider.gatewayBadge')}
-                  {' · '}{providerCLILabel(inferModelAccountCLI(p))}
-                  {p.model ? ` · ${p.model}` : ''}{p.baseUrl ? ` · ${p.baseUrl}` : ''}{p.hasKey ? ` · ${t('provider.keyConfigured')}` : ''}
-                </span>
+        {loading ? (
+          <p className="py-4 text-center text-sm text-neutral-400">{t('forms.loading')}</p>
+        ) : providers.length === 0 && !editing ? (
+          <p className="py-4 text-center text-sm text-neutral-400 dark:text-zinc-500">{t('provider.empty')}</p>
+        ) : (
+          <div className="space-y-2">
+            {providers.map(p => (
+              <div key={p.id} className="flex items-center justify-between rounded-lg border border-neutral-200/80 bg-neutral-50/30 px-4 py-2.5 dark:border-zinc-700/60 dark:bg-zinc-800/30">
+                <div className="flex flex-col">
+                  <span className="text-sm font-medium text-neutral-800 dark:text-zinc-200">{p.name}</span>
+                  <span className="text-xs text-neutral-400 dark:text-zinc-500">
+                    {inferModelAccountMode(p) === 'official' ? t('provider.officialBadge') : t('provider.gatewayBadge')}
+                    {' · '}{providerCLILabel(inferModelAccountCLI(p))}
+                    {p.model ? ` · ${p.model}` : ''}{p.baseUrl ? ` · ${p.baseUrl}` : ''}{p.hasKey ? ` · ${t('provider.keyConfigured')}` : ''}
+                  </span>
+                </div>
+                <div className="flex items-center gap-2">
+                  <span className={cn('rounded-full px-2 py-0.5 text-[10px] font-medium',
+                    p.ownerType === 'user'
+                      ? 'bg-violet-50 text-violet-700 dark:bg-violet-900/20 dark:text-violet-300'
+                      : 'bg-sky-50 text-sky-700 dark:bg-sky-900/20 dark:text-sky-300'
+                  )}>
+                    {p.ownerType === 'user' ? t('provider.scopePersonal') : t('provider.scopeWorkspace')}
+                  </span>
+                  {canManageProviderRow(p, canCreateWorkspaceProvider, user?.username) && (
+                    <>
+                      <button type="button" onClick={() => openEdit(p)}
+                        className="rounded p-1 text-neutral-400 hover:bg-neutral-100 hover:text-neutral-600 dark:hover:bg-zinc-800 dark:hover:text-zinc-300">
+                        <Pencil className="size-3.5" />
+                      </button>
+                      <button type="button" onClick={() => void handleDelete(p.id)}
+                        className="rounded p-1 text-neutral-400 hover:bg-red-50 hover:text-red-600 dark:hover:bg-red-900/20 dark:hover:text-red-400">
+                        <Trash2 className="size-3.5" />
+                      </button>
+                    </>
+                  )}
+                </div>
               </div>
-              <div className="flex items-center gap-2">
-                <span className={cn('rounded-full px-2 py-0.5 text-[10px] font-medium',
-                  p.ownerType === 'user'
-                    ? 'bg-violet-50 text-violet-700 dark:bg-violet-900/20 dark:text-violet-300'
-                    : 'bg-sky-50 text-sky-700 dark:bg-sky-900/20 dark:text-sky-300'
-                )}>
-                  {p.ownerType === 'user' ? t('provider.scopePersonal') : t('provider.scopeWorkspace')}
-                </span>
-                {canManageProviderRow(p, canCreateWorkspaceProvider, user?.username) && (
-                  <>
-                    <button type="button" onClick={() => openEdit(p)}
-                      className="rounded p-1 text-neutral-400 hover:bg-neutral-100 hover:text-neutral-600 dark:hover:bg-zinc-800 dark:hover:text-zinc-300">
-                      <Pencil className="size-3.5" />
-                    </button>
-                    <button type="button" onClick={() => void handleDelete(p.id)}
-                      className="rounded p-1 text-neutral-400 hover:bg-red-50 hover:text-red-600 dark:hover:bg-red-900/20 dark:hover:text-red-400">
-                      <Trash2 className="size-3.5" />
-                    </button>
-                  </>
-                )}
-              </div>
-            </div>
-          ))}
-        </div>
-      )}
+            ))}
+          </div>
+        )}
 
       {editing && (
         <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/45 p-4" onClick={() => !saving && setEditing(null)}>
@@ -1352,7 +1387,42 @@ function ProvidersSection() {
           </div>
         </div>
       )}
-    </section>
+      </section>
+
+      {canCreateWorkspaceProvider && (
+        <section id="assistant-account" className="scroll-mt-6 rounded-xl border border-neutral-200/80 bg-white p-5 dark:border-zinc-700/60 dark:bg-zinc-900/40">
+          <div className="flex items-center gap-2">
+            <KeyRound className="size-4 text-neutral-500 dark:text-zinc-500" strokeWidth={1.8} />
+            <h3 className="text-base font-semibold text-neutral-900 dark:text-zinc-100">{t('assistant.settingsTitle')}</h3>
+          </div>
+          <p className="mt-2 text-xs leading-5 text-neutral-500 dark:text-zinc-400">{t('assistant.settingsDesc')}</p>
+          {assistantStatus?.canUse && assistantStatus.modelProviderName && (
+            <p className="mt-2 text-xs text-sky-700 dark:text-sky-300">{t('assistant.settingsReady', { name: assistantStatus.modelProviderName })}</p>
+          )}
+          <div className="mt-4 flex max-w-md flex-col gap-2">
+            <select
+              value={assistantProviderId}
+              onChange={e => setAssistantProviderId(e.target.value)}
+              className={fieldCls}
+              disabled={assistantSaving || assistantProviderOptions.length === 0}
+            >
+              <option value="">{assistantProviderOptions.length === 0 ? t('assistant.noWorkspaceProvider') : t('assistant.selectProvider')}</option>
+              {assistantProviderOptions.map(provider => (
+                <option key={provider.id} value={provider.id}>{provider.name}</option>
+              ))}
+            </select>
+            <button
+              type="button"
+              onClick={() => void saveAssistantSettings()}
+              disabled={assistantSaving || !assistantProviderId}
+              className="w-fit rounded-lg border border-sky-600 bg-white px-3 py-2 text-sm font-medium text-sky-700 hover:bg-sky-50 disabled:opacity-50 dark:border-sky-500 dark:bg-zinc-900 dark:text-sky-400 dark:hover:bg-zinc-800"
+            >
+              {assistantSaving ? t('forms.saving') : t('assistant.saveSettings')}
+            </button>
+          </div>
+        </section>
+      )}
+    </>
   )
 }
 

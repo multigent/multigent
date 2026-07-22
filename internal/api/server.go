@@ -67,8 +67,6 @@ type Server struct {
 	msStore                *store.MilestoneStore
 	updateCheck            UpdateChecker
 	daemonStatus           DaemonStatusFunc
-	assistantMu            sync.Mutex
-	assistantSessions      map[string]*assistantSession
 	execMu                 sync.Mutex
 	execProcs              map[string]*execProcess // key = "project/agent"
 	interactions           *interaction.Manager
@@ -320,8 +318,9 @@ func (s *Server) Handler() http.Handler {
 	mux.HandleFunc("DELETE /api/v1/projects/{name}/agents/{agent}", s.handleFireAgent)
 	mux.HandleFunc("POST /api/v1/run", s.handleRunAgent)
 	mux.HandleFunc("POST /api/v1/session/reset", s.handleSessionReset)
+	mux.HandleFunc("GET /api/v1/assistant/status", s.handleAssistantStatus)
+	mux.HandleFunc("PUT /api/v1/assistant/settings", s.handleAssistantSettings)
 	mux.HandleFunc("POST /api/v1/assistant/chat", s.handleAssistantChat)
-	mux.HandleFunc("POST /api/v1/assistant/permission", s.handleAssistantPermission)
 	mux.HandleFunc("GET /api/v1/docs", s.handleDocsList)
 	mux.HandleFunc("GET /api/v1/docs/tree", s.handleDocsTree)
 	mux.HandleFunc("GET /api/v1/docs/query", s.handleDocsQuery)

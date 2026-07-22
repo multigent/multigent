@@ -1,6 +1,6 @@
 import { useCallback, useEffect, useRef, useState, type KeyboardEvent, type PointerEvent as RPointerEvent } from 'react'
 import { useTranslation } from 'react-i18next'
-import { MessageSquareText, Send, X, Sparkles, Square, Shield } from 'lucide-react'
+import { MessageSquareText, Send, X, Sparkles, Square } from 'lucide-react'
 import { ConversationLog } from '../ui/ConversationLog'
 import { apiBase } from '../../lib/api'
 import { getStoredToken } from '../../lib/auth'
@@ -10,20 +10,15 @@ type ChatMsg =
   | { role: 'user'; content: string }
   | { role: 'assistant'; rawLog: string; summary: string }
 
-type PermissionRequest = {
-  sessionId: string
-  requestId: string
-  toolName: string
-  input?: Record<string, unknown>
-}
-
-function formatPermInput(toolName: string, input?: Record<string, unknown>): string {
-  if (!input) return ''
-  if (toolName === 'Bash' || toolName.startsWith('Bash(')) return String(input.command ?? '')
-  if (toolName === 'Read') return String(input.file_path ?? '')
-  if (toolName === 'Write' || toolName === 'Edit' || toolName === 'MultiEdit') return String(input.file_path ?? '')
-  const s = JSON.stringify(input, null, 2)
-  return s.length > 200 ? s.slice(0, 200) + '…' : s
+type AssistantStatus = {
+  enabled: boolean
+  mode: string
+  configured: boolean
+  canUse: boolean
+  canAdmin: boolean
+  modelProviderId?: string
+  modelProviderName?: string
+  reason?: string
 }
 
 const STORAGE_KEY = 'assistant-btn-pos'
@@ -75,8 +70,9 @@ export default function AssistantWidget({ hidden = false, onHide }: AssistantWid
   const [loading, setLoading] = useState(false)
   const [stopping, setStopping] = useState(false)
   const [streamLog, setStreamLog] = useState('')
-  const [pendingPerm, setPendingPerm] = useState<PermissionRequest | null>(null)
-  const sessionIdRef = useRef<string>('')
+  const [status, setStatus] = useState<AssistantStatus | null>(null)
+  const [statusLoading, setStatusLoading] = useState(false)
+  const [statusErr, setStatusErr] = useState<string | null>(null)
   const abortRef = useRef<AbortController | null>(null)
   const scrollRef = useRef<HTMLDivElement>(null)
   const inputRef = useRef<HTMLTextAreaElement>(null)
@@ -120,6 +116,27 @@ export default function AssistantWidget({ hidden = false, onHide }: AssistantWid
 
   useEffect(() => { scrollToBottom() }, [msgs, streamLog, scrollToBottom])
   useEffect(() => { if (open) inputRef.current?.focus() }, [open])
+  useEffect(() => { if (open) void refreshStatus() }, [open])
+
+  async function refreshStatus(): Promise<AssistantStatus | null> {
+    setStatusLoading(true)
+    setStatusErr(null)
+    try {
+      const token = getStoredToken()
+      const headers: Record<string, string> = { Accept: 'application/json' }
+      if (token) headers.Authorization = `Bearer ${token}`
+      const res = await fetch(`${apiBase()}/api/v1/assistant/status`, { headers })
+      if (!res.ok) throw new Error(await res.text())
+      const nextStatus = await res.json()
+      setStatus(nextStatus)
+      return nextStatus
+    } catch (e) {
+      setStatusErr(e instanceof Error ? e.message : String(e))
+      return null
+    } finally {
+      setStatusLoading(false)
+    }
+  }
 
   function stopStream() {
     abortRef.current?.abort()
@@ -129,6 +146,10 @@ export default function AssistantWidget({ hidden = false, onHide }: AssistantWid
   async function send() {
     const text = input.trim()
     if (!text || loading) return
+    if (!status?.canUse) {
+      const nextStatus = await refreshStatus()
+      if (!nextStatus?.canUse) return
+    }
     setInput('')
 
     const userMsg: ChatMsg = { role: 'user', content: text }
@@ -183,23 +204,6 @@ export default function AssistantWidget({ hidden = false, onHide }: AssistantWid
           if (data === '{"type":"done"}') continue
           try {
             const evt = JSON.parse(data)
-            if (evt.type === 'session' && evt.session_id) {
-              sessionIdRef.current = evt.session_id
-              continue
-            }
-            if (evt.type === 'permission_request') {
-              setPendingPerm({
-                sessionId: evt.session_id,
-                requestId: evt.request_id,
-                toolName: evt.tool_name,
-                input: evt.input,
-              })
-              continue
-            }
-            if (evt.type === 'permission_cancel') {
-              setPendingPerm(null)
-              continue
-            }
             if (evt.type === 'stopped') {
               // Server acknowledged the stop - show stopping state until abort completes
               setStopping(true)
@@ -222,35 +226,11 @@ export default function AssistantWidget({ hidden = false, onHide }: AssistantWid
       setStreamLog('')
       setLoading(false)
       setStopping(false)
-      setPendingPerm(null)
-      sessionIdRef.current = ''
       if (accumulated.trim()) {
         const summary = extractSummary(accumulated)
         setMsgs((prev) => [...prev, { role: 'assistant', rawLog: accumulated, summary }])
       }
     }
-  }
-
-  async function respondPermission(behavior: string) {
-    if (!pendingPerm) return
-    try {
-      const token = getStoredToken()
-      const headers: Record<string, string> = { 'Content-Type': 'application/json' }
-      if (token) headers['Authorization'] = `Bearer ${token}`
-      await fetch(`${apiBase()}/api/v1/assistant/permission`, {
-        method: 'POST',
-        headers,
-        body: JSON.stringify({
-          session_id: pendingPerm.sessionId,
-          request_id: pendingPerm.requestId,
-          behavior,
-          input: pendingPerm.input,
-        }),
-      })
-    } catch (e) {
-      console.error('Permission response failed:', e)
-    }
-    setPendingPerm(null)
   }
 
   function handleKeyDown(e: KeyboardEvent) {
@@ -301,7 +281,9 @@ export default function AssistantWidget({ hidden = false, onHide }: AssistantWid
             </div>
             <div className="flex-1">
               <h3 className="text-sm font-semibold text-neutral-900 dark:text-zinc-100">{t('assistant.title')}</h3>
-              <p className="text-[11px] text-neutral-400 dark:text-zinc-500">{t('assistant.subtitle')}</p>
+              <p className="text-[11px] text-neutral-400 dark:text-zinc-500">
+                {status?.modelProviderName ? t('assistant.modelReady', { name: status.modelProviderName }) : t('assistant.subtitle')}
+              </p>
             </div>
             {msgs.length > 0 && !loading && (
               <button type="button" onClick={() => setMsgs([])} className="rounded-md px-2 py-1 text-[11px] text-neutral-400 hover:bg-neutral-100 hover:text-neutral-600 dark:text-zinc-500 dark:hover:bg-zinc-800">
@@ -312,7 +294,26 @@ export default function AssistantWidget({ hidden = false, onHide }: AssistantWid
 
           {/* Messages */}
           <div ref={scrollRef} className="flex-1 overflow-y-auto px-4 py-3 space-y-3">
-            {msgs.length === 0 && !loading && (
+            {(statusLoading || statusErr || (status && !status.canUse)) && (
+              <div className="rounded-xl border border-amber-200/70 bg-amber-50/80 p-3 text-sm text-amber-900 dark:border-amber-700/50 dark:bg-amber-950/30 dark:text-amber-200">
+                <p className="font-medium">
+                  {statusLoading ? t('assistant.checking') : statusErr ? t('assistant.statusError') : status?.canAdmin ? t('assistant.configureTitle') : t('assistant.adminOnlyTitle')}
+                </p>
+                <p className="mt-1 text-xs leading-relaxed text-amber-800/80 dark:text-amber-200/80">
+                  {statusErr ? t('assistant.statusErrorDesc') : status?.canAdmin ? t('assistant.configureDesc') : t('assistant.adminOnlyDesc')}
+                </p>
+                {status?.canAdmin && !status.canUse && (
+                  <button
+                    type="button"
+                    onClick={() => { window.location.href = '/settings#model-accounts' }}
+                    className="mt-3 rounded-lg border border-amber-500 bg-white px-3 py-1.5 text-xs font-medium text-amber-700 hover:bg-amber-50 dark:border-amber-500 dark:bg-zinc-900 dark:text-amber-300 dark:hover:bg-zinc-800"
+                  >
+                    {t('assistant.goConfigure')}
+                  </button>
+                )}
+              </div>
+            )}
+            {msgs.length === 0 && !loading && status?.canUse && (
               <div className="flex h-full flex-col items-center justify-center text-center">
                 <Sparkles className="mb-2 size-8 text-neutral-200 dark:text-zinc-500" strokeWidth={1.2} />
                 <p className="text-sm text-neutral-400 dark:text-zinc-500">{t('assistant.welcome')}</p>
@@ -368,39 +369,6 @@ export default function AssistantWidget({ hidden = false, onHide }: AssistantWid
             )}
           </div>
 
-          {/* Permission prompt */}
-          {pendingPerm && (
-            <div className="shrink-0 border-t border-amber-200/60 bg-amber-50/50 px-4 py-3 dark:border-amber-700/40 dark:bg-amber-900/20">
-              <div className="flex items-start gap-2.5">
-                <Shield className="mt-0.5 size-4 shrink-0 text-amber-600 dark:text-amber-400" strokeWidth={1.8} />
-                <div className="min-w-0 flex-1">
-                  <p className="text-xs font-semibold text-amber-800 dark:text-amber-300">
-                    {t('assistant.permissionTitle')}
-                  </p>
-                  <p className="mt-0.5 font-mono text-xs text-amber-700 dark:text-amber-400">
-                    {pendingPerm.toolName}
-                  </p>
-                  {pendingPerm.input && Object.keys(pendingPerm.input).length > 0 && (
-                    <pre className="mt-1 max-h-20 overflow-auto rounded-md bg-amber-100/50 px-2 py-1 text-[11px] leading-relaxed text-amber-800 dark:bg-amber-900/30 dark:text-amber-300">
-                      {formatPermInput(pendingPerm.toolName, pendingPerm.input)}
-                    </pre>
-                  )}
-                  <div className="mt-2 flex items-center gap-2">
-                    <button type="button" onClick={() => void respondPermission('allow')} className="rounded-md bg-emerald-600 px-3 py-1 text-xs font-medium text-white transition-colors hover:bg-emerald-700">
-                      {t('assistant.permAllow')}
-                    </button>
-                    <button type="button" onClick={() => void respondPermission('deny')} className="rounded-md bg-red-500 px-3 py-1 text-xs font-medium text-white transition-colors hover:bg-red-600">
-                      {t('assistant.permDeny')}
-                    </button>
-                    <button type="button" onClick={() => void respondPermission('allowAll')} className="rounded-md border border-amber-300 px-3 py-1 text-xs font-medium text-amber-700 transition-colors hover:bg-amber-100 dark:border-amber-600 dark:text-amber-400 dark:hover:bg-amber-900/40">
-                      {t('assistant.permAllowAll')}
-                    </button>
-                  </div>
-                </div>
-              </div>
-            </div>
-          )}
-
           {/* Input */}
           <div className="shrink-0 border-t border-neutral-200/60 p-3 dark:border-zinc-700/40">
             <div className="flex items-center gap-2 rounded-xl border border-neutral-200/60 bg-neutral-50/50 px-3 py-2 focus-within:border-sky-400 dark:border-zinc-700/60 dark:bg-zinc-800/50">
@@ -410,6 +378,7 @@ export default function AssistantWidget({ hidden = false, onHide }: AssistantWid
                 onChange={(e) => setInput(e.target.value)}
                 onKeyDown={handleKeyDown}
                 placeholder={t('assistant.placeholder')}
+                disabled={!status?.canUse}
                 rows={1}
                 className="flex-1 resize-none bg-transparent py-0.5 text-sm leading-[1.625rem] text-neutral-800 outline-none placeholder:text-neutral-400 dark:text-zinc-200 dark:placeholder:text-zinc-600"
                 style={{ maxHeight: '120px' }}
@@ -437,7 +406,7 @@ export default function AssistantWidget({ hidden = false, onHide }: AssistantWid
                 <button
                   type="button"
                   onClick={() => void send()}
-                  disabled={!input.trim()}
+                  disabled={!input.trim() || !status?.canUse}
                   className="flex size-7 shrink-0 items-center justify-center rounded-lg bg-sky-600 text-white transition-colors hover:bg-sky-700 disabled:opacity-30 dark:bg-sky-500"
                 >
                   <Send className="size-3.5" />

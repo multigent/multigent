@@ -47,6 +47,9 @@ const (
 	ErrCodeWorkspaceNotFound            = "workspace_not_found"
 	ErrCodeWorkspaceDatabaseUnavailable = "workspace_database_unavailable"
 
+	ErrCodeAssistantModelRequired       = "assistant_model_required"
+	ErrCodeAssistantProviderInvalid     = "assistant_provider_invalid"
+	ErrCodeAssistantProviderUnsupported = "assistant_provider_unsupported"
 	ErrCodeConnectionAccessRequired     = "connection_access_required"
 	ErrCodeConnectionManagementRequired = "connection_management_required"
 	ErrCodeConnectionNotFound           = "connection_not_found"

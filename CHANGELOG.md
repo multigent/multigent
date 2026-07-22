@@ -1,5 +1,23 @@
 # Changelog
 
+## [v0.1.1] - 2026-07-23
+
+### Added
+
+- Control-plane assistant settings backed by workspace model accounts.
+- Assistant HTTP model invocation for OpenAI-compatible and Anthropic providers.
+- Assistant status API so the web UI can show setup and permission state clearly.
+
+### Changed
+
+- Settings page now separates model accounts and the intelligent assistant account.
+- The assistant no longer depends on local Claude/Codex/Gemini CLI sessions.
+
+### Fixed
+
+- Removed obsolete assistant permission/session plumbing from the API server.
+- Added assistant API coverage for missing configuration and provider validation.
+
 ## [v0.5.1] - 2026-04-20
 
 ### Added

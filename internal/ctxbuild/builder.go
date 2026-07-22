@@ -171,7 +171,7 @@ func LayerHashes(mc *MergedContext) map[string]string {
 
 // loadSkillFiles recursively scans skillDir and returns all bundled
 // non-definition files as SkillFile entries.
-// Definition files (SKILL.md, skill.yaml, prompt.md) at the root level are
+// Definition files (SKILL.md, prompt.md, and obsolete metadata files) at the root level are
 // excluded because they are consumed by the store layer, not deployed to agents.
 // Files in subdirectories are included with their relative path as the Name
 // (e.g. "scripts/deploy.sh"), preserving the directory structure when deployed.
@@ -196,7 +196,9 @@ func loadSkillFiles(skillDir string) []SkillFile {
 		// Exclude top-level definition files only.
 		if !strings.Contains(rel, string(filepath.Separator)) {
 			switch rel {
-			case "SKILL.md", "skill.yaml", "prompt.md":
+			case "SKILL.md", "prompt.md":
+				return nil
+			case "skill.yaml":
 				return nil
 			}
 		}

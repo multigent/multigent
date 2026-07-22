@@ -131,9 +131,15 @@ func (s *Server) handleGetSkillDetail(w http.ResponseWriter, r *http.Request) {
 		s.serverError(w, err)
 		return
 	}
+	content, err := os.ReadFile(filepath.Join(s.st.SkillDir(name), "SKILL.md"))
+	if err != nil {
+		s.serverError(w, err)
+		return
+	}
 	_ = json.NewEncoder(w).Encode(map[string]any{
 		"name":        sk.Name,
 		"description": sk.Description,
+		"content":     string(content),
 		"prompt":      prompt,
 		"dir":         s.st.SkillDir(name),
 		"provenance":  s.playbookObjectProvenanceForRequest(r, "skill", "", name),
@@ -517,13 +523,8 @@ func normalizeUploadedSkillContent(content string) string {
 }
 
 func (s *Server) skillRegistryMeta(name string) entity.Skill {
-	path := filepath.Join(s.st.SkillDir(name), "skill.yaml")
-	raw, err := os.ReadFile(path)
-	if err != nil {
-		return entity.Skill{}
-	}
-	var meta entity.Skill
-	if err := yaml.Unmarshal(raw, &meta); err != nil {
+	meta := readSkillMetaFromDir(s.st.SkillDir(name))
+	if meta.Name == "" {
 		return entity.Skill{}
 	}
 	return meta
@@ -536,11 +537,31 @@ func writeSkillRegistryMeta(skillDir string, meta entity.Skill) error {
 	if err := os.MkdirAll(skillDir, 0o755); err != nil {
 		return err
 	}
-	raw, err := yaml.Marshal(&meta)
+	path := filepath.Join(skillDir, "SKILL.md")
+	raw, err := os.ReadFile(path)
+	if err != nil && !os.IsNotExist(err) {
+		return err
+	}
+	body := ""
+	if len(raw) > 0 {
+		_, parsedBody, err := parseSkillMDForInstall(path)
+		if err != nil {
+			return err
+		}
+		body = parsedBody
+	}
+	if strings.TrimSpace(body) == "" {
+		body = fmt.Sprintf("# Skill: %s\n\nDescribe when to use this skill, the workflow to follow, and any constraints.\n", meta.Name)
+	}
+	next, err := renderSkillMD(meta, body)
 	if err != nil {
 		return err
 	}
-	return os.WriteFile(filepath.Join(skillDir, "skill.yaml"), raw, 0o644)
+	if err := os.WriteFile(path, []byte(next), 0o644); err != nil {
+		return err
+	}
+	_ = os.Remove(filepath.Join(skillDir, "skill.yaml"))
+	return nil
 }
 
 func (s *Server) snapshotSkillPackage(skillDir string, meta entity.Skill) error {
@@ -616,13 +637,6 @@ func (s *Server) listSkillRegistryPackages() ([]skillPackageRow, error) {
 }
 
 func readSkillMetaFromDir(dir string) entity.Skill {
-	raw, err := os.ReadFile(filepath.Join(dir, "skill.yaml"))
-	if err == nil {
-		var meta entity.Skill
-		if yaml.Unmarshal(raw, &meta) == nil {
-			return meta
-		}
-	}
 	sk, _, err := parseSkillMDForInstall(filepath.Join(dir, "SKILL.md"))
 	if err != nil {
 		return entity.Skill{}
@@ -968,9 +982,12 @@ func parseSkillMDForInstall(path string) (entity.Skill, string, error) {
 	if err != nil {
 		return entity.Skill{}, "", err
 	}
-	content := string(raw)
+	return parseSkillMDContent(string(raw), strings.TrimSuffix(filepath.Base(filepath.Dir(path)), filepath.Ext(path)))
+}
+
+func parseSkillMDContent(content, fallbackName string) (entity.Skill, string, error) {
 	if !strings.HasPrefix(content, "---") {
-		return entity.Skill{Name: strings.TrimSuffix(filepath.Base(filepath.Dir(path)), filepath.Ext(path))}, content, nil
+		return entity.Skill{Name: fallbackName}, content, nil
 	}
 	rest := content[3:]
 	idx := strings.Index(rest, "\n---")
@@ -982,6 +999,56 @@ func parseSkillMDForInstall(path string) (entity.Skill, string, error) {
 		return entity.Skill{}, "", err
 	}
 	return sk, strings.TrimPrefix(rest[idx+4:], "\n"), nil
+}
+
+func mergeSkillMeta(base, override entity.Skill) entity.Skill {
+	if strings.TrimSpace(override.Name) != "" {
+		base.Name = strings.TrimSpace(override.Name)
+	}
+	if strings.TrimSpace(override.Description) != "" {
+		base.Description = strings.TrimSpace(override.Description)
+	}
+	if strings.TrimSpace(override.Source) != "" {
+		base.Source = strings.TrimSpace(override.Source)
+	}
+	if strings.TrimSpace(override.SourceType) != "" {
+		base.SourceType = strings.TrimSpace(override.SourceType)
+	}
+	if strings.TrimSpace(override.SourceRef) != "" {
+		base.SourceRef = strings.TrimSpace(override.SourceRef)
+	}
+	if strings.TrimSpace(override.Version) != "" {
+		base.Version = strings.TrimSpace(override.Version)
+	}
+	if override.Managed {
+		base.Managed = true
+	}
+	if override.Dirty {
+		base.Dirty = true
+	}
+	if strings.TrimSpace(override.InstalledAt) != "" {
+		base.InstalledAt = strings.TrimSpace(override.InstalledAt)
+	}
+	if strings.TrimSpace(override.UpdatedAt) != "" {
+		base.UpdatedAt = strings.TrimSpace(override.UpdatedAt)
+	}
+	return base
+}
+
+func renderSkillMD(meta entity.Skill, body string) (string, error) {
+	raw, err := yaml.Marshal(&meta)
+	if err != nil {
+		return "", err
+	}
+	var sb strings.Builder
+	sb.WriteString("---\n")
+	sb.Write(raw)
+	sb.WriteString("---\n\n")
+	sb.WriteString(strings.TrimPrefix(body, "\n"))
+	if !strings.HasSuffix(sb.String(), "\n") {
+		sb.WriteString("\n")
+	}
+	return sb.String(), nil
 }
 
 func copyDir(src, dst string) error {
@@ -1045,38 +1112,57 @@ func (s *Server) handlePutSkillPrompt(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	var sb strings.Builder
-	sb.WriteString("---\n")
-	sb.WriteString(fmt.Sprintf("name: %s\n", sk.Name))
-	if sk.Description != "" {
-		sb.WriteString(fmt.Sprintf("description: %q\n", sk.Description))
-	}
-	sb.WriteString("---\n")
-	if body.Content != "" {
-		sb.WriteString("\n")
-		sb.WriteString(body.Content)
-		if !strings.HasSuffix(body.Content, "\n") {
-			sb.WriteString("\n")
-		}
-	}
-
 	if err := s.ensureSkillWritableCopy(name); err != nil {
 		s.serverError(w, err)
 		return
 	}
+	content := strings.TrimSpace(body.Content)
+	meta := s.skillRegistryMeta(name)
+	if meta.Name == "" {
+		meta = *sk
+	}
+	if content == "" {
+		content = fmt.Sprintf("# Skill: %s\n\n", name)
+	}
+	next := ""
+	if strings.HasPrefix(content, "---") {
+		front, skillBody, err := parseSkillMDContent(content, name)
+		if err != nil {
+			s.jsonErrorCode(w, http.StatusBadRequest, ErrCodeValidationFailed, err.Error())
+			return
+		}
+		if strings.TrimSpace(front.Name) != "" && strings.TrimSpace(front.Name) != name {
+			s.jsonErrorCode(w, http.StatusBadRequest, ErrCodeValidationFailed, "frontmatter name must match skill name")
+			return
+		}
+		meta = mergeSkillMeta(meta, front)
+		meta.Name = name
+		meta.Dirty = true
+		meta.UpdatedAt = time.Now().UTC().Format(time.RFC3339)
+		rendered, err := renderSkillMD(meta, skillBody)
+		if err != nil {
+			s.serverError(w, err)
+			return
+		}
+		next = rendered
+	} else {
+		meta.Name = name
+		meta.Description = sk.Description
+		meta.Dirty = true
+		meta.UpdatedAt = time.Now().UTC().Format(time.RFC3339)
+		rendered, err := renderSkillMD(meta, content)
+		if err != nil {
+			s.serverError(w, err)
+			return
+		}
+		next = rendered
+	}
 	skillMD := filepath.Join(s.st.SkillDir(name), "SKILL.md")
-	if err := os.WriteFile(skillMD, []byte(sb.String()), 0o644); err != nil {
+	if err := os.WriteFile(skillMD, []byte(next), 0o644); err != nil {
 		s.serverError(w, err)
 		return
 	}
-	meta := s.skillRegistryMeta(name)
-	if meta.Name == "" {
-		meta.Name = name
-	}
-	meta.Description = sk.Description
-	meta.Dirty = true
-	meta.UpdatedAt = time.Now().UTC().Format(time.RFC3339)
-	_ = writeSkillRegistryMeta(s.st.SkillDir(name), meta)
+	_ = os.Remove(filepath.Join(s.st.SkillDir(name), "skill.yaml"))
 	s.markPlaybookObjectCustomized(r, "skill", "", name)
 	_ = json.NewEncoder(w).Encode(map[string]bool{"ok": true})
 }

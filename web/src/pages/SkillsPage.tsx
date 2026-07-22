@@ -31,7 +31,7 @@ type SkillRegistry = {
   installedAt?: string
   updatedAt?: string
 }
-type SkillDetail = { name: string; description?: string; prompt: string; provenance?: Provenance; registry?: SkillRegistry; packageDir?: string }
+type SkillDetail = { name: string; description?: string; content?: string; prompt: string; provenance?: Provenance; registry?: SkillRegistry; packageDir?: string }
 type SkillFileTree = { name: string; files: SkillFile[] }
 type SkillFile = { path: string; size: number; mode?: string; content?: string; encoding?: string }
 type SkillPackageRow = SkillRegistry & {
@@ -66,7 +66,7 @@ function SkillItem({ skill, defaultOpen }: { skill: SkillRow; defaultOpen?: bool
   const [preview, setPreview] = useState(false)
   const [syncOpen, setSyncOpen] = useState(false)
 
-  const content = value ?? (detailState.status === 'ok' ? detailState.data.prompt : '')
+  const content = value ?? (detailState.status === 'ok' ? (detailState.data.content ?? detailState.data.prompt) : '')
 
   const save = useCallback(async () => {
     setSaving(true)

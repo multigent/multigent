@@ -23,8 +23,7 @@ MyAgency/
 
   skills/                    # no built-ins — define only what you need
     github-push-relay/
-      skill.yaml
-      prompt.md              # uses {{SKILL_DIR}} for script paths
+      SKILL.md               # YAML frontmatter + Markdown instructions
       git-push-github.sh     # bundled file, chmod+x preserved
 
   project-blueprints/        # project templates packaged with the agency template
@@ -64,8 +63,8 @@ Team-level context. For example, `engineering/prompt.md` might define code revie
 ### `teams/<team>/roles/<role>/prompt.md`
 Role-specific instructions. A `developer` role might include how to write commit messages; a `pm` role might include how to prioritise issues.
 
-### `skills/<skill>/prompt.md`
-Reusable capability definitions deployed into agent working directories. Use `{{SKILL_DIR}}` to reference co-located scripts and files.
+### `skills/<skill>/SKILL.md`
+Reusable capability definitions deployed into agent working directories. Put metadata in YAML frontmatter and instructions in the Markdown body. Use `{{SKILL_DIR}}` to reference co-located scripts and files.
 
 ### `project-blueprints/<name>.yaml`
 Declarative project template defining which agents to hire, their heartbeat schedules, sandbox settings, and which playbook each agent uses.
