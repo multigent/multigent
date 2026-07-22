@@ -15,6 +15,7 @@ type StreamEvent = {
   type: string
   subtype?: string
   session_id?: string
+  parent_tool_use_id?: string | null
   thread_id?: string
   text?: string
   attempt?: number
@@ -463,16 +464,40 @@ function parseLog(content: string): ConversationItem[] {
     }
 
     if (ev.type === 'human' || ev.type === 'user' || ev.role === 'human') {
+      const blocks = Array.isArray(ev.message?.content)
+        ? ev.message!.content
+        : Array.isArray(ev.content)
+          ? ev.content as ContentBlock[]
+          : []
+      if (blocks.length > 0) {
+        const text = blocks
+          .filter((b): b is { type: 'text'; text: string } => b.type === 'text')
+          .map((b) => b.text)
+          .filter((text) => text.trim())
+          .join('\n')
+        const toolResults = blocks.filter((b): b is { type: 'tool_result'; content?: string; output?: string; is_error?: boolean } => b.type === 'tool_result')
+        for (const tr of toolResults) {
+          const content = typeof tr.content === 'string' ? tr.content : tr.output || ''
+          if (content.trim()) {
+            items.push({ kind: 'tool_result', content, isError: Boolean(tr.is_error) })
+          }
+        }
+        if (text) {
+          if (ev.parent_tool_use_id) {
+            items.push({ kind: 'system', text: truncateStr(text, 500) })
+          } else {
+            items.push({ kind: 'human', text })
+          }
+        }
+        continue
+      }
+
       const text = typeof ev.content === 'string'
         ? ev.content
         : typeof ev.message?.content === 'string'
           ? ev.message.content
-          : Array.isArray(ev.message?.content)
-            ? ev.message!.content.filter((b): b is { type: 'text'; text: string } => b.type === 'text').map((b) => b.text).join('\n')
-            : Array.isArray(ev.content)
-              ? (ev.content as ContentBlock[]).filter((b): b is { type: 'text'; text: string } => b.type === 'text').map((b) => b.text).join('\n')
-              : ''
-      if (text) items.push({ kind: 'human', text })
+          : ''
+      if (text) items.push({ kind: ev.parent_tool_use_id ? 'system' : 'human', text })
       continue
     }
 
