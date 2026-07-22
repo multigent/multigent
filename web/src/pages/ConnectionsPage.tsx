@@ -564,7 +564,7 @@ function providerCategoryLabel(category: string, t: TFn): string {
 }
 
 function providerCategorySort(a: string, b: string): number {
-  const order = ['Developer Tools', 'Project Management', 'Knowledge And Docs', 'Communication', 'Design And Data', 'Research And Search', 'Advanced', customMCPCategory, 'Other Tools']
+  const order = ['Developer Tools', 'Cloud And Infrastructure', 'Project Management', 'Knowledge And Docs', 'Communication', 'Design And Data', 'Research And Search', 'Advanced', customMCPCategory, 'Other Tools']
   const ai = order.indexOf(a)
   const bi = order.indexOf(b)
   if (ai === -1 && bi === -1) return a.localeCompare(b)
@@ -655,6 +655,8 @@ const providerLogoDomains: Record<string, string> = {
   confluence: 'atlassian.com',
   trello: 'trello.com',
   asana: 'asana.com',
+  aws: 'aws.amazon.com',
+  gcloud: 'cloud.google.com',
   vercel: 'vercel.com',
   cloudflare: 'cloudflare.com',
   stripe: 'stripe.com',

@@ -1559,14 +1559,18 @@ func firstProfileStringList(profile map[string]any, keys ...string) []string {
 
 func sanitizeConnectionProfile(providerID string, profile map[string]any) map[string]any {
 	secretKeys := map[string]bool{
-		"apiKey":     true,
-		"api_key":    true,
-		"appSecret":  true,
-		"app_secret": true,
-		"password":   true,
-		"secret":     true,
-		"token":      true,
-		"credential": true,
+		"apiKey":             true,
+		"api_key":            true,
+		"appSecret":          true,
+		"app_secret":         true,
+		"password":           true,
+		"privateKey":         true,
+		"secret":             true,
+		"secretAccessKey":    true,
+		"sessionToken":       true,
+		"serviceAccountJson": true,
+		"token":              true,
+		"credential":         true,
 	}
 	if provider, ok := defaultConnectorProvider(providerID); ok {
 		for _, field := range provider.Fields {

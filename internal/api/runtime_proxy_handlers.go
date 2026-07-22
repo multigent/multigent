@@ -503,6 +503,15 @@ func (s *Server) runtimeHTTPActionConfig(connection controldb.Connection) (runti
 			cfg.AuthValue = "Bearer " + apiKey
 			cfg.RedactValues = append(cfg.RedactValues, apiKey, cfg.AuthValue)
 		}
+	case "cloudflare":
+		if cfg.BaseURL == "" {
+			cfg.BaseURL = "https://api.cloudflare.com/client/v4"
+		}
+		cfg.AuthHeader = "Authorization"
+		if apiKey != "" {
+			cfg.AuthValue = "Bearer " + apiKey
+			cfg.RedactValues = append(cfg.RedactValues, apiKey, cfg.AuthValue)
+		}
 	case "exa":
 		if cfg.BaseURL == "" {
 			cfg.BaseURL = "https://api.exa.ai"

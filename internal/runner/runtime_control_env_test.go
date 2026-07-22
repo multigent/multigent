@@ -492,6 +492,42 @@ func TestWriteRuntimeToolsFileMaterializesBasicExternalToolCredentials(t *testin
 					"cli":{"binary":"docker","configFiles":[{"path":"~/.docker/config.json","format":"json"}]},
 					"credentialMaterialize":"runtime_file"
 				}]
+			},
+			{
+				"provider":"aws",
+				"connectionId":"conn_aws",
+				"connectionAlias":"aws",
+				"connectionName":"AWS",
+				"adapters":[{
+					"type":"cli",
+					"priority":100,
+					"cli":{"binary":"aws","configFiles":[{"path":"~/.aws/credentials","format":"ini"},{"path":"~/.aws/config","format":"ini"}]},
+					"credentialMaterialize":"runtime_file"
+				}]
+			},
+			{
+				"provider":"gcloud",
+				"connectionId":"conn_gcloud",
+				"connectionAlias":"gcloud",
+				"connectionName":"Google Cloud",
+				"adapters":[{
+					"type":"cli",
+					"priority":100,
+					"cli":{"binary":"gcloud","configFiles":[{"path":"~/.config/gcloud/application_default_credentials.json","format":"json"}]},
+					"credentialMaterialize":"runtime_file"
+				}]
+			},
+			{
+				"provider":"cloudflare",
+				"connectionId":"conn_cloudflare",
+				"connectionAlias":"cloudflare",
+				"connectionName":"Cloudflare",
+				"adapters":[{
+					"type":"cli",
+					"priority":100,
+					"cli":{"binary":"wrangler","configFiles":[{"path":"~/.cloudflare/env","format":"env"}]},
+					"credentialMaterialize":"runtime_env"
+				}]
 			}
 		]
 	}`)
@@ -515,6 +551,27 @@ func TestWriteRuntimeToolsFileMaterializesBasicExternalToolCredentials(t *testin
 				"registryUrl": "ghcr.io",
 				"username":    "octo",
 				"password":    "docker-secret-token",
+			}, true, nil
+		case "conn_aws":
+			return map[string]string{
+				"accessKeyId":     "AKIATEST",
+				"secretAccessKey": "aws-secret-key",
+				"sessionToken":    "aws-session-token",
+				"region":          "us-west-2",
+				"profile":         "multigent",
+			}, true, nil
+		case "conn_gcloud":
+			return map[string]string{
+				"serviceAccountJson": `{"type":"service_account","project_id":"demo-project","private_key_id":"kid","private_key":"key","client_email":"svc@example.test","client_id":"123"}`,
+				"projectId":          "demo-project",
+				"region":             "us-central1",
+				"zone":               "us-central1-a",
+			}, true, nil
+		case "conn_cloudflare":
+			return map[string]string{
+				"apiKey":    "cf-secret-token",
+				"accountId": "cf-account",
+				"zoneId":    "cf-zone",
 			}, true, nil
 		default:
 			t.Fatalf("unexpected connectionID=%q", connectionID)
@@ -564,11 +621,32 @@ func TestWriteRuntimeToolsFileMaterializesBasicExternalToolCredentials(t *testin
 	if !strings.Contains(string(dockerBody), "ghcr.io") || !strings.Contains(string(dockerBody), base64.StdEncoding.EncodeToString([]byte("octo:docker-secret-token"))) {
 		t.Fatalf("unexpected docker config: %s", string(dockerBody))
 	}
+	awsCredentialsBody, err := os.ReadFile(env["AWS_SHARED_CREDENTIALS_FILE"])
+	if err != nil {
+		t.Fatalf("read aws credentials: %v", err)
+	}
+	if !strings.Contains(string(awsCredentialsBody), "aws_access_key_id = AKIATEST") || !strings.Contains(string(awsCredentialsBody), "aws_session_token = aws-session-token") {
+		t.Fatalf("unexpected aws credentials: %s", string(awsCredentialsBody))
+	}
+	if env["AWS_PROFILE"] != "multigent" || env["AWS_REGION"] != "us-west-2" || env["AWS_CONFIG_FILE"] == "" {
+		t.Fatalf("unexpected aws env: %#v", env)
+	}
+	gcloudPath := env["GOOGLE_APPLICATION_CREDENTIALS"]
+	gcloudBody, err := os.ReadFile(gcloudPath)
+	if err != nil {
+		t.Fatalf("read gcloud credentials: %v", err)
+	}
+	if !strings.Contains(string(gcloudBody), `"type":"service_account"`) || env["CLOUDSDK_CORE_PROJECT"] != "demo-project" || env["CLOUDSDK_COMPUTE_ZONE"] != "us-central1-a" {
+		t.Fatalf("unexpected gcloud materialization: env=%#v body=%s", env, string(gcloudBody))
+	}
+	if env["CLOUDFLARE_API_TOKEN"] != "cf-secret-token" || env["CLOUDFLARE_ACCOUNT_ID"] != "cf-account" || env["CLOUDFLARE_ZONE_ID"] != "cf-zone" {
+		t.Fatalf("unexpected cloudflare env: %#v", env)
+	}
 	toolsBody, err := os.ReadFile(toolsPath)
 	if err != nil {
 		t.Fatalf("read tools plan: %v", err)
 	}
-	for _, secret := range []string{"npm-secret-token", "docker-secret-token", "key-body"} {
+	for _, secret := range []string{"npm-secret-token", "docker-secret-token", "key-body", "aws-secret-key", "aws-session-token", "cf-secret-token"} {
 		if strings.Contains(string(toolsBody), secret) {
 			t.Fatalf("tools file leaked %q: %s", secret, string(toolsBody))
 		}

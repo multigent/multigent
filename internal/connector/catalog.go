@@ -200,6 +200,9 @@ func Defaults() []Provider {
 		gitSSHProvider(),
 		npmRegistryProvider(),
 		dockerRegistryProvider(),
+		awsProvider(),
+		gcloudProvider(),
+		cloudflareProvider(),
 		customMCPProvider(),
 		{
 			Provider:    "feishu",
@@ -399,6 +402,73 @@ func DefaultRuntimeAdapters(provider Provider) []ToolRuntimeAdapter {
 			CredentialMaterialize: CredentialMaterializeRuntimeFile,
 			Audit:                 ToolRuntimeAuditPolicy{CommandAudit: "best_effort", ProxyAudit: "none"},
 		}}
+	case "aws":
+		return []ToolRuntimeAdapter{{
+			Type:        RuntimeAdapterCLI,
+			Priority:    100,
+			Description: "Use AWS CLI with agent-scoped access keys and region configuration for cloud infrastructure workflows.",
+			Skills:      []string{"aws"},
+			CLI: &ToolCLIAdapter{
+				Binary: "aws",
+				Installer: &ToolInstallerSpec{
+					Type:    "system",
+					Package: "awscli",
+					Version: "latest",
+					Check:   []string{"aws --version"},
+				},
+				ConfigFiles: []ToolConfigFileSpec{
+					{Path: "~/.aws/credentials", Format: "ini", Description: "Agent-scoped AWS shared credentials."},
+					{Path: "~/.aws/config", Format: "ini", Description: "Agent-scoped AWS profile and region config."},
+				},
+			},
+			CredentialMaterialize: CredentialMaterializeRuntimeFile,
+			Audit:                 ToolRuntimeAuditPolicy{CommandAudit: "best_effort", ProxyAudit: "none"},
+		}}
+	case "gcloud":
+		return []ToolRuntimeAdapter{{
+			Type:        RuntimeAdapterCLI,
+			Priority:    100,
+			Description: "Use Google Cloud CLI with an agent-scoped service account key and project configuration.",
+			Skills:      []string{"gcloud"},
+			CLI: &ToolCLIAdapter{
+				Binary: "gcloud",
+				Installer: &ToolInstallerSpec{
+					Type:    "system",
+					Package: "google-cloud-cli",
+					Version: "latest",
+					Check:   []string{"gcloud --version"},
+				},
+				ConfigFiles: []ToolConfigFileSpec{
+					{Path: "~/.config/gcloud/application_default_credentials.json", Format: "json", Description: "Agent-scoped Google Cloud service account key."},
+				},
+			},
+			CredentialMaterialize: CredentialMaterializeRuntimeFile,
+			Audit:                 ToolRuntimeAuditPolicy{CommandAudit: "best_effort", ProxyAudit: "none"},
+		}}
+	case "cloudflare":
+		return []ToolRuntimeAdapter{
+			{
+				Type:        RuntimeAdapterCLI,
+				Priority:    100,
+				Description: "Use Wrangler with an agent-scoped Cloudflare API token for Workers, Pages, KV, R2, and account workflows.",
+				Skills:      []string{"cloudflare"},
+				CLI: &ToolCLIAdapter{
+					Binary: "wrangler",
+					Installer: &ToolInstallerSpec{
+						Type:    "npm",
+						Package: "wrangler",
+						Version: "latest",
+						Check:   []string{"wrangler --version"},
+					},
+					ConfigFiles: []ToolConfigFileSpec{
+						{Path: "~/.cloudflare/env", Format: "env", Description: "Agent-scoped Cloudflare runtime environment."},
+					},
+				},
+				CredentialMaterialize: CredentialMaterializeRuntimeEnv,
+				Audit:                 ToolRuntimeAuditPolicy{CommandAudit: "best_effort", ProxyAudit: "available"},
+			},
+			httpActionAdapter(provider.Actions, 20),
+		}
 	case "feishu", "lark":
 		return []ToolRuntimeAdapter{
 			{
@@ -630,6 +700,67 @@ func dockerRegistryProvider() Provider {
 	}
 }
 
+func awsProvider() Provider {
+	return Provider{
+		Provider:    "aws",
+		DisplayName: "AWS",
+		Description: "Use AWS CLI for cloud infrastructure, deployment, storage, logs, and operations workflows.",
+		Category:    "Cloud And Infrastructure",
+		AuthTypes:   []string{AuthCustomCredential},
+		Fields: []ProviderField{
+			{Key: "accessKeyId", Label: "Access key ID", InputType: "text", Required: true},
+			{Key: "secretAccessKey", Label: "Secret access key", InputType: "password", Required: true, Secret: true},
+			{Key: "sessionToken", Label: "Session token", InputType: "password", Secret: true},
+			{Key: "region", Label: "Region", InputType: "text"},
+			{Key: "profile", Label: "Profile", InputType: "text"},
+		},
+		Guides: []ProviderGuide{
+			credentialGuide("AWS access key", "Create an IAM user or IAM Identity Center credential with the minimum permissions required by this workspace. Prefer short-lived or workload-specific credentials over broad administrator keys.", "AWS access keys", "https://docs.aws.amazon.com/IAM/latest/UserGuide/id_credentials_access-keys.html"),
+		},
+		Enabled: true,
+	}
+}
+
+func gcloudProvider() Provider {
+	return Provider{
+		Provider:    "gcloud",
+		DisplayName: "Google Cloud",
+		Description: "Use Google Cloud CLI for GCP projects, deployments, storage, logs, and cloud operations workflows.",
+		Category:    "Cloud And Infrastructure",
+		AuthTypes:   []string{AuthCustomCredential},
+		Fields: []ProviderField{
+			{Key: "serviceAccountJson", Label: "Service account JSON", InputType: "textarea", Required: true, Secret: true},
+			{Key: "projectId", Label: "Project ID", InputType: "text", Required: true},
+			{Key: "region", Label: "Region", InputType: "text"},
+			{Key: "zone", Label: "Zone", InputType: "text"},
+		},
+		Guides: []ProviderGuide{
+			credentialGuide("Google Cloud service account", "Create a dedicated service account, grant the smallest set of IAM roles needed by agents, then paste its JSON key here. Avoid using personal account credentials in production workspaces.", "Google Cloud service account keys", "https://cloud.google.com/iam/docs/keys-create-delete"),
+		},
+		Enabled: true,
+	}
+}
+
+func cloudflareProvider() Provider {
+	return Provider{
+		Provider:    "cloudflare",
+		DisplayName: "Cloudflare",
+		Description: "Use Cloudflare API and Wrangler for Workers, Pages, DNS, R2, KV, deployments, and edge operations.",
+		Category:    "Cloud And Infrastructure",
+		AuthTypes:   []string{AuthAPIKey},
+		Fields: []ProviderField{
+			{Key: "apiKey", Label: "API token", InputType: "password", Required: true, Secret: true},
+			{Key: "accountId", Label: "Account ID", InputType: "text"},
+			{Key: "zoneId", Label: "Zone ID", InputType: "text"},
+		},
+		Actions: cloudflareActions(),
+		Guides: []ProviderGuide{
+			credentialGuide("Cloudflare API token", "Create a Cloudflare API token with only the account, zone, Workers, Pages, KV, R2, or DNS permissions your agents need. Prefer scoped tokens over global API keys.", "Cloudflare API tokens", "https://developers.cloudflare.com/fundamentals/api/get-started/create-token/"),
+		},
+		Enabled: true,
+	}
+}
+
 func figmaProvider() Provider {
 	p := staticPATProvider(
 		"figma",
@@ -730,6 +861,43 @@ func feishuActions() []ProviderAction {
 				"msg_type":        stringSchema("Message type, for example text."),
 				"content":         stringSchema("Message content JSON string required by Feishu/Lark."),
 			}, []string{"receive_id_type", "receive_id", "msg_type", "content"}),
+		},
+	}
+}
+
+func cloudflareActions() []ProviderAction {
+	return []ProviderAction{
+		{
+			Name:        "get_user",
+			DisplayName: "Get authenticated user",
+			Description: "Verify the Cloudflare API token and read the authenticated user.",
+			Method:      "GET",
+			Endpoint:    "/user",
+			InputSchema: objectSchema(nil, nil),
+		},
+		{
+			Name:        "list_accounts",
+			DisplayName: "List accounts",
+			Description: "List Cloudflare accounts visible to the configured token.",
+			Method:      "GET",
+			Endpoint:    "/accounts",
+			InputSchema: objectSchema(map[string]any{
+				"page":     numberSchema("Page number."),
+				"per_page": numberSchema("Number of accounts per page."),
+			}, nil),
+		},
+		{
+			Name:        "list_zones",
+			DisplayName: "List zones",
+			Description: "List Cloudflare zones visible to the configured token.",
+			Method:      "GET",
+			Endpoint:    "/zones",
+			InputSchema: objectSchema(map[string]any{
+				"name":     stringSchema("Optional zone name filter."),
+				"status":   stringSchema("Optional zone status filter."),
+				"page":     numberSchema("Page number."),
+				"per_page": numberSchema("Number of zones per page."),
+			}, nil),
 		},
 	}
 }

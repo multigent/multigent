@@ -9,7 +9,7 @@ func TestDefaultProvidersIncludeActionCatalogs(t *testing.T) {
 	}
 	for _, providerID := range []string{
 		"github", "gitlab", "gitee", "feishu", "lark", "linear", "notion", "dingtalk_bot",
-		"figma", "airtable", "asana", "clickup", "sentry", "vercel", "exa", "brave_search",
+		"figma", "airtable", "asana", "clickup", "sentry", "vercel", "aws", "gcloud", "cloudflare", "exa", "brave_search",
 		"ssh_key", "git_ssh", "npm_registry", "docker_registry", "custom-mcp",
 	} {
 		provider, ok := providers[providerID]
@@ -19,7 +19,7 @@ func TestDefaultProvidersIncludeActionCatalogs(t *testing.T) {
 		if provider.ComingSoon {
 			t.Fatalf("provider %q should be available", providerID)
 		}
-		if len(provider.Actions) == 0 && provider.Provider != "ssh_key" && provider.Provider != "git_ssh" && provider.Provider != "npm_registry" && provider.Provider != "docker_registry" && provider.Provider != "custom-mcp" {
+		if len(provider.Actions) == 0 && provider.Provider != "ssh_key" && provider.Provider != "git_ssh" && provider.Provider != "npm_registry" && provider.Provider != "docker_registry" && provider.Provider != "aws" && provider.Provider != "gcloud" && provider.Provider != "custom-mcp" {
 			t.Fatalf("provider %q has no actions", providerID)
 		}
 		for _, action := range provider.Actions {
@@ -50,6 +50,9 @@ func TestDefaultProvidersIncludeRuntimeAdapters(t *testing.T) {
 		{provider: "git_ssh", want: RuntimeAdapterCLI, binary: "git"},
 		{provider: "npm_registry", want: RuntimeAdapterCLI, binary: "npm"},
 		{provider: "docker_registry", want: RuntimeAdapterCLI, binary: "docker"},
+		{provider: "aws", want: RuntimeAdapterCLI, binary: "aws"},
+		{provider: "gcloud", want: RuntimeAdapterCLI, binary: "gcloud"},
+		{provider: "cloudflare", want: RuntimeAdapterCLI, binary: "wrangler"},
 		{provider: "figma", want: RuntimeAdapterMCPGateway},
 		{provider: "custom-mcp", want: RuntimeAdapterMCPGateway},
 		{provider: "notion", want: RuntimeAdapterHTTPAction},

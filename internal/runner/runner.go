@@ -1799,6 +1799,12 @@ func materializeCLIConfig(tool runtimeToolRef, adapter runtimeAdapterRef, cfg ru
 		return materializeNPMRegistryConfig(cfg, secretValues)
 	case "docker_registry":
 		return materializeDockerRegistryConfig(cfg, secretValues)
+	case "aws":
+		return materializeAWSCLIConfig(cfg, secretValues)
+	case "gcloud":
+		return materializeGCloudCLIConfig(cfg, secretValues)
+	case "cloudflare":
+		return materializeCloudflareCLIConfig(cfg, secretValues)
 	default:
 		return nil, nil
 	}
@@ -2025,6 +2031,110 @@ func materializeDockerRegistryConfig(cfg runtimeConfigFileRef, secretValues map[
 		return nil, err
 	}
 	return map[string]string{"DOCKER_CONFIG": filepath.Dir(cfg.MaterializedPath)}, nil
+}
+
+func materializeAWSCLIConfig(cfg runtimeConfigFileRef, secretValues map[string]string) (map[string]string, error) {
+	path := strings.TrimSpace(cfg.Path)
+	if cfg.MaterializedPath == "" {
+		return nil, nil
+	}
+	profile := firstNonEmpty(secretValues["profile"], "default")
+	region := strings.TrimSpace(secretValues["region"])
+	env := map[string]string{"AWS_PROFILE": profile}
+	if strings.HasSuffix(path, ".aws/credentials") {
+		accessKeyID := strings.TrimSpace(secretValues["accessKeyId"])
+		secretAccessKey := strings.TrimSpace(secretValues["secretAccessKey"])
+		if accessKeyID == "" || secretAccessKey == "" {
+			return nil, nil
+		}
+		lines := []string{
+			"[" + profile + "]",
+			"aws_access_key_id = " + accessKeyID,
+			"aws_secret_access_key = " + secretAccessKey,
+		}
+		if sessionToken := strings.TrimSpace(secretValues["sessionToken"]); sessionToken != "" {
+			lines = append(lines, "aws_session_token = "+sessionToken)
+		}
+		if err := os.WriteFile(cfg.MaterializedPath, []byte(strings.Join(lines, "\n")+"\n"), 0o600); err != nil {
+			return nil, err
+		}
+		env["AWS_SHARED_CREDENTIALS_FILE"] = cfg.MaterializedPath
+		return env, nil
+	}
+	if strings.HasSuffix(path, ".aws/config") {
+		section := "profile " + profile
+		if profile == "default" {
+			section = "default"
+		}
+		lines := []string{"[" + section + "]"}
+		if region != "" {
+			lines = append(lines, "region = "+region)
+			env["AWS_REGION"] = region
+			env["AWS_DEFAULT_REGION"] = region
+		}
+		if err := os.WriteFile(cfg.MaterializedPath, []byte(strings.Join(lines, "\n")+"\n"), 0o600); err != nil {
+			return nil, err
+		}
+		env["AWS_CONFIG_FILE"] = cfg.MaterializedPath
+		return env, nil
+	}
+	return nil, nil
+}
+
+func materializeGCloudCLIConfig(cfg runtimeConfigFileRef, secretValues map[string]string) (map[string]string, error) {
+	if cfg.MaterializedPath == "" || !strings.HasSuffix(strings.TrimSpace(cfg.Path), "application_default_credentials.json") {
+		return nil, nil
+	}
+	serviceAccountJSON := strings.TrimSpace(secretValues["serviceAccountJson"])
+	projectID := strings.TrimSpace(secretValues["projectId"])
+	if serviceAccountJSON == "" {
+		return nil, nil
+	}
+	if !json.Valid([]byte(serviceAccountJSON)) {
+		return nil, fmt.Errorf("serviceAccountJson must be valid JSON")
+	}
+	if err := os.WriteFile(cfg.MaterializedPath, []byte(serviceAccountJSON+"\n"), 0o600); err != nil {
+		return nil, err
+	}
+	env := map[string]string{
+		"GOOGLE_APPLICATION_CREDENTIALS":         cfg.MaterializedPath,
+		"CLOUDSDK_AUTH_CREDENTIAL_FILE_OVERRIDE": cfg.MaterializedPath,
+	}
+	if projectID != "" {
+		env["GOOGLE_CLOUD_PROJECT"] = projectID
+		env["CLOUDSDK_CORE_PROJECT"] = projectID
+	}
+	if region := strings.TrimSpace(secretValues["region"]); region != "" {
+		env["CLOUDSDK_COMPUTE_REGION"] = region
+	}
+	if zone := strings.TrimSpace(secretValues["zone"]); zone != "" {
+		env["CLOUDSDK_COMPUTE_ZONE"] = zone
+	}
+	return env, nil
+}
+
+func materializeCloudflareCLIConfig(cfg runtimeConfigFileRef, secretValues map[string]string) (map[string]string, error) {
+	if cfg.MaterializedPath == "" || !strings.HasSuffix(strings.TrimSpace(cfg.Path), ".cloudflare/env") {
+		return nil, nil
+	}
+	apiToken := strings.TrimSpace(firstNonEmpty(secretValues["apiKey"], secretValues["apiToken"], secretValues["token"]))
+	if apiToken == "" {
+		return nil, nil
+	}
+	env := map[string]string{"CLOUDFLARE_API_TOKEN": apiToken}
+	lines := []string{"CLOUDFLARE_API_TOKEN=" + shellQuote(apiToken)}
+	if accountID := strings.TrimSpace(secretValues["accountId"]); accountID != "" {
+		env["CLOUDFLARE_ACCOUNT_ID"] = accountID
+		lines = append(lines, "CLOUDFLARE_ACCOUNT_ID="+shellQuote(accountID))
+	}
+	if zoneID := strings.TrimSpace(secretValues["zoneId"]); zoneID != "" {
+		env["CLOUDFLARE_ZONE_ID"] = zoneID
+		lines = append(lines, "CLOUDFLARE_ZONE_ID="+shellQuote(zoneID))
+	}
+	if err := os.WriteFile(cfg.MaterializedPath, []byte(strings.Join(lines, "\n")+"\n"), 0o600); err != nil {
+		return nil, err
+	}
+	return env, nil
 }
 
 func materializeLarkCLIConfig(tool runtimeToolRef, adapter runtimeAdapterRef, cfg runtimeConfigFileRef, secretValues map[string]string) (map[string]string, error) {

@@ -344,9 +344,9 @@ func (s *Server) testConnection(r *http.Request, connection controldb.Connection
 	switch connection.Provider {
 	case "custom-mcp":
 		return s.testCustomMCPConnection(r, connection)
-	case "ssh_key", "git_ssh", "npm_registry", "docker_registry":
+	case "ssh_key", "git_ssh", "npm_registry", "docker_registry", "aws", "gcloud":
 		return s.testStaticRuntimeCredentialConnection(connection)
-	case "custom-http", "github", "gitlab", "gitee", "linear", "notion", "figma", "airtable", "asana", "clickup", "sentry", "vercel", "exa", "brave_search", "feishu", "lark", "dingtalk_bot":
+	case "custom-http", "github", "gitlab", "gitee", "linear", "notion", "figma", "airtable", "asana", "clickup", "sentry", "vercel", "cloudflare", "exa", "brave_search", "feishu", "lark", "dingtalk_bot":
 		return s.testHTTPConnection(r, connection, body)
 	default:
 		return testConnectionResult{}, fmt.Errorf("connection test is not supported for provider %q", connection.Provider)
@@ -390,6 +390,23 @@ func (s *Server) testStaticRuntimeCredentialConnection(connection controldb.Conn
 		}
 		if strings.TrimSpace(firstNonEmpty(values["password"], values["authToken"], values["apiKey"], values["token"])) == "" {
 			return testConnectionResult{}, fmt.Errorf("password is required")
+		}
+	case "aws":
+		if strings.TrimSpace(values["accessKeyId"]) == "" {
+			return testConnectionResult{}, fmt.Errorf("accessKeyId is required")
+		}
+		if strings.TrimSpace(values["secretAccessKey"]) == "" {
+			return testConnectionResult{}, fmt.Errorf("secretAccessKey is required")
+		}
+	case "gcloud":
+		if strings.TrimSpace(values["serviceAccountJson"]) == "" {
+			return testConnectionResult{}, fmt.Errorf("serviceAccountJson is required")
+		}
+		if !json.Valid([]byte(strings.TrimSpace(values["serviceAccountJson"]))) {
+			return testConnectionResult{}, fmt.Errorf("serviceAccountJson must be valid JSON")
+		}
+		if strings.TrimSpace(values["projectId"]) == "" {
+			return testConnectionResult{}, fmt.Errorf("projectId is required")
 		}
 	}
 	return testConnectionResult{OK: true, Status: http.StatusOK, Message: "credential format looks valid"}, nil
