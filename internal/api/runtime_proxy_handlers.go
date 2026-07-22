@@ -95,8 +95,8 @@ func (s *Server) proxyCustomMCP(w http.ResponseWriter, r *http.Request, principa
 	if accept := strings.TrimSpace(r.Header.Get("Accept")); accept != "" {
 		req.Header.Set("Accept", accept)
 	}
-	if cfg.Token != "" {
-		req.Header.Set("Authorization", "Bearer "+cfg.Token)
+	if cfg.AuthHeader != "" && cfg.AuthValue != "" {
+		req.Header.Set(cfg.AuthHeader, cfg.AuthValue)
 	}
 	client := &http.Client{Timeout: 60 * time.Second}
 	resp, err := client.Do(req)
@@ -112,7 +112,7 @@ func (s *Server) proxyCustomMCP(w http.ResponseWriter, r *http.Request, principa
 	if err != nil {
 		return fmt.Errorf("read custom MCP response: %w", err)
 	}
-	respBody = redactRuntimeProxyResponse(respBody, cfg.Token)
+	respBody = redactRuntimeProxyResponse(respBody, cfg.RedactValues...)
 	w.WriteHeader(resp.StatusCode)
 	_, _ = w.Write(respBody)
 	return nil
@@ -1021,8 +1021,10 @@ func runtimeActionResponseBody(body []byte, contentType string) any {
 }
 
 type customMCPRuntimeConfig struct {
-	ServerURL string
-	Token     string
+	ServerURL    string
+	AuthHeader   string
+	AuthValue    string
+	RedactValues []string
 }
 
 func (s *Server) customMCPRuntimeConfig(connection controldb.Connection) (customMCPRuntimeConfig, error) {
@@ -1051,10 +1053,26 @@ func (s *Server) customMCPRuntimeConfig(connection controldb.Connection) (custom
 	if err := validateCustomMCPServerURL(serverURL); err != nil {
 		return customMCPRuntimeConfig{}, err
 	}
-	return customMCPRuntimeConfig{
-		ServerURL: serverURL,
-		Token:     strings.TrimSpace(values["token"]),
-	}, nil
+	token := firstNonEmpty(values["token"], values["apiKey"], values["accessToken"])
+	authHeader := firstNonEmpty(values["authHeader"], values["mcpAuthHeader"], firstProfileString(profile, "authHeader"), firstProfileString(profile, "mcpAuthHeader"))
+	authScheme := firstNonEmpty(values["authScheme"], values["mcpAuthScheme"], firstProfileString(profile, "authScheme"), firstProfileString(profile, "mcpAuthScheme"))
+	cfg := customMCPRuntimeConfig{ServerURL: serverURL}
+	if token != "" {
+		if authHeader == "" {
+			authHeader = "Authorization"
+		}
+		if strings.EqualFold(authHeader, "Authorization") {
+			if authScheme == "" {
+				authScheme = "Bearer"
+			}
+			cfg.AuthValue = strings.TrimSpace(authScheme + " " + token)
+		} else {
+			cfg.AuthValue = token
+		}
+		cfg.AuthHeader = authHeader
+		cfg.RedactValues = append(cfg.RedactValues, token, cfg.AuthValue)
+	}
+	return cfg, nil
 }
 
 func validateCustomMCPServerURL(raw string) error {

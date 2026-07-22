@@ -78,6 +78,7 @@ type TFn = (key: string, options?: Record<string, unknown>) => string
 
 const inputCls = 'w-full rounded-lg border border-neutral-200 bg-white px-3 py-2 text-sm outline-none focus:border-sky-400 dark:border-zinc-700 dark:bg-zinc-950 dark:text-zinc-100'
 const selectCls = 'w-full rounded-lg border border-neutral-200 bg-white px-3 py-2 text-sm outline-none focus:border-sky-400 dark:border-zinc-700 dark:bg-zinc-950 dark:text-zinc-100 dark:[color-scheme:dark]'
+const customMCPProviderID = 'custom-mcp'
 
 export default function ConnectionsPage() {
   const { t } = useTranslation()
@@ -179,6 +180,7 @@ export default function ConnectionsPage() {
     const order = ['Developer Tools', 'Project Management', 'Knowledge And Docs', 'Communication', 'Design And Data', 'Research And Search', 'Advanced']
     const groups = new Map<string, Provider[]>()
     for (const provider of providers) {
+      if (provider.provider === customMCPProviderID) continue
       const category = provider.category || 'Other Tools'
       groups.set(category, [...(groups.get(category) ?? []), provider])
     }
@@ -193,6 +195,10 @@ export default function ConnectionsPage() {
       })
       .map(([category, items]) => [category, items.sort((a, b) => a.displayName.localeCompare(b.displayName))] as const)
   }, [providers])
+  const customMCPProvider = providers.find(provider => provider.provider === customMCPProviderID)
+  const customMCPConnections = connections
+    .filter(connection => connection.provider === customMCPProviderID)
+    .sort((a, b) => (b.updatedAt || b.createdAt).localeCompare(a.updatedAt || a.createdAt))
 
   return (
     <div className="animate-fade-in px-8 py-6">
@@ -201,6 +207,11 @@ export default function ConnectionsPage() {
           <h1 className="text-xl font-semibold text-neutral-900 dark:text-zinc-100">{t('connections.title')}</h1>
           <p className="mt-0.5 text-sm text-neutral-500 dark:text-zinc-500">{t('connections.subtitle')}</p>
         </div>
+        {customMCPProvider && (
+          <button type="button" onClick={() => setCreatingProvider(customMCPProviderID)} className={primaryOutlineButton}>
+            {t('connections.newMCPTool')}
+          </button>
+        )}
       </div>
       {oauthMessage && (
         <div className={cn(
@@ -220,6 +231,28 @@ export default function ConnectionsPage() {
         </div>
       ) : (
         <div className="space-y-7">
+          {customMCPProvider && customMCPConnections.length > 0 && (
+            <section>
+              <div className="mb-3 flex items-center justify-between">
+                <h2 className="text-sm font-semibold text-neutral-900 dark:text-zinc-100">{t('connections.customMCPTools')}</h2>
+                <span className="text-xs text-neutral-400 dark:text-zinc-500">{t('connections.toolCount', { count: customMCPConnections.length })}</span>
+              </div>
+              <div className="grid gap-4 xl:grid-cols-2">
+                {customMCPConnections.map(connection => (
+                  <ExternalToolCard
+                    key={connection.id}
+                    provider={providerForCustomMCPConnection(customMCPProvider, connection)}
+                    connection={connection}
+                    isWorkspaceAdmin={isWorkspaceAdmin}
+                    currentUsername={user?.username ?? ''}
+                    testResults={testResults}
+                    onConfigure={() => setCreatingProvider(customMCPProviderID)}
+                    onEdit={setEditing}
+                  />
+                ))}
+              </div>
+            </section>
+          )}
           {providersByCategory.map(([category, items]) => (
             <section key={category}>
               <div className="mb-3 flex items-center justify-between">
@@ -361,7 +394,7 @@ function ExternalToolCard({
       <div className="mt-4 grid gap-3 sm:grid-cols-3">
         <ToolStat label={t('connections.authMethods')} value={formatAuthTypes(provider.authTypes, oauthAvailable, isWorkspaceAdmin, t)} />
         <ToolStat label={t('connections.credentials')} value={connection ? t('connections.connected') : t('connections.notConfigured')} />
-        <ToolStat label={t('connections.actions')} value={String(provider.actions?.length ?? 0)} />
+        <ToolStat label={t('connections.actions')} value={provider.provider === customMCPProviderID ? 'MCP' : String(provider.actions?.length ?? 0)} />
       </div>
       <div className="mt-4 flex flex-wrap items-center gap-2 text-xs text-neutral-400 dark:text-zinc-500">
         {oauthSupported && oauthAvailable && (
@@ -481,6 +514,17 @@ function providerDescription(provider: Provider, t: TFn): string {
   const value = t(key)
   if (value !== key) return value
   return provider.description || t('connections.externalToolDefaultDescription')
+}
+
+function providerForCustomMCPConnection(provider: Provider, connection: Connection): Provider {
+  const profile = connection.profile ?? {}
+  const displayName = typeof profile.displayName === 'string' && profile.displayName.trim()
+    ? profile.displayName.trim()
+    : connection.connectionName || provider.displayName
+  const description = typeof profile.description === 'string' && profile.description.trim()
+    ? profile.description.trim()
+    : provider.description
+  return { ...provider, displayName, description }
 }
 
 function categoryKey(category: string): string {
@@ -654,7 +698,7 @@ function ConnectionDialog({
   }, [provider, oauthConfig])
   const ownerType = connection?.ownerType ?? (isWorkspaceAdmin ? 'workspace' : 'user')
   const [authType, setAuthType] = useState(connection?.authType ?? availableAuthTypes[0] ?? 'api_key')
-  const connectionName = connection?.connectionName ?? 'default'
+  const [connectionName, setConnectionName] = useState(connection?.connectionName ?? (providerId === customMCPProviderID ? '' : 'default'))
   const [values, setValues] = useState<Record<string, string>>({})
   const [saving, setSaving] = useState(false)
   const [deviceSetup, setDeviceSetup] = useState<
@@ -678,6 +722,7 @@ function ConnectionDialog({
     const nextAuthTypes = (p?.authTypes ?? []).filter(type => type !== 'oauth2' || oauthConfigs.find(config => config.provider === p?.provider)?.configured)
     setAuthType(nextAuthTypes[0] ?? 'api_key')
     setValues({})
+    setConnectionName(p?.provider === customMCPProviderID ? '' : 'default')
     stopDevicePoll()
     setDeviceSetup({ step: 'idle' })
   }, [providerId, providers, oauthConfigs, isEditing])
@@ -695,7 +740,8 @@ function ConnectionDialog({
     try {
       const cleanValues = Object.fromEntries(Object.entries(values).filter(([, value]) => value.trim() !== ''))
       const profile = {
-        displayName: provider.displayName,
+        displayName: provider.provider === customMCPProviderID ? (connectionName.trim() || provider.displayName) : provider.displayName,
+        ...(provider.provider === customMCPProviderID && cleanValues.serverUrl ? { serverUrl: cleanValues.serverUrl } : {}),
       }
       if (!connection && authType === 'oauth2') {
         const started = await apiPost<OAuthAuthorizationStart>('/api/v1/oauth/authorizations', {
@@ -809,7 +855,7 @@ function ConnectionDialog({
           <label className="block">
             <span className="text-xs font-medium text-neutral-500 dark:text-zinc-400">{t('connections.provider')}</span>
             <select className={selectCls} value={providerId} onChange={e => setProviderId(e.target.value)} disabled={isEditing}>
-              {providers.filter(p => !p.comingSoon).map(p => <option key={p.provider} value={p.provider}>{p.displayName}</option>)}
+              {providers.filter(p => !p.comingSoon && p.provider !== customMCPProviderID).map(p => <option key={p.provider} value={p.provider}>{p.displayName}</option>)}
             </select>
           </label>
         )}
@@ -817,6 +863,17 @@ function ConnectionDialog({
           <div className="rounded-lg bg-neutral-50 px-3 py-2 text-sm text-neutral-600 dark:bg-zinc-800/50 dark:text-zinc-300">
             {providerDescription(provider, t)}
           </div>
+        )}
+        {!isEditing && provider?.provider === customMCPProviderID && (
+          <label className="block">
+            <span className="text-xs font-medium text-neutral-500 dark:text-zinc-400">{t('connections.mcpToolName')} *</span>
+            <input
+              className={inputCls}
+              value={connectionName}
+              onChange={e => setConnectionName(e.target.value)}
+              placeholder={t('connections.mcpToolNamePlaceholder')}
+            />
+          </label>
         )}
         {isEditing && connection && (
           <SavedConnectionSummary connection={connection} />
@@ -880,12 +937,14 @@ function ConnectionDialog({
             )}
           </div>
         )}
-        <label className="block">
-          <span className="text-xs font-medium text-neutral-500 dark:text-zinc-400">{t('connections.authType')}</span>
-          <select className={selectCls} value={authType} onChange={e => setAuthType(e.target.value)}>
-            {availableAuthTypes.map(type => <option key={type} value={type}>{authTypeLabel(type, t)}</option>)}
-          </select>
-        </label>
+        {provider?.provider !== customMCPProviderID && (
+          <label className="block">
+            <span className="text-xs font-medium text-neutral-500 dark:text-zinc-400">{t('connections.authType')}</span>
+            <select className={selectCls} value={authType} onChange={e => setAuthType(e.target.value)}>
+              {availableAuthTypes.map(type => <option key={type} value={type}>{authTypeLabel(type, t)}</option>)}
+            </select>
+          </label>
+        )}
         {provider?.authTypes.includes('oauth2') && !oauthConfig?.configured && (
           <p className="rounded-lg bg-amber-50 px-3 py-2 text-xs text-amber-700 dark:bg-amber-950/30 dark:text-amber-300">
             {isWorkspaceAdmin ? t('connections.oauthNotConfiguredAdmin') : t('connections.oauthHiddenForUsers')}
@@ -940,7 +999,7 @@ function ConnectionDialog({
         )}
         <div className="flex justify-end gap-2 pt-2">
           <button type="button" onClick={onClose} disabled={saving} className="rounded-lg border border-neutral-300 px-3 py-2 text-sm dark:border-zinc-600">{t('common.cancel')}</button>
-          <button type="button" onClick={() => void submit()} disabled={saving || !provider || provider.comingSoon || availableAuthTypes.length === 0} className="rounded-lg bg-sky-600 px-3 py-2 text-sm font-medium text-white disabled:opacity-50">{authType === 'oauth2' && !isEditing ? t('connections.startOAuth') : isEditing ? t('common.save') : t('common.create')}</button>
+          <button type="button" onClick={() => void submit()} disabled={saving || !provider || provider.comingSoon || availableAuthTypes.length === 0 || (provider.provider === customMCPProviderID && !connectionName.trim())} className="rounded-lg bg-sky-600 px-3 py-2 text-sm font-medium text-white disabled:opacity-50">{authType === 'oauth2' && !isEditing ? t('connections.startOAuth') : isEditing ? t('common.save') : t('common.create')}</button>
         </div>
           </>
         )}
@@ -955,10 +1014,12 @@ function SavedConnectionSummary({ connection }: { connection: Connection }) {
   const summary = connection.profileSummary
   const appId = typeof profile.appId === 'string' ? profile.appId : ''
   const baseUrl = typeof profile.baseUrl === 'string' ? profile.baseUrl : ''
+  const serverUrl = typeof profile.serverUrl === 'string' ? profile.serverUrl : ''
   const ownerOpenId = typeof profile.ownerOpenId === 'string' ? profile.ownerOpenId : ''
   const fields = [
     { label: t('connections.appId'), value: appId },
     { label: t('connections.baseUrl'), value: baseUrl },
+    { label: t('connections.mcpServerUrl'), value: serverUrl },
     { label: t('connections.openId'), value: ownerOpenId || summary?.accountId || '' },
     { label: t('connections.authType'), value: authTypeLabel(connection.authType, t) },
   ].filter(item => item.value)

@@ -200,6 +200,7 @@ func Defaults() []Provider {
 		gitSSHProvider(),
 		npmRegistryProvider(),
 		dockerRegistryProvider(),
+		customMCPProvider(),
 		{
 			Provider:    "feishu",
 			DisplayName: "Feishu",
@@ -653,6 +654,26 @@ func figmaProvider() Provider {
 		Body:  "Optional. Add a Figma-compatible MCP HTTP endpoint when agents should use MCP Gateway tools. If omitted, agents can still use the built-in Figma HTTP actions.",
 	})
 	return p
+}
+
+func customMCPProvider() Provider {
+	return Provider{
+		Provider:    "custom-mcp",
+		DisplayName: "Custom MCP Server",
+		Description: "Connect a custom MCP server and expose its tools to selected agents through the Multigent MCP Gateway.",
+		Category:    "Advanced",
+		AuthTypes:   []string{AuthCustomCredential},
+		Fields: []ProviderField{
+			{Key: "serverUrl", Label: "MCP server URL", InputType: "url", Required: true},
+			{Key: "token", Label: "Bearer token", InputType: "password", Secret: true},
+			{Key: "authHeader", Label: "Auth header", InputType: "text"},
+			{Key: "authScheme", Label: "Auth scheme", InputType: "text"},
+		},
+		Guides: []ProviderGuide{
+			credentialGuide("MCP Server", "Start an MCP server with an HTTP JSON-RPC endpoint, then paste its endpoint URL here. If the server requires authentication, provide a bearer token or custom auth header settings. Multigent will test the server by calling tools/list.", "MCP specification", "https://modelcontextprotocol.io/"),
+		},
+		Enabled: true,
+	}
 }
 
 func oauthOnlyProvider(provider, displayName, category, description, authorizationURL, tokenURL string, scopes []string) Provider {

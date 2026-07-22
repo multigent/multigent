@@ -414,10 +414,10 @@ func (s *Server) testCustomMCPConnection(r *http.Request, connection controldb.C
 	}
 	req.Header.Set("Content-Type", "application/json")
 	req.Header.Set("Accept", "application/json")
-	if cfg.Token != "" {
-		req.Header.Set("Authorization", "Bearer "+cfg.Token)
+	if cfg.AuthHeader != "" && cfg.AuthValue != "" {
+		req.Header.Set(cfg.AuthHeader, cfg.AuthValue)
 	}
-	return executeConnectionTestRequest(req, []string{cfg.Token})
+	return executeConnectionTestRequest(req, cfg.RedactValues)
 }
 
 func (s *Server) testHTTPConnection(r *http.Request, connection controldb.Connection, body testConnectionRequest) (testConnectionResult, error) {

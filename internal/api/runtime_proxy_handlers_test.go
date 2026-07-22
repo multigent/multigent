@@ -395,8 +395,8 @@ func TestCustomMCPRuntimeConfigSupportsNoAuthProfileURL(t *testing.T) {
 	if cfg.ServerURL != "http://127.0.0.1:3000/mcp" {
 		t.Fatalf("serverURL=%q", cfg.ServerURL)
 	}
-	if cfg.Token != "" {
-		t.Fatalf("no_auth profile token should not be used: %q", cfg.Token)
+	if cfg.AuthValue != "" {
+		t.Fatalf("no_auth profile token should not be used: %q", cfg.AuthValue)
 	}
 }
 

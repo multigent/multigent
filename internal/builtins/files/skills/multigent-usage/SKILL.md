@@ -102,7 +102,7 @@ Rules:
 - Prefer the provider's recommended adapter:
   - `cli`: use the platform CLI and bundled skill, for example `gh` or `lark-cli`.
   - `http_action`: use `mga runtime action --connection <alias>` so Multigent can enforce authorization and audit usage.
-  - `mcp_gateway`: MCP Gateway support is experimental; use it only when a task explicitly asks for MCP debugging.
+  - `mcp_gateway`: Use `mga runtime gateway list-tools` and `mga runtime gateway call-tool` when the task needs an external MCP tool granted to this Agent.
   - `skill_only`: follow the bundled skill; no executable tool is configured.
 - Use connection aliases from `mga runtime connections` when calling runtime proxies.
 - Never ask humans to paste provider secrets into chat.

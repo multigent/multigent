@@ -374,9 +374,17 @@ export default function DocsPage() {
             ) : (
               <div className="grid gap-2">
                 {visibleDocs.map(d => (
-                  <button
+                  <div
                     key={d.id}
+                    role="button"
+                    tabIndex={0}
                     onClick={() => openDoc(d)}
+                    onKeyDown={e => {
+                      if (e.key === 'Enter' || e.key === ' ') {
+                        e.preventDefault()
+                        openDoc(d)
+                      }
+                    }}
                     className="flex items-start gap-3 rounded-xl border border-neutral-200 bg-white p-4 text-left transition-all hover:border-sky-300 hover:shadow-sm dark:border-zinc-700/60 dark:bg-zinc-900 dark:hover:border-sky-700"
                   >
                     <FileText className="mt-0.5 size-5 shrink-0 text-sky-500" />
@@ -404,7 +412,7 @@ export default function DocsPage() {
                         ))}
                       </div>
                     </div>
-                  </button>
+                  </div>
                 ))}
               </div>
             )}

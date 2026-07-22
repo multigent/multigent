@@ -211,6 +211,11 @@
     "installToProjectNoProjects": "暫無可安裝的專案。",
     "installToProjectConfirm": "安裝",
     "installToProjectSuccess": "已安裝到 {{count}} 個 Agent，跳過 {{skipped}} 個成員。",
+    "newMCPTool": "新建 MCP 工具",
+    "customMCPTools": "自訂 MCP 工具",
+    "mcpToolName": "工具名",
+    "mcpToolNamePlaceholder": "例如：GitHub Workflow",
+    "mcpServerUrl": "MCP Server URL",
     "noConnectionsForTool": "暫無連線。可新增工作區連線或個人連線。",
     "disconnect": "斷連",
     "configureToolTitle": "設定 {{name}}",
@@ -258,6 +263,10 @@
       "authToken": "Auth Token",
       "alwaysAuth": "Always Auth",
       "password": "密碼或 Token",
+      "serverUrl": "MCP Server URL",
+      "token": "Bearer Token",
+      "authHeader": "認證 Header",
+      "authScheme": "認證 Scheme",
       "mcpServerUrl": "MCP Server URL",
       "signingSecret": "簽名密鑰"
     },
@@ -274,6 +283,7 @@
       "npm_token": "npm Token",
       "registry_token": "Registry Token",
       "webhook_credential": "Webhook 憑證",
+      "mcp_server": "MCP Server",
       "mcp_gateway": "MCP Gateway",
       "oauth_app": "OAuth 應用"
     },
@@ -290,6 +300,7 @@
       "npm_token": "建立 npm automation token 或私有 registry token。只安裝依賴的 Agent 使用唯讀 token；只有發布流程才使用發布權限。",
       "registry_token": "為 Docker Hub、GHCR、Harbor、ECR 或其他 OCI Registry 建立專用 token。預設使用 pull-only；只有發布映像時才開放 push 權限。",
       "webhook_credential": "建立自訂機器人或 Webhook，複製存取 Token 或 Webhook URL；如果啟用了簽名校驗，也請填寫簽名密鑰。",
+      "mcp_server": "啟動一個提供 HTTP JSON-RPC 端點的 MCP Server，然後填寫它的 URL。如果服務需要認證，請填寫 Bearer Token 或自訂認證 Header。Multigent 會透過 tools/list 測試連線。",
       "mcp_gateway": "可選。填寫相容 MCP 的 HTTP 端點後，Agent 可以透過統一 Gateway 使用該工具；不填寫時仍可使用內建能力。",
       "oauth_app": "需要工作區管理員先設定該平台的 OAuth 應用。請使用最小權限範圍，並為正式環境單獨建立 OAuth 應用。"
     },
@@ -313,7 +324,8 @@
       "openssh_key_guide": "OpenSSH 密鑰指南",
       "github_deploy_keys": "GitHub Deploy Key",
       "npm_access_tokens": "npm Access Token",
-      "docker_login_docs": "Docker 登入文件"
+      "docker_login_docs": "Docker 登入文件",
+      "mcp_specification": "MCP 規範"
     },
     "advancedSettings": "進階設定",
     "categories": {
@@ -353,7 +365,8 @@
       "sentry": "連接 Sentry Issue、錯誤事件、版本和故障分流訊號。",
       "vercel": "連接 Vercel 專案、部署、檢查和發布狀態。",
       "exa": "連接 Exa 神經搜尋，用於研究、資料發現和 Agent 瀏覽工作流。",
-      "brave_search": "連接 Brave Search API，用於獨立 Web 搜尋和輕量資料發現。"
+      "brave_search": "連接 Brave Search API，用於獨立 Web 搜尋和輕量資料發現。",
+      "custom-mcp": "連接一個自訂 MCP Server，讓 Agent 透過 Multigent MCP Gateway 使用其中的工具。"
     }
   },
   "projectNav": {

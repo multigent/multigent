@@ -211,6 +211,11 @@
     "installToProjectNoProjects": "利用できるプロジェクトがありません。",
     "installToProjectConfirm": "インストール",
     "installToProjectSuccess": "{{count}} 個の Agent にインストールしました。{{skipped}} 個のメンバーをスキップしました。",
+    "newMCPTool": "MCP ツールを作成",
+    "customMCPTools": "カスタム MCP ツール",
+    "mcpToolName": "ツール名",
+    "mcpToolNamePlaceholder": "例: GitHub Workflow",
+    "mcpServerUrl": "MCP Server URL",
     "noConnectionsForTool": "接続はまだありません。ワークスペース接続または個人接続を作成できます。",
     "disconnect": "解除",
     "configureToolTitle": "{{name}} を設定",
@@ -258,6 +263,10 @@
       "authToken": "Auth Token",
       "alwaysAuth": "Always Auth",
       "password": "パスワードまたは Token",
+      "serverUrl": "MCP Server URL",
+      "token": "Bearer token",
+      "authHeader": "Auth header",
+      "authScheme": "Auth scheme",
       "mcpServerUrl": "MCP Server URL",
       "signingSecret": "署名シークレット"
     },
@@ -274,6 +283,7 @@
       "npm_token": "npm Token",
       "registry_token": "Registry Token",
       "webhook_credential": "Webhook 認証情報",
+      "mcp_server": "MCP Server",
       "mcp_gateway": "MCP Gateway",
       "oauth_app": "OAuth アプリ"
     },
@@ -290,6 +300,7 @@
       "npm_token": "npm automation token またはプライベート registry token を作成します。依存関係のインストールだけなら読み取り専用 token を使い、公開フローだけに publish 権限を使ってください。",
       "registry_token": "Docker Hub、GHCR、Harbor、ECR、その他 OCI Registry 用の専用 token を作成します。Agent がイメージを公開する必要がない限り pull-only token を推奨します。",
       "webhook_credential": "カスタムボットまたは Webhook を作成し、アクセストークンまたは Webhook URL をコピーしてください。署名検証を有効にしている場合は署名シークレットも入力してください。",
+      "mcp_server": "HTTP JSON-RPC endpoint を提供する MCP Server を起動し、その URL を入力します。認証が必要な場合は bearer token または custom auth header を指定します。Multigent は tools/list で接続をテストします。",
       "mcp_gateway": "任意です。MCP 互換の HTTP エンドポイントを入力すると、Agent は統一 Gateway 経由でこのツールを利用できます。未設定でも内蔵機能は利用できます。",
       "oauth_app": "先にワークスペース管理者がこのプロバイダーの OAuth アプリを設定する必要があります。最小権限のスコープを使い、本番環境用に専用の OAuth アプリを作成してください。"
     },
@@ -313,7 +324,8 @@
       "openssh_key_guide": "OpenSSH 鍵ガイド",
       "github_deploy_keys": "GitHub Deploy Key",
       "npm_access_tokens": "npm Access Token",
-      "docker_login_docs": "Docker ログインドキュメント"
+      "docker_login_docs": "Docker ログインドキュメント",
+      "mcp_specification": "MCP specification"
     },
     "advancedSettings": "詳細設定",
     "categories": {
@@ -353,7 +365,8 @@
       "sentry": "Sentry の Issue、エラーイベント、リリース、トリアージ信号に接続します。",
       "vercel": "Vercel のプロジェクト、デプロイ、チェック、リリース状態に接続します。",
       "exa": "Exa のニューラル検索に接続し、調査、情報源の発見、Agent のブラウジング業務に利用します。",
-      "brave_search": "Brave Search API に接続し、独立した Web 検索と軽量な情報源発見に利用します。"
+      "brave_search": "Brave Search API に接続し、独立した Web 検索と軽量な情報源発見に利用します。",
+      "custom-mcp": "カスタム MCP Server に接続し、Agent が Multigent MCP Gateway 経由でその tools を利用できるようにします。"
     }
   },
   "projectNav": {
