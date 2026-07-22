@@ -208,13 +208,18 @@ function isCodexLog(lines: string[]): boolean {
   // Prefer concrete Codex markers over the presence of JSON lines.
   const trimmed = lines.map((l) => normalizeRawLogLine(l).trim())
 
-  const hasCodexMarkers = trimmed.some(l => l.includes('OpenAI Codex') || /^model:\s/.test(l)) ||
+  // If there are JSON event lines, this is a stream-json log, not a raw
+  // Codex transcript. Tool output can mention "OpenAI Codex" or contain
+  // "model:" snippets, so JSON must win over textual marker detection.
+  const hasJsonLines = trimmed.some(l => {
+    const jsonLine = extractJSONLogLine(l)
+    return jsonLine.startsWith('{') && jsonLine.includes('"type"')
+  })
+  if (hasJsonLines) return false
+
+  const hasCodexMarkers = trimmed.some(l => /^OpenAI Codex\b/.test(l) || /^model:\s/.test(l)) ||
     (trimmed.includes('user') && trimmed.includes('codex'))
   if (hasCodexMarkers) return true
-
-  // If there are JSON event lines, this is a stream-json log, not Codex.
-  const hasJsonLines = trimmed.some(l => l.startsWith('{') && l.includes('"type"'))
-  if (hasJsonLines) return false
 
   return false
 }
