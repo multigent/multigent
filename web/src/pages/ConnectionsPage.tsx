@@ -851,7 +851,7 @@ function ConnectionDialog({
   return (
     <Modal title={isEditing ? t('connections.manageConnection') : t('connections.configureToolTitle', { name: provider?.displayName ?? '' })} onClose={onClose}>
       <div className="space-y-4">
-        {!fixedProviderId && (
+        {!fixedProviderId && !isEditing && (
           <label className="block">
             <span className="text-xs font-medium text-neutral-500 dark:text-zinc-400">{t('connections.provider')}</span>
             <select className={selectCls} value={providerId} onChange={e => setProviderId(e.target.value)} disabled={isEditing}>
