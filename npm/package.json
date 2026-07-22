@@ -16,7 +16,7 @@
   "homepage": "https://github.com/multigent/multigent",
   "repository": {
     "type": "git",
-    "url": "https://github.com/multigent/multigent.git"
+    "url": "git+https://github.com/multigent/multigent.git"
   },
   "bugs": {
     "url": "https://github.com/multigent/multigent/issues"
