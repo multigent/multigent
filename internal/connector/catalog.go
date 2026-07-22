@@ -355,6 +355,7 @@ func DefaultRuntimeAdapters(provider Provider) []ToolRuntimeAdapter {
 				ConfigFiles: []ToolConfigFileSpec{
 					{Path: "~/.ssh/id_git_multigent", Format: "pem", Description: "Agent-scoped Git SSH private key."},
 					{Path: "~/.ssh/known_hosts", Format: "text", Description: "Agent-scoped Git SSH known_hosts entries."},
+					{Path: "~/.gitconfig", Format: "ini", Description: "Agent-scoped Git author identity."},
 				},
 			},
 			CredentialMaterialize: CredentialMaterializeRuntimeFile,
@@ -649,10 +650,12 @@ func gitSSHProvider() Provider {
 		AuthTypes:   []string{AuthCustomCredential},
 		Fields: []ProviderField{
 			{Key: "privateKey", Label: "Private key", InputType: "textarea", Required: true, Secret: true},
+			{Key: "gitUserName", Label: "Git user name", InputType: "text"},
+			{Key: "gitUserEmail", Label: "Git user email", InputType: "email"},
 			{Key: "knownHosts", Label: "Known hosts", InputType: "textarea"},
 		},
 		Guides: []ProviderGuide{
-			credentialGuide("Git SSH key", "Create an SSH key pair for this workspace. Add the public key to GitHub, Gitee, GitLab, or your Git server, then paste the private key here. Multigent injects it into agent sandboxes so Git can authenticate by SSH URL.", "GitHub deploy keys", "https://docs.github.com/authentication/connecting-to-github-with-ssh/managing-deploy-keys"),
+			credentialGuide("Git SSH key", "Create an SSH key pair for this workspace. Add the public key to GitHub, Gitee, GitLab, or your Git server, then paste the private key here. Optionally set Git user name and email so agents can create commits with the right identity.", "GitHub deploy keys", "https://docs.github.com/authentication/connecting-to-github-with-ssh/managing-deploy-keys"),
 		},
 		Enabled: true,
 	}

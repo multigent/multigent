@@ -1960,6 +1960,12 @@ func materializeGitSSHConfig(cfg runtimeConfigFileRef, secretValues map[string]s
 	if strings.HasSuffix(path, "known_hosts") {
 		return materializeSSHKeyConfig(cfg, secretValues, "", "")
 	}
+	if strings.HasSuffix(path, ".gitconfig") {
+		return materializeGitConfig(cfg, secretValues)
+	}
+	if !strings.HasSuffix(path, "id_git_multigent") {
+		return nil, nil
+	}
 	env, err := materializeSSHKeyConfig(cfg, secretValues, "id_git_multigent", "MULTIGENT_GIT_SSH_KEY_FILE")
 	if err != nil || len(env) == 0 {
 		return env, err
@@ -1974,6 +1980,28 @@ func materializeGitSSHConfig(cfg runtimeConfigFileRef, secretValues map[string]s
 	}
 	env["GIT_SSH_COMMAND"] = strings.Join(command, " ")
 	return env, nil
+}
+
+func materializeGitConfig(cfg runtimeConfigFileRef, secretValues map[string]string) (map[string]string, error) {
+	if cfg.MaterializedPath == "" {
+		return nil, nil
+	}
+	userName := strings.TrimSpace(firstNonEmpty(secretValues["gitUserName"], secretValues["userName"]))
+	userEmail := strings.TrimSpace(firstNonEmpty(secretValues["gitUserEmail"], secretValues["userEmail"], secretValues["email"]))
+	if userName == "" && userEmail == "" {
+		return nil, nil
+	}
+	lines := []string{"[user]"}
+	if userName != "" {
+		lines = append(lines, "\tname = "+userName)
+	}
+	if userEmail != "" {
+		lines = append(lines, "\temail = "+userEmail)
+	}
+	if err := os.WriteFile(cfg.MaterializedPath, []byte(strings.Join(lines, "\n")+"\n"), 0o600); err != nil {
+		return nil, err
+	}
+	return map[string]string{"GIT_CONFIG_GLOBAL": cfg.MaterializedPath}, nil
 }
 
 func materializeNPMRegistryConfig(cfg runtimeConfigFileRef, secretValues map[string]string) (map[string]string, error) {

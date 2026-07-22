@@ -463,7 +463,8 @@ func TestWriteRuntimeToolsFileMaterializesBasicExternalToolCredentials(t *testin
 						"binary":"git",
 						"configFiles":[
 							{"path":"~/.ssh/id_git_multigent","format":"pem"},
-							{"path":"~/.ssh/known_hosts","format":"text"}
+							{"path":"~/.ssh/known_hosts","format":"text"},
+							{"path":"~/.gitconfig","format":"ini"}
 						]
 					},
 					"credentialMaterialize":"runtime_file"
@@ -536,8 +537,10 @@ func TestWriteRuntimeToolsFileMaterializesBasicExternalToolCredentials(t *testin
 		switch connectionID {
 		case "conn_git":
 			return map[string]string{
-				"privateKey": "-----BEGIN OPENSSH PRIVATE KEY-----\nkey-body\n-----END OPENSSH PRIVATE KEY-----",
-				"knownHosts": "github.com ssh-ed25519 AAAATEST",
+				"privateKey":   "-----BEGIN OPENSSH PRIVATE KEY-----\nkey-body\n-----END OPENSSH PRIVATE KEY-----",
+				"gitUserName":  "Multigent Agent",
+				"gitUserEmail": "agent@example.test",
+				"knownHosts":   "github.com ssh-ed25519 AAAATEST",
 			}, true, nil
 		case "conn_npm":
 			return map[string]string{
@@ -604,6 +607,17 @@ func TestWriteRuntimeToolsFileMaterializesBasicExternalToolCredentials(t *testin
 	}
 	if !strings.Contains(string(knownHostsBody), "github.com ssh-ed25519") {
 		t.Fatalf("unexpected known_hosts: %s", string(knownHostsBody))
+	}
+	gitConfigPath := env["GIT_CONFIG_GLOBAL"]
+	if gitConfigPath == "" {
+		t.Fatalf("GIT_CONFIG_GLOBAL missing: %#v", env)
+	}
+	gitConfigBody, err := os.ReadFile(gitConfigPath)
+	if err != nil {
+		t.Fatalf("read git config: %v", err)
+	}
+	if !strings.Contains(string(gitConfigBody), "name = Multigent Agent") || !strings.Contains(string(gitConfigBody), "email = agent@example.test") {
+		t.Fatalf("unexpected git config: %s", string(gitConfigBody))
 	}
 	npmrcPath := env["NPM_CONFIG_USERCONFIG"]
 	npmrcBody, err := os.ReadFile(npmrcPath)
