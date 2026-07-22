@@ -75,10 +75,12 @@ type OAuthClientConfig = {
   updatedAt?: string
 }
 type TFn = (key: string, options?: Record<string, unknown>) => string
+type ConnectionStatusFilter = 'all' | 'configured' | 'not_configured'
 
 const inputCls = 'w-full rounded-lg border border-neutral-200 bg-white px-3 py-2 text-sm outline-none focus:border-sky-400 dark:border-zinc-700 dark:bg-zinc-950 dark:text-zinc-100'
 const selectCls = 'w-full rounded-lg border border-neutral-200 bg-white px-3 py-2 text-sm outline-none focus:border-sky-400 dark:border-zinc-700 dark:bg-zinc-950 dark:text-zinc-100 dark:[color-scheme:dark]'
 const customMCPProviderID = 'custom-mcp'
+const customMCPCategory = 'Custom MCP Tools'
 
 export default function ConnectionsPage() {
   const { t } = useTranslation()
@@ -96,6 +98,8 @@ export default function ConnectionsPage() {
   const [installingConnection, setInstallingConnection] = useState<Connection | null>(null)
   const [installMessage, setInstallMessage] = useState<{ kind: 'success' | 'error'; text: string } | null>(null)
   const [reloadKey, setReloadKey] = useState(0)
+  const [statusFilter, setStatusFilter] = useState<ConnectionStatusFilter>('all')
+  const [categoryFilter, setCategoryFilter] = useState('all')
   const [searchParams, setSearchParams] = useSearchParams()
 
   useEffect(() => {
@@ -176,29 +180,45 @@ export default function ConnectionsPage() {
     }
   }
 
-  const providersByCategory = useMemo(() => {
-    const order = ['Developer Tools', 'Project Management', 'Knowledge And Docs', 'Communication', 'Design And Data', 'Research And Search', 'Advanced']
-    const groups = new Map<string, Provider[]>()
-    for (const provider of providers) {
-      if (provider.provider === customMCPProviderID) continue
-      const category = provider.category || 'Other Tools'
-      groups.set(category, [...(groups.get(category) ?? []), provider])
-    }
-    return Array.from(groups.entries())
-      .sort(([a], [b]) => {
-        const ai = order.indexOf(a)
-        const bi = order.indexOf(b)
-        if (ai === -1 && bi === -1) return a.localeCompare(b)
-        if (ai === -1) return 1
-        if (bi === -1) return -1
-        return ai - bi
-      })
-      .map(([category, items]) => [category, items.sort((a, b) => a.displayName.localeCompare(b.displayName))] as const)
-  }, [providers])
   const customMCPProvider = providers.find(provider => provider.provider === customMCPProviderID)
   const customMCPConnections = connections
     .filter(connection => connection.provider === customMCPProviderID)
     .sort((a, b) => (b.updatedAt || b.createdAt).localeCompare(a.updatedAt || a.createdAt))
+
+  const categoryOptions = useMemo(() => {
+    const categories = new Set<string>()
+    for (const provider of providers) {
+      if (provider.provider === customMCPProviderID) continue
+      categories.add(provider.category || 'Other Tools')
+    }
+    if (customMCPProvider) categories.add(customMCPCategory)
+    return Array.from(categories).sort((a, b) => providerCategorySort(a, b))
+  }, [providers])
+  const filteredProvidersByCategory = useMemo(() => {
+    const groups = new Map<string, Provider[]>()
+    for (const provider of providers) {
+      if (provider.provider === customMCPProviderID) continue
+      const category = provider.category || 'Other Tools'
+      if (categoryFilter !== 'all' && category !== categoryFilter) continue
+      const connected = !!primaryConnectionForProvider(connections, provider.provider)
+      if (statusFilter === 'configured' && !connected) continue
+      if (statusFilter === 'not_configured' && connected) continue
+      groups.set(category, [...(groups.get(category) ?? []), provider])
+    }
+    return Array.from(groups.entries())
+      .sort(([a], [b]) => providerCategorySort(a, b))
+      .map(([category, items]) => [category, items.sort((a, b) => a.displayName.localeCompare(b.displayName))] as const)
+  }, [providers, connections, statusFilter, categoryFilter])
+  const showCustomMCPConnections = !!customMCPProvider
+    && customMCPConnections.length > 0
+    && statusFilter !== 'not_configured'
+    && (categoryFilter === 'all' || categoryFilter === customMCPCategory)
+  const hasFilteredTools = showCustomMCPConnections || filteredProvidersByCategory.length > 0
+
+  function resetFilters() {
+    setStatusFilter('all')
+    setCategoryFilter('all')
+  }
 
   return (
     <div className="animate-fade-in px-8 py-6">
@@ -213,6 +233,32 @@ export default function ConnectionsPage() {
           </button>
         )}
       </div>
+      {!loading && (
+        <div className="mb-5 flex flex-wrap items-end gap-3 rounded-xl border border-neutral-200/80 bg-white px-4 py-3 dark:border-zinc-700/60 dark:bg-zinc-900/40">
+          <label className="w-44">
+            <span className="text-xs font-medium text-neutral-500 dark:text-zinc-400">{t('connections.filterStatus')}</span>
+            <select className={cn(selectCls, 'mt-1')} value={statusFilter} onChange={event => setStatusFilter(event.target.value as ConnectionStatusFilter)}>
+              <option value="all">{t('connections.allStatuses')}</option>
+              <option value="configured">{t('connections.configuredOnly')}</option>
+              <option value="not_configured">{t('connections.notConfiguredOnly')}</option>
+            </select>
+          </label>
+          <label className="w-56">
+            <span className="text-xs font-medium text-neutral-500 dark:text-zinc-400">{t('connections.filterCategory')}</span>
+            <select className={cn(selectCls, 'mt-1')} value={categoryFilter} onChange={event => setCategoryFilter(event.target.value)}>
+              <option value="all">{t('connections.allCategories')}</option>
+              {categoryOptions.map(category => (
+                <option key={category} value={category}>{providerCategoryLabel(category, t)}</option>
+              ))}
+            </select>
+          </label>
+          {(statusFilter !== 'all' || categoryFilter !== 'all') && (
+            <button type="button" onClick={resetFilters} className="rounded-lg px-3 py-2 text-sm font-medium text-neutral-500 hover:bg-neutral-100 dark:text-zinc-400 dark:hover:bg-zinc-800">
+              {t('connections.clearFilters')}
+            </button>
+          )}
+        </div>
+      )}
       {oauthMessage && (
         <div className={cn(
           'mb-4 rounded-lg border px-3 py-2 text-xs',
@@ -231,7 +277,7 @@ export default function ConnectionsPage() {
         </div>
       ) : (
         <div className="space-y-7">
-          {customMCPProvider && customMCPConnections.length > 0 && (
+          {showCustomMCPConnections && customMCPProvider && (
             <section>
               <div className="mb-3 flex items-center justify-between">
                 <h2 className="text-sm font-semibold text-neutral-900 dark:text-zinc-100">{t('connections.customMCPTools')}</h2>
@@ -253,7 +299,7 @@ export default function ConnectionsPage() {
               </div>
             </section>
           )}
-          {providersByCategory.map(([category, items]) => (
+          {filteredProvidersByCategory.map(([category, items]) => (
             <section key={category}>
               <div className="mb-3 flex items-center justify-between">
                 <h2 className="text-sm font-semibold text-neutral-900 dark:text-zinc-100">{providerCategoryLabel(category, t)}</h2>
@@ -276,6 +322,14 @@ export default function ConnectionsPage() {
               </div>
             </section>
           ))}
+          {!hasFilteredTools && (
+            <div className="rounded-xl border border-dashed border-neutral-200 bg-white px-6 py-12 text-center dark:border-zinc-700 dark:bg-zinc-900/40">
+              <p className="text-sm font-medium text-neutral-700 dark:text-zinc-200">{t('connections.noToolsMatchFilters')}</p>
+              <button type="button" onClick={resetFilters} className="mt-3 rounded-lg px-3 py-2 text-sm font-medium text-sky-700 hover:bg-sky-50 dark:text-sky-400 dark:hover:bg-zinc-800">
+                {t('connections.clearFilters')}
+              </button>
+            </div>
+          )}
         </div>
       )}
 
@@ -507,6 +561,16 @@ function providerCategoryLabel(category: string, t: TFn): string {
   const key = `connections.categories.${categoryKey(category)}`
   const value = t(key)
   return value === key ? category : value
+}
+
+function providerCategorySort(a: string, b: string): number {
+  const order = ['Developer Tools', 'Project Management', 'Knowledge And Docs', 'Communication', 'Design And Data', 'Research And Search', 'Advanced', customMCPCategory, 'Other Tools']
+  const ai = order.indexOf(a)
+  const bi = order.indexOf(b)
+  if (ai === -1 && bi === -1) return a.localeCompare(b)
+  if (ai === -1) return 1
+  if (bi === -1) return -1
+  return ai - bi
 }
 
 function providerDescription(provider: Provider, t: TFn): string {

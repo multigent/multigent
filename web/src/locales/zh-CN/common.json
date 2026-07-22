@@ -197,6 +197,14 @@
     "usernamePlaceholder": "username",
     "addGrant": "添加授权",
     "noGrantsConfigured": "暂无授权配置。",
+    "filterStatus": "配置状态",
+    "filterCategory": "工具类别",
+    "allStatuses": "全部状态",
+    "configuredOnly": "仅已配置",
+    "notConfiguredOnly": "仅未配置",
+    "allCategories": "全部类别",
+    "clearFilters": "清除筛选",
+    "noToolsMatchFilters": "没有匹配当前筛选条件的外部工具。",
     "otherTools": "其他工具",
     "toolCount": "{{count}} 个工具",
     "comingSoon": "即将支持",
@@ -336,6 +344,7 @@
       "design_and_data": "设计与数据",
       "research_and_search": "研究与搜索",
       "advanced": "高级",
+      "custom_mcp_tools": "自定义 MCP 工具",
       "other_tools": "其他工具"
     },
     "providerDescriptions": {

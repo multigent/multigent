@@ -197,6 +197,14 @@
     "usernamePlaceholder": "username",
     "addGrant": "権限付与を追加",
     "noGrantsConfigured": "権限付与は設定されていません。",
+    "filterStatus": "設定状態",
+    "filterCategory": "ツールカテゴリ",
+    "allStatuses": "すべての状態",
+    "configuredOnly": "設定済みのみ",
+    "notConfiguredOnly": "未設定のみ",
+    "allCategories": "すべてのカテゴリ",
+    "clearFilters": "フィルターをクリア",
+    "noToolsMatchFilters": "現在のフィルターに一致する外部ツールはありません。",
     "otherTools": "その他のツール",
     "toolCount": "{{count}} 個のツール",
     "comingSoon": "近日対応",
@@ -336,6 +344,7 @@
       "design_and_data": "デザインとデータ",
       "research_and_search": "リサーチと検索",
       "advanced": "詳細",
+      "custom_mcp_tools": "カスタム MCP ツール",
       "other_tools": "その他のツール"
     },
     "providerDescriptions": {

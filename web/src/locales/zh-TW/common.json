@@ -197,6 +197,14 @@
     "usernamePlaceholder": "username",
     "addGrant": "新增授權",
     "noGrantsConfigured": "暫無授權設定。",
+    "filterStatus": "設定狀態",
+    "filterCategory": "工具類別",
+    "allStatuses": "全部狀態",
+    "configuredOnly": "僅已設定",
+    "notConfiguredOnly": "僅未設定",
+    "allCategories": "全部類別",
+    "clearFilters": "清除篩選",
+    "noToolsMatchFilters": "沒有符合目前篩選條件的外部工具。",
     "otherTools": "其他工具",
     "toolCount": "{{count}} 個工具",
     "comingSoon": "即將支援",
@@ -336,6 +344,7 @@
       "design_and_data": "設計與資料",
       "research_and_search": "研究與搜尋",
       "advanced": "進階",
+      "custom_mcp_tools": "自訂 MCP 工具",
       "other_tools": "其他工具"
     },
     "providerDescriptions": {

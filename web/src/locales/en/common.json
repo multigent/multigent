@@ -197,6 +197,14 @@
     "usernamePlaceholder": "username",
     "addGrant": "Add grant",
     "noGrantsConfigured": "No grants configured.",
+    "filterStatus": "Status",
+    "filterCategory": "Category",
+    "allStatuses": "All statuses",
+    "configuredOnly": "Configured only",
+    "notConfiguredOnly": "Not configured only",
+    "allCategories": "All categories",
+    "clearFilters": "Clear filters",
+    "noToolsMatchFilters": "No external tools match the current filters.",
     "otherTools": "Other Tools",
     "toolCount": "{{count}} tools",
     "comingSoon": "Coming soon",
@@ -336,6 +344,7 @@
       "design_and_data": "Design and Data",
       "research_and_search": "Research and Search",
       "advanced": "Advanced",
+      "custom_mcp_tools": "Custom MCP Tools",
       "other_tools": "Other Tools"
     },
     "providerDescriptions": {
