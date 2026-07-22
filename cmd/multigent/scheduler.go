@@ -827,6 +827,15 @@ func runAllPendingTasks(ctx context.Context, root, project, agentName string,
 							"status":           string(result.Status),
 						})
 					}
+					if handled, handleErr := taskHandledDuringRun(ts, project, agentName, wakeupTask.ID, runResultLogPath(result)); handleErr != nil {
+						return handleErr
+					} else if handled {
+						taskLog("%s wakeup task %s was updated by runtime", colorYellow+"↪", wakeupTask.ID)
+						if len(unread) > 0 {
+							_ = ts.MarkMessagesRead(recipient)
+						}
+						break
+					}
 					wakeupTask.Status = result.Status
 					wakeupTask.RunLogPath = result.LogPath
 					// All statuses (including awaiting_confirmation) are archived.
