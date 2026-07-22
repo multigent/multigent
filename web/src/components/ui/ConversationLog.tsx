@@ -112,6 +112,14 @@ function normalizeStreamLogLine(raw: string): string {
   return line
 }
 
+function extractJSONLogLine(line: string): string {
+  if (line.startsWith('{')) return line
+  const idx = line.indexOf('{')
+  if (idx < 0) return ''
+  const candidate = line.slice(idx).trim()
+  return candidate.startsWith('{') ? candidate : ''
+}
+
 function collapseConsecutiveDuplicateLines(text: string): string {
   const lines = text.split('\n')
   return lines.filter((line, index) => index === 0 || line !== lines[index - 1]).join('\n')
@@ -390,7 +398,8 @@ function parseLog(content: string): ConversationItem[] {
       continue
     }
 
-    if (!line.startsWith('{')) {
+    const jsonLine = extractJSONLogLine(line)
+    if (!jsonLine) {
       // Treat any non-empty non-JSON line as a debug header so we don't silently drop things like api_retry.
       if (line) items.push({ kind: 'header', text: `[raw] ${line.slice(0, 120)}` })
       continue
@@ -398,10 +407,10 @@ function parseLog(content: string): ConversationItem[] {
 
     let ev: StreamEvent
     try {
-      ev = JSON.parse(line)
+      ev = JSON.parse(jsonLine)
     } catch {
       // Malformed JSON — show as debug header.
-      items.push({ kind: 'header', text: `[raw:json-err] ${line.slice(0, 120)}` })
+      items.push({ kind: 'header', text: `[raw:json-err] ${jsonLine.slice(0, 120)}` })
       continue
     }
 
@@ -609,7 +618,7 @@ function parseLog(content: string): ConversationItem[] {
     // (content/type events with unrecognized block types also land here)
     const knownTypes = ['thinking', 'system', 'human', 'user', 'tool_call', 'assistant', 'content', 'result', 'thread.started', 'turn.started', 'item.completed', 'turn.completed']
     if (!knownTypes.includes(ev.type)) {
-      items.push({ kind: 'header', text: `[raw:${ev.type}] ${line.slice(0, 120)}` })
+      items.push({ kind: 'header', text: `[raw:${ev.type}] ${jsonLine.slice(0, 120)}` })
     }
   }
 
