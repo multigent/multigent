@@ -6,7 +6,7 @@ import remarkGfm from 'remark-gfm'
 import { BookOpen, FileCode, FolderTree, Puzzle, Save, Upload, X } from 'lucide-react'
 import { cn } from '../lib/cn'
 import { useApiJson } from '../lib/use-api'
-import { apiPost, apiPut } from '../lib/api'
+import { apiFetch, apiPost, apiPut } from '../lib/api'
 import { primaryOutlineButton } from '../lib/button-styles'
 
 type Provenance = { playbookId: string; playbookName: string; templateVersion?: string; customized?: boolean }
@@ -40,6 +40,11 @@ type SkillPackageRow = SkillRegistry & {
   path?: string
   installed?: boolean
 }
+type ProjectRow = { name: string; description?: string }
+type AgentRow = { name: string; model?: string }
+type AgentContext = { skills?: string[] }
+type SkillSyncTarget = { project: string; agent: string }
+type SkillSyncResult = SkillSyncTarget & { ok: boolean; output?: string; error?: string }
 
 function SkillItem({ skill, defaultOpen }: { skill: SkillRow; defaultOpen?: boolean }) {
   const { t } = useTranslation()
@@ -59,6 +64,7 @@ function SkillItem({ skill, defaultOpen }: { skill: SkillRow; defaultOpen?: bool
   const [saving, setSaving] = useState(false)
   const [saved, setSaved] = useState(false)
   const [preview, setPreview] = useState(false)
+  const [syncOpen, setSyncOpen] = useState(false)
 
   const content = value ?? (detailState.status === 'ok' ? detailState.data.prompt : '')
 
@@ -142,6 +148,13 @@ function SkillItem({ skill, defaultOpen }: { skill: SkillRow; defaultOpen?: bool
                     <div className="flex items-center gap-2">
                       <button
                         type="button"
+                        onClick={() => setSyncOpen(true)}
+                        className="rounded-md border border-neutral-200 px-2.5 py-1 text-[11px] font-medium text-neutral-600 transition-colors hover:bg-neutral-50 dark:border-zinc-700 dark:text-zinc-300 dark:hover:bg-zinc-800"
+                      >
+                        {t('skill.syncThisSkill')}
+                      </button>
+                      <button
+                        type="button"
                         onClick={() => setPreview((p) => !p)}
                         className={cn(
                           'rounded-md px-2 py-1 text-[11px] font-medium transition-colors',
@@ -205,6 +218,7 @@ function SkillItem({ skill, defaultOpen }: { skill: SkillRow; defaultOpen?: bool
           </div>
         </div>
       )}
+      {syncOpen && <SyncSkillDialog skillName={skill.name} onClose={() => setSyncOpen(false)} />}
     </div>
   )
 }
@@ -320,6 +334,136 @@ export default function SkillsPage() {
           }}
         />
       )}
+    </div>
+  )
+}
+
+function SyncSkillDialog({ skillName, onClose }: { skillName: string; onClose: () => void }) {
+  const { t } = useTranslation()
+  const [loading, setLoading] = useState(true)
+  const [syncing, setSyncing] = useState(false)
+  const [targets, setTargets] = useState<SkillSyncTarget[]>([])
+  const [results, setResults] = useState<SkillSyncResult[]>([])
+  const [loadError, setLoadError] = useState('')
+
+  useEffect(() => {
+    let cancelled = false
+    async function load() {
+      setLoading(true)
+      setLoadError('')
+      try {
+        const projects = await apiFetch<ProjectRow[]>('/api/v1/projects')
+        const found: SkillSyncTarget[] = []
+        for (const project of projects ?? []) {
+          let agents: AgentRow[] = []
+          try {
+            agents = await apiFetch<AgentRow[]>(`/api/v1/projects/${encodeURIComponent(project.name)}/agents`)
+          } catch {
+            agents = []
+          }
+          await Promise.all((agents ?? []).filter((agent) => agent.model !== 'human').map(async (agent) => {
+            try {
+              const context = await apiFetch<AgentContext>(`/api/v1/projects/${encodeURIComponent(project.name)}/agents/${encodeURIComponent(agent.name)}/context`)
+              if ((context.skills ?? []).includes(skillName)) {
+                found.push({ project: project.name, agent: agent.name })
+              }
+            } catch {
+              // Ignore agents whose context cannot be read; sync should stay scoped to confirmed users.
+            }
+          }))
+        }
+        found.sort((a, b) => `${a.project}/${a.agent}`.localeCompare(`${b.project}/${b.agent}`))
+        if (!cancelled) setTargets(found)
+      } catch (error) {
+        if (!cancelled) setLoadError(error instanceof Error ? error.message : String(error))
+      } finally {
+        if (!cancelled) setLoading(false)
+      }
+    }
+    void load()
+    return () => { cancelled = true }
+  }, [skillName])
+
+  async function sync() {
+    if (targets.length === 0) return
+    setSyncing(true)
+    setResults([])
+    const next: SkillSyncResult[] = []
+    for (const target of targets) {
+      try {
+        const res = await apiPost<{ ok: boolean; output?: string }>(`/api/v1/projects/${encodeURIComponent(target.project)}/sync`, { agent: target.agent })
+        next.push({ ...target, ok: !!res.ok, output: res.output })
+      } catch (error) {
+        next.push({ ...target, ok: false, error: error instanceof Error ? error.message : String(error) })
+      }
+      setResults([...next])
+    }
+    setSyncing(false)
+  }
+
+  return (
+    <div className="fixed inset-0 z-[60] flex items-start justify-center px-4 pt-[14vh]">
+      <div className="absolute inset-0 bg-black/30 backdrop-blur-[2px] dark:bg-black/50" onClick={syncing ? undefined : onClose} />
+      <div className="relative w-full max-w-lg overflow-hidden rounded-xl border border-neutral-200/80 bg-white shadow-2xl dark:border-zinc-700/80 dark:bg-zinc-900">
+        <div className="flex items-center justify-between border-b border-neutral-200/80 px-5 py-3 dark:border-zinc-700/60">
+          <div>
+            <h2 className="text-sm font-semibold text-neutral-900 dark:text-zinc-100">{t('skill.syncThisSkillTitle')}</h2>
+            <p className="mt-0.5 text-xs leading-relaxed text-neutral-500 dark:text-zinc-500">{t('skill.syncThisSkillHint', { name: skillName })}</p>
+          </div>
+          <button type="button" onClick={onClose} disabled={syncing} className="rounded-md p-1 text-neutral-400 hover:bg-neutral-100 hover:text-neutral-700 disabled:opacity-50 dark:hover:bg-zinc-800 dark:hover:text-zinc-300">
+            <X className="size-4" strokeWidth={2} />
+          </button>
+        </div>
+        <div className="space-y-4 p-5">
+          {loading ? (
+            <div className="flex items-center gap-2 py-4 text-sm text-neutral-500 dark:text-zinc-400">
+              <div className="size-4 animate-spin rounded-full border-2 border-neutral-300 border-t-sky-600 dark:border-zinc-600 dark:border-t-sky-400" />
+              {t('api.loading')}
+            </div>
+          ) : loadError ? (
+            <p className="rounded-lg bg-red-50 px-3 py-3 text-sm text-red-600 dark:bg-red-950/20 dark:text-red-300">{loadError}</p>
+          ) : targets.length === 0 ? (
+            <p className="rounded-lg bg-neutral-50 px-3 py-3 text-sm text-neutral-500 dark:bg-zinc-950/50 dark:text-zinc-400">{t('skill.syncNoAffectedAgents')}</p>
+          ) : (
+            <div className="rounded-lg border border-neutral-200/80 dark:border-zinc-700/60">
+              <div className="border-b border-neutral-100 px-3 py-2 text-xs font-medium text-neutral-500 dark:border-zinc-800 dark:text-zinc-500">
+                {t('skill.affectedAgents', { count: targets.length })}
+              </div>
+              <div className="max-h-44 overflow-auto">
+                {targets.map((target) => (
+                  <div key={`${target.project}/${target.agent}`} className="flex items-center justify-between gap-3 border-b border-neutral-100 px-3 py-2 last:border-b-0 dark:border-zinc-800">
+                    <span className="truncate font-mono text-sm text-neutral-800 dark:text-zinc-100">{target.agent}</span>
+                    <span className="shrink-0 truncate text-xs text-neutral-400 dark:text-zinc-500">{target.project}</span>
+                  </div>
+                ))}
+              </div>
+            </div>
+          )}
+          {results.length > 0 && (
+            <div className="max-h-56 overflow-auto rounded-lg border border-neutral-200/80 dark:border-zinc-700/60">
+              {results.map((result) => (
+                <div key={`${result.project}/${result.agent}`} className="border-b border-neutral-100 px-3 py-2 last:border-b-0 dark:border-zinc-800">
+                  <div className="flex items-center justify-between gap-3">
+                    <span className="truncate text-sm font-medium text-neutral-800 dark:text-zinc-100">{result.agent}</span>
+                    <span className={cn('shrink-0 text-xs font-medium', result.ok ? 'text-emerald-600 dark:text-emerald-300' : 'text-red-600 dark:text-red-300')}>
+                      {result.ok ? t('skill.syncSucceeded') : t('skill.syncFailed')}
+                    </span>
+                  </div>
+                  {(result.output || result.error) && (
+                    <pre className="mt-1 max-h-24 overflow-auto whitespace-pre-wrap text-xs leading-relaxed text-neutral-400 dark:text-zinc-500">{result.output || result.error}</pre>
+                  )}
+                </div>
+              ))}
+            </div>
+          )}
+        </div>
+        <div className="flex justify-end gap-2 border-t border-neutral-200/80 px-5 py-3 dark:border-zinc-700/60">
+          <button type="button" onClick={onClose} disabled={syncing} className="rounded-lg px-3 py-2 text-sm font-medium text-neutral-600 hover:bg-neutral-100 disabled:opacity-50 dark:text-zinc-400 dark:hover:bg-zinc-800">{t('common.close')}</button>
+          <button type="button" onClick={() => void sync()} disabled={syncing || loading || targets.length === 0} className="rounded-lg border border-sky-600 bg-white px-3 py-2 text-sm font-medium text-sky-700 hover:bg-sky-50 disabled:opacity-50 dark:border-sky-500 dark:bg-zinc-900 dark:text-sky-400 dark:hover:bg-zinc-800">
+            {syncing ? t('skill.syncingAgents') : t('skill.syncThisSkill')}
+          </button>
+        </div>
+      </div>
     </div>
   )
 }
