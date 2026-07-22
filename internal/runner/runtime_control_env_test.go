@@ -606,8 +606,11 @@ func TestWriteRuntimeToolsFileMaterializesBasicExternalToolCredentials(t *testin
 	if env["GIT_SSH_COMMAND"] == "" || !strings.Contains(env["GIT_SSH_COMMAND"], "id_git_multigent") {
 		t.Fatalf("GIT_SSH_COMMAND=%q", env["GIT_SSH_COMMAND"])
 	}
-	if !strings.Contains(env["GIT_SSH_COMMAND"], "-J root@120.79.164.240") {
-		t.Fatalf("GIT_SSH_COMMAND missing ProxyJump: %q", env["GIT_SSH_COMMAND"])
+	if !strings.Contains(env["GIT_SSH_COMMAND"], "ProxyCommand=") || !strings.Contains(env["GIT_SSH_COMMAND"], "root@120.79.164.240") {
+		t.Fatalf("GIT_SSH_COMMAND missing ProxyCommand jump: %q", env["GIT_SSH_COMMAND"])
+	}
+	if !strings.Contains(env["GIT_SSH_COMMAND"], "BatchMode=yes") {
+		t.Fatalf("GIT_SSH_COMMAND missing BatchMode: %q", env["GIT_SSH_COMMAND"])
 	}
 	gitKey := env["MULTIGENT_GIT_SSH_KEY_FILE"]
 	if gitKey == "" {

@@ -1958,14 +1958,33 @@ func materializeGitSSHConfig(cfg runtimeConfigFileRef, secretValues map[string]s
 		"ssh",
 		"-i", cfg.MaterializedPath,
 		"-o", "IdentitiesOnly=yes",
+		"-o", "BatchMode=yes",
 		"-o", "StrictHostKeyChecking=accept-new",
 		"-o", "UserKnownHostsFile=" + knownHostsPath,
 	}
 	if proxyJump := strings.TrimSpace(secretValues["proxyJump"]); proxyJump != "" {
-		command = append(command, "-J", proxyJump)
+		command = append(command, "-o", "ProxyCommand="+shellQuote(gitSSHProxyCommand(cfg.MaterializedPath, knownHostsPath, proxyJump)))
 	}
 	env["GIT_SSH_COMMAND"] = strings.Join(command, " ")
 	return env, nil
+}
+
+func gitSSHProxyCommand(keyPath, knownHostsPath, proxyJump string) string {
+	args := []string{
+		"ssh",
+		"-i", keyPath,
+		"-o", "IdentitiesOnly=yes",
+		"-o", "BatchMode=yes",
+		"-o", "StrictHostKeyChecking=accept-new",
+		"-o", "UserKnownHostsFile=" + knownHostsPath,
+		"-W", "%h:%p",
+		proxyJump,
+	}
+	quoted := make([]string, 0, len(args))
+	for _, arg := range args {
+		quoted = append(quoted, shellQuote(arg))
+	}
+	return strings.Join(quoted, " ")
 }
 
 func materializeGitConfig(cfg runtimeConfigFileRef, secretValues map[string]string) (map[string]string, error) {
