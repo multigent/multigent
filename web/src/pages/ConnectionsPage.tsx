@@ -100,6 +100,7 @@ export default function ConnectionsPage() {
   const [reloadKey, setReloadKey] = useState(0)
   const [statusFilter, setStatusFilter] = useState<ConnectionStatusFilter>('all')
   const [categoryFilter, setCategoryFilter] = useState('all')
+  const [toolSearch, setToolSearch] = useState('')
   const [searchParams, setSearchParams] = useSearchParams()
 
   useEffect(() => {
@@ -184,6 +185,11 @@ export default function ConnectionsPage() {
   const customMCPConnections = connections
     .filter(connection => connection.provider === customMCPProviderID)
     .sort((a, b) => (b.updatedAt || b.createdAt).localeCompare(a.updatedAt || a.createdAt))
+  const filteredCustomMCPConnections = useMemo(() => {
+    const query = normalizeToolSearch(toolSearch)
+    if (!customMCPProvider || !query) return customMCPConnections
+    return customMCPConnections.filter(connection => customMCPConnectionMatchesSearch(customMCPProvider, connection, query, t))
+  }, [customMCPProvider, customMCPConnections, toolSearch, t])
 
   const categoryOptions = useMemo(() => {
     const categories = new Set<string>()
@@ -196,10 +202,12 @@ export default function ConnectionsPage() {
   }, [providers])
   const filteredProvidersByCategory = useMemo(() => {
     const groups = new Map<string, Provider[]>()
+    const query = normalizeToolSearch(toolSearch)
     for (const provider of providers) {
       if (provider.provider === customMCPProviderID) continue
       const category = provider.category || 'Other Tools'
       if (categoryFilter !== 'all' && category !== categoryFilter) continue
+      if (query && !providerMatchesSearch(provider, query, t)) continue
       const connected = !!primaryConnectionForProvider(connections, provider.provider)
       if (statusFilter === 'configured' && !connected) continue
       if (statusFilter === 'not_configured' && connected) continue
@@ -208,9 +216,9 @@ export default function ConnectionsPage() {
     return Array.from(groups.entries())
       .sort(([a], [b]) => providerCategorySort(a, b))
       .map(([category, items]) => [category, items.sort((a, b) => a.displayName.localeCompare(b.displayName))] as const)
-  }, [providers, connections, statusFilter, categoryFilter])
+  }, [providers, connections, statusFilter, categoryFilter, toolSearch, t])
   const showCustomMCPConnections = !!customMCPProvider
-    && customMCPConnections.length > 0
+    && filteredCustomMCPConnections.length > 0
     && statusFilter !== 'not_configured'
     && (categoryFilter === 'all' || categoryFilter === customMCPCategory)
   const hasFilteredTools = showCustomMCPConnections || filteredProvidersByCategory.length > 0
@@ -218,6 +226,7 @@ export default function ConnectionsPage() {
   function resetFilters() {
     setStatusFilter('all')
     setCategoryFilter('all')
+    setToolSearch('')
   }
 
   return (
@@ -235,6 +244,15 @@ export default function ConnectionsPage() {
       </div>
       {!loading && (
         <div className="mb-5 flex flex-wrap items-end gap-3 rounded-xl border border-neutral-200/80 bg-white px-4 py-3 dark:border-zinc-700/60 dark:bg-zinc-900/40">
+          <label className="w-64">
+            <span className="text-xs font-medium text-neutral-500 dark:text-zinc-400">{t('connections.searchTools')}</span>
+            <input
+              className={cn(inputCls, 'mt-1')}
+              value={toolSearch}
+              onChange={event => setToolSearch(event.target.value)}
+              placeholder={t('connections.searchToolsPlaceholder')}
+            />
+          </label>
           <label className="w-44">
             <span className="text-xs font-medium text-neutral-500 dark:text-zinc-400">{t('connections.filterStatus')}</span>
             <select className={cn(selectCls, 'mt-1')} value={statusFilter} onChange={event => setStatusFilter(event.target.value as ConnectionStatusFilter)}>
@@ -252,7 +270,7 @@ export default function ConnectionsPage() {
               ))}
             </select>
           </label>
-          {(statusFilter !== 'all' || categoryFilter !== 'all') && (
+          {(statusFilter !== 'all' || categoryFilter !== 'all' || toolSearch.trim() !== '') && (
             <button type="button" onClick={resetFilters} className="rounded-lg px-3 py-2 text-sm font-medium text-neutral-500 hover:bg-neutral-100 dark:text-zinc-400 dark:hover:bg-zinc-800">
               {t('connections.clearFilters')}
             </button>
@@ -281,10 +299,10 @@ export default function ConnectionsPage() {
             <section>
               <div className="mb-3 flex items-center justify-between">
                 <h2 className="text-sm font-semibold text-neutral-900 dark:text-zinc-100">{t('connections.customMCPTools')}</h2>
-                <span className="text-xs text-neutral-400 dark:text-zinc-500">{t('connections.toolCount', { count: customMCPConnections.length })}</span>
+                <span className="text-xs text-neutral-400 dark:text-zinc-500">{t('connections.toolCount', { count: filteredCustomMCPConnections.length })}</span>
               </div>
               <div className="grid gap-4 xl:grid-cols-2">
-                {customMCPConnections.map(connection => (
+                {filteredCustomMCPConnections.map(connection => (
                   <ExternalToolCard
                     key={connection.id}
                     provider={providerForCustomMCPConnection(customMCPProvider, connection)}
@@ -578,6 +596,34 @@ function providerDescription(provider: Provider, t: TFn): string {
   const value = t(key)
   if (value !== key) return value
   return provider.description || t('connections.externalToolDefaultDescription')
+}
+
+function normalizeToolSearch(value: string): string {
+  return value.trim().toLowerCase()
+}
+
+function providerMatchesSearch(provider: Provider, query: string, t: TFn): boolean {
+  if (!query) return true
+  const haystack = [
+    provider.provider,
+    provider.displayName,
+    provider.description || '',
+    providerDescription(provider, t),
+    provider.category || '',
+    providerCategoryLabel(provider.category || 'Other Tools', t),
+  ].join(' ').toLowerCase()
+  return haystack.includes(query)
+}
+
+function customMCPConnectionMatchesSearch(provider: Provider, connection: Connection, query: string, t: TFn): boolean {
+  if (!query) return true
+  return providerMatchesSearch(providerForCustomMCPConnection(provider, connection), query, t)
+    || [
+      connection.connectionName,
+      connection.provider,
+      connection.ownerType,
+      connection.ownerId || '',
+    ].join(' ').toLowerCase().includes(query)
 }
 
 function providerForCustomMCPConnection(provider: Provider, connection: Connection): Provider {

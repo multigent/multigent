@@ -371,9 +371,6 @@ func (s *Server) testStaticRuntimeCredentialConnection(connection controldb.Conn
 			return testConnectionResult{}, fmt.Errorf("privateKey is required")
 		}
 	case "git_ssh":
-		if strings.TrimSpace(values["host"]) == "" {
-			return testConnectionResult{}, fmt.Errorf("host is required")
-		}
 		if normalizePrivateCredential(values["privateKey"]) == "" {
 			return testConnectionResult{}, fmt.Errorf("privateKey is required")
 		}

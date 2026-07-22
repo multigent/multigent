@@ -648,14 +648,11 @@ func gitSSHProvider() Provider {
 		Category:    "Developer Tools",
 		AuthTypes:   []string{AuthCustomCredential},
 		Fields: []ProviderField{
-			{Key: "host", Label: "Git host", InputType: "text", Required: true},
-			{Key: "username", Label: "SSH username", InputType: "text"},
 			{Key: "privateKey", Label: "Private key", InputType: "textarea", Required: true, Secret: true},
-			{Key: "passphrase", Label: "Passphrase", InputType: "password", Secret: true},
 			{Key: "knownHosts", Label: "Known hosts", InputType: "textarea"},
 		},
 		Guides: []ProviderGuide{
-			credentialGuide("Git SSH key", "Create a repository deploy key or service-account SSH key, grant only the repositories agents need, and paste the private key here. Use read-only keys unless agents must push branches or tags.", "GitHub deploy keys", "https://docs.github.com/authentication/connecting-to-github-with-ssh/managing-deploy-keys"),
+			credentialGuide("Git SSH key", "Create an SSH key pair for this workspace. Add the public key to GitHub, Gitee, GitLab, or your Git server, then paste the private key here. Multigent injects it into agent sandboxes so Git can authenticate by SSH URL.", "GitHub deploy keys", "https://docs.github.com/authentication/connecting-to-github-with-ssh/managing-deploy-keys"),
 		},
 		Enabled: true,
 	}
