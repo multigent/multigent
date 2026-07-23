@@ -21,14 +21,8 @@ type StreamEvent = {
   attempt?: number
   max_retries?: number
   error_status?: string
-  error?: string
-  message?: {
-    role?: string
-    content?: ContentBlock[] | string
-    model?: string
-    stop_reason?: string
-    usage?: { input_tokens?: number; output_tokens?: number }
-  }
+  error?: string | { message?: string }
+  message?: any
   call_id?: string
   tool_call?: Record<string, any>
   result?: string
@@ -41,6 +35,7 @@ type StreamEvent = {
   item?: {
     type?: string
     text?: string
+    message?: string
     name?: string
     input?: unknown
     output?: string
@@ -123,6 +118,14 @@ function extractJSONLogLine(line: string): string {
 function collapseConsecutiveDuplicateLines(text: string): string {
   const lines = text.split('\n')
   return lines.filter((line, index) => index === 0 || line !== lines[index - 1]).join('\n')
+}
+
+function streamEventErrorMessage(ev: StreamEvent): string {
+  if (typeof ev.error === 'string') return ev.error
+  if (ev.error?.message) return ev.error.message
+  if (typeof ev.message === 'string') return ev.message
+  if (ev.item?.message) return ev.item.message
+  return ''
 }
 
 function extractCursorToolInfo(tc: Record<string, unknown>): { name: string; desc: string; input: unknown } | null {
@@ -449,9 +452,18 @@ function parseLog(content: string): ConversationItem[] {
           kind: 'assistant',
           blocks: [{ type: 'tool_use', name: ev.item.name, input: ev.item.input }],
         })
+      } else if (ev.item.type === 'error') {
+        const msg = streamEventErrorMessage(ev)
+        items.push({ kind: 'result', text: msg || 'Error', isError: true })
       } else if (ev.item.output) {
         items.push({ kind: 'tool_result', content: ev.item.output, isError: false })
       }
+      continue
+    }
+
+    if (ev.type === 'error' || ev.type === 'turn.failed') {
+      const msg = streamEventErrorMessage(ev)
+      items.push({ kind: 'result', text: msg || 'Error', isError: true })
       continue
     }
 
@@ -484,8 +496,8 @@ function parseLog(content: string): ConversationItem[] {
     }
 
     if (ev.type === 'human' || ev.type === 'user' || ev.role === 'human') {
-      const blocks = Array.isArray(ev.message?.content)
-        ? ev.message!.content
+      const blocks: ContentBlock[] = Array.isArray(ev.message?.content)
+        ? ev.message.content as ContentBlock[]
         : Array.isArray(ev.content)
           ? ev.content as ContentBlock[]
           : []
@@ -515,7 +527,7 @@ function parseLog(content: string): ConversationItem[] {
       const text = typeof ev.content === 'string'
         ? ev.content
         : typeof ev.message?.content === 'string'
-          ? ev.message.content
+            ? ev.message.content
           : ''
       if (text) items.push({ kind: ev.parent_tool_use_id ? 'system' : 'human', text })
       continue
@@ -685,7 +697,7 @@ function fallbackResultFromRawLog(content: string): ConversationItem[] {
       if (ev.type === 'result' && (ev.result || ev.is_error)) {
         items.push({
           kind: 'result',
-          text: ev.result || (ev.is_error ? ev.error || 'Error' : 'Completed'),
+          text: ev.result || (ev.is_error ? streamEventErrorMessage(ev) || 'Error' : 'Completed'),
           cost: ev.total_cost_usd ?? ev.cost_usd,
           turns: ev.num_turns,
           isError: ev.is_error ?? false,

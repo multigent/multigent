@@ -54,6 +54,43 @@ func TestExtractAgentChatSessionID(t *testing.T) {
 	}
 }
 
+func TestExtractAgentChatError(t *testing.T) {
+	tests := []struct {
+		name string
+		line string
+		want string
+	}{
+		{
+			name: "codex error event",
+			line: `{"type":"error","message":"unexpected status 401 Unauthorized"}`,
+			want: "unexpected status 401 Unauthorized",
+		},
+		{
+			name: "codex turn failed",
+			line: `{"type":"turn.failed","error":{"message":"Missing bearer or basic authentication in header"}}`,
+			want: "Missing bearer or basic authentication in header",
+		},
+		{
+			name: "codex item completed error",
+			line: `{"type":"item.completed","item":{"type":"error","message":"Falling back from WebSockets"}}`,
+			want: "Falling back from WebSockets",
+		},
+		{
+			name: "plain log",
+			line: `exit status 1`,
+			want: "",
+		},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			if got := extractAgentChatError(tt.line); got != tt.want {
+				t.Fatalf("extractAgentChatError() = %q, want %q", got, tt.want)
+			}
+		})
+	}
+}
+
 func decodeChatSSEPayload(t *testing.T, raw string) map[string]any {
 	t.Helper()
 	var got map[string]any

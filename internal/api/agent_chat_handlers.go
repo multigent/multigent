@@ -322,6 +322,7 @@ func (s *Server) handleAgentChat(w http.ResponseWriter, r *http.Request) {
 	}
 	clientGone := false
 	lineCount := 0
+	lastStreamError := ""
 	for line := range lines {
 		lineCount++
 		if sid := extractAgentChatSessionID(line); sid != "" {
@@ -330,6 +331,9 @@ func (s *Server) handleAgentChat(w http.ResponseWriter, r *http.Request) {
 			}
 			detectedSessionID = sid
 			lease.SetRuntimeSessionID(sid)
+		}
+		if msg := extractAgentChatError(line); msg != "" {
+			lastStreamError = msg
 		}
 		if clientGone {
 			continue
@@ -352,10 +356,14 @@ func (s *Server) handleAgentChat(w http.ResponseWriter, r *http.Request) {
 	s.execMu.Unlock()
 
 	if waitErr != nil {
-		lease.Fail(waitErr.Error())
+		errMsg := waitErr.Error()
+		if lastStreamError != "" {
+			errMsg = lastStreamError + " (" + errMsg + ")"
+		}
+		lease.Fail(errMsg)
 		detectedSessionID = ""
 		_ = s.createInteractionEvent(lease.session, "system", "", "web", "run_failed", "", map[string]any{
-			"error": waitErr.Error(),
+			"error": errMsg,
 		})
 	} else {
 		_ = s.createInteractionEvent(lease.session, "agent", project+"/"+agent, "web", "run_completed", "", map[string]any{
@@ -364,9 +372,13 @@ func (s *Server) handleAgentChat(w http.ResponseWriter, r *http.Request) {
 	}
 
 	if waitErr != nil && !clientGone {
+		errMsg := waitErr.Error()
+		if lastStreamError != "" {
+			errMsg = lastStreamError + " (" + errMsg + ")"
+		}
 		evt, _ := json.Marshal(map[string]any{
 			"type":  "chat_error",
-			"error": waitErr.Error(),
+			"error": errMsg,
 		})
 		fmt.Fprintf(w, "data: %s\n\n", evt)
 		flusher.Flush()
@@ -454,6 +466,38 @@ func chatSSEPayload(line string, model entity.AgentModel) string {
 		return string(fallback)
 	}
 	return string(raw)
+}
+
+func extractAgentChatError(line string) string {
+	trimmed := strings.TrimSpace(line)
+	if !strings.HasPrefix(trimmed, "{") {
+		return ""
+	}
+	var ev struct {
+		Type    string `json:"type"`
+		Message string `json:"message"`
+		Error   struct {
+			Message string `json:"message"`
+		} `json:"error"`
+		Item struct {
+			Type    string `json:"type"`
+			Message string `json:"message"`
+		} `json:"item"`
+	}
+	if err := json.Unmarshal([]byte(trimmed), &ev); err != nil {
+		return ""
+	}
+	switch ev.Type {
+	case "error":
+		return strings.TrimSpace(ev.Message)
+	case "turn.failed":
+		return strings.TrimSpace(ev.Error.Message)
+	case "item.completed":
+		if ev.Item.Type == "error" {
+			return strings.TrimSpace(ev.Item.Message)
+		}
+	}
+	return ""
 }
 
 func extractAgentChatSessionID(line string) string {

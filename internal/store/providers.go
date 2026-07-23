@@ -202,7 +202,19 @@ func ProviderEnvForModel(p entity.APIProvider, model entity.AgentModel) map[stri
 	switch entity.NormaliseModel(model) {
 	case entity.ModelClaudeCode:
 		applyClaudeCodeProviderEnv(env, p)
-	case entity.ModelCodex, entity.ModelOpenCode:
+	case entity.ModelCodex:
+		if p.APIKey != "" {
+			env["CODEX_API_KEY"] = p.APIKey
+			env["OPENAI_API_KEY"] = p.APIKey
+		}
+		if p.BaseURL != "" {
+			env["OPENAI_BASE_URL"] = p.BaseURL
+		}
+		if p.Model != "" {
+			env["CODEX_MODEL"] = p.Model
+			env["OPENAI_MODEL"] = p.Model
+		}
+	case entity.ModelOpenCode:
 		if p.APIKey != "" {
 			env["OPENAI_API_KEY"] = p.APIKey
 		}

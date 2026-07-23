@@ -46,11 +46,17 @@ func TestProviderEnvForCodexUsesOpenAICompatibleVars(t *testing.T) {
 	if env["OPENAI_API_KEY"] != "secret-key" {
 		t.Fatalf("OPENAI_API_KEY=%q", env["OPENAI_API_KEY"])
 	}
+	if env["CODEX_API_KEY"] != "secret-key" {
+		t.Fatalf("CODEX_API_KEY=%q", env["CODEX_API_KEY"])
+	}
 	if env["OPENAI_BASE_URL"] != provider.BaseURL {
 		t.Fatalf("OPENAI_BASE_URL=%q", env["OPENAI_BASE_URL"])
 	}
 	if env["OPENAI_MODEL"] != provider.Model {
 		t.Fatalf("OPENAI_MODEL=%q", env["OPENAI_MODEL"])
+	}
+	if env["CODEX_MODEL"] != provider.Model {
+		t.Fatalf("CODEX_MODEL=%q", env["CODEX_MODEL"])
 	}
 	if env["ANTHROPIC_AUTH_TOKEN"] != "" {
 		t.Fatalf("unexpected ANTHROPIC_AUTH_TOKEN=%q", env["ANTHROPIC_AUTH_TOKEN"])
