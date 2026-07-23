@@ -24,6 +24,8 @@ const (
 
 	ProviderAuthMethodAPIKey        = "api_key"
 	ProviderAuthMethodCodexChatGPT  = "codex_chatgpt"
+	ProviderAuthMethodClaudeBrowser = "claudecode_browser"
+	ProviderAuthMethodCursorBrowser = "cursor_browser"
 	ProviderAuthStatusConfigured    = "configured"
 	ProviderAuthStatusNotConfigured = "not_configured"
 )

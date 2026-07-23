@@ -938,7 +938,9 @@ type ProviderDraft = Partial<ProviderRow> & { apiKey?: string; accountMode?: Mod
 type ModelDeviceAuthState = {
   sessionId: string
   verificationUri: string
-  userCode: string
+  userCode?: string
+  requiresCode?: boolean
+  cli?: ModelAccountCLI
   status: 'pending' | 'connected' | 'failed'
 }
 type CCSwitchProviderPreview = { id: string; name: string; cli: string; type: string; baseUrl?: string; model?: string; hasKey: boolean; isCurrent: boolean }
@@ -975,6 +977,7 @@ function ProvidersSection() {
   const [showKey, setShowKey] = useState(false)
   const [deviceAuth, setDeviceAuth] = useState<ModelDeviceAuthState | null>(null)
   const [deviceAuthStarting, setDeviceAuthStarting] = useState(false)
+  const [browserAuthCode, setBrowserAuthCode] = useState('')
   const deviceAuthSessionRef = useRef('')
 
   const refresh = useCallback(async () => {
@@ -999,6 +1002,7 @@ function ProvidersSection() {
     setShowKey(false)
     deviceAuthSessionRef.current = ''
     setDeviceAuth(null)
+    setBrowserAuthCode('')
     setErr(null)
   }
 
@@ -1043,6 +1047,7 @@ function ProvidersSection() {
     setShowKey(false)
     deviceAuthSessionRef.current = ''
     setDeviceAuth(null)
+    setBrowserAuthCode('')
     setErr(null)
   }
 
@@ -1108,10 +1113,12 @@ function ProvidersSection() {
 
   async function startCodexChatGPTAuth() {
     if (!editing?.name?.trim()) return
+    const cli = editing.cli ?? 'codex'
     setDeviceAuthStarting(true)
     setErr(null)
     try {
-      const res = await apiPost<{ sessionId: string; verificationUri: string; userCode: string; status: 'pending'; expiresIn?: number }>('/api/v1/providers/auth/codex/device/begin', {
+      const path = cli === 'codex' ? '/api/v1/providers/auth/codex/device/begin' : `/api/v1/providers/auth/${encodeURIComponent(cli)}/browser/begin`
+      const res = await apiPost<{ sessionId: string; verificationUri: string; userCode?: string; status: 'pending'; expiresIn?: number; requiresCode?: boolean }>(path, {
         ownerType: editing.ownerType || (canCreateWorkspaceProvider ? 'workspace' : 'user'),
         name: editing.name,
       })
@@ -1119,11 +1126,14 @@ function ProvidersSection() {
         sessionId: res.sessionId,
         verificationUri: res.verificationUri,
         userCode: res.userCode,
+        requiresCode: res.requiresCode,
+        cli,
         status: 'pending',
       }
       setDeviceAuth(next)
+      setBrowserAuthCode('')
       deviceAuthSessionRef.current = next.sessionId
-      pollCodexChatGPTAuth(next.sessionId)
+      pollCLINativeAuth(cli, next.sessionId)
     } catch (e) {
       setErr(e instanceof Error ? e.message : String(e))
     } finally {
@@ -1131,11 +1141,12 @@ function ProvidersSection() {
     }
   }
 
-  function pollCodexChatGPTAuth(sessionId: string) {
+  function pollCLINativeAuth(cli: ModelAccountCLI, sessionId: string) {
     window.setTimeout(async () => {
       if (deviceAuthSessionRef.current !== sessionId) return
       try {
-        const res = await apiPost<{ status: 'pending' | 'connected'; provider?: ProviderRow }>('/api/v1/providers/auth/codex/device/poll', { sessionId })
+        const path = cli === 'codex' ? '/api/v1/providers/auth/codex/device/poll' : `/api/v1/providers/auth/${encodeURIComponent(cli)}/browser/poll`
+        const res = await apiPost<{ status: 'pending' | 'connected'; provider?: ProviderRow; requiresCode?: boolean }>(path, { sessionId })
         if (res.status === 'connected') {
           setDeviceAuth(prev => prev && prev.sessionId === sessionId ? { ...prev, status: 'connected' } : prev)
           deviceAuthSessionRef.current = ''
@@ -1143,7 +1154,7 @@ function ProvidersSection() {
           await refresh()
           return
         }
-        pollCodexChatGPTAuth(sessionId)
+        pollCLINativeAuth(cli, sessionId)
       } catch (e) {
         setDeviceAuth(prev => prev && prev.sessionId === sessionId ? { ...prev, status: 'failed' } : prev)
         deviceAuthSessionRef.current = ''
@@ -1160,7 +1171,22 @@ function ProvidersSection() {
       void apiDelete(`/api/v1/providers/auth/sessions/${encodeURIComponent(sessionID)}`).catch(() => {})
     }
     setDeviceAuth(null)
+    setBrowserAuthCode('')
     setEditing(null)
+  }
+
+  async function submitBrowserAuthCode() {
+    if (!deviceAuth?.sessionId || !deviceAuth.cli || !browserAuthCode.trim()) return
+    setErr(null)
+    try {
+      await apiPost(`/api/v1/providers/auth/${encodeURIComponent(deviceAuth.cli)}/browser/code`, {
+        sessionId: deviceAuth.sessionId,
+        code: browserAuthCode,
+      })
+      setBrowserAuthCode('')
+    } catch (e) {
+      setErr(e instanceof Error ? e.message : String(e))
+    }
   }
 
   function applyPreset(presetID: string) {
@@ -1191,7 +1217,7 @@ function ProvidersSection() {
           type: providerTypeForCLI(nextCLI),
           baseUrl: '',
           model: '',
-          authMethod: nextCLI === 'codex' ? 'codex_chatgpt' : 'api_key',
+          authMethod: defaultAuthMethodForCLI(nextCLI),
           name: prev.name?.trim() && !isGeneratedModelAccountName(prev.name) ? prev.name : providerOfficialName(nextCLI),
         }
       }
@@ -1216,7 +1242,7 @@ function ProvidersSection() {
         ...prev,
         cli,
         type: providerTypeForCLI(cli),
-        authMethod: prev.accountMode === 'official' && cli === 'codex' ? 'codex_chatgpt' : 'api_key',
+        authMethod: prev.accountMode === 'official' ? defaultAuthMethodForCLI(cli) : 'api_key',
         name: prev.name?.trim() && !isGeneratedModelAccountName(prev.name) ? prev.name : (prev.accountMode === 'official' ? providerOfficialName(cli) : ''),
       }
     })
@@ -1353,18 +1379,18 @@ function ProvidersSection() {
               </label>
               {(editing.accountMode ?? 'official') === 'official' ? (
                 <div className="space-y-2">
-                  {editing.cli === 'codex' && !editing.id && (
+                  {supportsBrowserModelAuth(editing.cli) && !editing.id && (
                     <div className="grid grid-cols-2 gap-2 rounded-lg bg-neutral-100 p-1 dark:bg-zinc-800/70">
                       <button
                         type="button"
-                        onClick={() => setEditing({ ...editing, authMethod: 'codex_chatgpt', apiKey: '' })}
+                        onClick={() => setEditing({ ...editing, authMethod: defaultAuthMethodForCLI(editing.cli), apiKey: '' })}
                         className={cn('rounded-md px-3 py-2 text-sm font-medium transition-colors',
-                          (editing.authMethod ?? 'codex_chatgpt') === 'codex_chatgpt'
+                          (editing.authMethod ?? defaultAuthMethodForCLI(editing.cli)) === defaultAuthMethodForCLI(editing.cli)
                             ? 'bg-white text-neutral-900 shadow-sm dark:bg-zinc-950 dark:text-zinc-100'
                             : 'text-neutral-500 hover:text-neutral-800 dark:text-zinc-400 dark:hover:text-zinc-200'
                         )}
                       >
-                        {t('provider.authChatGPT')}
+                        {editing.cli === 'codex' ? t('provider.authChatGPT') : t('provider.authBrowser')}
                       </button>
                       <button
                         type="button"
@@ -1382,7 +1408,7 @@ function ProvidersSection() {
                   <p className="rounded-lg border border-sky-100 bg-sky-50 px-3 py-2 text-xs leading-5 text-sky-700 dark:border-sky-900/50 dark:bg-sky-900/20 dark:text-sky-300">
                     {editing.cli === 'codex' && (editing.authMethod ?? 'codex_chatgpt') === 'codex_chatgpt'
                       ? t('provider.codexChatGPTHint')
-                      : editing.cli === 'claudecode' || editing.cli === 'cursor'
+                      : supportsBrowserModelAuth(editing.cli) && (editing.authMethod ?? defaultAuthMethodForCLI(editing.cli)) === defaultAuthMethodForCLI(editing.cli)
                         ? t('provider.cliBrowserLoginHint')
                         : t('provider.officialHint')}
                   </p>
@@ -1411,7 +1437,7 @@ function ProvidersSection() {
                   <p className="text-xs leading-5 text-neutral-400 dark:text-zinc-500">{t('provider.gatewayHint')}</p>
                 </>
               )}
-              {((editing.accountMode ?? 'official') !== 'official' || editing.cli !== 'codex' || editing.authMethod === 'api_key' || editing.id) && (
+              {((editing.accountMode ?? 'official') !== 'official' || !supportsBrowserModelAuth(editing.cli) || editing.authMethod === 'api_key' || editing.id) && (
                 <>
                   <label className="flex flex-col gap-1">
                     <span className="text-sm font-medium text-neutral-600 dark:text-zinc-400">{t('provider.apiKeyLabel')}</span>
@@ -1436,14 +1462,24 @@ function ProvidersSection() {
                 <div className="rounded-lg border border-sky-200 bg-sky-50 px-3 py-3 text-sm text-sky-800 dark:border-sky-900/50 dark:bg-sky-900/20 dark:text-sky-200">
                   <p className="font-medium">{deviceAuth.status === 'connected' ? t('provider.deviceConnected') : t('provider.deviceWaiting')}</p>
                   <a href={deviceAuth.verificationUri} target="_blank" rel="noreferrer" className="mt-2 block font-medium text-sky-700 underline dark:text-sky-300">{deviceAuth.verificationUri}</a>
-                  <p className="mt-2 text-xs text-sky-700/80 dark:text-sky-300/80">{t('provider.deviceCodeLabel')}</p>
-                  <p className="mt-1 w-fit rounded-md bg-white px-3 py-1 font-mono text-lg font-semibold tracking-wide text-neutral-900 dark:bg-zinc-950 dark:text-zinc-100">{deviceAuth.userCode}</p>
+                  {deviceAuth.userCode && (
+                    <>
+                      <p className="mt-2 text-xs text-sky-700/80 dark:text-sky-300/80">{t('provider.deviceCodeLabel')}</p>
+                      <p className="mt-1 w-fit rounded-md bg-white px-3 py-1 font-mono text-lg font-semibold tracking-wide text-neutral-900 dark:bg-zinc-950 dark:text-zinc-100">{deviceAuth.userCode}</p>
+                    </>
+                  )}
+                  {deviceAuth.requiresCode && (
+                    <div className="mt-3 flex gap-2">
+                      <input value={browserAuthCode} onChange={e => setBrowserAuthCode(e.target.value)} className={cn(fieldCls, 'font-mono text-xs')} placeholder={t('provider.browserCodePlaceholder')} />
+                      <button type="button" onClick={() => void submitBrowserAuthCode()} disabled={!browserAuthCode.trim()} className="rounded-lg border border-sky-600 bg-white px-3 py-2 text-sm font-medium text-sky-700 hover:bg-sky-50 disabled:opacity-50 dark:border-sky-500 dark:bg-zinc-900 dark:text-sky-400 dark:hover:bg-zinc-800">{t('provider.submitCode')}</button>
+                    </div>
+                  )}
                 </div>
               )}
               {err && <p className="text-sm text-red-600 dark:text-red-400">{err}</p>}
               <div className="flex justify-end gap-2 pt-1">
                 <button type="button" onClick={closeProviderDialog} disabled={saving || deviceAuthStarting} className="rounded-lg border border-neutral-300 px-3 py-1.5 text-sm dark:border-zinc-600">{t('forms.cancel')}</button>
-                {(editing.accountMode ?? 'official') === 'official' && editing.cli === 'codex' && (editing.authMethod ?? 'codex_chatgpt') === 'codex_chatgpt' && !editing.id ? (
+                {(editing.accountMode ?? 'official') === 'official' && supportsBrowserModelAuth(editing.cli) && (editing.authMethod ?? defaultAuthMethodForCLI(editing.cli)) === defaultAuthMethodForCLI(editing.cli) && !editing.id ? (
                   <button type="button" onClick={() => void startCodexChatGPTAuth()} disabled={deviceAuthStarting || !editing.name?.trim()} className="rounded-lg bg-sky-600 px-3 py-1.5 text-sm font-medium text-white disabled:opacity-50">{deviceAuthStarting ? t('provider.deviceStarting') : t('provider.startDeviceAuth')}</button>
                 ) : (
                   <button type="button" onClick={() => void handleSave()} disabled={saving || !editing.name?.trim()} className="rounded-lg bg-sky-600 px-3 py-1.5 text-sm font-medium text-white disabled:opacity-50">{saving ? t('forms.saving') : t('forms.save')}</button>
@@ -1612,8 +1648,22 @@ function providerCLILabel(cli?: ModelAccountCLI): string {
   }
 }
 
+function defaultAuthMethodForCLI(cli?: ModelAccountCLI): string {
+  switch (cli) {
+    case 'codex': return 'codex_chatgpt'
+    case 'claudecode': return 'claudecode_browser'
+    case 'cursor': return 'cursor_browser'
+    default: return 'api_key'
+  }
+}
+
+function supportsBrowserModelAuth(cli?: ModelAccountCLI): boolean {
+  return cli === 'codex' || cli === 'claudecode' || cli === 'cursor'
+}
+
 function providerAuthConfiguredLabel(provider: ProviderRow, t: TFn): string {
   if (provider.authMethod === 'codex_chatgpt') return t('provider.chatGPTConfigured')
+  if (provider.authMethod === 'claudecode_browser' || provider.authMethod === 'cursor_browser') return t('provider.browserConfigured')
   return t('provider.keyConfigured')
 }
 
