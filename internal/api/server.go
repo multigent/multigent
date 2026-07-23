@@ -84,8 +84,10 @@ func NewServer(root, apiKey string) *Server {
 		log.Fatalf("control DB unavailable: %v", err)
 	}
 	root = normalizeServerWorkspaceRoot(root, controlDB)
-	if err := builtins.EnsureSkills(root); err != nil {
-		log.Printf("ensure builtin skills failed: %v", err)
+	if serverHasAgency(root) {
+		if err := builtins.EnsureSkills(root); err != nil {
+			log.Printf("ensure builtin skills failed: %v", err)
+		}
 	}
 	sched := newSchedulerManager(root)
 	ts := taskstore.NewDB(root, controlDB)

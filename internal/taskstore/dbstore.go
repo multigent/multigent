@@ -502,6 +502,9 @@ func ensureWorkspace(root string, db controldb.Store) (string, error) {
 	if err != nil {
 		absRoot = root
 	}
+	if _, err := os.Stat(filepath.Join(absRoot, ".multigent", "agency.yaml")); err != nil {
+		return workspaceID(absRoot), nil
+	}
 	if rows, err := db.ListWorkspaces(); err == nil {
 		for _, row := range rows {
 			if samePath(row.Root, absRoot) && row.ID != "" {

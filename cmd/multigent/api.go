@@ -2,7 +2,6 @@ package main
 
 import (
 	"context"
-	"crypto/rand"
 	"fmt"
 	"log"
 	"net/http"
@@ -16,8 +15,6 @@ import (
 	"github.com/multigent/multigent/internal/appconfig"
 	"github.com/multigent/multigent/internal/daemon"
 	controldb "github.com/multigent/multigent/internal/db"
-	"github.com/multigent/multigent/internal/entity"
-	"github.com/multigent/multigent/internal/scaffold"
 	"github.com/spf13/cobra"
 )
 
@@ -163,28 +160,7 @@ func resolveAPIServeRoots(cfg *appconfig.Config) (dataRoot, activeRoot string, e
 			return dataRoot, row.Root, nil
 		}
 	}
-	id := newAPIServeWorkspaceID()
-	activeRoot = filepath.Join(dataRoot, id)
-	now := daemon.NowISO()
-	if err := scaffold.InitAgency(activeRoot, &entity.Agency{
-		Name:      "Default Workspace",
-		CreatedBy: "system",
-		CreatedAt: now,
-	}); err != nil {
-		return "", "", err
-	}
-	if err := db.UpsertWorkspace(controldb.Workspace{
-		ID:        id,
-		Name:      "Default Workspace",
-		Slug:      "default-workspace",
-		Root:      activeRoot,
-		CreatedBy: "system",
-		CreatedAt: now,
-		UpdatedAt: now,
-	}); err != nil {
-		return "", "", err
-	}
-	return dataRoot, activeRoot, nil
+	return dataRoot, dataRoot, nil
 }
 
 func workspaceRootBelongsToDataRoot(dataRoot, root string) bool {
@@ -202,14 +178,4 @@ func workspaceRootBelongsToDataRoot(dataRoot, root string) bool {
 func hasAgency(root string) bool {
 	_, err := os.Stat(filepath.Join(root, ".multigent", "agency.yaml"))
 	return err == nil
-}
-
-func newAPIServeWorkspaceID() string {
-	var b [16]byte
-	if _, err := rand.Read(b[:]); err != nil {
-		return "ws-" + fmt.Sprint(os.Getpid())
-	}
-	b[6] = (b[6] & 0x0f) | 0x40
-	b[8] = (b[8] & 0x3f) | 0x80
-	return fmt.Sprintf("%x-%x-%x-%x-%x", b[0:4], b[4:6], b[6:8], b[8:10], b[10:16])
 }

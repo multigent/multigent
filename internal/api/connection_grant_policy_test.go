@@ -29,6 +29,14 @@ func newConnectionGrantPolicyServer(t *testing.T) (*Server, string) {
 	if err != nil {
 		t.Fatalf("workspace id: %v", err)
 	}
+	if err := s.controlDB.UpsertWorkspace(controldb.Workspace{
+		ID:   workspaceID,
+		Name: "Test Workspace",
+		Slug: "test-workspace",
+		Root: root,
+	}); err != nil {
+		t.Fatalf("workspace: %v", err)
+	}
 	if err := s.users.CreateUser("owner", "pass123", RoleMember, "", "", "", "", ""); err != nil {
 		t.Fatalf("create owner: %v", err)
 	}
