@@ -35,7 +35,27 @@ Multigent is built around that operating model:
 - **Loop engineering for agent teams**: prompts, skills, tools, model accounts, schedules, and review policies are managed as a repeatable operating loop rather than one-off conversations.
 - **Visual SOP and workflow orchestration**: design task flows on a board, define required inputs and outputs, add review loops and branch conditions, then bind real tasks to that workflow.
 - **Human-in-the-loop by design**: humans can review, approve, reject, or redirect at key workflow steps while agents continue handling the repeatable work around them.
-- **Demo assets coming next**: polished screenshots and videos will be added here as the public demo workspace stabilizes.
+- **Demo video coming next**: a short product walkthrough will be added as the public demo workspace stabilizes.
+
+## Screenshots
+
+### Visual SOP and workflow orchestration
+
+<p align="center">
+  <img src="docs/assets/screenshots/gitHub_beta_stable_workflow.png" alt="Multigent workflow board" width="100%">
+</p>
+
+### Multi-agent task board
+
+<p align="center">
+  <img src="docs/assets/screenshots/task_panel.png" alt="Multigent multi-agent task board" width="100%">
+</p>
+
+### Workflow task detail
+
+<p align="center">
+  <img src="docs/assets/screenshots/task_detail.png" alt="Multigent workflow task detail" width="100%">
+</p>
 
 ## Product Model
 

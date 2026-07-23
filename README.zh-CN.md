@@ -35,7 +35,27 @@ Multigent 解决的是这层 Agent 协作架构问题：
 - **面向 Agent 团队的 Loop Engineering**：Prompt、Skill、工具、模型账号、调度和 Review 策略都可以被持续调优，形成可复用的工作循环，而不是一次性的对话。
 - **任务流程图与 SOP 编排**：在可视化白板上设计流程，定义节点输入输出、人工 Review、打回循环和条件分支，再把真实任务绑定到这套流程中执行。
 - **Human-in-the-loop 不是阻塞点**：人类可以在关键节点审核、通过、打回或调整方向，重复性执行和流转由 Agent 继续推进。
-- **视频和截图即将补充**：后续会在这里补上公开 Demo Workspace、流程执行和 Agent 协作的截图与视频。
+- **演示视频即将补充**：后续会在这里补上公开 Demo Workspace、流程执行和 Agent 协作的短视频。
+
+## 产品截图
+
+### 可视化 SOP 与流程编排
+
+<p align="center">
+  <img src="docs/assets/screenshots/gitHub_beta_stable_workflow.png" alt="Multigent 流程白板" width="100%">
+</p>
+
+### 多 Agent 任务看板
+
+<p align="center">
+  <img src="docs/assets/screenshots/task_panel.png" alt="Multigent 多 Agent 任务看板" width="100%">
+</p>
+
+### 流程任务详情
+
+<p align="center">
+  <img src="docs/assets/screenshots/task_detail.png" alt="Multigent 流程任务详情" width="100%">
+</p>
 
 ## 产品模型
 
