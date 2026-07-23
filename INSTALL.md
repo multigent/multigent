@@ -1,60 +1,50 @@
-# multigent — Installation & Setup Guide
+# Multigent Installation Guide
 
-A complete walkthrough for installing multigent and building your first AI agent team from scratch.
+This guide is written for two readers:
 
----
+- **AI agents** helping a user install and configure Multigent.
+- **Humans** who prefer to install it manually.
 
-## ⚠ For AI agents reading this guide
+Recommended path: let a local coding agent read this file, install Multigent, start the web console, and guide the user through the first workspace.
 
-If you are an AI agent (Claude Code, Codex, Cursor, etc.) following this guide on behalf of a user, **stop before Step 3 and read this section carefully.**
+## For AI Agents
 
-### Building an agency is a design decision, not a mechanical task
+If you are Claude Code, Codex, Cursor, or another local coding agent installing Multigent for a user:
 
-An agency's structure — teams, roles, and workflows — directly shapes how every agent thinks and behaves. Getting it wrong means re-hiring agents and rewriting prompts later. **Do not invent a structure. Collaborate with the user first.**
+1. Check the OS, CPU architecture, shell, package managers, Docker status, and whether ports `27892`, `27893`, or `27894` are already occupied.
+2. Prefer the official install script on macOS/Linux. Use Homebrew, npm, binary releases, or Docker only when they fit the user's environment better.
+3. Install both CLIs when possible:
+   - `multigent`: admin CLI and self-hosted web server.
+   - `mga`: runtime CLI used inside agent sandboxes.
+4. Start Multigent and provide the local URL.
+5. Do not create teams, agents, workflows, external tools, or credentials without explaining the plan and asking the user to confirm.
+6. Do not ask the user to paste secrets into chat unless there is no safer option. Prefer the web UI credential forms.
+7. After setup, verify that the user can open the web console, create or enter a workspace, and configure at least one model account.
 
-Before creating any team, role, or project, have a conversation with the user to understand:
+Suggested user-facing plan before setup:
 
-1. **What is the user trying to build or operate?**
-   What is the product/codebase/business? What are the main projects, task types, and recurring workflows?
+```text
+I will install Multigent, verify Docker, start the web console, and help you create the first workspace.
+I will not configure model keys, external tools, or agents until you confirm the next step.
+```
 
-2. **Who are the "people" in this team?**
-   What functions do they need — engineering, QA, product, writing, ops, research, other?
+## Requirements
 
-3. **What does each role actually do?**
-   Responsibilities, tools they use, rules they must follow, things they must never do.
+- Docker, for sandboxed agent execution.
+- A modern browser.
+- Optional for source builds: Go 1.26+ and Node.js 20+.
 
-4. **How should agents communicate?**
-   Who reports to whom? Who makes decisions? Who needs to be CC'd on what?
+Multigent publishes the default runtime image:
 
-5. **What does "done" look like for each agent?**
-   How does an agent know its work is complete? Does it need human sign-off before it finishes a task?
+```text
+ghcr.io/multigent/multigent/runtime-base:latest
+```
 
-6. **What are the active hours and cadence?**
-   When should agents be running? How often should they check in?
+This image is public and does not require `docker login`.
 
-Only after you have clear answers to these questions should you proceed to create teams, roles, and projects. Use `AskUserQuestion` (or equivalent interactive input) for anything you are not sure about — **never guess**.
+## Install Options
 
-> **Practical tip:** Consider drafting a short summary of the proposed agency structure (team names, role names, responsibilities) and asking the user to confirm it before executing any commands. A one-paragraph confirmation now saves a full re-setup later.
-
-### Writing prompts is not optional
-
-Creating the directory structure is only half the work. **The prompts are what make agents intelligent.** An agent with an empty or thin `prompt.md` has no idea who it is, what it owns, or how to behave — it will produce generic, unreliable results.
-
-After every `multigent create` command, you **must** write a substantive prompt for that entity before moving on. The three prompt layers are:
-
-| Layer | File | What it shapes |
-|-------|------|----------------|
-| Agency | `agency-prompt.md` | Identity, values, and universal rules shared by **every** agent |
-| Team | `teams/<name>/prompt.md` | Standards, tools, and norms for agents in this team |
-| Role | `teams/<t>/roles/<r>/prompt.md` | Who this agent is, what it owns, how it works, what "done" means |
-
-The role prompt is the most important — spend the most time on it. See Steps 1, 2, and 4 below for concrete templates.
-
----
-
-## 1. Install
-
-### macOS / Linux install script (recommended)
+### macOS / Linux Install Script
 
 ```bash
 curl -fsSL https://raw.githubusercontent.com/multigent/multigent/main/scripts/install.sh | bash
@@ -62,16 +52,27 @@ multigent version
 mga version
 ```
 
-The script installs both:
+Optional custom install directory:
 
-- `multigent` — human/admin CLI and self-hosted web server.
-- `mga` — scoped runtime CLI mounted into agent sandboxes.
+```bash
+curl -fsSL https://raw.githubusercontent.com/multigent/multigent/main/scripts/install.sh \
+  | MULTIGENT_INSTALL_DIR="$HOME/.local/bin" bash
+```
 
 ### Homebrew
 
 ```bash
 brew install multigent/tap/multigent
 multigent version
+mga version
+```
+
+### npm Wrapper
+
+```bash
+npm install -g @multigent/multigent
+multigent version
+mga version
 ```
 
 ### Windows PowerShell
@@ -79,16 +80,10 @@ multigent version
 ```powershell
 irm https://raw.githubusercontent.com/multigent/multigent/main/scripts/install.ps1 | iex
 multigent version
+mga version
 ```
 
-### npm wrapper
-
-```bash
-npm install -g @multigent/multigent
-multigent version
-```
-
-### Docker self-host
+### Docker Self-Host
 
 ```bash
 docker run --rm -p 27892:27892 \
@@ -97,771 +92,121 @@ docker run --rm -p 27892:27892 \
   ghcr.io/multigent/multigent:latest
 ```
 
-Open `http://127.0.0.1:27892`.
+Open:
 
-### Go install (developer fallback)
+```text
+http://127.0.0.1:27892
+```
+
+### Prebuilt Binary
+
+Download the latest release:
+
+```text
+https://github.com/multigent/multigent/releases
+```
+
+Move both `multigent` and `mga` to a directory on `PATH`, then verify:
 
 ```bash
-go install github.com/multigent/multigent/cmd/multigent@latest
-go install github.com/multigent/multigent/cmd/mga@latest
 multigent version
+mga version
 ```
 
-### Pre-built binary
-
-Download from [github.com/multigent/multigent/releases](https://github.com/multigent/multigent/releases) and move both `multigent` and `mga` to a directory on your `PATH`.
-
-### From source (includes web console)
+### From Source
 
 ```bash
-git clone https://github.com/multigent/multigent && cd multigent
-make build      # builds web frontend + Go binary → dist/multigent
-# or
-make install    # builds and installs to $GOPATH/bin
+git clone https://github.com/multigent/multigent
+cd multigent
+make build
+./dist/multigent version
+./dist/mga version
 ```
 
-> **Requires:** Go 1.26+, Node.js 20+ (for building the web frontend).
+## Start The Web Console
 
----
-
-## 2. How context works
-
-```
-Agency                   ← rules, values, tone shared by every agent
-  └─ Team                ← capability group  (engineering, qa, product…)
-       └─ Role           ← job function      (developer, qa-engineer, pm…)
-            └─ Project   ← concrete product or repo
-                 └─ Agent ← AI agent = model + merged context + skills
-```
-
-When you **hire** an agent, multigent merges the full chain automatically:
-
-```
-agency-prompt.md  +  team/prompt.md  +  role/prompt.md  +  project/prompt.md  +  skills
-        └────────────────────────────────────────────────────────────┘
-                             written to CLAUDE.md / AGENTS.md / etc.
-```
-
-Edit any layer, run `multigent sync`, and all affected agents are regenerated.
-
----
-
-## 3. Step-by-step: build from scratch
-
-### Step 1 — Create the agency workspace
+Use a persistent data directory:
 
 ```bash
-multigent create agency --name "MyAgency" --desc "Building great software with AI"
-cd MyAgency
+mkdir -p ./multigent-data
+multigent --dir ./multigent-data start --addr 127.0.0.1:27892 --open
 ```
 
-This creates the workspace directory with a `.multigent/` folder and a starter `agency-prompt.md`.
+Open:
 
-**Optional: set the agency language** in `.multigent/agency.yaml` — this controls the language of all auto-generated scheduler messages (inbox notifications, wakeup triggers, etc.):
-
-```yaml
-# .multigent/agency.yaml
-name: MyAgency
-lang: zh   # "zh" for Chinese, "en" for English (default)
+```text
+http://127.0.0.1:27892
 ```
 
-**Edit `agency-prompt.md`** — this is injected into **every** agent across every team. It defines the company's identity, values, and universal rules. Fill it in fully before creating any teams.
+The first user creates or enters a workspace from the web UI.
+
+## First Setup Checklist
+
+1. Register the first user.
+2. Create or enter a workspace.
+3. Configure one model account.
+4. Open the example workspace or create a project.
+5. Add agents to the project.
+6. Configure any external tools the agents need.
+7. Create or install a workflow.
+8. Create a task and bind it to the workflow.
+9. Trigger the agent and inspect the run record.
+
+## Agent Setup Guidance
+
+When helping a user build the first workspace, do not overbuild. Start with one concrete workflow:
+
+- one project;
+- two or three agents;
+- one workflow;
+- one task;
+- one model account;
+- only the external tools needed for the first task.
+
+Before creating roles or agents, ask the user:
+
+1. What kind of work should this workspace demonstrate first?
+2. Which agents or human roles should participate?
+3. Which tools are required?
+4. Where should human review happen?
+
+Then summarize the proposed setup and wait for confirmation.
+
+## Troubleshooting
+
+### Docker Is Missing Or Not Running
 
 ```bash
-$EDITOR agency-prompt.md
+docker info
 ```
 
-A well-written `agency-prompt.md` should cover:
+If this fails, install and start Docker before running agents.
 
-```markdown
-# <Agency Name>
+### Port Already In Use
 
-## Mission
-<1–2 sentences: what this company/project is building and why it exists>
-
-## Core values
-- <Value 1>: <Brief description — e.g. "Quality over speed: we ship tested, reviewed code">
-- <Value 2>: <e.g. "Transparency: surface blockers immediately, never stay stuck silently">
-- <Value 3>: <e.g. "Ownership: if you see a problem, you own fixing it">
-
-## Communication style
-<Tone and style expected in all output — e.g. "Be concise and direct. Prefer bullet points
-over prose. Use plain language.">
-
-## Universal rules (apply to every agent)
-- Never push directly to main — always open a PR
-- Never delete files or code without explicit instruction
-- When blocked for more than 30 minutes, report via inbox and pause
-- Always confirm with the user before any irreversible action (deploy, delete, send email)
-- Keep task summaries factual — record what you did, not what you intended to do
-
-## How to use multigent (mandatory reading)
-Every agent must know these commands:
-
-  # Complete a task
-  multigent --dir $AGENCY_DIR task done --id <id> --status success --summary "..."
-
-  # Request human confirmation before proceeding
-  multigent --dir $AGENCY_DIR task confirm-request --id <id> \
-    --summary "..." --action-item "Approve or reject"
-
-  # Send a message to another participant
-  multigent --dir $AGENCY_DIR inbox send \
-    --from <project>/<agent> --to human \
-    --subject "..." --body "..."
-
-  # Reply to a message
-  multigent --dir $AGENCY_DIR inbox reply <msg-id> \
-    --from <project>/<agent> --body "..."
-
-## Escalation policy
-<Who to message when something is blocked or uncertain — e.g. "Always send blockers
-to 'human'. Copy the PM role when starting or finishing major features.">
-```
-
----
-
-### Step 2 — Create teams
-
-Teams group agents by capability. Create as many as you need:
+Use another port:
 
 ```bash
-multigent create team --name "engineering"    --desc "Software engineers"
-multigent create team --name "qa"             --desc "Quality assurance"
-multigent create team --name "product"        --desc "Product management"
+multigent --dir ./multigent-data start --addr 127.0.0.1:27992 --open
 ```
 
-Teams are flat. Use projects, task parents, labels, milestones, roles, and owners
-to express delivery decomposition instead of nesting teams.
+### Runtime Image Pull Fails
 
-**Edit `teams/<name>/prompt.md`** — every agent on this team inherits this context. It defines team-level standards, norms, and tooling that all roles within the team share.
+Try:
 
 ```bash
-$EDITOR teams/engineering/prompt.md
+docker pull ghcr.io/multigent/multigent/runtime-base:latest
 ```
 
-A well-written team prompt should cover:
+If the network is slow, pull manually or configure a registry mirror.
 
-```markdown
-# <Team Name> Team
+### CLI Not Found
 
-## Team mission
-<What this team is responsible for and what success looks like for the team>
-
-## Standards and conventions
-- **Language / stack:** <e.g. Go 1.22, PostgreSQL, Docker>
-- **Branch naming:** `<type>/<issue-number>-<short-desc>` (e.g. `fix/142-login-redirect`)
-- **Commit style:** <e.g. Conventional Commits: feat/fix/chore/docs/test>
-- **PR process:** <e.g. All PRs require 1 approval + passing CI before merge>
-- **Test requirements:** <e.g. New features must include unit tests; coverage must not drop>
-- **Code style:** <e.g. Run gofmt/eslint before committing; no warnings left unresolved>
-
-## Tools available to all roles in this team
-- `gh` — GitHub CLI (issues, PRs, releases)
-- <any other team-wide tools — e.g. `jq`, `docker`, `kubectl`>
-
-## Team communication norms
-- <e.g. "The PM role coordinates task assignment — check in with pm before starting new work">
-- <e.g. "QA must sign off on every feature PR before it is merged">
-- <e.g. "Post a brief status update to human inbox at the end of each work cycle">
-
-## What "quality work" means for this team
-<Define the bar — e.g. "Code is well-tested, documented, reviewed, and doesn't break
-existing functionality. Documentation is updated alongside code changes.">
-```
-
----
-
-### Step 3 — Add skills to agents
-
-Skills are reusable capability definitions (Markdown instructions + optional scripts) deployed into each agent's working directory.
-
-#### Built-in skills (provided by multigent)
-
-multigent ships two ready-made skills on GitHub that every agency should use. Download them into your workspace first:
+Check `PATH`:
 
 ```bash
-# agency-messaging — teaches agents how to discover each other and exchange inbox messages
-mkdir -p skills/agency-messaging
-curl -sL https://raw.githubusercontent.com/multigent/multigent/main/skills/agency-messaging/SKILL.md \
-  -o skills/agency-messaging/SKILL.md
-
-# multigent-usage — teaches agents how to operate multigent (add tasks, mark done, etc.)
-mkdir -p skills/multigent-usage
-curl -sL https://raw.githubusercontent.com/multigent/multigent/main/skills/multigent-usage/SKILL.md \
-  -o skills/multigent-usage/SKILL.md
+which multigent
+which mga
 ```
 
-| Skill | Purpose |
-|-------|---------|
-| `agency-messaging` | **Required for inter-agent communication.** Without this skill, agents won't know how to send messages to each other or to you. |
-| `multigent-usage` | Teaches agents how to operate multigent — add tasks, mark done, send confirmations, etc. Recommended for all agents. |
-
-**Bind both skills to every role** so all agents can communicate and self-manage tasks:
-
-```yaml
-# teams/engineering/roles/developer/role.yaml
-skills:
-  - agency-messaging    # ← must-have: enables inter-agent messaging
-  - multigent-usage     # ← recommended: agents know how to use multigent
-  - github-pr-review    # your custom skills below
-```
-
-Or via command line:
-
-```bash
-multigent role skill add --team engineering --role developer --skill agency-messaging
-multigent role skill add --team engineering --role developer --skill multigent-usage
-```
-
-> **Why `agency-messaging` matters:** Agents need to know how to send messages to the PM, reply to the human, or notify teammates. Without this skill injected into their context, they have no instructions for doing so and will not attempt it.
-
-#### Define your own skills
-
-```bash
-mkdir -p skills/github-pr-review
-```
-
-**`skills/github-pr-review/SKILL.md`**
-```markdown
----
-name: github-pr-review
-description: Review GitHub pull requests and post inline comments
----
-
-## Skill: GitHub PR Review
-
-When asked to review a PR:
-1. `gh pr view <number>` to read the description
-2. `gh pr diff <number>` to read the diff
-3. Look for bugs, missing tests, security issues, style problems
-4. Post inline comments: `gh pr review <number> --comment --body "..."`
-5. Approve or request changes: `gh pr review <number> --approve` / `--request-changes`
-```
-
-You can bundle scripts alongside `SKILL.md`. Reference them with `{{SKILL_DIR}}`:
-
-```markdown
-Run `{{SKILL_DIR}}/lint.sh` before reviewing to check for obvious issues.
-```
-
-```bash
-# List all defined skills
-multigent list skills
-```
-
----
-
-### Step 4 — Create roles and bind skills
-
-Roles define a job function within a team. Each role has its own prompt layer and a list of bound skills.
-
-```bash
-multigent create role --team "engineering" --name "developer"   --desc "Implements features and fixes bugs"
-multigent create role --team "qa"          --name "qa-engineer" --desc "Reviews PRs and tests"
-multigent create role --team "product"     --name "pm"          --desc "Manages roadmap and tasks"
-```
-
-**Edit `teams/<team>/roles/<role>/prompt.md`** — this is the most important layer. It defines who this agent is, what it owns, how it works, where its files live, and what "done" means. **Write it fully before hiring any agent with this role.**
-
-```bash
-$EDITOR teams/engineering/roles/developer/prompt.md
-```
-
-A well-written role prompt must cover all of the following:
-
-```markdown
-# Role: <Role Title>
-
-## Identity
-You are a <seniority + job title> on the <team name> team at <agency name>.
-<1–2 sentences describing the agent's personality and working style — e.g.
-"You are pragmatic and delivery-focused. You write clean, tested, well-documented
-code and communicate proactively.">
-
-## Responsibilities
-- <Primary responsibility — e.g. "Implement features and bug fixes as assigned by the PM">
-- <e.g. "Write unit and integration tests for all code you produce">
-- <e.g. "Open a PR for every change; never commit directly to main">
-- <e.g. "Respond to PR review comments within your next active wakeup cycle">
-- <e.g. "Keep the PM informed of progress and blockers via inbox">
-
-## Work scope and boundaries
-**You own:**
-- <e.g. All files under src/, internal/, cmd/ for the assigned project>
-- <e.g. Writing and updating tests in the test/ directory>
-
-**You do NOT:**
-- <e.g. Modify CI/CD configuration or deployment scripts — escalate to DevOps role>
-- <e.g. Merge your own PRs — always request review first>
-- <e.g. Make product decisions — ask the PM role>
-- <e.g. Access production infrastructure directly>
-
-## Your workspace
-Your working directory is at: projects/<project>/agents/<your-name>/
-
-  CLAUDE.md (or AGENTS.md)   ← your full context — auto-generated, do not edit manually
-  tasks/                     ← task queue (managed by multigent, do not edit manually)
-  notes/                     ← your persistent notes and research (you own this)
-  scratch/                   ← temporary files, experiments, drafts
-
-Always read your notes/ directory at the start of each wakeup cycle for continuity.
-
-## Your skills
-The following skills are deployed in your working directory. Read each SKILL.md
-at the start of your first session so you know how to use them:
-
-- `agency-messaging`  — How to discover other agents and send/receive inbox messages
-- `multigent-usage`   — How to operate multigent: tasks, inbox, sync, overview
-- `<your-skill-name>` — <One-line description of what this skill enables>
-
-## Communication
-- **Report blockers immediately** — never stay stuck. Send to human inbox after 30 min:
-  `multigent --dir $AGENCY_DIR inbox send --from <project>/<name> --to human --subject "Blocked: ..." --body "..."`
-- **Request confirmation before irreversible actions** (merges, deploys, deletes):
-  `multigent --dir $AGENCY_DIR task confirm-request --id <id> --summary "..." --action-item "..."`
-- **Update the PM** when starting or finishing significant work:
-  `multigent --dir $AGENCY_DIR inbox send --from <project>/<name> --to <project>/pm ...`
-
-## Definition of done
-A task is complete when **all** of the following are true:
-1. <e.g. Code is committed and a PR is opened with a clear description>
-2. <e.g. All tests pass — run the test suite before marking done>
-3. <e.g. Relevant documentation is updated if the public interface changed>
-4. <e.g. task done is called with a clear summary of what was done>
-
-If human review is required before marking done, use `task confirm-request` instead.
-```
-
-> **Looking for inspiration?** [github.com/msitarzewski/agency-agents](https://github.com/msitarzewski/agency-agents) is a community collection of role definitions covering engineering, QA, design, product, marketing, sales, and more. Browse it as a reference when writing your own `prompt.md`.
-
-**Edit `teams/<team>/roles/<role>/role.yaml`** to bind skills and configure workspace setup:
-
-```yaml
-# teams/engineering/roles/developer/role.yaml
-name: developer
-description: Implements features and fixes bugs
-skills:
-  - github-pr-review      # ← skill names to deploy into every agent with this role
-setup:
-  dirs:
-    - scratch             # subdirectories created in the agent's working directory on hire
-    - notes
-```
-
-You can also manage skills from the command line at any time:
-
-```bash
-# Bind a skill to a role
-multigent role skill add --team engineering --role developer --skill github-pr-review
-
-# Unbind a skill
-multigent role skill remove --team engineering --role developer --skill github-pr-review
-
-# List roles in a team
-multigent role list --team engineering
-```
-
-After binding/unbinding skills, run `multigent sync` to push the change to existing agents.
-
----
-
-### Step 5 — Create a project
-
-A project represents a concrete product or codebase:
-
-```bash
-multigent create project \
-  --name "my-api" \
-  --desc "REST API service" \
-  --repo "/absolute/path/to/my-api-repo"
-```
-
-**Edit `projects/my-api/prompt.md`** — add project-specific context:
-
-```bash
-$EDITOR projects/my-api/prompt.md
-# e.g.: tech stack, build/run/test commands, GitHub repo URL, branch conventions,
-#        known architectural decisions, issue tracker link
-```
-
----
-
-### Step 6 — Hire agents
-
-Hiring an agent merges the full context chain and writes the agent's working directory:
-
-```bash
-# Noun-verb form (recommended — more discoverable)
-multigent agent hire \
-  --project my-api \
-  --team    engineering \
-  --role    developer \
-  --model   claudecode \
-  --name    dev
-
-# Top-level verb form also works (backward compatible)
-multigent hire --project my-api --team engineering --role developer \
-               --model claudecode --name dev
-```
-
-For sandboxed execution inside Docker:
-
-```bash
-multigent agent hire \
-  --project my-api --team engineering --role developer \
-  --model claudecode --name dev \
-  --sandbox docker
-```
-
-Use `--if-not-exists` when scripting to make hire idempotent (safe to run multiple times):
-
-```bash
-multigent agent hire --project my-api --team engineering --role developer \
-                     --model claudecode --name dev --if-not-exists
-```
-
-Supported `--model` values: `claudecode`, `codex`, `gemini`, `cursor`, `qoder`, `opencode`, `iflow`, `generic-cli`.
-
-The hired agent's working directory is at `projects/my-api/agents/dev/`. Inside you'll find the merged context file (e.g. `CLAUDE.md`), deployed skill files, and any `setup.dirs` that were created.
-
-```bash
-# List all agents across all projects (JSON by default, table in terminal)
-multigent list agents
-multigent list agents --format table     # human-readable table
-multigent list agents --format json      # always JSON
-
-# See a specific agent's context summary
-multigent show agent my-api dev
-multigent show agent my-api dev --format json   # structured JSON output
-multigent show agent my-api dev --raw           # raw merged context file contents
-```
-
----
-
-### Step 7 — Set up heartbeat (autonomous scheduling)
-
-A heartbeat makes the agent wake up automatically on a recurring interval:
-
-```bash
-multigent scheduler heartbeat \
-  --project my-api \
-  --agent   dev \
-  --enable \
-  --interval     30m \
-  --active-hours "09:00-20:00" \
-  --active-days  "weekdays"
-```
-
-- **`--interval`** — how long to sleep after completing all pending tasks (e.g. `15m`, `1h`)
-- **`--active-hours`** — only wake within this daily window; overnight ranges (`22:00-06:00`) work
-- **`--active-days`** — `weekdays`, `weekends`, or `Mon,Wed,Fri` (comma-separated day names)
-
-Outside the active window the scheduler shows `⏸ outside active window — next wakeup in Xh`.
-
-**What happens on each wakeup:**
-1. Any unread inbox messages are prepended to the prompt automatically
-2. All pending tasks are executed in priority order (0=critical → 3=low)
-3. If the queue is empty and a `wakeup.md` exists (in `.multigent/context/`), it runs as the autonomous routine
-
----
-
-### Step 8 — Write a wakeup routine (playbook)
-
-When the agent wakes up with an empty task queue, the scheduler sends it a wakeup prompt.
-
-#### Recommended approach — put the SOP in the role prompt, keep wakeup.md short
-
-The detailed routine (what to check, what commands to run) belongs in the **role prompt** (`teams/<team>/roles/<role>/prompt.md`), which is baked into `CLAUDE.md` and loaded once per session. The `wakeup.md` then only needs to be a short trigger:
-
-```bash
-$EDITOR projects/my-api/agents/dev/.multigent/context/wakeup.md
-```
-
-**English trigger example:**
-```markdown
-Execute your wakeup routine. Check pending tasks, unread messages, and your scheduled activities.
-Refer to your role context for the detailed steps.
-```
-
-**Chinese trigger example:**
-```markdown
-执行你的唤醒例程。检查待处理任务、未读消息及计划中的工作事项。
-详细步骤请参阅你的角色上下文。
-```
-
-The scheduler automatically prepends any unread inbox messages before this trigger (in the language configured in `.multigent/agency.yaml`).
-
-> **Tip:** If you don't configure a `wakeup_prompt` at all, the scheduler will send a built-in default trigger in the agency language. This is the easiest way to get started.
-
-#### Add the detailed SOP to the role prompt
-
-In `teams/<team>/roles/<role>/prompt.md`, add a `## Wakeup Routine` section:
-
-```markdown
-## Wakeup Routine
-
-Each time you are woken up with no pending tasks:
-
-1. Check messages — unread messages are injected automatically before your prompt
-2. Scan for new GitHub issues: `gh issue list --repo owner/my-api --state open --label "ready"`
-3. If unassigned issues exist, pick one and create a task:
-   `multigent --dir $AGENCY_DIR task add --project my-api --agent dev --title "..." --prompt "..." --created-by my-api/pm`
-4. When done: `multigent --dir $AGENCY_DIR task done --id <id> --status success --summary "..."`
-```
-
-Then register the wakeup trigger file:
-
-```bash
-multigent scheduler heartbeat \
-  --project my-api \
-  --agent   dev \
-  --wakeup-prompt-file projects/my-api/agents/dev/.multigent/context/wakeup.md
-```
-
----
-
-### Step 9 — Start the scheduler
-
-```bash
-multigent scheduler start
-```
-
-The scheduler runs in the foreground. All agents with heartbeat enabled start their wakeup loops, with random startup jitter to prevent simultaneous wakeups:
-
-```
-Heartbeat agents (2):
-  ● my-api/dev  interval=30m
-  ● my-api/pm   interval=30m
-
-[heartbeat my-api/dev]  sleeping 14m before first wakeup — next at 09:44:00
-[heartbeat my-api/pm]   sleeping 23m before first wakeup — next at 09:53:00
-```
-
-Stop with `Ctrl+C` or `multigent scheduler stop`.
-
----
-
-### Step 10 — Monitor
-
-```bash
-# Dashboard: agents, heartbeat status, teams, skills, inbox summary
-multigent overview
-
-# Task confirmations waiting for your decision
-multigent inbox list
-
-# Async messages from agents
-multigent inbox messages
-
-# Task queue for an agent
-multigent task list --project my-api --agent dev
-
-# Token usage and cost
-multigent task tokens --project my-api --all-agents
-
-# Emergency halt
-multigent task stop-all --project my-api --all-agents --include-running
-```
-
----
-
-## Working with tasks
-
-```bash
-# Add a task (agent picks it up on next wakeup)
-multigent task add \
-  --project my-api --agent dev \
-  --title "Fix login redirect on mobile Safari" \
-  --type bug --priority 1 --created-by human \
-  --prompt "The OAuth redirect fails on mobile Safari. Reproduce, fix, and open a PR."
-
-# Use --idempotency-key to prevent duplicate tasks when a script is re-run
-multigent task add \
-  --project my-api --agent dev \
-  --title "Fix login redirect on mobile Safari" \
-  --type bug --priority 1 --created-by human \
-  --idempotency-key "fix-login-redirect-safari-2026-06" \
-  --prompt "The OAuth redirect fails on mobile Safari. Reproduce, fix, and open a PR."
-
-# Run an agent manually (bypasses scheduler)
-multigent agent run --project my-api --agent dev
-
-# Dry-run: preview what task would execute, without running it (outputs JSON)
-multigent agent run --project my-api --agent dev --dry-run
-
-# One-shot prompt (no task queue, no heartbeat)
-multigent agent exec --project my-api --agent dev \
-  --prompt "List all open GitHub issues and output a priority-sorted summary"
-```
-
-**Task lifecycle:**
-```
-pending → in_progress → done_success
-                      → done_failed   → (auto-retry if max_retries set)
-                      → awaiting_confirmation → done_success (via inbox reply)
-```
-
----
-
-## Inbox: confirmations and messaging
-
-### Task confirmations (blocking)
-
-When an agent calls `task confirm-request`, the task pauses until you respond:
-
-```bash
-multigent inbox list
-multigent inbox show    <task-id>     # summary, action items, log tail
-multigent inbox reply   <task-id> --body "Approved — merge when CI passes"
-multigent inbox forward <task-id> --to my-api/dev --note "Check the auth module"
-```
-
-### Async messages (non-blocking)
-
-Any participant can send messages to any inbox. Recipients see them on their next wakeup:
-
-```bash
-# Human → agent
-multigent inbox send \
-  --to my-api/pm \
-  --subject "Prioritise issue #42" \
-  --body "Customer reported this as critical."
-
-# Group send
-multigent inbox send \
-  --from my-api/pm \
-  --to my-api/dev --to my-api/qa --to human \
-  --subject "Sprint kick-off" \
-  --body "Sprint W14 starts now. See backlog for your tasks."
-
-# Read your messages
-multigent inbox messages
-multigent inbox messages --all           # include already-read
-multigent inbox messages --from my-api/pm  # filter by sender
-
-# Reply
-multigent inbox reply <msg-id> --body "On it, will report back in 30m."
-
-# Forward to someone else
-multigent inbox fwd <msg-id> --from my-api/pm --to my-api/dev --note "FYI"
-
-# Per-message management
-multigent inbox read    <msg-id> --recipient human
-multigent inbox archive <msg-id> --recipient human
-multigent inbox delete  <msg-id> --recipient human
-```
-
----
-
-## Cron jobs
-
-Add recurring tasks to any agent:
-
-```bash
-multigent cron add \
-  --project my-api --agent dev \
-  --title "Weekly dependency audit" \
-  --schedule "0 9 * * 1" \
-  --prompt "Run 'go list -m -u all' and open a PR for any outdated dependencies."
-
-multigent cron list   --project my-api --agent dev
-multigent cron delete <cron-id> --project my-api --agent dev
-```
-
----
-
-## Context sync
-
-After editing any prompt, skill, or role config:
-
-```bash
-multigent sync                                # all agents with changed context
-multigent sync --project my-api              # one project
-multigent sync --project my-api --name dev   # one agent
-multigent sync --force                        # force regenerate everything
-```
-
----
-
-## Setup checklist
-
-```
-─── Agency ────────────────────────────────────────────────────────────────────
-[ ] multigent create agency --name "..." --desc "..."
-[ ] Write agency-prompt.md             ← REQUIRED: mission, values, universal rules,
-                                          multigent command reference, escalation policy
-
-─── Teams (repeat for each team) ──────────────────────────────────────────────
-[ ] multigent create team --name "engineering"
-[ ] Write teams/engineering/prompt.md  ← REQUIRED: team mission, stack/standards,
-                                          tools, PR process, definition of quality
-
-─── Skills ─────────────────────────────────────────────────────────────────────
-[ ] Download built-in skills:
-[ ]   mkdir -p skills/agency-messaging && \
-        curl -sL https://raw.githubusercontent.com/multigent/multigent/main/skills/agency-messaging/SKILL.md \
-          -o skills/agency-messaging/SKILL.md
-[ ]   mkdir -p skills/multigent-usage && \
-        curl -sL https://raw.githubusercontent.com/multigent/multigent/main/skills/multigent-usage/SKILL.md \
-          -o skills/multigent-usage/SKILL.md
-[ ] (optional) mkdir -p skills/my-skill && write skills/my-skill/SKILL.md
-
-─── Roles (repeat for each role) ──────────────────────────────────────────────
-[ ] multigent create role --team engineering --name developer
-[ ] Write teams/engineering/roles/developer/prompt.md   ← REQUIRED: identity,
-        responsibilities, work scope & boundaries, workspace folder explanation,
-        skills overview, communication norms, definition of done
-[ ] Edit teams/engineering/roles/developer/role.yaml    ← skills: [...], setup dirs
-[ ]   multigent role skill add --team engineering --role developer --skill agency-messaging
-[ ]   multigent role skill add --team engineering --role developer --skill multigent-usage
-[ ]   multigent role skill add --team engineering --role developer --skill <your-skill>
-
-─── Project ────────────────────────────────────────────────────────────────────
-[ ] multigent create project --name "my-app" --repo /path/to/repo
-[ ] Write projects/my-app/prompt.md    ← REQUIRED: tech stack, build/test/run commands,
-                                          repo URL, branch conventions, architectural notes
-
-─── Hire ───────────────────────────────────────────────────────────────────────
-[ ] multigent agent hire --project my-app --team engineering --role developer --model claudecode --name dev
-[ ] multigent agent hire ... --if-not-exists   ← use in scripts for idempotent hire
-[ ] multigent show agent my-app dev --format json   ← verify merged context
-
-─── Heartbeat ──────────────────────────────────────────────────────────────────
-[ ] multigent scheduler heartbeat --project my-app --agent dev --enable --interval 30m
-[ ] Write projects/my-app/agents/dev/.multigent/context/wakeup.md
-[ ] multigent scheduler heartbeat --project my-app --agent dev --wakeup-prompt-file ...
-
-─── Start ──────────────────────────────────────────────────────────────────────
-[ ] multigent scheduler start
-[ ] multigent overview                 ← CLI dashboard
-[ ] multigent inbox list               ← task confirmations
-[ ] multigent inbox messages           ← async messages
-
-─── Web console (optional) ─────────────────────────────────────────────────────
-[ ] multigent start                    ← opens http://127.0.0.1:27892
-[ ] multigent start --addr 0.0.0.0:8080 --api-key <token>  ← remote access
-```
-
----
-
-## Agent-friendly CLI reference
-
-multigent is designed to be operated by AI agents. Key conventions agents should know:
-
-| Concern | Convention |
-|---------|-----------|
-| **Output format** | All list/show commands output JSON by default when piped; `--format table` for humans |
-| **Exit codes** | 0=success  1=error  2=bad-arguments  3=not-found  5=already-exists |
-| **Noun-verb commands** | Prefer `multigent agent hire/fire/sync/run/exec` over bare verbs |
-| **Idempotent hire** | `multigent agent hire ... --if-not-exists` — safe to re-run |
-| **Idempotent task add** | `--idempotency-key <key>` — prevents duplicate tasks on retry |
-| **Dry-run** | `multigent agent run --dry-run` outputs JSON preview, never executes |
-| **Self-discovery** | `multigent schema [command]` — full command tree or flags as JSON |
-
-```bash
-# Discover any command's flags without reading --help text
-multigent schema task add
-multigent schema inbox send
-multigent schema              # full tree
-```
+If installed to a custom directory, add that directory to `PATH`.

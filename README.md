@@ -10,7 +10,7 @@
 
 Multigent helps teams turn prompts, tools, workflows, and human reviews into a coordinated agent workforce. Keep your existing project tools and chat tools; use Multigent as the control plane that gives agents shared context, structured tasks, safe execution, and observable handoffs.
 
-[中文](README.zh-CN.md) · [Documentation](docs/) · [Architecture](docs/architecture/agent-runtime-cli-architecture.md) · [Workflow Engine](docs/concepts/collaboration-workflow-state-machine.md) · [Roadmap](docs/operations/roadmap.md)
+[中文](README.zh-CN.md) · [Install Guide](INSTALL.md) · [Documentation](docs/) · [Architecture](docs/architecture/agent-runtime-cli-architecture.md) · [Workflow Engine](docs/concepts/collaboration-workflow-state-machine.md) · [Roadmap](docs/operations/roadmap.md)
 
 </div>
 
@@ -107,13 +107,26 @@ Workspace roles, project membership, task visibility, user invitations, and audi
 
 ## Quick Start
 
-### Install
+### Recommended: Let Your Agent Install It
+
+The easiest way to try Multigent is to ask your coding agent to install and start it for you. Multigent ships an agent-readable setup guide:
+
+```text
+Read https://github.com/multigent/multigent/blob/main/INSTALL.md
+Install Multigent on this machine, start the web console, and tell me the local URL.
+Before creating teams, agents, workflows, or credentials, explain the plan and ask me to confirm.
+```
+
+This works well with Claude Code, Codex, Cursor, and similar local agent environments. The agent can choose the right install path, verify Docker, start the server, and help you configure the first workspace.
+
+### Manual Install
 
 macOS and Linux:
 
 ```bash
 curl -fsSL https://raw.githubusercontent.com/multigent/multigent/main/scripts/install.sh | bash
 multigent version
+mga version
 ```
 
 Homebrew:
