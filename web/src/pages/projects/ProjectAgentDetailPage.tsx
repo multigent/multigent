@@ -327,11 +327,11 @@ function ModelSelector({ project, agentName, currentModel, currentHttpAgent, onC
         body.httpTimeout = httpTimeout
         body.httpStream = httpStream
       }
-      const res = await apiPost<{ ok: boolean; output: string }>(
+      await apiPost<{ ok: boolean }>(
         `/api/v1/projects/${encodeURIComponent(project)}/agents/${encodeURIComponent(agentName)}/set-model`,
         body,
       )
-      setResult({ ok: true, msg: res.output || t('forms.saved') })
+      setResult({ ok: true, msg: t('forms.saved') })
       onChanged()
     } catch (e) {
       setResult({ ok: false, msg: e instanceof Error ? e.message : String(e) })

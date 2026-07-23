@@ -307,8 +307,7 @@ func (s *Server) handleSetModel(w http.ResponseWriter, r *http.Request) {
 	}
 
 	_ = json.NewEncoder(w).Encode(map[string]any{
-		"ok":     true,
-		"output": string(out),
+		"ok": true,
 	})
 }
 
