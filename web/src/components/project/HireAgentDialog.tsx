@@ -8,11 +8,6 @@ const MODELS = [
   'codex',
   'cursor',
   'gemini',
-  'qoder',
-  'opencode',
-  'iflow',
-  'generic-cli',
-  'http-agent',
 ] as const
 
 type TeamInfo = { path: string; name: string }

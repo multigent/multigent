@@ -20,13 +20,7 @@ import { AgentChannelPanel } from '../../components/project/AgentChannelPanel'
 
 const AGENT_MODELS = [
   'claudecode', 'codex', 'cursor', 'gemini',
-  'qoder', 'opencode', 'iflow', 'generic-cli', 'http-agent',
 ] as const
-
-const AGENT_MODEL_LABEL_KEYS: Record<string, string> = {
-  'generic-cli': 'agentDetail.genericCli',
-  'http-agent': 'agentDetail.customCli',
-}
 
 const MODEL_COLORS: Record<string, string> = {
   claudecode:    'bg-orange-100 text-orange-700 dark:bg-orange-900/30 dark:text-orange-300',
@@ -361,7 +355,7 @@ function ModelSelector({ project, agentName, currentModel, currentHttpAgent, onC
           className={cn(inputCls, 'font-medium')}
         >
           {AGENT_MODELS.map((m) => (
-            <option key={m} value={m}>{AGENT_MODEL_LABEL_KEYS[m] ? t(AGENT_MODEL_LABEL_KEYS[m]) : m}</option>
+            <option key={m} value={m}>{m}</option>
           ))}
         </select>
         {dirty && (
