@@ -6,6 +6,7 @@ import (
 	"io"
 	"net/http"
 	"os"
+	"sort"
 	"strings"
 	"time"
 )
@@ -36,15 +37,15 @@ func fallbackModelCatalog() modelCatalogResponse {
 		Source: "builtin",
 		ModelsByCLI: map[string][]string{
 			"codex":      []string{"gpt-5.6-sol", "gpt-5.6-terra", "gpt-5.6-luna", "gpt-5.5", "gpt-5.4", "gpt-5.4-mini", "gpt-5.3-codex-spark"},
-			"cursor":     []string{"auto", "gpt-5.6-sol", "gpt-5.6-terra", "gpt-5.6-luna", "claude-fable-5", "claude-opus-4-8", "claude-sonnet-5"},
-			"claudecode": []string{"claude-fable-5", "claude-opus-4-8", "claude-sonnet-5", "claude-haiku-4-5", "claude-haiku-4-5-20251001"},
+			"cursor":     []string{"gpt-5.6-sol", "gpt-5.6-terra", "gpt-5.6-luna", "claude-fable-5", "claude-sonnet-5", "claude-opus-4-8", "auto"},
+			"claudecode": []string{"claude-fable-5", "claude-sonnet-5", "claude-opus-4-8", "claude-haiku-4-5", "claude-haiku-4-5-20251001"},
 			"gemini":     []string{"gemini-3.6-flash", "gemini-3.5-flash", "gemini-3.5-flash-lite", "gemini-3.1-pro-preview", "gemini-3.1-pro-preview-customtools", "gemini-3.1-flash-lite", "gemini-2.5-pro", "gemini-2.5-flash", "gemini-2.5-flash-lite"},
-			"opencode":   []string{"gpt-5.6-sol", "gpt-5.6-terra", "gpt-5.6-luna", "gpt-5.5", "claude-fable-5", "claude-opus-4-8", "claude-sonnet-5"},
+			"opencode":   []string{"gpt-5.6-sol", "gpt-5.6-terra", "gpt-5.6-luna", "gpt-5.5", "claude-fable-5", "claude-sonnet-5", "claude-opus-4-8"},
 		},
 		ModelsByProviderType: map[string][]string{
 			"openai":    []string{"gpt-5.6-sol", "gpt-5.6-terra", "gpt-5.6-luna", "gpt-5.5", "gpt-5.4", "gpt-5.4-mini", "gpt-5.3-codex-spark"},
-			"cursor":    []string{"auto", "gpt-5.6-sol", "gpt-5.6-terra", "gpt-5.6-luna", "claude-fable-5", "claude-opus-4-8", "claude-sonnet-5"},
-			"anthropic": []string{"claude-fable-5", "claude-opus-4-8", "claude-sonnet-5", "claude-haiku-4-5", "claude-haiku-4-5-20251001"},
+			"cursor":    []string{"gpt-5.6-sol", "gpt-5.6-terra", "gpt-5.6-luna", "claude-fable-5", "claude-sonnet-5", "claude-opus-4-8", "auto"},
+			"anthropic": []string{"claude-fable-5", "claude-sonnet-5", "claude-opus-4-8", "claude-haiku-4-5", "claude-haiku-4-5-20251001"},
 			"gemini":    []string{"gemini-3.6-flash", "gemini-3.5-flash", "gemini-3.5-flash-lite", "gemini-3.1-pro-preview", "gemini-3.1-pro-preview-customtools", "gemini-3.1-flash-lite", "gemini-2.5-pro", "gemini-2.5-flash", "gemini-2.5-flash-lite"},
 		},
 	}
@@ -87,7 +88,7 @@ func cleanModelCatalogMap(in map[string][]string) map[string][]string {
 		if key == "" {
 			continue
 		}
-		cleaned := cleanProviderModels(models)
+		cleaned := sortModelsNewestFirst(cleanProviderModels(models))
 		if len(cleaned) > 0 {
 			out[key] = cleaned
 		}
@@ -106,14 +107,53 @@ func mergeModelCatalogs(primary, fallback modelCatalogResponse) modelCatalogResp
 func mergeModelCatalogMap(primary, fallback map[string][]string) map[string][]string {
 	out := map[string][]string{}
 	for key, models := range fallback {
-		out[key] = cleanProviderModels(models)
+		out[key] = sortModelsNewestFirst(cleanProviderModels(models))
 	}
 	for key, models := range primary {
 		key = strings.TrimSpace(strings.ToLower(key))
 		if key == "" {
 			continue
 		}
-		out[key] = cleanProviderModels(append(models, out[key]...))
+		out[key] = sortModelsNewestFirst(cleanProviderModels(append(models, out[key]...)))
 	}
 	return out
+}
+
+func sortModelsNewestFirst(models []string) []string {
+	out := append([]string(nil), models...)
+	sort.SliceStable(out, func(i, j int) bool {
+		left, right := modelSortKey(out[i]), modelSortKey(out[j])
+		for idx := 0; idx < len(left) && idx < len(right); idx++ {
+			if left[idx] != right[idx] {
+				return left[idx] > right[idx]
+			}
+		}
+		return false
+	})
+	return out
+}
+
+func modelSortKey(model string) []int {
+	nums := []int{}
+	cur := -1
+	for _, r := range model {
+		if r >= '0' && r <= '9' {
+			if cur < 0 {
+				cur = 0
+			}
+			cur = cur*10 + int(r-'0')
+			continue
+		}
+		if cur >= 0 {
+			nums = append(nums, cur)
+			cur = -1
+		}
+	}
+	if cur >= 0 {
+		nums = append(nums, cur)
+	}
+	for len(nums) < 4 {
+		nums = append(nums, 0)
+	}
+	return nums
 }

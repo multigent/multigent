@@ -121,18 +121,18 @@ type AgentContext = {
 
 const RUNTIME_MODEL_PRESETS: Record<string, string[]> = {
   codex: ['gpt-5.6-sol', 'gpt-5.6-terra', 'gpt-5.6-luna', 'gpt-5.5', 'gpt-5.4', 'gpt-5.4-mini', 'gpt-5.3-codex-spark'],
-  claudecode: ['claude-fable-5', 'claude-opus-4-8', 'claude-sonnet-5', 'claude-haiku-4-5', 'claude-haiku-4-5-20251001'],
+  claudecode: ['claude-fable-5', 'claude-sonnet-5', 'claude-opus-4-8', 'claude-haiku-4-5', 'claude-haiku-4-5-20251001'],
   gemini: ['gemini-3.6-flash', 'gemini-3.5-flash', 'gemini-3.5-flash-lite', 'gemini-3.1-pro-preview', 'gemini-3.1-pro-preview-customtools', 'gemini-3.1-flash-lite', 'gemini-2.5-pro', 'gemini-2.5-flash', 'gemini-2.5-flash-lite'],
-  cursor: ['auto', 'gpt-5.6-sol', 'gpt-5.6-terra', 'gpt-5.6-luna', 'claude-fable-5', 'claude-opus-4-8', 'claude-sonnet-5'],
-  opencode: ['gpt-5.6-sol', 'gpt-5.6-terra', 'gpt-5.6-luna', 'gpt-5.5', 'claude-fable-5', 'claude-opus-4-8', 'claude-sonnet-5'],
+  cursor: ['gpt-5.6-sol', 'gpt-5.6-terra', 'gpt-5.6-luna', 'claude-fable-5', 'claude-sonnet-5', 'claude-opus-4-8', 'auto'],
+  opencode: ['gpt-5.6-sol', 'gpt-5.6-terra', 'gpt-5.6-luna', 'gpt-5.5', 'claude-fable-5', 'claude-sonnet-5', 'claude-opus-4-8'],
 }
 
 const OFFICIAL_RUNTIME_MODEL_PRESETS: Record<string, string[]> = {
   codex: ['gpt-5.6-sol', 'gpt-5.6-terra', 'gpt-5.6-luna', 'gpt-5.5', 'gpt-5.4', 'gpt-5.4-mini', 'gpt-5.3-codex-spark'],
   openai: ['gpt-5.6-sol', 'gpt-5.6-terra', 'gpt-5.6-luna', 'gpt-5.5', 'gpt-5.4', 'gpt-5.4-mini', 'gpt-5.3-codex-spark'],
-  cursor: ['auto', 'gpt-5.6-sol', 'gpt-5.6-terra', 'gpt-5.6-luna', 'claude-fable-5', 'claude-opus-4-8', 'claude-sonnet-5'],
-  claudecode: ['claude-fable-5', 'claude-opus-4-8', 'claude-sonnet-5', 'claude-haiku-4-5', 'claude-haiku-4-5-20251001'],
-  anthropic: ['claude-fable-5', 'claude-opus-4-8', 'claude-sonnet-5', 'claude-haiku-4-5', 'claude-haiku-4-5-20251001'],
+  cursor: ['gpt-5.6-sol', 'gpt-5.6-terra', 'gpt-5.6-luna', 'claude-fable-5', 'claude-sonnet-5', 'claude-opus-4-8', 'auto'],
+  claudecode: ['claude-fable-5', 'claude-sonnet-5', 'claude-opus-4-8', 'claude-haiku-4-5', 'claude-haiku-4-5-20251001'],
+  anthropic: ['claude-fable-5', 'claude-sonnet-5', 'claude-opus-4-8', 'claude-haiku-4-5', 'claude-haiku-4-5-20251001'],
   gemini: ['gemini-3.6-flash', 'gemini-3.5-flash', 'gemini-3.5-flash-lite', 'gemini-3.1-pro-preview', 'gemini-3.1-pro-preview-customtools', 'gemini-3.1-flash-lite', 'gemini-2.5-pro', 'gemini-2.5-flash', 'gemini-2.5-flash-lite'],
 }
 
