@@ -39,6 +39,10 @@ type StreamEvent = {
     name?: string
     input?: unknown
     output?: string
+    command?: string
+    aggregated_output?: string
+    exit_code?: number | null
+    status?: string
   }
   content?: ContentBlock[] | string
   role?: string
@@ -74,6 +78,46 @@ function pushAssistantText(items: ConversationItem[], text: string) {
     }
   }
   items.push({ kind: 'assistant', blocks: [{ type: 'text', text }] })
+}
+
+function pushHumanText(items: ConversationItem[], text: string) {
+  const normalized = text.trim()
+  if (!normalized) return
+  for (let i = items.length - 1; i >= 0; i--) {
+    const prev = items[i]
+    if (prev.kind === 'header' || prev.kind === 'system') continue
+    if (prev.kind === 'human' && comparableText(prev.text) === comparableText(normalized)) {
+      return
+    }
+    break
+  }
+  items.push({ kind: 'human', text: normalized })
+}
+
+function pushToolUse(items: ConversationItem[], name: string, input?: unknown) {
+  const normalizedName = name.trim()
+  if (!normalizedName) return
+  const last = items[items.length - 1]
+  if (last?.kind === 'assistant') {
+    const lastBlock = last.blocks[last.blocks.length - 1]
+    if (lastBlock?.type === 'tool_use' && lastBlock.name === normalizedName && JSON.stringify(lastBlock.input ?? null) === JSON.stringify(input ?? null)) {
+      return
+    }
+  }
+  items.push({
+    kind: 'assistant',
+    blocks: [{ type: 'tool_use', name: normalizedName, input }],
+  })
+}
+
+function pushToolResult(items: ConversationItem[], content: string, isError: boolean) {
+  const normalized = content.trim()
+  if (!normalized) return
+  const last = items[items.length - 1]
+  if (last?.kind === 'tool_result' && last.isError === isError && comparableText(last.content) === comparableText(normalized)) {
+    return
+  }
+  items.push({ kind: 'tool_result', content: normalized, isError })
 }
 
 function pushAssistantBlocks(items: ConversationItem[], blocks: ContentBlock[]) {
@@ -247,7 +291,7 @@ function parseCodexLog(lines: string[]): ConversationItem[] {
     if (!text) return
     switch (section) {
       case 'user':
-        items.push({ kind: 'human', text })
+        pushHumanText(items, text)
         break
       case 'thinking':
         items.push({ kind: 'thinking', text })
@@ -444,19 +488,28 @@ function parseLog(content: string): ConversationItem[] {
       continue
     }
 
-    if (ev.type === 'item.completed' && ev.item) {
+    if ((ev.type === 'item.started' || ev.type === 'item.completed') && ev.item) {
       if (ev.item.type === 'agent_message' && ev.item.text) {
         pushAssistantText(items, ev.item.text)
       } else if (ev.item.type === 'tool_call' && ev.item.name) {
-        items.push({
-          kind: 'assistant',
-          blocks: [{ type: 'tool_use', name: ev.item.name, input: ev.item.input }],
-        })
+        pushToolUse(items, ev.item.name, ev.item.input)
+      } else if (ev.item.type === 'command_execution' && ev.item.command) {
+        const command = String(ev.item.command)
+        const status = typeof ev.item.status === 'string' ? ev.item.status : ''
+        const output = typeof ev.item.aggregated_output === 'string' ? ev.item.aggregated_output : ''
+        const exitCode = typeof ev.item.exit_code === 'number' ? ev.item.exit_code : 0
+        if (ev.type === 'item.started' || status === 'in_progress') {
+          pushToolUse(items, 'Shell', { command })
+        } else {
+          pushToolResult(items, output || `exit ${exitCode}`, exitCode !== 0)
+        }
+      } else if ((ev.item.type === 'reasoning' || ev.item.type === 'agent_reasoning') && ev.item.text) {
+        items.push({ kind: 'thinking', text: ev.item.text })
       } else if (ev.item.type === 'error') {
         const msg = streamEventErrorMessage(ev)
         items.push({ kind: 'result', text: msg || 'Error', isError: true })
       } else if (ev.item.output) {
-        items.push({ kind: 'tool_result', content: ev.item.output, isError: false })
+        pushToolResult(items, ev.item.output, false)
       }
       continue
     }
@@ -511,14 +564,14 @@ function parseLog(content: string): ConversationItem[] {
         for (const tr of toolResults) {
           const content = typeof tr.content === 'string' ? tr.content : tr.output || ''
           if (content.trim()) {
-            items.push({ kind: 'tool_result', content, isError: Boolean(tr.is_error) })
+            pushToolResult(items, content, Boolean(tr.is_error))
           }
         }
         if (text) {
           if (ev.parent_tool_use_id) {
             items.push({ kind: 'system', text: truncateStr(text, 500) })
           } else {
-            items.push({ kind: 'human', text })
+            pushHumanText(items, text)
           }
         }
         continue
@@ -529,7 +582,13 @@ function parseLog(content: string): ConversationItem[] {
         : typeof ev.message?.content === 'string'
             ? ev.message.content
           : ''
-      if (text) items.push({ kind: ev.parent_tool_use_id ? 'system' : 'human', text })
+      if (text) {
+        if (ev.parent_tool_use_id) {
+          items.push({ kind: 'system', text })
+        } else {
+          pushHumanText(items, text)
+        }
+      }
       continue
     }
 
@@ -538,24 +597,12 @@ function parseLog(content: string): ConversationItem[] {
       if (ev.subtype === 'started') {
         const info = extractCursorToolInfo(ev.tool_call)
         if (info) {
-          items.push({
-            kind: 'assistant',
-            blocks: [{
-              type: 'tool_use',
-              id: ev.call_id,
-              name: info.name + (info.desc ? `: ${truncateStr(info.desc, 120)}` : ''),
-              input: info.input,
-            }],
-          })
+          pushToolUse(items, info.name + (info.desc ? `: ${truncateStr(info.desc, 120)}` : ''), info.input)
         }
       } else if (ev.subtype === 'completed') {
         const res = extractCursorToolResult(ev.tool_call)
         if (res && res.content) {
-          items.push({
-            kind: 'tool_result',
-            content: res.content,
-            isError: res.isError,
-          })
+          pushToolResult(items, res.content, res.isError)
         }
       }
       continue
@@ -569,20 +616,9 @@ function parseLog(content: string): ConversationItem[] {
       } else if (blk.type === 'tool_use' && typeof blk.name === 'string') {
         const name = blk.name as string
         const input = blk.input
-        items.push({
-          kind: 'assistant',
-          blocks: [{
-            type: 'tool_use',
-            name,
-            input,
-          }],
-        })
+        pushToolUse(items, name, input)
       } else if (blk.type === 'tool_result' && typeof blk.content === 'string' && blk.content) {
-        items.push({
-          kind: 'tool_result',
-          content: blk.content,
-          isError: Boolean(blk.is_error),
-        })
+        pushToolResult(items, blk.content, Boolean(blk.is_error))
       }
       continue
     }
@@ -606,11 +642,7 @@ function parseLog(content: string): ConversationItem[] {
         }
         for (const tr of toolResultBlocks) {
           if (tr.type === 'tool_result') {
-            items.push({
-              kind: 'tool_result',
-              content: tr.content || tr.output || '',
-              isError: tr.is_error ?? false,
-            })
+            pushToolResult(items, tr.content || tr.output || '', tr.is_error ?? false)
           }
         }
       } else if (typeof c === 'string' && c) {
@@ -946,7 +978,7 @@ export function ConversationLog({
     const filtered = mode !== 'chat' ? items : items.filter((item, index) => {
       if (item.kind === 'result') return !isDuplicateSuccessResult(items, index, item)
       if (item.kind === 'human' || item.kind === 'assistant' || item.kind === 'thinking') return true
-      if (item.kind === 'tool_result') return item.isError || !items.some((candidate) => candidate.kind === 'assistant' || candidate.kind === 'thinking' || candidate.kind === 'result')
+      if (item.kind === 'tool_result') return true
       return false
     })
     if (filtered.length > 0 || mode !== 'chat') return filtered
