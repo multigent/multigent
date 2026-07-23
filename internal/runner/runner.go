@@ -145,6 +145,9 @@ func (r *Runner) ExecPrompt(project, agentName, prompt, sessionID string) (*RunR
 
 	model := entity.NormaliseModel(meta.Model)
 	agentEnv := resolveProviderEnv(r.root, meta)
+	if err := r.materializeProviderCredentials(agentDir, meta); err != nil {
+		return nil, fmt.Errorf("materialize provider credentials: %w", err)
+	}
 	runtimeEnv := r.resolveRuntimeControlEnv(project, agentName, "exec-"+time.Now().UTC().Format("20060102-150405"))
 	if cleanup := r.materializeRuntimeFiles(agentDir, runtimeEnv); cleanup != nil {
 		defer cleanup()
@@ -337,6 +340,9 @@ func (r *Runner) RunTask(project, agentName string, task *entity.Task, sessionID
 
 	model := entity.NormaliseModel(meta.Model)
 	agentEnv := resolveProviderEnv(r.root, meta)
+	if err := r.materializeProviderCredentials(agentDir, meta); err != nil {
+		return nil, fmt.Errorf("materialize provider credentials: %w", err)
+	}
 	runtimeEnv := r.resolveRuntimeControlEnv(project, agentName, task.ID)
 	if cleanup := r.materializeRuntimeFiles(agentDir, runtimeEnv); cleanup != nil {
 		defer cleanup()
@@ -1376,6 +1382,50 @@ func (r *Runner) materializeRuntimeFiles(agentDir string, env map[string]string)
 			_ = os.RemoveAll(toolDir)
 		}
 	}
+}
+
+func (r *Runner) materializeProviderCredentials(agentDir string, meta *entity.AgentMeta) error {
+	if meta == nil || strings.TrimSpace(meta.Provider) == "" {
+		return nil
+	}
+	ps := store.NewProviderStore(r.root)
+	provider, err := ps.Get(meta.Provider)
+	if err != nil {
+		return err
+	}
+	method := store.ProviderAuthMethod(*provider)
+	model := entity.NormaliseModel(meta.Model)
+	switch {
+	case method == store.ProviderAuthMethodCodexChatGPT && (model == entity.ModelCodex || model == entity.ModelQoder):
+		src := filepath.Join(store.ProviderCredentialDir(r.root, provider.ID, entity.ModelCodex), ".codex", "auth.json")
+		if !fileExists(src) {
+			return fmt.Errorf("codex ChatGPT auth file is missing for provider %s", provider.ID)
+		}
+		dst := filepath.Join(agentDir, ".multigent", "runtime-home", string(model), ".codex", "auth.json")
+		return copyRuntimeCredentialFile(src, dst)
+	default:
+		return nil
+	}
+}
+
+func copyRuntimeCredentialFile(src, dst string) error {
+	if err := os.MkdirAll(filepath.Dir(dst), 0o700); err != nil {
+		return err
+	}
+	in, err := os.Open(src)
+	if err != nil {
+		return err
+	}
+	defer in.Close()
+	out, err := os.OpenFile(dst, os.O_CREATE|os.O_TRUNC|os.O_WRONLY, 0o600)
+	if err != nil {
+		return err
+	}
+	if _, err := io.Copy(out, in); err != nil {
+		_ = out.Close()
+		return err
+	}
+	return out.Close()
 }
 
 // materializeRuntimeConnectionsFile is kept as a narrow helper for tests and

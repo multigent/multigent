@@ -3,6 +3,7 @@ module github.com/multigent/multigent
 go 1.26.4
 
 require (
+	github.com/creack/pty v1.1.24
 	github.com/robfig/cron/v3 v3.0.1
 	github.com/spf13/cobra v1.10.2
 	github.com/spf13/pflag v1.0.9

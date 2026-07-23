@@ -18,6 +18,39 @@ type ProviderStore struct {
 	db   controldb.Store
 }
 
+const (
+	ProviderAuthMethodEnvKey = "MULTIGENT_MODEL_AUTH_METHOD"
+	ProviderAuthStatusEnvKey = "MULTIGENT_MODEL_AUTH_STATUS"
+
+	ProviderAuthMethodAPIKey        = "api_key"
+	ProviderAuthMethodCodexChatGPT  = "codex_chatgpt"
+	ProviderAuthStatusConfigured    = "configured"
+	ProviderAuthStatusNotConfigured = "not_configured"
+)
+
+func ProviderAuthMethod(p entity.APIProvider) string {
+	if p.Env != nil {
+		if method := strings.TrimSpace(p.Env[ProviderAuthMethodEnvKey]); method != "" {
+			return method
+		}
+	}
+	if p.APIKey != "" {
+		return ProviderAuthMethodAPIKey
+	}
+	return ""
+}
+
+func ProviderAuthConfigured(p entity.APIProvider) bool {
+	if p.APIKey != "" {
+		return true
+	}
+	return ProviderAuthMethod(p) != "" && p.Env != nil && p.Env[ProviderAuthStatusEnvKey] == ProviderAuthStatusConfigured
+}
+
+func ProviderCredentialDir(root, providerID string, model entity.AgentModel) string {
+	return filepath.Join(root, ".multigent", "model-providers", providerID, string(entity.NormaliseModel(model)))
+}
+
 func NewProviderStore(root string) *ProviderStore {
 	return &ProviderStore{root: root}
 }

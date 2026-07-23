@@ -74,6 +74,8 @@ type Server struct {
 	connectionHealthDone   chan struct{}
 	connectorSetupMu       sync.Mutex
 	connectorSetupSessions map[string]connectorDeviceAuthSession
+	modelAuthMu            sync.Mutex
+	modelAuthSessions      map[string]*modelAuthSession
 }
 
 // NewServer builds an API server for the given workspace root.
@@ -107,6 +109,7 @@ func NewServer(root, apiKey string) *Server {
 		execProcs:              make(map[string]*execProcess),
 		interactions:           interaction.NewManager(),
 		connectorSetupSessions: make(map[string]connectorDeviceAuthSession),
+		modelAuthSessions:      make(map[string]*modelAuthSession),
 	}
 	go s.restoreDesiredSchedulers()
 	s.startConnectionHealthChecker()
@@ -351,6 +354,9 @@ func (s *Server) Handler() http.Handler {
 	mux.HandleFunc("POST /api/v1/providers", s.handleAddProvider)
 	mux.HandleFunc("GET /api/v1/providers/cc-switch", s.handleListCCSwitchProviders)
 	mux.HandleFunc("POST /api/v1/providers/cc-switch/import", s.handleImportCCSwitchProviders)
+	mux.HandleFunc("POST /api/v1/providers/auth/codex/device/begin", s.handleCodexDeviceAuthBegin)
+	mux.HandleFunc("POST /api/v1/providers/auth/codex/device/poll", s.handleCodexDeviceAuthPoll)
+	mux.HandleFunc("DELETE /api/v1/providers/auth/sessions/{sessionId}", s.handleModelAuthSessionCancel)
 	mux.HandleFunc("PUT /api/v1/providers/{id}", s.handleUpdateProvider)
 	mux.HandleFunc("DELETE /api/v1/providers/{id}", s.handleDeleteProvider)
 

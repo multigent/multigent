@@ -466,15 +466,19 @@ func (s *Server) canManageModelProvider(r *http.Request, p entity.APIProvider) b
 }
 
 func providerToJSON(p entity.APIProvider) map[string]any {
+	authMethod := store.ProviderAuthMethod(p)
+	authConfigured := store.ProviderAuthConfigured(p)
 	out := map[string]any{
-		"id":        p.ID,
-		"ownerType": p.OwnerType,
-		"ownerId":   p.OwnerID,
-		"name":      p.Name,
-		"type":      p.Type,
-		"baseUrl":   p.BaseURL,
-		"model":     p.Model,
-		"hasKey":    p.APIKey != "",
+		"id":             p.ID,
+		"ownerType":      p.OwnerType,
+		"ownerId":        p.OwnerID,
+		"name":           p.Name,
+		"type":           p.Type,
+		"baseUrl":        p.BaseURL,
+		"model":          p.Model,
+		"hasKey":         p.APIKey != "",
+		"authMethod":     authMethod,
+		"authConfigured": authConfigured,
 	}
 	if len(p.Env) > 0 {
 		out["env"] = p.Env

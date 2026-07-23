@@ -1,4 +1,4 @@
-import { useCallback, useEffect, useState } from 'react'
+import { useCallback, useEffect, useRef, useState } from 'react'
 import { useTranslation } from 'react-i18next'
 import { KeyRound, Plus, Server, Trash2, Pencil, X, Eye, EyeOff, Users, Shield, ShieldCheck, UserPlus, LockKeyhole } from 'lucide-react'
 import { useAuth } from '../lib/auth'
@@ -28,6 +28,7 @@ type RBACModel = {
   scopes: { name: string; roles: string[] }[]
   capabilities: { id: string; scope: string; label: string }[]
 }
+type TFn = (key: string, options?: Record<string, unknown>) => string
 
 type OAuthClientConfig = {
   provider: string
@@ -905,7 +906,7 @@ export function UsersSection() {
 
 type ProviderRow = {
   id: string; ownerType?: 'workspace' | 'user'; ownerId?: string; name: string; type: string; baseUrl?: string; model?: string
-  hasKey: boolean; env?: Record<string, string>
+  hasKey: boolean; authMethod?: string; authConfigured?: boolean; env?: Record<string, string>
 }
 type WorkspaceAccessSummary = { currentUserCanAdmin?: boolean }
 
@@ -933,7 +934,13 @@ const GATEWAY_ACCOUNT_PRESETS: ProviderPreset[] = [
   { id: 'openrouter', label: 'OpenRouter', cli: 'codex', baseUrl: 'https://openrouter.ai/api/v1', model: '', hint: 'OpenAI-compatible model router' },
 ]
 
-type ProviderDraft = Partial<ProviderRow> & { apiKey?: string; accountMode?: ModelAccountMode; cli?: ModelAccountCLI }
+type ProviderDraft = Partial<ProviderRow> & { apiKey?: string; accountMode?: ModelAccountMode; cli?: ModelAccountCLI; authMethod?: string }
+type ModelDeviceAuthState = {
+  sessionId: string
+  verificationUri: string
+  userCode: string
+  status: 'pending' | 'connected' | 'failed'
+}
 type CCSwitchProviderPreview = { id: string; name: string; cli: string; type: string; baseUrl?: string; model?: string; hasKey: boolean; isCurrent: boolean }
 type CCSwitchProviderResponse = { available: boolean; dbPath?: string; providers: CCSwitchProviderPreview[]; searched?: string[]; error?: string }
 type AssistantStatus = {
@@ -966,6 +973,9 @@ function ProvidersSection() {
   const [assistantSaving, setAssistantSaving] = useState(false)
   const [err, setErr] = useState<string | null>(null)
   const [showKey, setShowKey] = useState(false)
+  const [deviceAuth, setDeviceAuth] = useState<ModelDeviceAuthState | null>(null)
+  const [deviceAuthStarting, setDeviceAuthStarting] = useState(false)
+  const deviceAuthSessionRef = useRef('')
 
   const refresh = useCallback(async () => {
     try {
@@ -985,8 +995,10 @@ function ProvidersSection() {
   useEffect(() => { void refresh() }, [refresh])
 
   function openNew() {
-    setEditing({ accountMode: 'official', cli: 'codex', ownerType: canCreateWorkspaceProvider ? 'workspace' : 'user', name: providerOfficialName('codex'), type: providerTypeForCLI('codex'), baseUrl: '', model: '', apiKey: '' })
+    setEditing({ accountMode: 'official', cli: 'codex', ownerType: canCreateWorkspaceProvider ? 'workspace' : 'user', name: providerOfficialName('codex'), type: providerTypeForCLI('codex'), baseUrl: '', model: '', apiKey: '', authMethod: 'codex_chatgpt' })
     setShowKey(false)
+    deviceAuthSessionRef.current = ''
+    setDeviceAuth(null)
     setErr(null)
   }
 
@@ -1027,8 +1039,10 @@ function ProvidersSection() {
   }
 
   function openEdit(p: ProviderRow) {
-    setEditing({ ...p, accountMode: inferModelAccountMode(p), cli: inferModelAccountCLI(p), apiKey: '' })
+    setEditing({ ...p, accountMode: inferModelAccountMode(p), cli: inferModelAccountCLI(p), apiKey: '', authMethod: p.authMethod || (p.hasKey ? 'api_key' : '') })
     setShowKey(false)
+    deviceAuthSessionRef.current = ''
+    setDeviceAuth(null)
     setErr(null)
   }
 
@@ -1042,6 +1056,11 @@ function ProvidersSection() {
         type: providerTypeForCLI(editing.cli),
         baseUrl: editing.accountMode === 'official' ? '' : editing.baseUrl || '',
         model: editing.accountMode === 'official' ? '' : editing.model || '',
+        env: {
+          ...(editing.env ?? {}),
+          MULTIGENT_MODEL_AUTH_METHOD: editing.authMethod || 'api_key',
+          MULTIGENT_MODEL_AUTH_STATUS: editing.apiKey || editing.hasKey ? 'configured' : 'not_configured',
+        },
       }
       if (editing.apiKey) body.apiKey = editing.apiKey
       if (editing.id) {
@@ -1087,6 +1106,63 @@ function ProvidersSection() {
     }
   }
 
+  async function startCodexChatGPTAuth() {
+    if (!editing?.name?.trim()) return
+    setDeviceAuthStarting(true)
+    setErr(null)
+    try {
+      const res = await apiPost<{ sessionId: string; verificationUri: string; userCode: string; status: 'pending'; expiresIn?: number }>('/api/v1/providers/auth/codex/device/begin', {
+        ownerType: editing.ownerType || (canCreateWorkspaceProvider ? 'workspace' : 'user'),
+        name: editing.name,
+      })
+      const next: ModelDeviceAuthState = {
+        sessionId: res.sessionId,
+        verificationUri: res.verificationUri,
+        userCode: res.userCode,
+        status: 'pending',
+      }
+      setDeviceAuth(next)
+      deviceAuthSessionRef.current = next.sessionId
+      pollCodexChatGPTAuth(next.sessionId)
+    } catch (e) {
+      setErr(e instanceof Error ? e.message : String(e))
+    } finally {
+      setDeviceAuthStarting(false)
+    }
+  }
+
+  function pollCodexChatGPTAuth(sessionId: string) {
+    window.setTimeout(async () => {
+      if (deviceAuthSessionRef.current !== sessionId) return
+      try {
+        const res = await apiPost<{ status: 'pending' | 'connected'; provider?: ProviderRow }>('/api/v1/providers/auth/codex/device/poll', { sessionId })
+        if (res.status === 'connected') {
+          setDeviceAuth(prev => prev && prev.sessionId === sessionId ? { ...prev, status: 'connected' } : prev)
+          deviceAuthSessionRef.current = ''
+          setEditing(null)
+          await refresh()
+          return
+        }
+        pollCodexChatGPTAuth(sessionId)
+      } catch (e) {
+        setDeviceAuth(prev => prev && prev.sessionId === sessionId ? { ...prev, status: 'failed' } : prev)
+        deviceAuthSessionRef.current = ''
+        setErr(e instanceof Error ? e.message : String(e))
+      }
+    }, 2000)
+  }
+
+  function closeProviderDialog() {
+    if (saving || deviceAuthStarting) return
+    const sessionID = deviceAuthSessionRef.current
+    deviceAuthSessionRef.current = ''
+    if (sessionID) {
+      void apiDelete(`/api/v1/providers/auth/sessions/${encodeURIComponent(sessionID)}`).catch(() => {})
+    }
+    setDeviceAuth(null)
+    setEditing(null)
+  }
+
   function applyPreset(presetID: string) {
     const preset = GATEWAY_ACCOUNT_PRESETS.find(p => p.id === presetID)
     if (!preset) return
@@ -1102,6 +1178,8 @@ function ProvidersSection() {
   }
 
   function setAccountMode(mode: ModelAccountMode) {
+    deviceAuthSessionRef.current = ''
+    setDeviceAuth(null)
     setEditing(prev => {
       if (!prev) return prev
       if (mode === 'official') {
@@ -1113,6 +1191,7 @@ function ProvidersSection() {
           type: providerTypeForCLI(nextCLI),
           baseUrl: '',
           model: '',
+          authMethod: nextCLI === 'codex' ? 'codex_chatgpt' : 'api_key',
           name: prev.name?.trim() && !isGeneratedModelAccountName(prev.name) ? prev.name : providerOfficialName(nextCLI),
         }
       }
@@ -1122,25 +1201,29 @@ function ProvidersSection() {
         accountMode: 'gateway',
         cli: nextCLI,
         type: providerTypeForCLI(nextCLI),
+        authMethod: 'api_key',
         name: prev.name?.trim() && !isGeneratedModelAccountName(prev.name) ? prev.name : '',
       }
     })
   }
 
   function setProviderCLI(cli: ModelAccountCLI) {
+    deviceAuthSessionRef.current = ''
+    setDeviceAuth(null)
     setEditing(prev => {
       if (!prev) return prev
       return {
         ...prev,
         cli,
         type: providerTypeForCLI(cli),
+        authMethod: prev.accountMode === 'official' && cli === 'codex' ? 'codex_chatgpt' : 'api_key',
         name: prev.name?.trim() && !isGeneratedModelAccountName(prev.name) ? prev.name : (prev.accountMode === 'official' ? providerOfficialName(cli) : ''),
       }
     })
   }
 
   const fieldCls = 'w-full rounded-md border border-neutral-200/80 bg-neutral-50/50 px-3 py-2 text-sm outline-none transition-colors focus:border-sky-400 dark:border-zinc-700/60 dark:bg-zinc-800/50 dark:text-zinc-200 dark:[color-scheme:dark]'
-  const assistantProviderOptions = providers.filter(p => (p.ownerType ?? 'workspace') === 'workspace' && p.hasKey)
+  const assistantProviderOptions = providers.filter(p => (p.ownerType ?? 'workspace') === 'workspace' && (p.authConfigured || p.hasKey))
 
   return (
     <>
@@ -1176,7 +1259,7 @@ function ProvidersSection() {
                   <span className="text-xs text-neutral-400 dark:text-zinc-500">
                     {inferModelAccountMode(p) === 'official' ? t('provider.officialBadge') : t('provider.gatewayBadge')}
                     {' · '}{providerCLILabel(inferModelAccountCLI(p))}
-                    {p.model ? ` · ${p.model}` : ''}{p.baseUrl ? ` · ${p.baseUrl}` : ''}{p.hasKey ? ` · ${t('provider.keyConfigured')}` : ''}
+                    {p.model ? ` · ${p.model}` : ''}{p.baseUrl ? ` · ${p.baseUrl}` : ''}{(p.authConfigured || p.hasKey) ? ` · ${providerAuthConfiguredLabel(p, t)}` : ''}
                   </span>
                 </div>
                 <div className="flex items-center gap-2">
@@ -1206,13 +1289,13 @@ function ProvidersSection() {
         )}
 
       {editing && (
-        <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/45 p-4" onClick={() => !saving && setEditing(null)}>
+        <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/45 p-4" onClick={closeProviderDialog}>
           <div className="w-full max-w-md rounded-xl border border-neutral-200 bg-white shadow-lg dark:border-zinc-700 dark:bg-zinc-900 animate-scale-in" onClick={e => e.stopPropagation()}>
             <div className="flex items-center justify-between border-b border-neutral-200 px-5 py-3 dark:border-zinc-700">
               <h2 className="text-base font-semibold text-neutral-900 dark:text-zinc-100">
                 {editing.id ? t('provider.edit') : t('provider.add')}
               </h2>
-              <button type="button" onClick={() => setEditing(null)} className="rounded-md p-1 text-neutral-400 hover:bg-neutral-100 dark:text-zinc-500 dark:hover:bg-zinc-800"><X className="size-4" /></button>
+              <button type="button" onClick={closeProviderDialog} className="rounded-md p-1 text-neutral-400 hover:bg-neutral-100 dark:text-zinc-500 dark:hover:bg-zinc-800"><X className="size-4" /></button>
             </div>
             <div className="space-y-3 px-5 py-4">
               {!editing.id && (
@@ -1269,9 +1352,41 @@ function ProvidersSection() {
                 <input value={editing.name ?? ''} onChange={e => setEditing({ ...editing, name: e.target.value })} className={fieldCls} placeholder={t('provider.namePlaceholder')} />
               </label>
               {(editing.accountMode ?? 'official') === 'official' ? (
-                <p className="rounded-lg border border-sky-100 bg-sky-50 px-3 py-2 text-xs leading-5 text-sky-700 dark:border-sky-900/50 dark:bg-sky-900/20 dark:text-sky-300">
-                  {t('provider.officialHint')}
-                </p>
+                <div className="space-y-2">
+                  {editing.cli === 'codex' && !editing.id && (
+                    <div className="grid grid-cols-2 gap-2 rounded-lg bg-neutral-100 p-1 dark:bg-zinc-800/70">
+                      <button
+                        type="button"
+                        onClick={() => setEditing({ ...editing, authMethod: 'codex_chatgpt', apiKey: '' })}
+                        className={cn('rounded-md px-3 py-2 text-sm font-medium transition-colors',
+                          (editing.authMethod ?? 'codex_chatgpt') === 'codex_chatgpt'
+                            ? 'bg-white text-neutral-900 shadow-sm dark:bg-zinc-950 dark:text-zinc-100'
+                            : 'text-neutral-500 hover:text-neutral-800 dark:text-zinc-400 dark:hover:text-zinc-200'
+                        )}
+                      >
+                        {t('provider.authChatGPT')}
+                      </button>
+                      <button
+                        type="button"
+                        onClick={() => setEditing({ ...editing, authMethod: 'api_key' })}
+                        className={cn('rounded-md px-3 py-2 text-sm font-medium transition-colors',
+                          editing.authMethod === 'api_key'
+                            ? 'bg-white text-neutral-900 shadow-sm dark:bg-zinc-950 dark:text-zinc-100'
+                            : 'text-neutral-500 hover:text-neutral-800 dark:text-zinc-400 dark:hover:text-zinc-200'
+                        )}
+                      >
+                        {t('provider.authAPIKey')}
+                      </button>
+                    </div>
+                  )}
+                  <p className="rounded-lg border border-sky-100 bg-sky-50 px-3 py-2 text-xs leading-5 text-sky-700 dark:border-sky-900/50 dark:bg-sky-900/20 dark:text-sky-300">
+                    {editing.cli === 'codex' && (editing.authMethod ?? 'codex_chatgpt') === 'codex_chatgpt'
+                      ? t('provider.codexChatGPTHint')
+                      : editing.cli === 'claudecode' || editing.cli === 'cursor'
+                        ? t('provider.cliBrowserLoginHint')
+                        : t('provider.officialHint')}
+                  </p>
+                </div>
               ) : (
                 <>
                   {!editing.id && (
@@ -1296,27 +1411,43 @@ function ProvidersSection() {
                   <p className="text-xs leading-5 text-neutral-400 dark:text-zinc-500">{t('provider.gatewayHint')}</p>
                 </>
               )}
-              <label className="flex flex-col gap-1">
-                <span className="text-sm font-medium text-neutral-600 dark:text-zinc-400">{t('provider.apiKeyLabel')}</span>
-                <div className="flex items-center gap-2">
-                  <input
-                    type={showKey ? 'text' : 'password'}
-                    value={editing.apiKey ?? ''}
-                    onChange={e => setEditing({ ...editing, apiKey: e.target.value })}
-                    className={cn(fieldCls, 'flex-1 font-mono text-xs')}
-                    placeholder={editing.id && editing.hasKey ? t('provider.keyUnchangedHint') : 'sk-...'}
-                  />
-                  <button type="button" onClick={() => setShowKey(!showKey)}
-                    className="rounded p-1.5 text-neutral-400 hover:text-neutral-600 dark:hover:text-zinc-300">
-                    {showKey ? <EyeOff className="size-4" /> : <Eye className="size-4" />}
-                  </button>
+              {((editing.accountMode ?? 'official') !== 'official' || editing.cli !== 'codex' || editing.authMethod === 'api_key' || editing.id) && (
+                <>
+                  <label className="flex flex-col gap-1">
+                    <span className="text-sm font-medium text-neutral-600 dark:text-zinc-400">{t('provider.apiKeyLabel')}</span>
+                    <div className="flex items-center gap-2">
+                      <input
+                        type={showKey ? 'text' : 'password'}
+                        value={editing.apiKey ?? ''}
+                        onChange={e => setEditing({ ...editing, apiKey: e.target.value })}
+                        className={cn(fieldCls, 'flex-1 font-mono text-xs')}
+                        placeholder={editing.id && editing.hasKey ? t('provider.keyUnchangedHint') : 'sk-...'}
+                      />
+                      <button type="button" onClick={() => setShowKey(!showKey)}
+                        className="rounded p-1.5 text-neutral-400 hover:text-neutral-600 dark:hover:text-zinc-300">
+                        {showKey ? <EyeOff className="size-4" /> : <Eye className="size-4" />}
+                      </button>
+                    </div>
+                  </label>
+                  <p className="text-xs leading-5 text-neutral-400 dark:text-zinc-500">{t('provider.apiKeyHint')}</p>
+                </>
+              )}
+              {deviceAuth && (
+                <div className="rounded-lg border border-sky-200 bg-sky-50 px-3 py-3 text-sm text-sky-800 dark:border-sky-900/50 dark:bg-sky-900/20 dark:text-sky-200">
+                  <p className="font-medium">{deviceAuth.status === 'connected' ? t('provider.deviceConnected') : t('provider.deviceWaiting')}</p>
+                  <a href={deviceAuth.verificationUri} target="_blank" rel="noreferrer" className="mt-2 block font-medium text-sky-700 underline dark:text-sky-300">{deviceAuth.verificationUri}</a>
+                  <p className="mt-2 text-xs text-sky-700/80 dark:text-sky-300/80">{t('provider.deviceCodeLabel')}</p>
+                  <p className="mt-1 w-fit rounded-md bg-white px-3 py-1 font-mono text-lg font-semibold tracking-wide text-neutral-900 dark:bg-zinc-950 dark:text-zinc-100">{deviceAuth.userCode}</p>
                 </div>
-              </label>
-              <p className="text-xs leading-5 text-neutral-400 dark:text-zinc-500">{t('provider.apiKeyHint')}</p>
+              )}
               {err && <p className="text-sm text-red-600 dark:text-red-400">{err}</p>}
               <div className="flex justify-end gap-2 pt-1">
-                <button type="button" onClick={() => setEditing(null)} disabled={saving} className="rounded-lg border border-neutral-300 px-3 py-1.5 text-sm dark:border-zinc-600">{t('forms.cancel')}</button>
-                <button type="button" onClick={() => void handleSave()} disabled={saving || !editing.name?.trim()} className="rounded-lg bg-sky-600 px-3 py-1.5 text-sm font-medium text-white disabled:opacity-50">{saving ? t('forms.saving') : t('forms.save')}</button>
+                <button type="button" onClick={closeProviderDialog} disabled={saving || deviceAuthStarting} className="rounded-lg border border-neutral-300 px-3 py-1.5 text-sm dark:border-zinc-600">{t('forms.cancel')}</button>
+                {(editing.accountMode ?? 'official') === 'official' && editing.cli === 'codex' && (editing.authMethod ?? 'codex_chatgpt') === 'codex_chatgpt' && !editing.id ? (
+                  <button type="button" onClick={() => void startCodexChatGPTAuth()} disabled={deviceAuthStarting || !editing.name?.trim()} className="rounded-lg bg-sky-600 px-3 py-1.5 text-sm font-medium text-white disabled:opacity-50">{deviceAuthStarting ? t('provider.deviceStarting') : t('provider.startDeviceAuth')}</button>
+                ) : (
+                  <button type="button" onClick={() => void handleSave()} disabled={saving || !editing.name?.trim()} className="rounded-lg bg-sky-600 px-3 py-1.5 text-sm font-medium text-white disabled:opacity-50">{saving ? t('forms.saving') : t('forms.save')}</button>
+                )}
               </div>
             </div>
           </div>
@@ -1479,6 +1610,11 @@ function providerCLILabel(cli?: ModelAccountCLI): string {
     case 'codex':
     default: return 'Codex'
   }
+}
+
+function providerAuthConfiguredLabel(provider: ProviderRow, t: TFn): string {
+  if (provider.authMethod === 'codex_chatgpt') return t('provider.chatGPTConfigured')
+  return t('provider.keyConfigured')
 }
 
 function providerOfficialName(cli?: ModelAccountCLI): string {
