@@ -332,10 +332,51 @@ func imageExists(image string) bool {
 	if strings.TrimSpace(image) == "" {
 		return false
 	}
-	cmd := exec.Command(DockerExecutable(), "image", "inspect", image)
-	cmd.Stdout = nil
-	cmd.Stderr = nil
-	return cmd.Run() == nil
+	docker := DockerExecutable()
+	inspect, err := exec.Command(docker, "image", "inspect", image, "--format", "{{.Os}}/{{.Architecture}}").Output()
+	if err != nil {
+		return false
+	}
+	imagePlatform := strings.TrimSpace(string(inspect))
+	if imagePlatform == "" {
+		return true
+	}
+	host, err := exec.Command(docker, "info", "--format", "{{.OSType}}/{{.Architecture}}").Output()
+	if err != nil {
+		return true
+	}
+	return platformCompatible(imagePlatform, strings.TrimSpace(string(host)))
+}
+
+func platformCompatible(imagePlatform, hostPlatform string) bool {
+	imageOS, imageArch := splitPlatform(imagePlatform)
+	hostOS, hostArch := splitPlatform(hostPlatform)
+	if imageOS != "" && hostOS != "" && imageOS != hostOS {
+		return false
+	}
+	if imageArch != "" && hostArch != "" && imageArch != hostArch {
+		return false
+	}
+	return true
+}
+
+func splitPlatform(platform string) (string, string) {
+	parts := strings.Split(strings.TrimSpace(platform), "/")
+	if len(parts) < 2 {
+		return strings.TrimSpace(platform), ""
+	}
+	return strings.ToLower(strings.TrimSpace(parts[0])), normalizeDockerArch(parts[1])
+}
+
+func normalizeDockerArch(arch string) string {
+	switch strings.ToLower(strings.TrimSpace(arch)) {
+	case "x86_64":
+		return "amd64"
+	case "aarch64", "arm64/v8":
+		return "arm64"
+	default:
+		return strings.ToLower(strings.TrimSpace(arch))
+	}
 }
 
 // ResolveCredentialMounts is the exported form for use by CLI commands.

@@ -133,6 +133,25 @@ func TestDockerExecutableHonorsOverride(t *testing.T) {
 	}
 }
 
+func TestPlatformCompatibleNormalizesDockerArch(t *testing.T) {
+	cases := []struct {
+		image string
+		host  string
+		want  bool
+	}{
+		{"linux/amd64", "linux/x86_64", true},
+		{"linux/arm64", "linux/aarch64", true},
+		{"linux/amd64", "linux/aarch64", false},
+		{"linux/arm64", "linux/amd64", false},
+		{"linux/amd64", "windows/amd64", false},
+	}
+	for _, tc := range cases {
+		if got := platformCompatible(tc.image, tc.host); got != tc.want {
+			t.Fatalf("platformCompatible(%q, %q) = %v, want %v", tc.image, tc.host, got, tc.want)
+		}
+	}
+}
+
 func findEnvArg(args []string, prefix string) string {
 	for i := 0; i < len(args)-1; i++ {
 		if args[i] == "-e" && strings.HasPrefix(args[i+1], prefix) {

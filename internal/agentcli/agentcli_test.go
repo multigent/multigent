@@ -38,8 +38,11 @@ func TestWrapCommandAddsBootstrapAndExecsOriginalCommand(t *testing.T) {
 	if got[0] != "/bin/sh" || got[1] != "-lc" {
 		t.Fatalf("wrapped command prefix = %#v", got[:2])
 	}
-	if !strings.Contains(got[2], "npm install -g @openai/codex@1.2.3") {
+	if !strings.Contains(got[2], "npm install -g --no-audit --no-fund --loglevel=notice @openai/codex@1.2.3") {
 		t.Fatalf("bootstrap script missing versioned npm install:\n%s", got[2])
+	}
+	if !strings.Contains(got[2], "MULTIGENT_AGENT_CLI_INSTALL_TIMEOUT") {
+		t.Fatalf("bootstrap script missing install timeout:\n%s", got[2])
 	}
 	if got[len(got)-3] != "codex" || got[len(got)-2] != "exec" || got[len(got)-1] != "-" {
 		t.Fatalf("original command not preserved at tail: %#v", got)

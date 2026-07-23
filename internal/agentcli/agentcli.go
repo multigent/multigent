@@ -142,15 +142,31 @@ func npmInstaller(cfg *entity.AgentCLIConfig) string {
 		pkg += "@" + version
 	}
 	marker := markerPath(cfg)
+	installCmd := "npm install -g --no-audit --no-fund --loglevel=notice " + shellQuote(pkg)
 	return strings.Join([]string{
 		"set -eu",
 		"export MULTIGENT_TOOLCHAIN_HOME=" + shellQuote(ToolchainHome),
 		"export NPM_CONFIG_PREFIX=\"$MULTIGENT_TOOLCHAIN_HOME/npm\"",
+		"export NPM_CONFIG_FETCH_TIMEOUT=\"${NPM_CONFIG_FETCH_TIMEOUT:-120000}\"",
+		"export NPM_CONFIG_FETCH_RETRIES=\"${NPM_CONFIG_FETCH_RETRIES:-2}\"",
 		"export PATH=\"$NPM_CONFIG_PREFIX/bin:$PATH\"",
 		"mkdir -p \"$NPM_CONFIG_PREFIX\" \"$MULTIGENT_TOOLCHAIN_HOME/markers\"",
 		fmt.Sprintf("if [ ! -f %s ] || [ \"${MULTIGENT_AGENT_CLI_FORCE_INSTALL:-}\" = \"1\" ]; then", shellQuote(marker)),
-		fmt.Sprintf("  npm install -g %s", shellQuote(pkg)),
+		fmt.Sprintf("  if [ \"${MULTIGENT_AGENT_CLI_FORCE_INSTALL:-}\" != \"1\" ] && command -v %s >/dev/null 2>&1; then", shellQuote(cfg.Binary)),
+		fmt.Sprintf("    touch %s", shellQuote(marker)),
+		"  else",
+		fmt.Sprintf("  echo %s >&2", shellQuote("multigent: installing agent CLI "+pkg+" (first run can take a few minutes)")),
+		"  install_status=0",
+		"  if command -v timeout >/dev/null 2>&1; then",
+		fmt.Sprintf("    timeout \"${MULTIGENT_AGENT_CLI_INSTALL_TIMEOUT:-600}\" %s || install_status=$?", installCmd),
+		"  else",
+		fmt.Sprintf("    %s || install_status=$?", installCmd),
+		"  fi",
+		fmt.Sprintf("  if [ \"$install_status\" != \"0\" ] && ! command -v %s >/dev/null 2>&1; then", shellQuote(cfg.Binary)),
+		"    exit \"$install_status\"",
+		"  fi",
 		fmt.Sprintf("  touch %s", shellQuote(marker)),
+		"  fi",
 		"fi",
 		fmt.Sprintf("command -v %s >/dev/null 2>&1", shellQuote(cfg.Binary)),
 	}, "\n")

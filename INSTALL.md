@@ -16,10 +16,11 @@ If you are Claude Code, Codex, Cursor, or another local coding agent installing 
 3. Install both CLIs when possible:
    - `multigent`: admin CLI and self-hosted web server.
    - `mga`: runtime CLI used inside agent sandboxes.
-4. Start Multigent and provide the local URL.
-5. Do not create teams, agents, workflows, external tools, or credentials without explaining the plan and asking the user to confirm.
-6. Do not ask the user to paste secrets into chat unless there is no safer option. Prefer the web UI credential forms.
-7. After setup, verify that the user can open the web console, create or enter a workspace, and configure at least one model account.
+4. Verify Docker Desktop / Docker Engine is running, then run `multigent sandbox prepare` so the runtime image and common agent CLI toolchains are cached before the first chat.
+5. Start Multigent and provide the local URL.
+6. Do not create teams, agents, workflows, external tools, or credentials without explaining the plan and asking the user to confirm.
+7. Do not ask the user to paste secrets into chat unless there is no safer option. Prefer the web UI credential forms.
+8. After setup, verify that the user can open the web console, create or enter a workspace, configure at least one model account, and run one short agent chat.
 
 Suggested user-facing plan before setup:
 
@@ -59,9 +60,25 @@ ghcr.io/multigent/multigent/runtime-base:latest
 ```
 
 This image is public and does not require `docker login`.
-The first agent run may pull this image and take a few minutes. Later runs reuse
-the local image cache.
-To make the first chat faster, pre-pull it during setup:
+The first agent run may pull this image and install the selected agent CLI
+toolchain, which can take several minutes. Later runs reuse the local Docker
+image cache and the persistent `multigent-toolchains` Docker volume.
+
+Recommended setup prewarm:
+
+```bash
+multigent sandbox prepare
+```
+
+This pulls the runtime image and warms the common Codex / Claude Code
+toolchains. To warm only one toolchain:
+
+```bash
+multigent sandbox prepare --toolchain codex
+multigent sandbox prepare --toolchain claudecode
+```
+
+If you only want to pull the image manually:
 
 ```bash
 docker pull ghcr.io/multigent/multigent/runtime-base:latest
@@ -270,10 +287,19 @@ multigent --dir ./multigent-data start --addr 127.0.0.1:27992 --open
 Try:
 
 ```bash
+multigent sandbox prepare --skip-clis
+```
+
+Or pull the image manually:
+
+```bash
 docker pull ghcr.io/multigent/multigent/runtime-base:latest
 ```
 
-If the network is slow, pull manually or configure a registry mirror.
+If the network is slow, pull manually or configure a registry mirror. For China
+mainland users, Docker Hub mirrors do not always accelerate GHCR. Use a
+network/proxy that can access `ghcr.io` reliably, or pre-pull the image from a
+machine with better connectivity and import it with `docker save` / `docker load`.
 
 ### CLI Not Found
 

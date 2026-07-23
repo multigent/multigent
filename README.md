@@ -166,6 +166,15 @@ Open `http://127.0.0.1:27892`.
 
 Multigent publishes the default multi-architecture runtime image at `ghcr.io/multigent/multigent/runtime-base:latest`. The image provides stable sandbox dependencies and a fallback Linux `mga`; normal runs synchronize the `mga` version that matches the Multigent server into the persistent Docker toolchain volume. Native macOS and Windows binaries are never mounted into Linux sandboxes. The published GHCR package is public and does not require `docker login`.
 
+Recommended first-run preparation:
+
+```bash
+multigent sandbox prepare
+```
+
+This pulls the runtime image and warms common agent CLI toolchains before the
+first chat, so users do not confuse a long Docker pull with an agent failure.
+
 ### Run the Web Console
 
 The production-style command serves the API and embedded frontend from one binary:

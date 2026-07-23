@@ -232,6 +232,9 @@ func (r *Runner) ExecPrompt(project, agentName, prompt, sessionID string) (*RunR
 	if execDir != "" {
 		cmd.Dir = execDir
 	}
+	if meta.Sandbox != nil && meta.Sandbox.Provider == entity.SandboxDocker {
+		effectiveEnv = ensureHostDockerPATH(effectiveEnv)
+	}
 	cmd.Env = effectiveEnv
 
 	// When the invoker reads the prompt from stdin, open the prompt file and
@@ -440,6 +443,9 @@ func (r *Runner) RunTask(project, agentName string, task *entity.Task, sessionID
 	cmd := exec.Command(executable, args...)
 	if execDir != "" {
 		cmd.Dir = execDir
+	}
+	if meta.Sandbox != nil && meta.Sandbox.Provider == entity.SandboxDocker {
+		effectiveEnv = ensureHostDockerPATH(effectiveEnv)
 	}
 	cmd.Env = effectiveEnv
 
@@ -2741,6 +2747,41 @@ func mergeEnv(base []string, override map[string]string) []string {
 		if !seen[k] {
 			out = append(out, k+"="+v)
 		}
+	}
+	return out
+}
+
+func ensureHostDockerPATH(env []string) []string {
+	const dockerAppBin = "/Applications/Docker.app/Contents/Resources/bin"
+	prefixes := []string{dockerAppBin, "/usr/local/bin", "/opt/homebrew/bin"}
+	current := ""
+	for _, entry := range env {
+		key, value, ok := strings.Cut(entry, "=")
+		if ok && key == "PATH" {
+			current = value
+			break
+		}
+	}
+	if current == "" {
+		current = os.Getenv("PATH")
+	}
+	parts := append([]string{}, prefixes...)
+	if current != "" {
+		parts = append(parts, strings.Split(current, string(os.PathListSeparator))...)
+	}
+	return mergeEnv(env, map[string]string{"PATH": strings.Join(dedupeEnvPath(parts), string(os.PathListSeparator))})
+}
+
+func dedupeEnvPath(parts []string) []string {
+	out := make([]string, 0, len(parts))
+	seen := map[string]bool{}
+	for _, part := range parts {
+		part = strings.TrimSpace(part)
+		if part == "" || seen[part] {
+			continue
+		}
+		seen[part] = true
+		out = append(out, part)
 	}
 	return out
 }

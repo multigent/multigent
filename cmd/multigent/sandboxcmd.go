@@ -6,6 +6,7 @@ import (
 	"os/exec"
 	"strings"
 
+	"github.com/multigent/multigent/internal/agentcli"
 	"github.com/multigent/multigent/internal/entity"
 	"github.com/multigent/multigent/internal/runtimecli"
 	"github.com/multigent/multigent/internal/sandbox"
@@ -19,6 +20,7 @@ func newSandboxCmd() *cobra.Command {
 	}
 	cmd.AddCommand(
 		newSandboxShowCmd(),
+		newSandboxPrepareCmd(),
 		newSandboxTestCmd(),
 	)
 	return cmd
@@ -148,6 +150,135 @@ func newSandboxShowCmd() *cobra.Command {
 	return cmd
 }
 
+// ── sandbox prepare ───────────────────────────────────────────────────────────
+
+func newSandboxPrepareCmd() *cobra.Command {
+	var (
+		image      string
+		toolchain  []string
+		skipPull   bool
+		skipCLIs   bool
+		memoryMB   int
+		network    string
+		timeoutSec int
+	)
+
+	cmd := &cobra.Command{
+		Use:   "prepare",
+		Short: "Pre-pull the runtime image and warm common agent CLI toolchains",
+		Example: `  multigent sandbox prepare
+  multigent sandbox prepare --toolchain codex
+  multigent sandbox prepare --toolchain codex --toolchain claudecode`,
+		RunE: func(cmd *cobra.Command, args []string) error {
+			if image == "" {
+				image = sandbox.BaseImage
+			}
+			if network == "" {
+				network = "bridge"
+			}
+			if memoryMB <= 0 {
+				memoryMB = sandbox.DefaultMemoryMB
+			}
+			if timeoutSec <= 0 {
+				timeoutSec = 600
+			}
+
+			if err := sandbox.CheckDocker(); err != nil {
+				return err
+			}
+			fmt.Printf("Docker: %s\n", sandbox.DockerExecutable())
+			fmt.Printf("Runtime image: %s\n", image)
+
+			if !skipPull {
+				fmt.Println("\nPulling runtime image. This can take a few minutes on the first install...")
+				if err := sandbox.PullImage(image); err != nil {
+					return fmt.Errorf("pull runtime image: %w", err)
+				}
+			}
+
+			if skipCLIs {
+				fmt.Println("\nSkipping agent CLI toolchain warmup.")
+				fmt.Println("✓ Sandbox runtime image is ready.")
+				return nil
+			}
+
+			if len(toolchain) == 0 {
+				toolchain = []string{"codex", "claudecode"}
+			}
+			for _, name := range toolchain {
+				model, ok := prepareToolchainModel(name)
+				if !ok {
+					return fmt.Errorf("unsupported toolchain %q (supported: codex, claudecode, gemini)", name)
+				}
+				cfg := agentcli.DefaultForModel(model)
+				if cfg == nil {
+					return fmt.Errorf("no installer configured for %q", name)
+				}
+				if err := runToolchainWarmup(image, network, memoryMB, timeoutSec, model, cfg); err != nil {
+					return err
+				}
+			}
+
+			fmt.Println("\n✓ Sandbox is prepared. First agent chat should start much faster.")
+			return nil
+		},
+	}
+
+	cmd.Flags().StringVar(&image, "image", sandbox.BaseImage, "runtime image to pull and use")
+	cmd.Flags().StringSliceVar(&toolchain, "toolchain", nil, "agent CLI toolchain to warm (repeatable: codex, claudecode, gemini)")
+	cmd.Flags().BoolVar(&skipPull, "skip-pull", false, "skip pulling the runtime image")
+	cmd.Flags().BoolVar(&skipCLIs, "skip-clis", false, "skip warming agent CLI toolchains")
+	cmd.Flags().IntVar(&memoryMB, "memory", sandbox.DefaultMemoryMB, "container memory limit in MiB")
+	cmd.Flags().StringVar(&network, "network", "bridge", "Docker network mode")
+	cmd.Flags().IntVar(&timeoutSec, "install-timeout", 600, "agent CLI install timeout in seconds")
+	return cmd
+}
+
+func prepareToolchainModel(name string) (entity.AgentModel, bool) {
+	switch strings.ToLower(strings.TrimSpace(name)) {
+	case "codex", "openai":
+		return entity.ModelCodex, true
+	case "claude", "claudecode", "claude-code":
+		return entity.ModelClaudeCode, true
+	case "gemini":
+		return entity.ModelGemini, true
+	default:
+		return "", false
+	}
+}
+
+func runToolchainWarmup(image, network string, memoryMB, timeoutSec int, model entity.AgentModel, cliCfg *entity.AgentCLIConfig) error {
+	dir, err := os.MkdirTemp("", "multigent-sandbox-prepare-*")
+	if err != nil {
+		return err
+	}
+	defer os.RemoveAll(dir)
+
+	script := agentcli.BootstrapScript(cliCfg)
+	if script == "" {
+		return nil
+	}
+	script += "\n" + fmt.Sprintf("echo %s >&2", sbxShellQuote("multigent: agent CLI ready: "+cliCfg.Binary))
+	dockerCfg := &entity.DockerSandboxConfig{
+		Image:       image,
+		NetworkMode: network,
+		MemoryMB:    memoryMB,
+	}
+	_, dockerArgs, err := sandbox.RunArgs(dir, model, dockerCfg, []string{"/bin/sh", "-lc", script})
+	if err != nil {
+		return err
+	}
+	fmt.Printf("\nWarming %s toolchain (%s)...\n", cliCfg.Vendor, cliCfg.Package)
+	cmd := exec.Command(sandbox.DockerExecutable(), dockerArgs...)
+	cmd.Env = append(os.Environ(), fmt.Sprintf("MULTIGENT_AGENT_CLI_INSTALL_TIMEOUT=%d", timeoutSec))
+	cmd.Stdout = os.Stdout
+	cmd.Stderr = os.Stderr
+	if err := cmd.Run(); err != nil {
+		return fmt.Errorf("warm %s toolchain: %w", cliCfg.Vendor, err)
+	}
+	return nil
+}
+
 // ── sandbox test ──────────────────────────────────────────────────────────────
 
 func newSandboxTestCmd() *cobra.Command {
@@ -205,7 +336,7 @@ func newSandboxTestCmd() *cobra.Command {
 				return err
 			}
 
-			testCmd := exec.Command("docker", finalArgs...)
+			testCmd := exec.Command(sandbox.DockerExecutable(), finalArgs...)
 			testCmd.Stdout = os.Stdout
 			testCmd.Stderr = os.Stderr
 			if err := testCmd.Run(); err != nil {
@@ -290,6 +421,13 @@ func sbxExpandHome(path string) string {
 func sbxIsProxyKey(k string) bool {
 	k = strings.ToUpper(k)
 	return k == "HTTPS_PROXY" || k == "HTTP_PROXY" || k == "NO_PROXY"
+}
+
+func sbxShellQuote(s string) string {
+	if s == "" {
+		return "''"
+	}
+	return "'" + strings.ReplaceAll(s, "'", "'\"'\"'") + "'"
 }
 
 // sbxCloneDockerCfg returns a shallow copy so we can mutate ExtraVolumes.

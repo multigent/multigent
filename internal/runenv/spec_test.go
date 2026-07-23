@@ -43,7 +43,8 @@ func TestDockerProviderWrapsManagedAgentCLI(t *testing.T) {
 		runtimecli.BinDir,
 		agentcli.ToolchainBin,
 		"example/runtime-base:test",
-		"npm install -g @openai/codex@1.2.3",
+		"npm install -g --no-audit --no-fund --loglevel=notice @openai/codex@1.2.3",
+		"MULTIGENT_AGENT_CLI_INSTALL_TIMEOUT",
 	} {
 		if !strings.Contains(joined, want) {
 			t.Fatalf("docker args missing %q:\n%s", want, joined)

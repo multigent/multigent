@@ -166,6 +166,14 @@ docker run --rm -p 27892:27892 \
 
 Multigent 默认的多架构 runtime 镜像发布在 `ghcr.io/multigent/multigent/runtime-base:latest`。镜像提供稳定 sandbox 依赖和兜底 Linux `mga`；正常运行时会把与 Multigent Server 版本匹配的 `mga` 同步到持久化 Docker toolchain volume。macOS 或 Windows 原生二进制不会被挂载进 Linux sandbox。已发布的 GHCR 包必须公开，用户无需执行 `docker login`。
 
+推荐首次运行前先预热运行环境：
+
+```bash
+multigent sandbox prepare
+```
+
+这会提前拉取 runtime 镜像，并预热常用 Agent CLI toolchain，避免用户第一次对话时把漫长的 Docker 拉取误以为是 Agent 出错。
+
 ### 启动 Web 控制台
 
 生产式启动：一个二进制同时提供 API 和内置前端。
