@@ -1230,6 +1230,11 @@ function ProvidersSection() {
     }))
   }
 
+  function setProviderModels(models: string[]) {
+    const next = parseProviderModels(models.join('\n'))
+    setEditing(prev => prev ? { ...prev, models: next, modelsText: next.join('\n') } : prev)
+  }
+
   function setAccountMode(mode: ModelAccountMode) {
     deviceAuthSessionRef.current = ''
     setDeviceAuth(null)
@@ -1467,17 +1472,14 @@ function ProvidersSection() {
                     <span className="text-sm font-medium text-neutral-600 dark:text-zinc-400">{t('provider.defaultModelLabel')}</span>
                     <input value={editing.model ?? ''} onChange={e => setEditing({ ...editing, model: e.target.value })} className={cn(fieldCls, 'font-mono text-xs')} placeholder={providerModelPlaceholder(editing.cli)} />
                   </label>
-                  <label className="flex flex-col gap-1">
-                    <span className="text-sm font-medium text-neutral-600 dark:text-zinc-400">{t('provider.availableModelsLabel')}</span>
-                    <textarea
-                      value={editing.modelsText ?? ''}
-                      onChange={e => setEditing({ ...editing, modelsText: e.target.value, models: parseProviderModels(e.target.value) })}
-                      rows={3}
-                      className={cn(fieldCls, 'max-w-none resize-y font-mono text-xs')}
-                      placeholder={t('provider.availableModelsPlaceholder')}
-                    />
-                    <span className="text-xs leading-5 text-neutral-400 dark:text-zinc-500">{t('provider.availableModelsHint')}</span>
-                  </label>
+                  <ModelChipsEditor
+                    label={t('provider.availableModelsLabel')}
+                    models={providerModelsFromDraft(editing)}
+                    placeholder={t('provider.availableModelsPlaceholder')}
+                    hint={t('provider.availableModelsHint')}
+                    addLabel={t('common.add')}
+                    onChange={setProviderModels}
+                  />
                   <p className="text-xs leading-5 text-neutral-400 dark:text-zinc-500">{t('provider.gatewayHint')}</p>
                 </>
               )}
@@ -1780,6 +1782,82 @@ function providerModelsFromDraft(provider: ProviderDraft): string[] {
     provider.modelsText ?? '',
     ...(provider.models ?? []),
   ].join('\n'))
+}
+
+function ModelChipsEditor({
+  label,
+  models,
+  placeholder,
+  hint,
+  addLabel,
+  onChange,
+}: {
+  label: string
+  models: string[]
+  placeholder: string
+  hint: string
+  addLabel: string
+  onChange: (models: string[]) => void
+}) {
+  const [draft, setDraft] = useState('')
+
+  function addModel() {
+    const next = draft.trim()
+    if (!next) return
+    onChange(parseProviderModels([...models, next].join('\n')))
+    setDraft('')
+  }
+
+  function removeModel(model: string) {
+    onChange(models.filter(item => item !== model))
+  }
+
+  return (
+    <div className="flex flex-col gap-1">
+      <span className="text-sm font-medium text-neutral-600 dark:text-zinc-400">{label}</span>
+      <div className="rounded-md border border-neutral-200/80 bg-neutral-50/50 p-2 dark:border-zinc-700/60 dark:bg-zinc-800/50">
+        {models.length > 0 && (
+          <div className="mb-2 flex flex-wrap gap-1.5">
+            {models.map(model => (
+              <span key={model} className="inline-flex max-w-full items-center gap-1 rounded-md border border-neutral-200 bg-white px-2 py-1 font-mono text-xs text-neutral-700 dark:border-zinc-700 dark:bg-zinc-900 dark:text-zinc-300">
+                <span className="truncate">{model}</span>
+                <button
+                  type="button"
+                  onClick={() => removeModel(model)}
+                  className="rounded px-1 text-neutral-400 hover:bg-neutral-100 hover:text-red-600 dark:hover:bg-zinc-800 dark:hover:text-red-400"
+                  aria-label={`Remove ${model}`}
+                >
+                  x
+                </button>
+              </span>
+            ))}
+          </div>
+        )}
+        <div className="flex gap-2">
+          <input
+            value={draft}
+            onChange={e => setDraft(e.target.value)}
+            onKeyDown={e => {
+              if (e.key === 'Enter') {
+                e.preventDefault()
+                addModel()
+              }
+            }}
+            className="min-w-0 flex-1 bg-transparent px-1 py-1 font-mono text-xs text-neutral-800 outline-none placeholder:text-neutral-400 dark:text-zinc-200 dark:placeholder:text-zinc-600"
+            placeholder={placeholder}
+          />
+          <button
+            type="button"
+            onClick={addModel}
+            className="shrink-0 rounded-lg border border-sky-600 bg-white px-3 py-1.5 text-xs font-medium text-sky-700 hover:bg-sky-50 dark:border-sky-500 dark:bg-zinc-900 dark:text-sky-400 dark:hover:bg-zinc-800"
+          >
+            {addLabel}
+          </button>
+        </div>
+      </div>
+      <span className="text-xs leading-5 text-neutral-400 dark:text-zinc-500">{hint}</span>
+    </div>
+  )
 }
 
 // ── Workspace Secrets ──────────────────────────────────────────────────────
