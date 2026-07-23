@@ -94,13 +94,14 @@ func (s *Server) handleCodexDeviceAuthBegin(w http.ResponseWriter, r *http.Reque
 		return
 	}
 	ctx, cancel := context.WithTimeout(context.Background(), 15*time.Minute)
-	cmd := exec.CommandContext(ctx, "codex", "login", "--device-auth")
-	cmd.Env = append(os.Environ(), "HOME="+homeDir, "XDG_CONFIG_HOME="+filepath.Join(homeDir, ".config"))
+	codexBin := modelAuthCLIExecutable("codex")
+	cmd := exec.CommandContext(ctx, codexBin, "login", "--device-auth")
+	cmd.Env = modelAuthEnv(homeDir, codexBin)
 	tty, err := pty.Start(cmd)
 	if err != nil {
 		cancel()
 		_ = os.RemoveAll(homeDir)
-		s.jsonError(w, http.StatusBadGateway, "failed to start codex login")
+		s.jsonError(w, http.StatusBadGateway, "failed to start codex login: "+modelAuthCLIStartError("codex", codexBin, err))
 		return
 	}
 	session := &modelAuthSession{
@@ -279,8 +280,9 @@ func (s *Server) handleCLIBrowserAuthBegin(w http.ResponseWriter, r *http.Reques
 		return
 	}
 	ctx, cancel := context.WithTimeout(context.Background(), 15*time.Minute)
-	cmd := exec.CommandContext(ctx, spec.Command[0], spec.Command[1:]...)
-	cmd.Env = append(os.Environ(), "HOME="+homeDir, "XDG_CONFIG_HOME="+filepath.Join(homeDir, ".config"))
+	cliBin := modelAuthCLIExecutable(spec.Command[0])
+	cmd := exec.CommandContext(ctx, cliBin, spec.Command[1:]...)
+	cmd.Env = modelAuthEnv(homeDir, cliBin)
 	for key, value := range spec.Env {
 		cmd.Env = append(cmd.Env, key+"="+value)
 	}
@@ -288,7 +290,7 @@ func (s *Server) handleCLIBrowserAuthBegin(w http.ResponseWriter, r *http.Reques
 	if err != nil {
 		cancel()
 		_ = os.RemoveAll(homeDir)
-		s.jsonError(w, http.StatusBadGateway, "failed to start CLI login")
+		s.jsonError(w, http.StatusBadGateway, "failed to start "+spec.Command[0]+" login: "+modelAuthCLIStartError(spec.Command[0], cliBin, err))
 		return
 	}
 	session := &modelAuthSession{
@@ -595,6 +597,142 @@ func browserAuthSpec(cli string) (cliBrowserAuthSpec, bool) {
 	default:
 		return cliBrowserAuthSpec{}, false
 	}
+}
+
+func modelAuthCLIExecutable(name string) string {
+	name = strings.TrimSpace(name)
+	if name == "" {
+		return ""
+	}
+	if filepath.IsAbs(name) || strings.ContainsRune(name, os.PathSeparator) {
+		return name
+	}
+	for _, envKey := range modelAuthCLIEnvKeys(name) {
+		if configured := strings.TrimSpace(os.Getenv(envKey)); configured != "" {
+			if fileExecutable(configured) {
+				return configured
+			}
+		}
+	}
+	candidates := append([]string{name}, modelAuthCLICandidates(name)...)
+	for _, candidate := range candidates {
+		if candidate == "" {
+			continue
+		}
+		if filepath.IsAbs(candidate) || strings.ContainsRune(candidate, os.PathSeparator) {
+			if fileExecutable(candidate) {
+				return candidate
+			}
+			continue
+		}
+		if path, err := exec.LookPath(candidate); err == nil {
+			return path
+		}
+	}
+	return name
+}
+
+func modelAuthCLIEnvKeys(name string) []string {
+	switch strings.ToLower(name) {
+	case "codex":
+		return []string{"MULTIGENT_CODEX", "MULTIGENT_CODEX_CLI", "CODEX_CLI"}
+	case "claude":
+		return []string{"MULTIGENT_CLAUDE", "MULTIGENT_CLAUDE_CLI", "CLAUDE_CLI"}
+	case "agent":
+		return []string{"MULTIGENT_CURSOR_AGENT", "MULTIGENT_CURSOR_CLI", "CURSOR_AGENT"}
+	default:
+		key := strings.ToUpper(strings.ReplaceAll(name, "-", "_"))
+		return []string{"MULTIGENT_" + key}
+	}
+}
+
+func modelAuthCLICandidates(name string) []string {
+	home, _ := os.UserHomeDir()
+	commonDirs := []string{}
+	if home != "" {
+		commonDirs = append(commonDirs,
+			filepath.Join(home, ".local", "bin"),
+			filepath.Join(home, ".npm-global", "bin"),
+			filepath.Join(home, ".bun", "bin"),
+			filepath.Join(home, ".volta", "bin"),
+		)
+		if matches, _ := filepath.Glob(filepath.Join(home, ".nvm", "versions", "node", "*", "bin", name)); len(matches) > 0 {
+			commonDirs = append(commonDirs, filepath.Dir(matches[len(matches)-1]))
+		}
+	}
+	commonDirs = append(commonDirs, "/opt/homebrew/bin", "/usr/local/bin")
+	candidates := make([]string, 0, len(commonDirs)+2)
+	for _, dir := range commonDirs {
+		candidates = append(candidates, filepath.Join(dir, name))
+	}
+	switch strings.ToLower(name) {
+	case "codex":
+		candidates = append(candidates, "/Applications/ChatGPT.app/Contents/Resources/codex")
+	case "claude":
+		if home != "" {
+			candidates = append(candidates, filepath.Join(home, ".local", "share", "claude", "ClaudeCode.app", "Contents", "MacOS", "claude"))
+		}
+	case "agent":
+		candidates = append(candidates,
+			"/Applications/Cursor.app/Contents/Resources/app/bin/agent",
+			"/Applications/Cursor.app/Contents/MacOS/agent",
+		)
+	}
+	return candidates
+}
+
+func modelAuthEnv(homeDir, cliBin string) []string {
+	env := append([]string{}, os.Environ()...)
+	env = append(env, "HOME="+homeDir, "XDG_CONFIG_HOME="+filepath.Join(homeDir, ".config"))
+	pathParts := []string{}
+	if cliBin != "" && (filepath.IsAbs(cliBin) || strings.ContainsRune(cliBin, os.PathSeparator)) {
+		pathParts = append(pathParts, filepath.Dir(cliBin))
+	}
+	if home, _ := os.UserHomeDir(); home != "" {
+		pathParts = append(pathParts,
+			filepath.Join(home, ".local", "bin"),
+			filepath.Join(home, ".npm-global", "bin"),
+			filepath.Join(home, ".bun", "bin"),
+			filepath.Join(home, ".volta", "bin"),
+		)
+	}
+	pathParts = append(pathParts, "/opt/homebrew/bin", "/usr/local/bin")
+	if current := os.Getenv("PATH"); current != "" {
+		pathParts = append(pathParts, current)
+	}
+	env = append(env, "PATH="+strings.Join(dedupeNonEmpty(pathParts), string(os.PathListSeparator)))
+	return env
+}
+
+func modelAuthCLIStartError(name, resolved string, err error) string {
+	checked := []string{resolved}
+	checked = append(checked, modelAuthCLICandidates(name)...)
+	return fmt.Sprintf("%v; checked %s", err, strings.Join(dedupeNonEmpty(checked), ", "))
+}
+
+func fileExecutable(path string) bool {
+	if strings.TrimSpace(path) == "" {
+		return false
+	}
+	fi, err := os.Stat(path)
+	if err != nil || fi.IsDir() {
+		return false
+	}
+	return fi.Mode()&0o111 != 0
+}
+
+func dedupeNonEmpty(values []string) []string {
+	out := make([]string, 0, len(values))
+	seen := map[string]bool{}
+	for _, value := range values {
+		value = strings.TrimSpace(value)
+		if value == "" || seen[value] {
+			continue
+		}
+		seen[value] = true
+		out = append(out, value)
+	}
+	return out
 }
 
 func firstCleanAuthURL(text string) string {
