@@ -8,6 +8,9 @@
 #   $env:MULTIGENT_VERSION="v0.1.0"
 
 $ErrorActionPreference = "Stop"
+try {
+    [Net.ServicePointManager]::SecurityProtocol = [Net.SecurityProtocolType]::Tls12
+} catch {}
 
 $RepoWebUrl = if ($env:MULTIGENT_REPO_WEB_URL) { $env:MULTIGENT_REPO_WEB_URL } else { "https://github.com/multigent/multigent" }
 $BinDir = if ($env:MULTIGENT_BIN_DIR) { $env:MULTIGENT_BIN_DIR } else { Join-Path $env:USERPROFILE ".multigent\bin" }
@@ -62,10 +65,24 @@ function Get-WindowsCliArch {
 function Get-LatestVersion {
     if ($Version) { return $Version }
     try {
+        $latest = Invoke-WebRequest -Uri "$RepoWebUrl/releases/latest" -UseBasicParsing -ErrorAction Stop
+        $finalUrl = $latest.BaseResponse.ResponseUri.AbsoluteUri
+        if ($finalUrl -and $finalUrl -match "/tag/([^/?#]+)") {
+            return $matches[1]
+        }
+    } catch {
+        try {
+            $location = $_.Exception.Response.Headers["Location"]
+            if ($location -and $location -match "/tag/([^/?#]+)") {
+                return $matches[1]
+            }
+        } catch {}
+    }
+    try {
         $release = Invoke-RestMethod -Uri "https://api.github.com/repos/multigent/multigent/releases/latest" -ErrorAction Stop
         return $release.tag_name
     } catch {
-        Write-Fail "Could not determine latest release. Check your network connection."
+        Write-Fail "Could not determine latest release. Set MULTIGENT_VERSION, for example: `$env:MULTIGENT_VERSION='v0.1.1'"
     }
 }
 
