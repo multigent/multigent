@@ -25,6 +25,7 @@ const codexDeviceAuthURL = "https://auth.openai.com/codex/device"
 
 var codexDeviceCodePattern = regexp.MustCompile(`\b[A-Z0-9]{4}-[A-Z0-9]{4}[A-Z0-9-]*\b`)
 var authURLPattern = regexp.MustCompile(`https?://[^\s\x1b]+`)
+var ansiEscapePattern = regexp.MustCompile(`\x1b\[[0-?]*[ -/]*[@-~]`)
 
 type modelAuthSession struct {
 	mu              sync.Mutex
@@ -42,6 +43,7 @@ type modelAuthSession struct {
 	Done            bool
 	ExitErr         string
 	ProviderID      string
+	Output          string
 }
 
 type modelAuthBeginBody struct {
@@ -120,8 +122,11 @@ func (s *Server) handleCodexDeviceAuthBegin(w http.ResponseWriter, r *http.Reque
 	for {
 		select {
 		case <-deadline:
+			session.mu.Lock()
+			output := session.Output
+			session.mu.Unlock()
 			s.cleanupModelAuthSession(sessionID)
-			s.jsonError(w, http.StatusBadGateway, "codex login did not return a device code")
+			s.jsonError(w, http.StatusBadGateway, "codex login did not return a device code: "+shortAuthOutput(output))
 			return
 		case <-tick.C:
 			session.mu.Lock()
@@ -473,8 +478,9 @@ func runCodexDeviceAuthSession(cmd *exec.Cmd, tty *os.File, session *modelAuthSe
 	for {
 		n, readErr := tty.Read(buf)
 		if n > 0 {
-			text := string(buf[:n])
+			text := stripTerminalControls(string(buf[:n]))
 			session.mu.Lock()
+			session.Output += text
 			if strings.Contains(text, codexDeviceAuthURL) {
 				session.VerificationURI = codexDeviceAuthURL
 			}
@@ -513,8 +519,9 @@ func runBrowserAuthSession(cmd *exec.Cmd, tty *os.File, session *modelAuthSessio
 	for {
 		n, readErr := tty.Read(buf)
 		if n > 0 {
-			text := string(buf[:n])
+			text := stripTerminalControls(string(buf[:n]))
 			session.mu.Lock()
+			session.Output += text
 			if session.VerificationURI == "" {
 				if uri := firstCleanAuthURL(text); uri != "" {
 					session.VerificationURI = uri
@@ -592,6 +599,24 @@ func firstCleanAuthURL(text string) string {
 		}
 	}
 	return ""
+}
+
+func stripTerminalControls(text string) string {
+	text = ansiEscapePattern.ReplaceAllString(text, "")
+	text = strings.ReplaceAll(text, "\r", "\n")
+	return text
+}
+
+func shortAuthOutput(text string) string {
+	text = strings.TrimSpace(stripTerminalControls(text))
+	if text == "" {
+		return "no output"
+	}
+	text = strings.ReplaceAll(text, "\n", " ")
+	if len(text) > 600 {
+		return text[:600] + "..."
+	}
+	return text
 }
 
 func cleanTerminalURL(raw string) string {
