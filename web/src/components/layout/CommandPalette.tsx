@@ -50,6 +50,8 @@ export function CommandPalette({
   const { t } = useTranslation()
   const navigate = useNavigate()
   const { canAdmin } = useWorkspaceAccess()
+  const [workspaceReloadKey, setWorkspaceReloadKey] = useState(0)
+  const [projectAgents, setProjectAgents] = useState<ProjectAgents[]>([])
 
   useEffect(() => {
     function onKeyDown(e: KeyboardEvent) {
@@ -67,10 +69,18 @@ export function CommandPalette({
     return () => document.removeEventListener('keydown', onKeyDown)
   }, [open, onOpenChange])
 
-  const projectsState = useApiJson<ProjectRow[]>('/api/v1/projects', 0)
+  useEffect(() => {
+    function onWorkspaceChanged() {
+      setProjectAgents([])
+      setWorkspaceReloadKey((current) => current + 1)
+    }
+    window.addEventListener('workspace-changed', onWorkspaceChanged)
+    return () => window.removeEventListener('workspace-changed', onWorkspaceChanged)
+  }, [])
+
+  const projectsState = useApiJson<ProjectRow[]>('/api/v1/projects', workspaceReloadKey)
   const projects = projectsState.status === 'ok' ? (projectsState.data ?? EMPTY_PROJECTS) : EMPTY_PROJECTS
   const projectsKey = useMemo(() => projects.map((project) => project.name).join('\u001f'), [projects])
-  const [projectAgents, setProjectAgents] = useState<ProjectAgents[]>([])
 
   useEffect(() => {
     let cancelled = false
@@ -91,7 +101,7 @@ export function CommandPalette({
       if (!cancelled) setProjectAgents(rows)
     })()
     return () => { cancelled = true }
-  }, [projectsKey])
+  }, [projectsKey, workspaceReloadKey])
 
   const items = useMemo<SearchItem[]>(() => {
     const nav: SearchItem[] = [
