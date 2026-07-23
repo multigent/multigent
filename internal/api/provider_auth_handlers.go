@@ -587,7 +587,8 @@ func browserAuthSpec(cli string) (cliBrowserAuthSpec, bool) {
 			Command:      []string{"agent", "login"},
 			Env:          map[string]string{"NO_OPEN_BROWSER": "1"},
 			CredentialsReady: func(home string) bool {
-				return modelAuthFileExists(filepath.Join(home, ".cursor", "cli-config.json"))
+				return modelAuthFileExists(filepath.Join(home, ".config", "cursor", "cli-config.json")) ||
+					modelAuthFileExists(filepath.Join(home, ".cursor", "cli-config.json"))
 			},
 			CopyCredentials: copyCursorBrowserCredentials,
 		}, true
@@ -648,7 +649,11 @@ func copyClaudeBrowserCredentials(home, dstRoot string) error {
 }
 
 func copyCursorBrowserCredentials(home, dstRoot string) error {
-	for _, rel := range []string{filepath.Join(".cursor", "cli-config.json")} {
+	for _, rel := range []string{
+		filepath.Join(".config", "cursor", "cli-config.json"),
+		filepath.Join(".config", "cursor", "auth.json"),
+		filepath.Join(".cursor", "cli-config.json"),
+	} {
 		src := filepath.Join(home, rel)
 		if modelAuthFileExists(src) {
 			if err := copyFile0600(src, filepath.Join(dstRoot, rel)); err != nil {

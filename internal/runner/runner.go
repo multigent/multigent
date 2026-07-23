@@ -1416,12 +1416,27 @@ func (r *Runner) materializeProviderCredentials(agentDir string, meta *entity.Ag
 		}
 		return nil
 	case method == store.ProviderAuthMethodCursorBrowser && model == entity.ModelCursor:
-		src := filepath.Join(store.ProviderCredentialDir(r.root, provider.ID, entity.ModelCursor), ".cursor", "cli-config.json")
-		if !fileExists(src) {
+		srcRoot := store.ProviderCredentialDir(r.root, provider.ID, entity.ModelCursor)
+		hasCredential := false
+		for _, rel := range []string{
+			filepath.Join(".config", "cursor", "cli-config.json"),
+			filepath.Join(".config", "cursor", "auth.json"),
+			filepath.Join(".cursor", "cli-config.json"),
+		} {
+			src := filepath.Join(srcRoot, rel)
+			if !fileExists(src) {
+				continue
+			}
+			hasCredential = true
+			dst := filepath.Join(agentDir, ".multigent", "runtime-home", string(model), rel)
+			if err := copyRuntimeCredentialFile(src, dst); err != nil {
+				return err
+			}
+		}
+		if !hasCredential {
 			return fmt.Errorf("Cursor auth file is missing for provider %s", provider.ID)
 		}
-		dst := filepath.Join(agentDir, ".multigent", "runtime-home", string(model), ".cursor", "cli-config.json")
-		return copyRuntimeCredentialFile(src, dst)
+		return nil
 	default:
 		return nil
 	}
