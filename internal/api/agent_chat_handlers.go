@@ -212,6 +212,20 @@ func (s *Server) handleAgentChat(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
+	meta, err := s.st.AgentMeta(project, agent)
+	if err != nil {
+		if isNotFoundErr(err) {
+			s.jsonErrorCode(w, http.StatusNotFound, ErrCodeAgentNotFound, "agent not found")
+			return
+		}
+		s.serverError(w, err)
+		return
+	}
+	if readiness := buildRuntimeReadiness(meta); readiness.Blocking {
+		s.jsonErrorCode(w, http.StatusConflict, ErrCodeRuntimeNotReady, runtimeReadinessErrorMessage(readiness))
+		return
+	}
+
 	flusher, ok := w.(http.Flusher)
 	if !ok {
 		s.jsonError(w, http.StatusInternalServerError, "streaming not supported")

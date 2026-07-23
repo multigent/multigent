@@ -13,11 +13,13 @@
 package sandbox
 
 import (
+	"context"
 	"fmt"
 	"os"
 	"os/exec"
 	"path/filepath"
 	"strings"
+	"time"
 
 	"github.com/multigent/multigent/internal/entity"
 )
@@ -284,6 +286,45 @@ func PullImage(image string) error {
 	return cmd.Run()
 }
 
+// ImageAvailable reports whether a compatible local image is already present.
+// It never pulls from the registry; callers can use this for fast readiness
+// checks before deciding whether to run sandbox prepare.
+func ImageAvailable(image string) bool {
+	return imageExists(image)
+}
+
+// ToolchainBinaryAvailable checks whether a binary is already present in the
+// persistent Multigent toolchain volume for the given runtime image. It assumes
+// the image is already local and uses a short timeout so readiness checks do not
+// accidentally become slow runtime preparation.
+func ToolchainBinaryAvailable(image, binary string, timeout time.Duration) (bool, error) {
+	image = strings.TrimSpace(image)
+	binary = strings.TrimSpace(binary)
+	if image == "" || binary == "" {
+		return false, nil
+	}
+	if timeout <= 0 {
+		timeout = 5 * time.Second
+	}
+	ctx, cancel := context.WithTimeout(context.Background(), timeout)
+	defer cancel()
+	args := []string{
+		"run", "--rm",
+		"-v", "multigent-toolchains:/opt/multigent/toolchains",
+		image,
+		"/bin/sh", "-lc",
+		"export PATH=/opt/multigent/toolchains/npm/bin:/opt/multigent/toolchains/mga/bin:$PATH; command -v " + shellQuote(binary) + " >/dev/null 2>&1",
+	}
+	cmd := exec.CommandContext(ctx, DockerExecutable(), args...)
+	if err := cmd.Run(); err != nil {
+		if ctx.Err() != nil {
+			return false, ctx.Err()
+		}
+		return false, nil
+	}
+	return true, nil
+}
+
 // ImageForModel returns the default Docker image name for an agent model.
 func ImageForModel(model entity.AgentModel) string {
 	return resolveImage(model, nil)
@@ -377,6 +418,13 @@ func normalizeDockerArch(arch string) string {
 	default:
 		return strings.ToLower(strings.TrimSpace(arch))
 	}
+}
+
+func shellQuote(s string) string {
+	if s == "" {
+		return "''"
+	}
+	return "'" + strings.ReplaceAll(s, "'", "'\"'\"'") + "'"
 }
 
 // ResolveCredentialMounts is the exported form for use by CLI commands.

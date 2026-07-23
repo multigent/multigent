@@ -268,6 +268,7 @@ func (s *Server) Handler() http.Handler {
 	mux.HandleFunc("POST /api/v1/projects/{name}/agents/{agent}/tool-bindings", s.handleUpsertAgentToolBinding)
 	mux.HandleFunc("DELETE /api/v1/projects/{name}/agents/{agent}/tool-bindings/{bindingId}", s.handleDeleteAgentToolBinding)
 	mux.HandleFunc("GET /api/v1/projects/{name}/agents/{agent}/context", s.handleGetAgentContext)
+	mux.HandleFunc("GET /api/v1/projects/{name}/agents/{agent}/runtime/readiness", s.handleGetAgentRuntimeReadiness)
 	mux.HandleFunc("GET /api/v1/projects/{name}/agents/{agent}/interactions/active", s.handleAgentInteractionStatus)
 	mux.HandleFunc("GET /api/v1/projects/{name}/agents/{agent}/channels", s.handleAgentChannels)
 	mux.HandleFunc("POST /api/v1/projects/{name}/agents/{agent}/channels/{provider}/setup/begin", s.handleAgentChannelSetupBegin)

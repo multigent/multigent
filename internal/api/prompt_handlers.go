@@ -269,8 +269,27 @@ func (s *Server) handleGetAgentContext(w http.ResponseWriter, r *http.Request) {
 	}
 
 	resp["setupChecks"] = buildSetupChecks(meta)
+	resp["runtimeReadiness"] = buildRuntimeReadiness(meta)
 
 	_ = json.NewEncoder(w).Encode(resp)
+}
+
+func (s *Server) handleGetAgentRuntimeReadiness(w http.ResponseWriter, r *http.Request) {
+	project := r.PathValue("name")
+	agent := r.PathValue("agent")
+	if !s.checkAgentAccess(w, r, project, agent) {
+		return
+	}
+	meta, err := s.st.AgentMeta(project, agent)
+	if err != nil {
+		if isNotFoundErr(err) {
+			s.jsonErrorCode(w, http.StatusNotFound, ErrCodeNotFound, "agent not found")
+			return
+		}
+		s.serverError(w, err)
+		return
+	}
+	_ = json.NewEncoder(w).Encode(buildRuntimeReadiness(meta))
 }
 
 func contextFileName(model string) string {
@@ -508,36 +527,81 @@ func (s *Server) syncAgent(project, agent string) {
 }
 
 type setupCheck struct {
-	Key    string `json:"key"`
-	Label  string `json:"label"`
-	Status string `json:"status"` // ok, warning, error
-	Detail string `json:"detail,omitempty"`
+	Key      string `json:"key"`
+	Label    string `json:"label"`
+	Status   string `json:"status"` // ok, warning, error
+	Detail   string `json:"detail,omitempty"`
+	Action   string `json:"action,omitempty"`
+	Blocking bool   `json:"blocking,omitempty"`
 }
 
 func buildSetupChecks(meta *entity.AgentMeta) []setupCheck {
+	return buildRuntimeReadiness(meta).Checks
+}
+
+type runtimeReadinessResponse struct {
+	Ready    bool         `json:"ready"`
+	Blocking bool         `json:"blocking"`
+	Summary  string       `json:"summary"`
+	Checks   []setupCheck `json:"checks"`
+}
+
+func buildRuntimeReadiness(meta *entity.AgentMeta) runtimeReadinessResponse {
 	model := entity.NormaliseModel(meta.Model)
 	if model == entity.ModelHuman || model == entity.ModelHTTPAgent {
-		return nil
+		return runtimeReadinessResponse{Ready: true, Summary: "This member does not require a sandboxed CLI runtime.", Checks: nil}
 	}
 
 	var checks []setupCheck
-	isDocker := meta.Sandbox != nil && meta.Sandbox.Provider == entity.SandboxDocker
+	provider := entity.SandboxDocker
+	if meta.Sandbox != nil && meta.Sandbox.Provider != "" {
+		provider = meta.Sandbox.Provider
+	}
+	isDocker := provider == entity.SandboxDocker
+	if provider == entity.SandboxNone {
+		checks = append(checks, setupCheck{
+			Key: "sandbox", Label: "Sandbox", Status: "error", Blocking: true,
+			Detail: "No sandbox runtime is configured. Multigent requires an isolated runtime before agents can run.",
+			Action: "Configure Docker or another supported sandbox provider.",
+		})
+	} else if provider == entity.SandboxE2B {
+		caps := sandbox.DetectCapabilities()
+		if caps.E2B.Available {
+			checks = append(checks, setupCheck{Key: "sandbox", Label: "E2B", Status: "ok"})
+		} else {
+			checks = append(checks, setupCheck{
+				Key: "sandbox", Label: "E2B", Status: "error", Blocking: true,
+				Detail: caps.E2B.Reason,
+				Action: "Configure a reachable E2B-compatible sandbox provider, or switch this agent to Docker.",
+			})
+		}
+	}
 
 	// 1. CLI tool check
 	cliName, installCmd := cliInfoForModel(model)
 	if cliName != "" {
 		if isDocker {
-			checks = append(checks, setupCheck{
-				Key: "cli", Label: cliName + " CLI", Status: "ok",
-				Detail: "Docker 沙箱内已预装",
-			})
+			image := sandbox.EffectiveImage(model, dockerSandboxConfig(meta))
+			if sandbox.ImageAvailable(image) {
+				checks = append(checks, setupCheck{
+					Key: "cli", Label: cliName + " CLI", Status: "warning",
+					Detail: "Agent CLI toolchain is installed on first use unless prepared in advance. First run may spend several minutes installing it.",
+					Action: "Run: multigent sandbox prepare --toolchain " + prepareToolchainName(model),
+				})
+			} else {
+				checks = append(checks, setupCheck{
+					Key: "cli", Label: cliName + " CLI", Status: "warning",
+					Detail: "Agent CLI toolchain cannot be checked until the runtime image is available.",
+					Action: "Run: multigent sandbox prepare --toolchain " + prepareToolchainName(model),
+				})
+			}
 		} else if _, err := exec.LookPath(cliName); err == nil {
 			checks = append(checks, setupCheck{
 				Key: "cli", Label: cliName + " CLI", Status: "ok",
 			})
 		} else {
 			checks = append(checks, setupCheck{
-				Key: "cli", Label: cliName + " CLI", Status: "error",
+				Key: "cli", Label: cliName + " CLI", Status: "error", Blocking: true,
 				Detail: "未安装。请运行: " + installCmd,
 			})
 		}
@@ -546,14 +610,28 @@ func buildSetupChecks(meta *entity.AgentMeta) []setupCheck {
 	// 2. Docker check (if using docker sandbox)
 	if isDocker {
 		if err := sandbox.CheckDocker(); err == nil {
+			image := sandbox.EffectiveImage(model, dockerSandboxConfig(meta))
 			checks = append(checks, setupCheck{
 				Key: "docker", Label: "Docker", Status: "ok",
 				Detail: "Docker CLI: " + sandbox.DockerExecutable(),
 			})
+			if sandbox.ImageAvailable(image) {
+				checks = append(checks, setupCheck{
+					Key: "runtime_image", Label: "Runtime image", Status: "ok",
+					Detail: image,
+				})
+			} else {
+				checks = append(checks, setupCheck{
+					Key: "runtime_image", Label: "Runtime image", Status: "error", Blocking: true,
+					Detail: "Runtime image is not available locally: " + image,
+					Action: "Run: multigent sandbox prepare",
+				})
+			}
 		} else {
 			checks = append(checks, setupCheck{
-				Key: "docker", Label: "Docker", Status: "error",
+				Key: "docker", Label: "Docker", Status: "error", Blocking: true,
 				Detail: err.Error(),
+				Action: "Install and start Docker Desktop / Docker Engine.",
 			})
 		}
 	}
@@ -577,8 +655,8 @@ func buildSetupChecks(meta *entity.AgentMeta) []setupCheck {
 				checks = append(checks, setupCheck{Key: "provider", Label: "API 供应商", Status: "ok", Detail: "通过环境变量配置"})
 			} else {
 				checks = append(checks, setupCheck{
-					Key: "provider", Label: "API 供应商", Status: "warning",
-					Detail: "未配置 API 供应商或 ANTHROPIC_API_KEY。请在设置页添加供应商或设置环境变量",
+					Key: "provider", Label: "API 供应商", Status: "error", Blocking: true,
+					Detail: "未配置 API 供应商。请在设置页添加模型账号，并在 Agent 详情页关联。",
 				})
 			}
 		case entity.ModelCodex, entity.ModelQoder:
@@ -586,14 +664,76 @@ func buildSetupChecks(meta *entity.AgentMeta) []setupCheck {
 				checks = append(checks, setupCheck{Key: "provider", Label: "API 供应商", Status: "ok", Detail: "通过环境变量配置"})
 			} else {
 				checks = append(checks, setupCheck{
-					Key: "provider", Label: "API 供应商", Status: "warning",
-					Detail: "未配置 OPENAI_API_KEY。请在设置页添加供应商或设置环境变量",
+					Key: "provider", Label: "API 供应商", Status: "error", Blocking: true,
+					Detail: "未配置模型账号。请在设置页添加模型账号，并在 Agent 详情页关联。",
 				})
 			}
 		}
 	}
 
-	return checks
+	blocking := false
+	warnings := 0
+	for _, check := range checks {
+		if check.Blocking || check.Status == "error" {
+			blocking = true
+		}
+		if check.Status == "warning" {
+			warnings++
+		}
+	}
+	summary := "Runtime is ready."
+	if blocking {
+		summary = "Runtime is not ready. Resolve blocking checks before running this agent."
+	} else if warnings > 0 {
+		summary = "Runtime can run, but preparation is incomplete. First run may be slower."
+	}
+	return runtimeReadinessResponse{
+		Ready:    !blocking,
+		Blocking: blocking,
+		Summary:  summary,
+		Checks:   checks,
+	}
+}
+
+func runtimeReadinessErrorMessage(readiness runtimeReadinessResponse) string {
+	var parts []string
+	for _, check := range readiness.Checks {
+		if !check.Blocking && check.Status != "error" {
+			continue
+		}
+		msg := check.Label
+		if check.Detail != "" {
+			msg += ": " + check.Detail
+		}
+		if check.Action != "" {
+			msg += " " + check.Action
+		}
+		parts = append(parts, msg)
+	}
+	if len(parts) == 0 {
+		return "runtime is not ready"
+	}
+	return strings.Join(parts, "\n")
+}
+
+func dockerSandboxConfig(meta *entity.AgentMeta) *entity.DockerSandboxConfig {
+	if meta == nil || meta.Sandbox == nil {
+		return nil
+	}
+	return meta.Sandbox.Docker
+}
+
+func prepareToolchainName(model entity.AgentModel) string {
+	switch entity.NormaliseModel(model) {
+	case entity.ModelClaudeCode:
+		return "claudecode"
+	case entity.ModelCodex, entity.ModelQoder:
+		return "codex"
+	case entity.ModelGemini:
+		return "gemini"
+	default:
+		return string(entity.NormaliseModel(model))
+	}
 }
 
 func cliInfoForModel(model entity.AgentModel) (name, install string) {

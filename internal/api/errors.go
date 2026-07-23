@@ -59,6 +59,7 @@ const (
 	ErrCodeRuntimeAgentTokenRequired    = "runtime_agent_token_required"
 	ErrCodeRuntimeConnectionNotGranted  = "runtime_connection_not_granted"
 	ErrCodeRuntimeCapabilityRequired    = "runtime_capability_required"
+	ErrCodeRuntimeNotReady              = "runtime_not_ready"
 	ErrCodeUnsupportedAuthType          = "unsupported_auth_type"
 	ErrCodeUnsupportedProvider          = "unsupported_provider"
 

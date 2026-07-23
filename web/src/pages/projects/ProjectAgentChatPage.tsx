@@ -27,18 +27,28 @@ type AgentContext = {
   httpAgent?: {
     model?: string
   }
-}
-
-type SandboxCapabilities = {
-  docker?: {
-    available?: boolean
-    reason?: string
-  }
+  runtimeReadiness?: RuntimeReadiness
 }
 
 type ProviderOption = {
   id: string
   model?: string
+}
+
+type RuntimeCheck = {
+  key: string
+  label: string
+  status: 'ok' | 'warning' | 'error'
+  detail?: string
+  action?: string
+  blocking?: boolean
+}
+
+type RuntimeReadiness = {
+  ready: boolean
+  blocking: boolean
+  summary: string
+  checks?: RuntimeCheck[]
 }
 
 function appendLog(prev: string, line: string): string {
@@ -79,6 +89,8 @@ export default function ProjectAgentChatPage() {
   const [historyTruncated, setHistoryTruncated] = useState(false)
   const [error, setError] = useState<string | null>(null)
   const [runtimeWarning, setRuntimeWarning] = useState<string | null>(null)
+  const [runtimeReadiness, setRuntimeReadiness] = useState<RuntimeReadiness | null>(null)
+  const [runtimeChecking, setRuntimeChecking] = useState(false)
   const [freshNext, setFreshNext] = useState(false)
   const [focusMode, setFocusMode] = useState(false)
   const [agentContext, setAgentContext] = useState<AgentContext | null>(null)
@@ -91,6 +103,7 @@ export default function ProjectAgentChatPage() {
   const draftKey = agentChatDraftKey(projectId, agentName)
   const chatKey = projectId && agentName ? `${projectId}/${agentName}` : ''
   const activeChatKeyRef = useRef(chatKey)
+  const runtimeBlocked = Boolean(runtimeReadiness?.blocking)
 
   // Sync sessionId state + URL query param together so page refresh preserves the session.
   const updateSessionId = useCallback((sid: string) => {
@@ -109,6 +122,35 @@ export default function ProjectAgentChatPage() {
     const base = `/api/v1/projects/${encodeURIComponent(project)}/agents/${encodeURIComponent(agent)}/chat/history`
     return sid ? `${base}?sessionId=${encodeURIComponent(sid)}` : base
   }, [])
+
+  const readinessPath = useCallback((project: string | undefined, agent: string | undefined) => {
+    if (!project || !agent) return null
+    return `/api/v1/projects/${encodeURIComponent(project)}/agents/${encodeURIComponent(agent)}/runtime/readiness`
+  }, [])
+
+  const loadReadiness = useCallback(async (project = projectId, agent = agentName, expectedKey = chatKey) => {
+    const path = readinessPath(project, agent)
+    if (!path) return null
+    setRuntimeChecking(true)
+    try {
+      const data = await apiFetch<RuntimeReadiness>(path)
+      if (activeChatKeyRef.current !== expectedKey) return null
+      setRuntimeReadiness(data)
+      const warnings = (data.checks ?? []).filter((check) => check.status === 'warning')
+      if (data.blocking) {
+        setRuntimeWarning(null)
+      } else if (warnings.length > 0) {
+        setRuntimeWarning(t('agentChat.runtimeMayBeSlow'))
+      } else {
+        setRuntimeWarning(null)
+      }
+      return data
+    } catch {
+      return null
+    } finally {
+      if (activeChatKeyRef.current === expectedKey) setRuntimeChecking(false)
+    }
+  }, [agentName, chatKey, projectId, readinessPath, t])
 
   const loadHistory = useCallback(async (sid: string, project = projectId, agent = agentName, expectedKey = chatKey) => {
     const path = historyPath(project, agent, sid)
@@ -147,43 +189,32 @@ export default function ProjectAgentChatPage() {
     setHistoryLoading(false)
     setHistoryTruncated(false)
     setFreshNext(false)
+    setRuntimeReadiness(null)
+    setRuntimeWarning(null)
     setSessionEditorOpen(false)
     setSessionId(currentRouteSessionId)
     setSessionDraft(currentRouteSessionId)
     void loadHistory(currentRouteSessionId, projectId, agentName, nextKey)
-  }, [projectId, agentName, loadHistory])
+    void loadReadiness(projectId, agentName, nextKey)
+  }, [projectId, agentName, loadHistory, loadReadiness])
 
   useEffect(() => {
     if (!projectId || !agentName) return
     let cancelled = false
     const contextPath = `/api/v1/projects/${encodeURIComponent(projectId)}/agents/${encodeURIComponent(agentName)}/context`
     void apiFetch<AgentContext>(contextPath)
-      .then((data) => { if (!cancelled) setAgentContext(data) })
+      .then((data) => {
+        if (!cancelled) {
+          setAgentContext(data)
+          if (data.runtimeReadiness) setRuntimeReadiness(data.runtimeReadiness)
+        }
+      })
       .catch(() => {})
     void apiFetch<ProviderOption[]>('/api/v1/providers')
       .then((data) => { if (!cancelled) setProviders(data ?? []) })
       .catch(() => {})
     return () => { cancelled = true }
   }, [projectId, agentName])
-
-  useEffect(() => {
-    if ((agentContext?.sandbox?.provider ?? 'docker') !== 'docker') {
-      setRuntimeWarning(null)
-      return
-    }
-    let cancelled = false
-    void apiFetch<SandboxCapabilities>('/api/v1/sandbox/capabilities')
-      .then((caps) => {
-        if (cancelled) return
-        if (caps.docker && caps.docker.available === false) {
-          setRuntimeWarning(t('agentChat.dockerUnavailable'))
-        } else {
-          setRuntimeWarning(null)
-        }
-      })
-      .catch(() => {})
-    return () => { cancelled = true }
-  }, [agentContext?.sandbox?.provider, t])
 
   useEffect(() => {
     requestAnimationFrame(() => {
@@ -231,18 +262,11 @@ export default function ProjectAgentChatPage() {
     setError(null)
     setRunNotice(null)
 
-    if ((agentContext?.sandbox?.provider ?? 'docker') === 'docker') {
-      try {
-        const caps = await apiFetch<SandboxCapabilities>('/api/v1/sandbox/capabilities')
-        if (caps.docker && caps.docker.available === false) {
-          const reason = caps.docker.reason ? `\n\n${caps.docker.reason}` : ''
-          setError(`${t('agentChat.dockerUnavailable')}${reason}`)
-          setInput(text)
-          return
-        }
-      } catch {
-        // Do not block chat when the health preflight itself is unavailable.
-      }
+    const readiness = await loadReadiness(runProject, runAgent, runKey)
+    if (readiness?.blocking) {
+      setError(runtimeBlockingMessage(readiness, t))
+      setInput(text)
+      return
     }
 
     setLoading(true)
@@ -496,6 +520,11 @@ export default function ProjectAgentChatPage() {
             <p className="mt-2 text-xs text-sky-700/80 dark:text-sky-300/80">{t('agentChat.sessionSwitchHint')}</p>
           </div>
         )}
+        <RuntimeReadinessBanner
+          readiness={runtimeReadiness}
+          checking={runtimeChecking}
+          onRefresh={() => void loadReadiness()}
+        />
         {error && (
           <p className="mt-2 text-xs text-red-500 dark:text-red-400">{error}</p>
         )}
@@ -547,8 +576,9 @@ export default function ProjectAgentChatPage() {
             <button
               type="button"
               onClick={() => void send()}
-              disabled={!input.trim()}
+              disabled={!input.trim() || runtimeBlocked || runtimeChecking}
               className="flex size-8 shrink-0 items-center justify-center rounded-lg bg-sky-600 text-white transition-colors hover:bg-sky-700 disabled:opacity-30"
+              title={runtimeBlocked ? t('agentChat.runtimeBlocked') : undefined}
             >
               <Send className="size-4" />
             </button>
@@ -568,6 +598,77 @@ export default function ProjectAgentChatPage() {
   }
 
   return chatPanel
+}
+
+function RuntimeReadinessBanner({ readiness, checking, onRefresh }: {
+  readiness: RuntimeReadiness | null
+  checking: boolean
+  onRefresh: () => void
+}) {
+  const { t } = useTranslation()
+  if (!readiness && !checking) return null
+  const checks = readiness?.checks ?? []
+  const visibleChecks = checks.filter((check) => check.status !== 'ok')
+  const ready = Boolean(readiness?.ready)
+  const blocking = Boolean(readiness?.blocking)
+  const cls = blocking
+    ? 'border-red-200 bg-red-50 text-red-800 dark:border-red-900/50 dark:bg-red-950/20 dark:text-red-300'
+    : ready
+      ? 'border-emerald-200 bg-emerald-50 text-emerald-800 dark:border-emerald-900/50 dark:bg-emerald-950/20 dark:text-emerald-300'
+      : 'border-amber-200 bg-amber-50 text-amber-800 dark:border-amber-900/50 dark:bg-amber-950/20 dark:text-amber-300'
+  const summary = checking
+    ? t('agentChat.runtimeCheckingHint')
+    : blocking
+      ? t('agentChat.runtimeBlockedHint')
+      : ready && visibleChecks.length === 0
+        ? t('agentChat.runtimeReadyHint')
+        : t('agentChat.runtimePreparingHint')
+  return (
+    <div className={cn('mt-3 rounded-lg border px-3 py-2 text-xs leading-5', cls)}>
+      <div className="flex flex-col gap-2 sm:flex-row sm:items-start sm:justify-between">
+        <div className="min-w-0">
+          <p className="font-medium">
+            {checking ? t('agentChat.runtimeChecking') : blocking ? t('agentChat.runtimeBlocked') : ready ? t('agentChat.runtimeReady') : t('agentChat.runtimePreparing')}
+          </p>
+          <p className="mt-0.5 opacity-80">{summary}</p>
+        </div>
+        <button
+          type="button"
+          onClick={onRefresh}
+          disabled={checking}
+          className="w-fit rounded-md border border-current/20 bg-white/50 px-2.5 py-1 font-medium transition-colors hover:bg-white/80 disabled:opacity-50 dark:bg-zinc-950/20 dark:hover:bg-zinc-950/40"
+        >
+          {checking ? t('common.loading') : t('common.refresh')}
+        </button>
+      </div>
+      {visibleChecks.length > 0 && (
+        <div className="mt-2 space-y-1.5">
+          {visibleChecks.map((check) => (
+            <div key={check.key} className="rounded-md bg-white/55 px-2.5 py-1.5 dark:bg-zinc-950/20">
+              <div className="flex flex-wrap items-center gap-2">
+                <span className="font-medium">{check.label}</span>
+                <span className="rounded-full border border-current/20 px-1.5 py-0.5 text-[10px] uppercase tracking-wide opacity-80">{check.status}</span>
+              </div>
+              {check.detail && <p className="mt-0.5 whitespace-pre-wrap opacity-80">{check.detail}</p>}
+              {check.action && <p className="mt-0.5 font-mono opacity-90">{check.action}</p>}
+            </div>
+          ))}
+        </div>
+      )}
+    </div>
+  )
+}
+
+function runtimeBlockingMessage(readiness: RuntimeReadiness, t: (key: string) => string) {
+  const blockers = (readiness.checks ?? []).filter((check) => check.blocking || check.status === 'error')
+  if (blockers.length === 0) return t('agentChat.runtimeBlocked')
+  return [
+    t('agentChat.runtimeBlockedBeforeSend'),
+    ...blockers.map((check) => {
+      const action = check.action ? ` ${check.action}` : ''
+      return `${check.label}: ${check.detail ?? check.status}.${action}`
+    }),
+  ].join('\n')
 }
 
 function AgentReplyLoading({ notice }: { notice?: string | null }) {
