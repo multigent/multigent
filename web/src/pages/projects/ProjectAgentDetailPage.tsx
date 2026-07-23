@@ -120,11 +120,20 @@ type AgentContext = {
 }
 
 const RUNTIME_MODEL_PRESETS: Record<string, string[]> = {
-  codex: ['gpt-5.6-sol', 'gpt-5.1-codex-max', 'gpt-5.1-codex', 'gpt-5.1'],
+  codex: ['gpt-5.6-sol', 'gpt-5.1-codex-max', 'gpt-5.1-codex', 'gpt-5.1', 'gpt-5', 'gpt-4.1'],
   claudecode: ['claude-sonnet-4-20250514', 'claude-opus-4-20250514', 'claude-3-7-sonnet-latest'],
   gemini: ['gemini-2.5-pro', 'gemini-2.5-flash', 'gemini-2.0-flash'],
-  cursor: ['auto', 'gpt-5.1', 'claude-sonnet-4-20250514'],
+  cursor: ['auto', 'gpt-5.1', 'gpt-5', 'claude-sonnet-4-20250514', 'claude-opus-4-20250514'],
   opencode: ['gpt-5.1', 'claude-sonnet-4-20250514'],
+}
+
+const OFFICIAL_RUNTIME_MODEL_PRESETS: Record<string, string[]> = {
+  codex: ['gpt-5.6-sol', 'gpt-5.1-codex-max', 'gpt-5.1-codex', 'gpt-5.1', 'gpt-5', 'gpt-4.1'],
+  openai: ['gpt-5.6-sol', 'gpt-5.1-codex-max', 'gpt-5.1-codex', 'gpt-5.1', 'gpt-5', 'gpt-4.1'],
+  cursor: ['auto', 'gpt-5.1', 'gpt-5', 'claude-sonnet-4-20250514', 'claude-opus-4-20250514'],
+  claudecode: ['claude-sonnet-4-20250514', 'claude-opus-4-20250514', 'claude-3-7-sonnet-latest'],
+  anthropic: ['claude-sonnet-4-20250514', 'claude-opus-4-20250514', 'claude-3-7-sonnet-latest'],
+  gemini: ['gemini-2.5-pro', 'gemini-2.5-flash', 'gemini-2.0-flash'],
 }
 
 const buttonBaseCls = 'inline-flex h-8 items-center justify-center rounded-md px-3 text-xs font-medium transition-colors disabled:cursor-not-allowed disabled:opacity-50'
@@ -963,7 +972,15 @@ function SubsectionHeader({ title, description, action }: { title: string; descr
   )
 }
 
-type ProviderOption = { id: string; ownerType?: 'workspace' | 'user'; name: string; type: string; model?: string }
+type ProviderOption = {
+  id: string
+  ownerType?: 'workspace' | 'user'
+  name: string
+  type: string
+  baseUrl?: string
+  model?: string
+  authMethod?: string
+}
 
 function ModelCredentialsPanel({ project, agentName, ctx, onChanged }: {
   project: string; agentName: string; ctx: AgentContext; onChanged: () => void
@@ -1028,6 +1045,33 @@ function ReadOnlyField({ label, value, detail, valueClassName }: { label: string
       {detail && <p className="mt-0.5 truncate text-xs text-neutral-400 dark:text-zinc-500" title={detail}>{detail}</p>}
     </div>
   )
+}
+
+function uniqueStrings(items: Array<string | undefined>) {
+  const out: string[] = []
+  for (const item of items) {
+    const value = item?.trim()
+    if (!value || out.includes(value)) continue
+    out.push(value)
+  }
+  return out
+}
+
+function runtimeModelOptionsFor(model: string, provider?: ProviderOption) {
+  const normalizedModel = model.trim().toLowerCase()
+  const providerType = provider?.type?.trim().toLowerCase() ?? ''
+  const isGateway = Boolean(provider?.baseUrl?.trim())
+  const base = isGateway
+    ? []
+    : [
+        ...(OFFICIAL_RUNTIME_MODEL_PRESETS[normalizedModel] ?? []),
+        ...(OFFICIAL_RUNTIME_MODEL_PRESETS[providerType] ?? []),
+      ]
+  return uniqueStrings([
+    provider?.model,
+    ...base,
+    ...(isGateway ? [] : (RUNTIME_MODEL_PRESETS[normalizedModel] ?? [])),
+  ])
 }
 
 function ContextPanel({ context, contextFile, syncedAt }: { context: string; contextFile?: string; syncedAt?: string | null }) {
@@ -1332,6 +1376,7 @@ function EnvEditor({ project, agentName, model, initialEnv, initialProvider, ini
   const [providerOptions, setProviderOptions] = useState<ProviderOption[]>([])
   const [selectedProvider, setSelectedProvider] = useState(initialProvider ?? '')
   const [runtimeModel, setRuntimeModel] = useState(initialRuntimeModel ?? '')
+  const [customRuntimeModel, setCustomRuntimeModel] = useState(initialRuntimeModel ?? '')
 
   useEffect(() => {
     const path = `/api/v1/providers?project=${encodeURIComponent(project)}&agent=${encodeURIComponent(agentName)}`
@@ -1341,12 +1386,18 @@ function EnvEditor({ project, agentName, model, initialEnv, initialProvider, ini
   useEffect(() => {
     setSelectedProvider(initialProvider ?? '')
     setRuntimeModel(initialRuntimeModel ?? '')
+    setCustomRuntimeModel(initialRuntimeModel ?? '')
     setSaved(false)
   }, [initialEnv, initialProvider, initialRuntimeModel])
 
-  const runtimeModelOptions = RUNTIME_MODEL_PRESETS[model] ?? []
   const selectedProviderExists = Boolean(selectedProvider && providerOptions.some((p) => p.id === selectedProvider))
   const selectedProviderValue = selectedProviderExists ? selectedProvider : ''
+  const selectedProviderInfo = providerOptions.find((p) => p.id === selectedProviderValue)
+  const runtimeModelOptions = runtimeModelOptionsFor(model, selectedProviderInfo)
+  const runtimeModelSelectValue = runtimeModel
+    ? runtimeModelOptions.includes(runtimeModel) ? runtimeModel : '__custom__'
+    : ''
+  const showCustomRuntimeModel = runtimeModelSelectValue === '__custom__'
 
   async function save() {
     setBusy(true); setSaved(false)
@@ -1380,7 +1431,17 @@ function EnvEditor({ project, agentName, model, initialEnv, initialProvider, ini
       <div className="grid gap-3 md:grid-cols-2">
         <label className="block">
           <span className="mb-1 block text-xs font-medium text-neutral-600 dark:text-zinc-400">{t('provider.selectLabel')}</span>
-          <select value={selectedProviderValue} onChange={e => { setSelectedProvider(e.target.value); setSaved(false) }}
+          <select value={selectedProviderValue} onChange={e => {
+            const nextProviderID = e.target.value
+            const nextProvider = providerOptions.find((p) => p.id === nextProviderID)
+            const nextOptions = runtimeModelOptionsFor(model, nextProvider)
+            setSelectedProvider(nextProviderID)
+            if (!runtimeModel && nextOptions[0]) {
+              setRuntimeModel(nextOptions[0])
+              setCustomRuntimeModel(nextOptions[0])
+            }
+            setSaved(false)
+          }}
             className={cn(inputCls, 'w-full text-xs')}>
             <option value="">{providerOptions.length > 0 ? t('provider.none') : t('agentDetail.noCredential')}</option>
             {providerOptions.map(p => (
@@ -1402,17 +1463,35 @@ function EnvEditor({ project, agentName, model, initialEnv, initialProvider, ini
         )}
         <label className="block">
           <span className="mb-1 block text-xs font-medium text-neutral-600 dark:text-zinc-400">{t('provider.runtimeModelLabel')}</span>
-          <input
-            list={`runtime-model-${project}-${agentName}`}
-            value={runtimeModel}
-            onChange={e => { setRuntimeModel(e.target.value); setSaved(false) }}
+          <select
+            value={runtimeModelSelectValue}
+            onChange={e => {
+              const next = e.target.value
+              if (next === '__custom__') {
+                setRuntimeModel(customRuntimeModel || runtimeModel)
+              } else {
+                setRuntimeModel(next)
+                setCustomRuntimeModel(next)
+              }
+              setSaved(false)
+            }}
             className={cn(inputCls, 'w-full font-mono text-xs')}
-            placeholder={t('provider.runtimeModelPlaceholder')}
-          />
-          {runtimeModelOptions.length > 0 && (
-            <datalist id={`runtime-model-${project}-${agentName}`}>
-              {runtimeModelOptions.map(option => <option key={option} value={option} />)}
-            </datalist>
+          >
+            <option value="">{t('provider.useProviderDefault')}</option>
+            {runtimeModelOptions.map(option => <option key={option} value={option}>{option}</option>)}
+            <option value="__custom__">{t('provider.customRuntimeModel')}</option>
+          </select>
+          {showCustomRuntimeModel && (
+            <input
+              value={customRuntimeModel}
+              onChange={e => {
+                setCustomRuntimeModel(e.target.value)
+                setRuntimeModel(e.target.value)
+                setSaved(false)
+              }}
+              className={cn(inputCls, 'mt-2 w-full font-mono text-xs')}
+              placeholder={t('provider.runtimeModelPlaceholder')}
+            />
           )}
         </label>
         {selectedProvider && (

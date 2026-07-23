@@ -1494,6 +1494,8 @@
     "defaultModelLabel": "預設模型",
     "runtimeModelLabel": "運行模型",
     "runtimeModelPlaceholder": "例如 gpt-5.6-sol",
+    "useProviderDefault": "使用帳號預設模型",
+    "customRuntimeModel": "自訂模型",
     "selectLabel": "模型帳號",
     "none": "不選擇帳號",
     "overrideHint": "所選帳號提供服務地址和密鑰。Agent 这里只覆蓋模型名稱。",

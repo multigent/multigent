@@ -1515,6 +1515,8 @@
     "defaultModelLabel": "Default Model",
     "runtimeModelLabel": "Runtime Model",
     "runtimeModelPlaceholder": "e.g. gpt-5.6-sol",
+    "useProviderDefault": "Use account default",
+    "customRuntimeModel": "Custom model",
     "selectLabel": "Model account",
     "none": "None selected",
     "overrideHint": "The selected account provides endpoint and credentials. Agent model can override only the model name.",

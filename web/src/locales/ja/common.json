@@ -1484,6 +1484,8 @@
     "defaultModelLabel": "デフォルトモデル",
     "runtimeModelLabel": "実行モデル",
     "runtimeModelPlaceholder": "例: gpt-5.6-sol",
+    "useProviderDefault": "アカウント既定を使用",
+    "customRuntimeModel": "カスタムモデル",
     "selectLabel": "モデルアカウント",
     "none": "未選択",
     "overrideHint": "選択したアカウントがエンドポイントと認証情報を提供します。ここではモデル名のみ上書きします。",
