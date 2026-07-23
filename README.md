@@ -10,7 +10,7 @@
 
 Multigent helps teams turn prompts, tools, workflows, and human reviews into a coordinated agent workforce. Keep your existing project tools and chat tools; use Multigent as the control plane that gives agents shared context, structured tasks, safe execution, and observable handoffs.
 
-[Documentation](docs/) · [Architecture](docs/architecture/agent-runtime-cli-architecture.md) · [Workflow Engine](docs/concepts/collaboration-workflow-state-machine.md) · [Roadmap](docs/operations/roadmap.md)
+[中文](README.zh-CN.md) · [Documentation](docs/) · [Architecture](docs/architecture/agent-runtime-cli-architecture.md) · [Workflow Engine](docs/concepts/collaboration-workflow-state-machine.md) · [Roadmap](docs/operations/roadmap.md)
 
 </div>
 
@@ -28,6 +28,14 @@ Multigent is built around that operating model:
 - **External tools as capabilities**: GitHub, Feishu/Lark, Slack, Linear-style project systems, web search, design tools, and other services are modeled as workspace tools that agents can use through controlled runtime adapters.
 - **Observable agent work**: runs, chat sessions, workflow steps, task history, tokens, logs, and audit events are visible from the web console.
 - **Sandbox-first execution**: agents run in isolated environments with explicit credentials and tool access instead of reading the whole workspace by default.
+
+## Highlights
+
+- **Multi-agent autonomous wakeups**: agents can be woken by tasks, heartbeat schedules, cron jobs, manual triggers, and collaboration events, so work can keep moving without a human constantly copying prompts around.
+- **Loop engineering for agent teams**: prompts, skills, tools, model accounts, schedules, and review policies are managed as a repeatable operating loop rather than one-off conversations.
+- **Visual SOP and workflow orchestration**: design task flows on a board, define required inputs and outputs, add review loops and branch conditions, then bind real tasks to that workflow.
+- **Human-in-the-loop by design**: humans can review, approve, reject, or redirect at key workflow steps while agents continue handling the repeatable work around them.
+- **Demo assets coming next**: polished screenshots and videos will be added here as the public demo workspace stabilizes.
 
 ## Product Model
 
@@ -48,6 +56,10 @@ Multigent does not try to replace every existing system on day one. A company ca
 ### Agent Workforce
 
 Create agent teammates with a role, model account, CLI runtime, sandbox, skills, and external tool access. Agents can work through web chat, scheduled wakeups, tasks, and workflow steps.
+
+### Autonomous Wakeups and Loop Engineering
+
+Agents are not limited to synchronous chat. They can run task-triggered wakeups, heartbeat routines, cron jobs, and manual wakeups. Teams can tune the loop around each agent: what context it receives, what tools it can use, when it should ask for review, and how it reports output.
 
 ### Workflow Engine
 
