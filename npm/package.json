@@ -1,6 +1,6 @@
 {
   "name": "@multigent/multigent",
-  "version": "0.1.1",
+  "version": "0.1.2",
   "description": "Agent collaboration infrastructure for teams that want agents to actually deliver",
   "keywords": [
     "ai-agent",
