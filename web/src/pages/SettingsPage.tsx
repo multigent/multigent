@@ -111,10 +111,10 @@ function AccessControlSection() {
         </span>
       </div>
 
-      <div className="grid gap-5 pt-4 lg:grid-cols-[minmax(0,1fr)_minmax(320px,420px)]">
+      <div className="grid gap-4 pt-4">
         <div className="rounded-lg border border-neutral-200/80 bg-neutral-50/40 p-4 dark:border-zinc-700/60 dark:bg-zinc-800/30">
-          <div className="flex items-center justify-between gap-4">
-            <div>
+          <div className="flex flex-col gap-3 sm:flex-row sm:items-center sm:justify-between sm:gap-4">
+            <div className="min-w-0">
               <p className="text-sm font-medium text-neutral-900 dark:text-zinc-100">{t('settings.openRegistration')}</p>
               <p className="mt-1 text-xs leading-5 text-neutral-500 dark:text-zinc-400">{t('settings.openRegistrationDesc')}</p>
             </div>
@@ -129,8 +129,8 @@ function AccessControlSection() {
               aria-pressed={Boolean(settings?.openRegistrationEnabled)}
             >
               <span className={cn(
-                'absolute top-0.5 size-5 rounded-full bg-white shadow transition-transform',
-                settings?.openRegistrationEnabled ? 'translate-x-5' : 'translate-x-0.5'
+                'pointer-events-none absolute left-0.5 top-0.5 size-5 rounded-full bg-white shadow transition-transform',
+                settings?.openRegistrationEnabled ? 'translate-x-5' : 'translate-x-0'
               )} />
             </button>
           </div>
