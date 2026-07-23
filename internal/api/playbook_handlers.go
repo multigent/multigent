@@ -72,6 +72,9 @@ func (s *Server) handleGetPlaybookTemplate(w http.ResponseWriter, r *http.Reques
 }
 
 func playbookTemplateSummary(tmpl entity.PlaybookTemplate) entity.PlaybookTemplate {
+	if tmpl.AssetCounts.Roles == 0 && tmpl.AssetCounts.Skills == 0 && tmpl.AssetCounts.Workflows == 0 && tmpl.AssetCounts.TaskTemplates == 0 {
+		tmpl.AssetCounts = playbookstore.PlaybookAssetCounts(tmpl)
+	}
 	for i := range tmpl.Roles {
 		tmpl.Roles[i].Prompt = ""
 	}

@@ -58,6 +58,12 @@ type PlaybookMetric = {
   name: string
   description: string
 }
+type PlaybookAssetCounts = {
+  roles?: number
+  skills?: number
+  workflows?: number
+  taskTemplates?: number
+}
 type PlaybookTemplate = {
   id: string
   name: string
@@ -65,6 +71,7 @@ type PlaybookTemplate = {
   locale: string
   category: string
   complexity: string
+  assetCounts?: PlaybookAssetCounts
   tags?: string[]
   roles?: PlaybookRoleTemplate[]
   skills?: PlaybookSkillTemplate[]
@@ -519,11 +526,12 @@ function InstallSummary({ install }: { install: PlaybookInstall }) {
 
 function PlaybookStats({ playbook, className }: { playbook: PlaybookTemplate; className?: string }) {
   const { t } = useTranslation()
+  const counts = playbook.assetCounts
   const stats = [
-    { label: t('playbooks.roles'), value: playbook.roles?.length ?? 0 },
-    { label: t('playbooks.skills'), value: playbook.skills?.length ?? 0 },
-    { label: t('playbooks.workflows'), value: playbook.workflows?.length ?? 0 },
-    { label: t('playbooks.taskTemplates'), value: playbook.taskTemplates?.length ?? 0 },
+    { label: t('playbooks.roles'), value: counts?.roles ?? playbook.roles?.length ?? 0 },
+    { label: t('playbooks.skills'), value: counts?.skills ?? playbook.skills?.length ?? 0 },
+    { label: t('playbooks.workflows'), value: counts?.workflows ?? playbook.workflows?.length ?? 0 },
+    { label: t('playbooks.taskTemplates'), value: counts?.taskTemplates ?? playbook.taskTemplates?.length ?? 0 },
   ]
   return (
     <div className={cn('grid grid-cols-4 gap-2', className)}>

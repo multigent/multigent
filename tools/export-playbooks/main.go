@@ -20,15 +20,16 @@ type registry struct {
 }
 
 type registryEntry struct {
-	ID             string            `json:"id"`
-	Version        string            `json:"version"`
-	Name           map[string]string `json:"name"`
-	Description    map[string]string `json:"description"`
-	Category       map[string]string `json:"category"`
-	Complexity     map[string]string `json:"complexity"`
-	Tags           []string          `json:"tags,omitempty"`
-	TemplateURLs   map[string]string `json:"templateUrls"`
-	SHA256ByLocale map[string]string `json:"sha256ByLocale"`
+	ID             string                     `json:"id"`
+	Version        string                     `json:"version"`
+	Name           map[string]string          `json:"name"`
+	Description    map[string]string          `json:"description"`
+	Category       map[string]string          `json:"category"`
+	Complexity     map[string]string          `json:"complexity"`
+	AssetCounts    entity.PlaybookAssetCounts `json:"assetCounts,omitempty"`
+	Tags           []string                   `json:"tags,omitempty"`
+	TemplateURLs   map[string]string          `json:"templateUrls"`
+	SHA256ByLocale map[string]string          `json:"sha256ByLocale"`
 }
 
 func main() {
@@ -84,6 +85,9 @@ func export(outDir string) error {
 			entry.Description[locale] = tmpl.Description
 			entry.Category[locale] = tmpl.Category
 			entry.Complexity[locale] = tmpl.Complexity
+			if entry.AssetCounts.Roles == 0 && entry.AssetCounts.Skills == 0 && entry.AssetCounts.Workflows == 0 && entry.AssetCounts.TaskTemplates == 0 {
+				entry.AssetCounts = playbookstore.PlaybookAssetCounts(tmpl)
+			}
 			entry.Tags = mergeTags(entry.Tags, tmpl.Tags)
 
 			rel := filepath.ToSlash(filepath.Join("playbooks", id, locale+".json"))

@@ -141,6 +141,7 @@ func TestRemotePlaybookWrapperLoadsTemplateURL(t *testing.T) {
 				Version:        "2.0.0",
 				Name:           map[string]string{"zh-CN": "模板 URL 方案"},
 				Description:    map[string]string{"zh-CN": "从独立模板文件加载"},
+				AssetCounts:    entity.PlaybookAssetCounts{Skills: 1},
 				TemplateURLs:   map[string]string{"zh-CN": "playbooks/template-url-playbook.json"},
 				SHA256ByLocale: map[string]string{"zh-CN": fmt.Sprintf("%x", sum[:])},
 			},
@@ -158,7 +159,7 @@ func TestRemotePlaybookWrapperLoadsTemplateURL(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	if len(summaries) != 1 || summaries[0].Name != "模板 URL 方案" || len(summaries[0].Skills) != 0 {
+	if len(summaries) != 1 || summaries[0].Name != "模板 URL 方案" || len(summaries[0].Skills) != 0 || summaries[0].AssetCounts.Skills != 1 {
 		t.Fatalf("summary should use registry metadata without loading full template: %#v", summaries)
 	}
 
@@ -190,6 +191,38 @@ func TestRemoteTemplateOverridesBuiltinByID(t *testing.T) {
 	}
 	if tmpl.Name != "Remote Bug Flow" || tmpl.Version != "99.0.0" {
 		t.Fatalf("remote did not override builtin: %#v", tmpl)
+	}
+}
+
+func TestRemoteSummaryOverrideKeepsBuiltinAssetCounts(t *testing.T) {
+	registryPath := writeRegistry(t, RemoteRegistry{
+		SchemaVersion: 1,
+		Playbooks: []RemoteRegistryPlaybook{
+			{
+				ID:          "bug-triage-and-fix",
+				Version:     "99.0.0",
+				Name:        map[string]string{"en": "Remote Bug Flow"},
+				Description: map[string]string{"en": "Override builtin summary"},
+			},
+		},
+	})
+
+	templates := TemplatesWithRemote(context.Background(), "en", []string{registryPath})
+	var found entity.PlaybookTemplate
+	for _, tmpl := range templates {
+		if tmpl.ID == "bug-triage-and-fix" {
+			found = tmpl
+			break
+		}
+	}
+	if found.ID == "" {
+		t.Fatal("template not found")
+	}
+	if found.Name != "Remote Bug Flow" {
+		t.Fatalf("remote summary did not override metadata: %#v", found)
+	}
+	if found.AssetCounts.Roles == 0 || found.AssetCounts.Skills == 0 || found.AssetCounts.Workflows == 0 || found.AssetCounts.TaskTemplates == 0 {
+		t.Fatalf("asset counts were not preserved: %#v", found.AssetCounts)
 	}
 }
 

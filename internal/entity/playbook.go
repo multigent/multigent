@@ -10,6 +10,7 @@ type PlaybookTemplate struct {
 	Locale         string                     `json:"locale" yaml:"locale"`
 	Category       string                     `json:"category" yaml:"category"`
 	Complexity     string                     `json:"complexity" yaml:"complexity"`
+	AssetCounts    PlaybookAssetCounts        `json:"assetCounts,omitempty" yaml:"asset_counts,omitempty"`
 	Tags           []string                   `json:"tags,omitempty" yaml:"tags,omitempty"`
 	Roles          []PlaybookRoleTemplate     `json:"roles,omitempty" yaml:"roles,omitempty"`
 	Skills         []PlaybookSkillTemplate    `json:"skills,omitempty" yaml:"skills,omitempty"`
@@ -18,6 +19,13 @@ type PlaybookTemplate struct {
 	RequiredTools  []PlaybookToolRequirement  `json:"requiredTools,omitempty" yaml:"required_tools,omitempty"`
 	SetupQuestions []PlaybookSetupQuestion    `json:"setupQuestions,omitempty" yaml:"setup_questions,omitempty"`
 	SuccessMetrics []PlaybookMetric           `json:"successMetrics,omitempty" yaml:"success_metrics,omitempty"`
+}
+
+type PlaybookAssetCounts struct {
+	Roles         int `json:"roles,omitempty" yaml:"roles,omitempty"`
+	Skills        int `json:"skills,omitempty" yaml:"skills,omitempty"`
+	Workflows     int `json:"workflows,omitempty" yaml:"workflows,omitempty"`
+	TaskTemplates int `json:"taskTemplates,omitempty" yaml:"task_templates,omitempty"`
 }
 
 type PlaybookRoleTemplate struct {

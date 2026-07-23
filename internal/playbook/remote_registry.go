@@ -37,18 +37,19 @@ type RemoteRegistry struct {
 }
 
 type RemoteRegistryPlaybook struct {
-	ID             string                   `json:"id"`
-	Version        string                   `json:"version"`
-	Name           map[string]string        `json:"name"`
-	Description    map[string]string        `json:"description"`
-	Category       map[string]string        `json:"category"`
-	Complexity     map[string]string        `json:"complexity"`
-	Tags           []string                 `json:"tags"`
-	Template       *entity.PlaybookTemplate `json:"template,omitempty"`
-	TemplateURL    string                   `json:"templateUrl,omitempty"`
-	TemplateURLs   map[string]string        `json:"templateUrls,omitempty"`
-	SHA256         string                   `json:"sha256,omitempty"`
-	SHA256ByLocale map[string]string        `json:"sha256ByLocale,omitempty"`
+	ID             string                     `json:"id"`
+	Version        string                     `json:"version"`
+	Name           map[string]string          `json:"name"`
+	Description    map[string]string          `json:"description"`
+	Category       map[string]string          `json:"category"`
+	Complexity     map[string]string          `json:"complexity"`
+	Tags           []string                   `json:"tags"`
+	AssetCounts    entity.PlaybookAssetCounts `json:"assetCounts,omitempty"`
+	Template       *entity.PlaybookTemplate   `json:"template,omitempty"`
+	TemplateURL    string                     `json:"templateUrl,omitempty"`
+	TemplateURLs   map[string]string          `json:"templateUrls,omitempty"`
+	SHA256         string                     `json:"sha256,omitempty"`
+	SHA256ByLocale map[string]string          `json:"sha256ByLocale,omitempty"`
 }
 
 func RegistryURLsFromEnv() []string {
@@ -295,6 +296,9 @@ func templateFromRegistryEntry(ctx context.Context, locale, registryURL string, 
 	if len(tmpl.Tags) == 0 {
 		tmpl.Tags = entry.Tags
 	}
+	if isZeroAssetCounts(tmpl.AssetCounts) {
+		tmpl.AssetCounts = entry.AssetCounts
+	}
 	return normalizeRemoteTemplate(tmpl, locale), true, nil
 }
 
@@ -380,7 +384,23 @@ func normalizeRemoteTemplate(tmpl entity.PlaybookTemplate, locale string) entity
 	if tmpl.Locale == "" {
 		tmpl.Locale = normalizeLocale(locale)
 	}
+	if isZeroAssetCounts(tmpl.AssetCounts) {
+		tmpl.AssetCounts = PlaybookAssetCounts(tmpl)
+	}
 	return tmpl
+}
+
+func PlaybookAssetCounts(tmpl entity.PlaybookTemplate) entity.PlaybookAssetCounts {
+	return entity.PlaybookAssetCounts{
+		Roles:         len(tmpl.Roles),
+		Skills:        len(tmpl.Skills),
+		Workflows:     len(tmpl.Workflows),
+		TaskTemplates: len(tmpl.TaskTemplates),
+	}
+}
+
+func isZeroAssetCounts(counts entity.PlaybookAssetCounts) bool {
+	return counts.Roles == 0 && counts.Skills == 0 && counts.Workflows == 0 && counts.TaskTemplates == 0
 }
 
 func localized(values map[string]string, locale string) string {
@@ -416,6 +436,13 @@ func mergeTemplates(base, remote []entity.PlaybookTemplate) []entity.PlaybookTem
 			continue
 		}
 		if i, ok := index[tmpl.ID]; ok {
+			if isZeroAssetCounts(tmpl.AssetCounts) {
+				counts := out[i].AssetCounts
+				if isZeroAssetCounts(counts) {
+					counts = PlaybookAssetCounts(out[i])
+				}
+				tmpl.AssetCounts = counts
+			}
 			out[i] = tmpl
 			continue
 		}
