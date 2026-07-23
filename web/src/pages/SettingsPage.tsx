@@ -1745,7 +1745,7 @@ function providerEndpointPlaceholder(cli?: ModelAccountCLI): string {
 
 function providerModelPlaceholder(cli?: ModelAccountCLI): string {
   switch (cli) {
-    case 'claudecode': return 'claude-sonnet-4-20250514'
+    case 'claudecode': return 'claude-sonnet-5'
     case 'cursor': return 'auto'
     case 'codex':
     default: return 'gpt-5.6-sol'

@@ -35,17 +35,17 @@ func fallbackModelCatalog() modelCatalogResponse {
 	return modelCatalogResponse{
 		Source: "builtin",
 		ModelsByCLI: map[string][]string{
-			"codex":      []string{"gpt-5.6-sol", "gpt-5.1-codex-max", "gpt-5.1-codex", "gpt-5.1", "gpt-5", "gpt-4.1"},
-			"cursor":     []string{"auto", "gpt-5.1", "gpt-5", "claude-sonnet-4-20250514", "claude-opus-4-20250514"},
-			"claudecode": []string{"claude-sonnet-4-20250514", "claude-opus-4-20250514", "claude-3-7-sonnet-latest"},
-			"gemini":     []string{"gemini-2.5-pro", "gemini-2.5-flash", "gemini-2.0-flash"},
-			"opencode":   []string{"gpt-5.1", "claude-sonnet-4-20250514"},
+			"codex":      []string{"gpt-5.6-sol", "gpt-5.6-terra", "gpt-5.6-luna", "gpt-5.5", "gpt-5.4", "gpt-5.4-mini", "gpt-5.3-codex-spark"},
+			"cursor":     []string{"auto", "gpt-5.6-sol", "gpt-5.6-terra", "gpt-5.6-luna", "claude-fable-5", "claude-opus-4-8", "claude-sonnet-5"},
+			"claudecode": []string{"claude-fable-5", "claude-opus-4-8", "claude-sonnet-5", "claude-haiku-4-5", "claude-haiku-4-5-20251001"},
+			"gemini":     []string{"gemini-3.6-flash", "gemini-3.5-flash", "gemini-3.5-flash-lite", "gemini-3.1-pro-preview", "gemini-3.1-pro-preview-customtools", "gemini-3.1-flash-lite", "gemini-2.5-pro", "gemini-2.5-flash", "gemini-2.5-flash-lite"},
+			"opencode":   []string{"gpt-5.6-sol", "gpt-5.6-terra", "gpt-5.6-luna", "gpt-5.5", "claude-fable-5", "claude-opus-4-8", "claude-sonnet-5"},
 		},
 		ModelsByProviderType: map[string][]string{
-			"openai":    []string{"gpt-5.6-sol", "gpt-5.1-codex-max", "gpt-5.1-codex", "gpt-5.1", "gpt-5", "gpt-4.1"},
-			"cursor":    []string{"auto", "gpt-5.1", "gpt-5", "claude-sonnet-4-20250514", "claude-opus-4-20250514"},
-			"anthropic": []string{"claude-sonnet-4-20250514", "claude-opus-4-20250514", "claude-3-7-sonnet-latest"},
-			"gemini":    []string{"gemini-2.5-pro", "gemini-2.5-flash", "gemini-2.0-flash"},
+			"openai":    []string{"gpt-5.6-sol", "gpt-5.6-terra", "gpt-5.6-luna", "gpt-5.5", "gpt-5.4", "gpt-5.4-mini", "gpt-5.3-codex-spark"},
+			"cursor":    []string{"auto", "gpt-5.6-sol", "gpt-5.6-terra", "gpt-5.6-luna", "claude-fable-5", "claude-opus-4-8", "claude-sonnet-5"},
+			"anthropic": []string{"claude-fable-5", "claude-opus-4-8", "claude-sonnet-5", "claude-haiku-4-5", "claude-haiku-4-5-20251001"},
+			"gemini":    []string{"gemini-3.6-flash", "gemini-3.5-flash", "gemini-3.5-flash-lite", "gemini-3.1-pro-preview", "gemini-3.1-pro-preview-customtools", "gemini-3.1-flash-lite", "gemini-2.5-pro", "gemini-2.5-flash", "gemini-2.5-flash-lite"},
 		},
 	}
 }
