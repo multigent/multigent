@@ -222,19 +222,54 @@ func RunArgs(agentDir string, model entity.AgentModel, cfg *entity.DockerSandbox
 	if err != nil {
 		return "", nil, err
 	}
-	return "docker", a, nil
+	return DockerExecutable(), a, nil
 }
 
 // CheckDocker verifies that the docker CLI is available and the daemon is reachable.
 // Returns a user-friendly error if not.
 func CheckDocker() error {
-	cmd := exec.Command("docker", "info", "--format", "{{.ServerVersion}}")
+	docker := DockerExecutable()
+	cmd := exec.Command(docker, "info", "--format", "{{.ServerVersion}}")
 	cmd.Stdout = nil
 	cmd.Stderr = nil
 	if err := cmd.Run(); err != nil {
-		return fmt.Errorf("docker sandbox: cannot reach Docker daemon — is Docker running?\n  Install Docker: https://docs.docker.com/get-docker/\n  Start daemon:  sudo systemctl start docker  (Linux)\n  Original error: %w", err)
+		return fmt.Errorf("docker sandbox: cannot reach Docker daemon — is Docker running?\n  Install Docker: https://docs.docker.com/get-docker/\n  Start Docker Desktop on macOS/Windows, or start daemon: sudo systemctl start docker (Linux)\n  Docker executable checked: %s\n  Original error: %w", docker, err)
 	}
 	return nil
+}
+
+// DockerExecutable returns the best Docker CLI path for the current host.
+// macOS services and SSH sessions often omit /usr/local/bin from PATH even
+// when Docker Desktop is installed, so check common installation locations
+// before falling back to PATH resolution.
+func DockerExecutable() string {
+	candidates := []string{}
+	if configured := strings.TrimSpace(os.Getenv("MULTIGENT_DOCKER")); configured != "" {
+		candidates = append(candidates, configured)
+	}
+	candidates = append(candidates,
+		"docker",
+		"/usr/local/bin/docker",
+		"/opt/homebrew/bin/docker",
+		"/Applications/Docker.app/Contents/Resources/bin/docker",
+	)
+	seen := map[string]bool{}
+	for _, candidate := range candidates {
+		if candidate == "" || seen[candidate] {
+			continue
+		}
+		seen[candidate] = true
+		if strings.ContainsRune(candidate, os.PathSeparator) || filepath.IsAbs(candidate) {
+			if fi, err := os.Stat(candidate); err == nil && !fi.IsDir() {
+				return candidate
+			}
+			continue
+		}
+		if path, err := exec.LookPath(candidate); err == nil {
+			return path
+		}
+	}
+	return "docker"
 }
 
 // PullImage pulls a Docker image if it is not already present locally.
@@ -243,7 +278,7 @@ func PullImage(image string) error {
 	if imageExists(image) {
 		return nil
 	}
-	cmd := exec.Command("docker", "pull", image)
+	cmd := exec.Command(DockerExecutable(), "pull", image)
 	cmd.Stdout = os.Stdout
 	cmd.Stderr = os.Stderr
 	return cmd.Run()
@@ -297,7 +332,7 @@ func imageExists(image string) bool {
 	if strings.TrimSpace(image) == "" {
 		return false
 	}
-	cmd := exec.Command("docker", "image", "inspect", image)
+	cmd := exec.Command(DockerExecutable(), "image", "inspect", image)
 	cmd.Stdout = nil
 	cmd.Stderr = nil
 	return cmd.Run() == nil

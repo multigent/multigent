@@ -545,22 +545,15 @@ func buildSetupChecks(meta *entity.AgentMeta) []setupCheck {
 
 	// 2. Docker check (if using docker sandbox)
 	if isDocker {
-		if _, err := exec.LookPath("docker"); err == nil {
-			dcmd := exec.Command("docker", "info")
-			dcmd.Stdout = nil
-			dcmd.Stderr = nil
-			if dcmd.Run() == nil {
-				checks = append(checks, setupCheck{Key: "docker", Label: "Docker", Status: "ok"})
-			} else {
-				checks = append(checks, setupCheck{
-					Key: "docker", Label: "Docker", Status: "error",
-					Detail: "Docker 已安装但守护进程未运行。请运行: sudo systemctl start docker",
-				})
-			}
+		if err := sandbox.CheckDocker(); err == nil {
+			checks = append(checks, setupCheck{
+				Key: "docker", Label: "Docker", Status: "ok",
+				Detail: "Docker CLI: " + sandbox.DockerExecutable(),
+			})
 		} else {
 			checks = append(checks, setupCheck{
 				Key: "docker", Label: "Docker", Status: "error",
-				Detail: "未安装。请访问: https://docs.docker.com/get-docker/",
+				Detail: err.Error(),
 			})
 		}
 	}

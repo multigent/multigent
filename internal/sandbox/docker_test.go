@@ -121,6 +121,18 @@ func TestBuildArgsUsesAgentScopedRuntimeHome(t *testing.T) {
 	}
 }
 
+func TestDockerExecutableHonorsOverride(t *testing.T) {
+	dir := t.TempDir()
+	bin := filepath.Join(dir, "docker")
+	if err := os.WriteFile(bin, []byte("#!/bin/sh\nexit 0\n"), 0o755); err != nil {
+		t.Fatalf("write docker shim: %v", err)
+	}
+	t.Setenv("MULTIGENT_DOCKER", bin)
+	if got := DockerExecutable(); got != bin {
+		t.Fatalf("DockerExecutable() = %q, want %q", got, bin)
+	}
+}
+
 func findEnvArg(args []string, prefix string) string {
 	for i := 0; i < len(args)-1; i++ {
 		if args[i] == "-e" && strings.HasPrefix(args[i+1], prefix) {
