@@ -1,4 +1,4 @@
-import { useEffect, useMemo, useState, type CSSProperties } from 'react'
+import { useEffect, useMemo, useRef, useState, type CSSProperties, type PointerEvent } from 'react'
 import { useTranslation } from 'react-i18next'
 import { useLocation, useNavigate } from 'react-router-dom'
 
@@ -24,6 +24,11 @@ type TargetRect = {
   height: number
 }
 
+type CardPosition = {
+  top: number
+  left: number
+}
+
 export function productTourStorageKey(workspaceId?: string) {
   return `multigent.product-tour.v3.${workspaceId || 'default'}`
 }
@@ -42,6 +47,10 @@ export default function ProductTour({ workspaceId, example = false, open, onClos
   const { pathname } = useLocation()
   const [index, setIndex] = useState(0)
   const [targetRect, setTargetRect] = useState<TargetRect | null>(null)
+  const [cardPosition, setCardPosition] = useState<CardPosition | null>(null)
+  const [dragging, setDragging] = useState(false)
+  const cardRef = useRef<HTMLDivElement | null>(null)
+  const dragOffsetRef = useRef({ x: 0, y: 0 })
   const steps = useMemo<TourStep[]>(() => {
     if (!example) {
       return [
@@ -273,6 +282,10 @@ export default function ProductTour({ workspaceId, example = false, open, onClos
   }, [open])
 
   useEffect(() => {
+    setCardPosition(null)
+  }, [index, pathname, open])
+
+  useEffect(() => {
     if (!open) return undefined
     function updateTarget() {
       if (!current?.selector) {
@@ -329,6 +342,46 @@ export default function ProductTour({ workspaceId, example = false, open, onClos
         height: targetRect.height + 12,
       }
     : null
+  const baseCardStyle = floatingCardStyle(targetRect, current.placement)
+  const cardStyle: CSSProperties = {
+    ...baseCardStyle,
+    ...(cardPosition ? { top: cardPosition.top, left: cardPosition.left, right: 'auto' } : {}),
+    transitionProperty: dragging ? 'none' : undefined,
+  }
+
+  function startDrag(event: PointerEvent<HTMLDivElement>) {
+    if (event.button !== 0) return
+    const card = cardRef.current
+    if (!card) return
+    const rect = card.getBoundingClientRect()
+    dragOffsetRef.current = {
+      x: event.clientX - rect.left,
+      y: event.clientY - rect.top,
+    }
+    setCardPosition({ top: rect.top, left: rect.left })
+    setDragging(true)
+    event.currentTarget.setPointerCapture(event.pointerId)
+    event.preventDefault()
+  }
+
+  function moveDrag(event: PointerEvent<HTMLDivElement>) {
+    if (!dragging) return
+    const card = cardRef.current
+    const width = card?.offsetWidth ?? Math.min(400, window.innerWidth - 32)
+    const height = card?.offsetHeight ?? 260
+    setCardPosition({
+      top: clamp(event.clientY - dragOffsetRef.current.y, 8, Math.max(8, window.innerHeight - height - 8)),
+      left: clamp(event.clientX - dragOffsetRef.current.x, 8, Math.max(8, window.innerWidth - width - 8)),
+    })
+  }
+
+  function stopDrag(event: PointerEvent<HTMLDivElement>) {
+    if (!dragging) return
+    setDragging(false)
+    if (event.currentTarget.hasPointerCapture(event.pointerId)) {
+      event.currentTarget.releasePointerCapture(event.pointerId)
+    }
+  }
 
   return (
     <div className="pointer-events-none fixed inset-0 z-[80]">
@@ -339,10 +392,17 @@ export default function ProductTour({ workspaceId, example = false, open, onClos
         />
       ) : null}
       <div
+        ref={cardRef}
         className="pointer-events-auto absolute w-[min(25rem,calc(100vw-2rem))] rounded-xl border border-sky-300 bg-sky-950 p-5 text-white shadow-2xl shadow-sky-950/20 transition-all duration-200 dark:border-sky-500/50 dark:bg-zinc-50 dark:text-zinc-950"
-        style={floatingCardStyle(targetRect, current.placement)}
+        style={cardStyle}
       >
-        <div className="flex items-start justify-between gap-4">
+        <div
+          className="flex cursor-grab touch-none items-start justify-between gap-4 active:cursor-grabbing"
+          onPointerDown={startDrag}
+          onPointerMove={moveDrag}
+          onPointerUp={stopDrag}
+          onPointerCancel={stopDrag}
+        >
           <div>
             <p className="text-xs font-medium uppercase tracking-wider text-sky-600 dark:text-sky-400">
               {t('productTour.stepCount', { current: index + 1, total: steps.length })}
@@ -351,6 +411,7 @@ export default function ProductTour({ workspaceId, example = false, open, onClos
           </div>
           <button
             type="button"
+            onPointerDown={(event) => event.stopPropagation()}
             onClick={finish}
             className="rounded-md px-2 py-1 text-sm text-sky-100 hover:bg-white/10 dark:text-zinc-500 dark:hover:bg-zinc-200/70"
             aria-label={t('forms.close')}
