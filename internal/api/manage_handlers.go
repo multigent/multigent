@@ -459,6 +459,10 @@ func (s *Server) canOperateAgent(r *http.Request, project, agent string) bool {
 }
 
 func (s *Server) canUseModelProviderForAgent(r *http.Request, provider entity.APIProvider, project, agent string) bool {
+	meta, err := s.st.AgentMeta(project, agent)
+	if err != nil || meta == nil || !modelProviderMatchesAgentModel(provider, meta.Model) {
+		return false
+	}
 	switch provider.OwnerType {
 	case "", ConnectionOwnerWorkspace:
 		return s.canManageAgentConfig(r, project, agent)
@@ -467,6 +471,38 @@ func (s *Server) canUseModelProviderForAgent(r *http.Request, provider entity.AP
 		return cur != nil && cur.Username == provider.OwnerID && s.canManageAgentConfig(r, project, agent)
 	default:
 		return false
+	}
+}
+
+func modelProviderMatchesAgentModel(provider entity.APIProvider, model entity.AgentModel) bool {
+	if strings.TrimSpace(string(model)) == "" {
+		return true
+	}
+	want := providerTypesForAgentModel(model)
+	if len(want) == 0 {
+		return false
+	}
+	providerType := strings.ToLower(strings.TrimSpace(provider.Type))
+	for _, typ := range want {
+		if providerType == typ {
+			return true
+		}
+	}
+	return false
+}
+
+func providerTypesForAgentModel(model entity.AgentModel) []string {
+	switch entity.NormaliseModel(model) {
+	case entity.ModelClaudeCode:
+		return []string{"anthropic"}
+	case entity.ModelCodex, entity.ModelOpenCode, entity.ModelHTTPAgent:
+		return []string{"openai"}
+	case entity.ModelCursor:
+		return []string{"cursor"}
+	case entity.ModelGemini:
+		return []string{"gemini"}
+	default:
+		return nil
 	}
 }
 
