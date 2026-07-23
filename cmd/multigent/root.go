@@ -12,6 +12,7 @@ import (
 	"github.com/multigent/multigent/internal/errs"
 	"github.com/multigent/multigent/internal/playbook"
 	"github.com/multigent/multigent/internal/runtimecli"
+	"github.com/multigent/multigent/internal/sandbox"
 	"github.com/multigent/multigent/internal/workspace"
 	"github.com/spf13/cobra"
 )
@@ -213,6 +214,9 @@ func applyConfigEnv(cfg *appconfig.Config) {
 	setEnvIfEmpty("MULTIGENT_SMTP_FROM", cfg.SMTP.From)
 	setEnvIfEmpty("MULTIGENT_SMTP_FROM_NAME", cfg.SMTP.FromName)
 	setEnvIfEmpty("MULTIGENT_SMTP_TLS", cfg.SMTP.TLS)
+	setEnvIfEmpty(sandbox.EnvRuntimeImage, cfg.Runtime.Image)
+	setEnvIfEmpty(sandbox.EnvRuntimeRegion, cfg.Runtime.Region)
+	setEnvIfEmpty("NPM_CONFIG_REGISTRY", cfg.Runtime.NPMRegistry)
 	setEnvIfEmpty("MULTIGENT_E2B_API_URL", cfg.Sandbox.E2B.APIURL)
 	if len(cfg.Playbooks.RegistryURLs) > 0 {
 		setEnvIfEmpty(playbook.EnvRegistryURLs, strings.Join(cfg.Playbooks.RegistryURLs, ","))

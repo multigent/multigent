@@ -82,6 +82,27 @@ multigent sandbox prepare --toolchain codex
 multigent sandbox prepare --toolchain claudecode
 ```
 
+Mainland China mirror:
+
+```bash
+multigent sandbox prepare --region cn
+```
+
+This uses the official Alibaba Cloud ACR mirror:
+
+```text
+crpi-fu3b7e7lggtmh7za.cn-hangzhou.personal.cr.aliyuncs.com/multigent/runtime-base:latest
+```
+
+The mirror is intended to improve first-install reliability for mainland China
+users. It currently runs on ACR Personal Edition, which is free within public
+limits but has usage limits and no production SLA. If it is unavailable, use
+the GHCR image or configure your own mirror with:
+
+```bash
+multigent sandbox prepare --image <your-registry>/runtime-base:latest
+```
+
 If you only want to pull the image manually:
 
 ```bash
@@ -301,9 +322,20 @@ docker pull ghcr.io/multigent/multigent/runtime-base:latest
 ```
 
 If the network is slow, pull manually or configure a registry mirror. For China
-mainland users, Docker Hub mirrors do not always accelerate GHCR. Use a
-network/proxy that can access `ghcr.io` reliably, or pre-pull the image from a
-machine with better connectivity and import it with `docker save` / `docker load`.
+mainland users, Docker Hub mirrors do not always accelerate GHCR. Prefer:
+
+```bash
+multigent sandbox prepare --region cn --skip-clis
+```
+
+or:
+
+```bash
+docker pull crpi-fu3b7e7lggtmh7za.cn-hangzhou.personal.cr.aliyuncs.com/multigent/runtime-base:latest
+```
+
+You can also pre-pull the image from a machine with better connectivity and
+import it with `docker save` / `docker load`.
 
 ### CLI Not Found
 

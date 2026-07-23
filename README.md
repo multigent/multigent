@@ -172,6 +172,12 @@ Recommended first-run preparation:
 multigent sandbox prepare
 ```
 
+For mainland China installs, use the Alibaba Cloud mirror:
+
+```bash
+multigent sandbox prepare --region cn
+```
+
 This pulls the runtime image and warms common agent CLI toolchains before the
 first chat, so users do not confuse a long Docker pull with an agent failure.
 The image is intentionally kept as a stable runtime base; fast-moving agent

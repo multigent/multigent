@@ -35,6 +35,10 @@ const (
 	// Image registry prefix for multigent-provided sandbox images.
 	imagePrefix = "ghcr.io/multigent/multigent"
 
+	// ChinaImagePrefix is the official mainland China mirror for users who
+	// cannot reliably pull from GHCR.
+	ChinaImagePrefix = "crpi-fu3b7e7lggtmh7za.cn-hangzhou.personal.cr.aliyuncs.com/multigent"
+
 	// LocalBaseImage is the image tag created by local builds. Prefer it when it
 	// exists so development and self-hosted installs do not accidentally pull
 	// from an unavailable registry package.
@@ -44,6 +48,12 @@ const (
 	// are installed at runtime into a persistent toolchain cache, so CLI version
 	// bumps do not require rebuilding this image.
 	BaseImage = imagePrefix + "/runtime-base:latest"
+
+	// ChinaBaseImage is the official mainland China mirror of BaseImage.
+	ChinaBaseImage = ChinaImagePrefix + "/runtime-base:latest"
+
+	EnvRuntimeImage  = "MULTIGENT_RUNTIME_IMAGE"
+	EnvRuntimeRegion = "MULTIGENT_RUNTIME_REGION"
 
 	// UserBin is where user-provided binaries are mounted inside the
 	// container. If <root>/bin/ exists on the host, it is mounted here and
@@ -55,18 +65,6 @@ const (
 	// ENV PATH instead of expanding it.
 	ContainerDefaultPATH = "/opt/multigent/mga/bin:/usr/local/go/bin:/root/go/bin:/usr/local/sbin:/usr/local/bin:/usr/sbin:/usr/bin:/sbin:/bin"
 )
-
-// defaultImages uses the managed runtime base by default. Agent CLI binaries
-// are installed during sandbox initialization instead of being baked into
-// separate vendor-specific images.
-var defaultImages = map[entity.AgentModel]string{
-	entity.ModelClaudeCode: BaseImage,
-	entity.ModelCodex:      BaseImage,
-	entity.ModelGemini:     BaseImage,
-	entity.ModelOpenCode:   BaseImage,
-	entity.ModelCursor:     BaseImage,
-	entity.ModelQoder:      BaseImage,
-}
 
 var dockerImageExists = imageExists
 
@@ -330,6 +328,21 @@ func ImageForModel(model entity.AgentModel) string {
 	return resolveImage(model, nil)
 }
 
+// DefaultBaseImage returns the managed runtime image selected by environment.
+// MULTIGENT_RUNTIME_IMAGE is an explicit override; MULTIGENT_RUNTIME_REGION=cn
+// selects the official Alibaba Cloud mirror for mainland China installs.
+func DefaultBaseImage() string {
+	if image := strings.TrimSpace(os.Getenv(EnvRuntimeImage)); image != "" {
+		return image
+	}
+	switch strings.ToLower(strings.TrimSpace(os.Getenv(EnvRuntimeRegion))) {
+	case "cn", "china", "zh-cn", "mainland", "mainland-china":
+		return ChinaBaseImage
+	default:
+		return BaseImage
+	}
+}
+
 // EffectiveImage returns the Docker image after applying model defaults,
 // docker-specific overrides, and compatibility normalization for older configs.
 func EffectiveImage(model entity.AgentModel, cfg *entity.DockerSandboxConfig) string {
@@ -343,10 +356,12 @@ func resolveImage(model entity.AgentModel, cfg *entity.DockerSandboxConfig) stri
 		return normalizeDefaultImage(cfg.Image)
 	}
 	model = entity.NormaliseModel(model)
-	if img, ok := defaultImages[model]; ok {
-		return normalizeDefaultImage(img)
+	switch model {
+	case entity.ModelClaudeCode, entity.ModelCodex, entity.ModelGemini, entity.ModelOpenCode, entity.ModelCursor, entity.ModelQoder:
+		return normalizeDefaultImage(DefaultBaseImage())
+	default:
+		return DefaultBaseImage()
 	}
-	return BaseImage
 }
 
 func normalizeDefaultImage(image string) string {
@@ -354,16 +369,16 @@ func normalizeDefaultImage(image string) string {
 		if dockerImageExists(LocalBaseImage) {
 			return LocalBaseImage
 		}
-		return BaseImage
+		return DefaultBaseImage()
 	}
 	return image
 }
 
 func isManagedRuntimeImage(image string) bool {
-	if image == LocalBaseImage || image == BaseImage {
+	if image == LocalBaseImage || image == BaseImage || image == ChinaBaseImage {
 		return true
 	}
-	if !strings.HasPrefix(image, imagePrefix+"/sandbox-") {
+	if !strings.HasPrefix(image, imagePrefix+"/sandbox-") && !strings.HasPrefix(image, ChinaImagePrefix+"/sandbox-") {
 		return false
 	}
 	return strings.HasSuffix(image, ":latest") || !strings.Contains(filepath.Base(image), ":")
@@ -575,6 +590,7 @@ func wellKnownEnvKeys(model entity.AgentModel) []string {
 	// Keys common to all models.
 	common := []string{
 		"HTTPS_PROXY", "HTTP_PROXY", "NO_PROXY", // honour proxy settings
+		"NPM_CONFIG_REGISTRY", // allow regional npm mirrors for agent CLI installs
 	}
 	var modelKeys []string
 	switch entity.NormaliseModel(model) {

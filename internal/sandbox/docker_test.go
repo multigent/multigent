@@ -61,6 +61,8 @@ func TestBuildArgsMountsWorkspaceAtStableContainerPath(t *testing.T) {
 }
 
 func TestImageForManagedModelsUsesRuntimeBase(t *testing.T) {
+	t.Setenv(EnvRuntimeImage, "")
+	t.Setenv(EnvRuntimeRegion, "")
 	restore := dockerImageExists
 	dockerImageExists = func(string) bool { return false }
 	t.Cleanup(func() { dockerImageExists = restore })
@@ -71,7 +73,31 @@ func TestImageForManagedModelsUsesRuntimeBase(t *testing.T) {
 	}
 }
 
+func TestImageForManagedModelsUsesChinaMirrorWhenConfigured(t *testing.T) {
+	t.Setenv(EnvRuntimeImage, "")
+	t.Setenv(EnvRuntimeRegion, "cn")
+	restore := dockerImageExists
+	dockerImageExists = func(string) bool { return false }
+	t.Cleanup(func() { dockerImageExists = restore })
+	if got := ImageForModel(entity.ModelCodex); got != ChinaBaseImage {
+		t.Fatalf("ImageForModel() = %q, want %q", got, ChinaBaseImage)
+	}
+}
+
+func TestImageForManagedModelsUsesExplicitRuntimeImage(t *testing.T) {
+	t.Setenv(EnvRuntimeImage, "registry.example.com/multigent/runtime-base:latest")
+	t.Setenv(EnvRuntimeRegion, "cn")
+	restore := dockerImageExists
+	dockerImageExists = func(string) bool { return false }
+	t.Cleanup(func() { dockerImageExists = restore })
+	if got := ImageForModel(entity.ModelCodex); got != "registry.example.com/multigent/runtime-base:latest" {
+		t.Fatalf("ImageForModel() = %q", got)
+	}
+}
+
 func TestEffectiveImagePrefersLocalRuntimeBaseWhenPresent(t *testing.T) {
+	t.Setenv(EnvRuntimeImage, "")
+	t.Setenv(EnvRuntimeRegion, "")
 	restore := dockerImageExists
 	dockerImageExists = func(image string) bool { return image == LocalBaseImage }
 	t.Cleanup(func() { dockerImageExists = restore })
@@ -82,6 +108,8 @@ func TestEffectiveImagePrefersLocalRuntimeBaseWhenPresent(t *testing.T) {
 }
 
 func TestEffectiveImageUsesPublishedRuntimeBaseWhenLocalMissing(t *testing.T) {
+	t.Setenv(EnvRuntimeImage, "")
+	t.Setenv(EnvRuntimeRegion, "")
 	restore := dockerImageExists
 	dockerImageExists = func(string) bool { return false }
 	t.Cleanup(func() { dockerImageExists = restore })
@@ -92,6 +120,8 @@ func TestEffectiveImageUsesPublishedRuntimeBaseWhenLocalMissing(t *testing.T) {
 }
 
 func TestEffectiveImageNormalizesManagedLegacySandboxImages(t *testing.T) {
+	t.Setenv(EnvRuntimeImage, "")
+	t.Setenv(EnvRuntimeRegion, "")
 	restore := dockerImageExists
 	dockerImageExists = func(string) bool { return false }
 	t.Cleanup(func() { dockerImageExists = restore })

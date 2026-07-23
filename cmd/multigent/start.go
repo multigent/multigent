@@ -142,7 +142,7 @@ func logDockerReadiness() {
 		log.Printf("warning: Docker sandbox is not ready. Multigent can start, but CLI agents cannot run until Docker is installed and running. Details: %v", err)
 		return
 	}
-	image := sandbox.BaseImage
+	image := sandbox.DefaultBaseImage()
 	log.Printf("Docker sandbox ready. First agent run may pull runtime image %s and take a few minutes.", image)
 }
 

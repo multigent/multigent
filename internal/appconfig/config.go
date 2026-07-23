@@ -14,6 +14,7 @@ type Config struct {
 	Auth      AuthConfig
 	SMTP      SMTPConfig
 	Logging   LoggingConfig
+	Runtime   RuntimeConfig
 	Sandbox   SandboxConfig
 	Playbooks PlaybooksConfig
 }
@@ -46,6 +47,12 @@ type LoggingConfig struct {
 	Format    string
 	MaxSizeMB int
 	Stderr    *bool
+}
+
+type RuntimeConfig struct {
+	Image       string
+	Region      string
+	NPMRegistry string
 }
 
 type SandboxConfig struct {
@@ -163,6 +170,15 @@ func setValue(cfg *Config, section, key, raw string) error {
 		case "stderr":
 			v := boolValue(raw)
 			cfg.Logging.Stderr = &v
+		}
+	case "runtime":
+		switch key {
+		case "image":
+			cfg.Runtime.Image = stringValue(raw)
+		case "region":
+			cfg.Runtime.Region = stringValue(raw)
+		case "npm_registry":
+			cfg.Runtime.NPMRegistry = stringValue(raw)
 		}
 	case "sandbox.e2b":
 		if key == "api_url" {

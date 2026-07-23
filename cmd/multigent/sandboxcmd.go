@@ -155,6 +155,7 @@ func newSandboxShowCmd() *cobra.Command {
 func newSandboxPrepareCmd() *cobra.Command {
 	var (
 		image      string
+		region     string
 		toolchain  []string
 		skipPull   bool
 		skipCLIs   bool
@@ -167,11 +168,31 @@ func newSandboxPrepareCmd() *cobra.Command {
 		Use:   "prepare",
 		Short: "Pre-pull the runtime image and warm common agent CLI toolchains",
 		Example: `  multigent sandbox prepare
+  multigent sandbox prepare --region cn
   multigent sandbox prepare --toolchain codex
   multigent sandbox prepare --toolchain codex --toolchain claudecode`,
 		RunE: func(cmd *cobra.Command, args []string) error {
+			if _, err := loadAppConfig(); err != nil {
+				return err
+			}
+			imageFlagChanged := cmd.Flags().Changed("image")
+			if !imageFlagChanged {
+				image = ""
+			}
+			if region = strings.ToLower(strings.TrimSpace(region)); region != "" {
+				switch region {
+				case "cn", "china", "zh-cn", "mainland", "mainland-china":
+					if !imageFlagChanged || image == sandbox.BaseImage {
+						image = sandbox.ChinaBaseImage
+					}
+					_ = os.Setenv(sandbox.EnvRuntimeRegion, "cn")
+					setEnvIfEmpty("NPM_CONFIG_REGISTRY", "https://registry.npmmirror.com")
+				default:
+					return fmt.Errorf("unsupported --region %q (supported: cn)", region)
+				}
+			}
 			if image == "" {
-				image = sandbox.BaseImage
+				image = sandbox.DefaultBaseImage()
 			}
 			if network == "" {
 				network = "bridge"
@@ -225,6 +246,7 @@ func newSandboxPrepareCmd() *cobra.Command {
 	}
 
 	cmd.Flags().StringVar(&image, "image", sandbox.BaseImage, "runtime image to pull and use")
+	cmd.Flags().StringVar(&region, "region", "", "runtime mirror region (supported: cn)")
 	cmd.Flags().StringSliceVar(&toolchain, "toolchain", nil, "agent CLI toolchain to warm (repeatable: codex, claudecode, gemini)")
 	cmd.Flags().BoolVar(&skipPull, "skip-pull", false, "skip pulling the runtime image")
 	cmd.Flags().BoolVar(&skipCLIs, "skip-clis", false, "skip warming agent CLI toolchains")

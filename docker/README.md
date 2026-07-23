@@ -15,8 +15,10 @@ The base image contains system dependencies. Codex, Claude Code, Gemini, and oth
 | Image | Agent | Base |
 |-------|-------|------|
 | `ghcr.io/multigent/multigent/runtime-base:latest` | Managed CLI toolchains | ubuntu:24.04 + Node 22 + Python |
+| `crpi-fu3b7e7lggtmh7za.cn-hangzhou.personal.cr.aliyuncs.com/multigent/runtime-base:latest` | Mainland China mirror | same as GHCR |
 
 The default image for managed CLIs is `ghcr.io/multigent/multigent/runtime-base:latest`, so new users do not need to build a local image first.
+Use `multigent sandbox prepare --region cn` to select the Alibaba Cloud mirror.
 
 All images include: `git`, `gh` (GitHub CLI), `curl`, `jq`, `ripgrep`, `make`, `openssh-client`, `python3`, and `sqlite3`.
 

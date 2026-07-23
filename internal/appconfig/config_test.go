@@ -31,6 +31,11 @@ format = "json"
 max_size_mb = 20
 stderr = false
 
+[runtime]
+image = "registry.example.com/multigent/runtime-base:latest"
+region = "cn"
+npm_registry = "https://registry.npmmirror.com"
+
 [sandbox.e2b]
 api_url = "http://127.0.0.1:49999"
 
@@ -55,6 +60,9 @@ registry_urls = [
 	}
 	if cfg.Logging.Stderr == nil || *cfg.Logging.Stderr {
 		t.Fatalf("stderr bool not loaded: %#v", cfg.Logging)
+	}
+	if cfg.Runtime.Image != "registry.example.com/multigent/runtime-base:latest" || cfg.Runtime.Region != "cn" || cfg.Runtime.NPMRegistry != "https://registry.npmmirror.com" {
+		t.Fatalf("runtime config not loaded: %#v", cfg.Runtime)
 	}
 	if cfg.Sandbox.E2B.APIURL == "" {
 		t.Fatalf("e2b api url missing")
