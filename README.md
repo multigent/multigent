@@ -10,7 +10,7 @@
 
 Multigent helps teams turn prompts, tools, workflows, and human reviews into a coordinated agent workforce. Keep your existing project tools and chat tools; use Multigent as the control plane that gives agents shared context, structured tasks, safe execution, and observable handoffs.
 
-[中文](README.zh-CN.md) · [Install Guide](INSTALL.md) · [Documentation](docs/) · [Architecture](docs/architecture/agent-runtime-cli-architecture.md) · [Workflow Engine](docs/concepts/collaboration-workflow-state-machine.md) · [Roadmap](docs/operations/roadmap.md)
+[中文](README.zh-CN.md) · [Install Guide](INSTALL.md) · [Documentation](docs/README.md)
 
 </div>
 
@@ -232,13 +232,13 @@ Open the Vite URL shown in the terminal, usually `http://127.0.0.1:27894`.
 └─────────────────────────┘
 ```
 
-See the deeper design notes:
+For deeper design notes, see the further reading section below.
 
-- [Agent runtime CLI architecture](docs/architecture/agent-runtime-cli-architecture.md)
-- [Runtime toolchain architecture](docs/architecture/runtime-toolchain-architecture.md)
-- [Agent isolation and permission architecture](docs/architecture/agent-isolation-and-permission-architecture.md)
-- [SQLite storage architecture](docs/architecture/sqlite-storage-architecture.md)
-- [External tool plugin protocol](docs/concepts/external-tool-plugin-protocol.md)
+## Further Reading
+
+- [Documentation index](docs/README.md)
+- [Agent runtime CLI architecture](docs/architecture/agent-runtime-cli-architecture.en.md)
+- [Workflow state machine](docs/concepts/collaboration-workflow-state-machine.en.md)
 - [Configuration and logging](docs/getting-started/configuration-and-logging.md)
 - [Release and distribution](docs/operations/release-distribution.md)
 

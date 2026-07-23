@@ -2,6 +2,8 @@
 
 Public documentation for installing, configuring, and operating Multigent.
 
+[中文](README.zh-CN.md)
+
 ## Getting Started
 
 - [Commands](getting-started/commands.md)
@@ -10,8 +12,7 @@ Public documentation for installing, configuring, and operating Multigent.
 
 ## Architecture
 
-- [Agent runtime CLI architecture](architecture/agent-runtime-cli-architecture.md)
-- [Agent tool runtime adapter architecture](architecture/agent-tool-runtime-adapter-architecture.md)
+- [Agent runtime CLI architecture](architecture/agent-runtime-cli-architecture.en.md)
 - [Agent isolation and permission architecture](architecture/agent-isolation-and-permission-architecture.md)
 - [Connector credential architecture](architecture/connector-credential-architecture.md)
 - [Runtime toolchain architecture](architecture/runtime-toolchain-architecture.md)
@@ -20,13 +21,9 @@ Public documentation for installing, configuring, and operating Multigent.
 
 ## Concepts
 
-- [Workflow state machine](concepts/collaboration-workflow-state-machine.md)
-- [RBAC architecture](concepts/rbac-architecture.md)
-- [External tool plugin protocol](concepts/external-tool-plugin-protocol.md)
-- [External tool OAuth app setup](concepts/external-tool-oauth-app-setup.md)
+- [Workflow state machine](concepts/collaboration-workflow-state-machine.en.md)
 
 ## Operations
 
 - [Deployment runtime config](operations/deployment-runtime-config.md)
 - [Release and distribution](operations/release-distribution.md)
-- [Roadmap](operations/roadmap.md)

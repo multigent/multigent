@@ -10,7 +10,7 @@
 
 Multigent 帮助团队把 Prompt、工具、流程和人工 Review 组织成一套可持续运行的 Agent Workforce。团队可以继续使用原有项目管理、代码仓库、文档和沟通工具；Multigent 负责提供 Agent 友好的上下文、结构化任务、安全执行和可观察交接。
 
-[English](README.md) · [安装指南](INSTALL.md) · [文档](docs/) · [架构](docs/architecture/agent-runtime-cli-architecture.md) · [流程引擎](docs/concepts/collaboration-workflow-state-machine.md) · [路线图](docs/operations/roadmap.md)
+[English](README.md) · [安装指南](INSTALL.md) · [文档](docs/README.zh-CN.md)
 
 </div>
 
@@ -232,15 +232,15 @@ npm run dev
 └─────────────────────────┘
 ```
 
-更详细的设计文档：
+更详细的设计文档见下方延伸阅读。
 
+## 延伸阅读
+
+- [文档首页](docs/README.zh-CN.md)
 - [Agent Runtime CLI 架构](docs/architecture/agent-runtime-cli-architecture.md)
-- [Runtime Toolchain 架构](docs/architecture/runtime-toolchain-architecture.md)
-- [Agent 隔离与权限架构](docs/architecture/agent-isolation-and-permission-architecture.md)
-- [SQLite 存储架构](docs/architecture/sqlite-storage-architecture.md)
-- [外部工具插件协议](docs/concepts/external-tool-plugin-protocol.md)
-- [配置与日志](docs/getting-started/configuration-and-logging.md)
-- [发布与分发](docs/operations/release-distribution.md)
+- [协作流程状态机](docs/concepts/collaboration-workflow-state-machine.md)
+- [配置与日志](docs/getting-started/configuration-and-logging.zh-CN.md)
+- [发布与分发](docs/operations/release-distribution.zh-CN.md)
 
 ## 开发
 
