@@ -36,9 +36,8 @@
 
   <g transform="translate(812 80)">
     <rect width="300" height="160" rx="16" fill="#fafafa" stroke="#e4e4e7"/>
-    <text x="24" y="40" font-family="ui-monospace, SFMono-Regular, Menlo, monospace" font-size="15" fill="#71717a">workflow.step</text>
-    <path d="M36 72h74M124 72h58M196 72h42" stroke="#0284c7" stroke-width="8" stroke-linecap="round"/>
-    <path d="M36 106h46M96 106h92M202 106h52" stroke="#0f172a" stroke-width="8" stroke-linecap="round"/>
-    <path d="M36 140h112M162 140h34M210 140h54" stroke="#a1a1aa" stroke-width="8" stroke-linecap="round"/>
+    <path d="M36 54h74M124 54h58M196 54h42" stroke="#0284c7" stroke-width="8" stroke-linecap="round"/>
+    <path d="M36 88h46M96 88h92M202 88h52" stroke="#0f172a" stroke-width="8" stroke-linecap="round"/>
+    <path d="M36 122h112M162 122h34M210 122h54" stroke="#a1a1aa" stroke-width="8" stroke-linecap="round"/>
   </g>
 </svg>
