@@ -14,11 +14,13 @@ Multigent helps teams turn prompts, tools, workflows, and human reviews into a c
 
 </div>
 
----
-
 ## Why Multigent
 
 Most teams already have docs, task boards, repos, chats, meetings, and local coding agents. The hard part is not creating another chat box. The hard part is making agents understand the same context, follow the same process, use the right tools, ask for review at the right moment, and continue work without a human synchronously driving every step.
+
+<p align="center">
+  <img src="docs/assets/screenshots/main_pic.png" alt="Multigent visual workflow canvas" width="100%">
+</p>
 
 Multigent is built around that operating model:
 
