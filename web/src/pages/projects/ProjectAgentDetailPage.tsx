@@ -1417,6 +1417,7 @@ function EnvEditor({ project, agentName, model, initialEnv, initialProvider, ini
   const [selectedProvider, setSelectedProvider] = useState(initialProvider ?? '')
   const [runtimeModel, setRuntimeModel] = useState(initialRuntimeModel ?? '')
   const [customRuntimeModel, setCustomRuntimeModel] = useState(initialRuntimeModel ?? '')
+  const [runtimeModelCustomMode, setRuntimeModelCustomMode] = useState(false)
 
   useEffect(() => {
     const path = `/api/v1/providers?project=${encodeURIComponent(project)}&agent=${encodeURIComponent(agentName)}`
@@ -1431,6 +1432,7 @@ function EnvEditor({ project, agentName, model, initialEnv, initialProvider, ini
     setSelectedProvider(initialProvider ?? '')
     setRuntimeModel(initialRuntimeModel ?? '')
     setCustomRuntimeModel(initialRuntimeModel ?? '')
+    setRuntimeModelCustomMode(false)
     setSaved(false)
   }, [initialEnv, initialProvider, initialRuntimeModel])
 
@@ -1441,7 +1443,8 @@ function EnvEditor({ project, agentName, model, initialEnv, initialProvider, ini
   const runtimeModelSelectValue = runtimeModel
     ? runtimeModelOptions.includes(runtimeModel) ? runtimeModel : '__custom__'
     : ''
-  const showCustomRuntimeModel = runtimeModelSelectValue === '__custom__'
+  const effectiveRuntimeModelSelectValue = runtimeModelCustomMode ? '__custom__' : runtimeModelSelectValue
+  const showCustomRuntimeModel = runtimeModelCustomMode || runtimeModelSelectValue === '__custom__'
 
   async function save() {
     setBusy(true); setSaved(false)
@@ -1480,6 +1483,7 @@ function EnvEditor({ project, agentName, model, initialEnv, initialProvider, ini
             const nextProvider = providerOptions.find((p) => p.id === nextProviderID)
             const nextOptions = runtimeModelOptionsFor(model, nextProvider, modelCatalog)
             setSelectedProvider(nextProviderID)
+            setRuntimeModelCustomMode(false)
             if (!runtimeModel && nextOptions[0]) {
               setRuntimeModel(nextOptions[0])
               setCustomRuntimeModel(nextOptions[0])
@@ -1508,12 +1512,14 @@ function EnvEditor({ project, agentName, model, initialEnv, initialProvider, ini
         <label className="block">
           <span className="mb-1 block text-xs font-medium text-neutral-600 dark:text-zinc-400">{t('provider.runtimeModelLabel')}</span>
           <select
-            value={runtimeModelSelectValue}
+            value={effectiveRuntimeModelSelectValue}
             onChange={e => {
               const next = e.target.value
               if (next === '__custom__') {
-                setRuntimeModel(customRuntimeModel || runtimeModel)
+                setRuntimeModelCustomMode(true)
+                setRuntimeModel(customRuntimeModel || '')
               } else {
+                setRuntimeModelCustomMode(false)
                 setRuntimeModel(next)
                 setCustomRuntimeModel(next)
               }
