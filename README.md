@@ -1,5 +1,5 @@
 <p align="center">
-  <img src="docs/banner.svg" alt="Multigent" width="100%">
+  <img src="docs/assets/banner.svg" alt="Multigent" width="100%">
 </p>
 
 <div align="center">
@@ -10,7 +10,7 @@
 
 Multigent helps teams turn prompts, tools, workflows, and human reviews into a coordinated agent workforce. Keep your existing project tools and chat tools; use Multigent as the control plane that gives agents shared context, structured tasks, safe execution, and observable handoffs.
 
-[Documentation](docs/) · [Architecture](docs/agent-runtime-cli-architecture.md) · [Workflow Engine](docs/collaboration-workflow-state-machine.md) · [Roadmap](docs/roadmap.md)
+[Documentation](docs/) · [Architecture](docs/architecture/agent-runtime-cli-architecture.md) · [Workflow Engine](docs/concepts/collaboration-workflow-state-machine.md) · [Roadmap](docs/operations/roadmap.md)
 
 </div>
 
@@ -44,7 +44,7 @@ Workspace
 Multigent does not try to replace every existing system on day one. A company can keep using Jira, Linear, Plane, Huly, GitHub, Feishu/Lark, Slack, local agent CLIs, and internal docs. Multigent provides the agent-native coordination layer across those systems.
 
 <p align="center">
-  <img src="docs/multigent.png" alt="Multigent web console" width="860">
+  <img src="docs/assets/multigent.png" alt="Multigent web console" width="860">
 </p>
 
 ## Core Features
@@ -191,13 +191,13 @@ Open the Vite URL shown in the terminal, usually `http://127.0.0.1:27894`.
 
 See the deeper design notes:
 
-- [Agent runtime CLI architecture](docs/agent-runtime-cli-architecture.md)
-- [Runtime toolchain architecture](docs/runtime-toolchain-architecture.md)
-- [Agent isolation and permission architecture](docs/agent-isolation-and-permission-architecture.md)
-- [SQLite storage architecture](docs/sqlite-storage-architecture.md)
-- [External tool plugin protocol](docs/external-tool-plugin-protocol.md)
-- [Configuration and logging](docs/configuration-and-logging.md)
-- [Release and distribution](docs/release-distribution.md)
+- [Agent runtime CLI architecture](docs/architecture/agent-runtime-cli-architecture.md)
+- [Runtime toolchain architecture](docs/architecture/runtime-toolchain-architecture.md)
+- [Agent isolation and permission architecture](docs/architecture/agent-isolation-and-permission-architecture.md)
+- [SQLite storage architecture](docs/architecture/sqlite-storage-architecture.md)
+- [External tool plugin protocol](docs/concepts/external-tool-plugin-protocol.md)
+- [Configuration and logging](docs/getting-started/configuration-and-logging.md)
+- [Release and distribution](docs/operations/release-distribution.md)
 
 ## Development
 
@@ -220,7 +220,7 @@ Useful commands:
 ./dist/multigent worker inspect
 ```
 
-Configuration can be supplied through CLI flags, environment variables, or a TOML file. See [configuration and logging](docs/configuration-and-logging.md).
+Configuration can be supplied through CLI flags, environment variables, or a TOML file. See [configuration and logging](docs/getting-started/configuration-and-logging.md).
 
 ## Current Status
 

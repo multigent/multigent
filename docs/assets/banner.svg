@@ -1,0 +1,44 @@
+<svg width="1200" height="360" viewBox="0 0 1200 360" xmlns="http://www.w3.org/2000/svg" role="img" aria-labelledby="title desc">
+  <title id="title">Multigent</title>
+  <desc id="desc">Agent collaboration infrastructure for teams that want agents to actually deliver.</desc>
+  <rect width="1200" height="360" rx="28" fill="#ffffff"/>
+  <rect x="1" y="1" width="1198" height="358" rx="27" fill="none" stroke="#e4e4e7" stroke-width="2"/>
+
+  <g opacity="0.5" stroke="#e4e4e7" stroke-width="1">
+    <path d="M748 74h292M748 122h350M748 170h306M748 218h386M748 266h254"/>
+    <path d="M804 50v260M884 50v260M964 50v260M1044 50v260"/>
+  </g>
+
+  <g transform="translate(88 84)">
+    <rect width="192" height="192" rx="42" fill="#ffffff"/>
+    <rect x="6" y="6" width="180" height="180" rx="36" fill="none" stroke="#e4e4e7" stroke-width="2"/>
+    <path d="M48 136V56l48 54 48-54v80" fill="none" stroke="#0f172a" stroke-width="16" stroke-linecap="round" stroke-linejoin="round"/>
+    <path d="M48 136V56l48 54 48-54v80" fill="none" stroke="#0284c7" stroke-width="6" stroke-linecap="round" stroke-linejoin="round"/>
+    <circle cx="48" cy="56" r="12" fill="#ffffff" stroke="#0284c7" stroke-width="6"/>
+    <circle cx="96" cy="110" r="12" fill="#ffffff" stroke="#0f172a" stroke-width="6"/>
+    <circle cx="144" cy="56" r="12" fill="#ffffff" stroke="#0284c7" stroke-width="6"/>
+    <circle cx="48" cy="136" r="9" fill="#0f172a"/>
+    <circle cx="144" cy="136" r="9" fill="#0f172a"/>
+  </g>
+
+  <g transform="translate(330 94)">
+    <text x="0" y="62" font-family="Inter, ui-sans-serif, system-ui, -apple-system, BlinkMacSystemFont, Segoe UI, sans-serif" font-size="64" font-weight="760" fill="#0f172a" letter-spacing="0">Multigent</text>
+    <text x="3" y="112" font-family="Inter, ui-sans-serif, system-ui, -apple-system, BlinkMacSystemFont, Segoe UI, sans-serif" font-size="24" font-weight="500" fill="#3f3f46" letter-spacing="0">Agent collaboration infrastructure for real delivery.</text>
+    <g transform="translate(4 148)">
+      <rect x="0" y="0" width="164" height="34" rx="17" fill="#f0f9ff" stroke="#bae6fd"/>
+      <text x="18" y="23" font-family="Inter, ui-sans-serif, system-ui" font-size="15" font-weight="650" fill="#0369a1">Workflows</text>
+      <rect x="182" y="0" width="152" height="34" rx="17" fill="#fafafa" stroke="#e4e4e7"/>
+      <text x="200" y="23" font-family="Inter, ui-sans-serif, system-ui" font-size="15" font-weight="650" fill="#27272a">Sandbox</text>
+      <rect x="352" y="0" width="130" height="34" rx="17" fill="#fafafa" stroke="#e4e4e7"/>
+      <text x="370" y="23" font-family="Inter, ui-sans-serif, system-ui" font-size="15" font-weight="650" fill="#27272a">Tools</text>
+    </g>
+  </g>
+
+  <g transform="translate(770 88)">
+    <rect width="290" height="184" rx="14" fill="#fafafa" stroke="#e4e4e7"/>
+    <text x="22" y="42" font-family="ui-monospace, SFMono-Regular, Menlo, monospace" font-size="15" fill="#71717a">task.workflow.step</text>
+    <path d="M34 76h74M108 76l18 0M126 76h60" stroke="#0284c7" stroke-width="8" stroke-linecap="round"/>
+    <path d="M34 112h46M80 112h92M172 112h52" stroke="#0f172a" stroke-width="8" stroke-linecap="round"/>
+    <path d="M34 148h112M146 148h32M178 148h70" stroke="#a1a1aa" stroke-width="8" stroke-linecap="round"/>
+  </g>
+</svg>

@@ -49,3 +49,6 @@ Thumbs.db
 !.env.example
 
 /multigent
+
+# Internal/private planning notes
+docs/internal/
