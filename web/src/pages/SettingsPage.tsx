@@ -1362,14 +1362,14 @@ function ProvidersSection() {
 
       {editing && (
         <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/45 p-4" onClick={closeProviderDialog}>
-          <div className="w-full max-w-md rounded-xl border border-neutral-200 bg-white shadow-lg dark:border-zinc-700 dark:bg-zinc-900 animate-scale-in" onClick={e => e.stopPropagation()}>
-            <div className="flex items-center justify-between border-b border-neutral-200 px-5 py-3 dark:border-zinc-700">
+          <div className="flex max-h-[88vh] w-full max-w-md flex-col overflow-hidden rounded-xl border border-neutral-200 bg-white shadow-lg dark:border-zinc-700 dark:bg-zinc-900 animate-scale-in" onClick={e => e.stopPropagation()}>
+            <div className="shrink-0 flex items-center justify-between border-b border-neutral-200 px-5 py-3 dark:border-zinc-700">
               <h2 className="text-base font-semibold text-neutral-900 dark:text-zinc-100">
                 {editing.id ? t('provider.edit') : t('provider.add')}
               </h2>
               <button type="button" onClick={closeProviderDialog} className="rounded-md p-1 text-neutral-400 hover:bg-neutral-100 dark:text-zinc-500 dark:hover:bg-zinc-800"><X className="size-4" /></button>
             </div>
-            <div className="space-y-3 px-5 py-4">
+            <div className="min-h-0 flex-1 space-y-3 overflow-y-auto px-5 py-4">
               {!editing.id && (
                 <div className="grid grid-cols-2 gap-2 rounded-lg bg-neutral-100 p-1 dark:bg-zinc-800/70">
                   <button
@@ -1548,14 +1548,14 @@ function ProvidersSection() {
                 </div>
               )}
               {err && <p className="text-sm text-red-600 dark:text-red-400">{err}</p>}
-              <div className="flex justify-end gap-2 pt-1">
-                <button type="button" onClick={closeProviderDialog} disabled={saving || deviceAuthStarting} className="rounded-lg border border-neutral-300 px-3 py-1.5 text-sm dark:border-zinc-600">{t('forms.cancel')}</button>
-                {(editing.accountMode ?? 'official') === 'official' && supportsBrowserModelAuth(editing.cli) && (editing.authMethod ?? defaultAuthMethodForCLI(editing.cli)) === defaultAuthMethodForCLI(editing.cli) && !editing.id ? (
-                  <button type="button" onClick={() => void startCodexChatGPTAuth()} disabled={deviceAuthStarting || !editing.name?.trim()} className="rounded-lg bg-sky-600 px-3 py-1.5 text-sm font-medium text-white disabled:opacity-50">{deviceAuthStarting ? t('provider.deviceStarting') : t('provider.startDeviceAuth')}</button>
-                ) : (
-                  <button type="button" onClick={() => void handleSave()} disabled={saving || !editing.name?.trim()} className="rounded-lg bg-sky-600 px-3 py-1.5 text-sm font-medium text-white disabled:opacity-50">{saving ? t('forms.saving') : t('forms.save')}</button>
-                )}
-              </div>
+            </div>
+            <div className="shrink-0 flex justify-end gap-2 border-t border-neutral-200 bg-white px-5 py-3 dark:border-zinc-700 dark:bg-zinc-900">
+              <button type="button" onClick={closeProviderDialog} disabled={saving || deviceAuthStarting} className="rounded-lg border border-neutral-300 px-3 py-1.5 text-sm dark:border-zinc-600">{t('forms.cancel')}</button>
+              {(editing.accountMode ?? 'official') === 'official' && supportsBrowserModelAuth(editing.cli) && (editing.authMethod ?? defaultAuthMethodForCLI(editing.cli)) === defaultAuthMethodForCLI(editing.cli) && !editing.id ? (
+                <button type="button" onClick={() => void startCodexChatGPTAuth()} disabled={deviceAuthStarting || !editing.name?.trim()} className="rounded-lg bg-sky-600 px-3 py-1.5 text-sm font-medium text-white disabled:opacity-50">{deviceAuthStarting ? t('provider.deviceStarting') : t('provider.startDeviceAuth')}</button>
+              ) : (
+                <button type="button" onClick={() => void handleSave()} disabled={saving || !editing.name?.trim()} className="rounded-lg bg-sky-600 px-3 py-1.5 text-sm font-medium text-white disabled:opacity-50">{saving ? t('forms.saving') : t('forms.save')}</button>
+              )}
             </div>
           </div>
         </div>
@@ -1825,7 +1825,7 @@ function ModelChipsEditor({
       <span className="text-sm font-medium text-neutral-600 dark:text-zinc-400">{label}</span>
       <div className="rounded-md border border-neutral-200/80 bg-neutral-50/50 p-2 dark:border-zinc-700/60 dark:bg-zinc-800/50">
         {models.length > 0 && (
-          <div className="mb-2 flex flex-wrap gap-1.5">
+          <div className="mb-2 flex max-h-36 flex-wrap gap-1.5 overflow-y-auto pr-1">
             {models.map(model => (
               <span key={model} className="inline-flex max-w-full items-center gap-1 rounded-md border border-neutral-200 bg-white px-2 py-1 font-mono text-xs text-neutral-700 dark:border-zinc-700 dark:bg-zinc-900 dark:text-zinc-300">
                 <span className="truncate">{model}</span>
