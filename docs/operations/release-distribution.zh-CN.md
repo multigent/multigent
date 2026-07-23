@@ -24,9 +24,9 @@ checksums.txt
 每个包包含：
 
 - `multigent`：管理员/部署者 CLI 和自托管 Web Server。
-- `mga`：注入 Agent Sandbox 的受控 Runtime CLI。
+- `mga`：同步进 Agent Sandbox 的受控 Runtime CLI。
 
-`mga` 必须和 `multigent` 同版本发布，否则 Docker Sandbox 内的 Agent 不能稳定完成任务、读取文档或上报流程节点。
+`mga` 必须和 `multigent` 同版本发布，否则 Docker Sandbox 内的 Agent 不能稳定完成任务、读取文档或上报流程节点。runtime image 会保留一个兜底 `mga`，但正常启动 sandbox 时会把与 server 版本匹配的 `mga` release asset 下载并缓存到持久化 toolchain volume。
 
 ## 安装渠道
 

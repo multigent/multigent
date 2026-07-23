@@ -3,6 +3,7 @@ package runenv
 
 import (
 	"fmt"
+	"os"
 	"strings"
 
 	"github.com/multigent/multigent/internal/agentcli"
@@ -62,7 +63,7 @@ func (DockerProvider) Command(spec ProcessSpec) (string, []string, error) {
 	if toolCacheBin := runtimeEnvValue(spec.Runtime, "MULTIGENT_TOOL_CACHE_BIN_DIR"); toolCacheBin != "" {
 		pathParts = append(pathParts, toolCacheBin)
 	}
-	pathParts = append(pathParts, runtimecli.BinDir, agentcli.ToolchainBin, sandbox.UserBin, sandbox.ContainerDefaultPATH)
+	pathParts = append(pathParts, runtimecli.ManagedBinDir, runtimecli.BinDir, agentcli.ToolchainBin, sandbox.UserBin, sandbox.ContainerDefaultPATH)
 	cfg.ExtraEnv = append(cfg.ExtraEnv, "PATH="+strings.Join(pathParts, ":"))
 	for _, mount := range spec.Mounts {
 		volume := DockerVolume(mount)
@@ -71,10 +72,22 @@ func (DockerProvider) Command(spec ProcessSpec) (string, []string, error) {
 		}
 	}
 	command := agentcli.WrapCommand(spec.Command, spec.AgentCLI)
+	if runtimeBootstrap := runtimecli.BootstrapScript(os.Getenv(runtimecli.ServerVersionEnv)); runtimeBootstrap != "" {
+		command = wrapInlineScript(command, runtimeBootstrap)
+	}
 	if bootstrap := runtimeEnvValue(spec.Runtime, "MULTIGENT_TOOL_BOOTSTRAP_FILE"); bootstrap != "" {
 		command = wrapBootstrapScript(command, bootstrap)
 	}
 	return sandbox.RunArgs(spec.AgentDir, spec.Model, cfg, command)
+}
+
+func wrapInlineScript(cmd []string, script string) []string {
+	if len(cmd) == 0 || strings.TrimSpace(script) == "" {
+		return cmd
+	}
+	wrapped := []string{"/bin/sh", "-lc", script + "\nexec \"$@\"", "--"}
+	wrapped = append(wrapped, cmd...)
+	return wrapped
 }
 
 func runtimeEnvValue(runtime *entity.SandboxConfig, name string) string {

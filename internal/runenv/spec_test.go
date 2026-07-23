@@ -39,7 +39,8 @@ func TestDockerProviderWrapsManagedAgentCLI(t *testing.T) {
 	joined := strings.Join(args, "\n")
 	for _, want := range []string{
 		"multigent-toolchains:" + agentcli.ToolchainHome,
-		"PATH=" + runtimecli.BinDir,
+		"PATH=" + runtimecli.ManagedBinDir,
+		runtimecli.BinDir,
 		agentcli.ToolchainBin,
 		"example/runtime-base:test",
 		"npm install -g @openai/codex@1.2.3",
@@ -73,7 +74,7 @@ func TestDockerProviderPrependsRuntimeToolBin(t *testing.T) {
 	}
 
 	joined := strings.Join(args, "\n")
-	want := "PATH=/agent/.multigent/runtime-tools/run/bin:/workspace/.multigent/tool-cache/npm/bin:" + runtimecli.BinDir
+	want := "PATH=/agent/.multigent/runtime-tools/run/bin:/workspace/.multigent/tool-cache/npm/bin:" + runtimecli.ManagedBinDir + ":" + runtimecli.BinDir
 	if !strings.Contains(joined, want) {
 		t.Fatalf("docker args missing tool bin path %q:\n%s", want, joined)
 	}

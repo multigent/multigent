@@ -55,7 +55,7 @@ Recommended split:
 
 Every sandbox should receive:
 
-1. The matching Linux `mga` binary.
+1. A Linux `mga` binary synchronized to the current Multigent server version.
 2. The selected agent CLI, such as Codex, Claude Code, or Cursor.
 3. Runtime environment variables and a scoped agent token.
 4. Materialized skills and tool manifests.

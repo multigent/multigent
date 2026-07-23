@@ -24,9 +24,9 @@ checksums.txt
 Each archive contains:
 
 - `multigent`: human/admin CLI and self-hosted web server.
-- `mga`: scoped runtime CLI mounted into agent sandboxes.
+- `mga`: scoped runtime CLI synchronized into agent sandboxes.
 
-`mga` must be released with `multigent`; otherwise Docker sandbox runs cannot reliably report tasks, read docs, or complete workflow steps.
+`mga` must be released with `multigent`; otherwise Docker sandbox runs cannot reliably report tasks, read docs, or complete workflow steps. Runtime images include a fallback `mga`, but normal sandbox startup downloads and caches the server-matching `mga` release asset in the persistent toolchain volume.
 
 ## Install Channels
 

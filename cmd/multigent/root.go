@@ -11,6 +11,7 @@ import (
 	controldb "github.com/multigent/multigent/internal/db"
 	"github.com/multigent/multigent/internal/errs"
 	"github.com/multigent/multigent/internal/playbook"
+	"github.com/multigent/multigent/internal/runtimecli"
 	"github.com/multigent/multigent/internal/workspace"
 	"github.com/spf13/cobra"
 )
@@ -229,6 +230,7 @@ func setEnvIfEmpty(key, value string) {
 }
 
 func main() {
+	_ = os.Setenv(runtimecli.ServerVersionEnv, version)
 	checkUpdateAsync()
 	commandPath := ""
 	if cmd, _, err := rootCmd.Find(os.Args[1:]); err == nil && cmd != nil {

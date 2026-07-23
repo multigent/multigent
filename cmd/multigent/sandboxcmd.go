@@ -118,11 +118,11 @@ func newSandboxShowCmd() *cobra.Command {
 			fmt.Printf("\nWorkspace isolation:\n")
 			fmt.Printf("  workspace root is not mounted; agents coordinate through the runtime API\n")
 
-			// Optional agent runtime CLI override; published images bundle mga.
+			// Optional agent runtime CLI override for local development.
 			fmt.Printf("\nAgent runtime CLI mount (optional development override):\n")
 			mgaMount := runtimecli.ResolveAvailableBinaryMount(root)
 			if mgaMount == "" {
-				fmt.Printf("  using the `mga` bundled in the runtime image (set %s to override with a Linux ELF binary)\n", runtimecli.HostBinaryEnv)
+				fmt.Printf("  release runs sync `mga` into the Docker toolchain volume; image-bundled `mga` is a fallback (set %s to override with a Linux ELF binary)\n", runtimecli.HostBinaryEnv)
 			} else {
 				fmt.Printf("  -v %s\n", mgaMount)
 			}

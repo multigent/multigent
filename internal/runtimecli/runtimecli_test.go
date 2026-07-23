@@ -77,3 +77,29 @@ func TestResolveAvailableBinaryMountOnlyAutoDiscoversOnLinuxHost(t *testing.T) {
 		t.Fatalf("non-Linux host must use bundled image mga, got mount %q", got)
 	}
 }
+
+func TestBootstrapScriptDownloadsReleaseRuntimeCLI(t *testing.T) {
+	script := BootstrapScript("v0.1.3")
+	for _, want := range []string{
+		"multigent-v0.1.3-linux-${arch}.tar.gz",
+		"releases/mga-v0.1.3-${arch}",
+		ManagedBinDir,
+		"falling back to runtime image bundled mga",
+	} {
+		if !strings.Contains(script, want) {
+			t.Fatalf("bootstrap script missing %q:\n%s", want, script)
+		}
+	}
+}
+
+func TestBootstrapScriptDoesNotDownloadDevVersion(t *testing.T) {
+	for _, version := range []string{"", "dev", "v0.1.2-7-g614b938"} {
+		script := BootstrapScript(version)
+		if strings.Contains(script, "releases/download") {
+			t.Fatalf("dev bootstrap script must not download release assets for %q:\n%s", version, script)
+		}
+		if !strings.Contains(script, ManagedBinDir) {
+			t.Fatalf("bootstrap script missing managed bin dir for %q:\n%s", version, script)
+		}
+	}
+}

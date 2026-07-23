@@ -1,9 +1,10 @@
 # multigent stable runtime base image
 #
-# This image contains stable OS and language dependencies plus the Linux
-# runtime-control CLI (`mga`) built from the same source revision. Fast-moving
-# agent CLIs such as Codex, Claude Code, and Gemini are installed by the
-# Multigent runtime toolchain bootstrap into /opt/multigent/toolchains.
+# This image contains stable OS and language dependencies plus a Linux `mga`
+# fallback binary. At runtime, Multigent synchronizes the `mga` version that
+# matches the server into /opt/multigent/toolchains. Fast-moving agent CLIs such
+# as Codex, Claude Code, and Gemini are installed through the same toolchain
+# bootstrap path.
 #
 # Build:
 #   docker build -t multigent/runtime-base:latest \

@@ -160,21 +160,21 @@ Skill 文档必须和 `mga` 的实际命令同步。
 推荐路径：
 
 ```text
-/opt/multigent/mga/bin/mga
+/opt/multigent/toolchains/mga/bin/mga
 ```
 
 初始化顺序：
 
 1. 创建隔离 sandbox。
 2. 注入 runtime env。
-3. 使用 runtime image 内置的目标平台 `mga`，或显式安装兼容版本。
+3. 将与当前 Multigent Server 版本匹配的 Linux `mga` 同步到 runtime toolchain cache。
 4. 安装模型 CLI，例如 Codex/Claude/Gemini。
 5. materialize 当前 run 的上下文、skills、授权连接 manifest。
 6. 执行 Agent CLI。
 
 ## CLI 更新策略
 
-长期来看，`mga` 应该被当成 toolchain 管理；当前 runtime base image 会内置与该镜像源码版本匹配的 Linux `mga`，避免宿主机与容器平台不兼容。
+`mga` 应该被当成 toolchain 管理，而不是绑定在 runtime image 的生命周期里。正式 release 版本启动 sandbox 时会下载并缓存同版本 Linux `mga`；runtime base image 内置的 `mga` 只作为断网、开发构建或下载失败时的兜底。
 
 推荐模型：
 
@@ -212,9 +212,9 @@ mga runtime version --check
 
 当前代码已先完成 sandbox 入口收敛：
 
-- Docker sandbox 内默认把 `mga` 暴露到 `/opt/multigent/mga/bin/`。
-- sandbox PATH 默认包含 `/opt/multigent/mga/bin`。
-- runtime base image 针对 linux/amd64 和 linux/arm64 分别构建 `mga`；不会自动挂载宿主机原生二进制。
+- Docker sandbox 内默认把 `mga` 暴露到 `/opt/multigent/toolchains/mga/bin/`。
+- sandbox PATH 默认优先包含 `/opt/multigent/toolchains/mga/bin`，再回退到 `/opt/multigent/mga/bin`。
+- runtime base image 针对 linux/amd64 和 linux/arm64 分别构建 fallback `mga`；不会自动挂载宿主机原生二进制。
 - 内置 prompt/skill 使用 `mga` 作为 Agent 侧命令。
 - `mga` 已拆成独立 `cmd/mga`，只调用 scoped runtime API。
 - Server 已提供 runtime task/message/connections/actions/mcp API，并基于 runtime token capability 做鉴权。

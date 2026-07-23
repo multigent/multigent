@@ -164,7 +164,7 @@ docker run --rm -p 27892:27892 \
 
 - Docker，用于 Sandbox Agent 执行
 
-Multigent 默认的多架构 runtime 镜像发布在 `ghcr.io/multigent/multigent/runtime-base:latest`。镜像内置同版本的 Linux `mga` runtime CLI，不会再把 macOS 或 Windows 原生二进制挂载进 Linux sandbox。已发布的 GHCR 包必须公开，用户无需执行 `docker login`。
+Multigent 默认的多架构 runtime 镜像发布在 `ghcr.io/multigent/multigent/runtime-base:latest`。镜像提供稳定 sandbox 依赖和兜底 Linux `mga`；正常运行时会把与 Multigent Server 版本匹配的 `mga` 同步到持久化 Docker toolchain volume。macOS 或 Windows 原生二进制不会被挂载进 Linux sandbox。已发布的 GHCR 包必须公开，用户无需执行 `docker login`。
 
 ### 启动 Web 控制台
 
