@@ -59,8 +59,8 @@ export default function ProjectAgentChatPage() {
   const { user } = useAuth()
   const { projectId, agentName } = useParams<{ projectId: string; agentName: string }>()
   const [searchParams, setSearchParams] = useSearchParams()
-  const initialSessionId = searchParams.get('sessionId') ?? ''
-  const [sessionId, setSessionId] = useState(initialSessionId)
+  const routeSessionId = searchParams.get('sessionId') ?? ''
+  const [sessionId, setSessionId] = useState(routeSessionId)
   const [content, setContent] = useState('')
   const [input, setInput] = useState(() => readAgentChatDraft(projectId, agentName))
   const [loading, setLoading] = useState(false)
@@ -72,11 +72,13 @@ export default function ProjectAgentChatPage() {
   const [agentContext, setAgentContext] = useState<AgentContext | null>(null)
   const [providers, setProviders] = useState<ProviderOption[]>([])
   const [sessionEditorOpen, setSessionEditorOpen] = useState(false)
-  const [sessionDraft, setSessionDraft] = useState(initialSessionId)
+  const [sessionDraft, setSessionDraft] = useState(routeSessionId)
   const scrollRef = useRef<HTMLDivElement>(null)
   const inputRef = useRef<HTMLTextAreaElement>(null)
   const abortRef = useRef<AbortController | null>(null)
   const draftKey = agentChatDraftKey(projectId, agentName)
+  const chatKey = projectId && agentName ? `${projectId}/${agentName}` : ''
+  const activeChatKeyRef = useRef(chatKey)
 
   // Sync sessionId state + URL query param together so page refresh preserves the session.
   const updateSessionId = useCallback((sid: string) => {
@@ -90,34 +92,52 @@ export default function ProjectAgentChatPage() {
     }, { replace: true })
   }, [setSearchParams])
 
-  const historyPath = useCallback((sid: string) => {
-    if (!projectId || !agentName) return null
-    const base = `/api/v1/projects/${encodeURIComponent(projectId)}/agents/${encodeURIComponent(agentName)}/chat/history`
+  const historyPath = useCallback((project: string | undefined, agent: string | undefined, sid: string) => {
+    if (!project || !agent) return null
+    const base = `/api/v1/projects/${encodeURIComponent(project)}/agents/${encodeURIComponent(agent)}/chat/history`
     return sid ? `${base}?sessionId=${encodeURIComponent(sid)}` : base
-  }, [projectId, agentName])
+  }, [])
 
-  const loadHistory = useCallback(async (sid: string) => {
-    const path = historyPath(sid)
+  const loadHistory = useCallback(async (sid: string, project = projectId, agent = agentName, expectedKey = chatKey) => {
+    const path = historyPath(project, agent, sid)
     if (!path) return
     setHistoryLoading(true)
     setError(null)
     try {
       const data = await apiFetch<HistoryResp>(path)
+      if (activeChatKeyRef.current !== expectedKey) return
       updateSessionId(data.sessionId ?? sid)
       setContent(data.content ?? '')
       setHistoryTruncated(Boolean(data.truncated))
     } catch (e) {
+      if (activeChatKeyRef.current !== expectedKey) return
       setError(e instanceof Error ? e.message : String(e))
     } finally {
-      setHistoryLoading(false)
+      if (activeChatKeyRef.current === expectedKey) setHistoryLoading(false)
     }
-  }, [historyPath])
+  }, [agentName, chatKey, historyPath, projectId, updateSessionId])
 
-  // Load history once on mount. When the URL has no sessionId, the API resolves
-  // the current heartbeat session or falls back to the latest recorded run.
+  // Route params can change without remounting this page. Keep every chat view
+  // scoped by project/agent and stop any in-flight stream from the previous one.
   useEffect(() => {
-    void loadHistory(initialSessionId)
-  }, []) // eslint-disable-line react-hooks/exhaustive-deps
+    if (!projectId || !agentName) return
+    const nextKey = `${projectId}/${agentName}`
+    const currentRouteSessionId = new URLSearchParams(window.location.search).get('sessionId') ?? ''
+    activeChatKeyRef.current = nextKey
+    abortRef.current?.abort()
+    abortRef.current = null
+    setContent('')
+    setInput(readAgentChatDraft(projectId, agentName))
+    setError(null)
+    setLoading(false)
+    setHistoryLoading(false)
+    setHistoryTruncated(false)
+    setFreshNext(false)
+    setSessionEditorOpen(false)
+    setSessionId(currentRouteSessionId)
+    setSessionDraft(currentRouteSessionId)
+    void loadHistory(currentRouteSessionId, projectId, agentName, nextKey)
+  }, [projectId, agentName, loadHistory])
 
   useEffect(() => {
     if (!projectId || !agentName) return
@@ -167,6 +187,11 @@ export default function ProjectAgentChatPage() {
   async function send() {
     const text = input.trim()
     if (!text || loading || !projectId || !agentName) return
+    const runProject = projectId
+    const runAgent = agentName
+    const runKey = `${runProject}/${runAgent}`
+    const runSessionId = sessionId
+    const runFreshNext = freshNext
 
     setInput('')
     resetTextareaHeight(inputRef.current)
@@ -184,13 +209,13 @@ export default function ProjectAgentChatPage() {
       const token = getStoredToken()
       if (token) headers.Authorization = `Bearer ${token}`
 
-      const res = await fetch(apiUrl(`/api/v1/projects/${encodeURIComponent(projectId)}/agents/${encodeURIComponent(agentName)}/chat`), {
+      const res = await fetch(apiUrl(`/api/v1/projects/${encodeURIComponent(runProject)}/agents/${encodeURIComponent(runAgent)}/chat`), {
         method: 'POST',
         headers,
         body: JSON.stringify({
           message: text,
-          sessionId,
-          noSession: freshNext && !sessionId,
+          sessionId: runSessionId,
+          noSession: runFreshNext && !runSessionId,
         }),
         signal: controller.signal,
       })
@@ -214,6 +239,7 @@ export default function ProjectAgentChatPage() {
           if (!part.startsWith('data: ')) continue
           const data = part.slice(6)
           if (!data) continue
+          if (activeChatKeyRef.current !== runKey) continue
           try {
             const evt = JSON.parse(data)
             if (evt.type === 'chat_event') {
@@ -242,13 +268,13 @@ export default function ProjectAgentChatPage() {
         }
       }
     } catch (e) {
+      if (activeChatKeyRef.current !== runKey) return
       const stopped = (e as Error).name === 'AbortError'
       const msg = stopped ? t('agentChat.stopped') : (e instanceof Error ? e.message : String(e))
       setError(stopped ? null : msg)
       setContent((prev) => appendLog(prev, `=== ${msg} ===`))
-      // Re-throw so finally runs after catch propagates.
-      throw e
     } finally {
+      if (activeChatKeyRef.current !== runKey) return
       abortRef.current = null
       setFreshNext(false)
       setLoading(false)
