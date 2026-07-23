@@ -428,7 +428,7 @@ func newOverviewCmd() *cobra.Command {
 	return &cobra.Command{
 		Use:     "overview",
 		Aliases: []string{"status", "stat"},
-		Short:   "Show a dashboard overview of the agency",
+		Short:   "Show a dashboard overview of the workspace",
 		RunE:    runOverview,
 	}
 }

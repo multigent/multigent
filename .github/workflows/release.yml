@@ -154,18 +154,6 @@ jobs:
           - name: runtime-base
             file: docker/runtime-base/Dockerfile
             platforms: linux/amd64,linux/arm64
-          - name: sandbox-codex
-            file: docker/sandbox-codex/Dockerfile
-            platforms: linux/amd64
-          - name: sandbox-claudecode
-            file: docker/sandbox-claudecode/Dockerfile
-            platforms: linux/amd64
-          - name: sandbox-gemini
-            file: docker/sandbox-gemini/Dockerfile
-            platforms: linux/amd64
-          - name: sandbox-generic
-            file: docker/sandbox-generic/Dockerfile
-            platforms: linux/amd64
     steps:
       - name: Checkout
         uses: actions/checkout@v4

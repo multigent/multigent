@@ -10,7 +10,7 @@
 
 Multigent helps teams turn prompts, tools, workflows, and human reviews into a coordinated agent workforce. Keep your existing project tools and chat tools; use Multigent as the control plane that gives agents shared context, structured tasks, safe execution, and observable handoffs.
 
-[Documentation](docs/) · [Architecture](docs/distributed-architecture.md) · [Workflow Engine](docs/collaboration-workflow-state-machine.md) · [Roadmap](docs/roadmap.md)
+[Documentation](docs/) · [Architecture](docs/agent-runtime-cli-architecture.md) · [Workflow Engine](docs/collaboration-workflow-state-machine.md) · [Roadmap](docs/roadmap.md)
 
 </div>
 
@@ -192,14 +192,12 @@ Open the Vite URL shown in the terminal, usually `http://127.0.0.1:27894`.
 See the deeper design notes:
 
 - [Agent runtime CLI architecture](docs/agent-runtime-cli-architecture.md)
-- [Runtime sandbox research and model](docs/runtime-sandbox-research-and-model.md)
+- [Runtime toolchain architecture](docs/runtime-toolchain-architecture.md)
 - [Agent isolation and permission architecture](docs/agent-isolation-and-permission-architecture.md)
 - [SQLite storage architecture](docs/sqlite-storage-architecture.md)
-- [External tools connection redesign](docs/external-tools-connection-redesign-plan.md)
-- [Product tour and example workspaces](docs/product-tour-and-example-workspaces.md)
+- [External tool plugin protocol](docs/external-tool-plugin-protocol.md)
+- [Configuration and logging](docs/configuration-and-logging.md)
 - [Release and distribution](docs/release-distribution.md)
-- [Customer onboarding, playbook generation, and agent improvement](docs/customer-onboarding-playbook-generation-and-agent-improvement.md)
-- [Product launch and growth TODO](docs/product-launch-and-growth-todo.md)
 
 ## Development
 

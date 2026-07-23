@@ -10,7 +10,7 @@
 
 Multigent 帮助团队把 Prompt、工具、流程和人工 Review 组织成一套可持续运行的 Agent Workforce。团队可以继续使用原有项目管理、代码仓库、文档和沟通工具；Multigent 负责提供 Agent 友好的上下文、结构化任务、安全执行和可观察交接。
 
-[English](README.md) · [文档](docs/) · [架构](docs/distributed-architecture.md) · [流程引擎](docs/collaboration-workflow-state-machine.md) · [路线图](docs/roadmap.md)
+[English](README.md) · [文档](docs/) · [架构](docs/agent-runtime-cli-architecture.md) · [流程引擎](docs/collaboration-workflow-state-machine.md) · [路线图](docs/roadmap.md)
 
 </div>
 
@@ -192,14 +192,12 @@ npm run dev
 更详细的设计文档：
 
 - [Agent Runtime CLI 架构](docs/agent-runtime-cli-architecture.md)
-- [Runtime Sandbox 研究与模型](docs/runtime-sandbox-research-and-model.md)
+- [Runtime Toolchain 架构](docs/runtime-toolchain-architecture.md)
 - [Agent 隔离与权限架构](docs/agent-isolation-and-permission-architecture.md)
 - [SQLite 存储架构](docs/sqlite-storage-architecture.md)
-- [外部工具连接改造计划](docs/external-tools-connection-redesign-plan.md)
-- [Product Tour 与 Example Workspace](docs/product-tour-and-example-workspaces.md)
+- [外部工具插件协议](docs/external-tool-plugin-protocol.md)
+- [配置与日志](docs/configuration-and-logging.md)
 - [发布与分发](docs/release-distribution.md)
-- [客户上手、协作方案生成与 Agent 改进](docs/customer-onboarding-playbook-generation-and-agent-improvement.md)
-- [产品发布与增长 TODO](docs/product-launch-and-growth-todo.md)
 
 ## 开发
 

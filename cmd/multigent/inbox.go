@@ -68,7 +68,7 @@ func validateIdentity(ts taskstore.Store, identity, fieldName string) error {
 				fieldName, identity, project, fieldName, project, identity, fieldName)
 		}
 	}
-	return fmt.Errorf("unknown %s %q (hint: use 'human' or 'project/agent' format, e.g. cc-connect/pm)", fieldName, identity)
+	return fmt.Errorf("unknown %s %q (hint: use 'human' or 'project/agent' format, e.g. web-app/pm)", fieldName, identity)
 }
 
 func newInboxCmd() *cobra.Command {
@@ -113,7 +113,7 @@ func newInboxListCmd() *cobra.Command {
 		Long: `List async messages in the mailbox.
 
 By default shows unread messages for 'human'.
-Use --recipient to filter by mailbox (e.g. --recipient cc-connect/pm).
+Use --recipient to filter by mailbox (e.g. --recipient web-app/pm).
 Use --all to show all messages including read ones.`,
 		RunE: func(cmd *cobra.Command, args []string) error {
 			root, err := resolveRoot()
@@ -380,12 +380,12 @@ func newInboxForwardCmd() *cobra.Command {
 	cmd := &cobra.Command{
 		Use:   "forward <task-id>",
 		Short: "Forward a task to another agent for action, then return to inbox",
-		Long: `Forward an inbox item to another agent (e.g. qa-reviewer) for them to do
+		Long: `Forward an inbox item to another agent (e.g. qa) for them to do
 work on it. The forwarded task carries the full original context plus your note.
 When that agent finishes, it should call confirm-request which will route the
 result back to your inbox so you can make the final decision.
 
-  multigent inbox forward t-20260317-abc123 --to cc-connect/qa-reviewer \
+  multigent inbox forward t-20260317-abc123 --to web-app/qa \
     --note "Please review the diff and let me know if it looks safe to merge."`,
 		Args: cobra.ExactArgs(1),
 		RunE: func(cmd *cobra.Command, args []string) error {
@@ -412,7 +412,7 @@ result back to your inbox so you can make the final decision.
 			// Parse forwarding target
 			parts := strings.SplitN(to, "/", 2)
 			if len(parts) != 2 || parts[0] == "" || parts[1] == "" {
-				return fmt.Errorf("--to must be in format <project>/<agent>, e.g. cc-connect/qa-reviewer")
+				return fmt.Errorf("--to must be in format <project>/<agent>, e.g. web-app/qa")
 			}
 			targetProject, targetAgent := parts[0], parts[1]
 
@@ -514,15 +514,15 @@ Supports group send by repeating --to.
 
 Recipient format:
   --to human                 → agency owner's inbox
-  --to cc-connect/pm         → project cc-connect, agent pm
-  --to cc-connect/dev-claude → project cc-connect, agent dev-claude
+  --to web-app/pm         → project web-app, agent pm
+  --to web-app/dev → project web-app, agent dev
 
 Examples:
   # Single recipient
-  multigent inbox send --to cc-connect/pm --body "..."
+  multigent inbox send --to web-app/pm --body "..."
 
   # Group send (repeat --to)
-  multigent inbox send --to cc-connect/pm --to cc-connect/dev-claude --to human --body "..."`,
+  multigent inbox send --to web-app/pm --to web-app/dev --to human --body "..."`,
 		RunE: func(cmd *cobra.Command, args []string) error {
 			root, err := resolveRoot()
 			if err != nil {
@@ -604,7 +604,7 @@ func newInboxMessagesCmd() *cobra.Command {
 
 By default shows only unread messages for 'human'.
 Use --recipient to inspect an agent's mailbox.
-Use --from to filter by sender (e.g. --from cc-connect/pm).
+Use --from to filter by sender (e.g. --from web-app/pm).
 Use --all to show all messages including already-read ones.
 Use --archived to show archived messages.`,
 		RunE: func(cmd *cobra.Command, args []string) error {
@@ -694,7 +694,7 @@ Use --archived to show archived messages.`,
 	}
 
 	cmd.Flags().StringVar(&recipient, "recipient", "", "mailbox to inspect: 'human' (default) or 'project/agent'")
-	cmd.Flags().StringVar(&from, "from", "", "filter by sender: 'human' or 'project/agent' (e.g. cc-connect/pm)")
+	cmd.Flags().StringVar(&from, "from", "", "filter by sender: 'human' or 'project/agent' (e.g. web-app/pm)")
 	cmd.Flags().BoolVar(&all, "all", false, "show all messages including already-read ones")
 	cmd.Flags().BoolVar(&archived, "archived", false, "show only archived messages")
 	cmd.Flags().BoolVar(&mark, "mark-read", false, "mark displayed messages as read after listing")
@@ -807,8 +807,8 @@ func newInboxFwdCmd() *cobra.Command {
 The forwarded message includes the original content and an optional note.
 Supports group forward by repeating --to.
 
-  multigent inbox fwd msg-20260317-abc123 --to cc-connect/dev-claude --note "FYI"
-  multigent inbox fwd msg-20260317-abc123 --to cc-connect/pm --to cc-connect/qa-reviewer`,
+  multigent inbox fwd msg-20260317-abc123 --to web-app/dev --note "FYI"
+  multigent inbox fwd msg-20260317-abc123 --to web-app/pm --to web-app/qa`,
 		RunE: func(cmd *cobra.Command, args []string) error {
 			root, err := resolveRoot()
 			if err != nil {

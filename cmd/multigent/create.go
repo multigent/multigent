@@ -17,7 +17,7 @@ import (
 func newCreateCmd() *cobra.Command {
 	cmd := &cobra.Command{
 		Use:   "create",
-		Short: "Create workspace objects (agency, team, role, project)",
+		Short: "Create workspace objects (workspace, team, role, project)",
 	}
 	cmd.AddCommand(
 		newCreateAgencyCmd(),
@@ -28,7 +28,7 @@ func newCreateCmd() *cobra.Command {
 	return cmd
 }
 
-// ── create agency ─────────────────────────────────────────────────────────────
+// ── create agency/workspace ───────────────────────────────────────────────────
 
 func newCreateAgencyCmd() *cobra.Command {
 	var (
@@ -39,19 +39,19 @@ func newCreateAgencyCmd() *cobra.Command {
 
 	cmd := &cobra.Command{
 		Use:   "agency",
-		Short: "Initialise a new multigent workspace",
-		Example: `  # Blank agency
-  multigent create agency --name "Acme Agency" --desc "Building the future"
+		Short: "Initialise a new Multigent workspace directory",
+		Example: `  # Blank workspace
+  multigent create agency --name "Acme" --desc "Agent collaboration workspace"
 
   # From a local template archive
-  multigent create agency --name "Acme Agency" --template tech-project.tar.gz
+  multigent create agency --name "Acme" --template starter-workspace.tar.gz
 
   # From a template directory
-  multigent create agency --name "Acme Agency" --template ~/templates/tech-project
+  multigent create agency --name "Acme" --template ~/templates/starter-workspace
 
   # From a URL
-  multigent create agency --name "Acme Agency" \
-    --template https://github.com/multigent/multigent-templates/releases/download/v1.0.0/tech-project.tar.gz`,
+  multigent create agency --name "Acme" \
+    --template https://github.com/multigent/templates/releases/download/v1.0.0/starter-workspace.tar.gz`,
 		RunE: func(cmd *cobra.Command, args []string) error {
 			if name == "" {
 				return fmt.Errorf("--name is required")
@@ -68,7 +68,7 @@ func newCreateAgencyCmd() *cobra.Command {
 				}
 			} else {
 				if err := os.MkdirAll(root, 0o755); err != nil {
-					return fmt.Errorf("create agency dir: %w", err)
+					return fmt.Errorf("create workspace dir: %w", err)
 				}
 				displayName := name
 				if filepath.IsAbs(name) || strings.ContainsAny(name, `/\`) {
@@ -80,7 +80,7 @@ func newCreateAgencyCmd() *cobra.Command {
 				}
 			}
 
-			fmt.Printf("✓ Agency workspace created: %s\n", root)
+			fmt.Printf("✓ Multigent workspace created: %s\n", root)
 			fmt.Printf("\nNext steps:\n")
 			fmt.Printf("  cd %q\n", name)
 			if templateSrc == "" {
@@ -93,7 +93,7 @@ func newCreateAgencyCmd() *cobra.Command {
 		},
 	}
 
-	cmd.Flags().StringVar(&name, "name", "", "Agency name (also used as directory name)")
+	cmd.Flags().StringVar(&name, "name", "", "Workspace name (also used as directory name)")
 	cmd.Flags().StringVar(&desc, "desc", "", "Short description")
 	cmd.Flags().StringVar(&templateSrc, "template", "", "template source: local .tar.gz file, directory, or HTTPS URL")
 	_ = cmd.MarkFlagRequired("name")
@@ -375,7 +375,7 @@ func joinStrings(ss []string, empty string) string {
 
 // ── template apply helper ─────────────────────────────────────────────────────
 
-// applyTemplate creates an agency workspace at root using the template at src.
+// applyTemplate creates an Multigent workspace at root using the template at src.
 // src can be a local .tar.gz, a local directory, or an HTTPS URL to a .tar.gz.
 func applyTemplate(root, agencyName, agencyDesc, src string) error {
 	isURL := strings.HasPrefix(src, "https://") || strings.HasPrefix(src, "http://")

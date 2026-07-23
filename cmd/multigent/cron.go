@@ -67,13 +67,13 @@ func newCronAddCmd() *cobra.Command {
 		Use:   "add",
 		Short: "Add a cron job for an agent",
 		Example: `  # Run a daily standup summary at 09:00 on weekdays
-  multigent cron add --project cc-connect --agent pm \
+  multigent cron add --project web-app --agent pm \
     --title "Daily standup" \
     --schedule "0 9 * * 1-5" \
     --prompt "Summarise open tasks and post a standup report."
 
   # Every 30 minutes health check
-  multigent cron add --project cc-connect --agent qa-reviewer \
+  multigent cron add --project web-app --agent qa \
     --title "Periodic health check" \
     --schedule "*/30 * * * *" \
     --prompt "Run a quick sanity check on the project."`,

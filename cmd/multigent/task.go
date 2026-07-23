@@ -68,27 +68,27 @@ func newTaskAddCmd() *cobra.Command {
 		Short: "Add a new task for an agent",
 		Example: `  # Add a bug task (agent retries safely via idempotency key)
   multigent task add \
-    --project cc-connect --agent dev-claude \
+    --project web-app --agent dev \
     --title "Fix login redirect on mobile" \
     --type bug --priority 1 \
     --idempotency-key "fix-login-redirect-2026-06" \
     --prompt "The login redirect is broken on mobile. Fix it and open a PR." \
-    --created-by human
+    --created-by admin
 
   # Add a feature task
   multigent task add \
-    --project cc-connect --agent pm \
+    --project web-app --agent pm \
     --title "Scope AI search feature" \
     --type feature --priority 2 \
     --prompt "Issue #101 requests AI search. Scope and estimate the work." \
-    --created-by human
+    --created-by admin
 
-  # Route directly to human inbox for review
+  # Route directly to a workspace member for review
   multigent task add \
-    --project cc-connect --agent pm \
-    --title "Approve Q2 roadmap" --assignee human \
+    --project web-app --agent pm \
+    --title "Approve Q2 roadmap" --assignee admin \
     --prompt "Review and approve the Q2 roadmap doc at docs/roadmap-q2.md" \
-    --created-by cc-connect/pm`,
+    --created-by web-app/pm`,
 		RunE: func(cmd *cobra.Command, args []string) error {
 			root, err := resolveRoot()
 			if err != nil {
@@ -123,16 +123,16 @@ func newTaskAddCmd() *cobra.Command {
 			if !cmd.Flags().Changed("created-by") {
 				return fmt.Errorf("--created-by is required\n\n" +
 					"Usage:\n" +
-					"  --created-by human              (created by a human)\n" +
-					"  --created-by <project>/<agent>  (created by an agent, e.g. cc-connect/pm)")
+					"  --created-by <username>         (created by a workspace user)\n" +
+					"  --created-by <project>/<agent>  (created by an agent, e.g. web-app/pm)")
 			}
 			if strings.Contains(createdBy, "/") {
 				parts := strings.SplitN(createdBy, "/", 2)
 				if parts[1] == "human" {
 					return fmt.Errorf("invalid --created-by value %q: 'human' is not an agent name\n\n"+
 						"Usage:\n"+
-						"  --created-by human              (created by a human)\n"+
-						"  --created-by <project>/<agent>  (created by an agent, e.g. cc-connect/pm)", createdBy)
+						"  --created-by <username>         (created by a workspace user)\n"+
+						"  --created-by <project>/<agent>  (created by an agent, e.g. web-app/pm)", createdBy)
 				}
 			}
 
@@ -242,10 +242,10 @@ func newTaskListCmd() *cobra.Command {
 	cmd := &cobra.Command{
 		Use:   "list",
 		Short: "List tasks for an agent",
-		Example: `  multigent task list --project cc-connect --agent qa-reviewer
-  multigent task list --project cc-connect --agent qa-reviewer --format table
-  multigent task list --project cc-connect --agent qa-reviewer --status pending
-  multigent task list --project cc-connect --agent qa-reviewer --archived`,
+		Example: `  multigent task list --project web-app --agent qa
+  multigent task list --project web-app --agent qa --format table
+  multigent task list --project web-app --agent qa --status pending
+  multigent task list --project web-app --agent qa --archived`,
 		RunE: func(cmd *cobra.Command, args []string) error {
 			root, err := resolveRoot()
 			if err != nil {
@@ -334,8 +334,8 @@ func newTaskShowCmd() *cobra.Command {
 	cmd := &cobra.Command{
 		Use:   "show <task-id>",
 		Short: "Show full detail of a task",
-		Example: `  multigent task show t-abc123 --project cc-connect --agent pm
-  multigent task show t-abc123 --project cc-connect --agent pm --format json`,
+		Example: `  multigent task show t-abc123 --project web-app --agent pm
+  multigent task show t-abc123 --project web-app --agent pm --format json`,
 		Args: cobra.ExactArgs(1),
 		RunE: func(cmd *cobra.Command, args []string) error {
 			root, err := resolveRoot()
@@ -769,7 +769,7 @@ func newTaskConfirmRequestCmd() *cobra.Command {
 
 Use --to to route to a specific agent instead of the default human inbox:
 
-  multigent task confirm-request --id <task-id> --to cc-connect/pm --summary "PR ready"`,
+  multigent task confirm-request --id <task-id> --to web-app/pm --summary "PR ready"`,
 		RunE: func(cmd *cobra.Command, args []string) error {
 			root, err := resolveRoot()
 			if err != nil {
@@ -836,7 +836,7 @@ Use --to to route to a specific agent instead of the default human inbox:
 	cmd.Flags().StringVar(&taskID, "id", "", "task ID")
 	cmd.Flags().StringVar(&summary, "summary", "", "one-line summary for the recipient")
 	cmd.Flags().StringVar(&actionHint, "action-hint", "", "additional context / background")
-	cmd.Flags().StringVar(&to, "to", "", "recipient: 'human' (default) or 'project/agent' (e.g. cc-connect/pm)")
+	cmd.Flags().StringVar(&to, "to", "", "recipient: 'human' (default) or 'project/agent' (e.g. web-app/pm)")
 	cmd.Flags().StringArrayVar(&actionItems, "action-item", nil, "a specific action for the human (repeatable)")
 	return cmd
 }
@@ -1076,13 +1076,13 @@ when they finish — but the running Docker container is not forcibly killed.
 
 Use --no-pending to skip pending tasks and only cancel in-progress ones.`,
 		Example: `  # Cancel all pending tasks for one agent
-  multigent task stop-all --project cc-connect --agent dev-claude
+  multigent task stop-all --project web-app --agent dev
 
   # Cancel all pending tasks across the whole project
-  multigent task stop-all --project cc-connect --all-agents
+  multigent task stop-all --project web-app --all-agents
 
   # Cancel including in-progress (marks them failed in store)
-  multigent task stop-all --project cc-connect --all-agents --include-running`,
+  multigent task stop-all --project web-app --all-agents --include-running`,
 		RunE: func(cmd *cobra.Command, args []string) error {
 			root, err := resolveRoot()
 			if err != nil {
@@ -1190,13 +1190,13 @@ Cost is estimated using Anthropic's Claude pricing (configurable via env):
   ANTHROPIC_INPUT_PRICE_PER_M  (default: 3.0  USD per 1M input tokens)
   ANTHROPIC_OUTPUT_PRICE_PER_M (default: 15.0 USD per 1M output tokens)`,
 		Example: `  # Tokens for a specific task
-  multigent task tokens --project cc-connect --agent pm --task t-20260317-18omal
+  multigent task tokens --project web-app --agent pm --task t-20260317-18omal
 
   # Aggregate all tasks for an agent
-  multigent task tokens --project cc-connect --agent pm --all
+  multigent task tokens --project web-app --agent pm --all
 
   # All agents in project
-  multigent task tokens --project cc-connect --all-agents`,
+  multigent task tokens --project web-app --all-agents`,
 		RunE: func(cmd *cobra.Command, args []string) error {
 			root, err := resolveRoot()
 			if err != nil {

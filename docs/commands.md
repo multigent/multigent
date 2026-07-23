@@ -3,7 +3,7 @@
 All commands accept a `--dir <path>` global flag to operate on a workspace outside the current directory.
 
 ```bash
-multigent --dir /path/to/MyAgency inbox list
+multigent --dir ./multigent-data inbox list
 ```
 
 ---
@@ -169,7 +169,7 @@ The inbox has two distinct concepts.
 
 ```bash
 multigent inbox list
-multigent inbox list --to cc-connect/pm          # filter by recipient
+multigent inbox list --to web-app/pm          # filter by recipient
 multigent inbox show    <task-id>                # summary, action items, log tail
 multigent inbox reply   <task-id> --body "yes, proceed"
 multigent inbox forward <task-id> --to <project>/<agent> --note "..."
@@ -180,21 +180,21 @@ multigent inbox forward <task-id> --to <project>/<agent> --note "..."
 ```bash
 # Send (single or group)
 multigent inbox send \
-  --from cc-connect/pm \
-  --to   cc-connect/dev-claude \
+  --from web-app/pm \
+  --to   web-app/dev \
   --subject "New task context" \
   --body "Extra info for the task I just created..."
 
 # Group send — repeat --to
 multigent inbox send \
-  --from cc-connect/pm \
-  --to cc-connect/dev-claude --to cc-connect/qa-reviewer --to human \
+  --from web-app/pm \
+  --to web-app/dev --to web-app/qa --to human \
   --subject "Sprint kick-off" \
   --body "New sprint starts Monday."
 
 # Read
 multigent inbox messages                                         # human's mailbox (unread)
-multigent inbox messages --recipient cc-connect/pm              # agent's mailbox
+multigent inbox messages --recipient web-app/pm              # agent's mailbox
 multigent inbox messages --from human                           # filter by sender
 multigent inbox messages --all                                  # include read messages
 multigent inbox messages --archived                             # show archived
@@ -205,8 +205,8 @@ multigent inbox reply <msg-id> --from <your-address> --body "..."
 
 # Forward
 multigent inbox fwd <msg-id> --from <your-address> --to <recipient>
-multigent inbox fwd <msg-id> --from cc-connect/pm \
-  --to cc-connect/dev-claude --to cc-connect/qa-reviewer \
+multigent inbox fwd <msg-id> --from web-app/pm \
+  --to web-app/dev --to web-app/qa \
   --note "Please coordinate."
 
 # Per-message status management
@@ -264,7 +264,7 @@ Crons enqueue a new task each time the schedule fires. The scheduler checks for 
 ## `template` — share agencies
 
 ```bash
-# Pack the current agency as a shareable template
+# Pack the current workspace as a shareable template
 # Includes: agency-prompt.md, teams/, skills/, agent-playbooks/, project-blueprints/
 multigent template pack --output tech-agency.tar.gz \
   --name "tech-project" --version "1.0.0" \

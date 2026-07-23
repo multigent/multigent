@@ -54,14 +54,15 @@ const (
 	ContainerDefaultPATH = "/opt/multigent/mga/bin:/usr/local/go/bin:/root/go/bin:/usr/local/sbin:/usr/local/bin:/usr/sbin:/usr/bin:/sbin:/bin"
 )
 
-// defaultImages keeps temporary compatibility for CLIs that do not yet have a
-// managed installer. Models with managed installers use BaseImage.
+// defaultImages uses the managed runtime base by default. Agent CLI binaries
+// are installed during sandbox initialization instead of being baked into
+// separate vendor-specific images.
 var defaultImages = map[entity.AgentModel]string{
 	entity.ModelClaudeCode: BaseImage,
 	entity.ModelCodex:      BaseImage,
 	entity.ModelGemini:     BaseImage,
-	entity.ModelOpenCode:   imagePrefix + "/sandbox-opencode:latest",
-	entity.ModelCursor:     imagePrefix + "/sandbox-claudecode:latest",
+	entity.ModelOpenCode:   BaseImage,
+	entity.ModelCursor:     BaseImage,
 	entity.ModelQoder:      BaseImage,
 }
 

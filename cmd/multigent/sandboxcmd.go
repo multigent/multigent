@@ -35,7 +35,7 @@ func newSandboxShowCmd() *cobra.Command {
 	cmd := &cobra.Command{
 		Use:     "show",
 		Short:   "Show sandbox config and the generated docker run command for an agent",
-		Example: `  multigent sandbox show --project cc-connect --agent dev-claude`,
+		Example: `  multigent sandbox show --project web-app --agent dev`,
 		RunE: func(cmd *cobra.Command, args []string) error {
 			root, err := resolveRoot()
 			if err != nil {
@@ -159,7 +159,7 @@ func newSandboxTestCmd() *cobra.Command {
 	cmd := &cobra.Command{
 		Use:     "test",
 		Short:   "Verify the sandbox works by running 'echo ok' inside the container",
-		Example: `  multigent sandbox test --project cc-connect --agent dev-claude`,
+		Example: `  multigent sandbox test --project web-app --agent dev`,
 		RunE: func(cmd *cobra.Command, args []string) error {
 			root, err := resolveRoot()
 			if err != nil {

@@ -16,26 +16,26 @@ import (
 func newTemplateCmd() *cobra.Command {
 	cmd := &cobra.Command{
 		Use:   "template",
-		Short: "Pack and inspect agency templates",
-		Long: `Templates let you share and reuse agency configurations.
+		Short: "Pack and inspect workspace templates",
+		Long: `Templates let you share and reuse workspace configurations.
 
 A template is a .tar.gz archive containing:
   template.json     — metadata (name, version, author, description…)
-  agency-prompt.md  — top-level agency prompt
+  agency-prompt.md  — top-level workspace prompt
   teams/            — team prompts and role definitions
   skills/           — reusable skill files
 
 Runtime state (projects, agents, tasks) is never included.
 
-Pack your agency as a template:
-  multigent template pack --output my-agency.tar.gz
+Pack your workspace as a template:
+  multigent template pack --output starter-workspace.tar.gz
 
 Inspect a template:
-  multigent template info my-agency.tar.gz
+  multigent template info starter-workspace.tar.gz
 
-Create an agency from a template:
-  multigent create agency --name "My Agency" --template my-agency.tar.gz
-  multigent create agency --name "My Agency" --template https://example.com/template.tar.gz`,
+Create a workspace from a template:
+  multigent create agency --name "Acme" --template starter-workspace.tar.gz
+  multigent create agency --name "Acme" --template https://example.com/template.tar.gz`,
 	}
 	cmd.AddCommand(
 		newTemplatePackCmd(),
@@ -62,9 +62,9 @@ func newTemplatePackCmd() *cobra.Command {
 
 	cmd := &cobra.Command{
 		Use:   "pack",
-		Short: "Pack the current agency into a shareable template archive",
-		Example: `  # Pack the current agency (auto-detect name from agency.yaml)
-  multigent template pack --output my-agency-template.tar.gz
+		Short: "Pack the current workspace into a shareable template archive",
+		Example: `  # Pack the current workspace (auto-detect name from workspace metadata)
+  multigent template pack --output starter-workspace.tar.gz
 
   # Pack with full metadata
   multigent template pack --output tech-project.tar.gz \
@@ -74,16 +74,16 @@ func newTemplatePackCmd() *cobra.Command {
     --homepage "https://github.com/alice/tech-project-template" \
     --keywords "engineering,software,go"`,
 		RunE: func(cmd *cobra.Command, args []string) error {
-			// Resolve agency dir.
+			// Resolve workspace dir.
 			if agencyDir == "" {
 				root, err := resolveRoot()
 				if err != nil {
-					return fmt.Errorf("not inside an multigent workspace; use --dir or run from the agency root: %w", err)
+					return fmt.Errorf("not inside a Multigent workspace; use --dir or run from the workspace root: %w", err)
 				}
 				agencyDir = root
 			}
 
-			// Load agency.yaml to fill in defaults.
+			// Load workspace metadata to fill in defaults.
 			agencyYAML := filepath.Join(agencyDir, ".multigent", "agency.yaml")
 			if name == "" {
 				if n := readAgencyName(agencyYAML); n != "" {
@@ -150,12 +150,12 @@ func newTemplatePackCmd() *cobra.Command {
 			fmt.Printf("\nShare it:\n")
 			fmt.Printf("  Upload %s to GitHub releases or any URL\n", filepath.Base(absOut))
 			fmt.Printf("  Others can use it with:\n")
-			fmt.Printf("    multigent create agency --name \"My Agency\" --template %s\n", filepath.Base(absOut))
+			fmt.Printf("    multigent create agency --name \"Acme\" --template %s\n", filepath.Base(absOut))
 			return nil
 		},
 	}
 
-	cmd.Flags().StringVar(&agencyDir, "dir", "", "agency workspace directory (default: auto-detect from CWD)")
+	cmd.Flags().StringVar(&agencyDir, "dir", "", "Multigent workspace directory (default: auto-detect from CWD)")
 	cmd.Flags().StringVar(&outputPath, "output", "", "output file path (default: <name>.tar.gz)")
 	cmd.Flags().StringVar(&name, "name", "", "template name (default: from agency.yaml)")
 	cmd.Flags().StringVar(&version, "version", "", "version string, e.g. 1.0.0 (default: 1.0.0)")
@@ -229,7 +229,7 @@ func newTemplateInfoCmd() *cobra.Command {
 				fmt.Printf("  created : %s\n", m.CreatedAt)
 			}
 			fmt.Printf("\nUse it:\n")
-			fmt.Printf("  multigent create agency --name \"My Agency\" --template %s\n", src)
+			fmt.Printf("  multigent create agency --name \"Acme\" --template %s\n", src)
 			return nil
 		},
 	}

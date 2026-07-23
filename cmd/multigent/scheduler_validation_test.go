@@ -64,12 +64,12 @@ func TestValidateWakeupCondition(t *testing.T) {
 		},
 		{
 			name:      "workspace wakeup condition script",
-			condition: "$AGENCY_DIR/scripts/wakeup-conditions/cc-connect-pm.sh",
+			condition: "$AGENCY_DIR/scripts/wakeup-conditions/web-app-pm.sh",
 			wantErr:   false,
 		},
 		{
 			name:      "workspace wakeup condition script with braces",
-			condition: "${AGENCY_DIR}/scripts/wakeup-conditions/cc-connect-pm.sh",
+			condition: "${AGENCY_DIR}/scripts/wakeup-conditions/web-app-pm.sh",
 			wantErr:   false,
 		},
 

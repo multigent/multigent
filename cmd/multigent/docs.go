@@ -66,7 +66,7 @@ func newDocsAddCmd() *cobra.Command {
 only metadata is recorded.
 
   multigent docs add --path ./docs/design.md --title "System Design" \
-    --index "cc-connect/architecture" --created-by human
+    --index "product/architecture" --created-by admin
 
 Use --ref to record which existing documents this one is derived from or references.
 Virtual directories in --index are created automatically.`,

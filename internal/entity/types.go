@@ -417,11 +417,9 @@ type SandboxConfig struct {
 // DockerSandboxConfig holds options for Docker-based sandbox execution.
 type DockerSandboxConfig struct {
 	// Image is the container image to use.
-	// Defaults are chosen by model when empty:
-	//   claudecode → ghcr.io/multigent/sandbox-claudecode:latest
-	//   codex      → ghcr.io/multigent/sandbox-codex:latest
-	//   gemini     → ghcr.io/multigent/sandbox-gemini:latest
-	//   (others)   → ghcr.io/multigent/sandbox-generic:latest
+	// Defaults to ghcr.io/multigent/multigent/runtime-base:latest when empty.
+	// Agent CLI versions are installed into a persistent toolchain cache at
+	// sandbox initialization time.
 	Image string `yaml:"image,omitempty" json:"image,omitempty"`
 
 	// NetworkMode controls Docker networking.

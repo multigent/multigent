@@ -17,7 +17,7 @@ func newAgentSetEnvCmd() *cobra.Command {
 		Short: "Set an environment variable on a specific agent",
 		Long: `Per-agent env vars have the highest priority and override workspace
 secrets and API provider settings.`,
-		Example: `  multigent agent set-env ANTHROPIC_MODEL=claude-sonnet-4-20250514 -p myproj -a dev-claude
+		Example: `  multigent agent set-env ANTHROPIC_MODEL=claude-sonnet-4-20250514 -p myproj -a dev
   multigent agent set-env MY_TOKEN=secret123 --project myproj --agent pm`,
 		Args: cobra.ExactArgs(1),
 		RunE: func(cmd *cobra.Command, args []string) error {
@@ -62,7 +62,7 @@ func newAgentUnsetEnvCmd() *cobra.Command {
 	cmd := &cobra.Command{
 		Use:     "unset-env KEY",
 		Short:   "Remove an environment variable from a specific agent",
-		Example: `  multigent agent unset-env ANTHROPIC_MODEL -p myproj -a dev-claude`,
+		Example: `  multigent agent unset-env ANTHROPIC_MODEL -p myproj -a dev`,
 		Args:    cobra.ExactArgs(1),
 		RunE: func(cmd *cobra.Command, args []string) error {
 			root, err := resolveRoot()
@@ -105,7 +105,7 @@ func newAgentListEnvCmd() *cobra.Command {
 	cmd := &cobra.Command{
 		Use:     "list-env",
 		Short:   "List environment variables for a specific agent",
-		Example: `  multigent agent list-env -p myproj -a dev-claude`,
+		Example: `  multigent agent list-env -p myproj -a dev`,
 		RunE: func(cmd *cobra.Command, args []string) error {
 			root, err := resolveRoot()
 			if err != nil {

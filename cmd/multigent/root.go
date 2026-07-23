@@ -26,27 +26,25 @@ var rootCmd = &cobra.Command{
 	SilenceErrors: true, // error is printed by main()
 	SilenceUsage:  true, // no usage on error
 	Use:           "multigent",
-	Short:         "AI agent organisation and context management",
-	Long: `multigent manages the organisational context for AI agents.
+	Short:         "Agent collaboration control plane",
+	Long: `multigent runs an agent collaboration control plane.
 
-It lets you create an agency with teams and projects, then hire (or assign)
-AI agents into projects with the right accumulated context so they can
-start working immediately.
+It helps teams manage workspaces, users, teams, projects, agents, model
+accounts, external tools, tasks, workflows, schedules, docs, and run records
+from one place.
 
 Typical workflow:
 
-  multigent create agency --name "MyAgency"
-  cd MyAgency
+  multigent start --dir ./multigent-data --addr 127.0.0.1:27892 --open
 
-  multigent create team --name "engineering"
-  multigent create project --name "my-api" --repo "../my-api"
+  # Or serve only the API for a separate frontend:
+  multigent --dir ./multigent-data api serve --addr 127.0.0.1:27893
 
-  multigent agent hire --project "my-api" --team "engineering" \
-                       --model "claudecode" --name "dev"
-  multigent task add   --project "my-api" --agent "dev" \
-                       --title "Implement feature X" --prompt "..." \
-                       --created-by human
-  multigent agent run  --project "my-api" --agent "dev"
+Agent runtime commands:
+
+  mga task list
+  mga task complete --id <task-id> --summary "..."
+  mga docs read <doc-id>
 
 Agent-friendly tips:
   - All list/show commands output JSON by default (--format table for humans)
@@ -56,7 +54,7 @@ Agent-friendly tips:
 
 You can run any command from outside the workspace by passing --dir:
 
-  multigent --dir /path/to/MyAgency list agents`,
+  multigent --dir ./multigent-data list agents`,
 }
 
 func init() {

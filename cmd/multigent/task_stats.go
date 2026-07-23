@@ -38,8 +38,8 @@ Tasks are attributed by executor queue (--by agent, default), assignee, or label
 
 Examples:
   multigent task stats --since today
-  multigent task stats --since today --project cc-connect --agent dev-cursor
-  multigent task stats --since today --assignee cc-connect/dev-cursor
+  multigent task stats --since today --project web-app --agent dev
+  multigent task stats --since today --assignee web-app/dev
   multigent task stats --since 7d --by assignee
   multigent task stats --since today --by label:value
   multigent task stats --since today --by label:category

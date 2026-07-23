@@ -38,11 +38,11 @@ With a run-id, shows that specific run.
 Use --follow (-f) to stream new output as the run progresses.
 
 Examples:
-  multigent agent log --project cc-connect --agent pm
-  multigent agent log --project cc-connect --agent pm --current
-  multigent agent log --project cc-connect --agent pm 20260321-104532-t-20260321-abc123.log
-  multigent agent log --project cc-connect --agent pm --current --follow
-  multigent agent log --project cc-connect --agent pm --follow`,
+  multigent agent log --project web-app --agent pm
+  multigent agent log --project web-app --agent pm --current
+  multigent agent log --project web-app --agent pm 20260321-104532-t-20260321-abc123.log
+  multigent agent log --project web-app --agent pm --current --follow
+  multigent agent log --project web-app --agent pm --follow`,
 		RunE: func(cmd *cobra.Command, args []string) error {
 			root, err := resolveRoot()
 			if err != nil {

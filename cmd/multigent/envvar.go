@@ -44,7 +44,7 @@ func newEnvVarAddCmd() *cobra.Command {
   multigent envvar add GITHUB_TOKEN=ghp_xxxx
 
   # Add a variable for specific agents only
-  multigent envvar add MY_API_KEY=sk-xxx --scope agents --agents "myproj/dev-claude,myproj/pm"
+  multigent envvar add MY_API_KEY=sk-xxx --scope agents --agents "myproj/dev,myproj/pm"
 
   # Add with description
   multigent envvar add NPM_TOKEN=npm_xxx --description "npm publish token"`,

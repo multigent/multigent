@@ -176,13 +176,13 @@ First-class integration beyond what skills can do today:
 
 ### Template marketplace
 
-A community hub for sharing full agency templates (teams + roles + skills + wakeup routines + project blueprints). Browse, preview, and install in one command:
+A community hub for sharing full workspace templates (teams + roles + skills + wakeup routines + project blueprints). Browse, preview, and install in one command:
 
 ```bash
 multigent template browse
 multigent template install saas-startup
 multigent template install content-agency
-multigent template publish --name "my-agency-setup"
+multigent template publish --name "starter-workspace"
 ```
 
 Templates are versioned, rated, and searchable by use case, model, or team structure.
@@ -203,7 +203,7 @@ No proprietary cloud required. Works with any S3-compatible store or a simple sy
 
 ### Inter-agency federation
 
-Let two separate agency workspaces communicate — useful for organisations where different teams run independent agencies:
+Let two separate Multigent workspaces communicate — useful for organisations where different teams run independent workspaces:
 
 ```bash
 multigent agency peer add \

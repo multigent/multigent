@@ -1847,37 +1847,37 @@ func newSchedulerHeartbeatConfigureCmd() *cobra.Command {
 		Use:   "configure",
 		Short: "Configure heartbeat settings for an agent (interval, active hours, etc.)",
 		Example: `  # Enable heartbeat with 30-minute interval
-  multigent scheduler heartbeat configure --project cc-connect --agent qa-reviewer \
+  multigent scheduler heartbeat configure --project web-app --agent qa \
     --enable --interval 30m
 
   # Only wake up between 09:00 and 18:00 on weekdays
-  multigent scheduler heartbeat configure --project cc-connect --agent dev \
+  multigent scheduler heartbeat configure --project web-app --agent dev \
     --enable --interval 1h --active-hours "09:00-18:00" --active-days "weekdays"
 
   # Night-shift agent: only wake up between 22:00 and 06:00
-  multigent scheduler heartbeat configure --project cc-connect --agent dev \
+  multigent scheduler heartbeat configure --project web-app --agent dev \
     --active-hours "22:00-06:00"
 
   # Clear active-hours restriction (run anytime)
-  multigent scheduler heartbeat configure --project cc-connect --agent dev \
+  multigent scheduler heartbeat configure --project web-app --agent dev \
     --active-hours ""
 
   # Disable
-  multigent scheduler heartbeat configure --project cc-connect --agent qa-reviewer --disable
+  multigent scheduler heartbeat configure --project web-app --agent qa --disable
 
 		# Show current config
-  multigent scheduler heartbeat configure --project cc-connect --agent qa-reviewer
+  multigent scheduler heartbeat configure --project web-app --agent qa
 
   # Set a wakeup routine (runs when queue is empty)
-  multigent scheduler heartbeat configure --project cc-connect --agent pm \
-    --wakeup-prompt-file /root/code/TechStudio/projects/cc-connect/agents/pm/.multigent-context/wakeup.md
+  multigent scheduler heartbeat configure --project web-app --agent pm \
+    --wakeup-prompt-file /root/code/TechStudio/projects/web-app/agents/pm/.multigent-context/wakeup.md
 
   # Enable event triggers: wake immediately on message or task
-  multigent scheduler heartbeat configure --project cc-connect --agent dev \
+  multigent scheduler heartbeat configure --project web-app --agent dev \
     --trigger "message,task"
 
   # Trigger-only agent (no periodic heartbeat, wakes only on events)
-  multigent scheduler heartbeat configure --project cc-connect --agent on-call \
+  multigent scheduler heartbeat configure --project web-app --agent on-call \
     --disable --trigger "message,task"`,
 		RunE: func(cmd *cobra.Command, args []string) error {
 			root, err := resolveRoot()

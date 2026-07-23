@@ -122,7 +122,7 @@ func newListAgentsCmd() *cobra.Command {
 		Aliases: []string{"agent"},
 		Short:   "List hired agents",
 		Example: `  multigent list agents
-  multigent list agents --project cc-connect
+  multigent list agents --project web-app
   multigent list agents --format table`,
 		RunE: func(cmd *cobra.Command, args []string) error {
 			root, err := resolveRoot()

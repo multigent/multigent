@@ -6,13 +6,14 @@
 #
 # Options:
 #   MULTIGENT_BIN_DIR=$HOME/.local/bin bash scripts/install.sh
+#   MULTIGENT_INSTALL_DIR=$HOME/.local/bin bash scripts/install.sh
 #   MULTIGENT_VERSION=v0.1.0 bash scripts/install.sh
 #
 set -euo pipefail
 
 REPO_WEB_URL="${MULTIGENT_REPO_WEB_URL:-https://github.com/multigent/multigent}"
 BREW_PACKAGE="${MULTIGENT_BREW_PACKAGE:-multigent/tap/multigent}"
-BIN_DIR="${MULTIGENT_BIN_DIR:-/usr/local/bin}"
+BIN_DIR="${MULTIGENT_BIN_DIR:-${MULTIGENT_INSTALL_DIR:-/usr/local/bin}}"
 VERSION="${MULTIGENT_VERSION:-}"
 
 if [ -t 1 ] || [ -t 2 ]; then

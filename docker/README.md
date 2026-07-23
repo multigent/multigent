@@ -10,15 +10,11 @@ runtime-base image + versioned agent CLI toolchain bootstrap
 
 The base image contains system dependencies. Codex, Claude Code, Gemini, and other CLIs are installed into `/opt/multigent/toolchains` during sandbox initialization.
 
-## Available images
+## Published images
 
 | Image | Agent | Base |
 |-------|-------|------|
 | `ghcr.io/multigent/multigent/runtime-base:latest` | Managed CLI toolchains | ubuntu:24.04 + Node 22 + Go + Python |
-| `ghcr.io/multigent/multigent/sandbox-claudecode:latest` | Legacy Claude Code image | ubuntu:24.04 + Node 22 + Go + Claude Code |
-| `ghcr.io/multigent/multigent/sandbox-codex:latest` | Legacy Codex image | ubuntu:24.04 + Node 22 + Go + Codex + pnpm |
-| `ghcr.io/multigent/multigent/sandbox-gemini:latest` | Legacy Gemini image | ubuntu:24.04 + Node 22 + Gemini |
-| `ghcr.io/multigent/multigent/sandbox-generic:latest` | Any / custom | ubuntu:24.04 + Node 22 |
 
 The default image for managed CLIs is `ghcr.io/multigent/multigent/runtime-base:latest`, so new users do not need to build a local image first.
 
@@ -38,8 +34,6 @@ docker build --build-arg CN_MIRROR=1 \
              -t multigent/runtime-base:latest \
              -f docker/runtime-base/Dockerfile .
 ```
-
-Same `--build-arg CN_MIRROR=1` works for all sandbox images.
 
 To use the local image instead of GHCR, set the agent's sandbox image to
 `multigent/runtime-base:latest`.
@@ -93,16 +87,14 @@ When an agent is hired with `--sandbox docker`, every `multigent run` invocation
 docker run --rm -i \
   --memory=4096m \
   --network=bridge \
-  -v /path/to/agent-dir:/workspace \          ← agent working dir
-  -v /path/to/workspace-root:/path/to/workspace-root \ ← full workspace (inter-agent tasks)
-  -v /path/to/repo:/path/to/repo \            ← project repo (same path as host)
-  -v ~/.claude:/root/.claude:ro \             ← credentials, read-only
-  -v ~/.config/gh:/root/.config/gh:ro \
-  -v ~/.ssh:/root/.ssh:ro \
-  -v /usr/local/bin/multigent:/usr/local/bin/multigent:ro \  ← multigent binary
-  -w /workspace \
-  -e IS_SANDBOX=1 \                           ← claudecode: allow root run
-  -e ANTHROPIC_API_KEY \                      ← inherited from host (value hidden)
+  --add-host=host.docker.internal:host-gateway \
+  -v /path/to/agent-dir:/path/to/agent-dir \
+  -v /path/to/agent-dir/.multigent/runtime-home/claude/.claude:/root/.claude \
+  -v multigent-toolchains:/opt/multigent/toolchains \
+  -w /path/to/agent-dir \
+  -e IS_SANDBOX=1 \
+  -e MULTIGENT_API_URL=http://host.docker.internal:27893 \
+  -e MULTIGENT_AGENT_TOKEN=<scoped-runtime-token> \
   ghcr.io/multigent/multigent/runtime-base:latest \
   claude --dangerously-skip-permissions \
          --output-format stream-json \
@@ -110,7 +102,7 @@ docker run --rm -i \
          -p --print-file /workspace/.prompt-xxx.txt
 ```
 
-The agent working directory (`CLAUDE.md`, tasks, skills, etc.) is bind-mounted at the real host path. The container is ephemeral (`--rm`). The toolchain cache persists through the Docker named volume.
+The agent working directory is mounted at its real host path so vendor CLIs can persist sessions consistently. Credentials and CLI homes are agent-scoped under `.multigent/runtime-home`; Multigent does not mount host-global `~/.claude`, `~/.codex`, `~/.ssh`, or `~/.config/gh` by default. The container is ephemeral (`--rm`). The toolchain cache persists through the Docker named volume.
 
 ## Custom images
 

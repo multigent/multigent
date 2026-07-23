@@ -34,26 +34,26 @@ conversation (use --no-session to start fresh).
 Examples:
 
   # Inline prompt
-  multigent exec --project cc-connect --agent pm \
+  multigent exec --project web-app --agent pm \
     --prompt "List all open GitHub issues and summarize them"
 
   # From a file
-  multigent exec --project cc-connect --agent dev-claude --file task.txt
+  multigent exec --project web-app --agent dev --file task.txt
 
   # From stdin (pipe)
-  echo "What is 1+1?" | multigent exec --project cc-connect --agent pm
+  echo "What is 1+1?" | multigent exec --project web-app --agent pm
 
   # From stdin (explicit)
-  multigent exec --project cc-connect --agent pm - <<'EOF'
+  multigent exec --project web-app --agent pm - <<'EOF'
   Check the latest PRs.
   EOF
 
   # Resume a specific session
-  multigent exec --project cc-connect --agent pm \
+  multigent exec --project web-app --agent pm \
     --prompt "Prioritize those bugs" --session abc123
 
   # Start a fresh conversation (ignore saved session)
-  multigent exec --project cc-connect --agent pm \
+  multigent exec --project web-app --agent pm \
     --prompt "Start over" --no-session`,
 		Args: cobra.MaximumNArgs(1), // optional "-" for explicit stdin
 		RunE: func(cmd *cobra.Command, args []string) error {

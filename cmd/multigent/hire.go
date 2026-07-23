@@ -65,12 +65,12 @@ func buildHireCmd(use string) *cobra.Command {
 
 	cmd := &cobra.Command{
 		Use:   use,
-		Short: "Hire an agent for a project (merges context and creates the agent working directory)",
-		Long: `hire (or assign) assembles the full context for a (project, team[, role]) tuple and
-writes it into an agent working directory under projects/<project>/agents/<name>/.
+		Short: "Provision an agent for a project",
+		Long: `hire (or assign) provisions an agent for a project by assembling the
+workspace, team, role, project, skill, and tool context that the runtime needs.
 
 Context layers are merged in this order:
-  1. Agency
+  1. Workspace
   2. Team chain (from top-level to the specified team)
   3. Role (optional — provides extra prompt, skills, and workspace setup)
   4. Project

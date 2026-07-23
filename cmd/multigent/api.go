@@ -43,14 +43,14 @@ func newAPIServeCmd() *cobra.Command {
 	cmd := &cobra.Command{
 		Use:   "serve",
 		Short: "Start read-only HTTP server for the current workspace",
-		Long: `Serves JSON under /api/v1/ for the resolved agency workspace.
+		Long: `Serves JSON under /api/v1/ for the resolved Multigent workspace.
 
 Typical local use with the Vite dev server (see web/vite.config.ts proxy):
 
-  multigent --dir /path/to/MyAgency api serve
+  multigent --dir ./multigent-data api serve
   cd web && pnpm dev
 
-Read: GET health, agency, stats, teams, projects, tasks, messages, inbox, …
+Read: GET health, workspace, stats, teams, projects, tasks, messages, inbox, …
 Write: POST .../tasks; POST /api/v1/messages; mark-read, archive, mark-all-read;
   POST .../projects/{name}/messages/mark-all-read; GET .../messages?includeArchived=1
 

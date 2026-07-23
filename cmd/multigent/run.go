@@ -29,16 +29,16 @@ Task state is updated automatically based on the exit code and output.
 This is a one-shot manual trigger. For recurring automated runs, use
 'multigent scheduler start' to activate the heartbeat scheduler.`,
 		Example: `  # Run the next pending task
-  multigent run --project cc-connect --agent qa-reviewer
+  multigent run --project web-app --agent qa
 
   # Run a specific task
-  multigent run --project cc-connect --agent qa-reviewer --task t-20260316-abc123
+  multigent run --project web-app --agent qa --task t-20260316-abc123
 
   # Dry run: outputs JSON describing what would execute (exit 0)
-  multigent run --project cc-connect --agent qa-reviewer --dry-run
+  multigent run --project web-app --agent qa --dry-run
 
   # Equivalent noun-verb form (same flags)
-  multigent agent run --project cc-connect --agent qa-reviewer`,
+  multigent agent run --project web-app --agent qa`,
 		RunE: func(cmd *cobra.Command, args []string) error {
 			root, err := resolveRoot()
 			if err != nil {
