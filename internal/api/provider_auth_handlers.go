@@ -31,6 +31,8 @@ type modelAuthSession struct {
 	mu              sync.Mutex
 	ID              string
 	CLI             string
+	WorkspaceID     string
+	WorkspaceRoot   string
 	Name            string
 	OwnerType       string
 	HomeDir         string
@@ -102,14 +104,16 @@ func (s *Server) handleCodexDeviceAuthBegin(w http.ResponseWriter, r *http.Reque
 		return
 	}
 	session := &modelAuthSession{
-		ID:        sessionID,
-		CLI:       "codex",
-		Name:      prov.Name,
-		OwnerType: prov.OwnerType,
-		HomeDir:   homeDir,
-		CreatedAt: time.Now(),
-		Cancel:    cancel,
-		TTY:       tty,
+		ID:            sessionID,
+		CLI:           "codex",
+		WorkspaceID:   workspaceID,
+		WorkspaceRoot: s.root,
+		Name:          prov.Name,
+		OwnerType:     prov.OwnerType,
+		HomeDir:       homeDir,
+		CreatedAt:     time.Now(),
+		Cancel:        cancel,
+		TTY:           tty,
 	}
 	s.modelAuthMu.Lock()
 	s.modelAuthSessions[sessionID] = session
@@ -156,10 +160,6 @@ func (s *Server) handleCodexDeviceAuthBegin(w http.ResponseWriter, r *http.Reque
 }
 
 func (s *Server) handleCodexDeviceAuthPoll(w http.ResponseWriter, r *http.Request) {
-	workspaceID, err := s.modelProviderWorkspaceMember(w, r)
-	if err != nil {
-		return
-	}
 	var body modelAuthPollBody
 	if err := s.readJSON(w, r, &body); err != nil {
 		s.jsonError(w, http.StatusBadRequest, "invalid JSON body")
@@ -171,6 +171,9 @@ func (s *Server) handleCodexDeviceAuthPoll(w http.ResponseWriter, r *http.Reques
 	s.modelAuthMu.Unlock()
 	if session == nil {
 		s.jsonError(w, http.StatusNotFound, "auth session not found")
+		return
+	}
+	if !s.checkWorkspaceAccess(w, r, session.WorkspaceID) {
 		return
 	}
 	session.mu.Lock()
@@ -209,17 +212,17 @@ func (s *Server) handleCodexDeviceAuthPoll(w http.ResponseWriter, r *http.Reques
 			store.ProviderAuthStatusEnvKey: store.ProviderAuthStatusConfigured,
 		},
 	}
-	if !s.prepareNewModelProvider(w, r, workspaceID, &prov) {
+	if !s.prepareNewModelProvider(w, r, session.WorkspaceID, &prov) {
 		return
 	}
-	p, err := s.providerStore().Add(prov)
+	p, err := store.NewProviderStoreWithDB(session.WorkspaceRoot, s.controlDB).Add(prov)
 	if err != nil {
 		s.serverError(w, err)
 		return
 	}
-	dst := filepath.Join(store.ProviderCredentialDir(s.root, p.ID, entity.ModelCodex), ".codex", "auth.json")
+	dst := filepath.Join(store.ProviderCredentialDir(session.WorkspaceRoot, p.ID, entity.ModelCodex), ".codex", "auth.json")
 	if err := copyFile0600(authJSON, dst); err != nil {
-		_ = s.providerStore().Remove(p.ID)
+		_ = store.NewProviderStoreWithDB(session.WorkspaceRoot, s.controlDB).Remove(p.ID)
 		s.serverError(w, err)
 		return
 	}
@@ -228,7 +231,7 @@ func (s *Server) handleCodexDeviceAuthPoll(w http.ResponseWriter, r *http.Reques
 	session.mu.Unlock()
 	s.cleanupModelAuthSession(sessionID)
 	s.auditLog(auditLogInput{
-		WorkspaceID:  workspaceID,
+		WorkspaceID:  session.WorkspaceID,
 		Action:       "model_provider.create",
 		ResourceType: "model_provider",
 		ResourceID:   p.ID,
@@ -289,14 +292,16 @@ func (s *Server) handleCLIBrowserAuthBegin(w http.ResponseWriter, r *http.Reques
 		return
 	}
 	session := &modelAuthSession{
-		ID:        sessionID,
-		CLI:       spec.CLI,
-		Name:      prov.Name,
-		OwnerType: prov.OwnerType,
-		HomeDir:   homeDir,
-		CreatedAt: time.Now(),
-		Cancel:    cancel,
-		TTY:       tty,
+		ID:            sessionID,
+		CLI:           spec.CLI,
+		WorkspaceID:   workspaceID,
+		WorkspaceRoot: s.root,
+		Name:          prov.Name,
+		OwnerType:     prov.OwnerType,
+		HomeDir:       homeDir,
+		CreatedAt:     time.Now(),
+		Cancel:        cancel,
+		TTY:           tty,
 	}
 	s.modelAuthMu.Lock()
 	s.modelAuthSessions[sessionID] = session
@@ -338,10 +343,6 @@ func (s *Server) handleCLIBrowserAuthBegin(w http.ResponseWriter, r *http.Reques
 }
 
 func (s *Server) handleCLIBrowserAuthPoll(w http.ResponseWriter, r *http.Request) {
-	workspaceID, err := s.modelProviderWorkspaceMember(w, r)
-	if err != nil {
-		return
-	}
 	spec, ok := browserAuthSpec(r.PathValue("cli"))
 	if !ok {
 		s.jsonError(w, http.StatusBadRequest, "unsupported CLI browser auth")
@@ -355,6 +356,9 @@ func (s *Server) handleCLIBrowserAuthPoll(w http.ResponseWriter, r *http.Request
 	session := s.getModelAuthSession(strings.TrimSpace(body.SessionID))
 	if session == nil || session.CLI != spec.CLI {
 		s.jsonError(w, http.StatusNotFound, "auth session not found")
+		return
+	}
+	if !s.checkWorkspaceAccess(w, r, session.WorkspaceID) {
 		return
 	}
 	session.mu.Lock()
@@ -392,16 +396,16 @@ func (s *Server) handleCLIBrowserAuthPoll(w http.ResponseWriter, r *http.Request
 			store.ProviderAuthStatusEnvKey: store.ProviderAuthStatusConfigured,
 		},
 	}
-	if !s.prepareNewModelProvider(w, r, workspaceID, &prov) {
+	if !s.prepareNewModelProvider(w, r, session.WorkspaceID, &prov) {
 		return
 	}
-	p, err := s.providerStore().Add(prov)
+	p, err := store.NewProviderStoreWithDB(session.WorkspaceRoot, s.controlDB).Add(prov)
 	if err != nil {
 		s.serverError(w, err)
 		return
 	}
-	if err := spec.CopyCredentials(session.HomeDir, store.ProviderCredentialDir(s.root, p.ID, spec.Model)); err != nil {
-		_ = s.providerStore().Remove(p.ID)
+	if err := spec.CopyCredentials(session.HomeDir, store.ProviderCredentialDir(session.WorkspaceRoot, p.ID, spec.Model)); err != nil {
+		_ = store.NewProviderStoreWithDB(session.WorkspaceRoot, s.controlDB).Remove(p.ID)
 		s.serverError(w, err)
 		return
 	}
@@ -410,7 +414,7 @@ func (s *Server) handleCLIBrowserAuthPoll(w http.ResponseWriter, r *http.Request
 	session.mu.Unlock()
 	s.cleanupModelAuthSession(session.ID)
 	s.auditLog(auditLogInput{
-		WorkspaceID:  workspaceID,
+		WorkspaceID:  session.WorkspaceID,
 		Action:       "model_provider.create",
 		ResourceType: "model_provider",
 		ResourceID:   p.ID,
