@@ -103,6 +103,8 @@ func init() {
 		newEnvVarCmd(),
 		newProviderCmd(),
 		newRuntimeCmd(),
+		newWorkflowCmd(),
+		newTaskTemplateCmd(),
 		newWorkerCmd(),
 		newSchemaCmd(),
 	)

@@ -123,6 +123,14 @@ multigent task stats  [--since today] [--project P] [--agent A] [--assignee X] [
 multigent task cancel <task-id>
 multigent task retry  <task-id>
 
+# Create a task from a project task template
+multigent task add \
+  --project my-api \
+  --template handle-issue \
+  --var issue_number=42 \
+  --var issue_url=https://github.com/acme/my-api/issues/42 \
+  --created-by my-api/pm
+
 # Stop all running or pending tasks (emergency halt)
 multigent task stop-all --project P [--agent A | --all-agents] \
                         [--include-running] [--no-pending]
@@ -147,6 +155,80 @@ multigent task confirm-request --id <id> --summary "PR ready" \
 pending → in_progress → done_success
                       → done_failed  → (auto-retry if max_retries set)
                       → awaiting_confirmation → done_success (via inbox reply)
+```
+
+---
+
+## `workflow` — SOP/state-machine definitions
+
+Workflows are workspace-level process definitions. A workflow is usually edited
+in the Web whiteboard, but agents can also create, update, and export workflows
+through JSON.
+
+```bash
+# Built-in templates
+multigent workflow templates --locale zh-CN
+
+# Workspace workflows
+multigent workflow list
+multigent workflow show <workflow-id>
+multigent workflow export <workflow-id> --out workflow.json
+
+# Create from a built-in template
+multigent workflow create \
+  --template software-delivery \
+  --name "Software delivery workflow" \
+  --locale en-US
+
+# Create or replace from JSON
+multigent workflow create --file workflow.json
+multigent workflow update <workflow-id> --file workflow.json
+multigent workflow delete <workflow-id> --yes
+```
+
+Every command accepts `--workspace <id|name|slug|root>` when `--dir` points to a
+data root that contains multiple workspaces.
+
+---
+
+## `task-template` — repeatable project tasks
+
+Task templates are project-level recipes for creating recurring tasks. They can
+bind a task to a workflow and predefine the actor for each workflow step.
+
+```bash
+multigent task-template list --project my-api
+multigent task-template show <template-id>
+multigent task-template export <template-id> --out task-template.json
+
+multigent task-template create \
+  --project my-api \
+  --file issue-task-template.json
+
+multigent task-template update <template-id> --file issue-task-template.json
+multigent task-template delete <template-id> --yes
+```
+
+Minimal task template JSON:
+
+```json
+{
+  "name": "Handle GitHub issue",
+  "project": "my-api",
+  "type": "feature",
+  "priority": 1,
+  "titleTemplate": "Handle issue {{issue_number}}",
+  "promptTemplate": "Handle {{issue_url}}. Use the linked workflow and report structured outputs.",
+  "workflowDefinitionId": "wf-example",
+  "workflowActorBindings": {
+    "triage": { "type": "agent", "id": "pm" },
+    "review": { "type": "human", "id": "owner@example.com" }
+  },
+  "variables": [
+    { "name": "issue_number", "description": "GitHub issue number", "required": true },
+    { "name": "issue_url", "description": "GitHub issue URL", "required": true }
+  ]
+}
 ```
 
 ---

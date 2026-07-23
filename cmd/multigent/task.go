@@ -14,7 +14,9 @@ import (
 	"github.com/multigent/multigent/internal/errs"
 	"github.com/multigent/multigent/internal/store"
 	"github.com/multigent/multigent/internal/taskstore"
+	tasktemplatestore "github.com/multigent/multigent/internal/tasktemplate"
 	"github.com/multigent/multigent/internal/telemetry"
+	workflowstore "github.com/multigent/multigent/internal/workflow"
 	"github.com/spf13/cobra"
 )
 
@@ -61,6 +63,9 @@ func newTaskAddCmd() *cobra.Command {
 		dueDate        string
 		estimateDur    string
 		idempotencyKey string
+		templateID     string
+		templateVars   []string
+		bindings       []string
 	)
 
 	cmd := &cobra.Command{
@@ -94,10 +99,6 @@ func newTaskAddCmd() *cobra.Command {
 			if err != nil {
 				return err
 			}
-			if project == "" || agentName == "" || title == "" {
-				return fmt.Errorf("--project, --agent, and --title are required")
-			}
-
 			var promptText string
 			if promptFile != "" {
 				data, err := os.ReadFile(promptFile)
@@ -108,8 +109,68 @@ func newTaskAddCmd() *cobra.Command {
 			} else {
 				promptText = prompt
 			}
+
+			templateValues := map[string]string{}
+			var workflowID string
+			var workflowBindings map[string]entity.WorkflowActorBinding
+			if strings.TrimSpace(templateID) != "" {
+				tmpl, values, err := instantiateTaskTemplateForCLI(templateID, templateVars, bindings)
+				if err != nil {
+					return err
+				}
+				templateValues = values
+				if project == "" {
+					project = tmpl.Project
+				}
+				if tmpl.Project != project {
+					return fmt.Errorf("task template %q belongs to project %q, not %q", tmpl.ID, tmpl.Project, project)
+				}
+				if title == "" {
+					title = renderTaskTemplateStringCLI(tmpl.TitleTemplate, values)
+				}
+				if description == "" {
+					description = renderTaskTemplateStringCLI(tmpl.DescriptionTemplate, values)
+				}
+				if promptText == "" {
+					promptText = renderTaskTemplateStringCLI(tmpl.PromptTemplate, values)
+				}
+				if !cmd.Flags().Changed("type") {
+					taskType = tmpl.Type
+				}
+				if !cmd.Flags().Changed("priority") {
+					priority = tmpl.Priority
+				}
+				labels = append(append([]string{}, tmpl.Labels...), labels...)
+				workflowID = tmpl.WorkflowDefinitionID
+				workflowBindings = tmpl.WorkflowActorBindings
+				if len(bindings) > 0 {
+					overrideBindings, err := parseWorkflowActorBindings(bindings)
+					if err != nil {
+						return err
+					}
+					workflowBindings = mergeWorkflowActorBindings(workflowBindings, overrideBindings)
+				}
+				if workflowID != "" {
+					startActor, err := workflowStartActorForCLI(workflowID, workflowBindings)
+					if err != nil {
+						return err
+					}
+					if startActor.Type == "agent" && startActor.ID != "" {
+						agentName = startActor.ID
+					}
+					if startActor.Type == "human" && startActor.ID != "" && assignee == "" {
+						assignee = startActor.ID
+					}
+				}
+				if agentName == "" {
+					agentName = firstWorkflowAgentBinding(workflowBindings)
+				}
+			}
+			if project == "" || agentName == "" || title == "" {
+				return fmt.Errorf("--project, --agent, and --title are required")
+			}
 			if promptText == "" {
-				return fmt.Errorf("--prompt or --prompt-file is required")
+				return fmt.Errorf("--prompt, --prompt-file, or --template is required")
 			}
 
 			if assignee == "" {
@@ -151,6 +212,7 @@ func newTaskAddCmd() *cobra.Command {
 				Labels:         labels,
 				ParentID:       parentID,
 				IdempotencyKey: idempotencyKey,
+				Vars:           templateValues,
 				CreatedAt:      now,
 				UpdatedAt:      now,
 			}
@@ -168,10 +230,15 @@ func newTaskAddCmd() *cobra.Command {
 			}
 
 			ts := mustTaskStore(root)
+			if workflowID != "" {
+				if err := validateWorkflowForTaskCLI(workflowID); err != nil {
+					return err
+				}
+			}
 
-			// If assignee is "human", create the task under the source agent
-			// but also route it directly to the inbox.
-			if assignee == "human" {
+			// If assignee is a workspace user, create the task under the source
+			// agent queue and route it directly to that user's inbox.
+			if !strings.Contains(assignee, "/") {
 				addErr := ts.AddTask(project, agentName, t)
 				if addErr != nil {
 					var conflict *errs.ConflictError
@@ -185,11 +252,17 @@ func newTaskAddCmd() *cobra.Command {
 					TaskID:  t.ID,
 					Project: project,
 					Agent:   agentName,
+					To:      assignee,
 					Title:   t.Title,
 					Summary: promptText,
 				}
 				if err := ts.AddToInbox(item); err != nil {
 					return err
+				}
+				if workflowID != "" {
+					if err := startWorkflowForTaskCLI(project, t.ID, workflowID, workflowBindings); err != nil {
+						return err
+					}
 				}
 				fmt.Printf("✓ Task %s created and routed to human inbox\n", t.ID)
 				return nil
@@ -203,6 +276,11 @@ func newTaskAddCmd() *cobra.Command {
 					return nil
 				}
 				return addErr
+			}
+			if workflowID != "" {
+				if err := startWorkflowForTaskCLI(project, t.ID, workflowID, workflowBindings); err != nil {
+					return err
+				}
 			}
 			fmt.Printf("✓ Task %s created  [%s / %s]\n", t.ID, project, agentName)
 			return nil
@@ -225,7 +303,102 @@ func newTaskAddCmd() *cobra.Command {
 	cmd.Flags().StringVar(&parentID, "parent", "", "parent task ID for sub-task")
 	cmd.Flags().StringVar(&dueDate, "due-date", "", "due date (YYYY-MM-DD)")
 	cmd.Flags().StringVar(&estimateDur, "estimate-duration", "", "expected effort (Go duration, e.g. 30m, 2h)")
+	cmd.Flags().StringVar(&templateID, "template", "", "task template id")
+	cmd.Flags().StringArrayVar(&templateVars, "var", nil, "template variable as key=value (repeatable)")
+	cmd.Flags().StringArrayVar(&bindings, "binding", nil, "workflow actor binding as actorRole=agent:name or actorRole=human:username (repeatable)")
 	return cmd
+}
+
+func instantiateTaskTemplateForCLI(templateID string, vars []string, bindings []string) (entity.TaskTemplate, map[string]string, error) {
+	ctx, err := openCLIWorkspaceDB("")
+	if err != nil {
+		return entity.TaskTemplate{}, nil, err
+	}
+	defer ctx.Close()
+	tmpl, ok, err := tasktemplatestore.NewStore(ctx.db, ctx.workspaceID).Get(strings.TrimSpace(templateID))
+	if err != nil {
+		return entity.TaskTemplate{}, nil, err
+	}
+	if !ok {
+		return entity.TaskTemplate{}, nil, fmt.Errorf("task template %q not found", templateID)
+	}
+	values := map[string]string{}
+	for _, variable := range tmpl.Variables {
+		if variable.Default != "" {
+			values[variable.Name] = variable.Default
+		}
+	}
+	parsedVars, err := parseKeyValueFlags(vars, "--var")
+	if err != nil {
+		return entity.TaskTemplate{}, nil, err
+	}
+	for key, value := range parsedVars {
+		values[key] = value
+	}
+	for _, variable := range tmpl.Variables {
+		if variable.Required && strings.TrimSpace(values[variable.Name]) == "" {
+			return entity.TaskTemplate{}, nil, fmt.Errorf("template variable %q is required", variable.Name)
+		}
+	}
+	if len(bindings) > 0 {
+		if _, err := parseWorkflowActorBindings(bindings); err != nil {
+			return entity.TaskTemplate{}, nil, err
+		}
+	}
+	return tmpl, values, nil
+}
+
+func validateWorkflowForTaskCLI(workflowID string) error {
+	ctx, err := openCLIWorkspaceDB("")
+	if err != nil {
+		return err
+	}
+	defer ctx.Close()
+	_, ok, err := workflowstore.NewStore(ctx.db, ctx.workspaceID).Definition(workflowID)
+	if err != nil {
+		return err
+	}
+	if !ok {
+		return fmt.Errorf("workflow definition %q not found", workflowID)
+	}
+	return nil
+}
+
+func workflowStartActorForCLI(workflowID string, bindings map[string]entity.WorkflowActorBinding) (entity.WorkflowActorBinding, error) {
+	ctx, err := openCLIWorkspaceDB("")
+	if err != nil {
+		return entity.WorkflowActorBinding{}, err
+	}
+	defer ctx.Close()
+	def, ok, err := workflowstore.NewStore(ctx.db, ctx.workspaceID).Definition(workflowID)
+	if err != nil {
+		return entity.WorkflowActorBinding{}, err
+	}
+	if !ok {
+		return entity.WorkflowActorBinding{}, fmt.Errorf("workflow definition %q not found", workflowID)
+	}
+	for _, step := range def.Steps {
+		if step.ID != def.StartStepID {
+			continue
+		}
+		if binding, ok := bindings[step.ActorRole]; ok {
+			return entity.WorkflowActorBinding{Type: strings.TrimSpace(binding.Type), ID: strings.TrimSpace(binding.ID)}, nil
+		}
+		if binding, ok := bindings[step.ID]; ok {
+			return entity.WorkflowActorBinding{Type: strings.TrimSpace(binding.Type), ID: strings.TrimSpace(binding.ID)}, nil
+		}
+	}
+	return entity.WorkflowActorBinding{}, nil
+}
+
+func startWorkflowForTaskCLI(project, taskID, workflowID string, bindings map[string]entity.WorkflowActorBinding) error {
+	ctx, err := openCLIWorkspaceDB("")
+	if err != nil {
+		return err
+	}
+	defer ctx.Close()
+	_, _, err = workflowstore.NewStore(ctx.db, ctx.workspaceID).StartRun(project, taskID, workflowID, bindings)
+	return err
 }
 
 // ── task list ─────────────────────────────────────────────────────────────────
