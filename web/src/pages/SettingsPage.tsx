@@ -943,7 +943,7 @@ const GATEWAY_ACCOUNT_PRESETS: ProviderPreset[] = [
   { id: 'openrouter', label: 'OpenRouter', cli: 'codex', baseUrl: 'https://openrouter.ai/api/v1', model: '', hint: 'OpenAI-compatible model router' },
 ]
 
-type ProviderDraft = Partial<ProviderRow> & { apiKey?: string; accountMode?: ModelAccountMode; cli?: ModelAccountCLI; authMethod?: string; modelsText?: string }
+type ProviderDraft = Partial<ProviderRow> & { apiKey?: string; accountMode?: ModelAccountMode; cli?: ModelAccountCLI; authMethod?: string; modelsText?: string; presetId?: string }
 type ModelDeviceAuthState = {
   sessionId: string
   verificationUri: string
@@ -1222,6 +1222,7 @@ function ProvidersSection() {
       name: prev?.name?.trim() && !isGeneratedModelAccountName(prev.name) ? prev.name : preset.label,
       accountMode: 'gateway',
       cli: preset.cli,
+      presetId: preset.id,
       type: providerTypeForCLI(preset.cli),
       baseUrl: preset.baseUrl,
       model: preset.model,
@@ -1246,6 +1247,7 @@ function ProvidersSection() {
           ...prev,
           accountMode: 'official',
           cli: nextCLI,
+          presetId: '',
           type: providerTypeForCLI(nextCLI),
           baseUrl: '',
           model: '',
@@ -1260,7 +1262,10 @@ function ProvidersSection() {
         ...prev,
         accountMode: 'gateway',
         cli: nextCLI,
+        presetId: '',
         type: providerTypeForCLI(nextCLI),
+        baseUrl: '',
+        model: '',
         authMethod: 'api_key',
         models: [],
         modelsText: '',
@@ -1277,10 +1282,13 @@ function ProvidersSection() {
       return {
         ...prev,
         cli,
+        presetId: '',
         type: providerTypeForCLI(cli),
+        baseUrl: prev.accountMode === 'official' ? prev.baseUrl : '',
+        model: prev.accountMode === 'official' ? prev.model : '',
         authMethod: prev.accountMode === 'official' ? defaultAuthMethodForCLI(cli) : 'api_key',
-        models: prev.accountMode === 'official' ? [] : prev.models,
-        modelsText: prev.accountMode === 'official' ? '' : prev.modelsText,
+        models: [],
+        modelsText: '',
         name: prev.name?.trim() && !isGeneratedModelAccountName(prev.name) ? prev.name : (prev.accountMode === 'official' ? providerOfficialName(cli) : ''),
       }
     })
@@ -1388,6 +1396,10 @@ function ProvidersSection() {
                   </button>
                 </div>
               )}
+              <label className="flex flex-col gap-1">
+                <span className="text-sm font-medium text-neutral-600 dark:text-zinc-400">{t('provider.nameLabel')}</span>
+                <input value={editing.name ?? ''} onChange={e => setEditing({ ...editing, name: e.target.value })} className={fieldCls} placeholder={t('provider.namePlaceholder')} />
+              </label>
               {!editing.id && (
                 <label className="flex flex-col gap-1">
                   <span className="text-sm font-medium text-neutral-600 dark:text-zinc-400">{t('provider.cliLabel')}</span>
@@ -1411,10 +1423,6 @@ function ProvidersSection() {
                   </span>
                 </div>
               )}
-              <label className="flex flex-col gap-1">
-                <span className="text-sm font-medium text-neutral-600 dark:text-zinc-400">{t('provider.nameLabel')}</span>
-                <input value={editing.name ?? ''} onChange={e => setEditing({ ...editing, name: e.target.value })} className={fieldCls} placeholder={t('provider.namePlaceholder')} />
-              </label>
               {(editing.accountMode ?? 'official') === 'official' ? (
                 <div className="space-y-2">
                   {supportsBrowserModelAuth(editing.cli) && !editing.id && (
@@ -1456,7 +1464,7 @@ function ProvidersSection() {
                   {!editing.id && (
                     <label className="flex flex-col gap-1">
                       <span className="text-sm font-medium text-neutral-600 dark:text-zinc-400">{t('provider.presetLabel')}</span>
-                      <select value="" onChange={e => applyPreset(e.target.value)} className={fieldCls}>
+                      <select value={editing.presetId ?? ''} onChange={e => applyPreset(e.target.value)} className={fieldCls}>
                         <option value="">{t('provider.presetPlaceholder')}</option>
                         {GATEWAY_ACCOUNT_PRESETS.filter(preset => preset.cli === (editing.cli ?? 'codex')).map(preset => (
                           <option key={preset.id} value={preset.id}>{preset.label} - {preset.hint}</option>
