@@ -140,6 +140,51 @@ http://127.0.0.1:27892
 
 The first user creates or enters a workspace from the web UI.
 
+## Update Multigent
+
+Multigent follows the mainstream CLI update model:
+
+- Stable users stay on the `release` channel by default.
+- Early testers can opt into `pre-release` or `beta`.
+- The web console and CLI check for updates quietly and show a low-noise reminder when a newer version is available.
+- Set `MULTIGENT_NO_UPDATE_CHECK=1` to disable update checks.
+
+Check manually:
+
+```bash
+multigent check-update
+multigent check-update --channel pre-release
+multigent check-update --channel beta
+```
+
+Update a binary/script installation:
+
+```bash
+multigent update
+multigent update --channel pre-release
+multigent update --channel beta
+```
+
+Update by install method:
+
+```bash
+# Homebrew
+brew update && brew upgrade multigent
+
+# npm wrapper
+npm update -g @multigent/multigent
+
+# Docker self-host
+docker pull ghcr.io/multigent/multigent:latest
+docker pull ghcr.io/multigent/multigent/runtime-base:latest
+```
+
+If you want a deployment to follow a non-stable channel by default:
+
+```bash
+export MULTIGENT_UPDATE_CHANNEL=pre-release  # release | pre-release | beta
+```
+
 ## First Setup Checklist
 
 1. Register the first user.

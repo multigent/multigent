@@ -228,7 +228,13 @@ func setEnvIfEmpty(key, value string) {
 
 func main() {
 	checkUpdateAsync()
-	if err := rootCmd.Execute(); err != nil {
+	commandPath := ""
+	if cmd, _, err := rootCmd.Find(os.Args[1:]); err == nil && cmd != nil {
+		commandPath = cmd.CommandPath()
+	}
+	err := rootCmd.Execute()
+	maybePrintUpdateReminder(commandPath)
+	if err != nil {
 		fmt.Fprintln(os.Stderr, err)
 		os.Exit(exitCodeFor(err))
 	}

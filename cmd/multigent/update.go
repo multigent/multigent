@@ -24,17 +24,27 @@ const (
 	updateGithubAPI    = "https://api.github.com/repos/" + updateGithubRepo + "/releases/latest"
 	updateGithubAllAPI = "https://api.github.com/repos/" + updateGithubRepo + "/releases"
 	updateDownloadBase = "https://github.com/" + updateGithubRepo + "/releases/download"
-	updateGiteeAPI     = "https://gitee.com/api/v5/repos/cg33/agentorg/releases/latest"
+	updateGiteeAPI     = "https://gitee.com/api/v5/repos/" + updateGithubRepo + "/releases/latest"
+)
+
+type updateChannel string
+
+const (
+	updateChannelRelease    updateChannel = "release"
+	updateChannelPrerelease updateChannel = "pre-release"
+	updateChannelBeta       updateChannel = "beta"
 )
 
 var cachedLatestVersion struct {
 	version   string
 	body      string
+	channel   updateChannel
 	timestamp time.Time
 	mu        sync.RWMutex
 }
 
 const versionCheckTTL = time.Hour
+const updateNotifyTTL = 24 * time.Hour
 
 type githubRelease struct {
 	TagName    string `json:"tag_name"`
@@ -43,61 +53,73 @@ type githubRelease struct {
 	Prerelease bool   `json:"prerelease"`
 }
 
+type updateCheckCache struct {
+	Channel       string `json:"channel"`
+	LatestVersion string `json:"latestVersion"`
+	ReleaseBody   string `json:"releaseBody,omitempty"`
+	CheckedAt     string `json:"checkedAt"`
+	NotifiedAt    string `json:"notifiedAt,omitempty"`
+}
+
 func newCheckUpdateCmd() *cobra.Command {
-	return &cobra.Command{
+	var channel string
+	cmd := &cobra.Command{
 		Use:   "check-update",
 		Short: "Check if a newer version is available",
-		Run: func(_ *cobra.Command, args []string) {
-			pre := false
-			for _, a := range args {
-				if a == "--pre" || a == "--beta" {
-					pre = true
-				}
-			}
-			release, err := fetchUpdateRelease(pre)
+		RunE: func(cmd *cobra.Command, _ []string) error {
+			ch, err := resolveUpdateChannel(channel, cmd.Flags().Changed("pre"), cmd.Flags().Changed("beta"))
 			if err != nil {
-				return
+				return err
+			}
+			release, err := fetchUpdateRelease(ch)
+			if err != nil {
+				return err
 			}
 			if isNewerVersion(release.TagName, version) {
-				hint := "multigent update"
-				if release.Prerelease {
-					hint = "multigent update --pre"
-				}
-				fmt.Fprintf(os.Stderr, "Update available: %s -> %s (run: %s)\n", version, release.TagName, hint)
+				hint := updateCommandForInstall(ch)
+				fmt.Fprintf(os.Stderr, "Update available (%s): %s -> %s\nRun: %s\n", ch, version, release.TagName, hint)
 			} else {
-				fmt.Printf("Already up to date (%s).\n", version)
+				fmt.Printf("Already up to date on %s channel (%s).\n", ch, version)
 			}
+			return nil
 		},
 	}
+	cmd.Flags().StringVar(&channel, "channel", "", "update channel: release, pre-release, beta")
+	cmd.Flags().Bool("pre", false, "check the pre-release channel")
+	cmd.Flags().Bool("beta", false, "check the beta channel")
+	return cmd
 }
 
 func newUpdateCmd() *cobra.Command {
-	return &cobra.Command{
+	var channel string
+	cmd := &cobra.Command{
 		Use:   "update",
 		Short: "Self-update to the latest version",
-		Long: `Downloads and replaces the multigent binary with the latest release
-from GitHub. Use --pre to include pre-release versions.`,
-		RunE: func(_ *cobra.Command, args []string) error {
-			pre := false
-			for _, a := range args {
-				if a == "--pre" || a == "--beta" {
-					pre = true
-				}
+		Long: `Updates Multigent to the latest version for the selected channel.
+
+Channels:
+  release      Stable releases only. This is the default.
+  pre-release  Latest GitHub pre-release, including release candidates.
+  beta         Latest beta release tag, for early testers.`,
+		RunE: func(cmd *cobra.Command, _ []string) error {
+			ch, err := resolveUpdateChannel(channel, cmd.Flags().Changed("pre"), cmd.Flags().Changed("beta"))
+			if err != nil {
+				return err
 			}
-			return runSelfUpdate(pre)
+			return runSelfUpdate(ch)
 		},
 	}
+	cmd.Flags().StringVar(&channel, "channel", "", "update channel: release, pre-release, beta")
+	cmd.Flags().Bool("pre", false, "update from the pre-release channel")
+	cmd.Flags().Bool("beta", false, "update from the beta channel")
+	return cmd
 }
 
-func runSelfUpdate(pre bool) error {
+func runSelfUpdate(channel updateChannel) error {
 	fmt.Printf("multigent %s\n", version)
-	if pre {
-		fmt.Println("Checking for updates (including pre-releases)...")
-	} else {
-		fmt.Println("Checking for updates...")
-	}
+	fmt.Printf("Checking for updates on %s channel...\n", channel)
 
-	release, err := fetchUpdateRelease(pre)
+	release, err := fetchUpdateRelease(channel)
 	if err != nil {
 		return fmt.Errorf("error checking updates: %w", err)
 	}
@@ -114,6 +136,12 @@ func runSelfUpdate(pre bool) error {
 	}
 	fmt.Printf("New version available: %s -> %s\n", version, label)
 
+	if method := detectInstallMethod(); method == "brew" || method == "npm" {
+		fmt.Println("This installation is managed by a package manager.")
+		fmt.Printf("Run: %s\n", updateCommandForInstall(channel))
+		return nil
+	}
+
 	archiveAsset := updateArchiveAssetName(latest)
 	archiveURL := fmt.Sprintf("%s/%s/%s", updateDownloadBase, latest, archiveAsset)
 	fmt.Printf("Downloading %s ...\n", archiveURL)
@@ -124,19 +152,40 @@ func runSelfUpdate(pre bool) error {
 	}
 	defer os.Remove(tmpFile)
 
-	binTmp, err := updateExtractBinary(tmpFile, archiveAsset)
+	multigentTmp, err := updateExtractBinary(tmpFile, archiveAsset, "multigent")
 	if err != nil {
-		return fmt.Errorf("extract failed: %w", err)
+		return fmt.Errorf("extract multigent failed: %w", err)
 	}
-	defer os.Remove(binTmp)
+	defer os.Remove(multigentTmp)
+
+	mgaTmp, err := updateExtractBinary(tmpFile, archiveAsset, "mga")
+	if err != nil {
+		return fmt.Errorf("extract mga failed: %w", err)
+	}
+	defer os.Remove(mgaTmp)
 
 	execPath, err := os.Executable()
 	if err != nil {
 		return fmt.Errorf("cannot locate current binary: %w", err)
 	}
 
-	if err := updateReplaceExecutable(execPath, binTmp); err != nil {
-		return fmt.Errorf("update failed: %w", err)
+	if err := updateReplaceExecutable(execPath, multigentTmp); err != nil {
+		return fmt.Errorf("update multigent failed: %w", err)
+	}
+	mgaPath := filepath.Join(filepath.Dir(execPath), executableName("mga"))
+	if _, err := os.Stat(mgaPath); err == nil {
+		if err := updateReplaceExecutable(mgaPath, mgaTmp); err != nil {
+			return fmt.Errorf("update mga failed: %w", err)
+		}
+	} else if os.IsNotExist(err) {
+		if err := updateCopyFile(mgaTmp, mgaPath); err != nil {
+			return fmt.Errorf("install mga failed: %w", err)
+		}
+		if err := os.Chmod(mgaPath, 0o755); err != nil {
+			return fmt.Errorf("chmod mga: %w", err)
+		}
+	} else {
+		return fmt.Errorf("locate mga: %w", err)
 	}
 
 	syncNpmVersion(execPath, strings.TrimPrefix(latest, "v"))
@@ -152,49 +201,120 @@ func checkUpdateAsync() {
 	if version == "dev" || version == "" {
 		return
 	}
+	if updateCheckDisabled() {
+		return
+	}
+	channel, err := resolveUpdateChannel("", false, false)
+	if err != nil {
+		channel = updateChannelRelease
+	}
 	go func() {
-		release, err := fetchLatestStableFromGitee()
+		release, err := fetchUpdateRelease(channel)
 		if err != nil || release == nil || release.TagName == "" {
-			release, err = fetchLatestStable()
-			if err != nil || release == nil {
-				return
-			}
+			return
 		}
 		cachedLatestVersion.mu.Lock()
 		cachedLatestVersion.version = release.TagName
 		cachedLatestVersion.body = release.Body
+		cachedLatestVersion.channel = channel
 		cachedLatestVersion.timestamp = time.Now()
 		cachedLatestVersion.mu.Unlock()
+		cache := updateCheckCache{
+			Channel:       string(channel),
+			LatestVersion: release.TagName,
+			ReleaseBody:   release.Body,
+			CheckedAt:     time.Now().UTC().Format(time.RFC3339),
+		}
+		if existing, ok := readUpdateCheckCache(); ok && existing.Channel == cache.Channel && existing.LatestVersion == cache.LatestVersion {
+			cache.NotifiedAt = existing.NotifiedAt
+		}
+		writeUpdateCheckCache(cache)
 	}()
 }
 
 // GetCachedUpdateInfo returns cached version check results for the API.
-func GetCachedUpdateInfo() (latestVersion, releaseBody string, hasUpdate bool) {
+func GetCachedUpdateInfo() (latestVersion, releaseBody string, hasUpdate bool, channelName string, command string) {
+	channel, err := resolveUpdateChannel("", false, false)
+	if err != nil {
+		channel = updateChannelRelease
+	}
+	command = updateCommandForInstall(channel)
 	if version == "dev" || version == "" {
-		return "", "", false
+		return "", "", false, string(channel), command
 	}
 	cachedLatestVersion.mu.RLock()
 	ver := cachedLatestVersion.version
 	body := cachedLatestVersion.body
 	ts := cachedLatestVersion.timestamp
+	cachedChannel := cachedLatestVersion.channel
 	cachedLatestVersion.mu.RUnlock()
 
-	if ver == "" || time.Since(ts) > versionCheckTTL {
+	if ver == "" || cachedChannel != channel || time.Since(ts) > versionCheckTTL {
+		if c, ok := readUpdateCheckCache(); ok && c.Channel == string(channel) {
+			if checked, err := time.Parse(time.RFC3339, c.CheckedAt); err == nil && time.Since(checked) <= versionCheckTTL {
+				if isNewerVersion(c.LatestVersion, version) {
+					return c.LatestVersion, c.ReleaseBody, true, string(channel), command
+				}
+				return c.LatestVersion, "", false, string(channel), command
+			}
+		}
 		checkUpdateAsync()
-		return "", "", false
+		return "", "", false, string(channel), command
 	}
 
 	if isNewerVersion(ver, version) {
-		return ver, body, true
+		return ver, body, true, string(channel), command
 	}
-	return ver, "", false
+	return ver, "", false, string(channel), command
+}
+
+func maybePrintUpdateReminder(commandPath string) {
+	if version == "dev" || version == "" || updateCheckDisabled() {
+		return
+	}
+	if !shouldPrintUpdateReminderForCommand(commandPath) || !isTerminal(os.Stderr) {
+		return
+	}
+	channel, err := resolveUpdateChannel("", false, false)
+	if err != nil {
+		channel = updateChannelRelease
+	}
+	cache, ok := readUpdateCheckCache()
+	if !ok || cache.Channel != string(channel) || !isNewerVersion(cache.LatestVersion, version) {
+		return
+	}
+	if checked, err := time.Parse(time.RFC3339, cache.CheckedAt); err != nil || time.Since(checked) > 7*24*time.Hour {
+		return
+	}
+	if cache.NotifiedAt != "" {
+		if notified, err := time.Parse(time.RFC3339, cache.NotifiedAt); err == nil && time.Since(notified) < updateNotifyTTL {
+			return
+		}
+	}
+	fmt.Fprintf(os.Stderr, "\nUpdate available (%s): %s -> %s\nRun: %s\n", channel, version, cache.LatestVersion, updateCommandForInstall(channel))
+	cache.NotifiedAt = time.Now().UTC().Format(time.RFC3339)
+	writeUpdateCheckCache(cache)
 }
 
 // ── fetch helpers ───────────────────────────────────────────
 
-func fetchUpdateRelease(pre bool) (*githubRelease, error) {
-	if pre {
+func fetchUpdateRelease(channel updateChannel) (*githubRelease, error) {
+	switch channel {
+	case updateChannelBeta:
+		return fetchLatestBetaRelease()
+	case updateChannelPrerelease:
 		return fetchLatestPreRelease()
+	case updateChannelRelease:
+		return fetchLatestStableWithMirror()
+	default:
+		return nil, fmt.Errorf("unsupported update channel %q", channel)
+	}
+}
+
+func fetchLatestStableWithMirror() (*githubRelease, error) {
+	release, err := fetchLatestStableFromGitee()
+	if err == nil && release != nil && release.TagName != "" {
+		return release, nil
 	}
 	return fetchLatestStable()
 }
@@ -265,8 +385,37 @@ func fetchLatestStable() (*githubRelease, error) {
 }
 
 func fetchLatestPreRelease() (*githubRelease, error) {
+	releases, err := fetchGithubReleases(20)
+	if err != nil {
+		return nil, err
+	}
+	if len(releases) == 0 {
+		return nil, fmt.Errorf("no releases found")
+	}
+	for _, release := range releases {
+		if release.Prerelease {
+			return &release, nil
+		}
+	}
+	return nil, fmt.Errorf("no pre-release found")
+}
+
+func fetchLatestBetaRelease() (*githubRelease, error) {
+	releases, err := fetchGithubReleases(30)
+	if err != nil {
+		return nil, err
+	}
+	for _, release := range releases {
+		if release.Prerelease && strings.Contains(strings.ToLower(release.TagName), "beta") {
+			return &release, nil
+		}
+	}
+	return nil, fmt.Errorf("no beta release found")
+}
+
+func fetchGithubReleases(limit int) ([]githubRelease, error) {
 	client := &http.Client{Timeout: 15 * time.Second}
-	req, _ := http.NewRequest("GET", updateGithubAllAPI+"?per_page=10", nil)
+	req, _ := http.NewRequest("GET", fmt.Sprintf("%s?per_page=%d", updateGithubAllAPI, limit), nil)
 	req.Header.Set("Accept", "application/vnd.github.v3+json")
 
 	resp, err := client.Do(req)
@@ -283,11 +432,7 @@ func fetchLatestPreRelease() (*githubRelease, error) {
 	if err := json.NewDecoder(resp.Body).Decode(&releases); err != nil {
 		return nil, fmt.Errorf("parse releases: %w", err)
 	}
-
-	if len(releases) == 0 {
-		return nil, fmt.Errorf("no releases found")
-	}
-	return &releases[0], nil
+	return releases, nil
 }
 
 // ── version comparison ──────────────────────────────────────
@@ -452,14 +597,14 @@ func updateDownloadToTemp(url string) (string, error) {
 	return tmp.Name(), nil
 }
 
-func updateExtractBinary(archivePath, archiveName string) (string, error) {
+func updateExtractBinary(archivePath, archiveName, binary string) (string, error) {
 	if strings.HasSuffix(archiveName, ".zip") {
-		return updateExtractFromZip(archivePath)
+		return updateExtractFromZip(archivePath, binary)
 	}
-	return updateExtractFromTarGz(archivePath)
+	return updateExtractFromTarGz(archivePath, binary)
 }
 
-func updateExtractFromTarGz(archivePath string) (string, error) {
+func updateExtractFromTarGz(archivePath, binary string) (string, error) {
 	f, err := os.Open(archivePath)
 	if err != nil {
 		return "", err
@@ -484,7 +629,7 @@ func updateExtractFromTarGz(archivePath string) (string, error) {
 		if hdr.Typeflag != tar.TypeReg {
 			continue
 		}
-		if strings.HasPrefix(hdr.Name, "multigent") {
+		if filepath.Base(hdr.Name) == binary {
 			tmp, err := os.CreateTemp("", "multigent-update-bin-*")
 			if err != nil {
 				return "", err
@@ -498,10 +643,10 @@ func updateExtractFromTarGz(archivePath string) (string, error) {
 			return tmp.Name(), nil
 		}
 	}
-	return "", fmt.Errorf("binary not found in archive")
+	return "", fmt.Errorf("%s not found in archive", binary)
 }
 
-func updateExtractFromZip(archivePath string) (string, error) {
+func updateExtractFromZip(archivePath, binary string) (string, error) {
 	r, err := zip.OpenReader(archivePath)
 	if err != nil {
 		return "", fmt.Errorf("zip: %w", err)
@@ -509,7 +654,7 @@ func updateExtractFromZip(archivePath string) (string, error) {
 	defer r.Close()
 
 	for _, f := range r.File {
-		if !strings.HasPrefix(f.Name, "multigent") {
+		if filepath.Base(f.Name) != executableName(binary) {
 			continue
 		}
 		rc, err := f.Open()
@@ -531,7 +676,14 @@ func updateExtractFromZip(archivePath string) (string, error) {
 		tmp.Close()
 		return tmp.Name(), nil
 	}
-	return "", fmt.Errorf("binary not found in archive")
+	return "", fmt.Errorf("%s not found in archive", binary)
+}
+
+func executableName(name string) string {
+	if runtime.GOOS == "windows" {
+		return name + ".exe"
+	}
+	return name
 }
 
 func updateReplaceExecutable(target, src string) error {
@@ -621,4 +773,126 @@ func syncNpmVersion(execPath, newVer string) {
 		fmt.Println("Note: npm package version not synced. If the next run re-downloads an old version,")
 		fmt.Println("  please run: npm update -g @multigent/multigent")
 	}
+}
+
+func resolveUpdateChannel(flagValue string, preFlag, betaFlag bool) (updateChannel, error) {
+	raw := strings.TrimSpace(flagValue)
+	if raw == "" {
+		raw = strings.TrimSpace(os.Getenv("MULTIGENT_UPDATE_CHANNEL"))
+	}
+	if betaFlag {
+		raw = string(updateChannelBeta)
+	} else if preFlag {
+		raw = string(updateChannelPrerelease)
+	}
+	if raw == "" {
+		raw = string(updateChannelRelease)
+	}
+	raw = strings.ToLower(strings.ReplaceAll(raw, "_", "-"))
+	switch raw {
+	case "stable", "release", "latest":
+		return updateChannelRelease, nil
+	case "pre", "prerelease", "pre-release", "rc", "preview":
+		return updateChannelPrerelease, nil
+	case "beta":
+		return updateChannelBeta, nil
+	default:
+		return "", fmt.Errorf("invalid update channel %q (use release, pre-release, or beta)", raw)
+	}
+}
+
+func updateCheckDisabled() bool {
+	v := strings.ToLower(strings.TrimSpace(os.Getenv("MULTIGENT_NO_UPDATE_CHECK")))
+	return v == "1" || v == "true" || v == "yes"
+}
+
+func shouldPrintUpdateReminderForCommand(commandPath string) bool {
+	switch commandPath {
+	case "", "multigent update", "multigent check-update", "multigent version", "multigent schema":
+		return false
+	default:
+		return true
+	}
+}
+
+func detectInstallMethod() string {
+	execPath, err := os.Executable()
+	if err != nil {
+		return "binary"
+	}
+	p := filepath.ToSlash(execPath)
+	switch {
+	case strings.Contains(p, "/Cellar/multigent/") || strings.Contains(p, "/homebrew/Cellar/multigent/") || strings.Contains(p, "/Homebrew/Cellar/multigent/"):
+		return "brew"
+	case strings.Contains(p, "/node_modules/@multigent/multigent/"):
+		return "npm"
+	default:
+		return "binary"
+	}
+}
+
+func updateCommandForInstall(channel updateChannel) string {
+	suffix := ""
+	if channel != updateChannelRelease {
+		suffix = " --channel " + string(channel)
+	}
+	switch detectInstallMethod() {
+	case "brew":
+		if channel == updateChannelRelease {
+			return "brew update && brew upgrade multigent"
+		}
+		return "multigent update" + suffix
+	case "npm":
+		if channel == updateChannelRelease {
+			return "npm update -g @multigent/multigent"
+		}
+		return "multigent update" + suffix
+	default:
+		return "multigent update" + suffix
+	}
+}
+
+func updateCheckCachePath() (string, error) {
+	dir, err := os.UserCacheDir()
+	if err != nil || strings.TrimSpace(dir) == "" {
+		home, homeErr := os.UserHomeDir()
+		if homeErr != nil {
+			return "", err
+		}
+		dir = filepath.Join(home, ".multigent", "cache")
+	} else {
+		dir = filepath.Join(dir, "multigent")
+	}
+	return filepath.Join(dir, "update-check.json"), nil
+}
+
+func readUpdateCheckCache() (updateCheckCache, bool) {
+	path, err := updateCheckCachePath()
+	if err != nil {
+		return updateCheckCache{}, false
+	}
+	data, err := os.ReadFile(path)
+	if err != nil {
+		return updateCheckCache{}, false
+	}
+	var cache updateCheckCache
+	if err := json.Unmarshal(data, &cache); err != nil {
+		return updateCheckCache{}, false
+	}
+	return cache, true
+}
+
+func writeUpdateCheckCache(cache updateCheckCache) {
+	path, err := updateCheckCachePath()
+	if err != nil {
+		return
+	}
+	if err := os.MkdirAll(filepath.Dir(path), 0o755); err != nil {
+		return
+	}
+	data, err := json.MarshalIndent(cache, "", "  ")
+	if err != nil {
+		return
+	}
+	_ = os.WriteFile(path, append(data, '\n'), 0o644)
 }

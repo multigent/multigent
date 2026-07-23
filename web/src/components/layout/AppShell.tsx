@@ -187,7 +187,7 @@ export function AppShell() {
   const [collapsed, setCollapsed] = useState(() => localStorage.getItem(SIDEBAR_KEY) === '1')
   const [assistantHidden, setAssistantHidden] = useState(() => localStorage.getItem(ASSISTANT_HIDDEN_KEY) === '1')
   const [appVersion, setAppVersion] = useState('…')
-  const [updateInfo, setUpdateInfo] = useState<{ hasUpdate: boolean; latestVersion?: string } | null>(null)
+  const [updateInfo, setUpdateInfo] = useState<{ hasUpdate: boolean; latestVersion?: string; channel?: string; updateCommand?: string } | null>(null)
   const [workspaceScope, setWorkspaceScope] = useState('default')
   const [workspaceName, setWorkspaceName] = useState('')
   const [tourOpen, setTourOpen] = useState(false)
@@ -198,7 +198,7 @@ export function AppShell() {
       .then((d) => setAppVersion(d.version || 'dev'))
       .catch(() => setAppVersion('dev'))
 
-    apiFetch<{ hasUpdate: boolean; latestVersion?: string }>('/api/v1/check-update')
+    apiFetch<{ hasUpdate: boolean; latestVersion?: string; channel?: string; updateCommand?: string }>('/api/v1/check-update')
       .then((d) => setUpdateInfo(d))
       .catch(() => {})
   }, [])
@@ -300,6 +300,7 @@ export function AppShell() {
                     href={`https://github.com/multigent/multigent/releases/tag/${updateInfo.latestVersion}`}
                     target="_blank"
                     rel="noopener noreferrer"
+                    title={updateInfo.updateCommand || undefined}
                     className="inline-flex items-center gap-1 rounded-full bg-blue-50 px-2 py-0.5 text-[11px] font-medium text-blue-600 transition-colors hover:bg-blue-100 dark:bg-blue-900/30 dark:text-blue-400 dark:hover:bg-blue-900/50"
                   >
                     {t('footer.updateAvailable', { version: updateInfo.latestVersion })}

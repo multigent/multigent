@@ -30,7 +30,7 @@ type contextKey string
 const ctxUserKey contextKey = "auth-user"
 
 // UpdateChecker returns latest version info. Set by the caller.
-type UpdateChecker func() (latestVersion, releaseNotes string, hasUpdate bool)
+type UpdateChecker func() (latestVersion, releaseNotes string, hasUpdate bool, channel string, updateCommand string)
 
 // DaemonStatusFunc returns daemon status as a JSON-friendly map.
 type DaemonStatusFunc func() map[string]any
@@ -511,8 +511,14 @@ func (s *Server) handleCheckUpdate(w http.ResponseWriter, _ *http.Request) {
 		"hasUpdate":      false,
 	}
 	if s.updateCheck != nil {
-		latest, notes, has := s.updateCheck()
+		latest, notes, has, channel, command := s.updateCheck()
 		result["hasUpdate"] = has
+		if channel != "" {
+			result["channel"] = channel
+		}
+		if command != "" {
+			result["updateCommand"] = command
+		}
 		if latest != "" {
 			result["latestVersion"] = latest
 		}
