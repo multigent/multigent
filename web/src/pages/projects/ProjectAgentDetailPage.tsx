@@ -23,6 +23,11 @@ const AGENT_MODELS = [
   'qoder', 'opencode', 'iflow', 'generic-cli', 'http-agent',
 ] as const
 
+const AGENT_MODEL_LABEL_KEYS: Record<string, string> = {
+  'generic-cli': 'agentDetail.genericCli',
+  'http-agent': 'agentDetail.customCli',
+}
+
 const MODEL_COLORS: Record<string, string> = {
   claudecode:    'bg-orange-100 text-orange-700 dark:bg-orange-900/30 dark:text-orange-300',
   codex:         'bg-emerald-100 text-emerald-700 dark:bg-emerald-900/30 dark:text-emerald-300',
@@ -317,6 +322,10 @@ function ModelSelector({ project, agentName, currentModel, currentHttpAgent, onC
   const dirty = modelDirty || httpDirty
 
   async function apply() {
+    if (isHttp && !httpUrl.trim()) {
+      setResult({ ok: false, msg: t('agentDetail.customCliUrlRequired') })
+      return
+    }
     setBusy(true); setResult(null)
     try {
       const body: Record<string, unknown> = { model }
@@ -351,7 +360,7 @@ function ModelSelector({ project, agentName, currentModel, currentHttpAgent, onC
           className={cn(inputCls, 'font-medium')}
         >
           {AGENT_MODELS.map((m) => (
-            <option key={m} value={m}>{m}</option>
+            <option key={m} value={m}>{AGENT_MODEL_LABEL_KEYS[m] ? t(AGENT_MODEL_LABEL_KEYS[m]) : m}</option>
           ))}
         </select>
         {dirty && (
@@ -372,20 +381,20 @@ function ModelSelector({ project, agentName, currentModel, currentHttpAgent, onC
         )}
       </div>
       {isHttp && (
-        <div className="grid grid-cols-[auto_1fr] items-center gap-x-3 gap-y-1.5 pl-0.5 text-xs">
-          <span className="text-neutral-500 dark:text-zinc-500">URL *</span>
+        <div className="grid grid-cols-[auto_1fr] items-center gap-x-3 gap-y-1.5 rounded-lg border border-amber-200 bg-amber-50/50 p-3 text-xs dark:border-amber-900/40 dark:bg-amber-950/20">
+          <span className="text-neutral-500 dark:text-zinc-500">{t('agentDetail.customCliUrl')} *</span>
           <input value={httpUrl} onChange={(e) => setHttpUrl(e.target.value)} disabled={busy}
             placeholder="http://localhost:11434/v1/chat/completions" className={cn(inputCls, 'w-full')} />
-          <span className="text-neutral-500 dark:text-zinc-500">Model</span>
+          <span className="text-neutral-500 dark:text-zinc-500">{t('agentDetail.customCliModel')}</span>
           <input value={httpModel} onChange={(e) => setHttpModel(e.target.value)} disabled={busy}
             placeholder="llama3.2, gpt-4o, ..." className={cn(inputCls, 'w-full')} />
           <span className="text-neutral-500 dark:text-zinc-500">API Key</span>
           <input value={httpApiKey} onChange={(e) => setHttpApiKey(e.target.value)} disabled={busy}
             type="password" placeholder="Bearer token" className={cn(inputCls, 'w-full')} />
-          <span className="text-neutral-500 dark:text-zinc-500">Timeout</span>
+          <span className="text-neutral-500 dark:text-zinc-500">{t('agentDetail.customCliTimeout')}</span>
           <input value={httpTimeout} onChange={(e) => setHttpTimeout(e.target.value)} disabled={busy}
             placeholder="10m" className={cn(inputCls, 'w-24')} />
-          <span className="text-neutral-500 dark:text-zinc-500">Stream</span>
+          <span className="text-neutral-500 dark:text-zinc-500">{t('agentDetail.customCliStream')}</span>
           <label className="flex cursor-pointer items-center gap-1.5">
             <input type="checkbox" checked={httpStream} onChange={(e) => setHttpStream(e.target.checked)} disabled={busy}
               className="size-3.5 rounded border-neutral-300 text-sky-600 focus:ring-sky-400" />
