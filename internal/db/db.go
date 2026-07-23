@@ -225,6 +225,7 @@ type ModelProvider struct {
 	BaseURL     string
 	APIKey      string
 	Model       string
+	ModelsJSON  string
 	EnvJSON     string
 	CreatedAt   string
 	UpdatedAt   string

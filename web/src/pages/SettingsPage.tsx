@@ -906,6 +906,7 @@ export function UsersSection() {
 
 type ProviderRow = {
   id: string; ownerType?: 'workspace' | 'user'; ownerId?: string; name: string; type: string; baseUrl?: string; model?: string
+  models?: string[]
   hasKey: boolean; authMethod?: string; authConfigured?: boolean; env?: Record<string, string>
 }
 type WorkspaceAccessSummary = { currentUserCanAdmin?: boolean }
@@ -934,7 +935,7 @@ const GATEWAY_ACCOUNT_PRESETS: ProviderPreset[] = [
   { id: 'openrouter', label: 'OpenRouter', cli: 'codex', baseUrl: 'https://openrouter.ai/api/v1', model: '', hint: 'OpenAI-compatible model router' },
 ]
 
-type ProviderDraft = Partial<ProviderRow> & { apiKey?: string; accountMode?: ModelAccountMode; cli?: ModelAccountCLI; authMethod?: string }
+type ProviderDraft = Partial<ProviderRow> & { apiKey?: string; accountMode?: ModelAccountMode; cli?: ModelAccountCLI; authMethod?: string; modelsText?: string }
 type ModelDeviceAuthState = {
   sessionId: string
   verificationUri: string
@@ -998,7 +999,7 @@ function ProvidersSection() {
   useEffect(() => { void refresh() }, [refresh])
 
   function openNew() {
-    setEditing({ accountMode: 'official', cli: 'codex', ownerType: canCreateWorkspaceProvider ? 'workspace' : 'user', name: providerOfficialName('codex'), type: providerTypeForCLI('codex'), baseUrl: '', model: '', apiKey: '', authMethod: 'codex_chatgpt' })
+    setEditing({ accountMode: 'official', cli: 'codex', ownerType: canCreateWorkspaceProvider ? 'workspace' : 'user', name: providerOfficialName('codex'), type: providerTypeForCLI('codex'), baseUrl: '', model: '', models: [], modelsText: '', apiKey: '', authMethod: 'codex_chatgpt' })
     setShowKey(false)
     deviceAuthSessionRef.current = ''
     setDeviceAuth(null)
@@ -1043,7 +1044,7 @@ function ProvidersSection() {
   }
 
   function openEdit(p: ProviderRow) {
-    setEditing({ ...p, accountMode: inferModelAccountMode(p), cli: inferModelAccountCLI(p), apiKey: '', authMethod: p.authMethod || (p.hasKey ? 'api_key' : '') })
+    setEditing({ ...p, accountMode: inferModelAccountMode(p), cli: inferModelAccountCLI(p), apiKey: '', authMethod: p.authMethod || (p.hasKey ? 'api_key' : ''), modelsText: formatProviderModels(p.models) })
     setShowKey(false)
     deviceAuthSessionRef.current = ''
     setDeviceAuth(null)
@@ -1061,6 +1062,7 @@ function ProvidersSection() {
         type: providerTypeForCLI(editing.cli),
         baseUrl: editing.accountMode === 'official' ? '' : editing.baseUrl || '',
         model: editing.accountMode === 'official' ? '' : editing.model || '',
+        models: providerModelsFromDraft(editing),
         env: {
           ...(editing.env ?? {}),
           MULTIGENT_MODEL_AUTH_METHOD: editing.authMethod || 'api_key',
@@ -1215,6 +1217,8 @@ function ProvidersSection() {
       type: providerTypeForCLI(preset.cli),
       baseUrl: preset.baseUrl,
       model: preset.model,
+      models: preset.model ? [preset.model] : [],
+      modelsText: preset.model,
     }))
   }
 
@@ -1232,6 +1236,8 @@ function ProvidersSection() {
           type: providerTypeForCLI(nextCLI),
           baseUrl: '',
           model: '',
+          models: [],
+          modelsText: '',
           authMethod: defaultAuthMethodForCLI(nextCLI),
           name: prev.name?.trim() && !isGeneratedModelAccountName(prev.name) ? prev.name : providerOfficialName(nextCLI),
         }
@@ -1243,6 +1249,8 @@ function ProvidersSection() {
         cli: nextCLI,
         type: providerTypeForCLI(nextCLI),
         authMethod: 'api_key',
+        models: [],
+        modelsText: '',
         name: prev.name?.trim() && !isGeneratedModelAccountName(prev.name) ? prev.name : '',
       }
     })
@@ -1258,6 +1266,8 @@ function ProvidersSection() {
         cli,
         type: providerTypeForCLI(cli),
         authMethod: prev.accountMode === 'official' ? defaultAuthMethodForCLI(cli) : 'api_key',
+        models: prev.accountMode === 'official' ? [] : prev.models,
+        modelsText: prev.accountMode === 'official' ? '' : prev.modelsText,
         name: prev.name?.trim() && !isGeneratedModelAccountName(prev.name) ? prev.name : (prev.accountMode === 'official' ? providerOfficialName(cli) : ''),
       }
     })
@@ -1448,6 +1458,17 @@ function ProvidersSection() {
                   <label className="flex flex-col gap-1">
                     <span className="text-sm font-medium text-neutral-600 dark:text-zinc-400">{t('provider.defaultModelLabel')}</span>
                     <input value={editing.model ?? ''} onChange={e => setEditing({ ...editing, model: e.target.value })} className={cn(fieldCls, 'font-mono text-xs')} placeholder={providerModelPlaceholder(editing.cli)} />
+                  </label>
+                  <label className="flex flex-col gap-1">
+                    <span className="text-sm font-medium text-neutral-600 dark:text-zinc-400">{t('provider.availableModelsLabel')}</span>
+                    <textarea
+                      value={editing.modelsText ?? ''}
+                      onChange={e => setEditing({ ...editing, modelsText: e.target.value, models: parseProviderModels(e.target.value) })}
+                      rows={3}
+                      className={cn(fieldCls, 'max-w-none resize-y font-mono text-xs')}
+                      placeholder={t('provider.availableModelsPlaceholder')}
+                    />
+                    <span className="text-xs leading-5 text-neutral-400 dark:text-zinc-500">{t('provider.availableModelsHint')}</span>
                   </label>
                   <p className="text-xs leading-5 text-neutral-400 dark:text-zinc-500">{t('provider.gatewayHint')}</p>
                 </>
@@ -1729,6 +1750,28 @@ function providerModelPlaceholder(cli?: ModelAccountCLI): string {
     case 'codex':
     default: return 'gpt-5.6-sol'
   }
+}
+
+function parseProviderModels(value?: string): string[] {
+  const out: string[] = []
+  for (const raw of (value ?? '').split(/[\n,]/)) {
+    const model = raw.trim()
+    if (!model || out.includes(model)) continue
+    out.push(model)
+  }
+  return out
+}
+
+function formatProviderModels(models?: string[]): string {
+  return parseProviderModels((models ?? []).join('\n')).join('\n')
+}
+
+function providerModelsFromDraft(provider: ProviderDraft): string[] {
+  return parseProviderModels([
+    provider.model ?? '',
+    provider.modelsText ?? '',
+    ...(provider.models ?? []),
+  ].join('\n'))
 }
 
 // ── Workspace Secrets ──────────────────────────────────────────────────────

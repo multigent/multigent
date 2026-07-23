@@ -15,6 +15,9 @@ func (db *SQLiteStore) UpsertModelProvider(workspaceID string, provider ModelPro
 	if provider.EnvJSON == "" {
 		provider.EnvJSON = "{}"
 	}
+	if provider.ModelsJSON == "" {
+		provider.ModelsJSON = "[]"
+	}
 	if provider.OwnerType == "" {
 		provider.OwnerType = "workspace"
 	}
@@ -22,8 +25,8 @@ func (db *SQLiteStore) UpsertModelProvider(workspaceID string, provider ModelPro
 		provider.OwnerID = workspaceID
 	}
 	_, err := db.sql.Exec(`INSERT INTO model_providers (
-	id, workspace_id, owner_type, owner_id, name, type, base_url, api_key, model, env_json, created_at, updated_at
-) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+	id, workspace_id, owner_type, owner_id, name, type, base_url, api_key, model, models_json, env_json, created_at, updated_at
+) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
 ON CONFLICT(workspace_id, id) DO UPDATE SET
 	owner_type = excluded.owner_type,
 	owner_id = excluded.owner_id,
@@ -32,15 +35,16 @@ ON CONFLICT(workspace_id, id) DO UPDATE SET
 	base_url = excluded.base_url,
 	api_key = excluded.api_key,
 	model = excluded.model,
+	models_json = excluded.models_json,
 	env_json = excluded.env_json,
 	updated_at = excluded.updated_at`,
 		provider.ID, workspaceID, provider.OwnerType, provider.OwnerID, provider.Name, provider.Type, provider.BaseURL, provider.APIKey,
-		provider.Model, provider.EnvJSON, provider.CreatedAt, provider.UpdatedAt)
+		provider.Model, provider.ModelsJSON, provider.EnvJSON, provider.CreatedAt, provider.UpdatedAt)
 	return err
 }
 
 func (db *SQLiteStore) ModelProviderByID(workspaceID, id string) (ModelProvider, bool, error) {
-	row := db.sql.QueryRow(`SELECT id, workspace_id, owner_type, owner_id, name, type, base_url, api_key, model, env_json, created_at, updated_at
+	row := db.sql.QueryRow(`SELECT id, workspace_id, owner_type, owner_id, name, type, base_url, api_key, model, models_json, env_json, created_at, updated_at
 FROM model_providers WHERE workspace_id = ? AND id = ?`, workspaceID, id)
 	p, err := scanModelProvider(row)
 	if errors.Is(err, sql.ErrNoRows) {
@@ -53,7 +57,7 @@ FROM model_providers WHERE workspace_id = ? AND id = ?`, workspaceID, id)
 }
 
 func (db *SQLiteStore) ListModelProviders(workspaceID string) ([]ModelProvider, error) {
-	rows, err := db.sql.Query(`SELECT id, workspace_id, owner_type, owner_id, name, type, base_url, api_key, model, env_json, created_at, updated_at
+	rows, err := db.sql.Query(`SELECT id, workspace_id, owner_type, owner_id, name, type, base_url, api_key, model, models_json, env_json, created_at, updated_at
 FROM model_providers WHERE workspace_id = ? ORDER BY name ASC, id ASC`, workspaceID)
 	if err != nil {
 		return nil, err
@@ -81,6 +85,6 @@ type modelProviderScanner interface {
 
 func scanModelProvider(row modelProviderScanner) (ModelProvider, error) {
 	var p ModelProvider
-	err := row.Scan(&p.ID, &p.WorkspaceID, &p.OwnerType, &p.OwnerID, &p.Name, &p.Type, &p.BaseURL, &p.APIKey, &p.Model, &p.EnvJSON, &p.CreatedAt, &p.UpdatedAt)
+	err := row.Scan(&p.ID, &p.WorkspaceID, &p.OwnerType, &p.OwnerID, &p.Name, &p.Type, &p.BaseURL, &p.APIKey, &p.Model, &p.ModelsJSON, &p.EnvJSON, &p.CreatedAt, &p.UpdatedAt)
 	return p, err
 }

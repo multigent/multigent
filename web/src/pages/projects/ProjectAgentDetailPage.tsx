@@ -136,6 +136,12 @@ const OFFICIAL_RUNTIME_MODEL_PRESETS: Record<string, string[]> = {
   gemini: ['gemini-2.5-pro', 'gemini-2.5-flash', 'gemini-2.0-flash'],
 }
 
+type ModelCatalog = {
+  source?: string
+  modelsByCLI?: Record<string, string[]>
+  modelsByProviderType?: Record<string, string[]>
+}
+
 const buttonBaseCls = 'inline-flex h-8 items-center justify-center rounded-md px-3 text-xs font-medium transition-colors disabled:cursor-not-allowed disabled:opacity-50'
 const primaryButtonCls = cn(buttonBaseCls, 'border border-sky-200 bg-sky-50 text-sky-700 hover:bg-sky-100 dark:border-sky-800 dark:bg-sky-900/20 dark:text-sky-300 dark:hover:bg-sky-900/30')
 const secondaryButtonCls = cn(buttonBaseCls, 'border border-neutral-200 bg-white text-neutral-700 hover:border-neutral-300 hover:bg-neutral-50 dark:border-zinc-700 dark:bg-zinc-900 dark:text-zinc-300 dark:hover:border-zinc-600 dark:hover:bg-zinc-800')
@@ -979,6 +985,7 @@ type ProviderOption = {
   type: string
   baseUrl?: string
   model?: string
+  models?: string[]
   authMethod?: string
 }
 
@@ -1057,18 +1064,21 @@ function uniqueStrings(items: Array<string | undefined>) {
   return out
 }
 
-function runtimeModelOptionsFor(model: string, provider?: ProviderOption) {
+function runtimeModelOptionsFor(model: string, provider?: ProviderOption, catalog?: ModelCatalog | null) {
   const normalizedModel = model.trim().toLowerCase()
   const providerType = provider?.type?.trim().toLowerCase() ?? ''
   const isGateway = Boolean(provider?.baseUrl?.trim())
   const base = isGateway
     ? []
     : [
+        ...(catalog?.modelsByCLI?.[normalizedModel] ?? []),
+        ...(catalog?.modelsByProviderType?.[providerType] ?? []),
         ...(OFFICIAL_RUNTIME_MODEL_PRESETS[normalizedModel] ?? []),
         ...(OFFICIAL_RUNTIME_MODEL_PRESETS[providerType] ?? []),
       ]
   return uniqueStrings([
     provider?.model,
+    ...(provider?.models ?? []),
     ...base,
     ...(isGateway ? [] : (RUNTIME_MODEL_PRESETS[normalizedModel] ?? [])),
   ])
@@ -1374,6 +1384,7 @@ function EnvEditor({ project, agentName, model, initialEnv, initialProvider, ini
   const [busy, setBusy] = useState(false)
   const [saved, setSaved] = useState(false)
   const [providerOptions, setProviderOptions] = useState<ProviderOption[]>([])
+  const [modelCatalog, setModelCatalog] = useState<ModelCatalog | null>(null)
   const [selectedProvider, setSelectedProvider] = useState(initialProvider ?? '')
   const [runtimeModel, setRuntimeModel] = useState(initialRuntimeModel ?? '')
   const [customRuntimeModel, setCustomRuntimeModel] = useState(initialRuntimeModel ?? '')
@@ -1382,6 +1393,10 @@ function EnvEditor({ project, agentName, model, initialEnv, initialProvider, ini
     const path = `/api/v1/providers?project=${encodeURIComponent(project)}&agent=${encodeURIComponent(agentName)}`
     void apiFetch<ProviderOption[]>(path).then(data => setProviderOptions(data ?? [])).catch(() => {})
   }, [project, agentName])
+
+  useEffect(() => {
+    void apiFetch<ModelCatalog>('/api/v1/model-catalog').then(setModelCatalog).catch(() => setModelCatalog(null))
+  }, [])
 
   useEffect(() => {
     setSelectedProvider(initialProvider ?? '')
@@ -1393,7 +1408,7 @@ function EnvEditor({ project, agentName, model, initialEnv, initialProvider, ini
   const selectedProviderExists = Boolean(selectedProvider && providerOptions.some((p) => p.id === selectedProvider))
   const selectedProviderValue = selectedProviderExists ? selectedProvider : ''
   const selectedProviderInfo = providerOptions.find((p) => p.id === selectedProviderValue)
-  const runtimeModelOptions = runtimeModelOptionsFor(model, selectedProviderInfo)
+  const runtimeModelOptions = runtimeModelOptionsFor(model, selectedProviderInfo, modelCatalog)
   const runtimeModelSelectValue = runtimeModel
     ? runtimeModelOptions.includes(runtimeModel) ? runtimeModel : '__custom__'
     : ''
@@ -1434,7 +1449,7 @@ function EnvEditor({ project, agentName, model, initialEnv, initialProvider, ini
           <select value={selectedProviderValue} onChange={e => {
             const nextProviderID = e.target.value
             const nextProvider = providerOptions.find((p) => p.id === nextProviderID)
-            const nextOptions = runtimeModelOptionsFor(model, nextProvider)
+            const nextOptions = runtimeModelOptionsFor(model, nextProvider, modelCatalog)
             setSelectedProvider(nextProviderID)
             if (!runtimeModel && nextOptions[0]) {
               setRuntimeModel(nextOptions[0])

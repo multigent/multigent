@@ -106,6 +106,7 @@ type APIProvider struct {
 	BaseURL   string            `yaml:"base_url,omitempty" json:"baseUrl,omitempty"`
 	APIKey    string            `yaml:"api_key,omitempty"  json:"-"`
 	Model     string            `yaml:"model,omitempty"    json:"model,omitempty"`
+	Models    []string          `yaml:"models,omitempty"   json:"models,omitempty"`
 	Env       map[string]string `yaml:"env,omitempty"      json:"env,omitempty"`
 }
 

@@ -348,6 +348,12 @@ func modelProviderFromDB(row controldb.ModelProvider) (entity.APIProvider, error
 			return entity.APIProvider{}, err
 		}
 	}
+	models := []string{}
+	if strings.TrimSpace(row.ModelsJSON) != "" {
+		if err := json.Unmarshal([]byte(row.ModelsJSON), &models); err != nil {
+			return entity.APIProvider{}, err
+		}
+	}
 	apiKey := ""
 	if strings.TrimSpace(row.APIKey) != "" {
 		opened, err := secretbox.OpenString(row.APIKey)
@@ -365,6 +371,7 @@ func modelProviderFromDB(row controldb.ModelProvider) (entity.APIProvider, error
 		BaseURL:   row.BaseURL,
 		APIKey:    apiKey,
 		Model:     row.Model,
+		Models:    models,
 		Env:       env,
 	}, nil
 }
@@ -375,6 +382,10 @@ func modelProviderToDB(workspaceID string, p entity.APIProvider) (controldb.Mode
 		env = map[string]string{}
 	}
 	envJSON, err := json.Marshal(env)
+	if err != nil {
+		return controldb.ModelProvider{}, err
+	}
+	modelsJSON, err := json.Marshal(cleanModelList(p.Models))
 	if err != nil {
 		return controldb.ModelProvider{}, err
 	}
@@ -401,8 +412,23 @@ func modelProviderToDB(workspaceID string, p entity.APIProvider) (controldb.Mode
 		BaseURL:     strings.TrimSpace(p.BaseURL),
 		APIKey:      apiKey,
 		Model:       strings.TrimSpace(p.Model),
+		ModelsJSON:  string(modelsJSON),
 		EnvJSON:     string(envJSON),
 		CreatedAt:   now,
 		UpdatedAt:   now,
 	}, nil
+}
+
+func cleanModelList(models []string) []string {
+	out := make([]string, 0, len(models))
+	seen := map[string]bool{}
+	for _, model := range models {
+		model = strings.TrimSpace(model)
+		if model == "" || seen[model] {
+			continue
+		}
+		seen[model] = true
+		out = append(out, model)
+	}
+	return out
 }

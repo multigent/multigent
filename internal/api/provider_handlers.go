@@ -24,6 +24,7 @@ type providerBody struct {
 	BaseURL   string            `json:"baseUrl"`
 	APIKey    string            `json:"apiKey"`
 	Model     string            `json:"model"`
+	Models    []string          `json:"models,omitempty"`
 	Env       map[string]string `json:"env,omitempty"`
 }
 
@@ -58,6 +59,7 @@ func (b providerBody) toEntity() entity.APIProvider {
 		BaseURL:   strings.TrimSpace(b.BaseURL),
 		APIKey:    strings.TrimSpace(b.APIKey),
 		Model:     strings.TrimSpace(b.Model),
+		Models:    cleanProviderModels(b.Models),
 		Env:       b.Env,
 	}
 }
@@ -476,6 +478,7 @@ func providerToJSON(p entity.APIProvider) map[string]any {
 		"type":           p.Type,
 		"baseUrl":        p.BaseURL,
 		"model":          p.Model,
+		"models":         cleanProviderModels(p.Models),
 		"hasKey":         p.APIKey != "",
 		"authMethod":     authMethod,
 		"authConfigured": authConfigured,
@@ -495,8 +498,23 @@ func modelProviderAuditPayload(p entity.APIProvider) map[string]any {
 		"type":      p.Type,
 		"baseUrl":   p.BaseURL,
 		"model":     p.Model,
+		"models":    cleanProviderModels(p.Models),
 		"hasKey":    p.APIKey != "",
 	}
+}
+
+func cleanProviderModels(models []string) []string {
+	out := make([]string, 0, len(models))
+	seen := map[string]bool{}
+	for _, model := range models {
+		model = strings.TrimSpace(model)
+		if model == "" || seen[model] {
+			continue
+		}
+		seen[model] = true
+		out = append(out, model)
+	}
+	return out
 }
 
 func listCCSwitchProviderRows() ([]ccSwitchProviderRow, string, error) {
@@ -572,6 +590,7 @@ func fillClaudeCCSwitchProvider(prov *entity.APIProvider, settings map[string]an
 	}
 	if model := firstStringFromMap(env, "ANTHROPIC_MODEL", "CLAUDE_MODEL"); model != "" {
 		prov.Model = model
+		prov.Models = []string{model}
 	}
 	extra := map[string]string{}
 	known := map[string]bool{
@@ -618,6 +637,9 @@ func fillCodexCCSwitchProvider(prov *entity.APIProvider, settings map[string]any
 	}
 	if prov.APIKey == "" {
 		return fmt.Errorf("no OPENAI_API_KEY found")
+	}
+	if prov.Model != "" {
+		prov.Models = []string{prov.Model}
 	}
 	return nil
 }
