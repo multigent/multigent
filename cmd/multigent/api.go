@@ -140,6 +140,17 @@ func resolveAPIServeRoots(cfg *appconfig.Config) (dataRoot, activeRoot string, e
 	if err != nil {
 		return "", "", err
 	}
+	if hasAgency(dataRoot) {
+		activeRoot = dataRoot
+		dataRoot = filepath.Dir(activeRoot)
+		if err := os.MkdirAll(dataRoot, 0o755); err != nil {
+			return "", "", err
+		}
+		if err := os.Setenv("MULTIGENT_DATA_DIR", dataRoot); err != nil {
+			return "", "", err
+		}
+		return dataRoot, activeRoot, nil
+	}
 	if err := os.MkdirAll(dataRoot, 0o755); err != nil {
 		return "", "", err
 	}
