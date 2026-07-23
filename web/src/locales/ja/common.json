@@ -1438,6 +1438,8 @@
     "sessionSwitchHint": "別のターミナルやツールで作成された Session ID を貼り付けると、次のメッセージからその Session を再開します。",
     "followingLiveLog": "この Agent の実行ログを追跡しています。完了後に実行記録へ書き込まれます。",
     "waiting": "エージェントが返信中",
+    "preparingSandbox": "隔離ランタイムを準備しています。初回実行では Runtime イメージを pull するため、数分かかる場合があります。",
+    "dockerUnavailable": "この Agent は Docker sandbox を必要としますが、Docker がインストールされていないか起動していません。Docker Desktop を起動し、docker info が成功することを確認してから再実行してください。",
     "stopped": "停止しました",
     "protocolError": "チャットストリーム形式が不正です",
     "error": "チャット実行に失敗しました"

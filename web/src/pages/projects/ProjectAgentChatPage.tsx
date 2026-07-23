@@ -20,9 +20,19 @@ type AgentContext = {
   model: string
   runtimeModel?: string
   provider?: string
+  sandbox?: {
+    provider?: string
+  }
   env?: Record<string, string>
   httpAgent?: {
     model?: string
+  }
+}
+
+type SandboxCapabilities = {
+  docker?: {
+    available?: boolean
+    reason?: string
   }
 }
 
@@ -64,9 +74,11 @@ export default function ProjectAgentChatPage() {
   const [content, setContent] = useState('')
   const [input, setInput] = useState(() => readAgentChatDraft(projectId, agentName))
   const [loading, setLoading] = useState(false)
+  const [runNotice, setRunNotice] = useState<string | null>(null)
   const [historyLoading, setHistoryLoading] = useState(false)
   const [historyTruncated, setHistoryTruncated] = useState(false)
   const [error, setError] = useState<string | null>(null)
+  const [runtimeWarning, setRuntimeWarning] = useState<string | null>(null)
   const [freshNext, setFreshNext] = useState(false)
   const [focusMode, setFocusMode] = useState(false)
   const [agentContext, setAgentContext] = useState<AgentContext | null>(null)
@@ -103,6 +115,7 @@ export default function ProjectAgentChatPage() {
     if (!path) return
     setHistoryLoading(true)
     setError(null)
+    setRuntimeWarning(null)
     try {
       const data = await apiFetch<HistoryResp>(path)
       if (activeChatKeyRef.current !== expectedKey) return
@@ -130,6 +143,7 @@ export default function ProjectAgentChatPage() {
     setInput(readAgentChatDraft(projectId, agentName))
     setError(null)
     setLoading(false)
+    setRunNotice(null)
     setHistoryLoading(false)
     setHistoryTruncated(false)
     setFreshNext(false)
@@ -151,6 +165,25 @@ export default function ProjectAgentChatPage() {
       .catch(() => {})
     return () => { cancelled = true }
   }, [projectId, agentName])
+
+  useEffect(() => {
+    if ((agentContext?.sandbox?.provider ?? 'docker') !== 'docker') {
+      setRuntimeWarning(null)
+      return
+    }
+    let cancelled = false
+    void apiFetch<SandboxCapabilities>('/api/v1/sandbox/capabilities')
+      .then((caps) => {
+        if (cancelled) return
+        if (caps.docker && caps.docker.available === false) {
+          setRuntimeWarning(t('agentChat.dockerUnavailable'))
+        } else {
+          setRuntimeWarning(null)
+        }
+      })
+      .catch(() => {})
+    return () => { cancelled = true }
+  }, [agentContext?.sandbox?.provider, t])
 
   useEffect(() => {
     requestAnimationFrame(() => {
@@ -196,7 +229,24 @@ export default function ProjectAgentChatPage() {
     setInput('')
     resetTextareaHeight(inputRef.current)
     setError(null)
+    setRunNotice(null)
+
+    if ((agentContext?.sandbox?.provider ?? 'docker') === 'docker') {
+      try {
+        const caps = await apiFetch<SandboxCapabilities>('/api/v1/sandbox/capabilities')
+        if (caps.docker && caps.docker.available === false) {
+          const reason = caps.docker.reason ? `\n\n${caps.docker.reason}` : ''
+          setError(`${t('agentChat.dockerUnavailable')}${reason}`)
+          setInput(text)
+          return
+        }
+      } catch {
+        // Do not block chat when the health preflight itself is unavailable.
+      }
+    }
+
     setLoading(true)
+    setRunNotice(t('agentChat.preparingSandbox'))
     setContent((prev) => appendLog(prev, JSON.stringify({ type: 'human', content: text })))
 
     const controller = new AbortController()
@@ -245,6 +295,7 @@ export default function ProjectAgentChatPage() {
             if (evt.type === 'chat_event') {
               if (evt.session_id) updateSessionId(String(evt.session_id))
               if (typeof evt.payload === 'string' && evt.payload) {
+                setRunNotice(null)
                 setContent((prev) => appendLog(prev, evt.payload))
               }
               continue
@@ -255,6 +306,7 @@ export default function ProjectAgentChatPage() {
             }
             if (evt.type === 'chat_error') {
               const msg = evt.error ? String(evt.error) : t('agentChat.error')
+              setRunNotice(null)
               setError(msg)
               setContent((prev) => appendLog(prev, `=== Error: ${msg} ===`))
               continue
@@ -278,6 +330,7 @@ export default function ProjectAgentChatPage() {
       abortRef.current = null
       setFreshNext(false)
       setLoading(false)
+      setRunNotice(null)
       inputRef.current?.focus()
     }
   }
@@ -446,6 +499,9 @@ export default function ProjectAgentChatPage() {
         {error && (
           <p className="mt-2 text-xs text-red-500 dark:text-red-400">{error}</p>
         )}
+        {!error && runtimeWarning && (
+          <p className="mt-2 rounded-lg border border-amber-200 bg-amber-50 px-3 py-2 text-xs leading-5 text-amber-700 dark:border-amber-900/50 dark:bg-amber-900/20 dark:text-amber-300">{runtimeWarning}</p>
+        )}
       </div>
 
       <div ref={scrollRef} className="flex-1 overflow-y-auto px-6 py-5">
@@ -458,7 +514,7 @@ export default function ProjectAgentChatPage() {
         ) : (
           <div className="space-y-4">
             <ConversationLog content={content} mode="chat" user={userParticipant} assistant={assistantParticipant} />
-            {loading && <AgentReplyLoading />}
+            {loading && <AgentReplyLoading notice={runNotice} />}
           </div>
         )}
       </div>
@@ -514,17 +570,20 @@ export default function ProjectAgentChatPage() {
   return chatPanel
 }
 
-function AgentReplyLoading() {
+function AgentReplyLoading({ notice }: { notice?: string | null }) {
   return (
     <div className="flex gap-2.5">
       <div className="relative flex size-6 shrink-0 items-center justify-center rounded-full bg-neutral-100 dark:bg-zinc-800">
         <span className="absolute size-5 animate-ping rounded-full bg-sky-400/20" />
         <Sparkles className="relative size-3.5 text-sky-600 dark:text-sky-400" strokeWidth={1.8} />
       </div>
-      <div className="flex h-10 items-center gap-1.5 rounded-lg bg-neutral-50 px-3.5 dark:bg-zinc-900/70" aria-label="loading">
-        <span className="h-2 w-1 animate-[pulse_1.1s_ease-in-out_infinite] rounded-full bg-sky-500/70" />
-        <span className="h-4 w-1 animate-[pulse_1.1s_ease-in-out_infinite_120ms] rounded-full bg-sky-500/80" />
-        <span className="h-2.5 w-1 animate-[pulse_1.1s_ease-in-out_infinite_240ms] rounded-full bg-sky-500/70" />
+      <div>
+        <div className="flex h-10 w-fit items-center gap-1.5 rounded-lg bg-neutral-50 px-3.5 dark:bg-zinc-900/70" aria-label="loading">
+          <span className="h-2 w-1 animate-[pulse_1.1s_ease-in-out_infinite] rounded-full bg-sky-500/70" />
+          <span className="h-4 w-1 animate-[pulse_1.1s_ease-in-out_infinite_120ms] rounded-full bg-sky-500/80" />
+          <span className="h-2.5 w-1 animate-[pulse_1.1s_ease-in-out_infinite_240ms] rounded-full bg-sky-500/70" />
+        </div>
+        {notice && <p className="mt-1 text-xs text-neutral-400 dark:text-zinc-500">{notice}</p>}
       </div>
     </div>
   )

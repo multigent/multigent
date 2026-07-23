@@ -1462,6 +1462,8 @@
     "sessionSwitchHint": "可以粘贴在其他终端或工具里产生的 Session ID；发送下一条消息时会用该 Session 继续。",
     "followingLiveLog": "正在跟随该 Agent 的运行日志，运行完成后会写入运行记录。",
     "waiting": "Agent 正在回复",
+    "preparingSandbox": "正在准备隔离运行环境。首次运行可能需要拉取 Runtime 镜像，会比平时更久。",
+    "dockerUnavailable": "当前 Agent 需要 Docker 隔离运行环境，但 Docker 未安装或未启动。请先启动 Docker Desktop，确认 docker info 可以正常返回，然后再运行。",
     "stopped": "已停止",
     "protocolError": "对话流格式异常",
     "error": "对话执行失败"

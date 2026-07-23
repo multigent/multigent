@@ -34,6 +34,24 @@ I will not configure model keys, external tools, or agents until you confirm the
 - A modern browser.
 - Optional for source builds: Go 1.26+ and Node.js 20+.
 
+Docker is required when an agent actually runs. The web console can start
+without Docker so users can configure a workspace first, but chat, wakeups, and
+workflow execution for CLI agents will fail until Docker is installed and
+running.
+
+Before the first agent run:
+
+```bash
+docker info
+```
+
+If this fails:
+
+- Windows/macOS: install and start Docker Desktop, then wait until it reports
+  that the engine is running.
+- Linux: install Docker Engine and start the daemon, for example
+  `sudo systemctl start docker`.
+
 Multigent publishes the default runtime image:
 
 ```text
@@ -41,6 +59,13 @@ ghcr.io/multigent/multigent/runtime-base:latest
 ```
 
 This image is public and does not require `docker login`.
+The first agent run may pull this image and take a few minutes. Later runs reuse
+the local image cache.
+To make the first chat faster, pre-pull it during setup:
+
+```bash
+docker pull ghcr.io/multigent/multigent/runtime-base:latest
+```
 
 ## Install Options
 
@@ -226,6 +251,11 @@ docker info
 ```
 
 If this fails, install and start Docker before running agents.
+On Windows and macOS, this usually means Docker Desktop is not running yet.
+On Linux, start the Docker daemon.
+
+Multigent does not block the web console when Docker is missing. It will warn at
+startup and block only the agent run that needs a Docker sandbox.
 
 ### Port Already In Use
 

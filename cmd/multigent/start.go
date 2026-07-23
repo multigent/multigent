@@ -17,6 +17,7 @@ import (
 
 	"github.com/multigent/multigent/internal/api"
 	"github.com/multigent/multigent/internal/daemon"
+	"github.com/multigent/multigent/internal/sandbox"
 	"github.com/multigent/multigent/web"
 	"github.com/spf13/cobra"
 )
@@ -80,6 +81,7 @@ remote server. For local development with hot-reload, use
 			if err := configureRuntimeAPIURL(addr); err != nil {
 				return err
 			}
+			logDockerReadiness()
 			key := api.ResolveAPIKey(apiKey)
 			srv := api.NewServer(root, key)
 			srv.SetVersion(version)
@@ -133,6 +135,15 @@ remote server. For local development with hot-reload, use
 	cmd.Flags().StringVar(&logFormat, "log-format", "", "log format: json|text")
 	cmd.Flags().IntVar(&logMaxSizeMB, "log-max-size", 0, "max log file size in MB")
 	return cmd
+}
+
+func logDockerReadiness() {
+	if err := sandbox.CheckDocker(); err != nil {
+		log.Printf("warning: Docker sandbox is not ready. Multigent can start, but CLI agents cannot run until Docker is installed and running. Details: %v", err)
+		return
+	}
+	image := sandbox.BaseImage
+	log.Printf("Docker sandbox ready. First agent run may pull runtime image %s and take a few minutes.", image)
 }
 
 // newSPAHandler wraps the API handler with an SPA file server.

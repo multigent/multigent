@@ -1448,6 +1448,8 @@
     "sessionSwitchHint": "可以貼上在其他終端或工具裡產生的 Session ID；送出下一則訊息時會用該 Session 繼續。",
     "followingLiveLog": "正在跟隨該 Agent 的執行日誌，執行完成後會寫入執行記錄。",
     "waiting": "Agent 正在回覆",
+    "preparingSandbox": "正在準備隔離執行環境。首次執行可能需要拉取 Runtime 映像，會比平時更久。",
+    "dockerUnavailable": "目前 Agent 需要 Docker 隔離執行環境，但 Docker 未安裝或未啟動。請先啟動 Docker Desktop，確認 docker info 可以正常返回，然後再執行。",
     "stopped": "已停止",
     "protocolError": "對話流格式異常",
     "error": "對話執行失敗"

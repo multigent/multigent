@@ -1462,6 +1462,8 @@
     "sessionSwitchHint": "Paste a Session ID created in another terminal or tool; the next message will resume that session.",
     "followingLiveLog": "Following this agent's live run log. A run record will be written when it finishes.",
     "waiting": "Agent is replying",
+    "preparingSandbox": "Preparing the isolated runtime. The first run may need to pull the runtime image and can take a few minutes.",
+    "dockerUnavailable": "This agent needs the Docker sandbox, but Docker is not installed or not running. Start Docker Desktop, confirm docker info works, then run again.",
     "stopped": "Stopped",
     "protocolError": "Invalid chat stream format",
     "error": "Chat execution failed"
