@@ -35,6 +35,31 @@ func TestBuildArgsBinPATHKeepsToolchainPaths(t *testing.T) {
 	}
 }
 
+func TestBuildArgsMountsWorkspaceAtStableContainerPath(t *testing.T) {
+	root := t.TempDir()
+	agentDir := filepath.Join(root, "projects", "demo", "agents", "dev")
+	if err := os.MkdirAll(agentDir, 0o755); err != nil {
+		t.Fatalf("create agent dir: %v", err)
+	}
+
+	args, err := BuildArgs(agentDir, entity.ModelClaudeCode, nil, []string{"claude", "-p"})
+	if err != nil {
+		t.Fatalf("BuildArgs: %v", err)
+	}
+	absAgentDir, err := filepath.Abs(agentDir)
+	if err != nil {
+		t.Fatalf("Abs: %v", err)
+	}
+
+	joined := strings.Join(args, "\n")
+	if !strings.Contains(joined, absAgentDir+":"+WorkspaceMount) {
+		t.Fatalf("missing workspace mount %q in args:\n%s", absAgentDir+":"+WorkspaceMount, joined)
+	}
+	if got := argAfter(args, "-w"); got != WorkspaceMount {
+		t.Fatalf("workdir = %q, want %q; args=%v", got, WorkspaceMount, args)
+	}
+}
+
 func TestImageForManagedModelsUsesRuntimeBase(t *testing.T) {
 	restore := dockerImageExists
 	dockerImageExists = func(string) bool { return false }
@@ -99,6 +124,15 @@ func TestBuildArgsUsesAgentScopedRuntimeHome(t *testing.T) {
 func findEnvArg(args []string, prefix string) string {
 	for i := 0; i < len(args)-1; i++ {
 		if args[i] == "-e" && strings.HasPrefix(args[i+1], prefix) {
+			return args[i+1]
+		}
+	}
+	return ""
+}
+
+func argAfter(args []string, flag string) string {
+	for i := 0; i < len(args)-1; i++ {
+		if args[i] == flag {
 			return args[i+1]
 		}
 	}

@@ -475,9 +475,15 @@ func extractAgentChatError(line string) string {
 		switch {
 		case strings.HasPrefix(lower, "docker: error response from daemon:"):
 			return trimmed
+		case strings.HasPrefix(lower, "docker: error during connect:"):
+			return trimmed
+		case strings.Contains(lower, "docker_engine") || strings.Contains(lower, "docker client must be run with elevated privileges"):
+			return trimmed
 		case strings.HasPrefix(lower, "unable to find image "):
 			return trimmed
 		case strings.Contains(lower, "unauthorized") && (strings.Contains(lower, "docker") || strings.Contains(lower, "registry")):
+			return trimmed
+		case strings.Contains(lower, "cannot reach docker daemon") || strings.Contains(lower, "is docker running?"):
 			return trimmed
 		case strings.Contains(lower, "authentication required") || strings.Contains(lower, "not logged in"):
 			return trimmed

@@ -115,6 +115,9 @@ Examples:
 			fmt.Fprintf(os.Stderr, "──────────────────────────────────────────────────\n")
 
 			if result.Status == entity.TaskStatusDoneFailed {
+				if result.ErrorMsg != "" {
+					return fmt.Errorf("agent exited with error: %s", result.ErrorMsg)
+				}
 				return fmt.Errorf("agent exited with error")
 			}
 			return nil

@@ -809,8 +809,9 @@ func detectSetupHint(errText string) string {
 	case strings.Contains(lower, "docker") && (strings.Contains(lower, "not found") || strings.Contains(lower, "cannot connect") || strings.Contains(lower, "daemon")):
 		return `[hint] Docker 未安装或未启动。请：
 1. 安装 Docker：https://docs.docker.com/get-docker/
-2. 启动 Docker：sudo systemctl start docker
-3. 或在成员详情页将沙箱切换为"无"（直接在宿主机运行）`
+2. Windows/macOS：启动 Docker Desktop，并确认当前用户可以运行 docker info
+3. Linux：启动 Docker daemon：sudo systemctl start docker
+4. 再次运行前确认：docker info`
 
 	// Claude Code CLI not found
 	case strings.Contains(lower, "claude") && strings.Contains(lower, "not found"):

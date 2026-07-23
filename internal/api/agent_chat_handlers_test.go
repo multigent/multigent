@@ -85,6 +85,11 @@ func TestExtractAgentChatError(t *testing.T) {
 			line: `docker: Error response from daemon: error from registry: unauthorized`,
 			want: `docker: Error response from daemon: error from registry: unauthorized`,
 		},
+		{
+			name: "windows docker daemon error",
+			line: `docker: error during connect: in the default daemon configuration on Windows, the docker client must be run with elevated privileges to connect: Post "http://%2F%2F.%2Fpipe%2Fdocker_engine/v1.24/containers/create": open //./pipe/docker_engine: The system cannot find the file specified.`,
+			want: `docker: error during connect: in the default daemon configuration on Windows, the docker client must be run with elevated privileges to connect: Post "http://%2F%2F.%2Fpipe%2Fdocker_engine/v1.24/containers/create": open //./pipe/docker_engine: The system cannot find the file specified.`,
+		},
 	}
 
 	for _, tt := range tests {

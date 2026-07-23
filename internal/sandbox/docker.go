@@ -115,18 +115,16 @@ func BuildArgs(agentDir string, model entity.AgentModel, cfg *entity.DockerSandb
 	}
 
 	// ── Workspace mount ──────────────────────────────────────────────────────
-	// Mount the agent directory at its REAL path inside the container (not just
-	// at /workspace). This is critical for session persistence: Claude Code
-	// determines the project path from the cwd, and sessions must be stored
-	// at a path that is accessible from outside the container.
+	// Mount the agent directory at a stable Linux path inside the container.
+	// This keeps Docker commands valid on Windows hosts while session/config
+	// state remains persistent through the agent-scoped runtime-home mounts.
 	absAgentDir, err := filepath.Abs(agentDir)
 	if err != nil {
 		return nil, fmt.Errorf("sandbox: resolve agent dir: %w", err)
 	}
-	// Also mount at real path so cwd=realPath lets Claude find the project.
 	args = append(args,
-		"-v", absAgentDir+":"+absAgentDir,
-		"-w", absAgentDir,
+		"-v", absAgentDir+":"+WorkspaceMount,
+		"-w", WorkspaceMount,
 	)
 
 	// ── User bin directory ────────────────────────────────────────────────────
