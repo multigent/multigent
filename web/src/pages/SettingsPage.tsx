@@ -40,6 +40,148 @@ type OAuthClientConfig = {
   extra?: Record<string, unknown>
 }
 
+type AuthSettings = {
+  openRegistrationEnabled: boolean
+  envSignupDisabled?: boolean
+}
+
+function AccessControlSection() {
+  const { t } = useTranslation()
+  const [settings, setSettings] = useState<AuthSettings | null>(null)
+  const [saving, setSaving] = useState(false)
+  const [creating, setCreating] = useState(false)
+  const [newUser, setNewUser] = useState({ email: '', displayName: '', password: '', workspaceRole: 'member' })
+  const [err, setErr] = useState('')
+  const [ok, setOk] = useState('')
+
+  const refresh = useCallback(async () => {
+    try {
+      const data = await apiFetch<AuthSettings>('/api/v1/auth/settings')
+      setSettings(data)
+    } catch { /* toast handled globally */ }
+  }, [])
+
+  useEffect(() => { void refresh() }, [refresh])
+
+  async function toggleRegistration(enabled: boolean) {
+    setSaving(true)
+    setErr('')
+    setOk('')
+    try {
+      const data = await apiPut<AuthSettings>('/api/v1/auth/settings', { openRegistrationEnabled: enabled })
+      setSettings(data)
+      setOk(t('settings.authSettingsSaved'))
+    } catch (e) {
+      setErr(e instanceof Error ? e.message : String(e))
+    } finally {
+      setSaving(false)
+    }
+  }
+
+  async function createUser() {
+    setCreating(true)
+    setErr('')
+    setOk('')
+    try {
+      await apiPost('/api/v1/users', {
+        email: newUser.email.trim(),
+        displayName: newUser.displayName.trim(),
+        password: newUser.password,
+        workspaceRole: newUser.workspaceRole,
+        role: 'member',
+      })
+      setOk(t('settings.userCreated'))
+      setNewUser({ email: '', displayName: '', password: '', workspaceRole: 'member' })
+    } catch (e) {
+      setErr(e instanceof Error ? e.message : String(e))
+    } finally {
+      setCreating(false)
+    }
+  }
+
+  return (
+    <section className="rounded-xl border border-neutral-200/80 bg-white p-5 dark:border-zinc-700/60 dark:bg-zinc-900/40">
+      <div className="flex items-start justify-between gap-4 border-b border-neutral-100 pb-4 dark:border-zinc-800">
+        <div>
+          <h3 className="text-base font-semibold text-neutral-900 dark:text-zinc-100">{t('settings.accessControlTitle')}</h3>
+          <p className="mt-1 text-xs leading-5 text-neutral-500 dark:text-zinc-400">{t('settings.accessControlIntro')}</p>
+        </div>
+        <span className="rounded-full bg-amber-50 px-2.5 py-1 text-xs font-medium text-amber-700 dark:bg-amber-900/20 dark:text-amber-300">
+          {t('settings.superAdminOnly')}
+        </span>
+      </div>
+
+      <div className="grid gap-5 pt-4 lg:grid-cols-[minmax(0,1fr)_minmax(320px,420px)]">
+        <div className="rounded-lg border border-neutral-200/80 bg-neutral-50/40 p-4 dark:border-zinc-700/60 dark:bg-zinc-800/30">
+          <div className="flex items-center justify-between gap-4">
+            <div>
+              <p className="text-sm font-medium text-neutral-900 dark:text-zinc-100">{t('settings.openRegistration')}</p>
+              <p className="mt-1 text-xs leading-5 text-neutral-500 dark:text-zinc-400">{t('settings.openRegistrationDesc')}</p>
+            </div>
+            <button
+              type="button"
+              disabled={!settings || saving || settings.envSignupDisabled}
+              onClick={() => void toggleRegistration(!settings?.openRegistrationEnabled)}
+              className={cn(
+                'relative h-6 w-11 shrink-0 rounded-full transition-colors disabled:opacity-50',
+                settings?.openRegistrationEnabled ? 'bg-sky-600' : 'bg-neutral-300 dark:bg-zinc-700'
+              )}
+              aria-pressed={Boolean(settings?.openRegistrationEnabled)}
+            >
+              <span className={cn(
+                'absolute top-0.5 size-5 rounded-full bg-white shadow transition-transform',
+                settings?.openRegistrationEnabled ? 'translate-x-5' : 'translate-x-0.5'
+              )} />
+            </button>
+          </div>
+          {settings?.envSignupDisabled && (
+            <p className="mt-3 rounded-md border border-amber-200 bg-amber-50 px-3 py-2 text-xs text-amber-700 dark:border-amber-900/50 dark:bg-amber-900/20 dark:text-amber-300">
+              {t('settings.envSignupDisabled')}
+            </p>
+          )}
+        </div>
+
+        <div className="rounded-lg border border-neutral-200/80 bg-neutral-50/40 p-4 dark:border-zinc-700/60 dark:bg-zinc-800/30">
+          <p className="text-sm font-medium text-neutral-900 dark:text-zinc-100">{t('settings.createAccountTitle')}</p>
+          <p className="mt-1 text-xs leading-5 text-neutral-500 dark:text-zinc-400">{t('settings.createAccountDesc')}</p>
+          <div className="mt-3 space-y-3">
+            <label className="block">
+              <span className="mb-1 block text-xs font-medium text-neutral-500 dark:text-zinc-400">{t('auth.email')}</span>
+              <input className={cn(inputCls, '!max-w-none')} type="email" value={newUser.email} onChange={e => setNewUser({ ...newUser, email: e.target.value })} placeholder="user@example.com" />
+            </label>
+            <label className="block">
+              <span className="mb-1 block text-xs font-medium text-neutral-500 dark:text-zinc-400">{t('auth.displayName')}</span>
+              <input className={cn(inputCls, '!max-w-none')} value={newUser.displayName} onChange={e => setNewUser({ ...newUser, displayName: e.target.value })} placeholder="Alice" />
+            </label>
+            <div className="grid grid-cols-2 gap-3">
+              <label className="block">
+                <span className="mb-1 block text-xs font-medium text-neutral-500 dark:text-zinc-400">{t('auth.password')}</span>
+                <input className={cn(inputCls, '!max-w-none')} type="password" value={newUser.password} onChange={e => setNewUser({ ...newUser, password: e.target.value })} placeholder={t('auth.pwdMinHint')} />
+              </label>
+              <label className="block">
+                <span className="mb-1 block text-xs font-medium text-neutral-500 dark:text-zinc-400">{t('people.workspaceRole')}</span>
+                <select className={cn(selectCls, '!max-w-none')} value={newUser.workspaceRole} onChange={e => setNewUser({ ...newUser, workspaceRole: e.target.value })}>
+                  {['admin', 'member', 'guest'].map(role => <option key={role} value={role}>{t(`people.workspaceRole_${role}`)}</option>)}
+                </select>
+              </label>
+            </div>
+            <button
+              type="button"
+              onClick={() => void createUser()}
+              disabled={creating || !newUser.email.trim() || newUser.password.length < 6}
+              className="rounded-lg border border-sky-600 bg-white px-3 py-2 text-sm font-medium text-sky-700 hover:bg-sky-50 disabled:opacity-50 dark:border-sky-500 dark:bg-zinc-900 dark:text-sky-400 dark:hover:bg-zinc-800"
+            >
+              {creating ? t('common.creating') : t('settings.createAccount')}
+            </button>
+          </div>
+        </div>
+      </div>
+      {err && <p className="mt-3 text-sm text-red-600 dark:text-red-400">{err}</p>}
+      {ok && <p className="mt-3 text-sm text-emerald-600 dark:text-emerald-400">{ok}</p>}
+    </section>
+  )
+}
+
 function RBACSection() {
   const { t } = useTranslation()
   const [model, setModel] = useState<RBACModel | null>(null)
@@ -2113,6 +2255,9 @@ export default function SettingsPage() {
       <div className="space-y-5">
         {/* RBAC Model (admin only) */}
         {canAdmin && <RBACSection />}
+
+        {/* Instance access controls (super admin only) */}
+        {user?.role === 'admin' && <AccessControlSection />}
 
         {/* Model accounts */}
         <ProvidersSection />

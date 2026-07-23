@@ -406,10 +406,13 @@ func (s *Server) Handler() http.Handler {
 
 	mux.HandleFunc("GET /api/v1/check-update", s.handleCheckUpdate)
 	mux.HandleFunc("GET /api/v1/daemon/status", s.handleDaemonStatus)
+	mux.HandleFunc("GET /api/v1/auth/settings", s.handleAuthSettings)
+	mux.HandleFunc("PUT /api/v1/auth/settings", s.handlePutAuthSettings)
 
 	publicMux := http.NewServeMux()
 	publicMux.HandleFunc("POST /api/v1/auth/login", s.handleLogin)
 	publicMux.HandleFunc("POST /api/v1/auth/register", s.handleRegister)
+	publicMux.HandleFunc("GET /api/v1/auth/settings/public", s.handlePublicAuthSettings)
 	publicMux.HandleFunc("GET /api/v1/invitations/{token}", s.handlePublicInvitation)
 	publicMux.HandleFunc("POST /api/v1/invitations/{token}/accept", s.handleAcceptInvitation)
 	publicMux.HandleFunc("POST /api/v1/invitations/{token}/reject", s.handleRejectInvitation)

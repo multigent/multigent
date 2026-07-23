@@ -650,7 +650,18 @@
     "oauthClientTitle": "OAuth アプリ: {{name}}",
     "removeOAuthClient": "OAuth アプリを削除",
     "removeOAuthClientConfirm": "{{name}} の OAuth アプリ設定を削除しますか？",
-    "keepCurrentSecret": "現在のシークレットを保持する場合は空欄"
+    "keepCurrentSecret": "現在のシークレットを保持する場合は空欄",
+    "accessControlTitle": "アクセス制御",
+    "accessControlIntro": "インスタンス全体の登録ポリシーを制御し、公開登録を閉じた後はスーパー管理者がアカウントを作成します。",
+    "superAdminOnly": "スーパー管理者のみ",
+    "openRegistration": "公開登録",
+    "openRegistrationDesc": "有効にすると、ログイン画面から誰でもメールとパスワードでアカウントを作成できます。無効にすると、招待または管理者作成のみになります。",
+    "envSignupDisabled": "このデプロイは環境変数で公開登録を無効化しています。UI の切り替えでは上書きできません。",
+    "authSettingsSaved": "アクセス制御設定を保存しました",
+    "createAccountTitle": "アカウント作成",
+    "createAccountDesc": "メールと初期パスワードでアカウントを作成し、現在のワークスペースに追加します。",
+    "createAccount": "アカウント作成",
+    "userCreated": "アカウントを作成しました"
   },
   "account": {
     "title": "アカウント設定",

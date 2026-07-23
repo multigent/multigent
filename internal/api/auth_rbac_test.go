@@ -1,6 +1,7 @@
 package api
 
 import (
+	"bytes"
 	"context"
 	"encoding/json"
 	"net/http"
@@ -67,6 +68,90 @@ func TestUserStoreRegisterByEmailAllowsEmailLogin(t *testing.T) {
 	}
 	if got := users.Authenticate("dev@example.com", "secret1"); got == nil || got.Username != u.Username {
 		t.Fatalf("email login failed")
+	}
+}
+
+func TestRegisterBlockedWhenOpenRegistrationDisabled(t *testing.T) {
+	s, _ := newProviderHandlerTestServer(t)
+	if err := s.controlDB.SetSetting(openRegistrationSettingKey, "false"); err != nil {
+		t.Fatalf("set setting: %v", err)
+	}
+	rec := httptest.NewRecorder()
+	req := httptest.NewRequest(http.MethodPost, "/api/v1/auth/register", bytes.NewBufferString(`{"email":"new@example.com","password":"secret1","displayName":"New User"}`))
+	req.Header.Set("Content-Type", "application/json")
+	s.handleRegister(rec, req)
+	if rec.Code != http.StatusForbidden {
+		t.Fatalf("register status=%d body=%s", rec.Code, rec.Body.String())
+	}
+	var body apiErrorResponse
+	if err := json.Unmarshal(rec.Body.Bytes(), &body); err != nil {
+		t.Fatalf("decode error: %v", err)
+	}
+	if body.Error.Code != ErrCodeSignupDisabled {
+		t.Fatalf("code=%q", body.Error.Code)
+	}
+}
+
+func TestAuthSettingsToggleControlsOpenRegistration(t *testing.T) {
+	s, _ := newProviderHandlerTestServer(t)
+	if err := s.users.CreateUser("instance-admin", "pass123", RoleAdmin, "Instance Admin", "instance-admin@example.com", "", "", ""); err != nil {
+		t.Fatalf("create instance admin: %v", err)
+	}
+	if !s.openRegistrationEnabled() {
+		t.Fatalf("registration should default to enabled")
+	}
+	rec := httptest.NewRecorder()
+	s.handlePutAuthSettings(rec, providerTestRequest(http.MethodPut, "/api/v1/auth/settings", "instance-admin", map[string]any{
+		"openRegistrationEnabled": false,
+	}))
+	if rec.Code != http.StatusOK {
+		t.Fatalf("settings status=%d body=%s", rec.Code, rec.Body.String())
+	}
+	if s.openRegistrationEnabled() {
+		t.Fatalf("registration should be disabled")
+	}
+	publicRec := httptest.NewRecorder()
+	s.handlePublicAuthSettings(publicRec, httptest.NewRequest(http.MethodGet, "/api/v1/auth/settings/public", nil))
+	var publicBody struct {
+		OpenRegistrationEnabled bool `json:"openRegistrationEnabled"`
+	}
+	if err := json.Unmarshal(publicRec.Body.Bytes(), &publicBody); err != nil {
+		t.Fatalf("decode public settings: %v", err)
+	}
+	if publicBody.OpenRegistrationEnabled {
+		t.Fatalf("public settings should report disabled")
+	}
+}
+
+func TestCreateUserWithEmailOnlyAddsWorkspaceMember(t *testing.T) {
+	s, _ := newProviderHandlerTestServer(t)
+	workspaceID, err := s.currentWorkspaceID()
+	if err != nil {
+		t.Fatalf("workspace id: %v", err)
+	}
+	rec := httptest.NewRecorder()
+	s.handleCreateUser(rec, providerTestRequest(http.MethodPost, "/api/v1/users", "owner", map[string]any{
+		"email":         "new.person@example.com",
+		"displayName":   "New Person",
+		"password":      "secret1",
+		"workspaceRole": WorkspaceRoleAdmin,
+	}))
+	if rec.Code != http.StatusCreated {
+		t.Fatalf("create user status=%d body=%s", rec.Code, rec.Body.String())
+	}
+	u := s.users.UserByEmail("new.person@example.com")
+	if u == nil {
+		t.Fatalf("user not created")
+	}
+	if u.Username != "new-person" {
+		t.Fatalf("username=%q", u.Username)
+	}
+	member, ok, err := s.controlDB.WorkspaceMember(workspaceID, u.Username)
+	if err != nil || !ok {
+		t.Fatalf("workspace member ok=%v err=%v", ok, err)
+	}
+	if member.Role != WorkspaceRoleAdmin {
+		t.Fatalf("workspace role=%q", member.Role)
 	}
 }
 

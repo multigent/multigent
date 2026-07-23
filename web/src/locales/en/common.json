@@ -650,7 +650,18 @@
     "oauthClientTitle": "OAuth app: {{name}}",
     "removeOAuthClient": "Remove OAuth app",
     "removeOAuthClientConfirm": "Remove OAuth app config for {{name}}?",
-    "keepCurrentSecret": "Leave blank to keep current secret"
+    "keepCurrentSecret": "Leave blank to keep current secret",
+    "accessControlTitle": "Access Control",
+    "accessControlIntro": "Control instance-level signup policy, and let super admins create accounts after open registration is closed.",
+    "superAdminOnly": "Super admins only",
+    "openRegistration": "Open registration",
+    "openRegistrationDesc": "When enabled, anyone can create an account with email and password from the sign-in page. When disabled, users must be invited or created by an admin.",
+    "envSignupDisabled": "This deployment disables open registration through an environment variable. The UI switch cannot override that deployment-level lock.",
+    "authSettingsSaved": "Access control settings saved",
+    "createAccountTitle": "Create account",
+    "createAccountDesc": "Create an account with email and an initial password, and add it to the current workspace.",
+    "createAccount": "Create account",
+    "userCreated": "Account created"
   },
   "account": {
     "title": "Account Settings",

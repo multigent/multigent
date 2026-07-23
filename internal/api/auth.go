@@ -23,6 +23,8 @@ const (
 	RoleMember = string(rbac.OrgRoleMember)
 )
 
+const openRegistrationSettingKey = "auth.open_registration_enabled"
+
 // Project-level roles (ascending privilege).
 const (
 	ProjectRoleViewer   = string(rbac.ProjectRoleViewer)
@@ -773,7 +775,7 @@ func (s *Server) issueLoginResponse(w http.ResponseWriter, user *userRecord) {
 }
 
 func (s *Server) handleRegister(w http.ResponseWriter, r *http.Request) {
-	if strings.EqualFold(os.Getenv("MULTIGENT_ALLOW_SIGNUP"), "false") {
+	if !s.openRegistrationEnabled() {
 		s.jsonErrorCode(w, http.StatusForbidden, ErrCodeSignupDisabled, "signup is disabled")
 		return
 	}
@@ -796,6 +798,76 @@ func (s *Server) handleRegister(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	s.issueLoginResponse(w, user)
+}
+
+func (s *Server) openRegistrationEnabled() bool {
+	if strings.EqualFold(os.Getenv("MULTIGENT_ALLOW_SIGNUP"), "false") {
+		return false
+	}
+	if s.controlDB == nil {
+		return true
+	}
+	raw, ok, err := s.controlDB.GetSetting(openRegistrationSettingKey)
+	if err != nil || !ok || strings.TrimSpace(raw) == "" {
+		return true
+	}
+	switch strings.ToLower(strings.TrimSpace(raw)) {
+	case "false", "0", "off", "disabled":
+		return false
+	default:
+		return true
+	}
+}
+
+func (s *Server) handlePublicAuthSettings(w http.ResponseWriter, _ *http.Request) {
+	_ = json.NewEncoder(w).Encode(map[string]any{
+		"openRegistrationEnabled": s.openRegistrationEnabled(),
+	})
+}
+
+func (s *Server) handleAuthSettings(w http.ResponseWriter, _ *http.Request) {
+	_ = json.NewEncoder(w).Encode(map[string]any{
+		"openRegistrationEnabled": s.openRegistrationEnabled(),
+		"envSignupDisabled":       strings.EqualFold(os.Getenv("MULTIGENT_ALLOW_SIGNUP"), "false"),
+	})
+}
+
+func (s *Server) handlePutAuthSettings(w http.ResponseWriter, r *http.Request) {
+	if !s.requireAdmin(w, r) {
+		return
+	}
+	var body struct {
+		OpenRegistrationEnabled bool `json:"openRegistrationEnabled"`
+	}
+	if err := s.readJSON(w, r, &body); err != nil {
+		s.jsonErrorCode(w, http.StatusBadRequest, ErrCodeInvalidRequestBody, "invalid request body")
+		return
+	}
+	if s.controlDB == nil {
+		s.jsonErrorCode(w, http.StatusServiceUnavailable, ErrCodeWorkspaceDatabaseUnavailable, "control database unavailable")
+		return
+	}
+	value := "false"
+	if body.OpenRegistrationEnabled {
+		value = "true"
+	}
+	if err := s.controlDB.SetSetting(openRegistrationSettingKey, value); err != nil {
+		s.serverError(w, err)
+		return
+	}
+	s.auditLog(auditLogInput{
+		WorkspaceID:  "system",
+		Action:       "auth.settings.update",
+		ResourceType: "auth_settings",
+		ResourceID:   openRegistrationSettingKey,
+		Summary:      "Authentication settings updated",
+		After:        map[string]any{"openRegistrationEnabled": body.OpenRegistrationEnabled},
+		Request:      r,
+	})
+	_ = json.NewEncoder(w).Encode(map[string]any{
+		"openRegistrationEnabled": s.openRegistrationEnabled(),
+		"envSignupDisabled":       strings.EqualFold(os.Getenv("MULTIGENT_ALLOW_SIGNUP"), "false"),
+	})
 }
 
 func (s *Server) handleAuthMe(w http.ResponseWriter, r *http.Request) {
@@ -1059,28 +1131,60 @@ func (s *Server) handleCreateUser(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	var body struct {
-		Username    string `json:"username"`
-		Password    string `json:"password"`
-		Role        string `json:"role"`
-		DisplayName string `json:"displayName"`
-		Email       string `json:"email"`
-		Avatar      string `json:"avatar"`
-		Phone       string `json:"phone"`
-		Bio         string `json:"bio"`
+		Username      string `json:"username"`
+		Password      string `json:"password"`
+		Role          string `json:"role"`
+		WorkspaceRole string `json:"workspaceRole"`
+		DisplayName   string `json:"displayName"`
+		Email         string `json:"email"`
+		Avatar        string `json:"avatar"`
+		Phone         string `json:"phone"`
+		Bio           string `json:"bio"`
 	}
 	if err := s.readJSON(w, r, &body); err != nil {
 		s.jsonErrorCode(w, http.StatusBadRequest, ErrCodeInvalidRequestBody, "invalid request body")
 		return
 	}
 	body.Username = strings.TrimSpace(body.Username)
+	body.Email = normalizeEmail(body.Email)
 	body.Password = strings.TrimSpace(body.Password)
+	if body.Username == "" && body.Email != "" {
+		body.Username = s.users.uniqueUsernameLocked(usernameFromEmail(body.Email))
+	}
 	if body.Username == "" || body.Password == "" {
-		s.jsonErrorCode(w, http.StatusBadRequest, ErrCodeValidationFailed, "username and password required")
+		s.jsonErrorCode(w, http.StatusBadRequest, ErrCodeValidationFailed, "email and password required")
+		return
+	}
+	if body.Email != "" && !validEmail(body.Email) {
+		s.jsonErrorCode(w, http.StatusBadRequest, ErrCodeValidationFailed, "valid email required")
 		return
 	}
 	if len(body.Password) < 6 {
 		s.jsonErrorCode(w, http.StatusBadRequest, ErrCodeValidationFailed, "password must be at least 6 characters")
 		return
+	}
+	workspaceRole := WorkspaceRoleMember
+	workspaceID, workspaceErr := s.currentWorkspaceID()
+	if workspaceErr == nil && workspaceID != "" {
+		switch body.WorkspaceRole {
+		case WorkspaceRoleOwner, WorkspaceRoleAdmin, WorkspaceRoleMember, WorkspaceRoleGuest:
+			workspaceRole = body.WorkspaceRole
+		case "":
+			if body.Role == WorkspaceRoleAdmin || body.Role == RoleAdmin {
+				workspaceRole = WorkspaceRoleAdmin
+			}
+		default:
+			s.jsonErrorCode(w, http.StatusBadRequest, ErrCodeValidationFailed, "invalid workspace role")
+			return
+		}
+		if body.WorkspaceRole == WorkspaceRoleOwner {
+			cur := s.currentUser(r)
+			currentRole, _ := s.currentWorkspaceRole(r, workspaceID)
+			if currentRole != WorkspaceRoleOwner && (cur == nil || cur.Role != RoleAdmin) {
+				s.jsonErrorCode(w, http.StatusForbidden, ErrCodeWorkspaceAdminRequired, "workspace owner access required")
+				return
+			}
+		}
 	}
 	if err := s.users.CreateUser(body.Username, body.Password, body.Role, body.DisplayName, body.Email, body.Avatar, body.Phone, body.Bio); err != nil {
 		if strings.Contains(err.Error(), "already exists") {
@@ -1090,12 +1194,8 @@ func (s *Server) handleCreateUser(w http.ResponseWriter, r *http.Request) {
 		s.serverError(w, err)
 		return
 	}
-	if workspaceID, err := s.currentWorkspaceID(); err == nil && workspaceID != "" {
-		role := WorkspaceRoleMember
-		if body.Role == WorkspaceRoleAdmin || body.Role == RoleAdmin {
-			role = WorkspaceRoleAdmin
-		}
-		if err := s.controlDB.UpsertWorkspaceMember(workspaceID, body.Username, role); err != nil {
+	if workspaceErr == nil && workspaceID != "" {
+		if err := s.controlDB.UpsertWorkspaceMember(workspaceID, body.Username, workspaceRole); err != nil {
 			s.serverError(w, err)
 			return
 		}

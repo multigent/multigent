@@ -650,7 +650,18 @@
     "oauthClientTitle": "OAuth 應用：{{name}}",
     "removeOAuthClient": "刪除 OAuth 應用",
     "removeOAuthClientConfirm": "確定刪除 {{name}} 的 OAuth 應用設定？",
-    "keepCurrentSecret": "留空保留目前密鑰"
+    "keepCurrentSecret": "留空保留目前密鑰",
+    "accessControlTitle": "存取控制",
+    "accessControlIntro": "控制實例級註冊策略，並在關閉公開註冊後由超級管理員建立帳號。",
+    "superAdminOnly": "僅超級管理員",
+    "openRegistration": "公開註冊",
+    "openRegistrationDesc": "開啟後，登入頁允許任何人用電郵和密碼建立帳號。關閉後，只能透過邀請或管理員建立帳號。",
+    "envSignupDisabled": "目前部署已透過環境變數關閉公開註冊，介面開關不會覆蓋部署級限制。",
+    "authSettingsSaved": "存取控制設定已儲存",
+    "createAccountTitle": "建立帳號",
+    "createAccountDesc": "使用電郵和初始密碼建立帳號，並加入目前工作區。",
+    "createAccount": "建立帳號",
+    "userCreated": "帳號已建立"
   },
   "account": {
     "title": "帳號設定",

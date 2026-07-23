@@ -26,6 +26,7 @@ type InvitationInfo = {
 }
 
 type Mode = 'login' | 'register' | 'invite'
+type PublicAuthSettings = { openRegistrationEnabled: boolean }
 
 export default function LoginPage() {
   const { t } = useTranslation()
@@ -41,6 +42,16 @@ export default function LoginPage() {
   const [error, setError] = useState('')
   const [loading, setLoading] = useState(false)
   const [invite, setInvite] = useState<InvitationInfo | null>(null)
+  const [openRegistrationEnabled, setOpenRegistrationEnabled] = useState(true)
+
+  useEffect(() => {
+    apiPublicFetch<PublicAuthSettings>('/api/v1/auth/settings/public')
+      .then(settings => {
+        setOpenRegistrationEnabled(settings.openRegistrationEnabled)
+        if (!settings.openRegistrationEnabled && mode === 'register') setMode('login')
+      })
+      .catch(() => setOpenRegistrationEnabled(true))
+  }, [mode])
 
   useEffect(() => {
     if (!inviteToken) return
@@ -137,7 +148,7 @@ export default function LoginPage() {
 
         {/* Form */}
         <form onSubmit={handleSubmit} className="rounded-2xl border border-neutral-200/80 bg-white p-6 shadow-sm dark:border-zinc-700/60 dark:bg-zinc-900">
-          {!inviteToken && (
+          {!inviteToken && openRegistrationEnabled && (
             <div className="mb-5 grid grid-cols-2 rounded-lg bg-neutral-100 p-1 text-sm dark:bg-zinc-800">
               <button
                 type="button"
