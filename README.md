@@ -43,10 +43,6 @@ Workspace
 
 Multigent does not try to replace every existing system on day one. A company can keep using Jira, Linear, Plane, Huly, GitHub, Feishu/Lark, Slack, local agent CLIs, and internal docs. Multigent provides the agent-native coordination layer across those systems.
 
-<p align="center">
-  <img src="docs/assets/multigent.png" alt="Multigent web console" width="860">
-</p>
-
 ## Core Features
 
 ### Agent Workforce

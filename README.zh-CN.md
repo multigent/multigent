@@ -43,10 +43,6 @@ Workspace
 
 Multigent 不要求公司一上来替换 Jira、Linear、Plane、Huly、GitHub、飞书/Lark、Slack 或内部文档系统。它更像是这些系统之上的 Agent 原生协作控制层。
 
-<p align="center">
-  <img src="docs/assets/multigent.png" alt="Multigent Web 控制台" width="860">
-</p>
-
 ## 核心能力
 
 ### Agent Workforce

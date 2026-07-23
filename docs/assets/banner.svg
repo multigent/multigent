@@ -1,27 +1,27 @@
-<svg width="1200" height="360" viewBox="0 0 1200 360" xmlns="http://www.w3.org/2000/svg" role="img" aria-labelledby="title desc">
+<svg width="1200" height="320" viewBox="0 0 1200 320" xmlns="http://www.w3.org/2000/svg" role="img" aria-labelledby="title desc">
   <title id="title">Multigent</title>
   <desc id="desc">Agent collaboration infrastructure for teams that want agents to actually deliver.</desc>
-  <rect width="1200" height="360" rx="28" fill="#ffffff"/>
-  <rect x="1" y="1" width="1198" height="358" rx="27" fill="none" stroke="#e4e4e7" stroke-width="2"/>
+  <rect width="1200" height="320" rx="28" fill="#ffffff"/>
+  <rect x="1" y="1" width="1198" height="318" rx="27" fill="none" stroke="#e4e4e7" stroke-width="2"/>
 
-  <g opacity="0.5" stroke="#e4e4e7" stroke-width="1">
-    <path d="M748 74h292M748 122h350M748 170h306M748 218h386M748 266h254"/>
-    <path d="M804 50v260M884 50v260M964 50v260M1044 50v260"/>
+  <g opacity="0.38" stroke="#e4e4e7" stroke-width="1">
+    <path d="M760 56h310M760 104h352M760 152h292M760 200h372M760 248h260"/>
+    <path d="M820 40v240M900 40v240M980 40v240M1060 40v240"/>
   </g>
 
-  <g transform="translate(88 84)">
-    <rect width="192" height="192" rx="42" fill="#ffffff"/>
-    <rect x="6" y="6" width="180" height="180" rx="36" fill="none" stroke="#e4e4e7" stroke-width="2"/>
-    <path d="M48 136V56l48 54 48-54v80" fill="none" stroke="#0f172a" stroke-width="16" stroke-linecap="round" stroke-linejoin="round"/>
-    <path d="M48 136V56l48 54 48-54v80" fill="none" stroke="#0284c7" stroke-width="6" stroke-linecap="round" stroke-linejoin="round"/>
-    <circle cx="48" cy="56" r="12" fill="#ffffff" stroke="#0284c7" stroke-width="6"/>
-    <circle cx="96" cy="110" r="12" fill="#ffffff" stroke="#0f172a" stroke-width="6"/>
-    <circle cx="144" cy="56" r="12" fill="#ffffff" stroke="#0284c7" stroke-width="6"/>
-    <circle cx="48" cy="136" r="9" fill="#0f172a"/>
-    <circle cx="144" cy="136" r="9" fill="#0f172a"/>
+  <g transform="translate(88 80)">
+    <rect width="160" height="160" rx="36" fill="#ffffff"/>
+    <rect x="5" y="5" width="150" height="150" rx="31" fill="none" stroke="#e4e4e7" stroke-width="2"/>
+    <path d="M40 114V47l40 45 40-45v67" fill="none" stroke="#0f172a" stroke-width="14" stroke-linecap="round" stroke-linejoin="round"/>
+    <path d="M40 114V47l40 45 40-45v67" fill="none" stroke="#0284c7" stroke-width="5" stroke-linecap="round" stroke-linejoin="round"/>
+    <circle cx="40" cy="47" r="10" fill="#ffffff" stroke="#0284c7" stroke-width="5"/>
+    <circle cx="80" cy="92" r="10" fill="#ffffff" stroke="#0f172a" stroke-width="5"/>
+    <circle cx="120" cy="47" r="10" fill="#ffffff" stroke="#0284c7" stroke-width="5"/>
+    <circle cx="40" cy="114" r="8" fill="#0f172a"/>
+    <circle cx="120" cy="114" r="8" fill="#0f172a"/>
   </g>
 
-  <g transform="translate(330 94)">
+  <g transform="translate(304 82)">
     <text x="0" y="62" font-family="Inter, ui-sans-serif, system-ui, -apple-system, BlinkMacSystemFont, Segoe UI, sans-serif" font-size="64" font-weight="760" fill="#0f172a" letter-spacing="0">Multigent</text>
     <text x="3" y="112" font-family="Inter, ui-sans-serif, system-ui, -apple-system, BlinkMacSystemFont, Segoe UI, sans-serif" font-size="24" font-weight="500" fill="#3f3f46" letter-spacing="0">Agent collaboration infrastructure for real delivery.</text>
     <g transform="translate(4 148)">
@@ -34,11 +34,11 @@
     </g>
   </g>
 
-  <g transform="translate(770 88)">
-    <rect width="290" height="184" rx="14" fill="#fafafa" stroke="#e4e4e7"/>
-    <text x="22" y="42" font-family="ui-monospace, SFMono-Regular, Menlo, monospace" font-size="15" fill="#71717a">task.workflow.step</text>
-    <path d="M34 76h74M108 76l18 0M126 76h60" stroke="#0284c7" stroke-width="8" stroke-linecap="round"/>
-    <path d="M34 112h46M80 112h92M172 112h52" stroke="#0f172a" stroke-width="8" stroke-linecap="round"/>
-    <path d="M34 148h112M146 148h32M178 148h70" stroke="#a1a1aa" stroke-width="8" stroke-linecap="round"/>
+  <g transform="translate(812 80)">
+    <rect width="300" height="160" rx="16" fill="#fafafa" stroke="#e4e4e7"/>
+    <text x="24" y="40" font-family="ui-monospace, SFMono-Regular, Menlo, monospace" font-size="15" fill="#71717a">workflow.step</text>
+    <path d="M36 72h74M124 72h58M196 72h42" stroke="#0284c7" stroke-width="8" stroke-linecap="round"/>
+    <path d="M36 106h46M96 106h92M202 106h52" stroke="#0f172a" stroke-width="8" stroke-linecap="round"/>
+    <path d="M36 140h112M162 140h34M210 140h54" stroke="#a1a1aa" stroke-width="8" stroke-linecap="round"/>
   </g>
 </svg>
