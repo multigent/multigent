@@ -145,6 +145,7 @@ type ModelCatalog = {
   source?: string
   modelsByCLI?: Record<string, string[]>
   modelsByProviderType?: Record<string, string[]>
+  modelsByProvider?: Record<string, string[]>
 }
 
 const buttonBaseCls = 'inline-flex h-8 items-center justify-center rounded-md px-3 text-xs font-medium transition-colors disabled:cursor-not-allowed disabled:opacity-50'
@@ -1073,15 +1074,34 @@ function uniqueStrings(items: Array<string | undefined>) {
   return out
 }
 
+function detectProviderFamily(provider?: ProviderOption) {
+  const haystack = [
+    provider?.name,
+    provider?.baseUrl,
+    provider?.model,
+    provider?.id,
+  ].join(' ').toLowerCase()
+  if (!haystack.trim()) return ''
+  if (haystack.includes('minimax')) return 'minimax'
+  if (haystack.includes('moonshot') || haystack.includes('kimi')) return 'kimi'
+  if (haystack.includes('deepseek')) return 'deepseek'
+  if (haystack.includes('z.ai') || haystack.includes('zhipu') || haystack.includes('bigmodel') || haystack.includes('glm')) return 'glm'
+  if (haystack.includes('xiaomi') || haystack.includes('mimo')) return 'xiaomi'
+  return ''
+}
+
 function runtimeModelOptionsFor(model: string, provider?: ProviderOption, catalog?: ModelCatalog | null) {
   const normalizedModel = model.trim().toLowerCase()
   const providerType = provider?.type?.trim().toLowerCase() ?? ''
   const isGateway = Boolean(provider?.baseUrl?.trim())
+  const providerFamily = detectProviderFamily(provider)
+  const familyModels = providerFamily ? (catalog?.modelsByProvider?.[providerFamily] ?? []) : []
   const base = isGateway
-    ? []
+    ? familyModels
     : [
         ...(catalog?.modelsByCLI?.[normalizedModel] ?? []),
         ...(catalog?.modelsByProviderType?.[providerType] ?? []),
+        ...familyModels,
         ...(OFFICIAL_RUNTIME_MODEL_PRESETS[normalizedModel] ?? []),
         ...(OFFICIAL_RUNTIME_MODEL_PRESETS[providerType] ?? []),
       ]

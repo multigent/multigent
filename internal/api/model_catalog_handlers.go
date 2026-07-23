@@ -15,6 +15,7 @@ type modelCatalogResponse struct {
 	Source               string              `json:"source"`
 	ModelsByCLI          map[string][]string `json:"modelsByCLI"`
 	ModelsByProviderType map[string][]string `json:"modelsByProviderType"`
+	ModelsByProvider     map[string][]string `json:"modelsByProvider,omitempty"`
 }
 
 func (s *Server) handleModelCatalog(w http.ResponseWriter, r *http.Request) {
@@ -48,6 +49,13 @@ func fallbackModelCatalog() modelCatalogResponse {
 			"anthropic": []string{"claude-fable-5", "claude-sonnet-5", "claude-opus-4-8", "claude-haiku-4-5", "claude-haiku-4-5-20251001"},
 			"gemini":    []string{"gemini-3.6-flash", "gemini-3.5-flash", "gemini-3.5-flash-lite", "gemini-3.1-pro-preview", "gemini-3.1-pro-preview-customtools", "gemini-3.1-flash-lite", "gemini-2.5-pro", "gemini-2.5-flash", "gemini-2.5-flash-lite"},
 		},
+		ModelsByProvider: map[string][]string{
+			"minimax":  []string{"MiniMax-M3", "MiniMax-M2.7", "MiniMax-M2.7-highspeed", "MiniMax-M2.5", "MiniMax-M2.5-highspeed", "MiniMax-M2.1", "MiniMax-M2.1-highspeed", "MiniMax-M2"},
+			"kimi":     []string{"kimi-k3", "kimi-k2.7-code", "kimi-k2.6", "kimi-k2.5", "kimi-for-coding"},
+			"deepseek": []string{"deepseek-v4-pro[1m]", "deepseek-v4-pro", "deepseek-v4-flash", "deepseek-reasoner", "deepseek-chat"},
+			"glm":      []string{"glm-5.2", "glm-5.1", "glm-5", "glm-5-turbo", "glm-4.7", "glm-4.7-flashx", "glm-4.7-flash", "glm-4.6", "glm-4.5-air"},
+			"xiaomi":   []string{"mimo-v2.5-pro", "mimo-v2.5", "mimo-v2-pro", "mimo-v2-flash"},
+		},
 	}
 }
 
@@ -72,7 +80,8 @@ func fetchRemoteModelCatalog(ctx context.Context, url string) (modelCatalogRespo
 	}
 	catalog.ModelsByCLI = cleanModelCatalogMap(catalog.ModelsByCLI)
 	catalog.ModelsByProviderType = cleanModelCatalogMap(catalog.ModelsByProviderType)
-	if len(catalog.ModelsByCLI) == 0 && len(catalog.ModelsByProviderType) == 0 {
+	catalog.ModelsByProvider = cleanModelCatalogMap(catalog.ModelsByProvider)
+	if len(catalog.ModelsByCLI) == 0 && len(catalog.ModelsByProviderType) == 0 && len(catalog.ModelsByProvider) == 0 {
 		return modelCatalogResponse{}, false
 	}
 	if catalog.Source == "" {
@@ -101,6 +110,7 @@ func mergeModelCatalogs(primary, fallback modelCatalogResponse) modelCatalogResp
 		Source:               primary.Source,
 		ModelsByCLI:          mergeModelCatalogMap(primary.ModelsByCLI, fallback.ModelsByCLI),
 		ModelsByProviderType: mergeModelCatalogMap(primary.ModelsByProviderType, fallback.ModelsByProviderType),
+		ModelsByProvider:     mergeModelCatalogMap(primary.ModelsByProvider, fallback.ModelsByProvider),
 	}
 }
 

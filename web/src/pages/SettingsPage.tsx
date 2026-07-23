@@ -922,16 +922,24 @@ type ProviderPreset = {
   cli: ModelAccountCLI
   baseUrl: string
   model: string
+  models?: string[]
   hint: string
 }
 
 const GATEWAY_ACCOUNT_PRESETS: ProviderPreset[] = [
   { id: 'codex-compatible', label: 'OpenAI Compatible', cli: 'codex', baseUrl: '', model: '', hint: 'Codex / OpenAI-compatible gateways' },
   { id: 'claude-compatible', label: 'Anthropic Compatible', cli: 'claudecode', baseUrl: '', model: '', hint: 'Claude Code-compatible gateways' },
-  { id: 'deepseek-codex', label: 'DeepSeek', cli: 'codex', baseUrl: 'https://api.deepseek.com', model: 'deepseek-chat', hint: 'Codex via OpenAI-compatible API' },
-  { id: 'deepseek-claude', label: 'DeepSeek', cli: 'claudecode', baseUrl: 'https://api.deepseek.com/anthropic', model: 'deepseek-chat', hint: 'Claude Code-compatible API' },
-  { id: 'kimi-codex', label: 'Kimi', cli: 'codex', baseUrl: 'https://api.moonshot.cn/v1', model: 'kimi-k2-turbo-preview', hint: 'Codex via OpenAI-compatible API' },
-  { id: 'kimi-coding', label: 'Kimi Coding', cli: 'codex', baseUrl: 'https://api.kimi.com/coding/v1', model: 'kimi-for-coding', hint: 'Codex coding endpoint' },
+  { id: 'minimax-codex', label: 'MiniMax', cli: 'codex', baseUrl: 'https://api.minimax.io/v1', model: 'MiniMax-M3', models: ['MiniMax-M3', 'MiniMax-M2.7', 'MiniMax-M2.7-highspeed', 'MiniMax-M2.5', 'MiniMax-M2.5-highspeed', 'MiniMax-M2.1', 'MiniMax-M2.1-highspeed', 'MiniMax-M2'], hint: 'OpenAI-compatible API' },
+  { id: 'minimax-claude', label: 'MiniMax', cli: 'claudecode', baseUrl: 'https://api.minimax.io/anthropic', model: 'MiniMax-M3', models: ['MiniMax-M3', 'MiniMax-M2.7', 'MiniMax-M2.7-highspeed', 'MiniMax-M2.5', 'MiniMax-M2.5-highspeed', 'MiniMax-M2.1', 'MiniMax-M2.1-highspeed', 'MiniMax-M2'], hint: 'Anthropic-compatible API' },
+  { id: 'deepseek-codex', label: 'DeepSeek', cli: 'codex', baseUrl: 'https://api.deepseek.com', model: 'deepseek-v4-pro', models: ['deepseek-v4-pro', 'deepseek-v4-flash', 'deepseek-reasoner', 'deepseek-chat'], hint: 'OpenAI-compatible API' },
+  { id: 'deepseek-claude', label: 'DeepSeek', cli: 'claudecode', baseUrl: 'https://api.deepseek.com/anthropic', model: 'deepseek-v4-pro[1m]', models: ['deepseek-v4-pro[1m]', 'deepseek-v4-pro', 'deepseek-v4-flash', 'deepseek-reasoner', 'deepseek-chat'], hint: 'Anthropic-compatible API' },
+  { id: 'kimi-codex', label: 'Kimi', cli: 'codex', baseUrl: 'https://api.moonshot.ai/v1', model: 'kimi-k3', models: ['kimi-k3', 'kimi-k2.7-code', 'kimi-k2.6', 'kimi-k2.5'], hint: 'OpenAI-compatible API' },
+  { id: 'kimi-coding', label: 'Kimi Coding', cli: 'codex', baseUrl: 'https://api.kimi.com/coding/v1', model: 'kimi-for-coding', models: ['kimi-for-coding', 'kimi-k2.7-code', 'kimi-k3', 'kimi-k2.6'], hint: 'Kimi coding endpoint' },
+  { id: 'kimi-claude', label: 'Kimi', cli: 'claudecode', baseUrl: 'https://api.moonshot.ai/anthropic', model: 'kimi-k3', models: ['kimi-k3', 'kimi-k2.7-code', 'kimi-k2.6', 'kimi-k2.5'], hint: 'Anthropic-compatible API' },
+  { id: 'glm-codex', label: 'GLM / Z.AI', cli: 'codex', baseUrl: 'https://api.z.ai/api/coding/paas/v4', model: 'glm-5.2', models: ['glm-5.2', 'glm-5.1', 'glm-5', 'glm-5-turbo', 'glm-4.7', 'glm-4.7-flashx', 'glm-4.7-flash', 'glm-4.6', 'glm-4.5-air'], hint: 'OpenAI-compatible API' },
+  { id: 'glm-claude', label: 'GLM / Z.AI', cli: 'claudecode', baseUrl: 'https://api.z.ai/api/anthropic', model: 'glm-5.2', models: ['glm-5.2', 'glm-5.1', 'glm-5', 'glm-5-turbo', 'glm-4.7', 'glm-4.7-flashx', 'glm-4.7-flash', 'glm-4.6', 'glm-4.5-air'], hint: 'Anthropic-compatible API' },
+  { id: 'xiaomi-codex', label: 'Xiaomi MiMo', cli: 'codex', baseUrl: 'https://api.xiaomimimo.com/v1', model: 'mimo-v2.5-pro', models: ['mimo-v2.5-pro', 'mimo-v2.5', 'mimo-v2-pro', 'mimo-v2-flash'], hint: 'OpenAI-compatible API' },
+  { id: 'xiaomi-claude', label: 'Xiaomi MiMo', cli: 'claudecode', baseUrl: 'https://api.xiaomimimo.com/anthropic', model: 'mimo-v2.5-pro', models: ['mimo-v2.5-pro', 'mimo-v2.5', 'mimo-v2-pro', 'mimo-v2-flash'], hint: 'Anthropic-compatible API' },
   { id: 'openrouter', label: 'OpenRouter', cli: 'codex', baseUrl: 'https://openrouter.ai/api/v1', model: '', hint: 'OpenAI-compatible model router' },
 ]
 
@@ -1217,8 +1225,8 @@ function ProvidersSection() {
       type: providerTypeForCLI(preset.cli),
       baseUrl: preset.baseUrl,
       model: preset.model,
-      models: preset.model ? [preset.model] : [],
-      modelsText: preset.model,
+      models: parseProviderModels([preset.model, ...(preset.models ?? [])].join('\n')),
+      modelsText: parseProviderModels([preset.model, ...(preset.models ?? [])].join('\n')).join('\n'),
     }))
   }
 
