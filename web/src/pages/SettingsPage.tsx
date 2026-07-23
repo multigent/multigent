@@ -1114,6 +1114,11 @@ function ProvidersSection() {
   async function startCodexChatGPTAuth() {
     if (!editing?.name?.trim()) return
     const cli = editing.cli ?? 'codex'
+    const previousSessionID = deviceAuthSessionRef.current
+    deviceAuthSessionRef.current = ''
+    if (previousSessionID) {
+      void apiDelete(`/api/v1/providers/auth/sessions/${encodeURIComponent(previousSessionID)}`).catch(() => {})
+    }
     setDeviceAuthStarting(true)
     setErr(null)
     try {
@@ -1139,6 +1144,16 @@ function ProvidersSection() {
     } finally {
       setDeviceAuthStarting(false)
     }
+  }
+
+  function cancelDeviceAuth() {
+    const sessionID = deviceAuthSessionRef.current
+    deviceAuthSessionRef.current = ''
+    if (sessionID) {
+      void apiDelete(`/api/v1/providers/auth/sessions/${encodeURIComponent(sessionID)}`).catch(() => {})
+    }
+    setDeviceAuth(null)
+    setBrowserAuthCode('')
   }
 
   function pollCLINativeAuth(cli: ModelAccountCLI, sessionId: string) {
@@ -1460,8 +1475,25 @@ function ProvidersSection() {
               )}
               {deviceAuth && (
                 <div className="rounded-lg border border-sky-200 bg-sky-50 px-3 py-3 text-sm text-sky-800 dark:border-sky-900/50 dark:bg-sky-900/20 dark:text-sky-200">
-                  <p className="font-medium">{deviceAuth.status === 'connected' ? t('provider.deviceConnected') : t('provider.deviceWaiting')}</p>
-                  <a href={deviceAuth.verificationUri} target="_blank" rel="noreferrer" className="mt-2 block font-medium text-sky-700 underline dark:text-sky-300">{deviceAuth.verificationUri}</a>
+                  <div className="flex flex-wrap items-center justify-between gap-2">
+                    <p className="font-medium">{deviceAuth.status === 'connected' ? t('provider.deviceConnected') : t('provider.deviceWaiting')}</p>
+                    <div className="flex flex-wrap items-center gap-2">
+                      <a href={deviceAuth.verificationUri} target="_blank" rel="noreferrer" className="rounded-lg border border-sky-600 bg-white px-3 py-1.5 text-xs font-medium text-sky-700 hover:bg-sky-50 dark:border-sky-500 dark:bg-zinc-900 dark:text-sky-300 dark:hover:bg-zinc-800">
+                        {t('provider.openAuthPage')}
+                      </a>
+                      {deviceAuth.status !== 'connected' && (
+                        <button type="button" onClick={() => void startCodexChatGPTAuth()} disabled={deviceAuthStarting} className="rounded-lg border border-sky-600 bg-white px-3 py-1.5 text-xs font-medium text-sky-700 hover:bg-sky-50 disabled:opacity-50 dark:border-sky-500 dark:bg-zinc-900 dark:text-sky-300 dark:hover:bg-zinc-800">
+                          {deviceAuthStarting ? t('provider.deviceStarting') : t('provider.regenerateAuthLink')}
+                        </button>
+                      )}
+                      {deviceAuth.status !== 'connected' && (
+                        <button type="button" onClick={cancelDeviceAuth} disabled={deviceAuthStarting} className="rounded-lg border border-neutral-300 bg-white px-3 py-1.5 text-xs font-medium text-neutral-600 hover:bg-neutral-50 disabled:opacity-50 dark:border-zinc-700 dark:bg-zinc-900 dark:text-zinc-300 dark:hover:bg-zinc-800">
+                          {t('provider.cancelAuth')}
+                        </button>
+                      )}
+                    </div>
+                  </div>
+                  <p className="mt-2 text-xs leading-5 text-sky-700/80 dark:text-sky-300/80">{t('provider.authLinkHint')}</p>
                   {deviceAuth.userCode && (
                     <>
                       <p className="mt-2 text-xs text-sky-700/80 dark:text-sky-300/80">{t('provider.deviceCodeLabel')}</p>
