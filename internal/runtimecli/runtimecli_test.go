@@ -3,6 +3,7 @@ package runtimecli
 import (
 	"os"
 	"path/filepath"
+	"runtime"
 	"strings"
 	"testing"
 )
@@ -56,5 +57,23 @@ func TestResolveAvailableBinaryMountUsesWorkspaceDist(t *testing.T) {
 	got := ResolveAvailableBinaryMount(root)
 	if !strings.HasPrefix(got, bin+":") || !strings.HasSuffix(got, ":"+BinaryPath+":ro") {
 		t.Fatalf("workspace dist mount=%q", got)
+	}
+}
+
+func TestResolveAvailableBinaryMountOnlyAutoDiscoversOnLinuxHost(t *testing.T) {
+	t.Setenv(HostBinaryEnv, "")
+	if runtime.GOOS == "linux" {
+		t.Skip("this guard is for non-Linux hosts; Linux dev hosts may auto-discover dist/mga")
+	}
+	root := t.TempDir()
+	bin := filepath.Join(root, "dist", BinaryName)
+	if err := os.MkdirAll(filepath.Dir(bin), 0o755); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.WriteFile(bin, []byte{0x7f, 'E', 'L', 'F', 2, 1, 1}, 0o755); err != nil {
+		t.Fatal(err)
+	}
+	if got := ResolveAvailableBinaryMount(root); got != "" {
+		t.Fatalf("non-Linux host must use bundled image mga, got mount %q", got)
 	}
 }

@@ -4,6 +4,7 @@ import (
 	"encoding/binary"
 	"os"
 	"path/filepath"
+	"runtime"
 )
 
 const (
@@ -46,6 +47,13 @@ func ResolveAvailableBinaryMount(searchRoots ...string) string {
 	if mount := ResolveHostBinaryMount(); mount != "" {
 		return mount
 	}
+	if runtime.GOOS != "linux" {
+		return ""
+	}
+	return resolveAvailableLinuxBinaryMount(searchRoots...)
+}
+
+func resolveAvailableLinuxBinaryMount(searchRoots ...string) string {
 	candidates := []string{}
 	if exe, err := os.Executable(); err == nil && exe != "" {
 		candidates = append(candidates, filepath.Join(filepath.Dir(exe), BinaryName))
