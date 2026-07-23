@@ -993,13 +993,34 @@ type ProviderOption = {
   authMethod?: string
 }
 
+function providerTypesForAgentModel(model: string) {
+  switch (model.trim().toLowerCase()) {
+    case 'claudecode':
+      return ['anthropic']
+    case 'codex':
+      return ['openai']
+    case 'cursor':
+      return ['cursor']
+    case 'gemini':
+      return ['gemini']
+    default:
+      return []
+  }
+}
+
+function providerMatchesAgentModel(provider: ProviderOption, model: string) {
+  const allowed = providerTypesForAgentModel(model)
+  if (allowed.length === 0) return false
+  return allowed.includes(provider.type.trim().toLowerCase())
+}
+
 function ModelCredentialsPanel({ project, agentName, ctx, onChanged }: {
   project: string; agentName: string; ctx: AgentContext; onChanged: () => void
 }) {
   const { t } = useTranslation()
   const [editing, setEditing] = useState(false)
   const [providerOptions, setProviderOptions] = useState<ProviderOption[]>([])
-  const selectedProviderInfo = providerOptions.find((p) => p.id === ctx.provider)
+  const selectedProviderInfo = providerOptions.find((p) => p.id === ctx.provider && providerMatchesAgentModel(p, ctx.model))
   const providerValue = selectedProviderInfo ? selectedProviderInfo.name : t('agentDetail.noCredential')
   const runtimeModel = ctx.runtimeModel || selectedProviderInfo?.model || t('agentDetail.notConfigured')
 
@@ -1430,9 +1451,10 @@ function EnvEditor({ project, agentName, model, initialEnv, initialProvider, ini
     setSaved(false)
   }, [initialEnv, initialProvider, initialRuntimeModel])
 
-  const selectedProviderExists = Boolean(selectedProvider && providerOptions.some((p) => p.id === selectedProvider))
+  const visibleProviderOptions = providerOptions.filter((p) => providerMatchesAgentModel(p, model))
+  const selectedProviderExists = Boolean(selectedProvider && visibleProviderOptions.some((p) => p.id === selectedProvider))
   const selectedProviderValue = selectedProviderExists ? selectedProvider : ''
-  const selectedProviderInfo = providerOptions.find((p) => p.id === selectedProviderValue)
+  const selectedProviderInfo = visibleProviderOptions.find((p) => p.id === selectedProviderValue)
   const runtimeModelOptions = runtimeModelOptionsFor(model, selectedProviderInfo, modelCatalog)
   const runtimeModelSelectValue = runtimeModel
     ? runtimeModelOptions.includes(runtimeModel) ? runtimeModel : '__custom__'
@@ -1485,15 +1507,15 @@ function EnvEditor({ project, agentName, model, initialEnv, initialProvider, ini
             setSaved(false)
           }}
             className={cn(inputCls, 'w-full text-xs')}>
-            <option value="">{providerOptions.length > 0 ? t('provider.none') : t('agentDetail.noCredential')}</option>
-            {providerOptions.map(p => (
+            <option value="">{visibleProviderOptions.length > 0 ? t('provider.none') : t('agentDetail.noCredential')}</option>
+            {visibleProviderOptions.map(p => (
               <option key={p.id} value={p.id}>
                 {p.name} ({p.type}{p.model ? ` · ${p.model}` : ''} · {p.ownerType === 'user' ? t('provider.scopePersonal') : t('provider.scopeWorkspace')})
               </option>
             ))}
           </select>
         </label>
-        {providerOptions.length === 0 && (
+        {visibleProviderOptions.length === 0 && (
           <div className="flex items-end">
             <Link
               to="/settings#model-accounts"
