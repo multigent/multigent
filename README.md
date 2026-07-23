@@ -174,6 +174,9 @@ multigent sandbox prepare
 
 This pulls the runtime image and warms common agent CLI toolchains before the
 first chat, so users do not confuse a long Docker pull with an agent failure.
+The image is intentionally kept as a stable runtime base; fast-moving agent
+CLIs are installed into the persistent toolchain cache, and heavier
+project-specific compilers belong in custom runtime images or templates.
 
 ### Run the Web Console
 

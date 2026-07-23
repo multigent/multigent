@@ -14,6 +14,11 @@
 #   docker build --build-arg CN_MIRROR=1 \
 #                -t multigent/runtime-base:latest \
 #                -f docker/runtime-base/Dockerfile .
+#
+# Build with heavier development compilers included:
+#   docker build --build-arg INCLUDE_DEV_TOOLS=1 \
+#                -t multigent/runtime-base:dev \
+#                -f docker/runtime-base/Dockerfile .
 
 FROM --platform=$BUILDPLATFORM golang:1.26.4 AS runtime-cli-builder
 
@@ -40,6 +45,7 @@ FROM ubuntu:24.04
 ARG CN_MIRROR=0
 ARG GO_VERSION=1.26.4
 ARG TARGETARCH
+ARG INCLUDE_DEV_TOOLS=0
 
 ENV DEBIAN_FRONTEND=noninteractive \
     NODE_VERSION=22 \
@@ -75,7 +81,6 @@ RUN apt-get update && apt-get install -y --no-install-recommends \
     python3-pip \
     python3-venv \
     sqlite3 \
-    build-essential \
     && rm -rf /var/lib/apt/lists/*
 
 RUN curl -fsSL https://deb.nodesource.com/setup_${NODE_VERSION}.x | bash - \
@@ -86,24 +91,28 @@ RUN if [ "$CN_MIRROR" = "1" ]; then \
       npm config set registry https://registry.npmmirror.com; \
     fi
 
-RUN case "$TARGETARCH" in \
-      amd64|arm64) go_arch="$TARGETARCH" ;; \
-      *) echo "unsupported Go architecture: $TARGETARCH" >&2; exit 1 ;; \
-    esac; \
-    if [ "$CN_MIRROR" = "1" ]; then \
-      go_url="https://mirrors.aliyun.com/golang/go${GO_VERSION}.linux-${go_arch}.tar.gz"; \
-    else \
-      go_url="https://go.dev/dl/go${GO_VERSION}.linux-${go_arch}.tar.gz"; \
-    fi; \
-    curl -fsSL "$go_url" | tar -C /usr/local -xzf -
+RUN if [ "$INCLUDE_DEV_TOOLS" = "1" ]; then \
+      apt-get update \
+      && apt-get install -y --no-install-recommends build-essential \
+      && rm -rf /var/lib/apt/lists/*; \
+      case "$TARGETARCH" in \
+        amd64|arm64) go_arch="$TARGETARCH" ;; \
+        *) echo "unsupported Go architecture: $TARGETARCH" >&2; exit 1 ;; \
+      esac; \
+      if [ "$CN_MIRROR" = "1" ]; then \
+        go_url="https://mirrors.aliyun.com/golang/go${GO_VERSION}.linux-${go_arch}.tar.gz"; \
+      else \
+        go_url="https://go.dev/dl/go${GO_VERSION}.linux-${go_arch}.tar.gz"; \
+      fi; \
+      curl -fsSL "$go_url" | tar -C /usr/local -xzf -; \
+      if [ "$CN_MIRROR" = "1" ]; then \
+        /usr/local/go/bin/go env -w GOPROXY=https://goproxy.cn,direct GONOSUMDB='*'; \
+      fi; \
+    fi
 
 ENV PATH="/opt/multigent/toolchains/npm/bin:/usr/local/go/bin:/root/go/bin:/usr/local/sbin:/usr/local/bin:/usr/sbin:/usr/bin:/sbin:/bin" \
     GOPATH="/root/go" \
     GOMODCACHE="/root/go/pkg/mod"
-
-RUN if [ "$CN_MIRROR" = "1" ]; then \
-      go env -w GOPROXY=https://goproxy.cn,direct GONOSUMDB='*'; \
-    fi
 
 RUN curl -fsSL https://cli.github.com/packages/githubcli-archive-keyring.gpg \
         | dd of=/usr/share/keyrings/githubcli-archive-keyring.gpg \

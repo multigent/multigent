@@ -63,6 +63,10 @@ This image is public and does not require `docker login`.
 The first agent run may pull this image and install the selected agent CLI
 toolchain, which can take several minutes. Later runs reuse the local Docker
 image cache and the persistent `multigent-toolchains` Docker volume.
+The current runtime image is roughly 1 GB after unpacking locally; network
+download is smaller because registry layers are compressed. On slow networks,
+especially when accessing GHCR or npm from regions with poor connectivity,
+run the prewarm step before opening the first agent chat.
 
 Recommended setup prewarm:
 

@@ -14,13 +14,13 @@ The base image contains system dependencies. Codex, Claude Code, Gemini, and oth
 
 | Image | Agent | Base |
 |-------|-------|------|
-| `ghcr.io/multigent/multigent/runtime-base:latest` | Managed CLI toolchains | ubuntu:24.04 + Node 22 + Go + Python |
+| `ghcr.io/multigent/multigent/runtime-base:latest` | Managed CLI toolchains | ubuntu:24.04 + Node 22 + Python |
 
 The default image for managed CLIs is `ghcr.io/multigent/multigent/runtime-base:latest`, so new users do not need to build a local image first.
 
 All images include: `git`, `gh` (GitHub CLI), `curl`, `jq`, `ripgrep`, `make`, `openssh-client`, `python3`, and `sqlite3`.
 
-**Not included by default**: Rust, database clients beyond SQLite, browser stacks, and project-specific services. Add them with a custom base image or a runtime template.
+**Not included by default**: Go, C/C++ build toolchains, Rust, database clients beyond SQLite, browser stacks, and project-specific services. Add them with a custom base image or a runtime template. Keeping these out of the default image makes first install and first sandbox preparation substantially faster.
 
 ## Build locally
 
@@ -32,6 +32,11 @@ docker build -t multigent/runtime-base:latest \
 # Faster inside China (Aliyun apt + npmmirror)
 docker build --build-arg CN_MIRROR=1 \
              -t multigent/runtime-base:latest \
+             -f docker/runtime-base/Dockerfile .
+
+# Include Go and build-essential for heavier local development sandboxes
+docker build --build-arg INCLUDE_DEV_TOOLS=1 \
+             -t multigent/runtime-base:dev \
              -f docker/runtime-base/Dockerfile .
 ```
 
@@ -112,7 +117,7 @@ Extend any base image to add project-specific tools:
 FROM ghcr.io/multigent/multigent/runtime-base:latest
 
 # Add your project's toolchain
-RUN apt-get update && apt-get install -y golang-go python3-pip \
+RUN apt-get update && apt-get install -y golang-go build-essential python3-pip \
     && rm -rf /var/lib/apt/lists/*
 RUN npm install -g yarn
 ```
