@@ -80,6 +80,11 @@ func TestExtractAgentChatError(t *testing.T) {
 			line: `exit status 1`,
 			want: "",
 		},
+		{
+			name: "docker registry error",
+			line: `docker: Error response from daemon: error from registry: unauthorized`,
+			want: `docker: Error response from daemon: error from registry: unauthorized`,
+		},
 	}
 
 	for _, tt := range tests {

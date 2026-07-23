@@ -471,6 +471,17 @@ func chatSSEPayload(line string, model entity.AgentModel) string {
 func extractAgentChatError(line string) string {
 	trimmed := strings.TrimSpace(line)
 	if !strings.HasPrefix(trimmed, "{") {
+		lower := strings.ToLower(trimmed)
+		switch {
+		case strings.HasPrefix(lower, "docker: error response from daemon:"):
+			return trimmed
+		case strings.HasPrefix(lower, "unable to find image "):
+			return trimmed
+		case strings.Contains(lower, "unauthorized") && (strings.Contains(lower, "docker") || strings.Contains(lower, "registry")):
+			return trimmed
+		case strings.Contains(lower, "authentication required") || strings.Contains(lower, "not logged in"):
+			return trimmed
+		}
 		return ""
 	}
 	var ev struct {

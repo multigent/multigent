@@ -276,13 +276,23 @@ func resolveImage(model entity.AgentModel, cfg *entity.DockerSandboxConfig) stri
 }
 
 func normalizeDefaultImage(image string) string {
-	if image == LocalBaseImage || image == BaseImage {
+	if isManagedRuntimeImage(image) {
 		if dockerImageExists(LocalBaseImage) {
 			return LocalBaseImage
 		}
 		return BaseImage
 	}
 	return image
+}
+
+func isManagedRuntimeImage(image string) bool {
+	if image == LocalBaseImage || image == BaseImage {
+		return true
+	}
+	if !strings.HasPrefix(image, imagePrefix+"/sandbox-") {
+		return false
+	}
+	return strings.HasSuffix(image, ":latest") || !strings.Contains(filepath.Base(image), ":")
 }
 
 func imageExists(image string) bool {

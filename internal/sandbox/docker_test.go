@@ -39,7 +39,7 @@ func TestImageForManagedModelsUsesRuntimeBase(t *testing.T) {
 	restore := dockerImageExists
 	dockerImageExists = func(string) bool { return false }
 	t.Cleanup(func() { dockerImageExists = restore })
-	for _, model := range []entity.AgentModel{entity.ModelCodex, entity.ModelClaudeCode, entity.ModelGemini, entity.ModelQoder} {
+	for _, model := range []entity.AgentModel{entity.ModelCodex, entity.ModelClaudeCode, entity.ModelGemini, entity.ModelQoder, entity.ModelCursor} {
 		if got := ImageForModel(model); got != BaseImage {
 			t.Fatalf("ImageForModel(%s) = %q, want %q", model, got, BaseImage)
 		}
@@ -62,6 +62,16 @@ func TestEffectiveImageUsesPublishedRuntimeBaseWhenLocalMissing(t *testing.T) {
 	t.Cleanup(func() { dockerImageExists = restore })
 	cfg := &entity.DockerSandboxConfig{Image: LocalBaseImage}
 	if got := EffectiveImage(entity.ModelCodex, cfg); got != BaseImage {
+		t.Fatalf("EffectiveImage() = %q, want %q", got, BaseImage)
+	}
+}
+
+func TestEffectiveImageNormalizesManagedLegacySandboxImages(t *testing.T) {
+	restore := dockerImageExists
+	dockerImageExists = func(string) bool { return false }
+	t.Cleanup(func() { dockerImageExists = restore })
+	cfg := &entity.DockerSandboxConfig{Image: "ghcr.io/multigent/multigent/sandbox-claudecode:latest"}
+	if got := EffectiveImage(entity.ModelCursor, cfg); got != BaseImage {
 		t.Fatalf("EffectiveImage() = %q, want %q", got, BaseImage)
 	}
 }
