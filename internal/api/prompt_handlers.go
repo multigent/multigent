@@ -269,8 +269,9 @@ func (s *Server) handleGetAgentContext(w http.ResponseWriter, r *http.Request) {
 		resp["goals"] = goalSummary
 	}
 
-	resp["setupChecks"] = buildSetupChecks(meta)
-	resp["runtimeReadiness"] = buildRuntimeReadiness(meta)
+	readiness := buildRuntimeReadinessLight(meta)
+	resp["setupChecks"] = readiness.Checks
+	resp["runtimeReadiness"] = readiness
 
 	_ = json.NewEncoder(w).Encode(resp)
 }
@@ -548,6 +549,18 @@ type runtimeReadinessResponse struct {
 }
 
 func buildRuntimeReadiness(meta *entity.AgentMeta) runtimeReadinessResponse {
+	return buildRuntimeReadinessWithOptions(meta, runtimeReadinessOptions{CheckContainer: true})
+}
+
+func buildRuntimeReadinessLight(meta *entity.AgentMeta) runtimeReadinessResponse {
+	return buildRuntimeReadinessWithOptions(meta, runtimeReadinessOptions{CheckContainer: false})
+}
+
+type runtimeReadinessOptions struct {
+	CheckContainer bool
+}
+
+func buildRuntimeReadinessWithOptions(meta *entity.AgentMeta, opts runtimeReadinessOptions) runtimeReadinessResponse {
 	model := entity.NormaliseModel(meta.Model)
 	if model == entity.ModelHuman || model == entity.ModelHTTPAgent {
 		return runtimeReadinessResponse{Ready: true, Summary: "This member does not require a sandboxed CLI runtime.", Checks: nil}
@@ -621,17 +634,19 @@ func buildRuntimeReadiness(meta *entity.AgentMeta) runtimeReadinessResponse {
 					Key: "runtime_image", Label: "Runtime image", Status: "ok",
 					Detail: image,
 				})
-				if err := sandbox.RuntimeContainerAvailable(image, 4*time.Second); err != nil {
-					checks = append(checks, setupCheck{
-						Key: "runtime_container", Label: "Runtime container", Status: "error", Blocking: true,
-						Detail: err.Error(),
-						Action: "Restart Docker Desktop / Docker Engine, then run: multigent sandbox prepare",
-					})
-				} else {
-					checks = append(checks, setupCheck{
-						Key: "runtime_container", Label: "Runtime container", Status: "ok",
-						Detail: "Container startup check passed.",
-					})
+				if opts.CheckContainer {
+					if err := sandbox.RuntimeContainerAvailable(image, 4*time.Second); err != nil {
+						checks = append(checks, setupCheck{
+							Key: "runtime_container", Label: "Runtime container", Status: "error", Blocking: true,
+							Detail: err.Error(),
+							Action: "Restart Docker Desktop / Docker Engine, then run: multigent sandbox prepare",
+						})
+					} else {
+						checks = append(checks, setupCheck{
+							Key: "runtime_container", Label: "Runtime container", Status: "ok",
+							Detail: "Container startup check passed.",
+						})
+					}
 				}
 			} else {
 				checks = append(checks, setupCheck{
