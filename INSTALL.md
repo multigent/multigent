@@ -337,6 +337,32 @@ docker pull crpi-fu3b7e7lggtmh7za.cn-hangzhou.personal.cr.aliyuncs.com/multigent
 You can also pre-pull the image from a machine with better connectivity and
 import it with `docker save` / `docker load`.
 
+### Benchmark First Install
+
+To simulate a first-install runtime preparation path on macOS/Linux:
+
+```bash
+scripts/bench-first-install.sh
+scripts/bench-first-install.sh --region cn
+```
+
+By default this does not remove local Docker caches. To measure a colder path,
+explicitly remove the selected runtime image and shared agent CLI toolchain
+cache:
+
+```bash
+scripts/bench-first-install.sh --region cn --cold --yes
+```
+
+This removes only the selected runtime image and the `multigent-toolchains`
+Docker volume. It does not run `docker system prune`.
+
+To include a small `docker run` startup check:
+
+```bash
+scripts/bench-first-install.sh --region cn --verify-container
+```
+
 ### CLI Not Found
 
 Check `PATH`:
