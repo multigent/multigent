@@ -250,6 +250,7 @@ export function TaskDetailModal({ task, onClose, onEdit, onMutated, canEdit = tr
   const [reviewOutputs, setReviewOutputs] = useState<Record<string, string>>({})
   const [reviewBusy, setReviewBusy] = useState<string | null>(null)
   const [reviewErr, setReviewErr] = useState<string | null>(null)
+  const [assigneeEditing, setAssigneeEditing] = useState(false)
   const [assigneeDraft, setAssigneeDraft] = useState(task.assignee || `${task.project}/${task.agent}`)
   const [assigneeBusy, setAssigneeBusy] = useState(false)
   const [assigneeErr, setAssigneeErr] = useState<string | null>(null)
@@ -313,6 +314,7 @@ export function TaskDetailModal({ task, onClose, onEdit, onMutated, canEdit = tr
 
   useEffect(() => {
     setAssigneeDraft(task.assignee || `${task.project}/${task.agent}`)
+    setAssigneeEditing(false)
     setAssigneeErr(null)
   }, [task.agent, task.assignee, task.project])
 
@@ -333,6 +335,7 @@ export function TaskDetailModal({ task, onClose, onEdit, onMutated, canEdit = tr
         id: task.id,
         assignee: next,
       })
+      setAssigneeEditing(false)
       onMutated?.()
     } catch (e) {
       setAssigneeDraft(previous)
@@ -402,10 +405,21 @@ export function TaskDetailModal({ task, onClose, onEdit, onMutated, canEdit = tr
           <InfoCell label={t('tasks.colProject')}><span className="font-mono">{task.project}</span></InfoCell>
           <InfoCell label={t('tasks.colAssignee')}>
             <div className="space-y-1" title={task.assignee || `${task.project}/${task.agent}`}>
-              {canEdit && !isTerminal(task.status) ? (
+              {canEdit && !isTerminal(task.status) && assigneeEditing ? (
                 <select
                   value={assigneeDraft}
                   onChange={(event) => void saveAssignee(event.target.value)}
+                  onBlur={() => {
+                    setAssigneeDraft(task.assignee || `${task.project}/${task.agent}`)
+                    setAssigneeEditing(false)
+                  }}
+                  onKeyDown={(event) => {
+                    if (event.key === 'Escape') {
+                      setAssigneeDraft(task.assignee || `${task.project}/${task.agent}`)
+                      setAssigneeEditing(false)
+                    }
+                  }}
+                  autoFocus
                   disabled={assigneeBusy || membersState.status === 'loading'}
                   className="max-w-full rounded-lg border border-neutral-300 bg-white px-2 py-1 text-sm text-neutral-900 outline-none focus:border-sky-400 disabled:opacity-60 dark:border-zinc-600 dark:bg-zinc-800 dark:text-zinc-100"
                 >
@@ -414,7 +428,18 @@ export function TaskDetailModal({ task, onClose, onEdit, onMutated, canEdit = tr
                   ))}
                 </select>
               ) : (
-                <span>{compactTaskIdentityLabel(task.assignee || `${task.project}/${task.agent}`, task.assigneeLabel)}</span>
+                <button
+                  type="button"
+                  disabled={!canEdit || isTerminal(task.status)}
+                  onClick={() => {
+                    if (!canEdit || isTerminal(task.status)) return
+                    setAssigneeDraft(task.assignee || `${task.project}/${task.agent}`)
+                    setAssigneeEditing(true)
+                  }}
+                  className="max-w-full truncate rounded-md px-1.5 py-0.5 text-left text-neutral-800 transition-colors enabled:hover:bg-neutral-100 enabled:hover:text-sky-700 disabled:cursor-default dark:text-zinc-200 dark:enabled:hover:bg-zinc-800 dark:enabled:hover:text-sky-400"
+                >
+                  {compactTaskIdentityLabel(task.assignee || `${task.project}/${task.agent}`, task.assigneeLabel)}
+                </button>
               )}
               {membersState.status === 'loading' && <p className="text-xs text-neutral-400 dark:text-zinc-500">{t('api.loading')}</p>}
               {assigneeBusy && <p className="text-xs text-neutral-400 dark:text-zinc-500">{t('forms.saving')}</p>}
