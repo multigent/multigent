@@ -8,6 +8,7 @@ import { cn } from '../lib/cn'
 import { useApiJson } from '../lib/use-api'
 import { apiFetch, apiPost, apiPut } from '../lib/api'
 import { primaryOutlineButton } from '../lib/button-styles'
+import { useWorkspaceAccess } from '../lib/workspace-access'
 
 type Provenance = { playbookId: string; playbookName: string; templateVersion?: string; customized?: boolean }
 type SkillRow = {
@@ -65,7 +66,7 @@ type AgentContext = { skills?: string[] }
 type SkillSyncTarget = { project: string; agent: string }
 type SkillSyncResult = SkillSyncTarget & { ok: boolean; output?: string; error?: string }
 
-function SkillItem({ skill, defaultOpen }: { skill: SkillRow; defaultOpen?: boolean }) {
+function SkillItem({ skill, defaultOpen, canAdmin }: { skill: SkillRow; defaultOpen?: boolean; canAdmin: boolean }) {
   const { t } = useTranslation()
   const [open, setOpen] = useState(!!defaultOpen)
   const elRef = useRef<HTMLDivElement>(null)
@@ -165,37 +166,41 @@ function SkillItem({ skill, defaultOpen }: { skill: SkillRow; defaultOpen?: bool
                       {saved && <span className="text-[10px] text-emerald-500">{t('prompt.saved')}</span>}
                     </div>
                     <div className="flex items-center gap-2">
-                      <button
-                        type="button"
-                        onClick={() => setSyncOpen(true)}
-                        className="rounded-md border border-neutral-200 px-2.5 py-1 text-[11px] font-medium text-neutral-600 transition-colors hover:bg-neutral-50 dark:border-zinc-700 dark:text-zinc-300 dark:hover:bg-zinc-800"
-                      >
-                        {t('skill.syncThisSkill')}
-                      </button>
-                      <button
-                        type="button"
-                        onClick={() => setPreview((p) => !p)}
-                        className={cn(
-                          'rounded-md px-2 py-1 text-[11px] font-medium transition-colors',
-                          preview
-                            ? 'bg-sky-100 text-sky-700 dark:bg-sky-900/30 dark:text-sky-400'
-                            : 'text-neutral-400 hover:text-neutral-600 dark:text-zinc-500 dark:hover:text-zinc-400',
-                        )}
-                      >
-                        {preview ? t('prompt.edit') : t('prompt.preview')}
-                      </button>
-                      <button
-                        type="button"
-                        onClick={save}
-                        disabled={saving}
-                        className="flex items-center gap-1 rounded-md bg-sky-600 px-2.5 py-1 text-[11px] font-medium text-white transition-colors hover:bg-sky-700 disabled:opacity-50"
-                      >
-                        <Save className="size-3" strokeWidth={2} />
-                        {saving ? t('prompt.saving') : t('prompt.save')}
-                      </button>
+                      {canAdmin && (
+                        <>
+                          <button
+                            type="button"
+                            onClick={() => setSyncOpen(true)}
+                            className="rounded-md border border-neutral-200 px-2.5 py-1 text-[11px] font-medium text-neutral-600 transition-colors hover:bg-neutral-50 dark:border-zinc-700 dark:text-zinc-300 dark:hover:bg-zinc-800"
+                          >
+                            {t('skill.syncThisSkill')}
+                          </button>
+                          <button
+                            type="button"
+                            onClick={() => setPreview((p) => !p)}
+                            className={cn(
+                              'rounded-md px-2 py-1 text-[11px] font-medium transition-colors',
+                              preview
+                                ? 'bg-sky-100 text-sky-700 dark:bg-sky-900/30 dark:text-sky-400'
+                                : 'text-neutral-400 hover:text-neutral-600 dark:text-zinc-500 dark:hover:text-zinc-400',
+                            )}
+                          >
+                            {preview ? t('prompt.edit') : t('prompt.preview')}
+                          </button>
+                          <button
+                            type="button"
+                            onClick={save}
+                            disabled={saving}
+                            className="flex items-center gap-1 rounded-md bg-sky-600 px-2.5 py-1 text-[11px] font-medium text-white transition-colors hover:bg-sky-700 disabled:opacity-50"
+                          >
+                            <Save className="size-3" strokeWidth={2} />
+                            {saving ? t('prompt.saving') : t('prompt.save')}
+                          </button>
+                        </>
+                      )}
                     </div>
                   </div>
-                  {preview ? (
+                  {!canAdmin || preview ? (
                     <div className="prose-none max-h-[58vh] overflow-auto p-4 text-sm leading-relaxed text-neutral-800 dark:text-zinc-200">
                       <Markdown remarkPlugins={[remarkGfm]}>{content || '*(empty)*'}</Markdown>
                     </div>
@@ -237,7 +242,7 @@ function SkillItem({ skill, defaultOpen }: { skill: SkillRow; defaultOpen?: bool
           </div>
         </div>
       )}
-      {syncOpen && <SyncSkillDialog skillName={skill.name} onClose={() => setSyncOpen(false)} />}
+      {canAdmin && syncOpen && <SyncSkillDialog skillName={skill.name} onClose={() => setSyncOpen(false)} />}
     </div>
   )
 }
@@ -282,6 +287,7 @@ function ProvenanceBadge({ provenance, className }: { provenance: Provenance; cl
 
 export default function SkillsPage() {
   const { t } = useTranslation()
+  const { canAdmin } = useWorkspaceAccess()
   const [searchParams] = useSearchParams()
   const openSkill = searchParams.get('open') ?? ''
   const [reloadKey, setReloadKey] = useState(0)
@@ -305,17 +311,19 @@ export default function SkillsPage() {
           </div>
           <p className="mt-1 text-sm text-neutral-500 dark:text-zinc-500">{t('skill.catalogHint')}</p>
         </div>
-        <div className="flex items-center gap-2">
-          <button type="button" onClick={() => setLocalImportOpen(true)} className={primaryOutlineButton}>
-            {t('skill.syncFromLocal')}
-          </button>
-          <button type="button" onClick={() => setInstallOpen(true)} className={primaryOutlineButton}>
-            {t('skill.install')}
-          </button>
-          <button type="button" onClick={() => setCreateOpen(true)} className={primaryOutlineButton}>
-            {t('skill.create')}
-          </button>
-        </div>
+        {canAdmin && (
+          <div className="flex items-center gap-2">
+            <button type="button" onClick={() => setLocalImportOpen(true)} className={primaryOutlineButton}>
+              {t('skill.syncFromLocal')}
+            </button>
+            <button type="button" onClick={() => setInstallOpen(true)} className={primaryOutlineButton}>
+              {t('skill.install')}
+            </button>
+            <button type="button" onClick={() => setCreateOpen(true)} className={primaryOutlineButton}>
+              {t('skill.create')}
+            </button>
+          </div>
+        )}
       </div>
 
       {skillsState.status === 'loading' && (
@@ -335,11 +343,11 @@ export default function SkillsPage() {
       {skills.length > 0 && (
         <div className="grid gap-4 sm:grid-cols-2 xl:grid-cols-3">
           {skills.map((sk) => (
-            <SkillItem key={sk.name} skill={sk} defaultOpen={sk.name === openSkill} />
+            <SkillItem key={sk.name} skill={sk} defaultOpen={sk.name === openSkill} canAdmin={canAdmin} />
           ))}
         </div>
       )}
-      {createOpen && (
+      {canAdmin && createOpen && (
         <CreateSkillDialog
           onClose={() => setCreateOpen(false)}
           onCreated={() => {
@@ -348,7 +356,7 @@ export default function SkillsPage() {
           }}
         />
       )}
-      {installOpen && (
+      {canAdmin && installOpen && (
         <InstallSkillDialog
           onClose={() => setInstallOpen(false)}
           onInstalled={() => {
@@ -357,7 +365,7 @@ export default function SkillsPage() {
           }}
         />
       )}
-      {localImportOpen && (
+      {canAdmin && localImportOpen && (
         <LocalSkillImportDialog
           onClose={() => setLocalImportOpen(false)}
           onImported={() => {
