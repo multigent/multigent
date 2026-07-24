@@ -2003,7 +2003,12 @@
     "keepExisting": "空のままなら変更しません。新しい値を入力すると更新されます",
     "sessionStatus": "セッション状態",
     "sessionIdle": "現在アイドルです。Web または Feishu/Lark から協作を開始できます。",
-    "sessionActive": "{{source}} セッションによりロック中。実行者: {{actor}}"
+    "sessionActive": "{{source}} セッションによりロック中。実行者: {{actor}}",
+    "details": "詳細",
+    "detailsTitle": "{{provider}} 接続詳細",
+    "statusLabel": "状態",
+    "lastEventLabel": "最新イベント",
+    "lastEventSummary": "最新イベント: {{time}} · {{status}}"
   },
   "sandbox": {
     "title": "実行環境",

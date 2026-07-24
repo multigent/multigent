@@ -2034,7 +2034,12 @@
     "keepExisting": "留空保持不变；输入新值可更新",
     "sessionStatus": "会话状态",
     "sessionIdle": "当前空闲，可以从 Web 或飞书/Lark 发起协作。",
-    "sessionActive": "当前由 {{source}} 会话占用，发起人：{{actor}}"
+    "sessionActive": "当前由 {{source}} 会话占用，发起人：{{actor}}",
+    "details": "详情",
+    "detailsTitle": "{{provider}} 连接详情",
+    "statusLabel": "状态",
+    "lastEventLabel": "最近事件",
+    "lastEventSummary": "最近事件：{{time}} · {{status}}"
   },
   "sandbox": {
     "title": "运行环境",

@@ -1,7 +1,7 @@
 import { useCallback, useEffect, useRef, useState } from 'react'
 import { useTranslation } from 'react-i18next'
 import { QRCodeSVG } from 'qrcode.react'
-import { CheckCircle2, Loader2, MessageSquare, Trash2, X } from 'lucide-react'
+import { CheckCircle2, Loader2, MessageSquare, X } from 'lucide-react'
 import { apiDelete, apiFetch, apiPost } from '../../lib/api'
 import { cn } from '../../lib/cn'
 import { confirmDialog } from '../ui/ConfirmDialog'
@@ -88,6 +88,7 @@ export function AgentChannelPanel({ project, agentName }: { project: string; age
     { id: 'lark', label: 'Lark' },
   ])
   const [setup, setSetup] = useState<SetupState>({ step: 'idle' })
+  const [detail, setDetail] = useState<{ provider: ChannelProvider; channel: AgentChannel } | null>(null)
   const pollRef = useRef<ReturnType<typeof setInterval> | null>(null)
 
   const basePath = `/api/v1/projects/${encodeURIComponent(project)}/agents/${encodeURIComponent(agentName)}/channels`
@@ -203,6 +204,7 @@ export function AgentChannelPanel({ project, agentName }: { project: string; age
     })
     if (!ok) return
     await apiDelete(`${basePath}/${channel.provider}`)
+    setDetail(null)
     await load()
   }
 
@@ -270,35 +272,14 @@ export function AgentChannelPanel({ project, agentName }: { project: string; age
                     )}
                   </div>
                   {channel ? (
-                    <div className="mt-2 space-y-1.5 text-xs text-neutral-400 dark:text-zinc-500">
-                      <ChannelDetail label={t('agentChannels.connectedByLabel')} value={channel.createdBy || '-'} />
-                      {channel.appId && <ChannelDetail label={t('agentChannels.appIdLabel')} value={channel.appId} mono />}
-                      <ChannelDetail
-                        label={t('agentChannels.ownerIdLabel')}
-                        value={channel.externalOwnerId || t('agentChannels.ownerPending')}
-                        mono={Boolean(channel.externalOwnerId)}
-                      />
-                      <ChannelDetail
-                        label={t('agentChannels.botIdLabel')}
-                        value={channel.externalBotId || t('agentChannels.botPending')}
-                        mono={Boolean(channel.externalBotId)}
-                      />
-                      <ChannelDetail
-                        label={t('agentChannels.chatIdLabel')}
-                        value={channel.externalChatId || t('agentChannels.chatPending')}
-                        mono={Boolean(channel.externalChatId)}
-                      />
-                      <ChannelDetail label={t('agentChannels.lastActivityLabel')} value={fmtDateTime(channel.lastActivityAt)} />
-                      <ChannelDetail label={t('agentChannels.receiveModeLabel')} value={receiveModeLabel(channel.provider, t)} />
-                      <p className="text-neutral-500 dark:text-zinc-400">{receiveModeHint(channel.provider, t, channel.callbackUrl)}</p>
+                    <div className="mt-2 space-y-1 text-xs text-neutral-500 dark:text-zinc-400">
+                      <p>{t('agentChannels.lastActivity', { time: fmtDateTime(channel.lastActivityAt) })}</p>
                       {channel.callback?.lastAt ? (
-                        <p className={cn(channel.callback.error && 'text-red-500 dark:text-red-300')}>
-                          {t('agentChannels.lastEvent', {
+                        <p className={cn('truncate', channel.callback.error && 'text-red-500 dark:text-red-300')}>
+                          {t('agentChannels.lastEventSummary', {
                             time: fmtDateTime(channel.callback.lastAt),
                             status: t(`agentChannels.callbackStatus.${channel.callback.status || 'unknown'}`),
-                            reason: channel.callback.reason ? t(`agentChannels.callbackReason.${channel.callback.reason}`, { defaultValue: channel.callback.reason }) : '-',
                           })}
-                          {channel.callback.error ? ` · ${channel.callback.error}` : ''}
                         </p>
                       ) : (
                         <p>{t('agentChannels.eventPending')}</p>
@@ -310,8 +291,8 @@ export function AgentChannelPanel({ project, agentName }: { project: string; age
                 </div>
                 {channel ? (
                   <div className="flex items-center gap-1">
-                    <button type="button" onClick={() => void disconnect(channel)} className="rounded-md p-1.5 text-neutral-400 hover:bg-red-50 hover:text-red-600 dark:text-zinc-500 dark:hover:bg-red-950/30 dark:hover:text-red-300" title={t('agentChannels.disconnect')}>
-                      <Trash2 className="size-4" />
+                    <button type="button" onClick={() => setDetail({ provider, channel })} className="rounded-md border border-neutral-200 bg-white px-2.5 py-1 text-xs font-medium text-neutral-600 hover:border-neutral-300 hover:bg-neutral-50 dark:border-zinc-700 dark:bg-zinc-900 dark:text-zinc-300 dark:hover:border-zinc-600 dark:hover:bg-zinc-800">
+                      {t('agentChannels.details')}
                     </button>
                   </div>
                 ) : (
@@ -395,6 +376,68 @@ export function AgentChannelPanel({ project, agentName }: { project: string; age
                 {setup.message}
               </div>
             )}
+          </div>
+        </div>
+      )}
+
+      {detail && (
+        <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/40 px-4">
+          <div className="w-full max-w-xl rounded-xl border border-neutral-200 bg-white p-5 shadow-xl dark:border-zinc-700 dark:bg-zinc-900">
+            <div className="flex items-start justify-between gap-3">
+              <div>
+                <h3 className="text-base font-semibold text-neutral-900 dark:text-zinc-100">
+                  {t('agentChannels.detailsTitle', { provider: detail.provider.label })}
+                </h3>
+                <p className="mt-1 text-xs text-neutral-400 dark:text-zinc-500">{receiveModeHint(detail.channel.provider, t, detail.channel.callbackUrl)}</p>
+              </div>
+              <button type="button" onClick={() => setDetail(null)} className="rounded-md p-1.5 text-neutral-400 hover:bg-neutral-100 hover:text-neutral-700 dark:hover:bg-zinc-800 dark:hover:text-zinc-200">
+                <X className="size-4" />
+              </button>
+            </div>
+            <div className="mt-4 grid gap-2 rounded-lg border border-neutral-200/70 bg-neutral-50 p-3 dark:border-zinc-700/60 dark:bg-zinc-950/40">
+              <ChannelDetail label={t('agentChannels.statusLabel')} value={t('agentChannels.connected')} />
+              <ChannelDetail label={t('agentChannels.connectedByLabel')} value={detail.channel.createdBy || '-'} />
+              {detail.channel.appId && <ChannelDetail label={t('agentChannels.appIdLabel')} value={detail.channel.appId} mono />}
+              <ChannelDetail
+                label={t('agentChannels.ownerIdLabel')}
+                value={detail.channel.externalOwnerId || t('agentChannels.ownerPending')}
+                mono={Boolean(detail.channel.externalOwnerId)}
+              />
+              <ChannelDetail
+                label={t('agentChannels.botIdLabel')}
+                value={detail.channel.externalBotId || t('agentChannels.botPending')}
+                mono={Boolean(detail.channel.externalBotId)}
+              />
+              <ChannelDetail
+                label={t('agentChannels.chatIdLabel')}
+                value={detail.channel.externalChatId || t('agentChannels.chatPending')}
+                mono={Boolean(detail.channel.externalChatId)}
+              />
+              <ChannelDetail label={t('agentChannels.lastActivityLabel')} value={fmtDateTime(detail.channel.lastActivityAt)} />
+              <ChannelDetail label={t('agentChannels.receiveModeLabel')} value={receiveModeLabel(detail.channel.provider, t)} />
+              {detail.channel.callback?.lastAt ? (
+                <div className={cn('rounded-md bg-white p-2 text-xs text-neutral-500 dark:bg-zinc-900 dark:text-zinc-400', detail.channel.callback.error && 'text-red-500 dark:text-red-300')}>
+                  <p className="font-medium text-neutral-700 dark:text-zinc-200">
+                    {t('agentChannels.lastEvent', {
+                      time: fmtDateTime(detail.channel.callback.lastAt),
+                      status: t(`agentChannels.callbackStatus.${detail.channel.callback.status || 'unknown'}`),
+                      reason: detail.channel.callback.reason ? t(`agentChannels.callbackReason.${detail.channel.callback.reason}`, { defaultValue: detail.channel.callback.reason }) : '-',
+                    })}
+                  </p>
+                  {detail.channel.callback.error ? <p className="mt-1 break-words">{detail.channel.callback.error}</p> : null}
+                </div>
+              ) : (
+                <ChannelDetail label={t('agentChannels.lastEventLabel')} value={t('agentChannels.eventPending')} />
+              )}
+            </div>
+            <div className="mt-4 flex justify-end gap-2">
+              <button type="button" onClick={() => setDetail(null)} className="rounded-lg border border-neutral-200 bg-white px-3 py-2 text-sm font-medium text-neutral-600 hover:bg-neutral-50 dark:border-zinc-700 dark:bg-zinc-900 dark:text-zinc-300 dark:hover:bg-zinc-800">
+                {t('common.close')}
+              </button>
+              <button type="button" onClick={() => void disconnect(detail.channel)} className="rounded-lg border border-red-200 bg-white px-3 py-2 text-sm font-medium text-red-600 hover:bg-red-50 dark:border-red-900/70 dark:bg-zinc-900 dark:text-red-300 dark:hover:bg-red-950/30">
+                {t('agentChannels.disconnect')}
+              </button>
+            </div>
           </div>
         </div>
       )}

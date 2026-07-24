@@ -2013,7 +2013,12 @@
     "keepExisting": "留空保持不變；輸入新值可更新",
     "sessionStatus": "會話狀態",
     "sessionIdle": "目前空閒，可以從 Web 或飛書/Lark 發起協作。",
-    "sessionActive": "目前由 {{source}} 會話占用，發起人：{{actor}}"
+    "sessionActive": "目前由 {{source}} 會話占用，發起人：{{actor}}",
+    "details": "詳情",
+    "detailsTitle": "{{provider}} 連接詳情",
+    "statusLabel": "狀態",
+    "lastEventLabel": "最近事件",
+    "lastEventSummary": "最近事件：{{time}} · {{status}}"
   },
   "sandbox": {
     "title": "執行環境",

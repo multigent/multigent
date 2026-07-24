@@ -2034,7 +2034,12 @@
     "keepExisting": "Leave empty to keep unchanged; enter a new value to update",
     "sessionStatus": "Session status",
     "sessionIdle": "Idle. Collaboration can start from Web or Feishu/Lark.",
-    "sessionActive": "Locked by {{source}} session. Actor: {{actor}}"
+    "sessionActive": "Locked by {{source}} session. Actor: {{actor}}",
+    "details": "Details",
+    "detailsTitle": "{{provider}} connection details",
+    "statusLabel": "Status",
+    "lastEventLabel": "Last event",
+    "lastEventSummary": "Last event: {{time}} · {{status}}"
   },
   "sandbox": {
     "title": "Runtime Environment",
