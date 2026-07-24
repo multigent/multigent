@@ -88,7 +88,6 @@ export default function ProjectAgentChatPage() {
   const [historyLoading, setHistoryLoading] = useState(false)
   const [historyTruncated, setHistoryTruncated] = useState(false)
   const [error, setError] = useState<string | null>(null)
-  const [runtimeWarning, setRuntimeWarning] = useState<string | null>(null)
   const [runtimeReadiness, setRuntimeReadiness] = useState<RuntimeReadiness | null>(null)
   const [runtimeChecking, setRuntimeChecking] = useState(false)
   const [freshNext, setFreshNext] = useState(false)
@@ -136,14 +135,6 @@ export default function ProjectAgentChatPage() {
       const data = await apiFetch<RuntimeReadiness>(path)
       if (activeChatKeyRef.current !== expectedKey) return null
       setRuntimeReadiness(data)
-      const warnings = (data.checks ?? []).filter((check) => check.status === 'warning')
-      if (data.blocking) {
-        setRuntimeWarning(null)
-      } else if (warnings.length > 0) {
-        setRuntimeWarning(t('agentChat.runtimeMayBeSlow'))
-      } else {
-        setRuntimeWarning(null)
-      }
       return data
     } catch {
       return null
@@ -157,7 +148,6 @@ export default function ProjectAgentChatPage() {
     if (!path) return
     setHistoryLoading(true)
     setError(null)
-    setRuntimeWarning(null)
     try {
       const data = await apiFetch<HistoryResp>(path)
       if (activeChatKeyRef.current !== expectedKey) return
@@ -190,7 +180,6 @@ export default function ProjectAgentChatPage() {
     setHistoryTruncated(false)
     setFreshNext(false)
     setRuntimeReadiness(null)
-    setRuntimeWarning(null)
     setSessionEditorOpen(false)
     setSessionId(currentRouteSessionId)
     setSessionDraft(currentRouteSessionId)
@@ -528,9 +517,6 @@ export default function ProjectAgentChatPage() {
         {error && (
           <p className="mt-2 text-xs text-red-500 dark:text-red-400">{error}</p>
         )}
-        {!error && runtimeWarning && (
-          <p className="mt-2 rounded-lg border border-amber-200 bg-amber-50 px-3 py-2 text-xs leading-5 text-amber-700 dark:border-amber-900/50 dark:bg-amber-900/20 dark:text-amber-300">{runtimeWarning}</p>
-        )}
       </div>
 
       <div ref={scrollRef} className="flex-1 overflow-y-auto px-6 py-5">
@@ -611,6 +597,7 @@ function RuntimeReadinessBanner({ readiness, checking, onRefresh }: {
   const visibleChecks = checks.filter((check) => check.status !== 'ok')
   const ready = Boolean(readiness?.ready)
   const blocking = Boolean(readiness?.blocking)
+  if (!checking && !blocking) return null
   const cls = blocking
     ? 'border-red-200 bg-red-50 text-red-800 dark:border-red-900/50 dark:bg-red-950/20 dark:text-red-300'
     : ready

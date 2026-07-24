@@ -110,7 +110,6 @@ export default function PeoplePage() {
   const [form, setForm] = useState({ email: '', role: 'member' })
   const [lookup, setLookup] = useState<UserLookupResponse | null>(null)
   const [lookupLoading, setLookupLoading] = useState(false)
-  const [currentWorkspaceRole, setCurrentWorkspaceRole] = useState('')
   const [inviteUrl, setInviteUrl] = useState('')
   const [inviteResults, setInviteResults] = useState<{ email: string; inviteUrl?: string; delivery?: string; error?: string }[]>([])
   const [saving, setSaving] = useState(false)
@@ -130,9 +129,6 @@ export default function PeoplePage() {
       ])
       setPeople(data ?? [])
       setInvitations(inviteData.invitations ?? [])
-      apiFetch<{ currentUserRole?: string }>('/api/v1/workspace')
-        .then(workspace => setCurrentWorkspaceRole(workspace.currentUserRole ?? ''))
-        .catch(() => setCurrentWorkspaceRole(''))
     } catch { /* ignore */ }
     finally { setLoading(false) }
   }, [])
@@ -212,9 +208,8 @@ export default function PeoplePage() {
     finally { setSaving(false) }
   }
 
-  const inviteRoleOptions = currentWorkspaceRole === 'owner'
-    ? ['owner', 'admin', 'member', 'guest']
-    : ['admin', 'member', 'guest']
+  const workspaceRoleOptions = ['admin', 'member', 'guest']
+  const inviteRoleOptions = workspaceRoleOptions
 
   async function revokeInvite(token: string) {
     setErr(null)
@@ -546,10 +541,10 @@ export default function PeoplePage() {
                   <select
                     value={accessWorkspaceRole}
                     onChange={e => setAccessWorkspaceRole(e.target.value)}
-                    disabled={accessEditing.role === 'owner' && currentWorkspaceRole !== 'owner'}
+                    disabled={accessEditing.role === 'owner'}
                     className={fieldCls}
                   >
-                    {(currentWorkspaceRole === 'owner' ? ['owner', 'admin', 'member', 'guest'] : accessEditing.role === 'owner' ? ['owner'] : ['admin', 'member', 'guest']).map(role => (
+                    {(accessEditing.role === 'owner' ? ['owner'] : workspaceRoleOptions).map(role => (
                       <option key={role} value={role}>{t(roleKey(role))}</option>
                     ))}
                   </select>
