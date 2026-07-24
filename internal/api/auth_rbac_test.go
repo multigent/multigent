@@ -381,6 +381,58 @@ func TestListUsersReturnsWorkspaceRole(t *testing.T) {
 	}
 }
 
+func TestWorkspaceAdminCanUpdateMemberScopedAccess(t *testing.T) {
+	s, workspaceID := newConnectionGrantPolicyServer(t)
+	if err := s.users.CreateUser("member2", "pass123", RoleMember, "Member 2", "member2@example.com", "", "", ""); err != nil {
+		t.Fatalf("create member: %v", err)
+	}
+	if err := s.controlDB.UpsertWorkspaceMember(workspaceID, "member2", WorkspaceRoleMember); err != nil {
+		t.Fatalf("workspace member: %v", err)
+	}
+
+	rec := httptest.NewRecorder()
+	req := providerTestRequest(http.MethodPut, "/api/v1/users/member2", "admin", map[string]any{
+		"projects": []map[string]string{{"project": "sample", "role": ProjectRoleManager}},
+		"agentGrants": []map[string]string{{
+			"project": "sample",
+			"agent":   "pm",
+			"role":    string(rbac.AgentRoleOwner),
+		}},
+	})
+	req.SetPathValue("username", "member2")
+	s.handleUpdateUser(rec, req)
+	if rec.Code != http.StatusOK {
+		t.Fatalf("workspace admin update status=%d body=%s", rec.Code, rec.Body.String())
+	}
+	u := s.users.GetUser("member2")
+	if len(u.Projects) != 1 || u.Projects[0].Role != ProjectRoleManager {
+		t.Fatalf("projects not updated: %#v", u.Projects)
+	}
+	if len(u.AgentGrants) != 1 || u.AgentGrants[0].Role != string(rbac.AgentRoleOwner) {
+		t.Fatalf("agent grants not updated: %#v", u.AgentGrants)
+	}
+}
+
+func TestWorkspaceAdminCannotUpdateSuperAdminScopedAccess(t *testing.T) {
+	s, workspaceID := newConnectionGrantPolicyServer(t)
+	if err := s.users.CreateUser("root-admin", "pass123", RoleAdmin, "Root Admin", "root-admin@example.com", "", "", ""); err != nil {
+		t.Fatalf("create root admin: %v", err)
+	}
+	if err := s.controlDB.UpsertWorkspaceMember(workspaceID, "root-admin", WorkspaceRoleOwner); err != nil {
+		t.Fatalf("workspace member: %v", err)
+	}
+
+	rec := httptest.NewRecorder()
+	req := providerTestRequest(http.MethodPut, "/api/v1/users/root-admin", "owner", map[string]any{
+		"projects": []map[string]string{{"project": "sample", "role": ProjectRoleManager}},
+	})
+	req.SetPathValue("username", "root-admin")
+	s.handleUpdateUser(rec, req)
+	if rec.Code != http.StatusForbidden {
+		t.Fatalf("workspace admin should not update super admin, status=%d body=%s", rec.Code, rec.Body.String())
+	}
+}
+
 func TestListUsersWorkspaceMemberCanReadSafeDirectory(t *testing.T) {
 	s, _ := newProviderHandlerTestServer(t)
 

@@ -1080,6 +1080,7 @@ func (s *Server) handleListUsers(w http.ResponseWriter, r *http.Request) {
 	type safeUser struct {
 		Username     string          `json:"username"`
 		Role         string          `json:"role"`
+		SystemRole   string          `json:"systemRole,omitempty"`
 		DisplayName  string          `json:"displayName,omitempty"`
 		Email        string          `json:"email,omitempty"`
 		Avatar       string          `json:"avatar,omitempty"`
@@ -1100,6 +1101,7 @@ func (s *Server) handleListUsers(w http.ResponseWriter, r *http.Request) {
 		row := safeUser{
 			Username:    u.Username,
 			Role:        member.Role,
+			SystemRole:  u.Role,
 			DisplayName: u.DisplayName,
 			Email:       u.Email,
 			Avatar:      u.Avatar,
@@ -1561,11 +1563,35 @@ func (s *Server) handleGetUser(w http.ResponseWriter, r *http.Request) {
 func (s *Server) handleUpdateUser(w http.ResponseWriter, r *http.Request) {
 	target := r.PathValue("username")
 	cur := s.currentUser(r)
-	isAdmin := cur.Role == RoleAdmin
+	workspaceID, _ := s.currentWorkspaceID()
+	isSystemAdmin := cur.Role == RoleAdmin
+	isWorkspaceAdmin := workspaceID != "" && s.canAdminWorkspace(r, workspaceID)
 	isSelf := cur.Username == target
-	if !isAdmin && !isSelf {
+	if !isSystemAdmin && !isWorkspaceAdmin && !isSelf {
 		s.jsonErrorCode(w, http.StatusForbidden, ErrCodeForbidden, "access denied")
 		return
+	}
+	targetUser := s.users.GetUser(target)
+	if targetUser == nil {
+		s.jsonErrorCode(w, http.StatusNotFound, ErrCodeUserNotFound, "user not found")
+		return
+	}
+	if isWorkspaceAdmin && !isSystemAdmin && !isSelf {
+		if s.controlDB == nil || workspaceID == "" {
+			s.jsonErrorCode(w, http.StatusForbidden, ErrCodeWorkspaceAccessRequired, "workspace access required")
+			return
+		}
+		if _, ok, err := s.controlDB.WorkspaceMember(workspaceID, target); err != nil {
+			s.serverError(w, err)
+			return
+		} else if !ok {
+			s.jsonErrorCode(w, http.StatusForbidden, ErrCodeWorkspaceAccessRequired, "target user is not a workspace member")
+			return
+		}
+		if targetUser.Role == RoleAdmin {
+			s.jsonErrorCode(w, http.StatusForbidden, ErrCodeForbidden, "super admin cannot be modified from workspace permissions")
+			return
+		}
 	}
 	var body struct {
 		Role        *string         `json:"role"`
@@ -1587,13 +1613,15 @@ func (s *Server) handleUpdateUser(w http.ResponseWriter, r *http.Request) {
 		s.jsonErrorCode(w, http.StatusBadRequest, ErrCodeValidationFailed, "password must be at least 6 characters")
 		return
 	}
-	if !isAdmin {
+	if !isSystemAdmin {
 		body.Role = nil
 		body.Email = nil
 		body.Phone = nil
 		body.Bio = nil
 		body.Disabled = nil
 		body.Password = nil
+	}
+	if !isSystemAdmin && !isWorkspaceAdmin {
 		body.Projects = nil
 		body.AgentGrants = nil
 	}

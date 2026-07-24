@@ -6,7 +6,7 @@ import { cn } from '../lib/cn'
 import { useFormatDateTime } from '../lib/format-datetime'
 
 type PersonRow = {
-  username: string; role: string; displayName?: string
+  username: string; role: string; systemRole?: string; displayName?: string
   email?: string; avatar?: string; bio?: string
   projects?: { project: string; role: string }[]
   agentGrants?: { project: string; agent: string; role: string }[]
@@ -116,6 +116,7 @@ export default function PeoplePage() {
   const [saving, setSaving] = useState(false)
   const [err, setErr] = useState<string | null>(null)
   const [accessEditing, setAccessEditing] = useState<PersonRow | null>(null)
+  const [accessWorkspaceRole, setAccessWorkspaceRole] = useState('member')
   const [accessProjects, setAccessProjects] = useState<{ project: string; role: string }[]>([])
   const [accessAgents, setAccessAgents] = useState<{ project: string; agent: string; role: string }[]>([])
   const [projectCatalog, setProjectCatalog] = useState<ProjectRow[]>([])
@@ -225,18 +226,28 @@ export default function PeoplePage() {
     }
   }
 
-  async function updateMemberRole(username: string, role: string) {
-    setErr(null)
-    try {
-      await apiPut(`/api/v1/users/${encodeURIComponent(username)}/workspace-role`, { role })
-      await refresh()
-    } catch (e) {
-      setErr(e instanceof Error ? e.message : String(e))
-    }
+  function isSuperAdmin(person: PersonRow): boolean {
+    return person.systemRole === 'admin'
+  }
+
+  function effectiveProjectRoleLabel(person: PersonRow): string {
+    if (isSuperAdmin(person)) return t('people.systemRole_super_admin')
+    return t(roleKey(person.role))
+  }
+
+  function permissionSummary(person: PersonRow): string {
+    if (isSuperAdmin(person)) return t('people.superAdminAccess')
+    const projects = person.projects?.length ?? 0
+    const agents = person.agentGrants?.length ?? 0
+    if (person.role === 'owner' || person.role === 'admin') return t('people.workspaceAdminAccess')
+    if (projects === 0 && agents === 0) return t('people.noScopedAccess')
+    return t('people.scopedAccessSummary', { projects, agents })
   }
 
   async function openAccessEditor(person: PersonRow) {
+    if (isSuperAdmin(person)) return
     setAccessEditing(person)
+    setAccessWorkspaceRole(person.role || 'member')
     setAccessProjects([...(person.projects ?? [])])
     setAccessAgents([...(person.agentGrants ?? [])])
     setErr(null)
@@ -258,6 +269,9 @@ export default function PeoplePage() {
     if (!accessEditing) return
     setSaving(true); setErr(null)
     try {
+      if (accessWorkspaceRole && accessWorkspaceRole !== accessEditing.role) {
+        await apiPut(`/api/v1/users/${encodeURIComponent(accessEditing.username)}/workspace-role`, { role: accessWorkspaceRole })
+      }
       await apiPut(`/api/v1/users/${encodeURIComponent(accessEditing.username)}`, {
         projects: accessProjects.filter(p => p.project.trim()).map(p => ({ project: p.project, role: p.role || 'viewer' })),
         agentGrants: accessAgents.filter(a => a.project.trim() && a.agent.trim()).map(a => ({ project: a.project, agent: a.agent, role: a.role || 'operator' })),
@@ -312,8 +326,7 @@ export default function PeoplePage() {
                 <th className="px-4 py-3">{t('people.columnUser')}</th>
                 <th className="px-4 py-3">{t('users.email')}</th>
                 <th className="px-4 py-3">{t('people.columnRole')}</th>
-                <th className="px-4 py-3">{t('people.columnProjects')}</th>
-                <th className="px-4 py-3">{t('people.columnAgents')}</th>
+                <th className="px-4 py-3">{t('people.columnPermissions')}</th>
                 <th className="px-4 py-3">{t('people.columnCreated')}</th>
                 <th className="px-4 py-3">{t('people.columnStatus')}</th>
                 <th className="px-4 py-3 text-right">{t('people.columnActions')}</th>
@@ -338,19 +351,16 @@ export default function PeoplePage() {
                   </td>
                   <td className="px-4 py-3 text-neutral-600 dark:text-zinc-400">{p.email || '-'}</td>
                   <td className="px-4 py-3">
-                    <select
-                      value={p.role}
-                      onChange={(e) => void updateMemberRole(p.username, e.target.value)}
-                      disabled={p.role === 'owner' && currentWorkspaceRole !== 'owner'}
-                      className="rounded-md border border-neutral-200 bg-white px-2 py-1 text-xs font-medium text-neutral-700 outline-none focus:border-sky-400 disabled:opacity-60 dark:border-zinc-700 dark:bg-zinc-900 dark:text-zinc-300 dark:[color-scheme:dark]"
-                    >
-                      {(currentWorkspaceRole === 'owner' ? ['owner', 'admin', 'member', 'guest'] : p.role === 'owner' ? ['owner'] : ['admin', 'member', 'guest']).map(role => (
-                        <option key={role} value={role}>{t(roleKey(role))}</option>
-                      ))}
-                    </select>
+                    <span className={cn(
+                      'rounded-full px-2 py-0.5 text-xs font-medium',
+                      isSuperAdmin(p)
+                        ? 'bg-violet-100 text-violet-700 dark:bg-violet-900/30 dark:text-violet-300'
+                        : 'bg-neutral-100 text-neutral-600 dark:bg-zinc-800 dark:text-zinc-300',
+                    )}>
+                      {effectiveProjectRoleLabel(p)}
+                    </span>
                   </td>
-                  <td className="px-4 py-3 text-neutral-600 dark:text-zinc-400">{p.projects?.length ?? 0}</td>
-                  <td className="px-4 py-3 text-neutral-600 dark:text-zinc-400">{p.agentGrants?.length ?? 0}</td>
+                  <td className="px-4 py-3 text-neutral-600 dark:text-zinc-400">{permissionSummary(p)}</td>
                   <td className="px-4 py-3 text-neutral-500 dark:text-zinc-500">{fmtDateTime(p.createdAt)}</td>
                   <td className="px-4 py-3">
                     <span className={cn('rounded-full px-2 py-0.5 text-xs font-medium', p.disabled ? 'bg-red-100 text-red-700 dark:bg-red-900/30 dark:text-red-300' : 'bg-emerald-100 text-emerald-700 dark:bg-emerald-900/30 dark:text-emerald-300')}>
@@ -358,9 +368,13 @@ export default function PeoplePage() {
                     </span>
                   </td>
                   <td className="px-4 py-3 text-right">
-                    <button type="button" onClick={() => void openAccessEditor(p)} className="rounded px-2 py-1 text-xs font-medium text-sky-700 hover:bg-sky-50 dark:text-sky-300 dark:hover:bg-sky-900/20">
-                      {t('people.manageAccess')}
-                    </button>
+                    {isSuperAdmin(p) ? (
+                      <span className="text-xs text-neutral-400 dark:text-zinc-500">{t('people.superAdminManaged')}</span>
+                    ) : (
+                      <button type="button" onClick={() => void openAccessEditor(p)} className="rounded px-2 py-1 text-xs font-medium text-sky-700 hover:bg-sky-50 dark:text-sky-300 dark:hover:bg-sky-900/20">
+                        {t('people.manageAccess')}
+                      </button>
+                    )}
                   </td>
                 </tr>
               ))}
@@ -527,12 +541,28 @@ export default function PeoplePage() {
             </div>
             <div className="max-h-[70vh] space-y-5 overflow-auto px-5 py-4">
               <section>
+                <label className="flex flex-col gap-1">
+                  <span className="text-sm font-semibold text-neutral-900 dark:text-zinc-100">{t('people.workspaceRole')}</span>
+                  <select
+                    value={accessWorkspaceRole}
+                    onChange={e => setAccessWorkspaceRole(e.target.value)}
+                    disabled={accessEditing.role === 'owner' && currentWorkspaceRole !== 'owner'}
+                    className={fieldCls}
+                  >
+                    {(currentWorkspaceRole === 'owner' ? ['owner', 'admin', 'member', 'guest'] : accessEditing.role === 'owner' ? ['owner'] : ['admin', 'member', 'guest']).map(role => (
+                      <option key={role} value={role}>{t(roleKey(role))}</option>
+                    ))}
+                  </select>
+                </label>
+              </section>
+              <section>
                 <div className="mb-2 flex items-center justify-between">
                   <h3 className="text-sm font-semibold text-neutral-900 dark:text-zinc-100">{t('people.projectAccess')}</h3>
                   <button type="button" onClick={addProjectGrant} disabled={projectCatalog.length === 0} className="rounded-lg border border-sky-600 bg-white px-3 py-1.5 text-xs font-medium text-sky-700 hover:bg-sky-50 disabled:opacity-50 dark:border-sky-500 dark:bg-zinc-900 dark:text-sky-400 dark:hover:bg-zinc-800">
                     {t('people.addProjectAccess')}
                   </button>
                 </div>
+                <p className="mb-2 text-xs text-neutral-500 dark:text-zinc-500">{t('people.projectAccessHint')}</p>
                 <div className="space-y-2">
                   {accessProjects.length === 0 ? (
                     <p className="rounded-lg border border-dashed border-neutral-200 py-4 text-center text-xs text-neutral-400 dark:border-zinc-700 dark:text-zinc-500">{t('people.noProjectAccess')}</p>
