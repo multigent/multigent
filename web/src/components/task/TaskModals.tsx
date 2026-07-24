@@ -436,7 +436,7 @@ export function TaskDetailModal({ task, onClose, onEdit, onMutated, canEdit = tr
                     setAssigneeDraft(task.assignee || `${task.project}/${task.agent}`)
                     setAssigneeEditing(true)
                   }}
-                  className="max-w-full truncate rounded-md px-1.5 py-0.5 text-left text-neutral-800 transition-colors enabled:hover:bg-neutral-100 enabled:hover:text-sky-700 disabled:cursor-default dark:text-zinc-200 dark:enabled:hover:bg-zinc-800 dark:enabled:hover:text-sky-400"
+                  className="-ml-1 block max-w-full truncate rounded-md px-1 py-0.5 text-left text-neutral-800 transition-colors enabled:hover:bg-neutral-100 enabled:hover:text-sky-700 disabled:cursor-default dark:text-zinc-200 dark:enabled:hover:bg-zinc-800 dark:enabled:hover:text-sky-400"
                 >
                   {compactTaskIdentityLabel(task.assignee || `${task.project}/${task.agent}`, task.assigneeLabel)}
                 </button>
