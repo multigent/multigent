@@ -14,6 +14,10 @@ on:
         description: "Publish npm wrapper package"
         required: false
         default: "false"
+      build_runtime_image:
+        description: "Build runtime-base image: auto, true, or false"
+        required: false
+        default: "auto"
 
 permissions:
   contents: write
@@ -29,6 +33,7 @@ jobs:
     outputs:
       tag_name: ${{ steps.meta.outputs.tag_name }}
       is_stable: ${{ steps.meta.outputs.is_stable }}
+      build_runtime_image: ${{ steps.runtime_changes.outputs.build_runtime_image }}
     steps:
       - name: Checkout
         uses: actions/checkout@v4
@@ -55,6 +60,36 @@ jobs:
             echo "is_stable=false" >> "$GITHUB_OUTPUT"
           else
             echo "is_stable=true" >> "$GITHUB_OUTPUT"
+          fi
+
+      - name: Detect runtime-base changes
+        id: runtime_changes
+        shell: bash
+        run: |
+          mode="${{ github.event.inputs.build_runtime_image || 'auto' }}"
+          if [[ "$mode" == "true" ]]; then
+            echo "build_runtime_image=true" >> "$GITHUB_OUTPUT"
+            exit 0
+          fi
+          if [[ "$mode" == "false" ]]; then
+            echo "build_runtime_image=false" >> "$GITHUB_OUTPUT"
+            exit 0
+          fi
+
+          tag="${{ steps.meta.outputs.tag_name }}"
+          previous="$(git tag --sort=-v:refname | grep -E '^v[0-9]+\.[0-9]+\.[0-9]+(-[0-9A-Za-z.-]+)?$' | grep -v "^${tag}$" | head -n 1 || true)"
+          if [[ -z "$previous" ]]; then
+            echo "No previous release tag found; building runtime-base."
+            echo "build_runtime_image=true" >> "$GITHUB_OUTPUT"
+            exit 0
+          fi
+
+          if git diff --quiet "$previous" "$tag" -- docker/runtime-base; then
+            echo "runtime-base unchanged since $previous; skipping runtime image build."
+            echo "build_runtime_image=false" >> "$GITHUB_OUTPUT"
+          else
+            echo "runtime-base changed since $previous; building runtime image."
+            echo "build_runtime_image=true" >> "$GITHUB_OUTPUT"
           fi
 
       - name: Setup Go
@@ -146,6 +181,7 @@ jobs:
 
   runtime-images:
     needs: verify
+    if: needs.verify.outputs.build_runtime_image == 'true'
     runs-on: ubuntu-latest
     strategy:
       fail-fast: false
