@@ -662,7 +662,19 @@
     "createAccountTitle": "アカウント作成",
     "createAccountDesc": "メールと初期パスワードでアカウントを作成し、現在のワークスペースに追加します。",
     "createAccount": "アカウント作成",
-    "userCreated": "アカウントを作成しました"
+    "userCreated": "アカウントを作成しました",
+    "updatesTitle": "システム更新",
+    "updatesIntro": "この Multigent インスタンスのリリースチャンネル、最新バージョン、更新コマンドを確認します。",
+    "currentVersion": "現在のバージョン",
+    "latestVersion": "最新バージョン",
+    "updateUnknown": "不明",
+    "releaseChannel": "リリースチャンネル",
+    "checkingUpdates": "更新を確認しています…",
+    "updateAvailableDetail": "新しいバージョンがあります: {{current}} → {{latest}}。",
+    "updateCommand": "更新コマンド",
+    "upToDate": "このインスタンスは最新です。",
+    "checkUpdates": "更新を確認",
+    "releaseNotes": "リリースノート"
   },
   "account": {
     "title": "アカウント設定",

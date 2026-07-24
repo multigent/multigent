@@ -8,6 +8,7 @@ import { CommandPalette } from './CommandPalette'
 import { PageTabsProvider } from '../../lib/page-tabs'
 import { recordVisit } from '../../lib/recent-visits'
 import { apiFetch } from '../../lib/api'
+import { isSystemAdmin, useAuth } from '../../lib/auth'
 import {
   navKeyFromPath,
   projectIdFromPath,
@@ -181,6 +182,7 @@ const ASSISTANT_HIDDEN_KEY = 'assistant-hidden'
 
 export function AppShell() {
   const { t } = useTranslation()
+  const { user } = useAuth()
   const { pathname } = useLocation()
   const crumbs = useBreadcrumbs()
   const [searchOpen, setSearchOpen] = useState(false)
@@ -198,10 +200,14 @@ export function AppShell() {
       .then((d) => setAppVersion(d.version || 'dev'))
       .catch(() => setAppVersion('dev'))
 
-    apiFetch<{ hasUpdate: boolean; latestVersion?: string; channel?: string; updateCommand?: string }>('/api/v1/check-update')
-      .then((d) => setUpdateInfo(d))
-      .catch(() => {})
-  }, [])
+    if (isSystemAdmin(user)) {
+      apiFetch<{ hasUpdate: boolean; latestVersion?: string; channel?: string; updateCommand?: string }>('/api/v1/check-update')
+        .then((d) => setUpdateInfo(d))
+        .catch(() => {})
+    } else {
+      setUpdateInfo(null)
+    }
+  }, [user])
 
   useEffect(() => {
     let cancelled = false
@@ -299,7 +305,7 @@ export function AppShell() {
                 <span className="text-xs font-medium text-neutral-400 dark:text-zinc-500">
                   multigent <span className="font-mono text-neutral-300 dark:text-zinc-500">{appVersion}</span>
                 </span>
-                {updateInfo?.hasUpdate && updateInfo.latestVersion && (
+                {isSystemAdmin(user) && updateInfo?.hasUpdate && updateInfo.latestVersion && (
                   <a
                     href={`https://github.com/multigent/multigent/releases/tag/${updateInfo.latestVersion}`}
                     target="_blank"

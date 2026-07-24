@@ -525,7 +525,10 @@ func (s *Server) handleHealth(w http.ResponseWriter, _ *http.Request) {
 	_ = json.NewEncoder(w).Encode(map[string]any{"ok": true, "version": v})
 }
 
-func (s *Server) handleCheckUpdate(w http.ResponseWriter, _ *http.Request) {
+func (s *Server) handleCheckUpdate(w http.ResponseWriter, r *http.Request) {
+	if !s.requireAdmin(w, r) {
+		return
+	}
 	result := map[string]any{
 		"currentVersion": s.version,
 		"hasUpdate":      false,

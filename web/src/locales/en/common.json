@@ -662,7 +662,19 @@
     "createAccountTitle": "Create account",
     "createAccountDesc": "Create an account with email and an initial password, and add it to the current workspace.",
     "createAccount": "Create account",
-    "userCreated": "Account created"
+    "userCreated": "Account created",
+    "updatesTitle": "System Updates",
+    "updatesIntro": "Check the Multigent release channel and update command for this instance.",
+    "currentVersion": "Current version",
+    "latestVersion": "Latest version",
+    "updateUnknown": "Unknown",
+    "releaseChannel": "Release channel",
+    "checkingUpdates": "Checking for updates…",
+    "updateAvailableDetail": "A new version is available: {{current}} → {{latest}}.",
+    "updateCommand": "Update command",
+    "upToDate": "This instance is up to date.",
+    "checkUpdates": "Check updates",
+    "releaseNotes": "Release notes"
   },
   "account": {
     "title": "Account Settings",

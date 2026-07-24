@@ -662,7 +662,19 @@
     "createAccountTitle": "建立帳號",
     "createAccountDesc": "使用電郵和初始密碼建立帳號，並加入目前工作區。",
     "createAccount": "建立帳號",
-    "userCreated": "帳號已建立"
+    "userCreated": "帳號已建立",
+    "updatesTitle": "系統更新",
+    "updatesIntro": "檢查目前 Multigent 實例的發布通道、最新版本和更新命令。",
+    "currentVersion": "目前版本",
+    "latestVersion": "最新版本",
+    "updateUnknown": "未知",
+    "releaseChannel": "發布通道",
+    "checkingUpdates": "正在檢查更新…",
+    "updateAvailableDetail": "發現新版本：{{current}} → {{latest}}。",
+    "updateCommand": "更新命令",
+    "upToDate": "目前實例已是最新版本。",
+    "checkUpdates": "檢查更新",
+    "releaseNotes": "版本說明"
   },
   "account": {
     "title": "帳號設定",

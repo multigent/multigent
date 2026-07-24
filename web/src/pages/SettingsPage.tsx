@@ -45,6 +45,112 @@ type AuthSettings = {
   envSignupDisabled?: boolean
 }
 
+type UpdateInfo = {
+  currentVersion?: string
+  hasUpdate: boolean
+  latestVersion?: string
+  channel?: string
+  updateCommand?: string
+  releaseNotes?: string
+}
+
+function SystemUpdatesSection() {
+  const { t } = useTranslation()
+  const [info, setInfo] = useState<UpdateInfo | null>(null)
+  const [loading, setLoading] = useState(true)
+  const [err, setErr] = useState('')
+
+  const refresh = useCallback(async () => {
+    setLoading(true)
+    setErr('')
+    try {
+      const data = await apiFetch<UpdateInfo>('/api/v1/check-update')
+      setInfo(data)
+    } catch (e) {
+      setErr(e instanceof Error ? e.message : String(e))
+    } finally {
+      setLoading(false)
+    }
+  }, [])
+
+  useEffect(() => { void refresh() }, [refresh])
+
+  const latest = info?.latestVersion || ''
+  const current = info?.currentVersion || 'dev'
+  const releaseURL = latest ? `https://github.com/multigent/multigent/releases/tag/${latest}` : 'https://github.com/multigent/multigent/releases'
+
+  return (
+    <section className="rounded-xl border border-neutral-200/80 bg-white p-5 dark:border-zinc-700/60 dark:bg-zinc-900/40">
+      <div className="flex items-start justify-between gap-4 border-b border-neutral-100 pb-4 dark:border-zinc-800">
+        <div>
+          <h3 className="text-base font-semibold text-neutral-900 dark:text-zinc-100">{t('settings.updatesTitle')}</h3>
+          <p className="mt-1 text-xs leading-5 text-neutral-500 dark:text-zinc-400">{t('settings.updatesIntro')}</p>
+        </div>
+        <span className="rounded-full bg-amber-50 px-2.5 py-1 text-xs font-medium text-amber-700 dark:bg-amber-900/20 dark:text-amber-300">
+          {t('settings.superAdminOnly')}
+        </span>
+      </div>
+
+      <div className="grid gap-3 pt-4 md:grid-cols-3">
+        <div className="rounded-lg border border-neutral-200/80 bg-neutral-50/40 p-4 dark:border-zinc-700/60 dark:bg-zinc-800/30">
+          <p className="text-xs font-medium text-neutral-500 dark:text-zinc-400">{t('settings.currentVersion')}</p>
+          <p className="mt-1 font-mono text-sm font-semibold text-neutral-900 dark:text-zinc-100">{current}</p>
+        </div>
+        <div className="rounded-lg border border-neutral-200/80 bg-neutral-50/40 p-4 dark:border-zinc-700/60 dark:bg-zinc-800/30">
+          <p className="text-xs font-medium text-neutral-500 dark:text-zinc-400">{t('settings.latestVersion')}</p>
+          <p className="mt-1 font-mono text-sm font-semibold text-neutral-900 dark:text-zinc-100">{loading ? t('forms.loading') : latest || t('settings.updateUnknown')}</p>
+        </div>
+        <div className="rounded-lg border border-neutral-200/80 bg-neutral-50/40 p-4 dark:border-zinc-700/60 dark:bg-zinc-800/30">
+          <p className="text-xs font-medium text-neutral-500 dark:text-zinc-400">{t('settings.releaseChannel')}</p>
+          <p className="mt-1 font-mono text-sm font-semibold text-neutral-900 dark:text-zinc-100">{info?.channel || 'release'}</p>
+        </div>
+      </div>
+
+      <div className="mt-4 rounded-lg border border-neutral-200/80 bg-neutral-50/40 p-4 dark:border-zinc-700/60 dark:bg-zinc-800/30">
+        {loading ? (
+          <p className="text-sm text-neutral-500 dark:text-zinc-400">{t('settings.checkingUpdates')}</p>
+        ) : info?.hasUpdate ? (
+          <div className="space-y-3">
+            <p className="text-sm font-medium text-sky-700 dark:text-sky-300">
+              {t('settings.updateAvailableDetail', { current, latest })}
+            </p>
+            {info.updateCommand && (
+              <div>
+                <p className="mb-1 text-xs font-medium text-neutral-500 dark:text-zinc-400">{t('settings.updateCommand')}</p>
+                <code className="block overflow-x-auto rounded-md bg-white px-3 py-2 font-mono text-xs text-neutral-700 dark:bg-zinc-950 dark:text-zinc-300">
+                  {info.updateCommand}
+                </code>
+              </div>
+            )}
+          </div>
+        ) : (
+          <p className="text-sm text-neutral-600 dark:text-zinc-300">{t('settings.upToDate')}</p>
+        )}
+        {err && <p className="mt-3 text-sm text-red-600 dark:text-red-400">{err}</p>}
+      </div>
+
+      <div className="mt-4 flex flex-wrap gap-2">
+        <button
+          type="button"
+          onClick={() => void refresh()}
+          disabled={loading}
+          className="rounded-lg border border-sky-600 bg-white px-3 py-2 text-sm font-medium text-sky-700 hover:bg-sky-50 disabled:opacity-50 dark:border-sky-500 dark:bg-zinc-900 dark:text-sky-400 dark:hover:bg-zinc-800"
+        >
+          {t('settings.checkUpdates')}
+        </button>
+        <a
+          href={releaseURL}
+          target="_blank"
+          rel="noopener noreferrer"
+          className="rounded-lg border border-neutral-200 bg-white px-3 py-2 text-sm font-medium text-neutral-600 hover:bg-neutral-50 dark:border-zinc-700 dark:bg-zinc-900 dark:text-zinc-300 dark:hover:bg-zinc-800"
+        >
+          {t('settings.releaseNotes')}
+        </a>
+      </div>
+    </section>
+  )
+}
+
 function AccessControlSection() {
   const { t } = useTranslation()
   const [settings, setSettings] = useState<AuthSettings | null>(null)
@@ -2255,6 +2361,9 @@ export default function SettingsPage() {
       <div className="space-y-5">
         {/* RBAC Model (admin only) */}
         {canAdmin && <RBACSection />}
+
+        {/* System updates (super admin only) */}
+        {user?.role === 'admin' && <SystemUpdatesSection />}
 
         {/* Instance access controls (super admin only) */}
         {user?.role === 'admin' && <AccessControlSection />}
