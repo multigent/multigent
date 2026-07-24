@@ -1271,6 +1271,17 @@ func (s *Server) handleCreateInvitation(w http.ResponseWriter, r *http.Request) 
 	if smtpEnabled {
 		delivery = "smtp"
 	}
+	workspaceName := "Multigent workspace"
+	if ws, ok, err := s.controlDB.WorkspaceByID(workspaceID); err == nil && ok && strings.TrimSpace(ws.Name) != "" {
+		workspaceName = strings.TrimSpace(ws.Name)
+	}
+	inviterName := strings.TrimSpace(cur.DisplayName)
+	if inviterName == "" {
+		inviterName = strings.TrimSpace(cur.Email)
+	}
+	if inviterName == "" {
+		inviterName = strings.TrimSpace(cur.Username)
+	}
 	for _, email := range emails {
 		inv, err := s.users.CreateInvitation(workspaceID, email, role, strings.TrimSpace(body.DisplayName), cur.Username, body.Projects, body.LinkedAgents)
 		if err != nil {
@@ -1280,7 +1291,15 @@ func (s *Server) handleCreateInvitation(w http.ResponseWriter, r *http.Request) 
 		inviteURL := s.invitationURL(r, inv.Token)
 		result := invitationResult{Invitation: inv, InviteURL: inviteURL, Delivery: delivery}
 		if smtpEnabled {
-			if err := smtpCfg.sendInvitation(inv.Email, inv.DisplayName, inviteURL); err != nil {
+			if err := smtpCfg.sendInvitation(invitationEmailData{
+				To:            inv.Email,
+				DisplayName:   inv.DisplayName,
+				InviteURL:     inviteURL,
+				WorkspaceName: workspaceName,
+				InviterName:   inviterName,
+				ExpiresAt:     inv.ExpiresAt,
+				Locale:        r.Header.Get("Accept-Language"),
+			}); err != nil {
 				result.Delivery = "smtp_failed"
 				errors = append(errors, invitationError{Email: email, Error: "invitation created, but email delivery failed: " + err.Error()})
 			}
