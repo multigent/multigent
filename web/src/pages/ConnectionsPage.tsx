@@ -236,7 +236,7 @@ export default function ConnectionsPage() {
           <h1 className="text-xl font-semibold text-neutral-900 dark:text-zinc-100">{t('connections.title')}</h1>
           <p className="mt-0.5 text-sm text-neutral-500 dark:text-zinc-500">{t('connections.subtitle')}</p>
         </div>
-        {customMCPProvider && (
+        {customMCPProvider && isWorkspaceAdmin && (
           <button type="button" onClick={() => setCreatingProvider(customMCPProviderID)} className={primaryOutlineButton}>
             {t('connections.newMCPTool')}
           </button>
@@ -308,7 +308,6 @@ export default function ConnectionsPage() {
                     provider={providerForCustomMCPConnection(customMCPProvider, connection)}
                     connection={connection}
                     isWorkspaceAdmin={isWorkspaceAdmin}
-                    currentUsername={user?.username ?? ''}
                     testResults={testResults}
                     onConfigure={() => setCreatingProvider(customMCPProviderID)}
                     onEdit={setEditing}
@@ -331,7 +330,6 @@ export default function ConnectionsPage() {
                     connection={primaryConnectionForProvider(connections, provider.provider)}
                     oauthConfig={oauthConfigs.find(config => config.provider === provider.provider)}
                     isWorkspaceAdmin={isWorkspaceAdmin}
-                    currentUsername={user?.username ?? ''}
                     testResults={testResults}
                     onConfigure={() => setCreatingProvider(provider.provider)}
                     onEdit={setEditing}
@@ -408,7 +406,6 @@ function ExternalToolCard({
   connection,
   oauthConfig,
   isWorkspaceAdmin,
-  currentUsername,
   testResults,
   onConfigure,
   onEdit,
@@ -417,7 +414,6 @@ function ExternalToolCard({
   connection?: Connection
   oauthConfig?: OAuthClientConfig
   isWorkspaceAdmin: boolean
-  currentUsername: string
   testResults: Record<string, { loading?: boolean; ok?: boolean; message?: string }>
   onConfigure: () => void
   onEdit: (connection: Connection) => void
@@ -428,8 +424,8 @@ function ExternalToolCard({
   const oauthSupported = provider.authTypes.includes('oauth2')
   const staticAuthTypes = provider.authTypes.filter(type => type !== 'oauth2')
   const oauthAvailable = oauthSupported && oauthConfig?.configured === true
-  const canConfigure = !provider.comingSoon && (staticAuthTypes.length > 0 || oauthAvailable)
-  const canManageConnection = connection && (connection.ownerType === 'workspace' ? isWorkspaceAdmin : connection.ownerId === currentUsername)
+  const canConfigure = isWorkspaceAdmin && !provider.comingSoon && (staticAuthTypes.length > 0 || oauthAvailable)
+  const canManageConnection = Boolean(connection && isWorkspaceAdmin)
   const statusLabel = provider.comingSoon
     ? t('connections.comingSoon')
     : connection
@@ -459,9 +455,11 @@ function ExternalToolCard({
             <p className="mt-2 line-clamp-2 text-sm text-neutral-500 dark:text-zinc-400">{providerDescription(provider, t)}</p>
           </div>
         </div>
-        <button type="button" onClick={() => connection && canManageConnection ? onEdit(connection) : onConfigure()} disabled={connection ? !canManageConnection : !canConfigure} className={cn(primaryOutlineButton, 'shrink-0 justify-center disabled:cursor-not-allowed disabled:opacity-50')}>
-          {connection ? t('connections.manageConnection') : t('connections.configureTool')}
-        </button>
+        {(canManageConnection || (!connection && canConfigure)) && (
+          <button type="button" onClick={() => connection ? onEdit(connection) : onConfigure()} className={cn(primaryOutlineButton, 'shrink-0 justify-center')}>
+            {connection ? t('connections.manageConnection') : t('connections.configureTool')}
+          </button>
+        )}
       </div>
       <div className="mt-4 grid gap-3 sm:grid-cols-3">
         <ToolStat label={t('connections.authMethods')} value={formatAuthTypes(provider.authTypes, oauthAvailable, isWorkspaceAdmin, t)} />

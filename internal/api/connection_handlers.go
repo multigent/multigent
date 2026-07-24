@@ -162,6 +162,10 @@ func (s *Server) handleCreateConnection(w http.ResponseWriter, r *http.Request) 
 	if !ok {
 		return
 	}
+	if !s.canAdminWorkspace(r, workspaceID) {
+		s.jsonErrorCode(w, http.StatusForbidden, ErrCodeWorkspaceAdminRequired, "workspace admin access required")
+		return
+	}
 	cur := s.currentUser(r)
 	if cur == nil || cur.Username == "" || cur.Username == "apikey" {
 		s.jsonErrorCode(w, http.StatusForbidden, ErrCodeAuthenticatedUserRequired, "authenticated user required")
@@ -200,7 +204,7 @@ func (s *Server) handleCreateConnection(w http.ResponseWriter, r *http.Request) 
 	}
 	ownerType := strings.TrimSpace(body.OwnerType)
 	if ownerType == "" {
-		ownerType = ConnectionOwnerUser
+		ownerType = ConnectionOwnerWorkspace
 	}
 	if ownerType != ConnectionOwnerWorkspace && ownerType != ConnectionOwnerUser {
 		s.jsonErrorCode(w, http.StatusBadRequest, ErrCodeValidationFailed, "ownerType must be workspace or user")
@@ -290,6 +294,10 @@ func (s *Server) handleConnectorProviderSetupBegin(w http.ResponseWriter, r *htt
 	if !ok {
 		return
 	}
+	if !s.canAdminWorkspace(r, workspaceID) {
+		s.jsonErrorCode(w, http.StatusForbidden, ErrCodeWorkspaceAdminRequired, "workspace admin access required")
+		return
+	}
 	cur := s.currentUser(r)
 	if cur == nil || cur.Username == "" || cur.Username == "apikey" {
 		s.jsonErrorCode(w, http.StatusForbidden, ErrCodeAuthenticatedUserRequired, "authenticated user required")
@@ -343,6 +351,10 @@ func (s *Server) handleConnectorProviderSetupBegin(w http.ResponseWriter, r *htt
 func (s *Server) handleConnectorProviderSetupPoll(w http.ResponseWriter, r *http.Request) {
 	workspaceID, ok := s.connectionWorkspace(w, r)
 	if !ok {
+		return
+	}
+	if !s.canAdminWorkspace(r, workspaceID) {
+		s.jsonErrorCode(w, http.StatusForbidden, ErrCodeWorkspaceAdminRequired, "workspace admin access required")
 		return
 	}
 	cur := s.currentUser(r)
@@ -546,16 +558,8 @@ func (s *Server) saveConnectorProviderSetupConnection(r *http.Request, workspace
 	if err != nil {
 		return controldb.Connection{}, err
 	}
-	cur := s.currentUser(r)
-	ownerType := ConnectionOwnerUser
-	ownerID := ""
-	if cur != nil {
-		ownerID = cur.Username
-	}
-	if s.canAdminWorkspace(r, workspaceID) {
-		ownerType = ConnectionOwnerWorkspace
-		ownerID = workspaceID
-	}
+	ownerType := ConnectionOwnerWorkspace
+	ownerID := workspaceID
 	connectionName := "default"
 	now := time.Now().UTC().Format(time.RFC3339)
 	connectionID := newConnectionID("conn")
