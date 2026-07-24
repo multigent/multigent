@@ -63,7 +63,7 @@ type modelAuthCodeBody struct {
 }
 
 func (s *Server) handleCodexDeviceAuthBegin(w http.ResponseWriter, r *http.Request) {
-	workspaceID, err := s.modelProviderWorkspaceMember(w, r)
+	workspaceID, err := s.modelProviderWorkspaceAdmin(w, r)
 	if err != nil {
 		return
 	}
@@ -244,7 +244,7 @@ func (s *Server) handleCodexDeviceAuthPoll(w http.ResponseWriter, r *http.Reques
 }
 
 func (s *Server) handleCLIBrowserAuthBegin(w http.ResponseWriter, r *http.Request) {
-	workspaceID, err := s.modelProviderWorkspaceMember(w, r)
+	workspaceID, err := s.modelProviderWorkspaceAdmin(w, r)
 	if err != nil {
 		return
 	}

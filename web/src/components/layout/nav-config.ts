@@ -79,7 +79,7 @@ export const workspaceNav: NavItem[] = [
   { to: '/docs', navKey: 'docs', icon: BookOpen, activePrefix: '/docs' },
   { to: '/files', navKey: 'files', icon: FolderOpen, activePrefix: '/files' },
   { to: '/audit', navKey: 'audit', icon: ShieldCheck, activePrefix: '/audit', adminOnly: true },
-  { to: '/settings', navKey: 'settings', icon: Settings, activePrefix: '/settings' },
+  { to: '/settings', navKey: 'settings', icon: Settings, activePrefix: '/settings', adminOnly: true },
 ]
 
 export const projectSubNav: ProjectNavItem[] = [

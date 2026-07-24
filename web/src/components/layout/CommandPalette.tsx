@@ -115,7 +115,7 @@ export function CommandPalette({
       { id: 'nav-skills', label: t('nav.skills'), group: t('search.groupNav'), icon: Puzzle, to: '/skills' },
       { id: 'nav-audit', label: t('nav.audit'), group: t('search.groupNav'), icon: ShieldCheck, to: '/audit' },
       { id: 'nav-settings', label: t('nav.settings'), group: t('search.groupNav'), icon: Settings, to: '/settings' },
-    ].filter(item => canAdmin || !['nav-overview', 'nav-teams', 'nav-playbooks', 'nav-audit', 'nav-skills'].includes(item.id))
+    ].filter(item => canAdmin || !['nav-overview', 'nav-teams', 'nav-playbooks', 'nav-audit', 'nav-skills', 'nav-settings'].includes(item.id))
 
     const proj: SearchItem[] = projects.flatMap((p) => {
       const base = `/projects/${encodeURIComponent(p.name)}`

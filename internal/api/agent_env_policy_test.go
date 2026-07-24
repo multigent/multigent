@@ -167,8 +167,8 @@ func TestPutAgentEnvRestrictsPersonalModelProviders(t *testing.T) {
 	})
 	rec = httptest.NewRecorder()
 	s.handlePutAgentEnv(rec, req)
-	if rec.Code != http.StatusOK {
-		t.Fatalf("owner linked agent bind status=%d body=%s", rec.Code, rec.Body.String())
+	if rec.Code != http.StatusForbidden {
+		t.Fatalf("owner should not bind personal provider status=%d body=%s", rec.Code, rec.Body.String())
 	}
 
 	req = agentEnvPolicyRequest(http.MethodPut, "/api/v1/projects/sample/agents/backend/env", "owner", "sample", "backend", agentEnvBody{

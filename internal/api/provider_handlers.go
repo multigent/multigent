@@ -72,13 +72,6 @@ func (s *Server) handleListProviders(w http.ResponseWriter, r *http.Request) {
 	if !s.checkCurrentWorkspaceAccess(w, r) {
 		return
 	}
-	workspaceID, err := s.currentWorkspaceID()
-	if err != nil {
-		s.serverError(w, err)
-		return
-	}
-	cur := s.currentUser(r)
-	isAdmin := s.canAdminWorkspace(r, workspaceID)
 	project := strings.TrimSpace(r.URL.Query().Get("project"))
 	agent := strings.TrimSpace(r.URL.Query().Get("agent"))
 	agentScoped := project != "" || agent != ""
@@ -107,7 +100,7 @@ func (s *Server) handleListProviders(w http.ResponseWriter, r *http.Request) {
 			if !s.canUseModelProviderForAgent(r, p, project, agent) {
 				continue
 			}
-		} else if !canViewModelProvider(cur, isAdmin, p) {
+		} else if !canViewModelProvider(p) {
 			continue
 		}
 		out = append(out, providerToJSON(p))
@@ -116,7 +109,7 @@ func (s *Server) handleListProviders(w http.ResponseWriter, r *http.Request) {
 }
 
 func (s *Server) handleAddProvider(w http.ResponseWriter, r *http.Request) {
-	workspaceID, err := s.modelProviderWorkspaceMember(w, r)
+	workspaceID, err := s.modelProviderWorkspaceAdmin(w, r)
 	if err != nil {
 		return
 	}
@@ -151,7 +144,7 @@ func (s *Server) handleAddProvider(w http.ResponseWriter, r *http.Request) {
 }
 
 func (s *Server) handleUpdateProvider(w http.ResponseWriter, r *http.Request) {
-	workspaceID, err := s.modelProviderWorkspaceMember(w, r)
+	workspaceID, err := s.modelProviderWorkspaceAdmin(w, r)
 	if err != nil {
 		return
 	}
@@ -199,7 +192,7 @@ func (s *Server) handleUpdateProvider(w http.ResponseWriter, r *http.Request) {
 }
 
 func (s *Server) handleDeleteProvider(w http.ResponseWriter, r *http.Request) {
-	workspaceID, err := s.modelProviderWorkspaceMember(w, r)
+	workspaceID, err := s.modelProviderWorkspaceAdmin(w, r)
 	if err != nil {
 		return
 	}
@@ -245,7 +238,7 @@ func (s *Server) handleDeleteProvider(w http.ResponseWriter, r *http.Request) {
 }
 
 func (s *Server) handleListCCSwitchProviders(w http.ResponseWriter, r *http.Request) {
-	if !s.checkCurrentWorkspaceAccess(w, r) {
+	if !s.checkCurrentWorkspaceAdmin(w, r) {
 		return
 	}
 	rows, dbPath, err := listCCSwitchProviderRows()
@@ -283,7 +276,7 @@ func (s *Server) handleListCCSwitchProviders(w http.ResponseWriter, r *http.Requ
 }
 
 func (s *Server) handleImportCCSwitchProviders(w http.ResponseWriter, r *http.Request) {
-	workspaceID, err := s.modelProviderWorkspaceMember(w, r)
+	workspaceID, err := s.modelProviderWorkspaceAdmin(w, r)
 	if err != nil {
 		return
 	}
@@ -411,45 +404,32 @@ func (s *Server) modelProviderWorkspaceMember(w http.ResponseWriter, r *http.Req
 	return workspaceID, nil
 }
 
-func (s *Server) prepareNewModelProvider(w http.ResponseWriter, r *http.Request, workspaceID string, p *entity.APIProvider) bool {
-	ownerType := strings.TrimSpace(p.OwnerType)
-	if ownerType == "" {
-		if s.canAdminWorkspace(r, workspaceID) {
-			ownerType = ConnectionOwnerWorkspace
-		} else {
-			ownerType = ConnectionOwnerUser
-		}
+func (s *Server) modelProviderWorkspaceAdmin(w http.ResponseWriter, r *http.Request) (string, error) {
+	if !s.checkCurrentWorkspaceAdmin(w, r) {
+		return "", http.ErrAbortHandler
 	}
-	cur := s.currentUser(r)
-	switch ownerType {
-	case ConnectionOwnerWorkspace:
-		if !s.canAdminWorkspace(r, workspaceID) {
-			s.jsonError(w, http.StatusForbidden, "workspace admin access required")
-			return false
-		}
-		p.OwnerType = ConnectionOwnerWorkspace
-		p.OwnerID = workspaceID
-		return true
-	case ConnectionOwnerUser:
-		if cur == nil || cur.Username == "" {
-			s.jsonError(w, http.StatusForbidden, "authenticated user required")
-			return false
-		}
-		p.OwnerType = ConnectionOwnerUser
-		p.OwnerID = cur.Username
-		return true
-	default:
-		s.jsonError(w, http.StatusBadRequest, "ownerType must be workspace or user")
-		return false
+	workspaceID, err := s.currentWorkspaceID()
+	if err != nil {
+		s.serverError(w, err)
+		return "", err
 	}
+	return workspaceID, nil
 }
 
-func canViewModelProvider(cur *userRecord, isAdmin bool, p entity.APIProvider) bool {
+func (s *Server) prepareNewModelProvider(w http.ResponseWriter, r *http.Request, workspaceID string, p *entity.APIProvider) bool {
+	if !s.canAdminWorkspace(r, workspaceID) {
+		s.jsonError(w, http.StatusForbidden, "workspace admin access required")
+		return false
+	}
+	p.OwnerType = ConnectionOwnerWorkspace
+	p.OwnerID = workspaceID
+	return true
+}
+
+func canViewModelProvider(p entity.APIProvider) bool {
 	switch p.OwnerType {
 	case "", ConnectionOwnerWorkspace:
 		return true
-	case ConnectionOwnerUser:
-		return isAdmin || (cur != nil && p.OwnerID == cur.Username)
 	default:
 		return false
 	}
@@ -459,9 +439,6 @@ func (s *Server) canManageModelProvider(r *http.Request, p entity.APIProvider) b
 	switch p.OwnerType {
 	case "", ConnectionOwnerWorkspace:
 		return s.canAdminWorkspace(r, p.OwnerID)
-	case ConnectionOwnerUser:
-		cur := s.currentUser(r)
-		return cur != nil && cur.Username != "" && p.OwnerID == cur.Username
 	default:
 		return false
 	}

@@ -165,7 +165,7 @@ function AuthenticatedRoutes() {
         {canAdmin && <Route path="skills" element={<SkillsPage />} />}
         <Route path="docs/*" element={<DocsPage />} />
         <Route path="files" element={<FilesPage />} />
-        <Route path="settings" element={<SettingsPage />} />
+        {canAdmin && <Route path="settings" element={<SettingsPage />} />}
         <Route path="account" element={<AccountPage />} />
         <Route path="*" element={<Navigate to="/" replace />} />
       </Route>

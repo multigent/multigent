@@ -76,15 +76,8 @@ func TestModelProviderHandlersScopeWritesByOwner(t *testing.T) {
 	memberReq := providerTestRequest(http.MethodPost, "/api/v1/providers", "member", body)
 	memberRec := httptest.NewRecorder()
 	s.handleAddProvider(memberRec, memberReq)
-	if memberRec.Code != http.StatusOK {
-		t.Fatalf("member personal create status=%d body=%s", memberRec.Code, memberRec.Body.String())
-	}
-	var memberCreated map[string]any
-	if err := json.Unmarshal(memberRec.Body.Bytes(), &memberCreated); err != nil {
-		t.Fatalf("decode member provider: %v", err)
-	}
-	if memberCreated["ownerType"] != ConnectionOwnerUser || memberCreated["ownerId"] != "member" {
-		t.Fatalf("member provider should be personal: %#v", memberCreated)
+	if memberRec.Code != http.StatusForbidden {
+		t.Fatalf("member create status=%d body=%s", memberRec.Code, memberRec.Body.String())
 	}
 
 	memberWorkspaceReq := providerTestRequest(http.MethodPost, "/api/v1/providers", "member", providerBody{
@@ -135,15 +128,6 @@ func TestModelProviderHandlersScopeWritesByOwner(t *testing.T) {
 	s.handleDeleteProvider(deleteWorkspaceRec, deleteWorkspaceReq)
 	if deleteWorkspaceRec.Code != http.StatusForbidden {
 		t.Fatalf("member delete workspace status=%d body=%s", deleteWorkspaceRec.Code, deleteWorkspaceRec.Body.String())
-	}
-
-	memberID, _ := memberCreated["id"].(string)
-	deletePersonalReq := providerTestRequest(http.MethodDelete, "/api/v1/providers/"+memberID, "member", nil)
-	deletePersonalReq.SetPathValue("id", memberID)
-	deletePersonalRec := httptest.NewRecorder()
-	s.handleDeleteProvider(deletePersonalRec, deletePersonalReq)
-	if deletePersonalRec.Code != http.StatusOK {
-		t.Fatalf("member delete personal status=%d body=%s", deletePersonalRec.Code, deletePersonalRec.Body.String())
 	}
 }
 
@@ -253,21 +237,26 @@ func TestModelProviderListRequiresWorkspaceMembership(t *testing.T) {
 	}
 }
 
-func TestModelProviderListFiltersPersonalProviders(t *testing.T) {
+func TestModelProviderListShowsWorkspaceProvidersOnly(t *testing.T) {
 	s, _ := newProviderHandlerTestServer(t)
-	for _, req := range []struct {
-		user string
-		body providerBody
-	}{
-		{"owner", providerBody{Name: "Workspace", Type: "openai"}},
-		{"member", providerBody{Name: "Member Personal", Type: "openai", OwnerType: ConnectionOwnerUser}},
-		{"owner", providerBody{Name: "Owner Personal", Type: "anthropic", OwnerType: ConnectionOwnerUser}},
-	} {
-		rec := httptest.NewRecorder()
-		s.handleAddProvider(rec, providerTestRequest(http.MethodPost, "/api/v1/providers", req.user, req.body))
-		if rec.Code != http.StatusOK {
-			t.Fatalf("create provider for %s status=%d body=%s", req.user, rec.Code, rec.Body.String())
-		}
+	rec := httptest.NewRecorder()
+	s.handleAddProvider(rec, providerTestRequest(http.MethodPost, "/api/v1/providers", "owner", providerBody{Name: "Workspace", Type: "openai"}))
+	if rec.Code != http.StatusOK {
+		t.Fatalf("create workspace provider status=%d body=%s", rec.Code, rec.Body.String())
+	}
+	now := time.Now().UTC().Format(time.RFC3339)
+	if err := s.controlDB.UpsertModelProvider("ws-one", controldb.ModelProvider{
+		ID:          "personal-leftover",
+		WorkspaceID: "ws-one",
+		OwnerType:   ConnectionOwnerUser,
+		OwnerID:     "member",
+		Name:        "Personal Leftover",
+		Type:        "openai",
+		EnvJSON:     "{}",
+		CreatedAt:   now,
+		UpdatedAt:   now,
+	}); err != nil {
+		t.Fatalf("insert personal leftover: %v", err)
 	}
 
 	memberRec := httptest.NewRecorder()
@@ -276,11 +265,11 @@ func TestModelProviderListFiltersPersonalProviders(t *testing.T) {
 		t.Fatalf("member list status=%d body=%s", memberRec.Code, memberRec.Body.String())
 	}
 	body := memberRec.Body.String()
-	if !strings.Contains(body, "Workspace") || !strings.Contains(body, "Member Personal") {
-		t.Fatalf("member list missing visible providers: %s", body)
+	if !strings.Contains(body, "Workspace") {
+		t.Fatalf("member list missing workspace provider: %s", body)
 	}
-	if strings.Contains(body, "Owner Personal") {
-		t.Fatalf("member list included another user's provider: %s", body)
+	if strings.Contains(body, "Personal Leftover") {
+		t.Fatalf("member list included personal provider: %s", body)
 	}
 }
 
@@ -323,9 +312,12 @@ func TestModelProviderAgentScopedListFiltersUsableProviders(t *testing.T) {
 		t.Fatalf("admin global list status=%d body=%s", adminGlobalRec.Code, adminGlobalRec.Body.String())
 	}
 	adminGlobalBody := adminGlobalRec.Body.String()
-	for _, want := range []string{"Workspace Provider", "Owner Personal Provider", "Other Personal Provider"} {
-		if !strings.Contains(adminGlobalBody, want) {
-			t.Fatalf("admin global list missing %q: %s", want, adminGlobalBody)
+	if !strings.Contains(adminGlobalBody, "Workspace Provider") {
+		t.Fatalf("admin global list missing workspace provider: %s", adminGlobalBody)
+	}
+	for _, blocked := range []string{"Owner Personal Provider", "Other Personal Provider"} {
+		if strings.Contains(adminGlobalBody, blocked) {
+			t.Fatalf("admin global list included personal provider %q: %s", blocked, adminGlobalBody)
 		}
 	}
 
@@ -350,13 +342,13 @@ func TestModelProviderAgentScopedListFiltersUsableProviders(t *testing.T) {
 		t.Fatalf("owner agent-scoped list status=%d body=%s", ownerAgentRec.Code, ownerAgentRec.Body.String())
 	}
 	ownerAgentBody := ownerAgentRec.Body.String()
-	for _, want := range []string{"Workspace Provider", "Owner Personal Provider"} {
-		if !strings.Contains(ownerAgentBody, want) {
-			t.Fatalf("owner agent-scoped list missing %q: %s", want, ownerAgentBody)
-		}
+	if !strings.Contains(ownerAgentBody, "Workspace Provider") {
+		t.Fatalf("owner agent-scoped list missing workspace provider: %s", ownerAgentBody)
 	}
-	if strings.Contains(ownerAgentBody, "Other Personal Provider") {
-		t.Fatalf("owner agent-scoped list included another user's provider: %s", ownerAgentBody)
+	for _, blocked := range []string{"Owner Personal Provider", "Other Personal Provider"} {
+		if strings.Contains(ownerAgentBody, blocked) {
+			t.Fatalf("owner agent-scoped list included personal provider %q: %s", blocked, ownerAgentBody)
+		}
 	}
 }
 

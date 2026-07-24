@@ -6,6 +6,9 @@ import (
 	"net/http/httptest"
 	"strings"
 	"testing"
+	"time"
+
+	controldb "github.com/multigent/multigent/internal/db"
 )
 
 func TestAssistantStatusRequiresWorkspaceAdminAndModelProvider(t *testing.T) {
@@ -41,22 +44,25 @@ func TestAssistantStatusRequiresWorkspaceAdminAndModelProvider(t *testing.T) {
 func TestAssistantSettingsUsesWorkspaceProviderOnly(t *testing.T) {
 	s, _ := newProviderHandlerTestServer(t)
 
-	personalRec := httptest.NewRecorder()
-	s.handleAddProvider(personalRec, providerTestRequest(http.MethodPost, "/api/v1/providers", "member", providerBody{
-		Name:   "Personal",
-		Type:   "openai",
-		APIKey: "sk-personal",
-	}))
-	if personalRec.Code != http.StatusOK {
-		t.Fatalf("create personal provider code=%d body=%s", personalRec.Code, personalRec.Body.String())
+	now := time.Now().UTC().Format(time.RFC3339)
+	if err := s.controlDB.UpsertModelProvider("ws-one", controldb.ModelProvider{
+		ID:          "personal-leftover",
+		WorkspaceID: "ws-one",
+		OwnerType:   ConnectionOwnerUser,
+		OwnerID:     "member",
+		Name:        "Personal",
+		Type:        "openai",
+		APIKey:      "sealed:test",
+		EnvJSON:     "{}",
+		CreatedAt:   now,
+		UpdatedAt:   now,
+	}); err != nil {
+		t.Fatalf("insert personal provider: %v", err)
 	}
-	var personal map[string]any
-	_ = json.Unmarshal(personalRec.Body.Bytes(), &personal)
-	personalID, _ := personal["id"].(string)
 
 	memberSettingsRec := httptest.NewRecorder()
 	s.handleAssistantSettings(memberSettingsRec, providerTestRequest(http.MethodPut, "/api/v1/assistant/settings", "member", assistantSettingsBody{
-		ModelProviderID: personalID,
+		ModelProviderID: "personal-leftover",
 	}))
 	if memberSettingsRec.Code != http.StatusForbidden {
 		t.Fatalf("member settings code=%d body=%s", memberSettingsRec.Code, memberSettingsRec.Body.String())
@@ -64,13 +70,10 @@ func TestAssistantSettingsUsesWorkspaceProviderOnly(t *testing.T) {
 
 	ownerPersonalRec := httptest.NewRecorder()
 	s.handleAssistantSettings(ownerPersonalRec, providerTestRequest(http.MethodPut, "/api/v1/assistant/settings", "owner", assistantSettingsBody{
-		ModelProviderID: personalID,
+		ModelProviderID: "personal-leftover",
 	}))
-	if ownerPersonalRec.Code != http.StatusBadRequest {
+	if ownerPersonalRec.Code != http.StatusNotFound {
 		t.Fatalf("owner personal settings code=%d body=%s", ownerPersonalRec.Code, ownerPersonalRec.Body.String())
-	}
-	if !strings.Contains(ownerPersonalRec.Body.String(), ErrCodeAssistantProviderUnsupported) {
-		t.Fatalf("expected workspace-provider error, body=%s", ownerPersonalRec.Body.String())
 	}
 
 	workspaceRec := httptest.NewRecorder()

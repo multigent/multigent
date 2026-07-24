@@ -467,9 +467,6 @@ func (s *Server) canUseModelProviderForAgent(r *http.Request, provider entity.AP
 	switch provider.OwnerType {
 	case "", ConnectionOwnerWorkspace:
 		return s.canManageAgentConfig(r, project, agent)
-	case ConnectionOwnerUser:
-		cur := s.currentUser(r)
-		return cur != nil && cur.Username == provider.OwnerID && s.canManageAgentConfig(r, project, agent)
 	default:
 		return false
 	}
