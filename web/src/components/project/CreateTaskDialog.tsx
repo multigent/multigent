@@ -6,6 +6,7 @@ import { useApiJson } from '../../lib/use-api'
 import type { TaskOption } from '../task/TaskModals'
 
 const TASK_TYPES = ['chore', 'feature', 'bug', 'review', 'triage', 'test', 'research'] as const
+const TEMPLATE_VAR_RE = /\{\{\s*([A-Za-z0-9_.-]+)\s*\}\}/g
 
 type AgentOpt = { name: string; model?: string }
 
@@ -48,6 +49,7 @@ const fieldCls =
 export function CreateTaskDialog({ projectId: defaultProjectId, agents: defaultAgents, allProjectsAgents, taskOptions = [], onCreated }: Props) {
   const { t } = useTranslation()
   const [open, setOpen] = useState(false)
+  const [createMode, setCreateMode] = useState<'blank' | 'template'>('blank')
   const [selectedProject, setSelectedProject] = useState(defaultProjectId)
   const [agent, setAgent] = useState('')
   const [title, setTitle] = useState('')
@@ -111,6 +113,7 @@ export function CreateTaskDialog({ projectId: defaultProjectId, agents: defaultA
   }, [currentHumanMembers, people])
 
   function reset() {
+    setCreateMode('blank')
     setSelectedProject(defaultProjectId)
     setAgent('')
     setTitle('')
@@ -150,6 +153,18 @@ export function CreateTaskDialog({ projectId: defaultProjectId, agents: defaultA
     setTemplateInputs({})
   }
 
+  function onCreateModeChange(mode: 'blank' | 'template') {
+    setCreateMode(mode)
+    if (mode === 'blank') {
+      setTaskTemplateId('')
+      setTemplateInputs({})
+      return
+    }
+    if (!taskTemplateId && taskTemplates.length > 0) {
+      onTemplateChange(taskTemplates[0].id)
+    }
+  }
+
   const parentChoices = useMemo(() => {
     return taskOptions.filter((o) => !o.project || o.project === selectedProject)
   }, [taskOptions, selectedProject])
@@ -175,7 +190,16 @@ export function CreateTaskDialog({ projectId: defaultProjectId, agents: defaultA
   async function onSubmit(e: FormEvent) {
     e.preventDefault()
     setErr(null)
-    if (!agent.trim() || !title.trim() || !prompt.trim()) {
+    if (!agent.trim()) {
+      setErr(t('forms.fillRequired'))
+      return
+    }
+    if (createMode === 'template') {
+      if (!selectedTemplate) {
+        setErr(t('taskTemplates.selectRequired'))
+        return
+      }
+    } else if (!title.trim() || !prompt.trim()) {
       setErr(t('forms.fillRequired'))
       return
     }
@@ -194,7 +218,7 @@ export function CreateTaskDialog({ projectId: defaultProjectId, agents: defaultA
     setBusy(true)
     try {
       const labels = labelsStr.split(',').map(l => l.trim()).filter(Boolean)
-      if (selectedTemplate) {
+      if (createMode === 'template' && selectedTemplate) {
         await apiPost<{ id: string }>(
           `/api/v1/projects/${encodeURIComponent(selectedProject)}/tasks/from-template`,
           {
@@ -265,11 +289,13 @@ export function CreateTaskDialog({ projectId: defaultProjectId, agents: defaultA
     const template = taskTemplates.find((item) => item.id === id)
     if (!template) {
       setTemplateInputs({})
+      setWorkflowDefinitionId('')
+      setActorBindings({})
       return
     }
     setTaskType(template.type || 'chore')
     setPriority(template.priority ?? 2)
-    setLabelsStr((template.labels ?? []).join(', '))
+    setLabelsStr('')
     setTitle(template.titleTemplate)
     setDescription(template.descriptionTemplate || '')
     setPrompt(template.promptTemplate)
@@ -293,7 +319,15 @@ export function CreateTaskDialog({ projectId: defaultProjectId, agents: defaultA
         }
         setActorBindings(next)
       }
+    } else {
+      setWorkflowDefinitionId('')
+      setActorBindings({})
     }
+  }
+
+  function renderTemplatePreview(value: string | undefined) {
+    if (!value) return ''
+    return value.replace(TEMPLATE_VAR_RE, (_, name: string) => templateInputs[name]?.trim() || `{{${name}}}`)
   }
 
   function updateActorBinding(role: string, patch: Partial<ActorBinding>) {
@@ -351,18 +385,44 @@ export function CreateTaskDialog({ projectId: defaultProjectId, agents: defaultA
                 <p className="text-sm text-amber-800 dark:text-amber-400">{t('forms.needAgentsForTask')}</p>
               )}
 
-              {taskTemplates.length > 0 ? (
-                <label className="block text-sm">
-                  <span className="text-neutral-600 dark:text-zinc-400">{t('taskTemplates.title')}</span>
-                  <select value={taskTemplateId} onChange={(e) => onTemplateChange(e.target.value)} className={fieldCls}>
-                    <option value="">{t('taskTemplates.none')}</option>
-                    {taskTemplates.map((template) => <option key={template.id} value={template.id}>{template.name}</option>)}
-                  </select>
-                  {selectedTemplate?.description ? <p className="mt-0.5 text-xs text-neutral-400 dark:text-zinc-500">{selectedTemplate.description}</p> : null}
-                </label>
+              <div className="grid grid-cols-2 gap-2 rounded-lg bg-neutral-100 p-1 dark:bg-zinc-800/70">
+                {(['blank', 'template'] as const).map((mode) => (
+                  <button
+                    key={mode}
+                    type="button"
+                    onClick={() => onCreateModeChange(mode)}
+                    className={cn(
+                      'rounded-md px-3 py-1.5 text-sm font-medium transition-colors',
+                      createMode === mode
+                        ? 'bg-white text-neutral-900 shadow-sm dark:bg-zinc-950 dark:text-zinc-100'
+                        : 'text-neutral-500 hover:text-neutral-800 dark:text-zinc-400 dark:hover:text-zinc-100',
+                    )}
+                  >
+                    {mode === 'blank' ? t('taskTemplates.createBlank') : t('taskTemplates.createFromTemplate')}
+                  </button>
+                ))}
+              </div>
+
+              {createMode === 'template' ? (
+                <div className="rounded-lg border border-neutral-200 bg-neutral-50 p-3 dark:border-zinc-700 dark:bg-zinc-950/40">
+                  {templatesState.status === 'loading' ? (
+                    <p className="text-sm text-neutral-500 dark:text-zinc-400">{t('api.loading')}</p>
+                  ) : taskTemplates.length === 0 ? (
+                    <p className="text-sm text-amber-700 dark:text-amber-400">{t('taskTemplates.emptyForCreate')}</p>
+                  ) : (
+                    <label className="block text-sm">
+                      <span className="text-neutral-600 dark:text-zinc-400">{t('taskTemplates.selectTemplate')}</span>
+                      <select value={taskTemplateId} onChange={(e) => onTemplateChange(e.target.value)} className={fieldCls}>
+                        <option value="">{t('taskTemplates.none')}</option>
+                        {taskTemplates.map((template) => <option key={template.id} value={template.id}>{template.name}</option>)}
+                      </select>
+                      {selectedTemplate?.description ? <p className="mt-0.5 text-xs text-neutral-400 dark:text-zinc-500">{selectedTemplate.description}</p> : null}
+                    </label>
+                  )}
+                </div>
               ) : null}
 
-              {selectedTemplate && (selectedTemplate.variables?.length ?? 0) > 0 ? (
+              {createMode === 'template' && selectedTemplate && (selectedTemplate.variables?.length ?? 0) > 0 ? (
                 <div className="rounded-lg border border-neutral-200 bg-neutral-50 p-3 dark:border-zinc-700 dark:bg-zinc-950/40">
                   <div className="text-sm font-medium text-neutral-700 dark:text-zinc-300">{t('taskTemplates.variables')}</div>
                   <div className="mt-2 grid gap-2">
@@ -406,35 +466,50 @@ export function CreateTaskDialog({ projectId: defaultProjectId, agents: defaultA
                 <p className="mt-0.5 text-xs text-neutral-400 dark:text-zinc-500">{t('tasks.assignHint')}</p>
               </label>
 
-              <label className="block text-sm">
-                <span className="text-neutral-600 dark:text-zinc-400">{t('forms.title')}</span>
-                <input value={title} onChange={(e) => setTitle(e.target.value)} className={fieldCls} />
-              </label>
+              {createMode === 'template' && selectedTemplate ? (
+                <div className="rounded-lg border border-neutral-200 bg-white p-3 dark:border-zinc-700 dark:bg-zinc-900">
+                  <div className="text-sm font-medium text-neutral-700 dark:text-zinc-300">{t('taskTemplates.preview')}</div>
+                  <div className="mt-2 space-y-2 text-sm">
+                    <PreviewBlock label={t('forms.title')} value={renderTemplatePreview(selectedTemplate.titleTemplate)} />
+                    {selectedTemplate.descriptionTemplate ? <PreviewBlock label={t('tasks.description')} value={renderTemplatePreview(selectedTemplate.descriptionTemplate)} /> : null}
+                    <PreviewBlock label={t('forms.prompt')} value={renderTemplatePreview(selectedTemplate.promptTemplate)} multiline />
+                  </div>
+                </div>
+              ) : (
+                <>
+                  <label className="block text-sm">
+                    <span className="text-neutral-600 dark:text-zinc-400">{t('forms.title')}</span>
+                    <input value={title} onChange={(e) => setTitle(e.target.value)} className={fieldCls} />
+                  </label>
 
-              <label className="block text-sm">
-                <span className="text-neutral-600 dark:text-zinc-400">{t('tasks.description')}</span>
-                <textarea value={description} onChange={(e) => setDescription(e.target.value)} rows={3} className={cn(fieldCls, 'resize-y')} placeholder={t('tasks.descriptionHint')} />
-              </label>
+                  <label className="block text-sm">
+                    <span className="text-neutral-600 dark:text-zinc-400">{t('tasks.description')}</span>
+                    <textarea value={description} onChange={(e) => setDescription(e.target.value)} rows={3} className={cn(fieldCls, 'resize-y')} placeholder={t('tasks.descriptionHint')} />
+                  </label>
 
-              <label className="block text-sm">
-                <span className="text-neutral-600 dark:text-zinc-400">{t('forms.prompt')}</span>
-                <textarea value={prompt} onChange={(e) => setPrompt(e.target.value)} rows={8} className={cn(fieldCls, 'resize-y')} />
-              </label>
+                  <label className="block text-sm">
+                    <span className="text-neutral-600 dark:text-zinc-400">{t('forms.prompt')}</span>
+                    <textarea value={prompt} onChange={(e) => setPrompt(e.target.value)} rows={8} className={cn(fieldCls, 'resize-y')} />
+                  </label>
+                </>
+              )}
 
-              <div className="grid grid-cols-2 gap-3">
-                <label className="block text-sm">
-                  <span className="text-neutral-600 dark:text-zinc-400">{t('forms.type')}</span>
-                  <select value={taskType} onChange={(e) => setTaskType(e.target.value)} className={fieldCls}>
-                    {TASK_TYPES.map((ty) => <option key={ty} value={ty}>{t(`forms.taskType.${ty}`, { defaultValue: ty })}</option>)}
-                  </select>
-                </label>
-                <label className="block text-sm">
-                  <span className="text-neutral-600 dark:text-zinc-400">{t('forms.priority')}</span>
-                  <select value={priority} onChange={(e) => setPriority(Number(e.target.value))} className={fieldCls}>
-                    {[0, 1, 2, 3].map((p) => <option key={p} value={p}>P{p} — {t(`forms.priorityLabel.${p}`)}</option>)}
-                  </select>
-                </label>
-              </div>
+              {createMode === 'blank' ? (
+                <div className="grid grid-cols-2 gap-3">
+                  <label className="block text-sm">
+                    <span className="text-neutral-600 dark:text-zinc-400">{t('forms.type')}</span>
+                    <select value={taskType} onChange={(e) => setTaskType(e.target.value)} className={fieldCls}>
+                      {TASK_TYPES.map((ty) => <option key={ty} value={ty}>{t(`forms.taskType.${ty}`, { defaultValue: ty })}</option>)}
+                    </select>
+                  </label>
+                  <label className="block text-sm">
+                    <span className="text-neutral-600 dark:text-zinc-400">{t('forms.priority')}</span>
+                    <select value={priority} onChange={(e) => setPriority(Number(e.target.value))} className={fieldCls}>
+                      {[0, 1, 2, 3].map((p) => <option key={p} value={p}>P{p} — {t(`forms.priorityLabel.${p}`)}</option>)}
+                    </select>
+                  </label>
+                </div>
+              ) : null}
 
               <div className="grid grid-cols-2 gap-3">
                 <label className="block text-sm">
@@ -467,14 +542,16 @@ export function CreateTaskDialog({ projectId: defaultProjectId, agents: defaultA
                 </label>
               </div>
 
-              <label className="block text-sm">
-                <span className="text-neutral-600 dark:text-zinc-400">{t('workflows.taskWorkflow')}</span>
-                <select value={workflowDefinitionId} onChange={(e) => onWorkflowChange(e.target.value)} className={fieldCls}>
-                  <option value="">{t('workflows.noWorkflow')}</option>
-                  {workflows.map((wf) => <option key={wf.id} value={wf.id}>{wf.name}</option>)}
-                </select>
-                <p className="mt-0.5 text-xs text-neutral-400 dark:text-zinc-500">{t('workflows.taskWorkflowHint')}</p>
-              </label>
+              {createMode === 'blank' ? (
+                <label className="block text-sm">
+                  <span className="text-neutral-600 dark:text-zinc-400">{t('workflows.taskWorkflow')}</span>
+                  <select value={workflowDefinitionId} onChange={(e) => onWorkflowChange(e.target.value)} className={fieldCls}>
+                    <option value="">{t('workflows.noWorkflow')}</option>
+                    {workflows.map((wf) => <option key={wf.id} value={wf.id}>{wf.name}</option>)}
+                  </select>
+                  <p className="mt-0.5 text-xs text-neutral-400 dark:text-zinc-500">{t('workflows.taskWorkflowHint')}</p>
+                </label>
+              ) : null}
 
               {workflowDefinitionId && workflowActorSlots.length > 0 ? (
                 <div className="rounded-lg border border-neutral-200 bg-neutral-50 p-3 dark:border-zinc-700 dark:bg-zinc-950/40">
@@ -525,5 +602,19 @@ export function CreateTaskDialog({ projectId: defaultProjectId, agents: defaultA
         </div>
       ) : null}
     </>
+  )
+}
+
+function PreviewBlock({ label, value, multiline }: { label: string; value: string; multiline?: boolean }) {
+  return (
+    <div>
+      <div className="text-xs font-medium text-neutral-400 dark:text-zinc-500">{label}</div>
+      <div className={cn(
+        'mt-1 rounded-md bg-neutral-50 px-2.5 py-2 text-neutral-700 dark:bg-zinc-950/60 dark:text-zinc-300',
+        multiline ? 'max-h-36 overflow-y-auto whitespace-pre-wrap' : 'truncate',
+      )}>
+        {value || '—'}
+      </div>
+    </div>
   )
 }
