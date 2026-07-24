@@ -1,5 +1,30 @@
 # Changelog
 
+## [v0.1.3] - 2026-07-24
+
+### Added
+
+- Workspace role management and scoped project role assignment.
+- Local agent skill import and cross-workspace skill visibility improvements.
+- Runtime readiness checks that block agent execution until sandbox prerequisites are available.
+- Regional runtime image mirror support and first-install benchmarking utilities.
+- Product tour card dragging for the example workspace onboarding flow.
+
+### Changed
+
+- Settings now restrict administrative controls to workspace admins while keeping Skills readable for members and visitors.
+- External tool configuration is restricted to workspace admins.
+- Docker sandbox startup avoids Linux-only binary mounts on Windows and syncs the runtime CLI into containers.
+- Runtime image footprint was reduced to improve first-run download time.
+- Command palette search is scoped to the active workspace.
+
+### Fixed
+
+- Workspace-scoped role relationships now apply consistently across UI and API flows.
+- Workspace resource permissions are enforced for workflows, files, goals, tools, settings, and related actions.
+- Missing loading translations and noisy runtime prompts were cleaned up.
+- Docker Desktop and agent CLI binary discovery on macOS were improved.
+
 ## [v0.1.1] - 2026-07-23
 
 ### Added
