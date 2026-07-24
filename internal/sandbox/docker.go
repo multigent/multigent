@@ -286,10 +286,15 @@ func DockerCommandEnv(env []string) []string {
 // Returns a user-friendly error if not.
 func CheckDocker() error {
 	docker := DockerExecutable()
-	cmd := DockerCommand("info", "--format", "{{.ServerVersion}}")
+	ctx, cancel := context.WithTimeout(context.Background(), 3*time.Second)
+	defer cancel()
+	cmd := DockerCommandContext(ctx, "info", "--format", "{{.ServerVersion}}")
 	cmd.Stdout = nil
 	cmd.Stderr = nil
 	if err := cmd.Run(); err != nil {
+		if ctx.Err() != nil {
+			return fmt.Errorf("docker sandbox: Docker daemon did not respond within 3s — Docker may be starting, stuck, or unhealthy\n  Restart Docker Desktop / Docker Engine, then run: multigent sandbox prepare\n  Docker executable checked: %s", docker)
+		}
 		return fmt.Errorf("docker sandbox: cannot reach Docker daemon — is Docker running?\n  Install Docker: https://docs.docker.com/get-docker/\n  Start Docker Desktop on macOS/Windows, or start daemon: sudo systemctl start docker (Linux)\n  Docker executable checked: %s\n  Original error: %w", docker, err)
 	}
 	return nil

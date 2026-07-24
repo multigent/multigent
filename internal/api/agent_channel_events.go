@@ -162,6 +162,33 @@ func (s *Server) acceptIMMessage(channelProvider imbridge.Provider, appID, verif
 		})
 		return map[string]any{"ok": true, "ignored": true, "reason": "permission_denied"}, nil
 	}
+	meta, err := s.st.AgentMeta(resolved.Binding.ProjectID, resolved.Binding.AgentID)
+	if err != nil {
+		return nil, err
+	}
+	if readiness := buildRuntimeReadiness(meta); readiness.Blocking {
+		detail := runtimeReadinessErrorMessage(readiness)
+		reply := "Agent runtime is not ready. Please fix the runtime environment in Multigent and try again.\n\n" + detail
+		s.recordAgentChannelCallback(resolved.Binding, "rejected", "runtime_not_ready", message, detail)
+		s.auditLog(auditLogInput{
+			WorkspaceID:  resolved.Binding.WorkspaceID,
+			ActorType:    "user",
+			ActorID:      resolved.Identity.UserID,
+			Action:       "agent_channel.runtime_not_ready",
+			ResourceType: "agent_channel",
+			ResourceID:   resolved.Binding.ID,
+			Summary:      fmt.Sprintf("Rejected %s message for %s/%s because runtime is not ready", provider, resolved.Binding.ProjectID, resolved.Binding.AgentID),
+			After: map[string]any{
+				"provider":  provider,
+				"messageId": message.MessageID,
+				"detail":    detail,
+			},
+		})
+		if err := s.replyToIMEvent(context.Background(), channelProvider, resolved, message, trimForIM(reply, 3500)); err != nil {
+			s.recordAgentChannelCallback(resolved.Binding, "reply_failed", "runtime_not_ready", message, err.Error())
+		}
+		return map[string]any{"ok": true, "ignored": true, "reason": "runtime_not_ready"}, nil
+	}
 	s.recordAgentChannelCallback(resolved.Binding, "accepted", "", message, "")
 	go s.runAgentForIMEvent(channelProvider, resolved, message, text)
 	return map[string]any{"ok": true}, nil
