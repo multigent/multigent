@@ -67,6 +67,9 @@ The current runtime image is roughly 1 GB after unpacking locally; network
 download is smaller because registry layers are compressed. On slow networks,
 especially when accessing GHCR or npm from regions with poor connectivity,
 run the prewarm step before opening the first agent chat.
+In our cold-cache smoke tests, the runtime image pull usually took about
+2-4 minutes depending on the machine and network. Treat this as installation
+time, not first-chat time.
 
 Recommended setup prewarm:
 
@@ -108,6 +111,10 @@ If you only want to pull the image manually:
 ```bash
 docker pull ghcr.io/multigent/multigent/runtime-base:latest
 ```
+
+Before opening the first agent chat, you can verify the runtime from the web
+console. If the runtime is not ready, the chat button will show the blocking
+check instead of silently waiting for Docker or a large image pull.
 
 ## Install Options
 
@@ -298,6 +305,21 @@ On Linux, start the Docker daemon.
 
 Multigent does not block the web console when Docker is missing. It will warn at
 startup and block only the agent run that needs a Docker sandbox.
+
+### Docker Is Reachable But Containers Do Not Start
+
+Sometimes `docker info` succeeds but Docker Desktop or WSL cannot actually
+start containers. Multigent checks this before running an agent and may report:
+
+```text
+Docker daemon is reachable but containers did not start within 4s
+```
+
+Restart Docker Desktop / Docker Engine, then run:
+
+```bash
+multigent sandbox prepare
+```
 
 ### Port Already In Use
 

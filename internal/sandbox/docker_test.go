@@ -15,6 +15,9 @@ func TestBuildArgsBinPATHKeepsToolchainPaths(t *testing.T) {
 	if err := os.MkdirAll(agentDir, 0o755); err != nil {
 		t.Fatalf("create agent dir: %v", err)
 	}
+	if err := os.MkdirAll(filepath.Join(root, ".multigent"), 0o755); err != nil {
+		t.Fatalf("create workspace meta dir: %v", err)
+	}
 	if err := os.MkdirAll(filepath.Join(root, "bin"), 0o755); err != nil {
 		t.Fatalf("create bin dir: %v", err)
 	}
@@ -32,6 +35,18 @@ func TestBuildArgsBinPATHKeepsToolchainPaths(t *testing.T) {
 		if !strings.Contains(pathEnv, want) {
 			t.Fatalf("PATH %q missing %s", pathEnv, want)
 		}
+	}
+}
+
+func TestBuildArgsDoesNotMountSystemBinForNonWorkspaceTempDir(t *testing.T) {
+	agentDir := t.TempDir()
+	args, err := BuildArgs(agentDir, entity.ModelClaudeCode, nil, []string{"claude", "-p"})
+	if err != nil {
+		t.Fatalf("BuildArgs: %v", err)
+	}
+	joined := strings.Join(args, "\n")
+	if strings.Contains(joined, string(filepath.Separator)+"bin:"+UserBin) {
+		t.Fatalf("unexpected system bin mount in args:\n%s", joined)
 	}
 }
 

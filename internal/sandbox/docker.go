@@ -131,13 +131,18 @@ func BuildArgs(agentDir string, model entity.AgentModel, cfg *entity.DockerSandb
 	// If <root>/bin/ exists, mount it to /multigent/bin and add to PATH so
 	// custom binaries are directly accessible inside the container.
 	// agentDir = <root>/projects/<project>/agents/<agent> → root = ../../
-	binHostDir := filepath.Join(
+	workspaceRoot := filepath.Join(
 		filepath.Dir(filepath.Dir(filepath.Dir(filepath.Dir(agentDir)))),
+	)
+	binHostDir := filepath.Join(
+		workspaceRoot,
 		"bin",
 	)
-	if fi, err := os.Stat(binHostDir); err == nil && fi.IsDir() {
-		args = append(args, "-v", binHostDir+":"+UserBin)
-		args = append(args, "-e", "PATH="+UserBin+":"+ContainerDefaultPATH)
+	if isWorkspaceRoot(workspaceRoot) {
+		if fi, err := os.Stat(binHostDir); err == nil && fi.IsDir() {
+			args = append(args, "-v", binHostDir+":"+UserBin)
+			args = append(args, "-e", "PATH="+UserBin+":"+ContainerDefaultPATH)
+		}
 	}
 
 	// ── Agent-scoped credential/session mounts ───────────────────────────────
@@ -225,11 +230,63 @@ func RunArgs(agentDir string, model entity.AgentModel, cfg *entity.DockerSandbox
 	return DockerExecutable(), a, nil
 }
 
+// DockerCommand returns an exec.Cmd configured with a PATH that works in
+// non-interactive macOS/Windows sessions. Docker Desktop may need credential
+// helpers next to the docker binary even when the image is public.
+func DockerCommand(args ...string) *exec.Cmd {
+	cmd := exec.Command(DockerExecutable(), args...)
+	cmd.Env = DockerCommandEnv(os.Environ())
+	return cmd
+}
+
+// DockerCommandContext is the context-aware form of DockerCommand.
+func DockerCommandContext(ctx context.Context, args ...string) *exec.Cmd {
+	cmd := exec.CommandContext(ctx, DockerExecutable(), args...)
+	cmd.Env = DockerCommandEnv(os.Environ())
+	return cmd
+}
+
+// DockerCommandEnv prefixes common Docker Desktop binary directories to PATH.
+func DockerCommandEnv(env []string) []string {
+	prefixes := []string{
+		"/Applications/Docker.app/Contents/Resources/bin",
+		"/usr/local/bin",
+		"/opt/homebrew/bin",
+		filepath.Join(os.Getenv("ProgramFiles"), "Docker", "Docker", "resources", "bin"),
+		filepath.Join(os.Getenv("LOCALAPPDATA"), "Docker"),
+	}
+	current := ""
+	for _, entry := range env {
+		key, value, ok := strings.Cut(entry, "=")
+		if ok && strings.EqualFold(key, "PATH") {
+			current = value
+			break
+		}
+	}
+	if current == "" {
+		current = os.Getenv("PATH")
+	}
+	parts := append([]string{}, prefixes...)
+	if current != "" {
+		parts = append(parts, strings.Split(current, string(os.PathListSeparator))...)
+	}
+	next := strings.Join(dedupePath(parts), string(os.PathListSeparator))
+	out := append([]string{}, env...)
+	for i, entry := range out {
+		key, _, ok := strings.Cut(entry, "=")
+		if ok && strings.EqualFold(key, "PATH") {
+			out[i] = key + "=" + next
+			return out
+		}
+	}
+	return append(out, "PATH="+next)
+}
+
 // CheckDocker verifies that the docker CLI is available and the daemon is reachable.
 // Returns a user-friendly error if not.
 func CheckDocker() error {
 	docker := DockerExecutable()
-	cmd := exec.Command(docker, "info", "--format", "{{.ServerVersion}}")
+	cmd := DockerCommand("info", "--format", "{{.ServerVersion}}")
 	cmd.Stdout = nil
 	cmd.Stderr = nil
 	if err := cmd.Run(); err != nil {
@@ -278,7 +335,7 @@ func PullImage(image string) error {
 	if imageExists(image) {
 		return nil
 	}
-	cmd := exec.Command(DockerExecutable(), "pull", image)
+	cmd := DockerCommand("pull", image)
 	cmd.Stdout = os.Stdout
 	cmd.Stderr = os.Stderr
 	return cmd.Run()
@@ -289,6 +346,33 @@ func PullImage(image string) error {
 // checks before deciding whether to run sandbox prepare.
 func ImageAvailable(image string) bool {
 	return imageExists(image)
+}
+
+// RuntimeContainerAvailable verifies that Docker can start a container from the
+// runtime image. `docker info` can succeed while Docker Desktop/WSL is unable
+// to transition containers out of Created state.
+func RuntimeContainerAvailable(image string, timeout time.Duration) error {
+	image = strings.TrimSpace(image)
+	if image == "" {
+		return fmt.Errorf("runtime image is empty")
+	}
+	if timeout <= 0 {
+		timeout = 4 * time.Second
+	}
+	name := fmt.Sprintf("multigent-readiness-%d", time.Now().UnixNano())
+	ctx, cancel := context.WithTimeout(context.Background(), timeout)
+	defer cancel()
+	cmd := DockerCommandContext(ctx, "run", "--rm", "--pull=never", "--name", name, image, "/bin/sh", "-lc", "true")
+	if err := cmd.Run(); err != nil {
+		if ctx.Err() != nil {
+			cleanupCtx, cleanupCancel := context.WithTimeout(context.Background(), 2*time.Second)
+			defer cleanupCancel()
+			_ = DockerCommandContext(cleanupCtx, "rm", "-f", name).Run()
+			return fmt.Errorf("Docker daemon is reachable but containers did not start within %s", timeout)
+		}
+		return fmt.Errorf("start runtime container: %w", err)
+	}
+	return nil
 }
 
 // ToolchainBinaryAvailable checks whether a binary is already present in the
@@ -313,7 +397,7 @@ func ToolchainBinaryAvailable(image, binary string, timeout time.Duration) (bool
 		"/bin/sh", "-lc",
 		"export PATH=/opt/multigent/toolchains/npm/bin:/opt/multigent/toolchains/mga/bin:$PATH; command -v " + shellQuote(binary) + " >/dev/null 2>&1",
 	}
-	cmd := exec.CommandContext(ctx, DockerExecutable(), args...)
+	cmd := DockerCommandContext(ctx, args...)
 	if err := cmd.Run(); err != nil {
 		if ctx.Err() != nil {
 			return false, ctx.Err()
@@ -388,8 +472,7 @@ func imageExists(image string) bool {
 	if strings.TrimSpace(image) == "" {
 		return false
 	}
-	docker := DockerExecutable()
-	inspect, err := exec.Command(docker, "image", "inspect", image, "--format", "{{.Os}}/{{.Architecture}}").Output()
+	inspect, err := DockerCommand("image", "inspect", image, "--format", "{{.Os}}/{{.Architecture}}").Output()
 	if err != nil {
 		return false
 	}
@@ -397,7 +480,7 @@ func imageExists(image string) bool {
 	if imagePlatform == "" {
 		return true
 	}
-	host, err := exec.Command(docker, "info", "--format", "{{.OSType}}/{{.Architecture}}").Output()
+	host, err := DockerCommand("info", "--format", "{{.OSType}}/{{.Architecture}}").Output()
 	if err != nil {
 		return true
 	}
@@ -440,6 +523,31 @@ func shellQuote(s string) string {
 		return "''"
 	}
 	return "'" + strings.ReplaceAll(s, "'", "'\"'\"'") + "'"
+}
+
+func isWorkspaceRoot(root string) bool {
+	root = filepath.Clean(strings.TrimSpace(root))
+	if root == "" || root == "." || root == string(filepath.Separator) || filepath.Dir(root) == root {
+		return false
+	}
+	if fi, err := os.Stat(filepath.Join(root, ".multigent")); err == nil && fi.IsDir() {
+		return true
+	}
+	return false
+}
+
+func dedupePath(parts []string) []string {
+	out := make([]string, 0, len(parts))
+	seen := map[string]bool{}
+	for _, part := range parts {
+		part = strings.TrimSpace(part)
+		if part == "" || seen[part] {
+			continue
+		}
+		seen[part] = true
+		out = append(out, part)
+	}
+	return out
 }
 
 // ResolveCredentialMounts is the exported form for use by CLI commands.

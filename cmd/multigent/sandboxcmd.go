@@ -3,7 +3,6 @@ package main
 import (
 	"fmt"
 	"os"
-	"os/exec"
 	"strings"
 
 	"github.com/multigent/multigent/internal/agentcli"
@@ -291,8 +290,8 @@ func runToolchainWarmup(image, network string, memoryMB, timeoutSec int, model e
 		return err
 	}
 	fmt.Printf("\nWarming %s toolchain (%s)...\n", cliCfg.Vendor, cliCfg.Package)
-	cmd := exec.Command(sandbox.DockerExecutable(), dockerArgs...)
-	cmd.Env = append(os.Environ(), fmt.Sprintf("MULTIGENT_AGENT_CLI_INSTALL_TIMEOUT=%d", timeoutSec))
+	cmd := sandbox.DockerCommand(dockerArgs...)
+	cmd.Env = append(sandbox.DockerCommandEnv(os.Environ()), fmt.Sprintf("MULTIGENT_AGENT_CLI_INSTALL_TIMEOUT=%d", timeoutSec))
 	cmd.Stdout = os.Stdout
 	cmd.Stderr = os.Stderr
 	if err := cmd.Run(); err != nil {
@@ -358,7 +357,7 @@ func newSandboxTestCmd() *cobra.Command {
 				return err
 			}
 
-			testCmd := exec.Command(sandbox.DockerExecutable(), finalArgs...)
+			testCmd := sandbox.DockerCommand(finalArgs...)
 			testCmd.Stdout = os.Stdout
 			testCmd.Stderr = os.Stderr
 			if err := testCmd.Run(); err != nil {

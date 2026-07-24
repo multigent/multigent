@@ -8,6 +8,7 @@ import (
 	"os/exec"
 	"path/filepath"
 	"strings"
+	"time"
 
 	"github.com/multigent/multigent/internal/agentcli"
 	"github.com/multigent/multigent/internal/ctxbuild"
@@ -620,6 +621,18 @@ func buildRuntimeReadiness(meta *entity.AgentMeta) runtimeReadinessResponse {
 					Key: "runtime_image", Label: "Runtime image", Status: "ok",
 					Detail: image,
 				})
+				if err := sandbox.RuntimeContainerAvailable(image, 4*time.Second); err != nil {
+					checks = append(checks, setupCheck{
+						Key: "runtime_container", Label: "Runtime container", Status: "error", Blocking: true,
+						Detail: err.Error(),
+						Action: "Restart Docker Desktop / Docker Engine, then run: multigent sandbox prepare",
+					})
+				} else {
+					checks = append(checks, setupCheck{
+						Key: "runtime_container", Label: "Runtime container", Status: "ok",
+						Detail: "Container startup check passed.",
+					})
+				}
 			} else {
 				checks = append(checks, setupCheck{
 					Key: "runtime_image", Label: "Runtime image", Status: "error", Blocking: true,
