@@ -16,7 +16,7 @@ Multigent helps teams turn prompts, tools, workflows, and human reviews into a c
 [![Docker](https://img.shields.io/badge/ghcr-image-2496ED?style=flat-square&logo=docker&logoColor=white)](https://github.com/multigent/multigent/pkgs/container/multigent)
 [![License](https://img.shields.io/badge/license-PolyForm%20Noncommercial-blue?style=flat-square)](LICENSE)
 
-[中文](README.zh-CN.md) · [Install Guide](INSTALL.md) · [Documentation](docs/README.md)
+[中文](README.zh-CN.md) · [Install Guide](INSTALL.md) · [Documentation](docs/README.md) · [Community](#community)
 
 </div>
 
@@ -265,6 +265,18 @@ For deeper design notes, see the further reading section below.
 - [Workflow state machine](docs/concepts/collaboration-workflow-state-machine.en.md)
 - [Configuration and logging](docs/getting-started/configuration-and-logging.md)
 - [Release and distribution](docs/operations/release-distribution.md)
+
+## Community
+
+Join the community to discuss agent workflows, multi-agent operations, product feedback, and real-world deployment:
+
+- Telegram: <https://t.me/+kjUY8qQekRwyYjY1>
+- Discord: <https://discord.gg/wqweEt62sp>
+- WeChat: scan the QR code below, add the personal account, and mention `multigent` to be invited into the group.
+
+<p align="center">
+  <img src="docs/assets/wechat.jpg" alt="Multigent WeChat QR code" width="240">
+</p>
 
 ## Development
 
