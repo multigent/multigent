@@ -37,7 +37,6 @@ func (s *Server) handleIMEvent(w http.ResponseWriter, r *http.Request) {
 		s.jsonError(w, http.StatusBadRequest, "unsupported IM provider")
 		return
 	}
-	provider := channelProvider.Info().ID
 	raw, err := io.ReadAll(io.LimitReader(r.Body, 2<<20))
 	if err != nil {
 		s.jsonError(w, http.StatusBadRequest, "read event body failed")
@@ -68,16 +67,23 @@ func (s *Server) handleIMEvent(w http.ResponseWriter, r *http.Request) {
 		_ = json.NewEncoder(w).Encode(map[string]any{"ok": true, "ignored": true})
 		return
 	}
-	message := parsed.Message
-	text := strings.TrimSpace(message.Text)
-	if strings.TrimSpace(text) == "" {
-		_ = json.NewEncoder(w).Encode(map[string]any{"ok": true, "ignored": true})
-		return
-	}
-	resolution, err := s.resolveChannelEventBindingDetailed(provider, parsed.AppID, message.ChatID, message.SenderOpenID)
+	result, err := s.acceptIMMessage(channelProvider, parsed.AppID, parsed.VerificationToken, parsed.Message)
 	if err != nil {
 		s.serverError(w, err)
 		return
+	}
+	_ = json.NewEncoder(w).Encode(result)
+}
+
+func (s *Server) acceptIMMessage(channelProvider imbridge.Provider, appID, verificationToken string, message imbridge.IncomingMessage) (map[string]any, error) {
+	provider := channelProvider.Info().ID
+	text := strings.TrimSpace(message.Text)
+	if text == "" {
+		return map[string]any{"ok": true, "ignored": true}, nil
+	}
+	resolution, err := s.resolveChannelEventBindingDetailed(provider, appID, message.ChatID, message.SenderOpenID)
+	if err != nil {
+		return nil, err
 	}
 	if !resolution.Found {
 		reason := "binding_not_found"
@@ -98,10 +104,9 @@ func (s *Server) handleIMEvent(w http.ResponseWriter, r *http.Request) {
 				},
 			})
 		} else {
-			log.Printf("[im:%s] binding not found app=%s chat=%s sender=%s message=%s", provider, parsed.AppID, message.ChatID, message.SenderOpenID, message.MessageID)
+			log.Printf("[im:%s] binding not found app=%s chat=%s sender=%s message=%s", provider, appID, message.ChatID, message.SenderOpenID, message.MessageID)
 		}
-		_ = json.NewEncoder(w).Encode(map[string]any{"ok": true, "ignored": true, "reason": reason})
-		return
+		return map[string]any{"ok": true, "ignored": true, "reason": reason}, nil
 	}
 	resolved := resolution.Resolved
 	if !channelProvider.ShouldHandleMessage(resolved.Binding.ExternalChatID, message) {
@@ -121,10 +126,9 @@ func (s *Server) handleIMEvent(w http.ResponseWriter, r *http.Request) {
 				"chatType":  message.ChatType,
 			},
 		})
-		_ = json.NewEncoder(w).Encode(map[string]any{"ok": true, "ignored": true, "reason": "group_not_addressed"})
-		return
+		return map[string]any{"ok": true, "ignored": true, "reason": "group_not_addressed"}, nil
 	}
-	if !verifyIMEventToken(parsed.VerificationToken, resolved.SecretValues) {
+	if !verifyIMEventToken(verificationToken, resolved.SecretValues) {
 		s.recordAgentChannelCallback(resolved.Binding, "rejected", "verification_failed", message, "")
 		s.auditLog(auditLogInput{
 			WorkspaceID:  resolved.Binding.WorkspaceID,
@@ -138,8 +142,7 @@ func (s *Server) handleIMEvent(w http.ResponseWriter, r *http.Request) {
 				"chatId":    message.ChatID,
 			},
 		})
-		_ = json.NewEncoder(w).Encode(map[string]any{"ok": true, "ignored": true, "reason": "verification_failed"})
-		return
+		return map[string]any{"ok": true, "ignored": true, "reason": "verification_failed"}, nil
 	}
 	if !s.userCanOperateAgentInWorkspace(resolved.Identity.UserID, resolved.Binding.WorkspaceID, resolved.Binding.ProjectID, resolved.Binding.AgentID) {
 		s.recordAgentChannelCallback(resolved.Binding, "rejected", "permission_denied", message, "")
@@ -157,13 +160,11 @@ func (s *Server) handleIMEvent(w http.ResponseWriter, r *http.Request) {
 				"messageId":      message.MessageID,
 			},
 		})
-		_ = json.NewEncoder(w).Encode(map[string]any{"ok": true, "ignored": true, "reason": "permission_denied"})
-		return
+		return map[string]any{"ok": true, "ignored": true, "reason": "permission_denied"}, nil
 	}
 	s.recordAgentChannelCallback(resolved.Binding, "accepted", "", message, "")
-	_ = json.NewEncoder(w).Encode(map[string]any{"ok": true})
-
 	go s.runAgentForIMEvent(channelProvider, resolved, message, text)
+	return map[string]any{"ok": true}, nil
 }
 
 func (s *Server) decryptIMEvent(provider imbridge.Provider, encryptedPayload string) ([]byte, bool, error) {

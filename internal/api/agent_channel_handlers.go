@@ -117,6 +117,7 @@ func (s *Server) handleAgentChannelDelete(w http.ResponseWriter, r *http.Request
 		s.serverError(w, err)
 		return
 	}
+	go s.refreshAgentIMBridges()
 	s.auditLog(auditLogInput{
 		WorkspaceID:  workspaceID,
 		Action:       "agent_channel.disconnect",
@@ -400,6 +401,7 @@ func (s *Server) saveAgentIMChannel(r *http.Request, workspaceID, project, agent
 	if err := s.controlDB.UpsertAgentChannelBinding(binding); err != nil {
 		return controldb.AgentChannelBinding{}, err
 	}
+	go s.refreshAgentIMBridges()
 	if strings.TrimSpace(poll.OwnerOpenID) != "" {
 		metadataRaw, _ := json.Marshal(map[string]any{
 			"source":      "agent_channel_setup",

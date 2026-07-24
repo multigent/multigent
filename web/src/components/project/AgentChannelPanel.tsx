@@ -1,8 +1,8 @@
 import { useCallback, useEffect, useRef, useState } from 'react'
 import { useTranslation } from 'react-i18next'
 import { QRCodeSVG } from 'qrcode.react'
-import { CheckCircle2, Copy, Loader2, MessageSquare, ShieldCheck, Trash2, X } from 'lucide-react'
-import { apiDelete, apiFetch, apiPost, apiPut } from '../../lib/api'
+import { CheckCircle2, Loader2, MessageSquare, Trash2, X } from 'lucide-react'
+import { apiDelete, apiFetch, apiPost } from '../../lib/api'
 import { cn } from '../../lib/cn'
 import { confirmDialog } from '../ui/ConfirmDialog'
 import { useFormatDateTime } from '../../lib/format-datetime'
@@ -71,10 +71,6 @@ type SetupState =
   | { step: 'connected'; provider: ChannelProvider }
   | { step: 'error'; provider?: ChannelProvider; message: string }
 
-type SecurityState =
-  | { open: false }
-  | { open: true; channel: AgentChannel; verificationToken: string; encryptKey: string; saving: boolean; error?: string }
-
 export function AgentChannelPanel({ project, agentName }: { project: string; agentName: string }) {
   const { t } = useTranslation()
   const fmtDateTime = useFormatDateTime()
@@ -86,7 +82,6 @@ export function AgentChannelPanel({ project, agentName }: { project: string; age
     { id: 'lark', label: 'Lark' },
   ])
   const [setup, setSetup] = useState<SetupState>({ step: 'idle' })
-  const [security, setSecurity] = useState<SecurityState>({ open: false })
   const pollRef = useRef<ReturnType<typeof setInterval> | null>(null)
 
   const basePath = `/api/v1/projects/${encodeURIComponent(project)}/agents/${encodeURIComponent(agentName)}/channels`
@@ -184,21 +179,6 @@ export function AgentChannelPanel({ project, agentName }: { project: string; age
     await load()
   }
 
-  async function saveSecurity() {
-    if (!security.open) return
-    setSecurity({ ...security, saving: true, error: undefined })
-    try {
-      const body: { verificationToken?: string; encryptKey?: string } = {}
-      if (security.verificationToken.trim()) body.verificationToken = security.verificationToken.trim()
-      if (security.encryptKey.trim()) body.encryptKey = security.encryptKey.trim()
-      await apiPut<AgentChannel>(`${basePath}/${security.channel.provider}/security`, body)
-      setSecurity({ open: false })
-      await load()
-    } catch (e) {
-      setSecurity({ ...security, saving: false, error: e instanceof Error ? e.message : String(e) })
-    }
-  }
-
   const byProvider = new Map(channels.map(channel => [channel.provider, channel]))
 
   return (
@@ -282,21 +262,11 @@ export function AgentChannelPanel({ project, agentName }: { project: string; age
                         mono={Boolean(channel.externalChatId)}
                       />
                       <ChannelDetail label={t('agentChannels.lastActivityLabel')} value={fmtDateTime(channel.lastActivityAt)} />
-                      {channel.callbackUrl && (
-                        <div className="flex max-w-full items-center gap-1.5">
-                          <span className="shrink-0">{t('agentChannels.callbackUrl')}</span>
-                          <code className="min-w-0 truncate rounded bg-neutral-100 px-1.5 py-0.5 text-[11px] text-neutral-600 dark:bg-zinc-800 dark:text-zinc-300">{channel.callbackUrl}</code>
-                          <button type="button" onClick={() => void navigator.clipboard?.writeText(channel.callbackUrl || '')} className="shrink-0 rounded p-1 text-neutral-400 hover:bg-neutral-100 hover:text-neutral-700 dark:hover:bg-zinc-800 dark:hover:text-zinc-200" title={t('agentChannels.copyCallback')}>
-                            <Copy className="size-3.5" />
-                          </button>
-                        </div>
-                      )}
-                      <p>
-                        {channel.security?.verificationTokenConfigured ? t('agentChannels.securityConfigured') : t('agentChannels.securityNotConfigured')}
-                      </p>
+                      <ChannelDetail label={t('agentChannels.receiveModeLabel')} value={t('agentChannels.websocketMode')} />
+                      <p className="text-neutral-500 dark:text-zinc-400">{t('agentChannels.websocketHint')}</p>
                       {channel.callback?.lastAt ? (
                         <p className={cn(channel.callback.error && 'text-red-500 dark:text-red-300')}>
-                          {t('agentChannels.lastCallback', {
+                          {t('agentChannels.lastEvent', {
                             time: fmtDateTime(channel.callback.lastAt),
                             status: t(`agentChannels.callbackStatus.${channel.callback.status || 'unknown'}`),
                             reason: channel.callback.reason ? t(`agentChannels.callbackReason.${channel.callback.reason}`, { defaultValue: channel.callback.reason }) : '-',
@@ -304,7 +274,7 @@ export function AgentChannelPanel({ project, agentName }: { project: string; age
                           {channel.callback.error ? ` · ${channel.callback.error}` : ''}
                         </p>
                       ) : (
-                        <p>{t('agentChannels.callbackPending')}</p>
+                        <p>{t('agentChannels.eventPending')}</p>
                       )}
                     </div>
                   ) : (
@@ -313,9 +283,6 @@ export function AgentChannelPanel({ project, agentName }: { project: string; age
                 </div>
                 {channel ? (
                   <div className="flex items-center gap-1">
-                    <button type="button" onClick={() => setSecurity({ open: true, channel, verificationToken: '', encryptKey: '', saving: false })} className="rounded-md p-1.5 text-neutral-400 hover:bg-neutral-100 hover:text-neutral-700 dark:text-zinc-500 dark:hover:bg-zinc-800 dark:hover:text-zinc-200" title={t('agentChannels.security')}>
-                      <ShieldCheck className="size-4" />
-                    </button>
                     <button type="button" onClick={() => void disconnect(channel)} className="rounded-md p-1.5 text-neutral-400 hover:bg-red-50 hover:text-red-600 dark:text-zinc-500 dark:hover:bg-red-950/30 dark:hover:text-red-300" title={t('agentChannels.disconnect')}>
                       <Trash2 className="size-4" />
                     </button>
@@ -376,50 +343,6 @@ export function AgentChannelPanel({ project, agentName }: { project: string; age
         </div>
       )}
 
-      {security.open && (
-        <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/40 px-4">
-          <div className="w-full max-w-md rounded-xl border border-neutral-200 bg-white p-5 shadow-xl dark:border-zinc-700 dark:bg-zinc-900">
-            <div className="flex items-center justify-between gap-3">
-              <h3 className="text-base font-semibold text-neutral-900 dark:text-zinc-100">{t('agentChannels.security')}</h3>
-              <button type="button" onClick={() => setSecurity({ open: false })} className="rounded-md p-1.5 text-neutral-400 hover:bg-neutral-100 hover:text-neutral-700 dark:hover:bg-zinc-800 dark:hover:text-zinc-200">
-                <X className="size-4" />
-              </button>
-            </div>
-            <p className="mt-1 text-xs text-neutral-500 dark:text-zinc-400">{t('agentChannels.securityHint')}</p>
-            <div className="mt-4 space-y-3">
-              <label className="block">
-                <span className="text-xs font-medium text-neutral-600 dark:text-zinc-300">{t('agentChannels.verificationToken')}</span>
-                <input
-                  type="password"
-                  value={security.verificationToken}
-                  onChange={e => setSecurity({ ...security, verificationToken: e.target.value })}
-                  placeholder={security.channel.security?.verificationTokenConfigured ? t('agentChannels.keepExisting') : ''}
-                  className="mt-1 w-full rounded-md border border-neutral-200 bg-white px-3 py-2 text-sm text-neutral-900 outline-none focus:border-sky-400 dark:border-zinc-700 dark:bg-zinc-950 dark:text-zinc-100"
-                />
-              </label>
-              <label className="block">
-                <span className="text-xs font-medium text-neutral-600 dark:text-zinc-300">{t('agentChannels.encryptKey')}</span>
-                <input
-                  type="password"
-                  value={security.encryptKey}
-                  onChange={e => setSecurity({ ...security, encryptKey: e.target.value })}
-                  placeholder={security.channel.security?.encryptKeyConfigured ? t('agentChannels.keepExisting') : ''}
-                  className="mt-1 w-full rounded-md border border-neutral-200 bg-white px-3 py-2 text-sm text-neutral-900 outline-none focus:border-sky-400 dark:border-zinc-700 dark:bg-zinc-950 dark:text-zinc-100"
-                />
-              </label>
-              {security.error && <div className="rounded-md bg-red-50 px-3 py-2 text-sm text-red-600 dark:bg-red-950/30 dark:text-red-300">{security.error}</div>}
-            </div>
-            <div className="mt-5 flex justify-end gap-2">
-              <button type="button" onClick={() => setSecurity({ open: false })} className="rounded-md border border-neutral-200 px-3 py-2 text-sm text-neutral-600 hover:bg-neutral-50 dark:border-zinc-700 dark:text-zinc-300 dark:hover:bg-zinc-800">
-                {t('common.cancel')}
-              </button>
-              <button type="button" onClick={() => void saveSecurity()} disabled={security.saving} className="rounded-md border border-sky-200 bg-sky-50 px-3 py-2 text-sm font-medium text-sky-700 hover:bg-sky-100 disabled:opacity-50 dark:border-sky-800 dark:bg-sky-900/20 dark:text-sky-300 dark:hover:bg-sky-900/30">
-                {t('common.save')}
-              </button>
-            </div>
-          </div>
-        </div>
-      )}
     </section>
   )
 }

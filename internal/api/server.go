@@ -72,6 +72,8 @@ type Server struct {
 	interactions           *interaction.Manager
 	connectionHealthCancel func()
 	connectionHealthDone   chan struct{}
+	agentIMMu              sync.Mutex
+	agentIMCancel          map[string]context.CancelFunc
 	connectorSetupMu       sync.Mutex
 	connectorSetupSessions map[string]connectorDeviceAuthSession
 	modelAuthMu            sync.Mutex
@@ -108,11 +110,14 @@ func NewServer(root, apiKey string) *Server {
 		msStore:                store.NewMilestoneStore(root),
 		execProcs:              make(map[string]*execProcess),
 		interactions:           interaction.NewManager(),
+		agentIMCancel:          make(map[string]context.CancelFunc),
 		connectorSetupSessions: make(map[string]connectorDeviceAuthSession),
 		modelAuthSessions:      make(map[string]*modelAuthSession),
 	}
 	go s.restoreDesiredSchedulers()
 	s.startConnectionHealthChecker()
+	s.failStaleInteractionSessionsOnStartup()
+	go s.refreshAgentIMBridges()
 	return s
 }
 
@@ -157,6 +162,52 @@ func serverHasAgency(root string) bool {
 	return err == nil
 }
 
+func mergeJSONObjects(raw string, patch map[string]any) string {
+	obj := map[string]any{}
+	_ = json.Unmarshal([]byte(raw), &obj)
+	for k, v := range patch {
+		obj[k] = v
+	}
+	next, err := json.Marshal(obj)
+	if err != nil {
+		return raw
+	}
+	return string(next)
+}
+
+func (s *Server) failStaleInteractionSessionsOnStartup() {
+	if s.controlDB == nil {
+		return
+	}
+	for _, status := range []string{"active", "waiting_input"} {
+		sessions, err := s.controlDB.ListInteractionSessions(controldb.InteractionSessionFilter{
+			Status: status,
+			Limit:  500,
+		})
+		if err != nil {
+			log.Printf("list stale interaction sessions failed: %v", err)
+			continue
+		}
+		for _, session := range sessions {
+			now := time.Now().UTC().Format(time.RFC3339)
+			session.Status = "failed"
+			session.UpdatedAt = now
+			session.LastActivityAt = now
+			session.CompletedAt = now
+			session.MetadataJSON = mergeJSONObjects(session.MetadataJSON, map[string]any{
+				"staleReason": "server_restarted",
+			})
+			if err := s.controlDB.UpdateInteractionSession(session); err != nil {
+				log.Printf("mark stale interaction session failed id=%s: %v", session.ID, err)
+				continue
+			}
+			_ = s.createInteractionEvent(session, "system", "", session.SourceChannel, "session_failed", "Server restarted before the interaction completed.", map[string]any{
+				"reason": "server_restarted",
+			})
+		}
+	}
+}
+
 // SetVersion sets the build version string exposed via /api/v1/health.
 func (s *Server) SetVersion(v string) { s.version = v }
 
@@ -174,6 +225,7 @@ func (s *Server) Shutdown() {
 	if s.connectionHealthDone != nil {
 		<-s.connectionHealthDone
 	}
+	s.stopAgentIMBridges()
 	s.triggers.StopPoller()
 	s.sched.Cleanup()
 	_ = s.controlDB.Close()
