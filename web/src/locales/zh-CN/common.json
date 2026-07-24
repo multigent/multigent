@@ -1239,6 +1239,7 @@
     "apply": "应用",
     "save": "保存",
     "delete": "删除",
+    "loading": "加载中…",
     "saved": "已保存",
     "saving": "保存中…",
     "sending": "发送中…",

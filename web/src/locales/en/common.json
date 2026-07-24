@@ -1239,6 +1239,7 @@
     "apply": "Apply",
     "save": "Save",
     "delete": "Delete",
+    "loading": "Loading…",
     "saved": "Saved",
     "saving": "Saving…",
     "sending": "Sending…",
