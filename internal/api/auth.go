@@ -275,6 +275,11 @@ func (s *UserStore) CreateInvitation(workspaceID, email, role, displayName, invi
 	default:
 		role = WorkspaceRoleMember
 	}
+	projects = normalizeProjectGrants(projects)
+	agentGrants = normalizeAgentGrants(agentGrants)
+	if err := validateScopedAccessForWorkspaceRole(role, projects, agentGrants); err != nil {
+		return nil, err
+	}
 	now := time.Now().UTC()
 	inv := invitationRecord{
 		Token:       generateToken(24),
@@ -283,7 +288,7 @@ func (s *UserStore) CreateInvitation(workspaceID, email, role, displayName, invi
 		Role:        role,
 		DisplayName: displayName,
 		Projects:    projects,
-		AgentGrants: normalizeAgentGrants(agentGrants),
+		AgentGrants: agentGrants,
 		InvitedBy:   invitedBy,
 		Status:      "pending",
 		CreatedAt:   now.Format(time.RFC3339),
@@ -540,6 +545,52 @@ func normalizeAgentGrants(in []agentAccess) []agentAccess {
 	return out
 }
 
+func normalizeProjectGrants(in []projectAccess) []projectAccess {
+	out := make([]projectAccess, 0, len(in))
+	seen := map[string]bool{}
+	for _, grant := range in {
+		project := strings.TrimSpace(grant.Project)
+		role := strings.TrimSpace(grant.Role)
+		if project == "" {
+			continue
+		}
+		switch role {
+		case ProjectRoleViewer, ProjectRoleOperator, ProjectRoleManager:
+		default:
+			role = ProjectRoleViewer
+		}
+		if seen[project] {
+			continue
+		}
+		seen[project] = true
+		out = append(out, projectAccess{Project: project, Role: role})
+	}
+	return out
+}
+
+func validateScopedAccessForWorkspaceRole(workspaceRole string, projects []projectAccess, agentGrants []agentAccess) error {
+	if workspaceRole != WorkspaceRoleGuest {
+		return nil
+	}
+	for _, grant := range normalizeProjectGrants(projects) {
+		if grant.Role != ProjectRoleViewer {
+			return fmt.Errorf("workspace guest can only receive project viewer access")
+		}
+	}
+	if len(normalizeAgentGrants(agentGrants)) > 0 {
+		return fmt.Errorf("workspace guest cannot receive agent access")
+	}
+	return nil
+}
+
+func downgradeScopedAccessForWorkspaceGuest(projects []projectAccess) []projectAccess {
+	normalized := normalizeProjectGrants(projects)
+	for i := range normalized {
+		normalized[i].Role = ProjectRoleViewer
+	}
+	return normalized
+}
+
 func linkedAgentRefs(grants []agentAccess) []string {
 	out := make([]string, 0, len(grants))
 	for _, grant := range normalizeAgentGrants(grants) {
@@ -562,7 +613,7 @@ func dbUserToRecord(u controldb.User) userRecord {
 		Avatar:       u.Avatar,
 		Phone:        u.Phone,
 		Bio:          u.Bio,
-		Projects:     projects,
+		Projects:     normalizeProjectGrants(projects),
 		AgentGrants:  normalizeAgentGrants(grants),
 		LinkedAgents: linkedAgentRefs(grants),
 		Disabled:     u.Disabled,
@@ -571,7 +622,7 @@ func dbUserToRecord(u controldb.User) userRecord {
 }
 
 func recordToDBUser(u userRecord) controldb.User {
-	projects, _ := json.Marshal(u.Projects)
+	projects, _ := json.Marshal(normalizeProjectGrants(u.Projects))
 	grants := normalizeAgentGrants(u.AgentGrants)
 	linked, _ := json.Marshal(grants)
 	return controldb.User{
@@ -601,7 +652,7 @@ func dbInvitationToRecord(inv controldb.Invitation) invitationRecord {
 		Email:       inv.Email,
 		Role:        inv.Role,
 		DisplayName: inv.DisplayName,
-		Projects:    projects,
+		Projects:    normalizeProjectGrants(projects),
 		AgentGrants: normalizeAgentGrants(grants),
 		InvitedBy:   inv.InvitedBy,
 		Status:      inv.Status,
@@ -612,7 +663,7 @@ func dbInvitationToRecord(inv controldb.Invitation) invitationRecord {
 }
 
 func recordToDBInvitation(inv invitationRecord) controldb.Invitation {
-	projects, _ := json.Marshal(inv.Projects)
+	projects, _ := json.Marshal(normalizeProjectGrants(inv.Projects))
 	linked, _ := json.Marshal(normalizeAgentGrants(inv.AgentGrants))
 	return controldb.Invitation{
 		Token:        inv.Token,
@@ -1305,6 +1356,12 @@ func (s *Server) handleCreateInvitation(w http.ResponseWriter, r *http.Request) 
 		s.jsonErrorCode(w, http.StatusForbidden, ErrCodeForbidden, "workspace owner access required for this role")
 		return
 	}
+	body.Projects = normalizeProjectGrants(body.Projects)
+	body.AgentGrants = normalizeAgentGrants(body.AgentGrants)
+	if err := validateScopedAccessForWorkspaceRole(role, body.Projects, body.AgentGrants); err != nil {
+		s.jsonErrorCode(w, http.StatusBadRequest, ErrCodeValidationFailed, err.Error())
+		return
+	}
 
 	type invitationResult struct {
 		Invitation *invitationRecord `json:"invitation"`
@@ -1625,6 +1682,27 @@ func (s *Server) handleUpdateUser(w http.ResponseWriter, r *http.Request) {
 		body.Projects = nil
 		body.AgentGrants = nil
 	}
+	targetWorkspaceRole := WorkspaceRoleMember
+	if targetUser.Role == RoleAdmin {
+		targetWorkspaceRole = WorkspaceRoleAdmin
+	} else if workspaceID != "" && s.controlDB != nil {
+		if member, ok, err := s.controlDB.WorkspaceMember(workspaceID, target); err != nil {
+			s.serverError(w, err)
+			return
+		} else if ok {
+			targetWorkspaceRole = member.Role
+		}
+	}
+	if body.Projects != nil {
+		body.Projects = normalizeProjectGrants(body.Projects)
+	}
+	if body.AgentGrants != nil {
+		body.AgentGrants = normalizeAgentGrants(body.AgentGrants)
+	}
+	if err := validateScopedAccessForWorkspaceRole(targetWorkspaceRole, body.Projects, body.AgentGrants); err != nil {
+		s.jsonErrorCode(w, http.StatusBadRequest, ErrCodeValidationFailed, err.Error())
+		return
+	}
 	if err := s.users.UpdateUser(target, body.Role, body.DisplayName, body.Email, body.Avatar, body.Phone, body.Bio, body.Disabled, body.Projects, body.AgentGrants, body.Password); err != nil {
 		if strings.Contains(err.Error(), "not found") {
 			s.jsonErrorCode(w, http.StatusNotFound, ErrCodeUserNotFound, err.Error())
@@ -1711,6 +1789,15 @@ func (s *Server) handleUpdateWorkspaceMemberRole(w http.ResponseWriter, r *http.
 	if err := s.controlDB.UpsertWorkspaceMember(workspaceID, target, nextRole); err != nil {
 		s.serverError(w, err)
 		return
+	}
+	if nextRole == WorkspaceRoleGuest {
+		if targetUser := s.users.GetUser(target); targetUser != nil {
+			projects := downgradeScopedAccessForWorkspaceGuest(targetUser.Projects)
+			if err := s.users.UpdateUser(target, nil, nil, nil, nil, nil, nil, nil, projects, []agentAccess{}, nil); err != nil {
+				s.serverError(w, err)
+				return
+			}
+		}
 	}
 	s.auditLog(auditLogInput{
 		WorkspaceID:  workspaceID,

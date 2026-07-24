@@ -120,6 +120,8 @@ export default function PeoplePage() {
   const [accessAgents, setAccessAgents] = useState<{ project: string; agent: string; role: string }[]>([])
   const [projectCatalog, setProjectCatalog] = useState<ProjectRow[]>([])
   const [agentsByProject, setAgentsByProject] = useState<Record<string, AgentRow[]>>({})
+  const isAccessGuest = accessWorkspaceRole === 'guest'
+  const projectRoleOptions = isAccessGuest ? ['viewer'] : ['viewer', 'operator', 'manager']
 
   const refresh = useCallback(async () => {
     try {
@@ -241,10 +243,14 @@ export default function PeoplePage() {
 
   async function openAccessEditor(person: PersonRow) {
     if (isSuperAdmin(person)) return
+    const workspaceRole = person.role || 'member'
     setAccessEditing(person)
-    setAccessWorkspaceRole(person.role || 'member')
-    setAccessProjects([...(person.projects ?? [])])
-    setAccessAgents([...(person.agentGrants ?? [])])
+    setAccessWorkspaceRole(workspaceRole)
+    setAccessProjects((person.projects ?? []).map(grant => ({
+      ...grant,
+      role: workspaceRole === 'guest' ? 'viewer' : (grant.role || 'viewer'),
+    })))
+    setAccessAgents(workspaceRole === 'guest' ? [] : [...(person.agentGrants ?? [])])
     setErr(null)
     try {
       const projects = await apiFetch<ProjectRow[]>('/api/v1/projects')
@@ -264,12 +270,18 @@ export default function PeoplePage() {
     if (!accessEditing) return
     setSaving(true); setErr(null)
     try {
+      const projects = accessProjects
+        .filter(p => p.project.trim())
+        .map(p => ({ project: p.project, role: isAccessGuest ? 'viewer' : (p.role || 'viewer') }))
+      const agentGrants = isAccessGuest
+        ? []
+        : accessAgents.filter(a => a.project.trim() && a.agent.trim()).map(a => ({ project: a.project, agent: a.agent, role: a.role || 'operator' }))
       if (accessWorkspaceRole && accessWorkspaceRole !== accessEditing.role) {
         await apiPut(`/api/v1/users/${encodeURIComponent(accessEditing.username)}/workspace-role`, { role: accessWorkspaceRole })
       }
       await apiPut(`/api/v1/users/${encodeURIComponent(accessEditing.username)}`, {
-        projects: accessProjects.filter(p => p.project.trim()).map(p => ({ project: p.project, role: p.role || 'viewer' })),
-        agentGrants: accessAgents.filter(a => a.project.trim() && a.agent.trim()).map(a => ({ project: a.project, agent: a.agent, role: a.role || 'operator' })),
+        projects,
+        agentGrants,
       })
       setAccessEditing(null)
       await refresh()
@@ -287,9 +299,18 @@ export default function PeoplePage() {
   }
 
   function addAgentGrant() {
+    if (isAccessGuest) return
     const project = projectCatalog[0]?.name ?? ''
     const agent = project ? (agentsByProject[project]?.[0]?.name ?? '') : ''
     setAccessAgents([...accessAgents, { project, agent, role: 'operator' }])
+  }
+
+  function updateAccessWorkspaceRole(role: string) {
+    setAccessWorkspaceRole(role)
+    if (role === 'guest') {
+      setAccessProjects(prev => prev.map(grant => ({ ...grant, role: 'viewer' })))
+      setAccessAgents([])
+    }
   }
 
   return (
@@ -540,7 +561,7 @@ export default function PeoplePage() {
                   <span className="text-sm font-semibold text-neutral-900 dark:text-zinc-100">{t('people.workspaceRole')}</span>
                   <select
                     value={accessWorkspaceRole}
-                    onChange={e => setAccessWorkspaceRole(e.target.value)}
+                    onChange={e => updateAccessWorkspaceRole(e.target.value)}
                     disabled={accessEditing.role === 'owner'}
                     className={fieldCls}
                   >
@@ -573,7 +594,7 @@ export default function PeoplePage() {
                         const next = [...accessProjects]; next[idx] = { ...next[idx], role: e.target.value }
                         setAccessProjects(next)
                       }} className={fieldCls}>
-                        {['viewer', 'operator', 'manager'].map(role => <option key={role} value={role}>{t(`people.projectRole_${role}`)}</option>)}
+                        {projectRoleOptions.map(role => <option key={role} value={role}>{t(`people.projectRole_${role}`)}</option>)}
                       </select>
                       <button type="button" onClick={() => setAccessProjects(accessProjects.filter((_, i) => i !== idx))} className="rounded-lg border border-neutral-200 px-3 text-xs font-medium text-neutral-500 hover:bg-neutral-50 dark:border-zinc-700 dark:text-zinc-400 dark:hover:bg-zinc-800">
                         {t('forms.delete')}
@@ -586,9 +607,11 @@ export default function PeoplePage() {
               <section>
                 <div className="mb-2 flex items-center justify-between">
                   <h3 className="text-sm font-semibold text-neutral-900 dark:text-zinc-100">{t('people.agentAccess')}</h3>
-                  <button type="button" onClick={addAgentGrant} disabled={projectCatalog.length === 0} className="rounded-lg border border-sky-600 bg-white px-3 py-1.5 text-xs font-medium text-sky-700 hover:bg-sky-50 disabled:opacity-50 dark:border-sky-500 dark:bg-zinc-900 dark:text-sky-400 dark:hover:bg-zinc-800">
-                    {t('people.addAgentAccess')}
-                  </button>
+                  {!isAccessGuest && (
+                    <button type="button" onClick={addAgentGrant} disabled={projectCatalog.length === 0} className="rounded-lg border border-sky-600 bg-white px-3 py-1.5 text-xs font-medium text-sky-700 hover:bg-sky-50 disabled:opacity-50 dark:border-sky-500 dark:bg-zinc-900 dark:text-sky-400 dark:hover:bg-zinc-800">
+                      {t('people.addAgentAccess')}
+                    </button>
+                  )}
                 </div>
                 <p className="mb-2 text-xs text-neutral-500 dark:text-zinc-500">{t('people.agentAccessHint')}</p>
                 <div className="space-y-2">

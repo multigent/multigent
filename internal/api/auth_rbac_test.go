@@ -413,6 +413,81 @@ func TestWorkspaceAdminCanUpdateMemberScopedAccess(t *testing.T) {
 	}
 }
 
+func TestWorkspaceGuestCannotReceiveOperatorOrAgentScopedAccess(t *testing.T) {
+	s, workspaceID := newConnectionGrantPolicyServer(t)
+	if err := s.users.CreateUser("guest1", "pass123", RoleMember, "Guest 1", "guest1@example.com", "", "", ""); err != nil {
+		t.Fatalf("create guest: %v", err)
+	}
+	if err := s.controlDB.UpsertWorkspaceMember(workspaceID, "guest1", WorkspaceRoleGuest); err != nil {
+		t.Fatalf("workspace guest: %v", err)
+	}
+
+	rec := httptest.NewRecorder()
+	req := providerTestRequest(http.MethodPut, "/api/v1/users/guest1", "admin", map[string]any{
+		"projects": []map[string]string{{"project": "sample", "role": ProjectRoleOperator}},
+	})
+	req.SetPathValue("username", "guest1")
+	s.handleUpdateUser(rec, req)
+	if rec.Code != http.StatusBadRequest {
+		t.Fatalf("guest project operator update status=%d body=%s", rec.Code, rec.Body.String())
+	}
+
+	rec = httptest.NewRecorder()
+	req = providerTestRequest(http.MethodPut, "/api/v1/users/guest1", "admin", map[string]any{
+		"projects": []map[string]string{{"project": "sample", "role": ProjectRoleViewer}},
+		"agentGrants": []map[string]string{{
+			"project": "sample",
+			"agent":   "pm",
+			"role":    string(rbac.AgentRoleViewer),
+		}},
+	})
+	req.SetPathValue("username", "guest1")
+	s.handleUpdateUser(rec, req)
+	if rec.Code != http.StatusBadRequest {
+		t.Fatalf("guest agent grant update status=%d body=%s", rec.Code, rec.Body.String())
+	}
+}
+
+func TestWorkspaceGuestInvitationCannotCarryWriteOrAgentAccess(t *testing.T) {
+	users := newTestUserStore(t)
+	if _, err := users.CreateInvitation("ws-one", "guest@example.com", WorkspaceRoleGuest, "Guest", "admin", []projectAccess{{Project: "sample", Role: ProjectRoleManager}}, nil); err == nil {
+		t.Fatalf("expected guest invitation with write project role to fail")
+	}
+	if _, err := users.CreateInvitation("ws-one", "guest@example.com", WorkspaceRoleGuest, "Guest", "admin", []projectAccess{{Project: "sample", Role: ProjectRoleViewer}}, []agentAccess{{Project: "sample", Agent: "pm", Role: string(rbac.AgentRoleViewer)}}); err == nil {
+		t.Fatalf("expected guest invitation with agent access to fail")
+	}
+}
+
+func TestWorkspaceGuestDemotionDowngradesScopedAccess(t *testing.T) {
+	s, workspaceID := newConnectionGrantPolicyServer(t)
+	if err := s.users.CreateUser("member3", "pass123", RoleMember, "Member 3", "member3@example.com", "", "", ""); err != nil {
+		t.Fatalf("create member: %v", err)
+	}
+	if err := s.controlDB.UpsertWorkspaceMember(workspaceID, "member3", WorkspaceRoleMember); err != nil {
+		t.Fatalf("workspace member: %v", err)
+	}
+	if err := s.users.UpdateUser("member3", nil, nil, nil, nil, nil, nil, nil, []projectAccess{{Project: "sample", Role: ProjectRoleManager}}, []agentAccess{{Project: "sample", Agent: "pm", Role: string(rbac.AgentRoleOwner)}}, nil); err != nil {
+		t.Fatalf("seed scoped access: %v", err)
+	}
+
+	rec := httptest.NewRecorder()
+	req := providerTestRequest(http.MethodPut, "/api/v1/users/member3/workspace-role", "admin", map[string]any{
+		"role": WorkspaceRoleGuest,
+	})
+	req.SetPathValue("username", "member3")
+	s.handleUpdateWorkspaceMemberRole(rec, req)
+	if rec.Code != http.StatusOK {
+		t.Fatalf("demote status=%d body=%s", rec.Code, rec.Body.String())
+	}
+	u := s.users.GetUser("member3")
+	if len(u.Projects) != 1 || u.Projects[0].Role != ProjectRoleViewer {
+		t.Fatalf("projects not downgraded: %#v", u.Projects)
+	}
+	if len(u.AgentGrants) != 0 {
+		t.Fatalf("agent grants not cleared: %#v", u.AgentGrants)
+	}
+}
+
 func TestWorkspaceAdminCannotUpdateSuperAdminScopedAccess(t *testing.T) {
 	s, workspaceID := newConnectionGrantPolicyServer(t)
 	if err := s.users.CreateUser("root-admin", "pass123", RoleAdmin, "Root Admin", "root-admin@example.com", "", "", ""); err != nil {
