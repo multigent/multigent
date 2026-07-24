@@ -2018,7 +2018,8 @@
     "detailsTitle": "{{provider}} 連接詳情",
     "statusLabel": "狀態",
     "lastEventLabel": "最近事件",
-    "lastEventSummary": "最近事件：{{time}} · {{status}}"
+    "lastEventSummary": "最近事件：{{time}} · {{status}}",
+    "connectedReadyShort": "可以從該平台直接給這個 Agent 發訊息。"
   },
   "sandbox": {
     "title": "執行環境",

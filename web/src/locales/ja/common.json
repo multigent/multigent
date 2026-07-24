@@ -2008,7 +2008,8 @@
     "detailsTitle": "{{provider}} 接続詳細",
     "statusLabel": "状態",
     "lastEventLabel": "最新イベント",
-    "lastEventSummary": "最新イベント: {{time}} · {{status}}"
+    "lastEventSummary": "最新イベント: {{time}} · {{status}}",
+    "connectedReadyShort": "このプラットフォームから Agent に直接メッセージできます。"
   },
   "sandbox": {
     "title": "実行環境",

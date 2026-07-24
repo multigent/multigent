@@ -2039,7 +2039,8 @@
     "detailsTitle": "{{provider}} connection details",
     "statusLabel": "Status",
     "lastEventLabel": "Last event",
-    "lastEventSummary": "Last event: {{time}} · {{status}}"
+    "lastEventSummary": "Last event: {{time}} · {{status}}",
+    "connectedReadyShort": "You can message this agent from this platform."
   },
   "sandbox": {
     "title": "Runtime Environment",

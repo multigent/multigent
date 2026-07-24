@@ -2039,7 +2039,8 @@
     "detailsTitle": "{{provider}} 连接详情",
     "statusLabel": "状态",
     "lastEventLabel": "最近事件",
-    "lastEventSummary": "最近事件：{{time}} · {{status}}"
+    "lastEventSummary": "最近事件：{{time}} · {{status}}",
+    "connectedReadyShort": "可以从该平台直接给这个 Agent 发消息。"
   },
   "sandbox": {
     "title": "运行环境",

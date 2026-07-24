@@ -272,19 +272,7 @@ export function AgentChannelPanel({ project, agentName }: { project: string; age
                     )}
                   </div>
                   {channel ? (
-                    <div className="mt-2 space-y-1 text-xs text-neutral-500 dark:text-zinc-400">
-                      <p>{t('agentChannels.lastActivity', { time: fmtDateTime(channel.lastActivityAt) })}</p>
-                      {channel.callback?.lastAt ? (
-                        <p className={cn('truncate', channel.callback.error && 'text-red-500 dark:text-red-300')}>
-                          {t('agentChannels.lastEventSummary', {
-                            time: fmtDateTime(channel.callback.lastAt),
-                            status: t(`agentChannels.callbackStatus.${channel.callback.status || 'unknown'}`),
-                          })}
-                        </p>
-                      ) : (
-                        <p>{t('agentChannels.eventPending')}</p>
-                      )}
-                    </div>
+                    <p className="mt-1 text-xs text-neutral-400 dark:text-zinc-500">{t('agentChannels.connectedReadyShort')}</p>
                   ) : (
                     <p className="mt-1 text-xs text-neutral-400 dark:text-zinc-500">{t('agentChannels.connectHint')}</p>
                   )}
