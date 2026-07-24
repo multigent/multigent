@@ -1,5 +1,23 @@
 # Changelog
 
+## [v0.1.4] - 2026-07-24
+
+### Added
+
+- Task details now support reassigning ownership to another project agent or human member.
+- Reassigning a task to another agent moves it to that agent queue and fires the task trigger.
+
+### Changed
+
+- Browser tab titles now follow the current page instead of staying fixed as `Multigent`.
+- Release workflow skips `runtime-base` image publishing when the runtime image sources are unchanged.
+- Task assignee editing is now an inline text-to-select interaction in the task detail modal.
+
+### Fixed
+
+- Task assignee display alignment in task details.
+- Task reassignment validates project scope and assignee identity before moving queues.
+
 ## [v0.1.3] - 2026-07-24
 
 ### Added
