@@ -279,6 +279,10 @@ export function AppShell() {
 
   const pageTitle = crumbs.length > 0 ? crumbs[crumbs.length - 1].label : ''
 
+  useEffect(() => {
+    document.title = pageTitle ? `${pageTitle} · Multigent` : 'Multigent'
+  }, [pageTitle])
+
   return (
     <PageTabsProvider pageTitle={pageTitle} scope={workspaceScope}>
       <>
