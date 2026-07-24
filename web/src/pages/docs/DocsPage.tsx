@@ -14,6 +14,7 @@ import { apiFetch, apiPost, apiUrl } from '../../lib/api'
 import { getStoredToken } from '../../lib/auth'
 import { confirmDialog } from '../../components/ui/ConfirmDialog'
 import { primaryOutlineButton } from '../../lib/button-styles'
+import { useWorkspaceAccess } from '../../lib/workspace-access'
 
 function stripFrontmatter(md: string): string {
   const trimmed = md.trimStart()
@@ -66,6 +67,8 @@ const TOC_WIDTH = 224
 
 export default function DocsPage() {
   const { t } = useTranslation()
+  const { canAdmin } = useWorkspaceAccess()
+  const canManageDocs = canAdmin
   const location = useLocation()
   const navigate = useNavigate()
   const fmtDate = useLocaleDate()
@@ -205,6 +208,7 @@ export default function DocsPage() {
   }
 
   async function removeDoc(id: string) {
+    if (!canManageDocs) return
     const ok = await confirmDialog({
       title: t('common.delete'),
       description: t('docs.removeConfirm'),
@@ -334,6 +338,7 @@ export default function DocsPage() {
             sidebarOpen={sidebarOpen}
             onToggleSidebar={() => setSidebarOpen(v => !v)}
             onTagClick={tag => { selectTag(tag); goBackToList() }}
+            canManage={canManageDocs}
           />
         ) : (
           <div className="p-6 max-w-6xl mx-auto">
@@ -362,7 +367,7 @@ export default function DocsPage() {
                   </button>
                 )}
               </div>
-              <button data-tour-doc-add onClick={() => setShowAdd(true)} className={primaryOutlineButton}>{t('docs.addDoc')}</button>
+              {canManageDocs && <button data-tour-doc-add onClick={() => setShowAdd(true)} className={primaryOutlineButton}>{t('docs.addDoc')}</button>}
             </div>
             {(selectedIndex || selectedTag) && !searchQ && (
               <button onClick={() => { setSelectedIndex(null); setSelectedTag(null); navigate('/docs', { replace: true }) }} className={`${btnGhost} mb-4`}>
@@ -420,7 +425,7 @@ export default function DocsPage() {
         )}
       </div>
 
-      {showAdd && <AddDocModal allDocs={allDocs} onClose={() => setShowAdd(false)} onAdded={() => { setShowAdd(false); load() }} />}
+      {showAdd && canManageDocs && <AddDocModal allDocs={allDocs} onClose={() => setShowAdd(false)} onAdded={() => { setShowAdd(false); load() }} />}
     </div>
   )
 }
@@ -736,10 +741,11 @@ function HTMLDocFrame({ title, content, fullscreen = false }: { title: string; c
   )
 }
 
-function DocViewer({ doc, content, onBack, onRemove, onUpdated, onOpenDoc, sidebarOpen, onToggleSidebar, onTagClick }: {
+function DocViewer({ doc, content, onBack, onRemove, onUpdated, onOpenDoc, sidebarOpen, onToggleSidebar, onTagClick, canManage }: {
   doc: DocEntry; content: string; onBack: () => void; onRemove: () => void; onUpdated: () => void
   onOpenDoc?: (d: DocEntry) => void
   sidebarOpen: boolean; onToggleSidebar: () => void; onTagClick?: (tag: string) => void
+  canManage: boolean
 }) {
   const { t } = useTranslation()
   const fmtDate = useLocaleDate()
@@ -765,6 +771,7 @@ function DocViewer({ doc, content, onBack, onRemove, onUpdated, onOpenDoc, sideb
   useEffect(() => { void loadRefs() }, [loadRefs])
 
   async function addRef() {
+    if (!canManage) return
     const id = refInput.trim()
     if (!id) return
     await apiFetch(`/api/v1/docs/${doc.id}/refs`, {
@@ -778,6 +785,7 @@ function DocViewer({ doc, content, onBack, onRemove, onUpdated, onOpenDoc, sideb
   }
 
   async function removeRef(refId: string) {
+    if (!canManage) return
     await apiFetch(`/api/v1/docs/${doc.id}/refs/${encodeURIComponent(refId)}`, { method: 'DELETE' })
     void loadRefs()
   }
@@ -810,6 +818,7 @@ function DocViewer({ doc, content, onBack, onRemove, onUpdated, onOpenDoc, sideb
   }
 
   async function saveEdit() {
+    if (!canManage) return
     await apiFetch(`/api/v1/docs/${doc.id}`, {
       method: 'PUT',
       headers: { 'Content-Type': 'application/json' },
@@ -890,10 +899,14 @@ function DocViewer({ doc, content, onBack, onRemove, onUpdated, onOpenDoc, sideb
             <>
               <button onClick={() => setFullscreen(true)} className={btnGhost}><Maximize2 className="size-3.5" /> {t('docs.fullscreen')}</button>
               <button onClick={() => downloadDoc(doc)} className={btnGhost}><Download className="size-3.5" /> {t('docs.download')}</button>
-              <button onClick={() => setEditing(true)} className={btnGhost}><Pencil className="size-3.5" /> {t('docs.edit')}</button>
-              <button onClick={onRemove} className={`${btnGhost} text-red-500 hover:text-red-600 hover:bg-red-50 dark:hover:bg-red-950/20`}>
-                <Trash2 className="size-3.5" /> {t('docs.remove')}
-              </button>
+              {canManage && (
+                <>
+                  <button onClick={() => setEditing(true)} className={btnGhost}><Pencil className="size-3.5" /> {t('docs.edit')}</button>
+                  <button onClick={onRemove} className={`${btnGhost} text-red-500 hover:text-red-600 hover:bg-red-50 dark:hover:bg-red-950/20`}>
+                    <Trash2 className="size-3.5" /> {t('docs.remove')}
+                  </button>
+                </>
+              )}
             </>
           )}
         </div>
@@ -958,7 +971,7 @@ function DocViewer({ doc, content, onBack, onRemove, onUpdated, onOpenDoc, sideb
             )}
 
             {/* References panel */}
-            {(refs && ((refs.refs?.length ?? 0) > 0 || (refs.backrefs?.length ?? 0) > 0 || !editing)) && (
+            {(refs && ((refs.refs?.length ?? 0) > 0 || (refs.backrefs?.length ?? 0) > 0 || (canManage && !editing))) && (
               <div className="mt-10 border-t border-neutral-200 dark:border-zinc-700/60 pt-6 space-y-5">
                 {/* Outbound refs */}
                 <div>
@@ -969,14 +982,16 @@ function DocViewer({ doc, content, onBack, onRemove, onUpdated, onOpenDoc, sideb
                         <span className="text-xs text-neutral-400 font-normal">({refs.refs.length})</span>
                       )}
                     </h3>
-                    <button
-                      onClick={() => setAddingRef(v => !v)}
-                      className="text-xs text-sky-600 hover:text-sky-700 dark:text-sky-400 dark:hover:text-sky-300 flex items-center gap-1"
-                    >
-                      <Plus className="size-3" /> {t('docs.addRef')}
-                    </button>
+                    {canManage && (
+                      <button
+                        onClick={() => setAddingRef(v => !v)}
+                        className="text-xs text-sky-600 hover:text-sky-700 dark:text-sky-400 dark:hover:text-sky-300 flex items-center gap-1"
+                      >
+                        <Plus className="size-3" /> {t('docs.addRef')}
+                      </button>
+                    )}
                   </div>
-                  {addingRef && (
+                  {addingRef && canManage && (
                     <div className="flex gap-2 mb-2">
                       <input
                         value={refInput}
@@ -1006,13 +1021,15 @@ function DocViewer({ doc, content, onBack, onRemove, onUpdated, onOpenDoc, sideb
                               <p className="text-xs text-neutral-400 dark:text-zinc-500 truncate">{r.description}</p>
                             )}
                           </div>
-                          <button
-                            onClick={() => void removeRef(r.id)}
-                            className="opacity-0 group-hover:opacity-100 text-neutral-300 hover:text-red-500 dark:text-zinc-600 dark:hover:text-red-400 transition-opacity"
-                            title={t('docs.removeRef')}
-                          >
-                            <X className="size-3.5" />
-                          </button>
+                          {canManage && (
+                            <button
+                              onClick={() => void removeRef(r.id)}
+                              className="opacity-0 group-hover:opacity-100 text-neutral-300 hover:text-red-500 dark:text-zinc-600 dark:hover:text-red-400 transition-opacity"
+                              title={t('docs.removeRef')}
+                            >
+                              <X className="size-3.5" />
+                            </button>
+                          )}
                         </div>
                       ))}
                     </div>

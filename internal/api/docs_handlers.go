@@ -13,6 +13,9 @@ import (
 )
 
 func (s *Server) handleDocsTree(w http.ResponseWriter, r *http.Request) {
+	if !s.checkCurrentWorkspaceAccess(w, r) {
+		return
+	}
 	ds := store.NewDocsStore(s.root)
 	tree, err := ds.Tree()
 	if err != nil {
@@ -23,6 +26,9 @@ func (s *Server) handleDocsTree(w http.ResponseWriter, r *http.Request) {
 }
 
 func (s *Server) handleDocsList(w http.ResponseWriter, r *http.Request) {
+	if !s.checkCurrentWorkspaceAccess(w, r) {
+		return
+	}
 	ds := store.NewDocsStore(s.root)
 	docs, err := ds.List()
 	if err != nil {
@@ -72,6 +78,9 @@ func (s *Server) handleDocsList(w http.ResponseWriter, r *http.Request) {
 }
 
 func (s *Server) handleDocsGet(w http.ResponseWriter, r *http.Request) {
+	if !s.checkCurrentWorkspaceAccess(w, r) {
+		return
+	}
 	id := r.PathValue("id")
 	ds := store.NewDocsStore(s.root)
 	doc, err := ds.Get(id)
@@ -113,6 +122,9 @@ type docsAddBody struct {
 }
 
 func (s *Server) handleDocsAdd(w http.ResponseWriter, r *http.Request) {
+	if !s.checkCurrentWorkspaceAdmin(w, r) {
+		return
+	}
 	var body docsAddBody
 	if err := s.readJSON(w, r, &body); err != nil {
 		return
@@ -212,6 +224,9 @@ type docsUpdateBody struct {
 }
 
 func (s *Server) handleDocsUpdate(w http.ResponseWriter, r *http.Request) {
+	if !s.checkCurrentWorkspaceAdmin(w, r) {
+		return
+	}
 	id := r.PathValue("id")
 	var body docsUpdateBody
 	if err := s.readJSON(w, r, &body); err != nil {
@@ -250,6 +265,9 @@ func (s *Server) handleDocsUpdate(w http.ResponseWriter, r *http.Request) {
 }
 
 func (s *Server) handleDocsDownload(w http.ResponseWriter, r *http.Request) {
+	if !s.checkCurrentWorkspaceAccess(w, r) {
+		return
+	}
 	id := r.PathValue("id")
 	ds := store.NewDocsStore(s.root)
 	doc, err := ds.Get(id)
@@ -277,6 +295,9 @@ func (s *Server) handleDocsDownload(w http.ResponseWriter, r *http.Request) {
 }
 
 func (s *Server) handleDocsDelete(w http.ResponseWriter, r *http.Request) {
+	if !s.checkCurrentWorkspaceAdmin(w, r) {
+		return
+	}
 	id := r.PathValue("id")
 	ds := store.NewDocsStore(s.root)
 	if err := ds.Remove(id); err != nil {
@@ -293,6 +314,9 @@ func (s *Server) handleDocsDelete(w http.ResponseWriter, r *http.Request) {
 // ── refs handlers ─────────────────────────────────────────────────────────────
 
 func (s *Server) handleDocsGetRefs(w http.ResponseWriter, r *http.Request) {
+	if !s.checkCurrentWorkspaceAccess(w, r) {
+		return
+	}
 	id := r.PathValue("id")
 	ds := store.NewDocsStore(s.root)
 	refs, err := ds.GetRefs(id)
@@ -326,6 +350,9 @@ type docsAddRefBody struct {
 }
 
 func (s *Server) handleDocsAddRef(w http.ResponseWriter, r *http.Request) {
+	if !s.checkCurrentWorkspaceAdmin(w, r) {
+		return
+	}
 	id := r.PathValue("id")
 	var body docsAddRefBody
 	if err := s.readJSON(w, r, &body); err != nil {
@@ -348,6 +375,9 @@ func (s *Server) handleDocsAddRef(w http.ResponseWriter, r *http.Request) {
 }
 
 func (s *Server) handleDocsRemoveRef(w http.ResponseWriter, r *http.Request) {
+	if !s.checkCurrentWorkspaceAdmin(w, r) {
+		return
+	}
 	id := r.PathValue("id")
 	refID := r.PathValue("refId")
 	ds := store.NewDocsStore(s.root)
@@ -365,6 +395,9 @@ func (s *Server) handleDocsRemoveRef(w http.ResponseWriter, r *http.Request) {
 // ── query / lint handlers ─────────────────────────────────────────────────────
 
 func (s *Server) handleDocsQuery(w http.ResponseWriter, r *http.Request) {
+	if !s.checkCurrentWorkspaceAccess(w, r) {
+		return
+	}
 	question := r.URL.Query().Get("q")
 	if question == "" {
 		s.jsonError(w, http.StatusBadRequest, "q parameter is required")
@@ -381,6 +414,9 @@ func (s *Server) handleDocsQuery(w http.ResponseWriter, r *http.Request) {
 }
 
 func (s *Server) handleDocsLint(w http.ResponseWriter, r *http.Request) {
+	if !s.checkCurrentWorkspaceAccess(w, r) {
+		return
+	}
 	ds := store.NewDocsStore(s.root)
 	result, err := ds.Lint()
 	if err != nil {

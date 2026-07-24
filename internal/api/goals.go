@@ -3,6 +3,7 @@ package api
 import (
 	"encoding/json"
 	"net/http"
+	"strings"
 	"time"
 
 	"github.com/multigent/multigent/internal/entity"
@@ -11,6 +12,9 @@ import (
 // ── OKR endpoints ────────────────────────────────────────────────────────────
 
 func (s *Server) handleListOKRs(w http.ResponseWriter, r *http.Request) {
+	if !s.checkCurrentWorkspaceAccess(w, r) {
+		return
+	}
 	f, err := s.okrStore.Load()
 	if err != nil {
 		s.serverError(w, err)
@@ -71,6 +75,9 @@ func (s *Server) handleListOKRs(w http.ResponseWriter, r *http.Request) {
 }
 
 func (s *Server) handleGetOKR(w http.ResponseWriter, r *http.Request) {
+	if !s.checkCurrentWorkspaceAccess(w, r) {
+		return
+	}
 	id := r.PathValue("id")
 	o, err := s.okrStore.GetOKR(id)
 	if err != nil {
@@ -123,6 +130,9 @@ func (s *Server) handleCreateOKR(w http.ResponseWriter, r *http.Request) {
 		s.jsonError(w, http.StatusBadRequest, "objective is required")
 		return
 	}
+	if !s.checkCanManageOKR(w, r, req.Scope, req.ScopeRef) {
+		return
+	}
 	okr := entity.OKR{
 		Scope:       req.Scope,
 		ScopeRef:    req.ScopeRef,
@@ -145,6 +155,14 @@ func (s *Server) handleCreateOKR(w http.ResponseWriter, r *http.Request) {
 
 func (s *Server) handleUpdateOKR(w http.ResponseWriter, r *http.Request) {
 	id := r.PathValue("id")
+	existing, err := s.okrStore.GetOKR(id)
+	if err != nil {
+		s.jsonError(w, http.StatusNotFound, err.Error())
+		return
+	}
+	if !s.checkCanManageOKR(w, r, existing.Scope, existing.ScopeRef) {
+		return
+	}
 	var req struct {
 		Objective   *string            `json:"objective"`
 		Description *string            `json:"description"`
@@ -160,7 +178,20 @@ func (s *Server) handleUpdateOKR(w http.ResponseWriter, r *http.Request) {
 		s.jsonError(w, http.StatusBadRequest, "invalid JSON")
 		return
 	}
-	err := s.okrStore.UpdateOKR(id, func(o *entity.OKR) {
+	if req.Scope != nil || req.ScopeRef != nil {
+		nextScope := existing.Scope
+		nextScopeRef := existing.ScopeRef
+		if req.Scope != nil {
+			nextScope = *req.Scope
+		}
+		if req.ScopeRef != nil {
+			nextScopeRef = *req.ScopeRef
+		}
+		if !s.checkCanManageOKR(w, r, nextScope, nextScopeRef) {
+			return
+		}
+	}
+	err = s.okrStore.UpdateOKR(id, func(o *entity.OKR) {
 		if req.Objective != nil {
 			o.Objective = *req.Objective
 		}
@@ -199,6 +230,14 @@ func (s *Server) handleUpdateOKR(w http.ResponseWriter, r *http.Request) {
 
 func (s *Server) handleDeleteOKR(w http.ResponseWriter, r *http.Request) {
 	id := r.PathValue("id")
+	existing, err := s.okrStore.GetOKR(id)
+	if err != nil {
+		s.jsonError(w, http.StatusNotFound, err.Error())
+		return
+	}
+	if !s.checkCanManageOKR(w, r, existing.Scope, existing.ScopeRef) {
+		return
+	}
 	if err := s.okrStore.DeleteOKR(id); err != nil {
 		s.jsonError(w, http.StatusNotFound, err.Error())
 		return
@@ -210,6 +249,9 @@ func (s *Server) handleDeleteOKR(w http.ResponseWriter, r *http.Request) {
 
 func (s *Server) handleAddKR(w http.ResponseWriter, r *http.Request) {
 	okrID := r.PathValue("id")
+	if !s.checkCanManageExistingOKR(w, r, okrID) {
+		return
+	}
 	var kr entity.KeyResult
 	if err := json.NewDecoder(r.Body).Decode(&kr); err != nil {
 		s.jsonError(w, http.StatusBadRequest, "invalid JSON")
@@ -231,6 +273,9 @@ func (s *Server) handleAddKR(w http.ResponseWriter, r *http.Request) {
 func (s *Server) handleUpdateKR(w http.ResponseWriter, r *http.Request) {
 	okrID := r.PathValue("id")
 	krID := r.PathValue("krId")
+	if !s.checkCanManageExistingOKR(w, r, okrID) {
+		return
+	}
 	var req struct {
 		Description  *string  `json:"description"`
 		CurrentValue *float64 `json:"currentValue"`
@@ -269,6 +314,9 @@ func (s *Server) handleUpdateKR(w http.ResponseWriter, r *http.Request) {
 func (s *Server) handleDeleteKR(w http.ResponseWriter, r *http.Request) {
 	okrID := r.PathValue("id")
 	krID := r.PathValue("krId")
+	if !s.checkCanManageExistingOKR(w, r, okrID) {
+		return
+	}
 	err := s.okrStore.UpdateOKR(okrID, func(o *entity.OKR) {
 		for i := range o.KeyResults {
 			if o.KeyResults[i].ID == krID {
@@ -288,6 +336,9 @@ func (s *Server) handleDeleteKR(w http.ResponseWriter, r *http.Request) {
 
 func (s *Server) handleAddReviewNote(w http.ResponseWriter, r *http.Request) {
 	okrID := r.PathValue("id")
+	if !s.checkCanManageExistingOKR(w, r, okrID) {
+		return
+	}
 	var note entity.ReviewNote
 	if err := json.NewDecoder(r.Body).Decode(&note); err != nil {
 		s.jsonError(w, http.StatusBadRequest, "invalid JSON")
@@ -306,10 +357,51 @@ func (s *Server) handleAddReviewNote(w http.ResponseWriter, r *http.Request) {
 	_ = json.NewEncoder(w).Encode(map[string]any{"ok": true})
 }
 
+func (s *Server) checkCanManageExistingOKR(w http.ResponseWriter, r *http.Request, okrID string) bool {
+	okr, err := s.okrStore.GetOKR(okrID)
+	if err != nil {
+		s.jsonError(w, http.StatusNotFound, err.Error())
+		return false
+	}
+	return s.checkCanManageOKR(w, r, okr.Scope, okr.ScopeRef)
+}
+
+func (s *Server) checkCanManageOKR(w http.ResponseWriter, r *http.Request, scope entity.OKRScope, scopeRef string) bool {
+	if s.canManageOKR(r, scope, scopeRef) {
+		return true
+	}
+	if scope == entity.OKRScopeProject && scopeRef != "" {
+		s.jsonErrorCode(w, http.StatusForbidden, ErrCodeProjectManagerRequired, "project manager access required")
+		return false
+	}
+	s.jsonErrorCode(w, http.StatusForbidden, ErrCodeWorkspaceAdminRequired, "workspace admin access required")
+	return false
+}
+
+func (s *Server) canManageOKR(r *http.Request, scope entity.OKRScope, scopeRef string) bool {
+	if scope == "" || scope == entity.OKRScopeAgency {
+		return s.canAdminCurrentWorkspace(r)
+	}
+	if scope == entity.OKRScopeProject && scopeRef != "" {
+		return s.canAdminCurrentWorkspace(r) || s.canManageProject(r, scopeRef)
+	}
+	if scope == entity.OKRScopeAgent && scopeRef != "" {
+		project := scopeRef
+		if idx := strings.Index(scopeRef, "/"); idx >= 0 {
+			project = scopeRef[:idx]
+		}
+		return project != "" && (s.canAdminCurrentWorkspace(r) || s.canManageProject(r, project))
+	}
+	return s.canAdminCurrentWorkspace(r)
+}
+
 // ── Milestone endpoints ──────────────────────────────────────────────────────
 
 func (s *Server) handleListMilestones(w http.ResponseWriter, r *http.Request) {
 	project := r.PathValue("name")
+	if !s.checkProjectAccess(w, r, project) {
+		return
+	}
 	list, err := s.msStore.List(project)
 	if err != nil {
 		s.serverError(w, err)
@@ -323,6 +415,9 @@ func (s *Server) handleListMilestones(w http.ResponseWriter, r *http.Request) {
 
 func (s *Server) handleGetMilestone(w http.ResponseWriter, r *http.Request) {
 	project := r.PathValue("name")
+	if !s.checkProjectAccess(w, r, project) {
+		return
+	}
 	id := r.PathValue("msId")
 	ms, err := s.msStore.Get(project, id)
 	if err != nil {
@@ -334,6 +429,9 @@ func (s *Server) handleGetMilestone(w http.ResponseWriter, r *http.Request) {
 
 func (s *Server) handleCreateMilestone(w http.ResponseWriter, r *http.Request) {
 	project := r.PathValue("name")
+	if !s.checkProjectManager(w, r, project) {
+		return
+	}
 	var ms entity.Milestone
 	if err := json.NewDecoder(r.Body).Decode(&ms); err != nil {
 		s.jsonError(w, http.StatusBadRequest, "invalid JSON")
@@ -354,6 +452,9 @@ func (s *Server) handleCreateMilestone(w http.ResponseWriter, r *http.Request) {
 
 func (s *Server) handleUpdateMilestone(w http.ResponseWriter, r *http.Request) {
 	project := r.PathValue("name")
+	if !s.checkProjectManager(w, r, project) {
+		return
+	}
 	id := r.PathValue("msId")
 	var req struct {
 		Title       *string                 `json:"title"`
@@ -409,6 +510,9 @@ func (s *Server) handleUpdateMilestone(w http.ResponseWriter, r *http.Request) {
 
 func (s *Server) handleDeleteMilestone(w http.ResponseWriter, r *http.Request) {
 	project := r.PathValue("name")
+	if !s.checkProjectManager(w, r, project) {
+		return
+	}
 	id := r.PathValue("msId")
 	if err := s.msStore.Delete(project, id); err != nil {
 		s.jsonError(w, http.StatusNotFound, err.Error())

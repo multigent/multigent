@@ -37,6 +37,9 @@ func (s *Server) resolveFilesPath(sub string) (string, bool) {
 
 // GET /api/v1/files?path=...
 func (s *Server) handleListFiles(w http.ResponseWriter, r *http.Request) {
+	if !s.checkCurrentWorkspaceAccess(w, r) {
+		return
+	}
 	sub := r.URL.Query().Get("path")
 	dir, ok := s.resolveFilesPath(sub)
 	if !ok {
@@ -82,6 +85,9 @@ func (s *Server) handleListFiles(w http.ResponseWriter, r *http.Request) {
 
 // POST /api/v1/files/upload?path=...
 func (s *Server) handleUploadFile(w http.ResponseWriter, r *http.Request) {
+	if !s.checkCurrentWorkspaceAdmin(w, r) {
+		return
+	}
 	if err := r.ParseMultipartForm(200 << 20); err != nil {
 		s.jsonError(w, http.StatusBadRequest, "parse form: "+err.Error())
 		return
@@ -122,6 +128,9 @@ func (s *Server) handleUploadFile(w http.ResponseWriter, r *http.Request) {
 
 // POST /api/v1/files/mkdir
 func (s *Server) handleMkdir(w http.ResponseWriter, r *http.Request) {
+	if !s.checkCurrentWorkspaceAdmin(w, r) {
+		return
+	}
 	var body struct {
 		Path string `json:"path"`
 	}
@@ -143,6 +152,9 @@ func (s *Server) handleMkdir(w http.ResponseWriter, r *http.Request) {
 
 // GET /api/v1/files/content/{path...}
 func (s *Server) handleFileContent(w http.ResponseWriter, r *http.Request) {
+	if !s.checkCurrentWorkspaceAccess(w, r) {
+		return
+	}
 	sub := r.PathValue("path")
 	fp, ok := s.resolveFilesPath(sub)
 	if !ok {
@@ -154,6 +166,9 @@ func (s *Server) handleFileContent(w http.ResponseWriter, r *http.Request) {
 
 // POST /api/v1/files/move   {"from":"a/b.png","to":"folder"}
 func (s *Server) handleMoveFile(w http.ResponseWriter, r *http.Request) {
+	if !s.checkCurrentWorkspaceAdmin(w, r) {
+		return
+	}
 	var body struct {
 		From string `json:"from"`
 		To   string `json:"to"`
@@ -197,6 +212,9 @@ func (s *Server) handleMoveFile(w http.ResponseWriter, r *http.Request) {
 
 // DELETE /api/v1/files/{path...}
 func (s *Server) handleDeleteFile(w http.ResponseWriter, r *http.Request) {
+	if !s.checkCurrentWorkspaceAdmin(w, r) {
+		return
+	}
 	sub := r.PathValue("path")
 	fp, ok := s.resolveFilesPath(sub)
 	if !ok {

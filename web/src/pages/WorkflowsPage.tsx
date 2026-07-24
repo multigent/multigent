@@ -8,6 +8,7 @@ import { showToast } from '../components/ui/Toast'
 import { WorkflowBoard, type WorkflowDefinition, type WorkflowStep } from '../components/workflow/WorkflowBoard'
 import { apiDelete, apiPost, apiPut } from '../lib/api'
 import { useApiJson } from '../lib/use-api'
+import { useWorkspaceAccess } from '../lib/workspace-access'
 
 type WorkflowListResponse = { workflows: WorkflowDefinition[] }
 
@@ -24,6 +25,7 @@ export default function WorkflowsPage() {
   const { t, i18n } = useTranslation()
   const navigate = useNavigate()
   const params = useParams()
+  const { canAdmin } = useWorkspaceAccess()
   const [reloadKey, setReloadKey] = useState(0)
   const state = useApiJson<WorkflowListResponse>('/api/v1/workflows', reloadKey)
   const templateLocale = i18n.resolvedLanguage || i18n.language || 'en'
@@ -64,7 +66,12 @@ export default function WorkflowsPage() {
     }
   }, [params.workflowId])
 
-  const dirty = Boolean(draft && savedDraft && workflowEditableJSON(draft) !== workflowEditableJSON(savedDraft))
+  const canManageWorkflows = canAdmin
+  const dirty = Boolean(canManageWorkflows && draft && savedDraft && workflowEditableJSON(draft) !== workflowEditableJSON(savedDraft))
+
+  useEffect(() => {
+    if (!canManageWorkflows && createOpen) setCreateOpen(false)
+  }, [canManageWorkflows, createOpen])
 
   useEffect(() => {
     if (!dirty) return
@@ -84,6 +91,7 @@ export default function WorkflowsPage() {
   }, [draft?.description])
 
   async function createBlank(name = t('workflows.untitledName')) {
+    if (!canManageWorkflows) return
     setSaving(true)
     try {
       const created = await apiPost<WorkflowDefinition>('/api/v1/workflows', {
@@ -100,6 +108,7 @@ export default function WorkflowsPage() {
   }
 
   async function createFromTemplate(templateId: string, name: string) {
+    if (!canManageWorkflows) return
     setSaving(true)
     try {
       const created = await apiPost<WorkflowDefinition>('/api/v1/workflows', {
@@ -115,6 +124,7 @@ export default function WorkflowsPage() {
   }
 
   async function createFromJSON(raw: string, fallbackName: string) {
+    if (!canManageWorkflows) return
     const parsed = parseWorkflowJSON(raw)
     if (parsed.steps.length === 0) {
       throw new Error(t('workflows.importJSONNoSteps'))
@@ -132,6 +142,7 @@ export default function WorkflowsPage() {
   }
 
   function openCreateDialog() {
+    if (!canManageWorkflows) return
     const firstTemplate = templates[0]
     setCreateMode(firstTemplate ? 'template' : 'blank')
     setSelectedTemplateId(firstTemplate?.id || '')
@@ -167,6 +178,7 @@ export default function WorkflowsPage() {
   }
 
   async function duplicateWorkflow(wf: WorkflowDefinition) {
+    if (!canManageWorkflows) return
     setSaving(true)
     try {
       const created = await apiPost<WorkflowDefinition>('/api/v1/workflows', {
@@ -188,6 +200,7 @@ export default function WorkflowsPage() {
   }
 
   async function deleteWorkflow(wf: WorkflowDefinition) {
+    if (!canManageWorkflows) return
     const ok = await confirmDialog({
       title: t('workflows.deleteWorkflow'),
       description: t('workflows.confirmDeleteWorkflow', { name: wf.name }),
@@ -225,7 +238,7 @@ export default function WorkflowsPage() {
   }
 
   async function saveDraft() {
-    if (!draft) return
+    if (!draft || !canManageWorkflows) return
     setSaving(true)
     try {
       const saved = await apiPut<WorkflowDefinition>(`/api/v1/workflows/${encodeURIComponent(draft.id)}`, {
@@ -263,19 +276,28 @@ export default function WorkflowsPage() {
             {!fullscreen && (
               <div className="flex shrink-0 flex-wrap items-start justify-between gap-4">
                 <div className="min-w-[320px] max-w-3xl flex-1">
-                  <input
-                    value={draft.name}
-                    onChange={(e) => setDraft({ ...draft, name: e.target.value })}
-                    className="block w-full rounded-lg border border-transparent bg-transparent px-0 text-xl font-semibold text-neutral-900 outline-none focus:border-neutral-200 focus:bg-white focus:px-3 dark:text-zinc-100 dark:focus:border-zinc-700 dark:focus:bg-zinc-900"
-                  />
-                  <textarea
-                    ref={descriptionRef}
-                    value={draft.description || ''}
-                    onChange={(e) => setDraft({ ...draft, description: e.target.value })}
-                    placeholder={t('workflows.descriptionPlaceholder')}
-                    rows={1}
-                    className="mt-1 block w-full resize-none overflow-hidden whitespace-pre-wrap rounded-lg border border-transparent bg-transparent px-0 py-0.5 text-sm leading-5 text-neutral-500 outline-none focus:border-neutral-200 focus:bg-white focus:px-3 dark:text-zinc-400 dark:focus:border-zinc-700 dark:focus:bg-zinc-900"
-                  />
+                  {canManageWorkflows ? (
+                    <>
+                      <input
+                        value={draft.name}
+                        onChange={(e) => setDraft({ ...draft, name: e.target.value })}
+                        className="block w-full rounded-lg border border-transparent bg-transparent px-0 text-xl font-semibold text-neutral-900 outline-none focus:border-neutral-200 focus:bg-white focus:px-3 dark:text-zinc-100 dark:focus:border-zinc-700 dark:focus:bg-zinc-900"
+                      />
+                      <textarea
+                        ref={descriptionRef}
+                        value={draft.description || ''}
+                        onChange={(e) => setDraft({ ...draft, description: e.target.value })}
+                        placeholder={t('workflows.descriptionPlaceholder')}
+                        rows={1}
+                        className="mt-1 block w-full resize-none overflow-hidden whitespace-pre-wrap rounded-lg border border-transparent bg-transparent px-0 py-0.5 text-sm leading-5 text-neutral-500 outline-none focus:border-neutral-200 focus:bg-white focus:px-3 dark:text-zinc-400 dark:focus:border-zinc-700 dark:focus:bg-zinc-900"
+                      />
+                    </>
+                  ) : (
+                    <>
+                      <h1 className="text-xl font-semibold text-neutral-900 dark:text-zinc-100">{draft.name}</h1>
+                      <p className="mt-1 whitespace-pre-wrap text-sm leading-5 text-neutral-500 dark:text-zinc-400">{draft.description || t('workflows.noDescription')}</p>
+                    </>
+                  )}
                   {draft.provenance && <ProvenancePill name={draft.provenance.playbookName} customized={draft.provenance.customized} />}
                 </div>
                 <div className="flex gap-2">
@@ -287,25 +309,31 @@ export default function WorkflowsPage() {
                   <button type="button" onClick={() => void backToList()} className="rounded-lg border border-neutral-300 bg-white px-3 py-2 text-sm font-medium text-neutral-600 hover:bg-neutral-50 dark:border-zinc-600 dark:bg-zinc-900 dark:text-zinc-300 dark:hover:bg-zinc-800">
                     {t('workflows.backToList')}
                   </button>
-                  <button type="button" onClick={() => void duplicateWorkflow(draft)} disabled={saving} className="rounded-lg border border-neutral-300 bg-white px-3 py-2 text-sm font-medium text-neutral-600 hover:bg-neutral-50 disabled:opacity-50 dark:border-zinc-600 dark:bg-zinc-900 dark:text-zinc-300 dark:hover:bg-zinc-800">
-                    {t('workflows.duplicate')}
-                  </button>
+                  {canManageWorkflows && (
+                    <button type="button" onClick={() => void duplicateWorkflow(draft)} disabled={saving} className="rounded-lg border border-neutral-300 bg-white px-3 py-2 text-sm font-medium text-neutral-600 hover:bg-neutral-50 disabled:opacity-50 dark:border-zinc-600 dark:bg-zinc-900 dark:text-zinc-300 dark:hover:bg-zinc-800">
+                      {t('workflows.duplicate')}
+                    </button>
+                  )}
                   <button type="button" onClick={() => void copyWorkflowJSON(draft)} disabled={saving} className="rounded-lg border border-neutral-300 bg-white px-3 py-2 text-sm font-medium text-neutral-600 hover:bg-neutral-50 disabled:opacity-50 dark:border-zinc-600 dark:bg-zinc-900 dark:text-zinc-300 dark:hover:bg-zinc-800">
                     {t('workflows.copyJSON')}
                   </button>
-                  <button type="button" onClick={() => void deleteWorkflow(draft)} disabled={saving} className="rounded-lg border border-red-300 bg-white px-3 py-2 text-sm font-medium text-red-600 hover:bg-red-50 disabled:opacity-50 dark:border-red-900/70 dark:bg-zinc-900 dark:text-red-400 dark:hover:bg-red-950/30">
-                    {t('common.delete')}
-                  </button>
-                  <button type="button" onClick={() => void saveDraft()} disabled={saving || !dirty || !draft.name.trim()} className="rounded-lg border border-sky-600 bg-white px-3 py-2 text-sm font-medium text-sky-700 hover:bg-sky-50 disabled:opacity-50 dark:border-sky-500 dark:bg-zinc-900 dark:text-sky-400 dark:hover:bg-zinc-800">
-                    {saving ? t('common.saving') : t('common.save')}
-                  </button>
+                  {canManageWorkflows && (
+                    <>
+                      <button type="button" onClick={() => void deleteWorkflow(draft)} disabled={saving} className="rounded-lg border border-red-300 bg-white px-3 py-2 text-sm font-medium text-red-600 hover:bg-red-50 disabled:opacity-50 dark:border-red-900/70 dark:bg-zinc-900 dark:text-red-400 dark:hover:bg-red-950/30">
+                        {t('common.delete')}
+                      </button>
+                      <button type="button" onClick={() => void saveDraft()} disabled={saving || !dirty || !draft.name.trim()} className="rounded-lg border border-sky-600 bg-white px-3 py-2 text-sm font-medium text-sky-700 hover:bg-sky-50 disabled:opacity-50 dark:border-sky-500 dark:bg-zinc-900 dark:text-sky-400 dark:hover:bg-zinc-800">
+                        {saving ? t('common.saving') : t('common.save')}
+                      </button>
+                    </>
+                  )}
                 </div>
               </div>
             )}
             <div data-tour-workflow-board className="min-h-0 flex-1">
             <WorkflowBoard
               definition={draft}
-              editable
+              editable={canManageWorkflows}
               fill
               fullscreen={fullscreen}
               onToggleFullscreen={() => setFullscreen((v) => !v)}
@@ -325,9 +353,11 @@ export default function WorkflowsPage() {
           <h1 className="text-xl font-semibold text-neutral-900 dark:text-zinc-100">{t('nav.workflows')}</h1>
           <p className="mt-0.5 text-sm text-neutral-500 dark:text-zinc-500">{t('workflows.workspaceSubtitle')}</p>
         </div>
-        <button type="button" data-tour-workflow-create onClick={openCreateDialog} disabled={saving} className="rounded-lg border border-sky-600 bg-white px-3 py-2 text-sm font-medium text-sky-700 hover:bg-sky-50 disabled:opacity-50 dark:border-sky-500 dark:bg-zinc-900 dark:text-sky-400 dark:hover:bg-zinc-800">
-          {t('workflows.createBlank')}
-        </button>
+        {canManageWorkflows && (
+          <button type="button" data-tour-workflow-create onClick={openCreateDialog} disabled={saving} className="rounded-lg border border-sky-600 bg-white px-3 py-2 text-sm font-medium text-sky-700 hover:bg-sky-50 disabled:opacity-50 dark:border-sky-500 dark:bg-zinc-900 dark:text-sky-400 dark:hover:bg-zinc-800">
+            {t('workflows.createBlank')}
+          </button>
+        )}
       </div>
 
       {createOpen ? (

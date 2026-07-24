@@ -9,6 +9,7 @@ import { getStoredToken } from '../lib/auth'
 import { confirmDialog } from '../components/ui/ConfirmDialog'
 import { primaryOutlineButton } from '../lib/button-styles'
 import { useFormatDateTime } from '../lib/format-datetime'
+import { useWorkspaceAccess } from '../lib/workspace-access'
 
 type FileEntry = {
   name: string; path: string; isDir: boolean
@@ -85,21 +86,21 @@ function CopyPathBtn({ path, className }: { path: string; className?: string }) 
   )
 }
 
-function BreadcrumbDropTarget({ targetDir, onClick, className, onMove, children }: {
+function BreadcrumbDropTarget({ targetDir, onClick, className, onMove, canManage, children }: {
   targetDir: string; onClick: () => void; className?: string
-  onMove: (entry: FileEntry, dir: string) => void; children: React.ReactNode
+  onMove: (entry: FileEntry, dir: string) => void; canManage: boolean; children: React.ReactNode
 }) {
   const [over, setOver] = useState(false)
   return (
     <button onClick={onClick}
       className={`${className} rounded px-1 -mx-1 ${over ? 'ring-2 ring-sky-400 bg-sky-50 dark:bg-sky-900/30' : ''}`}
-      onDragOver={e => { if (isInternalDrag(e)) { e.preventDefault(); e.dataTransfer.dropEffect = 'move'; setOver(true) } }}
-      onDragEnter={e => { if (isInternalDrag(e)) setOver(true) }}
+      onDragOver={e => { if (canManage && isInternalDrag(e)) { e.preventDefault(); e.dataTransfer.dropEffect = 'move'; setOver(true) } }}
+      onDragEnter={e => { if (canManage && isInternalDrag(e)) setOver(true) }}
       onDragLeave={() => setOver(false)}
       onDrop={e => {
         setOver(false)
         const entry = getInternalEntry(e)
-        if (entry) { e.preventDefault(); e.stopPropagation(); onMove(entry, targetDir) }
+        if (canManage && entry) { e.preventDefault(); e.stopPropagation(); onMove(entry, targetDir) }
       }}
     >{children}</button>
   )
@@ -107,6 +108,8 @@ function BreadcrumbDropTarget({ targetDir, onClick, className, onMove, children 
 
 export default function FilesPage() {
   const { t } = useTranslation()
+  const { canAdmin } = useWorkspaceAccess()
+  const canManageFiles = canAdmin
   const [currentPath, setCurrentPath] = useState('')
   const [files, setFiles] = useState<FileEntry[]>([])
   const [viewMode, setViewMode] = useState<ViewMode>(() =>
@@ -134,6 +137,7 @@ export default function FilesPage() {
   const breadcrumbs = currentPath ? currentPath.split('/').filter(Boolean) : []
 
   async function uploadFiles(fileList: FileList) {
+    if (!canManageFiles) return
     const form = new FormData()
     for (let i = 0; i < fileList.length; i++) form.append('file', fileList[i])
     const params = currentPath ? `?path=${encodeURIComponent(currentPath)}` : ''
@@ -145,6 +149,7 @@ export default function FilesPage() {
   }
 
   async function moveEntry(entry: FileEntry, targetDir: string) {
+    if (!canManageFiles) return
     if (entry.path === targetDir) return
     const parent = entry.path.includes('/') ? entry.path.substring(0, entry.path.lastIndexOf('/')) : ''
     if (parent === targetDir) return
@@ -153,6 +158,7 @@ export default function FilesPage() {
   }
 
   function onDragEnter(e: React.DragEvent) {
+    if (!canManageFiles) return
     e.preventDefault()
     if (!isInternalDrag(e)) { dragCounter.current++; setDragging(true) }
   }
@@ -161,11 +167,13 @@ export default function FilesPage() {
   }
   function onDrop(e: React.DragEvent) {
     e.preventDefault(); dragCounter.current = 0; setDragging(false)
+    if (!canManageFiles) return
     if (isInternalDrag(e)) return
     if (e.dataTransfer.files.length > 0) uploadFiles(e.dataTransfer.files)
   }
 
   async function deleteEntry(entry: FileEntry) {
+    if (!canManageFiles) return
     const ok = await confirmDialog({
       title: t('common.delete'),
       description: entry.isDir ? t('files.deleteFolderConfirm', { name: entry.name }) : t('files.deleteConfirm', { name: entry.name }),
@@ -192,7 +200,8 @@ export default function FilesPage() {
         <nav className="flex items-center gap-1 text-sm flex-1 min-w-0 overflow-x-auto">
           <BreadcrumbDropTarget targetDir="" onClick={() => setCurrentPath('')}
             className={`shrink-0 font-medium transition-colors ${!currentPath ? 'text-neutral-900 dark:text-zinc-100' : 'text-neutral-500 hover:text-neutral-700 dark:text-zinc-400 dark:hover:text-zinc-200'}`}
-            onMove={moveEntry}>
+            onMove={moveEntry}
+            canManage={canManageFiles}>
             {t('files.title')}
           </BreadcrumbDropTarget>
           {breadcrumbs.map((seg, i) => {
@@ -203,7 +212,8 @@ export default function FilesPage() {
                 <ChevronRight className="size-3.5 text-neutral-300 dark:text-zinc-600" />
                 <BreadcrumbDropTarget targetDir={path} onClick={() => setCurrentPath(path)}
                   className={`transition-colors ${isLast ? 'font-medium text-neutral-900 dark:text-zinc-100' : 'text-neutral-500 hover:text-neutral-700 dark:text-zinc-400 dark:hover:text-zinc-200'}`}
-                  onMove={moveEntry}>
+                  onMove={moveEntry}
+                  canManage={canManageFiles}>
                   {seg}
                 </BreadcrumbDropTarget>
               </span>
@@ -211,12 +221,16 @@ export default function FilesPage() {
           })}
         </nav>
         <div className="flex items-center gap-1.5 shrink-0">
-          <input ref={fileInputRef} type="file" multiple className="hidden"
-            onChange={e => { if (e.target.files?.length) { uploadFiles(e.target.files); e.target.value = '' } }} />
-          <button onClick={() => fileInputRef.current?.click()} className={primaryOutlineButton}>{t('files.upload')}</button>
-          <button onClick={() => setShowMkdir(true)} className={btnGhost}>
-            <FolderPlus className="size-4" /> {t('files.newFolder')}
-          </button>
+          {canManageFiles && (
+            <input ref={fileInputRef} type="file" multiple className="hidden"
+              onChange={e => { if (e.target.files?.length) { uploadFiles(e.target.files); e.target.value = '' } }} />
+          )}
+          {canManageFiles && <button onClick={() => fileInputRef.current?.click()} className={primaryOutlineButton}>{t('files.upload')}</button>}
+          {canManageFiles && (
+            <button onClick={() => setShowMkdir(true)} className={btnGhost}>
+              <FolderPlus className="size-4" /> {t('files.newFolder')}
+            </button>
+          )}
           <div className="ml-2 flex rounded-lg border border-neutral-200 dark:border-zinc-700 overflow-hidden">
             <button onClick={() => toggleView('grid')}
               className={`p-1.5 transition-colors ${viewMode === 'grid' ? 'bg-neutral-100 text-neutral-900 dark:bg-zinc-800 dark:text-zinc-100' : 'text-neutral-400 hover:text-neutral-600 dark:text-zinc-500 dark:hover:text-zinc-300'}`}>
@@ -233,9 +247,9 @@ export default function FilesPage() {
       {/* Content */}
       <div className="flex-1 overflow-y-auto p-5 relative"
         onDragOver={e => e.preventDefault()}
-        onDragEnter={onDragEnter}
-        onDragLeave={onDragLeave}
-        onDrop={onDrop}
+        onDragEnter={canManageFiles ? onDragEnter : undefined}
+        onDragLeave={canManageFiles ? onDragLeave : undefined}
+        onDrop={canManageFiles ? onDrop : undefined}
       >
         {dragging && (
           <div className="absolute inset-4 z-40 flex items-center justify-center rounded-2xl border-2 border-dashed border-sky-400 bg-sky-500/5 pointer-events-none">
@@ -249,35 +263,35 @@ export default function FilesPage() {
             <p className="text-sm">{t('files.empty')}</p>
           </div>
         ) : viewMode === 'grid' ? (
-          <GridView files={files} onOpen={openEntry} onDelete={deleteEntry} onMove={moveEntry} />
+          <GridView files={files} onOpen={openEntry} onDelete={deleteEntry} onMove={moveEntry} canManage={canManageFiles} />
         ) : (
-          <ListView files={files} onOpen={openEntry} onDelete={deleteEntry} onMove={moveEntry} fmtDate={fmtDate} />
+          <ListView files={files} onOpen={openEntry} onDelete={deleteEntry} onMove={moveEntry} fmtDate={fmtDate} canManage={canManageFiles} />
         )}
       </div>
 
       {preview && <PreviewModal entry={preview} onClose={() => setPreview(null)} />}
-      {showMkdir && <MkdirModal currentPath={currentPath} onClose={() => setShowMkdir(false)} onCreated={() => { setShowMkdir(false); load() }} />}
+      {showMkdir && canManageFiles && <MkdirModal currentPath={currentPath} onClose={() => setShowMkdir(false)} onCreated={() => { setShowMkdir(false); load() }} />}
     </div>
   )
 }
 
 /* ─── Grid view ────────────────────────────────────────────────────────────── */
 
-function GridView({ files, onOpen, onDelete, onMove }: {
+function GridView({ files, onOpen, onDelete, onMove, canManage }: {
   files: FileEntry[]; onOpen: (f: FileEntry) => void; onDelete: (f: FileEntry) => void
-  onMove: (entry: FileEntry, dir: string) => void
+  onMove: (entry: FileEntry, dir: string) => void; canManage: boolean
 }) {
   const [dropTarget, setDropTarget] = useState<string | null>(null)
   return (
     <div className="grid grid-cols-2 sm:grid-cols-3 md:grid-cols-4 lg:grid-cols-5 xl:grid-cols-6 gap-3">
       {files.map(f => (
         <div key={f.path}
-          draggable
-          onDragStart={e => startInternalDrag(e, f)}
+          draggable={canManage}
+          onDragStart={e => { if (canManage) startInternalDrag(e, f) }}
           onDragOver={e => {
-            if (f.isDir && isInternalDrag(e)) { e.preventDefault(); e.dataTransfer.dropEffect = 'move'; setDropTarget(f.path) }
+            if (canManage && f.isDir && isInternalDrag(e)) { e.preventDefault(); e.dataTransfer.dropEffect = 'move'; setDropTarget(f.path) }
           }}
-          onDragEnter={e => { if (f.isDir && isInternalDrag(e)) setDropTarget(f.path) }}
+          onDragEnter={e => { if (canManage && f.isDir && isInternalDrag(e)) setDropTarget(f.path) }}
           onDragLeave={e => {
             const rect = e.currentTarget.getBoundingClientRect()
             if (e.clientX < rect.left || e.clientX > rect.right || e.clientY < rect.top || e.clientY > rect.bottom) {
@@ -287,7 +301,7 @@ function GridView({ files, onOpen, onDelete, onMove }: {
           onDrop={e => {
             if (!f.isDir) return
             const entry = getInternalEntry(e)
-            if (entry) { e.preventDefault(); e.stopPropagation(); onMove(entry, f.path) }
+            if (canManage && entry) { e.preventDefault(); e.stopPropagation(); onMove(entry, f.path) }
             setDropTarget(null)
           }}
           className={`group relative rounded-xl border bg-white overflow-hidden transition-all cursor-pointer
@@ -319,12 +333,14 @@ function GridView({ files, onOpen, onDelete, onMove }: {
           </div>
           <div className="absolute top-2 right-2 flex gap-1 opacity-0 group-hover:opacity-100 transition-opacity">
             <CopyPathBtn path={f.path} className="rounded-lg p-1 bg-black/40 text-white hover:bg-sky-600" />
-            <button
-              onClick={e => { e.stopPropagation(); onDelete(f) }}
-              className="rounded-lg p-1 bg-black/40 text-white hover:bg-red-600"
-            >
-              <Trash2 className="size-3.5" />
-            </button>
+            {canManage && (
+              <button
+                onClick={e => { e.stopPropagation(); onDelete(f) }}
+                className="rounded-lg p-1 bg-black/40 text-white hover:bg-red-600"
+              >
+                <Trash2 className="size-3.5" />
+              </button>
+            )}
           </div>
         </div>
       ))}
@@ -334,9 +350,9 @@ function GridView({ files, onOpen, onDelete, onMove }: {
 
 /* ─── List view ────────────────────────────────────────────────────────────── */
 
-function ListView({ files, onOpen, onDelete, onMove, fmtDate }: {
+function ListView({ files, onOpen, onDelete, onMove, fmtDate, canManage }: {
   files: FileEntry[]; onOpen: (f: FileEntry) => void; onDelete: (f: FileEntry) => void
-  onMove: (entry: FileEntry, dir: string) => void; fmtDate: (s: string) => string
+  onMove: (entry: FileEntry, dir: string) => void; fmtDate: (s: string) => string; canManage: boolean
 }) {
   const { t } = useTranslation()
   const [dropTarget, setDropTarget] = useState<string | null>(null)
@@ -355,12 +371,12 @@ function ListView({ files, onOpen, onDelete, onMove, fmtDate }: {
         <tbody>
           {files.map(f => (
             <tr key={f.path} onClick={() => onOpen(f)}
-              draggable
-              onDragStart={e => startInternalDrag(e, f)}
+              draggable={canManage}
+              onDragStart={e => { if (canManage) startInternalDrag(e, f) }}
               onDragOver={e => {
-                if (f.isDir && isInternalDrag(e)) { e.preventDefault(); e.dataTransfer.dropEffect = 'move'; setDropTarget(f.path) }
+                if (canManage && f.isDir && isInternalDrag(e)) { e.preventDefault(); e.dataTransfer.dropEffect = 'move'; setDropTarget(f.path) }
               }}
-              onDragEnter={e => { if (f.isDir && isInternalDrag(e)) setDropTarget(f.path) }}
+              onDragEnter={e => { if (canManage && f.isDir && isInternalDrag(e)) setDropTarget(f.path) }}
               onDragLeave={e => {
                 const rect = e.currentTarget.getBoundingClientRect()
                 if (e.clientX < rect.left || e.clientX > rect.right || e.clientY < rect.top || e.clientY > rect.bottom) {
@@ -370,7 +386,7 @@ function ListView({ files, onOpen, onDelete, onMove, fmtDate }: {
               onDrop={e => {
                 if (!f.isDir) return
                 const entry = getInternalEntry(e)
-                if (entry) { e.preventDefault(); e.stopPropagation(); onMove(entry, f.path) }
+                if (canManage && entry) { e.preventDefault(); e.stopPropagation(); onMove(entry, f.path) }
                 setDropTarget(null)
               }}
               className={`border-t cursor-pointer transition-colors
@@ -397,10 +413,12 @@ function ListView({ files, onOpen, onDelete, onMove, fmtDate }: {
                 <span className="flex items-center gap-0.5">
                   <CopyPathBtn path={f.path}
                     className="rounded-lg p-1 text-neutral-300 hover:text-sky-500 hover:bg-sky-50 dark:text-zinc-600 dark:hover:text-sky-400 dark:hover:bg-sky-950/20 transition-colors" />
-                  <button onClick={e => { e.stopPropagation(); onDelete(f) }}
-                    className="rounded-lg p-1 text-neutral-300 hover:text-red-500 hover:bg-red-50 dark:text-zinc-600 dark:hover:text-red-400 dark:hover:bg-red-950/20 transition-colors">
-                    <Trash2 className="size-3.5" />
-                  </button>
+                  {canManage && (
+                    <button onClick={e => { e.stopPropagation(); onDelete(f) }}
+                      className="rounded-lg p-1 text-neutral-300 hover:text-red-500 hover:bg-red-50 dark:text-zinc-600 dark:hover:text-red-400 dark:hover:bg-red-950/20 transition-colors">
+                      <Trash2 className="size-3.5" />
+                    </button>
+                  )}
                 </span>
               </td>
             </tr>

@@ -4,6 +4,7 @@ import { Plus, ChevronDown, ChevronRight, Trash2, X, TrendingUp, Pencil } from '
 import { apiFetch, apiPost, apiPut, apiDelete } from '../lib/api'
 import { cn } from '../lib/cn'
 import { confirmDialog } from '../components/ui/ConfirmDialog'
+import { useWorkspaceAccess } from '../lib/workspace-access'
 
 type KR = {
   id: string; description: string; metricType: string
@@ -63,6 +64,7 @@ function scopeLabel(t: (k: string) => string, scope?: string) {
 
 export default function OKRPage() {
   const { t } = useTranslation()
+  const { canAdmin } = useWorkspaceAccess()
   const [data, setData] = useState<OKRData | null>(null)
   const [initialLoading, setInitialLoading] = useState(true)
   const [expanded, setExpanded] = useState<Set<string>>(new Set())
@@ -157,10 +159,12 @@ export default function OKRPage() {
               <p className="mt-0.5 text-sm text-neutral-500 dark:text-zinc-500">{data.currentQuarter}</p>
             )}
           </div>
-          <button onClick={() => setShowCreate(true)}
-            className="rounded-lg border border-sky-600 bg-white px-3 py-2 text-sm font-medium text-sky-700 hover:bg-sky-50 dark:border-sky-500 dark:bg-zinc-900 dark:text-sky-400 dark:hover:bg-zinc-800">
-            {t('okr.newOKR')}
-          </button>
+          {canAdmin && (
+            <button onClick={() => setShowCreate(true)}
+              className="rounded-lg border border-sky-600 bg-white px-3 py-2 text-sm font-medium text-sky-700 hover:bg-sky-50 dark:border-sky-500 dark:bg-zinc-900 dark:text-sky-400 dark:hover:bg-zinc-800">
+              {t('okr.newOKR')}
+            </button>
+          )}
         </div>
 
         {/* Scope filter tabs */}
@@ -239,16 +243,18 @@ export default function OKRPage() {
                       <span className="shrink-0 text-xs font-medium text-neutral-500 dark:text-zinc-400">{prog}%</span>
                     </div>
                   </div>
-                  <div className="flex shrink-0 items-center gap-1">
-                    <button onClick={e => { e.stopPropagation(); setEditingOKR(okr) }}
-                      className="rounded-md p-1.5 text-neutral-400 hover:bg-neutral-100 hover:text-neutral-600 dark:hover:bg-zinc-800 dark:hover:text-zinc-300">
-                      <Pencil className="size-3.5" />
-                    </button>
-                    <button onClick={e => { e.stopPropagation(); deleteOKR(okr.id) }}
-                      className="rounded-md p-1.5 text-neutral-400 hover:bg-red-50 hover:text-red-500 dark:hover:bg-red-900/20">
-                      <Trash2 className="size-3.5" />
-                    </button>
-                  </div>
+                  {canAdmin && (
+                    <div className="flex shrink-0 items-center gap-1">
+                      <button onClick={e => { e.stopPropagation(); setEditingOKR(okr) }}
+                        className="rounded-md p-1.5 text-neutral-400 hover:bg-neutral-100 hover:text-neutral-600 dark:hover:bg-zinc-800 dark:hover:text-zinc-300">
+                        <Pencil className="size-3.5" />
+                      </button>
+                      <button onClick={e => { e.stopPropagation(); deleteOKR(okr.id) }}
+                        className="rounded-md p-1.5 text-neutral-400 hover:bg-red-50 hover:text-red-500 dark:hover:bg-red-900/20">
+                        <Trash2 className="size-3.5" />
+                      </button>
+                    </div>
+                  )}
                 </div>
 
                 {isOpen && (
@@ -274,15 +280,15 @@ export default function OKRPage() {
                               <td className="py-2.5 pr-3">
                                 <div className="flex items-center gap-2">
                                   <TrendingUp className="size-3 shrink-0 text-neutral-300 dark:text-zinc-600" />
-                                  {isEditingDesc ? (
+                                  {isEditingDesc && canAdmin ? (
                                     <input autoFocus value={editingKRDesc.value}
                                       onChange={e => setEditingKRDesc({ ...editingKRDesc, value: e.target.value })}
                                       onBlur={() => saveKRDesc(okr.id, kr.id, editingKRDesc.value)}
                                       onKeyDown={e => { if (e.key === 'Enter') saveKRDesc(okr.id, kr.id, editingKRDesc.value); if (e.key === 'Escape') setEditingKRDesc(null) }}
                                       className="w-full rounded border border-sky-400 bg-white px-2 py-0.5 text-xs dark:bg-zinc-800 dark:text-zinc-200" />
                                   ) : (
-                                    <span className="cursor-pointer rounded px-1 py-0.5 font-medium text-neutral-700 hover:bg-neutral-100 dark:text-zinc-300 dark:hover:bg-zinc-800"
-                                      onClick={() => setEditingKRDesc({ okrId: okr.id, krId: kr.id, value: kr.description })}>
+                                    <span className={`rounded px-1 py-0.5 font-medium text-neutral-700 dark:text-zinc-300 ${canAdmin ? 'cursor-pointer hover:bg-neutral-100 dark:hover:bg-zinc-800' : ''}`}
+                                      onClick={() => canAdmin && setEditingKRDesc({ okrId: okr.id, krId: kr.id, value: kr.description })}>
                                       {kr.description}
                                     </span>
                                   )}
@@ -299,24 +305,26 @@ export default function OKRPage() {
                                 </div>
                               </td>
                               <td className="py-2.5 pr-3 text-right">
-                                {editingKRValue?.okrId === okr.id && editingKRValue.krId === kr.id ? (
+                                {editingKRValue?.okrId === okr.id && editingKRValue.krId === kr.id && canAdmin ? (
                                   <input autoFocus type="number" value={editingKRValue.value}
                                     onChange={e => setEditingKRValue({ ...editingKRValue, value: e.target.value })}
                                     onBlur={() => saveKRValue(okr.id, kr.id, editingKRValue.value)}
                                     onKeyDown={e => { if (e.key === 'Enter') saveKRValue(okr.id, kr.id, editingKRValue.value); if (e.key === 'Escape') setEditingKRValue(null) }}
                                     className="w-20 rounded border border-sky-400 bg-white px-2 py-0.5 text-right text-xs dark:bg-zinc-800 dark:text-zinc-200" />
                                 ) : (
-                                  <button onClick={() => setEditingKRValue({ okrId: okr.id, krId: kr.id, value: String(kr.currentValue ?? 0) })}
-                                    className="whitespace-nowrap rounded px-1.5 py-0.5 font-mono text-neutral-600 hover:bg-neutral-100 dark:text-zinc-400 dark:hover:bg-zinc-800">
+                                  <button onClick={() => canAdmin && setEditingKRValue({ okrId: okr.id, krId: kr.id, value: String(kr.currentValue ?? 0) })}
+                                    className={`whitespace-nowrap rounded px-1.5 py-0.5 font-mono text-neutral-600 dark:text-zinc-400 ${canAdmin ? 'hover:bg-neutral-100 dark:hover:bg-zinc-800' : 'cursor-default'}`}>
                                     {kr.currentValue ?? 0}/{kr.targetValue ?? 0}{kr.unit ? ` (${kr.unit})` : ''}
                                   </button>
                                 )}
                               </td>
                               <td className="py-2.5">
-                                <button onClick={() => deleteKR(okr.id, kr.id)}
-                                  className="rounded p-1 text-neutral-300 opacity-0 transition-opacity hover:bg-red-50 hover:text-red-500 group-hover:opacity-100 dark:text-zinc-600 dark:hover:bg-red-900/20">
-                                  <Trash2 className="size-3" />
-                                </button>
+                                {canAdmin && (
+                                  <button onClick={() => deleteKR(okr.id, kr.id)}
+                                    className="rounded p-1 text-neutral-300 opacity-0 transition-opacity hover:bg-red-50 hover:text-red-500 group-hover:opacity-100 dark:text-zinc-600 dark:hover:bg-red-900/20">
+                                    <Trash2 className="size-3" />
+                                  </button>
+                                )}
                               </td>
                             </tr>
                           )
@@ -326,7 +334,7 @@ export default function OKRPage() {
                     {okr.keyResults.length === 0 && (
                       <p className="py-3 text-center text-xs text-neutral-400 dark:text-zinc-500">{t('okr.noKR')}</p>
                     )}
-                    <AddKRInline okrId={okr.id} onCreated={load} />
+                    {canAdmin && <AddKRInline okrId={okr.id} onCreated={load} />}
                   </div>
                 )}
               </div>
@@ -335,10 +343,10 @@ export default function OKRPage() {
         </div>
       </div>
 
-      {showCreate && <OKRFormModal people={people} projects={projects} allOKRs={okrs}
+      {showCreate && canAdmin && <OKRFormModal people={people} projects={projects} allOKRs={okrs}
         onClose={() => setShowCreate(false)} onSaved={() => { setShowCreate(false); void load() }}
         quarter={data?.currentQuarter || ''} />}
-      {editingOKR && <OKRFormModal people={people} projects={projects} allOKRs={okrs} okr={editingOKR}
+      {editingOKR && canAdmin && <OKRFormModal people={people} projects={projects} allOKRs={okrs} okr={editingOKR}
         onClose={() => setEditingOKR(null)} onSaved={() => { setEditingOKR(null); void load() }}
         quarter={data?.currentQuarter || ''} />}
     </div>
