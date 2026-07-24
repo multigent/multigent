@@ -10,6 +10,12 @@
 
 Multigent helps teams turn prompts, tools, workflows, and human reviews into a coordinated agent workforce. Keep your existing project tools and chat tools; use Multigent as the control plane that gives agents shared context, structured tasks, safe execution, and observable handoffs.
 
+[![GitHub Release](https://img.shields.io/github/v/release/multigent/multigent?style=flat-square)](https://github.com/multigent/multigent/releases)
+[![Release](https://img.shields.io/github/actions/workflow/status/multigent/multigent/release.yml?branch=main&label=release&style=flat-square)](https://github.com/multigent/multigent/actions/workflows/release.yml)
+[![npm](https://img.shields.io/npm/v/@multigent/multigent?style=flat-square)](https://www.npmjs.com/package/@multigent/multigent)
+[![Docker](https://img.shields.io/badge/ghcr-image-2496ED?style=flat-square&logo=docker&logoColor=white)](https://github.com/multigent/multigent/pkgs/container/multigent)
+[![License](https://img.shields.io/badge/license-PolyForm%20Noncommercial-blue?style=flat-square)](LICENSE)
+
 [中文](README.zh-CN.md) · [Install Guide](INSTALL.md) · [Documentation](docs/README.md)
 
 </div>

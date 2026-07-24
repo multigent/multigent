@@ -10,6 +10,12 @@
 
 Multigent 帮助团队把 Prompt、工具、流程和人工 Review 组织成一套可持续运行的 Agent Workforce。团队可以继续使用原有项目管理、代码仓库、文档和沟通工具；Multigent 负责提供 Agent 友好的上下文、结构化任务、安全执行和可观察交接。
 
+[![GitHub Release](https://img.shields.io/github/v/release/multigent/multigent?style=flat-square)](https://github.com/multigent/multigent/releases)
+[![Release](https://img.shields.io/github/actions/workflow/status/multigent/multigent/release.yml?branch=main&label=release&style=flat-square)](https://github.com/multigent/multigent/actions/workflows/release.yml)
+[![npm](https://img.shields.io/npm/v/@multigent/multigent?style=flat-square)](https://www.npmjs.com/package/@multigent/multigent)
+[![Docker](https://img.shields.io/badge/ghcr-image-2496ED?style=flat-square&logo=docker&logoColor=white)](https://github.com/multigent/multigent/pkgs/container/multigent)
+[![License](https://img.shields.io/badge/license-PolyForm%20Noncommercial-blue?style=flat-square)](LICENSE)
+
 [English](README.md) · [安装指南](INSTALL.md) · [文档](docs/README.zh-CN.md)
 
 </div>
