@@ -772,6 +772,7 @@
     "colArchived": "归档",
     "colProject": "项目",
     "colAssignee": "负责人",
+    "changeAssignee": "更改",
     "assignDefault": "默认（执行 Agent）",
     "assignHint": "留空默认由执行 Agent 负责，也可以指定项目用户或其他 Agent。",
     "loadingRuns": "正在加载执行记录…",

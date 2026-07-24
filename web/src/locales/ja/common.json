@@ -763,6 +763,7 @@
     "colArchived": "アーカイブ",
     "colProject": "プロジェクト",
     "colAssignee": "担当者",
+    "changeAssignee": "変更",
     "assignDefault": "デフォルト（実行 Agent）",
     "assignHint": "空のままにすると実行 Agent が担当します。プロジェクトのユーザーまたは別の Agent も指定できます。",
     "loadingRuns": "実行記録を読み込み中…",

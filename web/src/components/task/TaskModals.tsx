@@ -54,6 +54,7 @@ type RunRow = {
 type LogData = { content: string; truncated: boolean }
 type TaskWorkflowData = { definition: WorkflowDefinition; run: WorkflowRun; steps: WorkflowStepInstance[]; history?: WorkflowStepEvent[] }
 type SafeUser = { username: string; displayName?: string; email?: string }
+type ProjectMember = { name: string; model?: string; avatar?: string }
 type WorkflowRecord = WorkflowStepEvent | WorkflowStepInstance
 
 // Restore real line breaks for descriptions whose upstream author stored literal
@@ -249,6 +250,10 @@ export function TaskDetailModal({ task, onClose, onEdit, onMutated, canEdit = tr
   const [reviewOutputs, setReviewOutputs] = useState<Record<string, string>>({})
   const [reviewBusy, setReviewBusy] = useState<string | null>(null)
   const [reviewErr, setReviewErr] = useState<string | null>(null)
+  const [assigneeEditing, setAssigneeEditing] = useState(false)
+  const [assigneeDraft, setAssigneeDraft] = useState(task.assignee || `${task.project}/${task.agent}`)
+  const [assigneeBusy, setAssigneeBusy] = useState(false)
+  const [assigneeErr, setAssigneeErr] = useState<string | null>(null)
 
   const runsQuery = `/api/v1/telemetry/runs?allTime=1&project=${encodeURIComponent(task.project)}`
   const runsState = useApiJson<{ runs: RunRow[] }>(runsQuery, 0)
@@ -262,6 +267,7 @@ export function TaskDetailModal({ task, onClose, onEdit, onMutated, canEdit = tr
   const logState = useApiJson<LogData>(logQuery, 0)
   const workflowState = useApiJson<TaskWorkflowData>(`/api/v1/projects/${encodeURIComponent(task.project)}/tasks/${encodeURIComponent(task.id)}/workflow`, workflowVersion)
   const usersState = useApiJson<SafeUser[]>('/api/v1/users', 0)
+  const membersState = useApiJson<ProjectMember[]>(`/api/v1/projects/${encodeURIComponent(task.project)}/agents`, 0)
   const actorLabels = useMemo(() => {
     const labels = new Map<string, string>()
     if (usersState.status === 'ok') {
@@ -273,6 +279,22 @@ export function TaskDetailModal({ task, onClose, onEdit, onMutated, canEdit = tr
     if (task.createdBy && task.createdByLabel) labels.set(task.createdBy, task.createdByLabel)
     return labels
   }, [task.assignee, task.assigneeLabel, task.createdBy, task.createdByLabel, usersState])
+  const assigneeOptions = useMemo(() => {
+    const labels = new Map<string, string>()
+    if (membersState.status === 'ok') {
+      for (const member of membersState.data ?? []) {
+        if (!member.name) continue
+        if (member.model === 'human') {
+          labels.set(member.name, actorLabels.get(member.name) || member.name)
+        } else {
+          labels.set(`${task.project}/${member.name}`, member.name)
+        }
+      }
+    }
+    const current = task.assignee || `${task.project}/${task.agent}`
+    labels.set(current, taskIdentityLabel(current, task.assigneeLabel))
+    return Array.from(labels.entries()).map(([value, label]) => ({ value, label }))
+  }, [actorLabels, membersState, task.agent, task.assignee, task.assigneeLabel, task.project])
   const activeWorkflowStep = workflowState.status === 'ok'
     ? workflowState.data.definition.steps.find((step) => step.id === workflowState.data.run.activeStepId)
     : undefined
@@ -289,6 +311,36 @@ export function TaskDetailModal({ task, onClose, onEdit, onMutated, canEdit = tr
     setReviewOutputs({})
     setReviewErr(null)
   }, [activeWorkflowStep?.id])
+
+  useEffect(() => {
+    setAssigneeDraft(task.assignee || `${task.project}/${task.agent}`)
+    setAssigneeEditing(false)
+    setAssigneeErr(null)
+  }, [task.agent, task.assignee, task.project])
+
+  async function saveAssignee() {
+    const next = assigneeDraft.trim()
+    if (!next || next === (task.assignee || `${task.project}/${task.agent}`)) {
+      setAssigneeEditing(false)
+      return
+    }
+    setAssigneeBusy(true)
+    setAssigneeErr(null)
+    try {
+      await apiPut('/api/v1/tasks/update', {
+        project: task.project,
+        agent: task.agent,
+        id: task.id,
+        assignee: next,
+      })
+      setAssigneeEditing(false)
+      onMutated?.()
+    } catch (e) {
+      setAssigneeErr(e instanceof Error ? e.message : String(e))
+    } finally {
+      setAssigneeBusy(false)
+    }
+  }
 
   async function submitWorkflowReview(decision?: string) {
     setReviewErr(null)
@@ -349,7 +401,59 @@ export function TaskDetailModal({ task, onClose, onEdit, onMutated, canEdit = tr
           <InfoCell label="ID"><span className="font-mono text-xs">{task.id}</span></InfoCell>
           <InfoCell label={t('tasks.colProject')}><span className="font-mono">{task.project}</span></InfoCell>
           <InfoCell label={t('tasks.colAssignee')}>
-            <span title={task.assignee || `${task.project}/${task.agent}`}>{compactTaskIdentityLabel(task.assignee || `${task.project}/${task.agent}`, task.assigneeLabel)}</span>
+            <div className="space-y-1">
+              {!assigneeEditing ? (
+                <div className="flex items-center gap-2">
+                  <span title={task.assignee || `${task.project}/${task.agent}`}>{compactTaskIdentityLabel(task.assignee || `${task.project}/${task.agent}`, task.assigneeLabel)}</span>
+                  {canEdit && !isTerminal(task.status) && (
+                    <button
+                      type="button"
+                      onClick={() => setAssigneeEditing(true)}
+                      className="rounded-md border border-neutral-200 px-2 py-0.5 text-xs font-medium text-sky-700 transition-colors hover:bg-sky-50 dark:border-zinc-700 dark:text-sky-400 dark:hover:bg-zinc-800"
+                    >
+                      {t('tasks.changeAssignee')}
+                    </button>
+                  )}
+                </div>
+              ) : (
+                <div className="space-y-1">
+                  <div className="flex items-center gap-1.5">
+                    <select
+                      value={assigneeDraft}
+                      onChange={(event) => setAssigneeDraft(event.target.value)}
+                      disabled={assigneeBusy || membersState.status === 'loading'}
+                      className="min-w-36 rounded-lg border border-neutral-300 bg-white px-2 py-1 text-sm text-neutral-900 outline-none focus:border-sky-400 dark:border-zinc-600 dark:bg-zinc-800 dark:text-zinc-100"
+                    >
+                      {assigneeOptions.map((option) => (
+                        <option key={option.value} value={option.value}>{option.label}</option>
+                      ))}
+                    </select>
+                    <button
+                      type="button"
+                      onClick={() => void saveAssignee()}
+                      disabled={assigneeBusy}
+                      className="rounded-md border border-sky-600 bg-white px-2 py-1 text-xs font-medium text-sky-700 hover:bg-sky-50 disabled:opacity-50 dark:border-sky-500 dark:bg-zinc-900 dark:text-sky-400 dark:hover:bg-zinc-800"
+                    >
+                      {assigneeBusy ? t('forms.saving') : t('forms.save')}
+                    </button>
+                    <button
+                      type="button"
+                      onClick={() => {
+                        setAssigneeDraft(task.assignee || `${task.project}/${task.agent}`)
+                        setAssigneeEditing(false)
+                        setAssigneeErr(null)
+                      }}
+                      disabled={assigneeBusy}
+                      className="rounded-md border border-neutral-300 px-2 py-1 text-xs font-medium text-neutral-600 hover:bg-neutral-50 disabled:opacity-50 dark:border-zinc-700 dark:text-zinc-300 dark:hover:bg-zinc-800"
+                    >
+                      {t('forms.cancel')}
+                    </button>
+                  </div>
+                  {membersState.status === 'loading' && <p className="text-xs text-neutral-400 dark:text-zinc-500">{t('api.loading')}</p>}
+                  {assigneeErr && <p className="text-xs text-red-600 dark:text-red-400">{assigneeErr}</p>}
+                </div>
+              )}
+            </div>
           </InfoCell>
           <InfoCell label={t('forms.type')}>{task.type ? t(`forms.taskType.${task.type}`, { defaultValue: task.type }) : '—'}</InfoCell>
           <InfoCell label={t('api.taskColUpdated')}>{fmt(task.updatedAt)}</InfoCell>

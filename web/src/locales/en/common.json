@@ -772,6 +772,7 @@
     "colArchived": "Archived",
     "colProject": "Project",
     "colAssignee": "Assignee",
+    "changeAssignee": "Change",
     "assignDefault": "Default (execution agent)",
     "assignHint": "Leave default to assign ownership to the execution agent, or choose a project user or another agent.",
     "loadingRuns": "Loading execution records…",

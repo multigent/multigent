@@ -324,6 +324,45 @@ func TestProjectTasksAgentFilterMatchesAssigneeNotQueue(t *testing.T) {
 	}
 }
 
+func TestUpdateTaskAssigneeMovesAgentQueue(t *testing.T) {
+	s, _ := newConnectionGrantPolicyServer(t)
+	now := time.Now().UTC()
+	if err := s.ts.AddTask("sample", "pm", &entity.Task{
+		ID:        "task-reassign-agent",
+		Title:     "Reassign me",
+		Prompt:    "Move this task",
+		Status:    entity.TaskStatusPending,
+		Priority:  2,
+		Assignee:  "sample/pm",
+		CreatedAt: now,
+		UpdatedAt: now,
+	}); err != nil {
+		t.Fatalf("add task: %v", err)
+	}
+
+	rec := httptest.NewRecorder()
+	req := providerTestRequest(http.MethodPut, "/api/v1/tasks/update", "admin", updateTaskBody{
+		Project:  "sample",
+		Agent:    "pm",
+		ID:       "task-reassign-agent",
+		Assignee: strPtr("sample/backend"),
+	})
+	s.handlePutUpdateTask(rec, req)
+	if rec.Code != http.StatusOK {
+		t.Fatalf("update assignee status=%d body=%s", rec.Code, rec.Body.String())
+	}
+	if _, err := s.ts.GetTask("sample", "pm", "task-reassign-agent"); err == nil {
+		t.Fatalf("task still exists in old queue")
+	}
+	moved, err := s.ts.GetTask("sample", "backend", "task-reassign-agent")
+	if err != nil {
+		t.Fatalf("task not moved to backend queue: %v", err)
+	}
+	if moved.Assignee != "sample/backend" {
+		t.Fatalf("assignee=%q", moved.Assignee)
+	}
+}
+
 func containsAll(s string, substr string) bool {
 	return strings.Contains(s, substr)
 }

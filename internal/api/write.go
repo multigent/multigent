@@ -406,6 +406,8 @@ func (s *Server) handlePutUpdateTask(w http.ResponseWriter, r *http.Request) {
 		s.serverError(w, err)
 		return
 	}
+	oldAssignee := strings.TrimSpace(t.Assignee)
+	routeToProject, routeToAgent := project, agent
 
 	patch := taskstore.TaskPatch{
 		Title: body.Title, Description: body.Description, Summary: body.Summary,
@@ -447,23 +449,81 @@ func (s *Server) handlePutUpdateTask(w http.ResponseWriter, r *http.Request) {
 		taskType := entity.TaskType(typ)
 		patch.Type = &taskType
 	}
+	if body.Assignee != nil {
+		assignee := strings.TrimSpace(*body.Assignee)
+		if assignee == "" {
+			s.jsonError(w, http.StatusBadRequest, "assignee cannot be empty")
+			return
+		}
+		if err := s.validateIdentity(assignee, "assignee"); err != nil {
+			s.jsonError(w, http.StatusBadRequest, err.Error())
+			return
+		}
+		if targetProject, targetAgent, ok := splitAgentMailbox(assignee); ok {
+			if targetProject != project {
+				s.jsonError(w, http.StatusBadRequest, "assignee agent must belong to the task project")
+				return
+			}
+			if !s.canOperateAgent(r, targetProject, targetAgent) {
+				s.jsonError(w, http.StatusForbidden, "assignee agent operator access required")
+				return
+			}
+			routeToProject, routeToAgent = targetProject, targetAgent
+			if t.Status == entity.TaskStatusAwaitingConfirmation {
+				status := entity.TaskStatusPending
+				patch.Status = &status
+			}
+		}
+	}
 
 	if _, err := taskstore.ApplyTaskPatch(t, patch, time.Now().UTC()); err != nil {
 		s.jsonError(w, http.StatusBadRequest, err.Error())
 		return
 	}
 
-	if err := s.ts.PersistTask(project, agent, t); err != nil {
-		if strings.Contains(err.Error(), "not found") {
-			s.jsonError(w, http.StatusNotFound, "task not found")
+	if routeToAgent != agent {
+		if err := s.ts.DeleteTask(project, agent, id); err != nil {
+			if strings.Contains(err.Error(), "not found") {
+				s.jsonError(w, http.StatusNotFound, "task not found")
+				return
+			}
+			s.serverError(w, err)
 			return
 		}
-		s.serverError(w, err)
-		return
+		if err := s.ts.AddTask(routeToProject, routeToAgent, t); err != nil {
+			s.serverError(w, err)
+			return
+		}
+	} else {
+		if err := s.ts.PersistTask(project, agent, t); err != nil {
+			if strings.Contains(err.Error(), "not found") {
+				s.jsonError(w, http.StatusNotFound, "task not found")
+				return
+			}
+			s.serverError(w, err)
+			return
+		}
 	}
 
 	if patch.Status != nil && t.Status.IsTerminal() && t.CreatedBy != "" {
-		s.notifyTaskDone(t, project, agent)
+		s.notifyTaskDone(t, routeToProject, routeToAgent)
+	}
+	if body.Assignee != nil && strings.TrimSpace(t.Assignee) != oldAssignee {
+		if _, targetAgent, ok := splitAgentMailbox(t.Assignee); ok && !t.Status.IsTerminal() {
+			s.triggers.Fire(project, targetAgent, entity.TriggerOnTask, "task reassigned "+t.ID)
+		} else if strings.TrimSpace(t.Assignee) != "" && !strings.Contains(t.Assignee, "/") {
+			if err := s.ts.AddToInbox(&entity.InboxItem{
+				TaskID:  t.ID,
+				Project: project,
+				Agent:   routeToAgent,
+				To:      strings.TrimSpace(t.Assignee),
+				Title:   t.Title,
+				Summary: strings.TrimSpace(t.Description),
+			}); err != nil {
+				s.serverError(w, err)
+				return
+			}
+		}
 	}
 
 	_ = json.NewEncoder(w).Encode(map[string]bool{"ok": true})

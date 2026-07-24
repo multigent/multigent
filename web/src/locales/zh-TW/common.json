@@ -772,6 +772,7 @@
     "colArchived": "歸檔",
     "colProject": "專案",
     "colAssignee": "負責人",
+    "changeAssignee": "更改",
     "assignDefault": "預設（執行 Agent）",
     "assignHint": "留空預設由執行 Agent 負責，也可以指定專案使用者或其他 Agent。",
     "loadingRuns": "正在載入執行記錄…",
