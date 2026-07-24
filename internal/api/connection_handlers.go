@@ -1252,15 +1252,24 @@ func (s *Server) userRecordByUsername(username string) (*userRecord, bool) {
 }
 
 func currentUserLinkedAgent(cur *userRecord, agentRef string) bool {
-	if cur == nil {
+	project, agent, ok := strings.Cut(agentRef, "/")
+	if !ok {
 		return false
 	}
-	for _, linked := range cur.LinkedAgents {
-		if linked == agentRef {
-			return true
+	_, found := currentUserAgentRole(cur, project, agent)
+	return found
+}
+
+func currentUserAgentRole(cur *userRecord, project, agent string) (string, bool) {
+	if cur == nil {
+		return "", false
+	}
+	for _, grant := range cur.AgentGrants {
+		if grant.Project == project && grant.Agent == agent {
+			return grant.Role, true
 		}
 	}
-	return false
+	return "", false
 }
 
 func (s *Server) canAdminCurrentWorkspace(r *http.Request) bool {

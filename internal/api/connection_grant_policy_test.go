@@ -9,6 +9,7 @@ import (
 
 	controldb "github.com/multigent/multigent/internal/db"
 	"github.com/multigent/multigent/internal/entity"
+	"github.com/multigent/multigent/internal/rbac"
 	"github.com/multigent/multigent/internal/store"
 	"github.com/multigent/multigent/internal/taskstore"
 )
@@ -46,7 +47,7 @@ func newConnectionGrantPolicyServer(t *testing.T) (*Server, string) {
 	if err := s.controlDB.UpsertWorkspaceMember(workspaceID, "owner", WorkspaceRoleMember); err != nil {
 		t.Fatalf("owner member: %v", err)
 	}
-	if err := s.users.UpdateUser("owner", nil, nil, nil, nil, nil, nil, nil, nil, []string{"sample/pm"}, nil); err != nil {
+	if err := s.users.UpdateUser("owner", nil, nil, nil, nil, nil, nil, nil, nil, []agentAccess{{Project: "sample", Agent: "pm", Role: string(rbac.AgentRoleOwner)}}, nil); err != nil {
 		t.Fatalf("link owner agent: %v", err)
 	}
 	if err := st.SaveProject("sample", &entity.Project{Name: "sample"}); err != nil {

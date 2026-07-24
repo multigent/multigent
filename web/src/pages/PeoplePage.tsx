@@ -9,8 +9,12 @@ type PersonRow = {
   username: string; role: string; displayName?: string
   email?: string; avatar?: string; bio?: string
   projects?: { project: string; role: string }[]
+  agentGrants?: { project: string; agent: string; role: string }[]
   linkedAgents?: string[]; disabled?: boolean; createdAt?: string
 }
+
+type ProjectRow = { name: string; description?: string }
+type AgentRow = { name: string; model?: string }
 
 type InvitationRow = {
   token: string
@@ -111,6 +115,11 @@ export default function PeoplePage() {
   const [inviteResults, setInviteResults] = useState<{ email: string; inviteUrl?: string; delivery?: string; error?: string }[]>([])
   const [saving, setSaving] = useState(false)
   const [err, setErr] = useState<string | null>(null)
+  const [accessEditing, setAccessEditing] = useState<PersonRow | null>(null)
+  const [accessProjects, setAccessProjects] = useState<{ project: string; role: string }[]>([])
+  const [accessAgents, setAccessAgents] = useState<{ project: string; agent: string; role: string }[]>([])
+  const [projectCatalog, setProjectCatalog] = useState<ProjectRow[]>([])
+  const [agentsByProject, setAgentsByProject] = useState<Record<string, AgentRow[]>>({})
 
   const refresh = useCallback(async () => {
     try {
@@ -226,6 +235,54 @@ export default function PeoplePage() {
     }
   }
 
+  async function openAccessEditor(person: PersonRow) {
+    setAccessEditing(person)
+    setAccessProjects([...(person.projects ?? [])])
+    setAccessAgents([...(person.agentGrants ?? [])])
+    setErr(null)
+    try {
+      const projects = await apiFetch<ProjectRow[]>('/api/v1/projects')
+      setProjectCatalog(projects ?? [])
+      const pairs = await Promise.all((projects ?? []).map(async project => {
+        const agents = await apiFetch<AgentRow[]>(`/api/v1/projects/${encodeURIComponent(project.name)}/agents`).catch(() => [] as AgentRow[])
+        return [project.name, agents] as const
+      }))
+      setAgentsByProject(Object.fromEntries(pairs))
+    } catch {
+      setProjectCatalog([])
+      setAgentsByProject({})
+    }
+  }
+
+  async function saveAccess() {
+    if (!accessEditing) return
+    setSaving(true); setErr(null)
+    try {
+      await apiPut(`/api/v1/users/${encodeURIComponent(accessEditing.username)}`, {
+        projects: accessProjects.filter(p => p.project.trim()).map(p => ({ project: p.project, role: p.role || 'viewer' })),
+        agentGrants: accessAgents.filter(a => a.project.trim() && a.agent.trim()).map(a => ({ project: a.project, agent: a.agent, role: a.role || 'operator' })),
+      })
+      setAccessEditing(null)
+      await refresh()
+    } catch (e) {
+      setErr(e instanceof Error ? e.message : String(e))
+    } finally {
+      setSaving(false)
+    }
+  }
+
+  function addProjectGrant() {
+    const first = projectCatalog.find(p => !accessProjects.some(ap => ap.project === p.name))
+    if (!first) return
+    setAccessProjects([...accessProjects, { project: first.name, role: 'viewer' }])
+  }
+
+  function addAgentGrant() {
+    const project = projectCatalog[0]?.name ?? ''
+    const agent = project ? (agentsByProject[project]?.[0]?.name ?? '') : ''
+    setAccessAgents([...accessAgents, { project, agent, role: 'operator' }])
+  }
+
   return (
     <div className="animate-fade-in px-8 py-6">
       <div className="flex items-center justify-between pb-5">
@@ -256,8 +313,10 @@ export default function PeoplePage() {
                 <th className="px-4 py-3">{t('users.email')}</th>
                 <th className="px-4 py-3">{t('people.columnRole')}</th>
                 <th className="px-4 py-3">{t('people.columnProjects')}</th>
+                <th className="px-4 py-3">{t('people.columnAgents')}</th>
                 <th className="px-4 py-3">{t('people.columnCreated')}</th>
                 <th className="px-4 py-3">{t('people.columnStatus')}</th>
+                <th className="px-4 py-3 text-right">{t('people.columnActions')}</th>
               </tr>
             </thead>
             <tbody className="divide-y divide-neutral-100 dark:divide-zinc-800">
@@ -291,11 +350,17 @@ export default function PeoplePage() {
                     </select>
                   </td>
                   <td className="px-4 py-3 text-neutral-600 dark:text-zinc-400">{p.projects?.length ?? 0}</td>
+                  <td className="px-4 py-3 text-neutral-600 dark:text-zinc-400">{p.agentGrants?.length ?? 0}</td>
                   <td className="px-4 py-3 text-neutral-500 dark:text-zinc-500">{fmtDateTime(p.createdAt)}</td>
                   <td className="px-4 py-3">
                     <span className={cn('rounded-full px-2 py-0.5 text-xs font-medium', p.disabled ? 'bg-red-100 text-red-700 dark:bg-red-900/30 dark:text-red-300' : 'bg-emerald-100 text-emerald-700 dark:bg-emerald-900/30 dark:text-emerald-300')}>
                       {p.disabled ? t('users.disabled') : t('people.statusActive')}
                     </span>
+                  </td>
+                  <td className="px-4 py-3 text-right">
+                    <button type="button" onClick={() => void openAccessEditor(p)} className="rounded px-2 py-1 text-xs font-medium text-sky-700 hover:bg-sky-50 dark:text-sky-300 dark:hover:bg-sky-900/20">
+                      {t('people.manageAccess')}
+                    </button>
                   </td>
                 </tr>
               ))}
@@ -443,6 +508,104 @@ export default function PeoplePage() {
                 <button type="button" onClick={() => void handleCreate()} disabled={saving || !looksLikeEmail(form.email) || Boolean(lookup?.alreadyMember) || Boolean(lookup?.pendingInvite)}
                   className="rounded-lg bg-sky-600 px-3 py-1.5 text-sm font-medium text-white disabled:opacity-50">
                   {saving ? t('forms.saving') : t('people.sendInvite')}
+                </button>
+              </div>
+            </div>
+          </div>
+        </div>
+      )}
+
+      {accessEditing && (
+        <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/45 p-4" onClick={() => !saving && setAccessEditing(null)}>
+          <div className="w-full max-w-2xl rounded-xl border border-neutral-200 bg-white shadow-lg dark:border-zinc-700 dark:bg-zinc-900 animate-scale-in" onClick={e => e.stopPropagation()}>
+            <div className="flex items-center justify-between border-b border-neutral-200 px-5 py-3 dark:border-zinc-700">
+              <div>
+                <h2 className="text-base font-semibold text-neutral-900 dark:text-zinc-100">{t('people.accessTitle', { name: accessEditing.displayName || accessEditing.email || accessEditing.username })}</h2>
+                <p className="mt-0.5 text-xs text-neutral-500 dark:text-zinc-500">{t('people.accessHint')}</p>
+              </div>
+              <button type="button" onClick={() => setAccessEditing(null)} className="rounded-md p-1 text-neutral-400 hover:bg-neutral-100 dark:hover:bg-zinc-800"><X className="size-4" /></button>
+            </div>
+            <div className="max-h-[70vh] space-y-5 overflow-auto px-5 py-4">
+              <section>
+                <div className="mb-2 flex items-center justify-between">
+                  <h3 className="text-sm font-semibold text-neutral-900 dark:text-zinc-100">{t('people.projectAccess')}</h3>
+                  <button type="button" onClick={addProjectGrant} disabled={projectCatalog.length === 0} className="rounded-lg border border-sky-600 bg-white px-3 py-1.5 text-xs font-medium text-sky-700 hover:bg-sky-50 disabled:opacity-50 dark:border-sky-500 dark:bg-zinc-900 dark:text-sky-400 dark:hover:bg-zinc-800">
+                    {t('people.addProjectAccess')}
+                  </button>
+                </div>
+                <div className="space-y-2">
+                  {accessProjects.length === 0 ? (
+                    <p className="rounded-lg border border-dashed border-neutral-200 py-4 text-center text-xs text-neutral-400 dark:border-zinc-700 dark:text-zinc-500">{t('people.noProjectAccess')}</p>
+                  ) : accessProjects.map((grant, idx) => (
+                    <div key={`${grant.project}-${idx}`} className="grid grid-cols-[1fr_150px_auto] gap-2">
+                      <select value={grant.project} onChange={e => {
+                        const next = [...accessProjects]; next[idx] = { ...next[idx], project: e.target.value }
+                        setAccessProjects(next)
+                      }} className={fieldCls}>
+                        {projectCatalog.map(project => <option key={project.name} value={project.name}>{project.name}</option>)}
+                      </select>
+                      <select value={grant.role} onChange={e => {
+                        const next = [...accessProjects]; next[idx] = { ...next[idx], role: e.target.value }
+                        setAccessProjects(next)
+                      }} className={fieldCls}>
+                        {['viewer', 'operator', 'manager'].map(role => <option key={role} value={role}>{t(`people.projectRole_${role}`)}</option>)}
+                      </select>
+                      <button type="button" onClick={() => setAccessProjects(accessProjects.filter((_, i) => i !== idx))} className="rounded-lg border border-neutral-200 px-3 text-xs font-medium text-neutral-500 hover:bg-neutral-50 dark:border-zinc-700 dark:text-zinc-400 dark:hover:bg-zinc-800">
+                        {t('forms.delete')}
+                      </button>
+                    </div>
+                  ))}
+                </div>
+              </section>
+
+              <section>
+                <div className="mb-2 flex items-center justify-between">
+                  <h3 className="text-sm font-semibold text-neutral-900 dark:text-zinc-100">{t('people.agentAccess')}</h3>
+                  <button type="button" onClick={addAgentGrant} disabled={projectCatalog.length === 0} className="rounded-lg border border-sky-600 bg-white px-3 py-1.5 text-xs font-medium text-sky-700 hover:bg-sky-50 disabled:opacity-50 dark:border-sky-500 dark:bg-zinc-900 dark:text-sky-400 dark:hover:bg-zinc-800">
+                    {t('people.addAgentAccess')}
+                  </button>
+                </div>
+                <p className="mb-2 text-xs text-neutral-500 dark:text-zinc-500">{t('people.agentAccessHint')}</p>
+                <div className="space-y-2">
+                  {accessAgents.length === 0 ? (
+                    <p className="rounded-lg border border-dashed border-neutral-200 py-4 text-center text-xs text-neutral-400 dark:border-zinc-700 dark:text-zinc-500">{t('people.noAgentAccess')}</p>
+                  ) : accessAgents.map((grant, idx) => {
+                    const agents = agentsByProject[grant.project] ?? []
+                    return (
+                      <div key={`${grant.project}-${grant.agent}-${idx}`} className="grid grid-cols-[1fr_1fr_140px_auto] gap-2">
+                        <select value={grant.project} onChange={e => {
+                          const project = e.target.value
+                          const next = [...accessAgents]
+                          next[idx] = { ...next[idx], project, agent: agentsByProject[project]?.[0]?.name ?? '' }
+                          setAccessAgents(next)
+                        }} className={fieldCls}>
+                          {projectCatalog.map(project => <option key={project.name} value={project.name}>{project.name}</option>)}
+                        </select>
+                        <select value={grant.agent} onChange={e => {
+                          const next = [...accessAgents]; next[idx] = { ...next[idx], agent: e.target.value }
+                          setAccessAgents(next)
+                        }} className={fieldCls}>
+                          {agents.length === 0 ? <option value="">{t('people.noAgentsInProject')}</option> : agents.map(agent => <option key={agent.name} value={agent.name}>{agent.name}</option>)}
+                        </select>
+                        <select value={grant.role} onChange={e => {
+                          const next = [...accessAgents]; next[idx] = { ...next[idx], role: e.target.value }
+                          setAccessAgents(next)
+                        }} className={fieldCls}>
+                          {['viewer', 'operator', 'owner'].map(role => <option key={role} value={role}>{t(`people.agentRole_${role}`)}</option>)}
+                        </select>
+                        <button type="button" onClick={() => setAccessAgents(accessAgents.filter((_, i) => i !== idx))} className="rounded-lg border border-neutral-200 px-3 text-xs font-medium text-neutral-500 hover:bg-neutral-50 dark:border-zinc-700 dark:text-zinc-400 dark:hover:bg-zinc-800">
+                          {t('forms.delete')}
+                        </button>
+                      </div>
+                    )
+                  })}
+                </div>
+              </section>
+              {err && <p className="text-sm text-red-600 dark:text-red-400">{err}</p>}
+              <div className="flex justify-end gap-2 border-t border-neutral-100 pt-4 dark:border-zinc-800">
+                <button type="button" onClick={() => setAccessEditing(null)} disabled={saving} className="rounded-lg border border-neutral-300 px-3 py-1.5 text-sm dark:border-zinc-600">{t('forms.cancel')}</button>
+                <button type="button" onClick={() => void saveAccess()} disabled={saving} className="rounded-lg bg-sky-600 px-3 py-1.5 text-sm font-medium text-white disabled:opacity-50">
+                  {saving ? t('forms.saving') : t('forms.save')}
                 </button>
               </div>
             </div>

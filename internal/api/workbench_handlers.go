@@ -87,9 +87,8 @@ func (s *Server) handleWorkbenchMessages(w http.ResponseWriter, r *http.Request)
 			}
 		}
 	} else {
-		// Member: show messages for their linked agents only
-		linkedAgents := cur.LinkedAgents
-		for _, la := range linkedAgents {
+		for _, grant := range cur.AgentGrants {
+			la := grant.Project + "/" + grant.Agent
 			if direction == "inbox" || direction == "all" {
 				var raw []*entity.Message
 				if useAll {
@@ -157,8 +156,8 @@ func (s *Server) handleWorkbenchTasks(w http.ResponseWriter, r *http.Request) {
 	}
 
 	linkedSet := map[string]bool{}
-	for _, la := range cur.LinkedAgents {
-		linkedSet[la] = true
+	for _, grant := range cur.AgentGrants {
+		linkedSet[grant.Project+"/"+grant.Agent] = true
 	}
 
 	rows := make([]taskRow, 0)

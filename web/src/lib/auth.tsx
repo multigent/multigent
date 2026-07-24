@@ -8,6 +8,12 @@ export type ProjectAccess = {
   role: string // viewer | operator | manager
 }
 
+export type AgentAccess = {
+  project: string
+  agent: string
+  role: string // viewer | operator | owner
+}
+
 export type AuthUser = {
   username: string
   role: string // admin | member
@@ -17,6 +23,7 @@ export type AuthUser = {
   email?: string
   avatar?: string
   projects?: ProjectAccess[]
+  agentGrants?: AgentAccess[]
   linkedAgents?: string[]
 }
 
@@ -89,6 +96,12 @@ const projectRolePower: Record<string, number> = {
   manager: 3,
 }
 
+const agentRolePower: Record<string, number> = {
+  viewer: 1,
+  operator: 2,
+  owner: 3,
+}
+
 export function isSystemAdmin(user: AuthUser | null | undefined): boolean {
   return Boolean(user && user.role === 'admin')
 }
@@ -103,13 +116,18 @@ export function projectRole(user: AuthUser | null | undefined, project: string):
 }
 
 export function hasLinkedAgent(user: AuthUser | null | undefined, project: string, agent: string): boolean {
-  return Boolean(user?.linkedAgents?.includes(`${project}/${agent}`))
+  return Boolean(user?.agentGrants?.some((grant) => grant.project === project && grant.agent === agent) || user?.linkedAgents?.includes(`${project}/${agent}`))
+}
+
+export function agentRole(user: AuthUser | null | undefined, project: string, agent: string): string | null {
+  if (canManageProject(user, project)) return 'owner'
+  return user?.agentGrants?.find((grant) => grant.project === project && grant.agent === agent)?.role ?? (hasLinkedAgent(user, project, agent) ? 'operator' : null)
 }
 
 export function canAccessProject(user: AuthUser | null | undefined, project: string): boolean {
   if (isSystemAdmin(user)) return true
   if (projectRole(user, project) != null) return true
-  return Boolean(user?.linkedAgents?.some((agent) => agent.startsWith(`${project}/`)))
+  return Boolean(user?.agentGrants?.some((grant) => grant.project === project) || user?.linkedAgents?.some((agent) => agent.startsWith(`${project}/`)))
 }
 
 export function canOperateProject(user: AuthUser | null | undefined, project: string): boolean {
@@ -124,10 +142,12 @@ export function canManageProject(user: AuthUser | null | undefined, project: str
 
 export function canOperateAgent(user: AuthUser | null | undefined, project: string, agent: string): boolean {
   if (canOperateProject(user, project)) return true
-  return hasLinkedAgent(user, project, agent)
+  const role = agentRole(user, project, agent)
+  return (agentRolePower[role ?? ''] ?? 0) >= agentRolePower.operator
 }
 
 export function canConfigureAgent(user: AuthUser | null | undefined, project: string, agent: string): boolean {
   if (canManageProject(user, project)) return true
-  return hasLinkedAgent(user, project, agent)
+  const role = agentRole(user, project, agent)
+  return (agentRolePower[role ?? ''] ?? 0) >= agentRolePower.owner
 }

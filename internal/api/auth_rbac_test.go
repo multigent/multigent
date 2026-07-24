@@ -29,12 +29,12 @@ func TestUserStorePrincipalMapsProjectAndAgentRoles(t *testing.T) {
 	users := newTestUserStore(t)
 	role := RoleMember
 	projects := []projectAccess{{Project: "sample", Role: ProjectRoleViewer}}
-	linkedAgents := []string{"sample/connector-dev"}
+	agentGrants := []agentAccess{{Project: "sample", Agent: "connector-dev", Role: string(rbac.AgentRoleOperator)}}
 
 	if err := users.CreateUser("dev", "pass", role, "", "", "", "", ""); err != nil {
 		t.Fatalf("create user: %v", err)
 	}
-	if err := users.UpdateUser("dev", nil, nil, nil, nil, nil, nil, nil, projects, linkedAgents, nil); err != nil {
+	if err := users.UpdateUser("dev", nil, nil, nil, nil, nil, nil, nil, projects, agentGrants, nil); err != nil {
 		t.Fatalf("update user: %v", err)
 	}
 
@@ -159,7 +159,7 @@ func TestUserStoreAcceptInvitationCreatesMemberWithGrants(t *testing.T) {
 	users := newTestUserStore(t)
 	projects := []projectAccess{{Project: "sample", Role: ProjectRoleOperator}}
 
-	inv, err := users.CreateInvitation("ws-one", "Ella@Example.com", RoleMember, "Ella", "admin", projects, []string{"sample/frontend"})
+	inv, err := users.CreateInvitation("ws-one", "Ella@Example.com", RoleMember, "Ella", "admin", projects, []agentAccess{{Project: "sample", Agent: "frontend", Role: string(rbac.AgentRoleOperator)}})
 	if err != nil {
 		t.Fatalf("invite: %v", err)
 	}

@@ -37,19 +37,25 @@ type projectAccess struct {
 	Role    string `json:"role"` // viewer | operator | manager
 }
 
+type agentAccess struct {
+	Project string `json:"project"`
+	Agent   string `json:"agent"`
+	Role    string `json:"role"` // viewer | operator | owner
+}
+
 type invitationRecord struct {
-	Token        string          `json:"token"`
-	WorkspaceID  string          `json:"workspaceId,omitempty"`
-	Email        string          `json:"email"`
-	Role         string          `json:"role"`
-	DisplayName  string          `json:"displayName,omitempty"`
-	Projects     []projectAccess `json:"projects,omitempty"`
-	LinkedAgents []string        `json:"linkedAgents,omitempty"`
-	InvitedBy    string          `json:"invitedBy,omitempty"`
-	Status       string          `json:"status"` // pending | accepted | revoked
-	CreatedAt    string          `json:"createdAt"`
-	ExpiresAt    string          `json:"expiresAt"`
-	AcceptedAt   string          `json:"acceptedAt,omitempty"`
+	Token       string          `json:"token"`
+	WorkspaceID string          `json:"workspaceId,omitempty"`
+	Email       string          `json:"email"`
+	Role        string          `json:"role"`
+	DisplayName string          `json:"displayName,omitempty"`
+	Projects    []projectAccess `json:"projects,omitempty"`
+	AgentGrants []agentAccess   `json:"agentGrants,omitempty"`
+	InvitedBy   string          `json:"invitedBy,omitempty"`
+	Status      string          `json:"status"` // pending | accepted | revoked
+	CreatedAt   string          `json:"createdAt"`
+	ExpiresAt   string          `json:"expiresAt"`
+	AcceptedAt  string          `json:"acceptedAt,omitempty"`
 }
 
 type userRecord struct {
@@ -62,6 +68,7 @@ type userRecord struct {
 	Phone        string          `json:"phone,omitempty"`
 	Bio          string          `json:"bio,omitempty"`
 	Projects     []projectAccess `json:"projects,omitempty"`
+	AgentGrants  []agentAccess   `json:"agentGrants,omitempty"`
 	LinkedAgents []string        `json:"linkedAgents,omitempty"`
 	Disabled     bool            `json:"disabled,omitempty"`
 	CreatedAt    string          `json:"createdAt,omitempty"`
@@ -258,7 +265,7 @@ func (s *UserStore) RegisterByEmail(email, password, displayName string) (*userR
 	return &u, nil
 }
 
-func (s *UserStore) CreateInvitation(workspaceID, email, role, displayName, invitedBy string, projects []projectAccess, linkedAgents []string) (*invitationRecord, error) {
+func (s *UserStore) CreateInvitation(workspaceID, email, role, displayName, invitedBy string, projects []projectAccess, agentGrants []agentAccess) (*invitationRecord, error) {
 	email = normalizeEmail(email)
 	if !validEmail(email) {
 		return nil, fmt.Errorf("valid email required")
@@ -270,17 +277,17 @@ func (s *UserStore) CreateInvitation(workspaceID, email, role, displayName, invi
 	}
 	now := time.Now().UTC()
 	inv := invitationRecord{
-		Token:        generateToken(24),
-		WorkspaceID:  workspaceID,
-		Email:        email,
-		Role:         role,
-		DisplayName:  displayName,
-		Projects:     projects,
-		LinkedAgents: linkedAgents,
-		InvitedBy:    invitedBy,
-		Status:       "pending",
-		CreatedAt:    now.Format(time.RFC3339),
-		ExpiresAt:    now.Add(7 * 24 * time.Hour).Format(time.RFC3339),
+		Token:       generateToken(24),
+		WorkspaceID: workspaceID,
+		Email:       email,
+		Role:        role,
+		DisplayName: displayName,
+		Projects:    projects,
+		AgentGrants: normalizeAgentGrants(agentGrants),
+		InvitedBy:   invitedBy,
+		Status:      "pending",
+		CreatedAt:   now.Format(time.RFC3339),
+		ExpiresAt:   now.Add(7 * 24 * time.Hour).Format(time.RFC3339),
 	}
 	if err := s.db.CreateInvitation(recordToDBInvitation(inv)); err != nil {
 		return nil, err
@@ -384,14 +391,14 @@ func (s *UserStore) AcceptInvitation(token, password, displayName string) (*user
 		return nil, err
 	}
 	u := userRecord{
-		Username:     username,
-		Hash:         string(hash),
-		Role:         RoleMember,
-		DisplayName:  displayName,
-		Email:        inv.Email,
-		Projects:     inv.Projects,
-		LinkedAgents: inv.LinkedAgents,
-		CreatedAt:    now.Format(time.RFC3339),
+		Username:    username,
+		Hash:        string(hash),
+		Role:        RoleMember,
+		DisplayName: displayName,
+		Email:       inv.Email,
+		Projects:    inv.Projects,
+		AgentGrants: inv.AgentGrants,
+		CreatedAt:   now.Format(time.RFC3339),
 	}
 	if err := s.db.UpsertUser(recordToDBUser(u)); err != nil {
 		return nil, err
@@ -404,7 +411,7 @@ func (s *UserStore) AcceptInvitation(token, password, displayName string) (*user
 	return &u, nil
 }
 
-func (s *UserStore) UpdateUser(username string, role, displayName, email, avatar, phone, bio *string, disabled *bool, projects []projectAccess, linkedAgents []string, newPassword *string) error {
+func (s *UserStore) UpdateUser(username string, role, displayName, email, avatar, phone, bio *string, disabled *bool, projects []projectAccess, agentGrants []agentAccess, newPassword *string) error {
 	dbUser, ok, err := s.db.UserByUsername(username)
 	if err != nil {
 		return err
@@ -437,8 +444,8 @@ func (s *UserStore) UpdateUser(username string, role, displayName, email, avatar
 	if projects != nil {
 		u.Projects = projects
 	}
-	if linkedAgents != nil {
-		u.LinkedAgents = linkedAgents
+	if agentGrants != nil {
+		u.AgentGrants = normalizeAgentGrants(agentGrants)
 	}
 	if newPassword != nil && *newPassword != "" {
 		hash, err := bcrypt.GenerateFromPassword([]byte(*newPassword), bcrypt.DefaultCost)
@@ -484,7 +491,7 @@ func (s *UserStore) Principal(username string) (rbac.Principal, bool) {
 		ID:           u.Username,
 		OrgRole:      rbac.Role(u.Role),
 		ProjectRoles: make(map[string]rbac.Role, len(u.Projects)),
-		AgentRoles:   make(map[string]rbac.Role, len(u.LinkedAgents)),
+		AgentRoles:   make(map[string]rbac.Role, len(u.AgentGrants)),
 		TaskRoles:    make(map[string]rbac.Role),
 		ContextRoles: make(map[string]rbac.Role),
 		WorkerRoles:  make(map[string]rbac.Role),
@@ -492,10 +499,9 @@ func (s *UserStore) Principal(username string) (rbac.Principal, bool) {
 	for _, pa := range u.Projects {
 		p.ProjectRoles[rbac.ProjectKey(pa.Project)] = rbac.Role(pa.Role)
 	}
-	for _, linkedAgent := range u.LinkedAgents {
-		parts := strings.SplitN(linkedAgent, "/", 2)
-		if len(parts) == 2 && parts[0] != "" && parts[1] != "" {
-			p.AgentRoles[rbac.AgentKey(parts[0], parts[1])] = rbac.AgentRoleOperator
+	for _, grant := range u.AgentGrants {
+		if grant.Project != "" && grant.Agent != "" {
+			p.AgentRoles[rbac.AgentKey(grant.Project, grant.Agent)] = rbac.Role(grant.Role)
 		}
 	}
 	return p, true
@@ -505,11 +511,48 @@ func projectRoleLevel(role string) int {
 	return rbac.ProjectRolePower(rbac.Role(role))
 }
 
+func agentRoleLevel(role string) int {
+	return rbac.RolePower(rbac.ResourceAgent, rbac.Role(role))
+}
+
+func normalizeAgentGrants(in []agentAccess) []agentAccess {
+	out := make([]agentAccess, 0, len(in))
+	seen := map[string]bool{}
+	for _, grant := range in {
+		project := strings.TrimSpace(grant.Project)
+		agent := strings.TrimSpace(grant.Agent)
+		role := strings.TrimSpace(grant.Role)
+		if project == "" || agent == "" {
+			continue
+		}
+		switch role {
+		case string(rbac.AgentRoleOwner), string(rbac.AgentRoleOperator), string(rbac.AgentRoleViewer):
+		default:
+			role = string(rbac.AgentRoleOperator)
+		}
+		key := project + "/" + agent
+		if seen[key] {
+			continue
+		}
+		seen[key] = true
+		out = append(out, agentAccess{Project: project, Agent: agent, Role: role})
+	}
+	return out
+}
+
+func linkedAgentRefs(grants []agentAccess) []string {
+	out := make([]string, 0, len(grants))
+	for _, grant := range normalizeAgentGrants(grants) {
+		out = append(out, grant.Project+"/"+grant.Agent)
+	}
+	return out
+}
+
 func dbUserToRecord(u controldb.User) userRecord {
 	var projects []projectAccess
-	var linked []string
+	var grants []agentAccess
 	_ = json.Unmarshal([]byte(u.ProjectsJSON), &projects)
-	_ = json.Unmarshal([]byte(u.LinkedJSON), &linked)
+	_ = json.Unmarshal([]byte(u.LinkedJSON), &grants)
 	return userRecord{
 		Username:     u.Username,
 		Hash:         u.PasswordHash,
@@ -520,7 +563,8 @@ func dbUserToRecord(u controldb.User) userRecord {
 		Phone:        u.Phone,
 		Bio:          u.Bio,
 		Projects:     projects,
-		LinkedAgents: linked,
+		AgentGrants:  normalizeAgentGrants(grants),
+		LinkedAgents: linkedAgentRefs(grants),
 		Disabled:     u.Disabled,
 		CreatedAt:    u.CreatedAt,
 	}
@@ -528,7 +572,8 @@ func dbUserToRecord(u controldb.User) userRecord {
 
 func recordToDBUser(u userRecord) controldb.User {
 	projects, _ := json.Marshal(u.Projects)
-	linked, _ := json.Marshal(u.LinkedAgents)
+	grants := normalizeAgentGrants(u.AgentGrants)
+	linked, _ := json.Marshal(grants)
 	return controldb.User{
 		Username:     u.Username,
 		Email:        normalizeEmail(u.Email),
@@ -547,28 +592,28 @@ func recordToDBUser(u userRecord) controldb.User {
 
 func dbInvitationToRecord(inv controldb.Invitation) invitationRecord {
 	var projects []projectAccess
-	var linked []string
+	var grants []agentAccess
 	_ = json.Unmarshal([]byte(inv.ProjectsJSON), &projects)
-	_ = json.Unmarshal([]byte(inv.LinkedJSON), &linked)
+	_ = json.Unmarshal([]byte(inv.LinkedJSON), &grants)
 	return invitationRecord{
-		Token:        inv.Token,
-		WorkspaceID:  inv.WorkspaceID,
-		Email:        inv.Email,
-		Role:         inv.Role,
-		DisplayName:  inv.DisplayName,
-		Projects:     projects,
-		LinkedAgents: linked,
-		InvitedBy:    inv.InvitedBy,
-		Status:       inv.Status,
-		CreatedAt:    inv.CreatedAt,
-		ExpiresAt:    inv.ExpiresAt,
-		AcceptedAt:   inv.AcceptedAt,
+		Token:       inv.Token,
+		WorkspaceID: inv.WorkspaceID,
+		Email:       inv.Email,
+		Role:        inv.Role,
+		DisplayName: inv.DisplayName,
+		Projects:    projects,
+		AgentGrants: normalizeAgentGrants(grants),
+		InvitedBy:   inv.InvitedBy,
+		Status:      inv.Status,
+		CreatedAt:   inv.CreatedAt,
+		ExpiresAt:   inv.ExpiresAt,
+		AcceptedAt:  inv.AcceptedAt,
 	}
 }
 
 func recordToDBInvitation(inv invitationRecord) controldb.Invitation {
 	projects, _ := json.Marshal(inv.Projects)
-	linked, _ := json.Marshal(inv.LinkedAgents)
+	linked, _ := json.Marshal(normalizeAgentGrants(inv.AgentGrants))
 	return controldb.Invitation{
 		Token:        inv.Token,
 		WorkspaceID:  inv.WorkspaceID,
@@ -770,6 +815,7 @@ func (s *Server) issueLoginResponse(w http.ResponseWriter, user *userRecord) {
 		"email":        user.Email,
 		"avatar":       user.Avatar,
 		"projects":     user.Projects,
+		"agentGrants":  user.AgentGrants,
 		"linkedAgents": user.LinkedAgents,
 	})
 }
@@ -891,6 +937,7 @@ func (s *Server) handleAuthMe(w http.ResponseWriter, r *http.Request) {
 		"email":               user.Email,
 		"avatar":              user.Avatar,
 		"projects":            user.Projects,
+		"agentGrants":         user.AgentGrants,
 		"linkedAgents":        user.LinkedAgents,
 	})
 }
@@ -938,9 +985,8 @@ func currentUserLinkedProject(cur *userRecord, project string) bool {
 	if cur == nil {
 		return false
 	}
-	prefix := project + "/"
-	for _, linked := range cur.LinkedAgents {
-		if strings.HasPrefix(linked, prefix) {
+	for _, grant := range cur.AgentGrants {
+		if grant.Project == project {
 			return true
 		}
 	}
@@ -977,7 +1023,8 @@ func (s *Server) canAccessAgent(r *http.Request, project, agent string) bool {
 	if s.canAccessWholeProject(r, project) {
 		return true
 	}
-	return currentUserLinkedAgent(s.currentUser(r), project+"/"+agent)
+	_, ok := currentUserAgentRole(s.currentUser(r), project, agent)
+	return ok
 }
 
 func (s *Server) checkAgentAccess(w http.ResponseWriter, r *http.Request, project, agent string) bool {
@@ -1039,6 +1086,7 @@ func (s *Server) handleListUsers(w http.ResponseWriter, r *http.Request) {
 		Phone        string          `json:"phone,omitempty"`
 		Bio          string          `json:"bio,omitempty"`
 		Projects     []projectAccess `json:"projects,omitempty"`
+		AgentGrants  []agentAccess   `json:"agentGrants,omitempty"`
 		LinkedAgents []string        `json:"linkedAgents,omitempty"`
 		Disabled     bool            `json:"disabled,omitempty"`
 		CreatedAt    string          `json:"createdAt,omitempty"`
@@ -1061,6 +1109,7 @@ func (s *Server) handleListUsers(w http.ResponseWriter, r *http.Request) {
 			row.Phone = u.Phone
 			row.Bio = u.Bio
 			row.Projects = u.Projects
+			row.AgentGrants = u.AgentGrants
 			row.LinkedAgents = u.LinkedAgents
 			row.Disabled = u.Disabled
 		}
@@ -1232,12 +1281,12 @@ func (s *Server) handleCreateInvitation(w http.ResponseWriter, r *http.Request) 
 		return
 	}
 	var body struct {
-		Email        string          `json:"email"`
-		Emails       []string        `json:"emails"`
-		Role         string          `json:"role"`
-		DisplayName  string          `json:"displayName"`
-		Projects     []projectAccess `json:"projects"`
-		LinkedAgents []string        `json:"linkedAgents"`
+		Email       string          `json:"email"`
+		Emails      []string        `json:"emails"`
+		Role        string          `json:"role"`
+		DisplayName string          `json:"displayName"`
+		Projects    []projectAccess `json:"projects"`
+		AgentGrants []agentAccess   `json:"agentGrants"`
 	}
 	if err := s.readJSON(w, r, &body); err != nil {
 		s.jsonErrorCode(w, http.StatusBadRequest, ErrCodeInvalidRequestBody, "invalid request body")
@@ -1283,7 +1332,7 @@ func (s *Server) handleCreateInvitation(w http.ResponseWriter, r *http.Request) 
 		inviterName = strings.TrimSpace(cur.Username)
 	}
 	for _, email := range emails {
-		inv, err := s.users.CreateInvitation(workspaceID, email, role, strings.TrimSpace(body.DisplayName), cur.Username, body.Projects, body.LinkedAgents)
+		inv, err := s.users.CreateInvitation(workspaceID, email, role, strings.TrimSpace(body.DisplayName), cur.Username, body.Projects, body.AgentGrants)
 		if err != nil {
 			errors = append(errors, invitationError{Email: email, Error: err.Error()})
 			continue
@@ -1502,6 +1551,7 @@ func (s *Server) handleGetUser(w http.ResponseWriter, r *http.Request) {
 		"phone":        u.Phone,
 		"bio":          u.Bio,
 		"projects":     u.Projects,
+		"agentGrants":  u.AgentGrants,
 		"linkedAgents": u.LinkedAgents,
 		"disabled":     u.Disabled,
 		"createdAt":    u.CreatedAt,
@@ -1518,16 +1568,16 @@ func (s *Server) handleUpdateUser(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	var body struct {
-		Role         *string         `json:"role"`
-		DisplayName  *string         `json:"displayName"`
-		Email        *string         `json:"email"`
-		Avatar       *string         `json:"avatar"`
-		Phone        *string         `json:"phone"`
-		Bio          *string         `json:"bio"`
-		Disabled     *bool           `json:"disabled"`
-		Password     *string         `json:"password"`
-		Projects     []projectAccess `json:"projects"`
-		LinkedAgents []string        `json:"linkedAgents"`
+		Role        *string         `json:"role"`
+		DisplayName *string         `json:"displayName"`
+		Email       *string         `json:"email"`
+		Avatar      *string         `json:"avatar"`
+		Phone       *string         `json:"phone"`
+		Bio         *string         `json:"bio"`
+		Disabled    *bool           `json:"disabled"`
+		Password    *string         `json:"password"`
+		Projects    []projectAccess `json:"projects"`
+		AgentGrants []agentAccess   `json:"agentGrants"`
 	}
 	if err := s.readJSON(w, r, &body); err != nil {
 		s.jsonErrorCode(w, http.StatusBadRequest, ErrCodeInvalidRequestBody, "invalid request body")
@@ -1545,9 +1595,9 @@ func (s *Server) handleUpdateUser(w http.ResponseWriter, r *http.Request) {
 		body.Disabled = nil
 		body.Password = nil
 		body.Projects = nil
-		body.LinkedAgents = nil
+		body.AgentGrants = nil
 	}
-	if err := s.users.UpdateUser(target, body.Role, body.DisplayName, body.Email, body.Avatar, body.Phone, body.Bio, body.Disabled, body.Projects, body.LinkedAgents, body.Password); err != nil {
+	if err := s.users.UpdateUser(target, body.Role, body.DisplayName, body.Email, body.Avatar, body.Phone, body.Bio, body.Disabled, body.Projects, body.AgentGrants, body.Password); err != nil {
 		if strings.Contains(err.Error(), "not found") {
 			s.jsonErrorCode(w, http.StatusNotFound, ErrCodeUserNotFound, err.Error())
 			return
@@ -1564,6 +1614,7 @@ func (s *Server) handleUpdateUser(w http.ResponseWriter, r *http.Request) {
 		"email":        u.Email,
 		"avatar":       u.Avatar,
 		"projects":     u.Projects,
+		"agentGrants":  u.AgentGrants,
 		"linkedAgents": u.LinkedAgents,
 	})
 }

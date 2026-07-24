@@ -10,6 +10,7 @@ import (
 	"strings"
 
 	"github.com/multigent/multigent/internal/entity"
+	"github.com/multigent/multigent/internal/rbac"
 )
 
 // ── Create Role ──────────────────────────────────────────────────────────────
@@ -129,16 +130,15 @@ func (s *Server) handleHireAgent(w http.ResponseWriter, r *http.Request) {
 	// Auto-link user account when hiring a human
 	if entity.AgentModel(model) == entity.ModelHuman {
 		if u := s.users.GetUser(agentName); u != nil {
-			agentID := project + "/" + agentName
-			hasLink := false
-			for _, la := range u.LinkedAgents {
-				if la == agentID {
-					hasLink = true
+			hasGrant := false
+			for _, grant := range u.AgentGrants {
+				if grant.Project == project && grant.Agent == agentName {
+					hasGrant = true
 					break
 				}
 			}
-			if !hasLink {
-				newLinked := append(u.LinkedAgents, agentID)
+			if !hasGrant {
+				newGrants := append(u.AgentGrants, agentAccess{Project: project, Agent: agentName, Role: string(rbac.AgentRoleOperator)})
 				hasProj := false
 				for _, pa := range u.Projects {
 					if pa.Project == project {
@@ -152,7 +152,7 @@ func (s *Server) handleHireAgent(w http.ResponseWriter, r *http.Request) {
 				} else {
 					newProjects = append(u.Projects, projectAccess{Project: project, Role: ProjectRoleOperator})
 				}
-				_ = s.users.UpdateUser(agentName, nil, nil, nil, nil, nil, nil, nil, newProjects, newLinked, nil)
+				_ = s.users.UpdateUser(agentName, nil, nil, nil, nil, nil, nil, nil, newProjects, newGrants, nil)
 			}
 		}
 	}
@@ -447,14 +447,16 @@ func (s *Server) canManageAgentConfig(r *http.Request, project, agent string) bo
 	if s.canManageProject(r, project) {
 		return true
 	}
-	return currentUserLinkedAgent(s.currentUser(r), project+"/"+agent)
+	role, ok := currentUserAgentRole(s.currentUser(r), project, agent)
+	return ok && agentRoleLevel(role) >= agentRoleLevel(string(rbac.AgentRoleOwner))
 }
 
 func (s *Server) canOperateAgent(r *http.Request, project, agent string) bool {
 	if s.canOperateProject(r, project) {
 		return true
 	}
-	return currentUserLinkedAgent(s.currentUser(r), project+"/"+agent)
+	role, ok := currentUserAgentRole(s.currentUser(r), project, agent)
+	return ok && agentRoleLevel(role) >= agentRoleLevel(string(rbac.AgentRoleOperator))
 }
 
 func (s *Server) canUseModelProviderForAgent(r *http.Request, provider entity.APIProvider, project, agent string) bool {
