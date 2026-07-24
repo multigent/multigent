@@ -420,5 +420,10 @@ jobs:
         if: steps.npm_token.outputs.publish == 'true'
         working-directory: npm
         env:
-          NODE_AUTH_TOKEN: ${{ secrets.NPM_TOKEN }}
-        run: npm publish --access public
+          NPM_TOKEN: ${{ secrets.NPM_TOKEN }}
+        run: |
+          cat > "$RUNNER_TEMP/npmrc" <<'NPMRC'
+          @multigent:registry=https://registry.npmjs.org/
+          //registry.npmjs.org/:_authToken=${NPM_TOKEN}
+          NPMRC
+          NPM_CONFIG_USERCONFIG="$RUNNER_TEMP/npmrc" npm publish --access public
