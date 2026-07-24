@@ -5,6 +5,8 @@ import (
 	"net/http"
 	"net/http/httptest"
 	"testing"
+
+	"github.com/multigent/multigent/internal/entity"
 )
 
 func TestTeamTemplateCatalogReturnsBuiltinTemplates(t *testing.T) {
@@ -119,3 +121,55 @@ func TestCreateTeamAllowsBlankTeamAndMultipleInstancesFromSameTemplate(t *testin
 		}
 	}
 }
+
+func TestUpdateTeamAndRoleDisplayMetadataRequiresWorkspaceAdmin(t *testing.T) {
+	s, workspaceID := newConnectionGrantPolicyServer(t)
+	grantProjectRoleForTest(t, s, workspaceID, "member", ProjectRoleViewer)
+	if err := s.st.SaveTeam("engineering", &entity.Team{Name: "Engineering", Description: "Old team"}); err != nil {
+		t.Fatalf("save team: %v", err)
+	}
+	if err := s.st.SaveRole("engineering", "backend", &entity.Role{Name: "Backend", Description: "Old role"}); err != nil {
+		t.Fatalf("save role: %v", err)
+	}
+
+	memberTeamReq := providerTestRequest(http.MethodPatch, "/api/v1/teams/engineering", "member", updateTeamBody{Name: strPtr("Platform")})
+	memberTeamReq.SetPathValue("teamPath", "engineering")
+	memberTeamRec := httptest.NewRecorder()
+	s.handleUpdateTeam(memberTeamRec, memberTeamReq)
+	if memberTeamRec.Code != http.StatusForbidden {
+		t.Fatalf("member update team status=%d body=%s", memberTeamRec.Code, memberTeamRec.Body.String())
+	}
+
+	adminTeamReq := providerTestRequest(http.MethodPatch, "/api/v1/teams/engineering", "admin", updateTeamBody{Name: strPtr("Platform"), Description: strPtr("New team")})
+	adminTeamReq.SetPathValue("teamPath", "engineering")
+	adminTeamRec := httptest.NewRecorder()
+	s.handleUpdateTeam(adminTeamRec, adminTeamReq)
+	if adminTeamRec.Code != http.StatusOK {
+		t.Fatalf("admin update team status=%d body=%s", adminTeamRec.Code, adminTeamRec.Body.String())
+	}
+	team, err := s.st.Team("engineering")
+	if err != nil {
+		t.Fatalf("load team: %v", err)
+	}
+	if team.Name != "Platform" || team.Description != "New team" {
+		t.Fatalf("team not updated: %#v", team)
+	}
+
+	adminRoleReq := providerTestRequest(http.MethodPatch, "/api/v1/teams/engineering/roles/backend", "admin", updateRoleBody{Name: strPtr("API Engineer"), Description: strPtr("New role")})
+	adminRoleReq.SetPathValue("team", "engineering")
+	adminRoleReq.SetPathValue("role", "backend")
+	adminRoleRec := httptest.NewRecorder()
+	s.handleUpdateRole(adminRoleRec, adminRoleReq)
+	if adminRoleRec.Code != http.StatusOK {
+		t.Fatalf("admin update role status=%d body=%s", adminRoleRec.Code, adminRoleRec.Body.String())
+	}
+	role, err := s.st.Role("engineering", "backend")
+	if err != nil {
+		t.Fatalf("load role: %v", err)
+	}
+	if role.Name != "API Engineer" || role.Description != "New role" {
+		t.Fatalf("role not updated: %#v", role)
+	}
+}
+
+func strPtr(v string) *string { return &v }

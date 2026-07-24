@@ -215,7 +215,9 @@ func (s *Server) Handler() http.Handler {
 	mux.HandleFunc("POST /api/v1/team-templates/{id}/apply", s.handleApplyTeamTemplate)
 	mux.HandleFunc("GET /api/v1/teams", s.handleTeams)
 	mux.HandleFunc("POST /api/v1/teams", s.handleCreateTeam)
+	mux.HandleFunc("PATCH /api/v1/teams/{team}/roles/{role}", s.handleUpdateRole)
 	mux.HandleFunc("DELETE /api/v1/teams/{team}/roles/{role}", s.handleDeleteRole)
+	mux.HandleFunc("PATCH /api/v1/teams/{teamPath...}", s.handleUpdateTeam)
 	mux.HandleFunc("DELETE /api/v1/teams/{teamPath...}", s.handleDeleteTeam)
 	mux.HandleFunc("GET /api/v1/teams/{teamPath...}", s.handleTeamDetail)
 	mux.HandleFunc("GET /api/v1/projects", s.handleProjects)
@@ -697,7 +699,8 @@ func (s *Server) handleTeamDetail(w http.ResponseWriter, r *http.Request) {
 			prov = &cp
 		}
 		roleOut = append(roleOut, map[string]any{
-			"name":        re.Name,
+			"id":          re.Name,
+			"name":        firstNonEmpty(re.Role.Name, re.Name),
 			"description": re.Role.Description,
 			"skills":      sk,
 			"provenance":  prov,

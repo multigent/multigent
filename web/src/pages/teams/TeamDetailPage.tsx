@@ -1,4 +1,4 @@
-import { useCallback, useState } from 'react'
+import { useCallback, useEffect, useState } from 'react'
 import { useNavigate, useParams } from 'react-router-dom'
 import { useTranslation } from 'react-i18next'
 import Markdown from 'react-markdown'
@@ -8,13 +8,14 @@ import { CreateRoleDialog } from '../../components/team/CreateRoleDialog'
 import { cn } from '../../lib/cn'
 import { PlaceholderCard } from '../../components/ui/PlaceholderCard'
 import { ConfirmDialog } from '../../components/ui/ConfirmDialog'
-import { apiTeamPath, apiPut, apiPost, apiDelete } from '../../lib/api'
+import { apiTeamPath, apiPut, apiPost, apiDelete, apiPatch } from '../../lib/api'
 import { useApiJson } from '../../lib/use-api'
 
 type SkillRow = { name: string; description?: string }
 type Provenance = { playbookId: string; playbookName: string; templateVersion?: string; customized?: boolean }
 
 type RoleRow = {
+  id?: string
   name: string
   description?: string
   skills?: string[]
@@ -226,17 +227,26 @@ function RolePromptRow({
 }) {
   const { t } = useTranslation()
   const [open, setOpen] = useState(false)
-  const promptPath = `/api/v1/prompts/roles?team=${encodeURIComponent(teamPath)}&role=${encodeURIComponent(role.name)}`
+  const roleKey = role.id || role.name
+  const promptPath = `/api/v1/prompts/roles?team=${encodeURIComponent(teamPath)}&role=${encodeURIComponent(roleKey)}`
   const promptState = useApiJson<PromptData>(open ? promptPath : null, 0)
   const [localSkills, setLocalSkills] = useState<string[]>(role.skills ?? [])
   const [confirmDelete, setConfirmDelete] = useState(false)
   const [deleting, setDeleting] = useState(false)
+  const [displayName, setDisplayName] = useState(role.name)
+  const [description, setDescription] = useState(role.description ?? '')
+  const [savingMeta, setSavingMeta] = useState(false)
+
+  useEffect(() => {
+    setDisplayName(role.name)
+    setDescription(role.description ?? '')
+  }, [roleKey, role.name, role.description])
 
   const bindSkill = useCallback(async (skillName: string, action: 'add' | 'remove') => {
     try {
       const res = await apiPost<{ ok: boolean; skills: string[] }>('/api/v1/roles/skills', {
         team: teamPath,
-        role: role.name,
+        role: roleKey,
         skill: skillName,
         action,
       })
@@ -245,12 +255,12 @@ function RolePromptRow({
     } catch (e) {
       alert(String(e))
     }
-  }, [teamPath, role.name, onSkillsChanged])
+  }, [teamPath, roleKey, onSkillsChanged])
 
   const deleteRole = useCallback(async () => {
     setDeleting(true)
     try {
-      await apiDelete(`/api/v1/teams/${encodeURIComponent(teamPath)}/roles/${encodeURIComponent(role.name)}`)
+      await apiDelete(`/api/v1/teams/${encodeURIComponent(teamPath)}/roles/${encodeURIComponent(roleKey)}`)
       setConfirmDelete(false)
       onDeleted()
     } catch (e) {
@@ -258,10 +268,27 @@ function RolePromptRow({
     } finally {
       setDeleting(false)
     }
-  }, [teamPath, role.name, onDeleted])
+  }, [teamPath, roleKey, onDeleted])
+
+  const saveRoleMeta = useCallback(async () => {
+    const nextName = displayName.trim()
+    if (!nextName) return
+    setSavingMeta(true)
+    try {
+      await apiPatch(`/api/v1/teams/${encodeURIComponent(teamPath)}/roles/${encodeURIComponent(roleKey)}`, {
+        name: nextName,
+        description,
+      })
+      onSkillsChanged()
+    } catch (e) {
+      alert(String(e))
+    } finally {
+      setSavingMeta(false)
+    }
+  }, [teamPath, roleKey, displayName, description, onSkillsChanged])
 
   return (
-    <div data-tour-role-card={role.name} className="border-b border-neutral-100 last:border-b-0 dark:border-zinc-700/40">
+    <div data-tour-role-card={roleKey} className="border-b border-neutral-100 last:border-b-0 dark:border-zinc-700/40">
       <div className="flex items-center gap-2 px-4 py-3 transition-colors hover:bg-neutral-50/80 dark:hover:bg-zinc-800/30">
         <button
           type="button"
@@ -298,6 +325,34 @@ function RolePromptRow({
       </div>
       {open && (
         <div className="space-y-4 px-4 pb-4">
+          <div className="grid gap-3 rounded-lg bg-neutral-50 p-3 dark:bg-zinc-950/40 sm:grid-cols-[1fr_1.4fr_auto]">
+            <label className="block">
+              <span className="mb-1 block text-xs font-medium text-neutral-500 dark:text-zinc-500">{t('teams.roleName')}</span>
+              <input
+                value={displayName}
+                onChange={(e) => setDisplayName(e.target.value)}
+                className="w-full rounded-lg border border-neutral-200 bg-white px-3 py-2 text-sm outline-none focus:border-sky-400 dark:border-zinc-700 dark:bg-zinc-900 dark:text-zinc-100"
+              />
+            </label>
+            <label className="block">
+              <span className="mb-1 block text-xs font-medium text-neutral-500 dark:text-zinc-500">{t('teams.roleDescription')}</span>
+              <input
+                value={description}
+                onChange={(e) => setDescription(e.target.value)}
+                className="w-full rounded-lg border border-neutral-200 bg-white px-3 py-2 text-sm outline-none focus:border-sky-400 dark:border-zinc-700 dark:bg-zinc-900 dark:text-zinc-100"
+              />
+            </label>
+            <div className="flex items-end">
+              <button
+                type="button"
+                onClick={() => void saveRoleMeta()}
+                disabled={savingMeta || !displayName.trim()}
+                className="rounded-lg border border-sky-600 bg-white px-3 py-2 text-sm font-medium text-sky-700 hover:bg-sky-50 disabled:opacity-50 dark:border-sky-500 dark:bg-zinc-900 dark:text-sky-400 dark:hover:bg-zinc-800"
+              >
+                {savingMeta ? t('common.saving') : t('common.save')}
+              </button>
+            </div>
+          </div>
           {/* Role skills */}
           <div>
             <h4 className="mb-2 flex items-center gap-1.5 text-xs font-semibold text-neutral-500 dark:text-zinc-500">
@@ -362,6 +417,15 @@ export default function TeamDetailPage() {
   const teamSkills = state.status === 'ok' ? (state.data.skills ?? []) : []
   const [confirmDeleteTeam, setConfirmDeleteTeam] = useState(false)
   const [deletingTeam, setDeletingTeam] = useState(false)
+  const [teamNameDraft, setTeamNameDraft] = useState('')
+  const [teamDescDraft, setTeamDescDraft] = useState('')
+  const [savingTeamMeta, setSavingTeamMeta] = useState(false)
+
+  useEffect(() => {
+    if (state.status !== 'ok') return
+    setTeamNameDraft(state.data.name)
+    setTeamDescDraft(state.data.description ?? '')
+  }, [state.status === 'ok' ? state.data.path : '', state.status === 'ok' ? state.data.name : '', state.status === 'ok' ? state.data.description ?? '' : ''])
 
   const bindTeamSkill = useCallback(async (skillName: string, action: 'add' | 'remove') => {
     if (!teamId) return
@@ -386,6 +450,22 @@ export default function TeamDetailPage() {
       setDeletingTeam(false)
     }
   }, [teamId, navigate])
+
+  const saveTeamMeta = useCallback(async () => {
+    if (!teamId || !teamNameDraft.trim()) return
+    setSavingTeamMeta(true)
+    try {
+      await apiPatch(`/api/v1/teams/${apiTeamPath(teamId)}`, {
+        name: teamNameDraft.trim(),
+        description: teamDescDraft,
+      })
+      setReloadKey((k) => k + 1)
+    } catch (e) {
+      alert(String(e))
+    } finally {
+      setSavingTeamMeta(false)
+    }
+  }, [teamId, teamNameDraft, teamDescDraft])
 
   return (
     <div className="flex h-full flex-col overflow-hidden">
@@ -424,11 +504,35 @@ export default function TeamDetailPage() {
           <div className="space-y-5">
             {/* Team info */}
             <div className="rounded-lg border border-neutral-200/80 bg-white p-4 dark:border-zinc-700/60 dark:bg-zinc-900/40">
-              <h2 className="text-base font-semibold text-neutral-900 dark:text-zinc-100">{state.data.name}</h2>
+              <div className="grid gap-3 sm:grid-cols-[1fr_1.4fr_auto]">
+                <label className="block">
+                  <span className="mb-1 block text-xs font-medium text-neutral-500 dark:text-zinc-500">{t('teams.teamName')}</span>
+                  <input
+                    value={teamNameDraft}
+                    onChange={(e) => setTeamNameDraft(e.target.value)}
+                    className="w-full rounded-lg border border-neutral-200 bg-white px-3 py-2 text-sm outline-none focus:border-sky-400 dark:border-zinc-700 dark:bg-zinc-950 dark:text-zinc-100"
+                  />
+                </label>
+                <label className="block">
+                  <span className="mb-1 block text-xs font-medium text-neutral-500 dark:text-zinc-500">{t('teams.teamDescription')}</span>
+                  <input
+                    value={teamDescDraft}
+                    onChange={(e) => setTeamDescDraft(e.target.value)}
+                    className="w-full rounded-lg border border-neutral-200 bg-white px-3 py-2 text-sm outline-none focus:border-sky-400 dark:border-zinc-700 dark:bg-zinc-950 dark:text-zinc-100"
+                  />
+                </label>
+                <div className="flex items-end">
+                  <button
+                    type="button"
+                    onClick={() => void saveTeamMeta()}
+                    disabled={savingTeamMeta || !teamNameDraft.trim()}
+                    className="rounded-lg border border-sky-600 bg-white px-3 py-2 text-sm font-medium text-sky-700 hover:bg-sky-50 disabled:opacity-50 dark:border-sky-500 dark:bg-zinc-900 dark:text-sky-400 dark:hover:bg-zinc-800"
+                  >
+                    {savingTeamMeta ? t('common.saving') : t('common.save')}
+                  </button>
+                </div>
+              </div>
               {state.data.provenance && <ProvenanceBadge provenance={state.data.provenance} className="mt-2" />}
-              {state.data.description && (
-                <p className="mt-1.5 text-sm text-neutral-500 dark:text-zinc-500">{state.data.description}</p>
-              )}
               <div className="mt-3 flex flex-wrap gap-1.5">
                 {(state.data.owners ?? []).map(owner => (
                   <span key={owner} className="rounded-md bg-violet-50 px-2 py-0.5 text-xs font-medium text-violet-700 dark:bg-violet-900/20 dark:text-violet-300">{owner}</span>
@@ -485,7 +589,7 @@ export default function TeamDetailPage() {
                 <div className="overflow-hidden rounded-lg border border-neutral-200/80 bg-white dark:border-zinc-700/60 dark:bg-zinc-900/40">
                   {state.data.roles.map((r) => (
                     <RolePromptRow
-                      key={r.name}
+                      key={r.id || r.name}
                       teamPath={teamId!}
                       role={r}
                       allSkills={allSkills}

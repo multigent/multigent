@@ -260,6 +260,16 @@ type createTeamBody struct {
 	Locale      string   `json:"locale"`
 }
 
+type updateTeamBody struct {
+	Name        *string `json:"name"`
+	Description *string `json:"description"`
+}
+
+type updateRoleBody struct {
+	Name        *string `json:"name"`
+	Description *string `json:"description"`
+}
+
 func (s *Server) handleCreateTeam(w http.ResponseWriter, r *http.Request) {
 	if !s.checkCurrentWorkspaceAdmin(w, r) {
 		return
@@ -336,6 +346,121 @@ func (s *Server) handleCreateTeam(w http.ResponseWriter, r *http.Request) {
 	_ = json.NewEncoder(w).Encode(map[string]any{
 		"ok":   true,
 		"team": teamName,
+	})
+}
+
+func (s *Server) handleUpdateTeam(w http.ResponseWriter, r *http.Request) {
+	if !s.checkCurrentWorkspaceAdmin(w, r) {
+		return
+	}
+	teamPath := strings.TrimPrefix(r.PathValue("teamPath"), "/")
+	if teamPath == "" {
+		s.jsonErrorCode(w, http.StatusBadRequest, ErrCodeValidationFailed, "missing team path")
+		return
+	}
+	team, err := s.st.Team(teamPath)
+	if err != nil {
+		if isNotFoundErr(err) {
+			s.jsonErrorCode(w, http.StatusNotFound, ErrCodeTeamNotFound, "team not found")
+			return
+		}
+		s.serverError(w, err)
+		return
+	}
+	var body updateTeamBody
+	if err := s.readJSON(w, r, &body); err != nil {
+		s.jsonErrorCode(w, http.StatusBadRequest, ErrCodeInvalidJSON, "invalid JSON body")
+		return
+	}
+	before := map[string]any{"name": team.Name, "description": team.Description}
+	if body.Name != nil {
+		name := strings.TrimSpace(*body.Name)
+		if name == "" {
+			s.jsonErrorCode(w, http.StatusBadRequest, ErrCodeValidationFailed, "team display name is required")
+			return
+		}
+		team.Name = name
+	}
+	if body.Description != nil {
+		team.Description = strings.TrimSpace(*body.Description)
+	}
+	if err := s.st.SaveTeam(teamPath, team); err != nil {
+		s.serverError(w, err)
+		return
+	}
+	s.markPlaybookObjectCustomized(r, "team", "", teamPath)
+	s.auditLog(auditLogInput{
+		Action:       "team.update",
+		ResourceType: "team",
+		ResourceID:   teamPath,
+		Summary:      "Team updated",
+		Before:       before,
+		After:        map[string]any{"name": team.Name, "description": team.Description},
+		Request:      r,
+	})
+	_ = json.NewEncoder(w).Encode(map[string]any{
+		"ok":          true,
+		"path":        teamPath,
+		"name":        team.Name,
+		"description": team.Description,
+	})
+}
+
+func (s *Server) handleUpdateRole(w http.ResponseWriter, r *http.Request) {
+	if !s.checkCurrentWorkspaceAdmin(w, r) {
+		return
+	}
+	teamPath := strings.TrimSpace(r.PathValue("team"))
+	roleKey := strings.TrimSpace(r.PathValue("role"))
+	if teamPath == "" || roleKey == "" {
+		s.jsonErrorCode(w, http.StatusBadRequest, ErrCodeValidationFailed, "team and role are required")
+		return
+	}
+	role, err := s.st.Role(teamPath, roleKey)
+	if err != nil {
+		if isNotFoundErr(err) {
+			s.jsonErrorCode(w, http.StatusNotFound, ErrCodeNotFound, "role not found")
+			return
+		}
+		s.serverError(w, err)
+		return
+	}
+	var body updateRoleBody
+	if err := s.readJSON(w, r, &body); err != nil {
+		s.jsonErrorCode(w, http.StatusBadRequest, ErrCodeInvalidJSON, "invalid JSON body")
+		return
+	}
+	before := map[string]any{"name": role.Name, "description": role.Description}
+	if body.Name != nil {
+		name := strings.TrimSpace(*body.Name)
+		if name == "" {
+			s.jsonErrorCode(w, http.StatusBadRequest, ErrCodeValidationFailed, "role display name is required")
+			return
+		}
+		role.Name = name
+	}
+	if body.Description != nil {
+		role.Description = strings.TrimSpace(*body.Description)
+	}
+	if err := s.st.SaveRole(teamPath, roleKey, role); err != nil {
+		s.serverError(w, err)
+		return
+	}
+	s.markPlaybookObjectCustomized(r, "role", teamPath, roleKey)
+	s.auditLog(auditLogInput{
+		Action:       "role.update",
+		ResourceType: "role",
+		ResourceID:   teamPath + "/" + roleKey,
+		Summary:      "Role updated",
+		Before:       before,
+		After:        map[string]any{"name": role.Name, "description": role.Description},
+		Request:      r,
+	})
+	_ = json.NewEncoder(w).Encode(map[string]any{
+		"ok":          true,
+		"id":          roleKey,
+		"name":        role.Name,
+		"description": role.Description,
 	})
 }
 

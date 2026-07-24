@@ -1,6 +1,6 @@
 import { useEffect, useMemo, useState } from 'react'
 import { useTranslation } from 'react-i18next'
-import { Lock, LogIn, Mail, UserPlus } from 'lucide-react'
+import { LogIn, Mail, UserPlus } from 'lucide-react'
 import { apiLoginPost, apiPublicFetch, apiUrl } from '../lib/api'
 import { useAuth, type AuthUser } from '../lib/auth'
 
@@ -245,12 +245,14 @@ export default function LoginPage() {
             </button>
           )}
 
-          <div className="mt-4 flex items-start gap-2 rounded-lg bg-amber-50/80 px-3 py-2.5 dark:bg-amber-900/10">
-            {mode === 'login' ? <Lock className="mt-0.5 size-3.5 shrink-0 text-amber-500" strokeWidth={2} /> : <Mail className="mt-0.5 size-3.5 shrink-0 text-amber-500" strokeWidth={2} />}
-            <p className="text-xs leading-relaxed text-amber-700 dark:text-amber-400">
-              {mode === 'login' ? t('auth.defaultHint') : t('auth.localEmailHint')}
-            </p>
-          </div>
+          {mode !== 'login' && (
+            <div className="mt-4 flex items-start gap-2 rounded-lg bg-amber-50/80 px-3 py-2.5 dark:bg-amber-900/10">
+              <Mail className="mt-0.5 size-3.5 shrink-0 text-amber-500" strokeWidth={2} />
+              <p className="text-xs leading-relaxed text-amber-700 dark:text-amber-400">
+                {t('auth.localEmailHint')}
+              </p>
+            </div>
+          )}
         </form>
       </div>
     </div>
