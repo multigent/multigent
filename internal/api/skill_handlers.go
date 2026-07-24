@@ -53,6 +53,34 @@ type skillInstallBody struct {
 	Managed     *bool  `json:"managed,omitempty"`
 }
 
+type localSkillCandidate struct {
+	ID          string `json:"id"`
+	Name        string `json:"name"`
+	Description string `json:"description,omitempty"`
+	Source      string `json:"source"`
+	Path        string `json:"path"`
+	Files       int    `json:"files,omitempty"`
+	Size        int64  `json:"size,omitempty"`
+	Installed   bool   `json:"installed,omitempty"`
+}
+
+type localSkillImportBody struct {
+	IDs []string `json:"ids"`
+}
+
+type localSkillImportResult struct {
+	ID     string `json:"id"`
+	Name   string `json:"name"`
+	Source string `json:"source"`
+	Path   string `json:"path"`
+	Reason string `json:"reason,omitempty"`
+}
+
+type localSkillRoot struct {
+	Source string
+	Path   string
+}
+
 type skillPackageRow struct {
 	Name        string `json:"name"`
 	Description string `json:"description,omitempty"`
@@ -400,6 +428,136 @@ func (s *Server) handleInstallSkill(w http.ResponseWriter, r *http.Request) {
 	_ = json.NewEncoder(w).Encode(map[string]any{"ok": true, "skill": name, "sourceRef": sourceRef})
 }
 
+func (s *Server) handleListLocalSkills(w http.ResponseWriter, r *http.Request) {
+	if !s.checkCurrentWorkspaceAdmin(w, r) {
+		return
+	}
+	candidates, searched, err := s.scanLocalSkillCandidates()
+	if err != nil {
+		s.serverError(w, err)
+		return
+	}
+	_ = json.NewEncoder(w).Encode(map[string]any{
+		"available":  true,
+		"candidates": candidates,
+		"searched":   searched,
+	})
+}
+
+func (s *Server) handleImportLocalSkills(w http.ResponseWriter, r *http.Request) {
+	if !s.checkCurrentWorkspaceAdmin(w, r) {
+		return
+	}
+	var body localSkillImportBody
+	if err := s.readJSON(w, r, &body); err != nil {
+		s.jsonErrorCode(w, http.StatusBadRequest, ErrCodeInvalidJSON, "invalid JSON body")
+		return
+	}
+	if len(body.IDs) == 0 {
+		s.jsonErrorCode(w, http.StatusBadRequest, ErrCodeValidationFailed, "ids are required")
+		return
+	}
+	candidates, _, err := s.scanLocalSkillCandidates()
+	if err != nil {
+		s.serverError(w, err)
+		return
+	}
+	byID := map[string]localSkillCandidate{}
+	for _, candidate := range candidates {
+		byID[candidate.ID] = candidate
+	}
+	now := time.Now().UTC().Format(time.RFC3339)
+	version := skillVersionFromRef(now)
+	imported := []localSkillImportResult{}
+	skipped := []localSkillImportResult{}
+	for _, id := range body.IDs {
+		id = strings.TrimSpace(id)
+		if id == "" {
+			continue
+		}
+		candidate, ok := byID[id]
+		if !ok {
+			skipped = append(skipped, localSkillImportResult{ID: id, Reason: "not found"})
+			continue
+		}
+		if candidate.Installed {
+			skipped = append(skipped, localSkillImportResult{
+				ID:     candidate.ID,
+				Name:   candidate.Name,
+				Source: candidate.Source,
+				Path:   candidate.Path,
+				Reason: "already installed",
+			})
+			continue
+		}
+		if err := validateWorkspaceObjectName("skill", candidate.Name); err != nil {
+			skipped = append(skipped, localSkillImportResult{
+				ID:     candidate.ID,
+				Name:   candidate.Name,
+				Source: candidate.Source,
+				Path:   candidate.Path,
+				Reason: err.Error(),
+			})
+			continue
+		}
+		dst := s.st.SkillDir(candidate.Name)
+		if err := os.RemoveAll(dst); err != nil {
+			s.serverError(w, err)
+			return
+		}
+		if err := copyLocalSkillDir(candidate.Path, dst); err != nil {
+			_ = os.RemoveAll(dst)
+			skipped = append(skipped, localSkillImportResult{
+				ID:     candidate.ID,
+				Name:   candidate.Name,
+				Source: candidate.Source,
+				Path:   candidate.Path,
+				Reason: err.Error(),
+			})
+			continue
+		}
+		meta := entity.Skill{
+			Name:        candidate.Name,
+			Description: candidate.Description,
+			Source:      "local:" + candidate.Source,
+			SourceType:  "local-sync",
+			SourceRef:   candidate.Path,
+			Version:     version,
+			Managed:     false,
+			Dirty:       false,
+			InstalledAt: now,
+			UpdatedAt:   now,
+		}
+		if err := writeSkillRegistryMeta(dst, meta); err != nil {
+			s.serverError(w, err)
+			return
+		}
+		if err := s.snapshotSkillPackage(dst, meta); err != nil {
+			s.serverError(w, err)
+			return
+		}
+		imported = append(imported, localSkillImportResult{
+			ID:     candidate.ID,
+			Name:   candidate.Name,
+			Source: candidate.Source,
+			Path:   candidate.Path,
+		})
+		s.auditLog(auditLogInput{
+			Action:       "skill.import_local",
+			ResourceType: "skill",
+			ResourceID:   candidate.Name,
+			Summary:      "Skill imported from local agent client",
+			After:        map[string]any{"name": candidate.Name, "source": candidate.Source, "sourceRef": candidate.Path},
+			Request:      r,
+		})
+	}
+	_ = json.NewEncoder(w).Encode(map[string]any{
+		"ok":       true,
+		"imported": imported,
+		"skipped":  skipped,
+	})
+}
+
 func (s *Server) handleRuntimeSkillPublish(w http.ResponseWriter, r *http.Request) {
 	principal, ok := runtimeAgentFromRequest(r)
 	if !ok {
@@ -634,6 +792,173 @@ func (s *Server) listSkillRegistryPackages() ([]skillPackageRow, error) {
 		return strings.ToLower(out[i].Name) < strings.ToLower(out[j].Name)
 	})
 	return out, nil
+}
+
+func (s *Server) scanLocalSkillCandidates() ([]localSkillCandidate, []string, error) {
+	roots := localSkillSearchRoots()
+	searched := make([]string, 0, len(roots))
+	for _, root := range roots {
+		searched = append(searched, root.Path)
+	}
+	installed := map[string]bool{}
+	if skills, err := s.st.ListSkills(); err == nil {
+		for _, sk := range skills {
+			if sk != nil {
+				installed[sk.Name] = true
+			}
+		}
+	}
+	seenPath := map[string]bool{}
+	var out []localSkillCandidate
+	for _, root := range roots {
+		info, err := os.Stat(root.Path)
+		if err != nil || !info.IsDir() {
+			continue
+		}
+		err = filepath.WalkDir(root.Path, func(path string, d fs.DirEntry, err error) error {
+			if err != nil {
+				return nil
+			}
+			if d.IsDir() {
+				name := d.Name()
+				if path != root.Path && shouldSkipLocalSkillDir(name) {
+					return filepath.SkipDir
+				}
+				depth, ok := localSkillDepth(root.Path, path)
+				if ok && depth > 6 {
+					return filepath.SkipDir
+				}
+				return nil
+			}
+			if d.Name() != "SKILL.md" {
+				return nil
+			}
+			dir := filepath.Dir(path)
+			if seenPath[dir] {
+				return nil
+			}
+			seenPath[dir] = true
+			sk, _, err := parseSkillMDForInstall(path)
+			if err != nil {
+				return nil
+			}
+			name := firstNonEmpty(strings.TrimSpace(sk.Name), filepath.Base(dir))
+			if err := validateWorkspaceObjectName("skill", name); err != nil {
+				return nil
+			}
+			files, size := localSkillDirStats(dir)
+			out = append(out, localSkillCandidate{
+				ID:          localSkillCandidateID(dir),
+				Name:        name,
+				Description: strings.TrimSpace(sk.Description),
+				Source:      root.Source,
+				Path:        dir,
+				Files:       files,
+				Size:        size,
+				Installed:   installed[name],
+			})
+			return nil
+		})
+		if err != nil {
+			return nil, searched, err
+		}
+	}
+	sort.Slice(out, func(i, j int) bool {
+		if out[i].Source == out[j].Source {
+			return strings.ToLower(out[i].Name) < strings.ToLower(out[j].Name)
+		}
+		return out[i].Source < out[j].Source
+	})
+	return out, searched, nil
+}
+
+func localSkillSearchRoots() []localSkillRoot {
+	home, _ := os.UserHomeDir()
+	var roots []localSkillRoot
+	add := func(source, path string) {
+		path = strings.TrimSpace(path)
+		if path == "" {
+			return
+		}
+		abs, err := filepath.Abs(path)
+		if err != nil {
+			return
+		}
+		for _, root := range roots {
+			if samePath(root.Path, abs) {
+				return
+			}
+		}
+		roots = append(roots, localSkillRoot{Source: source, Path: abs})
+	}
+	if v := os.Getenv("CODEX_HOME"); v != "" {
+		add("codex", filepath.Join(v, "skills"))
+	}
+	if home != "" {
+		add("codex", filepath.Join(home, ".codex", "skills"))
+	}
+	if v := os.Getenv("CLAUDE_CONFIG_DIR"); v != "" {
+		add("claude", filepath.Join(v, "skills"))
+	}
+	if home != "" {
+		add("claude", filepath.Join(home, ".claude", "skills"))
+	}
+	if v := os.Getenv("CURSOR_HOME"); v != "" {
+		add("cursor", filepath.Join(v, "skills"))
+	}
+	if home != "" {
+		add("cursor", filepath.Join(home, ".cursor", "skills"))
+	}
+	return roots
+}
+
+func localSkillCandidateID(path string) string {
+	return base64.RawURLEncoding.EncodeToString([]byte(filepath.Clean(path)))
+}
+
+func localSkillDepth(root, path string) (int, bool) {
+	rel, err := filepath.Rel(root, path)
+	if err != nil {
+		return 0, false
+	}
+	rel = filepath.ToSlash(rel)
+	if rel == "." || rel == "" {
+		return 0, true
+	}
+	return strings.Count(rel, "/") + 1, true
+}
+
+func shouldSkipLocalSkillDir(name string) bool {
+	switch name {
+	case ".system", ".git", ".venv", "venv", "node_modules", "__pycache__", ".cache", "dist", "build":
+		return true
+	default:
+		return false
+	}
+}
+
+func localSkillDirStats(root string) (int, int64) {
+	files := 0
+	var size int64
+	_ = filepath.WalkDir(root, func(path string, d fs.DirEntry, err error) error {
+		if err != nil {
+			return nil
+		}
+		if d.IsDir() {
+			if path != root && shouldSkipLocalSkillDir(d.Name()) {
+				return filepath.SkipDir
+			}
+			return nil
+		}
+		info, err := d.Info()
+		if err != nil {
+			return nil
+		}
+		files++
+		size += info.Size()
+		return nil
+	})
+	return files, size
 }
 
 func readSkillMetaFromDir(dir string) entity.Skill {
@@ -1079,6 +1404,72 @@ func copyDir(src, dst string) error {
 			return err
 		}
 		info, err := d.Info()
+		if err != nil {
+			return err
+		}
+		out := filepath.Join(dst, clean)
+		if err := os.MkdirAll(filepath.Dir(out), 0o755); err != nil {
+			return err
+		}
+		mode := info.Mode()
+		if mode == 0 {
+			mode = 0o644
+		}
+		return os.WriteFile(out, raw, mode)
+	})
+}
+
+const (
+	localSkillMaxFiles     = 500
+	localSkillMaxBytes     = 20 * 1024 * 1024
+	localSkillMaxFileBytes = 2 * 1024 * 1024
+)
+
+func copyLocalSkillDir(src, dst string) error {
+	files := 0
+	var total int64
+	return filepath.WalkDir(src, func(path string, d fs.DirEntry, err error) error {
+		if err != nil {
+			return err
+		}
+		rel, err := filepath.Rel(src, path)
+		if err != nil {
+			return err
+		}
+		if rel == "." {
+			return os.MkdirAll(dst, 0o755)
+		}
+		rel = filepath.ToSlash(rel)
+		if d.IsDir() {
+			if shouldSkipLocalSkillDir(d.Name()) {
+				return filepath.SkipDir
+			}
+			clean, err := cleanSkillRelativePath(rel)
+			if err != nil {
+				return nil
+			}
+			return os.MkdirAll(filepath.Join(dst, clean), 0o755)
+		}
+		clean, err := cleanSkillRelativePath(rel)
+		if err != nil {
+			return nil
+		}
+		info, err := d.Info()
+		if err != nil {
+			return err
+		}
+		if info.Size() > localSkillMaxFileBytes {
+			return fmt.Errorf("skill file %s is too large", clean)
+		}
+		files++
+		total += info.Size()
+		if files > localSkillMaxFiles {
+			return fmt.Errorf("skill contains too many files")
+		}
+		if total > localSkillMaxBytes {
+			return fmt.Errorf("skill is too large")
+		}
+		raw, err := os.ReadFile(path)
 		if err != nil {
 			return err
 		}

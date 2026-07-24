@@ -40,6 +40,25 @@ type SkillPackageRow = SkillRegistry & {
   path?: string
   installed?: boolean
 }
+type LocalSkillCandidate = {
+  id: string
+  name: string
+  description?: string
+  source: string
+  path: string
+  files?: number
+  size?: number
+  installed?: boolean
+}
+type LocalSkillScanResponse = {
+  available?: boolean
+  candidates?: LocalSkillCandidate[]
+  searched?: string[]
+}
+type LocalSkillImportResponse = {
+  imported?: Array<{ id: string; name: string; source: string; path: string }>
+  skipped?: Array<{ id: string; name?: string; source?: string; path?: string; reason?: string }>
+}
 type ProjectRow = { name: string; description?: string }
 type AgentRow = { name: string; model?: string }
 type AgentContext = { skills?: string[] }
@@ -268,6 +287,7 @@ export default function SkillsPage() {
   const [reloadKey, setReloadKey] = useState(0)
   const [createOpen, setCreateOpen] = useState(false)
   const [installOpen, setInstallOpen] = useState(false)
+  const [localImportOpen, setLocalImportOpen] = useState(false)
   const skillsState = useApiJson<SkillRow[]>('/api/v1/skills', reloadKey)
   const skills = skillsState.status === 'ok' ? (skillsState.data ?? []) : []
 
@@ -286,6 +306,9 @@ export default function SkillsPage() {
           <p className="mt-1 text-sm text-neutral-500 dark:text-zinc-500">{t('skill.catalogHint')}</p>
         </div>
         <div className="flex items-center gap-2">
+          <button type="button" onClick={() => setLocalImportOpen(true)} className={primaryOutlineButton}>
+            {t('skill.syncFromLocal')}
+          </button>
           <button type="button" onClick={() => setInstallOpen(true)} className={primaryOutlineButton}>
             {t('skill.install')}
           </button>
@@ -334,6 +357,166 @@ export default function SkillsPage() {
           }}
         />
       )}
+      {localImportOpen && (
+        <LocalSkillImportDialog
+          onClose={() => setLocalImportOpen(false)}
+          onImported={() => {
+            setLocalImportOpen(false)
+            setReloadKey((v) => v + 1)
+          }}
+        />
+      )}
+    </div>
+  )
+}
+
+function LocalSkillImportDialog({ onClose, onImported }: { onClose: () => void; onImported: () => void }) {
+  const { t } = useTranslation()
+  const [loading, setLoading] = useState(true)
+  const [importing, setImporting] = useState(false)
+  const [scan, setScan] = useState<LocalSkillScanResponse | null>(null)
+  const [selected, setSelected] = useState<string[]>([])
+  const [error, setError] = useState('')
+  const [result, setResult] = useState<LocalSkillImportResponse | null>(null)
+
+  useEffect(() => {
+    let cancelled = false
+    async function load() {
+      setLoading(true)
+      setError('')
+      try {
+        const res = await apiFetch<LocalSkillScanResponse>('/api/v1/skills/local')
+        if (cancelled) return
+        const candidates = res.candidates ?? []
+        setScan(res)
+        setSelected(candidates.filter((item) => !item.installed).map((item) => item.id))
+      } catch (err) {
+        if (!cancelled) setError(err instanceof Error ? err.message : String(err))
+      } finally {
+        if (!cancelled) setLoading(false)
+      }
+    }
+    void load()
+    return () => { cancelled = true }
+  }, [])
+
+  const candidates = scan?.candidates ?? []
+  const importableCount = candidates.filter((item) => !item.installed).length
+
+  function toggle(id: string) {
+    setSelected((prev) => prev.includes(id) ? prev.filter((item) => item !== id) : [...prev, id])
+  }
+
+  async function importSelected() {
+    if (selected.length === 0) return
+    setImporting(true)
+    setResult(null)
+    try {
+      const res = await apiPost<LocalSkillImportResponse>('/api/v1/skills/local/import', { ids: selected })
+      setResult(res)
+      if ((res.imported ?? []).length > 0) {
+        onImported()
+      }
+    } catch (err) {
+      setError(err instanceof Error ? err.message : String(err))
+    } finally {
+      setImporting(false)
+    }
+  }
+
+  return (
+    <div className="fixed inset-0 z-50 flex items-start justify-center px-4 pt-[10vh]">
+      <div className="absolute inset-0 bg-black/30 backdrop-blur-[2px] dark:bg-black/50" onClick={importing ? undefined : onClose} />
+      <div className="relative flex max-h-[82vh] w-full max-w-3xl flex-col overflow-hidden rounded-xl border border-neutral-200/80 bg-white shadow-2xl dark:border-zinc-700/80 dark:bg-zinc-900">
+        <div className="flex items-center justify-between border-b border-neutral-200/80 px-5 py-3 dark:border-zinc-700/60">
+          <div>
+            <h2 className="text-sm font-semibold text-neutral-900 dark:text-zinc-100">{t('skill.syncFromLocalTitle')}</h2>
+            <p className="mt-0.5 text-xs leading-relaxed text-neutral-500 dark:text-zinc-500">{t('skill.syncFromLocalHint')}</p>
+          </div>
+          <button type="button" onClick={onClose} disabled={importing} className="rounded-md p-1 text-neutral-400 hover:bg-neutral-100 hover:text-neutral-700 disabled:opacity-50 dark:hover:bg-zinc-800 dark:hover:text-zinc-300">
+            <X className="size-4" strokeWidth={2} />
+          </button>
+        </div>
+        <div className="flex-1 overflow-auto p-5">
+          {loading && (
+            <div className="flex items-center justify-center gap-2 py-16">
+              <div className="size-5 animate-spin rounded-full border-2 border-neutral-300 border-t-sky-600 dark:border-zinc-600 dark:border-t-sky-400" />
+              <span className="text-sm text-neutral-500">{t('api.loading')}</span>
+            </div>
+          )}
+          {!loading && error && (
+            <p className="rounded-lg bg-red-50 px-3 py-3 text-sm text-red-600 dark:bg-red-950/20 dark:text-red-300">{error}</p>
+          )}
+          {!loading && !error && candidates.length === 0 && (
+            <div className="space-y-3 rounded-lg bg-neutral-50 px-4 py-8 text-center dark:bg-zinc-950/50">
+              <p className="text-sm font-medium text-neutral-600 dark:text-zinc-300">{t('skill.localSkillEmpty')}</p>
+              {(scan?.searched ?? []).length > 0 && (
+                <p className="mx-auto max-w-xl break-all text-xs leading-relaxed text-neutral-400 dark:text-zinc-500">
+                  {t('skill.localSkillSearchedPaths')}: {(scan?.searched ?? []).join(', ')}
+                </p>
+              )}
+            </div>
+          )}
+          {!loading && !error && candidates.length > 0 && (
+            <div className="space-y-3">
+              <div className="flex items-center justify-between rounded-lg bg-neutral-50 px-3 py-2 text-xs text-neutral-500 dark:bg-zinc-950/50 dark:text-zinc-500">
+                <span>{t('skill.localSkillFound', { count: candidates.length })}</span>
+                <button
+                  type="button"
+                  onClick={() => setSelected(candidates.filter((item) => !item.installed).map((item) => item.id))}
+                  className="font-medium text-sky-700 hover:text-sky-800 dark:text-sky-400 dark:hover:text-sky-300"
+                >
+                  {t('skill.localSkillSelectImportable', { count: importableCount })}
+                </button>
+              </div>
+              <div className="overflow-hidden rounded-lg border border-neutral-200/80 dark:border-zinc-700/60">
+                {candidates.map((item) => (
+                  <label key={item.id} className={cn(
+                    'flex cursor-pointer items-start gap-3 border-b border-neutral-100 px-4 py-3 last:border-b-0 dark:border-zinc-800',
+                    item.installed ? 'bg-neutral-50/70 dark:bg-zinc-950/40' : 'hover:bg-neutral-50 dark:hover:bg-zinc-800/30',
+                  )}>
+                    <input
+                      type="checkbox"
+                      checked={selected.includes(item.id)}
+                      disabled={item.installed}
+                      onChange={() => toggle(item.id)}
+                      className="mt-1 rounded border-neutral-300 text-sky-600 focus:ring-sky-500 disabled:opacity-40 dark:border-zinc-600 dark:bg-zinc-800"
+                    />
+                    <div className="min-w-0 flex-1">
+                      <div className="flex min-w-0 flex-wrap items-center gap-2">
+                        <span className="truncate font-mono text-sm font-medium text-neutral-900 dark:text-zinc-100">{item.name}</span>
+                        <span className="rounded-full bg-neutral-100 px-2 py-0.5 text-[11px] font-medium text-neutral-500 dark:bg-zinc-800 dark:text-zinc-400">
+                          {item.source}
+                        </span>
+                        {item.installed && (
+                          <span className="rounded-full bg-emerald-50 px-2 py-0.5 text-[11px] font-medium text-emerald-700 dark:bg-emerald-950/30 dark:text-emerald-300">{t('skill.installed')}</span>
+                        )}
+                      </div>
+                      {item.description && <p className="mt-1 line-clamp-2 text-xs leading-relaxed text-neutral-500 dark:text-zinc-500">{item.description}</p>}
+                      <p className="mt-1 truncate font-mono text-[11px] text-neutral-400 dark:text-zinc-600">{item.path}</p>
+                    </div>
+                    <div className="shrink-0 text-right text-[11px] text-neutral-400 dark:text-zinc-600">
+                      <div>{item.files ?? 0} {t('skill.localSkillFiles')}</div>
+                      <div>{formatBytes(item.size ?? 0)}</div>
+                    </div>
+                  </label>
+                ))}
+              </div>
+            </div>
+          )}
+          {result && (
+            <div className="mt-4 rounded-lg border border-neutral-200/80 bg-neutral-50 px-3 py-2 text-xs leading-relaxed text-neutral-500 dark:border-zinc-700/60 dark:bg-zinc-950/50 dark:text-zinc-400">
+              {t('skill.localSkillImportDone', { imported: result.imported?.length ?? 0, skipped: result.skipped?.length ?? 0 })}
+            </div>
+          )}
+        </div>
+        <div className="flex justify-end gap-2 border-t border-neutral-200/80 px-5 py-3 dark:border-zinc-700/60">
+          <button type="button" onClick={onClose} disabled={importing} className="rounded-lg px-3 py-2 text-sm font-medium text-neutral-600 hover:bg-neutral-100 disabled:opacity-50 dark:text-zinc-400 dark:hover:bg-zinc-800">{t('common.cancel')}</button>
+          <button type="button" onClick={() => void importSelected()} disabled={importing || selected.length === 0} className="rounded-lg border border-sky-600 bg-white px-3 py-2 text-sm font-medium text-sky-700 hover:bg-sky-50 disabled:opacity-50 dark:border-sky-500 dark:bg-zinc-900 dark:text-sky-400 dark:hover:bg-zinc-800">
+            {importing ? t('api.loading') : t('skill.localSkillImportSelected', { count: selected.length })}
+          </button>
+        </div>
+      </div>
     </div>
   )
 }

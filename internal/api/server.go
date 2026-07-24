@@ -312,6 +312,8 @@ func (s *Server) Handler() http.Handler {
 	mux.HandleFunc("PUT /api/v1/prompts/roles", s.handlePutRolePrompt)
 	mux.HandleFunc("GET /api/v1/skills", s.handleListSkills)
 	mux.HandleFunc("POST /api/v1/skills", s.handleCreateSkill)
+	mux.HandleFunc("GET /api/v1/skills/local", s.handleListLocalSkills)
+	mux.HandleFunc("POST /api/v1/skills/local/import", s.handleImportLocalSkills)
 	mux.HandleFunc("POST /api/v1/skills/install", s.handleInstallSkill)
 	mux.HandleFunc("GET /api/v1/skill-registry", s.handleListSkillRegistry)
 	mux.HandleFunc("GET /api/v1/skills/{name}", s.handleGetSkillDetail)
