@@ -248,6 +248,48 @@ func (s *Server) resolveChannelEventBindingDetailed(provider, appID, chatID, ext
 		return channelEventResolution{}, err
 	}
 	if len(identities) == 0 {
+		if len(bindings) == 1 && strings.TrimSpace(bindings[0].ExternalOwnerID) == "" && strings.TrimSpace(externalUserID) != "" {
+			binding := bindings[0]
+			secret, ok, err := s.controlDB.ConnectionSecret(binding.ConnectionID)
+			if err != nil {
+				return channelEventResolution{}, err
+			}
+			if ok && strings.TrimSpace(binding.CreatedBy) != "" {
+				values, err := openConnectionSecret(secret)
+				if err != nil {
+					return channelEventResolution{}, err
+				}
+				now := time.Now().UTC().Format(time.RFC3339)
+				binding.ExternalOwnerID = strings.TrimSpace(externalUserID)
+				binding.UpdatedAt = now
+				_ = s.controlDB.UpsertAgentChannelBinding(binding)
+				metadataRaw, _ := json.Marshal(map[string]any{
+					"source":      "agent_channel_first_message",
+					"project":     binding.ProjectID,
+					"agent":       binding.AgentID,
+					"connectedAt": now,
+				})
+				if err := s.controlDB.UpsertExternalIdentity(controldb.ExternalIdentity{
+					ID:             newChannelID("ext"),
+					WorkspaceID:    binding.WorkspaceID,
+					Provider:       provider,
+					ExternalUserID: strings.TrimSpace(externalUserID),
+					UserID:         binding.CreatedBy,
+					MetadataJSON:   string(metadataRaw),
+					CreatedBy:      binding.CreatedBy,
+					CreatedAt:      now,
+					UpdatedAt:      now,
+				}); err != nil {
+					return channelEventResolution{}, err
+				}
+				return channelEventResolution{
+					Resolved: resolvedChannelEventBinding{Binding: binding, SecretValues: values, Identity: controldb.ExternalIdentity{
+						WorkspaceID: binding.WorkspaceID, Provider: provider, ExternalUserID: externalUserID, UserID: binding.CreatedBy,
+					}},
+					Found: true,
+				}, nil
+			}
+		}
 		return channelEventResolution{Candidate: bindings[0], HasCandidate: true}, nil
 	}
 	identityByWorkspace := map[string]controldb.ExternalIdentity{}

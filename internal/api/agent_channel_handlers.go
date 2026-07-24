@@ -47,6 +47,10 @@ type channelSetupPollRequest struct {
 	BaseURL    string `json:"baseUrl"`
 }
 
+type channelManualSetupRequest struct {
+	Values map[string]string `json:"values"`
+}
+
 type agentChannelSecurityRequest struct {
 	VerificationToken *string `json:"verificationToken"`
 	EncryptKey        *string `json:"encryptKey"`
@@ -300,6 +304,52 @@ func (s *Server) handleAgentChannelSetupPoll(w http.ResponseWriter, r *http.Requ
 	_ = json.NewEncoder(w).Encode(resp)
 }
 
+func (s *Server) handleAgentChannelSetupManual(w http.ResponseWriter, r *http.Request) {
+	project, agent, provider, ok := s.parseProjectAgentProvider(w, r)
+	if !ok {
+		return
+	}
+	if !s.canOperateAgent(r, project, agent) {
+		s.jsonError(w, http.StatusForbidden, "agent operator access required")
+		return
+	}
+	workspaceID, ok := s.currentWorkspaceForRequest(w, r)
+	if !ok {
+		return
+	}
+	channelProvider, ok := imbridge.LookupProvider(provider)
+	if !ok {
+		s.jsonError(w, http.StatusBadRequest, "unsupported channel provider")
+		return
+	}
+	var req channelManualSetupRequest
+	if err := s.readJSON(w, r, &req); err != nil {
+		s.jsonError(w, http.StatusBadRequest, "invalid JSON body")
+		return
+	}
+	ctx, cancel := contextWithRequestTimeout(r, 25*time.Second)
+	defer cancel()
+	result, err := channelProvider.ManualSetup(ctx, imbridge.ManualSetupRequest{Values: req.Values})
+	if err != nil {
+		s.jsonError(w, http.StatusBadGateway, err.Error())
+		return
+	}
+	if result.Provider == "" {
+		result.Provider = provider
+	}
+	binding, err := s.saveManualAgentIMChannel(r, workspaceID, project, agent, result)
+	if err != nil {
+		s.serverError(w, err)
+		return
+	}
+	resp := agentChannelToResponse(binding)
+	resp.CallbackURL = requestBaseURL(r) + "/api/v1/im/" + binding.Provider + "/events"
+	_ = json.NewEncoder(w).Encode(map[string]any{
+		"status":  "connected",
+		"channel": resp,
+	})
+}
+
 func (s *Server) saveAgentIMChannel(r *http.Request, workspaceID, project, agent, provider string, poll imbridge.SetupPollResponse) (controldb.AgentChannelBinding, error) {
 	now := time.Now().UTC().Format(time.RFC3339)
 	openBaseURL, err := imbridge.MustOpenBaseURL(provider)
@@ -423,6 +473,152 @@ func (s *Server) saveAgentIMChannel(r *http.Request, workspaceID, project, agent
 			return controldb.AgentChannelBinding{}, err
 		}
 	}
+	s.auditLog(auditLogInput{
+		WorkspaceID:  workspaceID,
+		Action:       "agent_channel.connected",
+		ResourceType: "agent_channel",
+		ResourceID:   binding.ID,
+		Summary:      fmt.Sprintf("Connected %s channel for %s/%s", provider, project, agent),
+		After:        agentChannelToResponse(binding),
+		Request:      r,
+	})
+	return binding, nil
+}
+
+func (s *Server) saveManualAgentIMChannel(r *http.Request, workspaceID, project, agent string, result imbridge.ManualSetupResult) (controldb.AgentChannelBinding, error) {
+	now := time.Now().UTC().Format(time.RFC3339)
+	provider := result.Provider
+	openBaseURL := strings.TrimSpace(result.BaseURL)
+	if openBaseURL == "" {
+		var err error
+		openBaseURL, err = imbridge.MustOpenBaseURL(provider)
+		if err != nil {
+			return controldb.AgentChannelBinding{}, err
+		}
+	}
+	connectionName := agentChannelConnectionName(project, agent)
+	connectionID := ""
+	connections, err := s.controlDB.ListConnections(controldb.ConnectionFilter{
+		WorkspaceID: workspaceID,
+		Provider:    provider,
+		OwnerType:   ConnectionOwnerWorkspace,
+		OwnerID:     workspaceID,
+	})
+	if err != nil {
+		return controldb.AgentChannelBinding{}, err
+	}
+	for _, connection := range connections {
+		if connection.ConnectionName == connectionName {
+			connectionID = connection.ID
+			break
+		}
+	}
+	if connectionID == "" {
+		connectionID = newChannelID("conn")
+	}
+	profile := map[string]any{
+		"baseUrl": openBaseURL,
+		"appId":   result.AppID,
+		"usage":   "agent_im_channel",
+	}
+	for k, v := range result.Profile {
+		profile[k] = v
+	}
+	profileRaw, _ := json.Marshal(profile)
+	authType := strings.TrimSpace(result.AuthType)
+	if authType == "" {
+		authType = "token"
+	}
+	connection := controldb.Connection{
+		ID:             connectionID,
+		WorkspaceID:    workspaceID,
+		Provider:       provider,
+		ConnectionName: connectionName,
+		OwnerType:      ConnectionOwnerWorkspace,
+		OwnerID:        workspaceID,
+		AuthType:       authType,
+		Status:         "active",
+		ProfileJSON:    string(profileRaw),
+		CreatedBy:      requestUsername(r),
+		CreatedAt:      now,
+		UpdatedAt:      now,
+	}
+	if err := s.controlDB.UpsertConnection(connection); err != nil {
+		return controldb.AgentChannelBinding{}, err
+	}
+	values := map[string]string{"baseUrl": openBaseURL}
+	for k, v := range result.SecretValues {
+		values[k] = v
+	}
+	secret, err := sealConnectionSecret(values)
+	if err != nil {
+		return controldb.AgentChannelBinding{}, err
+	}
+	secret.ConnectionID = connectionID
+	if err := s.controlDB.UpsertConnectionSecret(secret); err != nil {
+		return controldb.AgentChannelBinding{}, err
+	}
+	_ = s.controlDB.CreateConnectionGrant(controldb.ConnectionGrant{
+		ID:           newChannelID("grant"),
+		WorkspaceID:  workspaceID,
+		ConnectionID: connectionID,
+		TargetType:   ConnectionTargetAgent,
+		TargetID:     project + "/" + agent,
+		CreatedBy:    requestUsername(r),
+		CreatedAt:    now,
+	})
+
+	metadataRaw, _ := json.Marshal(map[string]any{
+		"appId": result.AppID,
+	})
+	binding := controldb.AgentChannelBinding{
+		ID:              newChannelID("chan"),
+		WorkspaceID:     workspaceID,
+		ProjectID:       project,
+		AgentID:         agent,
+		Provider:        provider,
+		ConnectionID:    connectionID,
+		ExternalBotID:   result.ExternalBotID,
+		ExternalChatID:  result.ExternalChatID,
+		ExternalOwnerID: result.ExternalOwnerID,
+		Status:          "connected",
+		MetadataJSON:    string(metadataRaw),
+		CreatedBy:       requestUsername(r),
+		CreatedAt:       now,
+		UpdatedAt:       now,
+		LastActivityAt:  now,
+	}
+	if existing, found, err := s.findAgentChannelBinding(workspaceID, project, agent, provider); err != nil {
+		return controldb.AgentChannelBinding{}, err
+	} else if found {
+		binding.ID = existing.ID
+		binding.CreatedAt = existing.CreatedAt
+		if binding.ExternalChatID == "" {
+			binding.ExternalChatID = existing.ExternalChatID
+		}
+		if binding.ExternalOwnerID == "" {
+			binding.ExternalOwnerID = existing.ExternalOwnerID
+		}
+	}
+	if err := s.controlDB.UpsertAgentChannelBinding(binding); err != nil {
+		return controldb.AgentChannelBinding{}, err
+	}
+	if strings.TrimSpace(result.ExternalOwnerID) != "" {
+		if err := s.controlDB.UpsertExternalIdentity(controldb.ExternalIdentity{
+			ID:             newChannelID("ext"),
+			WorkspaceID:    workspaceID,
+			Provider:       provider,
+			ExternalUserID: result.ExternalOwnerID,
+			UserID:         requestUsername(r),
+			MetadataJSON:   `{"source":"agent_channel_manual_setup"}`,
+			CreatedBy:      requestUsername(r),
+			CreatedAt:      now,
+			UpdatedAt:      now,
+		}); err != nil {
+			return controldb.AgentChannelBinding{}, err
+		}
+	}
+	go s.refreshAgentIMBridges()
 	s.auditLog(auditLogInput{
 		WorkspaceID:  workspaceID,
 		Action:       "agent_channel.connected",

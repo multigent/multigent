@@ -7,7 +7,12 @@ import { cn } from '../../lib/cn'
 import { confirmDialog } from '../ui/ConfirmDialog'
 import { useFormatDateTime } from '../../lib/format-datetime'
 
-type ChannelProvider = { id: string; label: string }
+type ChannelProvider = {
+  id: string
+  label: string
+  setupMode?: 'qr' | 'manual'
+  fields?: Array<{ name: string; label: string; type: string; required?: boolean; placeholder?: string; help?: string }>
+}
 
 type AgentChannel = {
   id: string
@@ -68,6 +73,7 @@ type SetupState =
   | { step: 'idle' }
   | { step: 'beginning'; provider: ChannelProvider }
   | { step: 'scanning'; provider: ChannelProvider; deviceCode: string; qrUrl: string; baseUrl: string; interval: number }
+  | { step: 'manual'; provider: ChannelProvider; values: Record<string, string>; submitting?: boolean }
   | { step: 'connected'; provider: ChannelProvider }
   | { step: 'error'; provider?: ChannelProvider; message: string }
 
@@ -118,6 +124,10 @@ export function AgentChannelPanel({ project, agentName }: { project: string; age
 
   async function begin(provider: ChannelProvider) {
     stopPoll()
+    if (provider.setupMode === 'manual') {
+      setSetup({ step: 'manual', provider, values: {} })
+      return
+    }
     setSetup({ step: 'beginning', provider })
     try {
       const res = await apiPost<{ deviceCode: string; qrUrl: string; interval?: number; baseUrl?: string }>(
@@ -136,6 +146,23 @@ export function AgentChannelPanel({ project, agentName }: { project: string; age
       startPoll(next)
     } catch (e) {
       setSetup({ step: 'error', provider, message: e instanceof Error ? e.message : String(e) })
+    }
+  }
+
+  async function submitManualSetup() {
+    if (setup.step !== 'manual') return
+    setSetup({ ...setup, submitting: true })
+    try {
+      const res = await apiPost<{ status: string; channel?: AgentChannel }>(
+        `${basePath}/${setup.provider.id}/setup/manual`,
+        { values: setup.values },
+      )
+      if (res.status === 'connected') {
+        setSetup({ step: 'connected', provider: setup.provider })
+        await load()
+      }
+    } catch (e) {
+      setSetup({ step: 'error', provider: setup.provider, message: e instanceof Error ? e.message : String(e) })
     }
   }
 
@@ -262,8 +289,8 @@ export function AgentChannelPanel({ project, agentName }: { project: string; age
                         mono={Boolean(channel.externalChatId)}
                       />
                       <ChannelDetail label={t('agentChannels.lastActivityLabel')} value={fmtDateTime(channel.lastActivityAt)} />
-                      <ChannelDetail label={t('agentChannels.receiveModeLabel')} value={t('agentChannels.websocketMode')} />
-                      <p className="text-neutral-500 dark:text-zinc-400">{t('agentChannels.websocketHint')}</p>
+                      <ChannelDetail label={t('agentChannels.receiveModeLabel')} value={receiveModeLabel(channel.provider, t)} />
+                      <p className="text-neutral-500 dark:text-zinc-400">{receiveModeHint(channel.provider, t, channel.callbackUrl)}</p>
                       {channel.callback?.lastAt ? (
                         <p className={cn(channel.callback.error && 'text-red-500 dark:text-red-300')}>
                           {t('agentChannels.lastEvent', {
@@ -299,9 +326,9 @@ export function AgentChannelPanel({ project, agentName }: { project: string; age
         })}
       </div>
 
-      {(setup.step === 'beginning' || setup.step === 'scanning' || setup.step === 'connected' || setup.step === 'error') && (
+      {(setup.step === 'beginning' || setup.step === 'scanning' || setup.step === 'manual' || setup.step === 'connected' || setup.step === 'error') && (
         <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/40 px-4">
-          <div className="w-full max-w-sm rounded-xl border border-neutral-200 bg-white p-5 shadow-xl dark:border-zinc-700 dark:bg-zinc-900">
+          <div className="w-full max-w-md rounded-xl border border-neutral-200 bg-white p-5 shadow-xl dark:border-zinc-700 dark:bg-zinc-900">
             <div className="flex items-center justify-between gap-3">
               <h3 className="text-base font-semibold text-neutral-900 dark:text-zinc-100">
                 {setup.step === 'error' ? t('agentChannels.setupFailed') : t('agentChannels.scanToConnect', { provider: setup.provider.label })}
@@ -325,6 +352,35 @@ export function AgentChannelPanel({ project, agentName }: { project: string; age
                 </div>
                 <p className="mt-3 text-sm text-neutral-600 dark:text-zinc-300">{t('agentChannels.scanHint', { provider: setup.provider.label })}</p>
                 <p className="mt-1 text-xs text-neutral-400 dark:text-zinc-500">{t('agentChannels.waitingApproval')}</p>
+              </div>
+            )}
+
+            {setup.step === 'manual' && (
+              <div className="mt-4 space-y-3">
+                <p className="text-sm text-neutral-500 dark:text-zinc-400">{t('agentChannels.manualHint', { provider: setup.provider.label })}</p>
+                {(setup.provider.fields ?? []).map(field => (
+                  <label key={field.name} className="block">
+                    <span className="text-xs font-medium text-neutral-600 dark:text-zinc-300">
+                      {field.label}{field.required ? ' *' : ''}
+                    </span>
+                    <input
+                      type={field.type === 'password' ? 'password' : 'text'}
+                      value={setup.values[field.name] ?? ''}
+                      placeholder={field.placeholder}
+                      onChange={(e) => setSetup({ ...setup, values: { ...setup.values, [field.name]: e.target.value } })}
+                      className="mt-1 w-full rounded-lg border border-neutral-200 bg-white px-3 py-2 text-sm outline-none focus:border-sky-400 dark:border-zinc-700 dark:bg-zinc-950 dark:text-zinc-100"
+                    />
+                    {field.help ? <span className="mt-1 block text-xs text-neutral-400 dark:text-zinc-500">{field.help}</span> : null}
+                  </label>
+                ))}
+                <div className="flex justify-end gap-2 pt-2">
+                  <button type="button" onClick={closeSetup} className="rounded-lg border border-neutral-200 bg-white px-3 py-2 text-sm font-medium text-neutral-600 hover:bg-neutral-50 dark:border-zinc-700 dark:bg-zinc-900 dark:text-zinc-300 dark:hover:bg-zinc-800">
+                    {t('common.cancel')}
+                  </button>
+                  <button type="button" disabled={setup.submitting} onClick={() => void submitManualSetup()} className="rounded-lg border border-sky-600 bg-white px-3 py-2 text-sm font-medium text-sky-700 hover:bg-sky-50 disabled:opacity-50 dark:border-sky-500 dark:bg-zinc-900 dark:text-sky-400 dark:hover:bg-zinc-800">
+                    {setup.submitting ? t('common.loading') : t('agentChannels.connect')}
+                  </button>
+                </div>
               </div>
             )}
 
@@ -354,4 +410,18 @@ function ChannelDetail({ label, value, mono = false }: { label: string; value: s
       <span className={cn('min-w-0 truncate', mono && 'font-mono text-[11px] text-neutral-500 dark:text-zinc-300')}>{value}</span>
     </p>
   )
+}
+
+function receiveModeLabel(provider: string, t: (key: string, options?: Record<string, unknown>) => string) {
+  if (provider === 'telegram') return t('agentChannels.pollingMode')
+  if (provider === 'discord') return t('agentChannels.gatewayMode')
+  if (provider === 'slack') return t('agentChannels.webhookMode')
+  return t('agentChannels.websocketMode')
+}
+
+function receiveModeHint(provider: string, t: (key: string, options?: Record<string, unknown>) => string, callbackUrl?: string) {
+  if (provider === 'telegram') return t('agentChannels.telegramHint')
+  if (provider === 'discord') return t('agentChannels.discordHint')
+  if (provider === 'slack') return t('agentChannels.slackHint', { callbackUrl: callbackUrl || '-' })
+  return t('agentChannels.websocketHint')
 }
