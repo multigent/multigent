@@ -255,7 +255,7 @@ func (s *Server) handleAgentChat(w http.ResponseWriter, r *http.Request) {
 	s.execProcs[key] = nil // placeholder; will be replaced after cmd.Start
 	s.execMu.Unlock()
 
-	args := []string{"--dir", s.root, "exec", "--project", project, "--agent", agent, "--prompt", msg}
+	args := []string{"--dir", s.root, "exec", "--project", project, "--agent", agent, "--prompt", msg, "--no-save-session"}
 	sessionID := strings.TrimSpace(body.SessionID)
 	if sessionID != "" && !body.NoSession {
 		args = append(args, "--session", sessionID)

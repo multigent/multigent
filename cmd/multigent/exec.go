@@ -13,12 +13,13 @@ import (
 
 func newExecCmd() *cobra.Command {
 	var (
-		project   string
-		agentName string
-		prompt    string
-		file      string
-		sessionID string
-		noSession bool
+		project       string
+		agentName     string
+		prompt        string
+		file          string
+		sessionID     string
+		noSession     bool
+		noSaveSession bool
 	)
 
 	cmd := &cobra.Command{
@@ -29,7 +30,8 @@ func newExecCmd() *cobra.Command {
 Useful for quick interactive testing or one-off commands.
 Output is streamed to stdout in real time and also written to a log file.
 The session ID is saved automatically so the next exec resumes the same
-conversation (use --no-session to start fresh).
+conversation (use --no-session to start fresh, or --no-save-session to avoid
+updating the saved heartbeat session).
 
 Examples:
 
@@ -100,7 +102,7 @@ Examples:
 			if result.SessionID != "" {
 				fmt.Fprintf(os.Stderr, "session : %s\n", result.SessionID)
 				// Auto-save so the next exec resumes this conversation.
-				if !noSession && result.Status != entity.TaskStatusDoneFailed {
+				if !noSession && !noSaveSession && result.Status != entity.TaskStatusDoneFailed {
 					if hb, err2 := ts.GetHeartbeat(project, agentName); err2 == nil {
 						hb.SessionID = result.SessionID
 						if err2 = ts.SaveHeartbeat(project, agentName, hb); err2 == nil {
@@ -130,6 +132,7 @@ Examples:
 	cmd.Flags().StringVarP(&file, "file", "f", "", "read prompt from file")
 	cmd.Flags().StringVar(&sessionID, "session", "", "session ID to resume (overrides saved session)")
 	cmd.Flags().BoolVar(&noSession, "no-session", false, "ignore saved session; start a fresh conversation")
+	cmd.Flags().BoolVar(&noSaveSession, "no-save-session", false, "do not update the saved heartbeat session after this run")
 	return cmd
 }
 

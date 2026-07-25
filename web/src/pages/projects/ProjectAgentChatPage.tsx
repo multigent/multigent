@@ -127,6 +127,7 @@ export default function ProjectAgentChatPage() {
   const sessionIdRef = useRef(routeSessionId)
   const freshNextRef = useRef(false)
   const historyRequestRef = useRef(0)
+  const initializedChatKeyRef = useRef('')
   const draftKey = agentChatDraftKey(projectId, agentName)
   const chatKey = projectId && agentName ? `${projectId}/${agentName}` : ''
   const activeChatKeyRef = useRef(chatKey)
@@ -202,6 +203,8 @@ export default function ProjectAgentChatPage() {
   useEffect(() => {
     if (!projectId || !agentName) return
     const nextKey = `${projectId}/${agentName}`
+    if (initializedChatKeyRef.current === nextKey) return
+    initializedChatKeyRef.current = nextKey
     const currentRouteSessionId = new URLSearchParams(window.location.search).get('sessionId') ?? ''
     activeChatKeyRef.current = nextKey
     abortRef.current?.abort()
@@ -435,7 +438,15 @@ export default function ProjectAgentChatPage() {
     freshNextRef.current = false
     setFreshNext(false)
     updateSessionId(next)
-    void loadHistory(next)
+    if (next) {
+      void loadHistory(next)
+      return
+    }
+    historyRequestRef.current += 1
+    setContent('')
+    setError(null)
+    setHistoryLoading(false)
+    setHistoryTruncated(false)
   }
 
   if (!projectId || !agentName) return null
@@ -501,8 +512,8 @@ export default function ProjectAgentChatPage() {
             </button>
             <button
               type="button"
-              onClick={() => void loadHistory(sessionId)}
-              disabled={historyLoading || loading}
+              onClick={() => { if (sessionId) void loadHistory(sessionId) }}
+              disabled={!sessionId || historyLoading || loading}
               className="flex items-center gap-1.5 rounded-md border border-neutral-200 bg-white px-3 py-1.5 text-sm font-medium text-neutral-600 transition-colors hover:bg-neutral-50 disabled:opacity-50 dark:border-zinc-700 dark:bg-zinc-900 dark:text-zinc-400 dark:hover:bg-zinc-800"
             >
               <RefreshCw className={cn('size-3.5', historyLoading && 'animate-spin')} />
@@ -626,7 +637,7 @@ export default function ProjectAgentChatPage() {
             <button
               type="button"
               onClick={() => void send()}
-              disabled={!input.trim() || runtimeBlocked || runtimeChecking}
+              disabled={!input.trim() || runtimeBlocked}
               className="flex size-8 shrink-0 items-center justify-center rounded-lg bg-sky-600 text-white transition-colors hover:bg-sky-700 disabled:opacity-30"
               title={runtimeBlocked ? t('agentChat.runtimeBlocked') : undefined}
             >
@@ -657,12 +668,11 @@ function RuntimeReadinessBanner({ readiness, checking, onRefresh, canInspectDeta
   canInspectDetails: boolean
 }) {
   const { t } = useTranslation()
-  if (!readiness && !checking) return null
+  if (!readiness?.blocking) return null
   const checks = readiness?.checks ?? []
   const visibleChecks = checks.filter((check) => check.status !== 'ok')
   const ready = Boolean(readiness?.ready)
   const blocking = Boolean(readiness?.blocking)
-  if (!checking && !blocking) return null
   const cls = blocking
     ? 'border-red-200 bg-red-50 text-red-800 dark:border-red-900/50 dark:bg-red-950/20 dark:text-red-300'
     : ready

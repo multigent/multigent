@@ -568,7 +568,7 @@ func subtleConstantTimeEqual(a, b string) bool {
 }
 
 func (s *Server) execAgentPrompt(ctx context.Context, project, agent, prompt, sessionID string) (string, string, error) {
-	args := []string{"--dir", s.root, "exec", "--project", project, "--agent", agent, "--prompt", prompt}
+	args := []string{"--dir", s.root, "exec", "--project", project, "--agent", agent, "--prompt", prompt, "--no-save-session"}
 	if strings.TrimSpace(sessionID) != "" {
 		args = append(args, "--session", strings.TrimSpace(sessionID))
 	}
