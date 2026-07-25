@@ -56,6 +56,7 @@ type TaskWorkflowData = { definition: WorkflowDefinition; run: WorkflowRun; step
 type SafeUser = { username: string; displayName?: string; email?: string }
 type ProjectMember = { name: string; model?: string; avatar?: string }
 type WorkflowRecord = WorkflowStepEvent | WorkflowStepInstance
+const silentNotFound = [404]
 
 // Restore real line breaks for descriptions whose upstream author stored literal
 // "\n" / "\r\n" / "\t" sequences (typically agent-generated text that survived a
@@ -265,7 +266,11 @@ export function TaskDetailModal({ task, onClose, onEdit, onMutated, canEdit = tr
   const hasLog = Boolean(matchingRun?.logPath)
   const logQuery = hasLog ? `/api/v1/telemetry/log?path=${encodeURIComponent(matchingRun!.logPath!)}` : null
   const logState = useApiJson<LogData>(logQuery, 0)
-  const workflowState = useApiJson<TaskWorkflowData>(`/api/v1/projects/${encodeURIComponent(task.project)}/tasks/${encodeURIComponent(task.id)}/workflow`, workflowVersion)
+  const workflowState = useApiJson<TaskWorkflowData>(
+    `/api/v1/projects/${encodeURIComponent(task.project)}/tasks/${encodeURIComponent(task.id)}/workflow`,
+    workflowVersion,
+    { silentStatuses: silentNotFound },
+  )
   const usersState = useApiJson<SafeUser[]>('/api/v1/users', 0)
   const membersState = useApiJson<ProjectMember[]>(`/api/v1/projects/${encodeURIComponent(task.project)}/agents`, 0)
   const actorLabels = useMemo(() => {
@@ -1062,7 +1067,7 @@ function WorkflowValueMap({ values, fields = [], compact = false }: { values: Re
         return (
           <div key={key} className="rounded-lg border border-neutral-100 bg-white p-3 dark:border-zinc-800 dark:bg-zinc-950">
             <WorkflowFieldTitle fieldName={key} description={field?.description} />
-            <div className="mt-2 rounded-md bg-neutral-50 px-3 py-2 whitespace-pre-wrap break-words text-sm leading-relaxed text-neutral-800 dark:bg-zinc-900 dark:text-zinc-200">
+            <div className="mt-2 rounded-md bg-neutral-50 px-3 py-2 break-words text-sm leading-relaxed text-neutral-800 dark:bg-zinc-900 dark:text-zinc-200">
               <WorkflowValueText value={String(value)} />
             </div>
           </div>
@@ -1089,7 +1094,7 @@ function WorkflowFieldList({ fields, values }: { fields: WorkflowField[]; values
         <div key={field.name} className="rounded-lg border border-neutral-100 bg-white p-2.5 dark:border-zinc-800 dark:bg-zinc-950">
           <WorkflowFieldTitle fieldName={field.name} description={field.description} />
           {values[field.name] && (
-            <div className="mt-1.5 whitespace-pre-wrap break-words text-sm text-neutral-800 dark:text-zinc-200">
+            <div className="mt-1.5 break-words text-sm text-neutral-800 dark:text-zinc-200">
               <WorkflowValueText value={values[field.name]} />
             </div>
           )}
@@ -1150,6 +1155,72 @@ const trailingURLPunctuationPattern = /[),.;:!?，。；：！？）】\]]+$/
 
 function WorkflowValueText({ value }: { value: string }) {
   const text = String(value ?? '')
+  const structured = parseWorkflowStructuredValue(text)
+  if (structured !== null) {
+    return <WorkflowStructuredValue value={structured} />
+  }
+  return <WorkflowPlainText value={text} />
+}
+
+type WorkflowStructuredJSON = string | number | boolean | null | WorkflowStructuredJSON[] | { [key: string]: WorkflowStructuredJSON }
+
+function parseWorkflowStructuredValue(text: string): WorkflowStructuredJSON | null {
+  const trimmed = text.trim()
+  if (!trimmed || (!trimmed.startsWith('[') && !trimmed.startsWith('{'))) return null
+  try {
+    const parsed = JSON.parse(trimmed) as unknown
+    if (Array.isArray(parsed)) return parsed as WorkflowStructuredJSON
+    if (parsed && typeof parsed === 'object') return parsed as WorkflowStructuredJSON
+  } catch {
+    return null
+  }
+  return null
+}
+
+function WorkflowStructuredValue({ value }: { value: WorkflowStructuredJSON }) {
+  if (Array.isArray(value)) {
+    if (value.length === 0) return <span className="text-neutral-400 dark:text-zinc-500">[]</span>
+    return (
+      <ol className="space-y-1.5 pl-5 text-sm leading-relaxed [counter-reset:item]">
+        {value.map((item, index) => (
+          <li key={index} className="list-decimal pl-1 marker:text-xs marker:font-semibold marker:text-neutral-400 dark:marker:text-zinc-500">
+            <WorkflowStructuredValue value={normalizeWorkflowJSON(item)} />
+          </li>
+        ))}
+      </ol>
+    )
+  }
+  if (value && typeof value === 'object') {
+    const entries = Object.entries(value).filter(([, item]) => item !== undefined)
+    if (entries.length === 0) return <span className="text-neutral-400 dark:text-zinc-500">{'{}'}</span>
+    return (
+      <div className="space-y-2">
+        {entries.map(([key, item]) => (
+          <div key={key} className="rounded-md border border-neutral-200/70 bg-white px-2.5 py-2 dark:border-zinc-700/70 dark:bg-zinc-950/60">
+            <p className="mb-1 font-mono text-[11px] font-semibold text-neutral-400 dark:text-zinc-500">{key}</p>
+            <WorkflowStructuredValue value={normalizeWorkflowJSON(item)} />
+          </div>
+        ))}
+      </div>
+    )
+  }
+  if (value === null) return <span className="text-neutral-400 dark:text-zinc-500">null</span>
+  return <WorkflowPlainText value={String(value)} />
+}
+
+function normalizeWorkflowJSON(value: unknown): WorkflowStructuredJSON {
+  if (Array.isArray(value)) return value.map(normalizeWorkflowJSON)
+  if (value && typeof value === 'object') {
+    const out: Record<string, WorkflowStructuredJSON> = {}
+    for (const [key, item] of Object.entries(value)) out[key] = normalizeWorkflowJSON(item)
+    return out
+  }
+  if (typeof value === 'string' || typeof value === 'number' || typeof value === 'boolean' || value === null) return value
+  return String(value)
+}
+
+function WorkflowPlainText({ value }: { value: string }) {
+  const text = String(value ?? '')
   const parts: ReactNode[] = []
   let lastIndex = 0
   for (const match of text.matchAll(workflowLinkPattern)) {
@@ -1170,7 +1241,7 @@ function WorkflowValueText({ value }: { value: string }) {
   if (lastIndex < text.length) {
     parts.push(text.slice(lastIndex))
   }
-  return <>{parts.length > 0 ? parts : text}</>
+  return <span className="whitespace-pre-wrap">{parts.length > 0 ? parts : text}</span>
 }
 
 function splitURLTrailingPunctuation(raw: string) {

@@ -1182,7 +1182,9 @@
     "addRef": "参照を追加",
     "removeRef": "参照を削除",
     "noRefs": "なし",
-    "expandSidebar": "サイドバーを開く"
+    "expandSidebar": "サイドバーを開く",
+    "previousDoc": "前の記事",
+    "nextDoc": "次の記事"
   },
   "api": {
     "loading": "読み込み中…",

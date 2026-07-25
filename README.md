@@ -16,7 +16,7 @@ Multigent helps teams turn prompts, tools, workflows, and human reviews into a c
 [![Docker](https://img.shields.io/badge/ghcr-image-2496ED?style=flat-square&logo=docker&logoColor=white)](https://github.com/multigent/multigent/pkgs/container/multigent)
 [![License](https://img.shields.io/badge/license-PolyForm%20Noncommercial-blue?style=flat-square)](LICENSE)
 
-[中文](README.zh-CN.md) · [Install Guide](INSTALL.md) · [Documentation](docs/README.md) · [Community](#community)
+[Website](https://multigent.dev) · [中文](README.zh-CN.md) · [Install Guide](INSTALL.md) · [Documentation](docs/README.md) · [Community](#community)
 
 </div>
 
@@ -25,7 +25,7 @@ Multigent helps teams turn prompts, tools, workflows, and human reviews into a c
 Most teams already have docs, task boards, repos, chats, meetings, and local coding agents. The hard part is not creating another chat box. The hard part is making agents understand the same context, follow the same process, use the right tools, ask for review at the right moment, and continue work without a human synchronously driving every step.
 
 <p align="center">
-  <img src="docs/assets/screenshots/main_pic.png" alt="Multigent visual workflow canvas" width="100%">
+  <img src="docs/assets/screenshots/task_panel_light.png" alt="Multigent multi-agent task board" width="100%">
 </p>
 
 Multigent is built around that operating model:

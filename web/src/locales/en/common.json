@@ -1206,7 +1206,9 @@
     "addRef": "Add reference",
     "removeRef": "Remove reference",
     "noRefs": "None",
-    "expandSidebar": "Expand sidebar"
+    "expandSidebar": "Expand sidebar",
+    "previousDoc": "Previous",
+    "nextDoc": "Next"
   },
   "api": {
     "loading": "Loading…",

@@ -16,7 +16,7 @@ Multigent 帮助团队把 Prompt、工具、流程和人工 Review 组织成一�
 [![Docker](https://img.shields.io/badge/ghcr-image-2496ED?style=flat-square&logo=docker&logoColor=white)](https://github.com/multigent/multigent/pkgs/container/multigent)
 [![License](https://img.shields.io/badge/license-PolyForm%20Noncommercial-blue?style=flat-square)](LICENSE)
 
-[English](README.md) · [安装指南](INSTALL.md) · [文档](docs/README.zh-CN.md) · [社群](#社群)
+[官网](https://multigent.dev) · [English](README.md) · [安装指南](INSTALL.md) · [文档](docs/README.zh-CN.md) · [社群](#社群)
 
 </div>
 
@@ -25,7 +25,7 @@ Multigent 帮助团队把 Prompt、工具、流程和人工 Review 组织成一�
 大多数团队并不缺文档、任务系统、代码仓库、会议记录和本地 Agent 工具。真正的问题是：Agent 很难稳定理解同一份上下文，很难按同一套流程推进，很难知道什么时候该请求人类 Review，也很难在没有人同步驱动的情况下持续把事情做完。
 
 <p align="center">
-  <img src="docs/assets/screenshots/main_pic.png" alt="Multigent 可视化流程白板" width="100%">
+  <img src="docs/assets/screenshots/task_panel_light.png" alt="Multigent 多智能体任务看板" width="100%">
 </p>
 
 Multigent 解决的是这层 Agent 协作架构问题：

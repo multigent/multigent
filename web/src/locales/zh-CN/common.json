@@ -1206,7 +1206,9 @@
     "addRef": "添加引用",
     "removeRef": "移除引用",
     "noRefs": "无",
-    "expandSidebar": "展开目录"
+    "expandSidebar": "展开目录",
+    "previousDoc": "上一篇",
+    "nextDoc": "下一篇"
   },
   "api": {
     "loading": "加载中…",

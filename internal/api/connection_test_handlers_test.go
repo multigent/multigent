@@ -447,3 +447,11 @@ func TestDingTalkBotConnectionTestUsesScopedWebhookEndpoint(t *testing.T) {
 		t.Fatalf("expected unsupported endpoint error, got %v", err)
 	}
 }
+
+func TestCloudflareConnectionTestUsesTokenVerifyEndpoint(t *testing.T) {
+	actionReq := runtimeActionProxyRequest{}
+	applyDefaultConnectionTestRequest("cloudflare", &actionReq)
+	if actionReq.Endpoint != "/user/tokens/verify" || actionReq.Method != http.MethodGet {
+		t.Fatalf("default Cloudflare test request=%#v", actionReq)
+	}
+}

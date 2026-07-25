@@ -1192,7 +1192,9 @@
     "addRef": "添加引用",
     "removeRef": "移除引用",
     "noRefs": "無",
-    "expandSidebar": "展開目錄"
+    "expandSidebar": "展開目錄",
+    "previousDoc": "上一篇",
+    "nextDoc": "下一篇"
   },
   "api": {
     "loading": "載入中…",

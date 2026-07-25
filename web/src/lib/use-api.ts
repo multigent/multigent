@@ -6,9 +6,14 @@ export type ApiState<T> =
   | { status: 'error'; error: Error }
   | { status: 'ok'; data: T }
 
-export function useApiJson<T>(path: string | null, reloadKey = 0): ApiState<T> {
+type UseApiJsonOptions = {
+  silentStatuses?: number[]
+}
+
+export function useApiJson<T>(path: string | null, reloadKey = 0, options?: UseApiJsonOptions): ApiState<T> {
   const [state, setState] = useState<ApiState<T>>({ status: 'loading' })
   const prevPath = useRef(path)
+  const silentStatuses = options?.silentStatuses
 
   useEffect(() => {
     if (path == null) {
@@ -21,7 +26,7 @@ export function useApiJson<T>(path: string | null, reloadKey = 0): ApiState<T> {
       setState({ status: 'loading' })
     }
     const url = reloadKey ? `${path}${path.includes('?') ? '&' : '?'}_=${reloadKey}` : path
-    apiFetch<T>(url)
+    apiFetch<T>(url, silentStatuses ? { silentStatuses } : undefined)
       .then((data) => {
         if (!cancelled) {
           setState({ status: 'ok', data })
@@ -38,7 +43,7 @@ export function useApiJson<T>(path: string | null, reloadKey = 0): ApiState<T> {
     return () => {
       cancelled = true
     }
-  }, [path, reloadKey])
+  }, [path, reloadKey, silentStatuses])
 
   if (path == null) {
     return { status: 'error', error: new Error('no path') }

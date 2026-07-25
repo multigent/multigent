@@ -569,6 +569,13 @@ func applyDefaultConnectionTestRequest(provider string, req *runtimeActionProxyR
 		if req.Method == "" {
 			req.Method = http.MethodGet
 		}
+	case "cloudflare":
+		if req.Endpoint == "" {
+			req.Endpoint = "/user/tokens/verify"
+		}
+		if req.Method == "" {
+			req.Method = http.MethodGet
+		}
 	case "exa":
 		if req.Endpoint == "" {
 			req.Endpoint = "/search"

@@ -202,6 +202,25 @@ export default function DocsPage() {
     return docs.slice().sort((a, b) => new Date(b.createdAt).getTime() - new Date(a.createdAt).getTime())
   }, [allDocs, selectedIndex, selectedTag, searchQ])
 
+  const orderedDocs = useMemo(() => {
+    return allDocs
+      .slice()
+      .sort((a, b) => {
+        const timeDiff = new Date(b.createdAt).getTime() - new Date(a.createdAt).getTime()
+        if (timeDiff !== 0) return timeDiff
+        return a.title.localeCompare(b.title)
+      })
+  }, [allDocs])
+
+  const currentDocNav = useMemo(() => {
+    if (!selectedDoc) return { prevDoc: null as DocEntry | null, nextDoc: null as DocEntry | null }
+    const idx = orderedDocs.findIndex(d => d.id === selectedDoc.id)
+    return {
+      prevDoc: idx > 0 ? orderedDocs[idx - 1] : null,
+      nextDoc: idx >= 0 && idx < orderedDocs.length - 1 ? orderedDocs[idx + 1] : null,
+    }
+  }, [orderedDocs, selectedDoc])
+
   function goBackToList() {
     setSelectedDoc(null)
     navigate(selectedIndex ? `/docs/${selectedIndex}` : '/docs', { replace: true })
@@ -335,6 +354,8 @@ export default function DocsPage() {
             onRemove={() => removeDoc(selectedDoc.id)}
             onUpdated={load}
             onOpenDoc={openDoc}
+            prevDoc={currentDocNav.prevDoc}
+            nextDoc={currentDocNav.nextDoc}
             sidebarOpen={sidebarOpen}
             onToggleSidebar={() => setSidebarOpen(v => !v)}
             onTagClick={tag => { selectTag(tag); goBackToList() }}
@@ -536,30 +557,19 @@ function CodeBlock({ className, children, ...props }: React.HTMLAttributes<HTMLE
 /* ─── Custom markdown components for Notion-like rendering ─────────────────── */
 
 function createMdComponents(): Components {
-  const slugCount: Record<string, number> = {}
-  function uniqueSlug(text: string): string {
-    const base = slugify(text)
-    const count = slugCount[base] ?? 0
-    slugCount[base] = count + 1
-    return count === 0 ? base : `${base}-${count}`
-  }
   return {
-  h1: ({ children }) => {
-    const id = uniqueSlug(extractText(children))
-    return <h1 id={id} className="mt-10 mb-4 text-[2em] font-bold leading-tight tracking-tight text-neutral-900 dark:text-zinc-50 first:mt-0">{children}</h1>
-  },
-  h2: ({ children }) => {
-    const id = uniqueSlug(extractText(children))
-    return <h2 id={id} className="mt-8 mb-3 text-[1.5em] font-semibold leading-tight tracking-tight text-neutral-900 dark:text-zinc-50 border-b border-neutral-200 pb-2 dark:border-zinc-700/60">{children}</h2>
-  },
-  h3: ({ children }) => {
-    const id = uniqueSlug(extractText(children))
-    return <h3 id={id} className="mt-6 mb-2 text-[1.25em] font-semibold leading-snug text-neutral-900 dark:text-zinc-50">{children}</h3>
-  },
-  h4: ({ children }) => {
-    const id = uniqueSlug(extractText(children))
-    return <h4 id={id} className="mt-5 mb-2 text-[1.1em] font-semibold text-neutral-800 dark:text-zinc-100">{children}</h4>
-  },
+  h1: ({ children, ...props }) => (
+    <h1 {...props} className="mt-10 mb-4 text-[2em] font-bold leading-tight tracking-tight text-neutral-900 dark:text-zinc-50 first:mt-0">{children}</h1>
+  ),
+  h2: ({ children, ...props }) => (
+    <h2 {...props} className="mt-8 mb-3 text-[1.5em] font-semibold leading-tight tracking-tight text-neutral-900 dark:text-zinc-50 border-b border-neutral-200 pb-2 dark:border-zinc-700/60">{children}</h2>
+  ),
+  h3: ({ children, ...props }) => (
+    <h3 {...props} className="mt-6 mb-2 text-[1.25em] font-semibold leading-snug text-neutral-900 dark:text-zinc-50">{children}</h3>
+  ),
+  h4: ({ children, ...props }) => (
+    <h4 {...props} className="mt-5 mb-2 text-[1.1em] font-semibold text-neutral-800 dark:text-zinc-100">{children}</h4>
+  ),
   p: ({ children }) => (
     <p className="my-3 text-base leading-7 text-neutral-700 dark:text-zinc-300">{children}</p>
   ),
@@ -631,6 +641,38 @@ function createMdComponents(): Components {
 /* ─── Table of contents ────────────────────────────────────────────────────── */
 
 type TocItem = { level: number; text: string; id: string }
+type MdAstNode = {
+  type?: string
+  tagName?: string
+  value?: string
+  children?: MdAstNode[]
+  properties?: Record<string, unknown>
+}
+
+function textFromAst(node: MdAstNode): string {
+  if (typeof node.value === 'string') return node.value
+  if (!node.children) return ''
+  return node.children.map(textFromAst).join('')
+}
+
+function rehypeHeadingIds() {
+  return (tree: MdAstNode) => {
+    const slugCount: Record<string, number> = {}
+    function uniqueSlug(text: string): string {
+      const base = slugify(text) || 'section'
+      const count = slugCount[base] ?? 0
+      slugCount[base] = count + 1
+      return count === 0 ? base : `${base}-${count}`
+    }
+    function visit(node: MdAstNode) {
+      if (node.type === 'element' && /^h[1-4]$/.test(node.tagName ?? '')) {
+        node.properties = { ...(node.properties ?? {}), id: uniqueSlug(textFromAst(node).trim()) }
+      }
+      for (const child of node.children ?? []) visit(child)
+    }
+    visit(tree)
+  }
+}
 
 function parseHeadings(md: string): TocItem[] {
   const stripped = stripFrontmatter(md)
@@ -640,12 +682,16 @@ function parseHeadings(md: string): TocItem[] {
   for (const line of stripped.split('\n')) {
     if (line.trimStart().startsWith('```')) { inCode = !inCode; continue }
     if (inCode) continue
-    const m = line.match(/^(#{2,3})\s+(.+)$/)
+    const m = line.match(/^(#{1,4})\s+(.+)$/)
     if (!m) continue
     const level = m[1].length
-    const text = m[2].replace(/\[([^\]]*)\]\([^)]*\)/g, '$1').replace(/[*_`#]/g, '').trim()
+    const text = m[2]
+      .replace(/\s+#+\s*$/g, '')
+      .replace(/\[([^\]]*)\]\([^)]*\)/g, '$1')
+      .replace(/[*_`#]/g, '')
+      .trim()
     if (!text) continue
-    const base = slugify(text)
+    const base = slugify(text) || 'section'
     const count = slugCount[base] ?? 0
     slugCount[base] = count + 1
     const id = count === 0 ? base : `${base}-${count}`
@@ -661,13 +707,17 @@ function DocToc({ items, scrollRef }: {
   const [activeId, setActiveId] = useState('')
 
   useEffect(() => {
+    setActiveId(items[0]?.id ?? '')
+  }, [items])
+
+  useEffect(() => {
     const container = scrollRef.current
     if (!container || items.length === 0) return
     function onScroll() {
       const cRect = container!.getBoundingClientRect()
       let current = items[0]?.id ?? ''
       for (const item of items) {
-        const el = document.getElementById(item.id)
+        const el = findHeadingElement(container!, item.id)
         if (!el) continue
         if (el.getBoundingClientRect().top - cRect.top <= 80) current = item.id
       }
@@ -681,8 +731,9 @@ function DocToc({ items, scrollRef }: {
   const minLevel = Math.min(...items.map(h => h.level))
 
   function scrollTo(id: string) {
-    const el = document.getElementById(id)
     const container = scrollRef.current
+    if (!container) return
+    const el = findHeadingElement(container, id)
     if (!el || !container) return
     const top = el.getBoundingClientRect().top - container.getBoundingClientRect().top + container.scrollTop - 80
     container.scrollTo({ top, behavior: 'smooth' })
@@ -708,6 +759,11 @@ function DocToc({ items, scrollRef }: {
       </ul>
     </nav>
   )
+}
+
+function findHeadingElement(container: HTMLElement, id: string): HTMLElement | null {
+  const escaped = typeof CSS !== 'undefined' && CSS.escape ? CSS.escape(id) : id.replace(/["\\]/g, '\\$&')
+  return container.querySelector<HTMLElement>(`#${escaped}`) ?? document.getElementById(id)
 }
 
 /* ─── Document viewer ──────────────────────────────────────────────────────── */
@@ -741,9 +797,78 @@ function HTMLDocFrame({ title, content, fullscreen = false }: { title: string; c
   )
 }
 
-function DocViewer({ doc, content, onBack, onRemove, onUpdated, onOpenDoc, sidebarOpen, onToggleSidebar, onTagClick, canManage }: {
+function DocNavButtons({ prevDoc, nextDoc, onOpenDoc, compact = false }: {
+  prevDoc?: DocEntry | null
+  nextDoc?: DocEntry | null
+  onOpenDoc?: (d: DocEntry) => void
+  compact?: boolean
+}) {
+  const { t } = useTranslation()
+  const buttonClass = compact ? `${btnGhost} hidden md:inline-flex` : btnGhost
+  return (
+    <div className="flex items-center gap-1.5">
+      <button
+        type="button"
+        onClick={() => prevDoc && onOpenDoc?.(prevDoc)}
+        disabled={!prevDoc}
+        className={`${buttonClass} disabled:pointer-events-none disabled:opacity-40`}
+        title={prevDoc?.title ?? t('docs.previousDoc')}
+      >
+        {t('docs.previousDoc')}
+      </button>
+      <button
+        type="button"
+        onClick={() => nextDoc && onOpenDoc?.(nextDoc)}
+        disabled={!nextDoc}
+        className={`${buttonClass} disabled:pointer-events-none disabled:opacity-40`}
+        title={nextDoc?.title ?? t('docs.nextDoc')}
+      >
+        {t('docs.nextDoc')}
+      </button>
+    </div>
+  )
+}
+
+function DocNavPanel({ prevDoc, nextDoc, onOpenDoc }: {
+  prevDoc?: DocEntry | null
+  nextDoc?: DocEntry | null
+  onOpenDoc?: (d: DocEntry) => void
+}) {
+  const { t } = useTranslation()
+  if (!prevDoc && !nextDoc) return null
+  const itemClass = 'min-h-20 rounded-xl border border-neutral-200 bg-white px-4 py-3 text-left transition-colors hover:border-sky-300 hover:bg-sky-50/60 dark:border-zinc-800 dark:bg-zinc-900 dark:hover:border-sky-700 dark:hover:bg-sky-950/20 disabled:pointer-events-none disabled:opacity-45'
+  return (
+    <div className="mt-10 grid gap-3 border-t border-neutral-200 pt-6 dark:border-zinc-700/60 sm:grid-cols-2">
+      <button
+        type="button"
+        onClick={() => prevDoc && onOpenDoc?.(prevDoc)}
+        disabled={!prevDoc}
+        className={itemClass}
+      >
+        <span className="block text-xs font-medium text-neutral-400 dark:text-zinc-500">{t('docs.previousDoc')}</span>
+        <span className="mt-1 line-clamp-2 block text-sm font-semibold text-neutral-800 dark:text-zinc-100">
+          {prevDoc?.title ?? '—'}
+        </span>
+      </button>
+      <button
+        type="button"
+        onClick={() => nextDoc && onOpenDoc?.(nextDoc)}
+        disabled={!nextDoc}
+        className={`${itemClass} sm:text-right`}
+      >
+        <span className="block text-xs font-medium text-neutral-400 dark:text-zinc-500">{t('docs.nextDoc')}</span>
+        <span className="mt-1 line-clamp-2 block text-sm font-semibold text-neutral-800 dark:text-zinc-100">
+          {nextDoc?.title ?? '—'}
+        </span>
+      </button>
+    </div>
+  )
+}
+
+function DocViewer({ doc, content, onBack, onRemove, onUpdated, onOpenDoc, prevDoc, nextDoc, sidebarOpen, onToggleSidebar, onTagClick, canManage }: {
   doc: DocEntry; content: string; onBack: () => void; onRemove: () => void; onUpdated: () => void
   onOpenDoc?: (d: DocEntry) => void
+  prevDoc?: DocEntry | null; nextDoc?: DocEntry | null
   sidebarOpen: boolean; onToggleSidebar: () => void; onTagClick?: (tag: string) => void
   canManage: boolean
 }) {
@@ -762,6 +887,10 @@ function DocViewer({ doc, content, onBack, onRemove, onUpdated, onOpenDoc, sideb
   const htmlDoc = isHTMLDoc(doc, content)
   const tocItems = useMemo(() => htmlDoc ? [] : parseHeadings(content), [content, htmlDoc])
   const mdComponents = useMemo(() => createMdComponents(), [content])
+
+  useEffect(() => {
+    scrollRef.current?.scrollTo({ top: 0 })
+  }, [doc.id])
 
   const loadRefs = useCallback(async () => {
     const data = await apiFetch<DocRefs>(`/api/v1/docs/${doc.id}/refs`)
@@ -838,9 +967,12 @@ function DocViewer({ doc, content, onBack, onRemove, onUpdated, onOpenDoc, sideb
       <div className="fixed inset-0 z-50 flex flex-col bg-white dark:bg-zinc-950">
         <div className="flex items-center justify-between px-6 py-3 border-b border-neutral-100 dark:border-zinc-800/60">
           <h2 className="text-base font-semibold text-neutral-900 dark:text-zinc-100 truncate">{doc.title}</h2>
-          <button onClick={() => setFullscreen(false)} className={btnGhost}>
-            <Minimize2 className="size-3.5" /> {t('docs.exitFullscreen')}
-          </button>
+          <div className="flex items-center gap-2">
+            <DocNavButtons prevDoc={prevDoc} nextDoc={nextDoc} onOpenDoc={onOpenDoc} compact />
+            <button onClick={() => setFullscreen(false)} className={btnGhost}>
+              <Minimize2 className="size-3.5" /> {t('docs.exitFullscreen')}
+            </button>
+          </div>
         </div>
         <div className="flex-1 overflow-y-auto" ref={scrollRef}>
           <div className="flex justify-center">
@@ -850,7 +982,7 @@ function DocViewer({ doc, content, onBack, onRemove, onUpdated, onOpenDoc, sideb
               ) : (
                 <ReactMarkdown
                   remarkPlugins={[remarkGfm]}
-                  rehypePlugins={[rehypeHighlight]}
+                  rehypePlugins={[rehypeHeadingIds, rehypeHighlight]}
                   components={mdComponents}
                 >
                   {stripFrontmatter(content)}
@@ -890,6 +1022,7 @@ function DocViewer({ doc, content, onBack, onRemove, onUpdated, onOpenDoc, sideb
           )}
         </div>
         <div className="flex items-center gap-1.5">
+          <DocNavButtons prevDoc={prevDoc} nextDoc={nextDoc} onOpenDoc={onOpenDoc} compact />
           {editing ? (
             <>
               <button onClick={saveEdit} className={btnPrimary}><Save className="size-3.5" /> {t('docs.save')}</button>
@@ -963,7 +1096,7 @@ function DocViewer({ doc, content, onBack, onRemove, onUpdated, onOpenDoc, sideb
             ) : (
               <ReactMarkdown
                 remarkPlugins={[remarkGfm]}
-                rehypePlugins={[rehypeHighlight]}
+                rehypePlugins={[rehypeHeadingIds, rehypeHighlight]}
                 components={mdComponents}
               >
                 {stripFrontmatter(content)}
@@ -1067,6 +1200,8 @@ function DocViewer({ doc, content, onBack, onRemove, onUpdated, onOpenDoc, sideb
                 )}
               </div>
             )}
+
+            <DocNavPanel prevDoc={prevDoc} nextDoc={nextDoc} onOpenDoc={onOpenDoc} />
           </article>
           {tocItems.length > 1 && (
             <aside className="hidden xl:block w-56 shrink-0 py-8 pr-6">

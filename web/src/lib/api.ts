@@ -9,6 +9,11 @@ type APIErrorBody = {
   requestId?: string
 }
 
+type APIRequestInit = RequestInit & {
+  suppressToast?: boolean
+  silentStatuses?: number[]
+}
+
 export class ApiError extends Error {
   status: number
   code: string
@@ -54,14 +59,16 @@ function handle401() {
   window.dispatchEvent(new Event('auth-expired'))
 }
 
-async function handleResponse<T>(res: Response): Promise<T> {
+async function handleResponse<T>(res: Response, options?: Pick<APIRequestInit, 'suppressToast' | 'silentStatuses'>): Promise<T> {
   if (res.status === 401) {
     handle401()
     throw new ApiError(res.status, { code: 'unauthorized', message: 'unauthorized' })
   }
   if (!res.ok) {
     const err = await parseAPIError(res)
-    showToast(err.message, 'error')
+    if (!options?.suppressToast && !options?.silentStatuses?.includes(res.status)) {
+      showToast(err.message, 'error')
+    }
     throw err
   }
   if (res.status === 204) return undefined as T
@@ -70,11 +77,11 @@ async function handleResponse<T>(res: Response): Promise<T> {
   return undefined as T
 }
 
-export async function apiFetch<T>(path: string, init?: RequestInit): Promise<T> {
+export async function apiFetch<T>(path: string, init?: APIRequestInit): Promise<T> {
   const headers = authHeaders(init?.headers)
   if (!headers.has('Accept')) headers.set('Accept', 'application/json')
   const res = await fetch(apiUrl(path), { ...init, headers })
-  return handleResponse<T>(res)
+  return handleResponse<T>(res, init)
 }
 
 export async function apiPost<T>(path: string, body: unknown): Promise<T> {
