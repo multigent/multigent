@@ -1,5 +1,5 @@
 <p align="center">
-  <img src="docs/assets/banner.svg" alt="Multigent" width="100%">
+  <img src="docs/assets/multigent_waken.png" alt="Multigent awakening dawn concept" width="100%">
 </p>
 
 <div align="center">
