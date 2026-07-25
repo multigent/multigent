@@ -1,5 +1,12 @@
 # Changelog
 
+## [v0.1.9] - 2026-07-26
+
+### Fixed
+
+- Switching workspaces no longer leaks stale project and agent data from the previous workspace into workspace-scoped pages.
+- Workbench project/agent summaries now clear and reload when the active workspace changes.
+
 ## [v0.1.8] - 2026-07-26
 
 ### Changed
