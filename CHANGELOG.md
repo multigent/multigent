@@ -1,5 +1,18 @@
 # Changelog
 
+## [v0.1.7] - 2026-07-25
+
+### Added
+
+- Agent chat pages now provide a selectable session history list instead of requiring users to paste session IDs manually.
+- Session history entries show readable titles derived from task titles or the first user message in the run log.
+
+### Fixed
+
+- Page tabs now preserve query parameters, so returning to an agent chat tab keeps the selected `sessionId`.
+- Web chat and Feishu/Lark channel conversations no longer reuse or overwrite heartbeat and scheduled-run sessions by default.
+- Empty chat history requests no longer fall back to heartbeat sessions, keeping interactive chat state separate from automation state.
+
 ## [v0.1.6] - 2026-07-25
 
 ### Changed
