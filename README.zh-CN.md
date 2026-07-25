@@ -6,9 +6,9 @@
 
 # Multigent
 
-**让 Agent 真正参与交付的团队协作基础设施。**
+**让人与智能体真正协作交付的基础设施。**
 
-Multigent 帮助团队把 Prompt、工具、流程和人工 Review 组织成一套可持续运行的 Agent Workforce。团队可以继续使用原有项目管理、代码仓库、文档和沟通工具；Multigent 负责提供 Agent 友好的上下文、结构化任务、安全执行和可观察交接。
+Multigent 帮助团队把 Prompt、工具、流程和人工 Review 组织成一套可持续运行的人与智能体协作系统。团队可以继续使用原有项目管理、代码仓库、文档和沟通工具；Multigent 负责提供智能体友好的上下文、结构化任务、安全执行，以及人与智能体之间可观察的交接。
 
 [![GitHub Release](https://img.shields.io/github/v/release/multigent/multigent?style=flat-square)](https://github.com/multigent/multigent/releases)
 [![Release](https://img.shields.io/github/actions/workflow/status/multigent/multigent/release.yml?branch=main&label=release&style=flat-square)](https://github.com/multigent/multigent/actions/workflows/release.yml)
@@ -41,8 +41,8 @@ Multigent 解决的是这层 Agent 协作架构问题：
 
 ## 亮点
 
-- **多 Agent 自主唤醒**：Agent 可以通过任务、心跳、Cron、手动触发和协作事件被唤醒，不再需要人类反复复制 Prompt、同步驱动每一步。
-- **面向 Agent 团队的 Loop Engineering**：Prompt、Skill、工具、模型账号、调度和 Review 策略都可以被持续调优，形成可复用的工作循环，而不是一次性的对话。
+- **多智能体自主唤醒**：智能体可以通过任务、心跳、Cron、手动触发和协作事件被唤醒，不再需要人类反复复制 Prompt、同步驱动每一步。
+- **面向人与智能体协作的 Loop Engineering**：Prompt、Skill、工具、模型账号、调度和 Review 策略都可以被持续调优，形成可复用的工作循环，而不是一次性的对话。
 - **任务流程图与 SOP 编排**：在可视化白板上设计流程，定义节点输入输出、人工 Review、打回循环和条件分支，再把真实任务绑定到这套流程中执行。
 - **人和智能体的角色权限控制**：把人和智能体加入同一个项目，再通过权限控制项目访问、任务可见性、工具凭证、流程动作和审计记录。
 - **Human-in-the-loop 不是阻塞点**：人类可以在关键节点审核、通过、打回或调整方向，重复性执行和流转由智能体继续推进。
@@ -84,13 +84,13 @@ Multigent 不要求公司一上来替换 Jira、Linear、Plane、Huly、GitHub�
 
 ## 核心能力
 
-### Agent Workforce
+### 人与智能体协作成员
 
-创建具备角色、模型账号、CLI Runtime、Sandbox、Skill 和外部工具权限的 Agent 同事。Agent 可以通过 Web Chat、任务、流程节点、手动唤醒和定时调度来工作。
+创建具备角色、模型账号、CLI Runtime、Sandbox、Skill 和外部工具权限的智能体协作者。人和智能体在同一个项目中通过 Web Chat、任务、流程节点、审核、手动唤醒和定时调度来协作。
 
 ### 自主唤醒与 Loop Engineering
 
-Agent 不只是同步聊天窗口。它可以通过任务、心跳例程、Cron 和手动唤醒持续工作。团队可以围绕每个 Agent 调整它拿到什么上下文、能用什么工具、什么时候请求 Review、产出如何上报，从而把 Agent 的工作能力持续调教成稳定循环。
+智能体不只是同步聊天窗口。它可以通过任务、心跳例程、Cron 和手动唤醒持续工作。团队可以围绕每个智能体调整它拿到什么上下文、能用什么工具、什么时候请求 Review、产出如何上报，从而把智能体的工作能力持续调教成稳定循环。
 
 ### 流程引擎
 

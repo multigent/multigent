@@ -6,9 +6,9 @@
 
 # Multigent
 
-**Agent collaboration infrastructure for teams that want agents to actually deliver.**
+**Human-agent collaboration infrastructure for teams that want agents to actually deliver.**
 
-Multigent helps teams turn prompts, tools, workflows, and human reviews into a coordinated agent workforce. Keep your existing project tools and chat tools; use Multigent as the control plane that gives agents shared context, structured tasks, safe execution, and observable handoffs.
+Multigent helps teams turn prompts, tools, workflows, and human reviews into a coordinated human-agent operating system. Keep your existing project tools and chat tools; use Multigent as the control plane that gives agents shared context, structured tasks, safe execution, and observable handoffs with people in the loop.
 
 [![GitHub Release](https://img.shields.io/github/v/release/multigent/multigent?style=flat-square)](https://github.com/multigent/multigent/releases)
 [![Release](https://img.shields.io/github/actions/workflow/status/multigent/multigent/release.yml?branch=main&label=release&style=flat-square)](https://github.com/multigent/multigent/actions/workflows/release.yml)
@@ -42,7 +42,7 @@ Multigent is built around that operating model:
 ## Highlights
 
 - **Multi-agent autonomous wakeups**: agents can be woken by tasks, heartbeat schedules, cron jobs, manual triggers, and collaboration events, so work can keep moving without a human constantly copying prompts around.
-- **Loop engineering for agent teams**: prompts, skills, tools, model accounts, schedules, and review policies are managed as a repeatable operating loop rather than one-off conversations.
+- **Loop engineering for human-agent collaboration**: prompts, skills, tools, model accounts, schedules, and review policies are managed as a repeatable operating loop rather than one-off conversations.
 - **Visual SOP and workflow orchestration**: design task flows on a board, define required inputs and outputs, add review loops and branch conditions, then bind real tasks to that workflow.
 - **Role-based control for humans and agents**: assign people and agents to the same project, then control project access, task visibility, tool credentials, workflow actions, and audit trails through scoped permissions.
 - **Human-in-the-loop by design**: humans can review, approve, reject, or redirect at key workflow steps while agents continue handling the repeatable work around them.
@@ -84,9 +84,9 @@ Multigent does not try to replace every existing system on day one. A company ca
 
 ## Core Features
 
-### Agent Workforce
+### Human-Agent Collaboration
 
-Create agent teammates with a role, model account, CLI runtime, sandbox, skills, and external tool access. Agents can work through web chat, scheduled wakeups, tasks, and workflow steps.
+Create agent collaborators with a role, model account, CLI runtime, sandbox, skills, and external tool access. Humans and agents work in the same project through web chat, scheduled wakeups, tasks, reviews, and workflow steps.
 
 ### Autonomous Wakeups and Loop Engineering
 
