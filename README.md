@@ -56,10 +56,10 @@ Multigent is built around that operating model:
   <img src="docs/assets/screenshots/workflow_light.png" alt="Multigent workflow board" width="100%">
 </p>
 
-### Multi-agent task board
+### Agent heartbeat and schedule
 
 <p align="center">
-  <img src="docs/assets/screenshots/task_panel_light.png" alt="Multigent multi-agent task board" width="100%">
+  <img src="docs/assets/screenshots/heartbeat_light.png" alt="Multigent agent heartbeat and schedule" width="100%">
 </p>
 
 ### Workflow task detail
