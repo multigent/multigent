@@ -57,8 +57,13 @@ function saveTabs(scope: string, tabs: PageTab[]) {
   sessionStorage.setItem(storageKey(scope), JSON.stringify(tabs))
 }
 
+function pathBase(path: string): string {
+  return path.split(/[?#]/, 1)[0] || '/'
+}
+
 export function PageTabsProvider({ children, pageTitle, scope = 'default' }: { children: ReactNode; pageTitle?: string; scope?: string }) {
-  const { pathname } = useLocation()
+  const { pathname, search } = useLocation()
+  const activePath = `${pathname}${search}`
   const navigate = useNavigate()
   const [tabs, setTabs] = useState<PageTab[]>(() => loadTabs(scope))
   const [loadedScope, setLoadedScope] = useState(scope)
@@ -76,16 +81,17 @@ export function PageTabsProvider({ children, pageTitle, scope = 'default' }: { c
   const addOrActivate = useCallback(
     (path: string, title: string) => {
       setTabs((prev) => {
-        const idx = prev.findIndex((t) => t.path === path)
+        const base = pathBase(path)
+        const idx = prev.findIndex((t) => t.path === path || pathBase(t.path) === base)
         if (idx >= 0) {
           if (prev[idx].renamed) {
             const next = [...prev]
-            next[idx] = { ...next[idx], originalTitle: title }
+            next[idx] = { ...next[idx], path, originalTitle: title }
             return next
           }
-          if (prev[idx].title !== title) {
+          if (prev[idx].path !== path || prev[idx].title !== title) {
             const next = [...prev]
-            next[idx] = { ...next[idx], title, originalTitle: title }
+            next[idx] = { ...next[idx], path, title, originalTitle: title }
             return next
           }
           return prev
@@ -99,14 +105,14 @@ export function PageTabsProvider({ children, pageTitle, scope = 'default' }: { c
   )
 
   useEffect(() => {
-    if (pageTitle) addOrActivate(pathname, pageTitle)
-  }, [scope, pathname, pageTitle, addOrActivate])
+    if (pageTitle) addOrActivate(activePath, pageTitle)
+  }, [scope, activePath, pageTitle, addOrActivate])
 
   const close = useCallback(
     (path: string) => {
       setTabs((prev) => {
         const next = prev.filter((t) => t.path !== path)
-        if (path === pathname && next.length > 0) {
+        if (path === activePath && next.length > 0) {
           const closedIdx = prev.findIndex((t) => t.path === path)
           const target = next[Math.min(closedIdx, next.length - 1)]
           setTimeout(() => navigate(target.path), 0)
@@ -116,7 +122,7 @@ export function PageTabsProvider({ children, pageTitle, scope = 'default' }: { c
         return next
       })
     },
-    [pathname, navigate],
+    [activePath, navigate],
   )
 
   const closeOthers = useCallback(
@@ -156,8 +162,8 @@ export function PageTabsProvider({ children, pageTitle, scope = 'default' }: { c
   }, [])
 
   const value = useMemo<PageTabsContextValue>(
-    () => ({ tabs, activePath: pathname, close, closeOthers, closeAll, reorder, rename, resetTitle }),
-    [tabs, pathname, close, closeOthers, closeAll, reorder, rename, resetTitle],
+    () => ({ tabs, activePath, close, closeOthers, closeAll, reorder, rename, resetTitle }),
+    [tabs, activePath, close, closeOthers, closeAll, reorder, rename, resetTitle],
   )
 
   return (
