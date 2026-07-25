@@ -1,5 +1,14 @@
 # Changelog
 
+## [v0.1.8] - 2026-07-26
+
+### Changed
+
+- README now leads with the Multigent awakening concept image and official website link.
+- README screenshots now use the lighter task, workflow, project-member, and task-detail views for clearer product framing.
+- Product copy now emphasizes human-agent collaboration instead of positioning Multigent as only an agent-team manager.
+- README highlights RBAC and projects where people and agents collaborate as equal accountable participants.
+
 ## [v0.1.7] - 2026-07-25
 
 ### Added
