@@ -13,6 +13,7 @@ type UseApiJsonOptions = {
 export function useApiJson<T>(path: string | null, reloadKey = 0, options?: UseApiJsonOptions): ApiState<T> {
   const [state, setState] = useState<ApiState<T>>({ status: 'loading' })
   const prevPath = useRef(path)
+  const prevReloadKey = useRef(reloadKey)
   const silentStatuses = options?.silentStatuses
 
   useEffect(() => {
@@ -21,8 +22,10 @@ export function useApiJson<T>(path: string | null, reloadKey = 0, options?: UseA
     }
     let cancelled = false
     const pathChanged = prevPath.current !== path
+    const reloadChanged = prevReloadKey.current !== reloadKey
     prevPath.current = path
-    if (pathChanged) {
+    prevReloadKey.current = reloadKey
+    if (pathChanged || reloadChanged) {
       setState({ status: 'loading' })
     }
     const url = reloadKey ? `${path}${path.includes('?') ? '&' : '?'}_=${reloadKey}` : path

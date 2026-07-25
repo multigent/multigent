@@ -53,6 +53,17 @@ type ProjectAgents = { projectId: string; agents: { name: string; model?: string
 
 function useProjectsAgents() {
   const [data, setData] = useState<ProjectAgents[]>([])
+  const [reloadKey, setReloadKey] = useState(0)
+
+  useEffect(() => {
+    function onWorkspaceChanged() {
+      setData([])
+      setReloadKey((current) => current + 1)
+    }
+    window.addEventListener('workspace-changed', onWorkspaceChanged)
+    return () => window.removeEventListener('workspace-changed', onWorkspaceChanged)
+  }, [])
+
   useEffect(() => {
     let cancelled = false
     ;(async () => {
@@ -66,10 +77,12 @@ function useProjectsAgents() {
           } catch { result.push({ projectId: p.name, agents: [] }) }
         }
         if (!cancelled) setData(result)
-      } catch { /* ignore */ }
+      } catch {
+        if (!cancelled) setData([])
+      }
     })()
     return () => { cancelled = true }
-  }, [])
+  }, [reloadKey])
   return data
 }
 
