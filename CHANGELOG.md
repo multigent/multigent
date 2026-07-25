@@ -1,5 +1,21 @@
 # Changelog
 
+## [v0.1.6] - 2026-07-25
+
+### Changed
+
+- Web chat now uses independent interactive sessions instead of overwriting heartbeat or scheduled-run sessions.
+- Assistant replies in Web chat render with a typewriter-style live update and expanded thinking sections.
+- Runtime readiness checks stay quiet while passing and only block chat input when the sandbox is actually unavailable.
+- Feishu/Lark channel replies now send a quick acknowledgement before running the agent.
+
+### Fixed
+
+- Starting a new chat now clears stale Claude/Codex/Cursor session state before sending the next message.
+- Chat history no longer gets replaced by stale session loads while a new reply is streaming.
+- IM channel replies now extract the clean assistant answer instead of returning raw execution logs.
+- Chat error messages are clearer when a CLI session is expired or unrecoverable.
+
 ## [v0.1.4] - 2026-07-24
 
 ### Added
