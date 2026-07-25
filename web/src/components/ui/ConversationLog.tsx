@@ -1,4 +1,4 @@
-import { useMemo } from 'react'
+import { useEffect, useMemo, useRef, useState } from 'react'
 import { useTranslation } from 'react-i18next'
 import Markdown from 'react-markdown'
 import remarkGfm from 'remark-gfm'
@@ -613,6 +613,8 @@ function parseLog(content: string): ConversationItem[] {
       const blk = ev.content_block as Record<string, unknown>
       if (blk.type === 'text' && typeof blk.text === 'string' && blk.text) {
         pushAssistantText(items, blk.text)
+      } else if (blk.type === 'thinking' && typeof blk.thinking === 'string' && blk.thinking) {
+        items.push({ kind: 'thinking', text: blk.thinking })
       } else if (blk.type === 'tool_use' && typeof blk.name === 'string') {
         const name = blk.name as string
         const input = blk.input
@@ -966,11 +968,13 @@ export function ConversationLog({
   mode = 'log',
   user,
   assistant,
+  animateLatest = false,
 }: {
   content: string
   mode?: 'log' | 'chat'
   user?: ConversationParticipant
   assistant?: ConversationParticipant
+  animateLatest?: boolean
 }) {
   const { t } = useTranslation()
   const items = useMemo(() => parseLog(content), [content])
@@ -994,9 +998,12 @@ export function ConversationLog({
     )
   }
 
+  const animatedIndex = animateLatest ? latestAnimatableIndex(visibleItems) : -1
+
   return (
     <div className="space-y-3 overflow-x-hidden">
       {visibleItems.map((item, i) => {
+        const animateItem = i === animatedIndex
         switch (item.kind) {
           case 'header':
             return (
@@ -1016,14 +1023,14 @@ export function ConversationLog({
 
           case 'thinking':
             return (
-              <details key={i} className="group">
+              <details key={i} open className="group">
                 <summary className="flex cursor-pointer items-center gap-2 text-xs text-neutral-400 hover:text-neutral-600 dark:text-zinc-500 dark:hover:text-zinc-400">
                   <BrainCircuit className="size-3.5 shrink-0" strokeWidth={1.5} />
                   <span>{t('runs.thinking')}</span>
                   <span className="text-[10px] opacity-60">({item.text.length} chars)</span>
                 </summary>
                 <div className="ml-5 mt-1 max-h-48 overflow-auto rounded-md border border-neutral-200/60 bg-neutral-50/50 px-3 py-2 text-xs leading-relaxed whitespace-pre-wrap break-words text-neutral-500 dark:border-zinc-700/40 dark:bg-zinc-800/20 dark:text-zinc-500">
-                  {truncateStr(item.text, 4000)}
+                  <TypewriterPlainText text={truncateStr(item.text, 4000)} active={animateItem} />
                 </div>
               </details>
             )
@@ -1047,7 +1054,7 @@ export function ConversationLog({
                   <p className="text-xs font-medium text-sky-700 dark:text-sky-400">{assistant?.name || t('common.assistant', { defaultValue: 'Assistant' })}</p>
                   {item.blocks.map((block, bi) => {
                     if (block.type === 'text') {
-                      return <MdBlock key={bi} text={block.text} />
+                      return <TypewriterMdBlock key={bi} text={block.text} active={animateItem} />
                     }
                     if (block.type === 'tool_use') {
                       return (
@@ -1117,7 +1124,7 @@ export function ConversationLog({
                       <span className="ml-2 font-normal text-neutral-400 dark:text-zinc-500">${item.cost.toFixed(4)}</span>
                     )}
                   </p>
-                  <MdBlock text={item.text} className="mt-1" />
+                  <TypewriterMdBlock text={item.text} active={animateItem} className="mt-1" />
                 </div>
               </div>
             )
@@ -1136,4 +1143,70 @@ export function ConversationLog({
       })}
     </div>
   )
+}
+
+function latestAnimatableIndex(items: ConversationItem[]): number {
+  for (let i = items.length - 1; i >= 0; i--) {
+    const item = items[i]
+    if (item.kind === 'thinking') return i
+    if (item.kind === 'result' && item.text.trim()) return i
+    if (item.kind === 'assistant' && item.blocks.some((block) => block.type === 'text' && block.text.trim())) return i
+    if (item.kind === 'human') return -1
+  }
+  return -1
+}
+
+function TypewriterMdBlock({ text, active, className }: { text: string; active: boolean; className?: string }) {
+  const shown = useTypewriterText(text, active)
+  return <MdBlock text={shown} className={className} />
+}
+
+function TypewriterPlainText({ text, active }: { text: string; active: boolean }) {
+  const shown = useTypewriterText(text, active)
+  return <>{shown}</>
+}
+
+function useTypewriterText(text: string, active: boolean): string {
+  const [shown, setShown] = useState(active ? '' : text)
+  const shownRef = useRef(shown)
+
+  useEffect(() => {
+    shownRef.current = shown
+  }, [shown])
+
+  useEffect(() => {
+    if (!active) {
+      shownRef.current = text
+      setShown(text)
+      return
+    }
+
+    if (!text.startsWith(shownRef.current)) {
+      shownRef.current = ''
+      setShown('')
+    }
+
+    let cancelled = false
+    let timer: number | null = null
+
+    const tick = () => {
+      if (cancelled) return
+      const current = shownRef.current
+      if (current.length >= text.length) return
+      const remaining = text.length - current.length
+      const step = Math.max(1, Math.ceil(remaining / 42))
+      const next = text.slice(0, current.length + step)
+      shownRef.current = next
+      setShown(next)
+      timer = window.setTimeout(tick, 18)
+    }
+
+    timer = window.setTimeout(tick, 18)
+    return () => {
+      cancelled = true
+      if (timer != null) window.clearTimeout(timer)
+    }
+  }, [active, text])
+
+  return shown
 }

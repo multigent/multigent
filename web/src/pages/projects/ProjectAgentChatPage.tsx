@@ -125,6 +125,7 @@ export default function ProjectAgentChatPage() {
   const scrollRef = useRef<HTMLDivElement>(null)
   const inputRef = useRef<HTMLTextAreaElement>(null)
   const abortRef = useRef<AbortController | null>(null)
+  const replyPendingTimerRef = useRef<number | null>(null)
   const sessionIdRef = useRef(routeSessionId)
   const freshNextRef = useRef(false)
   const historyRequestRef = useRef(0)
@@ -218,6 +219,10 @@ export default function ProjectAgentChatPage() {
     setLoading(false)
     replyPendingRef.current = false
     setReplyPending(false)
+    if (replyPendingTimerRef.current != null) {
+      window.clearTimeout(replyPendingTimerRef.current)
+      replyPendingTimerRef.current = null
+    }
     setRunNotice(null)
     setHistoryLoading(false)
     setHistoryTruncated(false)
@@ -297,22 +302,30 @@ export default function ProjectAgentChatPage() {
     resetTextareaHeight(inputRef.current)
     setError(null)
     setRunNotice(null)
-
-    const readiness = await loadReadiness(runProject, runAgent, runKey)
-    if (readiness?.blocking) {
-      setError(runtimeBlockingMessage(readiness, t, canInspectRuntimeBlockers))
-      setInput(text)
-      return
-    }
-
     setLoading(true)
     replyPendingRef.current = true
     setReplyPending(false)
-    setRunNotice(t('agentChat.preparingSandbox'))
     setContent((prev) => appendLog(prev, JSON.stringify({ type: 'human', content: text })))
-    window.requestAnimationFrame(() => {
+    if (replyPendingTimerRef.current != null) window.clearTimeout(replyPendingTimerRef.current)
+    replyPendingTimerRef.current = window.setTimeout(() => {
+      replyPendingTimerRef.current = null
       if (activeChatKeyRef.current === runKey && replyPendingRef.current) setReplyPending(true)
-    })
+    }, 140)
+
+    const readiness = await loadReadiness(runProject, runAgent, runKey)
+    if (readiness?.blocking) {
+      replyPendingRef.current = false
+      setReplyPending(false)
+      if (replyPendingTimerRef.current != null) {
+        window.clearTimeout(replyPendingTimerRef.current)
+        replyPendingTimerRef.current = null
+      }
+      setLoading(false)
+      setError(runtimeBlockingMessage(readiness, t, canInspectRuntimeBlockers))
+      return
+    }
+
+    setRunNotice(t('agentChat.preparingSandbox'))
 
     const controller = new AbortController()
     abortRef.current = controller
@@ -420,6 +433,10 @@ export default function ProjectAgentChatPage() {
       setLoading(false)
       replyPendingRef.current = false
       setReplyPending(false)
+      if (replyPendingTimerRef.current != null) {
+        window.clearTimeout(replyPendingTimerRef.current)
+        replyPendingTimerRef.current = null
+      }
       setRunNotice(null)
       inputRef.current?.focus()
     }
@@ -619,7 +636,7 @@ export default function ProjectAgentChatPage() {
           </div>
         ) : (
           <div className="space-y-4">
-            <ConversationLog content={content} mode="chat" user={userParticipant} assistant={assistantParticipant} />
+            <ConversationLog content={content} mode="chat" user={userParticipant} assistant={assistantParticipant} animateLatest={loading} />
             {loading && replyPending && <AgentReplyLoading notice={runNotice} assistant={assistantParticipant} />}
           </div>
         )}
