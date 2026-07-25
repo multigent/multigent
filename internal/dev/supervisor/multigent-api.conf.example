@@ -1,0 +1,12 @@
+[program:multigent-api]
+directory=/root/code/spaceship/multigent
+command=/root/code/spaceship/multigent/dist/multigent --dir /root/code/spaceship/multigent_e2e api serve --addr 127.0.0.1:27893
+autostart=true
+autorestart=true
+startsecs=2
+stopasgroup=true
+killasgroup=true
+stdout_logfile=/root/code/spaceship/multigent/.multigent/dev/supervisor-api.stdout.log
+stderr_logfile=/root/code/spaceship/multigent/.multigent/dev/supervisor-api.stderr.log
+environment=HOME="/root",PATH="/root/.goenv/shims:/usr/local/sbin:/usr/local/bin:/usr/sbin:/usr/bin:/sbin:/bin"
+
