@@ -413,6 +413,9 @@ func (s *Server) runAgentForIMEvent(provider imbridge.Provider, resolved resolve
 	_ = s.createInteractionEvent(lease.session, "system", "", providerID, "run_started", "", map[string]any{
 		"messageId": message.MessageID,
 	})
+	if err := s.replyToIMEvent(ctx, provider, resolved, message, "⏳"); err != nil {
+		s.recordAgentChannelCallback(binding, "ack_failed", "", message, err.Error())
+	}
 	runtimeSessionID := ""
 	if hb, hbErr := s.ts.GetHeartbeat(binding.ProjectID, binding.AgentID); hbErr == nil && hb != nil {
 		runtimeSessionID = strings.TrimSpace(hb.SessionID)
@@ -420,22 +423,17 @@ func (s *Server) runAgentForIMEvent(provider imbridge.Provider, resolved resolve
 	output, detectedRuntimeSessionID, err := s.execAgentPrompt(ctx, binding.ProjectID, binding.AgentID, text, runtimeSessionID)
 	if detectedRuntimeSessionID != "" {
 		lease.SetRuntimeSessionID(detectedRuntimeSessionID)
-		if hb, hbErr := s.ts.GetHeartbeat(binding.ProjectID, binding.AgentID); hbErr == nil && hb != nil {
-			hb.SessionID = detectedRuntimeSessionID
-			if hb.SessionStartedAt == nil {
-				now := time.Now().UTC()
-				hb.SessionStartedAt = &now
-			}
-			_ = s.ts.SaveHeartbeat(binding.ProjectID, binding.AgentID, hb)
-		}
 	}
-	reply := strings.TrimSpace(output)
+	reply := extractAgentChatReply(output)
 	if err != nil {
 		lease.Fail(err.Error())
 		reply = "Agent run failed: " + err.Error()
-		if output != "" {
-			reply += "\n\n" + output
+		if cleaned := extractAgentChatReply(output); cleaned != "" {
+			reply += "\n\n" + cleaned
 		}
+	}
+	if strings.TrimSpace(reply) == "" {
+		reply = "已处理，但没有生成可展示的回复。"
 	}
 	reply = trimForIM(reply, 3500)
 	replyErr := s.replyToIMEvent(ctx, provider, resolved, message, reply)

@@ -109,6 +109,7 @@ export default function ProjectAgentChatPage() {
   const [content, setContent] = useState('')
   const [input, setInput] = useState(() => readAgentChatDraft(projectId, agentName))
   const [loading, setLoading] = useState(false)
+  const [replyPending, setReplyPending] = useState(false)
   const [runNotice, setRunNotice] = useState<string | null>(null)
   const [historyLoading, setHistoryLoading] = useState(false)
   const [historyTruncated, setHistoryTruncated] = useState(false)
@@ -128,6 +129,7 @@ export default function ProjectAgentChatPage() {
   const freshNextRef = useRef(false)
   const historyRequestRef = useRef(0)
   const initializedChatKeyRef = useRef('')
+  const replyPendingRef = useRef(false)
   const draftKey = agentChatDraftKey(projectId, agentName)
   const chatKey = projectId && agentName ? `${projectId}/${agentName}` : ''
   const activeChatKeyRef = useRef(chatKey)
@@ -214,6 +216,8 @@ export default function ProjectAgentChatPage() {
     setInput(readAgentChatDraft(projectId, agentName))
     setError(null)
     setLoading(false)
+    replyPendingRef.current = false
+    setReplyPending(false)
     setRunNotice(null)
     setHistoryLoading(false)
     setHistoryTruncated(false)
@@ -302,8 +306,13 @@ export default function ProjectAgentChatPage() {
     }
 
     setLoading(true)
+    replyPendingRef.current = true
+    setReplyPending(false)
     setRunNotice(t('agentChat.preparingSandbox'))
     setContent((prev) => appendLog(prev, JSON.stringify({ type: 'human', content: text })))
+    window.requestAnimationFrame(() => {
+      if (activeChatKeyRef.current === runKey && replyPendingRef.current) setReplyPending(true)
+    })
 
     const controller = new AbortController()
     abortRef.current = controller
@@ -362,8 +371,14 @@ export default function ProjectAgentChatPage() {
               if (typeof evt.payload === 'string' && evt.payload) {
                 const payloadError = chatPayloadError(evt.payload)
                 if (payloadError) {
+                  replyPendingRef.current = false
+                  setReplyPending(false)
                   showRunError(payloadError)
                   continue
+                }
+                if (isVisibleAssistantPayload(evt.payload)) {
+                  replyPendingRef.current = false
+                  setReplyPending(false)
                 }
                 setRunNotice(null)
                 setContent((prev) => appendLog(prev, evt.payload))
@@ -371,10 +386,14 @@ export default function ProjectAgentChatPage() {
               continue
             }
             if (evt.type === 'chat_done') {
+              replyPendingRef.current = false
+              setReplyPending(false)
               if (evt.session_id) updateSessionId(evt.session_id)
               continue
             }
             if (evt.type === 'chat_error') {
+              replyPendingRef.current = false
+              setReplyPending(false)
               const msg = evt.error ? String(evt.error) : t('agentChat.error')
               showRunError(msg)
               continue
@@ -399,6 +418,8 @@ export default function ProjectAgentChatPage() {
       freshNextRef.current = false
       setFreshNext(false)
       setLoading(false)
+      replyPendingRef.current = false
+      setReplyPending(false)
       setRunNotice(null)
       inputRef.current?.focus()
     }
@@ -599,7 +620,7 @@ export default function ProjectAgentChatPage() {
         ) : (
           <div className="space-y-4">
             <ConversationLog content={content} mode="chat" user={userParticipant} assistant={assistantParticipant} />
-            {loading && <AgentReplyLoading notice={runNotice} />}
+            {loading && replyPending && <AgentReplyLoading notice={runNotice} assistant={assistantParticipant} />}
           </div>
         )}
       </div>
@@ -734,12 +755,32 @@ function runtimeBlockingMessage(readiness: RuntimeReadiness, t: (key: string) =>
   ].join('\n')
 }
 
-function AgentReplyLoading({ notice }: { notice?: string | null }) {
+function isVisibleAssistantPayload(payload: string): boolean {
+  const text = payload.trim()
+  if (!text.startsWith('{')) return false
+  try {
+    const ev = JSON.parse(text) as {
+      type?: string
+      result?: string
+      is_error?: boolean
+      message?: { content?: Array<{ type?: string; text?: string }> }
+      content?: Array<{ type?: string; text?: string }> | string
+    }
+    if (ev.type === 'result' && !ev.is_error && typeof ev.result === 'string' && ev.result.trim()) return true
+    const blocks = Array.isArray(ev.message?.content) ? ev.message.content : Array.isArray(ev.content) ? ev.content : []
+    return blocks.some((block) => block.type === 'text' && typeof block.text === 'string' && block.text.trim())
+  } catch {
+    return false
+  }
+}
+
+function AgentReplyLoading({ notice, assistant }: { notice?: string | null; assistant?: { name: string; avatar?: string } }) {
+  const name = assistant?.name || 'A'
+  const initial = [...name.trim()][0]?.toUpperCase() || 'A'
   return (
     <div className="flex gap-2.5">
-      <div className="relative flex size-6 shrink-0 items-center justify-center rounded-full bg-neutral-100 dark:bg-zinc-800">
-        <span className="absolute size-5 animate-ping rounded-full bg-sky-400/20" />
-        <Sparkles className="relative size-3.5 text-sky-600 dark:text-sky-400" strokeWidth={1.8} />
+      <div className="flex size-6 shrink-0 items-center justify-center overflow-hidden rounded-full bg-neutral-100 text-[11px] font-semibold text-sky-700 dark:bg-zinc-800 dark:text-sky-400">
+        {assistant?.avatar ? <img src={assistant.avatar} alt="" className="size-full object-cover" /> : initial}
       </div>
       <div>
         <div className="flex h-10 w-fit items-center gap-1.5 rounded-lg bg-neutral-50 px-3.5 dark:bg-zinc-900/70" aria-label="loading">

@@ -537,6 +537,80 @@ func extractAgentChatError(line string) string {
 	return ""
 }
 
+func extractAgentChatReply(output string) string {
+	output = strings.TrimSpace(output)
+	if output == "" {
+		return ""
+	}
+	var assistantParts []string
+	result := ""
+	scanner := bufio.NewScanner(strings.NewReader(output))
+	scanner.Buffer(make([]byte, 0, 256*1024), 2*1024*1024)
+	for scanner.Scan() {
+		line := strings.TrimSpace(scanner.Text())
+		if !strings.HasPrefix(line, "{") {
+			continue
+		}
+		var ev struct {
+			Type    string `json:"type"`
+			IsError bool   `json:"is_error"`
+			Result  string `json:"result"`
+			Message struct {
+				Content []struct {
+					Type string `json:"type"`
+					Text string `json:"text"`
+				} `json:"content"`
+			} `json:"message"`
+			Content []struct {
+				Type string `json:"type"`
+				Text string `json:"text"`
+			} `json:"content"`
+		}
+		if err := json.Unmarshal([]byte(line), &ev); err != nil {
+			continue
+		}
+		if ev.Type == "result" && !ev.IsError && strings.TrimSpace(ev.Result) != "" {
+			result = strings.TrimSpace(ev.Result)
+			continue
+		}
+		if ev.Type == "assistant" {
+			for _, block := range ev.Message.Content {
+				if block.Type == "text" && strings.TrimSpace(block.Text) != "" {
+					assistantParts = append(assistantParts, strings.TrimSpace(block.Text))
+				}
+			}
+			for _, block := range ev.Content {
+				if block.Type == "text" && strings.TrimSpace(block.Text) != "" {
+					assistantParts = append(assistantParts, strings.TrimSpace(block.Text))
+				}
+			}
+		}
+	}
+	if result != "" {
+		return result
+	}
+	if len(assistantParts) > 0 {
+		return collapseDuplicateParagraphs(strings.Join(assistantParts, "\n\n"))
+	}
+	return ""
+}
+
+func collapseDuplicateParagraphs(text string) string {
+	parts := strings.Split(strings.TrimSpace(text), "\n\n")
+	out := make([]string, 0, len(parts))
+	for _, part := range parts {
+		trimmed := strings.TrimSpace(part)
+		if trimmed == "" {
+			continue
+		}
+		if len(out) > 0 && out[len(out)-1] == trimmed {
+			continue
+		}
+		out = append(out, trimmed)
+	}
+	return strings.Join(out, "\n\n")
+}
+
 func extractAgentChatSessionID(line string) string {
 	if strings.Contains(line, "\n") {
 		scanner := bufio.NewScanner(strings.NewReader(line))

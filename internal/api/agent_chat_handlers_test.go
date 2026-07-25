@@ -2,6 +2,7 @@ package api
 
 import (
 	"encoding/json"
+	"strings"
 	"testing"
 
 	"github.com/multigent/multigent/internal/entity"
@@ -98,6 +99,29 @@ func TestExtractAgentChatError(t *testing.T) {
 				t.Fatalf("extractAgentChatError() = %q, want %q", got, tt.want)
 			}
 		})
+	}
+}
+
+func TestExtractAgentChatReplyPrefersFinalResult(t *testing.T) {
+	output := strings.Join([]string{
+		"▶  exec cc-connect/pm",
+		"multigent: preparing runtime tool github",
+		`{"type":"system","subtype":"init","session_id":"sess-one"}`,
+		`{"type":"assistant","message":{"content":[{"type":"text","text":"draft reply"}]}}`,
+		`{"type":"result","is_error":false,"result":"final reply"}`,
+	}, "\n")
+	if got := extractAgentChatReply(output); got != "final reply" {
+		t.Fatalf("extractAgentChatReply() = %q", got)
+	}
+}
+
+func TestExtractAgentChatReplyFallsBackToAssistantText(t *testing.T) {
+	output := strings.Join([]string{
+		"runtime setup log",
+		`{"type":"assistant","message":{"content":[{"type":"thinking","thinking":"hidden"},{"type":"text","text":"visible reply"}]}}`,
+	}, "\n")
+	if got := extractAgentChatReply(output); got != "visible reply" {
+		t.Fatalf("extractAgentChatReply() = %q", got)
 	}
 }
 
