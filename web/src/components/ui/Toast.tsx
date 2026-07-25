@@ -6,10 +6,33 @@ type ToastItem = { id: number; message: string; type: 'error' | 'success' | 'inf
 
 let nextId = 0
 const listeners = new Set<(t: ToastItem) => void>()
+let pendingErrorMessages: string[] = []
+let pendingErrorTimer: ReturnType<typeof setTimeout> | null = null
 
-export function showToast(message: string, type: 'error' | 'success' | 'info' = 'error') {
+function emitToast(message: string, type: 'error' | 'success' | 'info') {
   const item: ToastItem = { id: ++nextId, message, type }
   listeners.forEach((fn) => fn(item))
+}
+
+function flushPendingErrors() {
+  const uniqueMessages = Array.from(new Set(pendingErrorMessages.map((m) => m.trim()).filter(Boolean)))
+  pendingErrorMessages = []
+  pendingErrorTimer = null
+  if (uniqueMessages.length === 0) return
+  const visible = uniqueMessages.slice(0, 3)
+  const suffix = uniqueMessages.length > visible.length ? `\n+${uniqueMessages.length - visible.length}` : ''
+  emitToast(`${visible.join('\n')}${suffix}`, 'error')
+}
+
+export function showToast(message: string, type: 'error' | 'success' | 'info' = 'error') {
+  if (type !== 'error') {
+    emitToast(message, type)
+    return
+  }
+  pendingErrorMessages.push(message)
+  if (!pendingErrorTimer) {
+    pendingErrorTimer = setTimeout(flushPendingErrors, 250)
+  }
 }
 
 export function ToastContainer() {
@@ -54,7 +77,7 @@ export function ToastContainer() {
           )}
           <p
             className={cn(
-              'flex-1 text-sm leading-snug',
+              'flex-1 whitespace-pre-line text-sm leading-snug',
               t.type === 'error' && 'text-red-700 dark:text-red-300',
               t.type === 'success' && 'text-emerald-700 dark:text-emerald-300',
               t.type === 'info' && 'text-sky-700 dark:text-sky-300',

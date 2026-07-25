@@ -157,7 +157,6 @@ function SkillItem({ skill, defaultOpen, canAdmin }: { skill: SkillRow; defaultO
       >
         <div className="min-w-0 flex-1">
           <p className="text-sm font-medium text-neutral-900 dark:text-zinc-100">{currentDisplayName || skill.name}</p>
-          {currentDisplayName && <p className="mt-0.5 truncate font-mono text-xs text-neutral-400 dark:text-zinc-500">{skill.name}</p>}
           {skill.description && (
             <p className="mt-1 line-clamp-2 text-xs leading-relaxed text-neutral-400 dark:text-zinc-500">{skill.description}</p>
           )}
@@ -205,7 +204,6 @@ function SkillItem({ skill, defaultOpen, canAdmin }: { skill: SkillRow; defaultO
                     {savingDisplayName && <span className="ml-1 text-[10px] text-neutral-400">…</span>}
                   </button>
                 )}
-                {effectiveDisplayName !== skill.name && <p className="mt-0.5 truncate font-mono text-xs text-neutral-400 dark:text-zinc-500">{skill.name}</p>}
                 {skill.description && (
                   <p className="mt-0.5 truncate text-xs text-neutral-400 dark:text-zinc-500">{skill.description}</p>
                 )}

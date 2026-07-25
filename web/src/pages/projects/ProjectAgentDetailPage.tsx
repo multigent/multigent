@@ -1304,7 +1304,6 @@ function AgentSkillsPanel({ skills, skillDetails }: { skills: string[]; skillDet
                 <Link key={sk} to={`/skills?open=${encodeURIComponent(sk)}`}
                   className="inline-flex items-center rounded-md bg-amber-50 px-2.5 py-1 text-sm font-medium text-amber-700 transition-colors hover:bg-amber-100 dark:bg-amber-900/20 dark:text-amber-400 dark:hover:bg-amber-900/40">
                   <span>{label}</span>
-                  {label !== sk && <span className="ml-1 font-mono text-xs opacity-60">{sk}</span>}
                 </Link>
               )
             })}
