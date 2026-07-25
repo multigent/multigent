@@ -416,11 +416,7 @@ func (s *Server) runAgentForIMEvent(provider imbridge.Provider, resolved resolve
 	if err := s.replyToIMEvent(ctx, provider, resolved, message, "⏳"); err != nil {
 		s.recordAgentChannelCallback(binding, "ack_failed", "", message, err.Error())
 	}
-	runtimeSessionID := ""
-	if hb, hbErr := s.ts.GetHeartbeat(binding.ProjectID, binding.AgentID); hbErr == nil && hb != nil {
-		runtimeSessionID = strings.TrimSpace(hb.SessionID)
-	}
-	output, detectedRuntimeSessionID, err := s.execAgentPrompt(ctx, binding.ProjectID, binding.AgentID, text, runtimeSessionID)
+	output, detectedRuntimeSessionID, err := s.execAgentPrompt(ctx, binding.ProjectID, binding.AgentID, text, "")
 	if detectedRuntimeSessionID != "" {
 		lease.SetRuntimeSessionID(detectedRuntimeSessionID)
 	}
@@ -569,6 +565,8 @@ func (s *Server) execAgentPrompt(ctx context.Context, project, agent, prompt, se
 	args := []string{"--dir", s.root, "exec", "--project", project, "--agent", agent, "--prompt", prompt, "--no-save-session"}
 	if strings.TrimSpace(sessionID) != "" {
 		args = append(args, "--session", strings.TrimSpace(sessionID))
+	} else {
+		args = append(args, "--no-session")
 	}
 	cmd := exec.CommandContext(ctx, s.sched.binPath, args...)
 	cmd.Dir = s.root

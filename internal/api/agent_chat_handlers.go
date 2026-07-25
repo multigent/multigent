@@ -201,12 +201,6 @@ func (s *Server) handleAgentChatHistory(w http.ResponseWriter, r *http.Request) 
 	}
 
 	sessionID := strings.TrimSpace(r.URL.Query().Get("sessionId"))
-	if sessionID == "" {
-		if hb, err := s.ts.GetHeartbeat(project, agent); err == nil && hb.SessionID != "" {
-			sessionID = hb.SessionID
-		}
-	}
-
 	resolvedSessionID := sessionID
 	content := ""
 	truncated := false
@@ -214,13 +208,6 @@ func (s *Server) handleAgentChatHistory(w http.ResponseWriter, r *http.Request) 
 	if sessionID != "" {
 		var err error
 		content, runs, resolvedSessionID, truncated, err = s.readAgentSessionHistory(project, agent, sessionID)
-		if err != nil {
-			s.serverError(w, err)
-			return
-		}
-	} else {
-		var err error
-		content, runs, resolvedSessionID, truncated, err = s.readAgentSessionHistory(project, agent, "")
 		if err != nil {
 			s.serverError(w, err)
 			return
@@ -420,7 +407,7 @@ func (s *Server) handleAgentChat(w http.ResponseWriter, r *http.Request) {
 	if sessionID != "" && !body.NoSession {
 		args = append(args, "--session", sessionID)
 	}
-	if body.NoSession {
+	if body.NoSession || sessionID == "" {
 		args = append(args, "--no-session")
 	}
 
