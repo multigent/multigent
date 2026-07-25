@@ -53,19 +53,19 @@ Multigent is built around that operating model:
 ### Visual SOP and workflow orchestration
 
 <p align="center">
-  <img src="docs/assets/screenshots/gitHub_beta_stable_workflow.png" alt="Multigent workflow board" width="100%">
+  <img src="docs/assets/screenshots/workflow_light.png" alt="Multigent workflow board" width="100%">
 </p>
 
 ### Multi-agent task board
 
 <p align="center">
-  <img src="docs/assets/screenshots/task_panel.png" alt="Multigent multi-agent task board" width="100%">
+  <img src="docs/assets/screenshots/task_panel_light.png" alt="Multigent multi-agent task board" width="100%">
 </p>
 
 ### Workflow task detail
 
 <p align="center">
-  <img src="docs/assets/screenshots/task_detail.png" alt="Multigent workflow task detail" width="100%">
+  <img src="docs/assets/screenshots/task_detail_light.png" alt="Multigent workflow task detail" width="100%">
 </p>
 
 ## Product Model

@@ -53,19 +53,19 @@ Multigent 解决的是这层 Agent 协作架构问题：
 ### 可视化 SOP 与流程编排
 
 <p align="center">
-  <img src="docs/assets/screenshots/gitHub_beta_stable_workflow.png" alt="Multigent 流程白板" width="100%">
+  <img src="docs/assets/screenshots/workflow_light.png" alt="Multigent 流程白板" width="100%">
 </p>
 
 ### 多 Agent 任务看板
 
 <p align="center">
-  <img src="docs/assets/screenshots/task_panel.png" alt="Multigent 多 Agent 任务看板" width="100%">
+  <img src="docs/assets/screenshots/task_panel_light.png" alt="Multigent 多智能体任务看板" width="100%">
 </p>
 
 ### 流程任务详情
 
 <p align="center">
-  <img src="docs/assets/screenshots/task_detail.png" alt="Multigent 流程任务详情" width="100%">
+  <img src="docs/assets/screenshots/task_detail_light.png" alt="Multigent 流程任务详情" width="100%">
 </p>
 
 ## 产品模型
