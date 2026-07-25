@@ -221,7 +221,9 @@ export default function ProjectAgentChatPage() {
     sessionIdRef.current = currentRouteSessionId
     setSessionId(currentRouteSessionId)
     setSessionDraft(currentRouteSessionId)
-    void loadHistory(currentRouteSessionId, projectId, agentName, nextKey)
+    if (currentRouteSessionId) {
+      void loadHistory(currentRouteSessionId, projectId, agentName, nextKey)
+    }
     void loadReadiness(projectId, agentName, nextKey)
   }, [projectId, agentName, loadHistory, loadReadiness])
 
