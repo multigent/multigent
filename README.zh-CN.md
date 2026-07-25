@@ -56,10 +56,10 @@ Multigent 解决的是这层 Agent 协作架构问题：
   <img src="docs/assets/screenshots/workflow_light.png" alt="Multigent 流程白板" width="100%">
 </p>
 
-### 智能体心跳与调度
+### 人和智能体在同一个项目内协作
 
 <p align="center">
-  <img src="docs/assets/screenshots/heartbeat_light.png" alt="Multigent 智能体心跳与调度" width="100%">
+  <img src="docs/assets/screenshots/project_members.png" alt="Multigent 项目成员包含人和智能体" width="100%">
 </p>
 
 ### 流程任务详情
