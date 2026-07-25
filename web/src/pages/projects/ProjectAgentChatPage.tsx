@@ -124,6 +124,8 @@ export default function ProjectAgentChatPage() {
   const scrollRef = useRef<HTMLDivElement>(null)
   const inputRef = useRef<HTMLTextAreaElement>(null)
   const abortRef = useRef<AbortController | null>(null)
+  const sessionIdRef = useRef(routeSessionId)
+  const freshNextRef = useRef(false)
   const draftKey = agentChatDraftKey(projectId, agentName)
   const chatKey = projectId && agentName ? `${projectId}/${agentName}` : ''
   const activeChatKeyRef = useRef(chatKey)
@@ -133,6 +135,7 @@ export default function ProjectAgentChatPage() {
 
   // Sync sessionId state + URL query param together so page refresh preserves the session.
   const updateSessionId = useCallback((sid: string) => {
+    sessionIdRef.current = sid
     setSessionId(sid)
     setSessionDraft(sid)
     setSearchParams((prev) => {
@@ -205,9 +208,11 @@ export default function ProjectAgentChatPage() {
     setRunNotice(null)
     setHistoryLoading(false)
     setHistoryTruncated(false)
+    freshNextRef.current = false
     setFreshNext(false)
     setRuntimeReadiness(null)
     setSessionEditorOpen(false)
+    sessionIdRef.current = currentRouteSessionId
     setSessionId(currentRouteSessionId)
     setSessionDraft(currentRouteSessionId)
     void loadHistory(currentRouteSessionId, projectId, agentName, nextKey)
@@ -270,8 +275,8 @@ export default function ProjectAgentChatPage() {
     const runProject = projectId
     const runAgent = agentName
     const runKey = `${runProject}/${runAgent}`
-    const runSessionId = sessionId
-    const runFreshNext = freshNext
+    const runFreshNext = freshNextRef.current || freshNext
+    const runSessionId = runFreshNext ? '' : sessionIdRef.current
 
     setInput('')
     resetTextareaHeight(inputRef.current)
@@ -314,7 +319,7 @@ export default function ProjectAgentChatPage() {
         body: JSON.stringify({
           message: text,
           sessionId: runSessionId,
-          noSession: runFreshNext && !runSessionId,
+          noSession: runFreshNext,
         }),
         signal: controller.signal,
       })
@@ -380,6 +385,7 @@ export default function ProjectAgentChatPage() {
     } finally {
       if (activeChatKeyRef.current !== runKey) return
       abortRef.current = null
+      freshNextRef.current = false
       setFreshNext(false)
       setLoading(false)
       setRunNotice(null)
@@ -403,6 +409,7 @@ export default function ProjectAgentChatPage() {
 
   function startFresh() {
     abortRef.current?.abort()
+    freshNextRef.current = true
     updateSessionId('')
     setContent('')
     setError(null)
@@ -414,6 +421,7 @@ export default function ProjectAgentChatPage() {
   function switchSession() {
     const next = sessionDraft.trim()
     setSessionEditorOpen(false)
+    freshNextRef.current = false
     setFreshNext(false)
     updateSessionId(next)
     void loadHistory(next)
