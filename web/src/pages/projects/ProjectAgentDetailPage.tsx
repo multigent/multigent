@@ -110,6 +110,7 @@ type AgentContext = {
   avatar?: string
   syncedAt: string | null
   skills: string[]
+  skillDetails?: Array<{ name: string; displayName?: string; description?: string }>
   httpAgent?: HTTPAgentConfig
   env?: Record<string, string>
   provider?: string
@@ -633,7 +634,7 @@ export default function ProjectAgentDetailPage() {
                     <p className="mt-1 text-sm text-neutral-500 dark:text-zinc-500">{t('agentDetail.capabilitiesHint')}</p>
                     <div className="mt-3 divide-y divide-neutral-100 rounded-lg border border-neutral-200/80 bg-white dark:divide-zinc-800 dark:border-zinc-700/60 dark:bg-zinc-900/40">
                       <AgentRuntimeConnectionsPanel project={projectId} agentName={agentName} />
-                      <AgentSkillsPanel skills={ctx.skills ?? []} />
+                      <AgentSkillsPanel skills={ctx.skills ?? []} skillDetails={ctx.skillDetails} />
                     </div>
                   </section>
                 </>
@@ -1261,7 +1262,7 @@ function AgentRuntimeConnectionsPanel({ project, agentName }: { project: string;
               <div className="flex flex-wrap gap-2">
                 {(bindingsState.data.bindings ?? []).map(binding => {
                   const connection = connections.find(item => item.id === binding.connectionId)
-                  const label = connection ? `${connection.provider} / ${connection.connectionName}` : binding.provider
+                  const label = toolBindingLabel(binding, connection)
                   return (
                     <span key={binding.id} className="inline-flex max-w-full items-center gap-2 rounded-md border border-neutral-200 bg-white px-2 py-1 text-xs text-neutral-600 dark:border-zinc-700 dark:bg-zinc-900 dark:text-zinc-300">
                       <span className="truncate">{label}</span>
@@ -1281,20 +1282,32 @@ function AgentRuntimeConnectionsPanel({ project, agentName }: { project: string;
   )
 }
 
-function AgentSkillsPanel({ skills }: { skills: string[] }) {
+function toolBindingLabel(binding: RuntimeToolBinding, connection?: ConnectionOption): string {
+  if (!connection) return binding.provider
+  if (connection.provider === 'custom-mcp') return connection.connectionName
+  return `${connection.provider} / ${connection.connectionName}`
+}
+
+function AgentSkillsPanel({ skills, skillDetails }: { skills: string[]; skillDetails?: Array<{ name: string; displayName?: string; description?: string }> }) {
   const { t } = useTranslation()
+  const detailByName = new Map((skillDetails ?? []).map((sk) => [sk.name, sk]))
   return (
     <section className="p-4">
       <SubsectionHeader title={t('agentDetail.inheritedSkills')} description={t('agentDetail.skillsHint')} />
       <div className="mt-3">
         {skills.length > 0 ? (
           <div className="flex flex-wrap gap-2">
-            {skills.map((sk) => (
-              <Link key={sk} to={`/skills?open=${encodeURIComponent(sk)}`}
-                className="inline-flex items-center rounded-md bg-amber-50 px-2.5 py-1 text-sm font-medium text-amber-700 transition-colors hover:bg-amber-100 dark:bg-amber-900/20 dark:text-amber-400 dark:hover:bg-amber-900/40">
-                {sk}
-              </Link>
-            ))}
+            {skills.map((sk) => {
+              const detail = detailByName.get(sk)
+              const label = detail?.displayName || sk
+              return (
+                <Link key={sk} to={`/skills?open=${encodeURIComponent(sk)}`}
+                  className="inline-flex items-center rounded-md bg-amber-50 px-2.5 py-1 text-sm font-medium text-amber-700 transition-colors hover:bg-amber-100 dark:bg-amber-900/20 dark:text-amber-400 dark:hover:bg-amber-900/40">
+                  <span>{label}</span>
+                  {label !== sk && <span className="ml-1 font-mono text-xs opacity-60">{sk}</span>}
+                </Link>
+              )
+            })}
           </div>
         ) : (
           <p className="text-sm text-neutral-400 dark:text-zinc-500">{t('agentDetail.noSkills')}</p>

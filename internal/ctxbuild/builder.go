@@ -76,6 +76,7 @@ func (b *Builder) Build(projectName, teamPath, roleName string) (*MergedContext,
 		files := loadSkillFiles(b.store.SkillDir(skillName))
 		mc.Skills = append(mc.Skills, SkillDef{
 			Name:        skill.Name,
+			DisplayName: skill.DisplayName,
 			Description: skill.Description,
 			Prompt:      skillPrompt,
 			Files:       files,

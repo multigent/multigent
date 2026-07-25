@@ -44,6 +44,7 @@ type SkillFile struct {
 // bundled scripts regardless of where the agent workspace lives.
 type SkillDef struct {
 	Name        string
+	DisplayName string
 	Description string
 	// Prompt is the Markdown body of the skill's SKILL.md (after frontmatter).
 	Prompt string

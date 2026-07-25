@@ -13,6 +13,7 @@ import { useWorkspaceAccess } from '../lib/workspace-access'
 type Provenance = { playbookId: string; playbookName: string; templateVersion?: string; customized?: boolean }
 type SkillRow = {
   name: string
+  displayName?: string
   description?: string
   provenance?: Provenance
   source?: string
@@ -32,11 +33,12 @@ type SkillRegistry = {
   installedAt?: string
   updatedAt?: string
 }
-type SkillDetail = { name: string; description?: string; content?: string; prompt: string; provenance?: Provenance; registry?: SkillRegistry; packageDir?: string }
+type SkillDetail = { name: string; displayName?: string; description?: string; content?: string; prompt: string; provenance?: Provenance; registry?: SkillRegistry; packageDir?: string }
 type SkillFileTree = { name: string; files: SkillFile[] }
 type SkillFile = { path: string; size: number; mode?: string; content?: string; encoding?: string }
 type SkillPackageRow = SkillRegistry & {
   name: string
+  displayName?: string
   description?: string
   path?: string
   installed?: boolean
@@ -85,14 +87,22 @@ function SkillItem({ skill, defaultOpen, canAdmin }: { skill: SkillRow; defaultO
   const [saved, setSaved] = useState(false)
   const [preview, setPreview] = useState(false)
   const [syncOpen, setSyncOpen] = useState(false)
+  const [displayName, setDisplayName] = useState(skill.displayName ?? '')
 
   const content = value ?? (detailState.status === 'ok' ? (detailState.data.content ?? detailState.data.prompt) : '')
+  const effectiveDisplayName = displayName || skill.displayName || skill.name
+
+  useEffect(() => {
+    if (detailState.status === 'ok' && !dirty) {
+      setDisplayName(detailState.data.displayName ?? skill.displayName ?? '')
+    }
+  }, [detailState.status, dirty, skill.displayName])
 
   const save = useCallback(async () => {
     setSaving(true)
     setSaved(false)
     try {
-      await apiPut(`/api/v1/skills/${encodeURIComponent(skill.name)}`, { content })
+      await apiPut(`/api/v1/skills/${encodeURIComponent(skill.name)}`, { content, displayName })
       setDirty(false)
       setSaved(true)
       setTimeout(() => setSaved(false), 2000)
@@ -101,7 +111,7 @@ function SkillItem({ skill, defaultOpen, canAdmin }: { skill: SkillRow; defaultO
     } finally {
       setSaving(false)
     }
-  }, [skill.name, content])
+  }, [skill.name, content, displayName])
 
   return (
     <div
@@ -114,7 +124,8 @@ function SkillItem({ skill, defaultOpen, canAdmin }: { skill: SkillRow; defaultO
         className="flex min-h-24 w-full items-start px-5 py-4 text-left transition-colors hover:bg-neutral-50/80 dark:hover:bg-zinc-800/30"
       >
         <div className="min-w-0 flex-1">
-          <p className="font-mono text-sm font-medium text-neutral-900 dark:text-zinc-100">{skill.name}</p>
+          <p className="text-sm font-medium text-neutral-900 dark:text-zinc-100">{skill.displayName || skill.name}</p>
+          {skill.displayName && <p className="mt-0.5 truncate font-mono text-xs text-neutral-400 dark:text-zinc-500">{skill.name}</p>}
           {skill.description && (
             <p className="mt-1 line-clamp-2 text-xs leading-relaxed text-neutral-400 dark:text-zinc-500">{skill.description}</p>
           )}
@@ -128,7 +139,8 @@ function SkillItem({ skill, defaultOpen, canAdmin }: { skill: SkillRow; defaultO
           <div className="relative flex max-h-[82vh] w-full max-w-4xl flex-col overflow-hidden rounded-xl border border-neutral-200/80 bg-white shadow-2xl dark:border-zinc-700/80 dark:bg-zinc-900">
             <div className="flex items-center justify-between border-b border-neutral-200/80 px-5 py-3 dark:border-zinc-700/60">
               <div className="min-w-0">
-                <p className="truncate font-mono text-sm font-semibold text-neutral-900 dark:text-zinc-100">{skill.name}</p>
+                <p className="truncate text-sm font-semibold text-neutral-900 dark:text-zinc-100">{effectiveDisplayName}</p>
+                {effectiveDisplayName !== skill.name && <p className="mt-0.5 truncate font-mono text-xs text-neutral-400 dark:text-zinc-500">{skill.name}</p>}
                 {skill.description && (
                   <p className="mt-0.5 truncate text-xs text-neutral-400 dark:text-zinc-500">{skill.description}</p>
                 )}
@@ -157,7 +169,19 @@ function SkillItem({ skill, defaultOpen, canAdmin }: { skill: SkillRow; defaultO
               )}
               {detailState.status === 'ok' && (
                 <div className="space-y-4">
-                <div className="rounded-lg border border-neutral-200/80 bg-white dark:border-zinc-700/60 dark:bg-zinc-900/40">
+                  {canAdmin && (
+                    <label className="block rounded-lg border border-neutral-200/80 bg-white p-4 dark:border-zinc-700/60 dark:bg-zinc-900/40">
+                      <span className="text-xs font-medium text-neutral-600 dark:text-zinc-400">{t('skill.displayName')}</span>
+                      <input
+                        value={displayName}
+                        onChange={(e) => { setDisplayName(e.target.value); setDirty(true); setSaved(false) }}
+                        placeholder={skill.name}
+                        className="mt-1 w-full rounded-lg border border-neutral-200 bg-white px-3 py-2 text-sm outline-none focus:border-sky-400 dark:border-zinc-700 dark:bg-zinc-950 dark:text-zinc-100"
+                      />
+                      <p className="mt-1.5 text-xs leading-relaxed text-neutral-400 dark:text-zinc-500">{t('skill.displayNameHint')}</p>
+                    </label>
+                  )}
+                  <div className="rounded-lg border border-neutral-200/80 bg-white dark:border-zinc-700/60 dark:bg-zinc-900/40">
                   <div className="flex items-center justify-between border-b border-neutral-100 px-4 py-2.5 dark:border-zinc-700/40">
                     <div className="flex items-center gap-2">
                       <BookOpen className="size-4 text-neutral-400 dark:text-zinc-500" strokeWidth={1.8} />
@@ -780,6 +804,7 @@ function InstallSkillDialog({ onClose, onInstalled }: { onClose: () => void; onI
 function CreateSkillDialog({ onClose, onCreated }: { onClose: () => void; onCreated: () => void }) {
   const { t } = useTranslation()
   const [name, setName] = useState('')
+  const [displayName, setDisplayName] = useState('')
   const [description, setDescription] = useState('')
   const [content, setContent] = useState('')
   const [saving, setSaving] = useState(false)
@@ -789,7 +814,7 @@ function CreateSkillDialog({ onClose, onCreated }: { onClose: () => void; onCrea
     if (!skillName) return
     setSaving(true)
     try {
-      await apiPost('/api/v1/skills', { name: skillName, description, content })
+      await apiPost('/api/v1/skills', { name: skillName, displayName, description, content })
       onCreated()
     } finally {
       setSaving(false)
@@ -823,6 +848,10 @@ function CreateSkillDialog({ onClose, onCreated }: { onClose: () => void; onCrea
             <label className="block">
               <span className="text-xs font-medium text-neutral-600 dark:text-zinc-400">{t('skill.name')}</span>
               <input value={name} onChange={(e) => setName(e.target.value)} placeholder="lark-doc" className="mt-1 w-full rounded-lg border border-neutral-200 bg-white px-3 py-2 text-sm outline-none focus:border-sky-400 dark:border-zinc-700 dark:bg-zinc-950 dark:text-zinc-100" />
+            </label>
+            <label className="block">
+              <span className="text-xs font-medium text-neutral-600 dark:text-zinc-400">{t('skill.displayName')}</span>
+              <input value={displayName} onChange={(e) => setDisplayName(e.target.value)} placeholder={t('skill.displayNamePlaceholder')} className="mt-1 w-full rounded-lg border border-neutral-200 bg-white px-3 py-2 text-sm outline-none focus:border-sky-400 dark:border-zinc-700 dark:bg-zinc-950 dark:text-zinc-100" />
             </label>
             <label className="block">
               <span className="text-xs font-medium text-neutral-600 dark:text-zinc-400">{t('skill.description')}</span>

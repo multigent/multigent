@@ -163,6 +163,7 @@ type Project struct {
 // Stored at <root>/skills/<name>/SKILL.md.
 type Skill struct {
 	Name        string `json:"name" yaml:"name"`
+	DisplayName string `json:"displayName,omitempty" yaml:"display_name,omitempty"`
 	Description string `json:"description,omitempty" yaml:"description,omitempty"`
 	Source      string `json:"source,omitempty" yaml:"source,omitempty"`
 	SourceType  string `json:"sourceType,omitempty" yaml:"source_type,omitempty"`

@@ -20,6 +20,7 @@ import (
 
 type skillRow struct {
 	Name        string                           `json:"name"`
+	DisplayName string                           `json:"displayName,omitempty"`
 	Description string                           `json:"description,omitempty"`
 	Provenance  *entity.PlaybookObjectProvenance `json:"provenance,omitempty"`
 	Source      string                           `json:"source,omitempty"`
@@ -34,6 +35,7 @@ type skillRow struct {
 
 type createSkillBody struct {
 	Name        string `json:"name"`
+	DisplayName string `json:"displayName,omitempty"`
 	Description string `json:"description"`
 	Content     string `json:"content"`
 }
@@ -49,6 +51,7 @@ type skillFileEntry struct {
 type skillInstallBody struct {
 	Source      string `json:"source"`
 	Name        string `json:"name,omitempty"`
+	DisplayName string `json:"displayName,omitempty"`
 	Description string `json:"description,omitempty"`
 	Managed     *bool  `json:"managed,omitempty"`
 }
@@ -83,6 +86,7 @@ type localSkillRoot struct {
 
 type skillPackageRow struct {
 	Name        string `json:"name"`
+	DisplayName string `json:"displayName,omitempty"`
 	Description string `json:"description,omitempty"`
 	Source      string `json:"source,omitempty"`
 	SourceType  string `json:"sourceType,omitempty"`
@@ -98,6 +102,7 @@ type skillPackageRow struct {
 
 type skillPublishBody struct {
 	Name        string           `json:"name"`
+	DisplayName string           `json:"displayName,omitempty"`
 	Description string           `json:"description,omitempty"`
 	Source      string           `json:"source,omitempty"`
 	SourceType  string           `json:"sourceType,omitempty"`
@@ -127,6 +132,7 @@ func (s *Server) handleListSkills(w http.ResponseWriter, r *http.Request) {
 		meta := s.skillRegistryMeta(sk.Name)
 		out = append(out, skillRow{
 			Name:        sk.Name,
+			DisplayName: sk.DisplayName,
 			Description: sk.Description,
 			Provenance:  prov,
 			Source:      firstNonEmpty(meta.Source, sk.Source),
@@ -166,6 +172,7 @@ func (s *Server) handleGetSkillDetail(w http.ResponseWriter, r *http.Request) {
 	}
 	_ = json.NewEncoder(w).Encode(map[string]any{
 		"name":        sk.Name,
+		"displayName": sk.DisplayName,
 		"description": sk.Description,
 		"content":     string(content),
 		"prompt":      prompt,
@@ -247,6 +254,10 @@ func (s *Server) handleCreateSkill(w http.ResponseWriter, r *http.Request) {
 	var sb strings.Builder
 	sb.WriteString("---\n")
 	sb.WriteString(fmt.Sprintf("name: %s\n", name))
+	displayName := strings.TrimSpace(body.DisplayName)
+	if displayName != "" {
+		sb.WriteString(fmt.Sprintf("display_name: %q\n", displayName))
+	}
 	description := strings.TrimSpace(body.Description)
 	if description != "" {
 		sb.WriteString(fmt.Sprintf("description: %q\n", description))
@@ -276,6 +287,7 @@ func (s *Server) handleCreateSkill(w http.ResponseWriter, r *http.Request) {
 	version := skillVersionFromRef(now)
 	meta := entity.Skill{
 		Name:        name,
+		DisplayName: displayName,
 		Description: description,
 		SourceType:  "manual",
 		Version:     version,
@@ -293,6 +305,7 @@ func (s *Server) handleCreateSkill(w http.ResponseWriter, r *http.Request) {
 		Summary:      "Skill created",
 		After: map[string]any{
 			"name":        name,
+			"displayName": displayName,
 			"description": description,
 		},
 		Request: r,
@@ -388,10 +401,12 @@ func (s *Server) handleInstallSkill(w http.ResponseWriter, r *http.Request) {
 		s.serverError(w, err)
 		return
 	}
+	copiedMeta := readSkillMetaFromDir(dst)
 	now := time.Now().UTC().Format(time.RFC3339)
 	version := firstNonEmpty(skillVersionFromRef(sourceRef), skillVersionFromRef(now))
 	meta := entity.Skill{
 		Name:        name,
+		DisplayName: firstNonEmpty(strings.TrimSpace(body.DisplayName), copiedMeta.DisplayName),
 		Description: description,
 		Source:      source,
 		SourceType:  sourceType,
@@ -516,8 +531,10 @@ func (s *Server) handleImportLocalSkills(w http.ResponseWriter, r *http.Request)
 			})
 			continue
 		}
+		copiedMeta := readSkillMetaFromDir(dst)
 		meta := entity.Skill{
 			Name:        candidate.Name,
+			DisplayName: copiedMeta.DisplayName,
 			Description: candidate.Description,
 			Source:      "local:" + candidate.Source,
 			SourceType:  "local-sync",
@@ -624,6 +641,7 @@ func (s *Server) handleRuntimeSkillPublish(w http.ResponseWriter, r *http.Reques
 		s.jsonErrorCode(w, http.StatusBadRequest, ErrCodeValidationFailed, "SKILL.md is required")
 		return
 	}
+	copiedMeta := readSkillMetaFromDir(dst)
 	managed := false
 	if body.Managed != nil {
 		managed = *body.Managed
@@ -634,6 +652,7 @@ func (s *Server) handleRuntimeSkillPublish(w http.ResponseWriter, r *http.Reques
 	version := firstNonEmpty(skillVersionFromRef(strings.TrimSpace(body.SourceRef)), skillVersionFromRef(now))
 	meta := entity.Skill{
 		Name:        name,
+		DisplayName: firstNonEmpty(strings.TrimSpace(body.DisplayName), copiedMeta.DisplayName),
 		Description: strings.TrimSpace(body.Description),
 		Source:      source,
 		SourceType:  sourceType,
@@ -772,6 +791,7 @@ func (s *Server) listSkillRegistryPackages() ([]skillPackageRow, error) {
 			}
 			out = append(out, skillPackageRow{
 				Name:        meta.Name,
+				DisplayName: meta.DisplayName,
 				Description: meta.Description,
 				Source:      meta.Source,
 				SourceType:  meta.SourceType,
@@ -1330,6 +1350,9 @@ func mergeSkillMeta(base, override entity.Skill) entity.Skill {
 	if strings.TrimSpace(override.Name) != "" {
 		base.Name = strings.TrimSpace(override.Name)
 	}
+	if strings.TrimSpace(override.DisplayName) != "" {
+		base.DisplayName = strings.TrimSpace(override.DisplayName)
+	}
 	if strings.TrimSpace(override.Description) != "" {
 		base.Description = strings.TrimSpace(override.Description)
 	}
@@ -1515,6 +1538,11 @@ func (s *Server) handlePutSkillPrompt(w http.ResponseWriter, r *http.Request) {
 	if content == "" {
 		content = fmt.Sprintf("# Skill: %s\n\n", name)
 	}
+	applyEditableMeta := func() {
+		if body.DisplayName != nil {
+			meta.DisplayName = strings.TrimSpace(*body.DisplayName)
+		}
+	}
 	next := ""
 	if strings.HasPrefix(content, "---") {
 		front, skillBody, err := parseSkillMDContent(content, name)
@@ -1528,6 +1556,7 @@ func (s *Server) handlePutSkillPrompt(w http.ResponseWriter, r *http.Request) {
 		}
 		meta = mergeSkillMeta(meta, front)
 		meta.Name = name
+		applyEditableMeta()
 		meta.Dirty = true
 		meta.UpdatedAt = time.Now().UTC().Format(time.RFC3339)
 		rendered, err := renderSkillMD(meta, skillBody)
@@ -1539,6 +1568,7 @@ func (s *Server) handlePutSkillPrompt(w http.ResponseWriter, r *http.Request) {
 	} else {
 		meta.Name = name
 		meta.Description = sk.Description
+		applyEditableMeta()
 		meta.Dirty = true
 		meta.UpdatedAt = time.Now().UTC().Format(time.RFC3339)
 		rendered, err := renderSkillMD(meta, content)

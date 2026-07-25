@@ -21,7 +21,8 @@ type promptResponse struct {
 }
 
 type promptSaveBody struct {
-	Content string `json:"content"`
+	Content     string  `json:"content"`
+	DisplayName *string `json:"displayName,omitempty"`
 }
 
 // ── Agency prompt ─────────────────────────────────────────────────────────────
@@ -200,6 +201,7 @@ func (s *Server) handleGetAgentContext(w http.ResponseWriter, r *http.Request) {
 	wakeup, _ := os.ReadFile(wakeupPath)
 
 	var skills []string
+	var skillDetails []map[string]string
 	seen := map[string]bool{}
 	addSkill := func(skillName string) {
 		if skillName == "" || seen[skillName] {
@@ -207,6 +209,16 @@ func (s *Server) handleGetAgentContext(w http.ResponseWriter, r *http.Request) {
 		}
 		skills = append(skills, skillName)
 		seen[skillName] = true
+		detail := map[string]string{"name": skillName}
+		if sk, err := s.st.Skill(skillName); err == nil && sk != nil {
+			if strings.TrimSpace(sk.DisplayName) != "" {
+				detail["displayName"] = strings.TrimSpace(sk.DisplayName)
+			}
+			if strings.TrimSpace(sk.Description) != "" {
+				detail["description"] = strings.TrimSpace(sk.Description)
+			}
+		}
+		skillDetails = append(skillDetails, detail)
 	}
 	for _, sk := range ctxbuild.DefaultSkillNames() {
 		addSkill(sk)
@@ -242,6 +254,7 @@ func (s *Server) handleGetAgentContext(w http.ResponseWriter, r *http.Request) {
 		"avatar":       meta.Avatar,
 		"syncedAt":     meta.SyncedAt,
 		"skills":       skills,
+		"skillDetails": skillDetails,
 		"workDir":      agentDir,
 		"addDirs":      addDirs,
 	}
