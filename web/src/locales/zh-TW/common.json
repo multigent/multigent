@@ -1487,6 +1487,8 @@
     "runtimeMayBeSlow": "執行環境可以啟動，但準備尚未完整。首次執行可能較慢。",
     "runtimeBlocked": "執行環境未就緒",
     "runtimeBlockedHint": "請先處理下面的阻塞項，再執行這個 Agent。",
+    "runtimeBlockedContactAdmin": "執行環境未就緒。請聯絡超級管理員處理後再執行這個 Agent。",
+    "runtimeBlockedPlaceholder": "執行環境未就緒，請聯絡超級管理員處理…",
     "runtimeBlockedBeforeSend": "這個 Agent 還不能執行，請先處理這些問題：",
     "stopped": "已停止",
     "protocolError": "對話流格式異常",

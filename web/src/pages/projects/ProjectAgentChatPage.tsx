@@ -4,7 +4,7 @@ import { useTranslation } from 'react-i18next'
 import { Edit3, Maximize2, Minimize2, RefreshCw, Send, Sparkles, Square } from 'lucide-react'
 import { ConversationLog } from '../../components/ui/ConversationLog'
 import { apiFetch, apiDelete, apiUrl } from '../../lib/api'
-import { getStoredToken, useAuth } from '../../lib/auth'
+import { getStoredToken, isSystemAdmin, useAuth } from '../../lib/auth'
 import { cn } from '../../lib/cn'
 
 type HistoryResp = {
@@ -103,6 +103,8 @@ export default function ProjectAgentChatPage() {
   const chatKey = projectId && agentName ? `${projectId}/${agentName}` : ''
   const activeChatKeyRef = useRef(chatKey)
   const runtimeBlocked = Boolean(runtimeReadiness?.blocking)
+  const canInspectRuntimeBlockers = isSystemAdmin(user)
+  const inputDisabled = loading || runtimeBlocked
 
   // Sync sessionId state + URL query param together so page refresh preserves the session.
   const updateSessionId = useCallback((sid: string) => {
@@ -253,7 +255,7 @@ export default function ProjectAgentChatPage() {
 
     const readiness = await loadReadiness(runProject, runAgent, runKey)
     if (readiness?.blocking) {
-      setError(runtimeBlockingMessage(readiness, t))
+      setError(runtimeBlockingMessage(readiness, t, canInspectRuntimeBlockers))
       setInput(text)
       return
     }
@@ -513,6 +515,7 @@ export default function ProjectAgentChatPage() {
           readiness={runtimeReadiness}
           checking={runtimeChecking}
           onRefresh={() => void loadReadiness()}
+          canInspectDetails={canInspectRuntimeBlockers}
         />
         {error && (
           <p className="mt-2 text-xs text-red-500 dark:text-red-400">{error}</p>
@@ -539,12 +542,17 @@ export default function ProjectAgentChatPage() {
           <textarea
             ref={inputRef}
             value={input}
-            onChange={(e) => setInput(e.target.value)}
+            onChange={(e) => {
+              if (inputDisabled) return
+              setInput(e.target.value)
+            }}
             onKeyDown={handleKeyDown}
-            placeholder={t('agentChat.placeholder')}
+            disabled={inputDisabled}
+            placeholder={runtimeBlocked ? t('agentChat.runtimeBlockedPlaceholder') : t('agentChat.placeholder')}
             rows={1}
-            className="max-h-32 min-h-8 flex-1 resize-none bg-transparent py-1.5 text-sm leading-relaxed text-neutral-800 outline-none placeholder:text-neutral-400 dark:text-zinc-200 dark:placeholder:text-zinc-600"
+            className="max-h-32 min-h-8 flex-1 resize-none bg-transparent py-1.5 text-sm leading-relaxed text-neutral-800 outline-none placeholder:text-neutral-400 disabled:cursor-not-allowed disabled:text-neutral-400 dark:text-zinc-200 dark:placeholder:text-zinc-600 dark:disabled:text-zinc-600"
             onInput={(e) => {
+              if (inputDisabled) return
               const el = e.currentTarget
               el.style.height = 'auto'
               el.style.height = Math.min(el.scrollHeight, 128) + 'px'
@@ -586,10 +594,11 @@ export default function ProjectAgentChatPage() {
   return chatPanel
 }
 
-function RuntimeReadinessBanner({ readiness, checking, onRefresh }: {
+function RuntimeReadinessBanner({ readiness, checking, onRefresh, canInspectDetails }: {
   readiness: RuntimeReadiness | null
   checking: boolean
   onRefresh: () => void
+  canInspectDetails: boolean
 }) {
   const { t } = useTranslation()
   if (!readiness && !checking) return null
@@ -606,7 +615,7 @@ function RuntimeReadinessBanner({ readiness, checking, onRefresh }: {
   const summary = checking
     ? t('agentChat.runtimeCheckingHint')
     : blocking
-      ? t('agentChat.runtimeBlockedHint')
+      ? canInspectDetails ? t('agentChat.runtimeBlockedHint') : t('agentChat.runtimeBlockedContactAdmin')
       : ready && visibleChecks.length === 0
         ? t('agentChat.runtimeReadyHint')
         : t('agentChat.runtimePreparingHint')
@@ -628,7 +637,7 @@ function RuntimeReadinessBanner({ readiness, checking, onRefresh }: {
           {checking ? t('common.loading') : t('common.refresh')}
         </button>
       </div>
-      {visibleChecks.length > 0 && (
+      {canInspectDetails && visibleChecks.length > 0 && (
         <div className="mt-2 space-y-1.5">
           {visibleChecks.map((check) => (
             <div key={check.key} className="rounded-md bg-white/55 px-2.5 py-1.5 dark:bg-zinc-950/20">
@@ -646,7 +655,8 @@ function RuntimeReadinessBanner({ readiness, checking, onRefresh }: {
   )
 }
 
-function runtimeBlockingMessage(readiness: RuntimeReadiness, t: (key: string) => string) {
+function runtimeBlockingMessage(readiness: RuntimeReadiness, t: (key: string) => string, canInspectDetails: boolean) {
+  if (!canInspectDetails) return t('agentChat.runtimeBlockedContactAdmin')
   const blockers = (readiness.checks ?? []).filter((check) => check.blocking || check.status === 'error')
   if (blockers.length === 0) return t('agentChat.runtimeBlocked')
   return [

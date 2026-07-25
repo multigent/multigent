@@ -1501,6 +1501,8 @@
     "runtimeMayBeSlow": "Runtime can run, but some preparation is incomplete. The first run may be slower.",
     "runtimeBlocked": "Runtime not ready",
     "runtimeBlockedHint": "Resolve the blocking items below before running this agent.",
+    "runtimeBlockedContactAdmin": "Runtime is not ready. Contact a Super Admin before running this agent.",
+    "runtimeBlockedPlaceholder": "Runtime is not ready. Contact a Super Admin…",
     "runtimeBlockedBeforeSend": "This agent is not ready to run yet. Please resolve these items first:",
     "stopped": "Stopped",
     "protocolError": "Invalid chat stream format",

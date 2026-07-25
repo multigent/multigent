@@ -1477,6 +1477,8 @@
     "runtimeMayBeSlow": "実行環境は起動できますが、準備が未完了です。初回実行は遅くなる場合があります。",
     "runtimeBlocked": "実行環境が未準備",
     "runtimeBlockedHint": "下記のブロック項目を解消してから、この Agent を実行してください。",
+    "runtimeBlockedContactAdmin": "実行環境が未準備です。スーパー管理者に対応を依頼してから、この Agent を実行してください。",
+    "runtimeBlockedPlaceholder": "実行環境が未準備です。スーパー管理者に連絡してください…",
     "runtimeBlockedBeforeSend": "この Agent はまだ実行できません。先に以下を解消してください:",
     "stopped": "停止しました",
     "protocolError": "チャットストリーム形式が不正です",

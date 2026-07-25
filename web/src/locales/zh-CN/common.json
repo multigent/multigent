@@ -1501,6 +1501,8 @@
     "runtimeMayBeSlow": "运行环境可以启动，但准备尚未完整。首次运行可能较慢。",
     "runtimeBlocked": "运行环境未就绪",
     "runtimeBlockedHint": "请先处理下面的阻塞项，再运行这个 Agent。",
+    "runtimeBlockedContactAdmin": "运行环境未就绪。请联系超级管理员处理后再运行这个 Agent。",
+    "runtimeBlockedPlaceholder": "运行环境未就绪，请联系超级管理员处理…",
     "runtimeBlockedBeforeSend": "这个 Agent 还不能运行，请先处理这些问题：",
     "stopped": "已停止",
     "protocolError": "对话流格式异常",
