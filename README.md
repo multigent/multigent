@@ -31,6 +31,8 @@ Most teams already have docs, task boards, repos, chats, meetings, and local cod
 Multigent is built around that operating model:
 
 - **Shared agent context**: workspace, team, role, project, task, docs, skills, tools, and workflow state are managed in one place.
+- **Humans and agents in one project**: people and agents share the same project space, task queue, workflow steps, reviews, and handoff records instead of working in separate tools.
+- **RBAC for mixed teams**: workspace roles, project membership, agent permissions, tool access, and review gates define what every human or agent can see and do.
 - **Agent-ready task execution**: tasks can bind to workflows, carry structured inputs and outputs, and move between agents and humans.
 - **Human review without human blocking**: humans act as owners, reviewers, and process designers instead of being the mandatory runtime loop.
 - **External tools as capabilities**: GitHub, Feishu/Lark, Slack, Linear-style project systems, web search, design tools, and other services are modeled as workspace tools that agents can use through controlled runtime adapters.
@@ -42,6 +44,7 @@ Multigent is built around that operating model:
 - **Multi-agent autonomous wakeups**: agents can be woken by tasks, heartbeat schedules, cron jobs, manual triggers, and collaboration events, so work can keep moving without a human constantly copying prompts around.
 - **Loop engineering for agent teams**: prompts, skills, tools, model accounts, schedules, and review policies are managed as a repeatable operating loop rather than one-off conversations.
 - **Visual SOP and workflow orchestration**: design task flows on a board, define required inputs and outputs, add review loops and branch conditions, then bind real tasks to that workflow.
+- **Role-based control for humans and agents**: assign people and agents to the same project, then control project access, task visibility, tool credentials, workflow actions, and audit trails through scoped permissions.
 - **Human-in-the-loop by design**: humans can review, approve, reject, or redirect at key workflow steps while agents continue handling the repeatable work around them.
 - **Demo video coming next**: a short product walkthrough will be added as the public demo workspace stabilizes.
 
@@ -111,7 +114,7 @@ Use task-triggered wakeups, heartbeat schedules, cron jobs, and manual wakeups. 
 
 ### RBAC and Audit
 
-Workspace roles, project membership, task visibility, user invitations, and audit events are first-class concepts. Humans and agents are treated as principals with scoped permissions.
+Workspace roles, project membership, task visibility, user invitations, agent permissions, tool access, review gates, and audit events are first-class concepts. Humans and agents are treated as principals in the same collaboration system, with scoped permissions that decide what they can read, change, run, approve, or hand off.
 
 ## Quick Start
 
