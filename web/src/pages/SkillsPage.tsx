@@ -6,7 +6,7 @@ import remarkGfm from 'remark-gfm'
 import { BookOpen, FileCode, FolderTree, Puzzle, Save, Upload, X } from 'lucide-react'
 import { cn } from '../lib/cn'
 import { useApiJson } from '../lib/use-api'
-import { apiFetch, apiPost, apiPut } from '../lib/api'
+import { apiFetch, apiPatch, apiPost, apiPut } from '../lib/api'
 import { primaryOutlineButton } from '../lib/button-styles'
 import { useWorkspaceAccess } from '../lib/workspace-access'
 
@@ -88,14 +88,19 @@ function SkillItem({ skill, defaultOpen, canAdmin }: { skill: SkillRow; defaultO
   const [preview, setPreview] = useState(false)
   const [syncOpen, setSyncOpen] = useState(false)
   const [displayName, setDisplayName] = useState(skill.displayName ?? '')
+  const [currentDisplayName, setCurrentDisplayName] = useState(skill.displayName ?? '')
   const [editingDisplayName, setEditingDisplayName] = useState(false)
+  const [savingDisplayName, setSavingDisplayName] = useState(false)
+  const cancelDisplayNameSaveRef = useRef(false)
 
   const content = value ?? (detailState.status === 'ok' ? (detailState.data.content ?? detailState.data.prompt) : '')
-  const effectiveDisplayName = displayName || skill.displayName || skill.name
+  const effectiveDisplayName = currentDisplayName || skill.name
 
   useEffect(() => {
     if (detailState.status === 'ok' && !dirty) {
-      setDisplayName(detailState.data.displayName ?? skill.displayName ?? '')
+      const next = detailState.data.displayName ?? skill.displayName ?? ''
+      setDisplayName(next)
+      setCurrentDisplayName(next)
     }
   }, [detailState.status, dirty, skill.displayName])
 
@@ -103,7 +108,7 @@ function SkillItem({ skill, defaultOpen, canAdmin }: { skill: SkillRow; defaultO
     setSaving(true)
     setSaved(false)
     try {
-      await apiPut(`/api/v1/skills/${encodeURIComponent(skill.name)}`, { content, displayName })
+      await apiPut(`/api/v1/skills/${encodeURIComponent(skill.name)}`, { content })
       setDirty(false)
       setSaved(true)
       setTimeout(() => setSaved(false), 2000)
@@ -112,7 +117,33 @@ function SkillItem({ skill, defaultOpen, canAdmin }: { skill: SkillRow; defaultO
     } finally {
       setSaving(false)
     }
-  }, [skill.name, content, displayName])
+  }, [skill.name, content])
+
+  const saveDisplayName = useCallback(async () => {
+    if (cancelDisplayNameSaveRef.current) {
+      cancelDisplayNameSaveRef.current = false
+      setDisplayName(currentDisplayName)
+      setEditingDisplayName(false)
+      return
+    }
+    const next = displayName.trim()
+    if (next === currentDisplayName) {
+      setEditingDisplayName(false)
+      return
+    }
+    setSavingDisplayName(true)
+    try {
+      const res = await apiPatch<{ displayName?: string }>(`/api/v1/skills/${encodeURIComponent(skill.name)}`, { displayName: next })
+      const savedName = res.displayName ?? next
+      setDisplayName(savedName)
+      setCurrentDisplayName(savedName)
+      setEditingDisplayName(false)
+    } catch (e) {
+      alert(String(e))
+    } finally {
+      setSavingDisplayName(false)
+    }
+  }, [skill.name, displayName, currentDisplayName])
 
   return (
     <div
@@ -125,8 +156,8 @@ function SkillItem({ skill, defaultOpen, canAdmin }: { skill: SkillRow; defaultO
         className="flex min-h-24 w-full items-start px-5 py-4 text-left transition-colors hover:bg-neutral-50/80 dark:hover:bg-zinc-800/30"
       >
         <div className="min-w-0 flex-1">
-          <p className="text-sm font-medium text-neutral-900 dark:text-zinc-100">{skill.displayName || skill.name}</p>
-          {skill.displayName && <p className="mt-0.5 truncate font-mono text-xs text-neutral-400 dark:text-zinc-500">{skill.name}</p>}
+          <p className="text-sm font-medium text-neutral-900 dark:text-zinc-100">{currentDisplayName || skill.name}</p>
+          {currentDisplayName && <p className="mt-0.5 truncate font-mono text-xs text-neutral-400 dark:text-zinc-500">{skill.name}</p>}
           {skill.description && (
             <p className="mt-1 line-clamp-2 text-xs leading-relaxed text-neutral-400 dark:text-zinc-500">{skill.description}</p>
           )}
@@ -144,13 +175,16 @@ function SkillItem({ skill, defaultOpen, canAdmin }: { skill: SkillRow; defaultO
                   <input
                     autoFocus
                     value={displayName}
-                    onChange={(e) => { setDisplayName(e.target.value); setDirty(true); setSaved(false) }}
-                    onBlur={() => setEditingDisplayName(false)}
+                    disabled={savingDisplayName}
+                    onChange={(e) => setDisplayName(e.target.value)}
+                    onBlur={() => void saveDisplayName()}
                     onKeyDown={(e) => {
                       if (e.key === 'Enter') {
                         e.currentTarget.blur()
                       }
                       if (e.key === 'Escape') {
+                        cancelDisplayNameSaveRef.current = true
+                        setDisplayName(currentDisplayName)
                         setEditingDisplayName(false)
                       }
                     }}
@@ -168,7 +202,7 @@ function SkillItem({ skill, defaultOpen, canAdmin }: { skill: SkillRow; defaultO
                     title={canAdmin ? t('skill.displayNameHint') : undefined}
                   >
                     {effectiveDisplayName}
-                    {dirty && <span className="ml-1 text-[10px] text-amber-500">●</span>}
+                    {savingDisplayName && <span className="ml-1 text-[10px] text-neutral-400">…</span>}
                   </button>
                 )}
                 {effectiveDisplayName !== skill.name && <p className="mt-0.5 truncate font-mono text-xs text-neutral-400 dark:text-zinc-500">{skill.name}</p>}
@@ -296,7 +330,6 @@ function SkillRegistryLine({ skill, className }: { skill: Partial<SkillRow & Ski
   if (skill.sourceType) bits.push(skill.sourceType)
   if (skill.version) bits.push(`v ${skill.version}`)
   if (skill.managed) bits.push(t('skill.managed'))
-  if (skill.dirty) bits.push(t('skill.customized'))
   if (bits.length === 0) return null
   return (
     <div className={cn('flex flex-wrap gap-1.5', className)}>

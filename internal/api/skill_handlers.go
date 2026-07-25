@@ -40,6 +40,10 @@ type createSkillBody struct {
 	Content     string `json:"content"`
 }
 
+type patchSkillMetadataBody struct {
+	DisplayName *string `json:"displayName,omitempty"`
+}
+
 type skillFileEntry struct {
 	Path     string `json:"path"`
 	Size     int64  `json:"size"`
@@ -1586,6 +1590,51 @@ func (s *Server) handlePutSkillPrompt(w http.ResponseWriter, r *http.Request) {
 	_ = os.Remove(filepath.Join(s.st.SkillDir(name), "skill.yaml"))
 	s.markPlaybookObjectCustomized(r, "skill", "", name)
 	_ = json.NewEncoder(w).Encode(map[string]bool{"ok": true})
+}
+
+func (s *Server) handlePatchSkillMetadata(w http.ResponseWriter, r *http.Request) {
+	if !s.checkCurrentWorkspaceAdmin(w, r) {
+		return
+	}
+	name := r.PathValue("name")
+	sk, err := s.st.Skill(name)
+	if err != nil {
+		if isNotFoundErr(err) {
+			s.jsonError(w, http.StatusNotFound, "skill not found")
+			return
+		}
+		s.serverError(w, err)
+		return
+	}
+	var body patchSkillMetadataBody
+	if err := s.readJSON(w, r, &body); err != nil {
+		s.jsonError(w, http.StatusBadRequest, "invalid JSON body")
+		return
+	}
+	if body.DisplayName == nil {
+		s.jsonErrorCode(w, http.StatusBadRequest, ErrCodeValidationFailed, "displayName is required")
+		return
+	}
+	if err := s.ensureSkillWritableCopy(name); err != nil {
+		s.serverError(w, err)
+		return
+	}
+	meta := s.skillRegistryMeta(name)
+	if meta.Name == "" {
+		meta = *sk
+	}
+	meta.Name = name
+	meta.DisplayName = strings.TrimSpace(*body.DisplayName)
+	meta.UpdatedAt = time.Now().UTC().Format(time.RFC3339)
+	if err := writeSkillRegistryMeta(s.st.SkillDir(name), meta); err != nil {
+		s.serverError(w, err)
+		return
+	}
+	_ = json.NewEncoder(w).Encode(map[string]any{
+		"ok":          true,
+		"name":        name,
+		"displayName": meta.DisplayName,
+	})
 }
 
 // ── Role / Team skill binding ─────────────────────────────────────────────────
