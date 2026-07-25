@@ -1,6 +1,7 @@
 package runenv
 
 import (
+	"path/filepath"
 	"strings"
 	"testing"
 
@@ -59,7 +60,7 @@ func TestDockerProviderPrependsRuntimeToolBin(t *testing.T) {
 		Image:    sandbox.BaseImage,
 		Docker:   &entity.DockerSandboxConfig{Image: sandbox.BaseImage},
 		Env: []entity.RuntimeEnvVar{
-			{Name: "MULTIGENT_TOOL_BIN_DIR", Value: "/agent/.multigent/runtime-tools/run/bin"},
+			{Name: "MULTIGENT_TOOL_BIN_DIR", Value: filepath.Join(dir, ".multigent", "runtime-tools", "run", "bin")},
 			{Name: "MULTIGENT_TOOL_CACHE_BIN_DIR", Value: "/workspace/.multigent/tool-cache/npm/bin"},
 		},
 	}
@@ -75,7 +76,7 @@ func TestDockerProviderPrependsRuntimeToolBin(t *testing.T) {
 	}
 
 	joined := strings.Join(args, "\n")
-	want := "PATH=/agent/.multigent/runtime-tools/run/bin:/workspace/.multigent/tool-cache/npm/bin:" + runtimecli.ManagedBinDir + ":" + runtimecli.BinDir
+	want := "PATH=/workspace/.multigent/runtime-tools/run/bin:/workspace/.multigent/tool-cache/npm/bin:" + runtimecli.ManagedBinDir + ":" + runtimecli.BinDir
 	if !strings.Contains(joined, want) {
 		t.Fatalf("docker args missing tool bin path %q:\n%s", want, joined)
 	}
@@ -88,7 +89,7 @@ func TestDockerProviderRunsRuntimeToolBootstrap(t *testing.T) {
 		Image:    sandbox.BaseImage,
 		Docker:   &entity.DockerSandboxConfig{Image: sandbox.BaseImage},
 		Env: []entity.RuntimeEnvVar{
-			{Name: "MULTIGENT_TOOL_BOOTSTRAP_FILE", Value: "/agent/.multigent/runtime-tools/run/bootstrap-tools.sh"},
+			{Name: "MULTIGENT_TOOL_BOOTSTRAP_FILE", Value: filepath.Join(dir, ".multigent", "runtime-tools", "run", "bootstrap-tools.sh")},
 		},
 	}
 
@@ -103,7 +104,7 @@ func TestDockerProviderRunsRuntimeToolBootstrap(t *testing.T) {
 	}
 
 	joined := strings.Join(args, "\n")
-	if !strings.Contains(joined, "/agent/.multigent/runtime-tools/run/bootstrap-tools.sh") {
+	if !strings.Contains(joined, "/workspace/.multigent/runtime-tools/run/bootstrap-tools.sh") {
 		t.Fatalf("docker args missing bootstrap script:\n%s", joined)
 	}
 	if !strings.Contains(joined, "exec \"$@\"") {

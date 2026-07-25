@@ -59,6 +59,31 @@ function resetTextareaHeight(el: HTMLTextAreaElement | null) {
   if (el) el.style.height = 'auto'
 }
 
+function chatPayloadError(payload: string): string {
+  const text = payload.trim()
+  if (!text.startsWith('{')) return ''
+  try {
+    const ev = JSON.parse(text) as { type?: string; subtype?: string; is_error?: boolean; errors?: string[]; result?: string }
+    if (ev.type === 'result' && ev.is_error) {
+      if (Array.isArray(ev.errors) && ev.errors.length > 0) {
+        return ev.errors.filter(Boolean).join('; ')
+      }
+      return ev.result || 'Error'
+    }
+  } catch {
+    return ''
+  }
+  return ''
+}
+
+function friendlyChatError(message: string, t: (key: string) => string): string {
+  const msg = message.trim()
+  if (/No conversation found with session ID/i.test(msg)) {
+    return t('agentChat.sessionMissing')
+  }
+  return msg
+}
+
 function agentChatDraftKey(projectId?: string, agentName?: string) {
   if (!projectId || !agentName) return null
   return `multigent.agentChatDraft:${projectId}:${agentName}`
@@ -266,6 +291,15 @@ export default function ProjectAgentChatPage() {
 
     const controller = new AbortController()
     abortRef.current = controller
+    const seenErrors = new Set<string>()
+    const showRunError = (message: string) => {
+      const msg = friendlyChatError(message, t).trim() || t('agentChat.error')
+      if (seenErrors.has(msg)) return
+      seenErrors.add(msg)
+      setRunNotice(null)
+      setError(msg)
+      setContent((prev) => appendLog(prev, `=== Error: ${msg} ===`))
+    }
     try {
       const headers: Record<string, string> = {
         'Content-Type': 'application/json',
@@ -310,6 +344,11 @@ export default function ProjectAgentChatPage() {
             if (evt.type === 'chat_event') {
               if (evt.session_id) updateSessionId(String(evt.session_id))
               if (typeof evt.payload === 'string' && evt.payload) {
+                const payloadError = chatPayloadError(evt.payload)
+                if (payloadError) {
+                  showRunError(payloadError)
+                  continue
+                }
                 setRunNotice(null)
                 setContent((prev) => appendLog(prev, evt.payload))
               }
@@ -321,9 +360,7 @@ export default function ProjectAgentChatPage() {
             }
             if (evt.type === 'chat_error') {
               const msg = evt.error ? String(evt.error) : t('agentChat.error')
-              setRunNotice(null)
-              setError(msg)
-              setContent((prev) => appendLog(prev, `=== Error: ${msg} ===`))
+              showRunError(msg)
               continue
             }
             if (evt.session_id) updateSessionId(evt.session_id)
@@ -339,7 +376,7 @@ export default function ProjectAgentChatPage() {
       const stopped = (e as Error).name === 'AbortError'
       const msg = stopped ? t('agentChat.stopped') : (e instanceof Error ? e.message : String(e))
       setError(stopped ? null : msg)
-      setContent((prev) => appendLog(prev, `=== ${msg} ===`))
+      if (!stopped) showRunError(msg)
     } finally {
       if (activeChatKeyRef.current !== runKey) return
       abortRef.current = null

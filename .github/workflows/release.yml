@@ -10,10 +10,6 @@ on:
       tag:
         description: "Release tag to build, for example v0.1.0"
         required: true
-      publish_npm:
-        description: "Publish npm wrapper package"
-        required: false
-        default: "false"
       build_runtime_image:
         description: "Build runtime-base image: auto, true, or false"
         required: false
@@ -384,46 +380,3 @@ jobs:
           git add Formula/multigent.rb
           git commit -m "multigent ${TAG}" || exit 0
           git push
-
-  npm:
-    needs: [verify, binaries]
-    runs-on: ubuntu-latest
-    if: github.event_name == 'workflow_dispatch' && github.event.inputs.publish_npm == 'true'
-    permissions:
-      contents: read
-      id-token: write
-    steps:
-      - name: Checkout
-        uses: actions/checkout@v4
-        with:
-          ref: ${{ github.event.inputs.tag || github.ref }}
-
-      - name: Setup Node
-        uses: actions/setup-node@v4
-        with:
-          node-version: ${{ env.NODE_VERSION }}
-          registry-url: https://registry.npmjs.org
-
-      - name: Check npm token
-        id: npm_token
-        env:
-          NODE_AUTH_TOKEN: ${{ secrets.NPM_TOKEN }}
-        run: |
-          if [ -n "$NODE_AUTH_TOKEN" ]; then
-            echo "publish=true" >> "$GITHUB_OUTPUT"
-          else
-            echo "publish=false" >> "$GITHUB_OUTPUT"
-            echo "NPM_TOKEN is not configured; skipping npm publish."
-          fi
-
-      - name: Publish npm binary wrapper
-        if: steps.npm_token.outputs.publish == 'true'
-        working-directory: npm
-        env:
-          NPM_TOKEN: ${{ secrets.NPM_TOKEN }}
-        run: |
-          cat > "$RUNNER_TEMP/npmrc" <<'NPMRC'
-          @multigent:registry=https://registry.npmjs.org/
-          //registry.npmjs.org/:_authToken=${NPM_TOKEN}
-          NPMRC
-          NPM_CONFIG_USERCONFIG="$RUNNER_TEMP/npmrc" npm publish --access public

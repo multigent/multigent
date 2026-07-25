@@ -54,6 +54,8 @@ npm：
 npm install -g @multigent/multigent
 ```
 
+npm 包版本必须与 release tag 去掉 `v` 后一致；release workflow 会检查这个一致性。npm 发布是维护者本地步骤，不通过 GitHub Actions 自动发布。
+
 ## Docker 镜像
 
 发布流程会推送：
@@ -84,8 +86,9 @@ ghcr.io/multigent/multigent/runtime-base:latest
    ```
 
 5. 等待 `.github/workflows/release.yml` 完成。
-6. 确认 GitHub Release 产物、GHCR 镜像、npm 包状态。
-7. 验证公开 quickstart：
+6. 使用维护者 npm token 在本地发布 npm。
+7. 确认 GitHub Release 产物、GHCR 镜像、npm 包状态。
+8. 验证公开 quickstart：
 
    ```bash
    curl -fsSL https://raw.githubusercontent.com/multigent/multigent/main/scripts/install.sh | bash

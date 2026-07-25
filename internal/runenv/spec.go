@@ -4,6 +4,7 @@ package runenv
 import (
 	"fmt"
 	"os"
+	"path/filepath"
 	"strings"
 
 	"github.com/multigent/multigent/internal/agentcli"
@@ -58,10 +59,10 @@ func (DockerProvider) Command(spec ProcessSpec) (string, []string, error) {
 	cfg.ExtraVolumes = append(cfg.ExtraVolumes, "multigent-toolchains:"+agentcli.ToolchainHome)
 	pathParts := []string{}
 	if toolBin := runtimeEnvValue(spec.Runtime, "MULTIGENT_TOOL_BIN_DIR"); toolBin != "" {
-		pathParts = append(pathParts, toolBin)
+		pathParts = append(pathParts, dockerWorkspacePath(spec.AgentDir, toolBin))
 	}
 	if toolCacheBin := runtimeEnvValue(spec.Runtime, "MULTIGENT_TOOL_CACHE_BIN_DIR"); toolCacheBin != "" {
-		pathParts = append(pathParts, toolCacheBin)
+		pathParts = append(pathParts, dockerWorkspacePath(spec.AgentDir, toolCacheBin))
 	}
 	pathParts = append(pathParts, runtimecli.ManagedBinDir, runtimecli.BinDir, agentcli.ToolchainBin, sandbox.UserBin, sandbox.ContainerDefaultPATH)
 	cfg.ExtraEnv = append(cfg.ExtraEnv, "PATH="+strings.Join(pathParts, ":"))
@@ -76,9 +77,27 @@ func (DockerProvider) Command(spec ProcessSpec) (string, []string, error) {
 		command = wrapInlineScript(command, runtimeBootstrap)
 	}
 	if bootstrap := runtimeEnvValue(spec.Runtime, "MULTIGENT_TOOL_BOOTSTRAP_FILE"); bootstrap != "" {
-		command = wrapBootstrapScript(command, bootstrap)
+		command = wrapBootstrapScript(command, dockerWorkspacePath(spec.AgentDir, bootstrap))
 	}
 	return sandbox.RunArgs(spec.AgentDir, spec.Model, cfg, command)
+}
+
+func dockerWorkspacePath(agentDir, path string) string {
+	path = strings.TrimSpace(path)
+	if path == "" {
+		return path
+	}
+	agentDir = strings.TrimSpace(agentDir)
+	if agentDir == "" {
+		return path
+	}
+	cleanPath := filepath.Clean(path)
+	cleanAgent := filepath.Clean(agentDir)
+	rel, err := filepath.Rel(cleanAgent, cleanPath)
+	if err != nil || rel == "." || strings.HasPrefix(rel, ".."+string(filepath.Separator)) || rel == ".." {
+		return path
+	}
+	return sandbox.WorkspaceMount + "/" + filepath.ToSlash(rel)
 }
 
 func wrapInlineScript(cmd []string, script string) []string {

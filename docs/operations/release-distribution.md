@@ -54,7 +54,7 @@ npm:
 npm install -g @multigent/multigent
 ```
 
-The npm package must keep `npm/package.json` version equal to the release tag without the leading `v`; the release workflow fails if they drift.
+The npm package must keep `npm/package.json` version equal to the release tag without the leading `v`; the release workflow fails if they drift. npm publishing is a local maintainer step, not a GitHub Actions job.
 
 ## Docker Images
 
@@ -86,8 +86,9 @@ It must remain public before announcing a release; otherwise new users will fail
    ```
 
 5. Wait for `.github/workflows/release.yml`.
-6. Confirm GitHub Release assets, GHCR packages, and npm package if `NPM_TOKEN` is configured.
-7. Confirm the public quickstart:
+6. Publish npm locally with the maintainer npm token.
+7. Confirm GitHub Release assets, GHCR packages, and npm package.
+8. Confirm the public quickstart:
 
    ```bash
    curl -fsSL https://raw.githubusercontent.com/multigent/multigent/main/scripts/install.sh | bash

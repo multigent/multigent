@@ -180,7 +180,7 @@ func (r *Runner) ExecPrompt(project, agentName, prompt, sessionID string) (*RunR
 		injectRuntimeControlEnvIntoRuntime(runtimeCfg, processRuntimeEnv)
 		mounts := append([]entity.RuntimeMount(nil), runtimeCfg.Mounts...)
 		r.addRuntimeDockerSystemMounts(runtimeCfg)
-		containerPromptFile := agentDir + "/" + filepath.Base(promptFile)
+		containerPromptFile := "/workspace/" + filepath.Base(promptFile)
 		remappedInner := remapPromptFile(innerArgs, promptFile, containerPromptFile)
 		var err error
 		executable, args, err = provider.Command(runenv.ProcessSpec{
@@ -388,7 +388,7 @@ func (r *Runner) RunTask(project, agentName string, task *entity.Task, sessionID
 
 		// The prompt file path inside the container.
 		// innerArgs reference the host promptFile path — remap it to the real agent path.
-		containerPromptFile := agentDir + "/" + filepath.Base(promptFile)
+		containerPromptFile := "/workspace/" + filepath.Base(promptFile)
 		remappedInner := remapPromptFile(innerArgs, promptFile, containerPromptFile)
 
 		var err error

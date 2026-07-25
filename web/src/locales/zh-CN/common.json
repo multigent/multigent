@@ -1506,6 +1506,7 @@
     "runtimeBlockedBeforeSend": "这个 Agent 还不能运行，请先处理这些问题：",
     "stopped": "已停止",
     "protocolError": "对话流格式异常",
+    "sessionMissing": "这个会话已失效或不存在。请点击“新会话”后重新发送。",
     "error": "对话执行失败"
   },
   "context": {

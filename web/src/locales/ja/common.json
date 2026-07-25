@@ -1482,6 +1482,7 @@
     "runtimeBlockedBeforeSend": "この Agent はまだ実行できません。先に以下を解消してください:",
     "stopped": "停止しました",
     "protocolError": "チャットストリーム形式が不正です",
+    "sessionMissing": "このセッションは存在しないか期限切れです。新しいセッションを開始してから再送信してください。",
     "error": "チャット実行に失敗しました"
   },
   "context": {

@@ -505,8 +505,10 @@ func extractAgentChatError(line string) string {
 		return ""
 	}
 	var ev struct {
-		Type    string `json:"type"`
-		Message string `json:"message"`
+		Type    string   `json:"type"`
+		Subtype string   `json:"subtype"`
+		Message string   `json:"message"`
+		Errors  []string `json:"errors"`
 		Error   struct {
 			Message string `json:"message"`
 		} `json:"error"`
@@ -521,6 +523,10 @@ func extractAgentChatError(line string) string {
 	switch ev.Type {
 	case "error":
 		return strings.TrimSpace(ev.Message)
+	case "result":
+		if ev.Subtype == "error_during_execution" && len(ev.Errors) > 0 {
+			return strings.TrimSpace(strings.Join(ev.Errors, "; "))
+		}
 	case "turn.failed":
 		return strings.TrimSpace(ev.Error.Message)
 	case "item.completed":

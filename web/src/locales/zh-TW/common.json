@@ -1492,6 +1492,7 @@
     "runtimeBlockedBeforeSend": "這個 Agent 還不能執行，請先處理這些問題：",
     "stopped": "已停止",
     "protocolError": "對話流格式異常",
+    "sessionMissing": "這個會話已失效或不存在。請點擊「新會話」後重新送出。",
     "error": "對話執行失敗"
   },
   "context": {

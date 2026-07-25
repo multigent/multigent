@@ -1506,6 +1506,7 @@
     "runtimeBlockedBeforeSend": "This agent is not ready to run yet. Please resolve these items first:",
     "stopped": "Stopped",
     "protocolError": "Invalid chat stream format",
+    "sessionMissing": "This session no longer exists. Start a new session and send the message again.",
     "error": "Chat execution failed"
   },
   "context": {
