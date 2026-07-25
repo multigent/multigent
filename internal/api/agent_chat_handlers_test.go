@@ -55,6 +55,24 @@ func TestExtractAgentChatSessionID(t *testing.T) {
 	}
 }
 
+func TestSummarizeSessionTitleFromLog(t *testing.T) {
+	log := strings.Join([]string{
+		`{"type":"system","session_id":"sess-one"}`,
+		`{"type":"human","content":"请帮我看一下这个任务为什么失败"}`,
+		`{"type":"assistant","message":{"content":[{"type":"text","text":"我来看一下。"}]}}`,
+	}, "\n")
+	if got := summarizeSessionTitleFromLog(log); got != "请帮我看一下这个任务为什么失败" {
+		t.Fatalf("summarizeSessionTitleFromLog() = %q", got)
+	}
+}
+
+func TestSummarizeSessionTitleFromClaudeUserLog(t *testing.T) {
+	log := `{"type":"user","message":{"role":"user","content":[{"type":"text","text":"检查本地文件"}]},"session_id":"sess-two"}`
+	if got := summarizeSessionTitleFromLog(log); got != "检查本地文件" {
+		t.Fatalf("summarizeSessionTitleFromLog() = %q", got)
+	}
+}
+
 func TestExtractAgentChatError(t *testing.T) {
 	tests := []struct {
 		name string

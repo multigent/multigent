@@ -14,6 +14,21 @@ type HistoryResp = {
   runs?: Array<{ startedAt: string; status: string; logPath: string }>
 }
 
+type ChatSessionOption = {
+  sessionId: string
+  title: string
+  source?: string
+  model?: string
+  status?: string
+  runCount?: number
+  startedAt?: string
+  updatedAt?: string
+}
+
+type ChatSessionsResp = {
+  sessions?: ChatSessionOption[]
+}
+
 type AgentContext = {
   name?: string
   avatar?: string
@@ -99,6 +114,30 @@ function readAgentChatDraft(projectId?: string, agentName?: string) {
   }
 }
 
+function formatSessionOption(item: ChatSessionOption): string {
+  const parts: string[] = []
+  const title = item.title || shortSession(item.sessionId)
+  parts.push(title)
+  if (item.updatedAt) parts.push(formatCompactDate(item.updatedAt))
+  if (item.runCount && item.runCount > 1) parts.push(`x${item.runCount}`)
+  return parts.join(' · ')
+}
+
+function formatCompactDate(value: string): string {
+  const d = new Date(value)
+  if (Number.isNaN(d.getTime())) return ''
+  return new Intl.DateTimeFormat(undefined, {
+    month: '2-digit',
+    day: '2-digit',
+    hour: '2-digit',
+    minute: '2-digit',
+  }).format(d)
+}
+
+function shortSession(sessionId: string): string {
+  return sessionId.length > 14 ? `${sessionId.slice(0, 14)}…` : sessionId
+}
+
 export default function ProjectAgentChatPage() {
   const { t } = useTranslation()
   const { user } = useAuth()
@@ -122,6 +161,8 @@ export default function ProjectAgentChatPage() {
   const [providers, setProviders] = useState<ProviderOption[]>([])
   const [sessionEditorOpen, setSessionEditorOpen] = useState(false)
   const [sessionDraft, setSessionDraft] = useState(routeSessionId)
+  const [sessionOptions, setSessionOptions] = useState<ChatSessionOption[]>([])
+  const [sessionsLoading, setSessionsLoading] = useState(false)
   const scrollRef = useRef<HTMLDivElement>(null)
   const inputRef = useRef<HTMLTextAreaElement>(null)
   const abortRef = useRef<AbortController | null>(null)
@@ -201,6 +242,20 @@ export default function ProjectAgentChatPage() {
     }
   }, [agentName, chatKey, historyPath, projectId, updateSessionId])
 
+  const loadSessionOptions = useCallback(async (project = projectId, agent = agentName, expectedKey = chatKey) => {
+    if (!project || !agent) return
+    setSessionsLoading(true)
+    try {
+      const data = await apiFetch<ChatSessionsResp>(`/api/v1/projects/${encodeURIComponent(project)}/agents/${encodeURIComponent(agent)}/chat/sessions`)
+      if (activeChatKeyRef.current !== expectedKey) return
+      setSessionOptions(data.sessions ?? [])
+    } catch {
+      if (activeChatKeyRef.current === expectedKey) setSessionOptions([])
+    } finally {
+      if (activeChatKeyRef.current === expectedKey) setSessionsLoading(false)
+    }
+  }, [agentName, chatKey, projectId])
+
   // Route params can change without remounting this page. Keep every chat view
   // scoped by project/agent and stop any in-flight stream from the previous one.
   useEffect(() => {
@@ -236,8 +291,9 @@ export default function ProjectAgentChatPage() {
     if (currentRouteSessionId) {
       void loadHistory(currentRouteSessionId, projectId, agentName, nextKey)
     }
+    void loadSessionOptions(projectId, agentName, nextKey)
     void loadReadiness(projectId, agentName, nextKey)
-  }, [projectId, agentName, loadHistory, loadReadiness])
+  }, [projectId, agentName, loadHistory, loadReadiness, loadSessionOptions])
 
   useEffect(() => {
     if (!projectId || !agentName) return
@@ -402,6 +458,7 @@ export default function ProjectAgentChatPage() {
               replyPendingRef.current = false
               setReplyPending(false)
               if (evt.session_id) updateSessionId(evt.session_id)
+              void loadSessionOptions(runProject, runAgent, runKey)
               continue
             }
             if (evt.type === 'chat_error') {
@@ -541,7 +598,11 @@ export default function ProjectAgentChatPage() {
           <div className="flex items-center gap-2">
             <button
               type="button"
-              onClick={() => { setSessionDraft(sessionId); setSessionEditorOpen(true) }}
+              onClick={() => {
+                setSessionDraft(sessionId)
+                setSessionEditorOpen(true)
+                void loadSessionOptions()
+              }}
               disabled={loading}
               className="flex items-center gap-1.5 rounded-md border border-neutral-200 bg-white px-3 py-1.5 text-sm font-medium text-neutral-600 transition-colors hover:bg-neutral-50 disabled:opacity-50 dark:border-zinc-700 dark:bg-zinc-900 dark:text-zinc-400 dark:hover:bg-zinc-800"
             >
@@ -582,8 +643,27 @@ export default function ProjectAgentChatPage() {
         {sessionEditorOpen && (
           <div className="mt-3 rounded-xl border border-sky-200/70 bg-sky-50/40 p-3 dark:border-sky-800/50 dark:bg-sky-950/20">
             <label className="block text-xs font-medium text-sky-800 dark:text-sky-300">
-              {t('agentChat.sessionIdLabel')}
+              {t('agentChat.sessionPickerLabel')}
             </label>
+            <select
+              value={sessionOptions.some((item) => item.sessionId === sessionDraft) ? sessionDraft : ''}
+              onChange={(e) => setSessionDraft(e.target.value)}
+              disabled={sessionsLoading || sessionOptions.length === 0}
+              className="mt-2 w-full rounded-lg border border-neutral-200 bg-white px-3 py-2 text-sm text-neutral-800 outline-none focus:border-sky-400 disabled:opacity-60 dark:border-zinc-700 dark:bg-zinc-900 dark:text-zinc-200"
+            >
+              <option value="">
+                {sessionsLoading
+                  ? t('agentChat.sessionsLoading')
+                  : sessionOptions.length === 0
+                    ? t('agentChat.noSessions')
+                    : t('agentChat.selectSession')}
+              </option>
+              {sessionOptions.map((item) => (
+                <option key={item.sessionId} value={item.sessionId}>
+                  {formatSessionOption(item)}
+                </option>
+              ))}
+            </select>
             <div className="mt-2 flex flex-col gap-2 sm:flex-row">
               <input
                 autoFocus

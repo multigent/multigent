@@ -330,6 +330,7 @@ func (s *Server) Handler() http.Handler {
 	mux.HandleFunc("POST /api/v1/projects/{name}/agents/{agent}/channels/{provider}/setup/manual", s.handleAgentChannelSetupManual)
 	mux.HandleFunc("PUT /api/v1/projects/{name}/agents/{agent}/channels/{provider}/security", s.handleAgentChannelSecurity)
 	mux.HandleFunc("DELETE /api/v1/projects/{name}/agents/{agent}/channels/{provider}", s.handleAgentChannelDelete)
+	mux.HandleFunc("GET /api/v1/projects/{name}/agents/{agent}/chat/sessions", s.handleAgentChatSessions)
 	mux.HandleFunc("GET /api/v1/projects/{name}/agents/{agent}/chat/history", s.handleAgentChatHistory)
 	mux.HandleFunc("POST /api/v1/projects/{name}/agents/{agent}/chat", s.handleAgentChat)
 	mux.HandleFunc("DELETE /api/v1/projects/{name}/agents/{agent}/chat", s.handleAgentChatStop)

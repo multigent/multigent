@@ -10,6 +10,7 @@ import (
 	"os"
 	"os/exec"
 	"path/filepath"
+	"sort"
 	"strings"
 	"sync"
 	"time"
@@ -29,6 +30,165 @@ type agentChatHistoryRun struct {
 	StartedAt string `json:"startedAt"`
 	Status    string `json:"status"`
 	LogPath   string `json:"logPath"`
+}
+
+type agentChatSessionInfo struct {
+	SessionID string `json:"sessionId"`
+	Title     string `json:"title"`
+	Source    string `json:"source"`
+	Model     string `json:"model,omitempty"`
+	Status    string `json:"status,omitempty"`
+	RunCount  int    `json:"runCount"`
+	StartedAt string `json:"startedAt,omitempty"`
+	UpdatedAt string `json:"updatedAt,omitempty"`
+}
+
+func (s *Server) handleAgentChatSessions(w http.ResponseWriter, r *http.Request) {
+	project, agent, ok := s.parseProjectAgent(w, r)
+	if !ok {
+		return
+	}
+	if !s.checkProjectAccess(w, r, project) {
+		return
+	}
+
+	sessions, err := s.listAgentChatSessions(project, agent)
+	if err != nil {
+		s.serverError(w, err)
+		return
+	}
+	_ = json.NewEncoder(w).Encode(map[string]any{"sessions": sessions})
+}
+
+func (s *Server) listAgentChatSessions(project, agent string) ([]agentChatSessionInfo, error) {
+	db, err := telemetry.OpenReadOnly(s.root)
+	if err != nil {
+		if err == telemetry.ErrNoDatabase {
+			return []agentChatSessionInfo{}, nil
+		}
+		return nil, err
+	}
+	defer db.Close()
+
+	rows, err := telemetry.ReadRuns(db, nil, nil, project)
+	if err != nil {
+		return nil, err
+	}
+
+	type acc struct {
+		info      agentChatSessionInfo
+		startedAt time.Time
+		updatedAt time.Time
+		logPath   string
+		taskTitle string
+	}
+	byID := map[string]*acc{}
+	for _, row := range rows {
+		if row.Agent != agent {
+			continue
+		}
+		sessionID := ""
+		if row.SessionID.Valid {
+			sessionID = strings.TrimSpace(row.SessionID.String)
+		}
+		if sessionID == "" && row.LogPath != "" {
+			if sid := s.extractSessionIDFromRunLog(row.LogPath); sid != "" {
+				sessionID = sid
+			}
+		}
+		if sessionID == "" {
+			continue
+		}
+		item := byID[sessionID]
+		if item == nil {
+			item = &acc{
+				info: agentChatSessionInfo{
+					SessionID: sessionID,
+					Source:    string(row.Kind),
+					Model:     firstNonEmpty(row.APIModel, row.Model),
+					Status:    row.Status,
+				},
+				startedAt: row.StartedAt,
+				updatedAt: row.StartedAt,
+			}
+			byID[sessionID] = item
+		}
+		item.info.RunCount++
+		if item.startedAt.IsZero() || row.StartedAt.Before(item.startedAt) {
+			item.startedAt = row.StartedAt
+		}
+		if row.StartedAt.After(item.updatedAt) {
+			item.updatedAt = row.StartedAt
+			item.info.Source = string(row.Kind)
+			item.info.Model = firstNonEmpty(row.APIModel, row.Model, item.info.Model)
+			item.info.Status = row.Status
+			item.logPath = row.LogPath
+		}
+		if item.logPath == "" && row.LogPath != "" {
+			item.logPath = row.LogPath
+		}
+		if row.TaskTitle.Valid && strings.TrimSpace(row.TaskTitle.String) != "" {
+			item.taskTitle = strings.TrimSpace(row.TaskTitle.String)
+		}
+	}
+
+	out := make([]agentChatSessionInfo, 0, len(byID))
+	for _, item := range byID {
+		title := strings.TrimSpace(item.taskTitle)
+		if title == "" && item.logPath != "" {
+			title = s.extractSessionTitleFromRunLog(item.logPath)
+		}
+		if title == "" {
+			title = "Session " + shortSessionID(item.info.SessionID)
+		}
+		item.info.Title = title
+		if !item.startedAt.IsZero() {
+			item.info.StartedAt = item.startedAt.UTC().Format(time.RFC3339Nano)
+		}
+		if !item.updatedAt.IsZero() {
+			item.info.UpdatedAt = item.updatedAt.UTC().Format(time.RFC3339Nano)
+		}
+		out = append(out, item.info)
+	}
+
+	sort.Slice(out, func(i, j int) bool {
+		return out[i].UpdatedAt > out[j].UpdatedAt
+	})
+	const maxSessions = 50
+	if len(out) > maxSessions {
+		out = out[:maxSessions]
+	}
+	return out, nil
+}
+
+func (s *Server) extractSessionIDFromRunLog(logPath string) string {
+	data, err := s.readSmallRunLog(logPath)
+	if err != nil {
+		return ""
+	}
+	return extractAgentChatSessionID(string(data))
+}
+
+func (s *Server) extractSessionTitleFromRunLog(logPath string) string {
+	data, err := s.readSmallRunLog(logPath)
+	if err != nil {
+		return ""
+	}
+	return summarizeSessionTitleFromLog(string(data))
+}
+
+func (s *Server) readSmallRunLog(logPath string) ([]byte, error) {
+	absLogPath := logPath
+	if !filepath.IsAbs(absLogPath) {
+		absLogPath = filepath.Join(s.root, absLogPath)
+	}
+	f, err := os.Open(absLogPath)
+	if err != nil {
+		return nil, err
+	}
+	defer f.Close()
+	limited := io.LimitReader(f, 256*1024)
+	return io.ReadAll(limited)
 }
 
 func (s *Server) handleAgentChatHistory(w http.ResponseWriter, r *http.Request) {
@@ -639,4 +799,113 @@ func extractAgentChatSessionID(line string) string {
 		}
 	}
 	return ""
+}
+
+func summarizeSessionTitleFromLog(content string) string {
+	scanner := bufio.NewScanner(strings.NewReader(content))
+	scanner.Buffer(make([]byte, 0, 64*1024), 256*1024)
+	for scanner.Scan() {
+		line := strings.TrimSpace(scanner.Text())
+		if line == "" {
+			continue
+		}
+		if title := extractUserTitleFromJSONLine(line); title != "" {
+			return truncateSessionTitle(title)
+		}
+	}
+	return ""
+}
+
+func extractUserTitleFromJSONLine(line string) string {
+	if !strings.HasPrefix(line, "{") {
+		return ""
+	}
+	var raw map[string]any
+	if err := json.Unmarshal([]byte(line), &raw); err != nil {
+		return ""
+	}
+	if typ, _ := raw["type"].(string); typ == "human" {
+		return stringField(raw, "content")
+	}
+	if typ, _ := raw["type"].(string); typ == "user" {
+		if text := messageText(raw["message"]); text != "" {
+			return text
+		}
+		if text := contentText(raw["content"]); text != "" {
+			return text
+		}
+	}
+	if role, _ := raw["role"].(string); role == "user" {
+		if text := contentText(raw["content"]); text != "" {
+			return text
+		}
+	}
+	msg, ok := raw["message"].(map[string]any)
+	if !ok {
+		return ""
+	}
+	if role, _ := msg["role"].(string); role == "user" {
+		return messageText(msg)
+	}
+	return ""
+}
+
+func messageText(v any) string {
+	msg, ok := v.(map[string]any)
+	if !ok {
+		return ""
+	}
+	if text := stringField(msg, "content"); text != "" {
+		return text
+	}
+	return contentText(msg["content"])
+}
+
+func contentText(v any) string {
+	switch c := v.(type) {
+	case string:
+		return strings.TrimSpace(c)
+	case []any:
+		parts := make([]string, 0, len(c))
+		for _, item := range c {
+			switch x := item.(type) {
+			case string:
+				if s := strings.TrimSpace(x); s != "" {
+					parts = append(parts, s)
+				}
+			case map[string]any:
+				if typ, _ := x["type"].(string); typ == "text" || typ == "" {
+					if text := stringField(x, "text"); text != "" {
+						parts = append(parts, text)
+					}
+				}
+			}
+		}
+		return strings.TrimSpace(strings.Join(parts, " "))
+	default:
+		return ""
+	}
+}
+
+func stringField(m map[string]any, key string) string {
+	v, _ := m[key].(string)
+	return strings.TrimSpace(v)
+}
+
+func truncateSessionTitle(title string) string {
+	title = strings.Join(strings.Fields(title), " ")
+	const maxRunes = 72
+	runes := []rune(title)
+	if len(runes) <= maxRunes {
+		return title
+	}
+	return string(runes[:maxRunes]) + "..."
+}
+
+func shortSessionID(sessionID string) string {
+	runes := []rune(strings.TrimSpace(sessionID))
+	if len(runes) <= 12 {
+		return string(runes)
+	}
+	return string(runes[:12]) + "..."
 }
