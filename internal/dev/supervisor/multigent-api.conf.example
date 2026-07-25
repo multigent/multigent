@@ -8,5 +8,4 @@ stopasgroup=true
 killasgroup=true
 stdout_logfile=/root/code/spaceship/multigent/.multigent/dev/supervisor-api.stdout.log
 stderr_logfile=/root/code/spaceship/multigent/.multigent/dev/supervisor-api.stderr.log
-environment=HOME="/root",PATH="/root/.goenv/shims:/usr/local/sbin:/usr/local/bin:/usr/sbin:/usr/bin:/sbin:/bin"
-
+environment=HOME="/root",PATH="/root/.nvm/versions/node/v24.16.0/bin:/root/.goenv/shims:/usr/local/sbin:/usr/local/bin:/usr/sbin:/usr/bin:/sbin:/bin"

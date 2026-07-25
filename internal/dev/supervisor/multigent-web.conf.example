@@ -1,0 +1,12 @@
+[program:multigent-web]
+directory=/root/code/spaceship/multigent
+command=/root/.nvm/versions/node/v24.16.0/bin/npm --prefix /root/code/spaceship/multigent/web run dev -- --host 127.0.0.1 --port 27894
+autostart=true
+autorestart=true
+startsecs=2
+stopasgroup=true
+killasgroup=true
+stdout_logfile=/root/code/spaceship/multigent/.multigent/dev/supervisor-web.stdout.log
+stderr_logfile=/root/code/spaceship/multigent/.multigent/dev/supervisor-web.stderr.log
+environment=HOME="/root",PATH="/root/.nvm/versions/node/v24.16.0/bin:/root/.goenv/shims:/usr/local/sbin:/usr/local/bin:/usr/sbin:/usr/bin:/sbin:/bin"
+
