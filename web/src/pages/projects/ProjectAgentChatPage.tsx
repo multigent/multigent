@@ -126,6 +126,7 @@ export default function ProjectAgentChatPage() {
   const abortRef = useRef<AbortController | null>(null)
   const sessionIdRef = useRef(routeSessionId)
   const freshNextRef = useRef(false)
+  const historyRequestRef = useRef(0)
   const draftKey = agentChatDraftKey(projectId, agentName)
   const chatKey = projectId && agentName ? `${projectId}/${agentName}` : ''
   const activeChatKeyRef = useRef(chatKey)
@@ -176,18 +177,22 @@ export default function ProjectAgentChatPage() {
   const loadHistory = useCallback(async (sid: string, project = projectId, agent = agentName, expectedKey = chatKey) => {
     const path = historyPath(project, agent, sid)
     if (!path) return
+    const requestId = ++historyRequestRef.current
     setHistoryLoading(true)
     setError(null)
     try {
       const data = await apiFetch<HistoryResp>(path)
+      if (historyRequestRef.current !== requestId) return
       if (activeChatKeyRef.current !== expectedKey) return
       updateSessionId(data.sessionId ?? sid)
       setContent(data.content ?? '')
       setHistoryTruncated(Boolean(data.truncated))
     } catch (e) {
+      if (historyRequestRef.current !== requestId) return
       if (activeChatKeyRef.current !== expectedKey) return
       setError(e instanceof Error ? e.message : String(e))
     } finally {
+      if (historyRequestRef.current !== requestId) return
       if (activeChatKeyRef.current === expectedKey) setHistoryLoading(false)
     }
   }, [agentName, chatKey, historyPath, projectId, updateSessionId])
@@ -201,6 +206,7 @@ export default function ProjectAgentChatPage() {
     activeChatKeyRef.current = nextKey
     abortRef.current?.abort()
     abortRef.current = null
+    historyRequestRef.current += 1
     setContent('')
     setInput(readAgentChatDraft(projectId, agentName))
     setError(null)
@@ -409,10 +415,13 @@ export default function ProjectAgentChatPage() {
 
   function startFresh() {
     abortRef.current?.abort()
+    historyRequestRef.current += 1
     freshNextRef.current = true
     updateSessionId('')
     setContent('')
     setError(null)
+    setHistoryLoading(false)
+    setHistoryTruncated(false)
     setFreshNext(true)
     resetTextareaHeight(inputRef.current)
     inputRef.current?.focus()
