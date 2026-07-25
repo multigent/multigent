@@ -1150,46 +1150,12 @@ function ContextPanel({ context, contextFile, syncedAt }: { context: string; con
   )
 }
 
-type RuntimeConnectionGrant = { id: string; targetType: string; targetId: string }
 type RuntimeToolBinding = {
   id: string
   connectionId: string
   provider: string
   adapterType?: string
   status: string
-}
-type RuntimeConnection = {
-  id: string
-  provider: string
-  connectionName: string
-  ownerType: string
-  ownerId: string
-  authType: string
-  profile?: Record<string, unknown>
-  profileSummary?: {
-    accountId?: string
-    accountName?: string
-    accountEmail?: string
-    scopes?: string[]
-    providerPermissions?: string[]
-  }
-  matchedGrants?: RuntimeConnectionGrant[]
-  runtime?: {
-    alias?: string
-    mcpProxy?: { path?: string }
-    actionProxy?: { path?: string }
-  }
-  toolBinding?: RuntimeToolBinding
-}
-type RuntimeConnectionsResponse = {
-  manifest?: {
-    version?: string
-    agentTokenEnv?: string
-    apiBaseUrlEnv?: string
-    mcpProxyPath?: string
-    actionProxyPath?: string
-  }
-  connections?: RuntimeConnection[]
 }
 type AgentToolBindingsResponse = { bindings?: RuntimeToolBinding[] }
 type ConnectionOption = {
@@ -1209,9 +1175,7 @@ function AgentRuntimeConnectionsPanel({ project, agentName }: { project: string;
   const [connections, setConnections] = useState<ConnectionOption[]>([])
   const [connectionId, setConnectionId] = useState('')
   const [saving, setSaving] = useState(false)
-  const runtimePath = `/api/v1/projects/${encodeURIComponent(project)}/agents/${encodeURIComponent(agentName)}/runtime/connections`
   const bindingsPath = `/api/v1/projects/${encodeURIComponent(project)}/agents/${encodeURIComponent(agentName)}/tool-bindings`
-  const state = useApiJson<RuntimeConnectionsResponse>(runtimePath, reloadKey)
   const bindingsState = useApiJson<AgentToolBindingsResponse>(bindingsPath, reloadKey)
 
   useEffect(() => {
@@ -1228,9 +1192,7 @@ function AgentRuntimeConnectionsPanel({ project, agentName }: { project: string;
 
   const boundConnectionIds = new Set((bindingsState.status === 'ok' ? bindingsState.data.bindings ?? [] : []).map(binding => binding.connectionId))
   const availableConnections = connections.filter(connection => !boundConnectionIds.has(connection.id))
-  const enabledRuntimeConnections = state.status === 'ok'
-    ? (state.data.connections ?? []).filter(connection => connection.toolBinding)
-    : []
+  const enabledToolCount = bindingsState.status === 'ok' ? (bindingsState.data.bindings ?? []).length : 0
 
   async function enableBinding() {
     if (!connectionId) return
@@ -1291,17 +1253,20 @@ function AgentRuntimeConnectionsPanel({ project, agentName }: { project: string;
               {t('agentDetail.enableTool')}
             </button>
           </div>
-          {bindingsState.status === 'ok' && (bindingsState.data.bindings ?? []).length > 0 && (
+          {bindingsState.status === 'ok' && enabledToolCount > 0 && (
             <div className="mt-3">
-              <p className="mb-2 text-xs font-medium text-neutral-500 dark:text-zinc-400">{t('agentDetail.configuredToolBindings')}</p>
+              <p className="mb-2 text-xs text-neutral-500 dark:text-zinc-400">
+                {t('agentDetail.enabledToolCount', { count: enabledToolCount })}
+              </p>
               <div className="flex flex-wrap gap-2">
                 {(bindingsState.data.bindings ?? []).map(binding => {
                   const connection = connections.find(item => item.id === binding.connectionId)
                   const label = connection ? `${connection.provider} / ${connection.connectionName}` : binding.provider
                   return (
-                    <span key={binding.id} className="inline-flex items-center gap-2 rounded-md border border-neutral-200 bg-white px-2 py-1 text-xs text-neutral-600 dark:border-zinc-700 dark:bg-zinc-900 dark:text-zinc-300">
-                      {label} · {binding.status}
-                      <button type="button" disabled={saving} onClick={() => void removeBinding(binding)} className="font-medium text-red-500 hover:text-red-600 disabled:opacity-50">
+                    <span key={binding.id} className="inline-flex max-w-full items-center gap-2 rounded-md border border-neutral-200 bg-white px-2 py-1 text-xs text-neutral-600 dark:border-zinc-700 dark:bg-zinc-900 dark:text-zinc-300">
+                      <span className="truncate">{label}</span>
+                      <span className="shrink-0 text-neutral-400 dark:text-zinc-500">{binding.status}</span>
+                      <button type="button" disabled={saving} onClick={() => void removeBinding(binding)} className="shrink-0 font-medium text-red-500 hover:text-red-600 disabled:opacity-50">
                         {t('agentDetail.removeToolBinding')}
                       </button>
                     </span>
@@ -1311,91 +1276,9 @@ function AgentRuntimeConnectionsPanel({ project, agentName }: { project: string;
             </div>
           )}
         </div>
-        {state.status === 'loading' && (
-          <p className="text-sm text-neutral-400 dark:text-zinc-500">{t('members.loadingRuntimeConnections')}</p>
-        )}
-        {state.status === 'error' && (
-          <p className="text-sm text-red-500">{state.error.message}</p>
-        )}
-        {state.status === 'ok' && (
-          <div className="space-y-3">
-            {enabledRuntimeConnections.length === 0 ? (
-              <p className="text-sm text-neutral-400 dark:text-zinc-500">
-                {t('agentDetail.noEnabledTools')}
-              </p>
-            ) : (
-              <div className="space-y-2">
-                {enabledRuntimeConnections.map(connection => (
-                  <div key={connection.id} className="rounded-lg border border-neutral-200/70 bg-neutral-50/60 px-3 py-2.5 dark:border-zinc-700/60 dark:bg-zinc-800/30">
-                    <div className="flex flex-wrap items-center justify-between gap-2">
-                      <div className="min-w-0">
-                        <div className="flex flex-wrap items-center gap-2">
-                          <span className="font-mono text-sm font-semibold text-neutral-800 dark:text-zinc-100">
-                            {connection.runtime?.alias ?? `${connection.provider}_${connection.connectionName}`}
-                          </span>
-                          <span className="rounded-full bg-neutral-200 px-2 py-0.5 text-[10px] font-medium text-neutral-600 dark:bg-zinc-700 dark:text-zinc-300">
-                            {connection.provider}
-                          </span>
-                          <span className="rounded-full bg-sky-50 px-2 py-0.5 text-[10px] font-medium text-sky-700 dark:bg-sky-900/20 dark:text-sky-300">
-                            {connection.ownerType}
-                          </span>
-                          {connection.toolBinding && (
-                            <span className="rounded-full bg-emerald-50 px-2 py-0.5 text-[10px] font-medium text-emerald-700 dark:bg-emerald-900/20 dark:text-emerald-300">
-                              {t('agentDetail.toolEnabled')}
-                            </span>
-                          )}
-                        </div>
-                        <p className="mt-1 text-xs text-neutral-400 dark:text-zinc-500">
-                          {connection.connectionName} · {connection.authType} · owner {connection.ownerId}
-                        </p>
-                        {runtimeConnectionAccountLabel(connection) && (
-                          <p className="mt-1 truncate text-xs text-neutral-500 dark:text-zinc-400" title={runtimeConnectionAccountLabel(connection)}>
-                            {runtimeConnectionAccountLabel(connection)}
-                          </p>
-                        )}
-                      </div>
-                      <div className="flex flex-wrap gap-1.5 text-[10px] text-neutral-500 dark:text-zinc-400">
-                        {connection.runtime?.mcpProxy?.path && <span className="rounded-md border border-neutral-200 px-1.5 py-0.5 dark:border-zinc-700">MCP {connection.runtime.mcpProxy.path}</span>}
-                        {connection.runtime?.actionProxy?.path && <span className="rounded-md border border-neutral-200 px-1.5 py-0.5 dark:border-zinc-700">Action {connection.runtime.actionProxy.path}</span>}
-                      </div>
-                    </div>
-                    {connection.matchedGrants && connection.matchedGrants.length > 0 && (
-                      <div className="mt-2 flex flex-wrap gap-1.5">
-                        {connection.matchedGrants.map(grant => (
-                          <span key={grant.id} className="rounded-md bg-white px-2 py-0.5 text-[11px] text-neutral-500 dark:bg-zinc-900 dark:text-zinc-400">
-                            {grant.targetType}: {grant.targetId}
-                          </span>
-                        ))}
-                      </div>
-                    )}
-                    {((connection.profileSummary?.scopes?.length ?? 0) > 0 || (connection.profileSummary?.providerPermissions?.length ?? 0) > 0) && (
-                      <div className="mt-2 flex flex-wrap gap-1.5">
-                        {(connection.profileSummary?.scopes ?? []).slice(0, 6).map(scope => (
-                          <span key={`scope-${scope}`} className="rounded-md border border-teal-200 bg-teal-50 px-2 py-0.5 text-[11px] text-teal-700 dark:border-teal-900/50 dark:bg-teal-950/30 dark:text-teal-300">
-                            scope: {scope}
-                          </span>
-                        ))}
-                        {(connection.profileSummary?.providerPermissions ?? []).slice(0, 6).map(permission => (
-                          <span key={`permission-${permission}`} className="rounded-md border border-violet-200 bg-violet-50 px-2 py-0.5 text-[11px] text-violet-700 dark:border-violet-900/50 dark:bg-violet-950/30 dark:text-violet-300">
-                            permission: {permission}
-                          </span>
-                        ))}
-                      </div>
-                    )}
-                  </div>
-                ))}
-              </div>
-            )}
-          </div>
-        )}
       </div>
     </section>
   )
-}
-
-function runtimeConnectionAccountLabel(connection: RuntimeConnection): string {
-  const summary = connection.profileSummary
-  return [summary?.accountId, summary?.accountName, summary?.accountEmail].filter(Boolean).join(' · ')
 }
 
 function AgentSkillsPanel({ skills }: { skills: string[] }) {

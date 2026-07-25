@@ -1590,7 +1590,8 @@
     "context": "Context",
     "contextHint": "エージェントが実際に受け取る完全なマージ済みコンテキストを確認します。Prompt、ロール、プロジェクト、Skill の注入確認に使います。",
     "fullContext": "完全なマージ済み Context",
-    "contextEmpty": "Context はまだありません"
+    "contextEmpty": "Context はまだありません",
+    "enabledToolCount": "有効化済みツール（{{count}}）"
   },
   "runs": {
     "subtitle": "このプロジェクトのエージェントの実行信頼性、所要時間、トークン使用量。",

@@ -1621,7 +1621,8 @@
     "context": "Context",
     "contextHint": "Review the complete merged context the agent receives, including prompt, role, project, and skill content.",
     "fullContext": "Complete Merged Context",
-    "contextEmpty": "No context yet"
+    "contextEmpty": "No context yet",
+    "enabledToolCount": "Enabled tools ({{count}})"
   },
   "runs": {
     "subtitle": "Run reliability, duration, and token usage for this project’s agents.",
