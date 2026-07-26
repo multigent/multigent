@@ -34,7 +34,16 @@ func (s *Server) handleCreateExampleWorkspace(w http.ResponseWriter, r *http.Req
 		s.jsonErrorCode(w, http.StatusServiceUnavailable, ErrCodeWorkspaceDatabaseUnavailable, "control database unavailable")
 		return
 	}
-	spec := exampleWorkspaceSpec(r.Header.Get("Accept-Language"))
+	var body struct {
+		Locale string `json:"locale"`
+	}
+	if r.Body != nil && r.ContentLength != 0 {
+		if err := s.readJSON(w, r, &body); err != nil {
+			s.jsonErrorCode(w, http.StatusBadRequest, ErrCodeInvalidJSON, "invalid JSON body")
+			return
+		}
+	}
+	spec := exampleWorkspaceSpec(preferredExampleLocale(body.Locale, r.Header.Get("Accept-Language")))
 
 	id := newWorkspaceID()
 	absRoot, err := filepath.Abs(filepath.Join(defaultWorkspaceDataDir(), id))
@@ -225,16 +234,45 @@ type exampleScheduleText struct {
 	WeeklySummaryPrompt string
 }
 
+func preferredExampleLocale(requested, acceptLanguage string) string {
+	switch normalizeExampleLocale(requested) {
+	case "en", "zh-CN", "zh-TW", "ja":
+		return normalizeExampleLocale(requested)
+	default:
+		return acceptLanguage
+	}
+}
+
+func normalizeExampleLocale(locale string) string {
+	lower := strings.ToLower(strings.TrimSpace(locale))
+	switch {
+	case lower == "zh-tw" || lower == "zh-hk" || lower == "zh-mo":
+		return "zh-TW"
+	case lower == "zh" || lower == "zh-cn" || strings.HasPrefix(lower, "zh-cn-"):
+		return "zh-CN"
+	case lower == "ja" || strings.HasPrefix(lower, "ja-"):
+		return "ja"
+	case lower == "en" || strings.HasPrefix(lower, "en-"):
+		return "en"
+	default:
+		return ""
+	}
+}
+
 func exampleWorkspaceSpec(acceptLanguage string) exampleLocaleSpec {
 	lang := "en"
-	lower := strings.ToLower(acceptLanguage)
-	switch {
-	case strings.Contains(lower, "zh-tw") || strings.Contains(lower, "zh-hk") || strings.Contains(lower, "zh-mo"):
-		lang = "zh-TW"
-	case strings.Contains(lower, "zh"):
-		lang = "zh-CN"
-	case strings.Contains(lower, "ja"):
-		lang = "ja"
+	if normalized := normalizeExampleLocale(acceptLanguage); normalized != "" {
+		lang = normalized
+	} else {
+		lower := strings.ToLower(acceptLanguage)
+		switch {
+		case strings.Contains(lower, "zh-tw") || strings.Contains(lower, "zh-hk") || strings.Contains(lower, "zh-mo"):
+			lang = "zh-TW"
+		case strings.Contains(lower, "zh"):
+			lang = "zh-CN"
+		case strings.Contains(lower, "ja"):
+			lang = "ja"
+		}
 	}
 	switch lang {
 	case "zh-CN":

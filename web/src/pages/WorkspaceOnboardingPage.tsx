@@ -4,7 +4,7 @@ import { useTranslation } from 'react-i18next'
 import { apiPost } from '../lib/api'
 
 export default function WorkspaceOnboardingPage({ onCreated }: { onCreated: () => void }) {
-  const { t } = useTranslation()
+  const { t, i18n } = useTranslation()
   const [name, setName] = useState('')
   const [description, setDescription] = useState('')
   const [busy, setBusy] = useState(false)
@@ -31,7 +31,7 @@ export default function WorkspaceOnboardingPage({ onCreated }: { onCreated: () =
   async function createExample() {
     setExampleBusy(true)
     try {
-      await apiPost('/api/v1/workspaces/example', {})
+      await apiPost('/api/v1/workspaces/example', { locale: i18n.resolvedLanguage || i18n.language || 'en' })
       window.dispatchEvent(new Event('workspace-changed'))
       onCreated()
     } finally {
