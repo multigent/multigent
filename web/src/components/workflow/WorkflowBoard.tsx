@@ -134,6 +134,7 @@ type Props = {
   fullscreen?: boolean
   onToggleFullscreen?: () => void
   focusActive?: boolean
+  hideInspector?: boolean
 }
 
 const EMPTY_INSTANCES: WorkflowStepInstance[] = []
@@ -554,6 +555,7 @@ export function WorkflowBoard({
   fullscreen = false,
   onToggleFullscreen,
   focusActive = false,
+  hideInspector = false,
 }: Props) {
   const { t } = useTranslation()
   const instancesKey = useMemo(
@@ -1036,7 +1038,7 @@ export function WorkflowBoard({
             />
           ) : null}
         </ReactFlow>
-      {!compact && selected ? (
+      {!hideInspector && !compact && selected ? (
         <aside className="absolute right-4 top-4 z-20 max-h-[calc(100%-2rem)] w-[340px] max-w-[calc(100%-2rem)] overflow-y-auto rounded-xl border border-neutral-200/90 bg-white/95 p-4 shadow-xl shadow-neutral-900/10 backdrop-blur-md dark:border-zinc-700/80 dark:bg-zinc-900/95 dark:shadow-black/30">
           {editable && stepDraft && selected ? (
             <div className="space-y-4 text-sm">

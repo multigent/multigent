@@ -191,8 +191,13 @@ export default function ProjectTaskFollowPage() {
               {t(`tasks.status.${task.status}`, { defaultValue: task.status })}
             </span>
           )}
-          <button type="button" onClick={refresh} className="rounded-lg border border-neutral-200 bg-white px-3 py-1.5 text-sm font-medium text-neutral-600 hover:bg-neutral-50 dark:border-zinc-700 dark:bg-zinc-900 dark:text-zinc-300 dark:hover:bg-zinc-800">
-            <span className="inline-flex items-center gap-1.5"><RefreshCw className="size-3.5" />{t('common.refresh')}</span>
+          <button
+            type="button"
+            onClick={refresh}
+            title={t('common.refresh')}
+            className="rounded-lg border border-neutral-200 bg-white p-1.5 text-neutral-500 hover:bg-neutral-50 hover:text-neutral-800 dark:border-zinc-700 dark:bg-zinc-900 dark:text-zinc-400 dark:hover:bg-zinc-800 dark:hover:text-zinc-100"
+          >
+            <RefreshCw className="size-4" />
           </button>
           <Link to={`/projects/${encodeURIComponent(projectId)}/tasks`} className="rounded-lg border border-neutral-200 bg-white p-1.5 text-neutral-500 hover:bg-neutral-50 hover:text-neutral-800 dark:border-zinc-700 dark:bg-zinc-900 dark:text-zinc-400 dark:hover:bg-zinc-800 dark:hover:text-zinc-100">
             <X className="size-4" />
@@ -203,7 +208,7 @@ export default function ProjectTaskFollowPage() {
       <main className="grid min-h-0 flex-1 grid-cols-[minmax(0,1fr)_420px] gap-0 overflow-hidden">
         <section className="min-w-0 border-r border-neutral-200/80 bg-white dark:border-zinc-800 dark:bg-zinc-950">
           {workflowData ? (
-            <WorkflowBoard definition={workflowData.definition} run={workflowData.run} instances={workflowData.steps} focusActive fill />
+            <WorkflowBoard definition={workflowData.definition} run={workflowData.run} instances={workflowData.steps} focusActive fill hideInspector />
           ) : workflowState.status === 'loading' ? (
             <CenteredLoading label={t('tasks.followLoadingWorkflow')} />
           ) : (
