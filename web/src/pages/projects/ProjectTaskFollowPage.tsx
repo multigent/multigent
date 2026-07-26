@@ -39,6 +39,7 @@ export default function ProjectTaskFollowPage() {
   const { canAdmin } = useWorkspaceAccess()
   const { projectId = '', taskId = '' } = useParams<{ projectId: string; taskId: string }>()
   const [reloadKey, setReloadKey] = useState(0)
+  const [pollKey, setPollKey] = useState(0)
   const [reviewComments, setReviewComments] = useState('')
   const [reviewOutputs, setReviewOutputs] = useState<Record<string, string>>({})
   const [reviewBusy, setReviewBusy] = useState<string | null>(null)
@@ -47,20 +48,17 @@ export default function ProjectTaskFollowPage() {
   const [optimisticStartedAt, setOptimisticStartedAt] = useState<string | null>(null)
 
   const refresh = useCallback(() => setReloadKey((value) => value + 1), [])
+  const pollRefresh = useCallback(() => setPollKey((value) => value + 1), [])
+  const dataReloadKey = reloadKey + pollKey
   const tasksState = useApiJson<TaskRow[]>(
     projectId ? `/api/v1/projects/${encodeURIComponent(projectId)}/tasks?scope=all` : null,
-    reloadKey,
+    dataReloadKey,
     { keepPreviousDataOnReload: true },
   )
   const workflowState = useApiJson<TaskWorkflowData>(
     projectId && taskId ? `/api/v1/projects/${encodeURIComponent(projectId)}/tasks/${encodeURIComponent(taskId)}/workflow` : null,
-    reloadKey,
+    dataReloadKey,
     { silentStatuses: silentNotFound, keepPreviousDataOnReload: true },
-  )
-  const runsState = useApiJson<{ runs: RunRow[] }>(
-    projectId ? `/api/v1/telemetry/runs?allTime=1&project=${encodeURIComponent(projectId)}&limit=200` : null,
-    reloadKey,
-    { keepPreviousDataOnReload: true },
   )
   const usersState = useApiJson<SafeUser[]>('/api/v1/users', 0, staticSilentForbiddenOptions)
   const membersState = useApiJson<ProjectMember[]>(
@@ -84,15 +82,21 @@ export default function ProjectTaskFollowPage() {
     : undefined
   const activeInstance = workflowData ? activeWorkflowStepInstance(workflowData) : undefined
   const workflowRecords = workflowData ? workflowHistoryRecords(workflowData) : []
-  const runs = runsState.status === 'ok' ? (runsState.data.runs ?? []) : []
   const isCurrentAgentStep = activeInstance?.actorType === 'agent' || activeStep?.type === 'agent_task'
+  const shouldPollActiveRun = Boolean(isCurrentAgentStep && displayTask?.status === 'in_progress')
+  const runsState = useApiJson<{ runs: RunRow[] }>(
+    isCurrentAgentStep && projectId ? `/api/v1/telemetry/runs?allTime=1&project=${encodeURIComponent(projectId)}&limit=200` : null,
+    dataReloadKey,
+    { keepPreviousDataOnReload: true },
+  )
+  const runs = runsState.status === 'ok' ? (runsState.data.runs ?? []) : []
   const activeRun = useMemo(
     () => isCurrentAgentStep ? findActiveRun(runs, taskId, projectId, activeStep, activeInstance?.actorId) : null,
     [activeInstance?.actorId, activeStep, isCurrentAgentStep, projectId, runs, taskId],
   )
   const logState = useApiJson<LogData>(
     isCurrentAgentStep && activeRun?.logPath ? `/api/v1/telemetry/log?path=${encodeURIComponent(activeRun.logPath)}` : null,
-    reloadKey,
+    dataReloadKey,
     { keepPreviousDataOnReload: true },
   )
 
@@ -130,10 +134,10 @@ export default function ProjectTaskFollowPage() {
   const canReview = activeStep?.type === 'human_review'
 
   useEffect(() => {
-    if (!displayTask || isTerminal(displayTask.status)) return
-    const timer = window.setInterval(refresh, FOLLOW_POLL_MS)
+    if (!shouldPollActiveRun) return
+    const timer = window.setInterval(pollRefresh, FOLLOW_POLL_MS)
     return () => window.clearInterval(timer)
-  }, [refresh, displayTask?.id, displayTask?.status])
+  }, [pollRefresh, shouldPollActiveRun])
 
   useEffect(() => {
     if (!optimisticStartedAt) return
