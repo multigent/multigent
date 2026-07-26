@@ -790,6 +790,8 @@
     "changeAssignee": "Change",
     "assignDefault": "Default (execution agent)",
     "assignHint": "Leave default to assign ownership to the execution agent, or choose a project user or another agent.",
+    "executionRecord": "Execution record",
+    "viewExecutionRecord": "View execution record",
     "loadingRuns": "Loading execution records…",
     "noRunRecord": "No execution record found for this task.",
     "yes": "Yes",

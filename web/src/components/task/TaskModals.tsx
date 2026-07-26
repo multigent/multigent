@@ -2,7 +2,7 @@ import { useCallback, useEffect, useMemo, useState, type ReactNode } from 'react
 import { useTranslation } from 'react-i18next'
 import ReactMarkdown from 'react-markdown'
 import remarkGfm from 'remark-gfm'
-import { ClipboardCopy, FileText, MessageSquare, Pencil, Play, Send, Trash2, X } from 'lucide-react'
+import { ClipboardCopy, MessageSquare, Pencil, Play, Send, Trash2, X } from 'lucide-react'
 import { cn } from '../../lib/cn'
 import { apiDelete, apiPost, apiPut } from '../../lib/api'
 import { useFormatDateTime } from '../../lib/format-datetime'
@@ -10,7 +10,6 @@ import { useApiJson } from '../../lib/use-api'
 import { useAuth } from '../../lib/auth'
 import { formatGoDuration, taskElapsedLabel } from '../../lib/task-duration'
 import { WorkflowBoard, type WorkflowDefinition, type WorkflowField, type WorkflowRun, type WorkflowStep, type WorkflowStepEvent, type WorkflowStepInstance } from '../workflow/WorkflowBoard'
-import { TechnicalLog } from '../ui/ConversationLog'
 
 export type TaskRow = {
   id: string
@@ -51,7 +50,6 @@ type RunRow = {
   sessionId?: string
 }
 
-type LogData = { content: string; truncated: boolean }
 type TaskWorkflowData = { definition: WorkflowDefinition; run: WorkflowRun; steps: WorkflowStepInstance[]; history?: WorkflowStepEvent[] }
 type SafeUser = { username: string; displayName?: string; email?: string }
 type ProjectMember = { name: string; model?: string; avatar?: string }
@@ -264,9 +262,6 @@ export function TaskDetailModal({ task, onClose, onEdit, onMutated, canEdit = tr
     return runsState.data.runs.find((r) => r.taskId === task.id) ?? null
   }, [runsState, task.id])
 
-  const hasLog = Boolean(matchingRun?.logPath)
-  const logQuery = hasLog ? `/api/v1/telemetry/log?path=${encodeURIComponent(matchingRun!.logPath!)}` : null
-  const logState = useApiJson<LogData>(logQuery, 0)
   const workflowState = useApiJson<TaskWorkflowData>(
     `/api/v1/projects/${encodeURIComponent(task.project)}/tasks/${encodeURIComponent(task.id)}/workflow`,
     workflowVersion,
@@ -516,6 +511,17 @@ export function TaskDetailModal({ task, onClose, onEdit, onMutated, canEdit = tr
                   </div>
                 </InfoCell>
               )}
+              <InfoCell label={t('tasks.executionRecord')}>
+                <a
+                  href={`/projects/${encodeURIComponent(matchingRun.project)}/runs?agent=${encodeURIComponent(`${matchingRun.project}/${matchingRun.agent}`)}`}
+                  target="_blank"
+                  rel="noreferrer"
+                  className="text-sm font-medium text-sky-700 hover:text-sky-800 dark:text-sky-400 dark:hover:text-sky-300"
+                  title={matchingRun.logPath || matchingRun.sessionId || undefined}
+                >
+                  {t('tasks.viewExecutionRecord')}
+                </a>
+              </InfoCell>
             </>
           )}
         </div>
@@ -595,35 +601,6 @@ export function TaskDetailModal({ task, onClose, onEdit, onMutated, canEdit = tr
         )}
 
         <TaskCommentsSection project={task.project} agent={task.agent} taskId={task.id} />
-
-        <div>
-          {matchingRun ? (
-            <>
-              <div className="flex items-center gap-1.5 px-5 pt-3 pb-2">
-                <FileText className="size-3.5 text-neutral-400 dark:text-zinc-500" strokeWidth={1.8} />
-                <span className="text-xs font-semibold uppercase tracking-wider text-neutral-400 dark:text-zinc-500">{t('runs.logTitle')}</span>
-              </div>
-              <div className="px-5 pb-4">
-                {hasLog && logState.status === 'loading' && (
-                  <div className="flex items-center gap-2 py-6 justify-center">
-                    <div className="size-4 animate-spin rounded-full border-2 border-neutral-300 border-t-sky-600 dark:border-zinc-600 dark:border-t-sky-400" />
-                    <span className="text-sm text-neutral-500">{t('api.loading')}</span>
-                  </div>
-                )}
-                {hasLog && logState.status === 'error' && <p className="py-4 text-center text-sm text-neutral-400">{t('runs.logNotFound')}</p>}
-                {hasLog && logState.status === 'ok' && <TechnicalLog content={logState.data.content} />}
-                {!hasLog && <p className="py-4 text-center text-sm text-neutral-400 dark:text-zinc-500">{t('runs.noLog')}</p>}
-              </div>
-            </>
-          ) : runsState.status === 'loading' ? (
-            <div className="flex items-center gap-2 py-8 justify-center">
-              <div className="size-4 animate-spin rounded-full border-2 border-neutral-300 border-t-sky-600 dark:border-zinc-600 dark:border-t-sky-400" />
-              <span className="text-sm text-neutral-500">{t('tasks.loadingRuns')}</span>
-            </div>
-          ) : (
-            <p className="py-8 text-center text-sm text-neutral-400 dark:text-zinc-500">{t('tasks.noRunRecord')}</p>
-          )}
-        </div>
         </div>
       </div>
     </div>
@@ -1068,7 +1045,7 @@ function WorkflowRunLink({ run }: { run: RunRow | null }) {
       title={run.logPath || run.sessionId || undefined}
       onClick={(e) => e.stopPropagation()}
     >
-      {t('runs.logTitle')}
+      {t('tasks.viewExecutionRecord')}
     </a>
   )
 }

@@ -790,6 +790,8 @@
     "changeAssignee": "更改",
     "assignDefault": "默认（执行 Agent）",
     "assignHint": "留空默认由执行 Agent 负责，也可以指定项目用户或其他 Agent。",
+    "executionRecord": "执行记录",
+    "viewExecutionRecord": "查看执行记录",
     "loadingRuns": "正在加载执行记录…",
     "noRunRecord": "未找到此任务的执行记录。",
     "yes": "是",
