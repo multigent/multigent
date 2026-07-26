@@ -1,5 +1,17 @@
 # Changelog
 
+## [v0.1.11] - 2026-07-26
+
+### Changed
+
+- Example Workspace now seeds localized onboarding tasks and workflows based on the user's browser language.
+- The built-in demo now uses a concrete new-teammate onboarding note instead of an abstract Hello World relay.
+- Product tour and quickstart docs now explain how workflows, tasks, owners, and wakeups work together.
+
+### Fixed
+
+- Task detail modal no longer renders invalid nested paragraph/button markup.
+
 ## [v0.1.10] - 2026-07-26
 
 ### Added

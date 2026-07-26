@@ -312,20 +312,27 @@ export MULTIGENT_UPDATE_CHANNEL=pre-release  # release | pre-release | beta
 8. Create a task and bind it to the workflow.
 9. Trigger the agent and inspect the run record.
 
-## Run The Built-In Hello World Demo
+## Run The Built-In Onboarding Demo
 
-If you are new to Multigent, start with the built-in Hello World relay instead
+If you are new to Multigent, start with the built-in onboarding relay instead
 of designing a real company workflow immediately:
 
 ```text
 Example Workspace -> Projects -> hello-world-relay
 ```
 
-The demo proves one simple loop:
+The demo uses one concrete task: prepare a short onboarding note for a new
+teammate. It proves one simple loop:
 
 ```text
 Agent takes work -> human reviews -> agent continues -> agent records -> human confirms
 ```
+
+Important: a workflow is only the reusable SOP map. It does not run by itself.
+A task is the real execution instance. To run the demo, open the seeded task
+that is already bound to the workflow, then wake the task's current owner. If
+the owner is an agent, wake it from `Schedule`; if the owner is a human user,
+review it from `Workbench -> Tasks`.
 
 Minimal steps:
 
@@ -338,11 +345,11 @@ Minimal steps:
    multigent sandbox prepare
    ```
 
-5. Open `Projects -> hello-world-relay -> Tasks` and inspect the seeded task.
+5. Open `Projects -> hello-world-relay -> Tasks` and inspect the seeded onboarding task.
 6. Open `Projects -> hello-world-relay -> Schedule`.
 7. Manually wake the current agent owner, usually `greeter-agent`.
 8. When the task reaches human review, open `Workbench -> Tasks`, approve it or send it back.
-9. Continue waking the next agent owner until the relay finishes.
+9. Continue waking the next agent owner until the onboarding note reaches final review.
 
 Full guide:
 

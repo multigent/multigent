@@ -95,7 +95,7 @@
     "create": "Create workspace",
     "creating": "Creating…",
     "exampleTitle": "Try the example workspace",
-    "exampleHint": "Create a neutral Hello World collaboration lab with demo agents, a workflow, a seeded task, and a short product tour.",
+    "exampleHint": "Create an example workspace that uses a new-teammate onboarding note to demonstrate agent handoff, human review, workflow routing, and scheduling.",
     "createExample": "Create example workspace",
     "creatingExample": "Creating example…"
   },
@@ -2106,7 +2106,7 @@
   },
   "productTour": {
     "cardTitle": "Product tour",
-    "cardBody": "Walk through the example workspace from model account setup to workflow execution. The demo stays intentionally neutral so you can focus on how agents, people, tasks, docs, and workflow handoffs fit together.",
+    "cardBody": "Walk through the example workspace from model account setup to workflow execution. The seeded task prepares an onboarding note for a new teammate, so the demo is concrete without being tied to one industry.",
     "start": "Start tour",
     "skip": "Skip",
     "previous": "Previous",
@@ -2117,7 +2117,7 @@
     "steps": {
       "welcome": {
         "title": "Welcome to the example workspace",
-        "body": "This workspace contains a pure Hello World relay: one agent starts, a human reviews, another agent continues, and a recorder agent summarizes the collaboration."
+        "body": "This workspace demonstrates a concrete small task: prepare an onboarding note for a teammate who is seeing Multigent for the first time. One agent drafts, a human reviews, another agent adds first steps, and a recorder agent summarizes."
       },
       "models": {
         "title": "Configure a model account first",
@@ -2125,11 +2125,11 @@
       },
       "team": {
         "title": "Inspect the demo team",
-        "body": "The collaboration-demo team defines neutral roles instead of a vertical business workflow. This keeps the example focused on coordination mechanics."
+        "body": "The collaboration-demo team includes three general roles: draft the welcome note, add first steps, and record the final result. Use this small task to understand the coordination mechanics."
       },
       "agents": {
         "title": "Check the three agents",
-        "body": "Open the project members page to review greeter-agent, responder-agent, and recorder-agent. Each agent can use the same model account or a different one."
+        "body": "Open the project members page to review greeter-agent, responder-agent, and recorder-agent. They will produce the welcome note, first steps, and final record in sequence, and can share one model account."
       },
       "workflow": {
         "title": "Review the workflow graph",
@@ -2137,7 +2137,7 @@
       },
       "task": {
         "title": "Run the seeded task",
-        "body": "The project already has a task bound to the workflow. After the agents have model accounts, wake the first agent or let the task trigger run it."
+        "body": "The project already has a workflow task: prepare a new-teammate onboarding note. After the agents have model accounts, wake the first agent or let the task trigger run it."
       },
       "docs": {
         "title": "Read durable outputs",
@@ -2157,7 +2157,7 @@
       },
       "exampleTeam": {
         "title": "Open the example team",
-        "body": "The example team already includes three neutral roles that show how agents relay work and where humans review the output."
+        "body": "The example team already includes three roles: drafter, responder, and recorder. They collaborate on one onboarding note, with human review in the middle."
       },
       "teamRoles": {
         "title": "Roles shape default agent behavior",
@@ -2172,8 +2172,8 @@
         "body": "Project creation does not ask for local paths. Multigent manages runtime directories and isolation inside the workspace."
       },
       "exampleProject": {
-        "title": "Open the Hello World relay project",
-        "body": "This project is not tied to engineering, sales, or operations. It only demonstrates the smallest collaboration loop: start, review, relay, and record."
+        "title": "Open the example relay project",
+        "body": "This project has a concrete goal: produce a readable Multigent onboarding note while showing the smallest collaboration loop: draft, review, add steps, and record."
       },
       "projectMembers": {
         "title": "Project members can be humans or agents",
@@ -2193,23 +2193,27 @@
       },
       "exampleWorkflow": {
         "title": "Open the example workflow",
-        "body": "This workflow includes agent steps, a human review step, and a return loop so you can verify structured handoffs between humans and agents."
+        "body": "This workflow includes agent steps, a human review step, and a return loop so you can verify that one onboarding note moves through structured handoffs between humans and agents."
       },
       "workflowBoard": {
         "title": "The board is the workflow control surface",
         "body": "Nodes are collaboration steps and edges are allowed transitions. Step outputs become downstream inputs, and docIDs point to knowledge base documents."
       },
+      "workflowTaskRelation": {
+        "title": "Workflows do not run by themselves. Tasks do.",
+        "body": "A workflow is the reusable SOP map; a task is one real execution. Once a task is bound to a workflow, it records the active step, owner, upstream outputs, and next transition. To move it forward, wake the current owner: agents run from Schedule or manual wakeup, while human steps are reviewed in Workbench."
+      },
       "taskCreate": {
         "title": "Create or run workflow tasks",
-        "body": "Tasks are the running work items. Choose a workflow when creating a task, assign each step to a person or agent, and Multigent routes the work through the graph."
+        "body": "When creating a task, choose a workflow or task template and bind workflow steps to specific people or agents. During execution, agents must submit the required structured outputs for the active step before Multigent can route the task to the next node."
       },
       "scheduleControl": {
         "title": "The scheduler starts automatic execution",
-        "body": "Start the project scheduler here. Once enabled, agents wake from tasks, heartbeats, and schedules instead of waiting for manual calls."
+        "body": "Start the project scheduler here. Once enabled, agents with assigned tasks wake to execute the active step; only idle agents run their wakeup prompt routine. For first tests, manual wakeup is the clearest path."
       },
       "runtimeSchedule": {
         "title": "Configure how each agent is triggered",
-        "body": "Each agent can run when tasks arrive, on a heartbeat, or through manual wakeup. Before production use, make sure its model account and tool permissions are configured."
+        "body": "Each agent can run when tasks arrive, on a heartbeat, or through manual wakeup. Wake the agent that currently owns the task. If the task reaches a human user, review it from Workbench."
       },
       "docsAdd": {
         "title": "Add knowledge base documents",
@@ -2217,7 +2221,7 @@
       },
       "finish": {
         "title": "You have seen the smallest collaboration loop",
-        "body": "Next, configure one model account, attach it to the example agents, create a test task, and watch the task move between agents and humans."
+        "body": "Next, configure one model account, attach it to the example agents, run the onboarding-note task, and watch it move between agents and humans. To replay this tour later, open Settings and click Start tour in the top-right corner."
       },
       "agentModelConfig": {
         "title": "Configure model and credentials",

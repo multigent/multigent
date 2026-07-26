@@ -608,7 +608,7 @@ function InfoCell({ label, children }: { label: string; children: React.ReactNod
   return (
     <div>
       <span className="text-xs font-medium text-neutral-400 dark:text-zinc-500">{label}</span>
-      <p className="text-neutral-800 dark:text-zinc-200">{children}</p>
+      <div className="text-neutral-800 dark:text-zinc-200">{children}</div>
     </div>
   )
 }

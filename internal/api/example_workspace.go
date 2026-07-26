@@ -250,75 +250,77 @@ func exampleWorkspaceSpec(acceptLanguage string) exampleLocaleSpec {
 
 func exampleENSpec() exampleLocaleSpec {
 	return exampleLocaleSpec{
-		WorkspaceDescription: "A built-in learning workspace that demonstrates agent handoff, human review, structured workflow output, shared docs, and scheduler examples without assuming a specific industry.",
-		TeamDescription:      "A neutral demo team for practicing agent-to-agent relay and human review.",
+		WorkspaceDescription: "A built-in learning workspace that helps you prepare a first onboarding note through agent handoff, human review, structured workflow output, shared docs, and scheduler examples.",
+		TeamDescription:      "A demo team that prepares a clear onboarding note for a new teammate while demonstrating agent handoff and human review.",
 		TeamGoals: []string{
-			"Show how work moves through multiple agents.",
+			"Show how a concrete work item moves through multiple agents.",
 			"Keep human intervention explicit and lightweight.",
-			"Store durable outputs in workspace docs.",
+			"Store the onboarding note and handoff artifacts in workspace docs.",
 		},
 		TeamPrompt: `# Collaboration Demo Team
 
-You demonstrate coordination, not a vertical business process.
+You demonstrate coordination through one concrete but universal task: preparing a short onboarding note for a new teammate.
 
 Every agent should:
 - Read upstream workflow inputs before acting.
 - Produce structured workflow outputs.
-- Avoid assuming a software, sales, marketing, design, or operations scenario.
+- Keep the task understandable to non-technical users.
 - Make handoffs clear enough that the next actor does not need the human to repeat context.`,
-		ProjectDescription: "A Hello World relay project that proves Multigent can route one task across agents and humans.",
+		ProjectDescription: "A small onboarding-note project that proves Multigent can route one concrete task across agents and humans.",
 		ProjectPrompt: `# hello-world-relay
 
-This project exists only to demonstrate Multigent coordination.
+This project demonstrates Multigent coordination with a concrete output.
 
-The goal is to complete one simple relay:
-1. Start with a greeting.
-2. Let a human approve or request changes.
-3. Continue the relay.
-4. Record what happened.
+The goal is to prepare a short onboarding note for a new teammate:
+1. Draft the first welcome note and explain the collaboration goal.
+2. Let a human approve it or request changes.
+3. Turn the approved note into practical first steps.
+4. Record the final onboarding note and handoff history.
 5. Let the human make a final decision.`,
 		Roles: map[string]exampleRoleText{
 			"greeter": {
-				Description: "Starts a clear, friendly relay and prepares the first handoff.",
-				Prompt: `You start neutral collaboration relays.
+				Description: "Drafts the first welcome note and prepares the first handoff.",
+				Prompt: `You start onboarding-note collaboration tasks.
 
 Focus on clarity:
-- State the purpose of the relay in one short document.
+- Explain the purpose of Multigent and this demo in one short welcome document.
 - Create durable docs for any non-trivial output.
 - Hand off with enough context for the next agent to continue without asking the human to repeat themselves.
-- Keep the tone simple and universal. Do not assume the workspace is for software, sales, marketing, or any single department.`,
+- Keep the tone simple enough for a non-technical teammate to understand.`,
 			},
 			"responder": {
-				Description: "Reads the upstream handoff and responds with the next useful contribution.",
-				Prompt: `You continue collaboration relays.
+				Description: "Reads the approved welcome note and turns it into practical first steps.",
+				Prompt: `You turn approved onboarding notes into usable first-step guidance.
 
 Focus on continuity:
 - Read the previous step output before acting.
 - Preserve the original intent.
-- Add one useful response and a clean handoff for the recorder.
+- Add practical next steps and a clean handoff for the recorder.
 - If anything is ambiguous, make the uncertainty explicit instead of inventing context.`,
 			},
 			"recorder": {
-				Description: "Turns the relay into a concise collaboration record.",
-				Prompt: `You record collaboration outcomes.
+				Description: "Turns the onboarding-note relay into a concise final record.",
+				Prompt: `You record onboarding and collaboration outcomes.
 
 Focus on traceability:
-- Summarize what each participant contributed.
+- Summarize the final onboarding note and what each participant contributed.
 - Store final notes in docs and return doc IDs in workflow outputs.
 - Point out where a human intervened and whether the intervention could be reduced next time.`,
 			},
 		},
-		DocTitle:       "Hello World Relay Guide",
-		DocDescription: "How to run the built-in Hello World collaboration relay.",
-		DocBody: `# Hello World Relay Guide
+		DocTitle:       "New Teammate Onboarding Relay Guide",
+		DocDescription: "How to run the built-in onboarding-note collaboration relay.",
+		DocBody: `# New Teammate Onboarding Relay Guide
 
-This workspace is intentionally neutral. It exists to prove a simple loop:
+This workspace uses a concrete, universal task: prepare a short onboarding note for a new teammate who is seeing Multigent for the first time.
 
-1. One agent starts the work.
-2. A human reviews or sends it back.
-3. Another agent continues from structured upstream output.
-4. A final agent records what happened.
-5. The human confirms the result.
+The loop is simple:
+
+1. One agent drafts the welcome note.
+2. A human reviews it or sends it back.
+3. Another agent turns the approved note into practical first steps.
+4. A final agent records the result and what was learned.
+5. The human confirms the final note.
 
 Before running the demo, configure at least one model account and attach it to the three demo agents. Then open the seeded task in the project task list and wake the first agent.
 
@@ -326,16 +328,16 @@ The Schedule page also contains examples:
 
 - Task-triggered heartbeat for the greeter agent.
 - Task/message-triggered heartbeat for the responder agent.
-- A weekday daily review cron.
-- A Friday weekly summary cron.`,
-		WorkflowName:        "Hello World Collaboration Relay",
-		WorkflowDescription: "A minimal workflow that demonstrates agent handoff, human review loops, structured outputs, and document references without assuming a business domain.",
+- A weekday queue review cron.
+- A Friday onboarding summary cron.`,
+		WorkflowName:        "New Teammate Onboarding Relay",
+		WorkflowDescription: "A minimal workflow that produces a real onboarding note while demonstrating agent handoff, human review loops, structured outputs, and document references.",
 		StepText: exampleStepText(
-			"Start Greeting", "Create the first greeting and a handoff note. Longer content must be stored as docs and returned as doc IDs.",
-			"Review Greeting", "Review whether the greeting is clear enough. Approve it or request changes with concrete comments.",
-			"Continue Relay", "Read the approved greeting and add the next response with a new handoff.",
-			"Record Collaboration", "Create a concise record of the whole relay and lessons learned.",
-			"Final Review", "Confirm whether the relay demonstrates the expected collaboration loop.",
+			"Draft Welcome Note", "Create the first welcome note and a handoff note. Longer content must be stored as docs and returned as doc IDs.",
+			"Review Welcome Note", "Review whether the welcome note is clear enough for a new teammate. Approve it or request changes with concrete comments.",
+			"Add First Steps", "Read the approved welcome note and add practical first steps with a new handoff.",
+			"Record Final Note", "Create the final onboarding note and a concise record of the whole relay.",
+			"Final Review", "Confirm whether the final onboarding note is useful and whether the collaboration loop worked.",
 		),
 		FieldText: exampleFieldTextEN(),
 		EdgeText: map[string]string{
@@ -345,11 +347,17 @@ The Schedule page also contains examples:
 			"record":            "record",
 			"final_review":      "final review",
 		},
-		TaskTitle: "Complete a Hello World collaboration relay",
-		TaskDesc:  "Use the built-in workflow to pass one small piece of work from one agent to another, with human review in the middle.",
-		TaskPrompt: `Run the Hello World collaboration relay.
+		TaskTitle: "Prepare a new teammate onboarding note",
+		TaskDesc:  "Use the built-in workflow to create a short onboarding note through agent handoff and human review.",
+		TaskPrompt: `Prepare a short onboarding note for a new teammate who is seeing Multigent for the first time.
 
-Keep the output neutral and easy to inspect. Use docs for the required document outputs, then finish the current workflow step with structured output fields exactly as specified by the workflow context.`,
+Include:
+1. What Multigent is in one paragraph.
+2. How tasks, workflows, owners, and wakeups relate to each other.
+3. When humans review and when agents continue automatically.
+4. What the next agent should add.
+
+Use docs for the required document outputs, then finish the current workflow step with structured output fields exactly as specified by the workflow context.`,
 		Schedules: exampleScheduleText{
 			GreeterWakeup: `# Wakeup Routine
 
@@ -359,7 +367,7 @@ When you wake up:
 3. If there is no task, do nothing except briefly report that the queue is empty.
 4. If there is a task, create the required docs, then finish the step with exactly the structured output fields requested by the workflow.
 
-Keep the relay neutral and easy to inspect.`,
+Keep the onboarding note concrete, short, and easy to inspect.`,
 			ResponderWakeup: `# Wakeup Routine
 
 When you wake up:
@@ -378,12 +386,12 @@ When you wake up:
 Call out where human intervention happened and whether it could be reduced next time.`,
 			DailyReviewTitle:    "Weekday demo queue review",
 			DailyReviewPrompt:   "Review the example project queue. Summarize pending workflow tasks and whether any human review is blocking progress.",
-			WeeklySummaryTitle:  "Friday relay summary",
-			WeeklySummaryPrompt: "Summarize what happened in the example relay this week, including human interventions and possible process improvements.",
+			WeeklySummaryTitle:  "Friday onboarding summary",
+			WeeklySummaryPrompt: "Summarize what happened in the example onboarding relay this week, including human interventions and possible process improvements.",
 		},
 		AgencyPrompt: `# Example Workspace
 
-This workspace is a neutral Multigent demo.
+This workspace is a Multigent onboarding demo.
 
 Rules:
 - Keep outputs short, inspectable, and durable.
@@ -396,79 +404,82 @@ Rules:
 func exampleZHSpec(traditional bool) exampleLocaleSpec {
 	if traditional {
 		spec := exampleZHSpec(false)
-		spec.WorkspaceDescription = "內建學習工作區，用中性的 Hello World 接力展示 Agent 交接、人類審核、結構化輸出、知識庫文檔與調度示例。"
-		spec.TeamDescription = "用於練習 Agent 接力和人類審核的中性示範團隊。"
-		spec.TeamGoals = []string{"展示工作如何在多個 Agent 之間流轉。", "讓人類介入保持明確且輕量。", "把長期產物沉澱到工作區知識庫。"}
-		spec.DocTitle = "Hello World 接力指南"
-		spec.DocDescription = "如何執行內建的 Hello World 協作接力。"
+		spec.WorkspaceDescription = "內建學習工作區，用一份新成員入門說明展示 Agent 交接、人類審核、結構化輸出、知識庫文檔與調度示例。"
+		spec.TeamDescription = "用三個 Agent 和一個人類審核者，完成一份給新成員看的協作入門說明。"
+		spec.TeamGoals = []string{"展示一件具體工作如何在多個 Agent 之間流轉。", "讓人類介入保持明確且輕量。", "把入門說明和交接產物沉澱到工作區知識庫。"}
+		spec.DocTitle = "新成員入門說明接力指南"
+		spec.DocDescription = "如何執行內建的新成員入門說明協作接力。"
 		return spec
 	}
 	return exampleLocaleSpec{
-		WorkspaceDescription: "内置学习工作区，用中性的 Hello World 接力展示 Agent 交接、人类审核、结构化输出、知识库文档与调度示例。",
-		TeamDescription:      "用于练习 Agent 接力和人类审核的中性演示团队。",
-		TeamGoals:            []string{"展示工作如何在多个 Agent 之间流转。", "让人类介入保持明确且轻量。", "把长期产物沉淀到工作区知识库。"},
+		WorkspaceDescription: "内置学习工作区，用一份新成员入门说明展示 Agent 交接、人类审核、结构化输出、知识库文档与调度示例。",
+		TeamDescription:      "用三个 Agent 和一个人类审核者，完成一份给新成员看的协作入门说明。",
+		TeamGoals:            []string{"展示一件具体工作如何在多个 Agent 之间流转。", "让人类介入保持明确且轻量。", "把入门说明和交接产物沉淀到工作区知识库。"},
 		TeamPrompt: `# 协作演示团队
 
-你们演示的是协作机制，不是某个垂直业务流程。
+你们通过一个具体但通用的任务来演示协作机制：为第一次进入 Multigent 的新成员准备一份简短入门说明。
 
 每个 Agent 都应该：
 - 先读取上游流程输入，再开始行动。
 - 按流程要求输出结构化字段。
-- 不要假设这是软件、销售、市场、设计或运营场景。
+- 让完全不懂技术的用户也能看懂。
 - 交接信息要足够清楚，避免下一个参与者要求人类重复上下文。`,
-		ProjectDescription: "一个 Hello World 接力项目，用来证明 Multigent 可以让任务在人和多个 Agent 之间流转。",
+		ProjectDescription: "一个新成员入门说明项目，用来证明 Multigent 可以让具体任务在人和多个 Agent 之间流转。",
 		ProjectPrompt: `# hello-world-relay
 
-这个项目只用于演示 Multigent 协作机制。
+这个项目用一个具体产物演示 Multigent 协作机制。
 
-目标是完成一个简单接力：
-1. 发起一段问候。
+目标是为第一次进入示例工作区的新成员准备一份简短入门说明：
+1. 起草欢迎说明，并解释这次协作的目标。
 2. 让人类审核通过或打回。
-3. 由另一个 Agent 接力回应。
-4. 记录整个过程。
+3. 由另一个 Agent 把通过后的说明整理成可执行上手步骤。
+4. 记录最终说明和完整交接过程。
 5. 由人类做最终确认。`,
 		Roles: map[string]exampleRoleText{
 			"greeter": {
-				Description: "发起清晰、友好的接力，并准备第一份交接说明。",
-				Prompt: `你负责发起中性的协作接力。
+				Description: "起草第一版欢迎说明，并准备第一份交接说明。",
+				Prompt: `你负责发起新成员入门说明的协作任务。
 
 重点：
-- 用一份简短文档说明本次接力的目的。
+- 用一份简短文档说明 Multigent 是什么，以及这个示例任务要验证什么。
 - 复杂内容要创建为知识库文档。
 - 交接时提供足够上下文，让下一个 Agent 不需要人类重复解释。
-- 保持表达简单、通用，不要假设这是软件、销售、市场或任何单一部门场景。`,
+- 保持表达简单，让不懂技术的新成员也能看懂。`,
 			},
 			"responder": {
-				Description: "读取上游交接内容，并给出下一步有用回应。",
-				Prompt: `你负责延续协作接力。
+				Description: "读取已通过的欢迎说明，并整理成可执行的上手步骤。",
+				Prompt: `你负责把已通过的欢迎说明变成可操作的上手指引。
 
 重点：
 - 行动前先读取上一步输出。
 - 保留原始意图。
-- 添加一个有用回应，并为记录者准备清晰交接。
+- 补充新成员最应该先做的 3-5 个步骤，并为记录者准备清晰交接。
 - 如果信息不明确，直接标注不确定，不要编造上下文。`,
 			},
 			"recorder": {
-				Description: "把接力过程整理成简洁的协作记录。",
-				Prompt: `你负责记录协作结果。
+				Description: "把入门说明和接力过程整理成最终记录。",
+				Prompt: `你负责记录入门说明和协作结果。
 
 重点：
+- 整理最终可读的新成员入门说明。
 - 总结每个参与者贡献了什么。
 - 把最终记录写入知识库，并在流程输出中返回 docID。
 - 指出人类在哪里介入，以及下次是否能减少这种介入。`,
 			},
 		},
-		DocTitle:       "Hello World 接力指南",
-		DocDescription: "如何运行内置的 Hello World 协作接力。",
-		DocBody: `# Hello World 接力指南
+		DocTitle:       "新成员入门说明接力指南",
+		DocDescription: "如何运行内置的新成员入门说明协作接力。",
+		DocBody: `# 新成员入门说明接力指南
 
-这个工作区刻意保持中性。它只用于证明一个简单闭环：
+这个工作区使用一个具体、通用的小任务：为第一次看到 Multigent 的新成员准备一份简短入门说明。
 
-1. 一个 Agent 发起工作。
+这个闭环是：
+
+1. 一个 Agent 起草欢迎说明。
 2. 人类审核，通过或打回。
-3. 另一个 Agent 基于结构化上游输出继续。
-4. 最后一个 Agent 记录过程。
-5. 人类确认结果。
+3. 另一个 Agent 基于结构化上游输出整理上手步骤。
+4. 最后一个 Agent 记录最终说明和协作过程。
+5. 人类确认最终结果。
 
 运行演示前，先配置至少一个模型账号，并绑定到三个演示 Agent。然后打开项目任务列表中的初始任务，唤醒第一个 Agent。
 
@@ -477,15 +488,15 @@ func exampleZHSpec(traditional bool) exampleLocaleSpec {
 - greeter-agent 的“有任务就触发”心跳。
 - responder-agent 的“有任务或消息就触发”心跳。
 - 工作日每日队列回顾 cron。
-- 周五协作总结 cron。`,
-		WorkflowName:        "Hello World 协作接力",
-		WorkflowDescription: "一个最小流程，用来演示 Agent 交接、人类审核循环、结构化输出和 docID 文档引用，不绑定任何业务领域。",
+- 周五入门说明总结 cron。`,
+		WorkflowName:        "新成员入门说明接力",
+		WorkflowDescription: "一个最小流程，用具体产物演示 Agent 交接、人类审核循环、结构化输出和 docID 文档引用。",
 		StepText: exampleStepText(
-			"发起问候", "创建第一段问候和交接说明。较长内容必须写入知识库文档，并在输出中返回 docID。",
-			"审核问候", "审核问候是否足够清楚。通过或填写具体意见后打回。",
-			"继续接力", "读取已通过的问候，并添加下一段回应和新的交接说明。",
-			"记录协作", "整理整个接力过程和经验教训。",
-			"最终确认", "确认这个接力是否展示了预期的协作闭环。",
+			"起草欢迎说明", "创建第一版欢迎说明和交接说明。较长内容必须写入知识库文档，并在输出中返回 docID。",
+			"审核欢迎说明", "审核欢迎说明是否足够清楚，是否能让新成员理解下一步。通过或填写具体意见后打回。",
+			"补充上手步骤", "读取已通过的欢迎说明，并补充 3-5 个可执行的上手步骤和新的交接说明。",
+			"整理最终说明", "整理最终入门说明、接力过程和经验教训。",
+			"最终确认", "确认最终入门说明是否可用，以及这次协作闭环是否跑通。",
 		),
 		FieldText: exampleFieldTextZH(),
 		EdgeText: map[string]string{
@@ -495,9 +506,9 @@ func exampleZHSpec(traditional bool) exampleLocaleSpec {
 			"record":            "记录",
 			"final_review":      "最终审核",
 		},
-		TaskTitle:  "完成一次 Hello World 协作接力",
-		TaskDesc:   "使用内置流程，让一个小任务从一个 Agent 流转到另一个 Agent，中间经过人类审核。",
-		TaskPrompt: "运行 Hello World 协作接力。\n\n保持输出中性、简短、方便检查。必要文档写入知识库，并按当前流程节点要求提交结构化输出字段。",
+		TaskTitle:  "给新成员准备一份 Multigent 协作入门说明",
+		TaskDesc:   "让三个 Agent 协作产出一份给新成员看的入门说明，中间经过人工审核，最终沉淀到知识库。",
+		TaskPrompt: "目标：为第一次进入 Example Workspace 的新成员，准备一份 3-5 分钟能看懂的协作入门说明。\n\n需要包含：\n1. Multigent 是什么，用一句话和一小段解释清楚。\n2. 流程、任务、负责人、唤醒分别是什么，它们之间是什么关系。\n3. 这个示例项目怎么跑起来：配置模型账号、绑定 Agent、唤醒当前负责人、在工作台审核。\n4. 人类什么时候审核，Agent 什么时候继续。\n5. 下一位 Agent 接力时应该补充什么。\n\n较长内容必须写入知识库，并在流程输出中返回 docID。按当前流程节点要求提交结构化输出字段。",
 		Schedules: exampleScheduleText{
 			GreeterWakeup: `# Wakeup Routine
 
@@ -507,18 +518,18 @@ func exampleZHSpec(traditional bool) exampleLocaleSpec {
 3. 如果没有任务，只需要简短说明队列为空。
 4. 如果有任务，先创建必需文档，再严格按流程要求提交结构化输出字段。
 
-保持接力内容中性、简短、方便检查。`,
+保持入门说明具体、简短、方便检查。`,
 			ResponderWakeup: `# Wakeup Routine
 
 每次被唤醒时：
 1. 检查是否有流程任务或未读消息。
-2. 只有拿到上游交接内容时才继续。
+2. 只有拿到上游欢迎说明和交接内容时才继续。
 3. 先读取上游 docID 对应的文档，再开始回应。
-4. 返回流程要求的结构化输出，不要编造缺失上下文。`,
+4. 输出新成员下一步应该怎么做，并返回流程要求的结构化输出，不要编造缺失上下文。`,
 			RecorderWakeup: `# Wakeup Routine
 
 每次被唤醒时：
-1. 检查是否已有上游接力输出。
+1. 检查是否已有上游入门说明输出。
 2. 读取引用的文档，总结发生了什么。
 3. 把最终记录写入工作区知识库。
 4. 在流程输出字段中返回 docID。
@@ -526,12 +537,12 @@ func exampleZHSpec(traditional bool) exampleLocaleSpec {
 需要指出人类在哪里介入，以及下次是否可以减少这类介入。`,
 			DailyReviewTitle:    "工作日演示队列回顾",
 			DailyReviewPrompt:   "回顾示例项目队列，简要总结待处理流程任务，以及是否有人类审核正在阻塞进展。",
-			WeeklySummaryTitle:  "周五接力总结",
-			WeeklySummaryPrompt: "总结本周示例接力发生了什么，包括人类介入点和可改进的流程。",
+			WeeklySummaryTitle:  "周五入门说明总结",
+			WeeklySummaryPrompt: "总结本周示例入门说明接力发生了什么，包括人类介入点和可改进的流程。",
 		},
 		AgencyPrompt: `# Example Workspace
 
-这是一个中性的 Multigent 演示工作区。
+这是一个 Multigent 入门演示工作区。
 
 规则：
 - 输出要短、可检查、可沉淀。
@@ -546,7 +557,7 @@ func exampleJASpec() exampleLocaleSpec {
 	spec.WorkspaceDescription = "Agent handoff、human review、structured output、docs、scheduler examples を中立的に確認する built-in learning workspace です。"
 	spec.TeamDescription = "Agent-to-agent relay と human review を練習する中立的な demo team です。"
 	spec.TeamGoals = []string{"複数 Agent 間で作業が流れる様子を示す。", "人の介入を明示的かつ軽量にする。", "成果物を workspace docs に保存する。"}
-	spec.DocTitle = "Hello World Relay Guide"
+	spec.DocTitle = "New Teammate Onboarding Relay Guide"
 	spec.DocDescription = "Built-in Hello World collaboration relay の実行方法。"
 	return spec
 }
@@ -569,19 +580,19 @@ func exampleStepText(gTitle, gDesc, rTitle, rDesc, respTitle, respDesc, recTitle
 
 func exampleFieldTextEN() map[string]string {
 	return map[string]string{
-		"greeting_doc_id":                   "Doc ID containing the greeting and purpose of the relay.",
+		"greeting_doc_id":                   "Doc ID containing the welcome note and purpose of the demo.",
 		"handoff_note_doc_id":               "Doc ID containing the handoff note for the next actor.",
 		"summary":                           "One-sentence summary of this step.",
-		"input_greeting_doc_id":             "Greeting document from the previous step.",
+		"input_greeting_doc_id":             "Welcome-note document from the previous step.",
 		"input_handoff_note_doc_id":         "Handoff document from the previous step.",
 		"decision":                          "approve or request_changes.",
 		"comments":                          "Review comments. Required even when approving.",
-		"approved_greeting_doc_id":          "Approved greeting document.",
+		"approved_greeting_doc_id":          "Approved welcome-note document.",
 		"approved_handoff_note_doc_id":      "Approved handoff document.",
 		"review_comments":                   "Human review comments from the approval step.",
 		"response_doc_id":                   "Doc ID containing the responder contribution.",
 		"next_handoff_doc_id":               "Doc ID containing the handoff for the recorder.",
-		"input_response_doc_id":             "Responder contribution document.",
+		"input_response_doc_id":             "First-steps document from the responder.",
 		"input_next_handoff_doc_id":         "Recorder handoff document.",
 		"collaboration_record_doc_id":       "Doc ID containing the final collaboration record.",
 		"learnings_doc_id":                  "Doc ID containing lessons learned and possible process improvements.",
@@ -593,23 +604,23 @@ func exampleFieldTextEN() map[string]string {
 
 func exampleFieldTextZH() map[string]string {
 	return map[string]string{
-		"greeting_doc_id":                   "包含问候内容和接力目的的文档 docID。",
+		"greeting_doc_id":                   "包含欢迎说明和示例目标的文档 docID。",
 		"handoff_note_doc_id":               "给下一个参与者的交接说明 docID。",
 		"summary":                           "本步骤的一句话总结。",
-		"input_greeting_doc_id":             "上一步产生的问候文档。",
+		"input_greeting_doc_id":             "上一步产生的欢迎说明文档。",
 		"input_handoff_note_doc_id":         "上一步产生的交接文档。",
 		"decision":                          "approve 或 request_changes。",
 		"comments":                          "审核意见。即使通过也要填写。",
-		"approved_greeting_doc_id":          "已通过的问候文档。",
+		"approved_greeting_doc_id":          "已通过的欢迎说明文档。",
 		"approved_handoff_note_doc_id":      "已通过的交接文档。",
 		"review_comments":                   "人类审核通过时给出的评论。",
-		"response_doc_id":                   "接力回应内容的文档 docID。",
+		"response_doc_id":                   "包含新成员上手步骤的文档 docID。",
 		"next_handoff_doc_id":               "给记录者的下一份交接说明 docID。",
-		"input_response_doc_id":             "回应者贡献的文档。",
+		"input_response_doc_id":             "上手步骤文档。",
 		"input_next_handoff_doc_id":         "给记录者的交接文档。",
-		"collaboration_record_doc_id":       "最终协作记录文档 docID。",
+		"collaboration_record_doc_id":       "最终入门说明和协作记录文档 docID。",
 		"learnings_doc_id":                  "经验教训和流程改进建议文档 docID。",
-		"input_collaboration_record_doc_id": "最终协作记录文档。",
+		"input_collaboration_record_doc_id": "最终入门说明和协作记录文档。",
 		"input_learnings_doc_id":            "经验教训文档。",
 		"final_comments":                    "最终审核意见。即使通过也要填写。",
 	}

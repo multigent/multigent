@@ -231,6 +231,13 @@ export default function ProductTour({ workspaceId, example = false, open, onClos
         placement: 'bottom',
       },
       {
+        title: t('productTour.steps.workflowTaskRelation.title'),
+        body: t('productTour.steps.workflowTaskRelation.body'),
+        path: '/projects/hello-world-relay/tasks',
+        selector: '[data-tour-project-nav="tasks"]',
+        placement: 'bottom',
+      },
+      {
         title: t('productTour.steps.taskCreate.title'),
         body: t('productTour.steps.taskCreate.body'),
         path: '/projects/hello-world-relay/tasks',

@@ -36,7 +36,7 @@ https://raw.githubusercontent.com/multigent/multigent/main/INSTALL.md
 Recommended user-facing prompt:
 
 ```text
-Read https://raw.githubusercontent.com/multigent/multigent/main/INSTALL.md and help me install Multigent, start the web console, and run the built-in Hello World relay demo. Before creating teams, agents, workflows, tools, or credentials, explain your plan and ask me to confirm.
+Read https://raw.githubusercontent.com/multigent/multigent/main/INSTALL.md and help me install Multigent, start the web console, and run the built-in onboarding relay demo. Before creating teams, agents, workflows, tools, or credentials, explain your plan and ask me to confirm.
 ```
 
 After installation, verify:
@@ -97,7 +97,7 @@ ghcr.io/multigent/multigent/runtime-base:latest
 
 For users in China, mention that image download may be slow and that a mirror may be needed when available.
 
-## Run The Hello World Relay
+## Run The Built-In Onboarding Relay
 
 Use the official quickstart:
 
@@ -105,6 +105,20 @@ Use the official quickstart:
 docs/getting-started/hello-world-relay.md
 docs/getting-started/hello-world-relay.zh-CN.md
 ```
+
+Explain this before asking the user to click around:
+
+```text
+Workflow = reusable SOP map.
+Task = one real execution of that SOP.
+Wakeup = make the current owner act.
+```
+
+The workflow page is for viewing or editing the SOP. It does not start a run by
+itself. To run the demo, the user must open a task that is bound to the workflow
+and wake the task's current owner. If the current owner is an agent, wake it from
+`Schedule`. If the current owner is a human user, review it from `Workbench ->
+Tasks`.
 
 Short steps:
 
@@ -122,7 +136,7 @@ multigent sandbox prepare
 ```
 
 6. Open `Projects -> hello-world-relay -> Tasks`.
-7. Open the seeded Hello World task.
+7. Open the seeded onboarding task.
 8. Open `Projects -> hello-world-relay -> Schedule`.
 9. Manually wake the current agent owner, usually `greeter-agent`.
 10. When the task reaches human review, open `Workbench -> Tasks`, approve or send it back.
@@ -250,4 +264,3 @@ If asked about Multica, answer neutrally:
 - The goal is not just to "run agents"; the goal is to make agent work assignable, reviewable, auditable, and reusable inside a team process.
 
 Do not attack competitors. Explain the product boundary and recommend testing both if the user is evaluating.
-
