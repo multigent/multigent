@@ -771,6 +771,7 @@ export function WorkflowRuntimePanel({
   taskID,
   actorLabels,
   canReview,
+  hideHeader = false,
   reviewOutputs,
   reviewComments,
   reviewBusy,
@@ -787,6 +788,7 @@ export function WorkflowRuntimePanel({
   taskID: string
   actorLabels: Map<string, string>
   canReview: boolean
+  hideHeader?: boolean
   reviewOutputs: Record<string, string>
   reviewComments: string
   reviewBusy: string | null
@@ -822,13 +824,15 @@ export function WorkflowRuntimePanel({
 
   return (
     <div className="flex min-h-0 flex-1 flex-col">
-      <div className="shrink-0 border-b border-neutral-100 px-4 py-3 dark:border-zinc-800">
-        <p className="text-xs font-semibold uppercase tracking-wider text-neutral-400 dark:text-zinc-500">{t('workflows.detail.currentStep')}</p>
-        <h4 className="mt-1 text-sm font-semibold text-neutral-900 dark:text-zinc-100">{step.title}</h4>
-        <p className="mt-1 text-xs text-neutral-500 dark:text-zinc-500">
-          {t(`workflows.stepTypes.${step.type}`, { defaultValue: step.type })} · {actorLabel}
-        </p>
-      </div>
+      {!hideHeader && (
+        <div className="shrink-0 border-b border-neutral-100 px-4 py-3 dark:border-zinc-800">
+          <p className="text-xs font-semibold uppercase tracking-wider text-neutral-400 dark:text-zinc-500">{t('workflows.detail.currentStep')}</p>
+          <h4 className="mt-1 text-sm font-semibold text-neutral-900 dark:text-zinc-100">{step.title}</h4>
+          <p className="mt-1 text-xs text-neutral-500 dark:text-zinc-500">
+            {t(`workflows.stepTypes.${step.type}`, { defaultValue: step.type })} · {actorLabel}
+          </p>
+        </div>
+      )}
       <div className="min-h-0 flex-1 space-y-4 overflow-y-auto p-4">
         {step.description && (
           <WorkflowPanelBlock title={t('workflows.detail.goal')}>

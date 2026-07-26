@@ -296,6 +296,7 @@ export default function ProjectTaskFollowPage() {
               taskID={taskId}
               actorLabels={actorLabels}
               canReview={canReview}
+              hideHeader
               reviewOutputs={reviewOutputs}
               reviewComments={reviewComments}
               reviewBusy={reviewBusy}
