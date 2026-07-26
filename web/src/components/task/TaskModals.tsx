@@ -2,7 +2,7 @@ import { useCallback, useEffect, useMemo, useState, type ReactNode } from 'react
 import { useTranslation } from 'react-i18next'
 import ReactMarkdown from 'react-markdown'
 import remarkGfm from 'remark-gfm'
-import { ClipboardCopy, FileText, MessageSquare, Pencil, Send, Trash2, X } from 'lucide-react'
+import { ClipboardCopy, FileText, MessageSquare, Pencil, Play, Send, Trash2, X } from 'lucide-react'
 import { cn } from '../../lib/cn'
 import { apiDelete, apiPost, apiPut } from '../../lib/api'
 import { useFormatDateTime } from '../../lib/format-datetime'
@@ -312,7 +312,7 @@ export function TaskDetailModal({ task, onClose, onEdit, onMutated, canEdit = tr
     : []
   const canReviewWorkflow = activeWorkflowStep?.type === 'human_review'
   const startAgentName = startableAgentName(task)
-  const canStartAgent = Boolean(startAgentName && !isTerminal(task.status))
+  const canStartAgent = Boolean(startAgentName && task.status === 'pending')
 
   useEffect(() => {
     setReviewComments('')
@@ -416,10 +416,10 @@ export function TaskDetailModal({ task, onClose, onEdit, onMutated, canEdit = tr
                 type="button"
                 onClick={() => void startCurrentAssignee()}
                 disabled={!canStartAgent || startBusy}
-                title={!startAgentName ? t('tasks.startRequiresAgent') : undefined}
-                className="rounded-lg border border-sky-600 bg-white px-3 py-1.5 text-xs font-medium text-sky-700 transition-colors hover:bg-sky-50 disabled:cursor-not-allowed disabled:opacity-50 dark:border-sky-500 dark:bg-zinc-900 dark:text-sky-400 dark:hover:bg-zinc-800"
+                title={!startAgentName ? t('tasks.startRequiresAgent') : t('tasks.start')}
+                className="rounded-md p-1 text-neutral-400 transition-colors enabled:hover:bg-sky-50 enabled:hover:text-sky-700 disabled:cursor-not-allowed disabled:opacity-35 dark:text-zinc-500 dark:enabled:hover:bg-zinc-800 dark:enabled:hover:text-sky-400"
               >
-                {startBusy ? t('tasks.starting') : t('tasks.start')}
+                <Play className={cn('size-4', startBusy && 'animate-pulse')} strokeWidth={1.8} />
               </button>
             )}
             {canEdit && (
