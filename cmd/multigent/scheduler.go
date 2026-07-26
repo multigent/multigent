@@ -728,6 +728,14 @@ func runAllPendingTasks(ctx context.Context, root, project, agentName string,
 			return err
 		}
 		if task == nil {
+			// A heartbeat cycle should do one kind of work:
+			// process queued tasks, or run the idle wakeup routine. If the cycle
+			// has already handled tasks, defer the routine until the next interval
+			// so users do not see a task run immediately followed by a redundant
+			// "[wakeup] routine" run for the same agent.
+			if !shouldRunIdleWakeup(tasksProcessed) {
+				break
+			}
 			// Queue is empty. Determine the wakeup prompt to run.
 			// WakeupPrompt may be "@<file>", inline text, or empty (use built-in trigger).
 			// The wakeup task is persisted to tasks.yaml so that the agent can
@@ -1009,6 +1017,10 @@ func runAllPendingTasks(ctx context.Context, root, project, agentName string,
 		}
 	}
 	return nil
+}
+
+func shouldRunIdleWakeup(tasksProcessed int) bool {
+	return tasksProcessed == 0
 }
 
 func runResultLogPath(result *runner.RunResult) string {

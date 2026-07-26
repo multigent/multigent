@@ -283,3 +283,15 @@ func TestCheckWakeupPresetRequireTasksOnlyCountsPending(t *testing.T) {
 		t.Fatalf("require_tasks should pass with a pending task, reason=%q", reason)
 	}
 }
+
+func TestShouldRunIdleWakeupOnlyWhenCycleDidNoTaskWork(t *testing.T) {
+	if !shouldRunIdleWakeup(0) {
+		t.Fatalf("idle wakeup should run when the cycle did not process any task")
+	}
+	if shouldRunIdleWakeup(1) {
+		t.Fatalf("idle wakeup should be deferred after processing a queued task")
+	}
+	if shouldRunIdleWakeup(3) {
+		t.Fatalf("idle wakeup should be deferred after processing multiple queued tasks")
+	}
+}
