@@ -9,6 +9,7 @@ import {
   BookOpen, ChevronRight, ChevronDown, FileText, FolderOpen, Folder,
   Maximize2, Minimize2, Plus, Search, ArrowLeft, Pencil, Trash2, X, Save, Copy, Check,
   Calendar, User, Tag, FolderTree, Download, PanelLeftClose, PanelLeft, Upload,
+  RefreshCw,
 } from 'lucide-react'
 import { apiFetch, apiPost, apiUrl } from '../../lib/api'
 import { getStoredToken } from '../../lib/auth'
@@ -82,6 +83,7 @@ export default function DocsPage() {
   const [showAdd, setShowAdd] = useState(false)
   const [sidebarOpen, setSidebarOpen] = useState(true)
   const [tagsOpen, setTagsOpen] = useState(false)
+  const [loading, setLoading] = useState(false)
   const initialRouteHandled = useRef(false)
   const lastMainSidebarPreference = useRef<boolean | null>(null)
 
@@ -104,13 +106,18 @@ export default function DocsPage() {
   }
 
   const load = useCallback(async () => {
-    const [t, d] = await Promise.all([
-      apiFetch<TreeNode>('/api/v1/docs/tree'),
-      apiFetch<DocEntry[]>('/api/v1/docs'),
-    ])
-    setTree(t)
-    setAllDocs(d ?? [])
-    return d ?? []
+    setLoading(true)
+    try {
+      const [t, d] = await Promise.all([
+        apiFetch<TreeNode>('/api/v1/docs/tree'),
+        apiFetch<DocEntry[]>('/api/v1/docs'),
+      ])
+      setTree(t)
+      setAllDocs(d ?? [])
+      return d ?? []
+    } finally {
+      setLoading(false)
+    }
   }, [])
 
   useEffect(() => { void Promise.resolve().then(load) }, [load])
@@ -149,6 +156,15 @@ export default function DocsPage() {
     const res = await apiFetch<DocEntry & { content: string }>(`/api/v1/docs/${doc.id}?content=true`)
     setDocContent(res?.content ?? '')
   }, [navigate])
+
+  const refreshDocs = useCallback(async () => {
+    const docs = await load()
+    if (!selectedDoc) return
+    const current = docs.find(d => d.id === selectedDoc.id) ?? selectedDoc
+    setSelectedDoc(current)
+    const res = await apiFetch<DocEntry & { content: string }>(`/api/v1/docs/${current.id}?content=true`)
+    setDocContent(res?.content ?? '')
+  }, [load, selectedDoc])
 
   // URL -> state: on first load or navigation, resolve /docs/<path> to a doc or index
   useEffect(() => {
@@ -360,6 +376,8 @@ export default function DocsPage() {
             onToggleSidebar={() => setSidebarOpen(v => !v)}
             onTagClick={tag => { selectTag(tag); goBackToList() }}
             canManage={canManageDocs}
+            onRefresh={refreshDocs}
+            refreshing={loading}
           />
         ) : (
           <div className="p-6 max-w-6xl mx-auto">
@@ -388,7 +406,18 @@ export default function DocsPage() {
                   </button>
                 )}
               </div>
-              {canManageDocs && <button data-tour-doc-add onClick={() => setShowAdd(true)} className={primaryOutlineButton}>{t('docs.addDoc')}</button>}
+              <div className="flex items-center gap-2">
+                <button
+                  type="button"
+                  onClick={() => void refreshDocs()}
+                  disabled={loading}
+                  className={btnGhost}
+                >
+                  <RefreshCw className={`size-3.5 ${loading ? 'animate-spin' : ''}`} />
+                  {t('common.refresh')}
+                </button>
+                {canManageDocs && <button data-tour-doc-add onClick={() => setShowAdd(true)} className={primaryOutlineButton}>{t('docs.addDoc')}</button>}
+              </div>
             </div>
             {(selectedIndex || selectedTag) && !searchQ && (
               <button onClick={() => { setSelectedIndex(null); setSelectedTag(null); navigate('/docs', { replace: true }) }} className={`${btnGhost} mb-4`}>
@@ -865,12 +894,14 @@ function DocNavPanel({ prevDoc, nextDoc, onOpenDoc }: {
   )
 }
 
-function DocViewer({ doc, content, onBack, onRemove, onUpdated, onOpenDoc, prevDoc, nextDoc, sidebarOpen, onToggleSidebar, onTagClick, canManage }: {
+function DocViewer({ doc, content, onBack, onRemove, onUpdated, onOpenDoc, prevDoc, nextDoc, sidebarOpen, onToggleSidebar, onTagClick, canManage, onRefresh, refreshing }: {
   doc: DocEntry; content: string; onBack: () => void; onRemove: () => void; onUpdated: () => void
   onOpenDoc?: (d: DocEntry) => void
   prevDoc?: DocEntry | null; nextDoc?: DocEntry | null
   sidebarOpen: boolean; onToggleSidebar: () => void; onTagClick?: (tag: string) => void
   canManage: boolean
+  onRefresh: () => void
+  refreshing: boolean
 }) {
   const { t } = useTranslation()
   const fmtDate = useLocaleDate()
@@ -1030,6 +1061,9 @@ function DocViewer({ doc, content, onBack, onRemove, onUpdated, onOpenDoc, prevD
             </>
           ) : (
             <>
+              <button onClick={onRefresh} disabled={refreshing} className={btnGhost}>
+                <RefreshCw className={`size-3.5 ${refreshing ? 'animate-spin' : ''}`} /> {t('common.refresh')}
+              </button>
               <button onClick={() => setFullscreen(true)} className={btnGhost}><Maximize2 className="size-3.5" /> {t('docs.fullscreen')}</button>
               <button onClick={() => downloadDoc(doc)} className={btnGhost}><Download className="size-3.5" /> {t('docs.download')}</button>
               {canManage && (

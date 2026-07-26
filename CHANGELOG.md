@@ -1,5 +1,15 @@
 # Changelog
 
+## [v0.1.10] - 2026-07-26
+
+### Added
+
+- Knowledge base list and document detail pages now include a refresh action.
+
+### Changed
+
+- Knowledge base refresh actions use the shared `common.refresh` localization key.
+
 ## [v0.1.9] - 2026-07-26
 
 ### Fixed
