@@ -215,8 +215,8 @@ export default function ProjectTaskFollowPage() {
           )}
         </section>
 
-        <aside className="flex min-w-0 flex-col bg-neutral-50 dark:bg-zinc-950">
-          <div className="shrink-0 border-b border-neutral-200/80 bg-white px-4 py-3 dark:border-zinc-800 dark:bg-zinc-950">
+        <aside className="min-w-0 overflow-y-auto bg-white dark:bg-zinc-950">
+          <div className="border-b border-neutral-200/80 px-4 py-3 dark:border-zinc-800">
             <p className="text-xs font-semibold uppercase tracking-wider text-neutral-400 dark:text-zinc-500">{t('tasks.followCurrent')}</p>
             <h2 className="mt-1 text-base font-semibold text-neutral-900 dark:text-zinc-100">{activeStep?.title || t('workflows.detail.notSpecified')}</h2>
             <div className="mt-2 flex flex-wrap items-center gap-2 text-xs text-neutral-500 dark:text-zinc-500">
@@ -237,51 +237,47 @@ export default function ProjectTaskFollowPage() {
             </div>
           </div>
 
-          <div className="min-h-0 flex-1 overflow-y-auto">
-            {workflowData && (
-              <div className="border-b border-neutral-200/80 bg-white dark:border-zinc-800 dark:bg-zinc-950">
-                <WorkflowRuntimePanel
-                  step={activeStep}
-                  instance={activeInstance}
-                  steps={workflowData.definition.steps}
-                  records={workflowRecords}
-                  runs={runs}
-                  taskID={taskId}
-                  actorLabels={actorLabels}
-                  canReview={canReview}
-                  reviewOutputs={reviewOutputs}
-                  reviewComments={reviewComments}
-                  reviewBusy={reviewBusy}
-                  reviewErr={reviewErr}
-                  onChangeOutput={(name, value) => {
-                    setReviewOutputs((current) => ({ ...current, [name]: value }))
-                    if (name === 'comments') setReviewComments(value)
-                  }}
-                  onChangeComments={setReviewComments}
-                  onSubmitReview={(decision) => void submitWorkflowReview(decision)}
-                />
-              </div>
-            )}
+          {workflowData && (
+            <WorkflowRuntimePanel
+              step={activeStep}
+              instance={activeInstance}
+              steps={workflowData.definition.steps}
+              records={workflowRecords}
+              runs={runs}
+              taskID={taskId}
+              actorLabels={actorLabels}
+              canReview={canReview}
+              reviewOutputs={reviewOutputs}
+              reviewComments={reviewComments}
+              reviewBusy={reviewBusy}
+              reviewErr={reviewErr}
+              onChangeOutput={(name, value) => {
+                setReviewOutputs((current) => ({ ...current, [name]: value }))
+                if (name === 'comments') setReviewComments(value)
+              }}
+              onChangeComments={setReviewComments}
+              onSubmitReview={(decision) => void submitWorkflowReview(decision)}
+            />
+          )}
 
-            <section className="bg-neutral-50 p-4 dark:bg-zinc-950">
-              <div className="mb-3 flex items-center justify-between gap-2">
-                <div>
-                  <p className="text-xs font-semibold uppercase tracking-wider text-neutral-400 dark:text-zinc-500">{t('tasks.followLiveOutput')}</p>
-                  <h3 className="mt-1 text-sm font-semibold text-neutral-900 dark:text-zinc-100">{activeRun ? `${activeRun.agent} · ${activeRun.status}` : t('tasks.noActiveRun')}</h3>
-                </div>
-                {activeRun?.sessionId && <span className="font-mono text-[11px] text-neutral-400 dark:text-zinc-500">{activeRun.sessionId.slice(0, 8)}…</span>}
+          <section className="border-t border-neutral-200/80 px-4 py-4 dark:border-zinc-800">
+            <div className="mb-3 flex items-center justify-between gap-2">
+              <div>
+                <p className="text-xs font-semibold uppercase tracking-wider text-neutral-400 dark:text-zinc-500">{t('tasks.followLiveOutput')}</p>
+                <h3 className="mt-1 text-sm font-semibold text-neutral-900 dark:text-zinc-100">{activeRun ? `${activeRun.agent} · ${activeRun.status}` : t('tasks.noActiveRun')}</h3>
               </div>
-              <div className="min-h-72 rounded-xl border border-neutral-200 bg-white p-3 dark:border-zinc-800 dark:bg-zinc-900/40">
-                {activeRun?.logPath && logState.status === 'ok' ? (
-                  <ConversationLog content={logState.data.content} mode="chat" assistant={{ name: activeRun.agent }} />
-                ) : activeRun?.logPath && logState.status === 'loading' ? (
-                  <CenteredLoading label={t('tasks.followLoadingOutput')} compact />
-                ) : (
-                  <p className="py-8 text-center text-sm text-neutral-400 dark:text-zinc-500">{t('tasks.followNoOutput')}</p>
-                )}
-              </div>
-            </section>
-          </div>
+              {activeRun?.sessionId && <span className="font-mono text-[11px] text-neutral-400 dark:text-zinc-500">{activeRun.sessionId.slice(0, 8)}…</span>}
+            </div>
+            <div className="min-h-72">
+              {activeRun?.logPath && logState.status === 'ok' ? (
+                <ConversationLog content={logState.data.content} mode="chat" assistant={{ name: activeRun.agent }} />
+              ) : activeRun?.logPath && logState.status === 'loading' ? (
+                <CenteredLoading label={t('tasks.followLoadingOutput')} compact />
+              ) : (
+                <p className="py-8 text-center text-sm text-neutral-400 dark:text-zinc-500">{t('tasks.followNoOutput')}</p>
+              )}
+            </div>
+          </section>
         </aside>
       </main>
     </div>
