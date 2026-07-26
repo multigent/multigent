@@ -48,6 +48,7 @@ export default function ProjectTaskFollowPage() {
   const [reviewErr, setReviewErr] = useState<string | null>(null)
   const [startBusy, setStartBusy] = useState(false)
   const [optimisticStartedAt, setOptimisticStartedAt] = useState<string | null>(null)
+  const [handoffStartedAt, setHandoffStartedAt] = useState<string | null>(null)
   const sidePanelRef = useRef<HTMLElement>(null)
 
   const refresh = useCallback(() => setReloadKey((value) => value + 1), [])
@@ -71,14 +72,20 @@ export default function ProjectTaskFollowPage() {
   )
 
   const task = tasksState.status === 'ok' ? (tasksState.data ?? []).find((item) => item.id === taskId) : undefined
-  const displayTask = useMemo(() => {
-    if (!task || !optimisticStartedAt || task.status === 'in_progress' || isTerminal(task.status)) return task
-    return { ...task, status: 'in_progress', startedAt: task.startedAt || optimisticStartedAt, updatedAt: optimisticStartedAt }
-  }, [optimisticStartedAt, task])
   const rawWorkflowData = workflowState.status === 'ok' ? workflowState.data : null
+  const rawActiveStep = rawWorkflowData
+    ? rawWorkflowData.definition.steps.find((step) => step.id === rawWorkflowData.run.activeStepId)
+    : undefined
+  const rawActiveInstance = rawWorkflowData ? activeWorkflowStepInstance(rawWorkflowData) : undefined
+  const rawIsAgentStep = rawActiveInstance?.actorType === 'agent' || rawActiveStep?.type === 'agent_task'
+  const optimisticRunStartedAt = optimisticStartedAt || (rawIsAgentStep ? handoffStartedAt : null)
+  const displayTask = useMemo(() => {
+    if (!task || !optimisticRunStartedAt || task.status === 'in_progress' || isTerminal(task.status)) return task
+    return { ...task, status: 'in_progress', startedAt: task.startedAt || optimisticRunStartedAt, updatedAt: optimisticRunStartedAt }
+  }, [optimisticRunStartedAt, task])
   const workflowData = useMemo(
-    () => withRunningActiveStep(rawWorkflowData, displayTask, projectId, optimisticStartedAt),
-    [displayTask, optimisticStartedAt, projectId, rawWorkflowData],
+    () => withRunningActiveStep(rawWorkflowData, displayTask, projectId, optimisticRunStartedAt, Boolean(handoffStartedAt && rawIsAgentStep)),
+    [displayTask, handoffStartedAt, optimisticRunStartedAt, projectId, rawIsAgentStep, rawWorkflowData],
   )
   const activeStep = workflowData
     ? workflowData.definition.steps.find((step) => step.id === workflowData.run.activeStepId)
@@ -151,9 +158,21 @@ export default function ProjectTaskFollowPage() {
   }, [pollRefresh, shouldPollActiveRun])
 
   useEffect(() => {
-    if (!optimisticStartedAt) return
-    if (!task || task.status === 'in_progress' || isTerminal(task.status)) setOptimisticStartedAt(null)
-  }, [optimisticStartedAt, task, task?.status])
+    if (!optimisticStartedAt && !handoffStartedAt) return
+    if (!task || task.status === 'in_progress' || isTerminal(task.status)) {
+      setOptimisticStartedAt(null)
+      setHandoffStartedAt(null)
+    }
+  }, [handoffStartedAt, optimisticStartedAt, task, task?.status])
+
+  useEffect(() => {
+    if (!handoffStartedAt || task?.status === 'in_progress') return
+    const timer = window.setTimeout(() => {
+      setHandoffStartedAt(null)
+      refresh()
+    }, 20000)
+    return () => window.clearTimeout(timer)
+  }, [handoffStartedAt, refresh, task?.status])
 
   useEffect(() => {
     setReviewComments('')
@@ -206,8 +225,11 @@ export default function ProjectTaskFollowPage() {
       })
       setReviewComments('')
       setReviewOutputs({})
+      setHandoffStartedAt(new Date().toISOString())
       refresh()
+      window.setTimeout(refresh, 300)
       window.setTimeout(refresh, 800)
+      window.setTimeout(refresh, 1600)
     } catch (e) {
       setReviewErr(e instanceof Error ? e.message : String(e))
     } finally {
@@ -369,6 +391,7 @@ function withRunningActiveStep(
   task: TaskRow | undefined,
   projectID: string,
   optimisticStartedAt: string | null,
+  allowActorMismatch = false,
 ): TaskWorkflowData | null {
   if (!data || !task || task.status !== 'in_progress' || !data.run.activeStepId) return data
   const current = activeWorkflowStepInstance(data)
@@ -378,7 +401,7 @@ function withRunningActiveStep(
 
   const taskAgent = startableAgentName(task) || task.agent
   const actorAgent = agentNameFromActor(projectID, current?.actorId || currentStep?.actorRole)
-  if (actorAgent && taskAgent && actorAgent !== taskAgent) return data
+  if (!allowActorMismatch && actorAgent && taskAgent && actorAgent !== taskAgent) return data
 
   const startedAt = current?.startedAt || task.startedAt || optimisticStartedAt || new Date().toISOString()
   return {
