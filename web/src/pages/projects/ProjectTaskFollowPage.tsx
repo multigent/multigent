@@ -10,6 +10,7 @@ import {
   activeWorkflowStepInstance,
   isTerminal,
   startableAgentName,
+  statusColor,
   taskIdentityLabel,
   workflowHistoryRecords,
   type RunRow,
@@ -229,7 +230,7 @@ export default function ProjectTaskFollowPage() {
         </div>
         <div className="flex shrink-0 items-center gap-2">
           {displayTask && (
-            <span className="rounded-full border border-neutral-200 bg-white px-2.5 py-1 text-xs text-neutral-500 dark:border-zinc-700 dark:bg-zinc-900 dark:text-zinc-400">
+            <span className={cn('rounded-full px-2.5 py-1 text-xs font-medium', statusColor[displayTask.status] ?? statusColor.pending)}>
               {t(`tasks.status.${displayTask.status}`, { defaultValue: displayTask.status })}
             </span>
           )}
