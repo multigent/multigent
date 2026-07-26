@@ -1,0 +1,116 @@
+<svg width="1280" height="640" viewBox="0 0 1280 640" fill="none" xmlns="http://www.w3.org/2000/svg">
+  <defs>
+    <linearGradient id="bg" x1="92" y1="32" x2="1180" y2="675" gradientUnits="userSpaceOnUse">
+      <stop offset="0" stop-color="#fbfdff"/>
+      <stop offset="0.36" stop-color="#eef7ff"/>
+      <stop offset="0.72" stop-color="#f7fbff"/>
+      <stop offset="1" stop-color="#ffffff"/>
+    </linearGradient>
+    <linearGradient id="sun" x1="344" y1="63" x2="738" y2="524" gradientUnits="userSpaceOnUse">
+      <stop offset="0" stop-color="#ffefe1"/>
+      <stop offset="0.56" stop-color="#eaf6ff"/>
+      <stop offset="1" stop-color="#ffffff" stop-opacity="0"/>
+    </linearGradient>
+    <linearGradient id="panel" x1="682" y1="101" x2="1177" y2="551" gradientUnits="userSpaceOnUse">
+      <stop offset="0" stop-color="#ffffff"/>
+      <stop offset="1" stop-color="#f8fbff"/>
+    </linearGradient>
+    <filter id="shadow" x="598" y="56" width="594" height="536" filterUnits="userSpaceOnUse" color-interpolation-filters="sRGB">
+      <feFlood flood-opacity="0" result="BackgroundImageFix"/>
+      <feColorMatrix in="SourceAlpha" type="matrix" values="0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 127 0" result="hardAlpha"/>
+      <feOffset dy="24"/>
+      <feGaussianBlur stdDeviation="26"/>
+      <feComposite in2="hardAlpha" operator="out"/>
+      <feColorMatrix type="matrix" values="0 0 0 0 0.02 0 0 0 0 0.09 0 0 0 0 0.18 0 0 0 0.14 0"/>
+      <feBlend mode="normal" in2="BackgroundImageFix" result="effect1_dropShadow"/>
+      <feBlend mode="normal" in="SourceGraphic" in2="effect1_dropShadow" result="shape"/>
+    </filter>
+    <filter id="soft" x="-100" y="-100" width="1480" height="840" filterUnits="userSpaceOnUse" color-interpolation-filters="sRGB">
+      <feGaussianBlur stdDeviation="42"/>
+    </filter>
+  </defs>
+
+  <rect width="1280" height="640" fill="url(#bg)"/>
+  <circle cx="558" cy="236" r="326" fill="url(#sun)" filter="url(#soft)"/>
+  <path d="M0 523C138 479 251 482 385 524C536 572 651 583 804 541C965 497 1088 493 1280 545V640H0V523Z" fill="#ffffff" fill-opacity="0.66"/>
+
+  <g opacity="0.42">
+    <path d="M82 116H534" stroke="#dcebf7" stroke-width="1"/>
+    <path d="M82 176H493" stroke="#e6eef6" stroke-width="1"/>
+    <path d="M82 236H552" stroke="#e6eef6" stroke-width="1"/>
+    <path d="M82 296H470" stroke="#e6eef6" stroke-width="1"/>
+    <path d="M82 356H521" stroke="#e6eef6" stroke-width="1"/>
+    <path d="M82 416H444" stroke="#e6eef6" stroke-width="1"/>
+  </g>
+
+  <g transform="translate(76 72)">
+    <rect width="52" height="52" rx="14" fill="#ffffff" stroke="#d0d0e5" stroke-width="2"/>
+    <path d="M14 36V16L26 29L38 16V36" stroke="#0f172a" stroke-width="5" stroke-linecap="round" stroke-linejoin="round"/>
+    <path d="M14 36V16L26 29L38 16V36" stroke="#0284c7" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"/>
+    <circle cx="14" cy="16" r="4" fill="#ffffff" stroke="#0284c7" stroke-width="2"/>
+    <circle cx="26" cy="29" r="4" fill="#ffffff" stroke="#0f172a" stroke-width="2"/>
+    <circle cx="38" cy="16" r="4" fill="#ffffff" stroke="#0284c7" stroke-width="2"/>
+  </g>
+
+  <text x="148" y="107" font-family="Inter, ui-sans-serif, system-ui, -apple-system, BlinkMacSystemFont, Segoe UI, sans-serif" font-size="27" font-weight="750" fill="#111827">Multigent</text>
+  <text x="76" y="205" font-family="Inter, ui-sans-serif, system-ui, -apple-system, BlinkMacSystemFont, Segoe UI, sans-serif" font-size="66" font-weight="780" letter-spacing="-1.1" fill="#0f172a">A place for</text>
+  <text x="76" y="279" font-family="Inter, ui-sans-serif, system-ui, -apple-system, BlinkMacSystemFont, Segoe UI, sans-serif" font-size="66" font-weight="780" letter-spacing="-1.1" fill="#0f172a">your agent</text>
+  <text x="76" y="353" font-family="Inter, ui-sans-serif, system-ui, -apple-system, BlinkMacSystemFont, Segoe UI, sans-serif" font-size="66" font-weight="780" letter-spacing="-1.1" fill="#0284c7">teammate</text>
+  <text x="78" y="413" font-family="Inter, ui-sans-serif, system-ui, -apple-system, BlinkMacSystemFont, Segoe UI, sans-serif" font-size="24" font-weight="480" fill="#475569">Turn agents into accountable collaborators.</text>
+  <text x="78" y="449" font-family="Inter, ui-sans-serif, system-ui, -apple-system, BlinkMacSystemFont, Segoe UI, sans-serif" font-size="24" font-weight="480" fill="#475569">Workflow, context, RBAC, review, wakeups.</text>
+
+  <g transform="translate(76 510)">
+    <rect width="162" height="44" rx="22" fill="#0f172a"/>
+    <text x="25" y="29" font-family="Inter, ui-sans-serif, system-ui, sans-serif" font-size="16" font-weight="700" fill="#ffffff">Workflows</text>
+    <rect x="178" width="128" height="44" rx="22" fill="#ffffff" stroke="#d7e5f0"/>
+    <text x="204" y="29" font-family="Inter, ui-sans-serif, system-ui, sans-serif" font-size="16" font-weight="700" fill="#0369a1">RBAC</text>
+    <rect x="322" width="170" height="44" rx="22" fill="#ffffff" stroke="#d7e5f0"/>
+    <text x="348" y="29" font-family="Inter, ui-sans-serif, system-ui, sans-serif" font-size="16" font-weight="700" fill="#0369a1">Loop control</text>
+  </g>
+
+  <g filter="url(#shadow)">
+    <rect x="640" y="92" width="492" height="460" rx="30" fill="url(#panel)" stroke="#d7e5f0"/>
+    <rect x="668" y="124" width="436" height="54" rx="18" fill="#ffffff" stroke="#e2edf6"/>
+    <circle cx="697" cy="151" r="9" fill="#38bdf8"/>
+    <text x="718" y="158" font-family="Inter, ui-sans-serif, system-ui, sans-serif" font-size="17" font-weight="750" fill="#0f172a">Workflow control</text>
+    <rect x="975" y="137" width="92" height="28" rx="14" fill="#ecfdf5"/>
+    <text x="996" y="156" font-family="Inter, ui-sans-serif, system-ui, sans-serif" font-size="13" font-weight="700" fill="#047857">running</text>
+
+    <path d="M740 256C790 214 854 214 906 256" stroke="#38bdf8" stroke-width="4" stroke-linecap="round"/>
+    <path d="M907 256C960 299 1008 302 1048 260" stroke="#8b5cf6" stroke-width="4" stroke-linecap="round"/>
+    <path d="M906 371C860 414 795 412 742 371" stroke="#f59e0b" stroke-width="4" stroke-linecap="round"/>
+    <path d="M1048 260C1082 306 1076 354 1034 391" stroke="#22c55e" stroke-width="4" stroke-linecap="round"/>
+
+    <g transform="translate(704 212)">
+      <rect width="132" height="74" rx="18" fill="#ffffff" stroke="#d7e5f0" stroke-width="1.5"/>
+      <circle cx="25" cy="26" r="10" fill="#e0f2fe"/>
+      <text x="44" y="31" font-family="Inter, ui-sans-serif, system-ui, sans-serif" font-size="14" font-weight="760" fill="#0f172a">PM agent</text>
+      <text x="20" y="55" font-family="Inter, ui-sans-serif, system-ui, sans-serif" font-size="12" fill="#64748b">draft spec</text>
+    </g>
+    <g transform="translate(869 212)">
+      <rect width="142" height="74" rx="18" fill="#ffffff" stroke="#d7e5f0" stroke-width="1.5"/>
+      <circle cx="25" cy="26" r="10" fill="#ede9fe"/>
+      <text x="44" y="31" font-family="Inter, ui-sans-serif, system-ui, sans-serif" font-size="14" font-weight="760" fill="#0f172a">Human</text>
+      <text x="20" y="55" font-family="Inter, ui-sans-serif, system-ui, sans-serif" font-size="12" fill="#64748b">review gate</text>
+    </g>
+    <g transform="translate(975 334)">
+      <rect width="132" height="74" rx="18" fill="#ffffff" stroke="#d7e5f0" stroke-width="1.5"/>
+      <circle cx="25" cy="26" r="10" fill="#dcfce7"/>
+      <text x="44" y="31" font-family="Inter, ui-sans-serif, system-ui, sans-serif" font-size="14" font-weight="760" fill="#0f172a">QA agent</text>
+      <text x="20" y="55" font-family="Inter, ui-sans-serif, system-ui, sans-serif" font-size="12" fill="#64748b">verify output</text>
+    </g>
+    <g transform="translate(718 334)">
+      <rect width="156" height="74" rx="18" fill="#ffffff" stroke="#d7e5f0" stroke-width="1.5"/>
+      <circle cx="25" cy="26" r="10" fill="#fef3c7"/>
+      <text x="44" y="31" font-family="Inter, ui-sans-serif, system-ui, sans-serif" font-size="14" font-weight="760" fill="#0f172a">Dev agent</text>
+      <text x="20" y="55" font-family="Inter, ui-sans-serif, system-ui, sans-serif" font-size="12" fill="#64748b">ship changes</text>
+    </g>
+
+    <rect x="670" y="476" width="434" height="44" rx="16" fill="#f8fafc" stroke="#e2edf6"/>
+    <text x="696" y="504" font-family="Inter, ui-sans-serif, system-ui, sans-serif" font-size="15" font-weight="700" fill="#0f172a">Context</text>
+    <text x="774" y="504" font-family="Inter, ui-sans-serif, system-ui, sans-serif" font-size="15" font-weight="700" fill="#0f172a">Skills</text>
+    <text x="840" y="504" font-family="Inter, ui-sans-serif, system-ui, sans-serif" font-size="15" font-weight="700" fill="#0f172a">Tasks</text>
+    <text x="905" y="504" font-family="Inter, ui-sans-serif, system-ui, sans-serif" font-size="15" font-weight="700" fill="#0f172a">Audit</text>
+    <text x="970" y="504" font-family="Inter, ui-sans-serif, system-ui, sans-serif" font-size="15" font-weight="700" fill="#0f172a">Tokens</text>
+  </g>
+</svg>
