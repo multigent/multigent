@@ -365,11 +365,17 @@ export default function ProjectTaskFollowPage() {
               </div>
               <div className="min-h-72">
                 {shouldPollActiveRun && liveLogState.status === 'ok' && liveLogContent ? (
-                  <ConversationLog content={liveLogContent} mode="chat" assistant={{ name: startAgent || activeRun?.agent || t('tasks.noActiveRun') }} />
+                  <ConversationLog
+                    content={liveLogContent}
+                    mode="chat"
+                    assistant={{ name: startAgent || activeRun?.agent || t('tasks.noActiveRun') }}
+                    animateLatest
+                    toolDisplay="compact"
+                  />
                 ) : shouldPollActiveRun && liveLogState.status === 'loading' ? (
                   <CenteredLoading label={t('tasks.followLoadingOutput')} compact />
                 ) : activeRun?.logPath && logState.status === 'ok' ? (
-                  <ConversationLog content={logState.data.content} mode="chat" assistant={{ name: activeRun.agent }} />
+                  <ConversationLog content={logState.data.content} mode="chat" assistant={{ name: activeRun.agent }} toolDisplay="compact" />
                 ) : activeRun?.logPath && logState.status === 'loading' ? (
                   <CenteredLoading label={t('tasks.followLoadingOutput')} compact />
                 ) : (

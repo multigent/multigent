@@ -969,12 +969,14 @@ export function ConversationLog({
   user,
   assistant,
   animateLatest = false,
+  toolDisplay = 'full',
 }: {
   content: string
   mode?: 'log' | 'chat'
   user?: ConversationParticipant
   assistant?: ConversationParticipant
   animateLatest?: boolean
+  toolDisplay?: 'full' | 'compact' | 'hidden'
 }) {
   const { t } = useTranslation()
   const items = useMemo(() => parseLog(content), [content])
@@ -982,7 +984,7 @@ export function ConversationLog({
     const filtered = mode !== 'chat' ? items : items.filter((item, index) => {
       if (item.kind === 'result') return !isDuplicateSuccessResult(items, index, item)
       if (item.kind === 'human' || item.kind === 'assistant' || item.kind === 'thinking') return true
-      if (item.kind === 'tool_result') return true
+      if (item.kind === 'tool_result') return toolDisplay !== 'hidden'
       return false
     })
     if (filtered.length > 0 || mode !== 'chat') return filtered
@@ -1060,7 +1062,10 @@ export function ConversationLog({
                       return (
                         <div
                           key={bi}
-                          className="rounded-md border border-amber-200/60 bg-amber-50/50 px-3 py-2 dark:border-amber-800/30 dark:bg-amber-900/10"
+                          className={cn(
+                            'rounded-md border border-amber-200/60 bg-amber-50/50 px-3 py-2 dark:border-amber-800/30 dark:bg-amber-900/10',
+                            toolDisplay === 'compact' && 'inline-flex max-w-full items-center gap-2 px-2.5 py-1.5',
+                          )}
                         >
                           <div className="flex items-center gap-1.5">
                             <Wrench className="size-3.5 text-amber-600 dark:text-amber-500" strokeWidth={1.8} />
@@ -1068,7 +1073,7 @@ export function ConversationLog({
                               {block.name}
                             </span>
                           </div>
-                          <ToolInputDisplay input={block.input} />
+                          {toolDisplay === 'full' && <ToolInputDisplay input={block.input} />}
                         </div>
                       )
                     }
@@ -1079,6 +1084,40 @@ export function ConversationLog({
             )
 
           case 'tool_result':
+            if (toolDisplay === 'compact') {
+              return (
+                <details
+                  key={i}
+                  className={cn(
+                    'group ml-8 rounded-md border text-xs',
+                    item.isError
+                      ? 'border-red-200/70 bg-red-50/40 dark:border-red-800/30 dark:bg-red-900/10'
+                      : 'border-neutral-200/70 bg-neutral-50/50 dark:border-zinc-700/40 dark:bg-zinc-800/20',
+                  )}
+                >
+                  <summary className="flex cursor-pointer list-none items-center gap-2 px-3 py-2 text-neutral-500 transition-colors hover:text-neutral-800 dark:text-zinc-500 dark:hover:text-zinc-300">
+                    <span className={cn('size-1.5 shrink-0 rounded-full', item.isError ? 'bg-red-400' : 'bg-emerald-400')} />
+                    <span className="font-medium">
+                      {item.isError ? t('runs.toolError') : t('runs.toolResult')}
+                    </span>
+                    <span className="text-neutral-400 dark:text-zinc-600">
+                      {t('runs.outputSize', { count: item.content.length })}
+                    </span>
+                    <span className="ml-auto text-neutral-400 group-open:hidden dark:text-zinc-600">{t('runs.expandLog')}</span>
+                    <span className="ml-auto hidden text-neutral-400 group-open:inline dark:text-zinc-600">{t('runs.collapseLog')}</span>
+                  </summary>
+                  <div className="border-t border-neutral-200/70 px-3 py-2 dark:border-zinc-700/40">
+                    {isDiffLike(item.content) ? (
+                      <DiffBlock text={item.content} />
+                    ) : (
+                      <pre className="max-h-64 overflow-auto whitespace-pre-wrap break-words text-xs leading-relaxed text-neutral-600 dark:text-zinc-400">
+                        {truncateStr(item.content, 4000)}
+                      </pre>
+                    )}
+                  </div>
+                </details>
+              )
+            }
             return (
               <div key={i} className="ml-8 flex gap-2">
                 <div className={cn(
