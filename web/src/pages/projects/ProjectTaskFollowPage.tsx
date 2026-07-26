@@ -1,8 +1,8 @@
-import { useCallback, useEffect, useMemo, useState } from 'react'
+import { useCallback, useEffect, useMemo, useRef, useState } from 'react'
 import { Link, useParams } from 'react-router-dom'
 import { useTranslation } from 'react-i18next'
 import { Play, RefreshCw, X } from 'lucide-react'
-import { WorkflowBoard, type WorkflowStep } from '../../components/workflow/WorkflowBoard'
+import { WorkflowBoard } from '../../components/workflow/WorkflowBoard'
 import { ConversationLog } from '../../components/ui/ConversationLog'
 import { PlaceholderCard } from '../../components/ui/PlaceholderCard'
 import {
@@ -26,6 +26,7 @@ import { useWorkspaceAccess } from '../../lib/workspace-access'
 type SafeUser = { username: string; displayName?: string; email?: string }
 type ProjectMember = { name: string; model?: string; avatar?: string }
 type LogData = { content: string; truncated: boolean }
+type LiveLogData = { content: string; path: string; finished: boolean }
 
 const silentNotFound = [404]
 const silentForbidden = [403]
@@ -46,6 +47,7 @@ export default function ProjectTaskFollowPage() {
   const [reviewErr, setReviewErr] = useState<string | null>(null)
   const [startBusy, setStartBusy] = useState(false)
   const [optimisticStartedAt, setOptimisticStartedAt] = useState<string | null>(null)
+  const sidePanelRef = useRef<HTMLElement>(null)
 
   const refresh = useCallback(() => setReloadKey((value) => value + 1), [])
   const pollRefresh = useCallback(() => setPollKey((value) => value + 1), [])
@@ -84,6 +86,11 @@ export default function ProjectTaskFollowPage() {
   const workflowRecords = workflowData ? workflowHistoryRecords(workflowData) : []
   const isCurrentAgentStep = activeInstance?.actorType === 'agent' || activeStep?.type === 'agent_task'
   const shouldPollActiveRun = Boolean(isCurrentAgentStep && displayTask?.status === 'in_progress')
+  const currentTaskAgent = displayTask ? startableAgentName(displayTask) : null
+  const currentStepAgent = isCurrentAgentStep && activeInstance?.actorType === 'agent'
+    ? agentNameFromActor(projectId, activeInstance.actorId)
+    : null
+  const startAgent = currentStepAgent || (isCurrentAgentStep ? currentTaskAgent : null)
   const runsState = useApiJson<{ runs: RunRow[] }>(
     isCurrentAgentStep && projectId ? `/api/v1/telemetry/runs?allTime=1&project=${encodeURIComponent(projectId)}&limit=200` : null,
     dataReloadKey,
@@ -91,14 +98,20 @@ export default function ProjectTaskFollowPage() {
   )
   const runs = runsState.status === 'ok' ? (runsState.data.runs ?? []) : []
   const activeRun = useMemo(
-    () => isCurrentAgentStep ? findActiveRun(runs, taskId, projectId, activeStep, activeInstance?.actorId) : null,
-    [activeInstance?.actorId, activeStep, isCurrentAgentStep, projectId, runs, taskId],
+    () => isCurrentAgentStep ? findActiveRun(runs, taskId, projectId, activeInstance?.actorId, activeInstance?.startedAt) : null,
+    [activeInstance?.actorId, activeInstance?.startedAt, isCurrentAgentStep, projectId, runs, taskId],
   )
-  const logState = useApiJson<LogData>(
-    isCurrentAgentStep && activeRun?.logPath ? `/api/v1/telemetry/log?path=${encodeURIComponent(activeRun.logPath)}` : null,
+  const liveLogState = useApiJson<LiveLogData>(
+    shouldPollActiveRun && startAgent ? `/api/v1/projects/${encodeURIComponent(projectId)}/agents/${encodeURIComponent(startAgent)}/live-log` : null,
     dataReloadKey,
     { keepPreviousDataOnReload: true },
   )
+  const logState = useApiJson<LogData>(
+    isCurrentAgentStep && !shouldPollActiveRun && activeRun?.logPath ? `/api/v1/telemetry/log?path=${encodeURIComponent(activeRun.logPath)}` : null,
+    dataReloadKey,
+    { keepPreviousDataOnReload: true },
+  )
+  const liveLogContent = liveLogState.status === 'ok' ? liveLogState.data.content : ''
 
   const actorLabels = useMemo(() => {
     const labels = new Map<string, string>()
@@ -121,9 +134,6 @@ export default function ProjectTaskFollowPage() {
     return labels
   }, [displayTask?.assignee, displayTask?.assigneeLabel, membersState, projectId, usersState])
 
-  const startAgent = isCurrentAgentStep && activeInstance?.actorType === 'agent'
-    ? agentNameFromActor(projectId, activeInstance.actorId)
-    : isCurrentAgentStep && displayTask ? startableAgentName(displayTask) : null
   const canStart = Boolean(
     displayTask &&
     startAgent &&
@@ -149,6 +159,11 @@ export default function ProjectTaskFollowPage() {
     setReviewOutputs({})
     setReviewErr(null)
   }, [activeStep?.id, activeInstance?.id])
+
+  useEffect(() => {
+    if (!shouldPollActiveRun || !liveLogContent || !sidePanelRef.current) return
+    sidePanelRef.current.scrollTop = sidePanelRef.current.scrollHeight
+  }, [liveLogContent, shouldPollActiveRun])
 
   async function startCurrentAgent() {
     if (!displayTask || !startAgent || !canStart) return
@@ -235,7 +250,7 @@ export default function ProjectTaskFollowPage() {
       <main className="grid min-h-0 flex-1 grid-cols-[minmax(0,1fr)_420px] gap-0 overflow-hidden">
         <section className="min-w-0 border-r border-neutral-200/80 bg-white dark:border-zinc-800 dark:bg-zinc-950">
           {workflowData ? (
-            <WorkflowBoard definition={workflowData.definition} run={workflowData.run} instances={workflowData.steps} focusActive fill hideInspector />
+            <WorkflowBoard key={`${workflowData.run.id}:${workflowData.run.activeStepId || ''}`} definition={workflowData.definition} run={workflowData.run} instances={workflowData.steps} focusActive fill hideInspector />
           ) : workflowState.status === 'loading' ? (
             <CenteredLoading label={t('tasks.followLoadingWorkflow')} />
           ) : (
@@ -247,7 +262,7 @@ export default function ProjectTaskFollowPage() {
           )}
         </section>
 
-        <aside className="min-w-0 overflow-y-auto bg-white dark:bg-zinc-950">
+        <aside ref={sidePanelRef} className="min-w-0 overflow-y-auto bg-white dark:bg-zinc-950">
           <div className="border-b border-neutral-200/80 px-4 py-3 dark:border-zinc-800">
             <p className="text-xs font-semibold uppercase tracking-wider text-neutral-400 dark:text-zinc-500">{t('tasks.followCurrent')}</p>
             <h2 className="mt-1 text-base font-semibold text-neutral-900 dark:text-zinc-100">{activeStep?.title || t('workflows.detail.notSpecified')}</h2>
@@ -299,12 +314,16 @@ export default function ProjectTaskFollowPage() {
               <div className="mb-3 flex items-center justify-between gap-2">
                 <div>
                   <p className="text-xs font-semibold uppercase tracking-wider text-neutral-400 dark:text-zinc-500">{t('tasks.followLiveOutput')}</p>
-                  <h3 className="mt-1 text-sm font-semibold text-neutral-900 dark:text-zinc-100">{activeRun ? `${activeRun.agent} · ${activeRun.status}` : t('tasks.noActiveRun')}</h3>
+                  <h3 className="mt-1 text-sm font-semibold text-neutral-900 dark:text-zinc-100">{shouldPollActiveRun && startAgent ? `${startAgent} · ${t('tasks.status.in_progress')}` : activeRun ? `${activeRun.agent} · ${activeRun.status}` : t('tasks.noActiveRun')}</h3>
                 </div>
                 {activeRun?.sessionId && <span className="font-mono text-[11px] text-neutral-400 dark:text-zinc-500">{activeRun.sessionId.slice(0, 8)}…</span>}
               </div>
               <div className="min-h-72">
-                {activeRun?.logPath && logState.status === 'ok' ? (
+                {shouldPollActiveRun && liveLogState.status === 'ok' && liveLogContent ? (
+                  <ConversationLog content={liveLogContent} mode="chat" assistant={{ name: startAgent || activeRun?.agent || t('tasks.noActiveRun') }} />
+                ) : shouldPollActiveRun && liveLogState.status === 'loading' ? (
+                  <CenteredLoading label={t('tasks.followLoadingOutput')} compact />
+                ) : activeRun?.logPath && logState.status === 'ok' ? (
                   <ConversationLog content={logState.data.content} mode="chat" assistant={{ name: activeRun.agent }} />
                 ) : activeRun?.logPath && logState.status === 'loading' ? (
                   <CenteredLoading label={t('tasks.followLoadingOutput')} compact />
@@ -329,18 +348,18 @@ function CenteredLoading({ label, compact = false }: { label: string; compact?: 
   )
 }
 
-function findActiveRun(runs: RunRow[], taskID: string, projectID: string, step?: WorkflowStep, actorID?: string): RunRow | null {
+function findActiveRun(runs: RunRow[], taskID: string, projectID: string, actorID?: string, minStartedAt?: string): RunRow | null {
   const actorAgent = agentNameFromActor(projectID, actorID)
-  const stepAgent = agentNameFromActor(projectID, step?.actorRole)
-  const preferredAgent = actorAgent || stepAgent
+  const preferredAgent = actorAgent
+  if (!preferredAgent) return null
+  const minTime = minStartedAt ? Date.parse(minStartedAt) : 0
   const candidates = runs
     .filter((run) => run.taskId === taskID)
-    .filter((run) => !preferredAgent || run.agent === preferredAgent || `${run.project}/${run.agent}` === preferredAgent)
+    .filter((run) => run.agent === preferredAgent || `${run.project}/${run.agent}` === preferredAgent)
+    .filter((run) => !minTime || Date.parse(run.startedAt || '') >= minTime)
     .sort((a, b) => Date.parse(b.startedAt || '') - Date.parse(a.startedAt || ''))
   if (candidates.length > 0) return candidates[0]
-  return runs
-    .filter((run) => run.taskId === taskID)
-    .sort((a, b) => Date.parse(b.startedAt || '') - Date.parse(a.startedAt || ''))[0] ?? null
+  return null
 }
 
 function withRunningActiveStep(
