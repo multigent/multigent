@@ -1523,13 +1523,20 @@
     "desc": "统一配置可复用的模型账号。Agent 只选择账号，不需要接触 API Key 或环境变量。",
     "add": "添加账号",
     "edit": "编辑账号",
-    "importCCSwitch": "从 cc-switch 导入",
-    "importCCSwitchTitle": "从 cc-switch 导入模型账号",
-    "importCCSwitchHint": "Multigent 会在服务端读取本机 cc-switch 数据库。预览不会暴露 API Key，导入后密钥会加密保存。",
+    "importCCSwitch": "从本地导入",
+    "importCCSwitchTitle": "从本地导入模型账号",
+    "importCCSwitchHint": "Multigent 会在服务端扫描本机官方 CLI 登录态、环境变量和 cc-switch 第三方账号。预览不会暴露密钥，导入后会加密保存。",
     "importSelected": "导入选中账号",
-    "ccSwitchUnavailable": "没有找到 cc-switch 数据库。请确认当前机器已经安装并配置过 cc-switch。",
-    "ccSwitchEmpty": "cc-switch 中没有可导入的 Codex 或 Claude Code 账号。",
+    "ccSwitchUnavailable": "没有发现可导入的本地模型账号。请确认当前机器已登录 Codex / Claude Code / Cursor / Gemini，或配置过 API Key / cc-switch。",
+    "ccSwitchEmpty": "没有可导入的本地模型账号。",
     "ccSwitchCurrent": "当前账号",
+    "localImportSource": {
+      "local-env": "本地环境变量",
+      "codex": "Codex 本地登录",
+      "claudecode": "Claude Code 本地登录",
+      "cursor": "Cursor 本地登录",
+      "cc-switch": "cc-switch"
+    },
     "empty": "暂未配置模型账号。",
     "nameLabel": "名称",
     "namePlaceholder": "团队 OpenAI 账号",
@@ -2114,7 +2121,7 @@
       },
       "models": {
         "title": "先配置模型账号",
-        "body": "Agent 需要模型账号才能运行。先在设置里添加官方 API Key 或第三方模型供应商，再绑定到每个演示 Agent。后续可以支持从 cc-switch 导入，减少手动配置。"
+        "body": "Agent 需要模型账号才能运行。可以在设置里添加官方 API Key 或第三方模型供应商，也可以使用“从本地导入”扫描本机官方 CLI 登录态和 cc-switch 账号，减少手动配置。"
       },
       "team": {
         "title": "查看演示团队",

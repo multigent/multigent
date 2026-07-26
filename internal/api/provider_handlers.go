@@ -45,10 +45,18 @@ type ccSwitchProviderPreview struct {
 	Model     string `json:"model,omitempty"`
 	HasKey    bool   `json:"hasKey"`
 	IsCurrent bool   `json:"isCurrent"`
+	Source    string `json:"source,omitempty"`
 }
 
 type ccSwitchImportBody struct {
 	IDs []string `json:"ids"`
+}
+
+type localModelProviderCandidate struct {
+	Preview         ccSwitchProviderPreview
+	Provider        entity.APIProvider
+	CredentialModel entity.AgentModel
+	CredentialFiles []string
 }
 
 func (b providerBody) toEntity() entity.APIProvider {
@@ -238,51 +246,34 @@ func (s *Server) handleDeleteProvider(w http.ResponseWriter, r *http.Request) {
 }
 
 func (s *Server) handleListCCSwitchProviders(w http.ResponseWriter, r *http.Request) {
+	s.handleListLocalModelProviders(w, r)
+}
+
+func (s *Server) handleListLocalModelProviders(w http.ResponseWriter, r *http.Request) {
 	if !s.checkCurrentWorkspaceAdmin(w, r) {
 		return
 	}
-	rows, dbPath, err := listCCSwitchProviderRows()
-	if err != nil {
-		_ = json.NewEncoder(w).Encode(map[string]any{
-			"available": false,
-			"providers": []ccSwitchProviderPreview{},
-			"searched":  ccSwitchDBCandidates(),
-			"error":     err.Error(),
-		})
-		return
+	candidates := listLocalModelProviderCandidates()
+	out := make([]ccSwitchProviderPreview, 0, len(candidates))
+	for _, candidate := range candidates {
+		out = append(out, candidate.Preview)
 	}
-	out := make([]ccSwitchProviderPreview, 0, len(rows))
-	for _, row := range rows {
-		prov, cli, err := convertCCSwitchModelProvider(row)
-		if err != nil {
-			continue
-		}
-		out = append(out, ccSwitchProviderPreview{
-			ID:        row.ID,
-			Name:      prov.Name,
-			CLI:       cli,
-			Type:      prov.Type,
-			BaseURL:   prov.BaseURL,
-			Model:     prov.Model,
-			HasKey:    prov.APIKey != "" || len(prov.Env) > 0,
-			IsCurrent: row.IsCurrent == 1,
-		})
-	}
+	available := len(out) > 0
 	_ = json.NewEncoder(w).Encode(map[string]any{
-		"available": true,
-		"dbPath":    dbPath,
+		"available": available,
+		"dbPath":    findCCSwitchDB(),
 		"providers": out,
+		"searched":  localModelProviderSearchedPaths(),
 	})
 }
 
 func (s *Server) handleImportCCSwitchProviders(w http.ResponseWriter, r *http.Request) {
+	s.handleImportLocalModelProviders(w, r)
+}
+
+func (s *Server) handleImportLocalModelProviders(w http.ResponseWriter, r *http.Request) {
 	workspaceID, err := s.modelProviderWorkspaceAdmin(w, r)
 	if err != nil {
-		return
-	}
-	rows, _, err := listCCSwitchProviderRows()
-	if err != nil {
-		s.jsonError(w, http.StatusNotFound, err.Error())
 		return
 	}
 	var body ccSwitchImportBody
@@ -301,6 +292,11 @@ func (s *Server) handleImportCCSwitchProviders(w http.ResponseWriter, r *http.Re
 		s.jsonError(w, http.StatusBadRequest, "ids are required")
 		return
 	}
+	candidates := listLocalModelProviderCandidates()
+	if len(candidates) == 0 {
+		s.jsonError(w, http.StatusNotFound, "no local model accounts were found")
+		return
+	}
 	existing, err := s.providerStore().List()
 	if err != nil {
 		s.serverError(w, err)
@@ -312,35 +308,40 @@ func (s *Server) handleImportCCSwitchProviders(w http.ResponseWriter, r *http.Re
 	}
 	imported := []map[string]any{}
 	skipped := []map[string]string{}
-	for _, row := range rows {
-		if !want[row.ID] {
+	for _, candidate := range candidates {
+		if !want[candidate.Preview.ID] {
 			continue
 		}
-		prov, cli, err := convertCCSwitchModelProvider(row)
-		if err != nil {
-			skipped = append(skipped, map[string]string{"id": row.ID, "name": row.Name, "reason": err.Error()})
-			continue
-		}
+		prov := candidate.Provider
+		cli := candidate.Preview.CLI
 		if !s.prepareNewModelProvider(w, r, workspaceID, &prov) {
 			return
 		}
 		key := providerNameTypeKey(prov)
 		if existingByNameType[key] {
-			skipped = append(skipped, map[string]string{"id": row.ID, "name": prov.Name, "reason": "already imported"})
+			skipped = append(skipped, map[string]string{"id": candidate.Preview.ID, "name": prov.Name, "reason": "already imported"})
 			continue
 		}
 		created, err := s.providerStore().Add(prov)
 		if err != nil {
-			skipped = append(skipped, map[string]string{"id": row.ID, "name": prov.Name, "reason": err.Error()})
+			skipped = append(skipped, map[string]string{"id": candidate.Preview.ID, "name": prov.Name, "reason": err.Error()})
 			continue
+		}
+		if len(candidate.CredentialFiles) > 0 {
+			dstRoot := store.ProviderCredentialDir(s.root, created.ID, candidate.CredentialModel)
+			if err := copyLocalCredentialFiles(candidate.CredentialFiles, dstRoot); err != nil {
+				_ = s.providerStore().Remove(created.ID)
+				skipped = append(skipped, map[string]string{"id": candidate.Preview.ID, "name": prov.Name, "reason": err.Error()})
+				continue
+			}
 		}
 		existingByNameType[key] = true
 		s.auditLog(auditLogInput{
 			WorkspaceID:  workspaceID,
-			Action:       "model_provider.import_cc_switch",
+			Action:       "model_provider.import_local",
 			ResourceType: "model_provider",
 			ResourceID:   created.ID,
-			Summary:      "Model provider imported from cc-switch",
+			Summary:      "Model provider imported from local machine",
 			After:        modelProviderAuditPayload(*created),
 			Request:      r,
 		})
@@ -491,6 +492,220 @@ func cleanProviderModels(models []string) []string {
 		seen[model] = true
 		out = append(out, model)
 	}
+	return out
+}
+
+func listLocalModelProviderCandidates() []localModelProviderCandidate {
+	out := []localModelProviderCandidate{}
+	seen := map[string]bool{}
+	add := func(candidate localModelProviderCandidate) {
+		id := strings.TrimSpace(candidate.Preview.ID)
+		if id == "" || seen[id] {
+			return
+		}
+		seen[id] = true
+		candidate.Preview.HasKey = candidate.Provider.APIKey != "" || len(candidate.Provider.Env) > 0 || len(candidate.CredentialFiles) > 0
+		out = append(out, candidate)
+	}
+
+	for _, candidate := range localOfficialModelProviderCandidates() {
+		add(candidate)
+	}
+	if rows, _, err := listCCSwitchProviderRows(); err == nil {
+		for _, row := range rows {
+			prov, cli, err := convertCCSwitchModelProvider(row)
+			if err != nil {
+				continue
+			}
+			add(localModelProviderCandidate{
+				Preview: ccSwitchProviderPreview{
+					ID:        "cc-switch:" + row.ID,
+					Name:      prov.Name,
+					CLI:       cli,
+					Type:      prov.Type,
+					BaseURL:   prov.BaseURL,
+					Model:     prov.Model,
+					HasKey:    prov.APIKey != "" || len(prov.Env) > 0,
+					IsCurrent: row.IsCurrent == 1,
+					Source:    "cc-switch",
+				},
+				Provider: prov,
+			})
+		}
+	}
+	return out
+}
+
+func localOfficialModelProviderCandidates() []localModelProviderCandidate {
+	home, _ := os.UserHomeDir()
+	out := []localModelProviderCandidate{}
+	if key := firstEnv("OPENAI_API_KEY", "CODEX_API_KEY"); key != "" {
+		model := firstEnv("OPENAI_MODEL", "CODEX_MODEL")
+		out = append(out, apiKeyLocalCandidate("env:openai", "OpenAI / Codex API Key", "codex", "openai", key, firstEnv("OPENAI_BASE_URL", "OPENAI_API_BASE"), model, "local-env"))
+	}
+	if key := firstEnv("ANTHROPIC_AUTH_TOKEN", "ANTHROPIC_API_KEY"); key != "" {
+		model := firstEnv("ANTHROPIC_MODEL", "CLAUDE_MODEL")
+		out = append(out, apiKeyLocalCandidate("env:anthropic", "Anthropic / Claude Code API Key", "claudecode", "anthropic", key, firstEnv("ANTHROPIC_BASE_URL"), model, "local-env"))
+	}
+	if key := firstEnv("GEMINI_API_KEY", "GOOGLE_API_KEY"); key != "" {
+		model := firstEnv("GEMINI_MODEL", "GOOGLE_MODEL")
+		out = append(out, apiKeyLocalCandidate("env:gemini", "Google Gemini API Key", "gemini", "gemini", key, firstEnv("GOOGLE_API_BASE"), model, "local-env"))
+	}
+	if key := firstEnv("CURSOR_API_KEY"); key != "" {
+		model := firstEnv("CURSOR_MODEL")
+		out = append(out, apiKeyLocalCandidate("env:cursor", "Cursor API Key", "cursor", "cursor", key, "", model, "local-env"))
+	}
+	if home == "" {
+		return out
+	}
+	codexAuth := filepath.Join(home, ".codex", "auth.json")
+	if modelAuthFileExists(codexAuth) {
+		out = append(out, credentialFileLocalCandidate(
+			"local:codex-auth-json",
+			"Codex ChatGPT",
+			"codex",
+			"openai",
+			store.ProviderAuthMethodCodexChatGPT,
+			entity.ModelCodex,
+			[]string{codexAuth},
+			"codex",
+		))
+	}
+	claudeFiles := existingFiles(
+		filepath.Join(home, ".claude.json"),
+		filepath.Join(home, ".claude", ".credentials.json"),
+	)
+	if len(claudeFiles) > 0 {
+		out = append(out, credentialFileLocalCandidate(
+			"local:claude-browser",
+			"Claude Code Browser",
+			"claudecode",
+			"anthropic",
+			store.ProviderAuthMethodClaudeBrowser,
+			entity.ModelClaudeCode,
+			claudeFiles,
+			"claudecode",
+		))
+	}
+	cursorFiles := existingFiles(
+		filepath.Join(home, ".config", "cursor", "cli-config.json"),
+		filepath.Join(home, ".config", "cursor", "auth.json"),
+		filepath.Join(home, ".cursor", "cli-config.json"),
+	)
+	if len(cursorFiles) > 0 {
+		out = append(out, credentialFileLocalCandidate(
+			"local:cursor-browser",
+			"Cursor Browser",
+			"cursor",
+			"cursor",
+			store.ProviderAuthMethodCursorBrowser,
+			entity.ModelCursor,
+			cursorFiles,
+			"cursor",
+		))
+	}
+	return out
+}
+
+func apiKeyLocalCandidate(id, name, cli, providerType, apiKey, baseURL, model, source string) localModelProviderCandidate {
+	prov := entity.APIProvider{
+		Name:    name,
+		Type:    providerType,
+		APIKey:  apiKey,
+		BaseURL: strings.TrimSpace(baseURL),
+		Model:   strings.TrimSpace(model),
+	}
+	if prov.Model != "" {
+		prov.Models = []string{prov.Model}
+	}
+	return localModelProviderCandidate{
+		Preview: ccSwitchProviderPreview{
+			ID:      id,
+			Name:    prov.Name,
+			CLI:     cli,
+			Type:    prov.Type,
+			BaseURL: prov.BaseURL,
+			Model:   prov.Model,
+			HasKey:  true,
+			Source:  source,
+		},
+		Provider: prov,
+	}
+}
+
+func credentialFileLocalCandidate(id, name, cli, providerType, authMethod string, model entity.AgentModel, files []string, source string) localModelProviderCandidate {
+	prov := entity.APIProvider{
+		Name: name,
+		Type: providerType,
+		Env: map[string]string{
+			store.ProviderAuthMethodEnvKey: authMethod,
+			store.ProviderAuthStatusEnvKey: store.ProviderAuthStatusConfigured,
+		},
+	}
+	return localModelProviderCandidate{
+		Preview: ccSwitchProviderPreview{
+			ID:     id,
+			Name:   prov.Name,
+			CLI:    cli,
+			Type:   prov.Type,
+			HasKey: true,
+			Source: source,
+		},
+		Provider:        prov,
+		CredentialModel: model,
+		CredentialFiles: files,
+	}
+}
+
+func firstEnv(keys ...string) string {
+	for _, key := range keys {
+		if value := strings.TrimSpace(os.Getenv(key)); value != "" {
+			return value
+		}
+	}
+	return ""
+}
+
+func existingFiles(paths ...string) []string {
+	out := []string{}
+	for _, path := range paths {
+		if modelAuthFileExists(path) {
+			out = append(out, path)
+		}
+	}
+	return out
+}
+
+func copyLocalCredentialFiles(files []string, dstRoot string) error {
+	home, _ := os.UserHomeDir()
+	for _, src := range files {
+		rel := filepath.Base(src)
+		if home != "" {
+			if r, err := filepath.Rel(home, src); err == nil && !strings.HasPrefix(r, "..") && !filepath.IsAbs(r) {
+				rel = r
+			}
+		}
+		if err := copyFile0600(src, filepath.Join(dstRoot, rel)); err != nil {
+			return fmt.Errorf("copy credential %s: %w", filepath.Base(src), err)
+		}
+	}
+	return nil
+}
+
+func localModelProviderSearchedPaths() []string {
+	home, _ := os.UserHomeDir()
+	out := []string{}
+	if home != "" {
+		out = append(out,
+			filepath.Join(home, ".codex", "auth.json"),
+			filepath.Join(home, ".claude.json"),
+			filepath.Join(home, ".claude", ".credentials.json"),
+			filepath.Join(home, ".config", "cursor", "cli-config.json"),
+			filepath.Join(home, ".config", "cursor", "auth.json"),
+			filepath.Join(home, ".cursor", "cli-config.json"),
+		)
+	}
+	out = append(out, ccSwitchDBCandidates()...)
 	return out
 }
 

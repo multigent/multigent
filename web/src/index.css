@@ -67,6 +67,64 @@ button, [role="button"], a, select, label[for], summary, [tabindex]:not([tabinde
   cursor: pointer;
 }
 
+input[type="checkbox"] {
+  appearance: none;
+  display: inline-grid;
+  place-content: center;
+  flex-shrink: 0;
+  width: 1rem;
+  height: 1rem;
+  border: 1px solid rgb(212 212 212);
+  border-radius: 0.25rem;
+  background-color: rgb(255 255 255);
+  color: rgb(2 132 199);
+  vertical-align: middle;
+  transition: border-color 0.12s ease, background-color 0.12s ease, box-shadow 0.12s ease;
+}
+
+input[type="checkbox"]:checked,
+input[type="checkbox"]:indeterminate {
+  border-color: rgb(2 132 199);
+  background-color: rgb(2 132 199);
+}
+
+input[type="checkbox"]:checked::before {
+  content: "";
+  width: 0.62em;
+  height: 0.62em;
+  clip-path: polygon(14% 48%, 0 63%, 39% 100%, 100% 20%, 84% 7%, 36% 70%);
+  background-color: white;
+}
+
+input[type="checkbox"]:indeterminate::before {
+  content: "";
+  width: 0.62em;
+  height: 0.12em;
+  border-radius: 999px;
+  background-color: white;
+}
+
+input[type="checkbox"]:focus-visible {
+  outline: none;
+  box-shadow: 0 0 0 3px rgb(14 165 233 / 0.22);
+}
+
+input[type="checkbox"]:disabled {
+  cursor: not-allowed;
+  opacity: 0.45;
+}
+
+.dark input[type="checkbox"] {
+  border-color: rgb(82 82 91);
+  background-color: rgb(24 24 27);
+}
+
+.dark input[type="checkbox"]:checked,
+.dark input[type="checkbox"]:indeterminate {
+  border-color: rgb(56 189 248);
+  background-color: rgb(14 165 233);
+}
+
 /* ── Syntax highlighting (highlight.js) ────────────────────────────── */
 /* Light theme — GitHub-inspired */
 .hljs { color: #24292f; background: transparent; }

@@ -1523,13 +1523,20 @@
     "desc": "Configure shared model accounts once. Agents reuse them without handling API keys or environment variables.",
     "add": "Add Account",
     "edit": "Edit Account",
-    "importCCSwitch": "Import from cc-switch",
-    "importCCSwitchTitle": "Import model accounts from cc-switch",
-    "importCCSwitchHint": "Multigent reads the local cc-switch database on the server. Preview never exposes API keys; imported keys are encrypted at rest.",
+    "importCCSwitch": "Import from local",
+    "importCCSwitchTitle": "Import local model accounts",
+    "importCCSwitchHint": "Multigent scans this server for official CLI login state, environment variables, and cc-switch third-party accounts. Preview never exposes secrets; imported credentials are encrypted at rest.",
     "importSelected": "Import selected accounts",
-    "ccSwitchUnavailable": "No cc-switch database was found. Make sure cc-switch is installed and configured on this machine.",
-    "ccSwitchEmpty": "No Codex or Claude Code accounts are available to import from cc-switch.",
+    "ccSwitchUnavailable": "No local model accounts were found. Make sure Codex, Claude Code, Cursor, Gemini, API keys, or cc-switch are configured on this machine.",
+    "ccSwitchEmpty": "No local model accounts are available to import.",
     "ccSwitchCurrent": "current account",
+    "localImportSource": {
+      "local-env": "Local environment",
+      "codex": "Codex local sign-in",
+      "claudecode": "Claude Code local sign-in",
+      "cursor": "Cursor local sign-in",
+      "cc-switch": "cc-switch"
+    },
     "empty": "No providers configured yet.",
     "nameLabel": "Name",
     "namePlaceholder": "Team OpenAI account",
@@ -2114,7 +2121,7 @@
       },
       "models": {
         "title": "Configure a model account first",
-        "body": "Agents need a model account before they can run. Add an official API key or third-party provider in Settings, then attach it to each demo agent. A cc-switch import helper can make this easier in a later step."
+        "body": "Agents need a model account before they can run. Add an official API key or third-party provider in Settings, or use Import from local to scan official CLI sign-ins and cc-switch accounts on this machine."
       },
       "team": {
         "title": "Inspect the demo team",

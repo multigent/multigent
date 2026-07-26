@@ -1200,7 +1200,7 @@ type ModelDeviceAuthState = {
   cli?: ModelAccountCLI
   status: 'pending' | 'connected' | 'failed'
 }
-type CCSwitchProviderPreview = { id: string; name: string; cli: string; type: string; baseUrl?: string; model?: string; hasKey: boolean; isCurrent: boolean }
+type CCSwitchProviderPreview = { id: string; name: string; cli: string; type: string; baseUrl?: string; model?: string; hasKey: boolean; isCurrent: boolean; source?: string }
 type CCSwitchProviderResponse = { available: boolean; dbPath?: string; providers: CCSwitchProviderPreview[]; searched?: string[]; error?: string }
 type AssistantStatus = {
   enabled: boolean
@@ -1269,7 +1269,7 @@ function ProvidersSection() {
     setCCSwitchLoading(true)
     setErr(null)
     try {
-      const data = await apiFetch<CCSwitchProviderResponse>('/api/v1/providers/cc-switch')
+      const data = await apiFetch<CCSwitchProviderResponse>('/api/v1/providers/local-import')
       setCCSwitch(data)
       setCCSwitchSelected((data.providers ?? []).filter(p => p.isCurrent).map(p => p.id))
     } catch (e) {
@@ -1288,7 +1288,7 @@ function ProvidersSection() {
     setCCSwitchImporting(true)
     setErr(null)
     try {
-      await apiPost('/api/v1/providers/cc-switch/import', { ids: ccSwitchSelected })
+      await apiPost('/api/v1/providers/local-import/import', { ids: ccSwitchSelected })
       setCCSwitch(null)
       setCCSwitchSelected([])
       await refresh()
@@ -1848,7 +1848,7 @@ function ProvidersSection() {
                           <td className="px-3 py-2">
                             <div className="flex flex-col">
                               <span className="font-medium text-neutral-800 dark:text-zinc-200">{provider.name}</span>
-                              <span className="text-xs text-neutral-400 dark:text-zinc-500">{provider.isCurrent ? t('provider.ccSwitchCurrent') : ''}{provider.hasKey ? ` · ${t('provider.keyConfigured')}` : ''}</span>
+                              <span className="text-xs text-neutral-400 dark:text-zinc-500">{provider.source ? t(`provider.localImportSource.${provider.source}`, { defaultValue: provider.source }) : ''}{provider.isCurrent ? ` · ${t('provider.ccSwitchCurrent')}` : ''}{provider.hasKey ? ` · ${t('provider.keyConfigured')}` : ''}</span>
                             </div>
                           </td>
                           <td className="px-3 py-2 text-neutral-500 dark:text-zinc-400">{providerCLILabel(provider.cli as ModelAccountCLI)}</td>

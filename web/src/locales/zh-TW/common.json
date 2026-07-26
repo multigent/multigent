@@ -1509,6 +1509,20 @@
     "desc": "統一配置可複用的模型帳號。Agent 只選擇帳號，不需要接觸 API Key 或環境變數。",
     "add": "新增帳號",
     "edit": "編輯帳號",
+    "importCCSwitch": "從本機匯入",
+    "importCCSwitchTitle": "從本機匯入模型帳號",
+    "importCCSwitchHint": "Multigent 會在服務端掃描本機官方 CLI 登入狀態、環境變數和 cc-switch 第三方帳號。預覽不會暴露密鑰，匯入後會加密保存。",
+    "importSelected": "匯入選中帳號",
+    "ccSwitchUnavailable": "沒有發現可匯入的本機模型帳號。請確認目前機器已登入 Codex / Claude Code / Cursor / Gemini，或配置過 API Key / cc-switch。",
+    "ccSwitchEmpty": "沒有可匯入的本機模型帳號。",
+    "ccSwitchCurrent": "目前帳號",
+    "localImportSource": {
+      "local-env": "本機環境變數",
+      "codex": "Codex 本機登入",
+      "claudecode": "Claude Code 本機登入",
+      "cursor": "Cursor 本機登入",
+      "cc-switch": "cc-switch"
+    },
     "empty": "尚未配置模型帳號。",
     "nameLabel": "名稱",
     "namePlaceholder": "團隊 OpenAI 帳號",
@@ -2093,7 +2107,7 @@
       },
       "models": {
         "title": "先設定模型帳號",
-        "body": "Agent 需要模型帳號才能執行。先在設定裡新增官方 API Key 或第三方模型供應商，再綁定到每個示範 Agent。後續可以支援從 cc-switch 匯入，減少手動設定。"
+        "body": "Agent 需要模型帳號才能執行。可以在設定裡新增官方 API Key 或第三方模型供應商，也可以使用「從本機匯入」掃描本機官方 CLI 登入狀態和 cc-switch 帳號，減少手動設定。"
       },
       "team": {
         "title": "查看示範團隊",

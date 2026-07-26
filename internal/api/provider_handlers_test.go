@@ -15,6 +15,7 @@ import (
 
 	controldb "github.com/multigent/multigent/internal/db"
 	"github.com/multigent/multigent/internal/entity"
+	"github.com/multigent/multigent/internal/store"
 )
 
 func newProviderHandlerTestServer(t *testing.T) (*Server, string) {
@@ -168,6 +169,7 @@ func TestCCSwitchProviderPreviewAndImport(t *testing.T) {
 	s, _ := newProviderHandlerTestServer(t)
 	home := t.TempDir()
 	t.Setenv("HOME", home)
+	clearLocalModelProviderEnv(t)
 	dbPath := filepath.Join(home, ".cc-switch", "cc-switch.db")
 	writeCCSwitchTestDB(t, dbPath)
 
@@ -189,9 +191,14 @@ func TestCCSwitchProviderPreviewAndImport(t *testing.T) {
 	if !preview.Available || len(preview.Providers) != 2 {
 		t.Fatalf("unexpected preview: %#v", preview)
 	}
+	for _, provider := range preview.Providers {
+		if !strings.HasPrefix(provider.ID, "cc-switch:") || provider.Source != "cc-switch" {
+			t.Fatalf("unexpected cc-switch preview id/source: %#v", provider)
+		}
+	}
 
 	importRec := httptest.NewRecorder()
-	s.handleImportCCSwitchProviders(importRec, providerTestRequest(http.MethodPost, "/api/v1/providers/cc-switch/import", "owner", ccSwitchImportBody{IDs: []string{"codex-one", "claude-one"}}))
+	s.handleImportCCSwitchProviders(importRec, providerTestRequest(http.MethodPost, "/api/v1/providers/cc-switch/import", "owner", ccSwitchImportBody{IDs: []string{"cc-switch:codex-one", "cc-switch:claude-one"}}))
 	if importRec.Code != http.StatusOK {
 		t.Fatalf("import status=%d body=%s", importRec.Code, importRec.Body.String())
 	}
@@ -224,6 +231,70 @@ func TestCCSwitchProviderPreviewAndImport(t *testing.T) {
 	}
 	if byName["Kimi Codex"].OwnerType != ConnectionOwnerWorkspace || byName["Claude Gateway"].OwnerID != "ws-one" {
 		t.Fatalf("owner import should create workspace providers: %#v", providers)
+	}
+}
+
+func TestLocalModelProviderPreviewAndImportCopiesCredentialFiles(t *testing.T) {
+	s, root := newProviderHandlerTestServer(t)
+	home := t.TempDir()
+	t.Setenv("HOME", home)
+	clearLocalModelProviderEnv(t)
+	codexAuth := filepath.Join(home, ".codex", "auth.json")
+	if err := os.MkdirAll(filepath.Dir(codexAuth), 0o755); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.WriteFile(codexAuth, []byte(`{"token":"secret-local-token"}`), 0o600); err != nil {
+		t.Fatal(err)
+	}
+
+	listRec := httptest.NewRecorder()
+	s.handleListLocalModelProviders(listRec, providerTestRequest(http.MethodGet, "/api/v1/providers/local-import", "owner", nil))
+	if listRec.Code != http.StatusOK {
+		t.Fatalf("list local providers status=%d body=%s", listRec.Code, listRec.Body.String())
+	}
+	if strings.Contains(listRec.Body.String(), "secret-local-token") {
+		t.Fatalf("preview leaked local auth file content: %s", listRec.Body.String())
+	}
+	var preview struct {
+		Available bool                      `json:"available"`
+		Providers []ccSwitchProviderPreview `json:"providers"`
+	}
+	if err := json.Unmarshal(listRec.Body.Bytes(), &preview); err != nil {
+		t.Fatalf("decode preview: %v", err)
+	}
+	if !preview.Available || len(preview.Providers) != 1 {
+		t.Fatalf("unexpected local preview: %#v", preview)
+	}
+	if preview.Providers[0].ID != "local:codex-auth-json" || preview.Providers[0].Source != "codex" || preview.Providers[0].CLI != "codex" {
+		t.Fatalf("unexpected local provider preview: %#v", preview.Providers[0])
+	}
+
+	importRec := httptest.NewRecorder()
+	s.handleImportLocalModelProviders(importRec, providerTestRequest(http.MethodPost, "/api/v1/providers/local-import/import", "owner", ccSwitchImportBody{IDs: []string{"local:codex-auth-json"}}))
+	if importRec.Code != http.StatusOK {
+		t.Fatalf("import local provider status=%d body=%s", importRec.Code, importRec.Body.String())
+	}
+	if strings.Contains(importRec.Body.String(), "secret-local-token") {
+		t.Fatalf("import response leaked local auth file content: %s", importRec.Body.String())
+	}
+	providers, err := s.providerStore().List()
+	if err != nil {
+		t.Fatalf("list providers: %v", err)
+	}
+	if len(providers) != 1 {
+		t.Fatalf("providers=%#v", providers)
+	}
+	imported := providers[0]
+	if imported.Name != "Codex ChatGPT" || imported.Type != "openai" || store.ProviderAuthMethod(imported) != store.ProviderAuthMethodCodexChatGPT {
+		t.Fatalf("unexpected imported local provider: %#v", imported)
+	}
+	copiedAuth := filepath.Join(store.ProviderCredentialDir(root, imported.ID, entity.ModelCodex), ".codex", "auth.json")
+	raw, err := os.ReadFile(copiedAuth)
+	if err != nil {
+		t.Fatalf("read copied auth file: %v", err)
+	}
+	if !strings.Contains(string(raw), "secret-local-token") {
+		t.Fatalf("copied auth file mismatch: %s", string(raw))
 	}
 }
 
@@ -368,6 +439,32 @@ func TestModelProviderAgentScopedListRequiresAgentManagementAccess(t *testing.T)
 	s.handleListProviders(rec, providerTestRequest(http.MethodGet, "/api/v1/providers?project=sample&agent=pm", "viewer", nil))
 	if rec.Code != http.StatusForbidden {
 		t.Fatalf("viewer agent-scoped list status=%d body=%s", rec.Code, rec.Body.String())
+	}
+}
+
+func clearLocalModelProviderEnv(t *testing.T) {
+	t.Helper()
+	for _, key := range []string{
+		"OPENAI_API_KEY",
+		"CODEX_API_KEY",
+		"OPENAI_MODEL",
+		"CODEX_MODEL",
+		"OPENAI_BASE_URL",
+		"OPENAI_API_BASE",
+		"ANTHROPIC_AUTH_TOKEN",
+		"ANTHROPIC_API_KEY",
+		"ANTHROPIC_MODEL",
+		"CLAUDE_MODEL",
+		"ANTHROPIC_BASE_URL",
+		"GEMINI_API_KEY",
+		"GOOGLE_API_KEY",
+		"GEMINI_MODEL",
+		"GOOGLE_MODEL",
+		"GOOGLE_API_BASE",
+		"CURSOR_API_KEY",
+		"CURSOR_MODEL",
+	} {
+		t.Setenv(key, "")
 	}
 }
 

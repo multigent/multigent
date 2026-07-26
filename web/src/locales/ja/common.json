@@ -1499,6 +1499,20 @@
     "desc": "共有モデルアカウントを一度設定します。エージェントは API Key や環境変数を扱わずに再利用できます。",
     "add": "アカウント追加",
     "edit": "アカウント編集",
+    "importCCSwitch": "ローカルからインポート",
+    "importCCSwitchTitle": "ローカルのモデルアカウントをインポート",
+    "importCCSwitchHint": "Multigent はこのサーバー上の公式 CLI ログイン状態、環境変数、cc-switch のサードパーティアカウントをスキャンします。プレビューでシークレットは表示せず、インポート後は暗号化して保存します。",
+    "importSelected": "選択したアカウントをインポート",
+    "ccSwitchUnavailable": "インポート可能なローカルモデルアカウントが見つかりません。Codex / Claude Code / Cursor / Gemini のログイン、API Key、または cc-switch 設定を確認してください。",
+    "ccSwitchEmpty": "インポート可能なローカルモデルアカウントはありません。",
+    "ccSwitchCurrent": "現在のアカウント",
+    "localImportSource": {
+      "local-env": "ローカル環境変数",
+      "codex": "Codex ローカルログイン",
+      "claudecode": "Claude Code ローカルログイン",
+      "cursor": "Cursor ローカルログイン",
+      "cc-switch": "cc-switch"
+    },
     "empty": "モデルアカウントが未設定です。",
     "nameLabel": "名前",
     "namePlaceholder": "Team OpenAI account",
@@ -2083,7 +2097,7 @@
       },
       "models": {
         "title": "まずモデルアカウントを設定",
-        "body": "Agent を実行するにはモデルアカウントが必要です。Settings で公式 API Key またはサードパーティ provider を追加し、各 demo Agent に割り当てます。後で cc-switch import も追加できます。"
+        "body": "Agent を実行するにはモデルアカウントが必要です。Settings で公式 API Key またはサードパーティ provider を追加するか、「ローカルからインポート」で公式 CLI ログイン状態や cc-switch アカウントを読み取れます。"
       },
       "team": {
         "title": "Demo team を確認",
