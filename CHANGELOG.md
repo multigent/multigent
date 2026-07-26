@@ -1,5 +1,17 @@
 # Changelog
 
+## [v0.1.14] - 2026-07-26
+
+### Fixed
+
+- Agents can no longer be run or manually woken up before a model account is explicitly linked.
+- Runtime readiness no longer treats host environment API keys as an implicit model account for SaaS-managed agents.
+
+### Changed
+
+- Project schedule responses now include lightweight runtime readiness so unavailable agents can be disabled before users click wakeup.
+- Agent detail and schedule controls now show a clearer model-account-required state.
+
 ## [v0.1.13] - 2026-07-26
 
 ### Fixed
