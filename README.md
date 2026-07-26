@@ -169,6 +169,15 @@ docker run --rm -p 27892:27892 \
 
 Open `http://127.0.0.1:27892`.
 
+Default initial login:
+
+```text
+Username: admin
+Password: admin123
+```
+
+Change the password immediately after first login.
+
 ### Prerequisites for Agent Runs
 
 - Docker, for sandboxed agent execution

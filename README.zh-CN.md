@@ -169,6 +169,15 @@ docker run --rm -p 27892:27892 \
 
 打开 `http://127.0.0.1:27892`。
 
+默认初始登录账号：
+
+```text
+用户名：admin
+密码：admin123
+```
+
+首次登录后请立即修改密码。
+
 ### Agent 运行环境要求
 
 - Docker，用于 Sandbox Agent 执行

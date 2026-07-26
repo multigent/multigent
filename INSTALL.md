@@ -212,7 +212,15 @@ Open:
 http://127.0.0.1:27892
 ```
 
-The first user creates or enters a workspace from the web UI.
+Default initial login:
+
+```text
+Username: admin
+Password: admin123
+```
+
+Change this password immediately after the first login. After signing in, the
+first user can create or enter a workspace from the web UI.
 
 ## Update Multigent
 
