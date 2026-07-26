@@ -49,6 +49,7 @@ export default function ProjectTaskFollowPage() {
   const [startBusy, setStartBusy] = useState(false)
   const [optimisticStartedAt, setOptimisticStartedAt] = useState<string | null>(null)
   const [handoffStartedAt, setHandoffStartedAt] = useState<string | null>(null)
+  const activeStepRef = useRef<string | null>(null)
   const sidePanelRef = useRef<HTMLElement>(null)
 
   const refresh = useCallback(() => setReloadKey((value) => value + 1), [])
@@ -78,14 +79,13 @@ export default function ProjectTaskFollowPage() {
     : undefined
   const rawActiveInstance = rawWorkflowData ? activeWorkflowStepInstance(rawWorkflowData) : undefined
   const rawIsAgentStep = rawActiveInstance?.actorType === 'agent' || rawActiveStep?.type === 'agent_task'
-  const rawWorkflowIsRunning = rawIsAgentStep && rawActiveInstance?.status === 'running'
   const optimisticRunStartedAt = optimisticStartedAt || (rawIsAgentStep ? handoffStartedAt : null)
   const displayTask = useMemo(() => {
     if (!task || task.status === 'in_progress' || isTerminal(task.status)) return task
-    if (!optimisticRunStartedAt && !rawWorkflowIsRunning) return task
+    if (!optimisticRunStartedAt) return task
     const startedAt = rawActiveInstance?.startedAt || optimisticRunStartedAt || task.startedAt || new Date().toISOString()
     return { ...task, status: 'in_progress', startedAt, updatedAt: task.updatedAt || startedAt }
-  }, [optimisticRunStartedAt, rawActiveInstance?.startedAt, rawWorkflowIsRunning, task])
+  }, [optimisticRunStartedAt, rawActiveInstance?.startedAt, task])
   const workflowData = useMemo(
     () => withRunningActiveStep(rawWorkflowData, displayTask, projectId, optimisticRunStartedAt, Boolean(handoffStartedAt && rawIsAgentStep)),
     [displayTask, handoffStartedAt, optimisticRunStartedAt, projectId, rawIsAgentStep, rawWorkflowData],
@@ -159,6 +159,23 @@ export default function ProjectTaskFollowPage() {
     const timer = window.setInterval(pollRefresh, FOLLOW_POLL_MS)
     return () => window.clearInterval(timer)
   }, [pollRefresh, shouldPollActiveRun])
+
+  useEffect(() => {
+    activeStepRef.current = null
+    setHandoffStartedAt(null)
+    setOptimisticStartedAt(null)
+  }, [taskId])
+
+  useEffect(() => {
+    const activeStepID = rawWorkflowData?.run.activeStepId || null
+    if (!activeStepID) return
+    const previousStepID = activeStepRef.current
+    activeStepRef.current = activeStepID
+    if (!previousStepID || previousStepID === activeStepID) return
+    if (rawIsAgentStep && rawActiveInstance?.status === 'running' && task?.status !== 'in_progress' && !isTerminal(task?.status || '')) {
+      setHandoffStartedAt(new Date().toISOString())
+    }
+  }, [rawActiveInstance?.status, rawIsAgentStep, rawWorkflowData?.run.activeStepId, task?.status])
 
   useEffect(() => {
     if (!optimisticStartedAt && !handoffStartedAt) return
