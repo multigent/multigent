@@ -83,9 +83,13 @@ export default function ProjectTaskFollowPage() {
   const activeInstance = workflowData ? activeWorkflowStepInstance(workflowData) : undefined
   const workflowRecords = workflowData ? workflowHistoryRecords(workflowData) : []
   const runs = runsState.status === 'ok' ? (runsState.data.runs ?? []) : []
-  const activeRun = useMemo(() => findActiveRun(runs, taskId, projectId, activeStep, activeInstance?.actorId), [activeInstance?.actorId, activeStep, projectId, runs, taskId])
+  const isCurrentAgentStep = activeInstance?.actorType === 'agent' || activeStep?.type === 'agent_task'
+  const activeRun = useMemo(
+    () => isCurrentAgentStep ? findActiveRun(runs, taskId, projectId, activeStep, activeInstance?.actorId) : null,
+    [activeInstance?.actorId, activeStep, isCurrentAgentStep, projectId, runs, taskId],
+  )
   const logState = useApiJson<LogData>(
-    activeRun?.logPath ? `/api/v1/telemetry/log?path=${encodeURIComponent(activeRun.logPath)}` : null,
+    isCurrentAgentStep && activeRun?.logPath ? `/api/v1/telemetry/log?path=${encodeURIComponent(activeRun.logPath)}` : null,
     reloadKey,
     { keepPreviousDataOnReload: true },
   )
@@ -111,9 +115,9 @@ export default function ProjectTaskFollowPage() {
     return labels
   }, [displayTask?.assignee, displayTask?.assigneeLabel, membersState, projectId, usersState])
 
-  const startAgent = activeInstance?.actorType === 'agent'
+  const startAgent = isCurrentAgentStep && activeInstance?.actorType === 'agent'
     ? agentNameFromActor(projectId, activeInstance.actorId)
-    : displayTask ? startableAgentName(displayTask) : null
+    : isCurrentAgentStep && displayTask ? startableAgentName(displayTask) : null
   const canStart = Boolean(
     displayTask &&
     startAgent &&
@@ -246,17 +250,19 @@ export default function ProjectTaskFollowPage() {
               {activeInstance?.status && <span>{t('api.taskColStatus')}: {t(`workflows.stepStatus.${activeInstance.status}`, { defaultValue: activeInstance.status })}</span>}
               {activeRun?.startedAt && <span>{t('tasks.startedAt')}: {fmt(activeRun.startedAt)}</span>}
             </div>
-            <div className="mt-3 flex items-center gap-2">
-              <button
-                type="button"
-                onClick={() => void startCurrentAgent()}
-                disabled={!canStart || startBusy || displayTask?.status === 'in_progress'}
-                className="rounded-lg border border-sky-600 bg-white px-3 py-2 text-sm font-medium text-sky-700 hover:bg-sky-50 disabled:cursor-not-allowed disabled:opacity-40 dark:border-sky-500 dark:bg-zinc-900 dark:text-sky-400 dark:hover:bg-zinc-800"
-              >
-                <span className="inline-flex items-center gap-1.5"><Play className={cn('size-3.5', (startBusy || displayTask?.status === 'in_progress') && 'animate-pulse')} />{displayTask?.status === 'in_progress' ? t('tasks.status.in_progress') : startBusy ? t('tasks.starting') : t('tasks.startCurrentAgent')}</span>
-              </button>
-              {startAgent && <span className="font-mono text-xs text-neutral-400 dark:text-zinc-500">{startAgent}</span>}
-            </div>
+            {isCurrentAgentStep && (
+              <div className="mt-3 flex items-center gap-2">
+                <button
+                  type="button"
+                  onClick={() => void startCurrentAgent()}
+                  disabled={!canStart || startBusy || displayTask?.status === 'in_progress'}
+                  className="rounded-lg border border-sky-600 bg-white px-3 py-2 text-sm font-medium text-sky-700 hover:bg-sky-50 disabled:cursor-not-allowed disabled:opacity-40 dark:border-sky-500 dark:bg-zinc-900 dark:text-sky-400 dark:hover:bg-zinc-800"
+                >
+                  <span className="inline-flex items-center gap-1.5"><Play className={cn('size-3.5', (startBusy || displayTask?.status === 'in_progress') && 'animate-pulse')} />{displayTask?.status === 'in_progress' ? t('tasks.status.in_progress') : startBusy ? t('tasks.starting') : t('tasks.startCurrentAgent')}</span>
+                </button>
+                {startAgent && <span className="font-mono text-xs text-neutral-400 dark:text-zinc-500">{startAgent}</span>}
+              </div>
+            )}
           </div>
 
           {workflowData && (
@@ -282,24 +288,26 @@ export default function ProjectTaskFollowPage() {
             />
           )}
 
-          <section className="border-t border-neutral-200/80 px-4 py-4 dark:border-zinc-800">
-            <div className="mb-3 flex items-center justify-between gap-2">
-              <div>
-                <p className="text-xs font-semibold uppercase tracking-wider text-neutral-400 dark:text-zinc-500">{t('tasks.followLiveOutput')}</p>
-                <h3 className="mt-1 text-sm font-semibold text-neutral-900 dark:text-zinc-100">{activeRun ? `${activeRun.agent} · ${activeRun.status}` : t('tasks.noActiveRun')}</h3>
+          {isCurrentAgentStep && (
+            <section className="border-t border-neutral-200/80 px-4 py-4 dark:border-zinc-800">
+              <div className="mb-3 flex items-center justify-between gap-2">
+                <div>
+                  <p className="text-xs font-semibold uppercase tracking-wider text-neutral-400 dark:text-zinc-500">{t('tasks.followLiveOutput')}</p>
+                  <h3 className="mt-1 text-sm font-semibold text-neutral-900 dark:text-zinc-100">{activeRun ? `${activeRun.agent} · ${activeRun.status}` : t('tasks.noActiveRun')}</h3>
+                </div>
+                {activeRun?.sessionId && <span className="font-mono text-[11px] text-neutral-400 dark:text-zinc-500">{activeRun.sessionId.slice(0, 8)}…</span>}
               </div>
-              {activeRun?.sessionId && <span className="font-mono text-[11px] text-neutral-400 dark:text-zinc-500">{activeRun.sessionId.slice(0, 8)}…</span>}
-            </div>
-            <div className="min-h-72">
-              {activeRun?.logPath && logState.status === 'ok' ? (
-                <ConversationLog content={logState.data.content} mode="chat" assistant={{ name: activeRun.agent }} />
-              ) : activeRun?.logPath && logState.status === 'loading' ? (
-                <CenteredLoading label={t('tasks.followLoadingOutput')} compact />
-              ) : (
-                <p className="py-8 text-center text-sm text-neutral-400 dark:text-zinc-500">{t('tasks.followNoOutput')}</p>
-              )}
-            </div>
-          </section>
+              <div className="min-h-72">
+                {activeRun?.logPath && logState.status === 'ok' ? (
+                  <ConversationLog content={logState.data.content} mode="chat" assistant={{ name: activeRun.agent }} />
+                ) : activeRun?.logPath && logState.status === 'loading' ? (
+                  <CenteredLoading label={t('tasks.followLoadingOutput')} compact />
+                ) : (
+                  <p className="py-8 text-center text-sm text-neutral-400 dark:text-zinc-500">{t('tasks.followNoOutput')}</p>
+                )}
+              </div>
+            </section>
+          )}
         </aside>
       </main>
     </div>
