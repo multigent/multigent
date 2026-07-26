@@ -101,7 +101,7 @@ export function CommandPalette({
       if (!cancelled) setProjectAgents(rows)
     })()
     return () => { cancelled = true }
-  }, [projectsKey, workspaceReloadKey])
+  }, [projectsKey])
 
   const items = useMemo<SearchItem[]>(() => {
     const nav: SearchItem[] = [
