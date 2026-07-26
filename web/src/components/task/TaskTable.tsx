@@ -184,6 +184,14 @@ export function TaskTable({
                   onClick={(e) => e.stopPropagation()}
                 >
                   <div className="flex items-center justify-end gap-1 whitespace-nowrap opacity-0 transition-opacity duration-100 group-hover:opacity-100">
+                    <Link
+                      to={`/projects/${encodeURIComponent(row.project)}/tasks/${encodeURIComponent(row.id)}/follow`}
+                      onClick={(e) => e.stopPropagation()}
+                      className="rounded px-2 py-1 text-[11px] font-medium text-sky-700 transition-colors hover:bg-sky-50 dark:text-sky-400 dark:hover:bg-sky-900/30"
+                      title={t('tasks.follow')}
+                    >
+                      {t('tasks.follow')}
+                    </Link>
                     {canMutate && (
                       <button
                         type="button"

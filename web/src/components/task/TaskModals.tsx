@@ -1,4 +1,5 @@
 import { useCallback, useEffect, useMemo, useState, type ReactNode } from 'react'
+import { Link } from 'react-router-dom'
 import { useTranslation } from 'react-i18next'
 import ReactMarkdown from 'react-markdown'
 import remarkGfm from 'remark-gfm'
@@ -41,7 +42,7 @@ export type TaskRow = {
 
 export type TaskOption = { id: string; title: string; project?: string }
 
-type RunRow = {
+export type RunRow = {
   project: string; agent: string; kind: string; status: string
   startedAt: string; finishedAt: string; model?: string
   taskId?: string; taskTitle?: string; logPath?: string
@@ -50,10 +51,10 @@ type RunRow = {
   sessionId?: string
 }
 
-type TaskWorkflowData = { definition: WorkflowDefinition; run: WorkflowRun; steps: WorkflowStepInstance[]; history?: WorkflowStepEvent[] }
+export type TaskWorkflowData = { definition: WorkflowDefinition; run: WorkflowRun; steps: WorkflowStepInstance[]; history?: WorkflowStepEvent[] }
 type SafeUser = { username: string; displayName?: string; email?: string }
 type ProjectMember = { name: string; model?: string; avatar?: string }
-type WorkflowRecord = WorkflowStepEvent | WorkflowStepInstance
+export type WorkflowRecord = WorkflowStepEvent | WorkflowStepInstance
 const silentNotFound = [404]
 
 // Restore real line breaks for descriptions whose upstream author stored literal
@@ -406,6 +407,13 @@ export function TaskDetailModal({ task, onClose, onEdit, onMutated, canEdit = tr
             <span className="truncate text-sm font-medium text-neutral-900 dark:text-zinc-100">{task.title}</span>
           </div>
           <div className="flex items-center gap-1 shrink-0">
+            <Link
+              to={`/projects/${encodeURIComponent(task.project)}/tasks/${encodeURIComponent(task.id)}/follow`}
+              className="rounded-md px-2 py-1 text-xs font-medium text-sky-700 transition-colors hover:bg-sky-50 dark:text-sky-400 dark:hover:bg-zinc-800"
+              title={t('tasks.follow')}
+            >
+              {t('tasks.follow')}
+            </Link>
             {canEdit && (
               <button
                 type="button"
@@ -618,7 +626,7 @@ function InfoCell({ label, children }: { label: string; children: React.ReactNod
   )
 }
 
-function workflowHistoryRecords(data: TaskWorkflowData): WorkflowRecord[] {
+export function workflowHistoryRecords(data: TaskWorkflowData): WorkflowRecord[] {
   const history = (data.history ?? [])
     .filter((item) => workflowRecordHasPayload(item))
     .sort((a, b) => workflowRecordTimestamp(a) - workflowRecordTimestamp(b))
@@ -628,7 +636,7 @@ function workflowHistoryRecords(data: TaskWorkflowData): WorkflowRecord[] {
     .sort((a, b) => workflowRecordTimestamp(a) - workflowRecordTimestamp(b))
 }
 
-function activeWorkflowStepInstance(data: TaskWorkflowData): WorkflowStepInstance | undefined {
+export function activeWorkflowStepInstance(data: TaskWorkflowData): WorkflowStepInstance | undefined {
   const activeStepID = data.run.activeStepId
   if (!activeStepID) return undefined
   const candidates = data.steps
@@ -637,7 +645,7 @@ function activeWorkflowStepInstance(data: TaskWorkflowData): WorkflowStepInstanc
   return candidates.find((item) => isWorkflowStepOpen(item.status)) ?? candidates[0]
 }
 
-function startableAgentName(task: TaskRow): string | null {
+export function startableAgentName(task: TaskRow): string | null {
   const assignee = (task.assignee || `${task.project}/${task.agent}`).trim()
   const prefix = `${task.project}/`
   if (!assignee.startsWith(prefix)) return null
@@ -754,7 +762,7 @@ function TaskCommentsSection({ project, agent, taskId }: { project: string; agen
   )
 }
 
-function WorkflowRuntimePanel({
+export function WorkflowRuntimePanel({
   step,
   instance,
   steps,
