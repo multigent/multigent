@@ -1,5 +1,18 @@
 # Changelog
 
+## [v0.1.12] - 2026-07-26
+
+### Added
+
+- Model account presets now include MiniMax China endpoints for Codex and Claude Code.
+- Saving a workspace model account can now apply it to matching unconfigured agents.
+- Task details now include a direct start action for pending tasks assigned to agents.
+
+### Changed
+
+- Task start now uses an icon-style action consistent with the task detail header.
+- Task start is disabled when the task is running, terminal, or assigned to a human member.
+
 ## [v0.1.11] - 2026-07-26
 
 ### Changed
