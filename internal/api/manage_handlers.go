@@ -190,6 +190,19 @@ func (s *Server) handleRunAgent(w http.ResponseWriter, r *http.Request) {
 		s.jsonError(w, http.StatusForbidden, "agent operator access required")
 		return
 	}
+	meta, err := s.st.AgentMeta(project, agent)
+	if err != nil {
+		if isNotFoundErr(err) {
+			s.jsonErrorCode(w, http.StatusNotFound, ErrCodeAgentNotFound, "agent not found")
+			return
+		}
+		s.serverError(w, err)
+		return
+	}
+	if readiness := buildRuntimeReadiness(meta); readiness.Blocking {
+		s.jsonErrorCode(w, http.StatusConflict, ErrCodeRuntimeNotReady, runtimeReadinessErrorMessage(readiness))
+		return
+	}
 
 	var allOutput strings.Builder
 

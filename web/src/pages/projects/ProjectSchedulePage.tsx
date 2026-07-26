@@ -44,7 +44,8 @@ type SessionUsage = {
   totalCacheRead: number; totalCostUsd: number; runCount: number; contextLimit: number
 }
 
-type AgentSchedule = { name: string; heartbeat: HeartbeatRow; crons: CronRow[]; model?: string; agentDir?: string; sessionUsage?: SessionUsage }
+type RuntimeReadiness = { ready: boolean; blocking: boolean; summary?: string; checks?: Array<{ key: string; label: string; status: string; detail?: string; action?: string; blocking?: boolean }> }
+type AgentSchedule = { name: string; heartbeat: HeartbeatRow; crons: CronRow[]; model?: string; agentDir?: string; sessionUsage?: SessionUsage; runtimeReadiness?: RuntimeReadiness }
 type ScheduleResp = { project: string; agents: AgentSchedule[] }
 
 /* ─── shared styles ─── */
@@ -1067,6 +1068,10 @@ function RuntimeTab({ agents, projectId, canManage, onChanged }: { agents: Agent
               const hb = ag.heartbeat
               const isRunningNow = hb.lastWakeupStatus === 'running'
               const hasSession = !!hb.sessionId
+              const runtimeBlocked = Boolean(ag.runtimeReadiness?.blocking)
+              const blockingTitle = runtimeBlocked
+                ? ag.runtimeReadiness?.checks?.filter((check) => check.blocking || check.status === 'error').map((check) => [check.label, check.detail, check.action].filter(Boolean).join(': ')).join('\n') || ag.runtimeReadiness?.summary || t('agentChat.runtimeBlocked')
+                : t('schedule.wakeupNow')
               return (
                 <tr key={ag.name} className="group bg-white transition-colors hover:bg-neutral-50/80 dark:bg-zinc-900/20 dark:hover:bg-zinc-800/30">
                   <td className={cn(tdCls, 'font-mono font-medium')}><Link to={`/projects/${projectId}/members/${ag.name}`} className="text-sky-700 hover:underline dark:text-sky-400">{ag.name}</Link></td>
@@ -1150,7 +1155,7 @@ function RuntimeTab({ agents, projectId, canManage, onChanged }: { agents: Agent
                   <td className={cn(tdCls, tdSticky)}>
                     <div className="flex items-center justify-center gap-1">
                       {canManage && (
-                        <button type="button" data-tour-wakeup-now={ag.name} disabled={isRunningNow || waking === ag.name} onClick={() => void doWakeup(ag.name)}
+                        <button type="button" data-tour-wakeup-now={ag.name} disabled={isRunningNow || runtimeBlocked || waking === ag.name} title={blockingTitle} onClick={() => void doWakeup(ag.name)}
                           className="cursor-pointer rounded-md px-2 py-1 text-xs font-medium text-sky-700 opacity-0 transition-all hover:bg-sky-50 disabled:opacity-40 group-hover:opacity-100 dark:text-sky-400 dark:hover:bg-sky-900/20">
                           {waking === ag.name ? t('schedule.wakingUp') : t('schedule.wakeupNow')}
                         </button>

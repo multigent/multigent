@@ -683,33 +683,18 @@ func buildRuntimeReadinessWithOptions(meta *entity.AgentMeta, opts runtimeReadin
 		checks = append(checks, *authCheck)
 	}
 
-	// 4. API provider check
-	if meta.Provider != "" {
+	// 4. Model account check. Multigent is a control-plane product: runnable
+	// agents must bind an explicit model account instead of inheriting host env.
+	if strings.TrimSpace(meta.Provider) != "" {
 		checks = append(checks, setupCheck{
-			Key: "provider", Label: "API 供应商", Status: "ok",
+			Key: "provider", Label: "模型账号", Status: "ok",
 			Detail: meta.Provider,
 		})
-	} else {
-		switch model {
-		case entity.ModelClaudeCode:
-			if os.Getenv("ANTHROPIC_API_KEY") != "" || os.Getenv("ANTHROPIC_AUTH_TOKEN") != "" {
-				checks = append(checks, setupCheck{Key: "provider", Label: "API 供应商", Status: "ok", Detail: "通过环境变量配置"})
-			} else {
-				checks = append(checks, setupCheck{
-					Key: "provider", Label: "API 供应商", Status: "error", Blocking: true,
-					Detail: "未配置 API 供应商。请在设置页添加模型账号，并在 Agent 详情页关联。",
-				})
-			}
-		case entity.ModelCodex, entity.ModelQoder:
-			if os.Getenv("OPENAI_API_KEY") != "" {
-				checks = append(checks, setupCheck{Key: "provider", Label: "API 供应商", Status: "ok", Detail: "通过环境变量配置"})
-			} else {
-				checks = append(checks, setupCheck{
-					Key: "provider", Label: "API 供应商", Status: "error", Blocking: true,
-					Detail: "未配置模型账号。请在设置页添加模型账号，并在 Agent 详情页关联。",
-				})
-			}
-		}
+	} else if modelRequiresModelAccount(model) {
+		checks = append(checks, setupCheck{
+			Key: "provider", Label: "模型账号", Status: "error", Blocking: true,
+			Detail: "未配置模型账号。请先在设置页添加模型账号，并在 Agent 详情页关联。",
+		})
 	}
 
 	blocking := false
@@ -733,6 +718,15 @@ func buildRuntimeReadinessWithOptions(meta *entity.AgentMeta, opts runtimeReadin
 		Blocking: blocking,
 		Summary:  summary,
 		Checks:   checks,
+	}
+}
+
+func modelRequiresModelAccount(model entity.AgentModel) bool {
+	switch entity.NormaliseModel(model) {
+	case entity.ModelHuman, entity.ModelHTTPAgent:
+		return false
+	default:
+		return true
 	}
 }
 

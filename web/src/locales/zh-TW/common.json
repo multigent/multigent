@@ -1616,6 +1616,7 @@
     "customCliStream": "串流輸出",
     "customCliUrlRequired": "請先填寫自訂 CLI 的介面地址。",
     "modelAccount": "模型帳號",
+    "modelAccountRequiredBeforeRun": "請先在模型與憑證中關聯模型帳號，再執行這個 Agent。",
     "runtimeModel": "執行模型",
     "notConfigured": "未配置",
     "webSession": "Web 會話",

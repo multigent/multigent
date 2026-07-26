@@ -1630,6 +1630,7 @@
     "customCliStream": "流式输出",
     "customCliUrlRequired": "请先填写自定义 CLI 的接口地址。",
     "modelAccount": "模型账号",
+    "modelAccountRequiredBeforeRun": "请先在模型与凭证中关联模型账号，再运行这个 Agent。",
     "runtimeModel": "运行模型",
     "notConfigured": "未配置",
     "webSession": "Web 会话",

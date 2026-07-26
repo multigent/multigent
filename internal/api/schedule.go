@@ -91,6 +91,7 @@ func (s *Server) handleGetProjectSchedule(w http.ResponseWriter, r *http.Request
 			modelStr = string(meta.Model)
 			entry["model"] = modelStr
 			entry["agentDir"] = s.st.AgentDir(name, ag.Name)
+			entry["runtimeReadiness"] = buildRuntimeReadinessLight(meta)
 		}
 		if hb.SessionID != "" {
 			if db, err := telemetry.OpenReadOnly(s.root); err == nil {

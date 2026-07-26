@@ -1630,6 +1630,7 @@
     "customCliStream": "Streaming",
     "customCliUrlRequired": "Enter the custom CLI endpoint URL first.",
     "modelAccount": "Model Account",
+    "modelAccountRequiredBeforeRun": "Link a model account under Model & Credentials before running this agent.",
     "runtimeModel": "Runtime Model",
     "notConfigured": "Not configured",
     "webSession": "Web Session",

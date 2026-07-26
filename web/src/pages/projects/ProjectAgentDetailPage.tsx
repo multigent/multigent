@@ -119,6 +119,10 @@ type AgentContext = {
   addDirs?: string[]
 }
 
+function agentModelRequiresModelAccount(model?: string) {
+  return model !== 'human' && model !== 'http-agent'
+}
+
 const RUNTIME_MODEL_PRESETS: Record<string, string[]> = {
   codex: ['gpt-5.6-sol', 'gpt-5.6-terra', 'gpt-5.6-luna', 'gpt-5.5', 'gpt-5.4', 'gpt-5.4-mini', 'gpt-5.3-codex-spark'],
   claudecode: ['claude-fable-5', 'claude-sonnet-5', 'claude-opus-4-8', 'claude-haiku-4-5', 'claude-haiku-4-5-20251001'],
@@ -221,7 +225,7 @@ function PromptEditor({ label, icon: Icon, apiPath, initialContent, canEdit = tr
   )
 }
 
-function SessionPanel({ project, agentName, canConfigure, canRun }: { project: string; agentName: string; canConfigure: boolean; canRun: boolean }) {
+function SessionPanel({ project, agentName, canConfigure, canRun, runBlockedReason }: { project: string; agentName: string; canConfigure: boolean; canRun: boolean; runBlockedReason?: string }) {
   const { t } = useTranslation()
   const fmt = useFormatDateTime()
   const hbPath = `/api/v1/projects/${encodeURIComponent(project)}/agents/${encodeURIComponent(agentName)}/heartbeat`
@@ -279,7 +283,7 @@ function SessionPanel({ project, agentName, canConfigure, canRun }: { project: s
             </button>
           )}
           {canRun && (
-            <button type="button" onClick={() => void doRun()} disabled={running}
+            <button type="button" onClick={() => void doRun()} disabled={running || Boolean(runBlockedReason)} title={runBlockedReason || undefined}
               className={secondaryButtonCls}>
               {running ? t('session.running') : t('session.run')}
             </button>
@@ -617,6 +621,7 @@ export default function ProjectAgentDetailPage() {
                     agentName={agentName}
                     canConfigure={canConfigureThisAgent}
                     canRun={canRunThisAgent}
+                    runBlockedReason={agentModelRequiresModelAccount(ctx.model) && !ctx.provider ? t('agentDetail.modelAccountRequiredBeforeRun') : undefined}
                   />
                   {canConfigureThisAgent && (
                     <AgentChannelPanel

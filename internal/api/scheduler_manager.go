@@ -374,6 +374,19 @@ func (s *Server) handleSchedulerWakeup(w http.ResponseWriter, r *http.Request) {
 		s.jsonErrorCode(w, http.StatusConflict, ErrCodeSchedulerWakeupFailed, fmt.Sprintf("agent %s/%s is already running", project, agent))
 		return
 	}
+	meta, err := s.st.AgentMeta(project, agent)
+	if err != nil {
+		if isNotFoundErr(err) {
+			s.jsonErrorCode(w, http.StatusNotFound, ErrCodeAgentNotFound, "agent not found")
+			return
+		}
+		s.serverError(w, err)
+		return
+	}
+	if readiness := buildRuntimeReadiness(meta); readiness.Blocking {
+		s.jsonErrorCode(w, http.StatusConflict, ErrCodeRuntimeNotReady, runtimeReadinessErrorMessage(readiness))
+		return
+	}
 
 	args := []string{"--dir", s.sched.root, "scheduler", "wakeup", "--project", project, "--agent", agent}
 	cmd := exec.Command(s.sched.binPath, args...)
