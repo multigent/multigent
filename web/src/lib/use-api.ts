@@ -8,6 +8,7 @@ export type ApiState<T> =
 
 type UseApiJsonOptions = {
   silentStatuses?: number[]
+  keepPreviousDataOnReload?: boolean
 }
 
 export function useApiJson<T>(path: string | null, reloadKey = 0, options?: UseApiJsonOptions): ApiState<T> {
@@ -15,6 +16,7 @@ export function useApiJson<T>(path: string | null, reloadKey = 0, options?: UseA
   const prevPath = useRef(path)
   const prevReloadKey = useRef(reloadKey)
   const silentStatuses = options?.silentStatuses
+  const keepPreviousDataOnReload = options?.keepPreviousDataOnReload ?? false
 
   useEffect(() => {
     if (path == null) {
@@ -25,7 +27,7 @@ export function useApiJson<T>(path: string | null, reloadKey = 0, options?: UseA
     const reloadChanged = prevReloadKey.current !== reloadKey
     prevPath.current = path
     prevReloadKey.current = reloadKey
-    if (pathChanged || reloadChanged) {
+    if (pathChanged || (reloadChanged && !keepPreviousDataOnReload)) {
       setState({ status: 'loading' })
     }
     const url = reloadKey ? `${path}${path.includes('?') ? '&' : '?'}_=${reloadKey}` : path
@@ -46,7 +48,7 @@ export function useApiJson<T>(path: string | null, reloadKey = 0, options?: UseA
     return () => {
       cancelled = true
     }
-  }, [path, reloadKey, silentStatuses])
+  }, [path, reloadKey, silentStatuses, keepPreviousDataOnReload])
 
   if (path == null) {
     return { status: 'error', error: new Error('no path') }

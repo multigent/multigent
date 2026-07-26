@@ -70,7 +70,7 @@ export default function ProjectSchedulePage() {
   const path = projectId ? `/api/v1/projects/${encodeURIComponent(projectId)}/schedule` : null
   const [reloadKey, setReloadKey] = useState(0)
   const [tab, setTab] = useState<Tab>('runtime')
-  const state = useApiJson<ScheduleResp>(path, reloadKey)
+  const state = useApiJson<ScheduleResp>(path, reloadKey, { keepPreviousDataOnReload: true })
   const reload = useCallback(() => setReloadKey((k) => k + 1), [])
   const agents = state.status === 'ok' ? state.data.agents : []
   const canManage = projectId ? canAdmin || canManageProject(user, projectId) : false
