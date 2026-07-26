@@ -970,6 +970,7 @@ export function ConversationLog({
   assistant,
   animateLatest = false,
   toolDisplay = 'full',
+  emptyFallback,
 }: {
   content: string
   mode?: 'log' | 'chat'
@@ -977,6 +978,7 @@ export function ConversationLog({
   assistant?: ConversationParticipant
   animateLatest?: boolean
   toolDisplay?: 'full' | 'compact' | 'hidden'
+  emptyFallback?: React.ReactNode
 }) {
   const { t } = useTranslation()
   const items = useMemo(() => parseLog(content), [content])
@@ -992,6 +994,7 @@ export function ConversationLog({
   }, [items, mode, content])
 
   if (visibleItems.length === 0) {
+    if (emptyFallback !== undefined) return <>{emptyFallback}</>
     const hasRawContent = content.trim().length > 0
     return (
       <p className="py-4 text-center text-sm text-neutral-400 dark:text-zinc-500">
@@ -1059,12 +1062,14 @@ export function ConversationLog({
                       return <TypewriterMdBlock key={bi} text={block.text} active={animateItem} />
                     }
                     if (block.type === 'tool_use') {
+                      const summary = toolInputSummary(block.name, block.input)
+                      const shellTool = isShellToolName(block.name)
                       return (
                         <div
                           key={bi}
                           className={cn(
                             'rounded-md border border-amber-200/60 bg-amber-50/50 px-3 py-2 dark:border-amber-800/30 dark:bg-amber-900/10',
-                            toolDisplay === 'compact' && 'inline-flex max-w-full items-center gap-2 px-2.5 py-1.5',
+                            toolDisplay === 'compact' && 'max-w-full px-2.5 py-1.5',
                           )}
                         >
                           <div className="flex items-center gap-1.5">
@@ -1072,7 +1077,17 @@ export function ConversationLog({
                             <span className="font-mono text-xs font-semibold text-amber-700 dark:text-amber-400">
                               {block.name}
                             </span>
+                            {summary && toolDisplay === 'compact' && !shellTool && (
+                              <span className="truncate text-xs text-amber-700/80 dark:text-amber-300/80">
+                                {summary}
+                              </span>
+                            )}
                           </div>
+                          {summary && toolDisplay === 'compact' && shellTool && (
+                            <pre className="mt-2 max-h-32 overflow-auto whitespace-pre-wrap break-words rounded-md border border-amber-200/70 bg-white/80 px-2.5 py-2 font-mono text-[11px] leading-relaxed text-amber-900 dark:border-amber-800/40 dark:bg-zinc-950/60 dark:text-amber-200">
+                              {summary}
+                            </pre>
+                          )}
                           {toolDisplay === 'full' && <ToolInputDisplay input={block.input} />}
                         </div>
                       )
@@ -1187,12 +1202,37 @@ export function ConversationLog({
 function latestAnimatableIndex(items: ConversationItem[]): number {
   for (let i = items.length - 1; i >= 0; i--) {
     const item = items[i]
-    if (item.kind === 'thinking') return i
     if (item.kind === 'result' && item.text.trim()) return i
     if (item.kind === 'assistant' && item.blocks.some((block) => block.type === 'text' && block.text.trim())) return i
-    if (item.kind === 'human') return -1
+    return -1
   }
   return -1
+}
+
+function toolInputSummary(name: string, input: unknown): string {
+  if (input == null) return ''
+  const normalizedName = name.toLowerCase()
+  if (typeof input === 'string') return truncateStr(input, 160)
+  if (typeof input !== 'object') return truncateStr(String(input), 160)
+  const data = input as Record<string, unknown>
+  const command = data.command ?? data.cmd ?? data.script
+  if (typeof command === 'string' && command.trim()) {
+    return truncateStr(command.trim(), normalizedName.includes('bash') || normalizedName.includes('shell') ? 220 : 160)
+  }
+  const path = data.filePath ?? data.path ?? data.relativePath
+  if (typeof path === 'string' && path.trim()) return truncateStr(path.trim(), 160)
+  const query = data.query ?? data.pattern ?? data.url
+  if (typeof query === 'string' && query.trim()) return truncateStr(query.trim(), 160)
+  try {
+    return truncateStr(JSON.stringify(input), 160)
+  } catch {
+    return ''
+  }
+}
+
+function isShellToolName(name: string): boolean {
+  const normalized = name.trim().toLowerCase()
+  return normalized === 'bash' || normalized === 'shell' || normalized.includes('bash') || normalized.includes('shell')
 }
 
 function TypewriterMdBlock({ text, active, className }: { text: string; active: boolean; className?: string }) {

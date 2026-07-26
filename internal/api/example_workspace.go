@@ -9,6 +9,7 @@ import (
 	"strings"
 	"time"
 
+	"github.com/multigent/multigent/internal/avatar"
 	controldb "github.com/multigent/multigent/internal/db"
 	"github.com/multigent/multigent/internal/entity"
 	"github.com/multigent/multigent/internal/scaffold"
@@ -18,10 +19,13 @@ import (
 )
 
 const (
-	exampleWorkspaceName = "Example Workspace"
-	exampleProjectName   = "hello-world-relay"
-	exampleTeamName      = "collaboration-demo"
-	exampleWorkflowID    = "wf-example-hello-world-relay"
+	exampleWorkspaceName  = "Example Workspace"
+	exampleProjectName    = "hello-world-relay"
+	exampleTeamName       = "collaboration-demo"
+	exampleWorkflowID     = "wf-example-hello-world-relay"
+	exampleGreeterAgent   = "Lina"
+	exampleResponderAgent = "Mira"
+	exampleRecorderAgent  = "Nora"
 )
 
 func (s *Server) handleCreateExampleWorkspace(w http.ResponseWriter, r *http.Request) {
@@ -171,14 +175,14 @@ func seedExampleWorkspace(root, workspaceID, username string, spec exampleLocale
 		return fmt.Errorf("save example workflow definition: %w", err)
 	}
 	task := exampleTask(username, spec)
-	if err := ts.AddTask(exampleProjectName, "greeter-agent", task); err != nil {
+	if err := ts.AddTask(exampleProjectName, exampleGreeterAgent, task); err != nil {
 		return fmt.Errorf("add example task: %w", err)
 	}
 	_, _, err := wfStore.StartRun(exampleProjectName, task.ID, def.ID, map[string]entity.WorkflowActorBinding{
-		"greeter":        {Type: "agent", ID: "greeter-agent"},
+		"greeter":        {Type: "agent", ID: exampleGreeterAgent},
 		"greetingReview": {Type: "human", ID: username},
-		"responder":      {Type: "agent", ID: "responder-agent"},
-		"recorder":       {Type: "agent", ID: "recorder-agent"},
+		"responder":      {Type: "agent", ID: exampleResponderAgent},
+		"recorder":       {Type: "agent", ID: exampleRecorderAgent},
 		"finalReview":    {Type: "human", ID: username},
 	})
 	if err != nil {
@@ -333,7 +337,7 @@ Focus on clarity:
 Focus on continuity:
 - Read the previous step output before acting.
 - Preserve the original intent.
-- Add practical next steps and a clean handoff for the recorder.
+- Add practical next steps and a clean handoff for Nora.
 - If anything is ambiguous, make the uncertainty explicit instead of inventing context.`,
 			},
 			"recorder": {
@@ -364,8 +368,8 @@ Before running the demo, configure at least one model account and attach it to t
 
 The Schedule page also contains examples:
 
-- Task-triggered heartbeat for the greeter agent.
-- Task/message-triggered heartbeat for the responder agent.
+- Task-triggered heartbeat for Lina.
+- Task/message-triggered heartbeat for Mira.
 - A weekday queue review cron.
 - A Friday onboarding summary cron.`,
 		WorkflowName:        "New Teammate Onboarding Relay",
@@ -523,8 +527,8 @@ func exampleZHSpec(traditional bool) exampleLocaleSpec {
 
 计划页还内置了几个示例：
 
-- greeter-agent 的“有任务就触发”心跳。
-- responder-agent 的“有任务或消息就触发”心跳。
+- Lina 的“有任务就触发”心跳。
+- Mira 的“有任务或消息就触发”心跳。
 - 工作日每日队列回顾 cron。
 - 周五入门说明总结 cron。`,
 		WorkflowName:        "新成员入门说明接力",
@@ -628,10 +632,10 @@ func exampleFieldTextEN() map[string]string {
 		"approved_greeting_doc_id":          "Approved welcome-note document.",
 		"approved_handoff_note_doc_id":      "Approved handoff document.",
 		"review_comments":                   "Human review comments from the approval step.",
-		"response_doc_id":                   "Doc ID containing the responder contribution.",
-		"next_handoff_doc_id":               "Doc ID containing the handoff for the recorder.",
-		"input_response_doc_id":             "First-steps document from the responder.",
-		"input_next_handoff_doc_id":         "Recorder handoff document.",
+		"response_doc_id":                   "Doc ID containing Mira's contribution.",
+		"next_handoff_doc_id":               "Doc ID containing the handoff for Nora.",
+		"input_response_doc_id":             "First-steps document from Mira.",
+		"input_next_handoff_doc_id":         "Handoff document for Nora.",
 		"collaboration_record_doc_id":       "Doc ID containing the final collaboration record.",
 		"learnings_doc_id":                  "Doc ID containing lessons learned and possible process improvements.",
 		"input_collaboration_record_doc_id": "Final collaboration record document.",
@@ -687,9 +691,9 @@ func exampleRoles(owner string, spec exampleLocaleSpec) []exampleRoleSeed {
 func exampleAgents(owner string) []*entity.AgentMeta {
 	now := time.Now().UTC()
 	return []*entity.AgentMeta{
-		exampleAgent("greeter-agent", "greeter", owner, now),
-		exampleAgent("responder-agent", "responder", owner, now),
-		exampleAgent("recorder-agent", "recorder", owner, now),
+		exampleAgent(exampleGreeterAgent, "greeter", owner, now),
+		exampleAgent(exampleResponderAgent, "responder", owner, now),
+		exampleAgent(exampleRecorderAgent, "recorder", owner, now),
 	}
 }
 
@@ -701,6 +705,7 @@ func exampleAgent(name, role, owner string, now time.Time) *entity.AgentMeta {
 		Role:          role,
 		Model:         entity.ModelClaudeCode,
 		HiredAt:       now,
+		Avatar:        avatar.RandomURL(exampleProjectName, name),
 		Owners:        []string{owner},
 		RuntimeMode:   "cloud",
 		AutonomyLevel: "L1",
@@ -726,9 +731,9 @@ func seedExampleDocs(root, username string, spec exampleLocaleSpec) error {
 
 func seedExampleWakeupPrompts(st store.Store, spec exampleLocaleSpec) error {
 	for agent, prompt := range map[string]string{
-		"greeter-agent":   spec.Schedules.GreeterWakeup,
-		"responder-agent": spec.Schedules.ResponderWakeup,
-		"recorder-agent":  spec.Schedules.RecorderWakeup,
+		exampleGreeterAgent:   spec.Schedules.GreeterWakeup,
+		exampleResponderAgent: spec.Schedules.ResponderWakeup,
+		exampleRecorderAgent:  spec.Schedules.RecorderWakeup,
 	} {
 		wakeupDir := filepath.Join(st.AgentDir(exampleProjectName, agent), ".multigent", "context")
 		if err := os.MkdirAll(wakeupDir, 0o755); err != nil {
@@ -744,7 +749,7 @@ func seedExampleWakeupPrompts(st store.Store, spec exampleLocaleSpec) error {
 func seedExampleSchedules(ts taskstore.Store, spec exampleLocaleSpec) error {
 	const wakeupFile = "@.multigent/context/wakeup.md"
 	heartbeats := map[string]*entity.HeartbeatConfig{
-		"greeter-agent": {
+		exampleGreeterAgent: {
 			Enabled:          true,
 			Interval:         "30m",
 			WakeupPreset:     "require_tasks",
@@ -755,7 +760,7 @@ func seedExampleSchedules(ts taskstore.Store, spec exampleLocaleSpec) error {
 			MaxTasksPerCycle: 1,
 			Jitter:           "2m",
 		},
-		"responder-agent": {
+		exampleResponderAgent: {
 			Enabled:          true,
 			Interval:         "1h",
 			WakeupPreset:     "require_any",
@@ -766,7 +771,7 @@ func seedExampleSchedules(ts taskstore.Store, spec exampleLocaleSpec) error {
 			MaxTasksPerCycle: 2,
 			Jitter:           "3m",
 		},
-		"recorder-agent": {
+		exampleRecorderAgent: {
 			Enabled:          true,
 			Interval:         "2h",
 			WakeupPreset:     "require_any",
@@ -783,7 +788,7 @@ func seedExampleSchedules(ts taskstore.Store, spec exampleLocaleSpec) error {
 			return err
 		}
 	}
-	if err := ts.SaveCrons(exampleProjectName, "greeter-agent", []*entity.Cron{
+	if err := ts.SaveCrons(exampleProjectName, exampleGreeterAgent, []*entity.Cron{
 		{
 			ID:           "example-daily-review",
 			Title:        spec.Schedules.DailyReviewTitle,
@@ -796,7 +801,7 @@ func seedExampleSchedules(ts taskstore.Store, spec exampleLocaleSpec) error {
 	}); err != nil {
 		return err
 	}
-	return ts.SaveCrons(exampleProjectName, "recorder-agent", []*entity.Cron{
+	return ts.SaveCrons(exampleProjectName, exampleRecorderAgent, []*entity.Cron{
 		{
 			ID:           "example-weekly-summary",
 			Title:        spec.Schedules.WeeklySummaryTitle,
@@ -913,7 +918,7 @@ func exampleTask(username string, spec exampleLocaleSpec) *entity.Task {
 		Title:       spec.TaskTitle,
 		Type:        entity.TaskTypeChore,
 		Priority:    2,
-		Assignee:    exampleProjectName + "/greeter-agent",
+		Assignee:    exampleProjectName + "/" + exampleGreeterAgent,
 		CreatedBy:   username,
 		Status:      entity.TaskStatusPending,
 		Description: spec.TaskDesc,

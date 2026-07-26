@@ -780,6 +780,7 @@
     "followLoadingWorkflow": "正在加载流程…",
     "followLoadingOutput": "正在加载输出…",
     "followNoOutput": "当前节点还没有实时输出。",
+    "followHandoff": "正在交接到下一个节点…",
     "noActiveRun": "暂无运行",
     "noWorkflowTitle": "未绑定流程",
     "noWorkflowBody": "这个任务还没有绑定流程，请先使用普通任务详情查看。",
@@ -2152,7 +2153,7 @@
       },
       "agents": {
         "title": "检查三个 Agent",
-        "body": "进入项目成员页，查看 greeter-agent、responder-agent 和 recorder-agent。三个 Agent 会依次完成欢迎说明、上手步骤和最终记录，可以共用同一个模型账号。"
+        "body": "进入项目成员页，查看 Lina、Mira 和 Nora。三个 Agent 会依次完成欢迎说明、上手步骤和最终记录，可以共用同一个模型账号。"
       },
       "workflow": {
         "title": "查看流程白板",

@@ -771,6 +771,7 @@
     "followLoadingWorkflow": "ワークフローを読み込み中…",
     "followLoadingOutput": "出力を読み込み中…",
     "followNoOutput": "このステップのライブ出力はまだありません。",
+    "followHandoff": "次のステップへ引き継ぎ中…",
     "noActiveRun": "実行なし",
     "noWorkflowTitle": "ワークフロー未設定",
     "noWorkflowBody": "このタスクにはまだワークフローが紐づいていません。通常のタスク詳細を使用してください。",
@@ -2115,7 +2116,7 @@
     "steps": {
       "welcome": {
         "title": "Example workspace へようこそ",
-        "body": "この workspace は純粋な Hello World relay です。Agent が開始し、人がレビューし、別の Agent が続け、recorder Agent がまとめます。"
+        "body": "この workspace は、Multigent を初めて見る teammate 向けの onboarding note を作る小さな demo です。Lina が下書きし、人がレビューし、Mira が first steps を追加し、Nora がまとめます。"
       },
       "models": {
         "title": "まずモデルアカウントを設定",
@@ -2127,7 +2128,7 @@
       },
       "agents": {
         "title": "3 つの Agent を確認",
-        "body": "Project members で greeter-agent、responder-agent、recorder-agent を確認します。同じモデルアカウントを共有しても、別々に設定しても構いません。"
+        "body": "Project members で Lina、Mira、Nora を確認します。3 つの Agent は welcome note、first steps、final record を順番に作成し、同じモデルアカウントを共有できます。"
       },
       "workflow": {
         "title": "Workflow graph を確認",

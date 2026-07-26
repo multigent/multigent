@@ -780,6 +780,7 @@
     "followLoadingWorkflow": "正在載入流程…",
     "followLoadingOutput": "正在載入輸出…",
     "followNoOutput": "目前節點還沒有即時輸出。",
+    "followHandoff": "正在交接到下一個節點…",
     "noActiveRun": "暫無執行",
     "noWorkflowTitle": "未綁定流程",
     "noWorkflowBody": "這個任務還沒有綁定流程，請先使用普通任務詳情查看。",
@@ -2126,7 +2127,7 @@
     "steps": {
       "welcome": {
         "title": "歡迎來到範例工作區",
-        "body": "這個工作區包含一個純粹的 Hello World 接力：一個 Agent 發起，人類審核，另一個 Agent 接力，最後由記錄 Agent 總結協作過程。"
+        "body": "這個工作區會演示一個具體小任務：為第一次使用 Multigent 的新成員準備一份入門說明。Lina 起草，人類審核，Mira 補充步驟，最後由 Nora 總結。"
       },
       "models": {
         "title": "先設定模型帳號",
@@ -2134,11 +2135,11 @@
       },
       "team": {
         "title": "查看示範團隊",
-        "body": "collaboration-demo 團隊只定義中性的協作角色，不綁定某個垂直業務流程，方便你先理解協作機制。"
+        "body": "collaboration-demo 團隊準備了三個通用角色：起草歡迎說明、補充上手步驟、整理最終記錄。先用這個小任務理解協作機制。"
       },
       "agents": {
         "title": "檢查三個 Agent",
-        "body": "進入專案成員頁，查看 greeter-agent、responder-agent 和 recorder-agent。三個 Agent 可以共用同一個模型帳號，也可以分別設定。"
+        "body": "進入專案成員頁，查看 Lina、Mira 和 Nora。三個 Agent 會依次完成歡迎說明、上手步驟和最終記錄，可以共用同一個模型帳號。"
       },
       "workflow": {
         "title": "查看流程白板",
@@ -2146,7 +2147,7 @@
       },
       "task": {
         "title": "執行初始任務",
-        "body": "專案裡已經有一條綁定流程的任務。給 Agent 配好模型帳號後，可以手動喚醒第一個 Agent，或讓任務觸發自動執行。"
+        "body": "專案裡已經有一條綁定流程的任務：給新成員準備一份協作入門說明。給 Agent 配好模型帳號後，可以手動喚醒第一個 Agent，或讓任務觸發自動執行。"
       },
       "docs": {
         "title": "查看長期產物",

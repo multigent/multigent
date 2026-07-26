@@ -126,9 +126,9 @@ Short steps:
 2. Open `Settings -> Model Accounts` and configure one usable model account.
 3. Open `Projects -> hello-world-relay -> Members`.
 4. Configure the model account for:
-   - `greeter-agent`
-   - `responder-agent`
-   - `recorder-agent`
+   - `Lina`
+   - `Mira`
+   - `Nora`
 5. Run:
 
 ```bash
@@ -138,7 +138,7 @@ multigent sandbox prepare
 6. Open `Projects -> hello-world-relay -> Tasks`.
 7. Open the seeded onboarding task.
 8. Open `Projects -> hello-world-relay -> Schedule`.
-9. Manually wake the current agent owner, usually `greeter-agent`.
+9. Manually wake the current agent owner, usually `Lina`.
 10. When the task reaches human review, open `Workbench -> Tasks`, approve or send it back.
 11. Continue waking the next agent owner until the relay finishes.
 

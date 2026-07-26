@@ -540,13 +540,26 @@ func (s *Server) handleAgentLiveLog(w http.ResponseWriter, r *http.Request) {
 	if len(data) > maxBytes {
 		content = string(data[len(data)-maxBytes:])
 	}
-	// Check if the log has a "=== exit code:" or "=== finished:" line, meaning execution is done.
-	finished := strings.Contains(content, "=== exit code:") || strings.Contains(content, "=== finished:")
+	finished := liveLogFinished(content)
 	_ = json.NewEncoder(w).Encode(map[string]any{
 		"content":  content,
 		"path":     latest,
 		"finished": finished,
 	})
+}
+
+func liveLogFinished(content string) bool {
+	if strings.Contains(content, "=== exit code:") ||
+		strings.Contains(content, "=== finished:") ||
+		strings.Contains(content, "exec complete") ||
+		strings.Contains(content, `"type":"chat_done"`) ||
+		strings.Contains(content, "agent exited with error") {
+		return true
+	}
+	return strings.Contains(content, "status : done_success") ||
+		strings.Contains(content, "status : done_failed") ||
+		strings.Contains(content, "status  : done_success") ||
+		strings.Contains(content, "status  : done_failed")
 }
 
 func (s *Server) handlePostCronPause(w http.ResponseWriter, r *http.Request) {

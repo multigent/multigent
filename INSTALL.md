@@ -338,7 +338,7 @@ Minimal steps:
 
 1. Open `Settings -> Model Accounts` and add one usable model account.
 2. Open `Projects -> hello-world-relay -> Members`.
-3. Bind that model account to `greeter-agent`, `responder-agent`, and `recorder-agent`.
+3. Bind that model account to `Lina`, `Mira`, and `Nora`.
 4. Prepare Docker sandbox:
 
    ```bash
@@ -347,7 +347,7 @@ Minimal steps:
 
 5. Open `Projects -> hello-world-relay -> Tasks` and inspect the seeded onboarding task.
 6. Open `Projects -> hello-world-relay -> Schedule`.
-7. Manually wake the current agent owner, usually `greeter-agent`.
+7. Manually wake the current agent owner, usually `Lina`.
 8. When the task reaches human review, open `Workbench -> Tasks`, approve it or send it back.
 9. Continue waking the next agent owner until the onboarding note reaches final review.
 

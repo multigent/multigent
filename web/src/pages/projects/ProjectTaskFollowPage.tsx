@@ -9,6 +9,7 @@ import {
   WorkflowRuntimePanel,
   activeWorkflowStepInstance,
   isTerminal,
+  isWorkflowStepOpen,
   startableAgentName,
   statusColor,
   taskIdentityLabel,
@@ -49,8 +50,12 @@ export default function ProjectTaskFollowPage() {
   const [startBusy, setStartBusy] = useState(false)
   const [optimisticStartedAt, setOptimisticStartedAt] = useState<string | null>(null)
   const [handoffStartedAt, setHandoffStartedAt] = useState<string | null>(null)
+  const [showLiveTail, setShowLiveTail] = useState(false)
+  const [stepTransition, setStepTransition] = useState<{ from?: string; to: string; at: number } | null>(null)
   const activeStepRef = useRef<string | null>(null)
   const sidePanelRef = useRef<HTMLElement>(null)
+  const liveSectionRef = useRef<HTMLElement>(null)
+  const liveOutputRef = useRef<HTMLDivElement>(null)
 
   const refresh = useCallback(() => setReloadKey((value) => value + 1), [])
   const pollRefresh = useCallback(() => setPollKey((value) => value + 1), [])
@@ -90,13 +95,12 @@ export default function ProjectTaskFollowPage() {
     () => withRunningActiveStep(rawWorkflowData, displayTask, projectId, optimisticRunStartedAt, Boolean(handoffStartedAt && rawIsAgentStep)),
     [displayTask, handoffStartedAt, optimisticRunStartedAt, projectId, rawIsAgentStep, rawWorkflowData],
   )
-  const activeStep = workflowData
-    ? workflowData.definition.steps.find((step) => step.id === workflowData.run.activeStepId)
-    : undefined
   const activeInstance = workflowData ? activeWorkflowStepInstance(workflowData) : undefined
+  const activeStep = workflowData
+    ? workflowData.definition.steps.find((step) => step.id === (activeInstance?.stepId || workflowData.run.activeStepId))
+    : undefined
   const workflowRecords = workflowData ? workflowHistoryRecords(workflowData) : []
   const isCurrentAgentStep = activeInstance?.actorType === 'agent' || activeStep?.type === 'agent_task'
-  const shouldPollActiveRun = Boolean(isCurrentAgentStep && displayTask?.status === 'in_progress')
   const currentTaskAgent = displayTask ? startableAgentName(displayTask) : null
   const currentStepAgent = isCurrentAgentStep && activeInstance?.actorType === 'agent'
     ? agentNameFromActor(projectId, activeInstance.actorId)
@@ -112,6 +116,9 @@ export default function ProjectTaskFollowPage() {
     () => isCurrentAgentStep ? findActiveRun(runs, taskId, projectId, activeInstance?.actorId, activeInstance?.startedAt) : null,
     [activeInstance?.actorId, activeInstance?.startedAt, isCurrentAgentStep, projectId, runs, taskId],
   )
+  const activeRunRunning = Boolean(activeRun && isRunningRunStatus(activeRun.status))
+  const displayStatus = activeRunRunning ? 'in_progress' : (displayTask?.status || '')
+  const shouldPollActiveRun = Boolean(isCurrentAgentStep && (displayTask?.status === 'in_progress' || activeRunRunning))
   const liveLogState = useApiJson<LiveLogData>(
     shouldPollActiveRun && startAgent ? `/api/v1/projects/${encodeURIComponent(projectId)}/agents/${encodeURIComponent(startAgent)}/live-log` : null,
     dataReloadKey,
@@ -123,6 +130,7 @@ export default function ProjectTaskFollowPage() {
     { keepPreviousDataOnReload: true },
   )
   const liveLogContent = liveLogState.status === 'ok' ? liveLogState.data.content : ''
+  const liveLogFinished = liveLogState.status === 'ok' && (liveLogState.data.finished || isLiveLogTerminal(liveLogContent))
 
   const actorLabels = useMemo(() => {
     const labels = new Map<string, string>()
@@ -144,15 +152,36 @@ export default function ProjectTaskFollowPage() {
     if (displayTask?.assignee) labels.set(displayTask.assignee, taskIdentityLabel(displayTask.assignee, displayTask.assigneeLabel))
     return labels
   }, [displayTask?.assignee, displayTask?.assigneeLabel, membersState, projectId, usersState])
+  const agentParticipants = useMemo(() => {
+    const participants = new Map<string, { name: string; avatar?: string }>()
+    if (membersState.status !== 'ok') return participants
+    for (const member of membersState.data ?? []) {
+      if (!member.name || member.model === 'human') continue
+      const participant = { name: member.name, avatar: member.avatar }
+      participants.set(member.name, participant)
+      participants.set(`${projectId}/${member.name}`, participant)
+    }
+    return participants
+  }, [membersState, projectId])
+  const activeAgentParticipant = useMemo(() => {
+    const name = startAgent || activeRun?.agent || t('tasks.noActiveRun')
+    const participant = agentParticipants.get(name) || agentParticipants.get(agentNameFromActor(projectId, name) || '')
+    return participant || { name: agentNameFromActor(projectId, name) || name }
+  }, [activeRun?.agent, agentParticipants, projectId, startAgent, t])
+  const liveOutputRunning = Boolean(
+    shouldPollActiveRun &&
+    displayStatus === 'in_progress' &&
+    (!liveLogState || liveLogState.status !== 'ok' || !liveLogFinished),
+  )
 
   const canStart = Boolean(
     displayTask &&
     startAgent &&
-    displayTask.status !== 'in_progress' &&
+    displayStatus !== 'in_progress' &&
     !isTerminal(displayTask.status) &&
     (canAdmin || canOperateAgent(user, projectId, startAgent)),
   )
-  const canReview = activeStep?.type === 'human_review'
+  const canReview = Boolean(activeStep?.type === 'human_review' && isWorkflowStepOpen(activeInstance?.status) && !isTerminal(displayTask?.status || ''))
 
   useEffect(() => {
     if (!shouldPollActiveRun) return
@@ -172,10 +201,17 @@ export default function ProjectTaskFollowPage() {
     const previousStepID = activeStepRef.current
     activeStepRef.current = activeStepID
     if (!previousStepID || previousStepID === activeStepID) return
-    if (rawIsAgentStep && rawActiveInstance?.status === 'running' && task?.status !== 'in_progress' && !isTerminal(task?.status || '')) {
+    setStepTransition({ from: previousStepID, to: activeStepID, at: Date.now() })
+    if (rawIsAgentStep && rawActiveInstance?.status === 'running' && task && !isTerminal(task.status)) {
       setHandoffStartedAt(new Date().toISOString())
     }
-  }, [rawActiveInstance?.status, rawIsAgentStep, rawWorkflowData?.run.activeStepId, task?.status])
+  }, [rawActiveInstance?.status, rawIsAgentStep, rawWorkflowData?.run.activeStepId, task])
+
+  useEffect(() => {
+    if (!stepTransition) return
+    const timer = window.setTimeout(() => setStepTransition(null), 1200)
+    return () => window.clearTimeout(timer)
+  }, [stepTransition])
 
   useEffect(() => {
     if (!optimisticStartedAt && !handoffStartedAt) return
@@ -201,9 +237,36 @@ export default function ProjectTaskFollowPage() {
   }, [activeStep?.id, activeInstance?.id])
 
   useEffect(() => {
-    if (!shouldPollActiveRun || !liveLogContent || !sidePanelRef.current) return
-    sidePanelRef.current.scrollTop = sidePanelRef.current.scrollHeight
-  }, [liveLogContent, shouldPollActiveRun])
+    if (!liveOutputRunning) {
+      setShowLiveTail(false)
+      return
+    }
+    if (!liveLogContent.trim()) {
+      setShowLiveTail(true)
+      return
+    }
+    setShowLiveTail(false)
+    const delay = Math.min(2200, Math.max(900, liveLogContent.length * 8))
+    const timer = window.setTimeout(() => setShowLiveTail(true), delay)
+    return () => window.clearTimeout(timer)
+  }, [liveLogContent, liveOutputRunning])
+
+  useEffect(() => {
+    if (!shouldPollActiveRun || !liveOutputRef.current) return
+    const outputEl = liveOutputRef.current
+    const panelEl = sidePanelRef.current
+    const scroll = () => {
+      if (panelEl) panelEl.scrollTop = panelEl.scrollHeight
+      outputEl.scrollTop = outputEl.scrollHeight
+    }
+    scroll()
+    const raf = window.requestAnimationFrame(scroll)
+    const timer = window.setTimeout(scroll, 80)
+    return () => {
+      window.cancelAnimationFrame(raf)
+      window.clearTimeout(timer)
+    }
+  }, [activeRun?.logPath, activeRun?.sessionId, activeStep?.id, liveLogContent, liveOutputRunning, shouldPollActiveRun])
 
   async function startCurrentAgent() {
     if (!displayTask || !startAgent || !canStart) return
@@ -272,9 +335,9 @@ export default function ProjectTaskFollowPage() {
         </div>
         <div className="flex shrink-0 items-center gap-2">
           {displayTask && (
-            <span className={cn('rounded-full px-2.5 py-1 text-xs font-medium', statusColor[displayTask.status] ?? statusColor.pending)}>
-              {displayTask.status === 'in_progress' && <span className="mr-1.5 inline-block size-1.5 animate-pulse rounded-full bg-current align-middle" />}
-              {t(`tasks.status.${displayTask.status}`, { defaultValue: displayTask.status })}
+            <span className={cn('rounded-full px-2.5 py-1 text-xs font-medium', statusColor[displayStatus] ?? statusColor.pending)}>
+              {displayStatus === 'in_progress' && <span className="mr-1.5 inline-block size-1.5 animate-pulse rounded-full bg-current align-middle" />}
+              {t(`tasks.status.${displayStatus}`, { defaultValue: displayStatus })}
             </span>
           )}
           <button
@@ -307,6 +370,14 @@ export default function ProjectTaskFollowPage() {
         </section>
 
         <aside ref={sidePanelRef} className="min-w-0 overflow-y-auto bg-white dark:bg-zinc-950">
+          {stepTransition && (
+            <div className="sticky top-0 z-10 border-b border-sky-100 bg-sky-50/95 px-4 py-2 text-xs font-medium text-sky-700 shadow-sm backdrop-blur-sm dark:border-sky-900/50 dark:bg-sky-950/80 dark:text-sky-300">
+              <div className="flex items-center gap-2">
+                <span className="size-1.5 rounded-full bg-sky-500" />
+                <span>{t('tasks.followHandoff', { defaultValue: 'Moving to the next step…' })}</span>
+              </div>
+            </div>
+          )}
           <div className="border-b border-neutral-200/80 px-4 py-3 dark:border-zinc-800">
             <p className="text-xs font-semibold uppercase tracking-wider text-neutral-400 dark:text-zinc-500">{t('tasks.followCurrent')}</p>
             <h2 className="mt-1 text-base font-semibold text-neutral-900 dark:text-zinc-100">{activeStep?.title || t('workflows.detail.notSpecified')}</h2>
@@ -320,10 +391,10 @@ export default function ProjectTaskFollowPage() {
                 <button
                   type="button"
                   onClick={() => void startCurrentAgent()}
-                  disabled={!canStart || startBusy || displayTask?.status === 'in_progress'}
+                  disabled={!canStart || startBusy || displayStatus === 'in_progress'}
                   className="rounded-lg border border-sky-600 bg-white px-3 py-2 text-sm font-medium text-sky-700 hover:bg-sky-50 disabled:cursor-not-allowed disabled:opacity-40 dark:border-sky-500 dark:bg-zinc-900 dark:text-sky-400 dark:hover:bg-zinc-800"
                 >
-                  <span className="inline-flex items-center gap-1.5"><Play className={cn('size-3.5', (startBusy || displayTask?.status === 'in_progress') && 'animate-pulse')} />{displayTask?.status === 'in_progress' ? t('tasks.status.in_progress') : startBusy ? t('tasks.starting') : t('tasks.startCurrentAgent')}</span>
+                  <span className="inline-flex items-center gap-1.5"><Play className={cn('size-3.5', (startBusy || displayStatus === 'in_progress') && 'animate-pulse')} />{displayStatus === 'in_progress' ? t('tasks.status.in_progress') : startBusy ? t('tasks.starting') : t('tasks.startCurrentAgent')}</span>
                 </button>
                 {startAgent && <span className="font-mono text-xs text-neutral-400 dark:text-zinc-500">{startAgent}</span>}
               </div>
@@ -345,6 +416,7 @@ export default function ProjectTaskFollowPage() {
               reviewComments={reviewComments}
               reviewBusy={reviewBusy}
               reviewErr={reviewErr}
+              docTitles={workflowData.docTitles}
               onChangeOutput={(name, value) => {
                 setReviewOutputs((current) => ({ ...current, [name]: value }))
                 if (name === 'comments') setReviewComments(value)
@@ -355,7 +427,7 @@ export default function ProjectTaskFollowPage() {
           )}
 
           {isCurrentAgentStep && (
-            <section className="border-t border-neutral-200/80 px-4 py-4 dark:border-zinc-800">
+            <section ref={liveSectionRef} className="border-t border-neutral-200/80 px-4 py-4 dark:border-zinc-800">
               <div className="mb-3 flex items-center justify-between gap-2">
                 <div>
                   <p className="text-xs font-semibold uppercase tracking-wider text-neutral-400 dark:text-zinc-500">{t('tasks.followLiveOutput')}</p>
@@ -363,19 +435,27 @@ export default function ProjectTaskFollowPage() {
                 </div>
                 {activeRun?.sessionId && <span className="font-mono text-[11px] text-neutral-400 dark:text-zinc-500">{activeRun.sessionId.slice(0, 8)}…</span>}
               </div>
-              <div className="min-h-72">
-                {shouldPollActiveRun && liveLogState.status === 'ok' && liveLogContent ? (
-                  <ConversationLog
-                    content={liveLogContent}
-                    mode="chat"
-                    assistant={{ name: startAgent || activeRun?.agent || t('tasks.noActiveRun') }}
-                    animateLatest
-                    toolDisplay="compact"
-                  />
+              <div ref={liveOutputRef} className="max-h-[calc(100dvh-25rem)] min-h-72 overflow-y-auto overscroll-contain pr-1 transition-opacity duration-300">
+                {shouldPollActiveRun && liveLogState.status === 'ok' ? (
+                  <div className="pb-16">
+                    {liveLogContent ? (
+                      <ConversationLog
+                        content={liveLogContent}
+                        mode="chat"
+                        assistant={activeAgentParticipant}
+                        animateLatest
+                        toolDisplay="compact"
+                        emptyFallback={null}
+                      />
+                    ) : null}
+                    {showLiveTail && <LiveOutputTail participant={activeAgentParticipant} />}
+                  </div>
                 ) : shouldPollActiveRun && liveLogState.status === 'loading' ? (
                   <CenteredLoading label={t('tasks.followLoadingOutput')} compact />
                 ) : activeRun?.logPath && logState.status === 'ok' ? (
-                  <ConversationLog content={logState.data.content} mode="chat" assistant={{ name: activeRun.agent }} toolDisplay="compact" />
+                  <div className="pb-16">
+                    <ConversationLog content={logState.data.content} mode="chat" assistant={activeAgentParticipant} toolDisplay="compact" />
+                  </div>
                 ) : activeRun?.logPath && logState.status === 'loading' ? (
                   <CenteredLoading label={t('tasks.followLoadingOutput')} compact />
                 ) : (
@@ -399,6 +479,26 @@ function CenteredLoading({ label, compact = false }: { label: string; compact?: 
   )
 }
 
+function LiveOutputTail({ participant }: { participant: { name: string; avatar?: string } }) {
+  const initial = [...(participant.name || 'A').trim()][0]?.toUpperCase() || 'A'
+  return (
+    <div className="mt-4 flex items-start gap-2.5 pl-0.5" aria-label="running">
+      <div className="flex size-6 shrink-0 items-center justify-center overflow-hidden rounded-full bg-neutral-100 text-[11px] font-semibold text-sky-700 dark:bg-zinc-800 dark:text-sky-400">
+        {participant.avatar ? <img src={participant.avatar} alt="" className="size-full object-cover" /> : initial}
+      </div>
+      <div className="min-w-0">
+        <p className="mb-1 text-xs font-medium text-sky-700 dark:text-sky-400">{participant.name}</p>
+        <div className="w-40 rounded-lg bg-neutral-50 px-3.5 py-3 dark:bg-zinc-900/70">
+          <div className="space-y-2">
+            <span className="block h-2 w-28 animate-pulse rounded-full bg-neutral-200/80 dark:bg-zinc-700/70" />
+            <span className="block h-2 w-16 animate-pulse rounded-full bg-sky-200/80 dark:bg-sky-800/60" />
+          </div>
+        </div>
+      </div>
+    </div>
+  )
+}
+
 function findActiveRun(runs: RunRow[], taskID: string, projectID: string, actorID?: string, minStartedAt?: string): RunRow | null {
   const actorAgent = agentNameFromActor(projectID, actorID)
   const preferredAgent = actorAgent
@@ -411,6 +511,23 @@ function findActiveRun(runs: RunRow[], taskID: string, projectID: string, actorI
     .sort((a, b) => Date.parse(b.startedAt || '') - Date.parse(a.startedAt || ''))
   if (candidates.length > 0) return candidates[0]
   return null
+}
+
+function isRunningRunStatus(status?: string): boolean {
+  const normalized = String(status || '').trim().toLowerCase()
+  return normalized === 'running' || normalized === 'in_progress'
+}
+
+function isLiveLogTerminal(content: string): boolean {
+  return content.includes('=== exit code:') ||
+    content.includes('=== finished:') ||
+    content.includes('exec complete') ||
+    content.includes('"type":"chat_done"') ||
+    content.includes('agent exited with error') ||
+    content.includes('status : done_success') ||
+    content.includes('status : done_failed') ||
+    content.includes('status  : done_success') ||
+    content.includes('status  : done_failed')
 }
 
 function withRunningActiveStep(

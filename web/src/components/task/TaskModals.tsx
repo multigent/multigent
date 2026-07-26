@@ -1,4 +1,4 @@
-import { useCallback, useEffect, useMemo, useState, type ReactNode } from 'react'
+import { createContext, useCallback, useContext, useEffect, useMemo, useState, type ReactNode } from 'react'
 import { Link } from 'react-router-dom'
 import { useTranslation } from 'react-i18next'
 import ReactMarkdown from 'react-markdown'
@@ -52,11 +52,12 @@ export type RunRow = {
   sessionId?: string
 }
 
-export type TaskWorkflowData = { definition: WorkflowDefinition; run: WorkflowRun; steps: WorkflowStepInstance[]; history?: WorkflowStepEvent[] }
+export type TaskWorkflowData = { definition: WorkflowDefinition; run: WorkflowRun; steps: WorkflowStepInstance[]; history?: WorkflowStepEvent[]; docTitles?: Record<string, string> }
 type SafeUser = { username: string; displayName?: string; email?: string }
 type ProjectMember = { name: string; model?: string; avatar?: string }
 export type WorkflowRecord = WorkflowStepEvent | WorkflowStepInstance
 const silentNotFound = [404]
+const WorkflowDocTitleContext = createContext<Map<string, string>>(new Map())
 
 // Restore real line breaks for descriptions whose upstream author stored literal
 // "\n" / "\r\n" / "\t" sequences (typically agent-generated text that survived a
@@ -87,6 +88,11 @@ export const priorityLabel: Record<number, { text: string; cls: string }> = {
 
 export function isTerminal(s: string) {
   return s === 'done_success' || s === 'done_failed' || s === 'cancelled'
+}
+
+export function isWorkflowStepOpen(status?: string) {
+  const normalized = String(status || '').trim()
+  return normalized === '' || normalized === 'pending' || normalized === 'running' || normalized === 'in_progress'
 }
 
 export function taskIdentityLabel(value?: string, label?: string) {
@@ -298,16 +304,16 @@ export function TaskDetailModal({ task, onClose, onEdit, onMutated, canEdit = tr
     labels.set(current, taskIdentityLabel(current, task.assigneeLabel))
     return Array.from(labels.entries()).map(([value, label]) => ({ value, label }))
   }, [actorLabels, membersState, task.agent, task.assignee, task.assigneeLabel, task.project])
-  const activeWorkflowStep = workflowState.status === 'ok'
-    ? workflowState.data.definition.steps.find((step) => step.id === workflowState.data.run.activeStepId)
-    : undefined
   const activeWorkflowInst = workflowState.status === 'ok'
     ? activeWorkflowStepInstance(workflowState.data)
+    : undefined
+  const activeWorkflowStep = workflowState.status === 'ok'
+    ? workflowState.data.definition.steps.find((step) => step.id === (activeWorkflowInst?.stepId || workflowState.data.run.activeStepId))
     : undefined
   const workflowRecords = workflowState.status === 'ok'
     ? workflowHistoryRecords(workflowState.data)
     : []
-  const canReviewWorkflow = activeWorkflowStep?.type === 'human_review'
+  const canReviewWorkflow = Boolean(activeWorkflowStep?.type === 'human_review' && isWorkflowStepOpen(activeWorkflowInst?.status) && !isTerminal(task.status))
   const startAgentName = startableAgentName(task)
   const canStartAgent = Boolean(startAgentName && task.status === 'pending')
 
@@ -561,6 +567,7 @@ export function TaskDetailModal({ task, onClose, onEdit, onMutated, canEdit = tr
                   taskID={task.id}
                   actorLabels={actorLabels}
                   canReview={canReviewWorkflow}
+                  docTitles={workflowState.data.docTitles}
                   reviewOutputs={reviewOutputs}
                   reviewComments={reviewComments}
                   reviewBusy={reviewBusy}
@@ -641,7 +648,11 @@ export function workflowHistoryRecords(data: TaskWorkflowData): WorkflowRecord[]
 
 export function activeWorkflowStepInstance(data: TaskWorkflowData): WorkflowStepInstance | undefined {
   const activeStepID = data.run.activeStepId
-  if (!activeStepID) return undefined
+  if (!activeStepID) {
+    return data.steps
+      .filter((item) => workflowRecordHasPayload(item))
+      .sort((a, b) => workflowRecordTimestamp(b) - workflowRecordTimestamp(a))[0]
+  }
   const candidates = data.steps
     .filter((item) => item.stepId === activeStepID)
     .sort((a, b) => workflowRecordTimestamp(b) - workflowRecordTimestamp(a))
@@ -654,11 +665,6 @@ export function startableAgentName(task: TaskRow): string | null {
   if (!assignee.startsWith(prefix)) return null
   const agent = assignee.slice(prefix.length).trim()
   return agent || null
-}
-
-function isWorkflowStepOpen(status?: string) {
-  const normalized = String(status || '').trim()
-  return normalized === '' || normalized === 'pending' || normalized === 'running' || normalized === 'in_progress'
 }
 
 function workflowRecordHasPayload(record: WorkflowRecord) {
@@ -782,6 +788,7 @@ export function WorkflowRuntimePanel({
   onChangeOutput,
   onChangeComments,
   onSubmitReview,
+  docTitles,
 }: {
   step?: WorkflowStep
   instance?: WorkflowStepInstance
@@ -799,8 +806,16 @@ export function WorkflowRuntimePanel({
   onChangeOutput: (name: string, value: string) => void
   onChangeComments: (value: string) => void
   onSubmitReview: (decision?: string) => void
+  docTitles?: Record<string, string>
 }) {
   const { t } = useTranslation()
+  const docTitleMap = useMemo(() => {
+    const map = new Map<string, string>()
+    for (const [id, title] of Object.entries(docTitles ?? {})) {
+      if (id.trim() && title.trim()) map.set(id, title.trim())
+    }
+    return map
+  }, [docTitles])
   const parsedOutputValues = parseWorkflowArtifact(instance?.outputArtifact || instance?.summary || '')
   const parsedInputValues = parseWorkflowArtifact(instance?.inputArtifact || '')
   const outputValues = hasWorkflowValues(instance?.outputValues) ? instance!.outputValues! : parsedOutputValues
@@ -826,6 +841,7 @@ export function WorkflowRuntimePanel({
   )
 
   return (
+    <WorkflowDocTitleContext.Provider value={docTitleMap}>
     <div className="flex min-h-0 flex-1 flex-col">
       {!hideHeader && (
         <div className="shrink-0 border-b border-neutral-100 px-4 py-3 dark:border-zinc-800">
@@ -940,6 +956,7 @@ export function WorkflowRuntimePanel({
         )}
       </div>
     </div>
+    </WorkflowDocTitleContext.Provider>
   )
 }
 
@@ -1280,15 +1297,19 @@ function splitURLTrailingPunctuation(raw: string) {
 }
 
 function DocIDLink({ docID }: { docID: string }) {
+  const docTitles = useContext(WorkflowDocTitleContext)
+  const title = docTitles.get(docID)
+  const label = title || docID
   return (
     <a
       href={`/docs/${encodeURIComponent(docID)}`}
       target="_blank"
       rel="noreferrer"
       className="font-medium text-sky-700 underline decoration-sky-300 underline-offset-2 hover:text-sky-800 dark:text-sky-400 dark:decoration-sky-700 dark:hover:text-sky-300"
+      title={title ? docID : undefined}
       onClick={(e) => e.stopPropagation()}
     >
-      {docID}
+      {label}
     </a>
   )
 }

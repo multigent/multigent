@@ -80,9 +80,9 @@ hello-world-relay
 
 依次点开三个 Agent：
 
-- `greeter-agent`
-- `responder-agent`
-- `recorder-agent`
+- `Lina`
+- `Mira`
+- `Nora`
 
 在 Agent 详情页的“模型与凭证”里选择刚刚配置的模型账号。
 
@@ -136,13 +136,13 @@ multigent sandbox prepare
 项目 -> hello-world-relay -> Schedule
 ```
 
-找到 `greeter-agent`，点击：
+找到 `Lina`，点击：
 
 ```text
 手动唤醒
 ```
 
-`greeter-agent` 会读取当前流程节点，创建第一版欢迎说明和交接文档，然后提交结构化输出。
+`Lina` 会读取当前流程节点，创建第一版欢迎说明和交接文档，然后提交结构化输出。
 
 执行成功后，任务不会直接完成。它会根据流程连线进入下一个节点。
 如果下一个节点是人工审核，你需要去工作台处理。
@@ -173,7 +173,7 @@ multigent sandbox prepare
 审核通过后，任务会流转到下一个 Agent：
 
 ```text
-responder-agent
+Mira
 ```
 
 再次手动唤醒当前负责人，或者等待它的任务触发心跳。
@@ -181,7 +181,7 @@ responder-agent
 后续流程会继续流转到：
 
 ```text
-recorder-agent -> 最终确认
+Nora -> 最终确认
 ```
 
 ## 8. 看运行结果

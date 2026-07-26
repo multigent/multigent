@@ -780,6 +780,7 @@
     "followLoadingWorkflow": "Loading workflow…",
     "followLoadingOutput": "Loading output…",
     "followNoOutput": "No live output for this step yet.",
+    "followHandoff": "Moving to the next step…",
     "noActiveRun": "No active run",
     "noWorkflowTitle": "No workflow attached",
     "noWorkflowBody": "This task is not bound to a workflow yet. Use the normal task detail view instead.",
@@ -2140,7 +2141,7 @@
     "steps": {
       "welcome": {
         "title": "Welcome to the example workspace",
-        "body": "This workspace demonstrates a concrete small task: prepare an onboarding note for a teammate who is seeing Multigent for the first time. One agent drafts, a human reviews, another agent adds first steps, and a recorder agent summarizes."
+        "body": "This workspace demonstrates a concrete small task: prepare an onboarding note for a teammate who is seeing Multigent for the first time. Lina drafts, a human reviews, Mira adds first steps, and Nora summarizes."
       },
       "models": {
         "title": "Configure a model account first",
@@ -2152,7 +2153,7 @@
       },
       "agents": {
         "title": "Check the three agents",
-        "body": "Open the project members page to review greeter-agent, responder-agent, and recorder-agent. They will produce the welcome note, first steps, and final record in sequence, and can share one model account."
+        "body": "Open the project members page to review Lina, Mira, and Nora. They will produce the welcome note, first steps, and final record in sequence, and can share one model account."
       },
       "workflow": {
         "title": "Review the workflow graph",

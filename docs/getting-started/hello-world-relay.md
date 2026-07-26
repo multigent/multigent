@@ -76,9 +76,9 @@ Projects -> hello-world-relay -> Members
 
 Configure the same model account for:
 
-- `greeter-agent`
-- `responder-agent`
-- `recorder-agent`
+- `Lina`
+- `Mira`
+- `Nora`
 
 ## 3. Prepare Docker Sandbox
 
@@ -121,7 +121,7 @@ Open:
 Projects -> hello-world-relay -> Schedule
 ```
 
-Find `greeter-agent` and click manual wakeup.
+Find `Lina` and click manual wakeup.
 
 The agent reads the active workflow step, creates the first welcome note and handoff document, and submits structured outputs.
 
@@ -146,12 +146,12 @@ to the upstream agent step and carries your comments as the next input.
 
 ## 7. Continue the relay
 
-After approval, the task moves to `responder-agent`. Wake the current owner manually or wait for task-triggered heartbeat.
+After approval, the task moves to `Mira`. Wake the current owner manually or wait for task-triggered heartbeat.
 
 The workflow then continues to:
 
 ```text
-recorder-agent -> final review
+Nora -> final review
 ```
 
 ## 8. Inspect results

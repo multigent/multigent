@@ -1,5 +1,19 @@
 # Changelog
 
+## [v0.1.15] - 2026-07-26
+
+### Changed
+
+- Example Workspace now uses friendlier demo agent names: `Lina`, `Mira`, and `Nora`.
+- Product tour, install guide, built-in setup assistant skill, and getting-started docs now refer to the updated demo agents.
+- Task follow view now shows cleaner live output handoff behavior between workflow steps.
+
+### Fixed
+
+- Task follow view no longer leaves the "Moving to the next step" handoff banner stuck after the workflow has already advanced.
+- Task follow view better preserves the latest completed workflow step when opening a completed task.
+- Knowledge-base doc IDs in workflow inputs and outputs now render as document titles when available.
+
 ## [v0.1.14] - 2026-07-26
 
 ### Fixed

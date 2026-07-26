@@ -9,6 +9,7 @@ import (
 	"time"
 
 	"github.com/multigent/multigent/internal/entity"
+	"github.com/multigent/multigent/internal/store"
 	workflowstore "github.com/multigent/multigent/internal/workflow"
 )
 
@@ -27,6 +28,7 @@ type taskWorkflowResponse struct {
 	Run        entity.WorkflowRun            `json:"run"`
 	Steps      []entity.WorkflowStepInstance `json:"steps"`
 	History    []entity.WorkflowStepEvent    `json:"history,omitempty"`
+	DocTitles  map[string]string             `json:"docTitles,omitempty"`
 }
 
 type workflowReviewBody struct {
@@ -275,7 +277,25 @@ func (s *Server) handleGetTaskWorkflow(w http.ResponseWriter, r *http.Request) {
 		s.serverError(w, err)
 		return
 	}
-	_ = json.NewEncoder(w).Encode(taskWorkflowResponse{Definition: def, Run: run, Steps: steps, History: history})
+	_ = json.NewEncoder(w).Encode(taskWorkflowResponse{Definition: def, Run: run, Steps: steps, History: history, DocTitles: s.workflowDocTitles()})
+}
+
+func (s *Server) workflowDocTitles() map[string]string {
+	docs, err := store.NewDocsStore(s.root).List()
+	if err != nil || len(docs) == 0 {
+		return nil
+	}
+	out := make(map[string]string, len(docs))
+	for _, doc := range docs {
+		if doc == nil || strings.TrimSpace(doc.ID) == "" || strings.TrimSpace(doc.Title) == "" {
+			continue
+		}
+		out[doc.ID] = strings.TrimSpace(doc.Title)
+	}
+	if len(out) == 0 {
+		return nil
+	}
+	return out
 }
 
 func (s *Server) handlePostTaskWorkflowReview(w http.ResponseWriter, r *http.Request) {
