@@ -28,6 +28,8 @@ type ProjectMember = { name: string; model?: string; avatar?: string }
 type LogData = { content: string; truncated: boolean }
 
 const silentNotFound = [404]
+const silentForbidden = [403]
+const staticSilentForbiddenOptions = { silentStatuses: silentForbidden }
 const FOLLOW_POLL_MS = 3500
 
 export default function ProjectTaskFollowPage() {
@@ -60,11 +62,11 @@ export default function ProjectTaskFollowPage() {
     reloadKey,
     { keepPreviousDataOnReload: true },
   )
-  const usersState = useApiJson<SafeUser[]>('/api/v1/users', 0, { silentStatuses: [403] })
+  const usersState = useApiJson<SafeUser[]>('/api/v1/users', 0, staticSilentForbiddenOptions)
   const membersState = useApiJson<ProjectMember[]>(
     projectId ? `/api/v1/projects/${encodeURIComponent(projectId)}/agents` : null,
     0,
-    { silentStatuses: [403] },
+    staticSilentForbiddenOptions,
   )
 
   const task = tasksState.status === 'ok' ? (tasksState.data ?? []).find((item) => item.id === taskId) : undefined
