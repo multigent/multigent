@@ -130,6 +130,19 @@ Workspace 角色、项目成员、任务可见性、用户邀请、智能体权�
 
 Agent 可以根据你的系统选择合适的安装方式，检查 Docker，启动服务，并协助你配置第一个 workspace。
 
+如果你已经安装好，建议先跑内置的新手示例：
+
+[跑通 Hello World 协作接力](docs/getting-started/hello-world-relay.zh-CN.md)
+
+最短路径：
+
+1. 进入 `Example Workspace`。
+2. 在 `设置 -> 模型账号` 添加一个可用模型账号。
+3. 到 `项目 -> hello-world-relay -> Members` 给三个示例 Agent 绑定模型账号。
+4. 运行 `multigent sandbox prepare`。
+5. 到 `项目 -> hello-world-relay -> Schedule` 手动唤醒当前负责人。
+6. 流程到人工审核时，到 `工作台 -> Tasks` 通过或打回。
+
 ### 手动安装
 
 macOS / Linux：

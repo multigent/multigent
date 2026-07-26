@@ -6,6 +6,7 @@
 
 ## 快速开始
 
+- [跑通 Hello World 协作接力](getting-started/hello-world-relay.zh-CN.md)
 - [命令参考](getting-started/commands.md)
 - [配置与日志](getting-started/configuration-and-logging.zh-CN.md)
 - [HTTP Agent Runtime](getting-started/http-agent.md)

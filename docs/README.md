@@ -6,6 +6,7 @@ Public documentation for installing, configuring, and operating Multigent.
 
 ## Getting Started
 
+- [Run the Hello World Relay](getting-started/hello-world-relay.md)
 - [Commands](getting-started/commands.md)
 - [Configuration and logging](getting-started/configuration-and-logging.md)
 - [HTTP agent runtime](getting-started/http-agent.md)

@@ -29,6 +29,39 @@ I will install Multigent, verify Docker, start the web console, and help you cre
 I will not configure model keys, external tools, or agents until you confirm the next step.
 ```
 
+### Recommended Agent Skill
+
+If the user wants you to do more than installation, install or read the built-in
+Multigent admin skill first:
+
+```text
+multigent-admin-ops
+```
+
+This skill teaches a local coding agent how to use the `multigent` CLI to create
+teams, roles, projects, agents, workflows, task templates, tasks, docs, and
+schedules. It is intended for prompts such as:
+
+```text
+Please use the multigent-admin-ops skill to help me model our company workflow
+in Multigent. Create the teams, roles, project, workflow JSON, task template,
+and one test task. Explain the plan before making changes.
+```
+
+After Multigent is installed, the canonical copy is available in the installed
+workspace skills as:
+
+```text
+skills/multigent-admin-ops/SKILL.md
+```
+
+If the skill has not been synced into the current workspace yet, use the source
+copy from the repository:
+
+```text
+internal/builtins/files/skills/multigent-admin-ops/SKILL.md
+```
+
 ## Requirements
 
 - Docker, for sandboxed agent execution.
@@ -278,6 +311,43 @@ export MULTIGENT_UPDATE_CHANNEL=pre-release  # release | pre-release | beta
 7. Create or install a workflow.
 8. Create a task and bind it to the workflow.
 9. Trigger the agent and inspect the run record.
+
+## Run The Built-In Hello World Demo
+
+If you are new to Multigent, start with the built-in Hello World relay instead
+of designing a real company workflow immediately:
+
+```text
+Example Workspace -> Projects -> hello-world-relay
+```
+
+The demo proves one simple loop:
+
+```text
+Agent takes work -> human reviews -> agent continues -> agent records -> human confirms
+```
+
+Minimal steps:
+
+1. Open `Settings -> Model Accounts` and add one usable model account.
+2. Open `Projects -> hello-world-relay -> Members`.
+3. Bind that model account to `greeter-agent`, `responder-agent`, and `recorder-agent`.
+4. Prepare Docker sandbox:
+
+   ```bash
+   multigent sandbox prepare
+   ```
+
+5. Open `Projects -> hello-world-relay -> Tasks` and inspect the seeded task.
+6. Open `Projects -> hello-world-relay -> Schedule`.
+7. Manually wake the current agent owner, usually `greeter-agent`.
+8. When the task reaches human review, open `Workbench -> Tasks`, approve it or send it back.
+9. Continue waking the next agent owner until the relay finishes.
+
+Full guide:
+
+- English: `docs/getting-started/hello-world-relay.md`
+- 中文：`docs/getting-started/hello-world-relay.zh-CN.md`
 
 ## Agent Setup Guidance
 

@@ -130,6 +130,19 @@ Before creating teams, agents, workflows, or credentials, explain the plan and a
 
 This works well with Claude Code, Codex, Cursor, and similar local agent environments. The agent can choose the right install path, verify Docker, start the server, and help you configure the first workspace.
 
+After installation, run the built-in beginner demo first:
+
+[Run the Hello World Relay](docs/getting-started/hello-world-relay.md)
+
+Shortest path:
+
+1. Enter `Example Workspace`.
+2. Add one usable model account in `Settings -> Model Accounts`.
+3. Bind that model account to the three demo agents in `Projects -> hello-world-relay -> Members`.
+4. Run `multigent sandbox prepare`.
+5. Open `Projects -> hello-world-relay -> Schedule` and manually wake the current owner.
+6. When the workflow reaches human review, approve or send it back from `Workbench -> Tasks`.
+
 ### Manual Install
 
 macOS and Linux:
