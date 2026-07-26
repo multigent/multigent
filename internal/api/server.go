@@ -1021,6 +1021,7 @@ type taskRow struct {
 	FinishedAt       string    `json:"finishedAt,omitempty"`
 	DueDate          string    `json:"dueDate,omitempty"`
 	EstimateDuration string    `json:"estimateDuration,omitempty"`
+	HasWorkflow      bool      `json:"hasWorkflow,omitempty"`
 }
 
 func taskToRow(t *entity.Task, project, agent string, archived bool) taskRow {
@@ -1056,6 +1057,12 @@ func (s *Server) taskToRow(t *entity.Task, project, agent string, archived bool)
 	row := taskToRow(t, project, agent, archived)
 	row.AssigneeLabel = s.identityLabel(row.Assignee)
 	row.CreatedByLabel = s.identityLabel(row.CreatedBy)
+	return row
+}
+
+func (s *Server) taskToRowWithWorkflow(workspaceID string, t *entity.Task, project, agent string, archived bool) taskRow {
+	row := s.taskToRow(t, project, agent, archived)
+	row.HasWorkflow = s.runtimeTaskHasWorkflow(workspaceID, project, t.ID)
 	return row
 }
 
@@ -1120,6 +1127,11 @@ func (s *Server) handleProjectTasks(w http.ResponseWriter, r *http.Request) {
 	qScope := r.URL.Query().Get("scope")        // "active" (default), "archived", "all"
 	if qScope == "" {
 		qScope = "all"
+	}
+	workspaceID, err := s.currentWorkspaceID()
+	if err != nil {
+		s.serverError(w, err)
+		return
 	}
 
 	agents, err := s.st.ListAgents(name)
@@ -1187,7 +1199,7 @@ func (s *Server) handleProjectTasks(w http.ResponseWriter, r *http.Request) {
 						continue
 					}
 					seenIDs[t.ID] = true
-					rows = append(rows, s.taskToRow(t, name, ag.Name, false))
+					rows = append(rows, s.taskToRowWithWorkflow(workspaceID, t, name, ag.Name, false))
 				}
 			}
 		}
@@ -1199,7 +1211,7 @@ func (s *Server) handleProjectTasks(w http.ResponseWriter, r *http.Request) {
 						continue
 					}
 					seenIDs[t.ID] = true
-					rows = append(rows, s.taskToRow(t, name, ag.Name, true))
+					rows = append(rows, s.taskToRowWithWorkflow(workspaceID, t, name, ag.Name, true))
 				}
 			}
 		}

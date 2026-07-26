@@ -38,6 +38,7 @@ export type TaskRow = {
   finishedAt?: string
   dueDate?: string
   estimateDuration?: string
+  hasWorkflow?: boolean
 }
 
 export type TaskOption = { id: string; title: string; project?: string }
@@ -407,13 +408,15 @@ export function TaskDetailModal({ task, onClose, onEdit, onMutated, canEdit = tr
             <span className="truncate text-sm font-medium text-neutral-900 dark:text-zinc-100">{task.title}</span>
           </div>
           <div className="flex items-center gap-1 shrink-0">
-            <Link
-              to={`/projects/${encodeURIComponent(task.project)}/tasks/${encodeURIComponent(task.id)}/follow`}
-              className="rounded-md px-2 py-1 text-xs font-medium text-sky-700 transition-colors hover:bg-sky-50 dark:text-sky-400 dark:hover:bg-zinc-800"
-              title={t('tasks.follow')}
-            >
-              {t('tasks.follow')}
-            </Link>
+            {task.hasWorkflow && (
+              <Link
+                to={`/projects/${encodeURIComponent(task.project)}/tasks/${encodeURIComponent(task.id)}/follow`}
+                className="rounded-md px-2 py-1 text-xs font-medium text-sky-700 transition-colors hover:bg-sky-50 dark:text-sky-400 dark:hover:bg-zinc-800"
+                title={t('tasks.follow')}
+              >
+                {t('tasks.follow')}
+              </Link>
+            )}
             {canEdit && (
               <button
                 type="button"

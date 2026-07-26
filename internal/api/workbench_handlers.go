@@ -148,6 +148,11 @@ func (s *Server) handleWorkbenchTasks(w http.ResponseWriter, r *http.Request) {
 	q := r.URL.Query()
 	statusFilter := strings.TrimSpace(q.Get("status"))
 	projectFilter := strings.TrimSpace(q.Get("project"))
+	workspaceID, err := s.currentWorkspaceID()
+	if err != nil {
+		s.serverError(w, err)
+		return
+	}
 
 	cur := s.currentUser(r)
 
@@ -195,7 +200,7 @@ func (s *Server) handleWorkbenchTasks(w http.ResponseWriter, r *http.Request) {
 					continue
 				}
 				isArchived := !containsTask(active, t.ID)
-				rows = append(rows, s.taskToRow(t, proj, ag, isArchived))
+				rows = append(rows, s.taskToRowWithWorkflow(workspaceID, t, proj, ag, isArchived))
 			}
 		}
 	}
