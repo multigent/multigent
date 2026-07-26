@@ -1,5 +1,12 @@
 # Changelog
 
+## [v0.1.13] - 2026-07-26
+
+### Fixed
+
+- Heartbeat cycles now defer idle wakeup routines after processing queued tasks, preventing a task run from being immediately followed by a redundant `[wakeup] routine` run.
+- Example Workspace agents no longer burn extra tokens on idle routine runs right after completing workflow task steps.
+
 ## [v0.1.12] - 2026-07-26
 
 ### Added
