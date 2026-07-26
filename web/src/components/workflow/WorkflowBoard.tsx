@@ -570,12 +570,12 @@ export function WorkflowBoard({
     [instances],
   )
   const instanceByStep = useMemo(() => new Map(instances.map((inst) => [inst.stepId, inst])), [instancesKey])
-  const [selectedId, setSelectedId] = useState(definition.startStepId || definition.steps[0]?.id || '')
+  const [selectedId, setSelectedId] = useState('')
   const [selectedEdgeId, setSelectedEdgeId] = useState('')
   const [selectedNodeIds, setSelectedNodeIds] = useState<string[]>([])
   const [clipboard, setClipboard] = useState<WorkflowClipboard | null>(null)
   const [layouting, setLayouting] = useState(false)
-  const selected = definition.steps.find((s) => s.id === selectedId) ?? definition.steps[0]
+  const selected = selectedId ? definition.steps.find((s) => s.id === selectedId) : undefined
   const outgoingEdges = selected ? definition.edges.filter((edge) => edge.from === selected.id) : []
   const selectedInst = selected ? instanceByStep.get(selected.id) : undefined
   const [stepDraft, setStepDraft] = useState<WorkflowStep | null>(selected ?? null)
@@ -645,8 +645,8 @@ export function WorkflowBoard({
   }, [initialEdges, setEdges])
 
   useEffect(() => {
-    if (!definition.steps.some((step) => step.id === selectedId)) {
-      setSelectedId(definition.startStepId || definition.steps[0]?.id || '')
+    if (selectedId && !definition.steps.some((step) => step.id === selectedId)) {
+      setSelectedId('')
     }
   }, [definition.startStepId, definition.steps, selectedId])
 
@@ -940,7 +940,7 @@ export function WorkflowBoard({
   const stepDraftChanged = Boolean(stepDraft && selected && JSON.stringify(stepDraft) !== JSON.stringify(selected))
 
   return (
-    <div className={cn('grid min-h-0 gap-4', fill && 'h-full flex-1', compact ? 'grid-cols-1' : fullscreen ? 'grid-cols-[minmax(0,1fr)_360px]' : 'grid-cols-[minmax(0,1fr)_320px]')}>
+    <div className={cn('relative min-h-0', fill && 'h-full flex-1')}>
       <div
         className={cn(
           'relative overflow-hidden rounded-xl border border-neutral-200/80 bg-white dark:border-zinc-700/60 dark:bg-zinc-950',
@@ -985,7 +985,7 @@ export function WorkflowBoard({
           onEdgeClick={(_, edge) => {
             setSelectedEdgeId(edge.id)
             setSelectedNodeIds([])
-            setSelectedId(edge.source)
+            setSelectedId('')
           }}
           onSelectionChange={({ nodes: selectedNodes, edges: selectedEdges }) => {
             const nodeIDs = selectedNodes.map((node) => node.id)
@@ -993,12 +993,10 @@ export function WorkflowBoard({
             setSelectedNodeIds((current) => (sameStringArray(current, nodeIDs) ? current : nodeIDs))
             setSelectedEdgeId(edgeID)
             if (nodeIDs.length === 1) setSelectedId(nodeIDs[0])
-            else if (edgeID) {
-              const edge = definition.edges.find((item) => item.id === edgeID)
-              if (edge) setSelectedId(edge.from)
-            }
+            else if (edgeID) setSelectedId('')
           }}
           onPaneClick={() => {
+            setSelectedId('')
             setSelectedEdgeId('')
             setSelectedNodeIds([])
           }}
@@ -1019,7 +1017,7 @@ export function WorkflowBoard({
           deleteKeyCode={null}
           className="workflow-flow"
         >
-          <Background variant={BackgroundVariant.Dots} gap={24} size={1.2} color="rgba(14,165,233,0.22)" />
+          <Background variant={BackgroundVariant.Dots} gap={24} size={1.45} color="rgba(14,165,233,0.34)" />
           <Controls showInteractive={false} position="bottom-left" />
           {!compact ? (
             <MiniMap
@@ -1038,9 +1036,8 @@ export function WorkflowBoard({
             />
           ) : null}
         </ReactFlow>
-      </div>
       {!compact && selected ? (
-        <aside className={cn('overflow-y-auto rounded-xl border border-neutral-200/80 bg-white p-4 dark:border-zinc-700/60 dark:bg-zinc-900', fill ? 'h-full min-h-[560px]' : fullscreen ? 'h-[calc(100vh-150px)]' : 'h-[520px]')}>
+        <aside className="absolute right-4 top-4 z-20 max-h-[calc(100%-2rem)] w-[340px] max-w-[calc(100%-2rem)] overflow-y-auto rounded-xl border border-neutral-200/90 bg-white/95 p-4 shadow-xl shadow-neutral-900/10 backdrop-blur-md dark:border-zinc-700/80 dark:bg-zinc-900/95 dark:shadow-black/30">
           {editable && stepDraft && selected ? (
             <div className="space-y-4 text-sm">
               <label className="block">
@@ -1133,6 +1130,7 @@ export function WorkflowBoard({
           )}
         </aside>
       ) : null}
+      </div>
     </div>
   )
 }
