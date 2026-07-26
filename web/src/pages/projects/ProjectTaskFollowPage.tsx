@@ -28,7 +28,7 @@ type ProjectMember = { name: string; model?: string; avatar?: string }
 type LogData = { content: string; truncated: boolean }
 
 const silentNotFound = [404]
-const FOLLOW_POLL_MS = 2500
+const FOLLOW_POLL_MS = 3500
 
 export default function ProjectTaskFollowPage() {
   const { t } = useTranslation()
@@ -42,6 +42,7 @@ export default function ProjectTaskFollowPage() {
   const [reviewBusy, setReviewBusy] = useState<string | null>(null)
   const [reviewErr, setReviewErr] = useState<string | null>(null)
   const [startBusy, setStartBusy] = useState(false)
+  const [optimisticStartedAt, setOptimisticStartedAt] = useState<string | null>(null)
 
   const refresh = useCallback(() => setReloadKey((value) => value + 1), [])
   const tasksState = useApiJson<TaskRow[]>(
@@ -67,7 +68,15 @@ export default function ProjectTaskFollowPage() {
   )
 
   const task = tasksState.status === 'ok' ? (tasksState.data ?? []).find((item) => item.id === taskId) : undefined
-  const workflowData = workflowState.status === 'ok' ? workflowState.data : null
+  const displayTask = useMemo(() => {
+    if (!task || !optimisticStartedAt || task.status === 'in_progress' || isTerminal(task.status)) return task
+    return { ...task, status: 'in_progress', startedAt: task.startedAt || optimisticStartedAt, updatedAt: optimisticStartedAt }
+  }, [optimisticStartedAt, task])
+  const rawWorkflowData = workflowState.status === 'ok' ? workflowState.data : null
+  const workflowData = useMemo(
+    () => withRunningActiveStep(rawWorkflowData, displayTask, projectId, optimisticStartedAt),
+    [displayTask, optimisticStartedAt, projectId, rawWorkflowData],
+  )
   const activeStep = workflowData
     ? workflowData.definition.steps.find((step) => step.id === workflowData.run.activeStepId)
     : undefined
@@ -98,26 +107,32 @@ export default function ProjectTaskFollowPage() {
         }
       }
     }
-    if (task?.assignee) labels.set(task.assignee, taskIdentityLabel(task.assignee, task.assigneeLabel))
+    if (displayTask?.assignee) labels.set(displayTask.assignee, taskIdentityLabel(displayTask.assignee, displayTask.assigneeLabel))
     return labels
-  }, [membersState, projectId, task?.assignee, task?.assigneeLabel, usersState])
+  }, [displayTask?.assignee, displayTask?.assigneeLabel, membersState, projectId, usersState])
 
   const startAgent = activeInstance?.actorType === 'agent'
     ? agentNameFromActor(projectId, activeInstance.actorId)
-    : task ? startableAgentName(task) : null
+    : displayTask ? startableAgentName(displayTask) : null
   const canStart = Boolean(
-    task &&
+    displayTask &&
     startAgent &&
-    !isTerminal(task.status) &&
+    displayTask.status !== 'in_progress' &&
+    !isTerminal(displayTask.status) &&
     (canAdmin || canOperateAgent(user, projectId, startAgent)),
   )
   const canReview = activeStep?.type === 'human_review'
 
   useEffect(() => {
-    if (!task || isTerminal(task.status)) return
+    if (!displayTask || isTerminal(displayTask.status)) return
     const timer = window.setInterval(refresh, FOLLOW_POLL_MS)
     return () => window.clearInterval(timer)
-  }, [refresh, task?.id, task?.status])
+  }, [refresh, displayTask?.id, displayTask?.status])
+
+  useEffect(() => {
+    if (!optimisticStartedAt) return
+    if (!task || task.status === 'in_progress' || isTerminal(task.status)) setOptimisticStartedAt(null)
+  }, [optimisticStartedAt, task, task?.status])
 
   useEffect(() => {
     setReviewComments('')
@@ -126,13 +141,15 @@ export default function ProjectTaskFollowPage() {
   }, [activeStep?.id, activeInstance?.id])
 
   async function startCurrentAgent() {
-    if (!task || !startAgent || !canStart) return
+    if (!displayTask || !startAgent || !canStart) return
     setStartBusy(true)
+    setOptimisticStartedAt(new Date().toISOString())
     try {
-      await apiPost('/api/v1/scheduler/wakeup', { project: task.project, agent: startAgent })
+      await apiPost('/api/v1/scheduler/wakeup', { project: displayTask.project, agent: startAgent })
       refresh()
       window.setTimeout(refresh, 1000)
     } catch {
+      setOptimisticStartedAt(null)
       // Toast handled by API layer.
     } finally {
       setStartBusy(false)
@@ -140,7 +157,7 @@ export default function ProjectTaskFollowPage() {
   }
 
   async function submitWorkflowReview(decision?: string) {
-    if (!task || !activeStep) return
+    if (!displayTask || !activeStep) return
     setReviewErr(null)
     const normalizedDecision = normalizeReviewDecision(decision || reviewOutputs.decision || '')
     setReviewBusy(normalizedDecision || 'submit')
@@ -156,7 +173,7 @@ export default function ProjectTaskFollowPage() {
       return
     }
     try {
-      await apiPost(`/api/v1/projects/${encodeURIComponent(task.project)}/tasks/${encodeURIComponent(task.id)}/workflow/review`, {
+      await apiPost(`/api/v1/projects/${encodeURIComponent(displayTask.project)}/tasks/${encodeURIComponent(displayTask.id)}/workflow/review`, {
         decision,
         comments,
         outputs,
@@ -183,12 +200,12 @@ export default function ProjectTaskFollowPage() {
             <span>/</span>
             <span>{t('tasks.follow')}</span>
           </div>
-          <h1 className="truncate text-sm font-semibold text-neutral-900 dark:text-zinc-100">{task?.title || taskId}</h1>
+          <h1 className="truncate text-sm font-semibold text-neutral-900 dark:text-zinc-100">{displayTask?.title || taskId}</h1>
         </div>
         <div className="flex shrink-0 items-center gap-2">
-          {task && (
+          {displayTask && (
             <span className="rounded-full border border-neutral-200 bg-white px-2.5 py-1 text-xs text-neutral-500 dark:border-zinc-700 dark:bg-zinc-900 dark:text-zinc-400">
-              {t(`tasks.status.${task.status}`, { defaultValue: task.status })}
+              {t(`tasks.status.${displayTask.status}`, { defaultValue: displayTask.status })}
             </span>
           )}
           <button
@@ -233,10 +250,10 @@ export default function ProjectTaskFollowPage() {
               <button
                 type="button"
                 onClick={() => void startCurrentAgent()}
-                disabled={!canStart || startBusy}
+                disabled={!canStart || startBusy || displayTask?.status === 'in_progress'}
                 className="rounded-lg border border-sky-600 bg-white px-3 py-2 text-sm font-medium text-sky-700 hover:bg-sky-50 disabled:cursor-not-allowed disabled:opacity-40 dark:border-sky-500 dark:bg-zinc-900 dark:text-sky-400 dark:hover:bg-zinc-800"
               >
-                <span className="inline-flex items-center gap-1.5"><Play className={cn('size-3.5', startBusy && 'animate-pulse')} />{startBusy ? t('tasks.starting') : t('tasks.startCurrentAgent')}</span>
+                <span className="inline-flex items-center gap-1.5"><Play className={cn('size-3.5', (startBusy || displayTask?.status === 'in_progress') && 'animate-pulse')} />{displayTask?.status === 'in_progress' ? t('tasks.status.in_progress') : startBusy ? t('tasks.starting') : t('tasks.startCurrentAgent')}</span>
               </button>
               {startAgent && <span className="font-mono text-xs text-neutral-400 dark:text-zinc-500">{startAgent}</span>}
             </div>
@@ -310,6 +327,42 @@ function findActiveRun(runs: RunRow[], taskID: string, projectID: string, step?:
   return runs
     .filter((run) => run.taskId === taskID)
     .sort((a, b) => Date.parse(b.startedAt || '') - Date.parse(a.startedAt || ''))[0] ?? null
+}
+
+function withRunningActiveStep(
+  data: TaskWorkflowData | null,
+  task: TaskRow | undefined,
+  projectID: string,
+  optimisticStartedAt: string | null,
+): TaskWorkflowData | null {
+  if (!data || !task || task.status !== 'in_progress' || !data.run.activeStepId) return data
+  const current = activeWorkflowStepInstance(data)
+  const currentStep = data.definition.steps.find((step) => step.id === data.run.activeStepId)
+  if (current?.status === 'completed' || current?.status === 'done_success' || current?.status === 'done_failed') return data
+  if (current?.actorType === 'human' || currentStep?.type === 'human_review') return data
+
+  const taskAgent = startableAgentName(task) || task.agent
+  const actorAgent = agentNameFromActor(projectID, current?.actorId || currentStep?.actorRole)
+  if (actorAgent && taskAgent && actorAgent !== taskAgent) return data
+
+  const startedAt = current?.startedAt || task.startedAt || optimisticStartedAt || new Date().toISOString()
+  return {
+    ...data,
+    run: {
+      ...data.run,
+      status: data.run.status === 'completed' ? data.run.status : 'running',
+      updatedAt: task.updatedAt || data.run.updatedAt,
+    },
+    steps: data.steps.map((step) => {
+      if (step.stepId !== data.run.activeStepId) return step
+      return {
+        ...step,
+        status: 'running',
+        startedAt,
+        updatedAt: task.updatedAt || step.updatedAt,
+      }
+    }),
+  }
 }
 
 function agentNameFromActor(projectID: string, actorID?: string): string | null {
