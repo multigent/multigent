@@ -78,11 +78,14 @@ export default function ProjectTaskFollowPage() {
     : undefined
   const rawActiveInstance = rawWorkflowData ? activeWorkflowStepInstance(rawWorkflowData) : undefined
   const rawIsAgentStep = rawActiveInstance?.actorType === 'agent' || rawActiveStep?.type === 'agent_task'
+  const rawWorkflowIsRunning = rawIsAgentStep && rawActiveInstance?.status === 'running'
   const optimisticRunStartedAt = optimisticStartedAt || (rawIsAgentStep ? handoffStartedAt : null)
   const displayTask = useMemo(() => {
-    if (!task || !optimisticRunStartedAt || task.status === 'in_progress' || isTerminal(task.status)) return task
-    return { ...task, status: 'in_progress', startedAt: task.startedAt || optimisticRunStartedAt, updatedAt: optimisticRunStartedAt }
-  }, [optimisticRunStartedAt, task])
+    if (!task || task.status === 'in_progress' || isTerminal(task.status)) return task
+    if (!optimisticRunStartedAt && !rawWorkflowIsRunning) return task
+    const startedAt = rawActiveInstance?.startedAt || optimisticRunStartedAt || task.startedAt || new Date().toISOString()
+    return { ...task, status: 'in_progress', startedAt, updatedAt: task.updatedAt || startedAt }
+  }, [optimisticRunStartedAt, rawActiveInstance?.startedAt, rawWorkflowIsRunning, task])
   const workflowData = useMemo(
     () => withRunningActiveStep(rawWorkflowData, displayTask, projectId, optimisticRunStartedAt, Boolean(handoffStartedAt && rawIsAgentStep)),
     [displayTask, handoffStartedAt, optimisticRunStartedAt, projectId, rawIsAgentStep, rawWorkflowData],
@@ -253,6 +256,7 @@ export default function ProjectTaskFollowPage() {
         <div className="flex shrink-0 items-center gap-2">
           {displayTask && (
             <span className={cn('rounded-full px-2.5 py-1 text-xs font-medium', statusColor[displayTask.status] ?? statusColor.pending)}>
+              {displayTask.status === 'in_progress' && <span className="mr-1.5 inline-block size-1.5 animate-pulse rounded-full bg-current align-middle" />}
               {t(`tasks.status.${displayTask.status}`, { defaultValue: displayTask.status })}
             </span>
           )}
