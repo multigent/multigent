@@ -762,6 +762,9 @@
     "archive": "アーカイブ",
     "delete": "削除",
     "edit": "タスクを編集",
+    "start": "開始",
+    "starting": "開始中",
+    "startRequiresAgent": "現在の担当者は Agent ではないため、このタスクは直接開始できません。",
     "confirmCancel": "このタスクをキャンセルしますか？",
     "confirmDelete": "このタスクを削除しますか？この操作は元に戻せません。",
     "batchCancel": "一括キャンセル",
@@ -1566,7 +1569,11 @@
     "selectLabel": "モデルアカウント",
     "none": "未選択",
     "overrideHint": "選択したアカウントがエンドポイントと認証情報を提供します。ここではモデル名のみ上書きします。",
-    "keyUnchangedHint": "（変更なし、空欄で維持）"
+    "keyUnchangedHint": "（変更なし、空欄で維持）",
+    "applyToAgentsTitle": "同じ種類の Agent に適用しますか？",
+    "applyToAgentsDescription": "{{count}} 件の {{cli}} Agent にモデルアカウントが未設定です。このアカウントを適用しますか？",
+    "applyToAgentsConfirm": "アカウントを適用",
+    "applyToAgentsResult": "{{count}} 件の Agent に適用しました。"
   },
   "agentDetail": {
     "modelCredentials": "モデルと認証情報",

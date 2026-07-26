@@ -1179,6 +1179,7 @@ const GATEWAY_ACCOUNT_PRESETS: ProviderPreset[] = [
   { id: 'claude-compatible', label: 'Anthropic Compatible', cli: 'claudecode', baseUrl: '', model: '', hint: 'Claude Code-compatible gateways' },
   { id: 'minimax-codex', label: 'MiniMax', cli: 'codex', baseUrl: 'https://api.minimax.io/v1', model: 'MiniMax-M3', models: ['MiniMax-M3', 'MiniMax-M2.7', 'MiniMax-M2.7-highspeed', 'MiniMax-M2.5', 'MiniMax-M2.5-highspeed', 'MiniMax-M2.1', 'MiniMax-M2.1-highspeed', 'MiniMax-M2'], hint: 'OpenAI-compatible API' },
   { id: 'minimax-claude', label: 'MiniMax', cli: 'claudecode', baseUrl: 'https://api.minimax.io/anthropic', model: 'MiniMax-M3', models: ['MiniMax-M3', 'MiniMax-M2.7', 'MiniMax-M2.7-highspeed', 'MiniMax-M2.5', 'MiniMax-M2.5-highspeed', 'MiniMax-M2.1', 'MiniMax-M2.1-highspeed', 'MiniMax-M2'], hint: 'Anthropic-compatible API' },
+  { id: 'minimax-cn-claude', label: 'MiniMax China', cli: 'claudecode', baseUrl: 'https://api.minimaxi.com/anthropic', model: 'MiniMax-M3', models: ['MiniMax-M3', 'MiniMax-M2.7', 'MiniMax-M2.7-highspeed', 'MiniMax-M2.5', 'MiniMax-M2.5-highspeed', 'MiniMax-M2.1', 'MiniMax-M2.1-highspeed', 'MiniMax-M2'], hint: 'Anthropic-compatible API (China)' },
   { id: 'deepseek-codex', label: 'DeepSeek', cli: 'codex', baseUrl: 'https://api.deepseek.com', model: 'deepseek-v4-pro', models: ['deepseek-v4-pro', 'deepseek-v4-flash', 'deepseek-reasoner', 'deepseek-chat'], hint: 'OpenAI-compatible API' },
   { id: 'deepseek-claude', label: 'DeepSeek', cli: 'claudecode', baseUrl: 'https://api.deepseek.com/anthropic', model: 'deepseek-v4-pro[1m]', models: ['deepseek-v4-pro[1m]', 'deepseek-v4-pro', 'deepseek-v4-flash', 'deepseek-reasoner', 'deepseek-chat'], hint: 'Anthropic-compatible API' },
   { id: 'kimi-codex', label: 'Kimi', cli: 'codex', baseUrl: 'https://api.moonshot.ai/v1', model: 'kimi-k3', models: ['kimi-k3', 'kimi-k2.7-code', 'kimi-k2.6', 'kimi-k2.5'], hint: 'OpenAI-compatible API' },
@@ -1192,6 +1193,8 @@ const GATEWAY_ACCOUNT_PRESETS: ProviderPreset[] = [
 ]
 
 type ProviderDraft = Partial<ProviderRow> & { apiKey?: string; accountMode?: ModelAccountMode; cli?: ModelAccountCLI; authMethod?: string; modelsText?: string; presetId?: string }
+type ProviderApplyAgent = { name: string; model?: string }
+type ProviderApplyAgentContext = { model?: string; provider?: string; runtimeModel?: string; env?: Record<string, string> }
 type ModelDeviceAuthState = {
   sessionId: string
   verificationUri: string
@@ -1231,6 +1234,7 @@ function ProvidersSection() {
   const [assistantProviderId, setAssistantProviderId] = useState('')
   const [assistantSaving, setAssistantSaving] = useState(false)
   const [err, setErr] = useState<string | null>(null)
+  const [notice, setNotice] = useState<string | null>(null)
   const [showKey, setShowKey] = useState(false)
   const [deviceAuth, setDeviceAuth] = useState<ModelDeviceAuthState | null>(null)
   const [deviceAuthStarting, setDeviceAuthStarting] = useState(false)
@@ -1326,15 +1330,63 @@ function ProvidersSection() {
         },
       }
       if (editing.apiKey) body.apiKey = editing.apiKey
-      if (editing.id) {
-        await apiPut(`/api/v1/providers/${editing.id}`, body)
-      } else {
-        await apiPost('/api/v1/providers', body)
-      }
+      const saved = editing.id
+        ? await apiPut<ProviderRow>(`/api/v1/providers/${editing.id}`, body)
+        : await apiPost<ProviderRow>('/api/v1/providers', body)
       setEditing(null)
       await refresh()
+      void promptApplyProviderToAgents(saved)
     } catch (e) { setErr(e instanceof Error ? e.message : String(e)) }
     finally { setSaving(false) }
+  }
+
+  async function promptApplyProviderToAgents(provider: ProviderRow) {
+    if (!canCreateWorkspaceProvider || provider.ownerType === 'user' || !(provider.authConfigured || provider.hasKey)) return
+    const cli = inferModelAccountCLI(provider)
+    const targets: Array<{ project: string; agent: string; context: ProviderApplyAgentContext }> = []
+    try {
+      const projects = await apiFetch<ProjectItem[]>('/api/v1/projects', { suppressToast: true })
+      for (const project of projects ?? []) {
+        const agents = await apiFetch<ProviderApplyAgent[]>(`/api/v1/projects/${encodeURIComponent(project.name)}/agents`, { suppressToast: true }).catch(() => [] as ProviderApplyAgent[])
+        for (const agent of agents) {
+          if (!agent.name || agent.model !== cli) continue
+          const context = await apiFetch<ProviderApplyAgentContext>(
+            `/api/v1/projects/${encodeURIComponent(project.name)}/agents/${encodeURIComponent(agent.name)}/context`,
+            { suppressToast: true },
+          ).catch(() => null)
+          if (!context || context.provider) continue
+          targets.push({ project: project.name, agent: agent.name, context })
+        }
+      }
+    } catch {
+      return
+    }
+    if (targets.length === 0) return
+    const ok = await confirmDialog({
+      title: t('provider.applyToAgentsTitle'),
+      description: t('provider.applyToAgentsDescription', { cli: providerCLILabel(cli), count: targets.length }),
+      confirmLabel: t('provider.applyToAgentsConfirm'),
+      cancelLabel: t('forms.cancel'),
+    })
+    if (!ok) return
+    let applied = 0
+    for (const target of targets) {
+      try {
+        await apiPut(`/api/v1/projects/${encodeURIComponent(target.project)}/agents/${encodeURIComponent(target.agent)}/env`, {
+          env: target.context.env ?? {},
+          provider: provider.id,
+          runtimeModel: target.context.runtimeModel ?? '',
+        })
+        applied += 1
+      } catch {
+        // Keep bulk apply best-effort. Permission or deleted-agent races should
+        // not block applying the account to other matching agents.
+      }
+    }
+    if (applied > 0) {
+      setNotice(t('provider.applyToAgentsResult', { count: applied }))
+      window.setTimeout(() => setNotice(null), 4000)
+    }
   }
 
   async function handleDelete(id: string) {
@@ -1425,6 +1477,7 @@ function ProvidersSection() {
           deviceAuthSessionRef.current = ''
           setEditing(null)
           await refresh()
+          if (res.provider) void promptApplyProviderToAgents(res.provider)
           return
         }
         pollCLINativeAuth(cli, sessionId)
@@ -1565,6 +1618,7 @@ function ProvidersSection() {
           </div>
         </div>
         <p className="mb-3 text-xs text-neutral-400 dark:text-zinc-500">{t('provider.desc')}</p>
+        {notice && <p className="mb-3 rounded-lg border border-emerald-200 bg-emerald-50 px-3 py-2 text-sm text-emerald-700 dark:border-emerald-900/50 dark:bg-emerald-900/20 dark:text-emerald-300">{notice}</p>}
 
         {loading ? (
           <p className="py-4 text-center text-sm text-neutral-400">{t('forms.loading')}</p>

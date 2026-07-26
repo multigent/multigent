@@ -255,6 +255,7 @@ export function TaskDetailModal({ task, onClose, onEdit, onMutated, canEdit = tr
   const [assigneeDraft, setAssigneeDraft] = useState(task.assignee || `${task.project}/${task.agent}`)
   const [assigneeBusy, setAssigneeBusy] = useState(false)
   const [assigneeErr, setAssigneeErr] = useState<string | null>(null)
+  const [startBusy, setStartBusy] = useState(false)
 
   const runsQuery = `/api/v1/telemetry/runs?allTime=1&project=${encodeURIComponent(task.project)}`
   const runsState = useApiJson<{ runs: RunRow[] }>(runsQuery, 0)
@@ -310,6 +311,8 @@ export function TaskDetailModal({ task, onClose, onEdit, onMutated, canEdit = tr
     ? workflowHistoryRecords(workflowState.data)
     : []
   const canReviewWorkflow = activeWorkflowStep?.type === 'human_review'
+  const startAgentName = startableAgentName(task)
+  const canStartAgent = Boolean(startAgentName && !isTerminal(task.status))
 
   useEffect(() => {
     setReviewComments('')
@@ -383,6 +386,20 @@ export function TaskDetailModal({ task, onClose, onEdit, onMutated, canEdit = tr
     }
   }
 
+  async function startCurrentAssignee() {
+    if (!startAgentName || isTerminal(task.status)) return
+    setStartBusy(true)
+    try {
+      await apiPost('/api/v1/scheduler/wakeup', { project: task.project, agent: startAgentName })
+      onMutated?.()
+      window.setTimeout(() => onMutated?.(), 800)
+    } catch {
+      // Toast handled by API layer.
+    } finally {
+      setStartBusy(false)
+    }
+  }
+
   return (
     <div className="fixed inset-0 z-50 flex items-start justify-center pt-[3vh]">
       <div className="absolute inset-0 bg-black/30 backdrop-blur-[2px] animate-fade-in dark:bg-black/50" onClick={onClose} />
@@ -394,6 +411,17 @@ export function TaskDetailModal({ task, onClose, onEdit, onMutated, canEdit = tr
             <span className="truncate text-sm font-medium text-neutral-900 dark:text-zinc-100">{task.title}</span>
           </div>
           <div className="flex items-center gap-1 shrink-0">
+            {canEdit && (
+              <button
+                type="button"
+                onClick={() => void startCurrentAssignee()}
+                disabled={!canStartAgent || startBusy}
+                title={!startAgentName ? t('tasks.startRequiresAgent') : undefined}
+                className="rounded-lg border border-sky-600 bg-white px-3 py-1.5 text-xs font-medium text-sky-700 transition-colors hover:bg-sky-50 disabled:cursor-not-allowed disabled:opacity-50 dark:border-sky-500 dark:bg-zinc-900 dark:text-sky-400 dark:hover:bg-zinc-800"
+              >
+                {startBusy ? t('tasks.starting') : t('tasks.start')}
+              </button>
+            )}
             {canEdit && (
               <button type="button" onClick={() => onEdit(task)} className="rounded-md p-1 text-neutral-400 transition-colors hover:bg-neutral-100 hover:text-neutral-700 dark:text-zinc-500 dark:hover:bg-zinc-800" title={t('tasks.edit')}>
                 <Pencil className="size-4" strokeWidth={1.8} />
@@ -630,6 +658,14 @@ function activeWorkflowStepInstance(data: TaskWorkflowData): WorkflowStepInstanc
     .filter((item) => item.stepId === activeStepID)
     .sort((a, b) => workflowRecordTimestamp(b) - workflowRecordTimestamp(a))
   return candidates.find((item) => isWorkflowStepOpen(item.status)) ?? candidates[0]
+}
+
+function startableAgentName(task: TaskRow): string | null {
+  const assignee = (task.assignee || `${task.project}/${task.agent}`).trim()
+  const prefix = `${task.project}/`
+  if (!assignee.startsWith(prefix)) return null
+  const agent = assignee.slice(prefix.length).trim()
+  return agent || null
 }
 
 function isWorkflowStepOpen(status?: string) {

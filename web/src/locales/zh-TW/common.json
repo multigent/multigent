@@ -771,6 +771,9 @@
     "archive": "封存",
     "delete": "刪除",
     "edit": "編輯任務",
+    "start": "啟動",
+    "starting": "啟動中",
+    "startRequiresAgent": "目前負責人不是 Agent，不能直接啟動。",
     "confirmCancel": "確定取消這則任務？",
     "confirmDelete": "確定刪除這則任務？此操作無法復原。",
     "batchCancel": "批次取消",
@@ -1576,7 +1579,11 @@
     "selectLabel": "模型帳號",
     "none": "不選擇帳號",
     "overrideHint": "所選帳號提供服務地址和密鑰。Agent 这里只覆蓋模型名稱。",
-    "keyUnchangedHint": "（未更改，留空保持不變）"
+    "keyUnchangedHint": "（未更改，留空保持不變）",
+    "applyToAgentsTitle": "套用到同類型 Agent？",
+    "applyToAgentsDescription": "偵測到 {{count}} 個 {{cli}} Agent 尚未配置模型帳號。是否將這個帳號同步給它們？",
+    "applyToAgentsConfirm": "同步配置",
+    "applyToAgentsResult": "已同步到 {{count}} 個 Agent。"
   },
   "agentDetail": {
     "modelCredentials": "模型與憑證",

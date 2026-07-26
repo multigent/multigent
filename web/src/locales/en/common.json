@@ -771,6 +771,9 @@
     "archive": "Archive",
     "delete": "Delete",
     "edit": "Edit task",
+    "start": "Start",
+    "starting": "Starting",
+    "startRequiresAgent": "The current assignee is not an agent, so this task cannot be started directly.",
     "confirmCancel": "Cancel this task?",
     "confirmDelete": "Delete this task? This cannot be undone.",
     "batchCancel": "Batch cancel",
@@ -1590,7 +1593,11 @@
     "selectLabel": "Model account",
     "none": "None selected",
     "overrideHint": "The selected account provides endpoint and credentials. Agent model can override only the model name.",
-    "keyUnchangedHint": "(unchanged, leave empty to keep)"
+    "keyUnchangedHint": "(unchanged, leave empty to keep)",
+    "applyToAgentsTitle": "Apply to matching agents?",
+    "applyToAgentsDescription": "{{count}} {{cli}} agent(s) do not have a model account yet. Apply this account to them now?",
+    "applyToAgentsConfirm": "Apply account",
+    "applyToAgentsResult": "Applied to {{count}} agent(s)."
   },
   "agentDetail": {
     "modelCredentials": "Model & Credentials",

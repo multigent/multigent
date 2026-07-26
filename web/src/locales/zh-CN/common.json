@@ -771,6 +771,9 @@
     "archive": "归档",
     "delete": "删除",
     "edit": "编辑任务",
+    "start": "启动",
+    "starting": "启动中",
+    "startRequiresAgent": "当前负责人不是 Agent，不能直接启动。",
     "confirmCancel": "确定取消这条任务？",
     "confirmDelete": "确定删除这条任务？此操作不可撤销。",
     "batchCancel": "批量取消",
@@ -1590,7 +1593,11 @@
     "selectLabel": "模型账号",
     "none": "不选择账号",
     "overrideHint": "所选账号提供服务地址和密钥。Agent 这里只覆盖模型名称。",
-    "keyUnchangedHint": "（未更改，留空保持不变）"
+    "keyUnchangedHint": "（未更改，留空保持不变）",
+    "applyToAgentsTitle": "应用到同类型 Agent？",
+    "applyToAgentsDescription": "检测到 {{count}} 个 {{cli}} Agent 尚未配置模型账号。是否将这个账号同步给它们？",
+    "applyToAgentsConfirm": "同步配置",
+    "applyToAgentsResult": "已同步到 {{count}} 个 Agent。"
   },
   "agentDetail": {
     "modelCredentials": "模型与凭证",
