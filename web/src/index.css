@@ -186,6 +186,52 @@ input[type="checkbox"]:disabled {
   fill: currentColor;
 }
 
+.workflow-flow .react-flow__connection-path {
+  stroke: rgb(14 165 233);
+  stroke-width: 2.5;
+}
+
+.workflow-flow .react-flow__edge.selected .react-flow__edge-path {
+  stroke: rgb(2 132 199);
+  stroke-width: 3;
+  filter: drop-shadow(0 3px 6px rgba(2, 132, 199, 0.16));
+}
+
+.workflow-flow .workflow-edge-selected .react-flow__edge-path {
+  stroke: rgb(2 132 199);
+  stroke-width: 3;
+  filter: drop-shadow(0 3px 6px rgba(2, 132, 199, 0.16));
+}
+
+.workflow-flow .react-flow__edge.selected .react-flow__edge-text {
+  fill: rgb(3 105 161);
+  font-weight: 650;
+}
+
+.workflow-flow .workflow-edge-selected .react-flow__edge-text {
+  fill: rgb(3 105 161);
+  font-weight: 650;
+}
+
+.workflow-flow .react-flow__handle {
+  opacity: 0.9;
+}
+
+.workflow-flow .react-flow__handle.connectingto,
+.workflow-flow .react-flow__handle.valid {
+  background: rgb(16 185 129) !important;
+  border-color: rgb(209 250 229) !important;
+  box-shadow: 0 0 0 8px rgba(16, 185, 129, 0.16);
+}
+
+.workflow-flow .react-flow__node-workflowStep:has(.react-flow__handle.connectingto) > div,
+.workflow-flow .react-flow__node-workflowStep:has(.react-flow__handle.valid) > div {
+  border-color: rgb(16 185 129);
+  box-shadow:
+    0 0 0 4px rgba(16, 185, 129, 0.18),
+    0 18px 38px rgba(15, 23, 42, 0.12);
+}
+
 .workflow-flow .react-flow__minimap {
   border: 1px solid rgb(229 229 229);
   border-radius: 0.75rem;

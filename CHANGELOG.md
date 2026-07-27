@@ -1,5 +1,13 @@
 # Changelog
 
+## [v0.1.18] - 2026-07-27
+
+### Improved
+
+- Improved workflow board edge creation with larger connection snapping radius and visible target-node feedback while dragging a connection.
+- Improved selected workflow edge styling so users can clearly see which connection is selected without an overly strong highlight.
+- Improved new workflow node placement so new nodes appear near the current canvas focus instead of being inserted behind the inspector.
+
 ## [v0.1.17] - 2026-07-27
 
 ### Fixed

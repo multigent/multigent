@@ -1,10 +1,11 @@
-import { useEffect, useMemo, useState } from 'react'
+import { useEffect, useMemo, useRef, useState } from 'react'
 import { useTranslation } from 'react-i18next'
 import type { ELK, ElkNode } from 'elkjs'
 import {
   addEdge,
   Background,
   BackgroundVariant,
+  ConnectionMode,
   Controls,
   Handle,
   MarkerType,
@@ -15,6 +16,8 @@ import {
   type Edge,
   type Node,
   type NodeProps,
+  type OnConnectStartParams,
+  type ReactFlowInstance,
   useEdgesState,
   useNodesState,
 } from '@xyflow/react'
@@ -143,6 +146,8 @@ type WorkflowNodeData = {
   step: WorkflowStep
   status?: string
   active: boolean
+  connectingSource?: boolean
+  connectingTarget?: boolean
 }
 
 type WorkflowNode = Node<WorkflowNodeData, 'workflowStep'>
@@ -474,15 +479,25 @@ function isTextEditingTarget(target: EventTarget | null) {
 
 function WorkflowStepNode({ data, selected }: NodeProps<WorkflowNode>) {
   const { t } = useTranslation()
-  const { step, status, active } = data
+  const { step, status, active, connectingSource, connectingTarget } = data
   const nodeClass = colorClass[step.config?.color || ''] ?? typeClass[step.type] ?? colorClass.neutral
+  const targetHandleClass = cn(
+    '!h-3 !w-3 !border-2 !border-white !bg-neutral-400 transition-all dark:!border-zinc-950 dark:!bg-zinc-500',
+    connectingTarget && '!h-5 !w-5 !border-4 !border-emerald-100 !bg-emerald-500 !shadow-lg !shadow-emerald-500/30 dark:!border-emerald-950 dark:!bg-emerald-400',
+  )
+  const sourceHandleClass = cn(
+    '!h-3 !w-3 !border-2 !border-white !bg-sky-500 transition-all dark:!border-zinc-950 dark:!bg-sky-400',
+    connectingSource && '!h-4 !w-4 !border-4 !border-sky-100 !shadow-lg !shadow-sky-500/30 dark:!border-sky-950',
+  )
   return (
     <div
       className={cn(
-        'relative flex h-[88px] w-[198px] flex-col rounded-xl border px-3 py-2 text-left shadow-sm transition-shadow',
+        'relative flex h-[88px] w-[198px] flex-col rounded-xl border px-3 py-2 text-left shadow-sm transition-all',
         nodeClass,
         active && 'ring-2 ring-sky-400 ring-offset-2 ring-offset-white dark:ring-sky-500 dark:ring-offset-zinc-950',
         selected && 'border-sky-500 shadow-lg ring-2 ring-sky-500 ring-offset-2 ring-offset-white dark:border-sky-400 dark:ring-sky-400 dark:ring-offset-zinc-950',
+        connectingSource && !selected && 'ring-2 ring-sky-300 ring-offset-2 ring-offset-white dark:ring-sky-500/80 dark:ring-offset-zinc-950',
+        connectingTarget && 'scale-[1.02] border-emerald-500 shadow-xl shadow-emerald-900/10 ring-4 ring-emerald-400/25 dark:border-emerald-400 dark:shadow-black/30 dark:ring-emerald-400/20',
       )}
     >
       {selected ? <span className="absolute -right-1.5 -top-1.5 size-3 rounded-full border-2 border-white bg-sky-500 dark:border-zinc-950 dark:bg-sky-400" /> : null}
@@ -490,49 +505,49 @@ function WorkflowStepNode({ data, selected }: NodeProps<WorkflowNode>) {
         type="target"
         id="target-left"
         position={Position.Left}
-        className="!h-2.5 !w-2.5 !border-2 !border-white !bg-neutral-400 dark:!border-zinc-950 dark:!bg-zinc-500"
+        className={targetHandleClass}
       />
       <Handle
         type="source"
         id="source-right"
         position={Position.Right}
-        className="!h-2.5 !w-2.5 !border-2 !border-white !bg-sky-500 dark:!border-zinc-950 dark:!bg-sky-400"
+        className={sourceHandleClass}
       />
       <Handle
         type="source"
         id="source-left"
         position={Position.Left}
-        className="!h-2.5 !w-2.5 !translate-y-4 !border-2 !border-white !bg-sky-500 dark:!border-zinc-950 dark:!bg-sky-400"
+        className={cn(sourceHandleClass, '!translate-y-4')}
       />
       <Handle
         type="target"
         id="target-right"
         position={Position.Right}
-        className="!h-2.5 !w-2.5 !translate-y-4 !border-2 !border-white !bg-neutral-400 dark:!border-zinc-950 dark:!bg-zinc-500"
+        className={cn(targetHandleClass, '!translate-y-4')}
       />
       <Handle
         type="source"
         id="source-top"
         position={Position.Top}
-        className="!h-2.5 !w-2.5 !-translate-x-4 !border-2 !border-white !bg-sky-500 dark:!border-zinc-950 dark:!bg-sky-400"
+        className={cn(sourceHandleClass, '!-translate-x-4')}
       />
       <Handle
         type="target"
         id="target-top"
         position={Position.Top}
-        className="!h-2.5 !w-2.5 !translate-x-4 !border-2 !border-white !bg-neutral-400 dark:!border-zinc-950 dark:!bg-zinc-500"
+        className={cn(targetHandleClass, '!translate-x-4')}
       />
       <Handle
         type="source"
         id="source-bottom"
         position={Position.Bottom}
-        className="!h-2.5 !w-2.5 !-translate-x-4 !border-2 !border-white !bg-sky-500 dark:!border-zinc-950 dark:!bg-sky-400"
+        className={cn(sourceHandleClass, '!-translate-x-4')}
       />
       <Handle
         type="target"
         id="target-bottom"
         position={Position.Bottom}
-        className="!h-2.5 !w-2.5 !translate-x-4 !border-2 !border-white !bg-neutral-400 dark:!border-zinc-950 dark:!bg-zinc-500"
+        className={cn(targetHandleClass, '!translate-x-4')}
       />
       <span className="text-[11px] font-semibold uppercase opacity-60">{t(`workflows.stepTypes.${step.type}`, { defaultValue: step.type.replace('_', ' ') })}</span>
       <span className="mt-1 line-clamp-1 text-sm font-semibold">{step.title}</span>
@@ -575,6 +590,10 @@ export function WorkflowBoard({
   const [selectedId, setSelectedId] = useState('')
   const [selectedEdgeId, setSelectedEdgeId] = useState('')
   const [selectedNodeIds, setSelectedNodeIds] = useState<string[]>([])
+  const [connectionSourceId, setConnectionSourceId] = useState('')
+  const [connectionTargetId, setConnectionTargetId] = useState('')
+  const flowViewportRef = useRef<HTMLDivElement | null>(null)
+  const flowInstanceRef = useRef<ReactFlowInstance<WorkflowNode, Edge> | null>(null)
   const [clipboard, setClipboard] = useState<WorkflowClipboard | null>(null)
   const [layouting, setLayouting] = useState(false)
   const selected = selectedId ? definition.steps.find((s) => s.id === selectedId) : undefined
@@ -600,10 +619,16 @@ export function WorkflowBoard({
           id: step.id,
           type: 'workflowStep',
           position: step.position,
-          data: { step, status: inst?.status, active },
+          data: {
+            step,
+            status: inst?.status,
+            active,
+            connectingSource: connectionSourceId === step.id,
+            connectingTarget: Boolean(connectionSourceId && connectionSourceId !== step.id && connectionTargetId === step.id),
+          },
         }
       }),
-    [definition.steps, instanceByStep, run?.activeStepId],
+    [definition.steps, instanceByStep, run?.activeStepId, connectionSourceId, connectionTargetId],
   )
 
   const initialEdges = useMemo<Edge[]>(
@@ -611,7 +636,8 @@ export function WorkflowBoard({
       definition.edges.map((edge) => {
         const sourceInst = instanceByStep.get(edge.from)
         const active = run?.activeStepId === edge.from || sourceInst?.status === 'running'
-        const color = active ? edgeClass.running : sourceInst?.status === 'completed' ? edgeClass.completed : edgeClass.pending
+        const selected = selectedEdgeId === edge.id
+        const color = selected ? '#0284c7' : active ? edgeClass.running : sourceInst?.status === 'completed' ? edgeClass.completed : edgeClass.pending
         const sourceStep = definition.steps.find((step) => step.id === edge.from)
         const targetStep = definition.steps.find((step) => step.id === edge.to)
         const handles = edgeHandles(sourceStep, targetStep)
@@ -623,16 +649,19 @@ export function WorkflowBoard({
           targetHandle: handles.targetHandle,
           label: edge.label || conditionLabel(edge),
           type: 'step',
+          className: selected ? 'workflow-edge-selected' : '',
+          selectable: true,
+          interactionWidth: 36,
           animated: active,
           markerEnd: { type: MarkerType.ArrowClosed, color },
-          style: { stroke: color, strokeWidth: active ? 2.5 : 2 },
-          labelStyle: { fill: '#71717a', fontSize: 11, fontWeight: 500 },
+          style: { stroke: color, strokeWidth: selected ? 3 : active ? 2.5 : 2 },
+          labelStyle: { fill: selected ? '#0369a1' : '#71717a', fontSize: 11, fontWeight: selected ? 650 : 500 },
           labelBgPadding: [6, 3],
           labelBgBorderRadius: 6,
-          labelBgStyle: { fill: 'rgba(255,255,255,0.92)' },
+          labelBgStyle: { fill: selected ? 'rgba(240,249,255,0.96)' : 'rgba(255,255,255,0.92)' },
         }
       }),
-    [definition.edges, definition.steps, instanceByStep, run?.activeStepId],
+    [definition.edges, definition.steps, instanceByStep, run?.activeStepId, selectedEdgeId],
   )
 
   const [nodes, setNodes, onNodesChange] = useNodesState(initialNodes)
@@ -744,6 +773,8 @@ export function WorkflowBoard({
 
   function handleConnect(connection: Connection) {
     if (!editable || !connection.source || !connection.target || connection.source === connection.target) return
+    setConnectionSourceId('')
+    setConnectionTargetId('')
     const edgeID = `e-${connection.source}-${connection.target}-${Date.now().toString(36)}`
     const sourceStep = definition.steps.find((step) => step.id === connection.source)
     const targetStep = definition.steps.find((step) => step.id === connection.target)
@@ -797,19 +828,28 @@ export function WorkflowBoard({
 
   function addNode() {
     if (!editable) return
-    const base = selected ?? definition.steps[definition.steps.length - 1]
     const id = `step_${Date.now().toString(36)}`
+    const viewportRect = flowViewportRef.current?.getBoundingClientRect()
+    const center = viewportRect
+      ? flowInstanceRef.current?.screenToFlowPosition({
+          x: viewportRect.left + viewportRect.width / 2,
+          y: viewportRect.top + viewportRect.height / 2,
+        })
+      : null
+    const fallback = selected?.position ?? definition.steps[definition.steps.length - 1]?.position ?? { x: 80, y: 180 }
     const step: WorkflowStep = {
       id,
       type: 'agent_task',
       title: t('workflows.newStepTitle'),
       description: '',
       actorRole: 'agent',
-      position: { x: (base?.position.x ?? 80) + 280, y: base?.position.y ?? 180 },
+      position: center
+        ? { x: Math.round(center.x - WORKFLOW_NODE_WIDTH / 2), y: Math.round(center.y - WORKFLOW_NODE_HEIGHT / 2) }
+        : { x: fallback.x + 280, y: fallback.y },
     }
-    setSelectedId(id)
+    setSelectedId('')
     setSelectedEdgeId('')
-    setSelectedNodeIds([id])
+    setSelectedNodeIds([])
     updateDefinition({
       ...definition,
       startStepId: definition.startStepId || id,
@@ -944,6 +984,7 @@ export function WorkflowBoard({
   return (
     <div className={cn('relative min-h-0', fill && 'h-full flex-1')}>
       <div
+        ref={flowViewportRef}
         className={cn(
           'relative overflow-hidden rounded-xl border border-neutral-200/80 bg-white dark:border-zinc-700/60 dark:bg-zinc-950',
           fill ? 'h-full min-h-[560px]' : fullscreen ? 'h-[calc(100vh-150px)]' : compact ? 'h-[360px]' : 'h-[520px]',
@@ -974,17 +1015,37 @@ export function WorkflowBoard({
         <ReactFlow
           nodes={nodes}
           edges={edges}
+          onInit={(instance) => {
+            flowInstanceRef.current = instance
+          }}
           nodeTypes={nodeTypes}
           onNodesChange={onNodesChange}
           onEdgesChange={onEdgesChange}
           onNodeDragStop={(_, node, nextNodes) => persistNodePositions(nextNodes as WorkflowNode[], node as WorkflowNode)}
           onConnect={handleConnect}
+          onConnectStart={(_, params: OnConnectStartParams) => {
+            if (!editable) return
+            setConnectionSourceId(params.nodeId ?? '')
+            setConnectionTargetId('')
+          }}
+          onConnectEnd={() => {
+            setConnectionSourceId('')
+            setConnectionTargetId('')
+          }}
+          onNodeMouseEnter={(_, node) => {
+            if (!editable || !connectionSourceId || connectionSourceId === node.id) return
+            setConnectionTargetId(node.id)
+          }}
+          onNodeMouseLeave={(_, node) => {
+            if (connectionTargetId === node.id) setConnectionTargetId('')
+          }}
           onNodeClick={(_, node) => {
             setSelectedId(node.id)
             setSelectedEdgeId('')
             setSelectedNodeIds([node.id])
           }}
-          onEdgeClick={(_, edge) => {
+          onEdgeClick={(event, edge) => {
+            event.stopPropagation()
             setSelectedEdgeId(edge.id)
             setSelectedNodeIds([])
             setSelectedId('')
@@ -992,10 +1053,17 @@ export function WorkflowBoard({
           onSelectionChange={({ nodes: selectedNodes, edges: selectedEdges }) => {
             const nodeIDs = selectedNodes.map((node) => node.id)
             const edgeID = selectedEdges[0]?.id || ''
-            setSelectedNodeIds((current) => (sameStringArray(current, nodeIDs) ? current : nodeIDs))
-            setSelectedEdgeId(edgeID)
-            if (nodeIDs.length === 1) setSelectedId(nodeIDs[0])
-            else if (edgeID) setSelectedId('')
+            if (nodeIDs.length > 0) {
+              setSelectedNodeIds((current) => (sameStringArray(current, nodeIDs) ? current : nodeIDs))
+              setSelectedEdgeId('')
+              if (nodeIDs.length === 1) setSelectedId(nodeIDs[0])
+              return
+            }
+            if (edgeID) {
+              setSelectedNodeIds([])
+              setSelectedEdgeId(edgeID)
+              setSelectedId('')
+            }
           }}
           onPaneClick={() => {
             setSelectedId('')
@@ -1006,6 +1074,8 @@ export function WorkflowBoard({
           fitViewOptions={focusActive && run?.activeStepId ? { padding: 0.7, nodes: [{ id: run.activeStepId }] } : { padding: 0.18 }}
           minZoom={0.25}
           maxZoom={1.8}
+          connectionMode={ConnectionMode.Loose}
+          connectionRadius={72}
           snapToGrid={editable}
           snapGrid={[24, 24]}
           panOnScroll
@@ -1325,9 +1395,9 @@ function sameWorkflowEdges(a: Edge[], b: Edge[]) {
       left.target !== right.target ||
       left.sourceHandle !== right.sourceHandle ||
       left.targetHandle !== right.targetHandle ||
-      left.label !== right.label ||
-      left.animated !== right.animated ||
-      JSON.stringify(left.style ?? {}) !== JSON.stringify(right.style ?? {}) ||
+          left.label !== right.label ||
+          left.animated !== right.animated ||
+          JSON.stringify(left.style ?? {}) !== JSON.stringify(right.style ?? {}) ||
       JSON.stringify(left.markerEnd ?? {}) !== JSON.stringify(right.markerEnd ?? {})
     ) {
       return false
