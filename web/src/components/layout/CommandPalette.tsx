@@ -49,9 +49,10 @@ export function CommandPalette({
 }) {
   const { t } = useTranslation()
   const navigate = useNavigate()
-  const { canAdmin } = useWorkspaceAccess()
+  const { canAdmin, workspace } = useWorkspaceAccess()
   const [workspaceReloadKey, setWorkspaceReloadKey] = useState(0)
   const [projectAgents, setProjectAgents] = useState<ProjectAgents[]>([])
+  const workspaceId = workspace?.id ?? ''
 
   useEffect(() => {
     function onKeyDown(e: KeyboardEvent) {
@@ -84,24 +85,29 @@ export function CommandPalette({
 
   useEffect(() => {
     let cancelled = false
+    setProjectAgents((current) => (current.length === 0 ? current : []))
     if (projects.length === 0) {
-      setProjectAgents((current) => (current.length === 0 ? current : []))
       return
     }
+    const requestWorkspaceId = workspaceId
     ;(async () => {
       const rows: ProjectAgents[] = []
       for (const project of projects) {
+        if (cancelled || requestWorkspaceId !== workspaceId) return
         try {
-          const agents = await apiFetch<ProjectAgent[]>(`/api/v1/projects/${encodeURIComponent(project.name)}/agents`)
+          const agents = await apiFetch<ProjectAgent[]>(
+            `/api/v1/projects/${encodeURIComponent(project.name)}/agents`,
+            { suppressToast: true, silentStatuses: [403, 404] },
+          )
           rows.push({ project: project.name, agents: agents ?? [] })
         } catch {
           rows.push({ project: project.name, agents: [] })
         }
       }
-      if (!cancelled) setProjectAgents(rows)
+      if (!cancelled && requestWorkspaceId === workspaceId) setProjectAgents(rows)
     })()
     return () => { cancelled = true }
-  }, [projectsKey])
+  }, [projectsKey, workspaceId])
 
   const items = useMemo<SearchItem[]>(() => {
     const nav: SearchItem[] = [

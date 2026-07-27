@@ -10,7 +10,7 @@ import {
 } from './nav-config'
 import { cn } from '../../lib/cn'
 import { useWorkspaceAccess } from '../../lib/workspace-access'
-import { apiFetch, apiPost } from '../../lib/api'
+import { WORKSPACE_ID_KEY, apiFetch, apiPost } from '../../lib/api'
 
 type WorkspaceSummary = {
   id: string
@@ -97,6 +97,7 @@ export function Sidebar({ collapsed, onToggle }: { collapsed: boolean; onToggle:
     window.dispatchEvent(new Event('workspace-switch-start'))
     try {
       await apiPost(`/api/v1/workspaces/${encodeURIComponent(id)}/switch`, {})
+      localStorage.setItem(WORKSPACE_ID_KEY, id)
       refreshWorkspaceData()
       setWorkspaceMenuOpen(false)
       navigate('/', { replace: true })
@@ -114,7 +115,10 @@ export function Sidebar({ collapsed, onToggle }: { collapsed: boolean; onToggle:
     setCreatingWorkspace(true)
     window.dispatchEvent(new Event('workspace-switch-start'))
     try {
-      await apiPost('/api/v1/workspaces', { name, switch: true })
+      const created = await apiPost<WorkspaceRef>('/api/v1/workspaces', { name, switch: true })
+      if (created?.id) {
+        localStorage.setItem(WORKSPACE_ID_KEY, created.id)
+      }
       setNewWorkspaceName('')
       refreshWorkspaceData()
       setWorkspaceMenuOpen(false)
