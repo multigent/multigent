@@ -1,11 +1,12 @@
-import { createContext, useCallback, useContext, useEffect, useMemo, useState, type ReactNode } from 'react'
+import { createContext, useCallback, useContext, useEffect, useMemo, useRef, useState, type MouseEvent, type PointerEvent, type ReactNode } from 'react'
+import { createPortal } from 'react-dom'
 import { Link } from 'react-router-dom'
 import { useTranslation } from 'react-i18next'
 import ReactMarkdown from 'react-markdown'
 import remarkGfm from 'remark-gfm'
 import { ClipboardCopy, MessageSquare, Pencil, Play, Send, Trash2, X } from 'lucide-react'
 import { cn } from '../../lib/cn'
-import { apiDelete, apiPost, apiPut } from '../../lib/api'
+import { apiDelete, apiFetch, apiPost, apiPut } from '../../lib/api'
 import { useFormatDateTime } from '../../lib/format-datetime'
 import { useApiJson } from '../../lib/use-api'
 import { useAuth } from '../../lib/auth'
@@ -55,6 +56,7 @@ export type RunRow = {
 export type TaskWorkflowData = { definition: WorkflowDefinition; run: WorkflowRun; steps: WorkflowStepInstance[]; history?: WorkflowStepEvent[]; docTitles?: Record<string, string> }
 type SafeUser = { username: string; displayName?: string; email?: string }
 type ProjectMember = { name: string; model?: string; avatar?: string }
+type DocPreview = { id: string; title?: string; content?: string; updatedAt?: string }
 export type WorkflowRecord = WorkflowStepEvent | WorkflowStepInstance
 const silentNotFound = [404]
 const WorkflowDocTitleContext = createContext<Map<string, string>>(new Map())
@@ -1297,21 +1299,203 @@ function splitURLTrailingPunctuation(raw: string) {
 }
 
 function DocIDLink({ docID }: { docID: string }) {
+  const { t } = useTranslation()
   const docTitles = useContext(WorkflowDocTitleContext)
+  const [open, setOpen] = useState(false)
+  const [loading, setLoading] = useState(false)
+  const [doc, setDoc] = useState<DocPreview | null>(null)
+  const [err, setErr] = useState<string | null>(null)
+  const [dragOffset, setDragOffset] = useState({ x: 0, y: 0 })
+  const [windowSize, setWindowSize] = useState({ width: 768, height: 560 })
+  const [zoom, setZoom] = useState(1)
+  const dragRef = useRef({ active: false, startX: 0, startY: 0, originX: 0, originY: 0 })
+  const resizeRef = useRef({ active: false, startX: 0, startY: 0, width: 768, height: 560 })
   const title = docTitles.get(docID)
-  const label = title || docID
+  const label = doc?.title || title || docID
+
+  useEffect(() => {
+    if (!open) return
+    function onMove(event: globalThis.PointerEvent) {
+      const dragState = dragRef.current
+      if (dragState.active) {
+        const maxX = Math.max(80, window.innerWidth / 2 - 80)
+        const maxY = Math.max(80, window.innerHeight / 2 - 80)
+        setDragOffset({
+          x: clampNumber(dragState.originX + event.clientX - dragState.startX, -maxX, maxX),
+          y: clampNumber(dragState.originY + event.clientY - dragState.startY, -maxY, maxY),
+        })
+        return
+      }
+      const resizeState = resizeRef.current
+      if (resizeState.active) {
+        setWindowSize({
+          width: clampNumber(resizeState.width + event.clientX - resizeState.startX, 520, Math.max(520, window.innerWidth - 48)),
+          height: clampNumber(resizeState.height + event.clientY - resizeState.startY, 420, Math.max(420, window.innerHeight - 48)),
+        })
+      }
+    }
+    function onUp() {
+      dragRef.current.active = false
+      resizeRef.current.active = false
+      document.body.style.userSelect = ''
+    }
+    window.addEventListener('pointermove', onMove)
+    window.addEventListener('pointerup', onUp)
+    window.addEventListener('pointercancel', onUp)
+    return () => {
+      window.removeEventListener('pointermove', onMove)
+      window.removeEventListener('pointerup', onUp)
+      window.removeEventListener('pointercancel', onUp)
+      document.body.style.userSelect = ''
+    }
+  }, [open])
+
+  async function openPreview(e: MouseEvent<HTMLAnchorElement>) {
+    e.preventDefault()
+    e.stopPropagation()
+    setOpen(true)
+    if (doc || loading) return
+    setLoading(true)
+    setErr(null)
+    try {
+      const res = await apiFetch<DocPreview>(`/api/v1/docs/${encodeURIComponent(docID)}?content=true`, { suppressToast: true })
+      setDoc(res)
+    } catch (error) {
+      setErr(error instanceof Error ? error.message : String(error))
+    } finally {
+      setLoading(false)
+    }
+  }
+
+  function beginDrag(e: PointerEvent<HTMLDivElement>) {
+    if (e.button !== 0) return
+    if ((e.target as HTMLElement).closest('a,button')) return
+    dragRef.current = {
+      active: true,
+      startX: e.clientX,
+      startY: e.clientY,
+      originX: dragOffset.x,
+      originY: dragOffset.y,
+    }
+    document.body.style.userSelect = 'none'
+  }
+
+  function changeZoom(delta: number) {
+    setZoom((value) => clampNumber(Math.round((value + delta) * 100) / 100, 0.75, 1.4))
+  }
+
+  function beginResize(e: PointerEvent<HTMLDivElement>) {
+    e.preventDefault()
+    e.stopPropagation()
+    resizeRef.current = {
+      active: true,
+      startX: e.clientX,
+      startY: e.clientY,
+      width: windowSize.width,
+      height: windowSize.height,
+    }
+    document.body.style.userSelect = 'none'
+  }
+
+  const modal = open && typeof document !== 'undefined'
+    ? createPortal(
+      <div className="pointer-events-none fixed inset-0 z-[90] flex items-center justify-center p-4">
+        <div
+          className="pointer-events-auto relative flex flex-col overflow-hidden rounded-xl border border-neutral-200 bg-white shadow-2xl ring-1 ring-black/5 dark:border-zinc-700 dark:bg-zinc-950 dark:ring-white/10"
+          style={{ width: windowSize.width, height: windowSize.height, transform: `translate(${dragOffset.x}px, ${dragOffset.y}px)`, transformOrigin: 'center' }}
+          onClick={(e) => e.stopPropagation()}
+        >
+          <div className="flex shrink-0 cursor-move items-start justify-between gap-4 border-b border-neutral-200 px-5 py-4 dark:border-zinc-800" onPointerDown={beginDrag}>
+            <div className="min-w-0">
+              <p className="font-mono text-[11px] uppercase tracking-wide text-neutral-400 dark:text-zinc-500">{docID}</p>
+              <h3 className="mt-1 truncate text-base font-semibold text-neutral-900 dark:text-zinc-100">{label}</h3>
+            </div>
+            <div className="flex shrink-0 items-center gap-2">
+              <a
+                href={`/docs/${encodeURIComponent(docID)}`}
+                target="_blank"
+                rel="noreferrer"
+                className="rounded-lg border border-neutral-200 bg-white px-3 py-1.5 text-sm font-medium text-neutral-500 hover:bg-neutral-50 hover:text-neutral-800 dark:border-zinc-700 dark:bg-zinc-900 dark:text-zinc-400 dark:hover:bg-zinc-800 dark:hover:text-zinc-100"
+              >
+                {t('docs.openFullDocument', { defaultValue: 'Open document' })}
+              </a>
+              <button type="button" onClick={() => setOpen(false)} className="rounded-md p-1.5 text-neutral-400 hover:bg-neutral-100 dark:text-zinc-500 dark:hover:bg-zinc-800" aria-label={t('common.close')}>
+                <X className="size-4" />
+              </button>
+            </div>
+          </div>
+          <div className="min-h-0 flex-1 overflow-y-auto px-5 py-4">
+            {loading && <DocPreviewSkeleton />}
+            {err && <p className="text-sm text-red-600 dark:text-red-400">{err}</p>}
+            {!loading && !err && (
+              <div className="prose prose-sm max-w-none dark:prose-invert">
+                <div style={{ transform: `scale(${zoom})`, transformOrigin: 'top left', width: `${100 / zoom}%` }}>
+                  <ReactMarkdown remarkPlugins={[remarkGfm]}>{unescapeBreaks(doc?.content || '') || t('docs.emptyContent', { defaultValue: 'No content.' })}</ReactMarkdown>
+                </div>
+              </div>
+            )}
+          </div>
+          <div className="absolute bottom-3 right-3 flex items-center rounded-lg border border-neutral-200 bg-white/90 p-0.5 shadow-sm backdrop-blur dark:border-zinc-700 dark:bg-zinc-900/90">
+            <button type="button" onClick={() => changeZoom(-0.1)} className="rounded-md px-2 py-1 text-xs font-semibold text-neutral-500 hover:bg-neutral-100 hover:text-neutral-900 dark:text-zinc-400 dark:hover:bg-zinc-800 dark:hover:text-zinc-100">-</button>
+            <button type="button" onClick={() => setZoom(1)} className="min-w-12 rounded-md px-2 py-1 text-xs font-medium text-neutral-500 hover:bg-neutral-100 hover:text-neutral-900 dark:text-zinc-400 dark:hover:bg-zinc-800 dark:hover:text-zinc-100">{Math.round(zoom * 100)}%</button>
+            <button type="button" onClick={() => changeZoom(0.1)} className="rounded-md px-2 py-1 text-xs font-semibold text-neutral-500 hover:bg-neutral-100 hover:text-neutral-900 dark:text-zinc-400 dark:hover:bg-zinc-800 dark:hover:text-zinc-100">+</button>
+          </div>
+          <div
+            className="absolute bottom-0 right-0 size-5 cursor-nwse-resize rounded-br-xl bg-gradient-to-br from-transparent via-transparent to-neutral-300 dark:to-zinc-600"
+            onPointerDown={beginResize}
+            aria-hidden="true"
+          />
+        </div>
+      </div>,
+      document.body,
+    )
+    : null
+
   return (
-    <a
-      href={`/docs/${encodeURIComponent(docID)}`}
-      target="_blank"
-      rel="noreferrer"
-      className="font-medium text-sky-700 underline decoration-sky-300 underline-offset-2 hover:text-sky-800 dark:text-sky-400 dark:decoration-sky-700 dark:hover:text-sky-300"
-      title={title ? docID : undefined}
-      onClick={(e) => e.stopPropagation()}
-    >
-      {label}
-    </a>
+    <>
+      <a
+        href={`/docs/${encodeURIComponent(docID)}`}
+        className="font-medium text-sky-700 underline decoration-sky-300 underline-offset-2 hover:text-sky-800 dark:text-sky-400 dark:decoration-sky-700 dark:hover:text-sky-300"
+        title={title ? docID : undefined}
+        onClick={openPreview}
+      >
+        {label}
+      </a>
+      {modal}
+    </>
   )
+}
+
+function DocPreviewSkeleton() {
+  return (
+    <div className="space-y-5">
+      <div className="space-y-2">
+        <div className="h-5 w-2/5 animate-pulse rounded-md bg-neutral-200 dark:bg-zinc-800" />
+        <div className="h-3 w-1/4 animate-pulse rounded-md bg-neutral-100 dark:bg-zinc-900" />
+      </div>
+      <div className="space-y-3">
+        <div className="h-3.5 w-full animate-pulse rounded-md bg-neutral-100 dark:bg-zinc-900" />
+        <div className="h-3.5 w-11/12 animate-pulse rounded-md bg-neutral-100 dark:bg-zinc-900" />
+        <div className="h-3.5 w-4/5 animate-pulse rounded-md bg-neutral-100 dark:bg-zinc-900" />
+      </div>
+      <div className="rounded-lg border border-neutral-100 bg-neutral-50 p-4 dark:border-zinc-800 dark:bg-zinc-900/70">
+        <div className="space-y-2.5">
+          <div className="h-3 w-1/3 animate-pulse rounded-md bg-neutral-200 dark:bg-zinc-800" />
+          <div className="h-3 w-full animate-pulse rounded-md bg-neutral-200 dark:bg-zinc-800" />
+          <div className="h-3 w-5/6 animate-pulse rounded-md bg-neutral-200 dark:bg-zinc-800" />
+          <div className="h-3 w-2/3 animate-pulse rounded-md bg-neutral-200 dark:bg-zinc-800" />
+        </div>
+      </div>
+      <div className="grid grid-cols-2 gap-3">
+        <div className="h-24 animate-pulse rounded-lg bg-neutral-100 dark:bg-zinc-900" />
+        <div className="h-24 animate-pulse rounded-lg bg-neutral-100 dark:bg-zinc-900" />
+      </div>
+    </div>
+  )
+}
+
+function clampNumber(value: number, min: number, max: number) {
+  return Math.min(max, Math.max(min, value))
 }
 
 function ExternalURLLink({ href }: { href: string }) {

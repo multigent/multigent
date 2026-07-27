@@ -3,14 +3,18 @@ package workflow
 import (
 	"encoding/json"
 	"fmt"
+	"regexp"
 	"sort"
 	"strings"
 	"time"
+	"unicode"
 
 	controldb "github.com/multigent/multigent/internal/db"
 	"github.com/multigent/multigent/internal/entity"
 	"github.com/multigent/multigent/internal/errs"
 )
+
+var workflowDocIDPattern = regexp.MustCompile(`^doc-\d{8}-[a-z0-9]+$`)
 
 type Store struct {
 	db          controldb.Store
@@ -1263,8 +1267,57 @@ func normalizeWorkflowOutputValues(step entity.WorkflowStep, values map[string]s
 		if strings.TrimSpace(out[name]) == "" {
 			return nil, fmt.Errorf("workflow output field %q is required for step %q", name, step.Title)
 		}
+		if workflowFieldRequiresDocID(field) && !workflowDocIDValueValid(out[name]) {
+			return nil, fmt.Errorf("workflow output field %q for step %q must be a knowledge docID like doc-20260728-abc123", name, step.Title)
+		}
 	}
 	return out, nil
+}
+
+func workflowFieldRequiresDocID(field entity.WorkflowField) bool {
+	name := strings.ToLower(strings.TrimSpace(field.Name))
+	desc := strings.ToLower(strings.TrimSpace(field.Description))
+	combined := name + " " + desc
+	normalizedName := strings.ReplaceAll(strings.ReplaceAll(name, "-", "_"), " ", "_")
+	switch {
+	case strings.Contains(normalizedName, "doc_id"):
+		return true
+	case strings.Contains(normalizedName, "docid"):
+		return true
+	case strings.Contains(combined, "doc id"):
+		return true
+	case strings.Contains(combined, "docid"):
+		return true
+	case strings.Contains(combined, "document id"):
+		return true
+	case strings.Contains(combined, "knowledge doc"):
+		return true
+	case strings.Contains(combined, "knowledge base document"):
+		return true
+	case strings.Contains(combined, "文档id"):
+		return true
+	case strings.Contains(combined, "文档 id"):
+		return true
+	case strings.Contains(combined, "知识库文档"):
+		return true
+	default:
+		return false
+	}
+}
+
+func workflowDocIDValueValid(value string) bool {
+	tokens := strings.FieldsFunc(strings.TrimSpace(value), func(r rune) bool {
+		return unicode.IsSpace(r) || r == ',' || r == ';' || r == '，' || r == '；'
+	})
+	if len(tokens) == 0 {
+		return false
+	}
+	for _, token := range tokens {
+		if !workflowDocIDPattern.MatchString(strings.TrimSpace(token)) {
+			return false
+		}
+	}
+	return true
 }
 
 func workflowFieldNames(fields []entity.WorkflowField) []string {

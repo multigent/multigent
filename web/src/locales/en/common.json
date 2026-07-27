@@ -1256,7 +1256,9 @@
     "noRefs": "None",
     "expandSidebar": "Expand sidebar",
     "previousDoc": "Previous",
-    "nextDoc": "Next"
+    "nextDoc": "Next",
+    "openFullDocument": "Open document",
+    "emptyContent": "No content."
   },
   "api": {
     "loading": "Loading…",

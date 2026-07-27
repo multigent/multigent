@@ -1,5 +1,17 @@
 # Changelog
 
+## [v0.1.19] - 2026-07-28
+
+### Added
+
+- Workflow task details and follow view now open knowledge-base docIDs in draggable floating preview windows.
+- Document preview windows can be resized from the bottom-right corner, zoomed, and opened side by side for comparing multiple upstream artifacts.
+
+### Improved
+
+- Document preview loading now uses a structured skeleton state to avoid layout jumps while content loads.
+- Workflow step completion now validates structured docID outputs so agents cannot advance with malformed knowledge-base references.
+
 ## [v0.1.18] - 2026-07-27
 
 ### Improved

@@ -1256,7 +1256,9 @@
     "noRefs": "无",
     "expandSidebar": "展开目录",
     "previousDoc": "上一篇",
-    "nextDoc": "下一篇"
+    "nextDoc": "下一篇",
+    "openFullDocument": "打开完整文档",
+    "emptyContent": "暂无内容。"
   },
   "api": {
     "loading": "加载中…",
