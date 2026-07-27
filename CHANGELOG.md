@@ -1,5 +1,22 @@
 # Changelog
 
+## [v0.1.16] - 2026-07-27
+
+### Added
+
+- Runtime Nodes can now join a workspace and execute assigned agent runs from a trusted machine.
+- Agent settings now support assigning a Runtime Node for remote or host-side execution.
+
+### Changed
+
+- Claude Code direct host execution now keeps `bypassPermissions` but requires the Runtime Node process to run as a non-root user.
+- Docker sandbox execution keeps using `IS_SANDBOX=1` with Claude Code's sandbox bypass path, preserving the existing default Docker behavior.
+
+### Fixed
+
+- Workspace switching now updates the active workspace id before reloading workspace-scoped data, preventing the UI from snapping back to the previous workspace.
+- Command palette background prefetch no longer leaks stale project-agent requests across workspace switches.
+
 ## [v0.1.15] - 2026-07-26
 
 ### Changed
