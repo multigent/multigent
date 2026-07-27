@@ -663,9 +663,9 @@ func expandTilde(path string) string {
 func sandboxEnvVars(model entity.AgentModel) []string {
 	switch entity.NormaliseModel(model) {
 	case entity.ModelClaudeCode:
-		// IS_SANDBOX=1 is required to use --dangerously-skip-permissions as
-		// root. Without it, Claude Code refuses to start with:
-		//   "--dangerously-skip-permissions cannot be used with root/sudo"
+		// Keep the Claude runtime aware that it is running inside an isolated
+		// container. Permission bypass itself is requested through
+		// --permission-mode bypassPermissions by the runner.
 		return []string{"IS_SANDBOX=1"}
 
 	case entity.ModelCodex, entity.ModelQoder:

@@ -244,19 +244,20 @@ func (s *Server) handleGetAgentContext(w http.ResponseWriter, r *http.Request) {
 		addDirs = []string{}
 	}
 	resp := map[string]any{
-		"contextFile":  contextFile,
-		"context":      string(merged),
-		"wakeup":       string(wakeup),
-		"model":        string(meta.Model),
-		"runtimeModel": meta.RuntimeModel,
-		"team":         meta.Team,
-		"role":         meta.Role,
-		"avatar":       meta.Avatar,
-		"syncedAt":     meta.SyncedAt,
-		"skills":       skills,
-		"skillDetails": skillDetails,
-		"workDir":      agentDir,
-		"addDirs":      addDirs,
+		"contextFile":   contextFile,
+		"context":       string(merged),
+		"wakeup":        string(wakeup),
+		"model":         string(meta.Model),
+		"runtimeModel":  meta.RuntimeModel,
+		"runtimeNodeId": meta.RuntimeNodeID,
+		"team":          meta.Team,
+		"role":          meta.Role,
+		"avatar":        meta.Avatar,
+		"syncedAt":      meta.SyncedAt,
+		"skills":        skills,
+		"skillDetails":  skillDetails,
+		"workDir":       agentDir,
+		"addDirs":       addDirs,
 	}
 	if meta.HTTPAgent != nil {
 		resp["httpAgent"] = meta.HTTPAgent
@@ -304,7 +305,11 @@ func (s *Server) handleGetAgentRuntimeReadiness(w http.ResponseWriter, r *http.R
 		s.serverError(w, err)
 		return
 	}
-	_ = json.NewEncoder(w).Encode(buildRuntimeReadiness(meta))
+	workspaceID, ok := s.currentWorkspaceForRequest(w, r)
+	if !ok {
+		return
+	}
+	_ = json.NewEncoder(w).Encode(s.runtimeReadinessForExecution(workspaceID, meta))
 }
 
 func contextFileName(model string) string {
@@ -583,14 +588,23 @@ func buildRuntimeReadinessWithOptions(meta *entity.AgentMeta, opts runtimeReadin
 	provider := entity.SandboxDocker
 	if meta.Sandbox != nil && meta.Sandbox.Provider != "" {
 		provider = meta.Sandbox.Provider
+	} else if strings.TrimSpace(meta.RuntimeNodeID) != "" {
+		provider = entity.SandboxNone
 	}
 	isDocker := provider == entity.SandboxDocker
 	if provider == entity.SandboxNone {
-		checks = append(checks, setupCheck{
-			Key: "sandbox", Label: "Sandbox", Status: "error", Blocking: true,
-			Detail: "No sandbox runtime is configured. Multigent requires an isolated runtime before agents can run.",
-			Action: "Configure Docker or another supported sandbox provider.",
-		})
+		if strings.TrimSpace(meta.RuntimeNodeID) != "" {
+			checks = append(checks, setupCheck{
+				Key: "runtime_node", Label: "Runtime node", Status: "ok",
+				Detail: "Direct host execution on the assigned trusted runtime node.",
+			})
+		} else {
+			checks = append(checks, setupCheck{
+				Key: "sandbox", Label: "Sandbox", Status: "error", Blocking: true,
+				Detail: "No sandbox runtime is configured. Multigent requires an isolated runtime before agents can run.",
+				Action: "Configure Docker or another supported sandbox provider.",
+			})
+		}
 	} else if provider == entity.SandboxE2B {
 		caps := sandbox.DetectCapabilities()
 		if caps.E2B.Available {

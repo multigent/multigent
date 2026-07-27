@@ -40,14 +40,23 @@ type runtimeConnectionDocumentRow struct {
 func newRuntimeCmd() *cobra.Command {
 	cmd := &cobra.Command{
 		Use:   "runtime",
-		Short: "Use scoped runtime APIs from inside an agent sandbox",
-		Long: `Use scoped runtime APIs from inside an agent sandbox.
+		Short: "Use scoped runtime APIs and manage runtime nodes",
+		Long: `Use scoped runtime APIs from inside an agent sandbox and manage
+remote Runtime Nodes.
 
-These commands require MULTIGENT_API_URL and MULTIGENT_AGENT_TOKEN injected by
+Agent sandbox commands require MULTIGENT_API_URL and MULTIGENT_AGENT_TOKEN injected by
 Multigent when an agent run starts. They are intentionally not a management API:
-all authorization is checked by the runtime agent token.`,
+all authorization is checked by the runtime agent token.
+
+Runtime Node commands use a node join token and are used on a machine that can
+execute agents for a Multigent workspace.`,
 	}
 	cmd.AddCommand(
+		newRuntimeJoinCmd(),
+		newRuntimeStartCmd(),
+		newRuntimeStatusCmd(),
+		newRuntimeDoctorCmd(),
+		newRuntimePrepareCmd(),
 		newRuntimeConnectionsCmd(),
 		newRuntimeActionCmd(),
 		newRuntimeMCPCmd(),

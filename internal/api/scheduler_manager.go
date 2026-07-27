@@ -1,6 +1,7 @@
 package api
 
 import (
+	"context"
 	"crypto/sha256"
 	"encoding/hex"
 	"encoding/json"
@@ -9,15 +10,21 @@ import (
 	"net/http"
 	"os"
 	"os/exec"
+	"path/filepath"
 	"strings"
 	"sync"
 	"syscall"
 	"time"
+
+	controldb "github.com/multigent/multigent/internal/db"
+	"github.com/multigent/multigent/internal/entity"
 )
 
 type schedulerProcess struct {
 	mu        sync.Mutex
 	cmd       *exec.Cmd
+	cancel    context.CancelFunc
+	mode      string
 	project   string
 	agent     string
 	startedAt time.Time
@@ -25,6 +32,11 @@ type schedulerProcess struct {
 	exitErr   error
 	doneCh    chan struct{}
 }
+
+const (
+	schedulerModeLocal       = "local"
+	schedulerModeRuntimeNode = "runtime-node"
+)
 
 type SchedulerManager struct {
 	mu      sync.Mutex
@@ -85,6 +97,7 @@ func (m *SchedulerManager) Start(project, agent string) error {
 
 	proc := &schedulerProcess{
 		cmd:       cmd,
+		mode:      schedulerModeLocal,
 		project:   project,
 		agent:     agent,
 		startedAt: time.Now(),
@@ -100,6 +113,43 @@ func (m *SchedulerManager) Start(project, agent string) error {
 		close(proc.doneCh)
 	}()
 
+	m.procs[key] = proc
+	return nil
+}
+
+func (m *SchedulerManager) StartLoop(project, agent, mode string, loop func(context.Context)) error {
+	m.mu.Lock()
+	defer m.mu.Unlock()
+
+	key := schedKey(project, agent)
+	if p, ok := m.procs[key]; ok {
+		select {
+		case <-p.doneCh:
+			// loop already exited, allow restart
+		default:
+			return fmt.Errorf("scheduler already running for %q", key)
+		}
+	}
+	if strings.TrimSpace(mode) == "" {
+		mode = schedulerModeRuntimeNode
+	}
+	ctx, cancel := context.WithCancel(context.Background())
+	proc := &schedulerProcess{
+		cancel:    cancel,
+		mode:      mode,
+		project:   project,
+		agent:     agent,
+		startedAt: time.Now(),
+		doneCh:    make(chan struct{}),
+	}
+	go func() {
+		defer close(proc.doneCh)
+		defer cancel()
+		loop(ctx)
+		proc.mu.Lock()
+		proc.stopped = true
+		proc.mu.Unlock()
+	}()
 	m.procs[key] = proc
 	return nil
 }
@@ -120,14 +170,16 @@ func (m *SchedulerManager) Stop(project, agent string) error {
 	default:
 	}
 
-	if proc.cmd.Process != nil {
+	if proc.cancel != nil {
+		proc.cancel()
+	} else if proc.cmd != nil && proc.cmd.Process != nil {
 		killProcessGroup(proc.cmd.Process.Pid)
 	}
 
 	select {
 	case <-proc.doneCh:
 	case <-time.After(5 * time.Second):
-		if proc.cmd.Process != nil {
+		if proc.cmd != nil && proc.cmd.Process != nil {
 			_ = proc.cmd.Process.Kill()
 		}
 	}
@@ -142,6 +194,7 @@ type schedStatus struct {
 	Key       string `json:"key"`
 	Running   bool   `json:"running"`
 	PID       int    `json:"pid,omitempty"`
+	Mode      string `json:"mode,omitempty"`
 	Project   string `json:"project,omitempty"`
 	Agent     string `json:"agent,omitempty"`
 	StartedAt string `json:"startedAt,omitempty"`
@@ -156,6 +209,7 @@ func (m *SchedulerManager) Status() []schedStatus {
 	for key, proc := range m.procs {
 		s := schedStatus{
 			Key:     key,
+			Mode:    proc.mode,
 			Project: proc.project,
 			Agent:   proc.agent,
 		}
@@ -169,7 +223,7 @@ func (m *SchedulerManager) Status() []schedStatus {
 			proc.mu.Unlock()
 		default:
 			s.Running = true
-			if proc.cmd.Process != nil {
+			if proc.cmd != nil && proc.cmd.Process != nil {
 				s.PID = proc.cmd.Process.Pid
 			}
 			s.StartedAt = proc.startedAt.UTC().Format(time.RFC3339)
@@ -182,6 +236,7 @@ func (m *SchedulerManager) Status() []schedStatus {
 type desiredSchedulerSpec struct {
 	Project string `json:"project,omitempty"`
 	Agent   string `json:"agent,omitempty"`
+	Mode    string `json:"mode,omitempty"`
 }
 
 func schedulerDesiredSettingKey(root string) string {
@@ -209,7 +264,7 @@ func (s *Server) saveDesiredSchedulers(specs []desiredSchedulerSpec) error {
 	return s.controlDB.SetSetting(schedulerDesiredSettingKey(s.root), string(b))
 }
 
-func (s *Server) setSchedulerDesired(project, agent string, running bool) {
+func (s *Server) setSchedulerDesired(project, agent, mode string, running bool) {
 	s.schedulerDesiredMu.Lock()
 	defer s.schedulerDesiredMu.Unlock()
 
@@ -224,14 +279,14 @@ func (s *Server) setSchedulerDesired(project, agent string, running bool) {
 		if schedKey(spec.Project, spec.Agent) == key {
 			found = true
 			if running {
-				next = append(next, desiredSchedulerSpec{Project: project, Agent: agent})
+				next = append(next, desiredSchedulerSpec{Project: project, Agent: agent, Mode: strings.TrimSpace(mode)})
 			}
 			continue
 		}
 		next = append(next, spec)
 	}
 	if running && !found {
-		next = append(next, desiredSchedulerSpec{Project: project, Agent: agent})
+		next = append(next, desiredSchedulerSpec{Project: project, Agent: agent, Mode: strings.TrimSpace(mode)})
 	}
 	_ = s.saveDesiredSchedulers(next)
 }
@@ -244,6 +299,10 @@ func (s *Server) restoreDesiredSchedulers() {
 	}
 	for _, spec := range specs {
 		if spec.Agent != "" && spec.Project == "" {
+			continue
+		}
+		if spec.Mode == schedulerModeRuntimeNode {
+			log.Printf("runtime-node scheduler %s restored as desired but not auto-started; start it from the web/API so the runtime API URL is known", schedKey(spec.Project, spec.Agent))
 			continue
 		}
 		if err := s.sched.Start(spec.Project, spec.Agent); err != nil {
@@ -324,11 +383,32 @@ func (s *Server) handleSchedulerStart(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	if err := s.sched.Start(project, agent); err != nil {
+	workspaceID, workspaceOK := s.currentWorkspaceForRequest(w, r)
+	if !workspaceOK {
+		return
+	}
+	mode := schedulerModeLocal
+	useRuntimeNode := false
+	if project != "" && agent != "" {
+		if meta, err := s.st.AgentMeta(project, agent); err == nil && meta != nil {
+			useRuntimeNode = s.usesAssignedRuntimeNode(workspaceID, meta)
+		}
+	}
+	if useRuntimeNode {
+		serverURL := externalServerURL(r)
+		actor := requestUsername(r)
+		mode = schedulerModeRuntimeNode
+		if err := s.sched.StartLoop(project, agent, mode, func(ctx context.Context) {
+			s.runtimeSchedulerLoop(ctx, workspaceID, project, agent, serverURL, actor)
+		}); err != nil {
+			s.jsonErrorCode(w, http.StatusConflict, ErrCodeSchedulerConflict, err.Error())
+			return
+		}
+	} else if err := s.sched.Start(project, agent); err != nil {
 		s.jsonErrorCode(w, http.StatusConflict, ErrCodeSchedulerConflict, err.Error())
 		return
 	}
-	s.setSchedulerDesired(project, agent, true)
+	s.setSchedulerDesired(project, agent, mode, true)
 	s.auditLog(auditLogInput{
 		Action:       "scheduler.start",
 		ResourceType: "scheduler",
@@ -338,14 +418,16 @@ func (s *Server) handleSchedulerStart(w http.ResponseWriter, r *http.Request) {
 			"project": project,
 			"agent":   agent,
 			"key":     schedKey(project, agent),
+			"mode":    mode,
 		},
 		Request: r,
 	})
 
 	key := schedKey(project, agent)
 	_ = json.NewEncoder(w).Encode(map[string]any{
-		"ok":  true,
-		"key": key,
+		"ok":   true,
+		"key":  key,
+		"mode": mode,
 	})
 }
 
@@ -362,6 +444,10 @@ func (s *Server) handleSchedulerWakeup(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	if !s.checkProjectManager(w, r, project) {
+		return
+	}
+	workspaceID, workspaceOK := s.currentWorkspaceForRequest(w, r)
+	if !workspaceOK {
 		return
 	}
 
@@ -383,8 +469,31 @@ func (s *Server) handleSchedulerWakeup(w http.ResponseWriter, r *http.Request) {
 		s.serverError(w, err)
 		return
 	}
-	if readiness := buildRuntimeReadiness(meta); readiness.Blocking {
+	if readiness := s.runtimeReadinessForExecution(workspaceID, meta); readiness.Blocking {
 		s.jsonErrorCode(w, http.StatusConflict, ErrCodeRuntimeNotReady, runtimeReadinessErrorMessage(readiness))
+		return
+	}
+	if s.usesAssignedRuntimeNode(workspaceID, meta) {
+		run, task, err := s.enqueueRuntimeWakeupRunFromRequest(workspaceID, project, agent, hb, externalServerURL(r), requestUsername(r))
+		if err != nil {
+			s.jsonErrorCode(w, http.StatusInternalServerError, ErrCodeSchedulerWakeupFailed, fmt.Sprintf("queue runtime wakeup failed: %v", err))
+			return
+		}
+		s.auditLog(auditLogInput{
+			Action:       "scheduler.wakeup",
+			ResourceType: "agent",
+			ResourceID:   project + "/" + agent,
+			Summary:      "Agent wakeup queued on runtime node",
+			After: map[string]any{
+				"project":      project,
+				"agent":        agent,
+				"taskId":       task.ID,
+				"runtimeRunId": run.ID,
+				"runtime":      "node",
+			},
+			Request: r,
+		})
+		_ = json.NewEncoder(w).Encode(map[string]any{"ok": true, "status": "queued", "runtimeRunId": run.ID, "taskId": task.ID})
 		return
 	}
 
@@ -420,6 +529,104 @@ func (s *Server) handleSchedulerWakeup(w http.ResponseWriter, r *http.Request) {
 	_ = json.NewEncoder(w).Encode(map[string]any{"ok": true, "pid": pid, "status": "started"})
 }
 
+func (s *Server) enqueueRuntimeWakeupRunFromRequest(workspaceID, project, agent string, hb *entity.HeartbeatConfig, serverURL, actor string) (controldb.RuntimeRun, *entity.Task, error) {
+	task, err := s.nextRuntimeWakeupTask(project, agent, hb)
+	if err != nil {
+		return controldb.RuntimeRun{}, nil, err
+	}
+	if task == nil {
+		return controldb.RuntimeRun{}, nil, fmt.Errorf("no pending task or wakeup prompt")
+	}
+	now := time.Now().UTC()
+	prev := task.Status
+	task.Status = entity.TaskStatusInProgress
+	task.UpdatedAt = now
+	entity.ApplyStatusTimestamps(task, prev, now)
+	if err := s.ts.UpdateTask(project, agent, task); err != nil {
+		return controldb.RuntimeRun{}, nil, err
+	}
+	run, err := s.enqueueRuntimeTaskRun(workspaceID, project, agent, task, strings.TrimSpace(hb.SessionID), serverURL, actor)
+	if err != nil {
+		return controldb.RuntimeRun{}, nil, err
+	}
+	hb.LastWakeup = &now
+	hb.LastWakeupStatus = "running"
+	hb.PID = 0
+	_ = s.ts.SaveHeartbeat(project, agent, hb)
+	return run, task, nil
+}
+
+func (s *Server) nextRuntimeWakeupTask(project, agent string, hb *entity.HeartbeatConfig) (*entity.Task, error) {
+	tasks, err := s.ts.ListTasks(project, agent, entity.TaskStatusPending)
+	if err != nil {
+		return nil, err
+	}
+	var selected *entity.Task
+	for _, task := range tasks {
+		if task == nil {
+			continue
+		}
+		if selected == nil ||
+			task.Priority < selected.Priority ||
+			(task.Priority == selected.Priority && task.CreatedAt.Before(selected.CreatedAt)) ||
+			(task.Priority == selected.Priority && task.CreatedAt.Equal(selected.CreatedAt) && task.ID < selected.ID) {
+			selected = task
+		}
+	}
+	if selected != nil {
+		return selected, nil
+	}
+	prompt, err := s.resolveRuntimeWakeupPrompt(project, agent, hb)
+	if err != nil {
+		return nil, err
+	}
+	if strings.TrimSpace(prompt) == "" {
+		return nil, nil
+	}
+	now := time.Now().UTC()
+	task := &entity.Task{
+		ID:        "t-" + now.Format("20060102") + "-" + randomRuntimeHex(3),
+		Title:     "[wakeup] routine",
+		Status:    entity.TaskStatusPending,
+		Type:      "wakeup",
+		Priority:  9,
+		Prompt:    prompt,
+		CreatedBy: "heartbeat:wakeup",
+		CreatedAt: now,
+		UpdatedAt: now,
+	}
+	if err := s.ts.AddTask(project, agent, task); err != nil {
+		return nil, err
+	}
+	return task, nil
+}
+
+func (s *Server) resolveRuntimeWakeupPrompt(project, agent string, hb *entity.HeartbeatConfig) (string, error) {
+	raw := ""
+	if hb != nil {
+		raw = strings.TrimSpace(hb.WakeupPrompt)
+	}
+	if raw == "" {
+		return "Execute your wakeup routine. Check pending tasks, unread messages, and your scheduled activities.", nil
+	}
+	if !strings.HasPrefix(raw, "@") {
+		return raw, nil
+	}
+	rel := strings.TrimSpace(strings.TrimPrefix(raw, "@"))
+	if rel == "" {
+		return "", nil
+	}
+	path := rel
+	if !filepath.IsAbs(path) {
+		path = filepath.Join(s.st.AgentDir(project, agent), rel)
+	}
+	body, err := os.ReadFile(path)
+	if err != nil {
+		return "", err
+	}
+	return string(body), nil
+}
+
 func (s *Server) handleSchedulerStop(w http.ResponseWriter, r *http.Request) {
 	var body schedActionBody
 	if r.ContentLength > 0 {
@@ -446,7 +653,7 @@ func (s *Server) handleSchedulerStop(w http.ResponseWriter, r *http.Request) {
 		s.jsonErrorCode(w, http.StatusNotFound, ErrCodeSchedulerNotFound, err.Error())
 		return
 	}
-	s.setSchedulerDesired(project, agent, false)
+	s.setSchedulerDesired(project, agent, "", false)
 
 	s.clearSchedulerRuntimeFields(project, agent)
 	s.auditLog(auditLogInput{
@@ -492,6 +699,247 @@ func (s *Server) clearSchedulerRuntimeFields(project, agent string) {
 	}
 }
 
+func (s *Server) runtimeSchedulerLoop(ctx context.Context, workspaceID, project, agent, serverURL, actor string) {
+	ticker := time.NewTicker(15 * time.Second)
+	defer ticker.Stop()
+	s.runtimeSchedulerTick(ctx, workspaceID, project, agent, serverURL, actor)
+	for {
+		select {
+		case <-ctx.Done():
+			return
+		case <-ticker.C:
+			s.runtimeSchedulerTick(ctx, workspaceID, project, agent, serverURL, actor)
+		}
+	}
+}
+
+func (s *Server) runtimeSchedulerTick(ctx context.Context, workspaceID, project, agent, serverURL, actor string) {
+	if ctx.Err() != nil {
+		return
+	}
+	targets := s.runtimeSchedulerTargets(project, agent)
+	now := time.Now()
+	for _, target := range targets {
+		if ctx.Err() != nil {
+			return
+		}
+		hb, err := s.ts.GetHeartbeat(target.project, target.agent)
+		if err != nil || hb == nil {
+			continue
+		}
+		if !s.runtimeHeartbeatDue(target.project, target.agent, hb, now) {
+			continue
+		}
+		meta, err := s.st.AgentMeta(target.project, target.agent)
+		if err != nil || meta == nil || meta.Model == entity.ModelHuman {
+			continue
+		}
+		if !s.usesAssignedRuntimeNode(workspaceID, meta) {
+			continue
+		}
+		if s.hasActiveRuntimeRun(workspaceID, target.project, target.agent, "") {
+			continue
+		}
+		run, task, err := s.enqueueRuntimeWakeupRunFromRequest(workspaceID, target.project, target.agent, hb, serverURL, actor)
+		if err != nil {
+			log.Printf("runtime scheduler enqueue %s/%s failed: %v", target.project, target.agent, err)
+			continue
+		}
+		if hb2, err := s.ts.GetHeartbeat(target.project, target.agent); err == nil && hb2 != nil {
+			if next := nextRuntimeHeartbeatAt(hb2, time.Now()); !next.IsZero() {
+				nextUTC := next.UTC()
+				hb2.NextWakeupAt = &nextUTC
+			}
+			_ = s.ts.SaveHeartbeat(target.project, target.agent, hb2)
+		}
+		log.Printf("runtime scheduler queued %s/%s task=%s run=%s", target.project, target.agent, task.ID, run.ID)
+	}
+}
+
+type runtimeSchedulerAgentTarget struct {
+	project string
+	agent   string
+}
+
+func (s *Server) runtimeSchedulerTargets(project, agent string) []runtimeSchedulerAgentTarget {
+	project = strings.TrimSpace(project)
+	agent = strings.TrimSpace(agent)
+	if project != "" && agent != "" {
+		return []runtimeSchedulerAgentTarget{{project: project, agent: agent}}
+	}
+	projects := []string{}
+	if project != "" {
+		projects = []string{project}
+	} else if rows, err := s.ts.ListProjects(); err == nil {
+		projects = rows
+	}
+	out := []runtimeSchedulerAgentTarget{}
+	for _, p := range projects {
+		agents, err := s.ts.ListAgents(p)
+		if err != nil {
+			continue
+		}
+		for _, a := range agents {
+			a = strings.TrimSpace(a)
+			if a == "" || strings.HasPrefix(a, ".") {
+				continue
+			}
+			out = append(out, runtimeSchedulerAgentTarget{project: p, agent: a})
+		}
+	}
+	return out
+}
+
+func (s *Server) runtimeHeartbeatDue(project, agent string, hb *entity.HeartbeatConfig, now time.Time) bool {
+	if hb == nil || !hb.Enabled || hb.Paused {
+		return false
+	}
+	if hb.LastWakeupStatus == "running" {
+		if s.hasActiveRuntimeRun("", project, agent, "") {
+			return false
+		}
+		hb.LastWakeupStatus = "done"
+		hb.PID = 0
+		_ = s.ts.SaveHeartbeat(project, agent, hb)
+	}
+	if !runtimeActiveDay(hb.ActiveDays, now) {
+		return false
+	}
+	if hb.ActiveHours != "" {
+		ok, _ := runtimeActiveHourAt(hb.ActiveHours, now)
+		if !ok {
+			return false
+		}
+	}
+	interval := runtimeHeartbeatInterval(hb)
+	next := now
+	if hb.LastWakeup != nil {
+		next = hb.LastWakeup.Add(interval)
+	}
+	if next.After(now) {
+		nextUTC := next.UTC()
+		if hb.NextWakeupAt == nil || !hb.NextWakeupAt.Equal(nextUTC) {
+			hb.NextWakeupAt = &nextUTC
+			_ = s.ts.SaveHeartbeat(project, agent, hb)
+		}
+		return false
+	}
+	return true
+}
+
+func runtimeHeartbeatInterval(hb *entity.HeartbeatConfig) time.Duration {
+	if hb == nil || strings.TrimSpace(hb.Interval) == "" {
+		return 30 * time.Minute
+	}
+	d, err := time.ParseDuration(strings.TrimSpace(hb.Interval))
+	if err != nil || d <= 0 {
+		return 30 * time.Minute
+	}
+	return d
+}
+
+func nextRuntimeHeartbeatAt(hb *entity.HeartbeatConfig, now time.Time) time.Time {
+	if hb == nil {
+		return time.Time{}
+	}
+	base := now
+	if hb.LastWakeup != nil {
+		base = *hb.LastWakeup
+	}
+	return base.Add(runtimeHeartbeatInterval(hb))
+}
+
+func (s *Server) hasActiveRuntimeRun(workspaceID, project, agent, taskID string) bool {
+	if s == nil || s.controlDB == nil {
+		return false
+	}
+	filter := controldb.RuntimeRunFilter{
+		WorkspaceID: workspaceID,
+		ProjectID:   project,
+		AgentID:     agent,
+		TaskID:      taskID,
+		Limit:       50,
+	}
+	if strings.TrimSpace(filter.WorkspaceID) == "" {
+		if ws, err := s.currentWorkspaceID(); err == nil {
+			filter.WorkspaceID = ws
+		}
+	}
+	if strings.TrimSpace(filter.WorkspaceID) == "" {
+		return false
+	}
+	for _, status := range []string{"queued", "running"} {
+		filter.Status = status
+		runs, err := s.controlDB.ListRuntimeRuns(filter)
+		if err == nil && len(runs) > 0 {
+			return true
+		}
+	}
+	return false
+}
+
+func runtimeActiveHourAt(activeHours string, t time.Time) (bool, time.Duration) {
+	parts := strings.SplitN(strings.TrimSpace(activeHours), "-", 2)
+	if len(parts) != 2 {
+		return true, 0
+	}
+	parse := func(s string) (int, bool) {
+		v, err := time.Parse("15:04", strings.TrimSpace(s))
+		if err != nil {
+			return 0, false
+		}
+		return v.Hour()*60 + v.Minute(), true
+	}
+	start, ok1 := parse(parts[0])
+	end, ok2 := parse(parts[1])
+	if !ok1 || !ok2 || start == end {
+		return true, 0
+	}
+	nowMin := t.Hour()*60 + t.Minute()
+	if start < end {
+		if nowMin >= start && nowMin < end {
+			return true, 0
+		}
+		openAt := time.Date(t.Year(), t.Month(), t.Day(), start/60, start%60, 0, 0, t.Location())
+		if openAt.Before(t) {
+			openAt = openAt.Add(24 * time.Hour)
+		}
+		return false, openAt.Sub(t)
+	}
+	if nowMin >= start || nowMin < end {
+		return true, 0
+	}
+	openAt := time.Date(t.Year(), t.Month(), t.Day(), start/60, start%60, 0, 0, t.Location())
+	if openAt.Before(t) {
+		openAt = openAt.Add(24 * time.Hour)
+	}
+	return false, openAt.Sub(t)
+}
+
+func runtimeActiveDay(activeDays string, now time.Time) bool {
+	activeDays = strings.TrimSpace(activeDays)
+	if activeDays == "" {
+		return true
+	}
+	day := strings.ToLower(now.Weekday().String()[:3])
+	for _, token := range strings.Split(activeDays, ",") {
+		tok := strings.ToLower(strings.TrimSpace(token))
+		switch tok {
+		case "weekdays":
+			if now.Weekday() >= time.Monday && now.Weekday() <= time.Friday {
+				return true
+			}
+		case "weekends":
+			if now.Weekday() == time.Saturday || now.Weekday() == time.Sunday {
+				return true
+			}
+		case day:
+			return true
+		}
+	}
+	return false
+}
+
 func (s *Server) handleSchedulerAbort(w http.ResponseWriter, r *http.Request) {
 	var body schedActionBody
 	if err := s.readJSON(w, r, &body); err != nil {
@@ -507,6 +955,10 @@ func (s *Server) handleSchedulerAbort(w http.ResponseWriter, r *http.Request) {
 	if !s.checkProjectManager(w, r, project) {
 		return
 	}
+	currentWorkspaceID, workspaceOK := s.currentWorkspaceForRequest(w, r)
+	if !workspaceOK {
+		return
+	}
 
 	hb, err := s.ts.GetHeartbeat(project, agent)
 	if err != nil || hb == nil {
@@ -514,7 +966,32 @@ func (s *Server) handleSchedulerAbort(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
+	cancelledRemote, err := s.cancelRuntimeRunsForAgent(currentWorkspaceID, project, agent, "", "agent run aborted")
+	if err != nil {
+		s.serverError(w, err)
+		return
+	}
+
 	if hb.PID <= 0 || hb.LastWakeupStatus != "running" {
+		if cancelledRemote > 0 {
+			hb.PID = 0
+			hb.LastWakeupStatus = "aborted"
+			_ = s.ts.SaveHeartbeat(project, agent, hb)
+			s.auditLog(auditLogInput{
+				Action:       "scheduler.abort",
+				ResourceType: "agent",
+				ResourceID:   project + "/" + agent,
+				Summary:      "Remote agent run cancelled",
+				After: map[string]any{
+					"project":              project,
+					"agent":                agent,
+					"runtimeRunsCancelled": cancelledRemote,
+				},
+				Request: r,
+			})
+			_ = json.NewEncoder(w).Encode(map[string]any{"ok": true, "runtimeRunsCancelled": cancelledRemote})
+			return
+		}
 		s.jsonErrorCode(w, http.StatusConflict, ErrCodeAgentNotRunning, "agent is not currently running")
 		return
 	}
@@ -554,12 +1031,13 @@ func (s *Server) handleSchedulerAbort(w http.ResponseWriter, r *http.Request) {
 		ResourceID:   project + "/" + agent,
 		Summary:      "Agent run aborted",
 		After: map[string]any{
-			"project": project,
-			"agent":   agent,
-			"pid":     pid,
+			"project":              project,
+			"agent":                agent,
+			"pid":                  pid,
+			"runtimeRunsCancelled": cancelledRemote,
 		},
 		Request: r,
 	})
 
-	_ = json.NewEncoder(w).Encode(map[string]any{"ok": true, "pid": pid})
+	_ = json.NewEncoder(w).Encode(map[string]any{"ok": true, "pid": pid, "runtimeRunsCancelled": cancelledRemote})
 }

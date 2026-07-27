@@ -5,6 +5,7 @@ import { useAuth } from '../lib/auth'
 import { useWorkspaceAccess } from '../lib/workspace-access'
 import { apiFetch, apiPost, apiPut, apiDelete } from '../lib/api'
 import { cn } from '../lib/cn'
+import { useFormatDateTime } from '../lib/format-datetime'
 import { confirmDialog } from '../components/ui/ConfirmDialog'
 
 const selectCls =
@@ -52,6 +53,30 @@ type UpdateInfo = {
   channel?: string
   updateCommand?: string
   releaseNotes?: string
+}
+
+type RuntimeNode = {
+  id: string
+  name: string
+  kind?: string
+  status: string
+  os?: string
+  arch?: string
+  hostname?: string
+  version?: string
+  lastSeenAt?: string
+  lastError?: string
+  createdAt?: string
+  updatedAt?: string
+}
+
+type RuntimeNodeListResp = { nodes: RuntimeNode[] }
+type RuntimeNodeTokenResp = {
+  runtimeNode?: RuntimeNode
+  joinToken: string
+  installCommand: string
+  expiresAt: string
+  serverUrl: string
 }
 
 function SystemUpdatesSection() {
@@ -147,6 +172,310 @@ function SystemUpdatesSection() {
           {t('settings.releaseNotes')}
         </a>
       </div>
+    </section>
+  )
+}
+
+function RuntimeNodesSection() {
+  const { t } = useTranslation()
+  const formatDateTime = useFormatDateTime()
+  const [nodes, setNodes] = useState<RuntimeNode[]>([])
+  const [loading, setLoading] = useState(true)
+  const [creating, setCreating] = useState(false)
+  const [copyingNodeId, setCopyingNodeId] = useState('')
+  const [copiedNodeId, setCopiedNodeId] = useState('')
+  const [joinCopied, setJoinCopied] = useState(false)
+  const [createOpen, setCreateOpen] = useState(false)
+  const [nodeName, setNodeName] = useState('')
+  const [join, setJoin] = useState<RuntimeNodeTokenResp | null>(null)
+  const [err, setErr] = useState('')
+
+  const refresh = useCallback(async () => {
+    setLoading(true)
+    setErr('')
+    try {
+      const data = await apiFetch<RuntimeNodeListResp>('/api/v1/runtime-nodes')
+      setNodes(data.nodes ?? [])
+    } catch (e) {
+      setErr(e instanceof Error ? e.message : String(e))
+    } finally {
+      setLoading(false)
+    }
+  }, [])
+
+  useEffect(() => { void refresh() }, [refresh])
+
+  function openCreateNode() {
+    setJoin(null)
+    setErr('')
+    setNodeName(t('settings.runtimeNodeDefaultName'))
+    setCreateOpen(true)
+  }
+
+  async function createJoinToken(runtimeNode?: RuntimeNode, copyOnly = false) {
+    setCreating(true)
+    setErr('')
+    try {
+      const data = await apiPost<RuntimeNodeTokenResp>('/api/v1/runtime-nodes/join-token', {
+        runtimeNodeId: runtimeNode?.id,
+        name: runtimeNode?.name || nodeName || t('settings.runtimeNodeDefaultName'),
+        kind: 'personal_computer',
+      })
+      setJoin(data)
+      await refresh()
+      if (copyOnly && data.installCommand) {
+        await navigator.clipboard?.writeText(data.installCommand)
+      }
+    } catch (e) {
+      setErr(e instanceof Error ? e.message : String(e))
+    } finally {
+      setCreating(false)
+    }
+  }
+
+  async function copyJoinCommandForNode(node: RuntimeNode) {
+    setCopyingNodeId(node.id)
+    setErr('')
+    try {
+      const data = await apiPost<RuntimeNodeTokenResp>('/api/v1/runtime-nodes/join-token', {
+        runtimeNodeId: node.id,
+        name: node.name,
+        kind: node.kind || 'personal_computer',
+      })
+      await navigator.clipboard?.writeText(data.installCommand)
+      setJoin(data)
+      setCopiedNodeId(node.id)
+      window.setTimeout(() => setCopiedNodeId(current => current === node.id ? '' : current), 2000)
+    } catch (e) {
+      setErr(e instanceof Error ? e.message : String(e))
+    } finally {
+      setCopyingNodeId('')
+    }
+  }
+
+  async function setNodeEnabled(node: RuntimeNode, enabled: boolean) {
+    setErr('')
+    try {
+      await apiPost(`/api/v1/runtime-nodes/${encodeURIComponent(node.id)}/${enabled ? 'enable' : 'disable'}`, {})
+      await refresh()
+    } catch (e) {
+      setErr(e instanceof Error ? e.message : String(e))
+    }
+  }
+
+  async function deleteNode(node: RuntimeNode) {
+    const ok = await confirmDialog({
+      title: t('settings.deleteRuntimeNode'),
+      description: t('settings.deleteRuntimeNodeConfirm', { name: node.name || node.id }),
+      confirmLabel: t('forms.delete'),
+      cancelLabel: t('forms.cancel'),
+      tone: 'danger',
+    })
+    if (!ok) return
+    setErr('')
+    try {
+      await apiDelete(`/api/v1/runtime-nodes/${encodeURIComponent(node.id)}`)
+      await refresh()
+    } catch (e) {
+      setErr(e instanceof Error ? e.message : String(e))
+    }
+  }
+
+  async function copyJoinCommand() {
+    if (!join?.installCommand) return
+    await navigator.clipboard?.writeText(join.installCommand)
+    setJoinCopied(true)
+    window.setTimeout(() => setJoinCopied(false), 2000)
+  }
+
+  function runtimeNodeStatusLabel(status?: string) {
+    const key = `settings.runtimeNodeStatus_${status || 'pending'}`
+    return t(key, { defaultValue: status || 'pending' })
+  }
+
+  return (
+    <section className="rounded-xl border border-neutral-200/80 bg-white p-5 dark:border-zinc-700/60 dark:bg-zinc-900/40">
+      <div className="flex items-start justify-between gap-4 border-b border-neutral-100 pb-4 dark:border-zinc-800">
+        <div>
+          <h3 className="text-base font-semibold text-neutral-900 dark:text-zinc-100">{t('settings.runtimeNodesTitle')}</h3>
+          <p className="mt-1 text-xs leading-5 text-neutral-500 dark:text-zinc-400">{t('settings.runtimeNodesIntro')}</p>
+        </div>
+        <div className="flex shrink-0 gap-2">
+          <button
+            type="button"
+            onClick={() => void refresh()}
+            disabled={loading}
+            className="rounded-lg border border-neutral-200 bg-white px-3 py-2 text-sm font-medium text-neutral-600 hover:bg-neutral-50 disabled:opacity-50 dark:border-zinc-700 dark:bg-zinc-900 dark:text-zinc-300 dark:hover:bg-zinc-800"
+          >
+            {t('common.refresh')}
+          </button>
+          <button
+            type="button"
+            onClick={openCreateNode}
+            disabled={creating}
+            className="rounded-lg border border-sky-600 bg-white px-3 py-2 text-sm font-medium text-sky-700 hover:bg-sky-50 disabled:opacity-50 dark:border-sky-500 dark:bg-zinc-900 dark:text-sky-400 dark:hover:bg-zinc-800"
+          >
+            {t('settings.addRuntimeNode')}
+          </button>
+        </div>
+      </div>
+
+      {join && !createOpen && (
+        <p className="mt-3 text-xs text-emerald-600 dark:text-emerald-400">{t('settings.runtimeCommandCopied')}</p>
+      )}
+
+      <div className="mt-4 overflow-hidden rounded-lg border border-neutral-200/80 dark:border-zinc-700/60">
+        <table className="min-w-full divide-y divide-neutral-200/80 text-sm dark:divide-zinc-700/60">
+          <thead className="bg-neutral-50 text-left text-xs font-medium uppercase tracking-wide text-neutral-500 dark:bg-zinc-800/60 dark:text-zinc-400">
+            <tr>
+              <th className="px-4 py-2.5">{t('settings.runtimeNodeName')}</th>
+              <th className="px-4 py-2.5">{t('settings.runtimeNodeStatus')}</th>
+              <th className="px-4 py-2.5">{t('settings.runtimeNodeHost')}</th>
+              <th className="px-4 py-2.5">{t('settings.runtimeNodeLastSeen')}</th>
+              <th className="px-4 py-2.5 text-right">{t('common.actions')}</th>
+            </tr>
+          </thead>
+          <tbody className="divide-y divide-neutral-200/70 bg-white dark:divide-zinc-800 dark:bg-zinc-900/30">
+            {loading ? (
+              <tr><td className="px-4 py-5 text-neutral-500 dark:text-zinc-400" colSpan={5}>{t('forms.loading')}</td></tr>
+            ) : nodes.length === 0 ? (
+              <tr><td className="px-4 py-5 text-neutral-500 dark:text-zinc-400" colSpan={5}>{t('settings.noRuntimeNodes')}</td></tr>
+            ) : nodes.map(node => (
+              <tr key={node.id}>
+                <td className="px-4 py-3">
+                  <div className="font-medium text-neutral-900 dark:text-zinc-100">{node.name || node.id}</div>
+                  <div className="mt-0.5 font-mono text-xs text-neutral-400 dark:text-zinc-500">{node.id}</div>
+                </td>
+                <td className="px-4 py-3">
+                  <span className={cn(
+                    'rounded-full px-2 py-1 text-xs font-medium',
+                    node.status === 'online'
+                      ? 'bg-emerald-50 text-emerald-700 dark:bg-emerald-900/20 dark:text-emerald-300'
+                      : node.status === 'disabled'
+                        ? 'bg-neutral-100 text-neutral-500 dark:bg-zinc-800 dark:text-zinc-400'
+                        : 'bg-amber-50 text-amber-700 dark:bg-amber-900/20 dark:text-amber-300',
+                  )}>
+                    {runtimeNodeStatusLabel(node.status)}
+                  </span>
+                  {node.status === 'pending' && <p className="mt-1 text-xs text-neutral-400 dark:text-zinc-500">{t('settings.runtimeNodePendingHint')}</p>}
+                  {node.status === 'offline' && <p className="mt-1 text-xs text-neutral-400 dark:text-zinc-500">{t('settings.runtimeNodeOfflineHint')}</p>}
+                  {node.lastError && <p className="mt-1 max-w-xs truncate text-xs text-red-500">{node.lastError}</p>}
+                </td>
+                <td className="px-4 py-3 text-neutral-600 dark:text-zinc-300">
+                  {[node.hostname, [node.os, node.arch].filter(Boolean).join('/')].filter(Boolean).join(' · ') || '-'}
+                </td>
+                <td className="px-4 py-3 text-xs text-neutral-500 dark:text-zinc-400">{node.lastSeenAt ? formatDateTime(node.lastSeenAt) : '-'}</td>
+                <td className="px-4 py-3 text-right">
+                  <div className="flex justify-end gap-2">
+                    <button
+                      type="button"
+                      onClick={() => void copyJoinCommandForNode(node)}
+                      disabled={copyingNodeId === node.id}
+                      className="rounded-lg border border-neutral-200 bg-white px-3 py-1.5 text-xs font-medium text-neutral-600 hover:bg-neutral-50 disabled:opacity-50 dark:border-zinc-700 dark:bg-zinc-900 dark:text-zinc-300 dark:hover:bg-zinc-800"
+                    >
+                      {copiedNodeId === node.id
+                        ? t('settings.copied')
+                        : copyingNodeId === node.id
+                          ? t('settings.generatingCommand')
+                          : t('settings.copyJoinCommand')}
+                    </button>
+                    <button
+                      type="button"
+                      onClick={() => void setNodeEnabled(node, node.status === 'disabled')}
+                      className="rounded-lg border border-neutral-200 bg-white px-3 py-1.5 text-xs font-medium text-neutral-600 hover:bg-neutral-50 dark:border-zinc-700 dark:bg-zinc-900 dark:text-zinc-300 dark:hover:bg-zinc-800"
+                    >
+                      {node.status === 'disabled' ? t('settings.enableRuntimeNode') : t('settings.disableRuntimeNode')}
+                    </button>
+                    <button
+                      type="button"
+                      onClick={() => void deleteNode(node)}
+                      className="rounded-lg border border-red-200 bg-white px-3 py-1.5 text-xs font-medium text-red-600 hover:bg-red-50 dark:border-red-900/60 dark:bg-zinc-900 dark:text-red-400 dark:hover:bg-red-950/30"
+                    >
+                      {t('forms.delete')}
+                    </button>
+                  </div>
+                </td>
+              </tr>
+            ))}
+          </tbody>
+        </table>
+      </div>
+      {err && <p className="mt-3 text-sm text-red-600 dark:text-red-400">{err}</p>}
+      {createOpen && (
+        <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/30 px-4 backdrop-blur-sm">
+          <div className="w-full max-w-2xl rounded-xl border border-neutral-200 bg-white shadow-xl dark:border-zinc-700 dark:bg-zinc-900">
+            <div className="flex items-start justify-between gap-4 border-b border-neutral-100 px-5 py-4 dark:border-zinc-800">
+              <div>
+                <h3 className="text-base font-semibold text-neutral-900 dark:text-zinc-100">{t('settings.addRuntimeNode')}</h3>
+                <p className="mt-1 text-xs leading-5 text-neutral-500 dark:text-zinc-400">{t('settings.addRuntimeNodeIntro')}</p>
+              </div>
+              <button
+                type="button"
+                onClick={() => setCreateOpen(false)}
+                className="rounded-md p-1 text-neutral-400 hover:bg-neutral-100 hover:text-neutral-700 dark:hover:bg-zinc-800 dark:hover:text-zinc-200"
+                aria-label={t('common.close')}
+              >
+                <X className="h-4 w-4" />
+              </button>
+            </div>
+            <div className="space-y-4 px-5 py-4">
+              <label className="block">
+                <span className="text-xs font-medium text-neutral-500 dark:text-zinc-400">{t('settings.runtimeNodeName')}</span>
+                <input
+                  value={nodeName}
+                  onChange={e => setNodeName(e.target.value)}
+                  className="mt-1 block w-full rounded-md border border-neutral-200/80 bg-neutral-50/50 px-3 py-2 text-sm text-neutral-800 outline-none transition-colors placeholder:text-neutral-400 focus:border-sky-400 dark:border-zinc-700/60 dark:bg-zinc-800/50 dark:text-zinc-200 dark:placeholder:text-zinc-600"
+                  placeholder={t('settings.runtimeNodeNamePlaceholder')}
+                />
+              </label>
+              {join ? (
+                <div className="rounded-lg border border-sky-100 bg-sky-50/60 p-4 dark:border-sky-900/40 dark:bg-sky-950/20">
+                  <div className="flex flex-wrap items-start justify-between gap-3">
+                    <div>
+                      <p className="text-sm font-semibold text-sky-900 dark:text-sky-200">{t('settings.runtimeJoinCommand')}</p>
+                      <p className="mt-1 text-xs text-sky-700/80 dark:text-sky-300/80">{t('settings.runtimeJoinExpires', { time: join.expiresAt })}</p>
+                    </div>
+                    <button
+                      type="button"
+                      onClick={() => void copyJoinCommand()}
+                      className="rounded-lg border border-sky-600 bg-white px-3 py-2 text-sm font-medium text-sky-700 hover:bg-sky-50 dark:border-sky-500 dark:bg-zinc-900 dark:text-sky-400 dark:hover:bg-zinc-800"
+                    >
+                      {joinCopied ? t('settings.copied') : t('settings.copyCommand')}
+                    </button>
+                  </div>
+                  <code className="mt-3 block overflow-x-auto rounded-md bg-white px-3 py-2 font-mono text-xs text-neutral-700 dark:bg-zinc-950 dark:text-zinc-300">
+                    {join.installCommand}
+                  </code>
+                  <p className="mt-2 text-xs text-neutral-500 dark:text-zinc-500">{t('settings.runtimeStartHint')}</p>
+                </div>
+              ) : (
+                <p className="rounded-lg border border-neutral-200 bg-neutral-50 px-3 py-2 text-xs text-neutral-500 dark:border-zinc-800 dark:bg-zinc-950/40 dark:text-zinc-400">
+                  {t('settings.runtimeCreateHint')}
+                </p>
+              )}
+            </div>
+            <div className="flex justify-end gap-2 border-t border-neutral-100 px-5 py-4 dark:border-zinc-800">
+              <button
+                type="button"
+                onClick={() => setCreateOpen(false)}
+                className="rounded-lg border border-neutral-200 bg-white px-3 py-2 text-sm font-medium text-neutral-600 hover:bg-neutral-50 dark:border-zinc-700 dark:bg-zinc-900 dark:text-zinc-300 dark:hover:bg-zinc-800"
+              >
+                {t('forms.close')}
+              </button>
+              {!join && (
+                <button
+                  type="button"
+                  onClick={() => void createJoinToken()}
+                  disabled={creating || !nodeName.trim()}
+                  className="rounded-lg border border-sky-600 bg-white px-3 py-2 text-sm font-medium text-sky-700 hover:bg-sky-50 disabled:opacity-50 dark:border-sky-500 dark:bg-zinc-900 dark:text-sky-400 dark:hover:bg-zinc-800"
+                >
+                  {creating ? t('common.creating') : t('settings.createRuntimeJoinCommand')}
+                </button>
+              )}
+            </div>
+          </div>
+        </div>
+      )}
     </section>
   )
 }
@@ -2422,6 +2751,9 @@ export default function SettingsPage() {
 
         {/* Instance access controls (super admin only) */}
         {user?.role === 'admin' && <AccessControlSection />}
+
+        {/* Runtime nodes */}
+        {canAdmin && <RuntimeNodesSection />}
 
         {/* Model accounts */}
         <ProvidersSection />

@@ -368,8 +368,13 @@ func (s *Server) handleAgentChat(w http.ResponseWriter, r *http.Request) {
 		s.serverError(w, err)
 		return
 	}
-	if readiness := buildRuntimeReadiness(meta); readiness.Blocking {
+	if readiness := s.runtimeReadinessForExecution(workspaceID, meta); readiness.Blocking {
 		s.jsonErrorCode(w, http.StatusConflict, ErrCodeRuntimeNotReady, runtimeReadinessErrorMessage(readiness))
+		return
+	}
+
+	if s.usesAssignedRuntimeNode(workspaceID, meta) {
+		s.handleAgentChatViaRuntimeNode(w, r, workspaceID, project, agent, meta, body, msg)
 		return
 	}
 
@@ -555,6 +560,149 @@ func (s *Server) handleAgentChat(w http.ResponseWriter, r *http.Request) {
 	})
 	fmt.Fprintf(w, "data: %s\n\n", done)
 	flusher.Flush()
+}
+
+func (s *Server) handleAgentChatViaRuntimeNode(w http.ResponseWriter, r *http.Request, workspaceID, project, agent string, meta *entity.AgentMeta, body agentChatBody, msg string) {
+	flusher, ok := w.(http.Flusher)
+	if !ok {
+		s.jsonError(w, http.StatusInternalServerError, "streaming not supported")
+		return
+	}
+	lease, ok := s.acquireAgentInteraction(w, s.interactionAgentRef(workspaceID, project, agent), interaction.Source{
+		Kind:    "web_chat",
+		ActorID: requestUsername(r),
+		Channel: "web",
+	}, "interactive")
+	if !ok {
+		return
+	}
+	defer lease.Release()
+	_ = s.createInteractionEvent(lease.session, "user", requestUsername(r), "web", "message", msg, map[string]any{
+		"source":  "web_chat",
+		"runtime": "node",
+	})
+
+	sessionID := strings.TrimSpace(body.SessionID)
+	if body.NoSession {
+		sessionID = ""
+	}
+	run, err := s.enqueueRuntimeExecRun(workspaceID, project, agent, msg, sessionID, externalServerURL(r), requestUsername(r))
+	if err != nil {
+		s.serverError(w, err)
+		return
+	}
+	_ = s.createInteractionEvent(lease.session, "system", "", "web", "run_started", "", map[string]any{
+		"sessionId": sessionID,
+		"runId":     run.ID,
+		"runtime":   "node",
+	})
+
+	w.Header().Set("Content-Type", "text/event-stream")
+	w.Header().Set("Cache-Control", "no-cache")
+	w.Header().Set("Connection", "keep-alive")
+	w.Header().Set("X-Accel-Buffering", "no")
+	sendChatSSE := func(payload map[string]any) bool {
+		raw, _ := json.Marshal(payload)
+		if _, err := fmt.Fprintf(w, "data: %s\n\n", raw); err != nil {
+			return false
+		}
+		flusher.Flush()
+		return true
+	}
+	if !sendChatSSE(map[string]any{
+		"type":         "chat_event",
+		"payload":      "Runtime node queued run " + run.ID,
+		"payloadType":  "log",
+		"raw":          false,
+		"runtimeRunId": run.ID,
+	}) {
+		return
+	}
+
+	ticker := time.NewTicker(1 * time.Second)
+	defer ticker.Stop()
+	timeout := time.NewTimer(30 * time.Minute)
+	defer timeout.Stop()
+	var lastStatus string
+	agentModel := entity.AgentModel("")
+	if meta != nil {
+		agentModel = meta.Model
+	}
+	for {
+		select {
+		case <-r.Context().Done():
+			return
+		case <-timeout.C:
+			lease.Fail("runtime run timed out")
+			_ = sendChatSSE(map[string]any{"type": "chat_error", "error": "runtime run timed out"})
+			return
+		case <-ticker.C:
+			current, found, err := s.controlDB.RuntimeRunByID(workspaceID, run.ID)
+			if err != nil {
+				lease.Fail(err.Error())
+				_ = sendChatSSE(map[string]any{"type": "chat_error", "error": err.Error()})
+				return
+			}
+			if !found {
+				lease.Fail("runtime run disappeared")
+				_ = sendChatSSE(map[string]any{"type": "chat_error", "error": "runtime run disappeared"})
+				return
+			}
+			if current.Status != lastStatus {
+				lastStatus = current.Status
+				if !sendChatSSE(map[string]any{
+					"type":         "chat_event",
+					"payload":      "Runtime node status: " + current.Status,
+					"payloadType":  "log",
+					"raw":          false,
+					"runtimeRunId": current.ID,
+				}) {
+					return
+				}
+			}
+			switch current.Status {
+			case "succeeded", "failed":
+				result := decodeRuntimeRunResult(current.ResultJSON)
+				detectedSessionID := strings.TrimSpace(result["sessionId"])
+				if detectedSessionID != "" {
+					lease.SetRuntimeSessionID(detectedSessionID)
+				}
+				logText := strings.TrimSpace(result["logText"])
+				if logText != "" {
+					for _, line := range strings.Split(logText, "\n") {
+						line = strings.TrimRight(line, "\r")
+						if line == "" {
+							continue
+						}
+						payload := chatSSEPayload(line, agentModel)
+						if _, err := fmt.Fprintf(w, "data: %s\n\n", payload); err != nil {
+							return
+						}
+						flusher.Flush()
+					}
+				}
+				if current.Status == "failed" {
+					errMsg := strings.TrimSpace(current.ErrorMessage)
+					if errMsg == "" {
+						errMsg = strings.TrimSpace(result["error"])
+					}
+					if errMsg == "" {
+						errMsg = "runtime run failed"
+					}
+					lease.Fail(errMsg)
+					_ = s.createInteractionEvent(lease.session, "system", "", "web", "run_failed", "", map[string]any{"error": errMsg, "runtimeRunId": current.ID})
+					_ = sendChatSSE(map[string]any{"type": "chat_error", "error": errMsg})
+					return
+				}
+				_ = s.createInteractionEvent(lease.session, "agent", project+"/"+agent, "web", "run_completed", "", map[string]any{
+					"runtimeSessionId": detectedSessionID,
+					"runtimeRunId":     current.ID,
+				})
+				_ = sendChatSSE(map[string]any{"type": "chat_done", "session_id": detectedSessionID, "runtimeRunId": current.ID})
+				return
+			}
+		}
+	}
 }
 
 // handleAgentChatStop kills a running agent exec process for a project/agent.

@@ -6,7 +6,7 @@ import remarkGfm from 'remark-gfm'
 import {
   ChevronRight, Bot, BookOpen, Check,
   Settings2, Users, UserCog, Activity, User, Mail, ListTodo, Reply, Send, Container,
-  Cable,
+  Cable, Server,
 } from 'lucide-react'
 import type { LucideIcon } from 'lucide-react'
 import { cn } from '../../lib/cn'
@@ -114,10 +114,22 @@ type AgentContext = {
   httpAgent?: HTTPAgentConfig
   env?: Record<string, string>
   provider?: string
+  runtimeNodeId?: string
   workDir?: string
   sandbox?: SandboxConfig
   addDirs?: string[]
 }
+
+type RuntimeNode = {
+  id: string
+  name: string
+  status: string
+  os?: string
+  arch?: string
+  hostname?: string
+}
+
+type RuntimeNodeListResp = { nodes: RuntimeNode[] }
 
 function agentModelRequiresModelAccount(model?: string) {
   return model !== 'human' && model !== 'http-agent'
@@ -151,6 +163,7 @@ const buttonBaseCls = 'inline-flex h-8 items-center justify-center rounded-md px
 const primaryButtonCls = cn(buttonBaseCls, 'border border-sky-200 bg-sky-50 text-sky-700 hover:bg-sky-100 dark:border-sky-800 dark:bg-sky-900/20 dark:text-sky-300 dark:hover:bg-sky-900/30')
 const secondaryButtonCls = cn(buttonBaseCls, 'border border-neutral-200 bg-white text-neutral-700 hover:border-neutral-300 hover:bg-neutral-50 dark:border-zinc-700 dark:bg-zinc-900 dark:text-zinc-300 dark:hover:border-zinc-600 dark:hover:bg-zinc-800')
 const subtleButtonCls = cn(buttonBaseCls, 'text-neutral-500 hover:bg-neutral-100 hover:text-neutral-800 dark:text-zinc-400 dark:hover:bg-zinc-800 dark:hover:text-zinc-200')
+const panelSelectCls = 'h-8 rounded-md border border-neutral-200 bg-white px-2.5 text-sm text-neutral-700 outline-none hover:border-neutral-300 focus:border-sky-400 disabled:opacity-50 dark:border-zinc-700 dark:bg-zinc-800 dark:text-zinc-300 dark:[color-scheme:dark]'
 
 function PromptEditor({ label, icon: Icon, apiPath, initialContent, canEdit = true }: { label: string; icon: LucideIcon; apiPath: string; initialContent: string; canEdit?: boolean }) {
   const { t } = useTranslation()
@@ -670,12 +683,20 @@ export default function ProjectAgentDetailPage() {
                     {t('agentDetail.advancedRuntime')}
                   </summary>
                   <div className="border-t border-neutral-100 p-4 dark:border-zinc-800">
-                    <SandboxEditor
-                      project={projectId}
-                      agentName={agentName}
-                      initial={ctx.sandbox}
-                      onChanged={() => setCtxReload((k) => k + 1)}
-                    />
+                    <div className="space-y-4">
+                      <SandboxEditor
+                        project={projectId}
+                        agentName={agentName}
+                        initial={ctx.sandbox}
+                        onChanged={() => setCtxReload((k) => k + 1)}
+                      />
+                      <RuntimeNodeBindingPanel
+                        project={projectId}
+                        agentName={agentName}
+                        runtimeNodeId={ctx.runtimeNodeId}
+                        onChanged={() => setCtxReload((k) => k + 1)}
+                      />
+                    </div>
                   </div>
                 </details>
               )}
@@ -764,7 +785,7 @@ function SandboxEditor({ project, agentName, initial, onChanged }: {
   const { t } = useTranslation()
   const capsState = useApiJson<SandboxCapabilities>('/api/v1/sandbox/capabilities', 0)
   const caps = capsState.status === 'ok' ? capsState.data : null
-  const [provider, setProvider] = useState(initial?.provider || 'docker')
+  const [provider, setProvider] = useState(initial?.provider || 'none')
   const [image, setImage] = useState(initial?.image ?? initial?.docker?.image ?? '')
   const [template, setTemplate] = useState(initial?.e2b?.template ?? '')
   const [network, setNetwork] = useState(initial?.networkMode ?? initial?.docker?.network_mode ?? '')
@@ -778,7 +799,7 @@ function SandboxEditor({ project, agentName, initial, onChanged }: {
   const [dirty, setDirty] = useState(false)
 
   useEffect(() => {
-    setProvider(initial?.provider || 'docker')
+    setProvider(initial?.provider || 'none')
     setImage(initial?.image ?? initial?.docker?.image ?? '')
     setTemplate(initial?.e2b?.template ?? '')
     setNetwork(initial?.networkMode ?? initial?.docker?.network_mode ?? '')
@@ -801,7 +822,7 @@ function SandboxEditor({ project, agentName, initial, onChanged }: {
     setSaving(true)
     try {
       await apiPut(`/api/v1/projects/${encodeURIComponent(project)}/agents/${encodeURIComponent(agentName)}/sandbox`, {
-        provider: provider || 'docker',
+        provider: provider || 'none',
         image,
         template,
         network,
@@ -852,16 +873,22 @@ function SandboxEditor({ project, agentName, initial, onChanged }: {
         <div>
           <label className={labelCls}>{t('sandbox.provider')}</label>
           <select value={provider} onChange={(e) => { setProvider(e.target.value); setDirty(true) }} className={inputCls}>
+            <option value="none">{t('sandbox.providerDirect')}</option>
             <option value="docker">Docker</option>
             <option value="e2b" disabled={!caps?.e2b?.available && provider !== 'e2b'}>E2B</option>
           </select>
+          {provider === 'none' && (
+            <p className="mt-1.5 text-[11px] leading-relaxed text-amber-600 dark:text-amber-400">
+              {t('sandbox.directHint')}
+            </p>
+          )}
           {caps?.e2b && !caps.e2b.available && (
             <p className="mt-1.5 text-[11px] leading-relaxed text-amber-600 dark:text-amber-400">
               {t('sandbox.e2bUnavailable')}: {caps.e2b.reason}
             </p>
           )}
         </div>
-        {provider && (
+        {provider && provider !== 'none' && (
           <>
             <div>
               <label className={labelCls}>{provider === 'e2b' ? t('sandbox.template') : t('sandbox.image')}</label>
@@ -1018,6 +1045,117 @@ function providerMatchesAgentModel(provider: ProviderOption, model: string) {
   const allowed = providerTypesForAgentModel(model)
   if (allowed.length === 0) return false
   return allowed.includes(provider.type.trim().toLowerCase())
+}
+
+function runtimeNodeStatusLabel(t: (key: string, options?: Record<string, unknown>) => string, status?: string) {
+  return t(`settings.runtimeNodeStatus_${status || 'pending'}`, { defaultValue: status || 'pending' })
+}
+
+function RuntimeNodeBindingPanel({ project, agentName, runtimeNodeId, onChanged }: {
+  project: string; agentName: string; runtimeNodeId?: string; onChanged: () => void
+}) {
+  const { t } = useTranslation()
+  const [editing, setEditing] = useState(false)
+  const [nodes, setNodes] = useState<RuntimeNode[]>([])
+  const [selected, setSelected] = useState(runtimeNodeId ?? '')
+  const [loading, setLoading] = useState(true)
+  const [saving, setSaving] = useState(false)
+  const [err, setErr] = useState('')
+
+  useEffect(() => {
+    setSelected(runtimeNodeId ?? '')
+  }, [runtimeNodeId])
+
+  useEffect(() => {
+    let cancelled = false
+    setLoading(true)
+    setErr('')
+    apiFetch<RuntimeNodeListResp>('/api/v1/runtime-nodes')
+      .then(data => {
+        if (!cancelled) setNodes(data.nodes ?? [])
+      })
+      .catch(e => {
+        if (!cancelled) setErr(e instanceof Error ? e.message : String(e))
+      })
+      .finally(() => {
+        if (!cancelled) setLoading(false)
+      })
+    return () => { cancelled = true }
+  }, [])
+
+  const currentNode = nodes.find(node => node.id === runtimeNodeId)
+  const currentValue = currentNode ? currentNode.name || currentNode.id : runtimeNodeId ? t('agentDetail.runtimeNodeUnavailable') : t('agentDetail.runtimeNodeLocal')
+  const currentDetail = currentNode
+    ? [runtimeNodeStatusLabel(t, currentNode.status), currentNode.hostname, [currentNode.os, currentNode.arch].filter(Boolean).join('/')].filter(Boolean).join(' · ')
+    : runtimeNodeId
+      ? runtimeNodeId
+      : t('agentDetail.runtimeNodeLocalHint')
+
+  async function save() {
+    setSaving(true)
+    setErr('')
+    try {
+      await apiPatch(`/api/v1/projects/${encodeURIComponent(project)}/agents/${encodeURIComponent(agentName)}`, {
+        runtimeNodeId: selected,
+      })
+      setEditing(false)
+      onChanged()
+    } catch (e) {
+      setErr(e instanceof Error ? e.message : String(e))
+    } finally {
+      setSaving(false)
+    }
+  }
+
+  return (
+    <div className="mt-3 rounded-lg border border-neutral-200/80 bg-white dark:border-zinc-700/60 dark:bg-zinc-900/40">
+      <div className="flex items-start justify-between gap-4 px-4 py-3">
+        <div className="flex min-w-0 items-start gap-3">
+          <div className="mt-0.5 flex size-7 shrink-0 items-center justify-center rounded-lg bg-neutral-100 dark:bg-zinc-800">
+            <Server className="size-3.5 text-neutral-500 dark:text-zinc-400" strokeWidth={1.8} />
+          </div>
+          <div className="min-w-0">
+            <p className="text-xs font-medium text-neutral-400 dark:text-zinc-500">{t('agentDetail.runtimeNode')}</p>
+            <p className="mt-1 truncate text-sm font-medium text-neutral-800 dark:text-zinc-200" title={currentValue}>{currentValue}</p>
+            <p className="mt-0.5 truncate text-xs text-neutral-400 dark:text-zinc-500" title={currentDetail}>{currentDetail}</p>
+          </div>
+        </div>
+        <button type="button" onClick={() => setEditing((v) => !v)} className={secondaryButtonCls}>
+          {editing ? t('common.done') : t('common.edit')}
+        </button>
+      </div>
+      {editing && (
+        <div className="space-y-3 border-t border-neutral-100 p-4 dark:border-zinc-800">
+          <label className="block">
+            <span className="text-xs font-medium text-neutral-500 dark:text-zinc-400">{t('agentDetail.runtimeNodeSelect')}</span>
+            <select
+              value={selected}
+              onChange={e => setSelected(e.target.value)}
+              className={cn(panelSelectCls, 'mt-1 w-full')}
+              disabled={loading || saving}
+            >
+              <option value="">{t('agentDetail.runtimeNodeLocal')}</option>
+              {nodes.map(node => (
+                <option key={node.id} value={node.id}>
+                  {(node.name || node.id) + ` · ${runtimeNodeStatusLabel(t, node.status)}`}
+                </option>
+              ))}
+            </select>
+          </label>
+          <p className="text-xs text-neutral-400 dark:text-zinc-500">{t('agentDetail.runtimeNodeBindingHint')}</p>
+          {err && <p className="text-xs text-red-600 dark:text-red-400">{err}</p>}
+          <div className="flex justify-end gap-2">
+            <button type="button" onClick={() => { setSelected(runtimeNodeId ?? ''); setEditing(false) }} disabled={saving} className={secondaryButtonCls}>
+              {t('common.cancel')}
+            </button>
+            <button type="button" onClick={() => void save()} disabled={saving || selected === (runtimeNodeId ?? '')} className={primaryButtonCls}>
+              {saving ? t('common.saving') : t('common.save')}
+            </button>
+          </div>
+        </div>
+      )}
+    </div>
+  )
 }
 
 function ModelCredentialsPanel({ project, agentName, ctx, onChanged }: {

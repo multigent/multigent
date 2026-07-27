@@ -229,6 +229,9 @@ type AgentMeta struct {
 	// cloud agents are the default teammate shape; local/private workers are
 	// bridges for import or private resource access.
 	RuntimeMode string `yaml:"runtime_mode,omitempty"`
+	// RuntimeNodeID optionally pins this agent to a trusted remote runtime node.
+	// Empty means the control plane runs the agent on the local/default runtime.
+	RuntimeNodeID string `yaml:"runtime_node_id,omitempty"`
 	// AutonomyLevel is a governance hint such as L0, L1, L2, L3, or L4.
 	AutonomyLevel string `yaml:"autonomy_level,omitempty"`
 

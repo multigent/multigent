@@ -1,5 +1,5 @@
 import { createContext, useContext, useEffect, useMemo, useState, type ReactNode } from 'react'
-import { apiFetch } from './api'
+import { WORKSPACE_ID_KEY, apiFetch } from './api'
 import { useAuth } from './auth'
 
 type WorkspaceAccessSummary = {
@@ -30,27 +30,45 @@ export function WorkspaceAccessProvider({ children }: { children: ReactNode }) {
   const [workspace, setWorkspace] = useState<WorkspaceAccessSummary | null>(null)
   const [loading, setLoading] = useState(true)
   const [reloadKey, setReloadKey] = useState(0)
+  const userAccessKey = [
+    user?.username ?? '',
+    user?.role ?? '',
+    user?.workspaceRole ?? '',
+    user?.currentUserCanAdmin ? '1' : '0',
+  ].join(':')
 
   useEffect(() => {
     let cancelled = false
     setLoading(true)
     apiFetch<WorkspaceAccessSummary>('/api/v1/workspace')
       .then((data) => {
-        if (!cancelled) setWorkspace(data)
+        if (cancelled) return
+        setWorkspace(data)
+        if (data?.id) {
+          localStorage.setItem(WORKSPACE_ID_KEY, data.id)
+        } else {
+          localStorage.removeItem(WORKSPACE_ID_KEY)
+        }
       })
       .catch(() => {
-        if (!cancelled) setWorkspace(null)
+        if (cancelled) return
+        setWorkspace(null)
+        localStorage.removeItem(WORKSPACE_ID_KEY)
       })
       .finally(() => {
         if (!cancelled) setLoading(false)
       })
     return () => { cancelled = true }
-  }, [reloadKey])
+  }, [reloadKey, userAccessKey])
 
   useEffect(() => {
     const reload = () => setReloadKey((k) => k + 1)
     window.addEventListener('workspace-changed', reload)
-    return () => window.removeEventListener('workspace-changed', reload)
+    window.addEventListener('workspace-access-denied', reload)
+    return () => {
+      window.removeEventListener('workspace-changed', reload)
+      window.removeEventListener('workspace-access-denied', reload)
+    }
   }, [])
 
   const value = useMemo(() => {

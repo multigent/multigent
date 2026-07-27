@@ -289,6 +289,10 @@ func (s *Server) handlePostCancelTask(w http.ResponseWriter, r *http.Request) {
 		s.jsonError(w, http.StatusForbidden, "agent operator access required")
 		return
 	}
+	workspaceID, ok := s.currentWorkspaceForRequest(w, r)
+	if !ok {
+		return
+	}
 	t, err := s.ts.GetTask(project, agent, id)
 	if err != nil {
 		if strings.Contains(err.Error(), "not found") {
@@ -308,6 +312,10 @@ func (s *Server) handlePostCancelTask(w http.ResponseWriter, r *http.Request) {
 	t.UpdatedAt = now
 	entity.ApplyStatusTimestamps(t, prev, now)
 	if err := s.ts.UpdateTask(project, agent, t); err != nil {
+		s.serverError(w, err)
+		return
+	}
+	if _, err := s.cancelRuntimeRunsForAgent(workspaceID, project, agent, id, "task cancelled"); err != nil {
 		s.serverError(w, err)
 		return
 	}

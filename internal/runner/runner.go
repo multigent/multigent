@@ -10,6 +10,7 @@ package runner
 import (
 	"bufio"
 	"bytes"
+	"context"
 	"crypto/aes"
 	"crypto/cipher"
 	"crypto/sha1"
@@ -124,6 +125,17 @@ type RunResult struct {
 // to resume. The returned RunResult contains the detected session ID (if any)
 // and the log path.
 func (r *Runner) ExecPrompt(project, agentName, prompt, sessionID string) (*RunResult, error) {
+	return r.ExecPromptWithRuntimeControlEnv(project, agentName, prompt, sessionID, nil)
+}
+
+func (r *Runner) ExecPromptWithRuntimeControlEnv(project, agentName, prompt, sessionID string, runtimeControlEnv map[string]string) (*RunResult, error) {
+	return r.ExecPromptWithRuntimeControlEnvContext(context.Background(), project, agentName, prompt, sessionID, runtimeControlEnv)
+}
+
+func (r *Runner) ExecPromptWithRuntimeControlEnvContext(ctx context.Context, project, agentName, prompt, sessionID string, runtimeControlEnv map[string]string) (*RunResult, error) {
+	if ctx == nil {
+		ctx = context.Background()
+	}
 	meta, err := r.agentStore.AgentMeta(project, agentName)
 	if err != nil {
 		return nil, fmt.Errorf("load agent meta: %w", err)
@@ -148,7 +160,10 @@ func (r *Runner) ExecPrompt(project, agentName, prompt, sessionID string) (*RunR
 	if err := r.materializeProviderCredentials(agentDir, meta); err != nil {
 		return nil, fmt.Errorf("materialize provider credentials: %w", err)
 	}
-	runtimeEnv := r.resolveRuntimeControlEnv(project, agentName, "exec-"+time.Now().UTC().Format("20060102-150405"))
+	runtimeEnv := cloneStringMap(runtimeControlEnv)
+	if len(runtimeEnv) == 0 {
+		runtimeEnv = r.resolveRuntimeControlEnv(project, agentName, "exec-"+time.Now().UTC().Format("20060102-150405"))
+	}
 	if cleanup := r.materializeRuntimeFiles(agentDir, runtimeEnv); cleanup != nil {
 		defer cleanup()
 	}
@@ -182,6 +197,7 @@ func (r *Runner) ExecPrompt(project, agentName, prompt, sessionID string) (*RunR
 		r.addRuntimeDockerSystemMounts(runtimeCfg)
 		containerPromptFile := "/workspace/" + filepath.Base(promptFile)
 		remappedInner := remapPromptFile(innerArgs, promptFile, containerPromptFile)
+		remappedInner = adaptSandboxArgs(model, remappedInner)
 		var err error
 		executable, args, err = provider.Command(runenv.ProcessSpec{
 			WorkspaceRoot: r.root,
@@ -200,6 +216,9 @@ func (r *Runner) ExecPrompt(project, agentName, prompt, sessionID string) (*RunR
 			return nil, fmt.Errorf("runtime %s: build command: %w", meta.Sandbox.Provider, err)
 		}
 	} else {
+		if err := validateDirectHostExecution(model, innerArgs, effectiveEnv); err != nil {
+			return nil, err
+		}
 		executable = innerArgs[0]
 		args = innerArgs[1:]
 		execDir = agentDir
@@ -256,7 +275,7 @@ func (r *Runner) ExecPrompt(project, agentName, prompt, sessionID string) (*RunR
 	cmd.Stderr = multiOut
 
 	runStarted := time.Now()
-	runErr := cmd.Run()
+	runErr := runCommandContext(ctx, cmd)
 	runFinished := time.Now()
 
 	fmt.Fprintf(logFile, "\n=== exit code: %v  finished: %s ===\n",
@@ -281,7 +300,7 @@ func (r *Runner) ExecPrompt(project, agentName, prompt, sessionID string) (*RunR
 				"codex rollout missing for saved session, retrying fresh",
 				logPath, telemetry.FormatExecCommand(executable, args), prompt, outBuf.Bytes())
 			r.clearHeartbeatSession(project, agentName)
-			return r.ExecPrompt(project, agentName, prompt, "")
+			return r.ExecPromptWithRuntimeControlEnvContext(ctx, project, agentName, prompt, "", runtimeControlEnv)
 		}
 		if sessionID != "" && isThinkingSignatureError(output) {
 			fmt.Fprintf(logFile, "\n=== thinking block signature invalid — clearing heartbeat session + retrying fresh ===\n")
@@ -291,7 +310,7 @@ func (r *Runner) ExecPrompt(project, agentName, prompt, sessionID string) (*RunR
 				"thinking block signature invalid, retrying fresh",
 				logPath, telemetry.FormatExecCommand(executable, args), prompt, outBuf.Bytes())
 			r.clearHeartbeatSession(project, agentName)
-			return r.ExecPrompt(project, agentName, prompt, "")
+			return r.ExecPromptWithRuntimeControlEnvContext(ctx, project, agentName, prompt, "", runtimeControlEnv)
 		}
 		if discardSessionIDOnFailure(model) {
 			result.SessionID = ""
@@ -319,6 +338,13 @@ func (r *Runner) ExecPrompt(project, agentName, prompt, sessionID string) (*RunR
 // It does NOT update task state in tasks.yaml — callers are responsible
 // for calling ts.UpdateTask / ts.ArchiveTask based on the returned RunResult.
 func (r *Runner) RunTask(project, agentName string, task *entity.Task, sessionID string) (*RunResult, error) {
+	return r.RunTaskWithContext(context.Background(), project, agentName, task, sessionID)
+}
+
+func (r *Runner) RunTaskWithContext(ctx context.Context, project, agentName string, task *entity.Task, sessionID string) (*RunResult, error) {
+	if ctx == nil {
+		ctx = context.Background()
+	}
 	meta, err := r.agentStore.AgentMeta(project, agentName)
 	if err != nil {
 		return nil, fmt.Errorf("load agent meta: %w", err)
@@ -390,6 +416,7 @@ func (r *Runner) RunTask(project, agentName string, task *entity.Task, sessionID
 		// innerArgs reference the host promptFile path — remap it to the real agent path.
 		containerPromptFile := "/workspace/" + filepath.Base(promptFile)
 		remappedInner := remapPromptFile(innerArgs, promptFile, containerPromptFile)
+		remappedInner = adaptSandboxArgs(model, remappedInner)
 
 		var err error
 		executable, args, err = provider.Command(runenv.ProcessSpec{
@@ -412,6 +439,9 @@ func (r *Runner) RunTask(project, agentName string, task *entity.Task, sessionID
 		execDir = ""
 	} else {
 		// Direct host execution.
+		if err := validateDirectHostExecution(model, innerArgs, effectiveEnv); err != nil {
+			return nil, err
+		}
 		executable = innerArgs[0]
 		args = innerArgs[1:]
 		execDir = agentDir
@@ -464,7 +494,7 @@ func (r *Runner) RunTask(project, agentName string, task *entity.Task, sessionID
 	cmd.Stderr = multiOut
 
 	runStarted := time.Now()
-	runErr := cmd.Run()
+	runErr := runCommandContext(ctx, cmd)
 	runFinished := time.Now()
 
 	fmt.Fprintf(logFile, "\n=== exit code: %v  finished: %s ===\n",
@@ -504,7 +534,7 @@ func (r *Runner) RunTask(project, agentName string, task *entity.Task, sessionID
 				"codex rollout missing for saved session, retrying fresh",
 				logPath, cmdSummary, fullPrompt, outBuf.Bytes())
 			r.clearHeartbeatSession(project, agentName)
-			return r.RunTask(project, agentName, task, "")
+			return r.RunTaskWithContext(ctx, project, agentName, task, "")
 		}
 		if sessionID != "" && isThinkingSignatureError(output) {
 			fmt.Fprintf(logFile, "\n=== thinking block signature invalid — clearing heartbeat session + retrying fresh ===\n")
@@ -514,7 +544,7 @@ func (r *Runner) RunTask(project, agentName string, task *entity.Task, sessionID
 				"thinking block signature invalid, retrying fresh",
 				logPath, cmdSummary, fullPrompt, outBuf.Bytes())
 			r.clearHeartbeatSession(project, agentName)
-			return r.RunTask(project, agentName, task, "")
+			return r.RunTaskWithContext(ctx, project, agentName, task, "")
 		}
 		if discardSessionIDOnFailure(model) {
 			result.SessionID = ""
@@ -545,6 +575,14 @@ func (r *Runner) taskPromptWithWorkflowContext(project, agentName string, task *
 		return task.Prompt
 	}
 	return ctx + "\n\n---\n## Task Prompt\n\n" + task.Prompt
+}
+
+func (r *Runner) BuildTaskPrompt(project, agentName string, task *entity.Task) string {
+	if task == nil {
+		return ""
+	}
+	return r.taskPromptWithWorkflowContext(project, agentName, task) + fmt.Sprintf(systemMetaFooter,
+		task.ID, project, agentName, task.ID, task.ID, task.ID, task.ID)
 }
 
 func (r *Runner) workflowPromptContext(project, agentName, taskID string) string {
@@ -778,6 +816,92 @@ func exitCodeOrZero(cmd *exec.Cmd) int {
 	return cmd.ProcessState.ExitCode()
 }
 
+func runCommandContext(ctx context.Context, cmd *exec.Cmd) error {
+	if ctx == nil {
+		ctx = context.Background()
+	}
+	setProcessGroup(cmd)
+	if err := cmd.Start(); err != nil {
+		return err
+	}
+	done := make(chan error, 1)
+	go func() {
+		done <- cmd.Wait()
+	}()
+	select {
+	case err := <-done:
+		return err
+	case <-ctx.Done():
+		if cmd.Process != nil {
+			killProcessGroup(cmd.Process.Pid)
+		}
+		select {
+		case <-done:
+		case <-time.After(5 * time.Second):
+			if cmd.Process != nil {
+				_ = cmd.Process.Kill()
+			}
+			<-done
+		}
+		return ctx.Err()
+	}
+}
+
+func validateDirectHostExecution(model entity.AgentModel, args, env []string) error {
+	if entity.NormaliseModel(model) != entity.ModelClaudeCode || !argsRequestClaudeBypass(args) || os.Geteuid() != 0 || envHasSandbox(env) {
+		return nil
+	}
+	return fmt.Errorf("Claude Code refuses bypassPermissions under root/sudo privileges. Run the Runtime Node as a non-root user, or switch this agent to Docker sandbox execution")
+}
+
+func adaptSandboxArgs(model entity.AgentModel, args []string) []string {
+	if entity.NormaliseModel(model) != entity.ModelClaudeCode {
+		return args
+	}
+	out := make([]string, 0, len(args))
+	replaced := false
+	for i := 0; i < len(args); i++ {
+		if args[i] == "--permission-mode" && i+1 < len(args) && args[i+1] == "bypassPermissions" {
+			out = append(out, "--dangerously-skip-permissions")
+			i++
+			replaced = true
+			continue
+		}
+		out = append(out, args[i])
+	}
+	if !replaced && !argsRequestClaudeBypass(out) {
+		out = append(out, "--dangerously-skip-permissions")
+	}
+	return out
+}
+
+func argsRequestClaudeBypass(args []string) bool {
+	for i, arg := range args {
+		if arg == "--dangerously-skip-permissions" {
+			return true
+		}
+		if arg == "--permission-mode" && i+1 < len(args) && args[i+1] == "bypassPermissions" {
+			return true
+		}
+	}
+	return false
+}
+
+func envHasSandbox(env []string) bool {
+	for i := len(env) - 1; i >= 0; i-- {
+		key, value, ok := strings.Cut(env[i], "=")
+		if key != "IS_SANDBOX" {
+			continue
+		}
+		if !ok {
+			return true
+		}
+		value = strings.TrimSpace(strings.ToLower(value))
+		return value != "" && value != "0" && value != "false"
+	}
+	return false
+}
+
 // buildErrorMsg combines the Go error string with the last few lines of
 // process output so that the caller can see *why* the command failed,
 // not just the exit code.  It also appends setup hints for common errors.
@@ -860,11 +984,12 @@ func detectSetupHint(errText string) string {
 2. 设置页 → API 供应商中配置 OpenAI provider
 3. 或通过 CLI：multigent envvar add OPENAI_API_KEY=sk-xxx`
 
-	// dangerously-skip-permissions as root
-	case strings.Contains(lower, "dangerously-skip-permissions") && strings.Contains(lower, "root"):
-		return `[hint] Claude Code 不允许在 root 下使用 --dangerously-skip-permissions。请：
-1. 在成员详情页将沙箱切换为 Docker（Docker 内已设置 IS_SANDBOX=1）
-2. 或使用非 root 用户运行`
+	// Claude Code bypass as root
+	case (strings.Contains(lower, "dangerously-skip-permissions") || strings.Contains(lower, "bypasspermissions")) && strings.Contains(lower, "root"):
+		return `[hint] Claude Code 不允许在 root/sudo 下使用 bypass 权限。请：
+1. 用普通用户启动 Runtime Node 后再运行直连 Agent
+2. 或者将该 Agent 切换到 Docker 沙箱运行
+3. 不要在 root 直跑模式下降级为普通权限，否则写文件/执行命令会被交互式权限请求卡住`
 
 	// Read-only filesystem
 	case strings.Contains(lower, "read-only file system") || strings.Contains(lower, "erofs"):
@@ -2714,7 +2839,7 @@ func injectRuntimeControlEnvIntoRuntime(cfg *entity.SandboxConfig, env map[strin
 
 func isRuntimeControlEnvKey(key string) bool {
 	switch key {
-	case "MULTIGENT_API_URL", "MULTIGENT_AGENT_TOKEN", "MULTIGENT_RUN_ID", "MULTIGENT_WORKSPACE_ID", runtimeConnectionsFileEnv, runtimeToolsFileEnv, runtimeToolDirEnv, runtimeToolBinDirEnv, runtimeToolCacheBinDirEnv, runtimeToolBootstrapEnv, runtimeToolSkillsFileEnv, runtimeToolCLIAuditEnv:
+	case "MULTIGENT_API_URL", "MULTIGENT_AGENT_TOKEN", "MULTIGENT_RUN_ID", "MULTIGENT_TASK_ID", "MULTIGENT_WORKSPACE_ID", runtimeConnectionsFileEnv, runtimeToolsFileEnv, runtimeToolDirEnv, runtimeToolBinDirEnv, runtimeToolCacheBinDirEnv, runtimeToolBootstrapEnv, runtimeToolSkillsFileEnv, runtimeToolCLIAuditEnv:
 		return true
 	default:
 		return false
@@ -2747,6 +2872,17 @@ func mergeEnv(base []string, override map[string]string) []string {
 		if !seen[k] {
 			out = append(out, k+"="+v)
 		}
+	}
+	return out
+}
+
+func cloneStringMap(in map[string]string) map[string]string {
+	if len(in) == 0 {
+		return nil
+	}
+	out := make(map[string]string, len(in))
+	for k, v := range in {
+		out[k] = v
 	}
 	return out
 }

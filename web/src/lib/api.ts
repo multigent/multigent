@@ -2,6 +2,8 @@ import { getStoredToken } from './auth'
 import { showToast } from '../components/ui/Toast'
 import { i18n } from '../i18n'
 
+export const WORKSPACE_ID_KEY = 'multigent-workspace-id'
+
 type APIErrorBody = {
   code?: string
   message?: string
@@ -50,6 +52,10 @@ function authHeaders(extra?: HeadersInit): Headers {
   if (token) {
     headers.set('Authorization', `Bearer ${token}`)
   }
+  const workspaceId = localStorage.getItem(WORKSPACE_ID_KEY)
+  if (workspaceId) {
+    headers.set('X-Multigent-Workspace-ID', workspaceId)
+  }
   return headers
 }
 
@@ -59,6 +65,12 @@ function handle401() {
   window.dispatchEvent(new Event('auth-expired'))
 }
 
+function handle403(err: ApiError) {
+  window.dispatchEvent(new CustomEvent('workspace-access-denied', {
+    detail: { code: err.code, requestId: err.requestId },
+  }))
+}
+
 async function handleResponse<T>(res: Response, options?: Pick<APIRequestInit, 'suppressToast' | 'silentStatuses'>): Promise<T> {
   if (res.status === 401) {
     handle401()
@@ -66,6 +78,7 @@ async function handleResponse<T>(res: Response, options?: Pick<APIRequestInit, '
   }
   if (!res.ok) {
     const err = await parseAPIError(res)
+    if (res.status === 403) handle403(err)
     if (!options?.suppressToast && !options?.silentStatuses?.includes(res.status)) {
       showToast(err.message, 'error')
     }

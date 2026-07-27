@@ -1,6 +1,7 @@
 package runner
 
 import (
+	"os"
 	"slices"
 	"testing"
 
@@ -20,6 +21,44 @@ func TestCodexInvokerUsesJSONOutput(t *testing.T) {
 	args := invoker.Args("/tmp/prompt.txt", "")
 	if !slices.Contains(args, "--json") {
 		t.Fatalf("codex args missing --json: %#v", args)
+	}
+}
+
+func TestClaudeInvokerUsesPermissionModeBypass(t *testing.T) {
+	invoker := &claudeInvoker{}
+	args := invoker.Args("/tmp/prompt.txt", "")
+	if slices.Contains(args, "--dangerously-skip-permissions") {
+		t.Fatalf("claude args should not use root-blocked dangerous flag: %#v", args)
+	}
+	for i := 0; i < len(args)-1; i++ {
+		if args[i] == "--permission-mode" && args[i+1] == "bypassPermissions" {
+			return
+		}
+	}
+	t.Fatalf("claude args missing --permission-mode bypassPermissions: %#v", args)
+}
+
+func TestValidateDirectHostExecutionBlocksClaudeBypassWhenRoot(t *testing.T) {
+	if os.Geteuid() != 0 {
+		t.Skip("root-specific Claude Code behavior")
+	}
+	args := []string{"claude", "-p", "--permission-mode", "bypassPermissions", "--output-format", "stream-json"}
+	if err := validateDirectHostExecution(entity.ModelClaudeCode, args, nil); err == nil {
+		t.Fatalf("expected root direct host Claude bypass to be blocked")
+	}
+	if err := validateDirectHostExecution(entity.ModelClaudeCode, args, []string{"IS_SANDBOX=1"}); err != nil {
+		t.Fatalf("expected sandbox-marked Claude bypass to be allowed: %v", err)
+	}
+}
+
+func TestAdaptSandboxArgsKeepsClaudeDangerousBypass(t *testing.T) {
+	args := []string{"claude", "-p", "--permission-mode", "bypassPermissions", "--output-format", "stream-json"}
+	got := adaptSandboxArgs(entity.ModelClaudeCode, args)
+	if !slices.Contains(got, "--dangerously-skip-permissions") {
+		t.Fatalf("expected sandbox Claude args to use dangerous bypass: %#v", got)
+	}
+	if slices.Contains(got, "--permission-mode") || slices.Contains(got, "bypassPermissions") {
+		t.Fatalf("expected sandbox Claude args to replace permission-mode bypass: %#v", got)
 	}
 }
 

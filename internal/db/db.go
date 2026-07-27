@@ -91,6 +91,22 @@ type Store interface {
 	ListInteractionSessions(filter InteractionSessionFilter) ([]InteractionSession, error)
 	CreateInteractionEvent(event InteractionEvent) error
 	ListInteractionEvents(filter InteractionEventFilter) ([]InteractionEvent, error)
+
+	UpsertRuntimeNode(node RuntimeNode) error
+	RuntimeNodeByID(workspaceID, id string) (RuntimeNode, bool, error)
+	ListRuntimeNodes(workspaceID string) ([]RuntimeNode, error)
+	DeleteRuntimeNode(workspaceID, id string) error
+	CreateRuntimeNodeToken(token RuntimeNodeToken) error
+	UpdateRuntimeNodeToken(token RuntimeNodeToken) error
+	RuntimeNodeTokenByHash(hash string) (RuntimeNodeToken, bool, error)
+	RevokeRuntimeNodeToken(id string) error
+	UpsertRuntimeRun(run RuntimeRun) error
+	RuntimeRunByID(workspaceID, id string) (RuntimeRun, bool, error)
+	ListRuntimeRuns(filter RuntimeRunFilter) ([]RuntimeRun, error)
+	ClaimRuntimeRun(workspaceID, nodeID string, leaseSeconds int) (RuntimeRun, bool, error)
+	ExtendRuntimeRunLease(workspaceID, runID, nodeID string, leaseSeconds int) (RuntimeRun, bool, error)
+	CreateRuntimeEvent(event RuntimeEvent) error
+	ListRuntimeEvents(workspaceID, runID string, limit int) ([]RuntimeEvent, error)
 }
 
 type SQLiteStore struct {
@@ -373,6 +389,82 @@ type InteractionEventFilter struct {
 	WorkspaceID string
 	SessionID   string
 	Limit       int
+}
+
+type RuntimeNode struct {
+	ID               string
+	WorkspaceID      string
+	Name             string
+	Kind             string
+	Status           string
+	OS               string
+	Arch             string
+	Hostname         string
+	Version          string
+	CapabilitiesJSON string
+	PolicyJSON       string
+	LastSeenAt       string
+	LastError        string
+	CreatedByUserID  string
+	CreatedAt        string
+	UpdatedAt        string
+}
+
+type RuntimeNodeToken struct {
+	ID            string
+	WorkspaceID   string
+	RuntimeNodeID string
+	TokenHash     string
+	Name          string
+	ScopesJSON    string
+	ExpiresAt     string
+	RevokedAt     string
+	CreatedBy     string
+	CreatedAt     string
+}
+
+type RuntimeRun struct {
+	ID                   string
+	WorkspaceID          string
+	ProjectID            string
+	AgentID              string
+	TaskID               string
+	WorkflowInstanceID   string
+	WorkflowStepID       string
+	DesiredRuntimeNodeID string
+	RuntimeNodeID        string
+	Status               string
+	Priority             int
+	SpecJSON             string
+	ResultJSON           string
+	LeaseExpiresAt       string
+	ClaimedAt            string
+	StartedAt            string
+	FinishedAt           string
+	ErrorCode            string
+	ErrorMessage         string
+	CreatedAt            string
+	UpdatedAt            string
+}
+
+type RuntimeRunFilter struct {
+	WorkspaceID   string
+	RuntimeNodeID string
+	ProjectID     string
+	AgentID       string
+	TaskID        string
+	Status        string
+	Limit         int
+}
+
+type RuntimeEvent struct {
+	ID          string
+	WorkspaceID string
+	RunID       string
+	Sequence    int64
+	Type        string
+	PayloadJSON string
+	CreatedAt   string
 }
 
 func OpenDefault() (*SQLiteStore, error) {

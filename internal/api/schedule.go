@@ -438,6 +438,9 @@ func (s *Server) handlePatchHeartbeat(w http.ResponseWriter, r *http.Request) {
 				continue
 			}
 			if st.Key == name || st.Key == "all" || st.Key == name+"/"+agent {
+				if st.Mode == schedulerModeRuntimeNode {
+					break
+				}
 				proj := st.Project
 				ag := st.Agent
 				_ = s.sched.Stop(proj, ag)

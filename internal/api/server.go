@@ -28,6 +28,7 @@ import (
 type contextKey string
 
 const ctxUserKey contextKey = "auth-user"
+const requestedWorkspaceHeader = "X-Multigent-Workspace-ID"
 
 // UpdateChecker returns latest version info. Set by the caller.
 type UpdateChecker func() (latestVersion, releaseNotes string, hasUpdate bool, channel string, updateCommand string)
@@ -277,6 +278,12 @@ func (s *Server) Handler() http.Handler {
 	mux.HandleFunc("DELETE /api/v1/projects/{name}", s.handleDeleteProject)
 	mux.HandleFunc("GET /api/v1/rbac/model", s.handleRBACModel)
 	mux.HandleFunc("GET /api/v1/sandbox/capabilities", s.handleSandboxCapabilities)
+	mux.HandleFunc("GET /api/v1/runtime-nodes", s.handleRuntimeNodes)
+	mux.HandleFunc("POST /api/v1/runtime-nodes/join-token", s.handleCreateRuntimeNodeJoinToken)
+	mux.HandleFunc("GET /api/v1/runtime-nodes/{id}", s.handleRuntimeNode)
+	mux.HandleFunc("POST /api/v1/runtime-nodes/{id}/disable", s.handleDisableRuntimeNode)
+	mux.HandleFunc("POST /api/v1/runtime-nodes/{id}/enable", s.handleEnableRuntimeNode)
+	mux.HandleFunc("DELETE /api/v1/runtime-nodes/{id}", s.handleDeleteRuntimeNode)
 	mux.HandleFunc("POST /api/v1/projects/{name}/tasks", s.handlePostProjectTask)
 	mux.HandleFunc("POST /api/v1/projects/{name}/tasks/from-template", s.handlePostProjectTaskFromTemplate)
 	mux.HandleFunc("POST /api/v1/projects/{name}/agents/{agent}/crons/{cronId}/pause", s.handlePostCronPause)
@@ -316,6 +323,7 @@ func (s *Server) Handler() http.Handler {
 	mux.HandleFunc("GET /api/v1/projects/{name}/agents", s.handleProjectAgents)
 	mux.HandleFunc("PATCH /api/v1/projects/{name}/agents/{agent}", s.handlePatchAgent)
 	mux.HandleFunc("POST /api/v1/projects/{name}/agents/{agent}/runtime/token", s.handleIssueAgentRuntimeToken)
+	mux.HandleFunc("POST /api/v1/projects/{name}/agents/{agent}/runtime-runs/exec", s.handleCreateRuntimeExecRun)
 	mux.HandleFunc("GET /api/v1/projects/{name}/agents/{agent}/runtime/connections", s.handleAgentRuntimeConnections)
 	mux.HandleFunc("POST /api/v1/projects/{name}/tool-bindings/install", s.handleInstallProjectToolBindings)
 	mux.HandleFunc("GET /api/v1/projects/{name}/agents/{agent}/tool-bindings", s.handleListAgentToolBindings)
@@ -503,6 +511,18 @@ func (s *Server) Handler() http.Handler {
 	runtimeMux.HandleFunc("POST /api/v1/runtime/mcp/gateway", s.handleRuntimeMCPGateway)
 	runtimeMux.HandleFunc("POST /api/v1/runtime/actions", s.handleRuntimeActionProxy)
 	publicMux.Handle("/api/v1/runtime/", s.withRuntimeAgentAuth(runtimeMux))
+
+	runtimeNodeMux := http.NewServeMux()
+	runtimeNodeMux.HandleFunc("POST /api/v1/runtime-node/register", s.handleRuntimeNodeRegister)
+	runtimeNodeMux.HandleFunc("POST /api/v1/runtime-node/heartbeat", s.handleRuntimeNodeHeartbeat)
+	runtimeNodeMux.HandleFunc("POST /api/v1/runtime-node/capabilities", s.handleRuntimeNodeHeartbeat)
+	runtimeNodeMux.HandleFunc("POST /api/v1/runtime-node/runs/claim", s.handleRuntimeNodeClaimRun)
+	runtimeNodeMux.HandleFunc("GET /api/v1/runtime-node/runs/{runId}/spec", s.handleRuntimeNodeRunSpec)
+	runtimeNodeMux.HandleFunc("POST /api/v1/runtime-node/runs/{runId}/events", s.handleRuntimeNodeRunEvent)
+	runtimeNodeMux.HandleFunc("POST /api/v1/runtime-node/runs/{runId}/lease", s.handleRuntimeNodeRunLease)
+	runtimeNodeMux.HandleFunc("POST /api/v1/runtime-node/runs/{runId}/complete", s.handleRuntimeNodeRunComplete)
+	runtimeNodeMux.HandleFunc("POST /api/v1/runtime-node/runs/{runId}/fail", s.handleRuntimeNodeRunFail)
+	publicMux.Handle("/api/v1/runtime-node/", s.withRuntimeNodeAuth(runtimeNodeMux))
 	publicMux.Handle("/", s.withTokenAuth(mux))
 
 	return withCORS(withJSONHeaders(publicMux))
@@ -556,7 +576,11 @@ func (s *Server) withTokenAuth(next http.Handler) http.Handler {
 		// Legacy: static API key
 		if s.apiKey != "" && token == s.apiKey {
 			ctx := context.WithValue(r.Context(), ctxUserKey, "apikey")
-			next.ServeHTTP(w, r.WithContext(ctx))
+			req := r.WithContext(ctx)
+			if !s.applyRequestedWorkspace(w, req) {
+				return
+			}
+			next.ServeHTTP(w, req)
 			return
 		}
 
@@ -570,8 +594,42 @@ func (s *Server) withTokenAuth(next http.Handler) http.Handler {
 			return
 		}
 		ctx := context.WithValue(r.Context(), ctxUserKey, username)
-		next.ServeHTTP(w, r.WithContext(ctx))
+		req := r.WithContext(ctx)
+		if !s.applyRequestedWorkspace(w, req) {
+			return
+		}
+		next.ServeHTTP(w, req)
 	})
+}
+
+func (s *Server) applyRequestedWorkspace(w http.ResponseWriter, r *http.Request) bool {
+	if s.controlDB == nil {
+		return true
+	}
+	id := strings.TrimSpace(r.Header.Get(requestedWorkspaceHeader))
+	if id == "" {
+		return true
+	}
+	current, err := s.currentWorkspaceID()
+	if err == nil && current == id {
+		return true
+	}
+	row, ok, err := s.controlDB.WorkspaceByID(id)
+	if err != nil {
+		s.serverError(w, err)
+		return false
+	}
+	if !ok || !workspaceRootInDataDir(row.Root) {
+		return true
+	}
+	if !s.checkWorkspaceAccess(w, r, row.ID) {
+		return false
+	}
+	if err := s.switchWorkspaceRoot(row.Root); err != nil {
+		s.serverError(w, err)
+		return false
+	}
+	return true
 }
 
 func (s *Server) handleHealth(w http.ResponseWriter, _ *http.Request) {
@@ -920,8 +978,9 @@ func (s *Server) handlePatchAgent(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	var body struct {
-		Name   string `json:"name"`
-		Avatar string `json:"avatar"`
+		Name          string  `json:"name"`
+		Avatar        *string `json:"avatar,omitempty"`
+		RuntimeNodeID *string `json:"runtimeNodeId,omitempty"`
 	}
 	if err := s.readJSON(w, r, &body); err != nil {
 		s.jsonErrorCode(w, http.StatusBadRequest, ErrCodeInvalidJSON, "invalid JSON body")
@@ -975,12 +1034,31 @@ func (s *Server) handlePatchAgent(w http.ResponseWriter, r *http.Request) {
 		}
 	}
 
-	meta.Avatar = strings.TrimSpace(body.Avatar)
+	if body.Avatar != nil {
+		meta.Avatar = strings.TrimSpace(*body.Avatar)
+	}
+	if body.RuntimeNodeID != nil {
+		nodeID := strings.TrimSpace(*body.RuntimeNodeID)
+		if nodeID != "" {
+			workspaceID, ok := s.currentWorkspaceForRequest(w, r)
+			if !ok {
+				return
+			}
+			if _, found, err := s.controlDB.RuntimeNodeByID(workspaceID, nodeID); err != nil {
+				s.serverError(w, err)
+				return
+			} else if !found {
+				s.jsonErrorCode(w, http.StatusBadRequest, ErrCodeValidationFailed, "runtime node not found")
+				return
+			}
+		}
+		meta.RuntimeNodeID = nodeID
+	}
 	if err := s.st.SaveAgentMeta(project, newName, meta); err != nil {
 		s.serverError(w, err)
 		return
 	}
-	_ = json.NewEncoder(w).Encode(map[string]any{"ok": true, "name": newName, "avatar": meta.Avatar})
+	_ = json.NewEncoder(w).Encode(map[string]any{"ok": true, "name": newName, "avatar": meta.Avatar, "runtimeNodeId": meta.RuntimeNodeID})
 }
 
 func validAgentName(name string) bool {

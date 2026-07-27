@@ -58,14 +58,15 @@ func (c *claudeInvoker) Args(promptFile, sessionID string) []string {
 	// Use -p/--print for non-interactive mode; prompt arrives on stdin
 	// (UseStdinPrompt returns true so the runner pipes promptFile).
 	//
-	// --dangerously-skip-permissions is required when running as root inside a
-	// Docker sandbox. IS_SANDBOX=1 must also be set (handled by sandbox layer).
+	// --permission-mode bypassPermissions is the Claude Code supported path for
+	// autonomous non-interactive runs. Direct host execution must run under a
+	// non-root user; Claude Code rejects bypass mode under root/sudo.
 	args := []string{
 		"claude",
 		"-p",
 		"--verbose",
 		"--output-format", "stream-json",
-		"--dangerously-skip-permissions",
+		"--permission-mode", "bypassPermissions",
 	}
 	if sessionID != "" {
 		args = append(args, "--resume", sessionID)
