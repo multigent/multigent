@@ -2,6 +2,7 @@ import { createContext, useCallback, useContext, useEffect, useMemo, useState, t
 
 const TOKEN_KEY = 'multigent-token'
 const USER_KEY = 'multigent-user'
+const WORKSPACE_ID_KEY = 'multigent-workspace-id'
 
 export type ProjectAccess = {
   project: string
@@ -55,6 +56,7 @@ export function AuthProvider({ children }: { children: ReactNode }) {
   const login = useCallback((t: string, u: AuthUser) => {
     localStorage.setItem(TOKEN_KEY, t)
     localStorage.setItem(USER_KEY, JSON.stringify(u))
+    localStorage.removeItem(WORKSPACE_ID_KEY)
     setToken(t)
     setUser(u)
   }, [])
@@ -62,6 +64,7 @@ export function AuthProvider({ children }: { children: ReactNode }) {
   const logout = useCallback(() => {
     localStorage.removeItem(TOKEN_KEY)
     localStorage.removeItem(USER_KEY)
+    localStorage.removeItem(WORKSPACE_ID_KEY)
     setToken(null)
     setUser(null)
   }, [])

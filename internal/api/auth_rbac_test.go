@@ -349,6 +349,58 @@ func TestCurrentWorkspaceAccessAutoSwitchesToUserWorkspace(t *testing.T) {
 	}
 }
 
+func TestRequestedWorkspaceHeaderFallsBackWhenUserCannotAccess(t *testing.T) {
+	users := newTestUserStore(t)
+	base := t.TempDir()
+	t.Setenv("MULTIGENT_DATA_DIR", base)
+	foreignRoot := filepath.Join(base, "foreign")
+	userRoot := filepath.Join(base, "user")
+	for _, root := range []string{foreignRoot, userRoot} {
+		if err := os.MkdirAll(filepath.Join(root, ".multigent"), 0o755); err != nil {
+			t.Fatalf("mkdir workspace: %v", err)
+		}
+		if err := os.WriteFile(filepath.Join(root, ".multigent", "agency.yaml"), []byte("name: Test\n"), 0o644); err != nil {
+			t.Fatalf("write agency: %v", err)
+		}
+	}
+	if err := users.CreateUser("john", "pass123", RoleMember, "John", "john@example.com", "", "", ""); err != nil {
+		t.Fatalf("create user: %v", err)
+	}
+	if err := users.db.UpsertWorkspace(controldb.Workspace{
+		ID:        "ws-foreign",
+		Name:      "Foreign Workspace",
+		Slug:      "foreign",
+		Root:      foreignRoot,
+		CreatedBy: "other",
+		CreatedAt: "2026-07-18T00:00:00Z",
+	}); err != nil {
+		t.Fatalf("foreign workspace: %v", err)
+	}
+	if err := users.db.UpsertWorkspace(controldb.Workspace{
+		ID:        "ws-user",
+		Name:      "User Workspace",
+		Slug:      "user",
+		Root:      userRoot,
+		CreatedBy: "john",
+		CreatedAt: "2026-07-18T00:00:00Z",
+	}); err != nil {
+		t.Fatalf("user workspace: %v", err)
+	}
+	if err := users.db.UpsertWorkspaceMember("ws-user", "john", WorkspaceRoleOwner); err != nil {
+		t.Fatalf("workspace member: %v", err)
+	}
+	s := &Server{root: foreignRoot, controlDB: users.db, users: users, st: store.NewDB(foreignRoot, users.db)}
+	rec := httptest.NewRecorder()
+	req := providerTestRequest(http.MethodGet, "/api/v1/workspace", "john", nil)
+	req.Header.Set(requestedWorkspaceHeader, "ws-foreign")
+	if !s.applyRequestedWorkspace(rec, req) {
+		t.Fatalf("requested workspace should fall back, status=%d body=%s", rec.Code, rec.Body.String())
+	}
+	if !samePath(s.root, userRoot) {
+		t.Fatalf("root=%q, want %q", s.root, userRoot)
+	}
+}
+
 func TestListUsersReturnsWorkspaceRole(t *testing.T) {
 	s, _ := newProviderHandlerTestServer(t)
 	if err := s.users.CreateUser("instance-admin", "pass123", RoleAdmin, "Instance Admin", "instance-admin@example.com", "", "", ""); err != nil {

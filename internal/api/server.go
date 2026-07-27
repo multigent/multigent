@@ -611,7 +611,7 @@ func (s *Server) applyRequestedWorkspace(w http.ResponseWriter, r *http.Request)
 		return true
 	}
 	current, err := s.currentWorkspaceID()
-	if err == nil && current == id {
+	if err == nil && current == id && s.userCanAccessWorkspace(r, id) {
 		return true
 	}
 	row, ok, err := s.controlDB.WorkspaceByID(id)
@@ -622,8 +622,17 @@ func (s *Server) applyRequestedWorkspace(w http.ResponseWriter, r *http.Request)
 	if !ok || !workspaceRootInDataDir(row.Root) {
 		return true
 	}
-	if !s.checkWorkspaceAccess(w, r, row.ID) {
-		return false
+	if !s.userCanAccessWorkspace(r, row.ID) {
+		if fallback, ok, err := s.nextAccessibleWorkspace(r, row.ID); err != nil {
+			s.serverError(w, err)
+			return false
+		} else if ok {
+			if err := s.switchWorkspaceRoot(fallback.Root); err != nil {
+				s.serverError(w, err)
+				return false
+			}
+		}
+		return true
 	}
 	if err := s.switchWorkspaceRoot(row.Root); err != nil {
 		s.serverError(w, err)

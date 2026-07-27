@@ -66,6 +66,9 @@ function handle401() {
 }
 
 function handle403(err: ApiError) {
+  if (err.code === 'workspace_access_required') {
+    localStorage.removeItem(WORKSPACE_ID_KEY)
+  }
   window.dispatchEvent(new CustomEvent('workspace-access-denied', {
     detail: { code: err.code, requestId: err.requestId },
   }))
