@@ -1,5 +1,12 @@
 # Changelog
 
+## [v0.1.17] - 2026-07-27
+
+### Fixed
+
+- Switching browser sessions between different users now clears stale workspace selection and falls back to an accessible workspace instead of repeatedly returning 403.
+- Workbench messages now include the current user's own mailbox, so messages sent directly to a real user such as `john` appear in that user's workbench.
+
 ## [v0.1.16] - 2026-07-27
 
 ### Added
