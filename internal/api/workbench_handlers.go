@@ -32,30 +32,53 @@ func (s *Server) handleWorkbenchMessages(w http.ResponseWriter, r *http.Request)
 	}
 
 	cur := s.currentUser(r)
+	if cur == nil || strings.TrimSpace(cur.Username) == "" {
+		s.jsonErrorCode(w, http.StatusForbidden, ErrCodeAuthenticatedUserRequired, "authenticated user required")
+		return
+	}
 	isAdmin := cur.Role == RoleAdmin || s.canAdminCurrentWorkspace(r)
 	useAll := archivedMode == "all" || archivedMode == "yes"
 	seen := map[string]bool{}
 	var msgs []*msgWithMailbox
 
+	addMailbox := func(mailbox string, keep func(*entity.Message) bool) error {
+		var raw []*entity.Message
+		var err error
+		if useAll {
+			raw, err = s.ts.ListAllMessages(mailbox)
+		} else {
+			raw, err = s.ts.ListMessages(mailbox)
+		}
+		if err != nil {
+			return err
+		}
+		for _, m := range raw {
+			if m == nil || (keep != nil && !keep(m)) {
+				continue
+			}
+			key := mailbox + "\x00" + m.ID
+			if seen[key] {
+				continue
+			}
+			seen[key] = true
+			msgs = append(msgs, &msgWithMailbox{m, mailbox})
+		}
+		return nil
+	}
+
+	if cur.Username != "" && (direction == "inbox" || direction == "all") {
+		if err := addMailbox(cur.Username, nil); err != nil {
+			s.serverError(w, err)
+			return
+		}
+	}
+
 	if isAdmin {
 		// Admin: show all messages to/from human
 		if direction == "inbox" || direction == "all" {
-			var raw []*entity.Message
-			var err error
-			if useAll {
-				raw, err = s.ts.ListAllMessages("human")
-			} else {
-				raw, err = s.ts.ListMessages("human")
-			}
-			if err != nil {
+			if err := addMailbox("human", nil); err != nil {
 				s.serverError(w, err)
 				return
-			}
-			for _, m := range raw {
-				if m != nil && !seen[m.ID] {
-					seen[m.ID] = true
-					msgs = append(msgs, &msgWithMailbox{m, "human"})
-				}
 			}
 		}
 		if direction == "sent" || direction == "all" {
@@ -71,18 +94,9 @@ func (s *Server) handleWorkbenchMessages(w http.ResponseWriter, r *http.Request)
 				}
 				for _, ag := range agents {
 					mailbox := proj + "/" + ag
-					var raw []*entity.Message
-					if useAll {
-						raw, _ = s.ts.ListAllMessages(mailbox)
-					} else {
-						raw, _ = s.ts.ListMessages(mailbox)
-					}
-					for _, m := range raw {
-						if m != nil && m.From == "human" && !seen[m.ID] {
-							seen[m.ID] = true
-							msgs = append(msgs, &msgWithMailbox{m, mailbox})
-						}
-					}
+					_ = addMailbox(mailbox, func(m *entity.Message) bool {
+						return m.From == "human" || m.From == cur.Username
+					})
 				}
 			}
 		}
@@ -90,18 +104,12 @@ func (s *Server) handleWorkbenchMessages(w http.ResponseWriter, r *http.Request)
 		for _, grant := range cur.AgentGrants {
 			la := grant.Project + "/" + grant.Agent
 			if direction == "inbox" || direction == "all" {
-				var raw []*entity.Message
-				if useAll {
-					raw, _ = s.ts.ListAllMessages(la)
-				} else {
-					raw, _ = s.ts.ListMessages(la)
-				}
-				for _, m := range raw {
-					if m != nil && !seen[m.ID] {
-						seen[m.ID] = true
-						msgs = append(msgs, &msgWithMailbox{m, la})
-					}
-				}
+				_ = addMailbox(la, nil)
+			}
+			if direction == "sent" || direction == "all" {
+				_ = addMailbox(la, func(m *entity.Message) bool {
+					return m.From == cur.Username
+				})
 			}
 		}
 	}

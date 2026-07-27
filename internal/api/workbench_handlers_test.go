@@ -124,3 +124,39 @@ func TestWorkbenchTasksIncludeAdminDirectAssigneeInAgentQueue(t *testing.T) {
 		t.Fatalf("expected admin direct review task, got %#v", rows)
 	}
 }
+
+func TestWorkbenchMessagesIncludesCurrentUserMailbox(t *testing.T) {
+	s, workspaceID := newConnectionGrantPolicyServer(t)
+	if err := s.users.CreateUser("john", "pass123", RoleMember, "John", "john@example.com", "", "", ""); err != nil {
+		t.Fatalf("create john: %v", err)
+	}
+	if err := s.controlDB.UpsertWorkspaceMember(workspaceID, "john", WorkspaceRoleMember); err != nil {
+		t.Fatalf("workspace john: %v", err)
+	}
+	if err := s.ts.SendMessage(&entity.Message{
+		ID:      "msg-one",
+		From:    "sample/pm",
+		To:      "john",
+		Subject: "Welcome",
+		Body:    "Hello John",
+		SentAt:  time.Date(2026, 7, 27, 12, 0, 0, 0, time.UTC),
+	}); err != nil {
+		t.Fatalf("send message: %v", err)
+	}
+
+	rec := httptest.NewRecorder()
+	s.handleWorkbenchMessages(rec, providerTestRequest(http.MethodGet, "/api/v1/workbench/messages?direction=inbox", "john", nil))
+	if rec.Code != http.StatusOK {
+		t.Fatalf("status=%d body=%s", rec.Code, rec.Body.String())
+	}
+	var rows []msgRow
+	if err := json.Unmarshal(rec.Body.Bytes(), &rows); err != nil {
+		t.Fatalf("decode rows: %v", err)
+	}
+	if len(rows) != 1 {
+		t.Fatalf("rows=%#v", rows)
+	}
+	if rows[0].Mailbox != "john" || rows[0].To != "john" || rows[0].From != "sample/pm" {
+		t.Fatalf("wrong row: %#v", rows[0])
+	}
+}
