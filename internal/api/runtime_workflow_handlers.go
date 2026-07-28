@@ -678,7 +678,7 @@ func (s *Server) handleRuntimeWorkflowStepComplete(w http.ResponseWriter, r *htt
 		if t.CreatedBy != "" {
 			s.notifyTaskDone(t, principal.Project, agent)
 		}
-	} else if err := s.activateNextWorkflowStep(principal.Project, agent, t, transition); err != nil {
+	} else if err := s.activateNextWorkflowStep(principal.WorkspaceID, principal.Project, agent, t, transition, r); err != nil {
 		s.serverError(w, err)
 		return
 	}
@@ -726,7 +726,7 @@ func (s *Server) runtimeTaskHasWorkflow(workspaceID, project, taskID string) boo
 	return err == nil && ok
 }
 
-func (s *Server) activateNextWorkflowStep(project, previousAgent string, completed *entity.Task, transition workflowstore.TransitionResult) error {
+func (s *Server) activateNextWorkflowStep(workspaceID, project, previousAgent string, completed *entity.Task, transition workflowstore.TransitionResult, r *http.Request) error {
 	if completed == nil || transition.Done || transition.Next == nil || transition.NextInst == nil {
 		return nil
 	}
@@ -771,7 +771,7 @@ func (s *Server) activateNextWorkflowStep(project, previousAgent string, complet
 		if err := s.ts.PersistTask(project, previousAgent, completed); err != nil {
 			return err
 		}
-		return s.ts.AddToInbox(&entity.InboxItem{
+		if err := s.ts.AddToInbox(&entity.InboxItem{
 			TaskID:      completed.ID,
 			Project:     project,
 			Agent:       previousAgent,
@@ -780,7 +780,26 @@ func (s *Server) activateNextWorkflowStep(project, previousAgent string, complet
 			Summary:     strings.TrimSpace(inst.InputArtifact),
 			ActionHint:  "Review the workflow step and choose approved or needs_changes.",
 			ActionItems: []string{"Open the task workflow panel.", "Review the previous step output.", "Approve or request changes with clear comments."},
-		})
+		}); err != nil {
+			return err
+		}
+		if strings.TrimSpace(workspaceID) != "" {
+			wfStore := workflowstore.NewStore(s.controlDB, workspaceID)
+			def, found, err := wfStore.Definition(transition.Run.DefinitionID)
+			if err == nil && found {
+				s.fireWorkflowStepTriggers(workspaceID, workflowTriggerEvent{
+					Type:       "workflow.human_review.required",
+					Project:    project,
+					TaskID:     completed.ID,
+					TaskTitle:  completed.Title,
+					Run:        transition.Run,
+					Definition: def,
+					Step:       *transition.Next,
+					Instance:   *transition.NextInst,
+				}, r)
+			}
+		}
+		return nil
 	}
 	return nil
 }

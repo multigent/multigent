@@ -319,6 +319,11 @@ func (s *Server) handlePostTaskWorkflowReview(w http.ResponseWriter, r *http.Req
 	if !ok {
 		return
 	}
+	currentWorkspaceID, err := s.currentWorkspaceID()
+	if err != nil {
+		s.serverError(w, err)
+		return
+	}
 	outputs := body.Outputs
 	if outputs == nil {
 		outputs = map[string]string{}
@@ -352,7 +357,7 @@ func (s *Server) handlePostTaskWorkflowReview(w http.ResponseWriter, r *http.Req
 			s.serverError(w, err)
 			return
 		}
-	} else if err := s.activateNextWorkflowStep(project, agent, t, transition); err != nil {
+	} else if err := s.activateNextWorkflowStep(currentWorkspaceID, project, agent, t, transition, r); err != nil {
 		s.serverError(w, err)
 		return
 	}
