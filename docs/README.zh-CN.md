@@ -24,6 +24,7 @@
 ## 概念
 
 - [协作流程状态机](concepts/collaboration-workflow-state-machine.md)
+- [流程协作账号与外部审核联动](concepts/workflow-collaboration-accounts.md)
 - [RBAC 架构](concepts/rbac-architecture.md)
 - [外部工具插件协议](concepts/external-tool-plugin-protocol.md)
 - [外部工具 OAuth 应用配置](concepts/external-tool-oauth-app-setup.md)

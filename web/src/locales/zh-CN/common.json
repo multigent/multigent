@@ -584,7 +584,16 @@
       "addField": "添加字段",
       "noFields": "暂无字段",
       "fieldName": "字段名",
-      "fieldDescription": "字段说明"
+      "fieldDescription": "字段说明",
+      "notifyAssignee": "通知实际负责人",
+      "notifyAssigneeHint": "当任务流转到这个人工审核节点时，通过已绑定的协作账号通知该任务实际负责人。",
+      "notifyChannel": "通知渠道",
+      "notifyChannelAuto": "自动选择",
+      "notifyChannelFeishu": "飞书",
+      "notifyChannelLark": "Lark",
+      "assigneeNotification": "负责人通知",
+      "assigneeNotificationEnabled": "已启用 · {{channel}}",
+      "assigneeNotificationDisabled": "未启用"
     },
     "colors": {
       "neutral": "中性",

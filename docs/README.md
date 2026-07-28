@@ -23,6 +23,7 @@ Public documentation for installing, configuring, and operating Multigent.
 ## Concepts
 
 - [Workflow state machine](concepts/collaboration-workflow-state-machine.en.md)
+- [Workflow collaboration accounts](concepts/workflow-collaboration-accounts.md)
 
 ## Operations
 

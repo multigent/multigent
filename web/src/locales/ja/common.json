@@ -584,7 +584,16 @@
       "addField": "フィールド追加",
       "noFields": "フィールドなし",
       "fieldName": "フィールド名",
-      "fieldDescription": "説明"
+      "fieldDescription": "説明",
+      "notifyAssignee": "実際の担当者に通知",
+      "notifyAssigneeHint": "タスクがこの人のレビューノードに到達したとき、リンク済みのコラボレーションアカウント経由で担当者に通知します。",
+      "notifyChannel": "通知チャネル",
+      "notifyChannelAuto": "自動",
+      "notifyChannelFeishu": "Feishu",
+      "notifyChannelLark": "Lark",
+      "assigneeNotification": "担当者通知",
+      "assigneeNotificationEnabled": "有効 · {{channel}}",
+      "assigneeNotificationDisabled": "無効"
     },
     "colors": {
       "neutral": "ニュートラル",

@@ -21,7 +21,15 @@ import (
 	workflowstore "github.com/multigent/multigent/internal/workflow"
 )
 
-const workflowNotificationTable = "workflow_notifications"
+const (
+	workflowNotificationTable = "workflow_notifications"
+
+	workflowNotifyAssigneeKey   = "notifyAssignee"
+	workflowNotifyChannelKey    = "notifyChannel"
+	workflowNotifyChannelAuto   = "auto"
+	workflowNotifyChannelFeishu = "feishu"
+	workflowNotifyChannelLark   = "lark"
+)
 
 type workflowTriggerEvent struct {
 	Type        string
@@ -95,6 +103,9 @@ func (s *Server) fireWorkflowStepTriggers(workspaceID string, event workflowTrig
 	if event.Step.Type != "human_review" && event.Instance.ActorType != "human" {
 		return
 	}
+	if !workflowStepNotifyAssignee(event.Step) {
+		return
+	}
 	if strings.TrimSpace(event.Instance.ActorID) == "" {
 		return
 	}
@@ -105,7 +116,11 @@ func (s *Server) fireWorkflowStepTriggers(workspaceID string, event workflowTrig
 
 func (s *Server) triggerHumanReviewNotification(event workflowTriggerEvent, r *http.Request) error {
 	reviewer := strings.TrimSpace(event.Instance.ActorID)
-	targets, err := s.workflowNotificationTargets(event.WorkspaceID, reviewer)
+	providers := workflowStepNotifyProviders(event.Step)
+	if len(providers) == 0 {
+		return nil
+	}
+	targets, err := s.workflowNotificationTargets(event.WorkspaceID, reviewer, providers)
 	if err != nil {
 		return err
 	}
@@ -177,8 +192,24 @@ func (s *Server) workflowExternalIdentity(workspaceID, provider, userID string) 
 	return identities[0], true, nil
 }
 
-func (s *Server) workflowNotificationTargets(workspaceID, reviewer string) ([]workflowNotificationTarget, error) {
-	providers := []string{"feishu", "lark"}
+func workflowStepNotifyAssignee(step entity.WorkflowStep) bool {
+	return strings.EqualFold(strings.TrimSpace(step.Config[workflowNotifyAssigneeKey]), "true")
+}
+
+func workflowStepNotifyProviders(step entity.WorkflowStep) []string {
+	switch strings.ToLower(strings.TrimSpace(step.Config[workflowNotifyChannelKey])) {
+	case "", workflowNotifyChannelAuto:
+		return []string{workflowNotifyChannelFeishu, workflowNotifyChannelLark}
+	case workflowNotifyChannelFeishu:
+		return []string{workflowNotifyChannelFeishu}
+	case workflowNotifyChannelLark:
+		return []string{workflowNotifyChannelLark}
+	default:
+		return nil
+	}
+}
+
+func (s *Server) workflowNotificationTargets(workspaceID, reviewer string, providers []string) ([]workflowNotificationTarget, error) {
 	targets := make([]workflowNotificationTarget, 0, len(providers))
 	for _, provider := range providers {
 		identity, ok, err := s.workflowExternalIdentity(workspaceID, provider, reviewer)

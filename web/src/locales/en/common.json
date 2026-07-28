@@ -584,7 +584,16 @@
       "addField": "Add field",
       "noFields": "No fields",
       "fieldName": "Field name",
-      "fieldDescription": "Description"
+      "fieldDescription": "Description",
+      "notifyAssignee": "Notify actual assignee",
+      "notifyAssigneeHint": "When a task reaches this human review node, notify the task's assigned reviewer through their linked collaboration account.",
+      "notifyChannel": "Notification channel",
+      "notifyChannelAuto": "Auto",
+      "notifyChannelFeishu": "Feishu",
+      "notifyChannelLark": "Lark",
+      "assigneeNotification": "Assignee notification",
+      "assigneeNotificationEnabled": "Enabled · {{channel}}",
+      "assigneeNotificationDisabled": "Disabled"
     },
     "colors": {
       "neutral": "Neutral",

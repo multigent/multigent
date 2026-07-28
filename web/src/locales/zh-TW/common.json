@@ -584,7 +584,16 @@
       "addField": "新增欄位",
       "noFields": "暫無欄位",
       "fieldName": "欄位名",
-      "fieldDescription": "欄位說明"
+      "fieldDescription": "欄位說明",
+      "notifyAssignee": "通知實際負責人",
+      "notifyAssigneeHint": "當任務流轉到這個人工審核節點時，透過已綁定的協作帳號通知該任務實際負責人。",
+      "notifyChannel": "通知渠道",
+      "notifyChannelAuto": "自動選擇",
+      "notifyChannelFeishu": "飛書",
+      "notifyChannelLark": "Lark",
+      "assigneeNotification": "負責人通知",
+      "assigneeNotificationEnabled": "已啟用 · {{channel}}",
+      "assigneeNotificationDisabled": "未啟用"
     },
     "colors": {
       "neutral": "中性",

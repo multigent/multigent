@@ -219,6 +219,8 @@ const AUTO_LAYOUT_START_X = 80
 const AUTO_LAYOUT_START_Y = 80
 const WORKFLOW_NODE_WIDTH = 198
 const WORKFLOW_NODE_HEIGHT = 88
+const WORKFLOW_NOTIFY_ASSIGNEE_KEY = 'notifyAssignee'
+const WORKFLOW_NOTIFY_CHANNEL_KEY = 'notifyChannel'
 
 let elkInstance: ELK | null = null
 
@@ -318,6 +320,17 @@ function normalizeEdgePatch(edge: WorkflowEdge, patch: Partial<WorkflowEdge>): W
         }
       : undefined,
     inputMapping: Object.fromEntries(Object.entries(next.inputMapping ?? {}).filter(([key, value]) => key.trim() && value.trim())),
+  }
+}
+
+function notifyChannelLabelKey(channel?: string) {
+  switch ((channel || 'auto').trim().toLowerCase()) {
+    case 'feishu':
+      return 'Feishu'
+    case 'lark':
+      return 'Lark'
+    default:
+      return 'Auto'
   }
 }
 
@@ -964,6 +977,21 @@ export function WorkflowBoard({
     })
   }
 
+  function updateStepDraftConfig(patch: Record<string, string | undefined>) {
+    setStepDraft((current) => {
+      if (!current) return current
+      const config = { ...(current.config ?? {}) }
+      for (const [key, value] of Object.entries(patch)) {
+        if (value === undefined || value === '') {
+          delete config[key]
+        } else {
+          config[key] = value
+        }
+      }
+      return { ...current, config }
+    })
+  }
+
   function updateStepDraftFields(kind: 'inputFields' | 'outputFields', fields: WorkflowField[]) {
     setStepDraft((current) => (current ? { ...current, [kind]: fields.map(({ name, description }) => ({ name, description })), [kind === 'inputFields' ? 'inputSchema' : 'outputSchema']: '' } : current))
   }
@@ -1157,6 +1185,39 @@ export function WorkflowBoard({
                 <span className="text-xs font-medium uppercase text-neutral-400 dark:text-zinc-500">{t('workflows.detail.defaultRole')}</span>
                 <input value={stepDraft.actorRole || ''} onChange={(event) => updateStepDraft({ actorRole: event.target.value })} placeholder="agent" className={fieldClass} />
               </label>
+              {stepDraft.type === 'human_review' ? (
+                <div className="rounded-lg border border-neutral-200 bg-neutral-50/70 p-3 dark:border-zinc-700 dark:bg-zinc-800/50">
+                  <label className="flex items-start gap-2">
+                    <input
+                      type="checkbox"
+                      checked={stepDraft.config?.[WORKFLOW_NOTIFY_ASSIGNEE_KEY] === 'true'}
+                      onChange={(event) => updateStepDraftConfig({
+                        [WORKFLOW_NOTIFY_ASSIGNEE_KEY]: event.target.checked ? 'true' : undefined,
+                        [WORKFLOW_NOTIFY_CHANNEL_KEY]: event.target.checked ? (stepDraft.config?.[WORKFLOW_NOTIFY_CHANNEL_KEY] || 'auto') : undefined,
+                      })}
+                      className="mt-0.5 size-4 rounded border-neutral-300 text-sky-600 focus:ring-sky-500 dark:border-zinc-600 dark:bg-zinc-900"
+                    />
+                    <span>
+                      <span className="block text-sm font-medium text-neutral-800 dark:text-zinc-100">{t('workflows.detail.notifyAssignee')}</span>
+                      <span className="mt-1 block text-xs leading-5 text-neutral-500 dark:text-zinc-400">{t('workflows.detail.notifyAssigneeHint')}</span>
+                    </span>
+                  </label>
+                  {stepDraft.config?.[WORKFLOW_NOTIFY_ASSIGNEE_KEY] === 'true' ? (
+                    <label className="mt-3 block">
+                      <span className="text-xs font-medium uppercase text-neutral-400 dark:text-zinc-500">{t('workflows.detail.notifyChannel')}</span>
+                      <select
+                        value={stepDraft.config?.[WORKFLOW_NOTIFY_CHANNEL_KEY] || 'auto'}
+                        onChange={(event) => updateStepDraftConfig({ [WORKFLOW_NOTIFY_CHANNEL_KEY]: event.target.value })}
+                        className={fieldClass}
+                      >
+                        <option value="auto">{t('workflows.detail.notifyChannelAuto')}</option>
+                        <option value="feishu">{t('workflows.detail.notifyChannelFeishu')}</option>
+                        <option value="lark">{t('workflows.detail.notifyChannelLark')}</option>
+                      </select>
+                    </label>
+                  ) : null}
+                </div>
+              ) : null}
               <FieldTable
                 title={t('workflows.detail.input')}
                 fields={stepDraft.inputFields ?? []}
@@ -1197,6 +1258,18 @@ export function WorkflowBoard({
               <p className="mt-3 text-sm leading-6 text-neutral-600 dark:text-zinc-400">{selected.description || t('workflows.noDescription')}</p>
               <div className="mt-5 space-y-4 text-sm">
                 <Detail label={t('workflows.detail.defaultRole')} value={selected.actorRole || selectedInst?.actorId || 'system'} />
+                {selected.type === 'human_review' ? (
+                  <Detail
+                    label={t('workflows.detail.assigneeNotification')}
+                    value={
+                      selected.config?.[WORKFLOW_NOTIFY_ASSIGNEE_KEY] === 'true'
+                        ? t('workflows.detail.assigneeNotificationEnabled', {
+                            channel: t(`workflows.detail.notifyChannel${notifyChannelLabelKey(selected.config?.[WORKFLOW_NOTIFY_CHANNEL_KEY])}`),
+                          })
+                        : t('workflows.detail.assigneeNotificationDisabled')
+                    }
+                  />
+                ) : null}
                 <FieldSummary label={t('workflows.detail.input')} fields={schemaFieldsFor(selected, 'input')} fallback={selected.inputSchema || selectedInst?.inputArtifact || t('workflows.detail.notSpecified')} />
                 <FieldSummary label={t('workflows.detail.output')} fields={schemaFieldsFor(selected, 'output')} fallback={selected.outputSchema || selectedInst?.outputArtifact || t('workflows.detail.notSpecified')} />
                 {selectedInst?.childTaskId ? <Detail label={t('workflows.detail.childTask')} value={selectedInst.childTaskId} mono /> : null}
