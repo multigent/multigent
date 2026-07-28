@@ -1,6 +1,6 @@
 {
   "name": "@multigent/multigent",
-  "version": "0.1.19",
+  "version": "0.1.20",
   "description": "Human-agent collaboration infrastructure for teams that want agents to actually deliver",
   "keywords": [
     "ai-agent",
@@ -24,13 +24,15 @@
   "license": "PolyForm-Noncommercial-1.0.0",
   "author": "chenhg5",
   "bin": {
-    "multigent": "run.js"
+    "multigent": "run.js",
+    "mga": "run-mga.js"
   },
   "scripts": {
     "postinstall": "node install.js"
   },
   "files": [
     "install.js",
+    "run-mga.js",
     "run.js",
     "README.md"
   ],

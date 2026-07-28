@@ -1186,7 +1186,7 @@ export function WorkflowBoard({
                 </div>
                 {selectedInst ? (
                   <span className={cn('rounded-full px-2 py-1 text-xs font-medium', statusClass[selectedInst.status] ?? statusClass.pending)}>
-                    {selectedInst.status}
+                    {t(`workflows.stepStatus.${selectedInst.status}`, { defaultValue: selectedInst.status })}
                   </span>
                 ) : null}
               </div>

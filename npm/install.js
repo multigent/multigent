@@ -11,6 +11,7 @@ const http = require("http");
 const PACKAGE = require("./package.json");
 const VERSION = `v${PACKAGE.version}`;
 const NAME = "multigent";
+const BINARIES = ["multigent", "mga"];
 
 const GITHUB_REPO = "multigent/multigent";
 
@@ -85,7 +86,7 @@ async function download(urls) {
   );
 }
 
-function extractTarGz(buffer, destDir, binaryName) {
+function extractTarGz(buffer, destDir) {
   const tmpFile = path.join(destDir, "_tmp.tar.gz");
   fs.writeFileSync(tmpFile, buffer);
   try {
@@ -93,15 +94,9 @@ function extractTarGz(buffer, destDir, binaryName) {
   } finally {
     fs.unlinkSync(tmpFile);
   }
-  const extracted = fs.readdirSync(destDir).find(
-    (f) => f.startsWith(NAME) && !f.endsWith(".tar.gz")
-  );
-  if (extracted && extracted !== binaryName) {
-    fs.renameSync(path.join(destDir, extracted), path.join(destDir, binaryName));
-  }
 }
 
-function extractZip(buffer, destDir, binaryName) {
+function extractZip(buffer, destDir) {
   const tmpFile = path.join(destDir, "_tmp.zip");
   fs.writeFileSync(tmpFile, buffer);
   try {
@@ -115,12 +110,6 @@ function extractZip(buffer, destDir, binaryName) {
     }
   } finally {
     try { fs.unlinkSync(tmpFile); } catch {}
-  }
-  const extracted = fs.readdirSync(destDir).find(
-    (f) => f.startsWith(NAME) && f.endsWith(".exe")
-  );
-  if (extracted && extracted !== binaryName) {
-    fs.renameSync(path.join(destDir, extracted), path.join(destDir, binaryName));
   }
 }
 
@@ -155,53 +144,66 @@ async function main() {
   const binDir = path.join(__dirname, "bin");
   fs.mkdirSync(binDir, { recursive: true });
 
-  const binaryName = platform === "windows" ? `${NAME}.exe` : NAME;
-  const binaryPath = path.join(binDir, binaryName);
-
-  if (fs.existsSync(binaryPath)) {
+  const binaryNames = BINARIES.map((name) => platform === "windows" ? `${name}.exe` : name);
+  const binaryPaths = binaryNames.map((binaryName) => path.join(binDir, binaryName));
+  const installed = binaryPaths.every((binaryPath) => {
+    if (!fs.existsSync(binaryPath)) return false;
     try {
       const out = execSync(`"${binaryPath}" version`, { encoding: "utf8", timeout: 5000 });
       const expectedVer = VERSION.slice(1); // strip leading "v"
       if (out.includes(expectedVer)) {
-        console.log(`[multigent] Binary ${VERSION} already installed, skipping.`);
-        return;
+        return true;
       }
       const match = out.match(/(\d+\.\d+\.\d+[^\s]*)/);
       if (match && isNewerOrEqual(match[1], expectedVer)) {
-        console.log(`[multigent] Binary ${match[1]} is newer than ${VERSION}, skipping.`);
-        return;
+        return true;
       }
-      console.log(`[multigent] Existing binary is outdated, upgrading to ${VERSION}…`);
-      fs.unlinkSync(binaryPath);
+      return false;
     } catch {
-      console.log(`[multigent] Replacing existing binary with ${VERSION}…`);
-      fs.unlinkSync(binaryPath);
+      return false;
     }
+  });
+
+  if (installed) {
+    console.log(`[multigent] Binaries ${VERSION} already installed, skipping.`);
+    return;
+  }
+  for (const binaryPath of binaryPaths) {
+    try { fs.unlinkSync(binaryPath); } catch {}
   }
 
   const urls = getDownloadURLs(filename);
   const data = await download(urls);
 
   if (ext === ".tar.gz") {
-    extractTarGz(data, binDir, binaryName);
+    extractTarGz(data, binDir);
   } else {
-    extractZip(data, binDir, binaryName);
+    extractZip(data, binDir);
   }
 
   if (platform !== "windows") {
-    fs.chmodSync(binaryPath, 0o755);
-  }
-
-  if (platform === "darwin") {
-    try {
-      execSync(`xattr -d com.apple.quarantine "${binaryPath}"`, { stdio: "pipe" });
-      console.log(`[multigent] Removed macOS quarantine attribute.`);
-    } catch {
-      // attribute may not exist — that's fine
+    for (const binaryPath of binaryPaths) {
+      fs.chmodSync(binaryPath, 0o755);
     }
   }
 
-  console.log(`[multigent] Installed to ${binaryPath}`);
+  if (platform === "darwin") {
+    for (const binaryPath of binaryPaths) {
+      try {
+        execSync(`xattr -d com.apple.quarantine "${binaryPath}"`, { stdio: "pipe" });
+      } catch {
+        // attribute may not exist — that's fine
+      }
+    }
+    console.log(`[multigent] Removed macOS quarantine attribute if present.`);
+  }
+
+  for (const binaryPath of binaryPaths) {
+    if (!fs.existsSync(binaryPath)) {
+      throw new Error(`[multigent] Expected binary missing after extraction: ${binaryPath}`);
+    }
+  }
+  console.log(`[multigent] Installed to ${binDir}`);
 }
 
 main().catch((err) => {

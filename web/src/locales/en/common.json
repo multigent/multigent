@@ -526,6 +526,19 @@
       "join": "Join",
       "terminal": "Terminal"
     },
+    "stepStatus": {
+      "pending": "Pending",
+      "running": "Running",
+      "in_progress": "Running",
+      "completed": "Completed",
+      "done_success": "Success",
+      "failed": "Failed",
+      "done_failed": "Failed",
+      "cancelled": "Cancelled",
+      "blocked": "Blocked",
+      "awaiting_confirmation": "Awaiting confirmation",
+      "skipped": "Skipped"
+    },
     "review": {
       "title": "Human review",
       "commentsPlaceholder": "Add review notes. Required when requesting changes; optional when approving.",

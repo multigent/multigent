@@ -526,6 +526,19 @@
       "join": "汇合",
       "terminal": "结束"
     },
+    "stepStatus": {
+      "pending": "待处理",
+      "running": "运行中",
+      "in_progress": "运行中",
+      "completed": "已完成",
+      "done_success": "成功",
+      "failed": "失败",
+      "done_failed": "失败",
+      "cancelled": "已取消",
+      "blocked": "已阻塞",
+      "awaiting_confirmation": "待确认",
+      "skipped": "已跳过"
+    },
     "review": {
       "title": "人工审核",
       "commentsPlaceholder": "填写审核意见。打回时必须说明需要修改什么；通过时可以留空。",

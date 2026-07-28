@@ -1,5 +1,12 @@
 # Changelog
 
+## [v0.1.20] - 2026-07-28
+
+### Fixed
+
+- Workflow step statuses now localize in follow views, workflow boards, and task workflow panels.
+- The npm package now exposes both `multigent` and `mga` command shims.
+
 ## [v0.1.19] - 2026-07-28
 
 ### Added

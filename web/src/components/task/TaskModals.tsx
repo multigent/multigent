@@ -554,7 +554,7 @@ export function TaskDetailModal({ task, onClose, onEdit, onMutated, canEdit = tr
                 <h3 className="mt-1 text-base font-semibold text-neutral-900 dark:text-zinc-100">{workflowState.data.definition.name}</h3>
               </div>
               <span className="rounded-full bg-sky-100 px-2.5 py-1 text-xs font-medium text-sky-700 dark:bg-sky-900/50 dark:text-sky-300">
-                {workflowState.data.run.status}
+                {t(`workflows.stepStatus.${workflowState.data.run.status}`, { defaultValue: workflowState.data.run.status })}
               </span>
             </div>
             <div className="grid min-h-[520px] gap-4">

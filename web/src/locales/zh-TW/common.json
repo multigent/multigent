@@ -526,6 +526,19 @@
       "join": "匯合",
       "terminal": "結束"
     },
+    "stepStatus": {
+      "pending": "待處理",
+      "running": "執行中",
+      "in_progress": "執行中",
+      "completed": "已完成",
+      "done_success": "成功",
+      "failed": "失敗",
+      "done_failed": "失敗",
+      "cancelled": "已取消",
+      "blocked": "已阻塞",
+      "awaiting_confirmation": "待確認",
+      "skipped": "已略過"
+    },
     "review": {
       "title": "人工審核",
       "commentsPlaceholder": "填寫審核意見。打回時必須說明需要修改什麼；通過時可以留空。",

@@ -526,6 +526,19 @@
       "join": "結合",
       "terminal": "終了"
     },
+    "stepStatus": {
+      "pending": "待機中",
+      "running": "実行中",
+      "in_progress": "実行中",
+      "completed": "完了",
+      "done_success": "成功",
+      "failed": "失敗",
+      "done_failed": "失敗",
+      "cancelled": "キャンセル済み",
+      "blocked": "ブロック中",
+      "awaiting_confirmation": "確認待ち",
+      "skipped": "スキップ済み"
+    },
     "review": {
       "title": "人のレビュー",
       "commentsPlaceholder": "レビューコメントを入力します。差し戻す場合は修正内容を書いてください。承認時は空でも構いません。",
