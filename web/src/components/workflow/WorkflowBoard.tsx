@@ -553,7 +553,11 @@ function WorkflowStepNode({ data, selected }: NodeProps<WorkflowNode>) {
       <span className="mt-1 line-clamp-1 text-sm font-semibold">{step.title}</span>
       <span className="mt-auto flex w-full items-center justify-between gap-2">
         <span className="truncate text-xs opacity-60">{step.actorRole || 'system'}</span>
-        {status ? <span className={cn('rounded-full px-2 py-0.5 text-[10px] font-medium', statusClass[status] ?? statusClass.pending)}>{status}</span> : null}
+        {status ? (
+          <span className={cn('rounded-full px-2 py-0.5 text-[10px] font-medium', statusClass[status] ?? statusClass.pending)}>
+            {t(`workflows.stepStatus.${status}`, { defaultValue: status })}
+          </span>
+        ) : null}
       </span>
     </div>
   )

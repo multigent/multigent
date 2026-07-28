@@ -1,5 +1,11 @@
 # Changelog
 
+## [v0.1.21] - 2026-07-28
+
+### Fixed
+
+- Workflow board node status badges now use localized labels instead of raw status keys.
+
 ## [v0.1.20] - 2026-07-28
 
 ### Fixed
