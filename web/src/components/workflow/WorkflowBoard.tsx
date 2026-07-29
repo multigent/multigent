@@ -138,6 +138,7 @@ type Props = {
   onToggleFullscreen?: () => void
   focusActive?: boolean
   hideInspector?: boolean
+  collaborationChannels?: string[]
 }
 
 const EMPTY_INSTANCES: WorkflowStepInstance[] = []
@@ -588,6 +589,7 @@ export function WorkflowBoard({
   onToggleFullscreen,
   focusActive = false,
   hideInspector = false,
+  collaborationChannels = [],
 }: Props) {
   const { t } = useTranslation()
   const instancesKey = useMemo(
@@ -1012,6 +1014,8 @@ export function WorkflowBoard({
   }
 
   const stepDraftChanged = Boolean(stepDraft && selected && JSON.stringify(stepDraft) !== JSON.stringify(selected))
+  const availableCollaborationChannels = collaborationChannels.filter((channel) => channel === 'feishu' || channel === 'lark')
+  const canNotifyAssignee = availableCollaborationChannels.length > 0
 
   return (
     <div className={cn('relative min-h-0', fill && 'h-full flex-1')}>
@@ -1185,7 +1189,7 @@ export function WorkflowBoard({
                 <span className="text-xs font-medium uppercase text-neutral-400 dark:text-zinc-500">{t('workflows.detail.defaultRole')}</span>
                 <input value={stepDraft.actorRole || ''} onChange={(event) => updateStepDraft({ actorRole: event.target.value })} placeholder="agent" className={fieldClass} />
               </label>
-              {stepDraft.type === 'human_review' ? (
+              {stepDraft.type === 'human_review' && canNotifyAssignee ? (
                 <div className="rounded-lg border border-neutral-200 bg-neutral-50/70 p-3 dark:border-zinc-700 dark:bg-zinc-800/50">
                   <label className="flex items-start gap-2">
                     <input
@@ -1211,8 +1215,8 @@ export function WorkflowBoard({
                         className={fieldClass}
                       >
                         <option value="auto">{t('workflows.detail.notifyChannelAuto')}</option>
-                        <option value="feishu">{t('workflows.detail.notifyChannelFeishu')}</option>
-                        <option value="lark">{t('workflows.detail.notifyChannelLark')}</option>
+                        {availableCollaborationChannels.includes('feishu') ? <option value="feishu">{t('workflows.detail.notifyChannelFeishu')}</option> : null}
+                        {availableCollaborationChannels.includes('lark') ? <option value="lark">{t('workflows.detail.notifyChannelLark')}</option> : null}
                       </select>
                     </label>
                   ) : null}

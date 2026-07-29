@@ -11,6 +11,8 @@ import { useApiJson } from '../lib/use-api'
 import { useWorkspaceAccess } from '../lib/workspace-access'
 
 type WorkflowListResponse = { workflows: WorkflowDefinition[] }
+type WorkflowConnection = { provider: string; status: string }
+type WorkflowConnectionsResponse = { connections: WorkflowConnection[] }
 
 const blankStep: WorkflowStep = {
   id: 'start',
@@ -31,9 +33,19 @@ export default function WorkflowsPage() {
   const templateLocale = i18n.resolvedLanguage || i18n.language || 'en'
   const templateState = useApiJson<{ templates: WorkflowDefinition[] }>(`/api/v1/workflow-templates?locale=${encodeURIComponent(templateLocale)}`, 0)
   const detailState = useApiJson<WorkflowDefinition>(params.workflowId ? `/api/v1/workflows/${encodeURIComponent(params.workflowId)}` : null, 0)
+  const connectionState = useApiJson<WorkflowConnectionsResponse>(params.workflowId && canAdmin ? '/api/v1/connections' : null, reloadKey, { silentStatuses: [403] })
   const workflows = state.status === 'ok' ? state.data.workflows : []
   const templates = templateState.status === 'ok' ? templateState.data.templates : []
   const selected = useMemo(() => (params.workflowId && detailState.status === 'ok' ? detailState.data : undefined), [params.workflowId, detailState])
+  const collaborationChannels = useMemo(() => {
+    if (connectionState.status !== 'ok') return []
+    const channels = new Set<string>()
+    for (const connection of connectionState.data.connections ?? []) {
+      if (connection.status !== 'active') continue
+      if (connection.provider === 'feishu' || connection.provider === 'lark') channels.add(connection.provider)
+    }
+    return Array.from(channels)
+  }, [connectionState])
 
   const [draft, setDraft] = useState<WorkflowDefinition | null>(null)
   const [savedDraft, setSavedDraft] = useState<WorkflowDefinition | null>(null)
@@ -338,6 +350,7 @@ export default function WorkflowsPage() {
               fullscreen={fullscreen}
               onToggleFullscreen={() => setFullscreen((v) => !v)}
               onChange={setDraft}
+              collaborationChannels={collaborationChannels}
             />
             </div>
           </div>
