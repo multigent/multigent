@@ -845,6 +845,10 @@ func (s *Server) handleRuntimeTaskConfirmRequest(w http.ResponseWriter, r *http.
 		s.jsonError(w, http.StatusNotFound, "task not found")
 		return
 	}
+	if s.runtimeTaskHasWorkflow(principal.WorkspaceID, principal.Project, t.ID) {
+		s.jsonError(w, http.StatusBadRequest, "workflow tasks must request human review through the workflow step route")
+		return
+	}
 	now := time.Now().UTC()
 	prev := t.Status
 	t.Status = entity.TaskStatusAwaitingConfirmation

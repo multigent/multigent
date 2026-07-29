@@ -1417,15 +1417,15 @@ func compareWorkflowValue(actual, op, value string, values []string) bool {
 	op = strings.TrimSpace(strings.ToLower(op))
 	switch op {
 	case "", "eq":
-		return actual == value || strings.Contains(actual, value)
+		return actual == value
 	case "neq":
-		return actual != value && !strings.Contains(actual, value)
+		return actual != value
 	case "exists":
 		return actual != ""
 	case "in":
 		for _, item := range values {
 			item = strings.TrimSpace(strings.ToLower(item))
-			if actual == item || strings.Contains(actual, item) {
+			if actual == item {
 				return true
 			}
 		}

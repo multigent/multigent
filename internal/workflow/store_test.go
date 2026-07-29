@@ -61,3 +61,21 @@ func TestWorkflowDocIDValueValidAllowsLists(t *testing.T) {
 		t.Fatal("expected prose docID value to be invalid")
 	}
 }
+
+func TestWorkflowConditionEqDoesNotUseSubstringMatching(t *testing.T) {
+	if compareWorkflowValue("不通过", "eq", "通过", nil) {
+		t.Fatal("expected exact eq comparison; 不通过 must not match 通过")
+	}
+	if !compareWorkflowValue("通过", "eq", "通过", nil) {
+		t.Fatal("expected exact eq comparison to match identical values")
+	}
+}
+
+func TestWorkflowConditionInDoesNotUseSubstringMatching(t *testing.T) {
+	if compareWorkflowValue("不通过", "in", "", []string{"通过", "approve"}) {
+		t.Fatal("expected exact in comparison; 不通过 must not match 通过")
+	}
+	if !compareWorkflowValue("approve", "in", "", []string{"通过", "approve"}) {
+		t.Fatal("expected exact in comparison to match listed value")
+	}
+}
