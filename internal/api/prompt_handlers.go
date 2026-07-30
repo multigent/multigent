@@ -475,11 +475,29 @@ func (s *Server) handlePutAgentSandbox(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	if body.Provider == "" || body.Provider == "none" {
-		meta.Sandbox = nil
+	provider := normalizeSandboxProvider(body.Provider)
+	if provider == entity.SandboxNone {
+		if strings.TrimSpace(meta.RuntimeNodeID) == "" && !directHostExecutionEnabled() {
+			s.jsonErrorCode(w, http.StatusBadRequest, ErrCodeValidationFailed, "direct host execution is disabled by server configuration")
+			return
+		}
+		meta.Sandbox = &entity.SandboxConfig{
+			Provider: entity.SandboxNone,
+			AgentCLI: body.AgentCLI,
+			Resources: entity.RuntimeResourceLimits{
+				MemoryMB:   body.MemoryMB,
+				CPUs:       body.CPUs,
+				TimeoutSec: body.TimeoutSec,
+			},
+		}
+		if meta.Sandbox.AgentCLI == nil {
+			meta.Sandbox.AgentCLI = agentcli.DefaultForModel(meta.Model)
+		} else {
+			meta.Sandbox.AgentCLI = agentcli.Normalize(meta.Sandbox.AgentCLI)
+		}
 	} else {
 		meta.Sandbox = &entity.SandboxConfig{
-			Provider:    entity.SandboxProvider(body.Provider),
+			Provider:    provider,
 			Image:       body.Image,
 			NetworkMode: body.Network,
 			AgentCLI:    body.AgentCLI,
@@ -494,7 +512,7 @@ func (s *Server) handlePutAgentSandbox(w http.ResponseWriter, r *http.Request) {
 		} else {
 			meta.Sandbox.AgentCLI = agentcli.Normalize(meta.Sandbox.AgentCLI)
 		}
-		if body.Provider == "docker" {
+		if provider == entity.SandboxDocker {
 			dc := &entity.DockerSandboxConfig{
 				Image:       body.Image,
 				NetworkMode: body.Network,
@@ -502,7 +520,7 @@ func (s *Server) handlePutAgentSandbox(w http.ResponseWriter, r *http.Request) {
 				CPUs:        body.CPUs,
 			}
 			meta.Sandbox.Docker = dc
-		} else if body.Provider == "e2b" {
+		} else if provider == entity.SandboxE2B {
 			caps := sandbox.DetectCapabilities()
 			if !caps.E2B.Available {
 				s.jsonErrorCode(w, http.StatusBadRequest, ErrCodeValidationFailed, "e2b runtime unavailable: "+caps.E2B.Reason)
@@ -529,6 +547,19 @@ func (s *Server) handlePutAgentSandbox(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	_ = json.NewEncoder(w).Encode(map[string]any{"ok": true})
+}
+
+func normalizeSandboxProvider(provider string) entity.SandboxProvider {
+	switch strings.ToLower(strings.TrimSpace(provider)) {
+	case "", "none", "direct", "host", "local":
+		return entity.SandboxNone
+	case string(entity.SandboxDocker):
+		return entity.SandboxDocker
+	case string(entity.SandboxE2B):
+		return entity.SandboxE2B
+	default:
+		return entity.SandboxProvider(strings.ToLower(strings.TrimSpace(provider)))
+	}
 }
 
 func (s *Server) syncAgent(project, agent string) {
@@ -586,7 +617,7 @@ func buildRuntimeReadinessWithOptions(meta *entity.AgentMeta, opts runtimeReadin
 
 	var checks []setupCheck
 	provider := entity.SandboxDocker
-	if meta.Sandbox != nil && meta.Sandbox.Provider != "" {
+	if meta.Sandbox != nil {
 		provider = meta.Sandbox.Provider
 	} else if strings.TrimSpace(meta.RuntimeNodeID) != "" {
 		provider = entity.SandboxNone
@@ -599,11 +630,30 @@ func buildRuntimeReadinessWithOptions(meta *entity.AgentMeta, opts runtimeReadin
 				Detail: "Direct host execution on the assigned trusted runtime node.",
 			})
 		} else {
-			checks = append(checks, setupCheck{
-				Key: "sandbox", Label: "Sandbox", Status: "error", Blocking: true,
-				Detail: "No sandbox runtime is configured. Multigent requires an isolated runtime before agents can run.",
-				Action: "Configure Docker or another supported sandbox provider.",
-			})
+			if !directHostExecutionEnabled() {
+				checks = append(checks, setupCheck{
+					Key:      "sandbox",
+					Label:    "Direct host process",
+					Status:   "error",
+					Detail:   "Direct host execution is disabled by the server configuration.",
+					Action:   "Switch this agent to Docker sandbox execution, or enable MULTIGENT_ALLOW_DIRECT_HOST on a trusted local install.",
+					Blocking: true,
+				})
+			} else {
+				checks = append(checks, setupCheck{
+					Key: "sandbox", Label: "Direct host process", Status: "warning",
+					Detail: "Runs on the local control-plane host without Docker isolation. Use only on a trusted machine.",
+				})
+			}
+			if model == entity.ModelClaudeCode && os.Geteuid() == 0 {
+				checks = append(checks, setupCheck{
+					Key:    "direct_claudecode_root",
+					Label:  "Claude Code direct execution",
+					Status: "warning",
+					Detail: "Multigent injects IS_SANDBOX=1 for Claude Code direct execution so non-interactive runs can work under root. This is a trusted-local mode, not a security sandbox.",
+					Action: "For safer production use, switch this agent to Docker sandbox execution or run a non-root Runtime Node.",
+				})
+			}
 		}
 	} else if provider == entity.SandboxE2B {
 		caps := sandbox.DetectCapabilities()
@@ -738,6 +788,21 @@ func buildRuntimeReadinessWithOptions(meta *entity.AgentMeta, opts runtimeReadin
 func modelRequiresModelAccount(model entity.AgentModel) bool {
 	switch entity.NormaliseModel(model) {
 	case entity.ModelHuman, entity.ModelHTTPAgent:
+		return false
+	default:
+		return true
+	}
+}
+
+func directHostExecutionEnabled() bool {
+	value := strings.TrimSpace(strings.ToLower(os.Getenv("MULTIGENT_ALLOW_DIRECT_HOST")))
+	if value == "" {
+		value = strings.TrimSpace(strings.ToLower(os.Getenv("MULTIGENT_ALLOW_DIRECT_HOST_EXECUTION")))
+	}
+	switch value {
+	case "", "1", "true", "yes", "y", "on":
+		return true
+	case "0", "false", "no", "n", "off":
 		return false
 	default:
 		return true

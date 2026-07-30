@@ -51,6 +51,16 @@ func TestValidateDirectHostExecutionBlocksClaudeBypassWhenRoot(t *testing.T) {
 	}
 }
 
+func TestDirectHostRuntimeEnvMarksClaudeAsSandboxed(t *testing.T) {
+	got := directHostRuntimeEnv(entity.ModelClaudeCode)
+	if got["IS_SANDBOX"] != "1" {
+		t.Fatalf("expected Claude Code direct host env to include IS_SANDBOX=1, got %#v", got)
+	}
+	if got := directHostRuntimeEnv(entity.ModelCodex); len(got) != 0 {
+		t.Fatalf("expected Codex direct host env to be empty, got %#v", got)
+	}
+}
+
 func TestAdaptSandboxArgsKeepsClaudeDangerousBypass(t *testing.T) {
 	args := []string{"claude", "-p", "--permission-mode", "bypassPermissions", "--output-format", "stream-json"}
 	got := adaptSandboxArgs(entity.ModelClaudeCode, args)

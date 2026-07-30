@@ -216,6 +216,7 @@ func (r *Runner) ExecPromptWithRuntimeControlEnvContext(ctx context.Context, pro
 			return nil, fmt.Errorf("runtime %s: build command: %w", meta.Sandbox.Provider, err)
 		}
 	} else {
+		effectiveEnv = mergeEnv(effectiveEnv, directHostRuntimeEnv(model))
 		if err := validateDirectHostExecution(model, innerArgs, effectiveEnv); err != nil {
 			return nil, err
 		}
@@ -439,6 +440,7 @@ func (r *Runner) RunTaskWithContext(ctx context.Context, project, agentName stri
 		execDir = ""
 	} else {
 		// Direct host execution.
+		effectiveEnv = mergeEnv(effectiveEnv, directHostRuntimeEnv(model))
 		if err := validateDirectHostExecution(model, innerArgs, effectiveEnv); err != nil {
 			return nil, err
 		}
@@ -852,6 +854,15 @@ func validateDirectHostExecution(model entity.AgentModel, args, env []string) er
 		return nil
 	}
 	return fmt.Errorf("Claude Code refuses bypassPermissions under root/sudo privileges. Run the Runtime Node as a non-root user, or switch this agent to Docker sandbox execution")
+}
+
+func directHostRuntimeEnv(model entity.AgentModel) map[string]string {
+	switch entity.NormaliseModel(model) {
+	case entity.ModelClaudeCode:
+		return map[string]string{"IS_SANDBOX": "1"}
+	default:
+		return nil
+	}
 }
 
 func adaptSandboxArgs(model entity.AgentModel, args []string) []string {

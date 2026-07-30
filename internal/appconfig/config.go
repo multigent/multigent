@@ -56,7 +56,8 @@ type RuntimeConfig struct {
 }
 
 type SandboxConfig struct {
-	E2B E2BConfig
+	AllowDirectHost *bool
+	E2B             E2BConfig
 }
 
 type PlaybooksConfig struct {
@@ -179,6 +180,11 @@ func setValue(cfg *Config, section, key, raw string) error {
 			cfg.Runtime.Region = stringValue(raw)
 		case "npm_registry":
 			cfg.Runtime.NPMRegistry = stringValue(raw)
+		}
+	case "sandbox":
+		if key == "allow_direct_host" {
+			v := boolValue(raw)
+			cfg.Sandbox.AllowDirectHost = &v
 		}
 	case "sandbox.e2b":
 		if key == "api_url" {

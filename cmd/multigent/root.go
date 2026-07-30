@@ -217,6 +217,9 @@ func applyConfigEnv(cfg *appconfig.Config) {
 	setEnvIfEmpty(sandbox.EnvRuntimeImage, cfg.Runtime.Image)
 	setEnvIfEmpty(sandbox.EnvRuntimeRegion, cfg.Runtime.Region)
 	setEnvIfEmpty("NPM_CONFIG_REGISTRY", cfg.Runtime.NPMRegistry)
+	if cfg.Sandbox.AllowDirectHost != nil {
+		setEnvIfEmpty("MULTIGENT_ALLOW_DIRECT_HOST", fmt.Sprintf("%t", *cfg.Sandbox.AllowDirectHost))
+	}
 	setEnvIfEmpty("MULTIGENT_E2B_API_URL", cfg.Sandbox.E2B.APIURL)
 	if len(cfg.Playbooks.RegistryURLs) > 0 {
 		setEnvIfEmpty(playbook.EnvRegistryURLs, strings.Join(cfg.Playbooks.RegistryURLs, ","))

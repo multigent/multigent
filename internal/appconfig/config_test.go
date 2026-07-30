@@ -36,6 +36,9 @@ image = "registry.example.com/multigent/runtime-base:latest"
 region = "cn"
 npm_registry = "https://registry.npmmirror.com"
 
+[sandbox]
+allow_direct_host = false
+
 [sandbox.e2b]
 api_url = "http://127.0.0.1:49999"
 
@@ -66,6 +69,9 @@ registry_urls = [
 	}
 	if cfg.Sandbox.E2B.APIURL == "" {
 		t.Fatalf("e2b api url missing")
+	}
+	if cfg.Sandbox.AllowDirectHost == nil || *cfg.Sandbox.AllowDirectHost {
+		t.Fatalf("sandbox allow_direct_host not loaded: %#v", cfg.Sandbox.AllowDirectHost)
 	}
 	if len(cfg.Playbooks.RegistryURLs) != 2 || cfg.Playbooks.RegistryURLs[0] != "file:///tmp/playbooks.json" || cfg.Playbooks.RegistryURLs[1] != "https://example.com/registry.json" {
 		t.Fatalf("playbook registry urls not loaded: %#v", cfg.Playbooks.RegistryURLs)

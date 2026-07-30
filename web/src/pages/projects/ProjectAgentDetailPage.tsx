@@ -88,6 +88,7 @@ type SandboxCapabilities = {
   docker?: { available: boolean; reason?: string }
   kvm?: { available: boolean; reason?: string }
   e2b?: { available: boolean; reason?: string }
+  directHost?: { available: boolean; reason?: string }
 }
 
 type AgentCLIConfig = {
@@ -785,7 +786,8 @@ function SandboxEditor({ project, agentName, initial, onChanged }: {
   const { t } = useTranslation()
   const capsState = useApiJson<SandboxCapabilities>('/api/v1/sandbox/capabilities', 0)
   const caps = capsState.status === 'ok' ? capsState.data : null
-  const [provider, setProvider] = useState(initial?.provider || 'none')
+  const initialProvider = initial ? (initial.provider || 'none') : 'docker'
+  const [provider, setProvider] = useState(initialProvider)
   const [image, setImage] = useState(initial?.image ?? initial?.docker?.image ?? '')
   const [template, setTemplate] = useState(initial?.e2b?.template ?? '')
   const [network, setNetwork] = useState(initial?.networkMode ?? initial?.docker?.network_mode ?? '')
@@ -799,7 +801,7 @@ function SandboxEditor({ project, agentName, initial, onChanged }: {
   const [dirty, setDirty] = useState(false)
 
   useEffect(() => {
-    setProvider(initial?.provider || 'none')
+    setProvider(initial ? (initial.provider || 'none') : 'docker')
     setImage(initial?.image ?? initial?.docker?.image ?? '')
     setTemplate(initial?.e2b?.template ?? '')
     setNetwork(initial?.networkMode ?? initial?.docker?.network_mode ?? '')
@@ -873,13 +875,18 @@ function SandboxEditor({ project, agentName, initial, onChanged }: {
         <div>
           <label className={labelCls}>{t('sandbox.provider')}</label>
           <select value={provider} onChange={(e) => { setProvider(e.target.value); setDirty(true) }} className={inputCls}>
-            <option value="none">{t('sandbox.providerDirect')}</option>
+            <option value="none" disabled={caps?.directHost?.available === false && provider !== 'none'}>{t('sandbox.providerDirect')}</option>
             <option value="docker">Docker</option>
             <option value="e2b" disabled={!caps?.e2b?.available && provider !== 'e2b'}>E2B</option>
           </select>
           {provider === 'none' && (
             <p className="mt-1.5 text-[11px] leading-relaxed text-amber-600 dark:text-amber-400">
               {t('sandbox.directHint')}
+            </p>
+          )}
+          {caps?.directHost && !caps.directHost.available && (
+            <p className="mt-1.5 text-[11px] leading-relaxed text-amber-600 dark:text-amber-400">
+              {t('sandbox.directDisabled')}: {caps.directHost.reason}
             </p>
           )}
           {caps?.e2b && !caps.e2b.available && (
