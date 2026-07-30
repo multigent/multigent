@@ -44,17 +44,19 @@ type WorkflowStep struct {
 	OutputFields []WorkflowField   `json:"outputFields,omitempty" yaml:"output_fields,omitempty"`
 	ReviewPolicy string            `json:"reviewPolicy,omitempty" yaml:"review_policy,omitempty"`
 	Branches     []WorkflowBranch  `json:"branches,omitempty" yaml:"branches,omitempty"`
+	JoinPolicy   string            `json:"joinPolicy,omitempty" yaml:"join_policy,omitempty"` // all or any, for parallel_stage
 	Position     WorkflowPosition  `json:"position" yaml:"position"`
 	Config       map[string]string `json:"config,omitempty" yaml:"config,omitempty"`
 }
 
 type WorkflowBranch struct {
-	ID           string          `json:"id" yaml:"id"`
-	Title        string          `json:"title" yaml:"title"`
-	Description  string          `json:"description,omitempty" yaml:"description,omitempty"`
-	ActorRole    string          `json:"actorRole,omitempty" yaml:"actor_role,omitempty"`
-	InputFields  []WorkflowField `json:"inputFields,omitempty" yaml:"input_fields,omitempty"`
-	OutputFields []WorkflowField `json:"outputFields,omitempty" yaml:"output_fields,omitempty"`
+	ID           string              `json:"id" yaml:"id"`
+	Title        string              `json:"title" yaml:"title"`
+	Description  string              `json:"description,omitempty" yaml:"description,omitempty"`
+	ActorRole    string              `json:"actorRole,omitempty" yaml:"actor_role,omitempty"`
+	InputFields  []WorkflowField     `json:"inputFields,omitempty" yaml:"input_fields,omitempty"`
+	OutputFields []WorkflowField     `json:"outputFields,omitempty" yaml:"output_fields,omitempty"`
+	Workflow     *WorkflowDefinition `json:"workflow,omitempty" yaml:"workflow,omitempty"`
 }
 
 type WorkflowField struct {
@@ -131,6 +133,7 @@ type WorkflowBranchInstance struct {
 	ActorType      string            `json:"actorType,omitempty" yaml:"actor_type,omitempty"`
 	ActorID        string            `json:"actorId,omitempty" yaml:"actor_id,omitempty"`
 	ChildTaskID    string            `json:"childTaskId,omitempty" yaml:"child_task_id,omitempty"`
+	ChildRunID     string            `json:"childRunId,omitempty" yaml:"child_run_id,omitempty"`
 	Summary        string            `json:"summary,omitempty" yaml:"summary,omitempty"`
 	StartedAt      time.Time         `json:"startedAt,omitempty" yaml:"started_at"`
 	UpdatedAt      time.Time         `json:"updatedAt" yaml:"updated_at"`

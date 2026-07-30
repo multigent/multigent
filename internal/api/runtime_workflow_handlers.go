@@ -686,39 +686,9 @@ func (s *Server) completeRuntimeWorkflowBranchHTTP(w http.ResponseWriter, r *htt
 		s.serverError(w, err)
 		return
 	}
-	rootTaskID := strings.TrimSpace(t.Vars[workflowRootTaskIDVar])
-	root, rootAgent, _, rootErr := s.runtimeFindTask(principal, rootTaskID, "")
-	if rootErr == nil && root != nil {
-		if stepStatus == "failed" {
-			root.Status = entity.TaskStatusBlocked
-			root.LastError = strings.TrimSpace(body.Error)
-			if root.LastError == "" {
-				root.LastError = strings.TrimSpace(body.Summary)
-			}
-			root.UpdatedAt = now
-			if err := s.ts.PersistTask(principal.Project, rootAgent, root); err != nil {
-				s.serverError(w, err)
-				return
-			}
-		} else if result.AllDone {
-			if result.Transition.Done {
-				prev := root.Status
-				root.Status = entity.TaskStatusDoneSuccess
-				root.Summary = strings.TrimSpace(result.Transition.Current.Summary)
-				root.UpdatedAt = now
-				entity.ApplyStatusTimestamps(root, prev, now)
-				if err := s.ts.ArchiveTask(principal.Project, rootAgent, root); err != nil {
-					s.serverError(w, err)
-					return
-				}
-				if root.CreatedBy != "" {
-					s.notifyTaskDone(root, principal.Project, rootAgent)
-				}
-			} else if err := s.activateNextWorkflowStep(principal.WorkspaceID, principal.Project, rootAgent, root, result.Transition, r); err != nil {
-				s.serverError(w, err)
-				return
-			}
-		}
+	if err := s.advanceParentAfterBranchCompletion(principal.WorkspaceID, principal.Project, result, r); err != nil {
+		s.serverError(w, err)
+		return
 	}
 	s.auditLog(auditLogInput{
 		WorkspaceID:  principal.WorkspaceID,
@@ -784,8 +754,19 @@ func (s *Server) handleRuntimeWorkflowStepComplete(w http.ResponseWriter, r *htt
 			s.serverError(w, err)
 			return
 		}
-		if t.CreatedBy != "" {
+		if t.CreatedBy != "" && strings.TrimSpace(t.Vars[workflowBranchIDVar]) == "" {
 			s.notifyTaskDone(t, principal.Project, agent)
+		}
+		if strings.TrimSpace(t.Vars[workflowBranchIDVar]) != "" {
+			branchResult, err := s.completeRuntimeWorkflowBranch(principal.WorkspaceID, principal.Project, t, body.Outputs, stepStatus)
+			if err != nil {
+				s.jsonError(w, http.StatusBadRequest, err.Error())
+				return
+			}
+			if err := s.advanceParentAfterBranchCompletion(principal.WorkspaceID, principal.Project, branchResult, r); err != nil {
+				s.serverError(w, err)
+				return
+			}
 		}
 	} else if err := s.activateNextWorkflowStep(principal.WorkspaceID, principal.Project, agent, t, transition, r); err != nil {
 		s.serverError(w, err)
@@ -844,6 +825,42 @@ func (s *Server) completeRuntimeWorkflowBranch(workspaceID, project string, t *e
 		summary = strings.TrimSpace(t.LastError)
 	}
 	return wfStore.CompleteBranchAndMaybeAdvance(project, rootTaskID, runID, stepID, branchID, summary, outputs, stepStatus)
+}
+
+func (s *Server) advanceParentAfterBranchCompletion(workspaceID, project string, result workflowstore.BranchTransitionResult, r *http.Request) error {
+	rootTaskID := strings.TrimSpace(result.Transition.Run.TaskID)
+	if rootTaskID == "" {
+		return nil
+	}
+	root, rootAgent, err := s.findTaskInProject(project, rootTaskID)
+	if err != nil || root == nil {
+		return nil
+	}
+	now := time.Now().UTC()
+	if result.Branch.Status == "failed" {
+		root.Status = entity.TaskStatusBlocked
+		root.LastError = strings.TrimSpace(result.Branch.Summary)
+		root.UpdatedAt = now
+		return s.ts.PersistTask(project, rootAgent, root)
+	}
+	if !result.AllDone {
+		return nil
+	}
+	if result.Transition.Done {
+		prev := root.Status
+		root.Status = entity.TaskStatusDoneSuccess
+		root.Summary = strings.TrimSpace(result.Transition.Current.Summary)
+		root.UpdatedAt = now
+		entity.ApplyStatusTimestamps(root, prev, now)
+		if err := s.ts.ArchiveTask(project, rootAgent, root); err != nil {
+			return err
+		}
+		if root.CreatedBy != "" {
+			s.notifyTaskDone(root, project, rootAgent)
+		}
+		return nil
+	}
+	return s.activateNextWorkflowStep(workspaceID, project, rootAgent, root, result.Transition, r)
 }
 
 func (s *Server) runtimeTaskHasWorkflow(workspaceID, project, taskID string) bool {
@@ -966,16 +983,19 @@ func (s *Server) activateParallelWorkflowStep(workspaceID, project, previousAgen
 		if branch.ID == "" || existingByBranch[branch.ID] {
 			continue
 		}
-		actorRole := strings.TrimSpace(branch.ActorRole)
-		if actorRole == "" {
-			actorRole = branch.ID
+		childDef := workflowDefinitionForBranch(transition.Run.DefinitionID, step, branch)
+		if err := wfStore.SaveDefinition(&childDef); err != nil {
+			return err
 		}
-		binding := transition.Run.ActorBindings[actorRole]
-		if strings.TrimSpace(binding.Type) != "agent" || strings.TrimSpace(binding.ID) == "" {
-			return fmt.Errorf("parallel branch %q requires an agent actor binding for role %q", branch.Title, actorRole)
+		startStep, startInst, ok := workflowStartActor(childDef, transition.Run.ActorBindings)
+		if !ok || startStep == nil || startInst == nil {
+			return fmt.Errorf("parallel branch %q has no start step", branch.Title)
 		}
-		nextAgent := strings.TrimSpace(binding.ID)
-		inputValues := workflowBranchInputValues(transition.Current, branch)
+		if strings.TrimSpace(startInst.ActorType) != "agent" || strings.TrimSpace(startInst.ActorID) == "" {
+			return fmt.Errorf("parallel branch %q requires an agent actor binding for role %q", branch.Title, startStep.ActorRole)
+		}
+		nextAgent := strings.TrimSpace(startInst.ActorID)
+		inputValues := workflowBranchInputValuesForFields(transition.Current, workflowBranchInputFields(branch, *startStep))
 		inputArtifact := workflowBranchInputArtifact(step, transition.Current, branch, inputValues)
 		branchTask := &entity.Task{
 			ID:          entity.NewTaskID(),
@@ -986,7 +1006,7 @@ func (s *Server) activateParallelWorkflowStep(workspaceID, project, previousAgen
 			CreatedBy:   completed.CreatedBy,
 			Status:      entity.TaskStatusPending,
 			Description: strings.TrimSpace(branch.Description),
-			Prompt:      workflowBranchTaskPrompt(completed, step, branch, inputArtifact),
+			Prompt:      workflowBranchTaskPrompt(completed, step, branch, *startStep, inputArtifact),
 			Labels:      append([]string{}, completed.Labels...),
 			ParentID:    completed.ID,
 			CreatedAt:   now,
@@ -1004,6 +1024,24 @@ func (s *Server) activateParallelWorkflowStep(workspaceID, project, previousAgen
 		if err := s.ts.AddTask(project, nextAgent, branchTask); err != nil {
 			return err
 		}
+		childRun, childInstances, err := wfStore.StartRun(project, branchTask.ID, childDef.ID, transition.Run.ActorBindings)
+		if err != nil {
+			return err
+		}
+		for i := range childInstances {
+			if childInstances[i].StepID != childRun.ActiveStepID {
+				continue
+			}
+			childInstances[i].InputArtifact = inputArtifact
+			childInstances[i].InputValues = inputValues
+			childInstances[i].ActorType = startInst.ActorType
+			childInstances[i].ActorID = startInst.ActorID
+			childInstances[i].UpdatedAt = now
+			if err := wfStore.SaveStepInstance(&childInstances[i]); err != nil {
+				return err
+			}
+			break
+		}
 		inst := &entity.WorkflowBranchInstance{
 			ID:            entity.NewWorkflowBranchInstanceID(),
 			RunID:         transition.Run.ID,
@@ -1013,6 +1051,7 @@ func (s *Server) activateParallelWorkflowStep(workspaceID, project, previousAgen
 			ActorType:     "agent",
 			ActorID:       nextAgent,
 			ChildTaskID:   branchTask.ID,
+			ChildRunID:    childRun.ID,
 			StartedAt:     now,
 			UpdatedAt:     now,
 			InputArtifact: inputArtifact,
@@ -1027,8 +1066,12 @@ func (s *Server) activateParallelWorkflowStep(workspaceID, project, previousAgen
 }
 
 func workflowBranchInputValues(parent entity.WorkflowStepInstance, branch entity.WorkflowBranch) map[string]string {
+	return workflowBranchInputValuesForFields(parent, branch.InputFields)
+}
+
+func workflowBranchInputValuesForFields(parent entity.WorkflowStepInstance, fields []entity.WorkflowField) map[string]string {
 	out := make(map[string]string)
-	for _, field := range branch.InputFields {
+	for _, field := range fields {
 		name := strings.TrimSpace(field.Name)
 		if name == "" {
 			continue
@@ -1041,7 +1084,7 @@ func workflowBranchInputValues(parent entity.WorkflowStepInstance, branch entity
 			out[name] = value
 		}
 	}
-	if len(out) > 0 || len(branch.InputFields) > 0 {
+	if len(out) > 0 || len(fields) > 0 {
 		return out
 	}
 	for key, value := range parent.InputValues {
@@ -1055,6 +1098,13 @@ func workflowBranchInputValues(parent entity.WorkflowStepInstance, branch entity
 		}
 	}
 	return out
+}
+
+func workflowBranchInputFields(branch entity.WorkflowBranch, startStep entity.WorkflowStep) []entity.WorkflowField {
+	if len(branch.InputFields) > 0 {
+		return branch.InputFields
+	}
+	return startStep.InputFields
 }
 
 func workflowBranchInputArtifact(step entity.WorkflowStep, parent entity.WorkflowStepInstance, branch entity.WorkflowBranch, inputs map[string]string) string {
@@ -1080,9 +1130,69 @@ func workflowBranchInputArtifact(step entity.WorkflowStep, parent entity.Workflo
 	return string(raw)
 }
 
-func workflowBranchTaskPrompt(root *entity.Task, step entity.WorkflowStep, branch entity.WorkflowBranch, inputArtifact string) string {
+func workflowDefinitionForBranch(parentDefinitionID string, parent entity.WorkflowStep, branch entity.WorkflowBranch) entity.WorkflowDefinition {
+	defID := workflowBranchDefinitionID(parentDefinitionID, parent.ID, branch.ID)
+	now := time.Now().UTC()
+	if branch.Workflow != nil && len(branch.Workflow.Steps) > 0 {
+		def := *branch.Workflow
+		def.ID = defID
+		if strings.TrimSpace(def.Name) == "" {
+			def.Name = branch.Title
+		}
+		if strings.TrimSpace(def.Description) == "" {
+			def.Description = branch.Description
+		}
+		if def.Version == 0 {
+			def.Version = 1
+		}
+		def.Scope = "branch"
+		def.Project = ""
+		if strings.TrimSpace(def.StartStepID) == "" {
+			def.StartStepID = strings.TrimSpace(def.Steps[0].ID)
+		}
+		def.CreatedAt = now
+		def.UpdatedAt = now
+		return def
+	}
+	actorRole := strings.TrimSpace(branch.ActorRole)
+	if actorRole == "" {
+		actorRole = strings.TrimSpace(branch.ID)
+	}
+	return entity.WorkflowDefinition{
+		ID:          defID,
+		Name:        strings.TrimSpace(branch.Title),
+		Description: strings.TrimSpace(branch.Description),
+		Version:     1,
+		Scope:       "branch",
+		StartStepID: "start",
+		Steps: []entity.WorkflowStep{{
+			ID:           "start",
+			Type:         "agent_task",
+			Title:        strings.TrimSpace(branch.Title),
+			Description:  strings.TrimSpace(branch.Description),
+			ActorRole:    actorRole,
+			InputFields:  append([]entity.WorkflowField{}, branch.InputFields...),
+			OutputFields: append([]entity.WorkflowField{}, branch.OutputFields...),
+			Position:     entity.WorkflowPosition{X: 80, Y: 120},
+		}},
+		Edges:     []entity.WorkflowEdge{},
+		CreatedAt: now,
+		UpdatedAt: now,
+	}
+}
+
+func workflowBranchDefinitionID(parentDefinitionID, stepID, branchID string) string {
+	parts := []string{"branch", parentDefinitionID, stepID, branchID}
+	replacer := strings.NewReplacer(" ", "-", "/", "-", "\\", "-", "_", "-")
+	for i, part := range parts {
+		parts[i] = replacer.Replace(strings.TrimSpace(strings.ToLower(part)))
+	}
+	return strings.Join(parts, "-")
+}
+
+func workflowBranchTaskPrompt(root *entity.Task, step entity.WorkflowStep, branch entity.WorkflowBranch, startStep entity.WorkflowStep, inputArtifact string) string {
 	var b strings.Builder
-	b.WriteString("Complete this branch of a parallel workflow stage.\n\n")
+	b.WriteString("Continue this branch sub-workflow from the current active step.\n\n")
 	b.WriteString("Root task: ")
 	b.WriteString(root.ID)
 	b.WriteString(" — ")
@@ -1098,9 +1208,16 @@ func workflowBranchTaskPrompt(root *entity.Task, step entity.WorkflowStep, branc
 	b.WriteString(" (")
 	b.WriteString(branch.ID)
 	b.WriteString(")\n\n")
-	if strings.TrimSpace(branch.Description) != "" {
-		b.WriteString("Branch goal:\n")
-		b.WriteString(strings.TrimSpace(branch.Description))
+	if strings.TrimSpace(startStep.Title) != "" {
+		b.WriteString("Current step: ")
+		b.WriteString(startStep.Title)
+		b.WriteString(" (")
+		b.WriteString(startStep.ID)
+		b.WriteString(")\n")
+	}
+	if strings.TrimSpace(startStep.Description) != "" {
+		b.WriteString("Step goal:\n")
+		b.WriteString(strings.TrimSpace(startStep.Description))
 		b.WriteString("\n\n")
 	}
 	if strings.TrimSpace(inputArtifact) != "" {
@@ -1108,9 +1225,9 @@ func workflowBranchTaskPrompt(root *entity.Task, step entity.WorkflowStep, branc
 		b.WriteString(inputArtifact)
 		b.WriteString("\n\n")
 	}
-	if len(branch.OutputFields) > 0 {
+	if len(startStep.OutputFields) > 0 {
 		b.WriteString("Required structured outputs:\n")
-		for _, field := range branch.OutputFields {
+		for _, field := range startStep.OutputFields {
 			name := strings.TrimSpace(field.Name)
 			if name == "" {
 				continue
@@ -1126,12 +1243,12 @@ func workflowBranchTaskPrompt(root *entity.Task, step entity.WorkflowStep, branc
 		b.WriteString("\n")
 	}
 	b.WriteString("When finished, report completion with:\n")
-	b.WriteString("mga task branch done --id \"$MULTIGENT_TASK_ID\" --summary \"...\"")
-	if len(branch.OutputFields) > 0 {
+	b.WriteString("mga task step done --id \"$MULTIGENT_TASK_ID\" --summary \"...\"")
+	if len(startStep.OutputFields) > 0 {
 		b.WriteString(" --output field=value")
 	}
 	b.WriteString("\n")
-	b.WriteString("Use the child task id assigned to this branch. Do not complete the root task directly.\n")
+	b.WriteString("Do not complete the root task directly. Multigent will advance the parent workflow after this branch sub-workflow reaches a terminal node.\n")
 	return b.String()
 }
 

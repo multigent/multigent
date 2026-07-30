@@ -363,6 +363,17 @@ func (s *Server) handlePostTaskWorkflowReview(w http.ResponseWriter, r *http.Req
 			s.serverError(w, err)
 			return
 		}
+		if strings.TrimSpace(t.Vars[workflowBranchIDVar]) != "" {
+			branchResult, err := s.completeRuntimeWorkflowBranch(currentWorkspaceID, project, t, outputs, "completed")
+			if err != nil {
+				s.jsonError(w, http.StatusBadRequest, err.Error())
+				return
+			}
+			if err := s.advanceParentAfterBranchCompletion(currentWorkspaceID, project, branchResult, r); err != nil {
+				s.serverError(w, err)
+				return
+			}
+		}
 	} else if err := s.activateNextWorkflowStep(currentWorkspaceID, project, agent, t, transition, r); err != nil {
 		s.serverError(w, err)
 		return

@@ -1174,6 +1174,7 @@ func (s *Store) CompleteBranchAndMaybeAdvance(project, taskID, runID, stepID, br
 	if run.ActiveStepID != strings.TrimSpace(stepID) {
 		return result, fmt.Errorf("workflow branch step %q is no longer active", strings.TrimSpace(stepID))
 	}
+	result.Transition.Run = run
 	def, ok, err := s.Definition(run.DefinitionID)
 	if err != nil || !ok {
 		return result, err
@@ -1229,13 +1230,33 @@ func (s *Store) CompleteBranchAndMaybeAdvance(project, taskID, runID, stepID, br
 	if result.Branch.Status == "failed" {
 		return result, nil
 	}
-	for i := range branches {
-		if branches[i].BranchID == branchID {
-			branches[i] = result.Branch
+	joinPolicy := workflowJoinPolicy(step)
+	if joinPolicy == "any" {
+		for i := range branches {
+			if branches[i].BranchID == branchID {
+				branches[i] = result.Branch
+				continue
+			}
+			if branches[i].Status == "completed" {
+				continue
+			}
+			branches[i].Status = "skipped"
+			branches[i].Summary = "Skipped because another branch completed first."
+			branches[i].UpdatedAt = now
+			branches[i].FinishedAt = now
+			if err := s.SaveBranchInstance(&branches[i]); err != nil {
+				return result, err
+			}
 		}
-		branch := branches[i]
-		if branch.Status != "completed" {
-			return result, nil
+	} else {
+		for i := range branches {
+			if branches[i].BranchID == branchID {
+				branches[i] = result.Branch
+			}
+			branch := branches[i]
+			if branch.Status != "completed" {
+				return result, nil
+			}
 		}
 	}
 	result.AllDone = true
@@ -1255,6 +1276,19 @@ func (s *Store) CompleteBranchAndMaybeAdvance(project, taskID, runID, stepID, br
 	}
 	result.Transition = transition
 	return result, nil
+}
+
+func workflowJoinPolicy(step entity.WorkflowStep) string {
+	policy := strings.TrimSpace(strings.ToLower(step.JoinPolicy))
+	if policy == "" && step.Config != nil {
+		policy = strings.TrimSpace(strings.ToLower(step.Config["joinPolicy"]))
+	}
+	switch policy {
+	case "any", "or", "first":
+		return "any"
+	default:
+		return "all"
+	}
 }
 
 func (s *Store) CompleteAndAdvance(project, taskID, summary, output string, outputValues map[string]string, status string) (TransitionResult, error) {

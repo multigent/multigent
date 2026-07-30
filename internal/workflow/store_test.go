@@ -206,3 +206,81 @@ func TestCompleteBranchAndMaybeAdvanceWaitsForAllBranches(t *testing.T) {
 		t.Fatalf("expected active step review, got %q", second.Transition.Run.ActiveStepID)
 	}
 }
+
+func TestCompleteBranchAndMaybeAdvanceAnyJoinSkipsRemainingBranches(t *testing.T) {
+	controlDB, err := db.Open(filepath.Join(t.TempDir(), "control.db"))
+	if err != nil {
+		t.Fatalf("open db: %v", err)
+	}
+	defer controlDB.Close()
+	if err := controlDB.UpsertWorkspace(db.Workspace{ID: "workspace-1", Name: "Workspace", Slug: "workspace", Root: t.TempDir()}); err != nil {
+		t.Fatalf("create workspace: %v", err)
+	}
+
+	store := NewStore(controlDB, "workspace-1")
+	now := time.Now().UTC()
+	def := &entity.WorkflowDefinition{
+		ID:          "wf-parallel-any",
+		Name:        "Parallel Any Test",
+		Version:     1,
+		Scope:       "workspace",
+		StartStepID: "parallel",
+		Steps: []entity.WorkflowStep{
+			{
+				ID:         "parallel",
+				Type:       "parallel_stage",
+				Title:      "Parallel Stage",
+				JoinPolicy: "any",
+				Position:   entity.WorkflowPosition{X: 0, Y: 0},
+				Branches: []entity.WorkflowBranch{
+					{ID: "path_a", Title: "Path A", ActorRole: "agent_a", OutputFields: []entity.WorkflowField{{Name: "path_a_doc_id", Description: "docID"}}},
+					{ID: "path_b", Title: "Path B", ActorRole: "agent_b", OutputFields: []entity.WorkflowField{{Name: "path_b_doc_id", Description: "docID"}}},
+				},
+			},
+			{ID: "done", Type: "human_review", Title: "Done", ActorRole: "reviewer", Position: entity.WorkflowPosition{X: 240, Y: 0}},
+		},
+		Edges: []entity.WorkflowEdge{{ID: "e1", From: "parallel", To: "done"}},
+	}
+	if err := store.SaveDefinition(def); err != nil {
+		t.Fatalf("save definition: %v", err)
+	}
+	run, _, err := store.StartRun("project", "task-1", def.ID, map[string]entity.WorkflowActorBinding{
+		"agent_a":  {Type: "agent", ID: "agent-a"},
+		"agent_b":  {Type: "agent", ID: "agent-b"},
+		"reviewer": {Type: "human", ID: "owner"},
+	})
+	if err != nil {
+		t.Fatalf("start run: %v", err)
+	}
+	for _, branch := range def.Steps[0].Branches {
+		if err := store.SaveBranchInstance(&entity.WorkflowBranchInstance{
+			RunID:       run.ID,
+			StepID:      "parallel",
+			BranchID:    branch.ID,
+			Status:      "running",
+			ChildTaskID: entity.NewTaskID(),
+			StartedAt:   now,
+			UpdatedAt:   now,
+		}); err != nil {
+			t.Fatalf("save branch instance: %v", err)
+		}
+	}
+	result, err := store.CompleteBranchAndMaybeAdvance("project", "task-1", run.ID, "parallel", "path_a", "path a done", map[string]string{"path_a_doc_id": "doc-20260730-aa11"}, "completed")
+	if err != nil {
+		t.Fatalf("complete branch: %v", err)
+	}
+	if !result.AllDone {
+		t.Fatal("expected any join to advance after first completed branch")
+	}
+	branches, err := store.BranchInstancesForStep(run.ID, "parallel")
+	if err != nil {
+		t.Fatalf("list branches: %v", err)
+	}
+	statuses := map[string]string{}
+	for _, branch := range branches {
+		statuses[branch.BranchID] = branch.Status
+	}
+	if statuses["path_b"] != "skipped" {
+		t.Fatalf("expected remaining branch to be skipped, got %q", statuses["path_b"])
+	}
+}

@@ -37,6 +37,7 @@ export type WorkflowBranch = {
   actorRole?: string
   inputFields?: WorkflowField[]
   outputFields?: WorkflowField[]
+  workflow?: WorkflowDefinition
 }
 
 export type WorkflowStep = {
@@ -53,6 +54,7 @@ export type WorkflowStep = {
   position: WorkflowPosition
   config?: Record<string, string>
   branches?: WorkflowBranch[]
+  joinPolicy?: string
 }
 
 export type WorkflowEdge = {
@@ -145,6 +147,7 @@ export type WorkflowBranchInstance = {
   actorType?: string
   actorId?: string
   childTaskId?: string
+  childRunId?: string
   summary?: string
   startedAt?: string
   updatedAt: string
@@ -303,7 +306,81 @@ function normalizeStepFields(step: WorkflowStep): WorkflowStep {
       ...branch,
       inputFields: (branch.inputFields ?? []).map(({ name, description }) => ({ name, description })),
       outputFields: (branch.outputFields ?? []).map(({ name, description }) => ({ name, description })),
+      workflow: branch.workflow ? normalizeWorkflowDefinition(branch.workflow) : undefined,
     })),
+  }
+}
+
+function normalizeWorkflowDefinition(def: WorkflowDefinition): WorkflowDefinition {
+  return {
+    ...def,
+    steps: (def.steps ?? []).map((step) => ({
+      ...step,
+      inputFields: schemaFieldsFor(step, 'input').map(({ name, description }) => ({ name, description })),
+      outputFields: schemaFieldsFor(step, 'output').map(({ name, description }) => ({ name, description })),
+      branches: (step.branches ?? []).map((branch) => ({ ...branch })),
+    })),
+    edges: def.edges ?? [],
+  }
+}
+
+function simpleBranchWorkflow(branchId: string, title: string, actorRole: string, outputField: string): WorkflowDefinition {
+  return {
+    id: `branch-${branchId}`,
+    name: title,
+    version: 1,
+    scope: 'branch',
+    startStepId: 'work',
+    steps: [
+      {
+        id: 'work',
+        type: 'agent_task',
+        title,
+        description: 'Complete this branch and return the required output.',
+        actorRole,
+        inputFields: [],
+        outputFields: [{ name: outputField, description: 'Knowledge base docID for this branch output.' }],
+        position: { x: 80, y: 120 },
+      },
+    ],
+    edges: [],
+  }
+}
+
+function reviewBranchWorkflow(branchId: string, title: string, actorRole: string, reviewerRole = `${actorRole}_reviewer`): WorkflowDefinition {
+  return {
+    id: `branch-${branchId}`,
+    name: title,
+    version: 1,
+    scope: 'branch',
+    startStepId: 'draft',
+    steps: [
+      {
+        id: 'draft',
+        type: 'agent_task',
+        title,
+        description: 'Create the branch output and store long-form content as knowledge base documents.',
+        actorRole,
+        inputFields: [],
+        outputFields: [{ name: `${branchId}_doc_id`, description: 'Knowledge base docID for the branch output.' }],
+        position: { x: 80, y: 120 },
+      },
+      {
+        id: 'review',
+        type: 'human_review',
+        title: `Review ${title}`,
+        description: 'Review the branch output. Approve it or request changes.',
+        actorRole: reviewerRole,
+        inputFields: [{ name: `${branchId}_doc_id`, description: 'Knowledge base docID from the branch work step.' }],
+        outputFields: [
+          { name: 'decision', description: 'approve or request_changes' },
+          { name: 'comments', description: 'Review comments.' },
+        ],
+        reviewPolicy: 'manual',
+        position: { x: 360, y: 120 },
+      },
+    ],
+    edges: [{ id: 'draft-review', from: 'draft', to: 'review' }],
   }
 }
 
@@ -326,6 +403,7 @@ function stepPatchForType(type: string): Partial<WorkflowStep> {
       actorRole: '',
       reviewPolicy: '',
       outputFields: [],
+      joinPolicy: 'all',
       branches: [
         {
           id: 'branch_a',
@@ -333,6 +411,7 @@ function stepPatchForType(type: string): Partial<WorkflowStep> {
           actorRole: 'agent_a',
           description: 'Complete the first parallel work item.',
           outputFields: [{ name: 'branch_a_doc_id', description: 'Knowledge base docID for branch A output.' }],
+          workflow: simpleBranchWorkflow('branch_a', 'Branch A', 'agent_a', 'branch_a_doc_id'),
         },
         {
           id: 'branch_b',
@@ -340,6 +419,7 @@ function stepPatchForType(type: string): Partial<WorkflowStep> {
           actorRole: 'agent_b',
           description: 'Complete the second parallel work item.',
           outputFields: [{ name: 'branch_b_doc_id', description: 'Knowledge base docID for branch B output.' }],
+          workflow: simpleBranchWorkflow('branch_b', 'Branch B', 'agent_b', 'branch_b_doc_id'),
         },
       ],
       config: { color: 'violet' },
@@ -1331,7 +1411,20 @@ export function WorkflowBoard({
                 onChange={(fields) => updateStepDraftFields('outputFields', fields)}
               />
               {stepDraft.type === 'parallel_stage' ? (
-                <BranchTable branches={stepDraft.branches ?? []} onChange={updateStepDraftBranches} />
+                <>
+                  <label className="block">
+                    <span className="text-xs font-medium uppercase text-neutral-400 dark:text-zinc-500">{t('workflows.detail.joinPolicy')}</span>
+                    <select
+                      value={stepDraft.joinPolicy || stepDraft.config?.joinPolicy || 'all'}
+                      onChange={(event) => updateStepDraft({ joinPolicy: event.target.value })}
+                      className={fieldClass}
+                    >
+                      <option value="all">{t('workflows.detail.joinPolicyAll')}</option>
+                      <option value="any">{t('workflows.detail.joinPolicyAny')}</option>
+                    </select>
+                  </label>
+                  <BranchTable branches={stepDraft.branches ?? []} onChange={updateStepDraftBranches} />
+                </>
               ) : null}
               <OutgoingBranches
                 edges={outgoingEdges}
@@ -1382,7 +1475,13 @@ export function WorkflowBoard({
                 {selectedInst?.childTaskId ? <Detail label={t('workflows.detail.childTask')} value={selectedInst.childTaskId} mono /> : null}
                 {selectedInst?.summary ? <Detail label={t('workflows.detail.summary')} value={selectedInst.summary} /> : null}
                 {selected.type === 'parallel_stage' ? (
-                  <BranchSummary branches={selected.branches ?? []} instances={selectedBranches} />
+                  <>
+                    <Detail
+                      label={t('workflows.detail.joinPolicy')}
+                      value={selected.joinPolicy === 'any' || selected.config?.joinPolicy === 'any' ? t('workflows.detail.joinPolicyAny') : t('workflows.detail.joinPolicyAll')}
+                    />
+                    <BranchSummary branches={selected.branches ?? []} instances={selectedBranches} />
+                  </>
                 ) : null}
               </div>
             </>
@@ -1469,7 +1568,54 @@ function BranchTable({ branches, onChange }: { branches: WorkflowBranch[]; onCha
   }
 
   function updateBranchFields(index: number, kind: 'inputFields' | 'outputFields', fields: WorkflowField[]) {
-    updateBranch(index, { [kind]: fields.map(({ name, description }) => ({ name, description })) })
+    const normalizedFields = fields.map(({ name, description }) => ({ name, description }))
+    const branch = branches[index]
+    const workflow = branch?.workflow
+    if (workflow && workflow.steps.length > 0) {
+      const steps = workflow.steps.map((step, stepIndex) => (
+        stepIndex === 0 && kind === 'inputFields'
+          ? { ...step, inputFields: normalizedFields }
+          : stepIndex === workflow.steps.length - 1 && kind === 'outputFields'
+            ? { ...step, outputFields: normalizedFields }
+            : step
+      ))
+      updateBranch(index, { [kind]: normalizedFields, workflow: { ...workflow, steps } })
+      return
+    }
+    updateBranch(index, { [kind]: normalizedFields })
+  }
+
+  function updateBranchActorRole(index: number, actorRole: string) {
+    const branch = branches[index]
+    const workflow = branch?.workflow
+    if (workflow && workflow.steps.length > 0) {
+      updateBranch(index, {
+        actorRole,
+        workflow: {
+          ...workflow,
+          steps: workflow.steps.map((step, stepIndex) => (stepIndex === 0 ? { ...step, actorRole } : step)),
+        },
+      })
+      return
+    }
+    updateBranch(index, { actorRole })
+  }
+
+  function setSimpleSubflow(index: number) {
+    const branch = branches[index]
+    const actorRole = branch.actorRole || branch.id || `agent_${index + 1}`
+    const outputName = branch.outputFields?.[0]?.name || `${branch.id || `branch_${index + 1}`}_doc_id`
+    updateBranch(index, {
+      workflow: simpleBranchWorkflow(branch.id || `branch_${index + 1}`, branch.title || `Branch ${index + 1}`, actorRole, outputName),
+    })
+  }
+
+  function setReviewSubflow(index: number) {
+    const branch = branches[index]
+    const actorRole = branch.actorRole || branch.id || `agent_${index + 1}`
+    updateBranch(index, {
+      workflow: reviewBranchWorkflow(branch.id || `branch_${index + 1}`, branch.title || `Branch ${index + 1}`, actorRole),
+    })
   }
 
   function addBranch() {
@@ -1481,6 +1627,7 @@ function BranchTable({ branches, onChange }: { branches: WorkflowBranch[]; onCha
         title: `Branch ${next}`,
         actorRole: `agent_${next}`,
         outputFields: [{ name: `branch_${next}_doc_id`, description: 'Knowledge base docID for this branch output.' }],
+        workflow: simpleBranchWorkflow(`branch_${next}`, `Branch ${next}`, `agent_${next}`, `branch_${next}_doc_id`),
       },
     ])
   }
@@ -1514,7 +1661,7 @@ function BranchTable({ branches, onChange }: { branches: WorkflowBranch[]; onCha
                 />
                 <input
                   value={branch.actorRole || ''}
-                  onChange={(event) => updateBranch(index, { actorRole: event.target.value })}
+                  onChange={(event) => updateBranchActorRole(index, event.target.value)}
                   placeholder={t('workflows.detail.branchRole')}
                   className="rounded-md border border-neutral-300 bg-white px-2 py-1.5 text-xs text-neutral-900 outline-none focus:border-sky-400 dark:border-zinc-600 dark:bg-zinc-800 dark:text-zinc-100"
                 />
@@ -1532,6 +1679,19 @@ function BranchTable({ branches, onChange }: { branches: WorkflowBranch[]; onCha
                 rows={2}
                 className="w-full resize-y rounded-md border border-neutral-300 bg-white px-2 py-1.5 text-xs text-neutral-900 outline-none focus:border-sky-400 dark:border-zinc-600 dark:bg-zinc-800 dark:text-zinc-100"
               />
+              <div className="flex flex-wrap items-center justify-between gap-2 rounded-md border border-neutral-200 bg-white px-2 py-2 dark:border-zinc-700 dark:bg-zinc-900">
+                <span className="text-xs text-neutral-500 dark:text-zinc-400">
+                  {t('workflows.detail.subflowNodeCount', { count: branch.workflow?.steps?.length ?? 1 })}
+                </span>
+                <div className="flex flex-wrap gap-2">
+                  <button type="button" onClick={() => setSimpleSubflow(index)} className="rounded-md border border-neutral-300 px-2 py-1 text-xs text-neutral-600 hover:bg-neutral-50 dark:border-zinc-600 dark:text-zinc-300 dark:hover:bg-zinc-800">
+                    {t('workflows.detail.simpleSubflow')}
+                  </button>
+                  <button type="button" onClick={() => setReviewSubflow(index)} className="rounded-md border border-neutral-300 px-2 py-1 text-xs text-neutral-600 hover:bg-neutral-50 dark:border-zinc-600 dark:text-zinc-300 dark:hover:bg-zinc-800">
+                    {t('workflows.detail.reviewSubflow')}
+                  </button>
+                </div>
+              </div>
               <FieldTable title={t('workflows.detail.input')} fields={branch.inputFields ?? []} onChange={(fields) => updateBranchFields(index, 'inputFields', fields)} />
               <FieldTable title={t('workflows.detail.output')} fields={branch.outputFields ?? []} onChange={(fields) => updateBranchFields(index, 'outputFields', fields)} />
               <div className="flex justify-end">

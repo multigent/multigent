@@ -522,6 +522,15 @@ func (s *Server) submitWorkflowReviewFromTrigger(workspaceID string, record work
 		if err := s.ts.PersistTask(record.Project, agent, t); err != nil {
 			return result, err
 		}
+		if strings.TrimSpace(t.Vars[workflowBranchIDVar]) != "" {
+			branchResult, err := s.completeRuntimeWorkflowBranch(workspaceID, record.Project, t, outputs, "completed")
+			if err != nil {
+				return result, err
+			}
+			if err := s.advanceParentAfterBranchCompletion(workspaceID, record.Project, branchResult, r); err != nil {
+				return result, err
+			}
+		}
 	} else if err := s.activateNextWorkflowStep(workspaceID, record.Project, agent, t, result, r); err != nil {
 		return result, err
 	}
