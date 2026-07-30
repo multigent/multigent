@@ -13,7 +13,8 @@ const TASK_TYPES = ['chore', 'feature', 'bug', 'review', 'triage', 'test', 'rese
 
 type ActorBinding = { type: 'agent' | 'human'; id: string }
 type AgentRow = { name: string; model?: string }
-type WorkflowStep = { id: string; type: string; title: string; actorRole?: string }
+type WorkflowBranch = { id: string; title: string; actorRole?: string }
+type WorkflowStep = { id: string; type: string; title: string; actorRole?: string; branches?: WorkflowBranch[] }
 type WorkflowRow = { id: string; name: string; steps?: WorkflowStep[] }
 type WorkflowListResponse = { workflows: WorkflowRow[] }
 type TaskTemplateVariable = { name: string; description?: string; required?: boolean; default?: string }
@@ -95,6 +96,20 @@ export default function ProjectTaskTemplatesPage() {
   const workflowSlots = useMemo(() => {
     const byRole = new Map<string, { role: string; preferredType: 'agent' | 'human'; titles: string[] }>()
     for (const step of selectedWorkflow?.steps ?? []) {
+      if (step.type === 'parallel_stage') {
+        for (const branch of step.branches ?? []) {
+          const role = (branch.actorRole || branch.id).trim()
+          if (!role) continue
+          const title = `${step.title} / ${branch.title || branch.id}`
+          const existing = byRole.get(role)
+          if (existing) {
+            existing.titles.push(title)
+          } else {
+            byRole.set(role, { role, preferredType: 'agent', titles: [title] })
+          }
+        }
+        continue
+      }
       const role = step.actorRole?.trim()
       if (!role) continue
       const preferredType = step.type === 'human_review' ? 'human' : 'agent'
@@ -122,6 +137,14 @@ export default function ProjectTaskTemplatesPage() {
     const workflow = workflows.find((item) => item.id === id)
     const bindings: Record<string, ActorBinding> = {}
     for (const step of workflow?.steps ?? []) {
+      if (step.type === 'parallel_stage') {
+        for (const branch of step.branches ?? []) {
+          const role = (branch.actorRole || branch.id).trim()
+          if (!role || bindings[role]) continue
+          bindings[role] = defaultBinding('agent')
+        }
+        continue
+      }
       const role = step.actorRole?.trim()
       if (!role || bindings[role]) continue
       bindings[role] = defaultBinding(step.type === 'human_review' ? 'human' : 'agent')

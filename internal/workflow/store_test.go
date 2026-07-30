@@ -1,9 +1,12 @@
 package workflow
 
 import (
+	"path/filepath"
 	"strings"
 	"testing"
+	"time"
 
+	"github.com/multigent/multigent/internal/db"
 	"github.com/multigent/multigent/internal/entity"
 )
 
@@ -77,5 +80,129 @@ func TestWorkflowConditionInDoesNotUseSubstringMatching(t *testing.T) {
 	}
 	if !compareWorkflowValue("approve", "in", "", []string{"通过", "approve"}) {
 		t.Fatal("expected exact in comparison to match listed value")
+	}
+}
+
+func TestCompleteBranchAndMaybeAdvanceWaitsForAllBranches(t *testing.T) {
+	controlDB, err := db.Open(filepath.Join(t.TempDir(), "control.db"))
+	if err != nil {
+		t.Fatalf("open db: %v", err)
+	}
+	defer controlDB.Close()
+	if err := controlDB.UpsertWorkspace(db.Workspace{ID: "workspace-1", Name: "Workspace", Slug: "workspace", Root: t.TempDir()}); err != nil {
+		t.Fatalf("create workspace: %v", err)
+	}
+
+	store := NewStore(controlDB, "workspace-1")
+	now := time.Now().UTC()
+	def := &entity.WorkflowDefinition{
+		ID:          "wf-parallel",
+		Name:        "Parallel Test",
+		Version:     1,
+		Scope:       "workspace",
+		StartStepID: "start",
+		Steps: []entity.WorkflowStep{
+			{
+				ID:           "start",
+				Type:         "agent_task",
+				Title:        "Start",
+				ActorRole:    "pm",
+				OutputFields: []entity.WorkflowField{{Name: "spec_doc_id", Description: "Spec docID."}},
+				Position:     entity.WorkflowPosition{X: 0, Y: 0},
+			},
+			{
+				ID:       "parallel",
+				Type:     "parallel_stage",
+				Title:    "Parallel Stage",
+				Position: entity.WorkflowPosition{X: 240, Y: 0},
+				Branches: []entity.WorkflowBranch{
+					{
+						ID:           "frontend",
+						Title:        "Frontend Spec",
+						ActorRole:    "frontend",
+						InputFields:  []entity.WorkflowField{{Name: "spec_doc_id", Description: "Spec docID."}},
+						OutputFields: []entity.WorkflowField{{Name: "frontend_doc_id", Description: "Frontend docID."}},
+					},
+					{
+						ID:           "backend",
+						Title:        "Backend Spec",
+						ActorRole:    "backend",
+						InputFields:  []entity.WorkflowField{{Name: "spec_doc_id", Description: "Spec docID."}},
+						OutputFields: []entity.WorkflowField{{Name: "backend_doc_id", Description: "Backend docID."}},
+					},
+				},
+			},
+			{
+				ID:        "review",
+				Type:      "human_review",
+				Title:     "Review",
+				ActorRole: "reviewer",
+				Position:  entity.WorkflowPosition{X: 480, Y: 0},
+			},
+		},
+		Edges: []entity.WorkflowEdge{
+			{ID: "e1", From: "start", To: "parallel"},
+			{ID: "e2", From: "parallel", To: "review"},
+		},
+		CreatedAt: now,
+		UpdatedAt: now,
+	}
+	if err := store.SaveDefinition(def); err != nil {
+		t.Fatalf("save definition: %v", err)
+	}
+	bindings := map[string]entity.WorkflowActorBinding{
+		"pm":       {Type: "agent", ID: "pm"},
+		"frontend": {Type: "agent", ID: "frontend"},
+		"backend":  {Type: "agent", ID: "backend"},
+		"reviewer": {Type: "human", ID: "owner"},
+	}
+	run, _, err := store.StartRun("project", "task-1", def.ID, bindings)
+	if err != nil {
+		t.Fatalf("start run: %v", err)
+	}
+	transition, err := store.CompleteAndAdvance("project", "task-1", "spec ready", "", map[string]string{"spec_doc_id": "doc-20260730-abc123"}, "completed")
+	if err != nil {
+		t.Fatalf("complete start: %v", err)
+	}
+	if transition.Next == nil || transition.Next.ID != "parallel" {
+		t.Fatalf("expected transition to parallel stage, got %#v", transition.Next)
+	}
+	parent := transition.NextInst
+	for _, branch := range transition.Next.Branches {
+		inst := &entity.WorkflowBranchInstance{
+			RunID:       run.ID,
+			StepID:      transition.Next.ID,
+			BranchID:    branch.ID,
+			Status:      "running",
+			ActorType:   "agent",
+			ActorID:     bindings[branch.ActorRole].ID,
+			ChildTaskID: entity.NewTaskID(),
+			StartedAt:   now,
+			UpdatedAt:   now,
+			InputValues: buildBranchInputValues(*parent, branch),
+		}
+		if err := store.SaveBranchInstance(inst); err != nil {
+			t.Fatalf("save branch instance: %v", err)
+		}
+	}
+	first, err := store.CompleteBranchAndMaybeAdvance("project", "task-1", run.ID, "parallel", "frontend", "frontend done", map[string]string{"frontend_doc_id": "doc-20260730-front1"}, "completed")
+	if err != nil {
+		t.Fatalf("complete first branch: %v", err)
+	}
+	if first.AllDone {
+		t.Fatal("expected first branch completion to wait for the remaining branch")
+	}
+	second, err := store.CompleteBranchAndMaybeAdvance("project", "task-1", run.ID, "parallel", "backend", "backend done", map[string]string{"backend_doc_id": "doc-20260730-back12"}, "completed")
+	if err != nil {
+		t.Fatalf("complete second branch: %v", err)
+	}
+	if !second.AllDone {
+		t.Fatal("expected all branches done after second completion")
+	}
+	if second.Transition.Next == nil || second.Transition.Next.ID != "review" {
+		t.Fatalf("expected transition to review, got %#v", second.Transition.Next)
+	}
+	if second.Transition.Run.ActiveStepID != "review" {
+		t.Fatalf("expected active step review, got %q", second.Transition.Run.ActiveStepID)
 	}
 }

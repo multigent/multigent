@@ -11,7 +11,7 @@ import { useFormatDateTime } from '../../lib/format-datetime'
 import { useApiJson } from '../../lib/use-api'
 import { useAuth } from '../../lib/auth'
 import { formatGoDuration, taskElapsedLabel } from '../../lib/task-duration'
-import { WorkflowBoard, type WorkflowDefinition, type WorkflowField, type WorkflowRun, type WorkflowStep, type WorkflowStepEvent, type WorkflowStepInstance } from '../workflow/WorkflowBoard'
+import { WorkflowBoard, type WorkflowBranchInstance, type WorkflowDefinition, type WorkflowField, type WorkflowRun, type WorkflowStep, type WorkflowStepEvent, type WorkflowStepInstance } from '../workflow/WorkflowBoard'
 
 export type TaskRow = {
   id: string
@@ -53,7 +53,7 @@ export type RunRow = {
   sessionId?: string
 }
 
-export type TaskWorkflowData = { definition: WorkflowDefinition; run: WorkflowRun; steps: WorkflowStepInstance[]; history?: WorkflowStepEvent[]; docTitles?: Record<string, string> }
+export type TaskWorkflowData = { definition: WorkflowDefinition; run: WorkflowRun; steps: WorkflowStepInstance[]; branches?: WorkflowBranchInstance[]; history?: WorkflowStepEvent[]; docTitles?: Record<string, string> }
 type SafeUser = { username: string; displayName?: string; email?: string }
 type ProjectMember = { name: string; model?: string; avatar?: string }
 type DocPreview = { id: string; title?: string; content?: string; updatedAt?: string }
@@ -558,7 +558,7 @@ export function TaskDetailModal({ task, onClose, onEdit, onMutated, canEdit = tr
               </span>
             </div>
             <div className="grid min-h-[520px] gap-4">
-              <WorkflowBoard definition={workflowState.data.definition} run={workflowState.data.run} instances={workflowState.data.steps} focusActive compact />
+              <WorkflowBoard definition={workflowState.data.definition} run={workflowState.data.run} instances={workflowState.data.steps} branches={workflowState.data.branches} focusActive compact />
               <div className="flex min-h-0 flex-col rounded-xl border border-neutral-200 bg-white dark:border-zinc-700 dark:bg-zinc-950">
                 <WorkflowRuntimePanel
                   step={activeWorkflowStep}

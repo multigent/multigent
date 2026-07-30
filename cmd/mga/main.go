@@ -498,6 +498,7 @@ func newTaskCmd() *cobra.Command {
 		newTaskSetCmd(),
 		newTaskCompleteCmd(),
 		newTaskStepCmd(),
+		newTaskBranchCmd(),
 		newTaskCancelCmd(),
 		newTaskConfirmRequestCmd(),
 	)
@@ -840,6 +841,53 @@ func newTaskStepDoneCmd() *cobra.Command {
 	cmd.Flags().StringVar(&agent, "agent", "", "agent that currently owns the task")
 	cmd.Flags().StringVar(&status, "status", "success", "success or failed")
 	cmd.Flags().StringVar(&summary, "summary", "", "step summary")
+	cmd.Flags().StringVar(&errText, "error", "", "failure reason")
+	cmd.Flags().StringArrayVar(&outputPairs, "output", nil, "structured workflow output as field=value, repeatable")
+	cmd.Flags().StringVar(&outputJSON, "output-json", "", "structured workflow outputs as a JSON object")
+	return cmd
+}
+
+func newTaskBranchCmd() *cobra.Command {
+	cmd := &cobra.Command{
+		Use:   "branch",
+		Short: "Complete a parallel workflow branch task",
+	}
+	cmd.AddCommand(newTaskBranchDoneCmd())
+	return cmd
+}
+
+func newTaskBranchDoneCmd() *cobra.Command {
+	var taskID, agent, status, summary, errText, outputJSON string
+	var outputPairs []string
+	cmd := &cobra.Command{
+		Use:   "done",
+		Short: "Complete the current parallel workflow branch",
+		RunE: func(cmd *cobra.Command, args []string) error {
+			if taskID == "" && len(args) > 0 {
+				taskID = args[0]
+			}
+			if strings.TrimSpace(taskID) == "" {
+				return fmt.Errorf("--id or task id argument is required")
+			}
+			if status == "" {
+				status = "success"
+			}
+			outputs, err := parseStructuredOutputs(outputPairs, outputJSON)
+			if err != nil {
+				return err
+			}
+			body, _ := json.Marshal(map[string]any{"agent": agent, "status": status, "summary": summary, "error": errText, "outputs": outputs})
+			resp, err := requestJSON(http.MethodPost, "/api/v1/runtime/tasks/"+url.PathEscape(taskID)+"/workflow/branch/complete", nil, body)
+			if err != nil {
+				return err
+			}
+			return writeJSON(resp)
+		},
+	}
+	cmd.Flags().StringVar(&taskID, "id", "", "task id")
+	cmd.Flags().StringVar(&agent, "agent", "", "agent that currently owns the branch task")
+	cmd.Flags().StringVar(&status, "status", "success", "success or failed")
+	cmd.Flags().StringVar(&summary, "summary", "", "branch summary")
 	cmd.Flags().StringVar(&errText, "error", "", "failure reason")
 	cmd.Flags().StringArrayVar(&outputPairs, "output", nil, "structured workflow output as field=value, repeatable")
 	cmd.Flags().StringVar(&outputJSON, "output-json", "", "structured workflow outputs as a JSON object")

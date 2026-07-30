@@ -11,7 +11,8 @@ const TEMPLATE_VAR_RE = /\{\{\s*([A-Za-z0-9_.-]+)\s*\}\}/g
 type AgentOpt = { name: string; model?: string }
 
 type ProjectAgentsOpt = { projectId: string; agents: AgentOpt[] }
-type WorkflowStepOpt = { id: string; type: string; title: string; actorRole?: string }
+type WorkflowBranchOpt = { id: string; title: string; actorRole?: string }
+type WorkflowStepOpt = { id: string; type: string; title: string; actorRole?: string; branches?: WorkflowBranchOpt[] }
 type WorkflowOpt = { id: string; name: string; steps?: WorkflowStepOpt[] }
 type WorkflowListResponse = { workflows: WorkflowOpt[] }
 type TaskTemplateVariable = { name: string; description?: string; required?: boolean; default?: string }
@@ -173,6 +174,20 @@ export function CreateTaskDialog({ projectId: defaultProjectId, agents: defaultA
     const steps = selectedWorkflow?.steps ?? []
     const byRole = new Map<string, { role: string; preferredType: 'agent' | 'human'; titles: string[] }>()
     for (const step of steps) {
+      if (step.type === 'parallel_stage') {
+        for (const branch of step.branches ?? []) {
+          const role = (branch.actorRole || branch.id).trim()
+          if (!role) continue
+          const title = `${step.title} / ${branch.title || branch.id}`
+          const existing = byRole.get(role)
+          if (existing) {
+            existing.titles.push(title)
+          } else {
+            byRole.set(role, { role, preferredType: 'agent', titles: [title] })
+          }
+        }
+        continue
+      }
       const role = step.actorRole?.trim()
       if (!role) continue
       const preferredType = step.type === 'human_review' ? 'human' : 'agent'
@@ -276,6 +291,14 @@ export function CreateTaskDialog({ projectId: defaultProjectId, agents: defaultA
     const workflow = workflows.find((wf) => wf.id === id)
     const next: Record<string, ActorBinding> = {}
     for (const step of workflow?.steps ?? []) {
+      if (step.type === 'parallel_stage') {
+        for (const branch of step.branches ?? []) {
+          const role = (branch.actorRole || branch.id).trim()
+          if (!role || next[role]) continue
+          next[role] = autoBindingFor(role, 'agent')
+        }
+        continue
+      }
       const role = step.actorRole?.trim()
       if (!role || next[role]) continue
       const preferredType = step.type === 'human_review' ? 'human' : 'agent'
@@ -312,6 +335,14 @@ export function CreateTaskDialog({ projectId: defaultProjectId, agents: defaultA
         const workflow = workflows.find((wf) => wf.id === template.workflowDefinitionId)
         const next: Record<string, ActorBinding> = {}
         for (const step of workflow?.steps ?? []) {
+          if (step.type === 'parallel_stage') {
+            for (const branch of step.branches ?? []) {
+              const role = (branch.actorRole || branch.id).trim()
+              if (!role || next[role]) continue
+              next[role] = autoBindingFor(role, 'agent')
+            }
+            continue
+          }
           const role = step.actorRole?.trim()
           if (!role || next[role]) continue
           const preferredType = step.type === 'human_review' ? 'human' : 'agent'

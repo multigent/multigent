@@ -24,11 +24,12 @@ type workflowCreateBody struct {
 }
 
 type taskWorkflowResponse struct {
-	Definition entity.WorkflowDefinition     `json:"definition"`
-	Run        entity.WorkflowRun            `json:"run"`
-	Steps      []entity.WorkflowStepInstance `json:"steps"`
-	History    []entity.WorkflowStepEvent    `json:"history,omitempty"`
-	DocTitles  map[string]string             `json:"docTitles,omitempty"`
+	Definition entity.WorkflowDefinition       `json:"definition"`
+	Run        entity.WorkflowRun              `json:"run"`
+	Steps      []entity.WorkflowStepInstance   `json:"steps"`
+	Branches   []entity.WorkflowBranchInstance `json:"branches,omitempty"`
+	History    []entity.WorkflowStepEvent      `json:"history,omitempty"`
+	DocTitles  map[string]string               `json:"docTitles,omitempty"`
 }
 
 type workflowReviewBody struct {
@@ -277,7 +278,12 @@ func (s *Server) handleGetTaskWorkflow(w http.ResponseWriter, r *http.Request) {
 		s.serverError(w, err)
 		return
 	}
-	_ = json.NewEncoder(w).Encode(taskWorkflowResponse{Definition: def, Run: run, Steps: steps, History: history, DocTitles: s.workflowDocTitles()})
+	branches, err := wfStore.ListBranchInstances(run.ID)
+	if err != nil {
+		s.serverError(w, err)
+		return
+	}
+	_ = json.NewEncoder(w).Encode(taskWorkflowResponse{Definition: def, Run: run, Steps: steps, Branches: branches, History: history, DocTitles: s.workflowDocTitles()})
 }
 
 func (s *Server) workflowDocTitles() map[string]string {
@@ -371,6 +377,11 @@ func (s *Server) handlePostTaskWorkflowReview(w http.ResponseWriter, r *http.Req
 		s.serverError(w, err)
 		return
 	}
+	branches, err := wfStore.ListBranchInstances(transition.Run.ID)
+	if err != nil {
+		s.serverError(w, err)
+		return
+	}
 	def, found, err := wfStore.Definition(transition.Run.DefinitionID)
 	if err != nil {
 		s.serverError(w, err)
@@ -380,7 +391,7 @@ func (s *Server) handlePostTaskWorkflowReview(w http.ResponseWriter, r *http.Req
 		s.jsonError(w, http.StatusNotFound, "workflow definition not found")
 		return
 	}
-	_ = json.NewEncoder(w).Encode(taskWorkflowResponse{Definition: def, Run: transition.Run, Steps: steps, History: history})
+	_ = json.NewEncoder(w).Encode(taskWorkflowResponse{Definition: def, Run: transition.Run, Steps: steps, Branches: branches, History: history})
 }
 
 func formatWorkflowReviewFields(fields map[string]string) string {
@@ -472,5 +483,10 @@ func (s *Server) handleRuntimeTaskWorkflow(w http.ResponseWriter, r *http.Reques
 		s.serverError(w, err)
 		return
 	}
-	_ = json.NewEncoder(w).Encode(taskWorkflowResponse{Definition: def, Run: run, Steps: steps, History: history})
+	branches, err := wfStore.ListBranchInstances(run.ID)
+	if err != nil {
+		s.serverError(w, err)
+		return
+	}
+	_ = json.NewEncoder(w).Encode(taskWorkflowResponse{Definition: def, Run: run, Steps: steps, Branches: branches, History: history})
 }

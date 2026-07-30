@@ -357,7 +357,7 @@ export default function ProjectTaskFollowPage() {
       <main className="grid min-h-0 flex-1 grid-cols-[minmax(0,1fr)_420px] gap-0 overflow-hidden">
         <section className="min-w-0 border-r border-neutral-200/80 bg-white dark:border-zinc-800 dark:bg-zinc-950">
           {workflowData ? (
-            <WorkflowBoard key={`${workflowData.run.id}:${workflowData.run.activeStepId || ''}`} definition={workflowData.definition} run={workflowData.run} instances={workflowData.steps} focusActive fill hideInspector />
+            <WorkflowBoard key={`${workflowData.run.id}:${workflowData.run.activeStepId || ''}`} definition={workflowData.definition} run={workflowData.run} instances={workflowData.steps} branches={workflowData.branches} focusActive fill hideInspector />
           ) : workflowState.status === 'loading' ? (
             <CenteredLoading label={t('tasks.followLoadingWorkflow')} />
           ) : (

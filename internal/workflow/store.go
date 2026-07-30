@@ -1062,6 +1062,55 @@ func (s *Store) ListStepEvents(runID string) ([]entity.WorkflowStepEvent, error)
 	return out, nil
 }
 
+func (s *Store) SaveBranchInstance(inst *entity.WorkflowBranchInstance) error {
+	if inst == nil {
+		return fmt.Errorf("workflow branch instance is nil")
+	}
+	if strings.TrimSpace(inst.ID) == "" {
+		inst.ID = entity.NewWorkflowBranchInstanceID()
+	}
+	raw, err := json.Marshal(inst)
+	if err != nil {
+		return err
+	}
+	return s.db.UpsertRecord("workflow_branch_instances", s.workspaceID, []string{inst.RunID, inst.StepID, inst.BranchID}, string(raw))
+}
+
+func (s *Store) ListBranchInstances(runID string) ([]entity.WorkflowBranchInstance, error) {
+	recs, err := s.db.ListRecords("workflow_branch_instances", s.workspaceID, []string{runID})
+	if err != nil {
+		return nil, err
+	}
+	out := make([]entity.WorkflowBranchInstance, 0, len(recs))
+	for _, rec := range recs {
+		var inst entity.WorkflowBranchInstance
+		if json.Unmarshal([]byte(rec.Payload), &inst) == nil {
+			out = append(out, inst)
+		}
+	}
+	sort.Slice(out, func(i, j int) bool {
+		if out[i].StepID == out[j].StepID {
+			return out[i].BranchID < out[j].BranchID
+		}
+		return out[i].StepID < out[j].StepID
+	})
+	return out, nil
+}
+
+func (s *Store) BranchInstancesForStep(runID, stepID string) ([]entity.WorkflowBranchInstance, error) {
+	branches, err := s.ListBranchInstances(runID)
+	if err != nil {
+		return nil, err
+	}
+	out := make([]entity.WorkflowBranchInstance, 0, len(branches))
+	for _, branch := range branches {
+		if branch.StepID == stepID {
+			out = append(out, branch)
+		}
+	}
+	return out, nil
+}
+
 func workflowEventSortTime(event entity.WorkflowStepEvent) time.Time {
 	switch {
 	case !event.FinishedAt.IsZero():
@@ -1105,6 +1154,107 @@ type TransitionResult struct {
 	Next     *entity.WorkflowStep
 	NextInst *entity.WorkflowStepInstance
 	Done     bool
+}
+
+type BranchTransitionResult struct {
+	Branch     entity.WorkflowBranchInstance
+	AllDone    bool
+	Transition TransitionResult
+}
+
+func (s *Store) CompleteBranchAndMaybeAdvance(project, taskID, runID, stepID, branchID, summary string, outputValues map[string]string, status string) (BranchTransitionResult, error) {
+	var result BranchTransitionResult
+	run, ok, err := s.RunForTask(project, taskID)
+	if err != nil || !ok {
+		return result, err
+	}
+	if run.ID != strings.TrimSpace(runID) {
+		return result, fmt.Errorf("workflow branch task is attached to run %q, active run is %q", strings.TrimSpace(runID), run.ID)
+	}
+	if run.ActiveStepID != strings.TrimSpace(stepID) {
+		return result, fmt.Errorf("workflow branch step %q is no longer active", strings.TrimSpace(stepID))
+	}
+	def, ok, err := s.Definition(run.DefinitionID)
+	if err != nil || !ok {
+		return result, err
+	}
+	step, ok := stepByID(def.Steps, stepID)
+	if !ok {
+		return result, fmt.Errorf("workflow step %q not found", stepID)
+	}
+	if step.Type != "parallel_stage" {
+		return result, fmt.Errorf("workflow step %q is not a parallel stage", step.Title)
+	}
+	branchDef, ok := workflowBranchByID(step.Branches, branchID)
+	if !ok {
+		return result, fmt.Errorf("workflow branch %q not found", branchID)
+	}
+	branches, err := s.BranchInstancesForStep(run.ID, step.ID)
+	if err != nil {
+		return result, err
+	}
+	now := time.Now().UTC()
+	branchStep := entity.WorkflowStep{ID: branchDef.ID, Title: branchDef.Title, OutputFields: branchDef.OutputFields}
+	values, err := normalizeWorkflowOutputValues(branchStep, outputValues, summary, "", strings.TrimSpace(status) == "failed")
+	if err != nil {
+		return result, err
+	}
+	if strings.TrimSpace(summary) == "" {
+		summary = workflowSummaryFromValues(values)
+	}
+	found := false
+	for i := range branches {
+		if branches[i].BranchID != branchID {
+			continue
+		}
+		branches[i].Status = strings.TrimSpace(status)
+		if branches[i].Status == "" {
+			branches[i].Status = "completed"
+		}
+		branches[i].Summary = strings.TrimSpace(summary)
+		branches[i].OutputValues = values
+		branches[i].OutputArtifact = workflowValuesJSON(values)
+		branches[i].UpdatedAt = now
+		branches[i].FinishedAt = now
+		if err := s.SaveBranchInstance(&branches[i]); err != nil {
+			return result, err
+		}
+		result.Branch = branches[i]
+		found = true
+		break
+	}
+	if !found {
+		return result, fmt.Errorf("workflow branch instance %q not found", branchID)
+	}
+	if result.Branch.Status == "failed" {
+		return result, nil
+	}
+	for i := range branches {
+		if branches[i].BranchID == branchID {
+			branches[i] = result.Branch
+		}
+		branch := branches[i]
+		if branch.Status != "completed" {
+			return result, nil
+		}
+	}
+	result.AllDone = true
+	aggregate := aggregateBranchOutputs(branches)
+	if result.Branch.BranchID != "" {
+		for key, value := range result.Branch.OutputValues {
+			aggregate[key] = value
+		}
+	}
+	stageSummary := workflowBranchSummary(branches)
+	if stageSummary == "" {
+		stageSummary = strings.TrimSpace(summary)
+	}
+	transition, err := s.CompleteAndAdvance(project, taskID, stageSummary, workflowValuesJSON(aggregate), aggregate, "completed")
+	if err != nil {
+		return result, err
+	}
+	result.Transition = transition
+	return result, nil
 }
 
 func (s *Store) CompleteAndAdvance(project, taskID, summary, output string, outputValues map[string]string, status string) (TransitionResult, error) {
@@ -1374,6 +1524,15 @@ func stepByID(steps []entity.WorkflowStep, id string) (entity.WorkflowStep, bool
 	return entity.WorkflowStep{}, false
 }
 
+func workflowBranchByID(branches []entity.WorkflowBranch, id string) (entity.WorkflowBranch, bool) {
+	for _, branch := range branches {
+		if branch.ID == id {
+			return branch, true
+		}
+	}
+	return entity.WorkflowBranch{}, false
+}
+
 func chooseNextEdge(edges []entity.WorkflowEdge, from string, outputValues map[string]string, output string) (entity.WorkflowEdge, bool) {
 	var fallback *entity.WorkflowEdge
 	for i := range edges {
@@ -1468,6 +1627,92 @@ func buildNextInputValues(currentInst entity.WorkflowStepInstance, next entity.W
 		}
 	}
 	return out
+}
+
+func buildBranchInputValues(parent entity.WorkflowStepInstance, branch entity.WorkflowBranch) map[string]string {
+	out := make(map[string]string)
+	for _, field := range branch.InputFields {
+		name := strings.TrimSpace(field.Name)
+		if name == "" {
+			continue
+		}
+		if value := strings.TrimSpace(parent.InputValues[name]); value != "" {
+			out[name] = value
+			continue
+		}
+		if value := strings.TrimSpace(parent.OutputValues[name]); value != "" {
+			out[name] = value
+		}
+	}
+	if len(out) > 0 || len(branch.InputFields) > 0 {
+		return out
+	}
+	for key, value := range parent.InputValues {
+		if strings.TrimSpace(value) != "" {
+			out[key] = strings.TrimSpace(value)
+		}
+	}
+	for key, value := range parent.OutputValues {
+		if strings.TrimSpace(value) != "" {
+			out[key] = strings.TrimSpace(value)
+		}
+	}
+	return out
+}
+
+func buildBranchInputArtifact(step entity.WorkflowStep, parent entity.WorkflowStepInstance, branch entity.WorkflowBranch) string {
+	payload := map[string]any{
+		"parallel_stage": map[string]string{
+			"id":    step.ID,
+			"title": step.Title,
+		},
+		"branch": map[string]string{
+			"id":    branch.ID,
+			"title": branch.Title,
+		},
+		"inputs": buildBranchInputValues(parent, branch),
+	}
+	if len(branch.InputFields) > 0 {
+		payload["expected_input_fields"] = workflowFieldNames(branch.InputFields)
+	}
+	raw, err := json.MarshalIndent(payload, "", "  ")
+	if err != nil {
+		return ""
+	}
+	return string(raw)
+}
+
+func aggregateBranchOutputs(branches []entity.WorkflowBranchInstance) map[string]string {
+	out := make(map[string]string)
+	for _, branch := range branches {
+		if strings.TrimSpace(branch.Summary) != "" {
+			out[branch.BranchID+"_summary"] = strings.TrimSpace(branch.Summary)
+		}
+		for key, value := range branch.OutputValues {
+			key = strings.TrimSpace(key)
+			value = strings.TrimSpace(value)
+			if key == "" || value == "" {
+				continue
+			}
+			if _, exists := out[key]; exists {
+				out[branch.BranchID+"_"+key] = value
+				continue
+			}
+			out[key] = value
+		}
+	}
+	return out
+}
+
+func workflowBranchSummary(branches []entity.WorkflowBranchInstance) string {
+	items := make([]string, 0, len(branches))
+	for _, branch := range branches {
+		if strings.TrimSpace(branch.Summary) == "" {
+			continue
+		}
+		items = append(items, branch.BranchID+": "+strings.TrimSpace(branch.Summary))
+	}
+	return strings.Join(items, "\n")
 }
 
 func buildNextInputArtifact(current entity.WorkflowStep, currentInst entity.WorkflowStepInstance, next entity.WorkflowStep, edge entity.WorkflowEdge) string {

@@ -30,6 +30,15 @@ export type WorkflowField = {
   description?: string
 }
 
+export type WorkflowBranch = {
+  id: string
+  title: string
+  description?: string
+  actorRole?: string
+  inputFields?: WorkflowField[]
+  outputFields?: WorkflowField[]
+}
+
 export type WorkflowStep = {
   id: string
   type: string
@@ -43,6 +52,7 @@ export type WorkflowStep = {
   reviewPolicy?: string
   position: WorkflowPosition
   config?: Record<string, string>
+  branches?: WorkflowBranch[]
 }
 
 export type WorkflowEdge = {
@@ -126,10 +136,30 @@ export type WorkflowStepEvent = {
   createdAt: string
 }
 
+export type WorkflowBranchInstance = {
+  id: string
+  runId: string
+  stepId: string
+  branchId: string
+  status: string
+  actorType?: string
+  actorId?: string
+  childTaskId?: string
+  summary?: string
+  startedAt?: string
+  updatedAt: string
+  finishedAt?: string
+  inputArtifact?: string
+  outputArtifact?: string
+  inputValues?: Record<string, string>
+  outputValues?: Record<string, string>
+}
+
 type Props = {
   definition: WorkflowDefinition
   run?: WorkflowRun
   instances?: WorkflowStepInstance[]
+  branches?: WorkflowBranchInstance[]
   compact?: boolean
   fill?: boolean
   editable?: boolean
@@ -142,6 +172,7 @@ type Props = {
 }
 
 const EMPTY_INSTANCES: WorkflowStepInstance[] = []
+const EMPTY_BRANCH_INSTANCES: WorkflowBranchInstance[] = []
 
 type WorkflowNodeData = {
   step: WorkflowStep
@@ -163,6 +194,8 @@ const typeClass: Record<string, string> = {
   agent_task: 'border-sky-200 bg-sky-50/95 text-sky-900 dark:border-sky-900/70 dark:bg-sky-950/80 dark:text-sky-100',
   human_review:
     'border-amber-200 bg-amber-50/95 text-amber-900 dark:border-amber-900/70 dark:bg-amber-950/80 dark:text-amber-100',
+  parallel_stage:
+    'border-violet-200 bg-violet-50/95 text-violet-900 dark:border-violet-900/70 dark:bg-violet-950/80 dark:text-violet-100',
 }
 
 const colorClass: Record<string, string> = {
@@ -209,7 +242,7 @@ const edgeClass: Record<string, string> = {
   failed: '#ef4444',
 }
 
-const stepTypes = ['agent_task', 'human_review']
+const stepTypes = ['agent_task', 'human_review', 'parallel_stage']
 const colorOptions = ['neutral', 'sky', 'violet', 'amber', 'emerald', 'rose']
 const edgeOperators = ['eq', 'neq', 'in', 'exists']
 const ALIGN_THRESHOLD = 28
@@ -266,6 +299,11 @@ function normalizeStepFields(step: WorkflowStep): WorkflowStep {
     ...step,
     inputFields,
     outputFields,
+    branches: (step.branches ?? []).map((branch) => ({
+      ...branch,
+      inputFields: (branch.inputFields ?? []).map(({ name, description }) => ({ name, description })),
+      outputFields: (branch.outputFields ?? []).map(({ name, description }) => ({ name, description })),
+    })),
   }
 }
 
@@ -280,6 +318,31 @@ function stepPatchForType(type: string): Partial<WorkflowStep> {
         { name: 'comments', description: 'Review notes passed to the next step or back to the previous step.' },
       ],
       config: { color: 'amber' },
+    }
+  }
+  if (type === 'parallel_stage') {
+    return {
+      type,
+      actorRole: '',
+      reviewPolicy: '',
+      outputFields: [],
+      branches: [
+        {
+          id: 'branch_a',
+          title: 'Branch A',
+          actorRole: 'agent_a',
+          description: 'Complete the first parallel work item.',
+          outputFields: [{ name: 'branch_a_doc_id', description: 'Knowledge base docID for branch A output.' }],
+        },
+        {
+          id: 'branch_b',
+          title: 'Branch B',
+          actorRole: 'agent_b',
+          description: 'Complete the second parallel work item.',
+          outputFields: [{ name: 'branch_b_doc_id', description: 'Knowledge base docID for branch B output.' }],
+        },
+      ],
+      config: { color: 'violet' },
     }
   }
   return {
@@ -565,6 +628,11 @@ function WorkflowStepNode({ data, selected }: NodeProps<WorkflowNode>) {
       />
       <span className="text-[11px] font-semibold uppercase opacity-60">{t(`workflows.stepTypes.${step.type}`, { defaultValue: step.type.replace('_', ' ') })}</span>
       <span className="mt-1 line-clamp-1 text-sm font-semibold">{step.title}</span>
+      {step.type === 'parallel_stage' ? (
+        <span className="mt-1 rounded-full bg-white/70 px-2 py-0.5 text-[10px] font-medium opacity-75 dark:bg-black/20">
+          {t('workflows.detail.branchCount', { count: step.branches?.length ?? 0 })}
+        </span>
+      ) : null}
       <span className="mt-auto flex w-full items-center justify-between gap-2">
         <span className="truncate text-xs opacity-60">{step.actorRole || 'system'}</span>
         {status ? (
@@ -581,6 +649,7 @@ export function WorkflowBoard({
   definition,
   run,
   instances = EMPTY_INSTANCES,
+  branches = EMPTY_BRANCH_INSTANCES,
   compact = false,
   fill = false,
   editable = false,
@@ -606,6 +675,28 @@ export function WorkflowBoard({
     [instances],
   )
   const instanceByStep = useMemo(() => new Map(instances.map((inst) => [inst.stepId, inst])), [instancesKey])
+  const branchesKey = useMemo(
+    () => branches.map((branch) => [
+      branch.stepId,
+      branch.branchId,
+      branch.status,
+      branch.actorType,
+      branch.actorId,
+      branch.childTaskId,
+      JSON.stringify(branch.inputValues ?? {}),
+      JSON.stringify(branch.outputValues ?? {}),
+    ].join('\u001f')).join('\u001e'),
+    [branches],
+  )
+  const branchesByStep = useMemo(() => {
+    const map = new Map<string, WorkflowBranchInstance[]>()
+    for (const branch of branches) {
+      const list = map.get(branch.stepId) ?? []
+      list.push(branch)
+      map.set(branch.stepId, list)
+    }
+    return map
+  }, [branchesKey])
   const [selectedId, setSelectedId] = useState('')
   const [selectedEdgeId, setSelectedEdgeId] = useState('')
   const [selectedNodeIds, setSelectedNodeIds] = useState<string[]>([])
@@ -618,6 +709,7 @@ export function WorkflowBoard({
   const selected = selectedId ? definition.steps.find((s) => s.id === selectedId) : undefined
   const outgoingEdges = selected ? definition.edges.filter((edge) => edge.from === selected.id) : []
   const selectedInst = selected ? instanceByStep.get(selected.id) : undefined
+  const selectedBranches = selected ? branchesByStep.get(selected.id) ?? [] : []
   const [stepDraft, setStepDraft] = useState<WorkflowStep | null>(selected ?? null)
   const [undoStack, setUndoStack] = useState<WorkflowDefinition[]>([])
 
@@ -998,6 +1090,10 @@ export function WorkflowBoard({
     setStepDraft((current) => (current ? { ...current, [kind]: fields.map(({ name, description }) => ({ name, description })), [kind === 'inputFields' ? 'inputSchema' : 'outputSchema']: '' } : current))
   }
 
+  function updateStepDraftBranches(branches: WorkflowBranch[]) {
+    setStepDraft((current) => (current ? { ...current, branches } : current))
+  }
+
   function saveSelectedStep() {
     if (!editable || !selected || !stepDraft) return
     updateDefinition({
@@ -1185,10 +1281,12 @@ export function WorkflowBoard({
                 <span className="text-xs font-medium uppercase text-neutral-400 dark:text-zinc-500">{t('workflows.detail.description')}</span>
                 <textarea value={stepDraft.description || ''} onChange={(event) => updateStepDraft({ description: event.target.value })} rows={3} className={cn(fieldClass, 'resize-y')} />
               </label>
-              <label className="block">
-                <span className="text-xs font-medium uppercase text-neutral-400 dark:text-zinc-500">{t('workflows.detail.defaultRole')}</span>
-                <input value={stepDraft.actorRole || ''} onChange={(event) => updateStepDraft({ actorRole: event.target.value })} placeholder="agent" className={fieldClass} />
-              </label>
+              {stepDraft.type !== 'parallel_stage' ? (
+                <label className="block">
+                  <span className="text-xs font-medium uppercase text-neutral-400 dark:text-zinc-500">{t('workflows.detail.defaultRole')}</span>
+                  <input value={stepDraft.actorRole || ''} onChange={(event) => updateStepDraft({ actorRole: event.target.value })} placeholder="agent" className={fieldClass} />
+                </label>
+              ) : null}
               {stepDraft.type === 'human_review' && canNotifyAssignee ? (
                 <div className="rounded-lg border border-neutral-200 bg-neutral-50/70 p-3 dark:border-zinc-700 dark:bg-zinc-800/50">
                   <label className="flex items-start gap-2">
@@ -1232,6 +1330,9 @@ export function WorkflowBoard({
                 fields={stepDraft.outputFields ?? []}
                 onChange={(fields) => updateStepDraftFields('outputFields', fields)}
               />
+              {stepDraft.type === 'parallel_stage' ? (
+                <BranchTable branches={stepDraft.branches ?? []} onChange={updateStepDraftBranches} />
+              ) : null}
               <OutgoingBranches
                 edges={outgoingEdges}
                 steps={definition.steps}
@@ -1261,7 +1362,9 @@ export function WorkflowBoard({
               </div>
               <p className="mt-3 text-sm leading-6 text-neutral-600 dark:text-zinc-400">{selected.description || t('workflows.noDescription')}</p>
               <div className="mt-5 space-y-4 text-sm">
-                <Detail label={t('workflows.detail.defaultRole')} value={selected.actorRole || selectedInst?.actorId || 'system'} />
+                {selected.type !== 'parallel_stage' ? (
+                  <Detail label={t('workflows.detail.defaultRole')} value={selected.actorRole || selectedInst?.actorId || 'system'} />
+                ) : null}
                 {selected.type === 'human_review' ? (
                   <Detail
                     label={t('workflows.detail.assigneeNotification')}
@@ -1278,6 +1381,9 @@ export function WorkflowBoard({
                 <FieldSummary label={t('workflows.detail.output')} fields={schemaFieldsFor(selected, 'output')} fallback={selected.outputSchema || selectedInst?.outputArtifact || t('workflows.detail.notSpecified')} />
                 {selectedInst?.childTaskId ? <Detail label={t('workflows.detail.childTask')} value={selectedInst.childTaskId} mono /> : null}
                 {selectedInst?.summary ? <Detail label={t('workflows.detail.summary')} value={selectedInst.summary} /> : null}
+                {selected.type === 'parallel_stage' ? (
+                  <BranchSummary branches={selected.branches ?? []} instances={selectedBranches} />
+                ) : null}
               </div>
             </>
           )}
@@ -1350,6 +1456,123 @@ function FieldTable({ title, fields, onChange }: { title: string; fields: Workfl
             ))}
           </div>
         )}
+      </div>
+    </div>
+  )
+}
+
+function BranchTable({ branches, onChange }: { branches: WorkflowBranch[]; onChange: (branches: WorkflowBranch[]) => void }) {
+  const { t } = useTranslation()
+
+  function updateBranch(index: number, patch: Partial<WorkflowBranch>) {
+    onChange(branches.map((branch, i) => (i === index ? { ...branch, ...patch } : branch)))
+  }
+
+  function updateBranchFields(index: number, kind: 'inputFields' | 'outputFields', fields: WorkflowField[]) {
+    updateBranch(index, { [kind]: fields.map(({ name, description }) => ({ name, description })) })
+  }
+
+  function addBranch() {
+    const next = branches.length + 1
+    onChange([
+      ...branches,
+      {
+        id: `branch_${next}`,
+        title: `Branch ${next}`,
+        actorRole: `agent_${next}`,
+        outputFields: [{ name: `branch_${next}_doc_id`, description: 'Knowledge base docID for this branch output.' }],
+      },
+    ])
+  }
+
+  function removeBranch(index: number) {
+    onChange(branches.filter((_, i) => i !== index))
+  }
+
+  return (
+    <div>
+      <div className="flex items-center justify-between gap-2">
+        <span className="text-xs font-medium uppercase text-neutral-400 dark:text-zinc-500">{t('workflows.detail.branches')}</span>
+        <button type="button" onClick={addBranch} className="rounded-md border border-neutral-300 px-2 py-1 text-xs text-neutral-600 hover:bg-neutral-50 dark:border-zinc-600 dark:text-zinc-300 dark:hover:bg-zinc-800">
+          {t('workflows.detail.addBranch')}
+        </button>
+      </div>
+      <div className="mt-2 space-y-3">
+        {branches.length === 0 ? (
+          <div className="rounded-lg border border-neutral-200 px-3 py-3 text-xs text-neutral-400 dark:border-zinc-700 dark:text-zinc-500">
+            {t('workflows.detail.noBranches')}
+          </div>
+        ) : (
+          branches.map((branch, index) => (
+            <div key={`${branch.id}:${index}`} className="space-y-3 rounded-lg border border-neutral-200 bg-neutral-50/60 p-3 dark:border-zinc-700 dark:bg-zinc-800/40">
+              <div className="grid grid-cols-2 gap-2">
+                <input
+                  value={branch.id}
+                  onChange={(event) => updateBranch(index, { id: event.target.value })}
+                  placeholder={t('workflows.detail.branchId')}
+                  className="rounded-md border border-neutral-300 bg-white px-2 py-1.5 text-xs text-neutral-900 outline-none focus:border-sky-400 dark:border-zinc-600 dark:bg-zinc-800 dark:text-zinc-100"
+                />
+                <input
+                  value={branch.actorRole || ''}
+                  onChange={(event) => updateBranch(index, { actorRole: event.target.value })}
+                  placeholder={t('workflows.detail.branchRole')}
+                  className="rounded-md border border-neutral-300 bg-white px-2 py-1.5 text-xs text-neutral-900 outline-none focus:border-sky-400 dark:border-zinc-600 dark:bg-zinc-800 dark:text-zinc-100"
+                />
+              </div>
+              <input
+                value={branch.title}
+                onChange={(event) => updateBranch(index, { title: event.target.value })}
+                placeholder={t('workflows.detail.branchTitle')}
+                className="w-full rounded-md border border-neutral-300 bg-white px-2 py-1.5 text-xs text-neutral-900 outline-none focus:border-sky-400 dark:border-zinc-600 dark:bg-zinc-800 dark:text-zinc-100"
+              />
+              <textarea
+                value={branch.description || ''}
+                onChange={(event) => updateBranch(index, { description: event.target.value })}
+                placeholder={t('workflows.detail.branchDescription')}
+                rows={2}
+                className="w-full resize-y rounded-md border border-neutral-300 bg-white px-2 py-1.5 text-xs text-neutral-900 outline-none focus:border-sky-400 dark:border-zinc-600 dark:bg-zinc-800 dark:text-zinc-100"
+              />
+              <FieldTable title={t('workflows.detail.input')} fields={branch.inputFields ?? []} onChange={(fields) => updateBranchFields(index, 'inputFields', fields)} />
+              <FieldTable title={t('workflows.detail.output')} fields={branch.outputFields ?? []} onChange={(fields) => updateBranchFields(index, 'outputFields', fields)} />
+              <div className="flex justify-end">
+                <button type="button" onClick={() => removeBranch(index)} className="text-xs text-red-500 hover:text-red-600 dark:text-red-400">
+                  {t('common.delete')}
+                </button>
+              </div>
+            </div>
+          ))
+        )}
+      </div>
+    </div>
+  )
+}
+
+function BranchSummary({ branches, instances }: { branches: WorkflowBranch[]; instances: WorkflowBranchInstance[] }) {
+  const { t } = useTranslation()
+  const instanceByBranch = useMemo(() => new Map(instances.map((inst) => [inst.branchId, inst])), [instances])
+  if (branches.length === 0) {
+    return <Detail label={t('workflows.detail.branches')} value={t('workflows.detail.noBranches')} />
+  }
+  return (
+    <div>
+      <p className="text-xs font-medium uppercase text-neutral-400 dark:text-zinc-500">{t('workflows.detail.branches')}</p>
+      <div className="mt-2 space-y-2">
+        {branches.map((branch) => {
+          const inst = instanceByBranch.get(branch.id)
+          const status = inst?.status || 'pending'
+          return (
+            <div key={branch.id} className="rounded-lg border border-neutral-200 bg-neutral-50/70 p-2 dark:border-zinc-700 dark:bg-zinc-800/50">
+              <div className="flex items-center justify-between gap-2">
+                <span className="min-w-0 truncate text-xs font-semibold text-neutral-800 dark:text-zinc-100">{branch.title || branch.id}</span>
+                <span className={cn('shrink-0 rounded-full px-2 py-0.5 text-[10px] font-medium', statusClass[status] ?? statusClass.pending)}>
+                  {t(`workflows.stepStatus.${status}`, { defaultValue: status })}
+                </span>
+              </div>
+              <p className="mt-1 truncate text-xs text-neutral-500 dark:text-zinc-400">{branch.actorRole || inst?.actorId || 'agent'}</p>
+              {inst?.childTaskId ? <p className="mt-1 font-mono text-[11px] text-neutral-400 dark:text-zinc-500">{inst.childTaskId}</p> : null}
+            </div>
+          )
+        })}
       </div>
     </div>
   )

@@ -34,7 +34,7 @@ type WorkflowTemplate struct {
 
 type WorkflowStep struct {
 	ID           string            `json:"id" yaml:"id"`
-	Type         string            `json:"type" yaml:"type"` // agent_task, human_review
+	Type         string            `json:"type" yaml:"type"` // agent_task, human_review, parallel_stage
 	Title        string            `json:"title" yaml:"title"`
 	Description  string            `json:"description,omitempty" yaml:"description,omitempty"`
 	ActorRole    string            `json:"actorRole,omitempty" yaml:"actor_role,omitempty"`
@@ -43,8 +43,18 @@ type WorkflowStep struct {
 	InputFields  []WorkflowField   `json:"inputFields,omitempty" yaml:"input_fields,omitempty"`
 	OutputFields []WorkflowField   `json:"outputFields,omitempty" yaml:"output_fields,omitempty"`
 	ReviewPolicy string            `json:"reviewPolicy,omitempty" yaml:"review_policy,omitempty"`
+	Branches     []WorkflowBranch  `json:"branches,omitempty" yaml:"branches,omitempty"`
 	Position     WorkflowPosition  `json:"position" yaml:"position"`
 	Config       map[string]string `json:"config,omitempty" yaml:"config,omitempty"`
+}
+
+type WorkflowBranch struct {
+	ID           string          `json:"id" yaml:"id"`
+	Title        string          `json:"title" yaml:"title"`
+	Description  string          `json:"description,omitempty" yaml:"description,omitempty"`
+	ActorRole    string          `json:"actorRole,omitempty" yaml:"actor_role,omitempty"`
+	InputFields  []WorkflowField `json:"inputFields,omitempty" yaml:"input_fields,omitempty"`
+	OutputFields []WorkflowField `json:"outputFields,omitempty" yaml:"output_fields,omitempty"`
 }
 
 type WorkflowField struct {
@@ -112,6 +122,25 @@ type WorkflowStepInstance struct {
 	OutputValues   map[string]string `json:"outputValues,omitempty" yaml:"output_values,omitempty"`
 }
 
+type WorkflowBranchInstance struct {
+	ID             string            `json:"id" yaml:"id"`
+	RunID          string            `json:"runId" yaml:"run_id"`
+	StepID         string            `json:"stepId" yaml:"step_id"`
+	BranchID       string            `json:"branchId" yaml:"branch_id"`
+	Status         string            `json:"status" yaml:"status"`
+	ActorType      string            `json:"actorType,omitempty" yaml:"actor_type,omitempty"`
+	ActorID        string            `json:"actorId,omitempty" yaml:"actor_id,omitempty"`
+	ChildTaskID    string            `json:"childTaskId,omitempty" yaml:"child_task_id,omitempty"`
+	Summary        string            `json:"summary,omitempty" yaml:"summary,omitempty"`
+	StartedAt      time.Time         `json:"startedAt,omitempty" yaml:"started_at"`
+	UpdatedAt      time.Time         `json:"updatedAt" yaml:"updated_at"`
+	FinishedAt     time.Time         `json:"finishedAt,omitempty" yaml:"finished_at,omitempty"`
+	InputArtifact  string            `json:"inputArtifact,omitempty" yaml:"input_artifact,omitempty"`
+	OutputArtifact string            `json:"outputArtifact,omitempty" yaml:"output_artifact,omitempty"`
+	InputValues    map[string]string `json:"inputValues,omitempty" yaml:"input_values,omitempty"`
+	OutputValues   map[string]string `json:"outputValues,omitempty" yaml:"output_values,omitempty"`
+}
+
 type WorkflowStepEvent struct {
 	ID             string            `json:"id" yaml:"id"`
 	RunID          string            `json:"runId" yaml:"run_id"`
@@ -139,6 +168,10 @@ func NewWorkflowRunID() string {
 
 func NewWorkflowStepInstanceID() string {
 	return newShortWorkflowID("wfs")
+}
+
+func NewWorkflowBranchInstanceID() string {
+	return newShortWorkflowID("wfb")
 }
 
 func NewWorkflowStepEventID() string {
