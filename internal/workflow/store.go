@@ -1416,7 +1416,7 @@ func normalizeWorkflowOutputValues(step entity.WorkflowStep, values map[string]s
 		}
 		out[key] = strings.TrimSpace(value)
 	}
-	if len(step.OutputFields) == 0 {
+	if step.Type == "parallel_stage" || len(step.OutputFields) == 0 {
 		if strings.TrimSpace(output) != "" {
 			out["output"] = strings.TrimSpace(output)
 		}
