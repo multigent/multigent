@@ -64,7 +64,11 @@ export function AuthProvider({ children }: { children: ReactNode }) {
 
   const logout = useCallback(() => {
     if (isSaaSProxyPath()) {
-      void fetch('/saas/api/auth/logout', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: '{}' }).catch(() => null)
+      void fetch('/saas/api/auth/logout', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: '{}' })
+        .catch(() => null)
+        .finally(() => {
+          window.location.href = '/sign-up'
+        })
     }
     localStorage.removeItem(TOKEN_KEY)
     localStorage.removeItem(USER_KEY)
