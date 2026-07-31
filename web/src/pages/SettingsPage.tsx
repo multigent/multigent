@@ -79,6 +79,126 @@ type RuntimeNodeTokenResp = {
   serverUrl: string
 }
 
+type BillingEntitlements = {
+  planCode?: string
+  billingStatus?: string
+  trialEndsAt?: string
+  workspaceLimit?: number
+  seatLimit?: number
+  agentLimit?: number
+  runtimeNodeLimit?: number
+  monthlyRunLimit?: number
+}
+
+type BillingUsage = {
+  seats: number
+  pendingSeats: number
+  agents: number
+  runtimeNodes: number
+}
+
+type BillingEntitlementsResp = {
+  entitlements: BillingEntitlements
+  usage: BillingUsage
+}
+
+function BillingUsageSection() {
+  const { t } = useTranslation()
+  const formatDateTime = useFormatDateTime()
+  const [data, setData] = useState<BillingEntitlementsResp | null>(null)
+  const [loading, setLoading] = useState(true)
+  const [err, setErr] = useState('')
+
+  const load = useCallback(async () => {
+    setLoading(true)
+    setErr('')
+    try {
+      const resp = await apiFetch<BillingEntitlementsResp>('/api/v1/billing/entitlements')
+      setData(resp)
+    } catch (e) {
+      setErr(e instanceof Error ? e.message : String(e))
+    } finally {
+      setLoading(false)
+    }
+  }, [])
+
+  useEffect(() => { void load() }, [load])
+
+  const ent = data?.entitlements
+  const usage = data?.usage
+  const billingStatus = ent?.billingStatus || 'unlimited'
+  const plan = ent?.planCode || 'local'
+  const limitLabel = (value?: number) => value && value > 0 ? String(value) : t('settings.billingUnlimited')
+  const usageItems = [
+    { key: 'seats', label: t('settings.billingSeats'), used: (usage?.seats || 0) + (usage?.pendingSeats || 0), current: usage?.seats || 0, pending: usage?.pendingSeats || 0, limit: ent?.seatLimit },
+    { key: 'agents', label: t('settings.billingAgents'), used: usage?.agents || 0, current: usage?.agents || 0, pending: 0, limit: ent?.agentLimit },
+    { key: 'runtimeNodes', label: t('settings.billingRuntimeNodes'), used: usage?.runtimeNodes || 0, current: usage?.runtimeNodes || 0, pending: 0, limit: ent?.runtimeNodeLimit },
+  ]
+
+  return (
+    <section className="rounded-xl border border-neutral-200/80 bg-white p-5 dark:border-zinc-700/60 dark:bg-zinc-900/40">
+      <div className="flex items-start justify-between gap-4 border-b border-neutral-100 pb-4 dark:border-zinc-800">
+        <div>
+          <h3 className="text-base font-semibold text-neutral-900 dark:text-zinc-100">{t('settings.billingTitle')}</h3>
+          <p className="mt-1 text-xs leading-5 text-neutral-500 dark:text-zinc-400">{t('settings.billingIntro')}</p>
+        </div>
+        <button
+          type="button"
+          onClick={() => void load()}
+          className="rounded-lg border border-neutral-200 bg-white px-3 py-2 text-sm font-medium text-neutral-600 hover:bg-neutral-50 dark:border-zinc-700 dark:bg-zinc-900 dark:text-zinc-300 dark:hover:bg-zinc-800"
+        >
+          {loading ? t('forms.loading') : t('common.refresh')}
+        </button>
+      </div>
+
+      {err && <p className="mt-4 rounded-lg border border-red-200 bg-red-50 px-3 py-2 text-sm text-red-700 dark:border-red-900/60 dark:bg-red-950/30 dark:text-red-300">{err}</p>}
+
+      <div className="grid gap-3 pt-4 md:grid-cols-3">
+        <div className="rounded-lg border border-neutral-200/80 bg-neutral-50/40 p-4 dark:border-zinc-700/60 dark:bg-zinc-800/30">
+          <p className="text-xs font-medium text-neutral-500 dark:text-zinc-400">{t('settings.billingPlan')}</p>
+          <p className="mt-1 text-sm font-semibold text-neutral-900 dark:text-zinc-100">{loading ? t('forms.loading') : plan}</p>
+        </div>
+        <div className="rounded-lg border border-neutral-200/80 bg-neutral-50/40 p-4 dark:border-zinc-700/60 dark:bg-zinc-800/30">
+          <p className="text-xs font-medium text-neutral-500 dark:text-zinc-400">{t('settings.billingStatus')}</p>
+          <p className="mt-1 text-sm font-semibold text-neutral-900 dark:text-zinc-100">{loading ? t('forms.loading') : t(`settings.billingStatus_${billingStatus}`, { defaultValue: billingStatus })}</p>
+        </div>
+        <div className="rounded-lg border border-neutral-200/80 bg-neutral-50/40 p-4 dark:border-zinc-700/60 dark:bg-zinc-800/30">
+          <p className="text-xs font-medium text-neutral-500 dark:text-zinc-400">{t('settings.billingTrialEnds')}</p>
+          <p className="mt-1 text-sm font-semibold text-neutral-900 dark:text-zinc-100">{ent?.trialEndsAt ? formatDateTime(ent.trialEndsAt) : '-'}</p>
+        </div>
+      </div>
+
+      <div className="mt-4 grid gap-3 md:grid-cols-3">
+        {usageItems.map(item => {
+          const limit = item.limit || 0
+          const pct = limit > 0 ? Math.min(100, Math.round((item.used / limit) * 100)) : 0
+          const nearLimit = limit > 0 && item.used >= limit
+          return (
+            <div key={item.key} className="rounded-lg border border-neutral-200/80 bg-white p-4 dark:border-zinc-700/60 dark:bg-zinc-900/30">
+              <div className="flex items-center justify-between gap-3">
+                <p className="text-sm font-medium text-neutral-900 dark:text-zinc-100">{item.label}</p>
+                <p className={cn('text-xs font-semibold', nearLimit ? 'text-red-600 dark:text-red-300' : 'text-neutral-500 dark:text-zinc-400')}>
+                  {item.used} / {limitLabel(limit)}
+                </p>
+              </div>
+              {item.pending > 0 && <p className="mt-1 text-xs text-neutral-400 dark:text-zinc-500">{t('settings.billingPendingSeats', { count: item.pending })}</p>}
+              <div className="mt-3 h-1.5 overflow-hidden rounded-full bg-neutral-100 dark:bg-zinc-800">
+                <div className={cn('h-full rounded-full', nearLimit ? 'bg-red-500' : 'bg-sky-500')} style={{ width: limit > 0 ? `${pct}%` : '12%' }} />
+              </div>
+            </div>
+          )
+        })}
+      </div>
+
+      {data && usageItems.some(item => item.limit && item.limit > 0 && item.used >= item.limit) && (
+        <div className="mt-4 rounded-lg border border-amber-200 bg-amber-50 px-4 py-3 text-sm text-amber-800 dark:border-amber-900/60 dark:bg-amber-950/30 dark:text-amber-200">
+          {t('settings.billingLimitHint')}
+        </div>
+      )}
+    </section>
+  )
+}
+
 function SystemUpdatesSection() {
   const { t } = useTranslation()
   const [info, setInfo] = useState<UpdateInfo | null>(null)
@@ -2743,6 +2863,9 @@ export default function SettingsPage() {
       </div>
 
       <div className="space-y-5">
+        {/* Billing and plan usage */}
+        {canAdmin && <BillingUsageSection />}
+
         {/* RBAC Model (admin only) */}
         {canAdmin && <RBACSection />}
 
