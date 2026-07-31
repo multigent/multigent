@@ -1,5 +1,24 @@
 # Changelog
 
+## [v0.1.22] - 2026-07-31
+
+### Added
+
+- Workflow human-review steps can now notify assigned users through configured collaboration channels.
+- Runtime nodes now support configurable direct host execution for trusted local or remote machines.
+- Workflow parallel stages now run each branch as a child subworkflow, allowing branches to evolve beyond a single agent step.
+- `multigent workflow scaffold parallel` can generate or save a workflow with a parallel subworkflow stage from the CLI.
+
+### Improved
+
+- Parallel workflow branch editing now hides internal branch IDs and lets users choose system default subflows or existing workflow definitions from one selector.
+- Workflow import/update now recursively normalizes and validates nested branch subflows.
+
+### Fixed
+
+- Workflow routing no longer uses substring matching for equality or set membership conditions.
+- Runtime task confirmation is blocked for tasks attached to active workflows, so agents must use explicit workflow step routes.
+
 ## [v0.1.21] - 2026-07-28
 
 ### Fixed
