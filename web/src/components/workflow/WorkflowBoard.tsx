@@ -184,15 +184,16 @@ type WorkflowNodeData = {
   active: boolean
   connectingSource?: boolean
   connectingTarget?: boolean
+  branchInstances?: WorkflowBranchInstance[]
 }
 
-type WorkflowNode = Node<WorkflowNodeData, 'workflowStep'>
+type WorkflowNode = Node<WorkflowNodeData, 'workflowStep' | 'parallelPreview'>
 type WorkflowClipboard = {
   steps: WorkflowStep[]
   edges: WorkflowEdge[]
 }
 
-const nodeTypes = { workflowStep: WorkflowStepNode }
+const nodeTypes = { workflowStep: WorkflowStepNode, parallelPreview: ParallelSubflowPreviewNode }
 
 const typeClass: Record<string, string> = {
   agent_task: 'border-sky-200 bg-sky-50/95 text-sky-900 dark:border-sky-900/70 dark:bg-sky-950/80 dark:text-sky-100',
@@ -257,6 +258,8 @@ const AUTO_LAYOUT_START_X = 80
 const AUTO_LAYOUT_START_Y = 80
 const WORKFLOW_NODE_WIDTH = 198
 const WORKFLOW_NODE_HEIGHT = 88
+const PARALLEL_PREVIEW_WIDTH = 620
+const PARALLEL_PREVIEW_ROW_HEIGHT = 92
 const WORKFLOW_NOTIFY_ASSIGNEE_KEY = 'notifyAssignee'
 const WORKFLOW_NOTIFY_CHANNEL_KEY = 'notifyChannel'
 
@@ -403,6 +406,34 @@ function workflowTerminalStep(def?: WorkflowDefinition): WorkflowStep | undefine
   if (!def?.steps?.length) return undefined
   const outgoing = new Set((def.edges ?? []).map((edge) => edge.from))
   return [...def.steps].reverse().find((step) => !outgoing.has(step.id)) ?? def.steps[def.steps.length - 1]
+}
+
+function workflowPreviewSteps(branch: WorkflowBranch): WorkflowStep[] {
+  if (branch.workflow?.steps?.length) return branch.workflow.steps
+  return [
+    {
+      id: branch.id || 'branch',
+      type: 'agent_task',
+      title: branch.title || branch.id || 'Branch',
+      description: branch.description || '',
+      actorRole: branch.actorRole || '',
+      inputFields: branch.inputFields ?? [],
+      outputFields: branch.outputFields ?? [],
+      position: { x: 0, y: 0 },
+    },
+  ]
+}
+
+function compactWorkflowPreviewSteps(branch: WorkflowBranch) {
+  const steps = workflowPreviewSteps(branch)
+  if (steps.length <= 4) return steps
+  return [steps[0], steps[1], steps[steps.length - 2], steps[steps.length - 1]]
+}
+
+function stepPreviewColor(step: WorkflowStep) {
+  if (step.type === 'human_review') return colorClass.amber
+  if (step.type === 'parallel_stage') return colorClass.violet
+  return colorClass.sky
 }
 
 function stepPatchForType(type: string): Partial<WorkflowStep> {
@@ -748,6 +779,91 @@ function WorkflowStepNode({ data, selected }: NodeProps<WorkflowNode>) {
   )
 }
 
+function ParallelSubflowPreviewNode({ data }: NodeProps<WorkflowNode>) {
+  const { t } = useTranslation()
+  const { step, branchInstances = [] } = data
+  const branches = step.branches ?? []
+  const instanceByBranch = useMemo(() => new Map(branchInstances.map((inst) => [inst.branchId, inst])), [branchInstances])
+  const joinPolicy = step.joinPolicy === 'any' || step.config?.joinPolicy === 'any' ? 'any' : 'all'
+  const previewHeight = Math.max(160, 70 + Math.max(1, branches.length) * PARALLEL_PREVIEW_ROW_HEIGHT)
+
+  return (
+    <div
+      style={{ width: PARALLEL_PREVIEW_WIDTH, minHeight: previewHeight }}
+      className="nodrag nopan rounded-2xl border border-violet-200/90 bg-white/95 p-3 text-left shadow-xl shadow-violet-900/10 backdrop-blur dark:border-violet-900/70 dark:bg-zinc-950/95 dark:shadow-black/30"
+    >
+      <Handle type="target" id="target-top" position={Position.Top} className="!h-2 !w-2 !opacity-0" />
+      <div className="flex items-center justify-between gap-3 border-b border-violet-100 pb-2 dark:border-violet-900/50">
+        <div className="min-w-0">
+          <div className="flex items-center gap-2">
+            <span className="size-2 rounded-full bg-violet-500" />
+            <span className="text-xs font-semibold uppercase tracking-wide text-violet-600 dark:text-violet-300">
+              {t('workflows.detail.parallelPreviewTitle')}
+            </span>
+          </div>
+          <p className="mt-1 truncate text-sm font-semibold text-neutral-900 dark:text-zinc-100">{step.title}</p>
+        </div>
+        <div className="flex shrink-0 items-center gap-2">
+          <span className="rounded-full bg-violet-50 px-2.5 py-1 text-[11px] font-medium text-violet-700 dark:bg-violet-950 dark:text-violet-200">
+            {joinPolicy === 'any' ? t('workflows.detail.joinPolicyAnyShort') : t('workflows.detail.joinPolicyAllShort')}
+          </span>
+          <span className="rounded-full bg-neutral-100 px-2.5 py-1 text-[11px] font-medium text-neutral-500 dark:bg-zinc-800 dark:text-zinc-400">
+            {t('workflows.detail.branchCount', { count: branches.length })}
+          </span>
+        </div>
+      </div>
+
+      {branches.length === 0 ? (
+        <div className="mt-3 rounded-xl border border-dashed border-neutral-200 px-4 py-6 text-center text-sm text-neutral-400 dark:border-zinc-700 dark:text-zinc-500">
+          {t('workflows.detail.noBranches')}
+        </div>
+      ) : (
+        <div className="mt-3 space-y-2">
+          {branches.map((branch) => {
+            const inst = instanceByBranch.get(branch.id)
+            const status = inst?.status || 'pending'
+            const steps = compactWorkflowPreviewSteps(branch)
+            const hasHiddenSteps = workflowPreviewSteps(branch).length > steps.length
+            return (
+              <div key={branch.id} className="rounded-xl border border-neutral-200 bg-neutral-50/70 p-3 dark:border-zinc-800 dark:bg-zinc-900/70">
+                <div className="flex items-center justify-between gap-3">
+                  <div className="min-w-0">
+                    <p className="truncate text-sm font-semibold text-neutral-900 dark:text-zinc-100">{branch.title || branch.id}</p>
+                    <p className="mt-0.5 truncate text-xs text-neutral-500 dark:text-zinc-400">
+                      {branch.actorRole || workflowFirstStep(branch.workflow)?.actorRole || 'agent'}
+                    </p>
+                  </div>
+                  <span className={cn('shrink-0 rounded-full px-2 py-0.5 text-[10px] font-medium', statusClass[status] ?? statusClass.pending)}>
+                    {t(`workflows.stepStatus.${status}`, { defaultValue: status })}
+                  </span>
+                </div>
+                <div className="mt-3 flex min-w-0 items-center gap-2 overflow-hidden">
+                  {steps.map((branchStep, index) => (
+                    <div key={`${branch.id}-${branchStep.id}-${index}`} className="flex min-w-0 items-center gap-2">
+                      {hasHiddenSteps && index === 2 ? (
+                        <span className="shrink-0 text-xs text-neutral-400 dark:text-zinc-500">...</span>
+                      ) : null}
+                      <span
+                        className={cn(
+                          'max-w-[130px] truncate rounded-lg border px-2 py-1 text-[11px] font-medium',
+                          stepPreviewColor(branchStep),
+                        )}
+                      >
+                        {branchStep.title || branchStep.id}
+                      </span>
+                      {index < steps.length - 1 ? <span className="text-neutral-300 dark:text-zinc-600">→</span> : null}
+                    </div>
+                  ))}
+                </div>
+              </div>
+            )
+          })}
+        </div>
+      )}
+    </div>
+  )
+}
+
 export function WorkflowBoard({
   definition,
   run,
@@ -826,8 +942,8 @@ export function WorkflowBoard({
   }, [definition.id])
 
   const initialNodes = useMemo<WorkflowNode[]>(
-    () =>
-      definition.steps.map((step) => {
+    () => {
+      const baseNodes: WorkflowNode[] = definition.steps.map((step) => {
         const inst = instanceByStep.get(step.id)
         const active = run?.activeStepId === step.id || inst?.status === 'running'
         return {
@@ -841,14 +957,38 @@ export function WorkflowBoard({
             connectingSource: connectionSourceId === step.id,
             connectingTarget: Boolean(connectionSourceId && connectionSourceId !== step.id && connectionTargetId === step.id),
           },
+          zIndex: active || selectedId === step.id ? 20 : 10,
         }
-      }),
-    [definition.steps, instanceByStep, run?.activeStepId, connectionSourceId, connectionTargetId],
+      })
+      if (!compact && selected?.type === 'parallel_stage') {
+        baseNodes.push({
+          id: `${selected.id}__parallel_preview`,
+          type: 'parallelPreview',
+          position: {
+            x: selected.position.x - 28,
+            y: selected.position.y + WORKFLOW_NODE_HEIGHT + 64,
+          },
+          data: {
+            step: selected,
+            status: selectedInst?.status,
+            active: false,
+            branchInstances: selectedBranches,
+          },
+          selectable: false,
+          draggable: false,
+          connectable: false,
+          deletable: false,
+          zIndex: 5,
+        })
+      }
+      return baseNodes
+    },
+    [definition.steps, instanceByStep, run?.activeStepId, connectionSourceId, connectionTargetId, compact, selected, selectedInst?.status, selectedBranches, selectedId],
   )
 
   const initialEdges = useMemo<Edge[]>(
-    () =>
-      definition.edges.map((edge) => {
+    () => {
+      const baseEdges: Edge[] = definition.edges.map((edge) => {
         const sourceInst = instanceByStep.get(edge.from)
         const active = run?.activeStepId === edge.from || sourceInst?.status === 'running'
         const selected = selectedEdgeId === edge.id
@@ -875,8 +1015,24 @@ export function WorkflowBoard({
           labelBgBorderRadius: 6,
           labelBgStyle: { fill: selected ? 'rgba(240,249,255,0.96)' : 'rgba(255,255,255,0.92)' },
         }
-      }),
-    [definition.edges, definition.steps, instanceByStep, run?.activeStepId, selectedEdgeId],
+      })
+      if (!compact && selected?.type === 'parallel_stage') {
+        baseEdges.push({
+          id: `${selected.id}__parallel_preview_edge`,
+          source: selected.id,
+          target: `${selected.id}__parallel_preview`,
+          sourceHandle: 'source-bottom',
+          targetHandle: 'target-top',
+          type: 'smoothstep',
+          selectable: false,
+          animated: false,
+          markerEnd: undefined,
+          style: { stroke: '#a78bfa', strokeDasharray: '5 5', strokeWidth: 1.5 },
+        })
+      }
+      return baseEdges
+    },
+    [definition.edges, definition.steps, instanceByStep, run?.activeStepId, selectedEdgeId, compact, selected],
   )
 
   const [nodes, setNodes, onNodesChange] = useNodesState(initialNodes)
@@ -964,6 +1120,7 @@ export function WorkflowBoard({
     let y = Math.round(node.position.y)
     for (const other of allNodes) {
       if (other.id === node.id) continue
+      if (other.type !== 'workflowStep') continue
       if (Math.abs(x - other.position.x) <= ALIGN_THRESHOLD) {
         x = Math.round(other.position.x)
       }
@@ -1269,6 +1426,7 @@ export function WorkflowBoard({
             setConnectionTargetId('')
           }}
           onNodeMouseEnter={(_, node) => {
+            if (node.type !== 'workflowStep') return
             if (!editable || !connectionSourceId || connectionSourceId === node.id) return
             setConnectionTargetId(node.id)
           }}
@@ -1276,6 +1434,7 @@ export function WorkflowBoard({
             if (connectionTargetId === node.id) setConnectionTargetId('')
           }}
           onNodeClick={(_, node) => {
+            if (node.type !== 'workflowStep') return
             setSelectedId(node.id)
             setSelectedEdgeId('')
             setSelectedNodeIds([node.id])
@@ -1287,7 +1446,7 @@ export function WorkflowBoard({
             setSelectedId('')
           }}
           onSelectionChange={({ nodes: selectedNodes, edges: selectedEdges }) => {
-            const nodeIDs = selectedNodes.map((node) => node.id)
+            const nodeIDs = selectedNodes.filter((node) => node.type === 'workflowStep').map((node) => node.id)
             const edgeID = selectedEdges[0]?.id || ''
             if (nodeIDs.length > 0) {
               setSelectedNodeIds((current) => (sameStringArray(current, nodeIDs) ? current : nodeIDs))
