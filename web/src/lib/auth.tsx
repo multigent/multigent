@@ -63,6 +63,9 @@ export function AuthProvider({ children }: { children: ReactNode }) {
   }, [])
 
   const logout = useCallback(() => {
+    if (isSaaSProxyPath()) {
+      void fetch('/saas/api/auth/logout', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: '{}' }).catch(() => null)
+    }
     localStorage.removeItem(TOKEN_KEY)
     localStorage.removeItem(USER_KEY)
     localStorage.removeItem(WORKSPACE_ID_KEY)
@@ -101,8 +104,29 @@ function initialToken(): string | null {
 }
 
 function isSaaSProxyPath(): boolean {
-  return typeof window !== 'undefined' && window.location.pathname.startsWith('/w/')
+  if (typeof window === 'undefined') return false
+  const match = /^\/([a-z0-9][a-z0-9-]*)(\/|$)/.exec(window.location.pathname)
+  return Boolean(match && !appRouteSegments.has(match[1]))
 }
+
+const appRouteSegments = new Set([
+  'account',
+  'audit',
+  'connections',
+  'docs',
+  'files',
+  'goals',
+  'invite',
+  'login',
+  'playbooks',
+  'projects',
+  'settings',
+  'skills',
+  'teams',
+  'users',
+  'workbench',
+  'workflows',
+])
 
 const projectRolePower: Record<string, number> = {
   viewer: 1,

@@ -9,9 +9,29 @@ import { AuthProvider } from './lib/auth'
 import { ThemeProvider } from './theme/ThemeProvider'
 
 function routerBasename() {
-  const match = /^\/w\/[^/]+/.exec(window.location.pathname)
-  return match ? match[0] : undefined
+  const bare = /^\/([a-z0-9][a-z0-9-]*)(\/|$)/.exec(window.location.pathname)
+  if (bare && !appRouteSegments.has(bare[1])) return `/${bare[1]}`
+  return undefined
 }
+
+const appRouteSegments = new Set([
+  'account',
+  'audit',
+  'connections',
+  'docs',
+  'files',
+  'goals',
+  'invite',
+  'login',
+  'playbooks',
+  'projects',
+  'settings',
+  'skills',
+  'teams',
+  'users',
+  'workbench',
+  'workflows',
+])
 
 createRoot(document.getElementById('root')!).render(
   <StrictMode>
