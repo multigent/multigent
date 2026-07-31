@@ -1123,6 +1123,11 @@ export function WorkflowBoard({
   useEffect(() => {
     if (!editable) return
     function handleKeyDown(event: KeyboardEvent) {
+      if ((event.metaKey || event.ctrlKey) && !event.shiftKey && event.key.toLowerCase() === 's') {
+        event.preventDefault()
+        saveSelectedStep()
+        return
+      }
       if (isTextEditingTarget(event.target)) return
       if (!event.metaKey && !event.ctrlKey && !event.altKey && ['ArrowLeft', 'ArrowRight', 'ArrowUp', 'ArrowDown'].includes(event.key)) {
         event.preventDefault()
@@ -1151,7 +1156,7 @@ export function WorkflowBoard({
     }
     window.addEventListener('keydown', handleKeyDown)
     return () => window.removeEventListener('keydown', handleKeyDown)
-  }, [clipboard, definition, editable, onChange, selectedId, selectedEdgeId, selectedNodeIds, undoStack])
+  }, [clipboard, definition, editable, onChange, selectedId, selectedEdgeId, selectedNodeIds, stepDraft, undoStack])
 
   function alignedPosition(node: WorkflowNode, allNodes: WorkflowNode[]) {
     let x = Math.round(node.position.x)
@@ -1984,7 +1989,7 @@ function BranchTable({
           </div>
         ) : (
           branches.map((branch, index) => (
-            <div key={`${branch.id}:${index}`} className="space-y-3 rounded-lg border border-violet-200/80 bg-white/85 p-3 shadow-sm shadow-violet-900/5 dark:border-violet-900/60 dark:bg-zinc-900/80 dark:shadow-black/20">
+            <div key={index} className="space-y-3 rounded-lg border border-violet-200/80 bg-white/85 p-3 shadow-sm shadow-violet-900/5 dark:border-violet-900/60 dark:bg-zinc-900/80 dark:shadow-black/20">
               <label className="block">
                 <span className="mb-1 block text-[11px] font-medium uppercase text-neutral-400 dark:text-zinc-500">{t('workflows.detail.branchTitle')}</span>
                 <input
