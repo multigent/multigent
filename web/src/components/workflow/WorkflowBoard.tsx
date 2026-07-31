@@ -758,13 +758,15 @@ function WorkflowStepNode({ data, selected }: NodeProps<WorkflowNode>) {
         position={Position.Bottom}
         className={cn(targetHandleClass, '!translate-x-4')}
       />
-      <span className="text-[11px] font-semibold uppercase opacity-60">{t(`workflows.stepTypes.${step.type}`, { defaultValue: step.type.replace('_', ' ') })}</span>
+      <span className="flex min-w-0 items-start justify-between gap-2">
+        <span className="min-w-0 truncate text-[11px] font-semibold uppercase opacity-60">{t(`workflows.stepTypes.${step.type}`, { defaultValue: step.type.replace('_', ' ') })}</span>
+        {step.type === 'parallel_stage' ? (
+          <span className="inline-flex shrink-0 rounded-full bg-white/70 px-2 py-0.5 text-[10px] font-medium leading-none opacity-75 dark:bg-black/20">
+            {t('workflows.detail.branchCount', { count: step.branches?.length ?? 0 })}
+          </span>
+        ) : null}
+      </span>
       <span className="mt-1 line-clamp-1 text-sm font-semibold">{step.title}</span>
-      {step.type === 'parallel_stage' ? (
-        <span className="mt-1 inline-flex w-fit shrink-0 rounded-full bg-white/70 px-2 py-0.5 text-[10px] font-medium leading-none opacity-75 dark:bg-black/20">
-          {t('workflows.detail.branchCount', { count: step.branches?.length ?? 0 })}
-        </span>
-      ) : null}
       <span className="mt-auto flex w-full min-w-0 items-center justify-between gap-2 pt-1">
         <span className="truncate text-xs opacity-60">
           {step.type === 'parallel_stage' ? t('workflows.detail.parallelAggregator') : (step.actorRole || 'system')}
@@ -1124,14 +1126,36 @@ export function WorkflowBoard({
   function alignedPosition(node: WorkflowNode, allNodes: WorkflowNode[]) {
     let x = Math.round(node.position.x)
     let y = Math.round(node.position.y)
+    const nodeWidth = node.type === 'parallelPreview' ? PARALLEL_PREVIEW_WIDTH : WORKFLOW_NODE_WIDTH
+    const nodeHeight = node.type === 'parallelPreview' ? Math.max(160, 70 + Math.max(1, node.data.step.branches?.length ?? 0) * PARALLEL_PREVIEW_ROW_HEIGHT) : WORKFLOW_NODE_HEIGHT
+    const nodeRight = x + nodeWidth
+    const nodeBottom = y + nodeHeight
+    const nodeCenterX = x + nodeWidth / 2
+    const nodeCenterY = y + nodeHeight / 2
     for (const other of allNodes) {
       if (other.id === node.id) continue
       if (other.type !== 'workflowStep') continue
-      if (Math.abs(x - other.position.x) <= ALIGN_THRESHOLD) {
-        x = Math.round(other.position.x)
+      const otherWidth = WORKFLOW_NODE_WIDTH
+      const otherHeight = WORKFLOW_NODE_HEIGHT
+      const otherX = Math.round(other.position.x)
+      const otherY = Math.round(other.position.y)
+      const otherRight = otherX + otherWidth
+      const otherBottom = otherY + otherHeight
+      const otherCenterX = otherX + otherWidth / 2
+      const otherCenterY = otherY + otherHeight / 2
+      if (Math.abs(x - otherX) <= ALIGN_THRESHOLD) {
+        x = otherX
+      } else if (Math.abs(nodeRight - otherRight) <= ALIGN_THRESHOLD) {
+        x = otherRight - nodeWidth
+      } else if (Math.abs(nodeCenterX - otherCenterX) <= ALIGN_THRESHOLD) {
+        x = Math.round(otherCenterX - nodeWidth / 2)
       }
-      if (Math.abs(y - other.position.y) <= ALIGN_THRESHOLD) {
-        y = Math.round(other.position.y)
+      if (Math.abs(y - otherY) <= ALIGN_THRESHOLD) {
+        y = otherY
+      } else if (Math.abs(nodeBottom - otherBottom) <= ALIGN_THRESHOLD) {
+        y = otherBottom - nodeHeight
+      } else if (Math.abs(nodeCenterY - otherCenterY) <= ALIGN_THRESHOLD) {
+        y = Math.round(otherCenterY - nodeHeight / 2)
       }
     }
     return { x, y }
@@ -1428,14 +1452,15 @@ export function WorkflowBoard({
           onNodeDragStop={(_, node, nextNodes) => {
             const workflowNode = node as WorkflowNode
             if (workflowNode.type === 'parallelPreview') {
+              const aligned = alignedPosition(workflowNode, nextNodes as WorkflowNode[])
               setPreviewPositions((current) => ({
                 ...current,
-                [workflowNode.id]: {
-                  x: Math.round(workflowNode.position.x),
-                  y: Math.round(workflowNode.position.y),
-                },
+                [workflowNode.id]: aligned,
               }))
+              setNodes((current) => current.map((item) => (item.id === workflowNode.id ? { ...item, position: aligned } : item)))
             } else {
+              const aligned = alignedPosition(workflowNode, nextNodes as WorkflowNode[])
+              setNodes((current) => current.map((item) => (item.id === workflowNode.id ? { ...item, position: aligned } : item)))
               persistNodePositions(nextNodes as WorkflowNode[], workflowNode)
             }
             window.setTimeout(() => {
@@ -1911,14 +1936,14 @@ function BranchTable({
         </button>
       </div>
       <p className="mt-1 text-xs leading-5 text-neutral-500 dark:text-zinc-400">{t('workflows.detail.branchSetupHint')}</p>
-      <div className="mt-2 space-y-3">
+      <div className="mt-2 space-y-3 rounded-xl border border-violet-100 bg-violet-50/35 p-2 dark:border-violet-900/50 dark:bg-violet-950/20">
         {branches.length === 0 ? (
-          <div className="rounded-lg border border-neutral-200 px-3 py-3 text-xs text-neutral-400 dark:border-zinc-700 dark:text-zinc-500">
+          <div className="rounded-lg border border-dashed border-violet-200 bg-white/70 px-3 py-3 text-xs text-neutral-400 dark:border-violet-900/60 dark:bg-zinc-900/60 dark:text-zinc-500">
             {t('workflows.detail.noBranches')}
           </div>
         ) : (
           branches.map((branch, index) => (
-            <div key={`${branch.id}:${index}`} className="space-y-3 rounded-lg border border-neutral-200 bg-neutral-50/60 p-3 dark:border-zinc-700 dark:bg-zinc-800/40">
+            <div key={`${branch.id}:${index}`} className="space-y-3 rounded-lg border border-violet-200/80 bg-white/85 p-3 shadow-sm shadow-violet-900/5 dark:border-violet-900/60 dark:bg-zinc-900/80 dark:shadow-black/20">
               <label className="block">
                 <span className="mb-1 block text-[11px] font-medium uppercase text-neutral-400 dark:text-zinc-500">{t('workflows.detail.branchTitle')}</span>
                 <input
