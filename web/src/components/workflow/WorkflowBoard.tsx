@@ -688,10 +688,10 @@ function isTextEditingTarget(target: EventTarget | null) {
   return tag === 'input' || tag === 'textarea' || tag === 'select' || target.isContentEditable
 }
 
-function WorkflowStepNode({ data, selected }: NodeProps<WorkflowNode>) {
+function WorkflowStepNode({ data }: NodeProps<WorkflowNode>) {
   const { t } = useTranslation()
   const { step, status, active, selected: localSelected, connectingSource, connectingTarget } = data
-  const highlighted = Boolean(localSelected || selected)
+  const highlighted = Boolean(localSelected)
   const nodeClass = colorClass[step.config?.color || ''] ?? typeClass[step.type] ?? colorClass.neutral
   const targetHandleClass = cn(
     '!h-3 !w-3 !border-2 !border-white !bg-neutral-400 transition-all dark:!border-zinc-950 dark:!bg-zinc-500',
