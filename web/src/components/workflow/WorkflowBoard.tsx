@@ -726,56 +726,58 @@ function WorkflowStepNode({ data, selected }: NodeProps<WorkflowNode>) {
         type="source"
         id="source-left"
         position={Position.Left}
-        className={cn(sourceHandleClass, '!translate-y-4')}
+        className={sourceHandleClass}
       />
       <Handle
         type="target"
         id="target-right"
         position={Position.Right}
-        className={cn(targetHandleClass, '!translate-y-4')}
+        className={targetHandleClass}
       />
       <Handle
         type="source"
         id="source-top"
         position={Position.Top}
-        className={cn(sourceHandleClass, '!-translate-x-4')}
+        className={sourceHandleClass}
       />
       <Handle
         type="target"
         id="target-top"
         position={Position.Top}
-        className={cn(targetHandleClass, '!translate-x-4')}
+        className={targetHandleClass}
       />
       <Handle
         type="source"
         id="source-bottom"
         position={Position.Bottom}
-        className={cn(sourceHandleClass, '!-translate-x-4')}
+        className={sourceHandleClass}
       />
       <Handle
         type="target"
         id="target-bottom"
         position={Position.Bottom}
-        className={cn(targetHandleClass, '!translate-x-4')}
+        className={targetHandleClass}
       />
       <span className="flex min-w-0 items-start justify-between gap-2">
         <span className="min-w-0 truncate text-[11px] font-semibold uppercase opacity-60">{t(`workflows.stepTypes.${step.type}`, { defaultValue: step.type.replace('_', ' ') })}</span>
-        {step.type === 'parallel_stage' ? (
-          <span className="inline-flex shrink-0 rounded-full bg-white/70 px-2 py-0.5 text-[10px] font-medium leading-none opacity-75 dark:bg-black/20">
-            {t('workflows.detail.branchCount', { count: step.branches?.length ?? 0 })}
-          </span>
-        ) : null}
       </span>
       <span className="mt-1 line-clamp-1 text-sm font-semibold">{step.title}</span>
       <span className="mt-auto flex w-full min-w-0 items-center justify-between gap-2 pt-1">
         <span className="truncate text-xs opacity-60">
           {step.type === 'parallel_stage' ? t('workflows.detail.parallelAggregator') : (step.actorRole || 'system')}
         </span>
-        {status ? (
-          <span className={cn('rounded-full px-2 py-0.5 text-[10px] font-medium', statusClass[status] ?? statusClass.pending)}>
-            {t(`workflows.stepStatus.${status}`, { defaultValue: status })}
-          </span>
-        ) : null}
+        <span className="flex shrink-0 items-center gap-1">
+          {status ? (
+            <span className={cn('rounded-full px-2 py-0.5 text-[10px] font-medium', statusClass[status] ?? statusClass.pending)}>
+              {t(`workflows.stepStatus.${status}`, { defaultValue: status })}
+            </span>
+          ) : null}
+          {step.type === 'parallel_stage' ? (
+            <span className="inline-flex rounded-full bg-white/70 px-2 py-0.5 text-[10px] font-medium leading-none opacity-75 dark:bg-black/20">
+              {t('workflows.detail.branchCount', { count: step.branches?.length ?? 0 })}
+            </span>
+          ) : null}
+        </span>
       </span>
     </div>
   )
@@ -1098,10 +1100,38 @@ export function WorkflowBoard({
     })
   }
 
+  function moveSelectedNodes(dx: number, dy: number) {
+    if (!editable || !onChange) return
+    const ids = new Set(selectedNodeIds.length > 0 ? selectedNodeIds : selected ? [selected.id] : [])
+    if (ids.size === 0) return
+    const nextDefinition = {
+      ...definition,
+      steps: definition.steps.map((step) => (
+        ids.has(step.id)
+          ? { ...step, position: { x: Math.round(step.position.x + dx), y: Math.round(step.position.y + dy) } }
+          : step
+      )),
+    }
+    updateDefinition(nextDefinition)
+    setNodes((current) => current.map((node) => (
+      ids.has(node.id)
+        ? { ...node, position: { x: Math.round(node.position.x + dx), y: Math.round(node.position.y + dy) } }
+        : node
+    )))
+  }
+
   useEffect(() => {
     if (!editable) return
     function handleKeyDown(event: KeyboardEvent) {
       if (isTextEditingTarget(event.target)) return
+      if (!event.metaKey && !event.ctrlKey && !event.altKey && ['ArrowLeft', 'ArrowRight', 'ArrowUp', 'ArrowDown'].includes(event.key)) {
+        event.preventDefault()
+        const distance = event.shiftKey ? 24 : 8
+        if (event.key === 'ArrowLeft') moveSelectedNodes(-distance, 0)
+        if (event.key === 'ArrowRight') moveSelectedNodes(distance, 0)
+        if (event.key === 'ArrowUp') moveSelectedNodes(0, -distance)
+        if (event.key === 'ArrowDown') moveSelectedNodes(0, distance)
+      }
       if ((event.metaKey || event.ctrlKey) && !event.shiftKey && event.key.toLowerCase() === 'z') {
         event.preventDefault()
         undoLastChange()
@@ -1121,17 +1151,15 @@ export function WorkflowBoard({
     }
     window.addEventListener('keydown', handleKeyDown)
     return () => window.removeEventListener('keydown', handleKeyDown)
-  }, [clipboard, editable, onChange, selectedId, selectedEdgeId, selectedNodeIds, undoStack])
+  }, [clipboard, definition, editable, onChange, selectedId, selectedEdgeId, selectedNodeIds, undoStack])
 
   function alignedPosition(node: WorkflowNode, allNodes: WorkflowNode[]) {
     let x = Math.round(node.position.x)
     let y = Math.round(node.position.y)
     const nodeWidth = node.type === 'parallelPreview' ? PARALLEL_PREVIEW_WIDTH : WORKFLOW_NODE_WIDTH
     const nodeHeight = node.type === 'parallelPreview' ? Math.max(160, 70 + Math.max(1, node.data.step.branches?.length ?? 0) * PARALLEL_PREVIEW_ROW_HEIGHT) : WORKFLOW_NODE_HEIGHT
-    const nodeRight = x + nodeWidth
-    const nodeBottom = y + nodeHeight
-    const nodeCenterX = x + nodeWidth / 2
-    const nodeCenterY = y + nodeHeight / 2
+    let bestXDelta = ALIGN_THRESHOLD + 1
+    let bestYDelta = ALIGN_THRESHOLD + 1
     for (const other of allNodes) {
       if (other.id === node.id) continue
       if (other.type !== 'workflowStep') continue
@@ -1143,19 +1171,27 @@ export function WorkflowBoard({
       const otherBottom = otherY + otherHeight
       const otherCenterX = otherX + otherWidth / 2
       const otherCenterY = otherY + otherHeight / 2
-      if (Math.abs(x - otherX) <= ALIGN_THRESHOLD) {
-        x = otherX
-      } else if (Math.abs(nodeRight - otherRight) <= ALIGN_THRESHOLD) {
-        x = otherRight - nodeWidth
-      } else if (Math.abs(nodeCenterX - otherCenterX) <= ALIGN_THRESHOLD) {
-        x = Math.round(otherCenterX - nodeWidth / 2)
+      const xCandidates = [
+        { delta: Math.abs(x - otherX), value: otherX },
+        { delta: Math.abs(x + nodeWidth - otherRight), value: otherRight - nodeWidth },
+        { delta: Math.abs(x + nodeWidth / 2 - otherCenterX), value: Math.round(otherCenterX - nodeWidth / 2) },
+      ]
+      for (const candidate of xCandidates) {
+        if (candidate.delta <= ALIGN_THRESHOLD && candidate.delta < bestXDelta) {
+          bestXDelta = candidate.delta
+          x = candidate.value
+        }
       }
-      if (Math.abs(y - otherY) <= ALIGN_THRESHOLD) {
-        y = otherY
-      } else if (Math.abs(nodeBottom - otherBottom) <= ALIGN_THRESHOLD) {
-        y = otherBottom - nodeHeight
-      } else if (Math.abs(nodeCenterY - otherCenterY) <= ALIGN_THRESHOLD) {
-        y = Math.round(otherCenterY - nodeHeight / 2)
+      const yCandidates = [
+        { delta: Math.abs(y - otherY), value: otherY },
+        { delta: Math.abs(y + nodeHeight - otherBottom), value: otherBottom - nodeHeight },
+        { delta: Math.abs(y + nodeHeight / 2 - otherCenterY), value: Math.round(otherCenterY - nodeHeight / 2) },
+      ]
+      for (const candidate of yCandidates) {
+        if (candidate.delta <= ALIGN_THRESHOLD && candidate.delta < bestYDelta) {
+          bestYDelta = candidate.delta
+          y = candidate.value
+        }
       }
     }
     return { x, y }
@@ -1449,6 +1485,12 @@ export function WorkflowBoard({
             draggingNodeRef.current = true
             setDraggingNode(true)
           }}
+          onNodeDrag={(_, node, nextNodes) => {
+            const workflowNode = node as WorkflowNode
+            const aligned = alignedPosition(workflowNode, nextNodes as WorkflowNode[])
+            if (aligned.x === Math.round(workflowNode.position.x) && aligned.y === Math.round(workflowNode.position.y)) return
+            setNodes((current) => current.map((item) => (item.id === workflowNode.id ? { ...item, position: aligned } : item)))
+          }}
           onNodeDragStop={(_, node, nextNodes) => {
             const workflowNode = node as WorkflowNode
             if (workflowNode.type === 'parallelPreview') {
@@ -1524,8 +1566,7 @@ export function WorkflowBoard({
           maxZoom={1.8}
           connectionMode={ConnectionMode.Loose}
           connectionRadius={72}
-          snapToGrid={editable}
-          snapGrid={[24, 24]}
+          snapToGrid={false}
           panOnScroll
           zoomOnPinch
           nodesDraggable={editable}
