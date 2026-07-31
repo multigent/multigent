@@ -1562,12 +1562,12 @@ export function WorkflowBoard({
           onSelectionChange={({ nodes: selectedNodes, edges: selectedEdges }) => {
             const nodeIDs = selectedNodes.filter((node) => node.type === 'workflowStep').map((node) => node.id)
             const edgeID = selectedEdges[0]?.id || ''
-            if (nodeIDs.length > 0) {
+            if (nodeIDs.length > 1) {
               setSelectedNodeIds((current) => (sameStringArray(current, nodeIDs) ? current : nodeIDs))
               setSelectedEdgeId('')
-              if (nodeIDs.length === 1) setSelectedId(nodeIDs[0])
               return
             }
+            if (nodeIDs.length === 1) return
             if (edgeID) {
               setSelectedNodeIds([])
               setSelectedEdgeId(edgeID)
