@@ -1,5 +1,19 @@
 # Changelog
 
+## [v0.1.23] - 2026-07-31
+
+### Added
+
+- Workflow parallel stages now expand into an on-canvas subflow preview when selected, making branch structure visible without leaving the workflow board.
+
+### Improved
+
+- Workflow parallel-stage cards now keep branch-count metadata in the lower-right content area without covering node labels.
+- Workflow board node and edge handles now align more predictably, with cleaner edge endpoints and less visual offset.
+- Workflow board dragging now follows the pointer smoothly, supports edge/center alignment snapping, and lets selected nodes move with arrow keys.
+- Parallel subflow preview panels can be dragged temporarily on the canvas without changing the saved workflow definition.
+- Parallel branch settings in the inspector now have stronger visual grouping.
+
 ## [v0.1.22] - 2026-07-31
 
 ### Added
