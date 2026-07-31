@@ -1291,6 +1291,9 @@ func (s *Server) handleCreateUser(w http.ResponseWriter, r *http.Request) {
 	workspaceRole := WorkspaceRoleMember
 	workspaceID, workspaceErr := s.currentWorkspaceID()
 	if workspaceErr == nil && workspaceID != "" {
+		if !s.checkSeatEntitlement(w, r, workspaceID, 1, false) {
+			return
+		}
 		switch body.WorkspaceRole {
 		case WorkspaceRoleOwner, WorkspaceRoleAdmin, WorkspaceRoleMember, WorkspaceRoleGuest:
 			workspaceRole = body.WorkspaceRole
@@ -1383,6 +1386,9 @@ func (s *Server) handleCreateInvitation(w http.ResponseWriter, r *http.Request) 
 	body.AgentGrants = normalizeAgentGrants(body.AgentGrants)
 	if err := validateScopedAccessForWorkspaceRole(role, body.Projects, body.AgentGrants); err != nil {
 		s.jsonErrorCode(w, http.StatusBadRequest, ErrCodeValidationFailed, err.Error())
+		return
+	}
+	if !s.checkSeatEntitlement(w, r, workspaceID, len(emails), true) {
 		return
 	}
 
@@ -1578,6 +1584,11 @@ func (s *Server) handleAcceptInvitation(w http.ResponseWriter, r *http.Request) 
 	if err := s.readJSON(w, r, &body); err != nil {
 		s.jsonErrorCode(w, http.StatusBadRequest, ErrCodeInvalidRequestBody, "invalid request body")
 		return
+	}
+	if inv, ok := s.users.Invitation(token); ok && inv.WorkspaceID != "" && s.controlDB != nil {
+		if !s.checkSeatEntitlement(w, r, inv.WorkspaceID, 1, false) {
+			return
+		}
 	}
 	user, err := s.users.AcceptInvitation(token, strings.TrimSpace(body.Password), strings.TrimSpace(body.DisplayName))
 	if err != nil {

@@ -542,6 +542,9 @@ func (s *Server) handleCreateRuntimeNodeJoinToken(w http.ResponseWriter, r *http
 			}
 		}
 	} else {
+		if !s.checkRuntimeNodeEntitlement(w, r, workspaceID, 1) {
+			return
+		}
 		name := strings.TrimSpace(body.Name)
 		if name == "" {
 			name = "Runtime Node"

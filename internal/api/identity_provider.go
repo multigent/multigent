@@ -26,9 +26,10 @@ const (
 )
 
 type authenticatedIdentity struct {
-	Username string
-	Source   identitySource
-	Err      error
+	Username     string
+	Source       identitySource
+	Entitlements *workspaceEntitlements
+	Err          error
 }
 
 type identityProvider interface {
@@ -89,6 +90,7 @@ func (p trustedProxyIdentityProvider) Authenticate(r *http.Request) (authenticat
 	userID := strings.TrimSpace(r.Header.Get(trustedProxyUserIDHeader))
 	email := normalizeEmail(r.Header.Get(trustedProxyUserEmailHeader))
 	workspaceID := strings.TrimSpace(r.Header.Get(trustedProxyWorkspaceIDHeader))
+	entitlementsRaw := strings.TrimSpace(r.Header.Get(trustedProxyEntitlementsHeader))
 	ts := strings.TrimSpace(r.Header.Get(trustedProxyTimestampHeader))
 	sig := strings.TrimSpace(r.Header.Get(trustedProxySignatureHeader))
 	if userID == "" || email == "" || workspaceID == "" || ts == "" || sig == "" {
@@ -98,12 +100,20 @@ func (p trustedProxyIdentityProvider) Authenticate(r *http.Request) (authenticat
 	if err != nil || time.Since(parsed) > 5*time.Minute || time.Until(parsed) > 5*time.Minute {
 		return authenticatedIdentity{Err: errors.New("invalid trusted proxy timestamp")}, true
 	}
-	msg := strings.Join([]string{ts, userID, email, workspaceID}, "\n")
+	msgParts := []string{ts, userID, email, workspaceID}
+	if entitlementsRaw != "" {
+		msgParts = append(msgParts, entitlementsRaw)
+	}
+	msg := strings.Join(msgParts, "\n")
 	mac := hmac.New(sha256.New, []byte(secret))
 	mac.Write([]byte(msg))
 	want := hex.EncodeToString(mac.Sum(nil))
 	if !hmac.Equal([]byte(want), []byte(sig)) {
 		return authenticatedIdentity{Err: errors.New("invalid trusted proxy signature")}, true
+	}
+	entitlements, err := decodeTrustedProxyEntitlements(entitlementsRaw)
+	if err != nil {
+		return authenticatedIdentity{Err: errors.New("invalid trusted proxy entitlements")}, true
 	}
 	username, err := p.server.ensureTrustedProxyUser(email, strings.TrimSpace(r.Header.Get(trustedProxyUserNameHeader)))
 	if err != nil {
@@ -114,7 +124,7 @@ func (p trustedProxyIdentityProvider) Authenticate(r *http.Request) (authenticat
 			_ = p.server.ensureCurrentUserMembership(currentWorkspaceID, username)
 		}
 	}
-	return authenticatedIdentity{Username: username, Source: identitySourceTrustedProxy}, true
+	return authenticatedIdentity{Username: username, Source: identitySourceTrustedProxy, Entitlements: entitlements}, true
 }
 
 func parseTrustedProxyTimestamp(raw string) (time.Time, error) {

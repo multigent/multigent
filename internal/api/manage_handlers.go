@@ -107,6 +107,11 @@ func (s *Server) handleHireAgent(w http.ResponseWriter, r *http.Request) {
 		s.jsonError(w, http.StatusBadRequest, "name, team, and model are required")
 		return
 	}
+	if entity.AgentModel(model) != entity.ModelHuman {
+		if !s.checkAgentEntitlement(w, r, 1) {
+			return
+		}
+	}
 
 	args := []string{
 		"--dir", s.root,

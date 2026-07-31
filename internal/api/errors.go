@@ -46,6 +46,7 @@ const (
 	ErrCodeWorkspaceNameRequired        = "workspace_name_required"
 	ErrCodeWorkspaceNotFound            = "workspace_not_found"
 	ErrCodeWorkspaceDatabaseUnavailable = "workspace_database_unavailable"
+	ErrCodeBillingLimitExceeded         = "billing_limit_exceeded"
 
 	ErrCodeAssistantModelRequired       = "assistant_model_required"
 	ErrCodeAssistantProviderInvalid     = "assistant_provider_invalid"

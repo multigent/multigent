@@ -29,11 +29,14 @@ type contextKey string
 
 const ctxUserKey contextKey = "auth-user"
 const ctxAuthSourceKey contextKey = "auth-source"
+const ctxEntitlementsKey contextKey = "billing-entitlements"
 const requestedWorkspaceHeader = "X-Multigent-Workspace-ID"
 const trustedProxyUserIDHeader = "X-Multigent-Proxy-User-ID"
 const trustedProxyUserEmailHeader = "X-Multigent-Proxy-User-Email"
 const trustedProxyUserNameHeader = "X-Multigent-Proxy-User-Name"
+const trustedProxyOrgIDHeader = "X-Multigent-Proxy-Org-ID"
 const trustedProxyWorkspaceIDHeader = "X-Multigent-Proxy-Workspace-ID"
+const trustedProxyEntitlementsHeader = "X-Multigent-Proxy-Entitlements"
 const trustedProxyTimestampHeader = "X-Multigent-Proxy-Timestamp"
 const trustedProxySignatureHeader = "X-Multigent-Proxy-Signature"
 
@@ -251,6 +254,7 @@ func (s *Server) Handler() http.Handler {
 	mux.HandleFunc("POST /api/v1/workspaces/{id}/switch", s.handleSwitchWorkspace)
 	mux.HandleFunc("DELETE /api/v1/workspaces/{id}", s.handleDeleteWorkspace)
 	mux.HandleFunc("GET /api/v1/audit/events", s.handleAuditEvents)
+	mux.HandleFunc("GET /api/v1/billing/entitlements", s.handleBillingEntitlements)
 	mux.HandleFunc("GET /api/v1/connectors/providers", s.handleConnectorProviders)
 	mux.HandleFunc("GET /api/v1/connectors/providers/{provider}", s.handleConnectorProvider)
 	mux.HandleFunc("POST /api/v1/connectors/providers/{provider}/setup/begin", s.handleConnectorProviderSetupBegin)
@@ -588,6 +592,9 @@ func (s *Server) withTokenAuth(next http.Handler) http.Handler {
 		}
 		ctx := context.WithValue(r.Context(), ctxUserKey, identity.Username)
 		ctx = context.WithValue(ctx, ctxAuthSourceKey, identity.Source)
+		if identity.Entitlements != nil {
+			ctx = context.WithValue(ctx, ctxEntitlementsKey, *identity.Entitlements)
+		}
 		req := r.WithContext(ctx)
 		if !s.applyRequestedWorkspace(w, req) {
 			return
