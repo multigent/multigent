@@ -29,6 +29,12 @@ type contextKey string
 
 const ctxUserKey contextKey = "auth-user"
 const requestedWorkspaceHeader = "X-Multigent-Workspace-ID"
+const saasUserIDHeader = "X-Multigent-SaaS-User-ID"
+const saasUserEmailHeader = "X-Multigent-SaaS-User-Email"
+const saasUserNameHeader = "X-Multigent-SaaS-User-Name"
+const saasWorkspaceIDHeader = "X-Multigent-SaaS-Workspace-ID"
+const saasTimestampHeader = "X-Multigent-SaaS-Timestamp"
+const saasSignatureHeader = "X-Multigent-SaaS-Signature"
 
 // UpdateChecker returns latest version info. Set by the caller.
 type UpdateChecker func() (latestVersion, releaseNotes string, hasUpdate bool, channel string, updateCommand string)
@@ -240,6 +246,7 @@ func (s *Server) Handler() http.Handler {
 	mux.HandleFunc("GET /api/v1/workspaces", s.handleListWorkspaces)
 	mux.HandleFunc("POST /api/v1/workspaces", s.handleCreateWorkspace)
 	mux.HandleFunc("POST /api/v1/workspaces/example", s.handleCreateExampleWorkspace)
+	mux.HandleFunc("POST /api/v1/workspaces/current/example", s.handleSeedCurrentExampleWorkspace)
 	mux.HandleFunc("POST /api/v1/workspaces/{id}/switch", s.handleSwitchWorkspace)
 	mux.HandleFunc("DELETE /api/v1/workspaces/{id}", s.handleDeleteWorkspace)
 	mux.HandleFunc("GET /api/v1/audit/events", s.handleAuditEvents)
@@ -564,6 +571,16 @@ func withJSONHeaders(next http.Handler) http.Handler {
 
 func (s *Server) withTokenAuth(next http.Handler) http.Handler {
 	return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		if username, ok := s.saasProxyUser(r); ok {
+			ctx := context.WithValue(r.Context(), ctxUserKey, username)
+			req := r.WithContext(ctx)
+			if !s.applyRequestedWorkspace(w, req) {
+				return
+			}
+			next.ServeHTTP(w, req)
+			return
+		}
+
 		var token string
 		if auth := r.Header.Get("Authorization"); strings.HasPrefix(auth, "Bearer ") {
 			token = strings.TrimPrefix(auth, "Bearer ")

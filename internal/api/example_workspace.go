@@ -119,6 +119,104 @@ func (s *Server) handleCreateExampleWorkspace(w http.ResponseWriter, r *http.Req
 	_ = json.NewEncoder(w).Encode(ref)
 }
 
+func (s *Server) handleSeedCurrentExampleWorkspace(w http.ResponseWriter, r *http.Request) {
+	cur := s.currentUser(r)
+	if cur == nil || cur.Username == "" || cur.Username == "apikey" {
+		s.jsonErrorCode(w, http.StatusForbidden, ErrCodeAuthenticatedUserRequired, "authenticated user required")
+		return
+	}
+	if s.controlDB == nil {
+		s.jsonErrorCode(w, http.StatusServiceUnavailable, ErrCodeWorkspaceDatabaseUnavailable, "control database unavailable")
+		return
+	}
+	workspaceID, err := s.currentWorkspaceID()
+	if err != nil {
+		s.serverError(w, err)
+		return
+	}
+	if !s.canAdminWorkspace(r, workspaceID) {
+		s.jsonErrorCode(w, http.StatusForbidden, ErrCodeWorkspaceAdminRequired, "workspace admin access required")
+		return
+	}
+	var body struct {
+		Locale      string `json:"locale"`
+		Name        string `json:"name"`
+		Description string `json:"description"`
+	}
+	if r.Body != nil && r.ContentLength != 0 {
+		if err := s.readJSON(w, r, &body); err != nil {
+			s.jsonErrorCode(w, http.StatusBadRequest, ErrCodeInvalidJSON, "invalid JSON body")
+			return
+		}
+	}
+	if existing, err := s.st.Project(exampleProjectName); err == nil && existing != nil {
+		s.updateCurrentExampleAgency(body.Name, body.Description, cur.Username)
+		_ = json.NewEncoder(w).Encode(map[string]any{
+			"ok":        true,
+			"seeded":    false,
+			"project":   exampleProjectName,
+			"workflow":  exampleWorkflowID,
+			"workspace": workspaceID,
+		})
+		return
+	}
+	spec := exampleWorkspaceSpec(preferredExampleLocale(body.Locale, r.Header.Get("Accept-Language")))
+	if strings.TrimSpace(body.Description) == "" {
+		body.Description = spec.WorkspaceDescription
+	}
+	s.updateCurrentExampleAgency(body.Name, body.Description, cur.Username)
+	if err := seedExampleWorkspace(s.root, workspaceID, cur.Username, spec, s.st, s.ts, s.controlDB); err != nil {
+		s.serverError(w, err)
+		return
+	}
+	s.auditLog(auditLogInput{
+		WorkspaceID:  workspaceID,
+		Action:       "workspace.example.seed",
+		ResourceType: "workspace",
+		ResourceID:   workspaceID,
+		Summary:      "Example content seeded into current workspace",
+		After: map[string]any{
+			"project":  exampleProjectName,
+			"workflow": exampleWorkflowID,
+		},
+		Request: r,
+	})
+	_ = json.NewEncoder(w).Encode(map[string]any{
+		"ok":        true,
+		"seeded":    true,
+		"project":   exampleProjectName,
+		"workflow":  exampleWorkflowID,
+		"workspace": workspaceID,
+	})
+}
+
+func (s *Server) updateCurrentExampleAgency(name, description, username string) {
+	name = strings.TrimSpace(name)
+	description = strings.TrimSpace(description)
+	if name == "" && description == "" {
+		return
+	}
+	agency, err := s.st.Agency()
+	if err != nil {
+		return
+	}
+	now := time.Now().UTC().Format(time.RFC3339)
+	if name != "" {
+		agency.Name = name
+	}
+	if description != "" {
+		agency.Description = description
+	}
+	if strings.TrimSpace(agency.CreatedBy) == "" {
+		agency.CreatedBy = username
+	}
+	if strings.TrimSpace(agency.CreatedAt) == "" {
+		agency.CreatedAt = now
+	}
+	agency.UpdatedAt = now
+	_ = s.st.SaveAgency(agency)
+}
+
 func seedExampleWorkspace(root, workspaceID, username string, spec exampleLocaleSpec, st store.Store, ts taskstore.Store, db controldb.Store) error {
 	if err := st.SaveAgencyPrompt(spec.AgencyPrompt); err != nil {
 		return fmt.Errorf("save agency prompt: %w", err)

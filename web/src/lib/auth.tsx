@@ -3,6 +3,7 @@ import { createContext, useCallback, useContext, useEffect, useMemo, useState, t
 const TOKEN_KEY = 'multigent-token'
 const USER_KEY = 'multigent-user'
 const WORKSPACE_ID_KEY = 'multigent-workspace-id'
+const SAAS_PROXY_TOKEN = 'saas-proxy'
 
 export type ProjectAccess = {
   project: string
@@ -43,7 +44,7 @@ const AuthContext = createContext<AuthContextType>({
 })
 
 export function AuthProvider({ children }: { children: ReactNode }) {
-  const [token, setToken] = useState<string | null>(() => localStorage.getItem(TOKEN_KEY))
+  const [token, setToken] = useState<string | null>(() => initialToken())
   const [user, setUser] = useState<AuthUser | null>(() => {
     try {
       const raw = localStorage.getItem(USER_KEY)
@@ -90,7 +91,17 @@ export function useAuth() {
 }
 
 export function getStoredToken(): string | null {
+  if (isSaaSProxyPath()) return SAAS_PROXY_TOKEN
   return localStorage.getItem(TOKEN_KEY)
+}
+
+function initialToken(): string | null {
+  if (isSaaSProxyPath()) return SAAS_PROXY_TOKEN
+  return localStorage.getItem(TOKEN_KEY)
+}
+
+function isSaaSProxyPath(): boolean {
+  return typeof window !== 'undefined' && window.location.pathname.startsWith('/w/')
 }
 
 const projectRolePower: Record<string, number> = {
