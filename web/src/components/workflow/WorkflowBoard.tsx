@@ -385,6 +385,15 @@ function reviewBranchWorkflow(branchId: string, title: string, actorRole: string
   }
 }
 
+function branchIDFromTitle(title: string, fallback: string): string {
+  const normalized = title
+    .trim()
+    .toLowerCase()
+    .replace(/[^a-z0-9]+/g, '_')
+    .replace(/^_+|_+$/g, '')
+  return normalized || fallback
+}
+
 function workflowFirstStep(def?: WorkflowDefinition): WorkflowStep | undefined {
   if (!def?.steps?.length) return undefined
   return def.steps.find((step) => step.id === def.startStepId) ?? def.steps[0]
@@ -1652,6 +1661,14 @@ function BranchTable({
   }
 
   function linkExistingWorkflow(index: number, workflowID: string) {
+    if (workflowID === '__preset_simple') {
+      setSimpleSubflow(index)
+      return
+    }
+    if (workflowID === '__preset_review') {
+      setReviewSubflow(index)
+      return
+    }
     const workflow = availableWorkflows.find((item) => item.id === workflowID)
     if (!workflow) {
       updateBranch(index, { workflow: undefined })
@@ -1668,16 +1685,28 @@ function BranchTable({
     })
   }
 
+  function subflowSelectValue(branch: WorkflowBranch) {
+    const workflow = branch.workflow
+    if (!workflow) return ''
+    if (availableWorkflows.some((item) => item.id === workflow.id)) return workflow.id
+    if (workflow.scope === 'branch') {
+      if ((workflow.steps ?? []).length === 1) return '__preset_simple'
+      if ((workflow.steps ?? []).some((step) => step.type === 'human_review')) return '__preset_review'
+    }
+    return ''
+  }
+
   function addBranch() {
     const next = branches.length + 1
+    const id = `branch_${next}`
     onChange([
       ...branches,
       {
-        id: `branch_${next}`,
+        id,
         title: `Branch ${next}`,
         actorRole: `agent_${next}`,
-        outputFields: [{ name: `branch_${next}_doc_id`, description: 'Knowledge base docID for this branch output.' }],
-        workflow: simpleBranchWorkflow(`branch_${next}`, `Branch ${next}`, `agent_${next}`, `branch_${next}_doc_id`),
+        outputFields: [{ name: `${id}_doc_id`, description: 'Knowledge base docID for this branch output.' }],
+        workflow: simpleBranchWorkflow(id, `Branch ${next}`, `agent_${next}`, `${id}_doc_id`),
       },
     ])
   }
@@ -1703,32 +1732,26 @@ function BranchTable({
         ) : (
           branches.map((branch, index) => (
             <div key={`${branch.id}:${index}`} className="space-y-3 rounded-lg border border-neutral-200 bg-neutral-50/60 p-3 dark:border-zinc-700 dark:bg-zinc-800/40">
-              <div className="grid grid-cols-2 gap-2">
-                <label className="block">
-                  <span className="mb-1 block text-[11px] font-medium uppercase text-neutral-400 dark:text-zinc-500">{t('workflows.detail.branchId')}</span>
-                  <input
-                    value={branch.id}
-                    onChange={(event) => updateBranch(index, { id: event.target.value })}
-                    placeholder="frontend_spec"
-                    className="w-full rounded-md border border-neutral-300 bg-white px-2 py-1.5 text-xs text-neutral-900 outline-none focus:border-sky-400 dark:border-zinc-600 dark:bg-zinc-800 dark:text-zinc-100"
-                  />
-                </label>
-                <label className="block">
-                  <span className="mb-1 block text-[11px] font-medium uppercase text-neutral-400 dark:text-zinc-500">{t('workflows.detail.branchRole')}</span>
-                  <input
-                    value={branch.actorRole || ''}
-                    onChange={(event) => updateBranchActorRole(index, event.target.value)}
-                    placeholder="frontend_engineer"
-                    className="w-full rounded-md border border-neutral-300 bg-white px-2 py-1.5 text-xs text-neutral-900 outline-none focus:border-sky-400 dark:border-zinc-600 dark:bg-zinc-800 dark:text-zinc-100"
-                  />
-                </label>
-              </div>
               <label className="block">
                 <span className="mb-1 block text-[11px] font-medium uppercase text-neutral-400 dark:text-zinc-500">{t('workflows.detail.branchTitle')}</span>
                 <input
                   value={branch.title}
-                  onChange={(event) => updateBranch(index, { title: event.target.value })}
+                  onChange={(event) => {
+                    const title = event.target.value
+                    const currentID = branch.id || `branch_${index + 1}`
+                    const shouldRefreshGeneratedID = currentID === `branch_${index + 1}` || currentID === branchIDFromTitle(branch.title || '', `branch_${index + 1}`)
+                    updateBranch(index, { title, id: shouldRefreshGeneratedID ? branchIDFromTitle(title, `branch_${index + 1}`) : currentID })
+                  }}
                   placeholder={t('workflows.detail.branchTitlePlaceholder')}
+                  className="w-full rounded-md border border-neutral-300 bg-white px-2 py-1.5 text-xs text-neutral-900 outline-none focus:border-sky-400 dark:border-zinc-600 dark:bg-zinc-800 dark:text-zinc-100"
+                />
+              </label>
+              <label className="block">
+                <span className="mb-1 block text-[11px] font-medium uppercase text-neutral-400 dark:text-zinc-500">{t('workflows.detail.branchRole')}</span>
+                <input
+                  value={branch.actorRole || ''}
+                  onChange={(event) => updateBranchActorRole(index, event.target.value)}
+                  placeholder="frontend_engineer"
                   className="w-full rounded-md border border-neutral-300 bg-white px-2 py-1.5 text-xs text-neutral-900 outline-none focus:border-sky-400 dark:border-zinc-600 dark:bg-zinc-800 dark:text-zinc-100"
                 />
               </label>
@@ -1742,33 +1765,31 @@ function BranchTable({
                   className="w-full resize-y rounded-md border border-neutral-300 bg-white px-2 py-1.5 text-xs text-neutral-900 outline-none focus:border-sky-400 dark:border-zinc-600 dark:bg-zinc-800 dark:text-zinc-100"
                 />
               </label>
-              {availableWorkflows.length > 0 ? (
-                <label className="block">
-                  <span className="mb-1 block text-[11px] font-medium uppercase text-neutral-400 dark:text-zinc-500">{t('workflows.detail.linkedSubflow')}</span>
-                  <select
-                    value={availableWorkflows.some((item) => item.id === branch.workflow?.id) ? branch.workflow?.id : ''}
-                    onChange={(event) => linkExistingWorkflow(index, event.target.value)}
-                    className="w-full rounded-md border border-neutral-300 bg-white px-2 py-1.5 text-xs text-neutral-900 outline-none focus:border-sky-400 dark:border-zinc-600 dark:bg-zinc-800 dark:text-zinc-100"
-                  >
-                    <option value="">{t('workflows.detail.noLinkedSubflow')}</option>
-                    {availableWorkflows.map((workflow) => (
-                      <option key={workflow.id} value={workflow.id}>{workflow.name}</option>
-                    ))}
-                  </select>
-                </label>
-              ) : null}
+              <label className="block">
+                <span className="mb-1 block text-[11px] font-medium uppercase text-neutral-400 dark:text-zinc-500">{t('workflows.detail.linkedSubflow')}</span>
+                <select
+                  value={subflowSelectValue(branch)}
+                  onChange={(event) => linkExistingWorkflow(index, event.target.value)}
+                  className="w-full rounded-md border border-neutral-300 bg-white px-2 py-1.5 text-xs text-neutral-900 outline-none focus:border-sky-400 dark:border-zinc-600 dark:bg-zinc-800 dark:text-zinc-100"
+                >
+                  <option value="">{t('workflows.detail.noLinkedSubflow')}</option>
+                  <option value="__preset_simple">{t('workflows.detail.simpleSubflowPreset')}</option>
+                  <option value="__preset_review">{t('workflows.detail.reviewSubflowPreset')}</option>
+                  {availableWorkflows.length > 0 ? (
+                    <option disabled value="__divider_existing">──────────</option>
+                  ) : null}
+                  {availableWorkflows.map((workflow) => (
+                    <option key={workflow.id} value={workflow.id}>{workflow.name}</option>
+                  ))}
+                </select>
+                {availableWorkflows.length === 0 ? (
+                  <span className="mt-1 block text-xs text-neutral-400 dark:text-zinc-500">{t('workflows.detail.noSubflowsAvailable')}</span>
+                ) : null}
+              </label>
               <div className="flex flex-wrap items-center justify-between gap-2 rounded-md border border-neutral-200 bg-white px-2 py-2 dark:border-zinc-700 dark:bg-zinc-900">
                 <span className="text-xs text-neutral-500 dark:text-zinc-400">
                   {t('workflows.detail.subflowNodeCount', { count: branch.workflow?.steps?.length ?? 1 })}
                 </span>
-                <div className="flex flex-wrap gap-2">
-                  <button type="button" onClick={() => setSimpleSubflow(index)} className="rounded-md border border-neutral-300 px-2 py-1 text-xs text-neutral-600 hover:bg-neutral-50 dark:border-zinc-600 dark:text-zinc-300 dark:hover:bg-zinc-800">
-                    {t('workflows.detail.simpleSubflow')}
-                  </button>
-                  <button type="button" onClick={() => setReviewSubflow(index)} className="rounded-md border border-neutral-300 px-2 py-1 text-xs text-neutral-600 hover:bg-neutral-50 dark:border-zinc-600 dark:text-zinc-300 dark:hover:bg-zinc-800">
-                    {t('workflows.detail.reviewSubflow')}
-                  </button>
-                </div>
               </div>
               <FieldTable title={t('workflows.detail.input')} fields={branch.inputFields ?? []} onChange={(fields) => updateBranchFields(index, 'inputFields', fields)} />
               <FieldTable title={t('workflows.detail.output')} fields={branch.outputFields ?? []} onChange={(fields) => updateBranchFields(index, 'outputFields', fields)} />

@@ -3,6 +3,7 @@ package main
 import (
 	"fmt"
 	"os"
+	"regexp"
 	"strings"
 	"text/tabwriter"
 	"time"
@@ -29,6 +30,7 @@ a workflow through a task template and then move across agent and human steps.`,
 		newWorkflowUpdateCmd(),
 		newWorkflowDeleteCmd(),
 		newWorkflowExportCmd(),
+		newWorkflowScaffoldCmd(),
 	)
 	return cmd
 }
@@ -258,6 +260,88 @@ func newWorkflowExportCmd() *cobra.Command {
 	return cmd
 }
 
+func newWorkflowScaffoldCmd() *cobra.Command {
+	cmd := &cobra.Command{
+		Use:   "scaffold",
+		Short: "Generate workflow JSON scaffolds",
+	}
+	cmd.AddCommand(newWorkflowScaffoldParallelCmd())
+	return cmd
+}
+
+func newWorkflowScaffoldParallelCmd() *cobra.Command {
+	var workspaceRef, name, description, startRole, startTitle, stageTitle, joinPolicy, finalReviewRole, out string
+	var save bool
+	var branches []string
+	cmd := &cobra.Command{
+		Use:   "parallel",
+		Short: "Generate a workflow with one parallel subworkflow stage",
+		Long: `Generate a workflow definition with a normal starting step, one parallel
+stage, and optional final human review.
+
+Each --branch value uses "title=actor_role" or "title:actor_role". The branch is
+generated as a child subworkflow, so it can later be expanded into multiple
+serial steps without changing the parent workflow shape.`,
+		Example: `  multigent workflow scaffold parallel \
+    --name "Frontend and backend design" \
+    --start-role pm \
+    --branch "Frontend technical spec=frontend_engineer" \
+    --branch "Backend technical spec=backend_engineer" \
+    --final-review-role tech_lead \
+    --out workflow.json
+
+  multigent workflow scaffold parallel \
+    --name "Market research split" \
+    --branch "Customer research=researcher" \
+    --branch "Competitor research=analyst" \
+    --join any \
+    --save`,
+		RunE: func(cmd *cobra.Command, args []string) error {
+			def, err := scaffoldParallelWorkflow(scaffoldParallelWorkflowOptions{
+				Name:            name,
+				Description:     description,
+				StartRole:       startRole,
+				StartTitle:      startTitle,
+				StageTitle:      stageTitle,
+				JoinPolicy:      joinPolicy,
+				FinalReviewRole: finalReviewRole,
+				Branches:        branches,
+			})
+			if err != nil {
+				return err
+			}
+			if err := validateWorkflowDefinition(def); err != nil {
+				return err
+			}
+			if save {
+				ctx, err := openCLIWorkspaceDB(workspaceRef)
+				if err != nil {
+					return err
+				}
+				defer ctx.Close()
+				if err := workflowstore.NewStore(ctx.db, ctx.workspaceID).SaveDefinition(&def); err != nil {
+					return err
+				}
+			}
+			return writeJSONFile(out, def)
+		},
+	}
+	cmd.Flags().StringVar(&workspaceRef, "workspace", "", "workspace id, name, slug, or root path, used with --save")
+	cmd.Flags().StringVar(&name, "name", "", "workflow name")
+	cmd.Flags().StringVar(&description, "description", "", "workflow description")
+	cmd.Flags().StringVar(&startRole, "start-role", "pm", "actor role for the first preparation step")
+	cmd.Flags().StringVar(&startTitle, "start-title", "Prepare workflow input", "title for the first preparation step")
+	cmd.Flags().StringVar(&stageTitle, "stage-title", "Run parallel subflows", "title for the parallel stage")
+	cmd.Flags().StringVar(&joinPolicy, "join", "all", "parallel join policy: all or any")
+	cmd.Flags().StringVar(&finalReviewRole, "final-review-role", "", "optional human reviewer role after all required branches finish")
+	cmd.Flags().StringArrayVar(&branches, "branch", nil, "parallel branch as title=actor_role, repeatable")
+	cmd.Flags().StringVar(&out, "out", "", "write JSON to file instead of stdout")
+	cmd.Flags().BoolVar(&save, "save", false, "save the generated workflow into the workspace")
+	_ = cmd.MarkFlagRequired("name")
+	_ = cmd.MarkFlagRequired("branch")
+	return cmd
+}
+
 func loadWorkflowDefinition(workspaceRef, id string) (entity.WorkflowDefinition, error) {
 	ctx, err := openCLIWorkspaceDB(workspaceRef)
 	if err != nil {
@@ -275,8 +359,16 @@ func loadWorkflowDefinition(workspaceRef, id string) (entity.WorkflowDefinition,
 }
 
 func normalizeWorkflowDefinition(def *entity.WorkflowDefinition, preserveID bool) {
+	normalizeWorkflowDefinitionWithFallback(def, preserveID, "")
+}
+
+func normalizeWorkflowDefinitionWithFallback(def *entity.WorkflowDefinition, preserveID bool, fallbackID string) {
 	if !preserveID && strings.TrimSpace(def.ID) == "" {
-		def.ID = entity.NewWorkflowID()
+		if strings.TrimSpace(fallbackID) != "" {
+			def.ID = strings.TrimSpace(fallbackID)
+		} else {
+			def.ID = entity.NewWorkflowID()
+		}
 	}
 	def.ID = strings.TrimSpace(def.ID)
 	def.Name = strings.TrimSpace(def.Name)
@@ -294,41 +386,84 @@ func normalizeWorkflowDefinition(def *entity.WorkflowDefinition, preserveID bool
 		if strings.TrimSpace(def.Steps[i].Type) == "" {
 			def.Steps[i].Type = "agent_task"
 		}
+		if def.Steps[i].Type == "parallel_stage" {
+			def.Steps[i].JoinPolicy = normalizeWorkflowJoinPolicy(def.Steps[i].JoinPolicy)
+		}
+		for j := range def.Steps[i].Branches {
+			branch := &def.Steps[i].Branches[j]
+			branch.ID = strings.TrimSpace(branch.ID)
+			branch.Title = strings.TrimSpace(branch.Title)
+			branch.ActorRole = strings.TrimSpace(branch.ActorRole)
+			if branch.Workflow != nil {
+				fallback := strings.Trim(strings.Join([]string{def.ID, def.Steps[i].ID, branch.ID, "workflow"}, "-"), "-")
+				normalizeWorkflowDefinitionWithFallback(branch.Workflow, false, fallback)
+			}
+		}
 	}
 }
 
 func validateWorkflowDefinition(def entity.WorkflowDefinition) error {
+	return validateWorkflowDefinitionAt(def, "workflow")
+}
+
+func validateWorkflowDefinitionAt(def entity.WorkflowDefinition, path string) error {
 	if strings.TrimSpace(def.Name) == "" {
-		return fmt.Errorf("workflow name is required")
+		return fmt.Errorf("%s name is required", path)
 	}
 	if len(def.Steps) == 0 {
-		return fmt.Errorf("workflow must contain at least one step")
+		return fmt.Errorf("%s must contain at least one step", path)
 	}
 	stepIDs := map[string]bool{}
 	for _, step := range def.Steps {
 		if step.ID == "" {
-			return fmt.Errorf("workflow step id is required")
+			return fmt.Errorf("%s step id is required", path)
 		}
 		if step.Title == "" {
-			return fmt.Errorf("workflow step %q title is required", step.ID)
+			return fmt.Errorf("%s step %q title is required", path, step.ID)
 		}
 		if stepIDs[step.ID] {
-			return fmt.Errorf("duplicate workflow step id %q", step.ID)
+			return fmt.Errorf("%s has duplicate step id %q", path, step.ID)
 		}
 		stepIDs[step.ID] = true
+		if step.Type == "parallel_stage" {
+			if policy := normalizeWorkflowJoinPolicy(step.JoinPolicy); policy != "all" && policy != "any" {
+				return fmt.Errorf("%s parallel step %q has invalid joinPolicy %q", path, step.ID, step.JoinPolicy)
+			}
+			if len(step.Branches) == 0 {
+				return fmt.Errorf("%s parallel step %q must include at least one branch", path, step.ID)
+			}
+			branchIDs := map[string]bool{}
+			for _, branch := range step.Branches {
+				if strings.TrimSpace(branch.ID) == "" {
+					return fmt.Errorf("%s parallel step %q branch id is required", path, step.ID)
+				}
+				if strings.TrimSpace(branch.Title) == "" {
+					return fmt.Errorf("%s parallel step %q branch %q title is required", path, step.ID, branch.ID)
+				}
+				if branchIDs[branch.ID] {
+					return fmt.Errorf("%s parallel step %q has duplicate branch id %q", path, step.ID, branch.ID)
+				}
+				branchIDs[branch.ID] = true
+				if branch.Workflow != nil {
+					if err := validateWorkflowDefinitionAt(*branch.Workflow, path+"."+step.ID+"."+branch.ID); err != nil {
+						return err
+					}
+				}
+			}
+		}
 	}
 	if !stepIDs[def.StartStepID] {
-		return fmt.Errorf("startStepId %q does not match any step", def.StartStepID)
+		return fmt.Errorf("%s startStepId %q does not match any step", path, def.StartStepID)
 	}
 	for _, edge := range def.Edges {
 		if edge.From == "" || edge.To == "" {
-			return fmt.Errorf("workflow edge must include from and to")
+			return fmt.Errorf("%s edge must include from and to", path)
 		}
 		if !stepIDs[edge.From] {
-			return fmt.Errorf("workflow edge references missing from step %q", edge.From)
+			return fmt.Errorf("%s edge references missing from step %q", path, edge.From)
 		}
 		if !stepIDs[edge.To] {
-			return fmt.Errorf("workflow edge references missing to step %q", edge.To)
+			return fmt.Errorf("%s edge references missing to step %q", path, edge.To)
 		}
 	}
 	return nil
@@ -357,4 +492,205 @@ func formatWorkflowTime(t time.Time) string {
 		return "-"
 	}
 	return t.Local().Format("2006-01-02 15:04")
+}
+
+type scaffoldParallelWorkflowOptions struct {
+	Name            string
+	Description     string
+	StartRole       string
+	StartTitle      string
+	StageTitle      string
+	JoinPolicy      string
+	FinalReviewRole string
+	Branches        []string
+}
+
+func scaffoldParallelWorkflow(opts scaffoldParallelWorkflowOptions) (entity.WorkflowDefinition, error) {
+	name := strings.TrimSpace(opts.Name)
+	if name == "" {
+		return entity.WorkflowDefinition{}, fmt.Errorf("workflow name is required")
+	}
+	branches, err := parseScaffoldBranches(opts.Branches)
+	if err != nil {
+		return entity.WorkflowDefinition{}, err
+	}
+	joinPolicy := normalizeWorkflowJoinPolicy(opts.JoinPolicy)
+	if joinPolicy != "all" && joinPolicy != "any" {
+		return entity.WorkflowDefinition{}, fmt.Errorf("--join must be all or any")
+	}
+	startRole := strings.TrimSpace(opts.StartRole)
+	if startRole == "" {
+		startRole = "pm"
+	}
+	startTitle := strings.TrimSpace(opts.StartTitle)
+	if startTitle == "" {
+		startTitle = "Prepare workflow input"
+	}
+	stageTitle := strings.TrimSpace(opts.StageTitle)
+	if stageTitle == "" {
+		stageTitle = "Run parallel subflows"
+	}
+	now := time.Now().UTC()
+	def := entity.WorkflowDefinition{
+		ID:          entity.NewWorkflowID(),
+		Name:        name,
+		Description: strings.TrimSpace(opts.Description),
+		Version:     1,
+		Scope:       "workspace",
+		StartStepID: "prepare_input",
+		CreatedAt:   now,
+		UpdatedAt:   now,
+		Steps: []entity.WorkflowStep{
+			{
+				ID:          "prepare_input",
+				Type:        "agent_task",
+				Title:       startTitle,
+				Description: "Clarify the original request and prepare structured input for the parallel subflows.",
+				ActorRole:   startRole,
+				OutputFields: []entity.WorkflowField{
+					{Name: "brief_doc_id", Description: "Knowledge docID for the shared brief."},
+					{Name: "summary", Description: "Short summary of the work to split."},
+				},
+				Position: entity.WorkflowPosition{X: 80, Y: 160},
+			},
+			{
+				ID:          "parallel_subflows",
+				Type:        "parallel_stage",
+				Title:       stageTitle,
+				Description: "Start every configured child subflow. This stage aggregates child outputs when the join policy is satisfied.",
+				InputFields: []entity.WorkflowField{
+					{Name: "brief_doc_id", Description: "Knowledge docID for the shared brief."},
+					{Name: "summary", Description: "Short summary of the work to split."},
+				},
+				Branches:   branches,
+				JoinPolicy: joinPolicy,
+				Position:   entity.WorkflowPosition{X: 420, Y: 160},
+			},
+		},
+		Edges: []entity.WorkflowEdge{
+			{ID: "e-prepare_input-parallel_subflows", From: "prepare_input", To: "parallel_subflows"},
+		},
+	}
+	if reviewRole := strings.TrimSpace(opts.FinalReviewRole); reviewRole != "" {
+		def.Steps = append(def.Steps, entity.WorkflowStep{
+			ID:          "final_review",
+			Type:        "human_review",
+			Title:       "Review aggregated branch outputs",
+			Description: "Review the combined outputs from all required parallel branches.",
+			ActorRole:   reviewRole,
+			OutputFields: []entity.WorkflowField{
+				{Name: "decision", Description: "Decision: approve or request_changes."},
+				{Name: "comments", Description: "Review comments or approval note."},
+			},
+			Position: entity.WorkflowPosition{X: 760, Y: 160},
+		})
+		def.Edges = append(def.Edges, entity.WorkflowEdge{ID: "e-parallel_subflows-final_review", From: "parallel_subflows", To: "final_review"})
+	}
+	return def, nil
+}
+
+func parseScaffoldBranches(items []string) ([]entity.WorkflowBranch, error) {
+	if len(items) == 0 {
+		return nil, fmt.Errorf("at least one --branch is required")
+	}
+	out := make([]entity.WorkflowBranch, 0, len(items))
+	seen := map[string]int{}
+	for i, item := range items {
+		title, role, err := parseScaffoldBranch(item)
+		if err != nil {
+			return nil, err
+		}
+		id := slugID(title)
+		if id == "" {
+			id = fmt.Sprintf("branch_%d", i+1)
+		}
+		if count := seen[id]; count > 0 {
+			seen[id] = count + 1
+			id = fmt.Sprintf("%s_%d", id, count+1)
+		} else {
+			seen[id] = 1
+		}
+		workflowID := id + "_subflow"
+		out = append(out, entity.WorkflowBranch{
+			ID:          id,
+			Title:       title,
+			Description: "Run this child subflow independently and return structured outputs to the parent stage.",
+			ActorRole:   role,
+			InputFields: []entity.WorkflowField{
+				{Name: "brief_doc_id", Description: "Knowledge docID for the shared brief."},
+				{Name: "summary", Description: "Short summary from the parent preparation step."},
+			},
+			OutputFields: []entity.WorkflowField{
+				{Name: "result_doc_id", Description: "Knowledge docID for this branch result."},
+				{Name: "summary", Description: "Short summary of this branch result."},
+			},
+			Workflow: &entity.WorkflowDefinition{
+				ID:          workflowID,
+				Name:        title,
+				Description: "Single-step child subflow generated by multigent workflow scaffold parallel.",
+				Version:     1,
+				Scope:       "workspace",
+				StartStepID: "work",
+				Steps: []entity.WorkflowStep{
+					{
+						ID:          "work",
+						Type:        "agent_task",
+						Title:       title,
+						Description: "Complete this branch and return the required structured outputs.",
+						ActorRole:   role,
+						InputFields: []entity.WorkflowField{
+							{Name: "brief_doc_id", Description: "Knowledge docID for the shared brief."},
+							{Name: "summary", Description: "Short summary from the parent preparation step."},
+						},
+						OutputFields: []entity.WorkflowField{
+							{Name: "result_doc_id", Description: "Knowledge docID for this branch result."},
+							{Name: "summary", Description: "Short summary of this branch result."},
+						},
+						Position: entity.WorkflowPosition{X: 80, Y: 120},
+					},
+				},
+				Edges: []entity.WorkflowEdge{},
+			},
+		})
+	}
+	return out, nil
+}
+
+func parseScaffoldBranch(item string) (string, string, error) {
+	item = strings.TrimSpace(item)
+	if item == "" {
+		return "", "", fmt.Errorf("--branch cannot be empty")
+	}
+	sep := strings.Index(item, "=")
+	if sep < 0 {
+		sep = strings.LastIndex(item, ":")
+	}
+	if sep < 0 {
+		return "", "", fmt.Errorf("--branch %q must use title=actor_role", item)
+	}
+	title := strings.TrimSpace(item[:sep])
+	role := strings.TrimSpace(item[sep+1:])
+	if title == "" || role == "" {
+		return "", "", fmt.Errorf("--branch %q must include both title and actor_role", item)
+	}
+	return title, role, nil
+}
+
+func normalizeWorkflowJoinPolicy(value string) string {
+	value = strings.TrimSpace(strings.ToLower(value))
+	if value == "" {
+		return "all"
+	}
+	return value
+}
+
+var workflowIDInvalid = regexp.MustCompile(`[^a-z0-9_]+`)
+
+func slugID(value string) string {
+	out := strings.ToLower(strings.TrimSpace(value))
+	out = strings.ReplaceAll(out, "-", "_")
+	out = strings.ReplaceAll(out, " ", "_")
+	out = workflowIDInvalid.ReplaceAllString(out, "_")
+	out = strings.Trim(out, "_")
+	return out
 }

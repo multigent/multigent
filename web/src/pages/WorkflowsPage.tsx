@@ -351,7 +351,7 @@ export default function WorkflowsPage() {
               onToggleFullscreen={() => setFullscreen((v) => !v)}
               onChange={setDraft}
               collaborationChannels={collaborationChannels}
-              availableWorkflows={workflows.filter((workflow) => workflow.id !== draft.id)}
+              availableWorkflows={workflows.filter((workflow) => workflow.id !== draft.id && workflow.scope !== 'branch')}
             />
             </div>
           </div>
