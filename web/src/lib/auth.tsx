@@ -62,6 +62,28 @@ export function AuthProvider({ children }: { children: ReactNode }) {
     setUser(u)
   }, [])
 
+  useEffect(() => {
+    if (!isSaaSProxyPath() || token !== SAAS_PROXY_TOKEN) return
+    let cancelled = false
+    fetch('/api/v1/auth/me', {
+      headers: {
+        Accept: 'application/json',
+        Authorization: `Bearer ${SAAS_PROXY_TOKEN}`,
+      },
+    })
+      .then((res) => res.ok ? res.json() : null)
+      .then((next: AuthUser | null) => {
+        if (!cancelled && next) {
+          localStorage.setItem(USER_KEY, JSON.stringify(next))
+          setUser(next)
+        }
+      })
+      .catch(() => {})
+    return () => {
+      cancelled = true
+    }
+  }, [token])
+
   const logout = useCallback(() => {
     if (isSaaSProxyPath()) {
       void fetch('/saas/api/auth/logout', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: '{}' })
