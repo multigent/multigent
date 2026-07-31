@@ -1,4 +1,4 @@
-import { useEffect, useMemo, useRef, useState } from 'react'
+import { useCallback, useEffect, useMemo, useRef, useState, type MouseEvent } from 'react'
 import { useTranslation } from 'react-i18next'
 import type { ELK, ElkNode } from 'elkjs'
 import {
@@ -186,6 +186,7 @@ type WorkflowNodeData = {
   connectingSource?: boolean
   connectingTarget?: boolean
   branchInstances?: WorkflowBranchInstance[]
+  onSelect?: (nodeID: string) => void
 }
 
 type WorkflowNode = Node<WorkflowNodeData, 'workflowStep' | 'parallelPreview'>
@@ -702,6 +703,11 @@ function WorkflowStepNode({ data, selected }: NodeProps<WorkflowNode>) {
   )
   return (
     <div
+      onMouseDown={(event: MouseEvent<HTMLDivElement>) => {
+        if (event.button !== 0) return
+        if (event.ctrlKey || event.metaKey || event.shiftKey) return
+        localSelected || data.onSelect?.(step.id)
+      }}
       className={cn(
         'relative flex h-[88px] w-[198px] flex-col rounded-xl border px-3 py-2 text-left shadow-sm transition-all',
         nodeClass,
@@ -950,6 +956,12 @@ export function WorkflowBoard({
     setUndoStack([])
   }, [definition.id])
 
+  const selectWorkflowNode = useCallback((nodeID: string) => {
+    setSelectedId(nodeID)
+    setSelectedEdgeId('')
+    setSelectedNodeIds([nodeID])
+  }, [])
+
   const initialNodes = useMemo<WorkflowNode[]>(
     () => {
       const baseNodes: WorkflowNode[] = definition.steps.map((step) => {
@@ -964,6 +976,7 @@ export function WorkflowBoard({
             status: inst?.status,
             active,
             selected: selectedId === step.id || selectedNodeIds.includes(step.id),
+            onSelect: selectWorkflowNode,
             connectingSource: connectionSourceId === step.id,
             connectingTarget: Boolean(connectionSourceId && connectionSourceId !== step.id && connectionTargetId === step.id),
           },
@@ -995,7 +1008,7 @@ export function WorkflowBoard({
       }
       return baseNodes
     },
-    [definition.steps, instanceByStep, run?.activeStepId, connectionSourceId, connectionTargetId, compact, previewPositions, selected, selectedInst?.status, selectedBranches, selectedId, selectedNodeIds],
+    [definition.steps, instanceByStep, run?.activeStepId, connectionSourceId, connectionTargetId, compact, previewPositions, selected, selectedInst?.status, selectedBranches, selectedId, selectedNodeIds, selectWorkflowNode],
   )
 
   const initialEdges = useMemo<Edge[]>(
@@ -1538,9 +1551,7 @@ export function WorkflowBoard({
           }}
           onNodeClick={(_, node) => {
             if (node.type !== 'workflowStep') return
-            setSelectedId(node.id)
-            setSelectedEdgeId('')
-            setSelectedNodeIds([node.id])
+            selectWorkflowNode(node.id)
           }}
           onEdgeClick={(event, edge) => {
             event.stopPropagation()
