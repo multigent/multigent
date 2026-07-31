@@ -1563,9 +1563,6 @@ export function WorkflowBoard({
               setSelectedId('')
               return
             }
-            setSelectedNodeIds((current) => (current.length ? [] : current))
-            setSelectedEdgeId((current) => (current ? '' : current))
-            setSelectedId((current) => (current ? '' : current))
           }}
           onPaneClick={() => {
             setSelectedId('')
