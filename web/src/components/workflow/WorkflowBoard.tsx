@@ -182,6 +182,7 @@ type WorkflowNodeData = {
   step: WorkflowStep
   status?: string
   active: boolean
+  selected?: boolean
   connectingSource?: boolean
   connectingTarget?: boolean
   branchInstances?: WorkflowBranchInstance[]
@@ -688,7 +689,8 @@ function isTextEditingTarget(target: EventTarget | null) {
 
 function WorkflowStepNode({ data, selected }: NodeProps<WorkflowNode>) {
   const { t } = useTranslation()
-  const { step, status, active, connectingSource, connectingTarget } = data
+  const { step, status, active, selected: localSelected, connectingSource, connectingTarget } = data
+  const highlighted = Boolean(localSelected || selected)
   const nodeClass = colorClass[step.config?.color || ''] ?? typeClass[step.type] ?? colorClass.neutral
   const targetHandleClass = cn(
     '!h-3 !w-3 !border-2 !border-white !bg-neutral-400 transition-all dark:!border-zinc-950 dark:!bg-zinc-500',
@@ -704,12 +706,12 @@ function WorkflowStepNode({ data, selected }: NodeProps<WorkflowNode>) {
         'relative flex h-[88px] w-[198px] flex-col rounded-xl border px-3 py-2 text-left shadow-sm transition-all',
         nodeClass,
         active && 'ring-2 ring-sky-400 ring-offset-2 ring-offset-white dark:ring-sky-500 dark:ring-offset-zinc-950',
-        selected && 'border-sky-500 shadow-lg ring-2 ring-sky-500 ring-offset-2 ring-offset-white dark:border-sky-400 dark:ring-sky-400 dark:ring-offset-zinc-950',
-        connectingSource && !selected && 'ring-2 ring-sky-300 ring-offset-2 ring-offset-white dark:ring-sky-500/80 dark:ring-offset-zinc-950',
+        highlighted && 'border-sky-500 shadow-lg ring-2 ring-sky-500 ring-offset-2 ring-offset-white dark:border-sky-400 dark:ring-sky-400 dark:ring-offset-zinc-950',
+        connectingSource && !highlighted && 'ring-2 ring-sky-300 ring-offset-2 ring-offset-white dark:ring-sky-500/80 dark:ring-offset-zinc-950',
         connectingTarget && 'scale-[1.02] border-emerald-500 shadow-xl shadow-emerald-900/10 ring-4 ring-emerald-400/25 dark:border-emerald-400 dark:shadow-black/30 dark:ring-emerald-400/20',
       )}
     >
-      {selected ? <span className="absolute -right-1.5 -top-1.5 size-3 rounded-full border-2 border-white bg-sky-500 dark:border-zinc-950 dark:bg-sky-400" /> : null}
+      {highlighted ? <span className="absolute -right-1.5 -top-1.5 size-3 rounded-full border-2 border-white bg-sky-500 dark:border-zinc-950 dark:bg-sky-400" /> : null}
       <Handle
         type="target"
         id="target-left"
@@ -961,6 +963,7 @@ export function WorkflowBoard({
             step,
             status: inst?.status,
             active,
+            selected: selectedId === step.id || selectedNodeIds.includes(step.id),
             connectingSource: connectionSourceId === step.id,
             connectingTarget: Boolean(connectionSourceId && connectionSourceId !== step.id && connectionTargetId === step.id),
           },
@@ -992,7 +995,7 @@ export function WorkflowBoard({
       }
       return baseNodes
     },
-    [definition.steps, instanceByStep, run?.activeStepId, connectionSourceId, connectionTargetId, compact, previewPositions, selected, selectedInst?.status, selectedBranches, selectedId],
+    [definition.steps, instanceByStep, run?.activeStepId, connectionSourceId, connectionTargetId, compact, previewPositions, selected, selectedInst?.status, selectedBranches, selectedId, selectedNodeIds],
   )
 
   const initialEdges = useMemo<Edge[]>(
@@ -1558,7 +1561,11 @@ export function WorkflowBoard({
               setSelectedNodeIds([])
               setSelectedEdgeId(edgeID)
               setSelectedId('')
+              return
             }
+            setSelectedNodeIds((current) => (current.length ? [] : current))
+            setSelectedEdgeId((current) => (current ? '' : current))
+            setSelectedId((current) => (current ? '' : current))
           }}
           onPaneClick={() => {
             setSelectedId('')
