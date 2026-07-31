@@ -1,5 +1,13 @@
 # Changelog
 
+## [v0.1.24] - 2026-07-31
+
+### Fixed
+
+- Workflow branch editors now keep focus while typing, so editing parallel branch titles and settings no longer drops the cursor after each keypress.
+- Workflow board node selection now renders from Multigent's local selection state, reducing stale React Flow selection races that could require a second click or briefly highlight multiple nodes.
+- Workflow board node clicks now select on pointer press with click fallback, making rapid node-to-node switching more reliable.
+
 ## [v0.1.23] - 2026-07-31
 
 ### Added
