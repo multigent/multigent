@@ -28,13 +28,14 @@ import (
 type contextKey string
 
 const ctxUserKey contextKey = "auth-user"
+const ctxAuthSourceKey contextKey = "auth-source"
 const requestedWorkspaceHeader = "X-Multigent-Workspace-ID"
-const saasUserIDHeader = "X-Multigent-SaaS-User-ID"
-const saasUserEmailHeader = "X-Multigent-SaaS-User-Email"
-const saasUserNameHeader = "X-Multigent-SaaS-User-Name"
-const saasWorkspaceIDHeader = "X-Multigent-SaaS-Workspace-ID"
-const saasTimestampHeader = "X-Multigent-SaaS-Timestamp"
-const saasSignatureHeader = "X-Multigent-SaaS-Signature"
+const trustedProxyUserIDHeader = "X-Multigent-Proxy-User-ID"
+const trustedProxyUserEmailHeader = "X-Multigent-Proxy-User-Email"
+const trustedProxyUserNameHeader = "X-Multigent-Proxy-User-Name"
+const trustedProxyWorkspaceIDHeader = "X-Multigent-Proxy-Workspace-ID"
+const trustedProxyTimestampHeader = "X-Multigent-Proxy-Timestamp"
+const trustedProxySignatureHeader = "X-Multigent-Proxy-Signature"
 
 // UpdateChecker returns latest version info. Set by the caller.
 type UpdateChecker func() (latestVersion, releaseNotes string, hasUpdate bool, channel string, updateCommand string)
@@ -423,6 +424,7 @@ func (s *Server) Handler() http.Handler {
 	mux.HandleFunc("POST /api/v1/scheduler/wakeup", s.handleSchedulerWakeup)
 	mux.HandleFunc("POST /api/v1/scheduler/abort", s.handleSchedulerAbort)
 	mux.HandleFunc("GET /api/v1/inbox", s.handleInbox)
+	mux.HandleFunc("GET /api/v1/auth/bootstrap", s.handleAuthBootstrap)
 	mux.HandleFunc("GET /api/v1/auth/me", s.handleAuthMe)
 	mux.HandleFunc("PUT /api/v1/auth/password", s.handleChangePassword)
 
@@ -571,48 +573,21 @@ func withJSONHeaders(next http.Handler) http.Handler {
 
 func (s *Server) withTokenAuth(next http.Handler) http.Handler {
 	return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
-		if username, ok := s.saasProxyUser(r); ok {
-			ctx := context.WithValue(r.Context(), ctxUserKey, username)
-			req := r.WithContext(ctx)
-			if !s.applyRequestedWorkspace(w, req) {
-				return
-			}
-			next.ServeHTTP(w, req)
-			return
-		}
-
-		var token string
-		if auth := r.Header.Get("Authorization"); strings.HasPrefix(auth, "Bearer ") {
-			token = strings.TrimPrefix(auth, "Bearer ")
-		} else if t := r.URL.Query().Get("_token"); t != "" {
-			token = t
-		}
-		if token == "" {
+		identity, ok := s.authenticateRequest(r)
+		if !ok {
 			s.jsonErrorCode(w, http.StatusUnauthorized, ErrCodeUnauthorized, "unauthorized")
 			return
 		}
-
-		// Legacy: static API key
-		if s.apiKey != "" && token == s.apiKey {
-			ctx := context.WithValue(r.Context(), ctxUserKey, "apikey")
-			req := r.WithContext(ctx)
-			if !s.applyRequestedWorkspace(w, req) {
-				return
+		if identity.Err != nil {
+			if errors.Is(identity.Err, errIdentityForbidden) {
+				s.jsonErrorCode(w, http.StatusForbidden, ErrCodeForbidden, identity.Err.Error())
+			} else {
+				s.jsonErrorCode(w, http.StatusUnauthorized, ErrCodeUnauthorized, identity.Err.Error())
 			}
-			next.ServeHTTP(w, req)
 			return
 		}
-
-		username, ok := s.users.ValidateToken(token)
-		if !ok {
-			s.jsonErrorCode(w, http.StatusUnauthorized, ErrCodeUnauthorized, "invalid or expired token")
-			return
-		}
-		if u := s.users.GetUser(username); u != nil && u.Disabled {
-			s.jsonErrorCode(w, http.StatusForbidden, ErrCodeForbidden, "account disabled")
-			return
-		}
-		ctx := context.WithValue(r.Context(), ctxUserKey, username)
+		ctx := context.WithValue(r.Context(), ctxUserKey, identity.Username)
+		ctx = context.WithValue(ctx, ctxAuthSourceKey, identity.Source)
 		req := r.WithContext(ctx)
 		if !s.applyRequestedWorkspace(w, req) {
 			return

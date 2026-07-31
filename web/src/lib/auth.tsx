@@ -3,7 +3,7 @@ import { createContext, useCallback, useContext, useEffect, useMemo, useState, t
 const TOKEN_KEY = 'multigent-token'
 const USER_KEY = 'multigent-user'
 const WORKSPACE_ID_KEY = 'multigent-workspace-id'
-const SAAS_PROXY_TOKEN = 'saas-proxy'
+const TRUSTED_PROXY_TOKEN = 'trusted-proxy'
 
 export type ProjectAccess = {
   project: string
@@ -27,6 +27,11 @@ export type AuthUser = {
   projects?: ProjectAccess[]
   agentGrants?: AgentAccess[]
   linkedAgents?: string[]
+}
+
+type AuthBootstrapResponse = {
+  authMode: 'local_token' | 'static_api_key' | 'trusted_proxy' | string
+  user: AuthUser
 }
 
 type AuthContextType = {
@@ -63,19 +68,19 @@ export function AuthProvider({ children }: { children: ReactNode }) {
   }, [])
 
   useEffect(() => {
-    if (!isSaaSProxyPath() || token !== SAAS_PROXY_TOKEN) return
+    if (!isTrustedProxyPath() || token !== TRUSTED_PROXY_TOKEN) return
     let cancelled = false
-    fetch('/api/v1/auth/me', {
+    fetch('/api/v1/auth/bootstrap', {
       headers: {
         Accept: 'application/json',
-        Authorization: `Bearer ${SAAS_PROXY_TOKEN}`,
+        Authorization: `Bearer ${TRUSTED_PROXY_TOKEN}`,
       },
     })
       .then((res) => res.ok ? res.json() : null)
-      .then((next: AuthUser | null) => {
-        if (!cancelled && next) {
-          localStorage.setItem(USER_KEY, JSON.stringify(next))
-          setUser(next)
+      .then((next: AuthBootstrapResponse | null) => {
+        if (!cancelled && next?.user) {
+          localStorage.setItem(USER_KEY, JSON.stringify(next.user))
+          setUser(next.user)
         }
       })
       .catch(() => {})
@@ -85,8 +90,8 @@ export function AuthProvider({ children }: { children: ReactNode }) {
   }, [token])
 
   const logout = useCallback(() => {
-    if (isSaaSProxyPath()) {
-      void fetch('/saas/api/auth/logout', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: '{}' })
+    if (isTrustedProxyPath()) {
+      void fetch('/api/v1/auth/logout', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: '{}' })
         .catch(() => null)
         .finally(() => {
           window.location.href = '/sign-up'
@@ -120,24 +125,24 @@ export function useAuth() {
 }
 
 export function getStoredToken(): string | null {
-  if (isSaaSProxyPath()) return SAAS_PROXY_TOKEN
+  if (isTrustedProxyPath()) return TRUSTED_PROXY_TOKEN
   return localStorage.getItem(TOKEN_KEY)
 }
 
 function initialToken(): string | null {
-  if (isSaaSProxyPath()) return SAAS_PROXY_TOKEN
+  if (isTrustedProxyPath()) return TRUSTED_PROXY_TOKEN
   return localStorage.getItem(TOKEN_KEY)
 }
 
-function isSaaSProxyPath(): boolean {
+function isTrustedProxyPath(): boolean {
   if (typeof window === 'undefined') return false
-  if (!hasSaaSModeCookie()) return false
+  if (!hasTrustedProxyCookie()) return false
   const match = /^\/([a-z0-9][a-z0-9-]*)(\/|$)/.exec(window.location.pathname)
   return Boolean(match && !appRouteSegments.has(match[1]))
 }
 
-function hasSaaSModeCookie(): boolean {
-  return typeof document !== 'undefined' && document.cookie.split(';').some((item) => item.trim() === 'mg_saas_mode=1')
+function hasTrustedProxyCookie(): boolean {
+  return typeof document !== 'undefined' && document.cookie.split(';').some((item) => item.trim() === 'mg_trusted_proxy=1')
 }
 
 const appRouteSegments = new Set([

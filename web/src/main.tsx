@@ -9,14 +9,14 @@ import { AuthProvider } from './lib/auth'
 import { ThemeProvider } from './theme/ThemeProvider'
 
 function routerBasename() {
-  if (!hasSaaSModeCookie()) return undefined
+  if (!hasTrustedProxyCookie()) return undefined
   const bare = /^\/([a-z0-9][a-z0-9-]*)(\/|$)/.exec(window.location.pathname)
   if (bare && !appRouteSegments.has(bare[1])) return `/${bare[1]}`
   return undefined
 }
 
-function hasSaaSModeCookie() {
-  return typeof document !== 'undefined' && document.cookie.split(';').some((item) => item.trim() === 'mg_saas_mode=1')
+function hasTrustedProxyCookie() {
+  return typeof document !== 'undefined' && document.cookie.split(';').some((item) => item.trim() === 'mg_trusted_proxy=1')
 }
 
 const appRouteSegments = new Set([

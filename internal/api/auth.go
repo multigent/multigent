@@ -968,18 +968,41 @@ func (s *Server) handlePutAuthSettings(w http.ResponseWriter, r *http.Request) {
 }
 
 func (s *Server) handleAuthMe(w http.ResponseWriter, r *http.Request) {
+	payload, ok := s.currentAuthUserPayload(w, r)
+	if !ok {
+		return
+	}
+	_ = json.NewEncoder(w).Encode(payload)
+}
+
+func (s *Server) handleAuthBootstrap(w http.ResponseWriter, r *http.Request) {
+	payload, ok := s.currentAuthUserPayload(w, r)
+	if !ok {
+		return
+	}
+	source, _ := r.Context().Value(ctxAuthSourceKey).(identitySource)
+	if source == "" {
+		source = identitySourceLocalToken
+	}
+	_ = json.NewEncoder(w).Encode(map[string]any{
+		"authMode": source,
+		"user":     payload,
+	})
+}
+
+func (s *Server) currentAuthUserPayload(w http.ResponseWriter, r *http.Request) (map[string]any, bool) {
 	username := r.Context().Value(ctxUserKey).(string)
 	user := s.users.GetUser(username)
 	if user == nil {
 		s.jsonErrorCode(w, http.StatusNotFound, ErrCodeUserNotFound, "user not found")
-		return
+		return nil, false
 	}
 	workspaceRole := ""
 	currentUserCanAdmin := false
 	if workspaceID, err := s.ensureCurrentWorkspaceForUser(r); err == nil && workspaceID != "" {
 		workspaceRole, currentUserCanAdmin = s.currentWorkspaceRole(r, workspaceID)
 	}
-	_ = json.NewEncoder(w).Encode(map[string]any{
+	return map[string]any{
 		"username":            user.Username,
 		"role":                user.Role,
 		"workspaceRole":       workspaceRole,
@@ -990,7 +1013,7 @@ func (s *Server) handleAuthMe(w http.ResponseWriter, r *http.Request) {
 		"projects":            user.Projects,
 		"agentGrants":         user.AgentGrants,
 		"linkedAgents":        user.LinkedAgents,
-	})
+	}, true
 }
 
 // RBAC helpers
