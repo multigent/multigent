@@ -109,8 +109,13 @@ function initialToken(): string | null {
 
 function isSaaSProxyPath(): boolean {
   if (typeof window === 'undefined') return false
+  if (!hasSaaSModeCookie()) return false
   const match = /^\/([a-z0-9][a-z0-9-]*)(\/|$)/.exec(window.location.pathname)
   return Boolean(match && !appRouteSegments.has(match[1]))
+}
+
+function hasSaaSModeCookie(): boolean {
+  return typeof document !== 'undefined' && document.cookie.split(';').some((item) => item.trim() === 'mg_saas_mode=1')
 }
 
 const appRouteSegments = new Set([
