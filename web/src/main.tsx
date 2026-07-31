@@ -8,11 +8,16 @@ import App from './App.tsx'
 import { AuthProvider } from './lib/auth'
 import { ThemeProvider } from './theme/ThemeProvider'
 
+function routerBasename() {
+  const match = /^\/w\/[^/]+/.exec(window.location.pathname)
+  return match ? match[0] : undefined
+}
+
 createRoot(document.getElementById('root')!).render(
   <StrictMode>
     <ThemeProvider>
       <AuthProvider>
-        <BrowserRouter>
+        <BrowserRouter basename={routerBasename()}>
           <App />
         </BrowserRouter>
       </AuthProvider>
