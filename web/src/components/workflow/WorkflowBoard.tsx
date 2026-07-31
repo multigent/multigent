@@ -761,11 +761,11 @@ function WorkflowStepNode({ data, selected }: NodeProps<WorkflowNode>) {
       <span className="text-[11px] font-semibold uppercase opacity-60">{t(`workflows.stepTypes.${step.type}`, { defaultValue: step.type.replace('_', ' ') })}</span>
       <span className="mt-1 line-clamp-1 text-sm font-semibold">{step.title}</span>
       {step.type === 'parallel_stage' ? (
-        <span className="mt-1 rounded-full bg-white/70 px-2 py-0.5 text-[10px] font-medium opacity-75 dark:bg-black/20">
+        <span className="mt-1 inline-flex w-fit shrink-0 rounded-full bg-white/70 px-2 py-0.5 text-[10px] font-medium leading-none opacity-75 dark:bg-black/20">
           {t('workflows.detail.branchCount', { count: step.branches?.length ?? 0 })}
         </span>
       ) : null}
-      <span className="mt-auto flex w-full items-center justify-between gap-2">
+      <span className="mt-auto flex w-full min-w-0 items-center justify-between gap-2 pt-1">
         <span className="truncate text-xs opacity-60">
           {step.type === 'parallel_stage' ? t('workflows.detail.parallelAggregator') : (step.actorRole || 'system')}
         </span>
@@ -790,7 +790,7 @@ function ParallelSubflowPreviewNode({ data }: NodeProps<WorkflowNode>) {
   return (
     <div
       style={{ width: PARALLEL_PREVIEW_WIDTH, minHeight: previewHeight }}
-      className="nodrag nopan rounded-2xl border border-violet-200/90 bg-white/95 p-3 text-left shadow-xl shadow-violet-900/10 backdrop-blur dark:border-violet-900/70 dark:bg-zinc-950/95 dark:shadow-black/30"
+      className="nopan cursor-grab rounded-2xl border border-violet-200/90 bg-white/95 p-3 text-left shadow-xl shadow-violet-900/10 backdrop-blur active:cursor-grabbing dark:border-violet-900/70 dark:bg-zinc-950/95 dark:shadow-black/30"
     >
       <Handle type="target" id="target-top" position={Position.Top} className="!h-2 !w-2 !opacity-0" />
       <div className="flex items-center justify-between gap-3 border-b border-violet-100 pb-2 dark:border-violet-900/50">
@@ -924,6 +924,9 @@ export function WorkflowBoard({
   const [connectionTargetId, setConnectionTargetId] = useState('')
   const flowViewportRef = useRef<HTMLDivElement | null>(null)
   const flowInstanceRef = useRef<ReactFlowInstance<WorkflowNode, Edge> | null>(null)
+  const draggingNodeRef = useRef(false)
+  const [draggingNode, setDraggingNode] = useState(false)
+  const [previewPositions, setPreviewPositions] = useState<Record<string, WorkflowPosition>>({})
   const [clipboard, setClipboard] = useState<WorkflowClipboard | null>(null)
   const [layouting, setLayouting] = useState(false)
   const selected = selectedId ? definition.steps.find((s) => s.id === selectedId) : undefined
@@ -961,13 +964,15 @@ export function WorkflowBoard({
         }
       })
       if (!compact && selected?.type === 'parallel_stage') {
+        const previewID = `${selected.id}__parallel_preview`
+        const fallbackPreviewPosition = {
+          x: selected.position.x - 28,
+          y: selected.position.y + WORKFLOW_NODE_HEIGHT + 64,
+        }
         baseNodes.push({
-          id: `${selected.id}__parallel_preview`,
+          id: previewID,
           type: 'parallelPreview',
-          position: {
-            x: selected.position.x - 28,
-            y: selected.position.y + WORKFLOW_NODE_HEIGHT + 64,
-          },
+          position: previewPositions[previewID] ?? fallbackPreviewPosition,
           data: {
             step: selected,
             status: selectedInst?.status,
@@ -975,7 +980,7 @@ export function WorkflowBoard({
             branchInstances: selectedBranches,
           },
           selectable: false,
-          draggable: false,
+          draggable: true,
           connectable: false,
           deletable: false,
           zIndex: 5,
@@ -983,7 +988,7 @@ export function WorkflowBoard({
       }
       return baseNodes
     },
-    [definition.steps, instanceByStep, run?.activeStepId, connectionSourceId, connectionTargetId, compact, selected, selectedInst?.status, selectedBranches, selectedId],
+    [definition.steps, instanceByStep, run?.activeStepId, connectionSourceId, connectionTargetId, compact, previewPositions, selected, selectedInst?.status, selectedBranches, selectedId],
   )
 
   const initialEdges = useMemo<Edge[]>(
@@ -1039,8 +1044,9 @@ export function WorkflowBoard({
   const [edges, setEdges, onEdgesChange] = useEdgesState(initialEdges)
 
   useEffect(() => {
+    if (draggingNode || draggingNodeRef.current) return
     setNodes((current) => (sameWorkflowNodes(current, initialNodes) ? current : initialNodes))
-  }, [initialNodes, setNodes])
+  }, [draggingNode, initialNodes, setNodes])
 
   useEffect(() => {
     setEdges((current) => (sameWorkflowEdges(current, initialEdges) ? current : initialEdges))
@@ -1133,6 +1139,7 @@ export function WorkflowBoard({
 
   function persistNodePositions(nextNodes: WorkflowNode[], draggedNode?: WorkflowNode) {
     if (!editable || !onChange) return
+    if (draggedNode?.type !== 'workflowStep') return
     const posByID = new Map(nextNodes.map((node) => [node.id, draggedNode && node.id === draggedNode.id ? alignedPosition(node, nextNodes) : node.position]))
     updateDefinition({
       ...definition,
@@ -1414,7 +1421,28 @@ export function WorkflowBoard({
           nodeTypes={nodeTypes}
           onNodesChange={onNodesChange}
           onEdgesChange={onEdgesChange}
-          onNodeDragStop={(_, node, nextNodes) => persistNodePositions(nextNodes as WorkflowNode[], node as WorkflowNode)}
+          onNodeDragStart={() => {
+            draggingNodeRef.current = true
+            setDraggingNode(true)
+          }}
+          onNodeDragStop={(_, node, nextNodes) => {
+            const workflowNode = node as WorkflowNode
+            if (workflowNode.type === 'parallelPreview') {
+              setPreviewPositions((current) => ({
+                ...current,
+                [workflowNode.id]: {
+                  x: Math.round(workflowNode.position.x),
+                  y: Math.round(workflowNode.position.y),
+                },
+              }))
+            } else {
+              persistNodePositions(nextNodes as WorkflowNode[], workflowNode)
+            }
+            window.setTimeout(() => {
+              draggingNodeRef.current = false
+              setDraggingNode(false)
+            }, 0)
+          }}
           onConnect={handleConnect}
           onConnectStart={(_, params: OnConnectStartParams) => {
             if (!editable) return
