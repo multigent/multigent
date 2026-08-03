@@ -432,7 +432,7 @@ export default function ProjectAgentDetailPage() {
     ? `/api/v1/projects/${encodeURIComponent(projectId)}/agents/${encodeURIComponent(agentName)}/context`
     : null
   const [ctxReload, setCtxReload] = useState(0)
-  const ctxState = useApiJson<AgentContext>(ctxPath, ctxReload)
+  const ctxState = useApiJson<AgentContext>(ctxPath, ctxReload, { keepPreviousDataOnReload: true })
 
   const [editingIdentity, setEditingIdentity] = useState(false)
   const [identityName, setIdentityName] = useState(agentName ?? '')

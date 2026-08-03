@@ -283,7 +283,14 @@ func (s *Server) handleGetAgentContext(w http.ResponseWriter, r *http.Request) {
 		resp["goals"] = goalSummary
 	}
 
+	workspaceID := ""
+	if id, ok := s.currentWorkspaceForRequest(w, r); ok {
+		workspaceID = id
+	}
 	readiness := buildRuntimeReadinessLight(meta)
+	if workspaceID != "" {
+		readiness = s.runtimeReadinessForExecution(workspaceID, meta)
+	}
 	resp["setupChecks"] = readiness.Checks
 	resp["runtimeReadiness"] = readiness
 
