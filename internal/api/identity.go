@@ -150,7 +150,53 @@ func (s *Server) resolveRuntimeRecipient(principal runtimeAgentPrincipal, input 
 		}
 		return "", fmt.Errorf("recipient %q is ambiguous; use one of: %s", input, strings.Join(ids, ", "))
 	}
+	suggestions := suggestRuntimeContacts(contacts, recipient, 5)
+	if len(suggestions) > 0 {
+		return "", fmt.Errorf("recipient %q not found; did you mean: %s? Use the contact identity value, or run `mga contacts list`", input, strings.Join(suggestions, "; "))
+	}
 	return "", fmt.Errorf("recipient %q not found; run `mga contacts list` to inspect valid identities", input)
+}
+
+func suggestRuntimeContacts(contacts []runtimeContactRow, query string, limit int) []string {
+	needle := strings.ToLower(strings.TrimSpace(query))
+	if needle == "" || limit <= 0 {
+		return nil
+	}
+	out := make([]string, 0, limit)
+	seen := make(map[string]bool)
+	for _, contact := range contacts {
+		haystack := strings.ToLower(strings.Join([]string{
+			contact.Identity,
+			contact.DisplayName,
+			contact.Email,
+			contact.Project,
+			contact.Agent,
+		}, " "))
+		if !strings.Contains(haystack, needle) || seen[contact.Identity] {
+			continue
+		}
+		seen[contact.Identity] = true
+		out = append(out, formatRuntimeContactSuggestion(contact))
+		if len(out) >= limit {
+			break
+		}
+	}
+	return out
+}
+
+func formatRuntimeContactSuggestion(contact runtimeContactRow) string {
+	label := strings.TrimSpace(contact.Identity)
+	var details []string
+	if displayName := strings.TrimSpace(contact.DisplayName); displayName != "" && displayName != label {
+		details = append(details, displayName)
+	}
+	if email := strings.TrimSpace(contact.Email); email != "" && email != label {
+		details = append(details, email)
+	}
+	if len(details) == 0 {
+		return label
+	}
+	return label + " (" + strings.Join(details, ", ") + ")"
 }
 
 func (s *Server) agentExistsInProject(project, agentName string) bool {
