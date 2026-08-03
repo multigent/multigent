@@ -1333,8 +1333,9 @@ func (s *Server) handleCreateUser(w http.ResponseWriter, r *http.Request) {
 }
 
 func (s *Server) invitationURL(r *http.Request, token string) string {
+	prefix := forwardedPathPrefix(r)
 	if origin := strings.TrimRight(r.Header.Get("Origin"), "/"); origin != "" {
-		return fmt.Sprintf("%s/invite/%s", origin, token)
+		return fmt.Sprintf("%s%s/invite/%s", origin, prefix, token)
 	}
 	proto := r.Header.Get("X-Forwarded-Proto")
 	if proto == "" {
@@ -1347,7 +1348,19 @@ func (s *Server) invitationURL(r *http.Request, token string) string {
 	if forwardedHost := r.Header.Get("X-Forwarded-Host"); forwardedHost != "" {
 		host = forwardedHost
 	}
-	return fmt.Sprintf("%s://%s/invite/%s", proto, host, token)
+	return fmt.Sprintf("%s://%s%s/invite/%s", proto, host, prefix, token)
+}
+
+func forwardedPathPrefix(r *http.Request) string {
+	prefix := strings.TrimSpace(r.Header.Get("X-Forwarded-Prefix"))
+	if prefix == "" {
+		return ""
+	}
+	prefix = "/" + strings.Trim(prefix, "/")
+	if prefix == "/" || strings.Contains(prefix, "..") {
+		return ""
+	}
+	return prefix
 }
 
 func (s *Server) handleCreateInvitation(w http.ResponseWriter, r *http.Request) {
@@ -1388,7 +1401,7 @@ func (s *Server) handleCreateInvitation(w http.ResponseWriter, r *http.Request) 
 		s.jsonErrorCode(w, http.StatusBadRequest, ErrCodeValidationFailed, err.Error())
 		return
 	}
-	if !s.checkSeatEntitlement(w, r, workspaceID, len(emails), true) {
+	if !s.checkSeatEntitlement(w, r, workspaceID, len(emails), false) {
 		return
 	}
 

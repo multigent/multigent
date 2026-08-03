@@ -92,10 +92,14 @@ export function AuthProvider({ children }: { children: ReactNode }) {
   const logout = useCallback(() => {
     if (isTrustedProxyPath()) {
       void fetch('/api/v1/auth/logout', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: '{}' })
-        .catch(() => null)
-        .finally(() => {
-          window.location.href = '/sign-up'
+        .then(async (res) => {
+          const payload = await res.json().catch(() => null) as { next?: string } | null
+          window.location.replace(payload?.next || '/sign-up')
         })
+        .catch(() => {
+          window.location.replace('/sign-up')
+        })
+      return
     }
     localStorage.removeItem(TOKEN_KEY)
     localStorage.removeItem(USER_KEY)
@@ -139,6 +143,10 @@ function isTrustedProxyPath(): boolean {
   if (!hasTrustedProxyCookie()) return false
   const match = /^\/([a-z0-9][a-z0-9-]*)(\/|$)/.exec(window.location.pathname)
   return Boolean(match && !appRouteSegments.has(match[1]))
+}
+
+export function isTrustedProxyMode(): boolean {
+  return isTrustedProxyPath()
 }
 
 function hasTrustedProxyCookie(): boolean {

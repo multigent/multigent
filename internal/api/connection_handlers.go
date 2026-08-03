@@ -233,10 +233,15 @@ func (s *Server) handleCreateConnection(w http.ResponseWriter, r *http.Request) 
 	connectionID := newConnectionID("conn")
 	createdBy := cur.Username
 	createdAt := now
+	isNewConnection := true
 	if existing, ok := s.existingConnection(workspaceID, body.Provider, ownerType, ownerID, connectionName); ok {
 		connectionID = existing.ID
 		createdBy = existing.CreatedBy
 		createdAt = existing.CreatedAt
+		isNewConnection = false
+	}
+	if isNewConnection && !s.checkConnectionEntitlement(w, r, workspaceID, 1) {
+		return
 	}
 	connection := controldb.Connection{
 		ID:             connectionID,
@@ -565,10 +570,24 @@ func (s *Server) saveConnectorProviderSetupConnection(r *http.Request, workspace
 	connectionID := newConnectionID("conn")
 	createdBy := requestUsername(r)
 	createdAt := now
+	isNewConnection := true
 	if existing, ok := s.existingConnection(workspaceID, providerID, ownerType, ownerID, connectionName); ok {
 		connectionID = existing.ID
 		createdBy = existing.CreatedBy
 		createdAt = existing.CreatedAt
+		isNewConnection = false
+	}
+	if isNewConnection {
+		ent := s.currentEntitlements(r)
+		if ent.ConnectionLimit > 0 {
+			usage, err := s.entitlementUsage(workspaceID)
+			if err != nil {
+				return controldb.Connection{}, err
+			}
+			if entitlementLimitExceeded(ent.ConnectionLimit, usage.Connections, 1) {
+				return controldb.Connection{}, fmt.Errorf("connections limit exceeded")
+			}
+		}
 	}
 	profileRaw, _ := json.Marshal(map[string]any{
 		"displayName":             provider.DisplayName,

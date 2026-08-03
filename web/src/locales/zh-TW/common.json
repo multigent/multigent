@@ -13,7 +13,8 @@
     "done": "完成",
     "loading": "載入中…",
     "creating": "建立中…",
-    "saving": "儲存中…"
+    "saving": "儲存中…",
+    "copied": "已複製"
   },
   "apiErrors": {
     "bad_request": "請求無法處理。",
@@ -652,6 +653,8 @@
   "footer": {
     "madeWith": "用心打造",
     "docs": "文件",
+    "website": "官網",
+    "commercialLicense": "購買商業授權",
     "updateAvailable": "新版本: {{version}}",
     "showAssistant": "顯示 AI 助手"
   },
@@ -760,6 +763,9 @@
     "billingTitle": "方案與用量",
     "billingIntro": "這裡展示目前工作區的資源限制。本機或自託管實例預設不限制，SaaS 實例會依方案限制執行。",
     "billingPlan": "方案",
+    "billingPlan_starter": "Starter",
+    "billingPlan_business": "Business",
+    "billingPlanLabel": "{{plan}}方案",
     "billingStatus": "計費狀態",
     "billingStatus_unlimited": "不限制",
     "billingStatus_trialing": "試用中",
@@ -768,7 +774,13 @@
     "billingStatus_past_due": "付款異常",
     "billingStatus_canceled": "已取消",
     "billingTrialEnds": "試用結束",
-    "billingSeats": "席位",
+    "billingTrialPill": "14天試用 · 剩{{count}}天",
+    "billingTrialEndsAt": "到期 {{date}}",
+    "billingManagePlan": "升級方案",
+    "billingBuyLicense": "購買商業授權",
+    "billingSeats": "成員席位",
+    "billingCollaborators": "協作者席位",
+    "billingCollaboratorBreakdown": "人 {{people}} · Agent {{agents}}",
     "billingAgents": "Agent",
     "billingRuntimeNodes": "執行節點",
     "billingUnlimited": "不限",
@@ -963,6 +975,7 @@
     "confirmFire": "確定要從專案中移除成員「{{name}}」？其工作目錄將被封存。",
     "hireAgentDesc": "向專案「{{project}}」新增成員。",
     "addMemberDesc": "向專案「{{project}}」新增人類成員或 Agent。",
+    "duplicateName": "專案裡已存在同名成員。",
     "memberType": "成員類型",
     "memberTypeAgent": "Agent",
     "memberTypeHuman": "Human",
@@ -1610,6 +1623,7 @@
     "runtimeMayBeSlow": "執行環境可以啟動，但準備尚未完整。首次執行可能較慢。",
     "runtimeBlocked": "執行環境未就緒",
     "runtimeBlockedHint": "請先處理下面的阻塞項，再執行這個 Agent。",
+    "runtimeNodeRequiredHint": "線上版暫不提供平台託管執行。請先在設定中新增執行節點，並在 Agent 詳情中綁定該節點。",
     "runtimeBlockedContactAdmin": "執行環境未就緒。請聯絡超級管理員處理後再執行這個 Agent。",
     "runtimeBlockedPlaceholder": "執行環境未就緒，請聯絡超級管理員處理…",
     "runtimeBlockedBeforeSend": "這個 Agent 還不能執行，請先處理這些問題：",
@@ -2241,7 +2255,7 @@
       },
       "models": {
         "title": "先設定模型帳號",
-        "body": "Agent 需要模型帳號才能執行。可以在設定裡新增官方 API Key 或第三方模型供應商，也可以使用「從本機匯入」掃描本機官方 CLI 登入狀態和 cc-switch 帳號，減少手動設定。"
+        "body": "Agent 需要模型帳號才能執行。可以在設定裡新增官方 API Key 或第三方模型供應商，然後分配給需要執行的 Agent。"
       },
       "team": {
         "title": "查看示範團隊",

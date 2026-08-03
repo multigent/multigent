@@ -95,6 +95,9 @@ func (s *Server) handleCreateTaskTemplate(w http.ResponseWriter, r *http.Request
 	if !s.checkCurrentWorkspaceAdmin(w, r) {
 		return
 	}
+	if !s.checkTaskTemplateEntitlement(w, r, 1) {
+		return
+	}
 	var body taskTemplateCreateBody
 	if err := s.readJSON(w, r, &body); err != nil {
 		s.jsonError(w, http.StatusBadRequest, "invalid JSON body")
@@ -119,6 +122,9 @@ func (s *Server) handleCreateTaskTemplate(w http.ResponseWriter, r *http.Request
 func (s *Server) handleCreateProjectTaskTemplate(w http.ResponseWriter, r *http.Request) {
 	project := r.PathValue("name")
 	if !s.checkProjectManager(w, r, project) {
+		return
+	}
+	if !s.checkTaskTemplateEntitlement(w, r, 1) {
 		return
 	}
 	var body taskTemplateCreateBody

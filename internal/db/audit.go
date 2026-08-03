@@ -46,6 +46,10 @@ summary, before_json, after_json, ip, user_agent, created_at FROM audit_events W
 		query += ` AND resource_id = ?`
 		args = append(args, strings.TrimSpace(filter.ResourceID))
 	}
+	if strings.TrimSpace(filter.CreatedAfter) != "" {
+		query += ` AND created_at >= ?`
+		args = append(args, strings.TrimSpace(filter.CreatedAfter))
+	}
 	query += ` ORDER BY created_at DESC, id DESC LIMIT ?`
 	args = append(args, limit)
 

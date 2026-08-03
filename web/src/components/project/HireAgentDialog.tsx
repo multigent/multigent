@@ -17,12 +17,15 @@ type PersonRow = { username: string; displayName?: string; role?: string; linked
 type Props = {
   projectId: string
   onHired: () => void
+  existingMemberNames?: string[]
+  agentLimitReached?: boolean
+  agentLimitText?: string
 }
 
 const fieldCls =
   'mt-1 w-full rounded-lg border border-neutral-300 bg-white px-2.5 py-1.5 text-sm text-neutral-900 outline-none transition-colors focus:border-sky-400 dark:border-zinc-600 dark:bg-zinc-800 dark:text-zinc-100'
 
-export function HireAgentDialog({ projectId, onHired }: Props) {
+export function HireAgentDialog({ projectId, onHired, existingMemberNames = [], agentLimitReached = false, agentLimitText = '' }: Props) {
   const { t } = useTranslation()
   const [open, setOpen] = useState(false)
   const [name, setName] = useState('')
@@ -37,6 +40,8 @@ export function HireAgentDialog({ projectId, onHired }: Props) {
   const [teams, setTeams] = useState<TeamInfo[]>([])
   const [roles, setRoles] = useState<{ name: string; description?: string }[]>([])
   const [people, setPeople] = useState<PersonRow[]>([])
+  const trimmedName = name.trim()
+  const duplicateName = trimmedName !== '' && existingMemberNames.includes(trimmedName)
 
   useEffect(() => {
     if (!open) return
@@ -79,8 +84,16 @@ export function HireAgentDialog({ projectId, onHired }: Props) {
     e.preventDefault()
     setErr(null)
     setOutput(null)
-    if (!name.trim() || (memberType === 'agent' && (!team.trim() || !model.trim()))) {
+    if (memberType === 'agent' && agentLimitReached) {
+      setErr(t('settings.billingLimitHint'))
+      return
+    }
+    if (!trimmedName || (memberType === 'agent' && (!team.trim() || !model.trim()))) {
       setErr(t('forms.fillRequired'))
+      return
+    }
+    if (duplicateName) {
+      setErr(t('members.duplicateName'))
       return
     }
     setBusy(true)
@@ -88,7 +101,7 @@ export function HireAgentDialog({ projectId, onHired }: Props) {
       const res = await apiPost<{ ok: boolean; output: string }>(
         `/api/v1/projects/${encodeURIComponent(projectId)}/hire`,
         {
-          name: name.trim(),
+          name: trimmedName,
           team: memberType === 'agent' ? team.trim() : 'human',
           role: memberType === 'agent' ? (role.trim() || undefined) : undefined,
           model: memberType === 'agent' ? model.trim() : 'human',
@@ -183,11 +196,24 @@ export function HireAgentDialog({ projectId, onHired }: Props) {
                   <input
                     value={name}
                     onChange={(e) => setName(e.target.value)}
-                    className={fieldCls}
+                    className={`${fieldCls} ${duplicateName ? 'border-red-300 focus:border-red-400 dark:border-red-800/70' : ''}`}
                     placeholder="e.g. dev-claude"
                     autoFocus
                   />
+                  {duplicateName && (
+                    <p className="mt-1 text-xs text-red-600 dark:text-red-400">{t('members.duplicateName')}</p>
+                  )}
                 </label>
+              )}
+
+              {memberType === 'agent' && (
+                <>
+                  {agentLimitReached && (
+                    <div className="rounded-lg border border-amber-200 bg-amber-50 px-3 py-2 text-sm text-amber-800 dark:border-amber-900/50 dark:bg-amber-900/20 dark:text-amber-300">
+                      {t('settings.billingLimitHint')} {agentLimitText && <span className="font-medium">{agentLimitText}</span>}
+                    </div>
+                  )}
+                </>
               )}
 
               {memberType === 'agent' && (
@@ -246,7 +272,7 @@ export function HireAgentDialog({ projectId, onHired }: Props) {
                 </button>
                 <button
                   type="submit"
-                  disabled={busy}
+                  disabled={busy || duplicateName || (memberType === 'agent' && agentLimitReached)}
                   className="rounded-lg bg-sky-600 px-3 py-1.5 text-sm font-medium text-white disabled:opacity-50"
                 >
                   {busy ? t('members.adding') : t('members.add')}

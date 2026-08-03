@@ -13,7 +13,7 @@ import { cn } from '../../lib/cn'
 import { useFormatDateTime } from '../../lib/format-datetime'
 import { useApiJson } from '../../lib/use-api'
 import { apiDelete, apiFetch, apiPost, apiPut, apiPatch } from '../../lib/api'
-import { canConfigureAgent, canManageProject, canOperateAgent, useAuth } from '../../lib/auth'
+import { canConfigureAgent, canManageProject, canOperateAgent, isTrustedProxyMode, useAuth } from '../../lib/auth'
 import { useWorkspaceAccess } from '../../lib/workspace-access'
 import { Pagination } from '../../components/ui/Pagination'
 import { AgentChannelPanel } from '../../components/project/AgentChannelPanel'
@@ -424,6 +424,7 @@ export default function ProjectAgentDetailPage() {
   const { t } = useTranslation()
   const { user } = useAuth()
   const { canAdmin: canAdminWorkspace } = useWorkspaceAccess()
+  const trustedProxyMode = isTrustedProxyMode()
   const navigate = useNavigate()
   const { projectId, agentName } = useParams<{ projectId: string; agentName: string }>()
 
@@ -626,6 +627,19 @@ export default function ProjectAgentDetailPage() {
                 </section>
               )}
 
+              {canConfigureThisAgent && trustedProxyMode && (
+                <section>
+                  <SectionHeader icon={Server} title={t('agentDetail.runtimeNode')} />
+                  <p className="mt-1 text-sm text-neutral-500 dark:text-zinc-500">{t('agentDetail.runtimeNodeBindingHint')}</p>
+                  <RuntimeNodeBindingPanel
+                    project={projectId}
+                    agentName={agentName}
+                    runtimeNodeId={ctx.runtimeNodeId}
+                    onChanged={() => setCtxReload((k) => k + 1)}
+                  />
+                </section>
+              )}
+
               <section>
                 <SectionHeader icon={Activity} title={t('agentDetail.connectAndChat')} />
                 <p className="mt-1 text-sm text-neutral-500 dark:text-zinc-500">{t('agentDetail.connectAndChatHint')}</p>
@@ -676,7 +690,7 @@ export default function ProjectAgentDetailPage() {
                 </div>
               </section>
 
-              {canConfigureThisAgent && (
+              {canConfigureThisAgent && !trustedProxyMode && (
                 <details className="group rounded-lg border border-neutral-200/80 bg-white dark:border-zinc-700/60 dark:bg-zinc-900/40">
                   <summary className="flex cursor-pointer items-center gap-2 px-4 py-3 text-sm font-medium text-neutral-700 dark:text-zinc-300">
                     <ChevronRight className="size-4 transition-transform group-open:rotate-90" strokeWidth={2} />

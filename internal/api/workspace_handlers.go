@@ -24,6 +24,7 @@ type workspaceSummary struct {
 	ID                  string `json:"id"`
 	Name                string `json:"name"`
 	Description         string `json:"description,omitempty"`
+	IsExample           bool   `json:"isExample,omitempty"`
 	CreatedBy           string `json:"createdBy"`
 	CreatedAt           string `json:"createdAt"`
 	UpdatedAt           string `json:"updatedAt,omitempty"`
@@ -112,6 +113,7 @@ func (s *Server) handleWorkspace(w http.ResponseWriter, r *http.Request) {
 		ID:                  id,
 		Name:                name,
 		Description:         agency.Description,
+		IsExample:           r.Header.Get("X-Multigent-Example-Workspace") == "1",
 		CreatedBy:           createdBy,
 		CreatedAt:           createdAt,
 		UpdatedAt:           agency.UpdatedAt,

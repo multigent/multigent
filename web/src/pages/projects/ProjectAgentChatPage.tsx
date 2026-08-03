@@ -4,7 +4,7 @@ import { useTranslation } from 'react-i18next'
 import { Edit3, Maximize2, Minimize2, RefreshCw, Send, Sparkles, Square } from 'lucide-react'
 import { ConversationLog } from '../../components/ui/ConversationLog'
 import { apiFetch, apiDelete, apiUrl } from '../../lib/api'
-import { getStoredToken, isSystemAdmin, useAuth } from '../../lib/auth'
+import { getStoredToken, isSystemAdmin, isTrustedProxyMode, useAuth } from '../../lib/auth'
 import { cn } from '../../lib/cn'
 
 type HistoryResp = {
@@ -177,6 +177,7 @@ export default function ProjectAgentChatPage() {
   const activeChatKeyRef = useRef(chatKey)
   const runtimeBlocked = Boolean(runtimeReadiness?.blocking)
   const canInspectRuntimeBlockers = isSystemAdmin(user)
+  const trustedProxyMode = isTrustedProxyMode()
   const inputDisabled = loading || runtimeBlocked
 
   // Sync sessionId state + URL query param together so page refresh preserves the session.
@@ -377,7 +378,7 @@ export default function ProjectAgentChatPage() {
         replyPendingTimerRef.current = null
       }
       setLoading(false)
-      setError(runtimeBlockingMessage(readiness, t, canInspectRuntimeBlockers))
+      setError(runtimeBlockingMessage(readiness, t, canInspectRuntimeBlockers, trustedProxyMode))
       return
     }
 
@@ -701,6 +702,7 @@ export default function ProjectAgentChatPage() {
           checking={runtimeChecking}
           onRefresh={() => void loadReadiness()}
           canInspectDetails={canInspectRuntimeBlockers}
+          trustedProxyMode={trustedProxyMode}
         />
         {error && (
           <p className="mt-2 text-xs text-red-500 dark:text-red-400">{error}</p>
@@ -779,16 +781,19 @@ export default function ProjectAgentChatPage() {
   return chatPanel
 }
 
-function RuntimeReadinessBanner({ readiness, checking, onRefresh, canInspectDetails }: {
+function RuntimeReadinessBanner({ readiness, checking, onRefresh, canInspectDetails, trustedProxyMode }: {
   readiness: RuntimeReadiness | null
   checking: boolean
   onRefresh: () => void
   canInspectDetails: boolean
+  trustedProxyMode: boolean
 }) {
   const { t } = useTranslation()
   if (!readiness?.blocking) return null
   const checks = readiness?.checks ?? []
-  const visibleChecks = checks.filter((check) => check.status !== 'ok')
+  const visibleChecks = trustedProxyMode
+    ? checks.filter((check) => check.key === 'runtime_node')
+    : checks.filter((check) => check.status !== 'ok')
   const ready = Boolean(readiness?.ready)
   const blocking = Boolean(readiness?.blocking)
   const cls = blocking
@@ -799,7 +804,9 @@ function RuntimeReadinessBanner({ readiness, checking, onRefresh, canInspectDeta
   const summary = checking
     ? t('agentChat.runtimeCheckingHint')
     : blocking
-      ? canInspectDetails ? t('agentChat.runtimeBlockedHint') : t('agentChat.runtimeBlockedContactAdmin')
+      ? trustedProxyMode
+        ? t('agentChat.runtimeNodeRequiredHint')
+        : canInspectDetails ? t('agentChat.runtimeBlockedHint') : t('agentChat.runtimeBlockedContactAdmin')
       : ready && visibleChecks.length === 0
         ? t('agentChat.runtimeReadyHint')
         : t('agentChat.runtimePreparingHint')
@@ -821,7 +828,7 @@ function RuntimeReadinessBanner({ readiness, checking, onRefresh, canInspectDeta
           {checking ? t('common.loading') : t('common.refresh')}
         </button>
       </div>
-      {canInspectDetails && visibleChecks.length > 0 && (
+      {(canInspectDetails || trustedProxyMode) && visibleChecks.length > 0 && (
         <div className="mt-2 space-y-1.5">
           {visibleChecks.map((check) => (
             <div key={check.key} className="rounded-md bg-white/55 px-2.5 py-1.5 dark:bg-zinc-950/20">
@@ -839,7 +846,8 @@ function RuntimeReadinessBanner({ readiness, checking, onRefresh, canInspectDeta
   )
 }
 
-function runtimeBlockingMessage(readiness: RuntimeReadiness, t: (key: string) => string, canInspectDetails: boolean) {
+function runtimeBlockingMessage(readiness: RuntimeReadiness, t: (key: string) => string, canInspectDetails: boolean, trustedProxyMode: boolean) {
+  if (trustedProxyMode) return t('agentChat.runtimeNodeRequiredHint')
   if (!canInspectDetails) return t('agentChat.runtimeBlockedContactAdmin')
   const blockers = (readiness.checks ?? []).filter((check) => check.blocking || check.status === 'error')
   if (blockers.length === 0) return t('agentChat.runtimeBlocked')

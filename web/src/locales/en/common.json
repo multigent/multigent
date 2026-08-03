@@ -13,7 +13,8 @@
     "done": "Done",
     "loading": "Loading…",
     "creating": "Creating…",
-    "saving": "Saving…"
+    "saving": "Saving…",
+    "copied": "Copied"
   },
   "apiErrors": {
     "bad_request": "The request could not be processed.",
@@ -652,6 +653,8 @@
   "footer": {
     "madeWith": "Made with",
     "docs": "Docs",
+    "website": "Website",
+    "commercialLicense": "Commercial license",
     "updateAvailable": "Update: {{version}}",
     "showAssistant": "Show AI Assistant"
   },
@@ -760,6 +763,9 @@
     "billingTitle": "Plan and Usage",
     "billingIntro": "Workspace resource limits are enforced here. Local/self-hosted instances are unlimited unless a SaaS entitlement is provided.",
     "billingPlan": "Plan",
+    "billingPlan_starter": "Starter",
+    "billingPlan_business": "Business",
+    "billingPlanLabel": "{{plan}} plan",
     "billingStatus": "Billing status",
     "billingStatus_unlimited": "Unlimited",
     "billingStatus_trialing": "Trialing",
@@ -768,7 +774,13 @@
     "billingStatus_past_due": "Past due",
     "billingStatus_canceled": "Canceled",
     "billingTrialEnds": "Trial ends",
-    "billingSeats": "Seats",
+    "billingTrialPill": "14-day trial · {{count}}d left",
+    "billingTrialEndsAt": "Ends {{date}}",
+    "billingManagePlan": "Upgrade plan",
+    "billingBuyLicense": "Buy commercial license",
+    "billingSeats": "Member seats",
+    "billingCollaborators": "Collaborator seats",
+    "billingCollaboratorBreakdown": "{{people}} people · {{agents}} agents",
     "billingAgents": "Agents",
     "billingRuntimeNodes": "Runtime nodes",
     "billingUnlimited": "Unlimited",
@@ -963,9 +975,11 @@
     "confirmFire": "Remove member \"{{name}}\" from the project? Their working directory will be archived.",
     "hireAgentDesc": "Add a member to project \"{{project}}\".",
     "addMemberDesc": "Add a human member or agent to project \"{{project}}\".",
+    "duplicateName": "A project member with this name already exists.",
     "memberType": "Member Type",
     "memberTypeAgent": "Agent",
     "memberTypeHuman": "Human",
+    "exampleReadonly": "This is a learning workspace. Adding or removing project members is disabled here. Create your own workspace when you are ready to add real teammates.",
     "agentName": "Agent name",
     "team": "Team",
     "selectTeam": "Select a team…",
@@ -1624,6 +1638,7 @@
     "runtimeMayBeSlow": "Runtime can run, but some preparation is incomplete. The first run may be slower.",
     "runtimeBlocked": "Runtime not ready",
     "runtimeBlockedHint": "Resolve the blocking items below before running this agent.",
+    "runtimeNodeRequiredHint": "Hosted execution is not enabled for the SaaS preview. Add a Runtime Node in Settings, then bind this agent to that node.",
     "runtimeBlockedContactAdmin": "Runtime is not ready. Contact a Super Admin before running this agent.",
     "runtimeBlockedPlaceholder": "Runtime is not ready. Contact a Super Admin…",
     "runtimeBlockedBeforeSend": "This agent is not ready to run yet. Please resolve these items first:",
@@ -1946,6 +1961,7 @@
     "copyInviteLink": "Copy link",
     "revokeInvite": "Revoke",
     "inviteResults": "Invite results",
+    "exampleReadonly": "This is a learning workspace. Inviting users and changing workspace membership are disabled here, so it does not count as a real billable workspace.",
     "manageAccess": "Permission settings",
     "systemRole_super_admin": "Super Admin",
     "superAdminAccess": "All workspaces and system settings",
@@ -2255,7 +2271,7 @@
       },
       "models": {
         "title": "Configure a model account first",
-        "body": "Agents need a model account before they can run. Add an official API key or third-party provider in Settings, or use Import from local to scan official CLI sign-ins and cc-switch accounts on this machine."
+        "body": "Agents need a model account before they can run. Add an official API key or third-party provider in Settings, then assign it to the agents you want to run."
       },
       "team": {
         "title": "Inspect the demo team",

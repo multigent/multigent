@@ -5,25 +5,34 @@ import (
 	"fmt"
 	"net/http"
 	"strings"
+
+	controldb "github.com/multigent/multigent/internal/db"
+	"github.com/multigent/multigent/internal/tasktemplate"
 )
 
 type workspaceEntitlements struct {
-	PlanCode         string `json:"planCode,omitempty"`
-	BillingStatus    string `json:"billingStatus,omitempty"`
-	TrialEndsAt      string `json:"trialEndsAt,omitempty"`
-	SeatsUsed        int    `json:"seatsUsed,omitempty"`
-	WorkspaceLimit   int    `json:"workspaceLimit,omitempty"`
-	SeatLimit        int    `json:"seatLimit,omitempty"`
-	AgentLimit       int    `json:"agentLimit,omitempty"`
-	RuntimeNodeLimit int    `json:"runtimeNodeLimit,omitempty"`
-	MonthlyRunLimit  int    `json:"monthlyRunLimit,omitempty"`
+	PlanCode           string `json:"planCode,omitempty"`
+	BillingStatus      string `json:"billingStatus,omitempty"`
+	TrialEndsAt        string `json:"trialEndsAt,omitempty"`
+	SeatsUsed          int    `json:"seatsUsed,omitempty"`
+	WorkspaceLimit     int    `json:"workspaceLimit,omitempty"`
+	SeatLimit          int    `json:"seatLimit,omitempty"`
+	AgentLimit         int    `json:"agentLimit,omitempty"`
+	RuntimeNodeLimit   int    `json:"runtimeNodeLimit,omitempty"`
+	TaskTemplateLimit  int    `json:"taskTemplateLimit,omitempty"`
+	ConnectionLimit    int    `json:"connectionLimit,omitempty"`
+	AuditRetentionDays int    `json:"auditRetentionDays,omitempty"`
+	AdvancedRBAC       bool   `json:"advancedRBAC,omitempty"`
+	MonthlyRunLimit    int    `json:"monthlyRunLimit,omitempty"`
 }
 
 type entitlementUsage struct {
-	Seats        int `json:"seats"`
-	PendingSeats int `json:"pendingSeats"`
-	Agents       int `json:"agents"`
-	RuntimeNodes int `json:"runtimeNodes"`
+	Seats         int `json:"seats"`
+	PendingSeats  int `json:"pendingSeats"`
+	Agents        int `json:"agents"`
+	RuntimeNodes  int `json:"runtimeNodes"`
+	TaskTemplates int `json:"taskTemplates"`
+	Connections   int `json:"connections"`
 }
 
 func (s *Server) currentEntitlements(r *http.Request) workspaceEntitlements {
@@ -74,6 +83,18 @@ func (s *Server) entitlementUsage(workspaceID string) (entitlementUsage, error) 
 			return usage, err
 		}
 		usage.RuntimeNodes = len(nodes)
+		connections, err := s.controlDB.ListConnections(controldb.ConnectionFilter{WorkspaceID: workspaceID, Status: "active"})
+		if err != nil {
+			return usage, err
+		}
+		usage.Connections = len(connections)
+	}
+	if s.controlDB != nil && strings.TrimSpace(workspaceID) != "" {
+		templates, err := tasktemplate.NewStore(s.controlDB, workspaceID).List()
+		if err != nil {
+			return usage, err
+		}
+		usage.TaskTemplates = len(templates)
 	}
 	projects, err := s.st.ListProjects()
 	if err != nil {
@@ -166,12 +187,50 @@ func (s *Server) checkRuntimeNodeEntitlement(w http.ResponseWriter, r *http.Requ
 	return true
 }
 
+func (s *Server) checkTaskTemplateEntitlement(w http.ResponseWriter, r *http.Request, adding int) bool {
+	ent := s.currentEntitlements(r)
+	if ent.TaskTemplateLimit <= 0 {
+		return true
+	}
+	workspaceID, _ := s.currentWorkspaceID()
+	usage, err := s.entitlementUsage(workspaceID)
+	if err != nil {
+		s.serverError(w, err)
+		return false
+	}
+	if entitlementLimitExceeded(ent.TaskTemplateLimit, usage.TaskTemplates, adding) {
+		s.rejectEntitlementLimit(w, "task_templates", ent.TaskTemplateLimit, usage.TaskTemplates, adding)
+		return false
+	}
+	return true
+}
+
+func (s *Server) checkConnectionEntitlement(w http.ResponseWriter, r *http.Request, workspaceID string, adding int) bool {
+	ent := s.currentEntitlements(r)
+	if ent.ConnectionLimit <= 0 {
+		return true
+	}
+	usage, err := s.entitlementUsage(workspaceID)
+	if err != nil {
+		s.serverError(w, err)
+		return false
+	}
+	if entitlementLimitExceeded(ent.ConnectionLimit, usage.Connections, adding) {
+		s.rejectEntitlementLimit(w, "connections", ent.ConnectionLimit, usage.Connections, adding)
+		return false
+	}
+	return true
+}
+
 func (s *Server) handleBillingEntitlements(w http.ResponseWriter, r *http.Request) {
 	workspaceID, _ := s.currentWorkspaceID()
 	usage, err := s.entitlementUsage(workspaceID)
 	if err != nil {
 		s.serverError(w, err)
 		return
+	}
+	if r.Header.Get("X-Multigent-Example-Workspace") == "1" {
+		usage = entitlementUsage{}
 	}
 	_ = json.NewEncoder(w).Encode(map[string]any{
 		"entitlements": s.currentEntitlements(r),

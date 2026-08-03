@@ -103,7 +103,7 @@ type Store interface {
 	UpsertRuntimeRun(run RuntimeRun) error
 	RuntimeRunByID(workspaceID, id string) (RuntimeRun, bool, error)
 	ListRuntimeRuns(filter RuntimeRunFilter) ([]RuntimeRun, error)
-	ClaimRuntimeRun(workspaceID, nodeID string, leaseSeconds int) (RuntimeRun, bool, error)
+	ClaimRuntimeRun(workspaceID, nodeID string, leaseSeconds int, busyAgents []string) (RuntimeRun, bool, error)
 	ExtendRuntimeRunLease(workspaceID, runID, nodeID string, leaseSeconds int) (RuntimeRun, bool, error)
 	CreateRuntimeEvent(event RuntimeEvent) error
 	ListRuntimeEvents(workspaceID, runID string, limit int) ([]RuntimeEvent, error)
@@ -189,6 +189,7 @@ type AuditEventFilter struct {
 	Action       string
 	ResourceType string
 	ResourceID   string
+	CreatedAfter string
 	Limit        int
 }
 

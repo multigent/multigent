@@ -7,11 +7,14 @@ import (
 	"errors"
 	"fmt"
 	"io"
+	"log/slog"
 	"net/http"
 	"os"
+	"os/exec"
 	"path/filepath"
 	"runtime"
 	"strings"
+	"sync"
 	"time"
 
 	"github.com/multigent/multigent/internal/entity"
@@ -57,6 +60,23 @@ type runtimeNodeSpecEnvelope struct {
 type runtimeNodeLeaseEnvelope struct {
 	Run       *runtimeNodeRun `json:"run"`
 	Cancelled bool            `json:"cancelled"`
+}
+
+type runtimeNodeCoordinator struct {
+	mu         sync.Mutex
+	busyAgents map[string]struct{}
+}
+
+func newRuntimeNodeCoordinator() *runtimeNodeCoordinator {
+	return &runtimeNodeCoordinator{busyAgents: map[string]struct{}{}}
+}
+
+func (c *runtimeNodeCoordinator) busyAgentListLocked() []string {
+	out := make([]string, 0, len(c.busyAgents))
+	for agent := range c.busyAgents {
+		out = append(out, agent)
+	}
+	return out
 }
 
 func newRuntimeJoinCmd() *cobra.Command {
@@ -156,56 +176,187 @@ func newRuntimePrepareCmd() *cobra.Command {
 func newRuntimeStartCmd() *cobra.Command {
 	var once bool
 	var pollInterval time.Duration
+	var concurrency int
+	var daemonMode bool
+	var streamAgentOutput bool
+	var logFile string
+	var logLevel string
+	var logFormat string
+	var logMaxSizeMB int
+	var logStderr bool
 	cmd := &cobra.Command{
 		Use:   "start",
-		Short: "Start the Runtime Node foreground loop",
-		RunE: func(_ *cobra.Command, _ []string) error {
+		Short: "Start the Runtime Node loop",
+		RunE: func(cmd *cobra.Command, _ []string) error {
 			cfg, err := loadRuntimeNodeConfig()
 			if err != nil {
 				return err
 			}
+			opts := resolveRuntimeNodeLogOptions(logFile, logLevel, logFormat, logMaxSizeMB, logStderr, cmd.Flags().Changed)
+			if daemonMode && os.Getenv("MULTIGENT_RUNTIME_NODE_DAEMON_CHILD") == "" {
+				return startRuntimeNodeDaemon(opts.File)
+			}
+			logCloser, err := initServiceLogger(opts, "runtime-node")
+			if err != nil {
+				return fmt.Errorf("init runtime node logger: %w", err)
+			}
+			defer logCloser()
 			if err := runtimeNodeRegister(cfg); err != nil {
 				return err
 			}
-			fmt.Printf("Runtime node connected to %s\n", cfg.ServerURL)
+			if concurrency <= 0 {
+				concurrency = 1
+			}
+			slog.Info("runtime node connected", "server", cfg.ServerURL, "concurrency", concurrency, "once", once)
+			coord := newRuntimeNodeCoordinator()
 			if once {
-				return runtimeNodeLoopOnce(cfg)
+				return runtimeNodeLoopOnce(cfg, 1, coord, streamAgentOutput)
 			}
-			for {
-				if err := runtimeNodeLoopOnce(cfg); err != nil {
-					fmt.Fprintf(os.Stderr, "runtime loop error: %v\n", err)
-				}
-				if pollInterval <= 0 {
-					pollInterval = 3 * time.Second
-				}
-				time.Sleep(pollInterval)
-			}
+			return runtimeNodeRunWorkers(cfg, concurrency, pollInterval, coord, streamAgentOutput)
 		},
 	}
 	cmd.Flags().BoolVar(&once, "once", false, "run one heartbeat/claim cycle and exit")
 	cmd.Flags().DurationVar(&pollInterval, "poll-interval", 3*time.Second, "run claim polling interval")
+	cmd.Flags().IntVar(&concurrency, "concurrency", 1, "maximum concurrent agent runs claimed by this runtime node")
+	cmd.Flags().BoolVar(&daemonMode, "daemon", false, "start in the background and write logs to --log-file")
+	cmd.Flags().BoolVar(&streamAgentOutput, "stream-agent-output", false, "stream raw agent stdout/stderr to the runtime node output for debugging")
+	cmd.Flags().StringVar(&logFile, "log-file", "", "runtime node log file path")
+	cmd.Flags().StringVar(&logLevel, "log-level", "", "log level: debug|info|warn|error")
+	cmd.Flags().StringVar(&logFormat, "log-format", "", "log format: json|text")
+	cmd.Flags().IntVar(&logMaxSizeMB, "log-max-size", 0, "max log file size in MB")
+	cmd.Flags().BoolVar(&logStderr, "log-stderr", false, "also write runtime node service logs to stderr")
 	return cmd
 }
 
-func runtimeNodeLoopOnce(cfg runtimeNodeConfig) error {
+func runtimeNodeRunWorkers(cfg runtimeNodeConfig, concurrency int, pollInterval time.Duration, coord *runtimeNodeCoordinator, streamAgentOutput bool) error {
+	if concurrency <= 0 {
+		concurrency = 1
+	}
+	if concurrency > 64 {
+		concurrency = 64
+	}
+	if pollInterval <= 0 {
+		pollInterval = 3 * time.Second
+	}
+	var wg sync.WaitGroup
+	for i := 1; i <= concurrency; i++ {
+		workerID := i
+		wg.Add(1)
+		go func() {
+			defer wg.Done()
+			for {
+				if err := runtimeNodeLoopOnce(cfg, workerID, coord, streamAgentOutput); err != nil {
+					slog.Warn("runtime worker loop error", "worker", workerID, "error", err)
+					_ = runtimeNodeHeartbeat(cfg, "online", err.Error())
+				}
+				time.Sleep(pollInterval)
+			}
+		}()
+	}
+	wg.Wait()
+	return nil
+}
+
+func runtimeNodeLoopOnce(cfg runtimeNodeConfig, workerID int, coord *runtimeNodeCoordinator, streamAgentOutput bool) error {
 	if err := runtimeNodeHeartbeat(cfg, "online", ""); err != nil {
 		return err
 	}
+	if coord == nil {
+		coord = newRuntimeNodeCoordinator()
+	}
+	coord.mu.Lock()
 	env, err := runtimeNodePost(cfg, "/api/v1/runtime-node/runs/claim", map[string]any{
-		"capacity": 1,
+		"capacity":   1,
+		"busyAgents": coord.busyAgentListLocked(),
 	})
 	if err != nil {
+		coord.mu.Unlock()
 		return err
 	}
 	var claim runtimeNodeRunEnvelope
 	if err := json.Unmarshal(env, &claim); err != nil {
+		coord.mu.Unlock()
 		return fmt.Errorf("decode claim response: %w", err)
 	}
 	if claim.Run == nil {
+		coord.mu.Unlock()
 		return nil
 	}
-	fmt.Printf("claimed run %s for %s/%s\n", claim.Run.ID, claim.Run.ProjectID, claim.Run.AgentID)
-	return runtimeNodeExecuteRun(cfg, *claim.Run)
+	agentKey := claim.Run.ProjectID + "/" + claim.Run.AgentID
+	coord.busyAgents[agentKey] = struct{}{}
+	coord.mu.Unlock()
+	defer func() {
+		coord.mu.Lock()
+		delete(coord.busyAgents, agentKey)
+		coord.mu.Unlock()
+	}()
+	slog.Info("runtime run claimed", "worker", workerID, "run", claim.Run.ID, "project", claim.Run.ProjectID, "agent", claim.Run.AgentID)
+	return runtimeNodeExecuteRun(cfg, *claim.Run, workerID, streamAgentOutput)
+}
+
+func resolveRuntimeNodeLogOptions(file, level, format string, maxSizeMB int, logStderr bool, flagChanged func(string) bool) serviceLogOptions {
+	opts := resolveServiceLogOptions(loadedConfig, file, level, format, maxSizeMB, flagChanged)
+	if !flagChanged("log-file") && strings.TrimSpace(file) == "" && os.Getenv("MULTIGENT_LOG_FILE") == "" {
+		opts.File = runtimeNodeDefaultLogFile()
+	}
+	if flagChanged("log-stderr") {
+		opts.Stderr = logStderr
+	}
+	return opts
+}
+
+func runtimeNodeDefaultLogFile() string {
+	home, err := os.UserHomeDir()
+	if err != nil {
+		return filepath.Join(".multigent", "runtime", "runtime-node.log")
+	}
+	return filepath.Join(home, ".multigent", "runtime", "runtime-node.log")
+}
+
+func startRuntimeNodeDaemon(logFile string) error {
+	exe, err := os.Executable()
+	if err != nil {
+		return err
+	}
+	args := filterRuntimeNodeDaemonArgs(os.Args[1:])
+	logPath := strings.TrimSpace(logFile)
+	if logPath == "" {
+		logPath = runtimeNodeDefaultLogFile()
+	}
+	if err := os.MkdirAll(filepath.Dir(logPath), 0o755); err != nil {
+		return err
+	}
+	file, err := os.OpenFile(logPath, os.O_CREATE|os.O_APPEND|os.O_WRONLY, 0o644)
+	if err != nil {
+		return err
+	}
+	defer file.Close()
+	cmd := exec.Command(exe, args...)
+	cmd.Env = append(os.Environ(), "MULTIGENT_RUNTIME_NODE_DAEMON_CHILD=1", "MULTIGENT_LOG_STDERR=false")
+	cmd.Stdout = file
+	cmd.Stderr = file
+	setBackgroundProcessGroup(cmd)
+	if err := cmd.Start(); err != nil {
+		return err
+	}
+	fmt.Printf("Runtime node daemon started (pid %d)\n", cmd.Process.Pid)
+	fmt.Printf("Log file: %s\n", logPath)
+	return cmd.Process.Release()
+}
+
+func filterRuntimeNodeDaemonArgs(args []string) []string {
+	out := make([]string, 0, len(args))
+	for i := 0; i < len(args); i++ {
+		arg := args[i]
+		if arg == "--daemon" || arg == "-d" {
+			continue
+		}
+		if strings.HasPrefix(arg, "--daemon=") {
+			continue
+		}
+		out = append(out, arg)
+	}
+	return out
 }
 
 func runtimeNodeRegister(cfg runtimeNodeConfig) error {
@@ -269,11 +420,11 @@ func runtimeNodeExtendRunLease(cfg runtimeNodeConfig, runID string, leaseSeconds
 	return nil
 }
 
-func runtimeNodeExecuteRun(cfg runtimeNodeConfig, run runtimeNodeRun) error {
+func runtimeNodeExecuteRun(cfg runtimeNodeConfig, run runtimeNodeRun, workerID int, streamAgentOutput bool) error {
 	spec, err := runtimeNodeFetchRunSpec(cfg, run.ID)
 	if err != nil {
 		if errors.Is(err, errRuntimeRunCancelled) {
-			fmt.Printf("runtime run %s was cancelled before execution\n", run.ID)
+			slog.Info("runtime run cancelled before execution", "worker", workerID, "run", run.ID)
 			return nil
 		}
 		_ = runtimeNodeFailRun(cfg, run.ID, "spec_fetch_failed", err.Error())
@@ -315,17 +466,20 @@ func runtimeNodeExecuteRun(cfg runtimeNodeConfig, run runtimeNodeRun) error {
 		return err
 	}
 	r := runner.New(root, taskstore.New(root), st)
+	r.SuppressStdout = !streamAgentOutput
 	ctx, stopLease := startRuntimeRunLeaseLoop(cfg, run.ID)
 	defer stopLease()
 	started := time.Now().UTC()
+	slog.Info("runtime run started", "worker", workerID, "run", run.ID, "kind", spec.Kind, "project", spec.ProjectID, "agent", spec.AgentID)
 	result, err := r.ExecPromptWithRuntimeControlEnvContext(ctx, spec.ProjectID, spec.AgentID, spec.Prompt, spec.SessionID, spec.RuntimeControlEnv)
 	durationMS := time.Since(started).Milliseconds()
 	if err != nil {
 		if errors.Is(err, context.Canceled) {
-			fmt.Printf("runtime run %s was cancelled during execution\n", run.ID)
+			slog.Info("runtime run cancelled during execution", "worker", workerID, "run", run.ID)
 			return nil
 		}
 		_ = runtimeNodeFailRun(cfg, run.ID, "executor_failed", err.Error())
+		slog.Error("runtime run executor failed", "worker", workerID, "run", run.ID, "duration_ms", durationMS, "error", err)
 		return err
 	}
 	out := map[string]any{
@@ -343,8 +497,10 @@ func runtimeNodeExecuteRun(cfg runtimeNodeConfig, run runtimeNodeRun) error {
 			msg = "agent run failed"
 		}
 		_ = runtimeNodeFailRun(cfg, run.ID, "agent_run_failed", msg)
+		slog.Warn("runtime run failed", "worker", workerID, "run", run.ID, "status", result.Status, "duration_ms", durationMS, "log", result.LogPath, "error", msg)
 		return fmt.Errorf("%s", msg)
 	}
+	slog.Info("runtime run completed", "worker", workerID, "run", run.ID, "status", result.Status, "duration_ms", durationMS, "session", result.SessionID, "log", result.LogPath)
 	return runtimeNodeCompleteRun(cfg, run.ID, out)
 }
 
@@ -359,11 +515,11 @@ func startRuntimeRunLeaseLoop(cfg runtimeNodeConfig, runID string) (context.Cont
 			case <-ticker.C:
 				if err := runtimeNodeExtendRunLease(cfg, runID, 90); err != nil {
 					if errors.Is(err, errRuntimeRunCancelled) {
-						fmt.Fprintf(os.Stderr, "runtime run %s was cancelled by the control plane\n", runID)
+						slog.Info("runtime run cancelled by control plane", "run", runID)
 						cancel()
 						return
 					}
-					fmt.Fprintf(os.Stderr, "runtime lease renewal failed for %s: %v\n", runID, err)
+					slog.Warn("runtime lease renewal failed", "run", runID, "error", err)
 				}
 			case <-done:
 				return
@@ -498,8 +654,8 @@ func detectRuntimeNodeCapabilities() map[string]any {
 	euid := os.Geteuid()
 	isRoot := euid == 0
 	return map[string]any{
-		"os":           runtime.GOOS,
-		"arch":         runtime.GOARCH,
+		"os":   runtime.GOOS,
+		"arch": runtime.GOARCH,
 		"direct": map[string]any{
 			"available":                 true,
 			"isRoot":                    isRoot,

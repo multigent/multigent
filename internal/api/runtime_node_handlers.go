@@ -8,6 +8,7 @@ import (
 	"encoding/json"
 	"fmt"
 	"net/http"
+	"os"
 	"runtime"
 	"strings"
 	"time"
@@ -56,8 +57,9 @@ type runtimeNodeHeartbeatRequest struct {
 }
 
 type runtimeRunClaimRequest struct {
-	Capacity         int    `json:"capacity"`
-	CapabilitiesHash string `json:"capabilitiesHash"`
+	Capacity         int      `json:"capacity"`
+	CapabilitiesHash string   `json:"capabilitiesHash"`
+	BusyAgents       []string `json:"busyAgents,omitempty"`
 }
 
 type runtimeRunEventRequest struct {
@@ -139,17 +141,20 @@ func (s *Server) usesAssignedRuntimeNode(workspaceID string, meta *entity.AgentM
 }
 
 func (s *Server) runtimeReadinessForExecution(workspaceID string, meta *entity.AgentMeta) runtimeReadinessResponse {
-	readiness := buildRuntimeReadiness(meta)
+	requireNode := runtimeNodeRequired()
 	nodeID := ""
 	if meta != nil {
 		nodeID = strings.TrimSpace(meta.RuntimeNodeID)
 	}
+	if requireNode && nodeID == "" {
+		return runtimeNodeBlockingReadiness("Runtime node is required before this agent can run.", "This workspace is configured for customer-provided Runtime Nodes. Add a Runtime Node in Settings, then bind this agent to that node.")
+	}
+	readiness := buildRuntimeReadiness(meta)
 	if nodeID == "" {
 		return readiness
 	}
 	node, found, err := s.controlDB.RuntimeNodeByID(workspaceID, nodeID)
 	if err != nil || !found || !runtimeNodeIsOnline(node) {
-		checks := append([]setupCheck(nil), readiness.Checks...)
 		statusDetail := "Assigned runtime node is not online."
 		if found {
 			statusDetail = fmt.Sprintf("Assigned runtime node %q is %s.", firstNonEmpty(node.Name, node.ID), runtimeNodeEffectiveStatus(node))
@@ -157,22 +162,18 @@ func (s *Server) runtimeReadinessForExecution(workspaceID string, meta *entity.A
 				statusDetail += " Last error: " + strings.TrimSpace(node.LastError)
 			}
 		}
-		checks = append(checks, setupCheck{
-			Key:      "runtime_node",
-			Label:    "Runtime Node",
-			Status:   "error",
-			Detail:   statusDetail,
-			Action:   "Start the assigned runtime node, or clear the node binding in Agent settings.",
-			Blocking: true,
-		})
-		return runtimeReadinessResponse{
-			Ready:    false,
-			Blocking: true,
-			Summary:  "Assigned runtime node is not ready.",
-			Checks:   checks,
+		if requireNode {
+			return runtimeNodeBlockingReadiness("Assigned runtime node is not ready.", statusDetail)
 		}
+		checks := append([]setupCheck(nil), readiness.Checks...)
+		checks = append(checks, runtimeNodeBlockingCheck(statusDetail))
+		return runtimeReadinessResponse{Ready: false, Blocking: true, Summary: "Assigned runtime node is not ready.", Checks: checks}
 	}
-	if entity.NormaliseModel(meta.Model) == entity.ModelClaudeCode && runtimeNodeDirectRunsAsRoot(node) {
+	provider := entity.SandboxDocker
+	if meta.Sandbox != nil {
+		provider = meta.Sandbox.Provider
+	}
+	if provider == entity.SandboxNone && entity.NormaliseModel(meta.Model) == entity.ModelClaudeCode && runtimeNodeDirectRunsAsRoot(node) {
 		checks := append([]setupCheck(nil), readiness.Checks...)
 		checks = append(checks, setupCheck{
 			Key:      "runtime_node_claudecode_root",
@@ -224,6 +225,36 @@ func (s *Server) runtimeReadinessForExecution(workspaceID string, meta *entity.A
 		filtered.Summary = "Runtime is ready."
 	}
 	return filtered
+}
+
+func runtimeNodeBlockingReadiness(summary, detail string) runtimeReadinessResponse {
+	return runtimeReadinessResponse{
+		Ready:    false,
+		Blocking: true,
+		Summary:  summary,
+		Checks:   []setupCheck{runtimeNodeBlockingCheck(detail)},
+	}
+}
+
+func runtimeNodeBlockingCheck(detail string) setupCheck {
+	return setupCheck{
+		Key:      "runtime_node",
+		Label:    "Runtime Node",
+		Status:   "error",
+		Detail:   detail,
+		Action:   "Open Settings → Runtime Nodes, add a node, run the join command on your machine, then select it in this agent's advanced settings.",
+		Blocking: true,
+	}
+}
+
+func runtimeNodeRequired() bool {
+	value := strings.TrimSpace(strings.ToLower(os.Getenv("MULTIGENT_REQUIRE_RUNTIME_NODE")))
+	switch value {
+	case "1", "true", "yes", "y", "on":
+		return true
+	default:
+		return false
+	}
 }
 
 func runtimeNodeDirectRunsAsRoot(node controldb.RuntimeNode) bool {
@@ -830,7 +861,7 @@ func (s *Server) handleRuntimeNodeClaimRun(w http.ResponseWriter, r *http.Reques
 		s.jsonErrorCode(w, http.StatusForbidden, ErrCodeForbidden, "runtime node is disabled")
 		return
 	}
-	run, found, err := s.controlDB.ClaimRuntimeRun(principal.Node.WorkspaceID, principal.Node.ID, 90)
+	run, found, err := s.controlDB.ClaimRuntimeRun(principal.Node.WorkspaceID, principal.Node.ID, 90, body.BusyAgents)
 	if err != nil {
 		s.serverError(w, err)
 		return
@@ -1234,7 +1265,14 @@ func externalServerURL(r *http.Request) string {
 	if host == "" {
 		host = r.Host
 	}
-	return strings.TrimRight(proto+"://"+host, "/")
+	prefix := strings.TrimSpace(r.Header.Get("X-Forwarded-Prefix"))
+	if prefix != "" {
+		prefix = "/" + strings.Trim(prefix, "/")
+		if prefix == "/" || strings.Contains(prefix, "..") {
+			prefix = ""
+		}
+	}
+	return strings.TrimRight(proto+"://"+host+prefix, "/")
 }
 
 func marshalRuntimeObject(v map[string]any) string {

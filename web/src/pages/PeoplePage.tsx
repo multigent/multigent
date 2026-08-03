@@ -1,9 +1,10 @@
 import { useCallback, useEffect, useState } from 'react'
 import { useTranslation } from 'react-i18next'
-import { User, X, Copy } from 'lucide-react'
+import { User, X, Copy, Check } from 'lucide-react'
 import { apiFetch, apiPost, apiPut } from '../lib/api'
 import { cn } from '../lib/cn'
 import { useFormatDateTime } from '../lib/format-datetime'
+import { useWorkspaceAccess } from '../lib/workspace-access'
 
 type PersonRow = {
   username: string; role: string; systemRole?: string; displayName?: string
@@ -56,11 +57,28 @@ type UserLookupResponse = {
   }
 }
 
+type BillingEntitlementsResp = {
+  entitlements?: {
+    seatLimit?: number
+  }
+  usage?: {
+    seats?: number
+    pendingSeats?: number
+  }
+}
+
 const fieldCls =
   'w-full rounded-md border border-neutral-200/80 bg-neutral-50/50 px-3 py-2 text-sm outline-none transition-colors focus:border-sky-400 dark:border-zinc-700/60 dark:bg-zinc-800/50 dark:text-zinc-200 dark:[color-scheme:dark]'
 
 function inviteLink(token: string): string {
-  return `${window.location.origin}/invite/${encodeURIComponent(token)}`
+  return `${window.location.origin}${workspacePathPrefix()}/invite/${encodeURIComponent(token)}`
+}
+
+function workspacePathPrefix(): string {
+  const isSaaSProxy = document.cookie.split(';').some((item) => item.trim() === 'mg_trusted_proxy=1')
+  if (!isSaaSProxy) return ''
+  const [slug] = window.location.pathname.split('/').filter(Boolean)
+  return slug ? `/${encodeURIComponent(slug)}` : ''
 }
 
 function looksLikeEmail(value: string): boolean {
@@ -102,9 +120,11 @@ function roleKey(role: string): string {
 
 export default function PeoplePage() {
   const { t } = useTranslation()
+  const { isExample } = useWorkspaceAccess()
   const fmtDateTime = useFormatDateTime()
   const [people, setPeople] = useState<PersonRow[]>([])
   const [invitations, setInvitations] = useState<InvitationRow[]>([])
+  const [billing, setBilling] = useState<BillingEntitlementsResp | null>(null)
   const [loading, setLoading] = useState(true)
   const [creating, setCreating] = useState(false)
   const [form, setForm] = useState({ email: '', role: 'member' })
@@ -112,6 +132,7 @@ export default function PeoplePage() {
   const [lookupLoading, setLookupLoading] = useState(false)
   const [inviteUrl, setInviteUrl] = useState('')
   const [inviteResults, setInviteResults] = useState<{ email: string; inviteUrl?: string; delivery?: string; error?: string }[]>([])
+  const [copiedInviteKey, setCopiedInviteKey] = useState('')
   const [saving, setSaving] = useState(false)
   const [err, setErr] = useState<string | null>(null)
   const [accessEditing, setAccessEditing] = useState<PersonRow | null>(null)
@@ -125,12 +146,14 @@ export default function PeoplePage() {
 
   const refresh = useCallback(async () => {
     try {
-      const [data, inviteData] = await Promise.all([
+      const [data, inviteData, billingData] = await Promise.all([
         apiFetch<PersonRow[]>('/api/v1/users'),
         apiFetch<{ invitations: InvitationRow[] }>('/api/v1/invitations').catch(() => ({ invitations: [] })),
+        apiFetch<BillingEntitlementsResp>('/api/v1/billing/entitlements').catch(() => null),
       ])
       setPeople(data ?? [])
       setInvitations(inviteData.invitations ?? [])
+      setBilling(billingData)
     } catch { /* ignore */ }
     finally { setLoading(false) }
   }, [])
@@ -210,8 +233,20 @@ export default function PeoplePage() {
     finally { setSaving(false) }
   }
 
+  async function copyInviteLink(link: string, key: string) {
+    if (!link) return
+    await navigator.clipboard?.writeText(link)
+    setCopiedInviteKey(key)
+    window.setTimeout(() => {
+      setCopiedInviteKey(prev => prev === key ? '' : prev)
+    }, 1600)
+  }
+
   const workspaceRoleOptions = ['admin', 'member', 'guest']
   const inviteRoleOptions = workspaceRoleOptions
+  const seatLimit = billing?.entitlements?.seatLimit || 0
+  const seatsUsed = billing?.usage?.seats || 0
+  const seatLimitReached = seatLimit > 0 && seatsUsed >= seatLimit
 
   async function revokeInvite(token: string) {
     setErr(null)
@@ -320,11 +355,26 @@ export default function PeoplePage() {
           <h1 className="text-xl font-semibold text-neutral-900 dark:text-zinc-100">{t('people.title')}</h1>
           <p className="mt-0.5 text-sm text-neutral-500 dark:text-zinc-500">{t('people.subtitle')}</p>
         </div>
-        <button type="button" onClick={() => { setCreating(true); setErr(null); setInviteUrl(''); setInviteResults([]); setLookup(null) }}
-          className="rounded-lg border border-sky-600 bg-white px-3 py-2 text-sm font-medium text-sky-700 hover:bg-sky-50 dark:border-sky-500 dark:bg-zinc-900 dark:text-sky-400 dark:hover:bg-zinc-800">
-          {t('people.add')}
-        </button>
+        {!isExample && (
+          <button type="button" disabled={seatLimitReached} onClick={() => { if (seatLimitReached) return; setCreating(true); setErr(null); setInviteUrl(''); setInviteResults([]); setLookup(null) }}
+            title={seatLimitReached ? t('settings.billingLimitHint') : undefined}
+            className="rounded-lg border border-sky-600 bg-white px-3 py-2 text-sm font-medium text-sky-700 hover:bg-sky-50 disabled:cursor-not-allowed disabled:border-neutral-200 disabled:text-neutral-400 disabled:hover:bg-white dark:border-sky-500 dark:bg-zinc-900 dark:text-sky-400 dark:hover:bg-zinc-800 dark:disabled:border-zinc-700 dark:disabled:text-zinc-500 dark:disabled:hover:bg-zinc-900">
+            {t('people.add')}
+          </button>
+        )}
       </div>
+
+      {seatLimitReached && !isExample && (
+        <div className="mb-4 rounded-xl border border-amber-200 bg-amber-50 px-4 py-3 text-sm text-amber-800 dark:border-amber-900/50 dark:bg-amber-900/20 dark:text-amber-300">
+          {t('settings.billingLimitHint')} <span className="font-medium">{seatsUsed} / {seatLimit}</span>
+        </div>
+      )}
+
+      {isExample && (
+        <div className="mb-4 rounded-xl border border-sky-200 bg-sky-50 px-4 py-3 text-sm text-sky-800 dark:border-sky-900/50 dark:bg-sky-900/20 dark:text-sky-300">
+          {t('people.exampleReadonly')}
+        </div>
+      )}
 
       {loading ? (
         <p className="py-12 text-center text-sm text-neutral-400">{t('forms.loading')}</p>
@@ -434,8 +484,8 @@ export default function PeoplePage() {
                       <td className="px-4 py-3 text-neutral-500 dark:text-zinc-500">{fmtDateTime(inv.expiresAt)}</td>
                       <td className="px-4 py-3">
                         <div className="flex justify-end gap-1.5">
-                          <button type="button" onClick={() => navigator.clipboard?.writeText(link)} className="rounded px-2 py-1 text-xs font-medium text-sky-700 hover:bg-sky-50 dark:text-sky-300 dark:hover:bg-sky-900/20">
-                            {t('people.copyInviteLink')}
+                          <button type="button" onClick={() => void copyInviteLink(link, `row-${inv.token}`)} className="rounded px-2 py-1 text-xs font-medium text-sky-700 hover:bg-sky-50 dark:text-sky-300 dark:hover:bg-sky-900/20">
+                            {copiedInviteKey === `row-${inv.token}` ? t('common.copied') : t('people.copyInviteLink')}
                           </button>
                           {inv.status === 'pending' && (
                             <button type="button" onClick={() => void revokeInvite(inv.token)} className="rounded px-2 py-1 text-xs font-medium text-red-600 hover:bg-red-50 dark:text-red-400 dark:hover:bg-red-900/20">
@@ -454,7 +504,7 @@ export default function PeoplePage() {
       )}
 
       {/* Create Person Dialog */}
-      {creating && (
+      {creating && !isExample && (
         <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/45 p-4" onClick={() => !saving && setCreating(false)}>
           <div className="w-full max-w-md rounded-xl border border-neutral-200 bg-white shadow-lg dark:border-zinc-700 dark:bg-zinc-900 animate-scale-in" onClick={e => e.stopPropagation()}>
             <div className="flex items-center justify-between border-b border-neutral-200 px-5 py-3 dark:border-zinc-700">
@@ -502,8 +552,8 @@ export default function PeoplePage() {
                   <p className="mb-2 text-xs text-sky-700 dark:text-sky-300">{t('people.inviteLinkHint')}</p>
                   <div className="flex items-center gap-2">
                     <input readOnly value={inviteUrl} className={cn(fieldCls, 'flex-1 font-mono text-xs')} />
-                    <button type="button" onClick={() => navigator.clipboard?.writeText(inviteUrl)} className="rounded p-2 text-sky-700 hover:bg-sky-100 dark:text-sky-300 dark:hover:bg-sky-900/30">
-                      <Copy className="size-4" />
+                    <button type="button" onClick={() => void copyInviteLink(inviteUrl, 'latest')} className="rounded p-2 text-sky-700 hover:bg-sky-100 dark:text-sky-300 dark:hover:bg-sky-900/30" aria-label={copiedInviteKey === 'latest' ? t('common.copied') : t('people.copyInviteLink')}>
+                      {copiedInviteKey === 'latest' ? <Check className="size-4" /> : <Copy className="size-4" />}
                     </button>
                   </div>
                 </div>
@@ -524,8 +574,8 @@ export default function PeoplePage() {
                       ) : (
                         <div className="mt-1 flex items-center gap-2">
                           <input readOnly value={item.inviteUrl ?? ''} className={cn(fieldCls, 'flex-1 py-1.5 font-mono text-xs')} />
-                          <button type="button" onClick={() => navigator.clipboard?.writeText(item.inviteUrl ?? '')} className="rounded p-1.5 text-sky-700 hover:bg-sky-100 dark:text-sky-300 dark:hover:bg-sky-900/30">
-                            <Copy className="size-4" />
+                          <button type="button" onClick={() => void copyInviteLink(item.inviteUrl ?? '', `result-${idx}`)} className="rounded p-1.5 text-sky-700 hover:bg-sky-100 dark:text-sky-300 dark:hover:bg-sky-900/30" aria-label={copiedInviteKey === `result-${idx}` ? t('common.copied') : t('people.copyInviteLink')}>
+                            {copiedInviteKey === `result-${idx}` ? <Check className="size-4" /> : <Copy className="size-4" />}
                           </button>
                         </div>
                       )}
@@ -535,7 +585,7 @@ export default function PeoplePage() {
               )}
               <div className="flex justify-end gap-2 pt-1">
                 <button type="button" onClick={() => setCreating(false)} disabled={saving} className="rounded-lg border border-neutral-300 px-3 py-1.5 text-sm dark:border-zinc-600">{t('forms.cancel')}</button>
-                <button type="button" onClick={() => void handleCreate()} disabled={saving || !looksLikeEmail(form.email) || Boolean(lookup?.alreadyMember) || Boolean(lookup?.pendingInvite)}
+                <button type="button" onClick={() => void handleCreate()} disabled={saving || seatLimitReached || !looksLikeEmail(form.email) || Boolean(lookup?.alreadyMember) || Boolean(lookup?.pendingInvite)}
                   className="rounded-lg bg-sky-600 px-3 py-1.5 text-sm font-medium text-white disabled:opacity-50">
                   {saving ? t('forms.saving') : t('people.sendInvite')}
                 </button>

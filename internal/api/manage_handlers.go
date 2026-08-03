@@ -6,11 +6,18 @@ import (
 	"net/http"
 	"os"
 	"os/exec"
+	"path/filepath"
 	"sort"
 	"strings"
+	"time"
 
+	"github.com/multigent/multigent/internal/agentcli"
+	"github.com/multigent/multigent/internal/avatar"
+	"github.com/multigent/multigent/internal/ctxbuild"
 	"github.com/multigent/multigent/internal/entity"
+	"github.com/multigent/multigent/internal/formatter"
 	"github.com/multigent/multigent/internal/rbac"
+	"github.com/multigent/multigent/internal/sandbox"
 )
 
 // ── Create Role ──────────────────────────────────────────────────────────────
@@ -112,23 +119,17 @@ func (s *Server) handleHireAgent(w http.ResponseWriter, r *http.Request) {
 			return
 		}
 	}
-
-	args := []string{
-		"--dir", s.root,
-		"hire",
-		"--project", project,
-		"--team", team,
-		"--model", model,
-		"--name", agentName,
-	}
-	if role != "" {
-		args = append(args, "--role", role)
+	if _, err := s.st.AgentMeta(project, agentName); err == nil {
+		s.jsonErrorCode(w, http.StatusConflict, ErrCodeAgentAlreadyExists, fmt.Sprintf("agent %q already exists", agentName))
+		return
+	} else if !isNotFoundErr(err) {
+		s.serverError(w, err)
+		return
 	}
 
-	cmd := exec.Command(s.sched.binPath, args...)
-	out, err := cmd.CombinedOutput()
+	out, err := s.hireAgent(project, agentName, team, role, model)
 	if err != nil {
-		s.jsonError(w, http.StatusInternalServerError, fmt.Sprintf("hire failed: %v\n%s", err, string(out)))
+		s.writeHireAgentError(w, err)
 		return
 	}
 
@@ -164,9 +165,159 @@ func (s *Server) handleHireAgent(w http.ResponseWriter, r *http.Request) {
 
 	_ = json.NewEncoder(w).Encode(map[string]any{
 		"ok":     true,
-		"output": string(out),
+		"output": out,
 		"agent":  agentName,
 	})
+}
+
+type hireAgentError struct {
+	status  int
+	code    string
+	message string
+	err     error
+}
+
+func (e hireAgentError) Error() string {
+	if e.err != nil {
+		return e.err.Error()
+	}
+	return e.message
+}
+
+func (s *Server) writeHireAgentError(w http.ResponseWriter, err error) {
+	if he, ok := err.(hireAgentError); ok {
+		s.jsonErrorCode(w, he.status, he.code, he.message)
+		return
+	}
+	s.jsonErrorCode(w, http.StatusInternalServerError, ErrCodeInternal, "hire failed")
+}
+
+func (s *Server) hireAgent(project, agentName, team, role, model string) (string, error) {
+	agentModel := entity.NormaliseModel(entity.AgentModel(model))
+	if !entity.IsValidModel(agentModel) {
+		return "", hireAgentError{
+			status:  http.StatusBadRequest,
+			code:    ErrCodeValidationFailed,
+			message: fmt.Sprintf("unknown agent CLI %q", model),
+		}
+	}
+	if _, err := s.st.Project(project); err != nil {
+		if isNotFoundErr(err) {
+			return "", hireAgentError{status: http.StatusNotFound, code: ErrCodeProjectNotFound, message: "project not found", err: err}
+		}
+		return "", err
+	}
+	if team != "" {
+		if _, err := s.st.Team(team); err != nil {
+			if isNotFoundErr(err) {
+				return "", hireAgentError{status: http.StatusNotFound, code: ErrCodeTeamNotFound, message: "team not found", err: err}
+			}
+			return "", err
+		}
+	}
+	if role != "" {
+		if _, err := s.st.Role(team, role); err != nil {
+			if isNotFoundErr(err) {
+				return "", hireAgentError{status: http.StatusBadRequest, code: ErrCodeValidationFailed, message: "role not found", err: err}
+			}
+			return "", err
+		}
+	}
+
+	agentDir := s.st.AgentDir(project, agentName)
+	if err := os.RemoveAll(agentDir); err != nil {
+		return "", err
+	}
+	if err := os.MkdirAll(agentDir, 0o755); err != nil {
+		return "", err
+	}
+
+	now := time.Now().UTC()
+	meta := &entity.AgentMeta{
+		Name:    agentName,
+		Project: project,
+		Team:    team,
+		Role:    role,
+		Model:   agentModel,
+		HiredAt: now,
+		Avatar:  avatar.RandomURL(project, agentName),
+	}
+
+	if agentModel != entity.ModelHuman {
+		builder := ctxbuild.NewBuilder(s.st)
+		mc, err := builder.Build(project, team, role)
+		if err != nil {
+			return "", hireAgentError{status: http.StatusBadRequest, code: ErrCodeValidationFailed, message: "agent context is invalid", err: err}
+		}
+		f, err := formatter.New(agentModel)
+		if err != nil {
+			return "", hireAgentError{status: http.StatusBadRequest, code: ErrCodeValidationFailed, message: "unsupported agent CLI", err: err}
+		}
+		if err := f.Format(mc, agentDir); err != nil {
+			return "", err
+		}
+		meta.ContextHash = ctxbuild.LayerHashes(mc)
+		meta.Sandbox = defaultAPISandboxConfig(agentModel)
+		if role != "" {
+			roleMeta, err := s.st.Role(team, role)
+			if err == nil {
+				if err := applyAPIRoleSetup(roleMeta.Setup, agentDir); err != nil {
+					return "", err
+				}
+			}
+		}
+		if projMeta, err := s.st.Project(project); err == nil && strings.TrimSpace(projMeta.Repo) != "" {
+			repoAbs := strings.TrimSpace(projMeta.Repo)
+			if !filepath.IsAbs(repoAbs) {
+				repoAbs = filepath.Join(s.root, repoAbs)
+			}
+			meta.AddDirs = []string{repoAbs}
+		}
+	}
+
+	if err := s.st.SaveAgentMeta(project, agentName, meta); err != nil {
+		return "", err
+	}
+	return fmt.Sprintf("Agent %s/%s added", project, agentName), nil
+}
+
+func defaultAPISandboxConfig(agentModel entity.AgentModel) *entity.SandboxConfig {
+	agentModel = entity.NormaliseModel(agentModel)
+	if agentModel == entity.ModelHuman || agentModel == entity.ModelHTTPAgent {
+		return nil
+	}
+	image := sandbox.ImageForModel(agentModel)
+	return &entity.SandboxConfig{
+		Provider: entity.SandboxDocker,
+		Image:    image,
+		AgentCLI: agentcli.DefaultForModel(agentModel),
+		Docker: &entity.DockerSandboxConfig{
+			Image:       image,
+			NetworkMode: "bridge",
+		},
+	}
+}
+
+func applyAPIRoleSetup(setup entity.RoleSetup, agentDir string) error {
+	multigentDir := filepath.Join(agentDir, ".multigent")
+	for _, dir := range setup.Dirs {
+		full := filepath.Join(multigentDir, dir)
+		if err := os.MkdirAll(full, 0o755); err != nil {
+			return fmt.Errorf("create dir %q: %w", dir, err)
+		}
+	}
+	for _, file := range setup.Files {
+		full := filepath.Join(multigentDir, file.Path)
+		if err := os.MkdirAll(filepath.Dir(full), 0o755); err != nil {
+			return fmt.Errorf("create parent for %q: %w", file.Path, err)
+		}
+		if _, err := os.Stat(full); os.IsNotExist(err) {
+			if err := os.WriteFile(full, []byte(file.Content), 0o644); err != nil {
+				return fmt.Errorf("create file %q: %w", file.Path, err)
+			}
+		}
+	}
+	return nil
 }
 
 // ── Run Agent ────────────────────────────────────────────────────────────────

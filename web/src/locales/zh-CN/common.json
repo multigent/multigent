@@ -13,7 +13,8 @@
     "done": "完成",
     "loading": "加载中…",
     "creating": "创建中…",
-    "saving": "保存中…"
+    "saving": "保存中…",
+    "copied": "已复制"
   },
   "apiErrors": {
     "bad_request": "请求无法处理。",
@@ -652,6 +653,8 @@
   "footer": {
     "madeWith": "用心打造",
     "docs": "文档",
+    "website": "官网",
+    "commercialLicense": "购买商业授权",
     "updateAvailable": "新版本: {{version}}",
     "showAssistant": "显示 AI 助手"
   },
@@ -760,6 +763,9 @@
     "billingTitle": "计划与用量",
     "billingIntro": "这里展示当前工作区的资源限制。本地或自托管实例默认不限制，SaaS 实例会按套餐限制执行。",
     "billingPlan": "套餐",
+    "billingPlan_starter": "Starter",
+    "billingPlan_business": "Business",
+    "billingPlanLabel": "{{plan}}计划",
     "billingStatus": "计费状态",
     "billingStatus_unlimited": "不限制",
     "billingStatus_trialing": "试用中",
@@ -768,7 +774,13 @@
     "billingStatus_past_due": "付款异常",
     "billingStatus_canceled": "已取消",
     "billingTrialEnds": "试用结束",
-    "billingSeats": "席位",
+    "billingTrialPill": "14天试用 · 剩{{count}}天",
+    "billingTrialEndsAt": "到期 {{date}}",
+    "billingManagePlan": "升级计划",
+    "billingBuyLicense": "购买商业授权",
+    "billingSeats": "成员席位",
+    "billingCollaborators": "协作者席位",
+    "billingCollaboratorBreakdown": "人 {{people}} · Agent {{agents}}",
     "billingAgents": "Agent",
     "billingRuntimeNodes": "运行节点",
     "billingUnlimited": "不限",
@@ -963,9 +975,11 @@
     "confirmFire": "确定要从项目中移除成员 \"{{name}}\"？其工作目录将被归档。",
     "hireAgentDesc": "向项目 \"{{project}}\" 添加成员。",
     "addMemberDesc": "向项目 \"{{project}}\" 添加人类成员或 Agent。",
+    "duplicateName": "项目里已存在同名成员。",
     "memberType": "成员类型",
     "memberTypeAgent": "Agent",
     "memberTypeHuman": "Human",
+    "exampleReadonly": "这是教学演示工作区。这里不能添加或删除项目成员。准备接入真实团队时，请切换到你自己的工作区。",
     "agentName": "Agent 名称",
     "team": "团队",
     "selectTeam": "选择团队…",
@@ -1624,6 +1638,7 @@
     "runtimeMayBeSlow": "运行环境可以启动，但准备尚未完整。首次运行可能较慢。",
     "runtimeBlocked": "运行环境未就绪",
     "runtimeBlockedHint": "请先处理下面的阻塞项，再运行这个 Agent。",
+    "runtimeNodeRequiredHint": "在线版暂不提供平台托管执行。请先在设置中添加运行节点，并在 Agent 详情里绑定该节点。",
     "runtimeBlockedContactAdmin": "运行环境未就绪。请联系超级管理员处理后再运行这个 Agent。",
     "runtimeBlockedPlaceholder": "运行环境未就绪，请联系超级管理员处理…",
     "runtimeBlockedBeforeSend": "这个 Agent 还不能运行，请先处理这些问题：",
@@ -1946,6 +1961,7 @@
     "copyInviteLink": "复制链接",
     "revokeInvite": "撤销",
     "inviteResults": "邀请结果",
+    "exampleReadonly": "这是教学演示工作区。这里不能邀请用户或调整工作区成员，也不会计入真实付费工作区数量。",
     "manageAccess": "权限设置",
     "systemRole_super_admin": "超级管理员",
     "superAdminAccess": "全部工作区和系统设置",
@@ -2255,7 +2271,7 @@
       },
       "models": {
         "title": "先配置模型账号",
-        "body": "Agent 需要模型账号才能运行。可以在设置里添加官方 API Key 或第三方模型供应商，也可以使用“从本地导入”扫描本机官方 CLI 登录态和 cc-switch 账号，减少手动配置。"
+        "body": "Agent 需要模型账号才能运行。可以在设置里添加官方 API Key 或第三方模型供应商，然后分配给需要运行的 Agent。"
       },
       "team": {
         "title": "查看演示团队",

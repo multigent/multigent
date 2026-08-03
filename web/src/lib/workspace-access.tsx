@@ -5,6 +5,7 @@ import { useAuth } from './auth'
 type WorkspaceAccessSummary = {
   id?: string
   name?: string
+  isExample?: boolean
   currentUserRole?: string
   currentUserCanAdmin?: boolean
 }
@@ -14,6 +15,7 @@ type WorkspaceAccessContextValue = {
   workspace: WorkspaceAccessSummary | null
   role: string
   canAdmin: boolean
+  isExample: boolean
   reload: () => void
 }
 
@@ -22,6 +24,7 @@ const WorkspaceAccessContext = createContext<WorkspaceAccessContextValue>({
   workspace: null,
   role: '',
   canAdmin: false,
+  isExample: false,
   reload: () => {},
 })
 
@@ -79,6 +82,7 @@ export function WorkspaceAccessProvider({ children }: { children: ReactNode }) {
       workspace,
       role,
       canAdmin,
+      isExample: Boolean(workspace?.isExample),
       reload: () => setReloadKey((k) => k + 1),
     }
   }, [loading, user, workspace])

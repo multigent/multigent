@@ -1011,22 +1011,42 @@ func (s *Server) handlePatchAgent(w http.ResponseWriter, r *http.Request) {
 			s.jsonError(w, http.StatusConflict, "cannot rename a running agent")
 			return
 		}
+		if _, err := s.st.AgentMeta(project, newName); err == nil {
+			s.jsonErrorCode(w, http.StatusConflict, ErrCodeAgentAlreadyExists, "target agent already exists")
+			return
+		} else if !isNotFoundErr(err) {
+			s.serverError(w, err)
+			return
+		}
 		oldDir := s.st.AgentDir(project, agent)
 		newDir := s.st.AgentDir(project, newName)
 		if _, err := os.Stat(newDir); err == nil {
-			s.jsonErrorCode(w, http.StatusConflict, ErrCodeAgentAlreadyExists, "target agent already exists")
-			return
+			if err := os.RemoveAll(newDir); err != nil {
+				s.serverError(w, err)
+				return
+			}
 		} else if !os.IsNotExist(err) {
 			s.serverError(w, err)
 			return
 		}
 		if err := os.Rename(oldDir, newDir); err != nil {
-			s.serverError(w, err)
-			return
+			if os.IsNotExist(err) {
+				if err := os.MkdirAll(newDir, 0o755); err != nil {
+					s.serverError(w, err)
+					return
+				}
+			} else {
+				s.serverError(w, err)
+				return
+			}
 		}
 		meta.Name = newName
 		meta.Project = project
 		if err := s.st.SaveAgentMeta(project, newName, meta); err != nil {
+			s.serverError(w, err)
+			return
+		}
+		if err := s.st.DeleteAgentMeta(project, agent); err != nil && !isNotFoundErr(err) {
 			s.serverError(w, err)
 			return
 		}

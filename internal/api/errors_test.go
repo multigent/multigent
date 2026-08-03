@@ -20,12 +20,19 @@ func TestJSONErrorUsesStructuredEnvelope(t *testing.T) {
 	if rec.Header().Get("X-Multigent-Error-Code") != ErrCodeInvalidJSON {
 		t.Fatalf("error code header=%q", rec.Header().Get("X-Multigent-Error-Code"))
 	}
+	requestID := rec.Header().Get("X-Multigent-Request-ID")
+	if len(requestID) < 32 || strings.HasPrefix(requestID, "err-") {
+		t.Fatalf("request id header=%q", requestID)
+	}
 	var body apiErrorResponse
 	if err := json.Unmarshal(rec.Body.Bytes(), &body); err != nil {
 		t.Fatalf("decode error response: %v", err)
 	}
 	if body.Error.Code != ErrCodeInvalidJSON || body.Error.Message != "invalid JSON body" || body.Error.RequestID == "" {
 		t.Fatalf("unexpected body=%#v", body)
+	}
+	if body.Error.RequestID != requestID {
+		t.Fatalf("request id mismatch header=%q body=%q", requestID, body.Error.RequestID)
 	}
 }
 

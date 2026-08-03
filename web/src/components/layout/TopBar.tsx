@@ -344,7 +344,7 @@ export function TopBar({
 
       {/* Right controls */}
       <div className="flex shrink-0 items-center gap-1">
-          <button
+        <button
           type="button"
           onClick={onOpenSearch}
           className="flex h-7 w-40 max-w-[32vw] items-center gap-1.5 rounded-lg border border-neutral-200/80 bg-neutral-50/60 px-2 text-left text-[11px] text-neutral-400 transition-all duration-150 hover:border-neutral-300 dark:border-zinc-700/50 dark:bg-zinc-800/40 dark:text-zinc-500 dark:hover:border-zinc-600"

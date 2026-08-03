@@ -9,6 +9,7 @@ import { ConfirmDialog } from '../../components/ui/ConfirmDialog'
 import { useFormatDateTime } from '../../lib/format-datetime'
 import { useApiJson } from '../../lib/use-api'
 import { apiDelete } from '../../lib/api'
+import { useWorkspaceAccess } from '../../lib/workspace-access'
 
 const MODEL_COLORS: Record<string, string> = {
   claudecode:    'bg-orange-100 text-orange-700 dark:bg-orange-900/30 dark:text-orange-300',
@@ -30,6 +31,15 @@ type AgentRow = {
   project: string
   hiredAt: string
   avatar?: string
+}
+
+type BillingEntitlementsResp = {
+  entitlements?: {
+    agentLimit?: number
+  }
+  usage?: {
+    agents?: number
+  }
 }
 
 function MemberAvatar({ row }: { row: AgentRow }) {
@@ -62,6 +72,7 @@ function MemberAvatar({ row }: { row: AgentRow }) {
 
 export default function ProjectMembersPage() {
   const { t } = useTranslation()
+  const { isExample } = useWorkspaceAccess()
   const fmt = useFormatDateTime()
   const { projectId } = useParams<{ projectId: string }>()
 
@@ -73,7 +84,11 @@ export default function ProjectMembersPage() {
       ? `/api/v1/projects/${encodeURIComponent(projectId)}/agents`
       : null
   const agentsState = useApiJson<AgentRow[]>(agentsPath, reloadKey)
+  const billingState = useApiJson<BillingEntitlementsResp>('/api/v1/billing/entitlements', reloadKey)
   const members = agentsState.status === 'ok' ? (agentsState.data ?? []) : []
+  const agentLimit = billingState.status === 'ok' ? (billingState.data?.entitlements?.agentLimit || 0) : 0
+  const agentsUsed = billingState.status === 'ok' ? (billingState.data?.usage?.agents || 0) : 0
+  const agentLimitReached = agentLimit > 0 && agentsUsed >= agentLimit
 
   async function deleteMember() {
     if (!projectId || !pendingDelete) return
@@ -97,13 +112,26 @@ export default function ProjectMembersPage() {
             <h1 className="text-xl font-semibold text-neutral-900 dark:text-zinc-100">{t('projectNav.members')}</h1>
             <p className="mt-0.5 text-sm text-neutral-500 dark:text-zinc-500">{t('members.subtitle')}</p>
           </div>
-          {projectId && (
+          {projectId && !isExample && (
             <HireAgentDialog
               projectId={projectId}
+              existingMemberNames={members.map(member => member.name)}
+              agentLimitReached={agentLimitReached}
+              agentLimitText={agentLimitReached ? `${agentsUsed} / ${agentLimit}` : ''}
               onHired={() => setReloadKey((k) => k + 1)}
             />
           )}
         </div>
+        {isExample && (
+          <div className="mt-4 rounded-xl border border-sky-200 bg-sky-50 px-4 py-3 text-sm text-sky-800 dark:border-sky-900/50 dark:bg-sky-900/20 dark:text-sky-300">
+            {t('members.exampleReadonly')}
+          </div>
+        )}
+        {agentLimitReached && !isExample && (
+          <div className="mt-4 rounded-xl border border-amber-200 bg-amber-50 px-4 py-3 text-sm text-amber-800 dark:border-amber-900/50 dark:bg-amber-900/20 dark:text-amber-300">
+            {t('settings.billingLimitHint')} <span className="font-medium">{agentsUsed} / {agentLimit}</span>
+          </div>
+        )}
       </div>
 
       <div className="flex-1 overflow-y-auto px-6 pb-6">
@@ -152,17 +180,19 @@ export default function ProjectMembersPage() {
                       {row.model}
                     </span>
                     <span className="ml-auto text-[11px] text-neutral-400 dark:text-zinc-500">{fmt(row.hiredAt)}</span>
-                    <button
-                      type="button"
-                      title={t('members.fire')}
-                      onClick={(e) => {
-                        e.preventDefault()
-                        setPendingDelete(row)
-                      }}
-                      className="rounded p-1 text-neutral-400 opacity-0 transition-all hover:bg-red-50 hover:text-red-600 group-hover:opacity-100 dark:hover:bg-red-900/20 dark:hover:text-red-400"
-                    >
-                      <UserMinus className="size-3.5" strokeWidth={1.8} />
-                    </button>
+                    {!isExample && (
+                      <button
+                        type="button"
+                        title={t('members.fire')}
+                        onClick={(e) => {
+                          e.preventDefault()
+                          setPendingDelete(row)
+                        }}
+                        className="rounded p-1 text-neutral-400 opacity-0 transition-all hover:bg-red-50 hover:text-red-600 group-hover:opacity-100 dark:hover:bg-red-900/20 dark:hover:text-red-400"
+                      >
+                        <UserMinus className="size-3.5" strokeWidth={1.8} />
+                      </button>
+                    )}
                   </div>
                 </div>
               )

@@ -105,15 +105,17 @@ func (s *Server) writeAPIError(w http.ResponseWriter, status int, code, msg stri
 	if strings.TrimSpace(msg) == "" {
 		msg = http.StatusText(status)
 	}
+	requestID := newErrorRequestID()
 	w.Header().Set("Content-Type", "application/json")
 	w.Header().Set("X-Multigent-Error-Code", code)
+	w.Header().Set("X-Multigent-Request-ID", requestID)
 	w.WriteHeader(status)
 	_ = json.NewEncoder(w).Encode(apiErrorResponse{
 		Error: apiErrorBody{
 			Code:      code,
 			Message:   msg,
 			Details:   details,
-			RequestID: newErrorRequestID(),
+			RequestID: requestID,
 		},
 	})
 }
@@ -152,9 +154,9 @@ func classifyErrorCode(status int, msg string) string {
 }
 
 func newErrorRequestID() string {
-	var b [8]byte
+	var b [16]byte
 	if _, err := rand.Read(b[:]); err == nil {
-		return "err-" + hex.EncodeToString(b[:])
+		return hex.EncodeToString(b[:])
 	}
-	return "err-" + hex.EncodeToString([]byte(time.Now().UTC().Format("150405.000")))
+	return hex.EncodeToString([]byte(time.Now().UTC().Format("20060102150405.000000000")))
 }

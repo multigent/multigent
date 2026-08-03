@@ -1,7 +1,7 @@
 import { useCallback, useEffect, useRef, useState } from 'react'
 import { useTranslation } from 'react-i18next'
 import { KeyRound, Plus, Server, Trash2, Pencil, X, Eye, EyeOff, Users, Shield, ShieldCheck, UserPlus, LockKeyhole } from 'lucide-react'
-import { useAuth } from '../lib/auth'
+import { isTrustedProxyMode, useAuth } from '../lib/auth'
 import { useWorkspaceAccess } from '../lib/workspace-access'
 import { apiFetch, apiPost, apiPut, apiDelete } from '../lib/api'
 import { cn } from '../lib/cn'
@@ -128,9 +128,21 @@ function BillingUsageSection() {
   const usage = data?.usage
   const billingStatus = ent?.billingStatus || 'unlimited'
   const plan = ent?.planCode || 'local'
+  const trustedProxyMode = isTrustedProxyMode()
+  const workspaceSlug = window.location.pathname.split('/').filter(Boolean)[0] || ''
+  const billingURL = trustedProxyMode && workspaceSlug
+    ? `/billing/start?workspace=${encodeURIComponent(workspaceSlug)}`
+    : (trustedProxyMode ? '/billing/start' : 'https://multigent.dev/contact-sales')
   const limitLabel = (value?: number) => value && value > 0 ? String(value) : t('settings.billingUnlimited')
   const usageItems = [
-    { key: 'seats', label: t('settings.billingSeats'), used: (usage?.seats || 0) + (usage?.pendingSeats || 0), current: usage?.seats || 0, pending: usage?.pendingSeats || 0, limit: ent?.seatLimit },
+    {
+      key: 'seats',
+      label: t('settings.billingSeats'),
+      used: usage?.seats || 0,
+      current: usage?.seats || 0,
+      pending: usage?.pendingSeats || 0,
+      limit: ent?.seatLimit,
+    },
     { key: 'agents', label: t('settings.billingAgents'), used: usage?.agents || 0, current: usage?.agents || 0, pending: 0, limit: ent?.agentLimit },
     { key: 'runtimeNodes', label: t('settings.billingRuntimeNodes'), used: usage?.runtimeNodes || 0, current: usage?.runtimeNodes || 0, pending: 0, limit: ent?.runtimeNodeLimit },
   ]
@@ -142,13 +154,14 @@ function BillingUsageSection() {
           <h3 className="text-base font-semibold text-neutral-900 dark:text-zinc-100">{t('settings.billingTitle')}</h3>
           <p className="mt-1 text-xs leading-5 text-neutral-500 dark:text-zinc-400">{t('settings.billingIntro')}</p>
         </div>
-        <button
-          type="button"
-          onClick={() => void load()}
-          className="rounded-lg border border-neutral-200 bg-white px-3 py-2 text-sm font-medium text-neutral-600 hover:bg-neutral-50 dark:border-zinc-700 dark:bg-zinc-900 dark:text-zinc-300 dark:hover:bg-zinc-800"
+        <a
+          href={billingURL}
+          target="_blank"
+          rel="noopener noreferrer"
+          className="rounded-lg border border-sky-600 bg-white px-3 py-2 text-sm font-medium text-sky-700 hover:bg-sky-50 dark:border-sky-500 dark:bg-zinc-900 dark:text-sky-400 dark:hover:bg-zinc-800"
         >
-          {loading ? t('forms.loading') : t('common.refresh')}
-        </button>
+          {trustedProxyMode ? t('settings.billingManagePlan') : t('settings.billingBuyLicense')}
+        </a>
       </div>
 
       {err && <p className="mt-4 rounded-lg border border-red-200 bg-red-50 px-3 py-2 text-sm text-red-700 dark:border-red-900/60 dark:bg-red-950/30 dark:text-red-300">{err}</p>}
@@ -190,11 +203,6 @@ function BillingUsageSection() {
         })}
       </div>
 
-      {data && usageItems.some(item => item.limit && item.limit > 0 && item.used >= item.limit) && (
-        <div className="mt-4 rounded-lg border border-amber-200 bg-amber-50 px-4 py-3 text-sm text-amber-800 dark:border-amber-900/60 dark:bg-amber-950/30 dark:text-amber-200">
-          {t('settings.billingLimitHint')}
-        </div>
-      )}
     </section>
   )
 }
@@ -1670,6 +1678,7 @@ function ProvidersSection() {
   const { t } = useTranslation()
   const { user } = useAuth()
   const { canAdmin } = useWorkspaceAccess()
+  const trustedProxyMode = isTrustedProxyMode()
   const [workspace, setWorkspace] = useState<WorkspaceAccessSummary | null>(null)
   const canCreateWorkspaceProvider = workspace?.currentUserCanAdmin ?? canAdmin
   const [providers, setProviders] = useState<ProviderRow[]>([])
@@ -1718,6 +1727,7 @@ function ProvidersSection() {
   }
 
   async function openCCSwitchImport() {
+    if (trustedProxyMode) return
     setCCSwitch({ available: false, providers: [] })
     setCCSwitchSelected([])
     setCCSwitchLoading(true)
@@ -2057,10 +2067,12 @@ function ProvidersSection() {
             <h3 className="text-base font-semibold text-neutral-900 dark:text-zinc-100">{t('provider.title')}</h3>
           </div>
           <div className="flex items-center gap-2">
-            <button type="button" onClick={() => void openCCSwitchImport()}
-              className="rounded-lg border border-sky-600 bg-white px-3 py-1.5 text-xs font-medium text-sky-700 hover:bg-sky-50 dark:border-sky-500 dark:bg-zinc-900 dark:text-sky-400 dark:hover:bg-zinc-800">
-              {t('provider.importCCSwitch')}
-            </button>
+            {!trustedProxyMode && (
+              <button type="button" onClick={() => void openCCSwitchImport()}
+                className="rounded-lg border border-sky-600 bg-white px-3 py-1.5 text-xs font-medium text-sky-700 hover:bg-sky-50 dark:border-sky-500 dark:bg-zinc-900 dark:text-sky-400 dark:hover:bg-zinc-800">
+                {t('provider.importCCSwitch')}
+              </button>
+            )}
             <button type="button" data-tour-provider-add onClick={openNew}
               className="rounded-lg border border-sky-600 bg-white px-3 py-1.5 text-xs font-medium text-sky-700 hover:bg-sky-50 dark:border-sky-500 dark:bg-zinc-900 dark:text-sky-400 dark:hover:bg-zinc-800">
               {t('provider.add')}
@@ -2312,7 +2324,7 @@ function ProvidersSection() {
           </div>
         </div>
       )}
-      {ccSwitch && (
+      {!trustedProxyMode && ccSwitch && (
         <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/45 p-4" onClick={() => !ccSwitchImporting && setCCSwitch(null)}>
           <div className="w-full max-w-2xl rounded-xl border border-neutral-200 bg-white shadow-lg dark:border-zinc-700 dark:bg-zinc-900 animate-scale-in" onClick={e => e.stopPropagation()}>
             <div className="flex items-center justify-between border-b border-neutral-200 px-5 py-3 dark:border-zinc-700">

@@ -149,12 +149,17 @@ func (s *Server) handleAuditEvents(w http.ResponseWriter, r *http.Request) {
 			limit = n
 		}
 	}
+	createdAfter := ""
+	if days := s.currentEntitlements(r).AuditRetentionDays; days > 0 {
+		createdAfter = time.Now().UTC().Add(-time.Duration(days) * 24 * time.Hour).Format(time.RFC3339)
+	}
 	events, err := s.controlDB.ListAuditEvents(controldb.AuditEventFilter{
 		WorkspaceID:  workspaceID,
 		ActorID:      strings.TrimSpace(r.URL.Query().Get("actorId")),
 		Action:       strings.TrimSpace(r.URL.Query().Get("action")),
 		ResourceType: strings.TrimSpace(r.URL.Query().Get("resourceType")),
 		ResourceID:   strings.TrimSpace(r.URL.Query().Get("resourceId")),
+		CreatedAfter: createdAfter,
 		Limit:        limit,
 	})
 	if err != nil {

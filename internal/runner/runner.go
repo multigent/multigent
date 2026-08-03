@@ -93,9 +93,10 @@ Important: do not use Claude Code built-in Task, TaskUpdate, or Todo tools to up
 
 // Runner executes tasks for agents using their configured CLI.
 type Runner struct {
-	root       string
-	ts         taskstore.Store
-	agentStore store.Store
+	root           string
+	ts             taskstore.Store
+	agentStore     store.Store
+	SuppressStdout bool
 }
 
 // New creates a Runner. root is the workspace root.
@@ -271,7 +272,10 @@ func (r *Runner) ExecPromptWithRuntimeControlEnvContext(ctx context.Context, pro
 	}
 
 	var outBuf bytes.Buffer
-	multiOut := io.MultiWriter(&outBuf, logFile, os.Stdout)
+	var multiOut io.Writer = io.MultiWriter(&outBuf, logFile, os.Stdout)
+	if r.SuppressStdout {
+		multiOut = io.MultiWriter(&outBuf, logFile)
+	}
 	cmd.Stdout = multiOut
 	cmd.Stderr = multiOut
 

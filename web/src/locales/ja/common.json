@@ -13,7 +13,8 @@
     "done": "完了",
     "loading": "読み込み中…",
     "creating": "作成中…",
-    "saving": "保存中…"
+    "saving": "保存中…",
+    "copied": "コピー済み"
   },
   "apiErrors": {
     "bad_request": "リクエストを処理できませんでした。",
@@ -652,6 +653,8 @@
   "footer": {
     "madeWith": "こだわりの",
     "docs": "ドキュメント",
+    "website": "Webサイト",
+    "commercialLicense": "商用ライセンス",
     "updateAvailable": "更新あり: {{version}}",
     "showAssistant": "AI アシスタントを表示"
   },
@@ -760,6 +763,9 @@
     "billingTitle": "プランと使用量",
     "billingIntro": "現在のワークスペースのリソース制限を表示します。ローカル/セルフホスト環境は、SaaS entitlement がない限り無制限です。",
     "billingPlan": "プラン",
+    "billingPlan_starter": "Starter",
+    "billingPlan_business": "Business",
+    "billingPlanLabel": "{{plan}}プラン",
     "billingStatus": "請求ステータス",
     "billingStatus_unlimited": "無制限",
     "billingStatus_trialing": "トライアル中",
@@ -768,7 +774,13 @@
     "billingStatus_past_due": "支払い遅延",
     "billingStatus_canceled": "キャンセル済み",
     "billingTrialEnds": "トライアル終了",
-    "billingSeats": "シート",
+    "billingTrialPill": "14日間トライアル · 残り{{count}}日",
+    "billingTrialEndsAt": "{{date}} まで",
+    "billingManagePlan": "プランをアップグレード",
+    "billingBuyLicense": "商用ライセンスを購入",
+    "billingSeats": "メンバーシート",
+    "billingCollaborators": "コラボレーターシート",
+    "billingCollaboratorBreakdown": "人 {{people}} · Agent {{agents}}",
     "billingAgents": "Agent",
     "billingRuntimeNodes": "実行ノード",
     "billingUnlimited": "無制限",
@@ -954,6 +966,7 @@
     "confirmFire": "プロジェクトからメンバー「{{name}}」を削除しますか？作業ディレクトリはアーカイブされます。",
     "hireAgentDesc": "プロジェクト「{{project}}」にメンバーを追加します。",
     "addMemberDesc": "プロジェクト「{{project}}」に人間メンバーまたは Agent を追加します。",
+    "duplicateName": "同じ名前のプロジェクトメンバーが既に存在します。",
     "memberType": "メンバー種別",
     "memberTypeAgent": "Agent",
     "memberTypeHuman": "Human",
@@ -1600,6 +1613,7 @@
     "runtimeMayBeSlow": "実行環境は起動できますが、準備が未完了です。初回実行は遅くなる場合があります。",
     "runtimeBlocked": "実行環境が未準備",
     "runtimeBlockedHint": "下記のブロック項目を解消してから、この Agent を実行してください。",
+    "runtimeNodeRequiredHint": "SaaS プレビューではホスト型実行はまだ有効ではありません。設定で Runtime Node を追加し、この Agent に割り当ててください。",
     "runtimeBlockedContactAdmin": "実行環境が未準備です。スーパー管理者に対応を依頼してから、この Agent を実行してください。",
     "runtimeBlockedPlaceholder": "実行環境が未準備です。スーパー管理者に連絡してください…",
     "runtimeBlockedBeforeSend": "この Agent はまだ実行できません。先に以下を解消してください:",
@@ -2230,7 +2244,7 @@
       },
       "models": {
         "title": "まずモデルアカウントを設定",
-        "body": "Agent を実行するにはモデルアカウントが必要です。Settings で公式 API Key またはサードパーティ provider を追加するか、「ローカルからインポート」で公式 CLI ログイン状態や cc-switch アカウントを読み取れます。"
+        "body": "Agent を実行するにはモデルアカウントが必要です。Settings で公式 API Key またはサードパーティ provider を追加し、実行する Agent に割り当てます。"
       },
       "team": {
         "title": "Demo team を確認",

@@ -229,7 +229,7 @@ func (db *SQLiteStore) ListRuntimeRuns(filter RuntimeRunFilter) ([]RuntimeRun, e
 	return out, rows.Err()
 }
 
-func (db *SQLiteStore) ClaimRuntimeRun(workspaceID, nodeID string, leaseSeconds int) (RuntimeRun, bool, error) {
+func (db *SQLiteStore) ClaimRuntimeRun(workspaceID, nodeID string, leaseSeconds int, busyAgents []string) (RuntimeRun, bool, error) {
 	if leaseSeconds <= 0 {
 		leaseSeconds = 60
 	}
@@ -241,11 +241,29 @@ func (db *SQLiteStore) ClaimRuntimeRun(workspaceID, nodeID string, leaseSeconds 
 
 	nowTime := time.Now().UTC()
 	now := nowTime.Format(time.RFC3339)
-	row := tx.QueryRow(runtimeRunSelectSQL()+` WHERE workspace_id = ? AND (desired_runtime_node_id = '' OR desired_runtime_node_id = ?) AND (
+	query := runtimeRunSelectSQL() + ` WHERE workspace_id = ? AND (desired_runtime_node_id = '' OR desired_runtime_node_id = ?) AND (
 	status = 'queued'
 	OR (status = 'running' AND lease_expires_at IS NOT NULL AND lease_expires_at != '' AND lease_expires_at < ?)
 )
-ORDER BY priority ASC, created_at ASC, id ASC LIMIT 1`, workspaceID, nodeID, now)
+`
+	args := []any{workspaceID, nodeID, now}
+	if len(busyAgents) > 0 {
+		placeholders := make([]string, 0, len(busyAgents))
+		for _, agent := range busyAgents {
+			agent = strings.TrimSpace(agent)
+			if agent == "" {
+				continue
+			}
+			placeholders = append(placeholders, "?")
+			args = append(args, agent)
+		}
+		if len(placeholders) > 0 {
+			query += ` AND (project_id || '/' || agent_id) NOT IN (` + strings.Join(placeholders, ",") + `)
+`
+		}
+	}
+	query += `ORDER BY priority ASC, created_at ASC, id ASC LIMIT 1`
+	row := tx.QueryRow(query, args...)
 	run, err := scanRuntimeRun(row)
 	if errors.Is(err, sql.ErrNoRows) {
 		return RuntimeRun{}, false, nil

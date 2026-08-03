@@ -41,7 +41,7 @@ func TestCreateInvitationRespectsSeatLimit(t *testing.T) {
 func TestBillingEntitlementsEndpointReturnsUsage(t *testing.T) {
 	s, _ := newConnectionGrantPolicyServer(t)
 	req := providerTestRequest(http.MethodGet, "/api/v1/billing/entitlements", "admin", nil)
-	req = requestWithEntitlements(req, workspaceEntitlements{PlanCode: "business", BillingStatus: "active", SeatLimit: 10, AgentLimit: 20})
+	req = requestWithEntitlements(req, workspaceEntitlements{PlanCode: "business", BillingStatus: "active", SeatLimit: 10, AgentLimit: 50, RuntimeNodeLimit: 50})
 
 	rec := httptest.NewRecorder()
 	s.handleBillingEntitlements(rec, req)

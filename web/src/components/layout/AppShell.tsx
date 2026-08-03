@@ -4,11 +4,12 @@ import { useTranslation } from 'react-i18next'
 import { ChevronRight } from 'lucide-react'
 import { Sidebar } from './Sidebar'
 import { TopBar } from './TopBar'
+import { BillingStatusIndicator } from './BillingStatusIndicator'
 import { CommandPalette } from './CommandPalette'
 import { PageTabsProvider } from '../../lib/page-tabs'
 import { recordVisit } from '../../lib/recent-visits'
 import { apiFetch } from '../../lib/api'
-import { isSystemAdmin, useAuth } from '../../lib/auth'
+import { isSystemAdmin, isTrustedProxyMode, useAuth } from '../../lib/auth'
 import {
   navKeyFromPath,
   projectIdFromPath,
@@ -284,6 +285,7 @@ export function AppShell() {
   }, [])
 
   const pageTitle = crumbs.length > 0 ? crumbs[crumbs.length - 1].label : ''
+  const trustedProxyMode = isTrustedProxyMode()
 
   useEffect(() => {
     document.title = pageTitle ? `${pageTitle} · Multigent` : 'Multigent'
@@ -317,7 +319,7 @@ export function AppShell() {
                   </a>
                 )}
               </div>
-              <div className="flex items-center gap-3">
+              <div className="flex items-center gap-1.5">
                 {assistantHidden && (
                   <button
                     type="button"
@@ -327,14 +329,23 @@ export function AppShell() {
                     {t('footer.showAssistant')}
                   </button>
                 )}
-                <a href="https://github.com/multigent/multigent/wiki" target="_blank" rel="noopener noreferrer"
+                <BillingStatusIndicator />
+                <a href="https://multigent.dev" target="_blank" rel="noopener noreferrer"
                   className="rounded-md px-2 py-0.5 text-xs text-neutral-400 transition-colors hover:bg-neutral-100 hover:text-neutral-600 dark:text-zinc-500 dark:hover:bg-zinc-800 dark:hover:text-zinc-300">
-                  {t('footer.docs')}
+                  {t('footer.website')}
                 </a>
-                <a href="https://github.com/multigent/multigent" target="_blank" rel="noopener noreferrer"
-                  className="rounded-md px-2 py-0.5 text-xs text-neutral-400 transition-colors hover:bg-neutral-100 hover:text-neutral-600 dark:text-zinc-500 dark:hover:bg-zinc-800 dark:hover:text-zinc-300">
-                  GitHub
-                </a>
+                {!trustedProxyMode && (
+                  <a href="https://multigent.dev/contact-sales" target="_blank" rel="noopener noreferrer"
+                    className="rounded-md px-2 py-0.5 text-xs text-neutral-400 transition-colors hover:bg-neutral-100 hover:text-neutral-600 dark:text-zinc-500 dark:hover:bg-zinc-800 dark:hover:text-zinc-300">
+                    {t('footer.commercialLicense')}
+                  </a>
+                )}
+                {!trustedProxyMode && (
+                  <a href="https://github.com/multigent/multigent" target="_blank" rel="noopener noreferrer"
+                    className="rounded-md px-2 py-0.5 text-xs text-neutral-400 transition-colors hover:bg-neutral-100 hover:text-neutral-600 dark:text-zinc-500 dark:hover:bg-zinc-800 dark:hover:text-zinc-300">
+                    GitHub
+                  </a>
+                )}
               </div>
             </footer>
           </div>
