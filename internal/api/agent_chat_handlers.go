@@ -15,6 +15,7 @@ import (
 	"sync"
 	"time"
 
+	controldb "github.com/multigent/multigent/internal/db"
 	"github.com/multigent/multigent/internal/entity"
 	"github.com/multigent/multigent/internal/interaction"
 	"github.com/multigent/multigent/internal/telemetry"
@@ -51,8 +52,12 @@ func (s *Server) handleAgentChatSessions(w http.ResponseWriter, r *http.Request)
 	if !s.checkProjectAccess(w, r, project) {
 		return
 	}
+	workspaceID, ok := s.currentWorkspaceForRequest(w, r)
+	if !ok {
+		return
+	}
 
-	sessions, err := s.listAgentChatSessions(project, agent)
+	sessions, err := s.listAgentChatSessions(workspaceID, project, agent)
 	if err != nil {
 		s.serverError(w, err)
 		return
@@ -60,81 +65,21 @@ func (s *Server) handleAgentChatSessions(w http.ResponseWriter, r *http.Request)
 	_ = json.NewEncoder(w).Encode(map[string]any{"sessions": sessions})
 }
 
-func (s *Server) listAgentChatSessions(project, agent string) ([]agentChatSessionInfo, error) {
-	db, err := telemetry.OpenReadOnly(s.root)
-	if err != nil {
-		if err == telemetry.ErrNoDatabase {
-			return []agentChatSessionInfo{}, nil
-		}
+func (s *Server) listAgentChatSessions(workspaceID, project, agent string) ([]agentChatSessionInfo, error) {
+	byID := map[string]*agentChatSessionAcc{}
+	if err := s.addTelemetryAgentChatSessions(byID, project, agent); err != nil {
 		return nil, err
 	}
-	defer db.Close()
-
-	rows, err := telemetry.ReadRuns(db, nil, nil, project)
-	if err != nil {
+	if err := s.addRuntimeNodeAgentChatSessions(byID, workspaceID, project, agent); err != nil {
 		return nil, err
-	}
-
-	type acc struct {
-		info      agentChatSessionInfo
-		startedAt time.Time
-		updatedAt time.Time
-		logPath   string
-		taskTitle string
-	}
-	byID := map[string]*acc{}
-	for _, row := range rows {
-		if row.Agent != agent {
-			continue
-		}
-		sessionID := ""
-		if row.SessionID.Valid {
-			sessionID = strings.TrimSpace(row.SessionID.String)
-		}
-		if sessionID == "" && row.LogPath != "" {
-			if sid := s.extractSessionIDFromRunLog(row.LogPath); sid != "" {
-				sessionID = sid
-			}
-		}
-		if sessionID == "" {
-			continue
-		}
-		item := byID[sessionID]
-		if item == nil {
-			item = &acc{
-				info: agentChatSessionInfo{
-					SessionID: sessionID,
-					Source:    string(row.Kind),
-					Model:     firstNonEmpty(row.APIModel, row.Model),
-					Status:    row.Status,
-				},
-				startedAt: row.StartedAt,
-				updatedAt: row.StartedAt,
-			}
-			byID[sessionID] = item
-		}
-		item.info.RunCount++
-		if item.startedAt.IsZero() || row.StartedAt.Before(item.startedAt) {
-			item.startedAt = row.StartedAt
-		}
-		if row.StartedAt.After(item.updatedAt) {
-			item.updatedAt = row.StartedAt
-			item.info.Source = string(row.Kind)
-			item.info.Model = firstNonEmpty(row.APIModel, row.Model, item.info.Model)
-			item.info.Status = row.Status
-			item.logPath = row.LogPath
-		}
-		if item.logPath == "" && row.LogPath != "" {
-			item.logPath = row.LogPath
-		}
-		if row.TaskTitle.Valid && strings.TrimSpace(row.TaskTitle.String) != "" {
-			item.taskTitle = strings.TrimSpace(row.TaskTitle.String)
-		}
 	}
 
 	out := make([]agentChatSessionInfo, 0, len(byID))
 	for _, item := range byID {
-		title := strings.TrimSpace(item.taskTitle)
+		title := strings.TrimSpace(item.info.Title)
+		if title == "" {
+			title = strings.TrimSpace(item.taskTitle)
+		}
 		if title == "" && item.logPath != "" {
 			title = s.extractSessionTitleFromRunLog(item.logPath)
 		}
@@ -159,6 +104,235 @@ func (s *Server) listAgentChatSessions(project, agent string) ([]agentChatSessio
 		out = out[:maxSessions]
 	}
 	return out, nil
+}
+
+type agentChatSessionAcc struct {
+	info      agentChatSessionInfo
+	startedAt time.Time
+	updatedAt time.Time
+	logPath   string
+	taskTitle string
+	runIDs    map[string]bool
+}
+
+func (s *Server) addTelemetryAgentChatSessions(byID map[string]*agentChatSessionAcc, project, agent string) error {
+	db, err := telemetry.OpenReadOnly(s.root)
+	if err != nil {
+		if err == telemetry.ErrNoDatabase {
+			return nil
+		}
+		return err
+	}
+	defer db.Close()
+
+	rows, err := telemetry.ReadRuns(db, nil, nil, project)
+	if err != nil {
+		return err
+	}
+
+	for _, row := range rows {
+		if row.Agent != agent {
+			continue
+		}
+		sessionID := ""
+		if row.SessionID.Valid {
+			sessionID = strings.TrimSpace(row.SessionID.String)
+		}
+		if sessionID == "" && row.LogPath != "" {
+			if sid := s.extractSessionIDFromRunLog(row.LogPath); sid != "" {
+				sessionID = sid
+			}
+		}
+		if sessionID == "" {
+			continue
+		}
+		item := byID[sessionID]
+		if item == nil {
+			item = &agentChatSessionAcc{
+				info: agentChatSessionInfo{
+					SessionID: sessionID,
+					Source:    string(row.Kind),
+					Model:     firstNonEmpty(row.APIModel, row.Model),
+					Status:    row.Status,
+				},
+				startedAt: row.StartedAt,
+				updatedAt: row.StartedAt,
+				runIDs:    map[string]bool{},
+			}
+			byID[sessionID] = item
+		}
+		runKey := firstNonEmpty(row.LogPath, row.StartedAt.UTC().Format(time.RFC3339Nano))
+		if !item.runIDs[runKey] {
+			item.runIDs[runKey] = true
+			item.info.RunCount++
+		}
+		if item.startedAt.IsZero() || row.StartedAt.Before(item.startedAt) {
+			item.startedAt = row.StartedAt
+		}
+		if row.StartedAt.After(item.updatedAt) {
+			item.updatedAt = row.StartedAt
+			item.info.Source = string(row.Kind)
+			item.info.Model = firstNonEmpty(row.APIModel, row.Model, item.info.Model)
+			item.info.Status = row.Status
+			item.logPath = row.LogPath
+		}
+		if item.logPath == "" && row.LogPath != "" {
+			item.logPath = row.LogPath
+		}
+		if row.TaskTitle.Valid && strings.TrimSpace(row.TaskTitle.String) != "" {
+			item.taskTitle = strings.TrimSpace(row.TaskTitle.String)
+		}
+	}
+	return nil
+}
+
+func (s *Server) addRuntimeNodeAgentChatSessions(byID map[string]*agentChatSessionAcc, workspaceID, project, agent string) error {
+	if s.controlDB == nil || strings.TrimSpace(workspaceID) == "" {
+		return nil
+	}
+
+	sessions, err := s.controlDB.ListInteractionSessions(controldb.InteractionSessionFilter{
+		WorkspaceID: workspaceID,
+		ProjectID:   project,
+		AgentID:     agent,
+		Limit:       500,
+	})
+	if err != nil {
+		return err
+	}
+	for _, session := range sessions {
+		sessionID := strings.TrimSpace(session.RuntimeSessionID)
+		if sessionID == "" {
+			continue
+		}
+		item := ensureAgentChatSessionAcc(byID, sessionID)
+		if item.info.Source == "" {
+			item.info.Source = firstNonEmpty(session.SourceKind, "runtime-node")
+		}
+		if session.Status != "" {
+			item.info.Status = session.Status
+		}
+		createdAt := parseDBTime(session.CreatedAt)
+		updatedAt := latestDBTime(session.UpdatedAt, session.LastActivityAt, session.CompletedAt, session.CreatedAt)
+		updateAgentChatSessionTimes(item, createdAt, updatedAt)
+		if item.info.Title == "" {
+			title, err := s.interactionSessionTitle(workspaceID, session.ID)
+			if err != nil {
+				return err
+			}
+			item.info.Title = title
+		}
+	}
+
+	runs, err := s.controlDB.ListRuntimeRuns(controldb.RuntimeRunFilter{
+		WorkspaceID: workspaceID,
+		ProjectID:   project,
+		AgentID:     agent,
+		Limit:       500,
+	})
+	if err != nil {
+		return err
+	}
+	for _, run := range runs {
+		result := decodeRuntimeRunResult(run.ResultJSON)
+		sessionID := strings.TrimSpace(result["sessionId"])
+		logText := result["logText"]
+		if sessionID == "" && logText != "" {
+			sessionID = extractAgentChatSessionID(logText)
+		}
+		if sessionID == "" {
+			continue
+		}
+		item := ensureAgentChatSessionAcc(byID, sessionID)
+		if item.info.Source == "" {
+			item.info.Source = "runtime-node"
+		}
+		if run.Status != "" {
+			item.info.Status = run.Status
+		}
+		if item.logPath == "" {
+			item.logPath = result["logPath"]
+		}
+		createdAt := latestDBTime(run.StartedAt, run.CreatedAt)
+		updatedAt := latestDBTime(run.FinishedAt, run.UpdatedAt, run.StartedAt, run.CreatedAt)
+		updateAgentChatSessionTimes(item, createdAt, updatedAt)
+		if item.runIDs == nil {
+			item.runIDs = map[string]bool{}
+		}
+		if !item.runIDs[run.ID] {
+			item.runIDs[run.ID] = true
+			item.info.RunCount++
+		}
+		if item.info.Title == "" && logText != "" {
+			item.info.Title = summarizeSessionTitleFromLog(logText)
+		}
+	}
+	return nil
+}
+
+func ensureAgentChatSessionAcc(byID map[string]*agentChatSessionAcc, sessionID string) *agentChatSessionAcc {
+	item := byID[sessionID]
+	if item == nil {
+		item = &agentChatSessionAcc{
+			info:   agentChatSessionInfo{SessionID: sessionID},
+			runIDs: map[string]bool{},
+		}
+		byID[sessionID] = item
+	}
+	return item
+}
+
+func updateAgentChatSessionTimes(item *agentChatSessionAcc, startedAt, updatedAt time.Time) {
+	if !startedAt.IsZero() && (item.startedAt.IsZero() || startedAt.Before(item.startedAt)) {
+		item.startedAt = startedAt
+	}
+	if !updatedAt.IsZero() && updatedAt.After(item.updatedAt) {
+		item.updatedAt = updatedAt
+	}
+}
+
+func (s *Server) interactionSessionTitle(workspaceID, sessionID string) (string, error) {
+	if s.controlDB == nil || sessionID == "" {
+		return "", nil
+	}
+	events, err := s.controlDB.ListInteractionEvents(controldb.InteractionEventFilter{
+		WorkspaceID: workspaceID,
+		SessionID:   sessionID,
+		Limit:       200,
+	})
+	if err != nil {
+		return "", err
+	}
+	for _, event := range events {
+		if strings.EqualFold(event.ActorType, "user") && strings.TrimSpace(event.Content) != "" {
+			return truncateSessionTitle(event.Content), nil
+		}
+	}
+	return "", nil
+}
+
+func latestDBTime(values ...string) time.Time {
+	var latest time.Time
+	for _, value := range values {
+		parsed := parseDBTime(value)
+		if !parsed.IsZero() && parsed.After(latest) {
+			latest = parsed
+		}
+	}
+	return latest
+}
+
+func parseDBTime(value string) time.Time {
+	value = strings.TrimSpace(value)
+	if value == "" {
+		return time.Time{}
+	}
+	for _, layout := range []string{time.RFC3339Nano, time.RFC3339, "2006-01-02 15:04:05.999999999-07:00", "2006-01-02 15:04:05"} {
+		if parsed, err := time.Parse(layout, value); err == nil {
+			return parsed
+		}
+	}
+	return time.Time{}
 }
 
 func (s *Server) extractSessionIDFromRunLog(logPath string) string {
@@ -199,6 +373,10 @@ func (s *Server) handleAgentChatHistory(w http.ResponseWriter, r *http.Request) 
 	if !s.checkProjectAccess(w, r, project) {
 		return
 	}
+	workspaceID, ok := s.currentWorkspaceForRequest(w, r)
+	if !ok {
+		return
+	}
 
 	sessionID := strings.TrimSpace(r.URL.Query().Get("sessionId"))
 	resolvedSessionID := sessionID
@@ -207,7 +385,7 @@ func (s *Server) handleAgentChatHistory(w http.ResponseWriter, r *http.Request) 
 	runs := []agentChatHistoryRun{}
 	if sessionID != "" {
 		var err error
-		content, runs, resolvedSessionID, truncated, err = s.readAgentSessionHistory(project, agent, sessionID)
+		content, runs, resolvedSessionID, truncated, err = s.readAgentSessionHistory(workspaceID, project, agent, sessionID)
 		if err != nil {
 			s.serverError(w, err)
 			return
@@ -222,79 +400,46 @@ func (s *Server) handleAgentChatHistory(w http.ResponseWriter, r *http.Request) 
 	})
 }
 
-func (s *Server) readAgentSessionHistory(project, agent, sessionID string) (string, []agentChatHistoryRun, string, bool, error) {
-	db, err := telemetry.OpenReadOnly(s.root)
-	if err != nil {
-		if err == telemetry.ErrNoDatabase {
-			return "", []agentChatHistoryRun{}, sessionID, false, nil
-		}
-		return "", nil, sessionID, false, err
-	}
-	defer db.Close()
+type historySegment struct {
+	startedAt time.Time
+	status    string
+	logPath   string
+	data      []byte
+}
 
-	rows, err := telemetry.ReadRuns(db, nil, nil, project)
-	if err != nil {
-		return "", nil, sessionID, false, err
-	}
-
+func (s *Server) readAgentSessionHistory(workspaceID, project, agent, sessionID string) (string, []agentChatHistoryRun, string, bool, error) {
 	const maxRuns = 8
-	filtered := make([]telemetry.RunRow, 0, maxRuns)
-	for i := len(rows) - 1; i >= 0; i-- {
-		row := rows[i]
-		if row.Agent != agent || row.LogPath == "" {
-			continue
-		}
-		if sessionID != "" && (!row.SessionID.Valid || row.SessionID.String != sessionID) {
-			continue
-		}
-		filtered = append(filtered, row)
-		if len(filtered) >= maxRuns {
-			break
-		}
+	segments := make([]historySegment, 0, maxRuns)
+
+	telemetrySegments, resolvedFromTelemetry, err := s.readTelemetryAgentSessionHistory(project, agent, sessionID, maxRuns)
+	if err != nil {
+		return "", nil, sessionID, false, err
 	}
-	log.Printf("[chat-history] %s/%s: query sessionID=%q → %d candidate runs (total rows=%d)", project, agent, sessionID, len(filtered), len(rows))
-	for i, j := 0, len(filtered)-1; i < j; i, j = i+1, j-1 {
-		filtered[i], filtered[j] = filtered[j], filtered[i]
+	segments = append(segments, telemetrySegments...)
+	if sessionID == "" && resolvedFromTelemetry != "" {
+		sessionID = resolvedFromTelemetry
 	}
 
-	type historySegment struct {
-		row     telemetry.RunRow
-		logPath string
-		data    []byte
+	runtimeSegments, resolvedFromRuntime, err := s.readRuntimeNodeAgentSessionHistory(workspaceID, project, agent, sessionID, maxRuns)
+	if err != nil {
+		return "", nil, sessionID, false, err
+	}
+	segments = append(segments, runtimeSegments...)
+	if sessionID == "" && resolvedFromRuntime != "" {
+		sessionID = resolvedFromRuntime
 	}
 
-	segments := make([]historySegment, 0, len(filtered))
-	truncated := false
-	for _, row := range filtered {
-		logPath := row.LogPath
-		absLogPath := logPath
-		if !filepath.IsAbs(absLogPath) {
-			absLogPath = filepath.Join(s.root, absLogPath)
-		}
-		data, err := os.ReadFile(absLogPath)
-		if err != nil {
-			if os.IsNotExist(err) {
-				continue
-			}
-			return "", nil, sessionID, false, err
-		}
-		if sessionID == "" {
-			if row.SessionID.Valid && row.SessionID.String != "" {
-				sessionID = row.SessionID.String
-			} else if sid := extractAgentChatSessionID(string(data)); sid != "" {
-				sessionID = sid
-			}
-		}
-		segments = append(segments, historySegment{
-			row:     row,
-			logPath: logPath,
-			data:    data,
-		})
+	sort.SliceStable(segments, func(i, j int) bool {
+		return segments[i].startedAt.Before(segments[j].startedAt)
+	})
+	if len(segments) > maxRuns {
+		segments = segments[len(segments)-maxRuns:]
 	}
 
 	const maxBytes = 768 * 1024
 	total := 0
 	selected := make([]historySegment, 0, len(segments))
+	truncated := false
 	for i := len(segments) - 1; i >= 0; i-- {
 		seg := segments[i]
 		if total+len(seg.data) > maxBytes {
@@ -321,14 +466,157 @@ func (s *Server) readAgentSessionHistory(project, agent, sessionID string) (stri
 		}
 		sb.Write(seg.data)
 		outRuns = append(outRuns, agentChatHistoryRun{
-			StartedAt: seg.row.StartedAt.UTC().Format(time.RFC3339Nano),
-			Status:    seg.row.Status,
+			StartedAt: seg.startedAt.UTC().Format(time.RFC3339Nano),
+			Status:    seg.status,
 			LogPath:   seg.logPath,
 		})
 	}
 	log.Printf("[chat-history] %s/%s: returning %d runs, resolvedSession=%q, totalBytes=%d, truncated=%v",
 		project, agent, len(outRuns), sessionID, sb.Len(), truncated)
 	return sb.String(), outRuns, sessionID, truncated, nil
+}
+
+func (s *Server) readTelemetryAgentSessionHistory(project, agent, sessionID string, maxRuns int) ([]historySegment, string, error) {
+	db, err := telemetry.OpenReadOnly(s.root)
+	if err != nil {
+		if err == telemetry.ErrNoDatabase {
+			return nil, sessionID, nil
+		}
+		return nil, sessionID, err
+	}
+	defer db.Close()
+
+	rows, err := telemetry.ReadRuns(db, nil, nil, project)
+	if err != nil {
+		return nil, sessionID, err
+	}
+
+	filtered := make([]telemetry.RunRow, 0, maxRuns)
+	for i := len(rows) - 1; i >= 0; i-- {
+		row := rows[i]
+		if row.Agent != agent || row.LogPath == "" {
+			continue
+		}
+		if sessionID != "" && (!row.SessionID.Valid || row.SessionID.String != sessionID) {
+			continue
+		}
+		filtered = append(filtered, row)
+		if len(filtered) >= maxRuns {
+			break
+		}
+	}
+	log.Printf("[chat-history] %s/%s: telemetry query sessionID=%q -> %d candidate runs (total rows=%d)", project, agent, sessionID, len(filtered), len(rows))
+	for i, j := 0, len(filtered)-1; i < j; i, j = i+1, j-1 {
+		filtered[i], filtered[j] = filtered[j], filtered[i]
+	}
+
+	segments := make([]historySegment, 0, len(filtered))
+	for _, row := range filtered {
+		logPath := row.LogPath
+		absLogPath := logPath
+		if !filepath.IsAbs(absLogPath) {
+			absLogPath = filepath.Join(s.root, absLogPath)
+		}
+		data, err := os.ReadFile(absLogPath)
+		if err != nil {
+			if os.IsNotExist(err) {
+				continue
+			}
+			return nil, sessionID, err
+		}
+		if sessionID == "" {
+			if row.SessionID.Valid && row.SessionID.String != "" {
+				sessionID = row.SessionID.String
+			} else if sid := extractAgentChatSessionID(string(data)); sid != "" {
+				sessionID = sid
+			}
+		}
+		segments = append(segments, historySegment{
+			startedAt: row.StartedAt,
+			status:    row.Status,
+			logPath:   logPath,
+			data:      data,
+		})
+	}
+	return segments, sessionID, nil
+}
+
+func (s *Server) readRuntimeNodeAgentSessionHistory(workspaceID, project, agent, sessionID string, maxRuns int) ([]historySegment, string, error) {
+	if s.controlDB == nil || strings.TrimSpace(workspaceID) == "" {
+		return nil, sessionID, nil
+	}
+	runs, err := s.controlDB.ListRuntimeRuns(controldb.RuntimeRunFilter{
+		WorkspaceID: workspaceID,
+		ProjectID:   project,
+		AgentID:     agent,
+		Limit:       500,
+	})
+	if err != nil {
+		return nil, sessionID, err
+	}
+
+	segments := make([]historySegment, 0, maxRuns)
+	for _, run := range runs {
+		result := decodeRuntimeRunResult(run.ResultJSON)
+		runSessionID := strings.TrimSpace(result["sessionId"])
+		logText := result["logText"]
+		if runSessionID == "" && logText != "" {
+			runSessionID = extractAgentChatSessionID(logText)
+		}
+		if runSessionID == "" {
+			continue
+		}
+		if sessionID != "" && runSessionID != sessionID {
+			continue
+		}
+		if sessionID == "" {
+			sessionID = runSessionID
+		}
+		if strings.TrimSpace(logText) == "" {
+			logText = s.runtimeRunHistoryFallback(workspaceID, run.ID)
+		}
+		if strings.TrimSpace(logText) == "" {
+			continue
+		}
+		startedAt := latestDBTime(run.StartedAt, run.CreatedAt)
+		if startedAt.IsZero() {
+			startedAt = time.Now().UTC()
+		}
+		segments = append(segments, historySegment{
+			startedAt: startedAt,
+			status:    run.Status,
+			logPath:   result["logPath"],
+			data:      []byte(logText),
+		})
+		if len(segments) >= maxRuns {
+			break
+		}
+	}
+	for i, j := 0, len(segments)-1; i < j; i, j = i+1, j-1 {
+		segments[i], segments[j] = segments[j], segments[i]
+	}
+	return segments, sessionID, nil
+}
+
+func (s *Server) runtimeRunHistoryFallback(workspaceID, runID string) string {
+	if s.controlDB == nil || runID == "" {
+		return ""
+	}
+	events, err := s.controlDB.ListRuntimeEvents(workspaceID, runID, 200)
+	if err != nil || len(events) == 0 {
+		return ""
+	}
+	var sb strings.Builder
+	for _, event := range events {
+		if strings.TrimSpace(event.PayloadJSON) == "" {
+			continue
+		}
+		if sb.Len() > 0 {
+			sb.WriteByte('\n')
+		}
+		sb.WriteString(event.PayloadJSON)
+	}
+	return sb.String()
 }
 
 func (s *Server) handleAgentChat(w http.ResponseWriter, r *http.Request) {
