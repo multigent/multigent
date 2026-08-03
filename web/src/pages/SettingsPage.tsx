@@ -2857,6 +2857,7 @@ export default function SettingsPage() {
   const { t } = useTranslation()
   const { user } = useAuth()
   const { canAdmin } = useWorkspaceAccess()
+  const showBilling = canAdmin && isTrustedProxyMode()
 
   return (
     <div className="animate-fade-in px-8 py-6">
@@ -2876,7 +2877,7 @@ export default function SettingsPage() {
 
       <div className="space-y-5">
         {/* Billing and plan usage */}
-        {canAdmin && <BillingUsageSection />}
+        {showBilling && <BillingUsageSection />}
 
         {/* RBAC Model (admin only) */}
         {canAdmin && <RBACSection />}
