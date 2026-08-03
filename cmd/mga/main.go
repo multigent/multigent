@@ -48,6 +48,7 @@ func main() {
 		newRuntimeCmd(),
 		newTaskCmd(),
 		newInboxCmd(),
+		newContactsCmd(),
 		newDocsCmd(),
 		newSkillCmd(),
 		newWorkflowCmd(),
@@ -994,6 +995,26 @@ func newInboxCmd() *cobra.Command {
 	cmd := &cobra.Command{Use: "inbox", Aliases: []string{"message", "messages"}, Short: "Send and read runtime messages"}
 	cmd.AddCommand(newInboxMessagesCmd(), newInboxSendCmd(), newInboxReplyCmd())
 	return cmd
+}
+
+func newContactsCmd() *cobra.Command {
+	cmd := &cobra.Command{Use: "contacts", Aliases: []string{"contact"}, Short: "List workspace users and project agents this runtime can message"}
+	cmd.AddCommand(newContactsListCmd())
+	return cmd
+}
+
+func newContactsListCmd() *cobra.Command {
+	return &cobra.Command{
+		Use:   "list",
+		Short: "List message recipients available to this agent",
+		RunE: func(cmd *cobra.Command, args []string) error {
+			body, err := requestJSON(http.MethodGet, "/api/v1/runtime/contacts", nil, nil)
+			if err != nil {
+				return err
+			}
+			return writeJSON(body)
+		},
+	}
 }
 
 func newDocsCmd() *cobra.Command {

@@ -1284,7 +1284,8 @@ func (s *Server) handleRuntimeTaskConfirmRequest(w http.ResponseWriter, r *http.
 	if to == "" {
 		to = "human"
 	}
-	if err := s.validateIdentity(to, "to"); err != nil {
+	resolvedTo, err := s.resolveRuntimeRecipient(principal, to)
+	if err != nil {
 		s.jsonError(w, http.StatusBadRequest, err.Error())
 		return
 	}
@@ -1315,7 +1316,7 @@ func (s *Server) handleRuntimeTaskConfirmRequest(w http.ResponseWriter, r *http.
 		TaskID:      t.ID,
 		Project:     principal.Project,
 		Agent:       agent,
-		To:          to,
+		To:          resolvedTo,
 		Title:       t.Title,
 		Summary:     summary,
 		ActionHint:  strings.TrimSpace(body.ActionHint),
@@ -1373,6 +1374,19 @@ func (s *Server) handleRuntimeMessages(w http.ResponseWriter, r *http.Request) {
 	_ = json.NewEncoder(w).Encode(rows)
 }
 
+func (s *Server) handleRuntimeContacts(w http.ResponseWriter, r *http.Request) {
+	principal, ok := s.runtimeRequireCapability(w, r, "message.use")
+	if !ok {
+		return
+	}
+	rows, err := s.runtimeContacts(principal.WorkspaceID, principal.Project)
+	if err != nil {
+		s.serverError(w, err)
+		return
+	}
+	_ = json.NewEncoder(w).Encode(rows)
+}
+
 func messageToRow(m *entity.Message, mailbox string) msgRow {
 	sent := m.SentAt.UTC()
 	var read *time.Time
@@ -1418,16 +1432,19 @@ func (s *Server) handleRuntimePostMessage(w http.ResponseWriter, r *http.Request
 		s.jsonError(w, http.StatusBadRequest, err.Error())
 		return
 	}
+	resolved := make([]string, 0, len(recipients))
 	for _, rec := range recipients {
-		if err := s.validateRuntimeRecipient(principal, rec); err != nil {
+		canonical, err := s.resolveRuntimeRecipient(principal, rec)
+		if err != nil {
 			s.jsonError(w, http.StatusBadRequest, err.Error())
 			return
 		}
+		resolved = append(resolved, canonical)
 	}
 	from := runtimeAgentAddress(principal)
 	sentAt := time.Now().UTC()
-	ids := make([]string, 0, len(recipients))
-	for _, rec := range recipients {
+	ids := make([]string, 0, len(resolved))
+	for _, rec := range resolved {
 		msg := &entity.Message{
 			ID:      entity.NewMessageID(),
 			From:    from,
@@ -1454,7 +1471,7 @@ func (s *Server) handleRuntimePostMessage(w http.ResponseWriter, r *http.Request
 		ResourceType: "message",
 		ResourceID:   strings.Join(ids, ","),
 		Summary:      "Runtime agent sent message",
-		After:        map[string]any{"to": recipients, "subject": strings.TrimSpace(body.Subject)},
+		After:        map[string]any{"to": resolved, "subject": strings.TrimSpace(body.Subject)},
 		Request:      r,
 	})
 	w.WriteHeader(http.StatusCreated)

@@ -70,6 +70,9 @@ mga task cancel <task-id> --reason "No longer needed"
 ## Message Commands
 
 ```bash
+# Inspect valid recipients before messaging humans or other agents.
+mga contacts list
+
 # Read this agent's mailbox.
 mga inbox messages
 mga inbox list --archived
@@ -77,12 +80,16 @@ mga inbox list --archived
 # Send a non-blocking message.
 mga inbox send --to human --subject "Update" --body "Message body"
 mga inbox send --to <project>/<agent> --subject "Context" --body "Details"
+mga inbox send --to <username-or-email> --subject "Question" --body "Details"
 
 # Reply to a received message.
 mga inbox reply <message-id> --body "Reply body"
 ```
 
 `mga message ...` and `mga messages ...` are aliases for `mga inbox ...`.
+For human recipients, use `mga contacts list` and pass the returned `identity`
+value when possible. Multigent also accepts exact email, display name, or
+`Display Name (username)` forms and resolves them to the stable username.
 
 ## Runtime Tool Connections
 
