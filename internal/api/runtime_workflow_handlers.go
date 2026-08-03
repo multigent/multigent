@@ -891,8 +891,7 @@ func (s *Server) activateNextWorkflowStep(workspaceID, project, previousAgent st
 			if err := s.ts.PersistTask(project, nextAgent, completed); err != nil {
 				return err
 			}
-			s.triggers.Fire(project, nextAgent, entity.TriggerOnTask, "workflow task "+completed.ID)
-			return nil
+			return s.fireTaskTriggerOrQueueRuntime(workspaceID, project, nextAgent, completed, r, "workflow task "+completed.ID)
 		}
 		_ = s.ts.DeleteTask(project, previousAgent, completed.ID)
 		completed.Status = entity.TaskStatusPending
@@ -902,8 +901,7 @@ func (s *Server) activateNextWorkflowStep(workspaceID, project, previousAgent st
 		if err := s.ts.AddTask(project, nextAgent, completed); err != nil {
 			return err
 		}
-		s.triggers.Fire(project, nextAgent, entity.TriggerOnTask, "workflow task "+completed.ID)
-		return nil
+		return s.fireTaskTriggerOrQueueRuntime(workspaceID, project, nextAgent, completed, r, "workflow task "+completed.ID)
 	}
 	if inst.ActorType == "human" {
 		reviewer := strings.TrimSpace(inst.ActorID)
@@ -1060,8 +1058,69 @@ func (s *Server) activateParallelWorkflowStep(workspaceID, project, previousAgen
 		if err := wfStore.SaveBranchInstance(inst); err != nil {
 			return err
 		}
-		s.triggers.Fire(project, nextAgent, entity.TriggerOnTask, "workflow branch task "+branchTask.ID)
+		if err := s.fireTaskTriggerOrQueueRuntime(workspaceID, project, nextAgent, branchTask, r, "workflow branch task "+branchTask.ID); err != nil {
+			return err
+		}
 	}
+	return nil
+}
+
+func (s *Server) fireTaskTriggerOrQueueRuntime(workspaceID, project, agent string, task *entity.Task, r *http.Request, reason string) error {
+	if s == nil || task == nil {
+		return nil
+	}
+	hb, err := s.ts.GetHeartbeat(project, agent)
+	if err != nil || hb == nil || hb.Paused || !hb.HasTrigger(entity.TriggerOnTask) {
+		if s.triggers != nil {
+			s.triggers.Fire(project, agent, entity.TriggerOnTask, reason)
+		}
+		return nil
+	}
+	meta, err := s.st.AgentMeta(project, agent)
+	if err != nil || meta == nil || !s.usesAssignedRuntimeNode(workspaceID, meta) {
+		if s.triggers != nil {
+			s.triggers.Fire(project, agent, entity.TriggerOnTask, reason)
+		}
+		return nil
+	}
+	if s.hasActiveRuntimeRun(workspaceID, project, agent, task.ID) {
+		return nil
+	}
+	now := time.Now().UTC()
+	prev := task.Status
+	task.Status = entity.TaskStatusInProgress
+	task.UpdatedAt = now
+	task.FinishedAt = nil
+	entity.ApplyStatusTimestamps(task, prev, now)
+	if err := s.ts.UpdateTask(project, agent, task); err != nil {
+		return err
+	}
+	run, err := s.enqueueRuntimeTaskRun(workspaceID, project, agent, task, "", externalServerURL(r), requestUsername(r))
+	if err != nil {
+		task.Status = prev
+		task.UpdatedAt = now
+		_ = s.ts.UpdateTask(project, agent, task)
+		return err
+	}
+	hb.LastWakeup = &now
+	hb.LastWakeupStatus = "running"
+	hb.PID = 0
+	_ = s.ts.SaveHeartbeat(project, agent, hb)
+	s.auditLog(auditLogInput{
+		WorkspaceID:  workspaceID,
+		Action:       "runtime_run.enqueue",
+		ResourceType: "task",
+		ResourceID:   project + "/" + agent + "/" + task.ID,
+		Summary:      "Workflow task queued on runtime node",
+		After: map[string]any{
+			"project":      project,
+			"agent":        agent,
+			"taskId":       task.ID,
+			"runtimeRunId": run.ID,
+			"reason":       reason,
+		},
+		Request: r,
+	})
 	return nil
 }
 

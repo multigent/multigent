@@ -48,6 +48,7 @@ export type RunRow = {
   project: string; agent: string; kind: string; status: string
   startedAt: string; finishedAt: string; model?: string
   taskId?: string; taskTitle?: string; logPath?: string
+  runtimeRunId?: string; logText?: string
   inputTokens?: number; outputTokens?: number; cacheReadTokens?: number
   errorMsg?: string; command?: string
   sessionId?: string

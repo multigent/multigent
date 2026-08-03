@@ -232,7 +232,11 @@ func (s *Server) createProjectTaskFromBody(w http.ResponseWriter, r *http.Reques
 		// Fire trigger if configured for the actual task owner. Workflow tasks
 		// are routed to the start step actor, which can differ from the form's
 		// initially selected agent.
-		s.triggers.Fire(name, agentName, entity.TriggerOnTask, "task "+t.ID)
+		workspaceID, _ := s.currentWorkspaceID()
+		if err := s.fireTaskTriggerOrQueueRuntime(workspaceID, name, agentName, t, r, "task "+t.ID); err != nil {
+			s.serverError(w, err)
+			return
+		}
 	}
 
 	w.WriteHeader(http.StatusCreated)

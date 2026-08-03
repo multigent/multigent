@@ -119,8 +119,10 @@ export default function ProjectTaskFollowPage() {
   const activeRunRunning = Boolean(activeRun && isRunningRunStatus(activeRun.status))
   const displayStatus = activeRunRunning ? 'in_progress' : (displayTask?.status || '')
   const shouldPollActiveRun = Boolean(isCurrentAgentStep && (displayTask?.status === 'in_progress' || activeRunRunning))
+  const shouldPollLocalLiveLog = Boolean(shouldPollActiveRun && startAgent && !activeRun?.runtimeRunId)
+  const localLiveLogAgent = shouldPollLocalLiveLog && startAgent ? startAgent : null
   const liveLogState = useApiJson<LiveLogData>(
-    shouldPollActiveRun && startAgent ? `/api/v1/projects/${encodeURIComponent(projectId)}/agents/${encodeURIComponent(startAgent)}/live-log` : null,
+    localLiveLogAgent ? `/api/v1/projects/${encodeURIComponent(projectId)}/agents/${encodeURIComponent(localLiveLogAgent)}/live-log` : null,
     dataReloadKey,
     { keepPreviousDataOnReload: true },
   )
@@ -130,6 +132,7 @@ export default function ProjectTaskFollowPage() {
     { keepPreviousDataOnReload: true },
   )
   const liveLogContent = liveLogState.status === 'ok' ? liveLogState.data.content : ''
+  const remoteLogContent = activeRun?.logText || ''
   const liveLogFinished = liveLogState.status === 'ok' && (liveLogState.data.finished || isLiveLogTerminal(liveLogContent))
 
   const actorLabels = useMemo(() => {
@@ -170,6 +173,7 @@ export default function ProjectTaskFollowPage() {
   }, [activeRun?.agent, agentParticipants, projectId, startAgent, t])
   const liveOutputRunning = Boolean(
     shouldPollActiveRun &&
+    !remoteLogContent.trim() &&
     displayStatus === 'in_progress' &&
     (!liveLogState || liveLogState.status !== 'ok' || !liveLogFinished),
   )
@@ -266,7 +270,7 @@ export default function ProjectTaskFollowPage() {
       window.cancelAnimationFrame(raf)
       window.clearTimeout(timer)
     }
-  }, [activeRun?.logPath, activeRun?.sessionId, activeStep?.id, liveLogContent, liveOutputRunning, shouldPollActiveRun])
+  }, [activeRun?.logPath, activeRun?.sessionId, activeStep?.id, liveLogContent, liveOutputRunning, remoteLogContent, shouldPollActiveRun])
 
   async function startCurrentAgent() {
     if (!displayTask || !startAgent || !canStart) return
@@ -436,7 +440,17 @@ export default function ProjectTaskFollowPage() {
                 {activeRun?.sessionId && <span className="font-mono text-[11px] text-neutral-400 dark:text-zinc-500">{activeRun.sessionId.slice(0, 8)}…</span>}
               </div>
               <div ref={liveOutputRef} className="max-h-[calc(100dvh-25rem)] min-h-72 overflow-y-auto overscroll-contain pr-1 transition-opacity duration-300">
-                {shouldPollActiveRun && liveLogState.status === 'ok' ? (
+                {remoteLogContent ? (
+                  <div className="pb-16">
+                    <ConversationLog
+                      content={remoteLogContent}
+                      mode="chat"
+                      assistant={activeAgentParticipant}
+                      animateLatest={isRunningRunStatus(activeRun?.status)}
+                      toolDisplay="compact"
+                    />
+                  </div>
+                ) : shouldPollLocalLiveLog && liveLogState.status === 'ok' ? (
                   <div className="pb-16">
                     {liveLogContent ? (
                       <ConversationLog
@@ -450,7 +464,9 @@ export default function ProjectTaskFollowPage() {
                     ) : null}
                     {showLiveTail && <LiveOutputTail participant={activeAgentParticipant} />}
                   </div>
-                ) : shouldPollActiveRun && liveLogState.status === 'loading' ? (
+                ) : shouldPollActiveRun && activeRun?.runtimeRunId ? (
+                  <LiveOutputTail participant={activeAgentParticipant} />
+                ) : shouldPollLocalLiveLog && liveLogState.status === 'loading' ? (
                   <CenteredLoading label={t('tasks.followLoadingOutput')} compact />
                 ) : activeRun?.logPath && logState.status === 'ok' ? (
                   <div className="pb-16">

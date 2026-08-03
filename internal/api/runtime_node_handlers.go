@@ -1044,6 +1044,9 @@ func (s *Server) finalizeRuntimeTaskRun(run controldb.RuntimeRun, runtimeStatus 
 	if task.Status.IsTerminal() {
 		return
 	}
+	if s.runtimeTaskHasWorkflow(run.WorkspaceID, run.ProjectID, run.TaskID) {
+		return
+	}
 	if task.Status != entity.TaskStatusInProgress && task.Status != entity.TaskStatusPending {
 		return
 	}

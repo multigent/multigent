@@ -6,10 +6,12 @@ import (
 	"net/http"
 	"os"
 	"path/filepath"
+	"sort"
 	"strconv"
 	"strings"
 	"time"
 
+	controldb "github.com/multigent/multigent/internal/db"
 	"github.com/multigent/multigent/internal/telemetry"
 )
 
@@ -164,9 +166,6 @@ func (s *Server) handleTelemetryRuns(w http.ResponseWriter, r *http.Request) {
 	for i, j := 0, len(rows)-1; i < j; i, j = i+1, j-1 {
 		rows[i], rows[j] = rows[j], rows[i]
 	}
-	if len(rows) > limit {
-		rows = rows[:limit]
-	}
 
 	runOut := make([]map[string]any, 0, len(rows))
 	for _, row := range rows {
@@ -213,12 +212,100 @@ func (s *Server) handleTelemetryRuns(w http.ResponseWriter, r *http.Request) {
 		}
 		runOut = append(runOut, m)
 	}
+	runOut = append(runOut, s.runtimeRunRowsForTelemetry(project, limit)...)
+	sortRunRowsNewestFirst(runOut)
+	if len(runOut) > limit {
+		runOut = runOut[:limit]
+	}
 
 	_ = json.NewEncoder(w).Encode(map[string]any{
 		"window":    windowJSON(from, to, allTime),
 		"available": true,
 		"runs":      runOut,
 	})
+}
+
+func (s *Server) runtimeRunRowsForTelemetry(project string, limit int) []map[string]any {
+	if s == nil || s.controlDB == nil {
+		return nil
+	}
+	workspaceID, err := s.currentWorkspaceID()
+	if err != nil || strings.TrimSpace(workspaceID) == "" {
+		return nil
+	}
+	runs, err := s.controlDB.ListRuntimeRuns(controldb.RuntimeRunFilter{
+		WorkspaceID: workspaceID,
+		ProjectID:   project,
+		Limit:       limit,
+	})
+	if err != nil || len(runs) == 0 {
+		return nil
+	}
+	out := make([]map[string]any, 0, len(runs))
+	for _, run := range runs {
+		result := map[string]any{}
+		_ = json.Unmarshal([]byte(defaultRawJSON(run.ResultJSON)), &result)
+		startedAt := firstNonEmpty(run.StartedAt, run.ClaimedAt, run.CreatedAt)
+		finishedAt := firstNonEmpty(run.FinishedAt, run.UpdatedAt, startedAt)
+		status := runtimeRunTelemetryStatus(run.Status, result)
+		row := map[string]any{
+			"project":      run.ProjectID,
+			"agent":        run.AgentID,
+			"kind":         "task",
+			"status":       status,
+			"startedAt":    startedAt,
+			"finishedAt":   finishedAt,
+			"taskId":       run.TaskID,
+			"runtimeRunId": run.ID,
+		}
+		if sessionID, _ := result["sessionId"].(string); strings.TrimSpace(sessionID) != "" {
+			row["sessionId"] = strings.TrimSpace(sessionID)
+		}
+		if logText, _ := result["logText"].(string); strings.TrimSpace(logText) != "" {
+			row["logText"] = logText
+		}
+		if summary, _ := result["summary"].(string); strings.TrimSpace(summary) != "" {
+			row["summary"] = strings.TrimSpace(summary)
+		}
+		if run.ErrorMessage != "" {
+			row["errorMsg"] = run.ErrorMessage
+		}
+		out = append(out, row)
+	}
+	return out
+}
+
+func runtimeRunTelemetryStatus(status string, result map[string]any) string {
+	switch strings.TrimSpace(status) {
+	case "queued":
+		return "pending"
+	case "running":
+		return "in_progress"
+	case "succeeded":
+		if s, _ := result["status"].(string); strings.TrimSpace(s) != "" {
+			return strings.TrimSpace(s)
+		}
+		return "done_success"
+	case "failed", "cancelled":
+		return "done_failed"
+	default:
+		if strings.TrimSpace(status) != "" {
+			return status
+		}
+		return "pending"
+	}
+}
+
+func sortRunRowsNewestFirst(rows []map[string]any) {
+	sort.SliceStable(rows, func(i, j int) bool {
+		return rowTime(rows[i], "startedAt").After(rowTime(rows[j], "startedAt"))
+	})
+}
+
+func rowTime(row map[string]any, key string) time.Time {
+	value, _ := row[key].(string)
+	t, _ := time.Parse(time.RFC3339Nano, value)
+	return t
 }
 
 func (s *Server) handleTelemetryLog(w http.ResponseWriter, r *http.Request) {
