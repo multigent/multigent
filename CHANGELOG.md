@@ -1,5 +1,24 @@
 # Changelog
 
+## [v0.1.25] - 2026-08-03
+
+### Added
+
+- Runtime nodes can now preserve chat sessions and expose runtime contacts so agents can message workspace users more reliably.
+- Runtime messaging now returns recipient suggestions when a contact cannot be matched exactly.
+
+### Improved
+
+- SaaS proxy mode now hydrates user identity through an abstract identity provider boundary.
+- SaaS runtime readiness messaging now focuses users on binding a runtime node instead of showing local Docker checks when hosted execution is disabled.
+- Runtime node service controls and routing are more reliable for remote execution.
+
+### Fixed
+
+- Open-source/self-hosted settings no longer show the SaaS-only Plan and Usage panel.
+- Invite email delivery prompts now reflect SMTP delivery instead of always showing the local-link fallback.
+- SaaS workspace route handling now preserves bare workspace basenames and redirects logout back to the SaaS sign-up flow.
+
 ## [v0.1.24] - 2026-07-31
 
 ### Fixed
