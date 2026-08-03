@@ -247,6 +247,8 @@ export default function PeoplePage() {
   const seatLimit = billing?.entitlements?.seatLimit || 0
   const seatsUsed = billing?.usage?.seats || 0
   const seatLimitReached = seatLimit > 0 && seatsUsed >= seatLimit
+  const primaryInviteDelivery = inviteResults.find(item => item.inviteUrl === inviteUrl)?.delivery || inviteResults[0]?.delivery || ''
+  const inviteEmailDelivered = primaryInviteDelivery !== '' && primaryInviteDelivery !== 'local-link' && primaryInviteDelivery !== 'smtp_failed'
 
   async function revokeInvite(token: string) {
     setErr(null)
@@ -548,8 +550,14 @@ export default function PeoplePage() {
               </label>
               {err && <p className="text-sm text-red-600 dark:text-red-400">{err}</p>}
               {inviteUrl && (
-                <div className="rounded-lg border border-sky-200 bg-sky-50 p-3 dark:border-sky-900/50 dark:bg-sky-900/20">
-                  <p className="mb-2 text-xs text-sky-700 dark:text-sky-300">{t('people.inviteLinkHint')}</p>
+                <div className={cn('rounded-lg border p-3', inviteEmailDelivered
+                  ? 'border-emerald-200 bg-emerald-50 dark:border-emerald-900/50 dark:bg-emerald-900/20'
+                  : 'border-sky-200 bg-sky-50 dark:border-sky-900/50 dark:bg-sky-900/20')}>
+                  <p className={cn('mb-2 text-xs', inviteEmailDelivered
+                    ? 'text-emerald-700 dark:text-emerald-300'
+                    : 'text-sky-700 dark:text-sky-300')}>
+                    {inviteEmailDelivered ? t('people.inviteEmailSentHint') : t('people.inviteLinkHint')}
+                  </p>
                   <div className="flex items-center gap-2">
                     <input readOnly value={inviteUrl} className={cn(fieldCls, 'flex-1 font-mono text-xs')} />
                     <button type="button" onClick={() => void copyInviteLink(inviteUrl, 'latest')} className="rounded p-2 text-sky-700 hover:bg-sky-100 dark:text-sky-300 dark:hover:bg-sky-900/30" aria-label={copiedInviteKey === 'latest' ? t('common.copied') : t('people.copyInviteLink')}>

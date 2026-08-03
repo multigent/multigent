@@ -1933,6 +1933,7 @@
     "lookupPendingInvite": "This email already has a pending invite. You can copy the invite link below.",
     "sendInvite": "Send invite",
     "inviteLinkHint": "Email delivery is not configured yet. Copy this local invite link and send it manually.",
+    "inviteEmailSentHint": "Invitation email sent. You can also copy the invite link below.",
     "create": "Create",
     "empty": "No users yet",
     "emptyHint": "Add users to assign them to projects for receiving messages and tasks.",

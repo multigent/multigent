@@ -1918,6 +1918,7 @@
     "lookupPendingInvite": "此電郵已有待處理邀請，可直接複製下方邀請連結。",
     "sendInvite": "傳送邀請",
     "inviteLinkHint": "目前尚未配置郵件寄送。請複製這個本機邀請連結手動傳給對方。",
+    "inviteEmailSentHint": "邀請郵件已寄出。也可以複製下方邀請連結手動轉發。",
     "create": "建立",
     "empty": "暫無使用者",
     "emptyHint": "新增使用者後，可將其分配到不同專案中接收訊息和任務。",

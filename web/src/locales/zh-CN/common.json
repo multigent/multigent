@@ -1933,6 +1933,7 @@
     "lookupPendingInvite": "该邮箱已有待处理邀请，可直接复制下方邀请链接。",
     "sendInvite": "发送邀请",
     "inviteLinkHint": "当前还没有配置邮件发送。请复制这个本地邀请链接手动发给对方。",
+    "inviteEmailSentHint": "邀请邮件已发送。也可以复制下方邀请链接手动转发。",
     "create": "创建",
     "empty": "暂无用户",
     "emptyHint": "添加用户后，可将其分配到不同项目中接收消息和任务。",
