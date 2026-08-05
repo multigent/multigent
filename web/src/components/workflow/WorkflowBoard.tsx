@@ -61,6 +61,8 @@ export type WorkflowEdge = {
   id: string
   from: string
   to: string
+  sourceHandle?: string
+  targetHandle?: string
   label?: string
   policy?: string
   condition?: WorkflowEdgeCondition
@@ -299,6 +301,16 @@ function edgeHandles(sourceStep?: WorkflowStep, targetStep?: WorkflowStep) {
   return dy < 0
     ? { sourceHandle: 'source-top', targetHandle: 'target-bottom' }
     : { sourceHandle: 'source-bottom', targetHandle: 'target-top' }
+}
+
+function asSourceHandle(handle?: string | null) {
+  const value = (handle || '').trim()
+  return value ? value.replace(/^target-/, 'source-') : ''
+}
+
+function asTargetHandle(handle?: string | null) {
+  const value = (handle || '').trim()
+  return value ? value.replace(/^source-/, 'target-') : ''
 }
 
 function normalizeStepFields(step: WorkflowStep): WorkflowStep {
@@ -936,6 +948,7 @@ export function WorkflowBoard({
   const [connectionTargetId, setConnectionTargetId] = useState('')
   const flowViewportRef = useRef<HTMLDivElement | null>(null)
   const flowInstanceRef = useRef<ReactFlowInstance<WorkflowNode, Edge> | null>(null)
+  const connectionStartRef = useRef<string>('')
   const draggingNodeRef = useRef(false)
   const [draggingNode, setDraggingNode] = useState(false)
   const [previewPositions, setPreviewPositions] = useState<Record<string, WorkflowPosition>>({})
@@ -1025,8 +1038,8 @@ export function WorkflowBoard({
           id: edge.id,
           source: edge.from,
           target: edge.to,
-          sourceHandle: handles.sourceHandle,
-          targetHandle: handles.targetHandle,
+          sourceHandle: edge.sourceHandle || handles.sourceHandle,
+          targetHandle: edge.targetHandle || handles.targetHandle,
           label: edge.label || conditionLabel(edge),
           type: 'step',
           className: selected ? 'workflow-edge-selected' : '',
@@ -1233,11 +1246,16 @@ export function WorkflowBoard({
 
   function handleConnect(connection: Connection) {
     if (!editable || !connection.source || !connection.target || connection.source === connection.target) return
+    const startedFrom = connectionStartRef.current || connectionSourceId
     setConnectionSourceId('')
     setConnectionTargetId('')
-    const edgeID = `e-${connection.source}-${connection.target}-${Date.now().toString(36)}`
-    const sourceStep = definition.steps.find((step) => step.id === connection.source)
-    const targetStep = definition.steps.find((step) => step.id === connection.target)
+    connectionStartRef.current = ''
+    const sourceID = startedFrom && (startedFrom === connection.source || startedFrom === connection.target) ? startedFrom : connection.source
+    const targetID = sourceID === connection.source ? connection.target : connection.source
+    if (!targetID || sourceID === targetID) return
+    const edgeID = `e-${sourceID}-${targetID}-${Date.now().toString(36)}`
+    const sourceStep = definition.steps.find((step) => step.id === sourceID)
+    const targetStep = definition.steps.find((step) => step.id === targetID)
     const backward = Boolean(sourceStep && targetStep && sourceStep.position.x > targetStep.position.x)
     const reviewEdgePatch: Partial<WorkflowEdge> = sourceStep?.type === 'human_review'
       ? backward
@@ -1252,15 +1270,22 @@ export function WorkflowBoard({
             inputMapping: { approval: '$output.decision' },
           }
       : {}
-    const nextEdge: WorkflowEdge = { id: edgeID, from: connection.source, to: connection.target, ...reviewEdgePatch }
+    const handles = edgeHandles(sourceStep, targetStep)
+    const sourceHandle = sourceID === connection.source
+      ? asSourceHandle(connection.sourceHandle) || handles.sourceHandle
+      : asSourceHandle(connection.targetHandle) || handles.sourceHandle
+    const targetHandle = targetID === connection.target
+      ? asTargetHandle(connection.targetHandle) || handles.targetHandle
+      : asTargetHandle(connection.sourceHandle) || handles.targetHandle
+    const nextEdge: WorkflowEdge = { id: edgeID, from: sourceID, to: targetID, sourceHandle, targetHandle, ...reviewEdgePatch }
     setEdges((eds) =>
       addEdge(
         {
           id: edgeID,
-          source: connection.source,
-          target: connection.target,
-          sourceHandle: connection.sourceHandle || edgeHandles(sourceStep, targetStep).sourceHandle,
-          targetHandle: connection.targetHandle || edgeHandles(sourceStep, targetStep).targetHandle,
+          source: sourceID,
+          target: targetID,
+          sourceHandle,
+          targetHandle,
           label: nextEdge.label || '',
           type: 'step',
           markerEnd: { type: MarkerType.ArrowClosed, color: edgeClass.pending },
@@ -1270,12 +1295,12 @@ export function WorkflowBoard({
       ),
     )
     setSelectedEdgeId(edgeID)
-    setSelectedId(connection.source)
+    setSelectedId(sourceID)
     const sourceOutputs = sourceStep ? schemaFieldsFor(sourceStep, 'output') : []
     updateDefinition({
       ...definition,
       steps: definition.steps.map((step) => {
-        if (step.id !== connection.target || schemaFieldsFor(step, 'input').length > 0 || sourceOutputs.length === 0) return step
+        if (step.id !== targetID || schemaFieldsFor(step, 'input').length > 0 || sourceOutputs.length === 0) return step
         return {
           ...step,
           inputFields: sourceOutputs.map(({ name, description }) => ({ name, description })),
@@ -1534,10 +1559,12 @@ export function WorkflowBoard({
           onConnect={handleConnect}
           onConnectStart={(_, params: OnConnectStartParams) => {
             if (!editable) return
+            connectionStartRef.current = params.nodeId ?? ''
             setConnectionSourceId(params.nodeId ?? '')
             setConnectionTargetId('')
           }}
           onConnectEnd={() => {
+            connectionStartRef.current = ''
             setConnectionSourceId('')
             setConnectionTargetId('')
           }}

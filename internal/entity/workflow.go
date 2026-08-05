@@ -73,6 +73,8 @@ type WorkflowEdge struct {
 	ID           string                 `json:"id" yaml:"id"`
 	From         string                 `json:"from" yaml:"from"`
 	To           string                 `json:"to" yaml:"to"`
+	SourceHandle string                 `json:"sourceHandle,omitempty" yaml:"source_handle,omitempty"`
+	TargetHandle string                 `json:"targetHandle,omitempty" yaml:"target_handle,omitempty"`
 	Label        string                 `json:"label,omitempty" yaml:"label,omitempty"`
 	Policy       string                 `json:"policy,omitempty" yaml:"policy,omitempty"`
 	Condition    *WorkflowEdgeCondition `json:"condition,omitempty" yaml:"condition,omitempty"`

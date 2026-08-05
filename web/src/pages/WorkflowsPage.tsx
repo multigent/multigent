@@ -621,6 +621,8 @@ function normalizeImportedEdge(value: unknown, index: number): WorkflowDefinitio
     id: typeof record.id === 'string' && record.id.trim() ? record.id.trim() : `edge_${index + 1}`,
     from,
     to,
+    sourceHandle: typeof record.sourceHandle === 'string' ? record.sourceHandle.trim() : undefined,
+    targetHandle: typeof record.targetHandle === 'string' ? record.targetHandle.trim() : undefined,
     label: typeof record.label === 'string' ? record.label : '',
     condition: normalizeImportedCondition(record.condition),
     inputMapping: normalizeImportedMapping(record.inputMapping ?? record.input_mapping),
