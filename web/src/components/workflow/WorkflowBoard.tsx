@@ -99,6 +99,7 @@ export type WorkflowRun = {
   taskId: string
   status: string
   activeStepId?: string
+  actorBindings?: Record<string, { type?: string; id?: string }>
   startedAt: string
   updatedAt: string
   finishedAt?: string

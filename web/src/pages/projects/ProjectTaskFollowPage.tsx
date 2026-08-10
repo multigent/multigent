@@ -102,10 +102,11 @@ export default function ProjectTaskFollowPage() {
   const workflowRecords = workflowData ? workflowHistoryRecords(workflowData) : []
   const isCurrentAgentStep = activeInstance?.actorType === 'agent' || activeStep?.type === 'agent_task'
   const currentTaskAgent = displayTask ? startableAgentName(displayTask) : null
-  const currentStepAgent = isCurrentAgentStep && activeInstance?.actorType === 'agent'
-    ? agentNameFromActor(projectId, activeInstance.actorId)
+  const currentStepAgent = isCurrentAgentStep
+    ? agentNameFromActor(projectId, activeInstance?.actorId) || workflowActorAgentForStep(workflowData?.run.actorBindings, activeStep)
     : null
   const startAgent = currentStepAgent || (isCurrentAgentStep ? currentTaskAgent : null)
+  const activeStepRunning = isCurrentAgentStep && isRunningStepStatus(activeInstance?.status)
   const runsState = useApiJson<{ runs: RunRow[] }>(
     isCurrentAgentStep && projectId ? `/api/v1/telemetry/runs?allTime=1&project=${encodeURIComponent(projectId)}&limit=200` : null,
     dataReloadKey,
@@ -117,8 +118,8 @@ export default function ProjectTaskFollowPage() {
     [activeInstance?.actorId, activeInstance?.startedAt, isCurrentAgentStep, projectId, runs, taskId],
   )
   const activeRunRunning = Boolean(activeRun && isRunningRunStatus(activeRun.status))
-  const displayStatus = activeRunRunning ? 'in_progress' : (displayTask?.status || '')
-  const shouldPollActiveRun = Boolean(isCurrentAgentStep && (displayTask?.status === 'in_progress' || activeRunRunning))
+  const displayStatus = activeRunRunning || activeStepRunning ? 'in_progress' : (displayTask?.status || '')
+  const shouldPollActiveRun = Boolean(isCurrentAgentStep && (activeStepRunning || displayTask?.status === 'in_progress' || activeRunRunning))
   const shouldPollLocalLiveLog = Boolean(shouldPollActiveRun && startAgent && !activeRun?.runtimeRunId)
   const localLiveLogAgent = shouldPollLocalLiveLog && startAgent ? startAgent : null
   const liveLogState = useApiJson<LiveLogData>(
@@ -534,6 +535,11 @@ function isRunningRunStatus(status?: string): boolean {
   return normalized === 'running' || normalized === 'in_progress'
 }
 
+function isRunningStepStatus(status?: string): boolean {
+  const normalized = String(status || '').trim().toLowerCase()
+  return normalized === 'running' || normalized === 'in_progress'
+}
+
 function isLiveLogTerminal(content: string): boolean {
   return content.includes('=== exit code:') ||
     content.includes('=== finished:') ||
@@ -584,12 +590,21 @@ function withRunningActiveStep(
 }
 
 function agentNameFromActor(projectID: string, actorID?: string): string | null {
-  const raw = String(actorID || '').trim()
-  if (!raw) return null
-  const prefix = `${projectID}/`
-  if (raw.startsWith(prefix)) return raw.slice(prefix.length) || null
-  if (raw.includes('/')) return null
-  return raw
+	const raw = String(actorID || '').trim()
+	if (!raw) return null
+	const prefix = `${projectID}/`
+	if (raw.startsWith(prefix)) return raw.slice(prefix.length) || null
+	if (raw.includes('/')) return null
+	return raw
+}
+
+function workflowActorAgentForStep(bindings?: Record<string, { type?: string; id?: string }>, step?: { id?: string; actorRole?: string }): string | null {
+  if (!bindings || !step) return null
+  for (const key of [step.id, step.actorRole]) {
+    const binding = key ? bindings[key] : undefined
+    if (binding?.type === 'agent' && binding.id?.trim()) return binding.id.trim()
+  }
+  return null
 }
 
 function normalizeReviewDecision(decision: string) {

@@ -62,6 +62,9 @@ func (DockerProvider) Command(spec ProcessSpec) (string, []string, error) {
 		pathParts = append(pathParts, dockerWorkspacePath(spec.AgentDir, toolBin))
 	}
 	if toolCacheBin := runtimeEnvValue(spec.Runtime, "MULTIGENT_TOOL_CACHE_BIN_DIR"); toolCacheBin != "" {
+		if cacheMount := dockerRuntimeToolCacheVolume(spec.WorkspaceRoot, toolCacheBin); cacheMount != "" {
+			cfg.ExtraVolumes = append(cfg.ExtraVolumes, cacheMount)
+		}
 		pathParts = append(pathParts, dockerWorkspacePath(spec.AgentDir, toolCacheBin))
 	}
 	pathParts = append(pathParts, runtimecli.ManagedBinDir, runtimecli.BinDir, agentcli.ToolchainBin, sandbox.UserBin, sandbox.ContainerDefaultPATH)
@@ -80,6 +83,23 @@ func (DockerProvider) Command(spec ProcessSpec) (string, []string, error) {
 		command = wrapBootstrapScript(command, dockerWorkspacePath(spec.AgentDir, bootstrap))
 	}
 	return sandbox.RunArgs(spec.AgentDir, spec.Model, cfg, command)
+}
+
+func dockerRuntimeToolCacheVolume(workspaceRoot, cacheBin string) string {
+	workspaceRoot = strings.TrimSpace(workspaceRoot)
+	cacheBin = strings.TrimSpace(cacheBin)
+	if workspaceRoot == "" || cacheBin == "" {
+		return ""
+	}
+	cacheRoot := filepath.Join(workspaceRoot, ".multigent", "tool-cache")
+	rel, err := filepath.Rel(filepath.Clean(cacheRoot), filepath.Clean(cacheBin))
+	if err != nil || rel == "." || strings.HasPrefix(rel, ".."+string(filepath.Separator)) || rel == ".." {
+		return ""
+	}
+	if err := os.MkdirAll(cacheRoot, 0o700); err != nil {
+		return ""
+	}
+	return cacheRoot + ":" + cacheRoot
 }
 
 func dockerWorkspacePath(agentDir, path string) string {

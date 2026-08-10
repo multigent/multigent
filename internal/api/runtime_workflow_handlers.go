@@ -2,6 +2,7 @@ package api
 
 import (
 	"encoding/json"
+	"errors"
 	"fmt"
 	"net/http"
 	"sort"
@@ -9,6 +10,7 @@ import (
 	"time"
 
 	"github.com/multigent/multigent/internal/entity"
+	"github.com/multigent/multigent/internal/errs"
 	"github.com/multigent/multigent/internal/taskstore"
 	"github.com/multigent/multigent/internal/tasktemplate"
 	workflowstore "github.com/multigent/multigent/internal/workflow"
@@ -883,22 +885,7 @@ func (s *Server) activateNextWorkflowStep(workspaceID, project, previousAgent st
 	now := time.Now().UTC()
 	if inst.ActorType == "agent" && strings.TrimSpace(inst.ActorID) != "" {
 		nextAgent := strings.TrimSpace(inst.ActorID)
-		if nextAgent == previousAgent {
-			completed.Status = entity.TaskStatusPending
-			completed.Assignee = project + "/" + nextAgent
-			completed.UpdatedAt = now
-			completed.FinishedAt = nil
-			if err := s.ts.PersistTask(project, nextAgent, completed); err != nil {
-				return err
-			}
-			return s.fireTaskTriggerOrQueueRuntime(workspaceID, project, nextAgent, completed, r, "workflow task "+completed.ID)
-		}
-		_ = s.ts.DeleteTask(project, previousAgent, completed.ID)
-		completed.Status = entity.TaskStatusPending
-		completed.Assignee = project + "/" + nextAgent
-		completed.UpdatedAt = now
-		completed.FinishedAt = nil
-		if err := s.ts.AddTask(project, nextAgent, completed); err != nil {
+		if err := s.moveWorkflowTaskToAgent(project, previousAgent, nextAgent, completed, entity.TaskStatusPending, now); err != nil {
 			return err
 		}
 		return s.fireTaskTriggerOrQueueRuntime(workspaceID, project, nextAgent, completed, r, "workflow task "+completed.ID)
@@ -947,6 +934,44 @@ func (s *Server) activateNextWorkflowStep(workspaceID, project, previousAgent st
 			}
 		}
 		return nil
+	}
+	return nil
+}
+
+func (s *Server) moveWorkflowTaskToAgent(project, previousAgent, nextAgent string, task *entity.Task, status entity.TaskStatus, now time.Time) error {
+	if task == nil {
+		return fmt.Errorf("task is required")
+	}
+	previousAgent = strings.TrimSpace(previousAgent)
+	nextAgent = strings.TrimSpace(nextAgent)
+	if nextAgent == "" {
+		return fmt.Errorf("workflow next agent is required")
+	}
+	task.Status = status
+	task.Assignee = project + "/" + nextAgent
+	task.UpdatedAt = now
+	task.FinishedAt = nil
+	if previousAgent == nextAgent {
+		if err := s.ts.PersistTask(project, nextAgent, task); err != nil {
+			return err
+		}
+		return nil
+	}
+	if _, err := s.ts.GetTask(project, nextAgent, task.ID); err == nil {
+		if err := s.ts.PersistTask(project, nextAgent, task); err != nil {
+			return err
+		}
+	} else {
+		var notFound *errs.NotFoundError
+		if !errors.As(err, &notFound) {
+			return err
+		}
+		if err := s.ts.AddTask(project, nextAgent, task); err != nil {
+			return err
+		}
+	}
+	if previousAgent != "" {
+		_ = s.ts.DeleteTask(project, previousAgent, task.ID)
 	}
 	return nil
 }

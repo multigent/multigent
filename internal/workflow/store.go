@@ -973,7 +973,7 @@ func (s *Store) StartRun(project, taskID, definitionID string, actorBindings map
 			StartedAt: started,
 			UpdatedAt: now,
 		}
-		if binding, ok := actorBindings[step.ActorRole]; ok {
+		if binding, ok := workflowActorBindingForStep(actorBindings, step); ok {
 			inst.ActorType = binding.Type
 			inst.ActorID = binding.ID
 		}
@@ -1291,6 +1291,22 @@ func workflowJoinPolicy(step entity.WorkflowStep) string {
 	}
 }
 
+func workflowActorBindingForStep(bindings map[string]entity.WorkflowActorBinding, step entity.WorkflowStep) (entity.WorkflowActorBinding, bool) {
+	if len(bindings) == 0 {
+		return entity.WorkflowActorBinding{}, false
+	}
+	for _, key := range []string{step.ID, step.ActorRole} {
+		key = strings.TrimSpace(key)
+		if key == "" {
+			continue
+		}
+		if binding, ok := bindings[key]; ok {
+			return binding, true
+		}
+	}
+	return entity.WorkflowActorBinding{}, false
+}
+
 func (s *Store) CompleteAndAdvance(project, taskID, summary, output string, outputValues map[string]string, status string) (TransitionResult, error) {
 	var result TransitionResult
 	run, ok, err := s.RunForTask(project, taskID)
@@ -1396,6 +1412,10 @@ func (s *Store) CompleteAndAdvance(project, taskID, summary, output string, outp
 		instances[i].OutputValues = nil
 		instances[i].InputValues = buildNextInputValues(result.Current, nextStep, edge)
 		instances[i].InputArtifact = buildNextInputArtifact(currentStep, result.Current, nextStep, edge)
+		if binding, ok := workflowActorBindingForStep(run.ActorBindings, nextStep); ok {
+			instances[i].ActorType = binding.Type
+			instances[i].ActorID = binding.ID
+		}
 		if err := s.SaveStepInstance(&instances[i]); err != nil {
 			return result, err
 		}

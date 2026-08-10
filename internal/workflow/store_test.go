@@ -83,6 +83,87 @@ func TestWorkflowConditionInDoesNotUseSubstringMatching(t *testing.T) {
 	}
 }
 
+func TestWorkflowActorBindingPrefersStepIDOverRole(t *testing.T) {
+	controlDB, err := db.Open(filepath.Join(t.TempDir(), "control.db"))
+	if err != nil {
+		t.Fatalf("open db: %v", err)
+	}
+	defer controlDB.Close()
+	if err := controlDB.UpsertWorkspace(db.Workspace{ID: "workspace-1", Name: "Workspace", Slug: "workspace", Root: t.TempDir()}); err != nil {
+		t.Fatalf("create workspace: %v", err)
+	}
+
+	store := NewStore(controlDB, "workspace-1")
+	now := time.Now().UTC()
+	def := &entity.WorkflowDefinition{
+		ID:          "wf-step-binding",
+		Name:        "Step Binding Test",
+		Version:     1,
+		Scope:       "workspace",
+		StartStepID: "draft",
+		Steps: []entity.WorkflowStep{
+			{
+				ID:           "draft",
+				Type:         "agent_task",
+				Title:        "Draft",
+				ActorRole:    "worker",
+				OutputFields: []entity.WorkflowField{{Name: "draft_doc_id", Description: "Draft docID."}},
+			},
+			{
+				ID:        "review",
+				Type:      "agent_task",
+				Title:     "Review",
+				ActorRole: "worker",
+			},
+		},
+		Edges:     []entity.WorkflowEdge{{ID: "e1", From: "draft", To: "review"}},
+		CreatedAt: now,
+		UpdatedAt: now,
+	}
+	if err := store.SaveDefinition(def); err != nil {
+		t.Fatalf("save definition: %v", err)
+	}
+	bindings := map[string]entity.WorkflowActorBinding{
+		"worker": {Type: "agent", ID: "fallback-agent"},
+		"draft":  {Type: "agent", ID: "analyst"},
+		"review": {Type: "agent", ID: "reviewer"},
+	}
+	run, steps, err := store.StartRun("project", "task-1", def.ID, bindings)
+	if err != nil {
+		t.Fatalf("start run: %v", err)
+	}
+	if run.ActorBindings["draft"].ID != "analyst" {
+		t.Fatalf("expected run to preserve step binding, got %#v", run.ActorBindings["draft"])
+	}
+	start, ok := workflowStepInstanceByIDForTest(steps, "draft")
+	if !ok {
+		t.Fatal("missing draft step instance")
+	}
+	if start.ActorID != "analyst" {
+		t.Fatalf("expected draft actor analyst, got %q", start.ActorID)
+	}
+
+	transition, err := store.CompleteAndAdvance("project", "task-1", "draft done", "", map[string]string{"draft_doc_id": "doc-20260730-abc123"}, "completed")
+	if err != nil {
+		t.Fatalf("complete and advance: %v", err)
+	}
+	if transition.NextInst == nil {
+		t.Fatal("expected next instance")
+	}
+	if transition.NextInst.ActorID != "reviewer" {
+		t.Fatalf("expected review actor reviewer, got %q", transition.NextInst.ActorID)
+	}
+}
+
+func workflowStepInstanceByIDForTest(steps []entity.WorkflowStepInstance, stepID string) (entity.WorkflowStepInstance, bool) {
+	for _, step := range steps {
+		if step.StepID == stepID {
+			return step, true
+		}
+	}
+	return entity.WorkflowStepInstance{}, false
+}
+
 func TestCompleteBranchAndMaybeAdvanceWaitsForAllBranches(t *testing.T) {
 	controlDB, err := db.Open(filepath.Join(t.TempDir(), "control.db"))
 	if err != nil {

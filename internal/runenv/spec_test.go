@@ -53,6 +53,37 @@ func TestDockerProviderWrapsManagedAgentCLI(t *testing.T) {
 	}
 }
 
+func TestDockerProviderMountsWorkspaceRuntimeToolCache(t *testing.T) {
+	workspace := t.TempDir()
+	agentDir := filepath.Join(workspace, "projects", "demo", "agents", "builder")
+	cacheBin := filepath.Join(workspace, ".multigent", "tool-cache", "npm", "bin")
+	runtime := &entity.SandboxConfig{
+		Provider: entity.SandboxDocker,
+		Image:    sandbox.BaseImage,
+		Docker:   &entity.DockerSandboxConfig{Image: sandbox.BaseImage},
+		Env: []entity.RuntimeEnvVar{
+			{Name: "MULTIGENT_TOOL_CACHE_BIN_DIR", Value: cacheBin},
+		},
+	}
+
+	_, args, err := DockerProvider{}.Command(ProcessSpec{
+		WorkspaceRoot: workspace,
+		AgentDir:      agentDir,
+		Model:         entity.ModelCodex,
+		Runtime:       runtime,
+		Command:       []string{"codex", "exec", "-"},
+	})
+	if err != nil {
+		t.Fatalf("Command: %v", err)
+	}
+
+	joined := strings.Join(args, "\n")
+	cacheRoot := filepath.Join(workspace, ".multigent", "tool-cache")
+	if !strings.Contains(joined, cacheRoot+":"+cacheRoot) {
+		t.Fatalf("docker args missing runtime tool cache mount %q:\n%s", cacheRoot+":"+cacheRoot, joined)
+	}
+}
+
 func TestDockerProviderPrependsRuntimeToolBin(t *testing.T) {
 	dir := t.TempDir()
 	runtime := &entity.SandboxConfig{

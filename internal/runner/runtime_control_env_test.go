@@ -458,7 +458,7 @@ func TestWriteRuntimeToolsFileMaterializesLarkCLIConfig(t *testing.T) {
 		t.Fatalf("read bootstrap-tools.sh: %v", err)
 	}
 	bootstrapText := string(bootstrapBody)
-	if !strings.Contains(bootstrapText, "npm install -g '@larksuite/cli'") || !strings.Contains(bootstrapText, "lark-cli --version") || !strings.Contains(bootstrapText, filepath.Join(workspaceRoot, ".multigent", "tool-cache", "npm")) {
+	if !strings.Contains(bootstrapText, "npm install -g --no-audit --no-fund --loglevel=notice '@larksuite/cli'") || !strings.Contains(bootstrapText, "MULTIGENT_RUNTIME_TOOL_INSTALL_TIMEOUT") || !strings.Contains(bootstrapText, "lark-cli --version") || !strings.Contains(bootstrapText, filepath.Join(workspaceRoot, ".multigent", "tool-cache", "npm")) {
 		t.Fatalf("unexpected bootstrap script: %s", bootstrapText)
 	}
 }

@@ -2065,7 +2065,13 @@ func runtimeCLIInstallerScript(workspaceRoot string, tool runtimeToolRef, adapte
 		marker := runtimeToolInstallerMarker(markerDir, *installer, binary)
 		lines = append(lines,
 			fmt.Sprintf("if [ ! -f %s ] || [ \"${MULTIGENT_TOOL_FORCE_INSTALL:-}\" = \"1\" ]; then", shellQuote(marker)),
-			fmt.Sprintf("  npm install -g %s", shellQuote(installPkg)),
+			"  install_status=0",
+			"  if command -v timeout >/dev/null 2>&1; then",
+			fmt.Sprintf("    timeout \"${MULTIGENT_RUNTIME_TOOL_INSTALL_TIMEOUT:-300}\" npm install -g --no-audit --no-fund --loglevel=notice %s || install_status=$?", shellQuote(installPkg)),
+			"  else",
+			fmt.Sprintf("    npm install -g --no-audit --no-fund --loglevel=notice %s || install_status=$?", shellQuote(installPkg)),
+			"  fi",
+			"  if [ \"$install_status\" != \"0\" ]; then exit \"$install_status\"; fi",
 			fmt.Sprintf("  touch %s", shellQuote(marker)),
 			"fi",
 		)

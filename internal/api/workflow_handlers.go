@@ -246,6 +246,11 @@ func (s *Server) handleGetTaskWorkflow(w http.ResponseWriter, r *http.Request) {
 	if !s.checkProjectAccess(w, r, project) {
 		return
 	}
+	workspaceID, err := s.currentWorkspaceID()
+	if err != nil {
+		s.serverError(w, err)
+		return
+	}
 	wfStore, ok := s.workflowStoreForRequest(w, r)
 	if !ok {
 		return
@@ -270,6 +275,10 @@ func (s *Server) handleGetTaskWorkflow(w http.ResponseWriter, r *http.Request) {
 	}
 	steps, err := wfStore.ListStepInstances(run.ID)
 	if err != nil {
+		s.serverError(w, err)
+		return
+	}
+	if err := s.reconcileActiveWorkflowTaskQueue(workspaceID, project, taskID, run, def, steps, r); err != nil {
 		s.serverError(w, err)
 		return
 	}
@@ -302,6 +311,184 @@ func (s *Server) workflowDocTitles() map[string]string {
 		return nil
 	}
 	return out
+}
+
+func (s *Server) reconcileActiveWorkflowTaskQueue(workspaceID, project, taskID string, run entity.WorkflowRun, def entity.WorkflowDefinition, steps []entity.WorkflowStepInstance, r *http.Request) error {
+	if s == nil || strings.TrimSpace(run.ActiveStepID) == "" || strings.TrimSpace(run.Status) == "completed" {
+		return nil
+	}
+	inst, ok := workflowStepInstanceByStepID(steps, run.ActiveStepID)
+	if !ok {
+		return nil
+	}
+	step, _ := workflowDefinitionStepByID(def.Steps, run.ActiveStepID)
+	actorType := strings.TrimSpace(inst.ActorType)
+	if actorType == "" {
+		actorType = workflowActorTypeForStep(step)
+	}
+	actorID := strings.TrimSpace(inst.ActorID)
+	if actorID == "" {
+		actorID = workflowActorIDForStep(run.ActorBindings, step)
+	}
+	if actorID == "" {
+		return nil
+	}
+	if strings.TrimSpace(inst.ActorType) != actorType || strings.TrimSpace(inst.ActorID) != actorID {
+		inst.ActorType = actorType
+		inst.ActorID = actorID
+		inst.UpdatedAt = time.Now().UTC()
+		if err := workflowstore.NewStore(s.controlDB, workspaceID).SaveStepInstance(&inst); err != nil {
+			return err
+		}
+	}
+	task, currentAgent, err := s.findTaskInProject(project, taskID)
+	if err != nil {
+		return nil
+	}
+	if task.Status.IsTerminal() || task.Status == entity.TaskStatusBlocked {
+		return nil
+	}
+	now := time.Now().UTC()
+	switch actorType {
+	case "agent":
+		wantAssignee := project + "/" + actorID
+		if currentAgent == actorID && strings.TrimSpace(task.Assignee) == wantAssignee && (task.Status == entity.TaskStatusPending || task.Status == entity.TaskStatusInProgress) {
+			return nil
+		}
+		status := entity.TaskStatusPending
+		if s.hasActiveRuntimeRun(workspaceID, project, actorID, task.ID) {
+			status = entity.TaskStatusInProgress
+		}
+		if err := s.moveWorkflowTaskToAgent(project, currentAgent, actorID, task, status, now); err != nil {
+			return err
+		}
+		if status == entity.TaskStatusPending {
+			return s.fireTaskTriggerOrQueueRuntime(workspaceID, project, actorID, task, r, "workflow task "+task.ID+" reconciled")
+		}
+	case "human":
+		if currentAgent == "" || strings.TrimSpace(task.Assignee) == actorID && task.Status == entity.TaskStatusAwaitingConfirmation {
+			return nil
+		}
+		task.Status = entity.TaskStatusAwaitingConfirmation
+		task.Assignee = actorID
+		task.UpdatedAt = now
+		task.FinishedAt = nil
+		return s.ts.PersistTask(project, currentAgent, task)
+	}
+	return nil
+}
+
+type activeWorkflowTaskPresentation struct {
+	Agent    string
+	Assignee string
+	Status   string
+}
+
+func (s *Server) activeWorkflowTaskView(workspaceID, project, taskID string) (activeWorkflowTaskPresentation, bool) {
+	var out activeWorkflowTaskPresentation
+	if s == nil || s.controlDB == nil || strings.TrimSpace(workspaceID) == "" || strings.TrimSpace(project) == "" || strings.TrimSpace(taskID) == "" {
+		return out, false
+	}
+	wfStore := workflowstore.NewStore(s.controlDB, workspaceID)
+	run, found, err := wfStore.RunForTask(project, taskID)
+	if err != nil || !found || strings.TrimSpace(run.ActiveStepID) == "" || strings.TrimSpace(run.Status) == "completed" {
+		return out, false
+	}
+	def, found, err := wfStore.Definition(run.DefinitionID)
+	if err != nil || !found {
+		return out, false
+	}
+	steps, err := wfStore.ListStepInstances(run.ID)
+	if err != nil {
+		return out, false
+	}
+	inst, ok := workflowStepInstanceByStepID(steps, run.ActiveStepID)
+	if !ok {
+		return out, false
+	}
+	step, _ := workflowDefinitionStepByID(def.Steps, run.ActiveStepID)
+	actorType := strings.TrimSpace(inst.ActorType)
+	if actorType == "" {
+		actorType = workflowActorTypeForStep(step)
+	}
+	actorID := strings.TrimSpace(inst.ActorID)
+	if actorID == "" {
+		actorID = workflowActorIDForStep(run.ActorBindings, step)
+	}
+	switch actorType {
+	case "agent":
+		if actorID == "" {
+			return out, false
+		}
+		out.Agent = actorID
+		out.Assignee = project + "/" + actorID
+		if workflowStepInstanceRunning(inst.Status) {
+			out.Status = string(entity.TaskStatusInProgress)
+		} else {
+			out.Status = string(entity.TaskStatusPending)
+		}
+		return out, true
+	case "human":
+		if actorID == "" {
+			return out, false
+		}
+		out.Assignee = actorID
+		if workflowStepInstanceOpen(inst.Status) {
+			out.Status = string(entity.TaskStatusAwaitingConfirmation)
+		}
+		return out, out.Status != ""
+	default:
+		return out, false
+	}
+}
+
+func workflowStepInstanceByStepID(steps []entity.WorkflowStepInstance, stepID string) (entity.WorkflowStepInstance, bool) {
+	for _, inst := range steps {
+		if inst.StepID == stepID {
+			return inst, true
+		}
+	}
+	return entity.WorkflowStepInstance{}, false
+}
+
+func workflowDefinitionStepByID(steps []entity.WorkflowStep, stepID string) (entity.WorkflowStep, bool) {
+	for _, step := range steps {
+		if step.ID == stepID {
+			return step, true
+		}
+	}
+	return entity.WorkflowStep{}, false
+}
+
+func workflowActorTypeForStep(step entity.WorkflowStep) string {
+	switch step.Type {
+	case "human_review":
+		return "human"
+	case "agent_task":
+		return "agent"
+	default:
+		return ""
+	}
+}
+
+func workflowActorIDForStep(bindings map[string]entity.WorkflowActorBinding, step entity.WorkflowStep) string {
+	for _, key := range []string{step.ID, step.ActorRole} {
+		binding, ok := bindings[strings.TrimSpace(key)]
+		if ok {
+			return strings.TrimSpace(binding.ID)
+		}
+	}
+	return ""
+}
+
+func workflowStepInstanceRunning(status string) bool {
+	normalized := strings.TrimSpace(status)
+	return normalized == "running" || normalized == "in_progress"
+}
+
+func workflowStepInstanceOpen(status string) bool {
+	normalized := strings.TrimSpace(status)
+	return normalized == "" || normalized == "pending" || workflowStepInstanceRunning(normalized)
 }
 
 func (s *Server) handlePostTaskWorkflowReview(w http.ResponseWriter, r *http.Request) {

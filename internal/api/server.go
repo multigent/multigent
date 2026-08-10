@@ -1172,6 +1172,20 @@ func (s *Server) taskToRow(t *entity.Task, project, agent string, archived bool)
 func (s *Server) taskToRowWithWorkflow(workspaceID string, t *entity.Task, project, agent string, archived bool) taskRow {
 	row := s.taskToRow(t, project, agent, archived)
 	row.HasWorkflow = s.runtimeTaskHasWorkflow(workspaceID, project, t.ID)
+	if view, ok := s.activeWorkflowTaskView(workspaceID, project, t.ID); ok {
+		if view.Agent != "" {
+			row.Agent = view.Agent
+		}
+		if view.Assignee != "" {
+			row.Assignee = view.Assignee
+			row.AssigneeLabel = s.identityLabel(view.Assignee)
+		}
+		if view.Status != "" {
+			row.Status = view.Status
+			row.StatusGroup = string(entity.TaskStatus(view.Status).Group())
+			row.Archived = false
+		}
+	}
 	return row
 }
 
