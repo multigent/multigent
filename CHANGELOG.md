@@ -1,5 +1,20 @@
 # Changelog
 
+## [v0.1.26] - 2026-08-10
+
+### Fixed
+
+- Workflow task handoff now keeps task assignee, queue state, active step actor, and follow-view status aligned when moving between agents and human review steps.
+- Workflow actor bindings now prefer explicit step IDs before role fallback, so multiple steps sharing the same role can still route to different assigned agents.
+- Workflow detail reconciliation no longer revives terminal or blocked tasks just because a user opens the workflow view.
+- Docker sandbox runs now mount the workspace runtime tool cache, preventing repeated external CLI installs across agent runs.
+- Runtime tool installation now uses bounded npm installs with quieter output and fails fast instead of hanging indefinitely.
+
+### Tested
+
+- Added coverage for step-specific workflow actor bindings and Docker runtime tool-cache mounting.
+- Re-ran an end-to-end workflow through agent analysis, human review, implementation, QA, final review, and release handoff.
+
 ## [v0.1.25] - 2026-08-03
 
 ### Added
