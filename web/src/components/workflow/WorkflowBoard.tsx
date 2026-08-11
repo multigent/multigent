@@ -1252,8 +1252,8 @@ export function WorkflowBoard({
   }
 
   function findOpenStepPosition(preferred: WorkflowPosition, steps: WorkflowStep[]) {
-    const gapX = WORKFLOW_NODE_WIDTH + 72
-    const gapY = WORKFLOW_NODE_HEIGHT + 48
+    const gapX = WORKFLOW_NODE_WIDTH + 28
+    const gapY = WORKFLOW_NODE_HEIGHT + 28
     const candidates: WorkflowPosition[] = [{ x: Math.round(preferred.x), y: Math.round(preferred.y) }]
     for (let ring = 1; ring <= 8; ring += 1) {
       candidates.push(
@@ -1267,7 +1267,7 @@ export function WorkflowBoard({
     const overlaps = (pos: WorkflowPosition) => steps.some((step) => {
       const dx = Math.abs(pos.x - step.position.x)
       const dy = Math.abs(pos.y - step.position.y)
-      return dx < WORKFLOW_NODE_WIDTH + 36 && dy < WORKFLOW_NODE_HEIGHT + 28
+      return dx < WORKFLOW_NODE_WIDTH + 16 && dy < WORKFLOW_NODE_HEIGHT + 16
     })
     return candidates.find((pos) => !overlaps(pos)) ?? candidates[0]
   }
@@ -1379,6 +1379,13 @@ export function WorkflowBoard({
     const currentSteps = selected && stepDraft
       ? definition.steps.map((item) => (item.id === selected.id ? stepDraft : item))
       : definition.steps
+    window.requestAnimationFrame(() => {
+      flowInstanceRef.current?.setCenter(
+        step.position.x + WORKFLOW_NODE_WIDTH / 2,
+        step.position.y + WORKFLOW_NODE_HEIGHT / 2,
+        { duration: 450, zoom: flowInstanceRef.current?.getZoom() ?? 1 },
+      )
+    })
     setSelectedId(id)
     setSelectedEdgeId('')
     setSelectedNodeIds([id])
@@ -1539,6 +1546,9 @@ export function WorkflowBoard({
   }
 
   const stepDraftChanged = Boolean(stepDraft && selected && JSON.stringify(stepDraft) !== JSON.stringify(selected))
+  const branchConditionSteps = selected && stepDraft
+    ? definition.steps.map((step) => (step.id === selected.id ? stepDraft : step))
+    : definition.steps
   const availableCollaborationChannels = collaborationChannels.filter((channel) => channel === 'feishu' || channel === 'lark')
   const canNotifyAssignee = availableCollaborationChannels.length > 0
 
@@ -1813,7 +1823,7 @@ export function WorkflowBoard({
               ) : null}
               <OutgoingBranches
                 edges={outgoingEdges}
-                steps={definition.steps}
+                steps={branchConditionSteps}
                 onPatch={patchEdge}
               />
               <button

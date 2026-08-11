@@ -96,6 +96,18 @@ export default function WorkflowsPage() {
   }, [dirty])
 
   useEffect(() => {
+    if (!params.workflowId || !canManageWorkflows) return
+    function handleSaveShortcut(event: KeyboardEvent) {
+      if (!(event.metaKey || event.ctrlKey) || event.shiftKey || event.altKey || event.key.toLowerCase() !== 's') return
+      event.preventDefault()
+      if (!dirty || saving || !draft?.name.trim()) return
+      void saveWorkflowDefinition(draft)
+    }
+    window.addEventListener('keydown', handleSaveShortcut)
+    return () => window.removeEventListener('keydown', handleSaveShortcut)
+  }, [canManageWorkflows, dirty, draft, params.workflowId, saving])
+
+  useEffect(() => {
     const el = descriptionRef.current
     if (!el) return
     el.style.height = 'auto'
