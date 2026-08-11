@@ -1201,6 +1201,12 @@ function workflowDecisionLabel(value: string) {
 
 const workflowLinkPattern = /https?:\/\/[^\s<>"']+|\bdoc-\d{8}-[a-z0-9]+\b/gi
 const trailingURLPunctuationPattern = /[),.;:!?，。；：！？）】\]]+$/
+let docPreviewZIndexCounter = 90
+
+function nextDocPreviewZIndex() {
+  docPreviewZIndexCounter += 1
+  return docPreviewZIndexCounter
+}
 
 function WorkflowValueText({ value }: { value: string }) {
   const text = String(value ?? '')
@@ -1310,10 +1316,15 @@ function DocIDLink({ docID }: { docID: string }) {
   const [dragOffset, setDragOffset] = useState({ x: 0, y: 0 })
   const [windowSize, setWindowSize] = useState({ width: 768, height: 560 })
   const [zoom, setZoom] = useState(1)
+  const [zIndex, setZIndex] = useState(90)
   const dragRef = useRef({ active: false, startX: 0, startY: 0, originX: 0, originY: 0 })
   const resizeRef = useRef({ active: false, startX: 0, startY: 0, width: 768, height: 560 })
   const title = docTitles.get(docID)
   const label = doc?.title || title || docID
+
+  const bringToFront = useCallback(() => {
+    setZIndex(nextDocPreviewZIndex())
+  }, [])
 
   useEffect(() => {
     if (!open) return
@@ -1355,6 +1366,7 @@ function DocIDLink({ docID }: { docID: string }) {
   async function openPreview(e: MouseEvent<HTMLAnchorElement>) {
     e.preventDefault()
     e.stopPropagation()
+    bringToFront()
     setOpen(true)
     if (doc || loading) return
     setLoading(true)
@@ -1372,6 +1384,7 @@ function DocIDLink({ docID }: { docID: string }) {
   function beginDrag(e: PointerEvent<HTMLDivElement>) {
     if (e.button !== 0) return
     if ((e.target as HTMLElement).closest('a,button')) return
+    bringToFront()
     dragRef.current = {
       active: true,
       startX: e.clientX,
@@ -1389,6 +1402,7 @@ function DocIDLink({ docID }: { docID: string }) {
   function beginResize(e: PointerEvent<HTMLDivElement>) {
     e.preventDefault()
     e.stopPropagation()
+    bringToFront()
     resizeRef.current = {
       active: true,
       startX: e.clientX,
@@ -1401,11 +1415,12 @@ function DocIDLink({ docID }: { docID: string }) {
 
   const modal = open && typeof document !== 'undefined'
     ? createPortal(
-      <div className="pointer-events-none fixed inset-0 z-[90] flex items-center justify-center p-4">
+      <div className="pointer-events-none fixed inset-0 flex items-center justify-center p-4" style={{ zIndex }}>
         <div
           className="pointer-events-auto relative flex flex-col overflow-hidden rounded-xl border border-neutral-200 bg-white shadow-2xl ring-1 ring-black/5 dark:border-zinc-700 dark:bg-zinc-950 dark:ring-white/10"
           style={{ width: windowSize.width, height: windowSize.height, transform: `translate(${dragOffset.x}px, ${dragOffset.y}px)`, transformOrigin: 'center' }}
           onClick={(e) => e.stopPropagation()}
+          onPointerDownCapture={bringToFront}
         >
           <div className="flex shrink-0 cursor-move items-start justify-between gap-4 border-b border-neutral-200 px-5 py-4 dark:border-zinc-800" onPointerDown={beginDrag}>
             <div className="min-w-0">
