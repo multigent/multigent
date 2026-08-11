@@ -150,6 +150,9 @@ func TestWorkflowActorBindingPrefersStepIDOverRole(t *testing.T) {
 	if transition.NextInst == nil {
 		t.Fatal("expected next instance")
 	}
+	if transition.NextInst.Status != "pending" {
+		t.Fatalf("expected next agent step to remain pending until a runtime starts, got %q", transition.NextInst.Status)
+	}
 	if transition.NextInst.ActorID != "reviewer" {
 		t.Fatalf("expected review actor reviewer, got %q", transition.NextInst.ActorID)
 	}

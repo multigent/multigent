@@ -100,7 +100,6 @@ export default function ProjectTaskFollowPage() {
   const activeStep = workflowData
     ? workflowData.definition.steps.find((step) => step.id === (activeInstance?.stepId || workflowData.run.activeStepId))
     : undefined
-  const workflowRecords = workflowData ? workflowHistoryRecords(workflowData) : []
   const isCurrentAgentStep = activeInstance?.actorType === 'agent' || activeStep?.type === 'agent_task'
   const currentTaskAgent = displayTask ? startableAgentName(displayTask) : null
   const currentStepAgent = isCurrentAgentStep
@@ -119,8 +118,16 @@ export default function ProjectTaskFollowPage() {
     [activeInstance?.actorId, activeInstance?.startedAt, isCurrentAgentStep, projectId, runs, taskId],
   )
   const activeRunRunning = Boolean(activeRun && isRunningRunStatus(activeRun.status))
-  const displayStatus = activeRunRunning || activeStepRunning ? 'in_progress' : (displayTask?.status || '')
-  const shouldPollActiveRun = Boolean(isCurrentAgentStep && (activeStepRunning || displayTask?.status === 'in_progress' || activeRunRunning))
+  const taskRunning = displayTask?.status === 'in_progress'
+  const effectiveStepRunning = Boolean(activeStepRunning && (taskRunning || activeRunRunning))
+  const displayStatus = activeRunRunning || effectiveStepRunning ? 'in_progress' : (displayTask?.status || '')
+  const shouldPollActiveRun = Boolean(isCurrentAgentStep && (effectiveStepRunning || taskRunning || activeRunRunning))
+  const visibleWorkflowData = useMemo(
+    () => withIdleAgentStepPending(workflowData, displayTask, projectId, Boolean(activeRunRunning)),
+    [activeRunRunning, displayTask, projectId, workflowData],
+  )
+  const visibleActiveInstance = visibleWorkflowData ? activeWorkflowStepInstance(visibleWorkflowData) : undefined
+  const visibleWorkflowRecords = visibleWorkflowData ? workflowHistoryRecords(visibleWorkflowData) : []
   const shouldPollLocalLiveLog = Boolean(shouldPollActiveRun && startAgent && !activeRun?.runtimeRunId)
   const localLiveLogAgent = shouldPollLocalLiveLog && startAgent ? startAgent : null
   const liveLogState = useApiJson<LiveLogData>(
@@ -363,8 +370,8 @@ export default function ProjectTaskFollowPage() {
 
       <main className="grid min-h-0 flex-1 grid-cols-[minmax(0,1fr)_420px] gap-0 overflow-hidden">
         <section className="min-w-0 border-r border-neutral-200/80 bg-white dark:border-zinc-800 dark:bg-zinc-950">
-          {workflowData ? (
-            <WorkflowBoard key={`${workflowData.run.id}:${workflowData.run.activeStepId || ''}`} definition={workflowData.definition} run={workflowData.run} instances={workflowData.steps} branches={workflowData.branches} focusActive fill hideInspector />
+          {visibleWorkflowData ? (
+            <WorkflowBoard key={`${visibleWorkflowData.run.id}:${visibleWorkflowData.run.activeStepId || ''}`} definition={visibleWorkflowData.definition} run={visibleWorkflowData.run} instances={visibleWorkflowData.steps} branches={visibleWorkflowData.branches} focusActive fill hideInspector />
           ) : workflowState.status === 'loading' ? (
             <CenteredLoading label={t('tasks.followLoadingWorkflow')} />
           ) : (
@@ -389,8 +396,8 @@ export default function ProjectTaskFollowPage() {
             <p className="text-xs font-semibold uppercase tracking-wider text-neutral-400 dark:text-zinc-500">{t('tasks.followCurrent')}</p>
             <h2 className="mt-1 text-base font-semibold text-neutral-900 dark:text-zinc-100">{activeStep?.title || t('workflows.detail.notSpecified')}</h2>
             <div className="mt-2 flex flex-wrap items-center gap-2 text-xs text-neutral-500 dark:text-zinc-500">
-              {activeInstance?.actorId && <span>{t('tasks.colAssignee')}: {actorLabels.get(activeInstance.actorId) || activeInstance.actorId}</span>}
-              {activeInstance?.status && <span>{t('api.taskColStatus')}: {t(`workflows.stepStatus.${activeInstance.status}`, { defaultValue: activeInstance.status })}</span>}
+              {visibleActiveInstance?.actorId && <span>{t('tasks.colAssignee')}: {actorLabels.get(visibleActiveInstance.actorId) || visibleActiveInstance.actorId}</span>}
+              {visibleActiveInstance?.status && <span>{t('api.taskColStatus')}: {t(`workflows.stepStatus.${visibleActiveInstance.status}`, { defaultValue: visibleActiveInstance.status })}</span>}
               {activeRun?.startedAt && <span>{t('tasks.startedAt')}: {fmt(activeRun.startedAt)}</span>}
             </div>
             {isCurrentAgentStep && (
@@ -408,12 +415,12 @@ export default function ProjectTaskFollowPage() {
             )}
           </div>
 
-          {workflowData && (
+          {visibleWorkflowData && (
             <WorkflowRuntimePanel
               step={activeStep}
-              instance={activeInstance}
-              steps={workflowData.definition.steps}
-              records={workflowRecords}
+              instance={visibleActiveInstance}
+              steps={visibleWorkflowData.definition.steps}
+              records={visibleWorkflowRecords}
               runs={runs}
               taskID={taskId}
               actorLabels={actorLabels}
@@ -423,7 +430,7 @@ export default function ProjectTaskFollowPage() {
               reviewComments={reviewComments}
               reviewBusy={reviewBusy}
               reviewErr={reviewErr}
-              docTitles={workflowData.docTitles}
+              docTitles={visibleWorkflowData.docTitles}
               onChangeOutput={(name, value) => {
                 setReviewOutputs((current) => ({ ...current, [name]: value }))
                 if (name === 'comments') setReviewComments(value)
@@ -586,6 +593,33 @@ function withRunningActiveStep(
         status: 'running',
         startedAt,
         updatedAt: task.updatedAt || step.updatedAt,
+      }
+    }),
+  }
+}
+
+function withIdleAgentStepPending(
+  data: TaskWorkflowData | null,
+  task: TaskRow | undefined,
+  projectID: string,
+  activeRunRunning: boolean,
+): TaskWorkflowData | null {
+  if (!data || !task || task.status === 'in_progress' || activeRunRunning || !data.run.activeStepId) return data
+  const current = activeWorkflowStepInstance(data)
+  const currentStep = data.definition.steps.find((step) => step.id === data.run.activeStepId)
+  const isAgentStep = current?.actorType === 'agent' || currentStep?.type === 'agent_task'
+  if (!isAgentStep || !isRunningStepStatus(current?.status)) return data
+  const taskAgent = startableAgentName(task) || task.agent
+  const actorAgent = agentNameFromActor(projectID, current?.actorId || currentStep?.actorRole)
+  if (actorAgent && taskAgent && actorAgent !== taskAgent) return data
+  return {
+    ...data,
+    steps: data.steps.map((step) => {
+      if (step.stepId !== data.run.activeStepId) return step
+      return {
+        ...step,
+        status: 'pending',
+        startedAt: '',
       }
     }),
   }

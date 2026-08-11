@@ -1399,8 +1399,8 @@ func (s *Store) CompleteAndAdvance(project, taskID, summary, output string, outp
 		if instances[i].StepID != nextStep.ID {
 			continue
 		}
-		instances[i].Status = "running"
-		instances[i].StartedAt = now
+		instances[i].Status = "pending"
+		instances[i].StartedAt = time.Time{}
 		instances[i].UpdatedAt = now
 		instances[i].FinishedAt = time.Time{}
 		instances[i].Summary = ""

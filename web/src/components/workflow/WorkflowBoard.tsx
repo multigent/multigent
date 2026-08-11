@@ -499,14 +499,23 @@ function stepPatchForType(type: string): Partial<WorkflowStep> {
   }
 }
 
-function conditionLabel(edge: WorkflowEdge) {
+function localizedEdgeLabel(label: string | undefined, t: (key: string, options?: Record<string, unknown>) => string) {
+  const normalized = String(label || '').trim().toLowerCase()
+  if (normalized === 'approved') return t('workflows.detail.edgeLabelApproved')
+  if (normalized === 'request changes') return t('workflows.detail.edgeLabelRequestChanges')
+  if (normalized === 'default') return t('workflows.detail.edgeLabelDefault')
+  return label || ''
+}
+
+function conditionLabel(edge: WorkflowEdge, t: (key: string, options?: Record<string, unknown>) => string) {
   const condition = edge.condition
   if (!condition?.field && !edge.isDefault) return ''
-  if (edge.isDefault) return edge.label || 'default'
-  if (!condition?.field) return edge.label || ''
-  if (condition.operator === 'exists') return `${condition.field} exists`
+  if (edge.isDefault) return localizedEdgeLabel(edge.label, t) || t('workflows.detail.edgeLabelDefault')
+  if (!condition?.field) return localizedEdgeLabel(edge.label, t)
+  if (condition.operator === 'exists') return t('workflows.detail.conditionExistsLabel', { field: condition.field })
   const value = condition.operator === 'in' ? (condition.values ?? []).join(', ') : condition.value
-  return [condition.field, condition.operator || 'eq', value].filter(Boolean).join(' ')
+  const operator = t(`workflows.detail.operators.${condition.operator || 'eq'}`)
+  return [condition.field, operator, value].filter(Boolean).join(' ')
 }
 
 function normalizeEdge(edge: WorkflowEdge): WorkflowEdge {
@@ -1041,7 +1050,7 @@ export function WorkflowBoard({
           target: edge.to,
           sourceHandle: edge.sourceHandle || handles.sourceHandle,
           targetHandle: edge.targetHandle || handles.targetHandle,
-          label: edge.label || conditionLabel(edge),
+          label: localizedEdgeLabel(edge.label, t) || conditionLabel(edge, t),
           type: 'step',
           className: selected ? 'workflow-edge-selected' : '',
           selectable: true,
@@ -1261,12 +1270,12 @@ export function WorkflowBoard({
     const reviewEdgePatch: Partial<WorkflowEdge> = sourceStep?.type === 'human_review'
       ? backward
         ? {
-            label: 'request changes',
+            label: t('workflows.detail.edgeLabelRequestChanges'),
             condition: { field: 'decision', operator: 'eq', value: 'request_changes' },
             inputMapping: { review_comments: '$output.comments' },
           }
         : {
-            label: 'approved',
+            label: t('workflows.detail.edgeLabelApproved'),
             condition: { field: 'decision', operator: 'eq', value: 'approve' },
             inputMapping: { approval: '$output.decision' },
           }
@@ -2177,7 +2186,7 @@ function OutgoingBranches({
                     <p className="truncate text-sm font-medium text-neutral-800 dark:text-zinc-200">
                       {t('workflows.detail.toNode')}: {target?.title || edge.to}
                     </p>
-                    <p className="mt-0.5 truncate text-xs text-neutral-400 dark:text-zinc-500">{conditionLabel(edge) || t('workflows.detail.notSpecified')}</p>
+                    <p className="mt-0.5 truncate text-xs text-neutral-400 dark:text-zinc-500">{conditionLabel(edge, t) || t('workflows.detail.notSpecified')}</p>
                   </div>
                   <input
                     value={edge.label || ''}
