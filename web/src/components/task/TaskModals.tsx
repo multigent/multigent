@@ -842,7 +842,7 @@ export function WorkflowRuntimePanel({
 
   const decisionField = (step.outputFields ?? []).find((field) => field.name === 'decision')
   const decisionOptions = decisionField ? workflowDecisionOptions(decisionField.description) : []
-  const usesDefaultReviewButtons = !decisionField || decisionOptions.length === 0
+  const usesDefaultReviewButtons = !decisionField || decisionOptions.length === 0 || isStandardReviewDecisionOptions(decisionOptions)
   const editableOutputFields = (step.outputFields ?? []).filter((field) => field.name !== 'decision')
   const hasInput = Boolean(instance?.inputArtifact?.trim()) || (step.inputFields ?? []).length > 0
   const showReadonlyOutput = !canReview && !isWorkflowStepOpen(instance?.status) && (
@@ -1190,9 +1190,14 @@ function workflowDecisionOptions(description?: string) {
   const match = /(?:决策|決策|decision)\s*[:：]\s*([^。.;；]+)/i.exec(text)
   if (!match) return []
   return match[1]
-    .split(/[、,，/|]/)
+    .split(/[、,，/|]|(?:\s+or\s+)|(?:\s+或\s+)|(?:\s+或者\s+)/i)
     .map((item) => item.trim())
     .filter(Boolean)
+}
+
+function isStandardReviewDecisionOptions(options: string[]) {
+  const normalized = new Set(options.map((item) => normalizeReviewDecision(item)))
+  return normalized.has('approve') && normalized.has('request_changes')
 }
 
 function workflowDecisionLabel(value: string) {
@@ -1317,6 +1322,7 @@ function DocIDLink({ docID }: { docID: string }) {
   const [windowSize, setWindowSize] = useState({ width: 768, height: 560 })
   const [zoom, setZoom] = useState(1)
   const [zIndex, setZIndex] = useState(90)
+  const [maximized, setMaximized] = useState(false)
   const dragRef = useRef({ active: false, startX: 0, startY: 0, originX: 0, originY: 0 })
   const resizeRef = useRef({ active: false, startX: 0, startY: 0, width: 768, height: 560 })
   const title = docTitles.get(docID)
@@ -1383,6 +1389,7 @@ function DocIDLink({ docID }: { docID: string }) {
 
   function beginDrag(e: PointerEvent<HTMLDivElement>) {
     if (e.button !== 0) return
+    if (maximized) return
     if ((e.target as HTMLElement).closest('a,button')) return
     bringToFront()
     dragRef.current = {
@@ -1402,6 +1409,7 @@ function DocIDLink({ docID }: { docID: string }) {
   function beginResize(e: PointerEvent<HTMLDivElement>) {
     e.preventDefault()
     e.stopPropagation()
+    if (maximized) return
     bringToFront()
     resizeRef.current = {
       active: true,
@@ -1418,11 +1426,24 @@ function DocIDLink({ docID }: { docID: string }) {
       <div className="pointer-events-none fixed inset-0 flex items-center justify-center p-4" style={{ zIndex }}>
         <div
           className="pointer-events-auto relative flex flex-col overflow-hidden rounded-xl border border-neutral-200 bg-white shadow-2xl ring-1 ring-black/5 dark:border-zinc-700 dark:bg-zinc-950 dark:ring-white/10"
-          style={{ width: windowSize.width, height: windowSize.height, transform: `translate(${dragOffset.x}px, ${dragOffset.y}px)`, transformOrigin: 'center' }}
+          style={{
+            width: maximized ? 'calc(100vw - 32px)' : windowSize.width,
+            height: maximized ? 'calc(100vh - 32px)' : windowSize.height,
+            transform: maximized ? 'translate(0, 0)' : `translate(${dragOffset.x}px, ${dragOffset.y}px)`,
+            transformOrigin: 'center',
+          }}
           onClick={(e) => e.stopPropagation()}
           onPointerDownCapture={bringToFront}
         >
-          <div className="flex shrink-0 cursor-move items-start justify-between gap-4 border-b border-neutral-200 px-5 py-4 dark:border-zinc-800" onPointerDown={beginDrag}>
+          <div
+            className={cn('flex shrink-0 items-start justify-between gap-4 border-b border-neutral-200 px-5 py-4 dark:border-zinc-800', maximized ? 'cursor-default' : 'cursor-move')}
+            onPointerDown={beginDrag}
+            onDoubleClick={(e) => {
+              if ((e.target as HTMLElement).closest('a,button')) return
+              bringToFront()
+              setMaximized((value) => !value)
+            }}
+          >
             <div className="min-w-0">
               <p className="font-mono text-[11px] uppercase tracking-wide text-neutral-400 dark:text-zinc-500">{docID}</p>
               <h3 className="mt-1 truncate text-base font-semibold text-neutral-900 dark:text-zinc-100">{label}</h3>
@@ -1457,11 +1478,13 @@ function DocIDLink({ docID }: { docID: string }) {
             <button type="button" onClick={() => setZoom(1)} className="min-w-12 rounded-md px-2 py-1 text-xs font-medium text-neutral-500 hover:bg-neutral-100 hover:text-neutral-900 dark:text-zinc-400 dark:hover:bg-zinc-800 dark:hover:text-zinc-100">{Math.round(zoom * 100)}%</button>
             <button type="button" onClick={() => changeZoom(0.1)} className="rounded-md px-2 py-1 text-xs font-semibold text-neutral-500 hover:bg-neutral-100 hover:text-neutral-900 dark:text-zinc-400 dark:hover:bg-zinc-800 dark:hover:text-zinc-100">+</button>
           </div>
-          <div
-            className="absolute bottom-0 right-0 size-5 cursor-nwse-resize rounded-br-xl bg-gradient-to-br from-transparent via-transparent to-neutral-300 dark:to-zinc-600"
-            onPointerDown={beginResize}
-            aria-hidden="true"
-          />
+          {!maximized && (
+            <div
+              className="absolute bottom-0 right-0 size-5 cursor-nwse-resize rounded-br-xl bg-gradient-to-br from-transparent via-transparent to-neutral-300 dark:to-zinc-600"
+              onPointerDown={beginResize}
+              aria-hidden="true"
+            />
+          )}
         </div>
       </div>,
       document.body,
