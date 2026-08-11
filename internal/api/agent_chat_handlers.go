@@ -777,8 +777,10 @@ func (s *Server) handleAgentChat(w http.ResponseWriter, r *http.Request) {
 	clientGone := false
 	lineCount := 0
 	lastStreamError := ""
+	recentLines := []string{}
 	for line := range lines {
 		lineCount++
+		recentLines = appendRecentAgentChatLine(recentLines, line, 14)
 		if sid := extractAgentChatSessionID(line); sid != "" {
 			if detectedSessionID == "" {
 				log.Printf("[chat] %s/%s: detected session_id=%s", project, agent, sid)
@@ -810,10 +812,7 @@ func (s *Server) handleAgentChat(w http.ResponseWriter, r *http.Request) {
 	s.execMu.Unlock()
 
 	if waitErr != nil {
-		errMsg := waitErr.Error()
-		if lastStreamError != "" {
-			errMsg = lastStreamError + " (" + errMsg + ")"
-		}
+		errMsg := summarizeAgentChatExit(waitErr, lastStreamError, recentLines)
 		lease.Fail(errMsg)
 		detectedSessionID = ""
 		_ = s.createInteractionEvent(lease.session, "system", "", "web", "run_failed", "", map[string]any{
@@ -826,10 +825,7 @@ func (s *Server) handleAgentChat(w http.ResponseWriter, r *http.Request) {
 	}
 
 	if waitErr != nil && !clientGone {
-		errMsg := waitErr.Error()
-		if lastStreamError != "" {
-			errMsg = lastStreamError + " (" + errMsg + ")"
-		}
+		errMsg := summarizeAgentChatExit(waitErr, lastStreamError, recentLines)
 		evt, _ := json.Marshal(map[string]any{
 			"type":  "chat_error",
 			"error": errMsg,
@@ -1308,6 +1304,54 @@ func contentText(v any) string {
 	default:
 		return ""
 	}
+}
+
+func appendRecentAgentChatLine(lines []string, line string, limit int) []string {
+	line = strings.TrimSpace(line)
+	if line == "" {
+		return lines
+	}
+	if len(line) > 1200 {
+		line = line[:1200] + "..."
+	}
+	lines = append(lines, line)
+	if limit > 0 && len(lines) > limit {
+		lines = lines[len(lines)-limit:]
+	}
+	return lines
+}
+
+func summarizeAgentChatExit(waitErr error, lastStreamError string, recentLines []string) string {
+	base := "agent run failed"
+	if waitErr != nil {
+		base = strings.TrimSpace(waitErr.Error())
+	}
+	if strings.TrimSpace(lastStreamError) != "" {
+		return strings.TrimSpace(lastStreamError) + " (" + base + ")"
+	}
+	tail := usefulAgentChatTail(recentLines)
+	if tail == "" {
+		return base
+	}
+	return base + "\n\nLast output:\n" + tail
+}
+
+func usefulAgentChatTail(lines []string) string {
+	out := make([]string, 0, len(lines))
+	for _, line := range lines {
+		trimmed := strings.TrimSpace(line)
+		if trimmed == "" {
+			continue
+		}
+		if strings.HasPrefix(trimmed, "data: ") {
+			trimmed = strings.TrimSpace(strings.TrimPrefix(trimmed, "data: "))
+		}
+		out = append(out, trimmed)
+	}
+	if len(out) > 8 {
+		out = out[len(out)-8:]
+	}
+	return strings.Join(out, "\n")
 }
 
 func stringField(m map[string]any, key string) string {

@@ -848,7 +848,7 @@ func seedExampleSchedules(ts taskstore.Store, spec exampleLocaleSpec) error {
 	const wakeupFile = "@.multigent/context/wakeup.md"
 	heartbeats := map[string]*entity.HeartbeatConfig{
 		exampleGreeterAgent: {
-			Enabled:          true,
+			Enabled:          false,
 			Interval:         "30m",
 			WakeupPreset:     "require_tasks",
 			WakeupPrompt:     wakeupFile,
@@ -859,7 +859,7 @@ func seedExampleSchedules(ts taskstore.Store, spec exampleLocaleSpec) error {
 			Jitter:           "2m",
 		},
 		exampleResponderAgent: {
-			Enabled:          true,
+			Enabled:          false,
 			Interval:         "1h",
 			WakeupPreset:     "require_any",
 			WakeupPrompt:     wakeupFile,
@@ -870,7 +870,7 @@ func seedExampleSchedules(ts taskstore.Store, spec exampleLocaleSpec) error {
 			Jitter:           "3m",
 		},
 		exampleRecorderAgent: {
-			Enabled:          true,
+			Enabled:          false,
 			Interval:         "2h",
 			WakeupPreset:     "require_any",
 			WakeupPrompt:     wakeupFile,
@@ -891,7 +891,7 @@ func seedExampleSchedules(ts taskstore.Store, spec exampleLocaleSpec) error {
 			ID:           "example-daily-review",
 			Title:        spec.Schedules.DailyReviewTitle,
 			Schedule:     "0 9 * * 1-5",
-			Enabled:      true,
+			Enabled:      false,
 			Prompt:       spec.Schedules.DailyReviewPrompt,
 			SessionScope: string(entity.SessionScopeTask),
 			Jitter:       "10m",
@@ -904,7 +904,7 @@ func seedExampleSchedules(ts taskstore.Store, spec exampleLocaleSpec) error {
 			ID:           "example-weekly-summary",
 			Title:        spec.Schedules.WeeklySummaryTitle,
 			Schedule:     "0 17 * * 5",
-			Enabled:      true,
+			Enabled:      false,
 			Prompt:       spec.Schedules.WeeklySummaryPrompt,
 			SessionScope: string(entity.SessionScopeTask),
 			Jitter:       "15m",

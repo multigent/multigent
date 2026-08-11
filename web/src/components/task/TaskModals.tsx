@@ -70,6 +70,12 @@ function unescapeBreaks(s: string): string {
   return s.replace(/\\r\\n/g, '\n').replace(/\\n/g, '\n').replace(/\\t/g, '\t')
 }
 
+export function isOptionalTerminalReviewDecision(step?: WorkflowStep, definition?: WorkflowDefinition) {
+  if (!step || step.type !== 'human_review') return false
+  const outgoing = (definition?.edges ?? []).filter((edge) => edge.from === step.id)
+  return outgoing.length <= 1
+}
+
 export const STATUS_KEYS = ['pending', 'in_progress', 'awaiting_confirmation', 'blocked', 'done_success', 'done_failed', 'cancelled'] as const
 
 export const statusColor: Record<string, string> = {
@@ -363,13 +369,14 @@ export function TaskDetailModal({ task, onClose, onEdit, onMutated, canEdit = tr
     setReviewErr(null)
     const normalizedDecision = normalizeReviewDecision(decision || reviewOutputs.decision || '')
     setReviewBusy(normalizedDecision || 'submit')
-    const outputs: Record<string, string> = { ...reviewOutputs }
+    const outputs: Record<string, string> = Object.fromEntries(Object.entries(reviewOutputs).map(([key, value]) => [key, String(value ?? '').trim()]))
     if (normalizedDecision) outputs.decision = normalizedDecision
     const outputFieldNames = (activeWorkflowStep?.outputFields ?? []).map((field) => field.name).filter(Boolean)
     const comments = (outputs.comments ?? reviewComments).trim()
     if (outputFieldNames.includes('comments')) outputs.comments = comments
+    const decisionOptional = isOptionalTerminalReviewDecision(activeWorkflowStep, workflowState.status === 'ok' ? workflowState.data.definition : undefined)
     const missingField = outputFieldNames
-      .find((name) => !String(outputs[name] ?? '').trim())
+      .find((name) => !(name === 'decision' && decisionOptional) && !String(outputs[name] ?? '').trim())
     if (missingField) {
       setReviewErr(`${t('forms.fillRequired')} ${missingField}`)
       setReviewBusy(null)
@@ -835,7 +842,7 @@ export function WorkflowRuntimePanel({
 
   const decisionField = (step.outputFields ?? []).find((field) => field.name === 'decision')
   const decisionOptions = decisionField ? workflowDecisionOptions(decisionField.description) : []
-  const usesDefaultReviewButtons = !decisionField || decisionOptions.length === 0 || sameStringSet(decisionOptions, ['approve', 'request_changes'])
+  const usesDefaultReviewButtons = !decisionField || decisionOptions.length === 0
   const editableOutputFields = (step.outputFields ?? []).filter((field) => field.name !== 'decision')
   const hasInput = Boolean(instance?.inputArtifact?.trim()) || (step.inputFields ?? []).length > 0
   const showReadonlyOutput = !canReview && !isWorkflowStepOpen(instance?.status) && (
@@ -1186,12 +1193,6 @@ function workflowDecisionOptions(description?: string) {
     .split(/[、,，/|]/)
     .map((item) => item.trim())
     .filter(Boolean)
-}
-
-function sameStringSet(a: string[], b: string[]) {
-  if (a.length !== b.length) return false
-  const set = new Set(a)
-  return b.every((item) => set.has(item))
 }
 
 function workflowDecisionLabel(value: string) {

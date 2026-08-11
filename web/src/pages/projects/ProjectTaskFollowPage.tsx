@@ -8,6 +8,7 @@ import { PlaceholderCard } from '../../components/ui/PlaceholderCard'
 import {
   WorkflowRuntimePanel,
   activeWorkflowStepInstance,
+  isOptionalTerminalReviewDecision,
   isTerminal,
   isWorkflowStepOpen,
   startableAgentName,
@@ -294,12 +295,13 @@ export default function ProjectTaskFollowPage() {
     setReviewErr(null)
     const normalizedDecision = normalizeReviewDecision(decision || reviewOutputs.decision || '')
     setReviewBusy(normalizedDecision || 'submit')
-    const outputs: Record<string, string> = { ...reviewOutputs }
+    const outputs: Record<string, string> = Object.fromEntries(Object.entries(reviewOutputs).map(([key, value]) => [key, String(value ?? '').trim()]))
     if (normalizedDecision) outputs.decision = normalizedDecision
     const outputFieldNames = (activeStep.outputFields ?? []).map((field) => field.name).filter(Boolean)
     const comments = (outputs.comments ?? reviewComments).trim()
     if (outputFieldNames.includes('comments')) outputs.comments = comments
-    const missingField = outputFieldNames.find((name) => !String(outputs[name] ?? '').trim())
+    const decisionOptional = isOptionalTerminalReviewDecision(activeStep, workflowData?.definition)
+    const missingField = outputFieldNames.find((name) => !(name === 'decision' && decisionOptional) && !String(outputs[name] ?? '').trim())
     if (missingField) {
       setReviewErr(`${t('forms.fillRequired')} ${missingField}`)
       setReviewBusy(null)

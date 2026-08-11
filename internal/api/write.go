@@ -228,17 +228,6 @@ func (s *Server) createProjectTaskFromBody(w http.ResponseWriter, r *http.Reques
 		}
 	}
 
-	if assignee != "human" {
-		// Fire trigger if configured for the actual task owner. Workflow tasks
-		// are routed to the start step actor, which can differ from the form's
-		// initially selected agent.
-		workspaceID, _ := s.currentWorkspaceID()
-		if err := s.fireTaskTriggerOrQueueRuntime(workspaceID, name, agentName, t, r, "task "+t.ID); err != nil {
-			s.serverError(w, err)
-			return
-		}
-	}
-
 	w.WriteHeader(http.StatusCreated)
 	_ = json.NewEncoder(w).Encode(map[string]string{
 		"id":      t.ID,
@@ -254,7 +243,7 @@ func workflowStartActor(def entity.WorkflowDefinition, bindings map[string]entit
 		}
 		inst := &entity.WorkflowStepInstance{
 			StepID:    def.Steps[i].ID,
-			Status:    "running",
+			Status:    "pending",
 			ActorType: "",
 			ActorID:   "",
 		}

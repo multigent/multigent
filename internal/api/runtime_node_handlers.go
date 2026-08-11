@@ -78,6 +78,8 @@ type runtimeRunFinishRequest struct {
 	ErrorMessage string         `json:"errorMessage"`
 }
 
+const runtimeWorkflowStepNotCompletedError = "workflow step was not completed by the agent; use `mga task step done --id <id>` with every required output field, or `mga task step done --id <id> --status failed --error <reason>` if the step cannot be completed"
+
 type createRuntimeExecRunRequest struct {
 	Message   string `json:"message"`
 	SessionID string `json:"sessionId"`
@@ -1012,21 +1014,21 @@ func (s *Server) finishRuntimeNodeRun(w http.ResponseWriter, r *http.Request, st
 	run.ErrorMessage = strings.TrimSpace(body.ErrorMessage)
 	run.FinishedAt = now
 	run.UpdatedAt = now
+	s.finalizeRuntimeTaskRun(&run, body)
 	if err := s.controlDB.UpsertRuntimeRun(run); err != nil {
 		s.serverError(w, err)
 		return
 	}
-	s.finalizeRuntimeTaskRun(run, status, body)
 	_ = json.NewEncoder(w).Encode(map[string]any{"run": runtimeRunResponse(run)})
 }
 
-func (s *Server) finalizeRuntimeTaskRun(run controldb.RuntimeRun, runtimeStatus string, body runtimeRunFinishRequest) {
-	if s == nil || s.ts == nil || strings.TrimSpace(run.TaskID) == "" {
+func (s *Server) finalizeRuntimeTaskRun(run *controldb.RuntimeRun, body runtimeRunFinishRequest) {
+	if s == nil || s.ts == nil || run == nil || strings.TrimSpace(run.TaskID) == "" {
 		return
 	}
 	now := time.Now().UTC()
 	if hb, err := s.ts.GetHeartbeat(run.ProjectID, run.AgentID); err == nil && hb != nil {
-		if runtimeStatus == "failed" {
+		if run.Status == "failed" {
 			hb.LastWakeupStatus = "failed"
 		} else {
 			hb.LastWakeupStatus = "done"
@@ -1045,13 +1047,30 @@ func (s *Server) finalizeRuntimeTaskRun(run controldb.RuntimeRun, runtimeStatus 
 		return
 	}
 	if s.runtimeTaskHasWorkflow(run.WorkspaceID, run.ProjectID, run.TaskID) {
+		if run.Status != "failed" && (task.Status == entity.TaskStatusInProgress || task.Status == entity.TaskStatusPending) {
+			msg := runtimeWorkflowStepNotCompletedError
+			prev := task.Status
+			task.Status = entity.TaskStatusDoneFailed
+			task.LastError = msg
+			task.UpdatedAt = now
+			entity.ApplyStatusTimestamps(task, prev, now)
+			_ = s.ts.ArchiveTask(run.ProjectID, run.AgentID, task)
+			run.Status = "failed"
+			run.ErrorCode = "workflow_step_not_completed"
+			run.ErrorMessage = msg
+			if body.Result == nil {
+				body.Result = map[string]any{}
+			}
+			body.Result["error"] = msg
+			run.ResultJSON = marshalRuntimeObject(body.Result)
+		}
 		return
 	}
 	if task.Status != entity.TaskStatusInProgress && task.Status != entity.TaskStatusPending {
 		return
 	}
 	prev := task.Status
-	if runtimeStatus == "failed" {
+	if run.Status == "failed" {
 		task.Status = entity.TaskStatusDoneFailed
 		task.LastError = firstNonEmpty(strings.TrimSpace(body.ErrorMessage), strings.TrimSpace(body.ErrorCode), "runtime run failed")
 	} else {

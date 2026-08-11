@@ -1,5 +1,5 @@
 import { useCallback, useEffect, useRef, useState, type KeyboardEvent } from 'react'
-import { useParams, useSearchParams } from 'react-router-dom'
+import { useLocation, useParams, useSearchParams } from 'react-router-dom'
 import { useTranslation } from 'react-i18next'
 import { Edit3, Maximize2, Minimize2, RefreshCw, Send, Sparkles, Square } from 'lucide-react'
 import { ConversationLog } from '../../components/ui/ConversationLog'
@@ -141,6 +141,7 @@ function shortSession(sessionId: string): string {
 export default function ProjectAgentChatPage() {
   const { t } = useTranslation()
   const { user } = useAuth()
+  const location = useLocation()
   const { projectId, agentName } = useParams<{ projectId: string; agentName: string }>()
   const [searchParams, setSearchParams] = useSearchParams()
   const routeSessionId = searchParams.get('sessionId') ?? ''
@@ -166,6 +167,8 @@ export default function ProjectAgentChatPage() {
   const scrollRef = useRef<HTMLDivElement>(null)
   const inputRef = useRef<HTMLTextAreaElement>(null)
   const abortRef = useRef<AbortController | null>(null)
+  const mountedRef = useRef(true)
+  const chatPathRef = useRef(location.pathname)
   const replyPendingTimerRef = useRef<number | null>(null)
   const sessionIdRef = useRef(routeSessionId)
   const freshNextRef = useRef(false)
@@ -180,8 +183,27 @@ export default function ProjectAgentChatPage() {
   const trustedProxyMode = isTrustedProxyMode()
   const inputDisabled = loading || runtimeBlocked
 
+  useEffect(() => {
+    mountedRef.current = true
+    return () => {
+      mountedRef.current = false
+      activeChatKeyRef.current = ''
+      abortRef.current?.abort()
+      abortRef.current = null
+      if (replyPendingTimerRef.current != null) {
+        window.clearTimeout(replyPendingTimerRef.current)
+        replyPendingTimerRef.current = null
+      }
+    }
+  }, [])
+
+  useEffect(() => {
+    chatPathRef.current = location.pathname
+  }, [location.pathname])
+
   // Sync sessionId state + URL query param together so page refresh preserves the session.
   const updateSessionId = useCallback((sid: string) => {
+    if (!mountedRef.current || window.location.pathname !== chatPathRef.current) return
     sessionIdRef.current = sid
     setSessionId(sid)
     setSessionDraft(sid)

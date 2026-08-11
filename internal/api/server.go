@@ -1172,7 +1172,7 @@ func (s *Server) taskToRow(t *entity.Task, project, agent string, archived bool)
 func (s *Server) taskToRowWithWorkflow(workspaceID string, t *entity.Task, project, agent string, archived bool) taskRow {
 	row := s.taskToRow(t, project, agent, archived)
 	row.HasWorkflow = s.runtimeTaskHasWorkflow(workspaceID, project, t.ID)
-	if view, ok := s.activeWorkflowTaskView(workspaceID, project, t.ID); ok {
+	if view, ok := s.activeWorkflowTaskView(workspaceID, project, t.ID, t.Status); ok {
 		if view.Agent != "" {
 			row.Agent = view.Agent
 		}

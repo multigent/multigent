@@ -69,6 +69,7 @@ export function CreateTaskDialog({ projectId: defaultProjectId, agents: defaultA
   const [templateInputs, setTemplateInputs] = useState<Record<string, string>>({})
   const [busy, setBusy] = useState(false)
   const [err, setErr] = useState<string | null>(null)
+  const [fieldErrors, setFieldErrors] = useState<Record<string, string>>({})
 
   const multiProject = Boolean(allProjectsAgents && allProjectsAgents.length > 1)
   const workflowPath = open ? '/api/v1/workflows' : null
@@ -131,6 +132,7 @@ export function CreateTaskDialog({ projectId: defaultProjectId, agents: defaultA
     setActorBindings({})
     setTaskTemplateId('')
     setTemplateInputs({})
+    setFieldErrors({})
     setErr(null)
   }
 
@@ -152,6 +154,7 @@ export function CreateTaskDialog({ projectId: defaultProjectId, agents: defaultA
     setActorBindings({})
     setTaskTemplateId('')
     setTemplateInputs({})
+    setFieldErrors({})
   }
 
   function onCreateModeChange(mode: 'blank' | 'template') {
@@ -211,34 +214,76 @@ export function CreateTaskDialog({ projectId: defaultProjectId, agents: defaultA
     return Array.from(byRole.values())
   }, [selectedWorkflow])
 
+  function requiredMessage() {
+    return t('forms.required', { defaultValue: t('forms.fillRequired') })
+  }
+
+  function clearFieldError(name: string) {
+    setFieldErrors((current) => {
+      if (!current[name]) return current
+      const next = { ...current }
+      delete next[name]
+      return next
+    })
+  }
+
+  function controlClass(name: string) {
+    return cn(
+      fieldCls,
+      fieldErrors[name] && 'border-red-400 bg-red-50/40 focus:border-red-500 dark:border-red-500/70 dark:bg-red-950/20',
+    )
+  }
+
+  function fieldError(name: string) {
+    const message = fieldErrors[name]
+    if (!message) return null
+    return <p className="mt-1 text-xs text-red-600 dark:text-red-400">{message}</p>
+  }
+
   async function onSubmit(e: FormEvent) {
     e.preventDefault()
     setErr(null)
+    const nextFieldErrors: Record<string, string> = {}
+    const required = requiredMessage()
     if (!agent.trim()) {
+      nextFieldErrors.agent = required
       setErr(t('forms.fillRequired'))
+      setFieldErrors(nextFieldErrors)
       return
     }
     if (createMode === 'template') {
       if (!selectedTemplate) {
+        nextFieldErrors.template = required
         setErr(t('taskTemplates.selectRequired'))
+        setFieldErrors(nextFieldErrors)
         return
       }
     } else if (!title.trim() || !prompt.trim()) {
+      if (!title.trim()) nextFieldErrors.title = required
+      if (!prompt.trim()) nextFieldErrors.prompt = required
       setErr(t('forms.fillRequired'))
+      setFieldErrors(nextFieldErrors)
       return
     }
     if (workflowDefinitionId && missingWorkflowActors.length > 0) {
+      for (const slot of missingWorkflowActors) {
+        nextFieldErrors[`actor:${slot.role}`] = required
+      }
       setErr(t('workflows.actorBindingsRequired'))
+      setFieldErrors(nextFieldErrors)
       return
     }
     if (selectedTemplate) {
       for (const variable of selectedTemplate.variables ?? []) {
         if (variable.required && !templateInputs[variable.name]?.trim()) {
+          nextFieldErrors[`variable:${variable.name}`] = required
           setErr(t('taskTemplates.variableRequired', { name: variable.name }))
+          setFieldErrors(nextFieldErrors)
           return
         }
       }
     }
+    setFieldErrors({})
     setBusy(true)
     try {
       const labels = labelsStr.split(',').map(l => l.trim()).filter(Boolean)
@@ -367,6 +412,7 @@ export function CreateTaskDialog({ projectId: defaultProjectId, agents: defaultA
   }
 
   function updateActorBinding(role: string, patch: Partial<ActorBinding>) {
+    clearFieldError(`actor:${role}`)
     setActorBindings((current) => {
       const prev = current[role] ?? { type: 'agent', id: '' }
       const nextType = patch.type ?? prev.type
@@ -448,10 +494,11 @@ export function CreateTaskDialog({ projectId: defaultProjectId, agents: defaultA
                   ) : (
                     <label className="block text-sm">
                       <span className="text-neutral-600 dark:text-zinc-400">{t('taskTemplates.selectTemplate')}</span>
-                      <select value={taskTemplateId} onChange={(e) => onTemplateChange(e.target.value)} className={fieldCls}>
+                      <select value={taskTemplateId} onChange={(e) => { clearFieldError('template'); onTemplateChange(e.target.value) }} className={controlClass('template')}>
                         <option value="">{t('taskTemplates.none')}</option>
                         {taskTemplates.map((template) => <option key={template.id} value={template.id}>{template.name}</option>)}
                       </select>
+                      {fieldError('template')}
                       {selectedTemplate?.description ? <p className="mt-0.5 text-xs text-neutral-400 dark:text-zinc-500">{selectedTemplate.description}</p> : null}
                     </label>
                   )}
@@ -469,10 +516,14 @@ export function CreateTaskDialog({ projectId: defaultProjectId, agents: defaultA
                         </span>
                         <input
                           value={templateInputs[variable.name] ?? ''}
-                          onChange={(e) => setTemplateInputs((current) => ({ ...current, [variable.name]: e.target.value }))}
-                          className={fieldCls}
+                          onChange={(e) => {
+                            clearFieldError(`variable:${variable.name}`)
+                            setTemplateInputs((current) => ({ ...current, [variable.name]: e.target.value }))
+                          }}
+                          className={controlClass(`variable:${variable.name}`)}
                           placeholder={variable.description || variable.default || ''}
                         />
+                        {fieldError(`variable:${variable.name}`)}
                       </label>
                     ))}
                   </div>
@@ -481,9 +532,10 @@ export function CreateTaskDialog({ projectId: defaultProjectId, agents: defaultA
 
               <label className="block text-sm">
                 <span className="text-neutral-600 dark:text-zinc-400">{t('forms.agent')}</span>
-                <select value={agent} onChange={(e) => setAgent(e.target.value)} className={fieldCls} disabled={currentAgentActors.length === 0}>
+                <select value={agent} onChange={(e) => { clearFieldError('agent'); setAgent(e.target.value) }} className={controlClass('agent')} disabled={currentAgentActors.length === 0}>
                   {currentAgentActors.map((a) => <option key={a.name} value={a.name}>{a.name}</option>)}
                 </select>
+                {fieldError('agent')}
               </label>
 
               <label className="block text-sm">
@@ -515,7 +567,8 @@ export function CreateTaskDialog({ projectId: defaultProjectId, agents: defaultA
                 <>
                   <label className="block text-sm">
                     <span className="text-neutral-600 dark:text-zinc-400">{t('forms.title')}</span>
-                    <input value={title} onChange={(e) => setTitle(e.target.value)} className={fieldCls} />
+                    <input value={title} onChange={(e) => { clearFieldError('title'); setTitle(e.target.value) }} className={controlClass('title')} />
+                    {fieldError('title')}
                   </label>
 
                   <label className="block text-sm">
@@ -525,7 +578,8 @@ export function CreateTaskDialog({ projectId: defaultProjectId, agents: defaultA
 
                   <label className="block text-sm">
                     <span className="text-neutral-600 dark:text-zinc-400">{t('forms.prompt')}</span>
-                    <textarea value={prompt} onChange={(e) => setPrompt(e.target.value)} rows={8} className={cn(fieldCls, 'resize-y')} />
+                    <textarea value={prompt} onChange={(e) => { clearFieldError('prompt'); setPrompt(e.target.value) }} rows={8} className={cn(controlClass('prompt'), 'resize-y')} />
+                    {fieldError('prompt')}
                   </label>
                 </>
               )}
@@ -602,7 +656,15 @@ export function CreateTaskDialog({ projectId: defaultProjectId, agents: defaultA
                       const binding = actorBindings[slot.role] ?? { type: slot.preferredType, id: '' }
                       const options = binding.type === 'agent' ? currentAgentActors.map((a) => ({ id: a.name, label: a.name })) : humanAssignees
                       return (
-                        <div key={slot.role} className="rounded-md border border-neutral-200 bg-white p-2 dark:border-zinc-700 dark:bg-zinc-900">
+                        <div
+                          key={slot.role}
+                          className={cn(
+                            'rounded-md border bg-white p-2 dark:bg-zinc-900',
+                            fieldErrors[`actor:${slot.role}`]
+                              ? 'border-red-400 dark:border-red-500/70'
+                              : 'border-neutral-200 dark:border-zinc-700',
+                          )}
+                        >
                           <div className="flex items-start justify-between gap-2">
                             <div className="min-w-0">
                               <p className="truncate text-sm font-medium text-neutral-800 dark:text-zinc-200">{slot.role}</p>
@@ -621,6 +683,7 @@ export function CreateTaskDialog({ projectId: defaultProjectId, agents: defaultA
                               ))}
                             </select>
                           </div>
+                          {fieldError(`actor:${slot.role}`)}
                         </div>
                       )
                     })}

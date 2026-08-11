@@ -1333,13 +1333,16 @@ export function WorkflowBoard({
         ? { x: Math.round(center.x - WORKFLOW_NODE_WIDTH / 2), y: Math.round(center.y - WORKFLOW_NODE_HEIGHT / 2) }
         : { x: fallback.x + 280, y: fallback.y },
     }
-    setSelectedId('')
+    const currentSteps = selected && stepDraft
+      ? definition.steps.map((item) => (item.id === selected.id ? stepDraft : item))
+      : definition.steps
+    setSelectedId(id)
     setSelectedEdgeId('')
-    setSelectedNodeIds([])
+    setSelectedNodeIds([id])
     updateDefinition({
       ...definition,
-      startStepId: definition.startStepId || id,
-      steps: [...definition.steps, step],
+      startStepId: definition.startStepId || currentSteps[0]?.id || id,
+      steps: [...currentSteps, step],
     })
   }
 

@@ -659,11 +659,16 @@ func (r *Runner) workflowPromptContext(project, agentName, taskID string) string
 	}
 	b.WriteString("Instructions:\n")
 	b.WriteString("- Treat the current step as the workflow contract for this task.\n")
+	b.WriteString("- Do not stop after asking the user a clarifying question in natural language. Workflow execution must end with an explicit Multigent state change.\n")
+	b.WriteString("- If the step description is incomplete but the inputs and previous outputs are enough to make reasonable assumptions, state those assumptions in the output and continue.\n")
 	b.WriteString("- Finish workflow steps with structured outputs using `mga task step done --id ")
 	b.WriteString(taskID)
 	b.WriteString(" --status success --output <field>=<value>` for every required output field, or use `--output-json '{...}'`.\n")
+	b.WriteString("- If the step truly cannot be completed, run `mga task step done --id ")
+	b.WriteString(taskID)
+	b.WriteString(" --status failed --error \"clear reason\"` instead of leaving the task running.\n")
 	b.WriteString("- Do not put required workflow fields only in natural-language summary; the server validates output field names against the current step spec.\n")
-	b.WriteString("- If this step needs human review or clarification, use `mga task confirm-request` instead of blocking silently.\n")
+	b.WriteString("- If this step needs human review or external clarification before any safe output can be produced, use `mga task confirm-request` instead of blocking silently.\n")
 	b.WriteString("- To inspect the full workflow run, run `mga workflow current --task-id ")
 	b.WriteString(taskID)
 	b.WriteString("`.\n")
@@ -1552,14 +1557,19 @@ func (r *Runner) materializeProviderCredentials(agentDir string, meta *entity.Ag
 		return copyRuntimeCredentialFile(src, dst)
 	case method == store.ProviderAuthMethodClaudeBrowser && model == entity.ModelClaudeCode:
 		srcRoot := store.ProviderCredentialDir(r.root, provider.ID, entity.ModelClaudeCode)
+		hasCredential := false
 		for _, rel := range []string{".claude.json", filepath.Join(".claude", ".credentials.json")} {
 			src := filepath.Join(srcRoot, rel)
 			if fileExists(src) {
+				hasCredential = true
 				dst := filepath.Join(agentDir, ".multigent", "runtime-home", string(model), rel)
 				if err := copyRuntimeCredentialFile(src, dst); err != nil {
 					return err
 				}
 			}
+		}
+		if !hasCredential {
+			return fmt.Errorf("Claude Code browser auth files are missing for provider %s", provider.ID)
 		}
 		return nil
 	case method == store.ProviderAuthMethodCursorBrowser && model == entity.ModelCursor:

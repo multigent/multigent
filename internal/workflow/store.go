@@ -961,10 +961,6 @@ func (s *Store) StartRun(project, taskID, definitionID string, actorBindings map
 	for _, step := range def.Steps {
 		status := "pending"
 		started := time.Time{}
-		if step.ID == def.StartStepID {
-			status = "running"
-			started = now
-		}
 		inst := entity.WorkflowStepInstance{
 			ID:        entity.NewWorkflowStepInstanceID(),
 			RunID:     run.ID,

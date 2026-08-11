@@ -9,6 +9,7 @@ import (
 	"time"
 
 	"github.com/multigent/multigent/internal/entity"
+	workflowstore "github.com/multigent/multigent/internal/workflow"
 )
 
 func grantProjectRoleForTest(t *testing.T, s *Server, workspaceID, username, role string) {
@@ -61,6 +62,68 @@ func TestProjectWriteRBACDistinguishesViewerOperatorAndLinkedAgent(t *testing.T)
 	s.handlePostProjectTask(linkedOtherRec, linkedOtherReq)
 	if linkedOtherRec.Code != http.StatusForbidden {
 		t.Fatalf("linked owner create other-agent task status=%d body=%s", linkedOtherRec.Code, linkedOtherRec.Body.String())
+	}
+}
+
+func TestCreateWorkflowTaskDoesNotStartTask(t *testing.T) {
+	s, workspaceID := newConnectionGrantPolicyServer(t)
+	now := time.Now().UTC()
+	wfStore := workflowstore.NewStore(s.controlDB, workspaceID)
+	def := entity.WorkflowDefinition{
+		ID:          "wf-create-pending",
+		Name:        "Create pending workflow",
+		Project:     "sample",
+		StartStepID: "start",
+		Steps: []entity.WorkflowStep{{
+			ID:        "start",
+			Type:      "agent_task",
+			Title:     "Start",
+			ActorRole: "worker",
+		}},
+		CreatedAt: now,
+		UpdatedAt: now,
+	}
+	if err := wfStore.SaveDefinition(&def); err != nil {
+		t.Fatalf("save workflow definition: %v", err)
+	}
+
+	body := postTaskBody{
+		Agent:                "backend",
+		Title:                "Use workflow",
+		Prompt:               "Run the first step when explicitly started.",
+		Priority:             2,
+		WorkflowDefinitionID: def.ID,
+		WorkflowActorBindings: map[string]entity.WorkflowActorBinding{
+			"worker": {Type: "agent", ID: "pm"},
+		},
+	}
+	rec := httptest.NewRecorder()
+	req := providerTestRequest(http.MethodPost, "/api/v1/projects/sample/tasks", "admin", body)
+	req.SetPathValue("name", "sample")
+	s.handlePostProjectTask(rec, req)
+	if rec.Code != http.StatusCreated {
+		t.Fatalf("create workflow task status=%d body=%s", rec.Code, rec.Body.String())
+	}
+
+	rowsRec := httptest.NewRecorder()
+	rowsReq := providerTestRequest(http.MethodGet, "/api/v1/projects/sample/tasks?scope=all", "admin", nil)
+	rowsReq.SetPathValue("name", "sample")
+	s.handleProjectTasks(rowsRec, rowsReq)
+	if rowsRec.Code != http.StatusOK {
+		t.Fatalf("list tasks status=%d body=%s", rowsRec.Code, rowsRec.Body.String())
+	}
+	var rows []taskRow
+	if err := json.Unmarshal(rowsRec.Body.Bytes(), &rows); err != nil {
+		t.Fatalf("decode task rows: %v", err)
+	}
+	if len(rows) != 1 {
+		t.Fatalf("expected 1 task row, got %d: %#v", len(rows), rows)
+	}
+	if rows[0].Agent != "pm" || rows[0].Assignee != "sample/pm" {
+		t.Fatalf("expected task routed to workflow start agent pm, got agent=%q assignee=%q", rows[0].Agent, rows[0].Assignee)
+	}
+	if rows[0].Status != string(entity.TaskStatusPending) {
+		t.Fatalf("expected created workflow task to remain pending, got %q", rows[0].Status)
 	}
 }
 

@@ -362,9 +362,6 @@ func (s *Server) reconcileActiveWorkflowTaskQueue(workspaceID, project, taskID s
 		if err := s.moveWorkflowTaskToAgent(project, currentAgent, actorID, task, status, now); err != nil {
 			return err
 		}
-		if status == entity.TaskStatusPending {
-			return s.fireTaskTriggerOrQueueRuntime(workspaceID, project, actorID, task, r, "workflow task "+task.ID+" reconciled")
-		}
 	case "human":
 		if currentAgent == "" || strings.TrimSpace(task.Assignee) == actorID && task.Status == entity.TaskStatusAwaitingConfirmation {
 			return nil
@@ -384,7 +381,7 @@ type activeWorkflowTaskPresentation struct {
 	Status   string
 }
 
-func (s *Server) activeWorkflowTaskView(workspaceID, project, taskID string) (activeWorkflowTaskPresentation, bool) {
+func (s *Server) activeWorkflowTaskView(workspaceID, project, taskID string, taskStatus entity.TaskStatus) (activeWorkflowTaskPresentation, bool) {
 	var out activeWorkflowTaskPresentation
 	if s == nil || s.controlDB == nil || strings.TrimSpace(workspaceID) == "" || strings.TrimSpace(project) == "" || strings.TrimSpace(taskID) == "" {
 		return out, false
@@ -422,7 +419,7 @@ func (s *Server) activeWorkflowTaskView(workspaceID, project, taskID string) (ac
 		}
 		out.Agent = actorID
 		out.Assignee = project + "/" + actorID
-		if workflowStepInstanceRunning(inst.Status) {
+		if taskStatus == entity.TaskStatusInProgress || s.hasActiveRuntimeRun(workspaceID, project, actorID, taskID) {
 			out.Status = string(entity.TaskStatusInProgress)
 		} else {
 			out.Status = string(entity.TaskStatusPending)
