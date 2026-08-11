@@ -18,6 +18,7 @@ import (
 
 	controldb "github.com/multigent/multigent/internal/db"
 	"github.com/multigent/multigent/internal/entity"
+	workflowstore "github.com/multigent/multigent/internal/workflow"
 )
 
 type schedulerProcess struct {
@@ -527,6 +528,199 @@ func (s *Server) handleSchedulerWakeup(w http.ResponseWriter, r *http.Request) {
 		Request: r,
 	})
 	_ = json.NewEncoder(w).Encode(map[string]any{"ok": true, "pid": pid, "status": "started"})
+}
+
+func (s *Server) handleStartProjectTask(w http.ResponseWriter, r *http.Request) {
+	project := strings.TrimSpace(r.PathValue("name"))
+	taskID := strings.TrimSpace(r.PathValue("taskId"))
+	if project == "" || taskID == "" {
+		s.jsonErrorCode(w, http.StatusBadRequest, ErrCodeValidationFailed, "project and taskId are required")
+		return
+	}
+	if !s.checkProjectManager(w, r, project) {
+		return
+	}
+	workspaceID, workspaceOK := s.currentWorkspaceForRequest(w, r)
+	if !workspaceOK {
+		return
+	}
+	task, agent, err := s.findTaskInProject(project, taskID)
+	if err != nil || task == nil {
+		s.jsonErrorCode(w, http.StatusNotFound, ErrCodeValidationFailed, "task not found")
+		return
+	}
+	if task.Status.IsTerminal() {
+		s.jsonErrorCode(w, http.StatusConflict, ErrCodeValidationFailed, "task is already finished")
+		return
+	}
+	if task.Status == entity.TaskStatusAwaitingConfirmation {
+		s.jsonErrorCode(w, http.StatusConflict, ErrCodeValidationFailed, "current assignee is not an agent")
+		return
+	}
+	if err := s.reconcileWorkflowTaskBeforeManualStart(workspaceID, project, taskID, r); err != nil {
+		s.serverError(w, err)
+		return
+	}
+	task, agent, err = s.findTaskInProject(project, taskID)
+	if err != nil || task == nil {
+		s.jsonErrorCode(w, http.StatusNotFound, ErrCodeValidationFailed, "task not found")
+		return
+	}
+	if task.Status.IsTerminal() {
+		s.jsonErrorCode(w, http.StatusConflict, ErrCodeValidationFailed, "task is already finished")
+		return
+	}
+	if task.Status == entity.TaskStatusAwaitingConfirmation {
+		s.jsonErrorCode(w, http.StatusConflict, ErrCodeValidationFailed, "current assignee is not an agent")
+		return
+	}
+	hb, err := s.ts.GetHeartbeat(project, agent)
+	if err != nil || hb == nil {
+		s.jsonErrorCode(w, http.StatusNotFound, ErrCodeValidationFailed, "heartbeat not found")
+		return
+	}
+	if hb.PID > 0 && hb.LastWakeupStatus == "running" && processAlive(hb.PID) {
+		s.jsonErrorCode(w, http.StatusConflict, ErrCodeSchedulerWakeupFailed, fmt.Sprintf("agent %s/%s is already running", project, agent))
+		return
+	}
+	meta, err := s.st.AgentMeta(project, agent)
+	if err != nil {
+		if isNotFoundErr(err) {
+			s.jsonErrorCode(w, http.StatusNotFound, ErrCodeAgentNotFound, "agent not found")
+			return
+		}
+		s.serverError(w, err)
+		return
+	}
+	if readiness := s.runtimeReadinessForExecution(workspaceID, meta); readiness.Blocking {
+		s.jsonErrorCode(w, http.StatusConflict, ErrCodeRuntimeNotReady, runtimeReadinessErrorMessage(readiness))
+		return
+	}
+	if s.usesAssignedRuntimeNode(workspaceID, meta) {
+		if s.hasActiveRuntimeRun(workspaceID, project, agent, "") {
+			s.jsonErrorCode(w, http.StatusConflict, ErrCodeSchedulerWakeupFailed, fmt.Sprintf("agent %s/%s is already running", project, agent))
+			return
+		}
+		run, err := s.enqueueSpecificRuntimeTaskRunFromRequest(workspaceID, project, agent, task, hb, externalServerURL(r), requestUsername(r))
+		if err != nil {
+			s.jsonErrorCode(w, http.StatusInternalServerError, ErrCodeSchedulerWakeupFailed, fmt.Sprintf("queue task run failed: %v", err))
+			return
+		}
+		s.auditLog(auditLogInput{
+			Action:       "task.start",
+			ResourceType: "task",
+			ResourceID:   project + "/" + agent + "/" + task.ID,
+			Summary:      "Specific task queued on runtime node",
+			After: map[string]any{
+				"project":      project,
+				"agent":        agent,
+				"taskId":       task.ID,
+				"runtimeRunId": run.ID,
+				"runtime":      "node",
+			},
+			Request: r,
+		})
+		_ = json.NewEncoder(w).Encode(map[string]any{"ok": true, "status": "queued", "runtimeRunId": run.ID, "taskId": task.ID, "agent": agent})
+		return
+	}
+
+	args := []string{"--dir", s.sched.root, "run", "--project", project, "--agent", agent, "--task", task.ID}
+	cmd := exec.Command(s.sched.binPath, args...)
+	cmd.Stdout = os.Stdout
+	cmd.Stderr = os.Stderr
+	setProcGroup(cmd)
+	if err := cmd.Start(); err != nil {
+		s.jsonErrorCode(w, http.StatusInternalServerError, ErrCodeSchedulerWakeupFailed, fmt.Sprintf("start task run failed: %v", err))
+		return
+	}
+	pid := 0
+	if cmd.Process != nil {
+		pid = cmd.Process.Pid
+	}
+	now := time.Now().UTC()
+	hb.LastWakeup = &now
+	hb.LastWakeupStatus = "running"
+	hb.PID = pid
+	_ = s.ts.SaveHeartbeat(project, agent, hb)
+	go func() {
+		if err := cmd.Wait(); err != nil {
+			log.Printf("manual task run %s/%s task=%s exited with error: %v", project, agent, task.ID, err)
+		}
+		if hb2, err := s.ts.GetHeartbeat(project, agent); err == nil && hb2 != nil && hb2.PID == pid {
+			hb2.PID = 0
+			if hb2.LastWakeupStatus == "running" {
+				hb2.LastWakeupStatus = "done"
+			}
+			_ = s.ts.SaveHeartbeat(project, agent, hb2)
+		}
+	}()
+	s.auditLog(auditLogInput{
+		Action:       "task.start",
+		ResourceType: "task",
+		ResourceID:   project + "/" + agent + "/" + task.ID,
+		Summary:      "Specific task run requested",
+		After: map[string]any{
+			"project": project,
+			"agent":   agent,
+			"taskId":  task.ID,
+			"pid":     pid,
+		},
+		Request: r,
+	})
+	_ = json.NewEncoder(w).Encode(map[string]any{"ok": true, "pid": pid, "status": "started", "taskId": task.ID, "agent": agent})
+}
+
+func (s *Server) reconcileWorkflowTaskBeforeManualStart(workspaceID, project, taskID string, r *http.Request) error {
+	if s == nil || s.controlDB == nil || strings.TrimSpace(workspaceID) == "" {
+		return nil
+	}
+	wfStore := workflowstore.NewStore(s.controlDB, workspaceID)
+	run, found, err := wfStore.RunForTask(project, taskID)
+	if err != nil || !found || strings.TrimSpace(run.ActiveStepID) == "" || strings.TrimSpace(run.Status) == "completed" {
+		return err
+	}
+	def, found, err := wfStore.Definition(run.DefinitionID)
+	if err != nil || !found {
+		return err
+	}
+	steps, err := wfStore.ListStepInstances(run.ID)
+	if err != nil {
+		return err
+	}
+	return s.reconcileActiveWorkflowTaskQueue(workspaceID, project, taskID, run, def, steps, r)
+}
+
+func (s *Server) enqueueSpecificRuntimeTaskRunFromRequest(workspaceID, project, agent string, task *entity.Task, hb *entity.HeartbeatConfig, serverURL, actor string) (controldb.RuntimeRun, error) {
+	if task == nil {
+		return controldb.RuntimeRun{}, fmt.Errorf("task not found")
+	}
+	now := time.Now().UTC()
+	prev := task.Status
+	task.Status = entity.TaskStatusInProgress
+	task.UpdatedAt = now
+	task.FinishedAt = nil
+	entity.ApplyStatusTimestamps(task, prev, now)
+	if err := s.ts.UpdateTask(project, agent, task); err != nil {
+		return controldb.RuntimeRun{}, err
+	}
+	sessionID := ""
+	if hb != nil {
+		sessionID = strings.TrimSpace(hb.SessionID)
+	}
+	run, err := s.enqueueRuntimeTaskRun(workspaceID, project, agent, task, sessionID, serverURL, actor)
+	if err != nil {
+		task.Status = prev
+		task.UpdatedAt = now
+		_ = s.ts.UpdateTask(project, agent, task)
+		return controldb.RuntimeRun{}, err
+	}
+	if hb != nil {
+		hb.LastWakeup = &now
+		hb.LastWakeupStatus = "running"
+		hb.PID = 0
+		_ = s.ts.SaveHeartbeat(project, agent, hb)
+	}
+	return run, nil
 }
 
 func (s *Server) enqueueRuntimeWakeupRunFromRequest(workspaceID, project, agent string, hb *entity.HeartbeatConfig, serverURL, actor string) (controldb.RuntimeRun, *entity.Task, error) {

@@ -286,7 +286,7 @@ export default function ProjectTaskFollowPage() {
     setStartBusy(true)
     setOptimisticStartedAt(new Date().toISOString())
     try {
-      await apiPost('/api/v1/scheduler/wakeup', { project: displayTask.project, agent: startAgent })
+      await apiPost(`/api/v1/projects/${encodeURIComponent(displayTask.project)}/tasks/${encodeURIComponent(displayTask.id)}/start`, {})
       refresh()
       window.setTimeout(refresh, 1000)
     } catch {

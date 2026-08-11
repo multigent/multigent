@@ -403,7 +403,7 @@ export function TaskDetailModal({ task, onClose, onEdit, onMutated, canEdit = tr
     if (!startAgentName || isTerminal(task.status)) return
     setStartBusy(true)
     try {
-      await apiPost('/api/v1/scheduler/wakeup', { project: task.project, agent: startAgentName })
+      await apiPost(`/api/v1/projects/${encodeURIComponent(task.project)}/tasks/${encodeURIComponent(task.id)}/start`, {})
       onMutated?.()
       window.setTimeout(() => onMutated?.(), 800)
     } catch {
