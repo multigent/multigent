@@ -249,22 +249,27 @@ export default function WorkflowsPage() {
     navigate('/workflows')
   }
 
-  async function saveDraft() {
-    if (!draft || !canManageWorkflows) return
+  async function saveWorkflowDefinition(nextDraft: WorkflowDefinition) {
+    if (!canManageWorkflows) return
     setSaving(true)
     try {
-      const saved = await apiPut<WorkflowDefinition>(`/api/v1/workflows/${encodeURIComponent(draft.id)}`, {
-        name: draft.name,
-        description: draft.description,
-        startStepId: draft.startStepId,
-        steps: draft.steps,
-        edges: draft.edges,
+      const saved = await apiPut<WorkflowDefinition>(`/api/v1/workflows/${encodeURIComponent(nextDraft.id)}`, {
+        name: nextDraft.name,
+        description: nextDraft.description,
+        startStepId: nextDraft.startStepId,
+        steps: nextDraft.steps,
+        edges: nextDraft.edges,
       })
       setDraft(saved)
       setSavedDraft(structuredClone(saved))
     } finally {
       setSaving(false)
     }
+  }
+
+  async function saveDraft() {
+    if (!draft) return
+    await saveWorkflowDefinition(draft)
   }
 
   if (params.workflowId) {
@@ -350,6 +355,7 @@ export default function WorkflowsPage() {
               fullscreen={fullscreen}
               onToggleFullscreen={() => setFullscreen((v) => !v)}
               onChange={setDraft}
+              onSave={saveWorkflowDefinition}
               collaborationChannels={collaborationChannels}
               availableWorkflows={workflows.filter((workflow) => workflow.id !== draft.id && workflow.scope !== 'branch')}
             />

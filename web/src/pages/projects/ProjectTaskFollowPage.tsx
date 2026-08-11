@@ -85,7 +85,7 @@ export default function ProjectTaskFollowPage() {
     : undefined
   const rawActiveInstance = rawWorkflowData ? activeWorkflowStepInstance(rawWorkflowData) : undefined
   const rawIsAgentStep = rawActiveInstance?.actorType === 'agent' || rawActiveStep?.type === 'agent_task'
-  const optimisticRunStartedAt = optimisticStartedAt || (rawIsAgentStep ? handoffStartedAt : null)
+  const optimisticRunStartedAt = optimisticStartedAt
   const displayTask = useMemo(() => {
     if (!task || task.status === 'in_progress' || isTerminal(task.status)) return task
     if (!optimisticRunStartedAt) return task
@@ -93,8 +93,8 @@ export default function ProjectTaskFollowPage() {
     return { ...task, status: 'in_progress', startedAt, updatedAt: task.updatedAt || startedAt }
   }, [optimisticRunStartedAt, rawActiveInstance?.startedAt, task])
   const workflowData = useMemo(
-    () => withRunningActiveStep(rawWorkflowData, displayTask, projectId, optimisticRunStartedAt, Boolean(handoffStartedAt && rawIsAgentStep)),
-    [displayTask, handoffStartedAt, optimisticRunStartedAt, projectId, rawIsAgentStep, rawWorkflowData],
+    () => withRunningActiveStep(rawWorkflowData, displayTask, projectId, optimisticRunStartedAt, Boolean(handoffStartedAt && rawIsAgentStep && task?.status === 'in_progress')),
+    [displayTask, handoffStartedAt, optimisticRunStartedAt, projectId, rawIsAgentStep, rawWorkflowData, task?.status],
   )
   const activeInstance = workflowData ? activeWorkflowStepInstance(workflowData) : undefined
   const activeStep = workflowData
@@ -215,7 +215,7 @@ export default function ProjectTaskFollowPage() {
     activeStepRef.current = activeStepID
     if (!previousStepID || previousStepID === activeStepID) return
     setStepTransition({ from: previousStepID, to: activeStepID, at: Date.now() })
-    if (rawIsAgentStep && rawActiveInstance?.status === 'running' && task && !isTerminal(task.status)) {
+    if (rawIsAgentStep && rawActiveInstance?.status === 'running' && task?.status === 'in_progress') {
       setHandoffStartedAt(new Date().toISOString())
     }
   }, [rawActiveInstance?.status, rawIsAgentStep, rawWorkflowData?.run.activeStepId, task])

@@ -170,6 +170,7 @@ type Props = {
   fill?: boolean
   editable?: boolean
   onChange?: (definition: WorkflowDefinition) => void
+  onSave?: (definition: WorkflowDefinition) => Promise<void> | void
   fullscreen?: boolean
   onToggleFullscreen?: () => void
   focusActive?: boolean
@@ -366,7 +367,13 @@ function simpleBranchWorkflow(branchId: string, title: string, actorRole: string
   }
 }
 
-function reviewBranchWorkflow(branchId: string, title: string, actorRole: string, reviewerRole = `${actorRole}_reviewer`): WorkflowDefinition {
+function reviewBranchWorkflow(
+  branchId: string,
+  title: string,
+  actorRole: string,
+  t: (key: string, options?: Record<string, unknown>) => string,
+  reviewerRole = `${actorRole}_reviewer`,
+): WorkflowDefinition {
   return {
     id: `branch-${branchId}`,
     name: title,
@@ -387,14 +394,11 @@ function reviewBranchWorkflow(branchId: string, title: string, actorRole: string
       {
         id: 'review',
         type: 'human_review',
-        title: `Review ${title}`,
-        description: 'Review the branch output. Approve it or request changes.',
+        title: t('workflows.detail.reviewSubflowReviewTitle', { title }),
+        description: t('workflows.detail.reviewSubflowReviewDescription'),
         actorRole: reviewerRole,
-        inputFields: [{ name: `${branchId}_doc_id`, description: 'Knowledge base docID from the branch work step.' }],
-        outputFields: [
-          { name: 'decision', description: 'approve or request_changes' },
-          { name: 'comments', description: 'Review comments.' },
-        ],
+        inputFields: [{ name: `${branchId}_doc_id`, description: t('workflows.detail.branchInputDocDescription') }],
+        outputFields: humanReviewOutputFields(t),
         reviewPolicy: 'manual',
         position: { x: 360, y: 120 },
       },
@@ -451,16 +455,20 @@ function stepPreviewColor(step: WorkflowStep) {
   return colorClass.sky
 }
 
-function stepPatchForType(type: string): Partial<WorkflowStep> {
+function humanReviewOutputFields(t: (key: string, options?: Record<string, unknown>) => string): WorkflowField[] {
+  return [
+    { name: 'decision', description: t('workflows.detail.humanReviewDecisionDescription') },
+    { name: 'comments', description: t('workflows.detail.humanReviewCommentsDescription') },
+  ]
+}
+
+function stepPatchForType(type: string, t: (key: string, options?: Record<string, unknown>) => string): Partial<WorkflowStep> {
   if (type === 'human_review') {
     return {
       type,
       actorRole: 'reviewer',
       reviewPolicy: 'manual',
-      outputFields: [
-        { name: 'decision', description: 'approve or request_changes' },
-        { name: 'comments', description: 'Review notes passed to the next step or back to the previous step.' },
-      ],
+      outputFields: humanReviewOutputFields(t),
       config: { color: 'amber' },
     }
   }
@@ -907,6 +915,7 @@ export function WorkflowBoard({
   fill = false,
   editable = false,
   onChange,
+  onSave,
   fullscreen = false,
   onToggleFullscreen,
   focusActive = false,
@@ -964,6 +973,7 @@ export function WorkflowBoard({
   const [previewPositions, setPreviewPositions] = useState<Record<string, WorkflowPosition>>({})
   const [clipboard, setClipboard] = useState<WorkflowClipboard | null>(null)
   const [layouting, setLayouting] = useState(false)
+  const [savingNode, setSavingNode] = useState(false)
   const selected = selectedId ? definition.steps.find((s) => s.id === selectedId) : undefined
   const outgoingEdges = selected ? definition.edges.filter((edge) => edge.from === selected.id) : []
   const selectedInst = selected ? instanceByStep.get(selected.id) : undefined
@@ -1241,6 +1251,27 @@ export function WorkflowBoard({
     return { x, y }
   }
 
+  function findOpenStepPosition(preferred: WorkflowPosition, steps: WorkflowStep[]) {
+    const gapX = WORKFLOW_NODE_WIDTH + 72
+    const gapY = WORKFLOW_NODE_HEIGHT + 48
+    const candidates: WorkflowPosition[] = [{ x: Math.round(preferred.x), y: Math.round(preferred.y) }]
+    for (let ring = 1; ring <= 8; ring += 1) {
+      candidates.push(
+        { x: preferred.x + ring * gapX, y: preferred.y },
+        { x: preferred.x, y: preferred.y + ring * gapY },
+        { x: preferred.x + ring * gapX, y: preferred.y + ring * gapY },
+        { x: preferred.x - ring * gapX, y: preferred.y },
+        { x: preferred.x, y: preferred.y - ring * gapY },
+      )
+    }
+    const overlaps = (pos: WorkflowPosition) => steps.some((step) => {
+      const dx = Math.abs(pos.x - step.position.x)
+      const dy = Math.abs(pos.y - step.position.y)
+      return dx < WORKFLOW_NODE_WIDTH + 36 && dy < WORKFLOW_NODE_HEIGHT + 28
+    })
+    return candidates.find((pos) => !overlaps(pos)) ?? candidates[0]
+  }
+
   function persistNodePositions(nextNodes: WorkflowNode[], draggedNode?: WorkflowNode) {
     if (!editable || !onChange) return
     if (draggedNode?.type !== 'workflowStep') return
@@ -1338,9 +1369,12 @@ export function WorkflowBoard({
       title: t('workflows.newStepTitle'),
       description: '',
       actorRole: 'agent',
-      position: center
-        ? { x: Math.round(center.x - WORKFLOW_NODE_WIDTH / 2), y: Math.round(center.y - WORKFLOW_NODE_HEIGHT / 2) }
-        : { x: fallback.x + 280, y: fallback.y },
+      position: findOpenStepPosition(
+        center
+          ? { x: Math.round(center.x - WORKFLOW_NODE_WIDTH / 2), y: Math.round(center.y - WORKFLOW_NODE_HEIGHT / 2) }
+          : { x: fallback.x + 280, y: fallback.y },
+        definition.steps,
+      ),
     }
     const currentSteps = selected && stepDraft
       ? definition.steps.map((item) => (item.id === selected.id ? stepDraft : item))
@@ -1481,12 +1515,20 @@ export function WorkflowBoard({
     setStepDraft((current) => (current ? { ...current, branches } : current))
   }
 
-  function saveSelectedStep() {
+  async function saveSelectedStep() {
     if (!editable || !selected || !stepDraft) return
-    updateDefinition({
+    const nextDefinition = {
       ...definition,
       steps: definition.steps.map((step) => (step.id === selected.id ? stepDraft : step)),
-    })
+    }
+    updateDefinition(nextDefinition)
+    if (!onSave) return
+    setSavingNode(true)
+    try {
+      await onSave(nextDefinition)
+    } finally {
+      setSavingNode(false)
+    }
   }
 
   function patchEdge(edgeID: string, patch: Partial<WorkflowEdge>) {
@@ -1667,7 +1709,7 @@ export function WorkflowBoard({
               </label>
               <label className="block">
                 <span className="text-xs font-medium uppercase text-neutral-400 dark:text-zinc-500">{t('workflows.detail.type')}</span>
-                <select value={stepDraft.type} onChange={(event) => updateStepDraft(stepPatchForType(event.target.value))} className={fieldClass}>
+                <select value={stepDraft.type} onChange={(event) => updateStepDraft(stepPatchForType(event.target.value, t))} className={fieldClass}>
                   {stepTypes.map((type) => (
                     <option key={type} value={type}>
                       {t(`workflows.stepTypes.${type}`, { defaultValue: type.replace('_', ' ') })}
@@ -1776,11 +1818,11 @@ export function WorkflowBoard({
               />
               <button
                 type="button"
-                onClick={saveSelectedStep}
-                disabled={!stepDraftChanged || !stepDraft.title.trim()}
+                onClick={() => void saveSelectedStep()}
+                disabled={savingNode || !stepDraftChanged || !stepDraft.title.trim()}
                 className="w-full rounded-lg border border-sky-600 bg-white px-3 py-2 text-sm font-medium text-sky-700 hover:bg-sky-50 disabled:opacity-50 dark:border-sky-500 dark:bg-zinc-900 dark:text-sky-400 dark:hover:bg-zinc-800"
               >
-                {t('workflows.detail.saveNode')}
+                {savingNode ? t('common.saving') : t('workflows.detail.saveNode')}
               </button>
             </div>
           ) : (
@@ -1969,7 +2011,7 @@ function BranchTable({
     const branch = branches[index]
     const actorRole = branch.actorRole || branch.id || `agent_${index + 1}`
     updateBranch(index, {
-      workflow: reviewBranchWorkflow(branch.id || `branch_${index + 1}`, branch.title || `Branch ${index + 1}`, actorRole),
+      workflow: reviewBranchWorkflow(branch.id || `branch_${index + 1}`, branch.title || `Branch ${index + 1}`, actorRole, t),
     })
   }
 
@@ -2179,6 +2221,10 @@ function OutgoingBranches({
           <div className="divide-y divide-neutral-200 dark:divide-zinc-700">
             {edges.map((edge) => {
               const target = stepByID.get(edge.to)
+              const source = stepByID.get(edge.from)
+              const fieldOptions = source ? schemaFieldsFor(source, 'output').map((field) => field.name).filter(Boolean) : []
+              const currentField = edge.condition?.field || ''
+              const fieldSelectOptions = currentField && !fieldOptions.includes(currentField) ? [currentField, ...fieldOptions] : fieldOptions
               const operator = edge.condition?.operator || 'eq'
               return (
                 <div key={edge.id} className="space-y-2 p-3">
@@ -2195,12 +2241,25 @@ function OutgoingBranches({
                     className="w-full rounded-md border border-neutral-300 bg-white px-2 py-1.5 text-xs text-neutral-900 outline-none focus:border-sky-400 dark:border-zinc-600 dark:bg-zinc-800 dark:text-zinc-100"
                   />
                   <div className="grid grid-cols-[minmax(0,1fr)_96px] gap-2">
-                    <input
-                      value={edge.condition?.field || ''}
-                      onChange={(event) => updateCondition(edge, { field: event.target.value })}
-                      placeholder={t('workflows.detail.conditionField')}
-                      className="rounded-md border border-neutral-300 bg-white px-2 py-1.5 text-xs text-neutral-900 outline-none focus:border-sky-400 dark:border-zinc-600 dark:bg-zinc-800 dark:text-zinc-100"
-                    />
+                    {fieldSelectOptions.length > 0 ? (
+                      <select
+                        value={currentField}
+                        onChange={(event) => updateCondition(edge, { field: event.target.value })}
+                        className="rounded-md border border-neutral-300 bg-white px-2 py-1.5 text-xs text-neutral-900 outline-none focus:border-sky-400 dark:border-zinc-600 dark:bg-zinc-800 dark:text-zinc-100"
+                      >
+                        <option value="">{t('workflows.detail.selectOutputField')}</option>
+                        {fieldSelectOptions.map((field) => (
+                          <option key={field} value={field}>{field}</option>
+                        ))}
+                      </select>
+                    ) : (
+                      <input
+                        value={currentField}
+                        onChange={(event) => updateCondition(edge, { field: event.target.value })}
+                        placeholder={t('workflows.detail.conditionField')}
+                        className="rounded-md border border-neutral-300 bg-white px-2 py-1.5 text-xs text-neutral-900 outline-none focus:border-sky-400 dark:border-zinc-600 dark:bg-zinc-800 dark:text-zinc-100"
+                      />
+                    )}
                     <select
                       value={operator}
                       onChange={(event) => updateCondition(edge, { operator: event.target.value })}
