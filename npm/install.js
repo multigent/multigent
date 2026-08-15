@@ -7,6 +7,7 @@ const fs = require("fs");
 const path = require("path");
 const https = require("https");
 const http = require("http");
+const os = require("os");
 
 const PACKAGE = require("./package.json");
 const VERSION = `v${PACKAGE.version}`;
@@ -14,6 +15,7 @@ const NAME = "multigent";
 const BINARIES = ["multigent", "mga"];
 
 const GITHUB_REPO = "multigent/multigent";
+const DOWNLOAD_TIMEOUT_MS = Number(process.env.MULTIGENT_INSTALL_TIMEOUT_MS || 120000);
 
 const PLATFORM_MAP = {
   darwin: "darwin",
@@ -50,7 +52,7 @@ function fetch(url, redirects = 5) {
   return new Promise((resolve, reject) => {
     if (redirects <= 0) return reject(new Error("Too many redirects"));
     const mod = url.startsWith("https") ? https : http;
-    mod
+    const req = mod
       .get(url, { headers: { "User-Agent": "multigent-npm-installer" } }, (res) => {
         if (res.statusCode >= 300 && res.statusCode < 400 && res.headers.location) {
           return resolve(fetch(res.headers.location, redirects - 1));
@@ -65,13 +67,54 @@ function fetch(url, redirects = 5) {
         res.on("error", reject);
       })
       .on("error", reject);
+    req.setTimeout(DOWNLOAD_TIMEOUT_MS, () => {
+      req.destroy(new Error(`Download timed out after ${DOWNLOAD_TIMEOUT_MS}ms`));
+    });
   });
+}
+
+function commandExists(command) {
+  try {
+    const check = process.platform === "win32" ? "where" : "command";
+    const args = process.platform === "win32" ? command : `-v ${command}`;
+    execSync(`${check} ${args}`, { stdio: "ignore" });
+    return true;
+  } catch {
+    return false;
+  }
+}
+
+function downloadWithCommand(url) {
+  const tmpFile = path.join(os.tmpdir(), `multigent-${process.pid}-${Date.now()}.download`);
+  try {
+    if (commandExists("curl")) {
+      execSync(`curl -fL --connect-timeout 20 --max-time ${Math.ceil(DOWNLOAD_TIMEOUT_MS / 1000)} -o "${tmpFile}" "${url}"`, {
+        stdio: "inherit",
+      });
+      return fs.readFileSync(tmpFile);
+    }
+    if (commandExists("wget")) {
+      execSync(`wget -O "${tmpFile}" --timeout=20 "${url}"`, { stdio: "inherit" });
+      return fs.readFileSync(tmpFile);
+    }
+    throw new Error("curl/wget not found");
+  } finally {
+    try { fs.unlinkSync(tmpFile); } catch {}
+  }
 }
 
 async function download(urls) {
   for (const url of urls) {
     try {
       console.log(`[multigent] Downloading from ${url}`);
+      const data = downloadWithCommand(url);
+      console.log(`[multigent] Downloaded ${(data.length / 1024 / 1024).toFixed(1)} MB`);
+      return data;
+    } catch (err) {
+      console.warn(`[multigent] Command download failed: ${err.message}`);
+    }
+    try {
+      console.log(`[multigent] Retrying with Node.js downloader`);
       const data = await fetch(url);
       console.log(`[multigent] Downloaded ${(data.length / 1024 / 1024).toFixed(1)} MB`);
       return data;

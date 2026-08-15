@@ -1,5 +1,11 @@
 # Changelog
 
+## [v0.1.29] - 2026-08-15
+
+### Fixed
+
+- npm installer now prefers `curl`/`wget` for GitHub Release downloads and adds a timeout to the Node.js fallback downloader, preventing installs from hanging silently on slow or blocked HTTPS connections.
+
 ## [v0.1.28] - 2026-08-15
 
 ### Added
