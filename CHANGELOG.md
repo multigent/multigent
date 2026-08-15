@@ -1,5 +1,26 @@
 # Changelog
 
+## [v0.1.28] - 2026-08-15
+
+### Added
+
+- External tools can now manage multiple named connections and grant a specific connection to each agent instead of sharing one workspace-wide credential.
+- Workflow task template runs now propagate start-step inputs from template variables and prompt fields, including Chinese full-width separators.
+
+### Improved
+
+- Runtime node execution now keeps leases alive during long runs, injects the correct runtime API credentials for remote agents, and avoids leaking loopback proxy settings into sandboxed runs.
+- Workflow follow views and task details now render structured markdown and document previews more cleanly for human-review decisions.
+- Project schedule loading is faster because runtime readiness uses a lightweight path and telemetry is opened once per request.
+- Local install and runtime guidance now prefer `0.0.0.0` when Docker or runtime nodes need to call back into the Multigent server.
+
+### Fixed
+
+- Workflow terminal routes can now be represented explicitly, and route mismatch errors are guarded so agents do not silently advance down the wrong path.
+- Agent chat history can fall back to native Claude session JSONL logs when Multigent telemetry does not contain a rendered conversation.
+- Runtime Docker callbacks and remote runtime-node runs can complete workflow steps without hitting host loopback connection failures.
+- Agent tool grants now check the selected connection, preventing agents from using unassigned external-tool credentials.
+
 ## [v0.1.26] - 2026-08-10
 
 ### Fixed
