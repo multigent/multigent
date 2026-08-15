@@ -1331,6 +1331,8 @@ type ConnectionOption = {
   ownerId: string
   authType: string
   status?: string
+  profile?: Record<string, unknown>
+  profileSummary?: { displayName?: string; accountName?: string; accountEmail?: string }
 }
 type ConnectionsResponse = { connections?: ConnectionOption[] }
 
@@ -1410,7 +1412,7 @@ function AgentRuntimeConnectionsPanel({ project, agentName }: { project: string;
               <option value="">{t('agentDetail.selectToolConnection')}</option>
               {availableConnections.map(connection => (
                 <option key={connection.id} value={connection.id}>
-                  {connection.provider} / {connection.connectionName} · {connection.ownerType}
+                  {connectionOptionLabel(connection)} · {connection.ownerType}
                 </option>
               ))}
             </select>
@@ -1448,8 +1450,16 @@ function AgentRuntimeConnectionsPanel({ project, agentName }: { project: string;
 
 function toolBindingLabel(binding: RuntimeToolBinding, connection?: ConnectionOption): string {
   if (!connection) return binding.provider
-  if (connection.provider === 'custom-mcp') return connection.connectionName
-  return `${connection.provider} / ${connection.connectionName}`
+  return connectionOptionLabel(connection)
+}
+
+function connectionOptionLabel(connection: ConnectionOption): string {
+  if (connection.provider !== 'custom-mcp') return `${connection.provider} / ${connection.connectionName}`
+  const profile = connection.profile ?? {}
+  const toolName = typeof profile.toolName === 'string' && profile.toolName.trim()
+    ? profile.toolName.trim()
+    : connection.profileSummary?.displayName?.trim() || ''
+  return toolName ? `${toolName} / ${connection.connectionName}` : connection.connectionName
 }
 
 function AgentSkillsPanel({ skills, skillDetails }: { skills: string[]; skillDetails?: Array<{ name: string; displayName?: string; description?: string }> }) {

@@ -12,6 +12,23 @@ import (
 	controldb "github.com/multigent/multigent/internal/db"
 )
 
+type connectionGrantCreator interface {
+	CreateConnectionGrant(controldb.ConnectionGrant) error
+}
+
+func grantRuntimeConnectionToSamplePM(t *testing.T, db connectionGrantCreator, workspaceID, connectionID string) {
+	t.Helper()
+	if err := db.CreateConnectionGrant(controldb.ConnectionGrant{
+		ID:           newConnectionID("grant"),
+		WorkspaceID:  workspaceID,
+		ConnectionID: connectionID,
+		TargetType:   ConnectionTargetAgent,
+		TargetID:     "sample/pm",
+	}); err != nil {
+		t.Fatalf("grant connection %s: %v", connectionID, err)
+	}
+}
+
 func TestRuntimeMCPProxyForwardsCustomMCPWithServerSideToken(t *testing.T) {
 	users := newTestUserStore(t)
 	s := &Server{controlDB: users.db, users: users}
@@ -124,6 +141,7 @@ func TestRuntimeMCPGatewayListsBrokerAndRuntimeTools(t *testing.T) {
 	if err := users.db.UpsertConnection(connection); err != nil {
 		t.Fatalf("connection: %v", err)
 	}
+	grantRuntimeConnectionToSamplePM(t, users.db, workspaceID, connection.ID)
 	principal := runtimeAgentPrincipal{
 		WorkspaceID:  workspaceID,
 		Project:      "sample",
@@ -193,6 +211,7 @@ func TestRuntimeMCPGatewayCallToolRoutesThroughActionProxy(t *testing.T) {
 	if err := users.db.UpsertConnection(connection); err != nil {
 		t.Fatalf("connection: %v", err)
 	}
+	grantRuntimeConnectionToSamplePM(t, users.db, workspaceID, connection.ID)
 	connections, err := users.db.ListConnections(controldb.ConnectionFilter{WorkspaceID: workspaceID, Provider: "github"})
 	if err != nil || len(connections) != 1 {
 		t.Fatalf("list connection: %v %#v", err, connections)
@@ -321,6 +340,7 @@ func TestRuntimeMCPGatewayRoutesProviderUpstreamTools(t *testing.T) {
 	if err := users.db.UpsertConnection(connection); err != nil {
 		t.Fatalf("connection: %v", err)
 	}
+	grantRuntimeConnectionToSamplePM(t, users.db, workspaceID, connection.ID)
 	secret, err := sealConnectionSecret(map[string]string{"apiKey": "figma-token"})
 	if err != nil {
 		t.Fatalf("seal secret: %v", err)

@@ -46,8 +46,8 @@ remote server. For local development with hot-reload, use
 		Example: `  # Default: listen on 127.0.0.1:27892
   multigent start
 
-  # Custom address
-  multigent start --addr 0.0.0.0:8080
+  # Recommended when using Docker sandbox agents
+  multigent start --addr 0.0.0.0:27892
 
   # With API key auth
   multigent start --api-key my-secret
@@ -81,6 +81,7 @@ remote server. For local development with hot-reload, use
 			if err := configureRuntimeAPIURL(addr); err != nil {
 				return err
 			}
+			warnIfDockerCallbackMayFail(addr)
 			logDockerReadiness()
 			key := api.ResolveAPIKey(apiKey)
 			srv := api.NewServer(root, key)

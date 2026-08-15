@@ -141,15 +141,26 @@ func (s *FSStore) PersistTask(project, agent string, t *entity.Task) error {
 		return err
 	}
 	found := false
+	foundIndex := -1
 	for i, at := range archived {
 		if at.ID == t.ID {
 			archived[i] = t
 			found = true
+			foundIndex = i
 			break
 		}
 	}
 	if !found {
 		return fmt.Errorf("task %q not found", t.ID)
+	}
+	if !t.Status.IsTerminal() {
+		restored := append([]*entity.Task{}, archived[:foundIndex]...)
+		restored = append(restored, archived[foundIndex+1:]...)
+		if err := s.OverwriteArchive(project, agent, restored); err != nil {
+			return err
+		}
+		active = append(active, t)
+		return s.saveTasks(project, agent, active)
 	}
 	return s.OverwriteArchive(project, agent, archived)
 }

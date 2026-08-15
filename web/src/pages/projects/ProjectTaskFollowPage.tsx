@@ -316,7 +316,7 @@ export default function ProjectTaskFollowPage() {
     }
     try {
       await apiPost(`/api/v1/projects/${encodeURIComponent(displayTask.project)}/tasks/${encodeURIComponent(displayTask.id)}/workflow/review`, {
-        decision,
+        decision: normalizedDecision,
         comments,
         outputs,
       })

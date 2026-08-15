@@ -602,6 +602,9 @@ func runHeartbeatLoop(ctx context.Context, root, project, agentName string,
 			}
 
 			if !conditionMet {
+				nextCheckUTC := time.Now().Add(interval).UTC()
+				hb.NextWakeupAt = &nextCheckUTC
+				_ = ts.SaveHeartbeat(project, agentName, hb)
 				if len(reasons) > 0 {
 					agentLog("%s wakeup conditions not met (%s) — skipping cycle, next check in %s",
 						colorYellow+"⏸", strings.Join(reasons, "; "), interval.Round(time.Second))

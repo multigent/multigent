@@ -93,7 +93,7 @@ func TestBootstrapScriptDownloadsReleaseRuntimeCLI(t *testing.T) {
 }
 
 func TestBootstrapScriptDoesNotDownloadDevVersion(t *testing.T) {
-	for _, version := range []string{"", "dev", "v0.1.2-7-g614b938"} {
+	for _, version := range []string{"", "dev", "v0.1.2-7-g614b938", "v0.1.27-dirty", "v0.1.27-3-g614b938-dirty"} {
 		script := BootstrapScript(version)
 		if strings.Contains(script, "releases/download") {
 			t.Fatalf("dev bootstrap script must not download release assets for %q:\n%s", version, script)

@@ -65,6 +65,26 @@ func TestWorkflowDocIDValueValidAllowsLists(t *testing.T) {
 	}
 }
 
+func TestNormalizeWorkflowOutputValuesAllowsExplicitNoneForDocIDFields(t *testing.T) {
+	step := entity.WorkflowStep{
+		Title: "Human Review",
+		OutputFields: []entity.WorkflowField{
+			{Name: "fix_request_doc_id", Description: "If no fix is needed, 不需要则填 none."},
+			{Name: "decision", Description: "Decision."},
+		},
+	}
+	values, err := normalizeWorkflowOutputValues(step, map[string]string{
+		"fix_request_doc_id": "none",
+		"decision":           "approve",
+	}, "", "", false)
+	if err != nil {
+		t.Fatalf("expected explicit none to be accepted: %v", err)
+	}
+	if values["fix_request_doc_id"] != "none" {
+		t.Fatalf("unexpected value: %q", values["fix_request_doc_id"])
+	}
+}
+
 func TestWorkflowConditionEqDoesNotUseSubstringMatching(t *testing.T) {
 	if compareWorkflowValue("不通过", "eq", "通过", nil) {
 		t.Fatal("expected exact eq comparison; 不通过 must not match 通过")
@@ -155,6 +175,71 @@ func TestWorkflowActorBindingPrefersStepIDOverRole(t *testing.T) {
 	}
 	if transition.NextInst.ActorID != "reviewer" {
 		t.Fatalf("expected review actor reviewer, got %q", transition.NextInst.ActorID)
+	}
+}
+
+func TestCompleteAndAdvanceErrorsWhenOutgoingEdgesDoNotMatch(t *testing.T) {
+	controlDB, err := db.Open(filepath.Join(t.TempDir(), "control.db"))
+	if err != nil {
+		t.Fatalf("open db: %v", err)
+	}
+	defer controlDB.Close()
+	if err := controlDB.UpsertWorkspace(db.Workspace{ID: "workspace-1", Name: "Workspace", Slug: "workspace", Root: t.TempDir()}); err != nil {
+		t.Fatalf("create workspace: %v", err)
+	}
+
+	store := NewStore(controlDB, "workspace-1")
+	now := time.Now().UTC()
+	def := &entity.WorkflowDefinition{
+		ID:          "wf-route-mismatch",
+		Name:        "Route Mismatch Test",
+		Version:     1,
+		Scope:       "workspace",
+		StartStepID: "qa",
+		Steps: []entity.WorkflowStep{
+			{
+				ID:           "qa",
+				Type:         "agent_task",
+				Title:        "QA Review",
+				ActorRole:    "qa",
+				OutputFields: []entity.WorkflowField{{Name: "review_decision", Description: "approve or request_changes."}},
+			},
+			{
+				ID:        "human",
+				Type:      "human_review",
+				Title:     "Human Merge",
+				ActorRole: "maintainer",
+			},
+		},
+		Edges: []entity.WorkflowEdge{
+			{ID: "approve", From: "qa", To: "human", Condition: &entity.WorkflowEdgeCondition{Field: "review_decision", Operator: "eq", Value: "approve"}},
+		},
+		CreatedAt: now,
+		UpdatedAt: now,
+	}
+	if err := store.SaveDefinition(def); err != nil {
+		t.Fatalf("save definition: %v", err)
+	}
+	if _, _, err := store.StartRun("project", "task-1", def.ID, map[string]entity.WorkflowActorBinding{
+		"qa":         {Type: "agent", ID: "qa-agent"},
+		"maintainer": {Type: "human", ID: "owner"},
+	}); err != nil {
+		t.Fatalf("start run: %v", err)
+	}
+
+	_, err = store.CompleteAndAdvance("project", "task-1", "review done", "", map[string]string{"review_decision": "comment"}, "completed")
+	if err == nil {
+		t.Fatal("expected route mismatch error")
+	}
+	if !strings.Contains(err.Error(), "did not match any outgoing route") {
+		t.Fatalf("unexpected error: %v", err)
+	}
+	run, found, err := store.RunForTask("project", "task-1")
+	if err != nil || !found {
+		t.Fatalf("load run: found=%v err=%v", found, err)
+	}
+	if run.Status != "active" || run.ActiveStepID != "qa" {
+		t.Fatalf("expected run to stay on qa, got status=%q active=%q", run.Status, run.ActiveStepID)
 	}
 }
 
@@ -366,5 +451,61 @@ func TestCompleteBranchAndMaybeAdvanceAnyJoinSkipsRemainingBranches(t *testing.T
 	}
 	if statuses["path_b"] != "skipped" {
 		t.Fatalf("expected remaining branch to be skipped, got %q", statuses["path_b"])
+	}
+}
+
+func TestCancelRunForTaskCancelsActiveRunAndStep(t *testing.T) {
+	controlDB, err := db.Open(filepath.Join(t.TempDir(), "control.db"))
+	if err != nil {
+		t.Fatalf("open db: %v", err)
+	}
+	defer controlDB.Close()
+	if err := controlDB.UpsertWorkspace(db.Workspace{ID: "workspace-1", Name: "Workspace", Slug: "workspace", Root: t.TempDir()}); err != nil {
+		t.Fatalf("create workspace: %v", err)
+	}
+
+	store := NewStore(controlDB, "workspace-1")
+	now := time.Now().UTC()
+	def := &entity.WorkflowDefinition{
+		ID:          "wf-cancel",
+		Name:        "Cancel Test",
+		Version:     1,
+		Scope:       "workspace",
+		StartStepID: "draft",
+		Steps: []entity.WorkflowStep{{
+			ID:        "draft",
+			Type:      "agent_task",
+			Title:     "Draft",
+			ActorRole: "worker",
+		}},
+		CreatedAt: now,
+		UpdatedAt: now,
+	}
+	if err := store.SaveDefinition(def); err != nil {
+		t.Fatalf("save definition: %v", err)
+	}
+	run, _, err := store.StartRun("project", "task-1", def.ID, map[string]entity.WorkflowActorBinding{
+		"worker": {Type: "agent", ID: "agent-a"},
+	})
+	if err != nil {
+		t.Fatalf("start run: %v", err)
+	}
+
+	cancelled, changed, err := store.CancelRunForTask("project", "task-1", "task cancelled")
+	if err != nil {
+		t.Fatalf("cancel run: %v", err)
+	}
+	if !changed {
+		t.Fatal("expected run to change")
+	}
+	if cancelled.Status != "cancelled" || cancelled.ActiveStepID != "" {
+		t.Fatalf("unexpected cancelled run: %+v", cancelled)
+	}
+	steps, err := store.ListStepInstances(run.ID)
+	if err != nil {
+		t.Fatalf("list steps: %v", err)
+	}
+	if len(steps) != 1 || steps[0].Status != "cancelled" || steps[0].Summary != "task cancelled" {
+		t.Fatalf("unexpected step instances: %+v", steps)
 	}
 }

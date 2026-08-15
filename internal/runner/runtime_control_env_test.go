@@ -357,6 +357,54 @@ func TestWriteRuntimeToolsFileMaterializesGitHubCLIConfig(t *testing.T) {
 	}
 }
 
+func TestRuntimeControlEnvForDockerRemapsRuntimeToolPaths(t *testing.T) {
+	agentDir := filepath.Join(t.TempDir(), "projects", "demo", "agents", "qa")
+	hostToolDir := filepath.Join(agentDir, ".multigent", "runtime-tools", "run-gh")
+	env := map[string]string{
+		"MULTIGENT_API_URL":          "http://127.0.0.1:27894",
+		runtimeConnectionsFileEnv:    filepath.Join(agentDir, ".multigent", "runtime-connections.json"),
+		runtimeToolsFileEnv:          filepath.Join(hostToolDir, "tools.json"),
+		runtimeToolBinDirEnv:         filepath.Join(hostToolDir, "bin"),
+		runtimeToolBootstrapEnv:      filepath.Join(hostToolDir, "bootstrap-tools.sh"),
+		runtimeToolCLIAuditEnv:       filepath.Join(hostToolDir, "cli-audit.jsonl"),
+		"GH_CONFIG_DIR":              filepath.Join(hostToolDir, "home", "github", "github", ".config", "gh"),
+		"MULTIGENT_GIT_SSH_KEY_FILE": filepath.Join(hostToolDir, "home", "git_ssh", "default", ".ssh", "id_git_multigent"),
+		"GIT_CONFIG_GLOBAL":          filepath.Join(hostToolDir, "home", "git_ssh", "default", ".gitconfig"),
+		"GIT_SSH_COMMAND":            "ssh -i " + filepath.Join(hostToolDir, "home", "git_ssh", "default", ".ssh", "id_git_multigent") + " -o UserKnownHostsFile=" + filepath.Join(hostToolDir, "home", "git_ssh", "default", ".ssh", "known_hosts"),
+		"CLOUDFLARE_API_TOKEN":       "secret-token",
+		"MULTIGENT_AGENT_TOKEN":      "agent-token",
+	}
+
+	got := runtimeControlEnvForProvider(env, entity.SandboxDocker, agentDir)
+	for _, key := range []string{
+		runtimeConnectionsFileEnv,
+		runtimeToolsFileEnv,
+		runtimeToolBinDirEnv,
+		runtimeToolBootstrapEnv,
+		runtimeToolCLIAuditEnv,
+		"GH_CONFIG_DIR",
+		"MULTIGENT_GIT_SSH_KEY_FILE",
+		"GIT_CONFIG_GLOBAL",
+		"GIT_SSH_COMMAND",
+	} {
+		if strings.Contains(got[key], agentDir) {
+			t.Fatalf("%s still contains host agent dir: %q", key, got[key])
+		}
+		if !strings.Contains(got[key], "/workspace") {
+			t.Fatalf("%s was not remapped to /workspace: %q", key, got[key])
+		}
+	}
+	if got["CLOUDFLARE_API_TOKEN"] != "secret-token" {
+		t.Fatalf("secret env must not be rewritten: %q", got["CLOUDFLARE_API_TOKEN"])
+	}
+	if got["MULTIGENT_AGENT_TOKEN"] != "agent-token" {
+		t.Fatalf("agent token must not be rewritten: %q", got["MULTIGENT_AGENT_TOKEN"])
+	}
+	if got["MULTIGENT_API_URL"] == env["MULTIGENT_API_URL"] {
+		t.Fatalf("docker API URL was not translated: %q", got["MULTIGENT_API_URL"])
+	}
+}
+
 func TestWriteRuntimeToolsFileMaterializesLarkCLIConfig(t *testing.T) {
 	body := []byte(`{
 		"tools":[{
@@ -705,7 +753,7 @@ func TestDockerRuntimeControlEnvUsesHostGateway(t *testing.T) {
 		"MULTIGENT_API_URL":     "http://127.0.0.1:27893",
 		"MULTIGENT_AGENT_TOKEN": "token",
 	}
-	got := runtimeControlEnvForProvider(env, entity.SandboxDocker)
+	got := runtimeControlEnvForProvider(env, entity.SandboxDocker, "")
 	if got["MULTIGENT_API_URL"] != "http://host.docker.internal:27893" {
 		t.Fatalf("MULTIGENT_API_URL=%q", got["MULTIGENT_API_URL"])
 	}

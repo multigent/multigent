@@ -90,8 +90,22 @@ func (s *Server) handleUpsertAgentToolBinding(w http.ResponseWriter, r *http.Req
 		return
 	}
 	if !allowed {
-		s.jsonErrorCode(w, http.StatusBadRequest, ErrCodeValidationFailed, "connection must be granted to this agent before it can be enabled")
-		return
+		if !s.canManageConnection(r, connection, cur) {
+			s.jsonErrorCode(w, http.StatusBadRequest, ErrCodeValidationFailed, "connection must be granted to this agent before it can be enabled")
+			return
+		}
+		if err := s.controlDB.CreateConnectionGrant(controldb.ConnectionGrant{
+			ID:           newConnectionID("grant"),
+			WorkspaceID:  workspaceID,
+			ConnectionID: connection.ID,
+			TargetType:   ConnectionTargetAgent,
+			TargetID:     project + "/" + agent,
+			CreatedBy:    cur.Username,
+			CreatedAt:    time.Now().UTC().Format(time.RFC3339),
+		}); err != nil {
+			s.serverError(w, err)
+			return
+		}
 	}
 	if body.AdapterType != "" {
 		if err := s.validateRuntimeAdapterType(connection, body.AdapterType); err != nil {
@@ -360,8 +374,7 @@ func (s *Server) connectionAvailableToRuntimeAgent(connection controldb.Connecti
 	if err != nil {
 		return false, err
 	}
-	return len(matchingAgentConnectionGrants(grants, workspaceID, project, agent)) > 0 ||
-		workspaceConnectionAvailableToAgent(connection, workspaceID), nil
+	return len(matchingAgentConnectionGrants(grants, workspaceID, project, agent)) > 0, nil
 }
 
 func (s *Server) validateRuntimeAdapterType(connection controldb.Connection, adapterType string) error {

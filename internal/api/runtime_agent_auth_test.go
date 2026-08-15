@@ -105,7 +105,7 @@ func issueAgentRuntimeTokenRequestForTest(username, project, agent string) *http
 	return req
 }
 
-func TestFindRuntimeConnectionAllowsWorkspaceConnectionByDefault(t *testing.T) {
+func TestFindRuntimeConnectionRequiresExplicitGrant(t *testing.T) {
 	users := newTestUserStore(t)
 	s := &Server{controlDB: users.db, users: users}
 	workspaceID := "ws-one"
@@ -135,6 +135,15 @@ func TestFindRuntimeConnectionAllowsWorkspaceConnectionByDefault(t *testing.T) {
 	}
 	if err := users.db.UpsertConnection(userOnly); err != nil {
 		t.Fatalf("user connection: %v", err)
+	}
+	if err := users.db.CreateConnectionGrant(controldb.ConnectionGrant{
+		ID:           "grant-project",
+		WorkspaceID:  workspaceID,
+		ConnectionID: granted.ID,
+		TargetType:   ConnectionTargetProject,
+		TargetID:     "sample",
+	}); err != nil {
+		t.Fatalf("project grant: %v", err)
 	}
 	if err := users.db.CreateConnectionGrant(controldb.ConnectionGrant{
 		ID:           "grant-user",
@@ -194,6 +203,15 @@ func TestFindRuntimeConnectionRequiresEnabledBindingWhenBindingsExist(t *testing
 	}
 	if err := users.db.UpsertConnection(lark); err != nil {
 		t.Fatalf("lark connection: %v", err)
+	}
+	if err := users.db.CreateConnectionGrant(controldb.ConnectionGrant{
+		ID:           "grant-lark-project",
+		WorkspaceID:  workspaceID,
+		ConnectionID: lark.ID,
+		TargetType:   ConnectionTargetProject,
+		TargetID:     "sample",
+	}); err != nil {
+		t.Fatalf("lark grant: %v", err)
 	}
 	if err := users.db.UpsertAgentToolBinding(controldb.AgentToolBinding{
 		ID:           "bind-lark",

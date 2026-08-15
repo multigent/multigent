@@ -47,6 +47,10 @@ func (s *Server) handleGetProjectSchedule(w http.ResponseWriter, r *http.Request
 		return
 	}
 	sortAgents := make([]map[string]any, 0, len(agents))
+	usageDB, _ := telemetry.OpenReadOnly(s.root)
+	if usageDB != nil {
+		defer usageDB.Close()
+	}
 	for _, ag := range agents {
 		if ag == nil {
 			continue
@@ -94,8 +98,8 @@ func (s *Server) handleGetProjectSchedule(w http.ResponseWriter, r *http.Request
 			entry["runtimeReadiness"] = buildRuntimeReadinessLight(meta)
 		}
 		if hb.SessionID != "" {
-			if db, err := telemetry.OpenReadOnly(s.root); err == nil {
-				if usage, err := telemetry.ReadSessionUsage(db, hb.SessionID); err == nil && usage != nil && usage.RunCount > 0 {
+			if usageDB != nil {
+				if usage, err := telemetry.ReadSessionUsage(usageDB, hb.SessionID); err == nil && usage != nil && usage.RunCount > 0 {
 					ctxLimit := telemetry.ContextWindowLimit(modelStr)
 					entry["sessionUsage"] = map[string]any{
 						"lastInputTokens":   usage.LastInputTokens,
@@ -107,7 +111,6 @@ func (s *Server) handleGetProjectSchedule(w http.ResponseWriter, r *http.Request
 						"contextLimit":      ctxLimit,
 					}
 				}
-				db.Close()
 			}
 		}
 		sortAgents = append(sortAgents, entry)

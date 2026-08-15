@@ -40,6 +40,7 @@ const (
 )
 
 var releaseVersion = regexp.MustCompile(`^v[0-9]+\.[0-9]+\.[0-9]+(?:-[A-Za-z][0-9A-Za-z.-]*)?$`)
+var gitDescribeVersion = regexp.MustCompile(`^v[0-9]+\.[0-9]+\.[0-9]+-[0-9]+-g[0-9a-f]+(?:-dirty)?$`)
 
 // BootstrapScript returns a POSIX shell snippet that prepares the runtime CLI
 // inside a sandbox. Release builds download the matching Linux mga binary into
@@ -59,7 +60,7 @@ func BootstrapScript(version string) string {
 		"export PATH=" + shellQuote(ManagedBinDir) + ":$PATH",
 		"mkdir -p \"$MULTIGENT_RUNTIME_CLI_HOME/bin\" \"$MULTIGENT_RUNTIME_CLI_HOME/releases\" \"$MULTIGENT_TOOLCHAIN_HOME/markers\"",
 	}
-	if releaseVersion.MatchString(version) {
+	if downloadableReleaseVersion(version) {
 		lines = append(lines,
 			"  arch=\"$(uname -m)\"",
 			"  case \"$arch\" in",
@@ -98,6 +99,15 @@ func BootstrapScript(version string) string {
 		"command -v "+shellQuote(BinaryName)+" >/dev/null 2>&1 || { echo 'multigent: mga runtime CLI is missing in sandbox' >&2; exit 127; }",
 	)
 	return strings.Join(lines, "\n")
+}
+
+func downloadableReleaseVersion(version string) bool {
+	version = strings.TrimSpace(version)
+	lower := strings.ToLower(version)
+	if version == "" || strings.Contains(lower, "dirty") || gitDescribeVersion.MatchString(lower) {
+		return false
+	}
+	return releaseVersion.MatchString(version)
 }
 
 func markerHash(version string) string {

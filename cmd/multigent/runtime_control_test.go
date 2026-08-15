@@ -24,3 +24,19 @@ func TestConfigureRuntimeAPIURLPreservesOverride(t *testing.T) {
 		t.Fatalf("MULTIGENT_API_URL=%q", got)
 	}
 }
+
+func TestIsLoopbackListenAddr(t *testing.T) {
+	cases := map[string]bool{
+		"127.0.0.1:27892": true,
+		"localhost:27892": true,
+		"[::1]:27892":     true,
+		"0.0.0.0:27892":   false,
+		":27892":          false,
+		"10.0.0.5:27892":  false,
+	}
+	for input, want := range cases {
+		if got := isLoopbackListenAddr(input); got != want {
+			t.Fatalf("isLoopbackListenAddr(%q) = %v, want %v", input, got, want)
+		}
+	}
+}

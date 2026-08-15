@@ -75,10 +75,11 @@ func TestCreateWorkflowTaskDoesNotStartTask(t *testing.T) {
 		Project:     "sample",
 		StartStepID: "start",
 		Steps: []entity.WorkflowStep{{
-			ID:        "start",
-			Type:      "agent_task",
-			Title:     "Start",
-			ActorRole: "worker",
+			ID:          "start",
+			Type:        "agent_task",
+			Title:       "Start",
+			ActorRole:   "worker",
+			InputFields: []entity.WorkflowField{{Name: "repo", Description: "repo"}, {Name: "pr_number", Description: "PR number"}},
 		}},
 		CreatedAt: now,
 		UpdatedAt: now,
@@ -90,7 +91,7 @@ func TestCreateWorkflowTaskDoesNotStartTask(t *testing.T) {
 	body := postTaskBody{
 		Agent:                "backend",
 		Title:                "Use workflow",
-		Prompt:               "Run the first step when explicitly started.",
+		Prompt:               "Run the first step when explicitly started.\n\nrepo: owner/repo\npr_number: 42\nignored: no",
 		Priority:             2,
 		WorkflowDefinitionID: def.ID,
 		WorkflowActorBindings: map[string]entity.WorkflowActorBinding{
@@ -124,6 +125,34 @@ func TestCreateWorkflowTaskDoesNotStartTask(t *testing.T) {
 	}
 	if rows[0].Status != string(entity.TaskStatusPending) {
 		t.Fatalf("expected created workflow task to remain pending, got %q", rows[0].Status)
+	}
+
+	run, found, err := wfStore.RunForTask("sample", rows[0].ID)
+	if err != nil || !found {
+		t.Fatalf("expected workflow run for task, found=%v err=%v", found, err)
+	}
+	instances, err := wfStore.ListStepInstances(run.ID)
+	if err != nil {
+		t.Fatalf("list workflow instances: %v", err)
+	}
+	var startInst *entity.WorkflowStepInstance
+	for i := range instances {
+		if instances[i].StepID == "start" {
+			startInst = &instances[i]
+			break
+		}
+	}
+	if startInst == nil {
+		t.Fatalf("start instance not found")
+	}
+	if got := startInst.InputValues["repo"]; got != "owner/repo" {
+		t.Fatalf("expected repo input owner/repo, got %q", got)
+	}
+	if got := startInst.InputValues["pr_number"]; got != "42" {
+		t.Fatalf("expected pr_number input 42, got %q", got)
+	}
+	if _, ok := startInst.InputValues["ignored"]; ok {
+		t.Fatalf("unexpected prompt key copied into workflow inputs: %#v", startInst.InputValues)
 	}
 }
 

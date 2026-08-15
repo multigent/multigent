@@ -96,7 +96,19 @@ function friendlyChatError(message: string, t: (key: string) => string): string 
   if (/No conversation found with session ID/i.test(msg)) {
     return t('agentChat.sessionMissing')
   }
+  if (/API Error:\s*Unable to connect to API \(ConnectionRefused\)/i.test(msg)) {
+    return t('agentChat.upstreamConnectionRefused')
+  }
   return msg
+}
+
+function compactErrorSummary(message: string): { summary: string; detail: string } {
+  const trimmed = message.trim()
+  if (!trimmed) return { summary: '', detail: '' }
+  const lines = trimmed.split('\n').map((line) => line.trim()).filter(Boolean)
+  const first = lines[0] || trimmed
+  const summary = first.length > 180 ? `${first.slice(0, 180)}…` : first
+  return { summary, detail: trimmed.length > summary.length ? trimmed : '' }
 }
 
 function agentChatDraftKey(projectId?: string, agentName?: string) {
@@ -174,6 +186,7 @@ export default function ProjectAgentChatPage() {
   const freshNextRef = useRef(false)
   const historyRequestRef = useRef(0)
   const initializedChatKeyRef = useRef('')
+  const loadedHistoryKeyRef = useRef('')
   const replyPendingRef = useRef(false)
   const draftKey = agentChatDraftKey(projectId, agentName)
   const chatKey = projectId && agentName ? `${projectId}/${agentName}` : ''
@@ -255,6 +268,7 @@ export default function ProjectAgentChatPage() {
       updateSessionId(data.sessionId ?? sid)
       setContent(data.content ?? '')
       setHistoryTruncated(Boolean(data.truncated))
+      loadedHistoryKeyRef.current = `${expectedKey}:${data.sessionId ?? sid}`
     } catch (e) {
       if (historyRequestRef.current !== requestId) return
       if (activeChatKeyRef.current !== expectedKey) return
@@ -292,6 +306,7 @@ export default function ProjectAgentChatPage() {
     abortRef.current = null
     historyRequestRef.current += 1
     setContent('')
+    loadedHistoryKeyRef.current = ''
     setInput(readAgentChatDraft(projectId, agentName))
     setError(null)
     setLoading(false)
@@ -317,6 +332,39 @@ export default function ProjectAgentChatPage() {
     void loadSessionOptions(projectId, agentName, nextKey)
     void loadReadiness(projectId, agentName, nextKey)
   }, [projectId, agentName, loadHistory, loadReadiness, loadSessionOptions])
+
+  useEffect(() => {
+    if (!projectId || !agentName) return
+    const expectedKey = `${projectId}/${agentName}`
+    if (initializedChatKeyRef.current !== expectedKey) return
+    const loadedKey = `${expectedKey}:${routeSessionId}`
+    if (routeSessionId && loadedHistoryKeyRef.current === loadedKey) return
+
+    abortRef.current?.abort()
+    abortRef.current = null
+    historyRequestRef.current += 1
+    activeChatKeyRef.current = expectedKey
+    sessionIdRef.current = routeSessionId
+    setSessionId(routeSessionId)
+    setSessionDraft(routeSessionId)
+    setError(null)
+    setLoading(false)
+    replyPendingRef.current = false
+    setReplyPending(false)
+    if (replyPendingTimerRef.current != null) {
+      window.clearTimeout(replyPendingTimerRef.current)
+      replyPendingTimerRef.current = null
+    }
+    setRunNotice(null)
+    setHistoryTruncated(false)
+    loadedHistoryKeyRef.current = ''
+    if (routeSessionId) {
+      void loadHistory(routeSessionId, projectId, agentName, expectedKey)
+    } else {
+      setContent('')
+      setHistoryLoading(false)
+    }
+  }, [agentName, loadHistory, projectId, routeSessionId])
 
   useEffect(() => {
     if (!projectId || !agentName) return
@@ -385,6 +433,7 @@ export default function ProjectAgentChatPage() {
     replyPendingRef.current = true
     setReplyPending(false)
     setContent((prev) => appendLog(prev, JSON.stringify({ type: 'human', content: text })))
+    loadedHistoryKeyRef.current = ''
     if (replyPendingTimerRef.current != null) window.clearTimeout(replyPendingTimerRef.current)
     replyPendingTimerRef.current = window.setTimeout(() => {
       replyPendingTimerRef.current = null
@@ -542,6 +591,7 @@ export default function ProjectAgentChatPage() {
     freshNextRef.current = true
     updateSessionId('')
     setContent('')
+    loadedHistoryKeyRef.current = ''
     setError(null)
     setHistoryLoading(false)
     setHistoryTruncated(false)
@@ -562,6 +612,7 @@ export default function ProjectAgentChatPage() {
     }
     historyRequestRef.current += 1
     setContent('')
+    loadedHistoryKeyRef.current = ''
     setError(null)
     setHistoryLoading(false)
     setHistoryTruncated(false)
@@ -592,6 +643,7 @@ export default function ProjectAgentChatPage() {
     name: agentContext?.name || agentName,
     avatar: agentContext?.avatar,
   }
+  const errorView = error ? compactErrorSummary(error) : null
 
   const chatPanel = (
     <div className={cn(
@@ -726,13 +778,33 @@ export default function ProjectAgentChatPage() {
           canInspectDetails={canInspectRuntimeBlockers}
           trustedProxyMode={trustedProxyMode}
         />
-        {error && (
-          <p className="mt-2 text-xs text-red-500 dark:text-red-400">{error}</p>
+        {errorView && (
+          <div className="mt-2 rounded-lg border border-red-200 bg-red-50 px-3 py-2 text-xs text-red-700 dark:border-red-900/50 dark:bg-red-950/20 dark:text-red-300">
+            <div className="flex items-start gap-2">
+              <span className="mt-0.5 size-1.5 shrink-0 rounded-full bg-red-500" />
+              <p className="min-w-0 flex-1 break-words">{errorView.summary}</p>
+            </div>
+            {errorView.detail && (
+              <details className="mt-2">
+                <summary className="cursor-pointer text-red-600/80 hover:text-red-700 dark:text-red-300/80 dark:hover:text-red-200">
+                  {t('agentChat.errorDetails')}
+                </summary>
+                <pre className="mt-2 max-h-40 overflow-auto whitespace-pre-wrap break-words rounded-md bg-white/70 p-2 font-mono text-[11px] leading-relaxed text-red-700/80 dark:bg-zinc-950/40 dark:text-red-200/80">
+                  {errorView.detail}
+                </pre>
+              </details>
+            )}
+          </div>
         )}
       </div>
 
       <div ref={scrollRef} className="flex-1 overflow-y-auto px-6 py-5">
-        {!content && !historyLoading ? (
+        {historyLoading && !content ? (
+          <div className="flex h-full flex-col items-center justify-center text-center">
+            <RefreshCw className="mb-3 size-8 animate-spin text-neutral-300 dark:text-zinc-700" strokeWidth={1.5} />
+            <p className="text-sm text-neutral-500 dark:text-zinc-400">{t('agentChat.historyLoading')}</p>
+          </div>
+        ) : !content ? (
           <div className="flex h-full flex-col items-center justify-center text-center">
             <Sparkles className="mb-3 size-10 text-neutral-200 dark:text-zinc-700" strokeWidth={1.3} />
             <p className="text-sm text-neutral-500 dark:text-zinc-400">{t('agentChat.empty')}</p>

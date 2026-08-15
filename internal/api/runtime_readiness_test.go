@@ -20,9 +20,30 @@ func TestRuntimeReadinessRequiresExplicitModelAccount(t *testing.T) {
 		},
 	}
 
-	readiness := buildRuntimeReadinessLight(meta)
+	readiness := buildRuntimeReadiness(meta)
 	if !readiness.Blocking {
 		t.Fatalf("expected readiness to block when agent has no explicit model account")
+	}
+	for _, check := range readiness.Checks {
+		if check.Key == "provider" && check.Blocking && check.Status == "error" {
+			return
+		}
+	}
+	t.Fatalf("expected blocking provider check, got %#v", readiness.Checks)
+}
+
+func TestRuntimeReadinessLightRequiresExplicitModelAccount(t *testing.T) {
+	meta := &entity.AgentMeta{
+		Name:  "pm",
+		Model: entity.ModelClaudeCode,
+		Sandbox: &entity.SandboxConfig{
+			Provider: entity.SandboxDocker,
+		},
+	}
+
+	readiness := buildRuntimeReadinessLight(meta)
+	if !readiness.Blocking {
+		t.Fatalf("expected light readiness to block when agent has no explicit model account")
 	}
 	for _, check := range readiness.Checks {
 		if check.Key == "provider" && check.Blocking && check.Status == "error" {
@@ -50,7 +71,7 @@ func TestRuntimeReadinessAllowsExplicitDirectHostProcess(t *testing.T) {
 		},
 	}
 
-	readiness := buildRuntimeReadinessLight(meta)
+	readiness := buildRuntimeReadiness(meta)
 	if readiness.Blocking {
 		t.Fatalf("expected explicit direct host process to be runnable, got %#v", readiness.Checks)
 	}
@@ -72,7 +93,7 @@ func TestRuntimeReadinessBlocksDirectHostWhenDisabled(t *testing.T) {
 		},
 	}
 
-	readiness := buildRuntimeReadinessLight(meta)
+	readiness := buildRuntimeReadiness(meta)
 	if !readiness.Blocking {
 		t.Fatalf("expected direct host process to be blocked when disabled, got %#v", readiness.Checks)
 	}
@@ -95,6 +116,28 @@ func TestNormalizeSandboxProviderAliases(t *testing.T) {
 	}
 	if got := normalizeSandboxProvider("e2b"); got != entity.SandboxE2B {
 		t.Fatalf("normalizeSandboxProvider(e2b) = %q", got)
+	}
+}
+
+func TestRuntimeReadinessLightSkipsRuntimeProbes(t *testing.T) {
+	meta := &entity.AgentMeta{
+		Name:     "dev",
+		Model:    entity.ModelCodex,
+		Provider: "openai-main",
+		Sandbox: &entity.SandboxConfig{
+			Provider: entity.SandboxDocker,
+		},
+	}
+
+	readiness := buildRuntimeReadinessLight(meta)
+	if readiness.Blocking {
+		t.Fatalf("expected light readiness to avoid runtime probe blockers, got %#v", readiness.Checks)
+	}
+	for _, check := range readiness.Checks {
+		switch check.Key {
+		case "docker", "runtime_image", "runtime_container", "runtime_api", "cli", "auth", "sandbox":
+			t.Fatalf("light readiness should not probe runtime dependency %q, got %#v", check.Key, readiness.Checks)
+		}
 	}
 }
 

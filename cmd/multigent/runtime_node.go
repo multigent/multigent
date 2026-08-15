@@ -513,6 +513,9 @@ func startRuntimeRunLeaseLoop(cfg runtimeNodeConfig, runID string) (context.Cont
 		for {
 			select {
 			case <-ticker.C:
+				if err := runtimeNodeHeartbeat(cfg, "online", ""); err != nil {
+					slog.Warn("runtime node heartbeat failed during run", "run", runID, "error", err)
+				}
 				if err := runtimeNodeExtendRunLease(cfg, runID, 90); err != nil {
 					if errors.Is(err, errRuntimeRunCancelled) {
 						slog.Info("runtime run cancelled by control plane", "run", runID)

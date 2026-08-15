@@ -166,6 +166,33 @@ func TestBuildArgsUsesAgentScopedRuntimeHome(t *testing.T) {
 	}
 }
 
+func TestBuildArgsDoesNotForwardLoopbackProxyIntoDocker(t *testing.T) {
+	t.Setenv("HTTPS_PROXY", "http://127.0.0.1:7890")
+	t.Setenv("HTTP_PROXY", "http://localhost:7890")
+	t.Setenv("NO_PROXY", "localhost,127.0.0.1")
+	args, err := BuildArgs(t.TempDir(), entity.ModelClaudeCode, nil, []string{"claude", "-p"})
+	if err != nil {
+		t.Fatalf("BuildArgs: %v", err)
+	}
+	if hasExactEnvArg(args, "HTTPS_PROXY") || hasExactEnvArg(args, "HTTP_PROXY") {
+		t.Fatalf("loopback proxy leaked into docker args: %v", args)
+	}
+	if !hasExactEnvArg(args, "NO_PROXY") {
+		t.Fatalf("NO_PROXY should still be forwarded: %v", args)
+	}
+}
+
+func TestBuildArgsForwardsContainerReachableProxyIntoDocker(t *testing.T) {
+	t.Setenv("HTTPS_PROXY", "http://host.docker.internal:7890")
+	args, err := BuildArgs(t.TempDir(), entity.ModelClaudeCode, nil, []string{"claude", "-p"})
+	if err != nil {
+		t.Fatalf("BuildArgs: %v", err)
+	}
+	if !hasExactEnvArg(args, "HTTPS_PROXY") {
+		t.Fatalf("container-reachable proxy was not forwarded: %v", args)
+	}
+}
+
 func TestDockerExecutableHonorsOverride(t *testing.T) {
 	dir := t.TempDir()
 	bin := filepath.Join(dir, "docker")
@@ -175,6 +202,21 @@ func TestDockerExecutableHonorsOverride(t *testing.T) {
 	t.Setenv("MULTIGENT_DOCKER", bin)
 	if got := DockerExecutable(); got != bin {
 		t.Fatalf("DockerExecutable() = %q, want %q", got, bin)
+	}
+}
+
+func TestDockerReachableRuntimeAPIURLRewritesLoopback(t *testing.T) {
+	cases := map[string]string{
+		"http://127.0.0.1:27892": "http://host.docker.internal:27892",
+		"http://localhost:27892": "http://host.docker.internal:27892",
+		"http://[::1]:27892":     "http://host.docker.internal:27892",
+		"http://192.168.1.2:80":  "http://192.168.1.2:80",
+		"https://api.example":    "https://api.example",
+	}
+	for input, want := range cases {
+		if got := DockerReachableRuntimeAPIURL(input); got != want {
+			t.Fatalf("DockerReachableRuntimeAPIURL(%q) = %q, want %q", input, got, want)
+		}
 	}
 }
 
@@ -204,6 +246,15 @@ func findEnvArg(args []string, prefix string) string {
 		}
 	}
 	return ""
+}
+
+func hasExactEnvArg(args []string, key string) bool {
+	for i := 0; i < len(args)-1; i++ {
+		if args[i] == "-e" && args[i+1] == key {
+			return true
+		}
+	}
+	return false
 }
 
 func argAfter(args []string, flag string) string {

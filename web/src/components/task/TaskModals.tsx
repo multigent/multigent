@@ -3,6 +3,7 @@ import { createPortal } from 'react-dom'
 import { Link } from 'react-router-dom'
 import { useTranslation } from 'react-i18next'
 import ReactMarkdown from 'react-markdown'
+import type { Components } from 'react-markdown'
 import remarkGfm from 'remark-gfm'
 import { ClipboardCopy, MessageSquare, Pencil, Play, Send, Trash2, X } from 'lucide-react'
 import { cn } from '../../lib/cn'
@@ -58,6 +59,7 @@ export type TaskWorkflowData = { definition: WorkflowDefinition; run: WorkflowRu
 type SafeUser = { username: string; displayName?: string; email?: string }
 type ProjectMember = { name: string; model?: string; avatar?: string }
 type DocPreview = { id: string; title?: string; content?: string; updatedAt?: string }
+type DocPreviewMeta = { docId?: string; title?: string; author?: string; createdAt?: string; tags?: string[] }
 export type WorkflowRecord = WorkflowStepEvent | WorkflowStepInstance
 const silentNotFound = [404]
 const WorkflowDocTitleContext = createContext<Map<string, string>>(new Map())
@@ -384,7 +386,7 @@ export function TaskDetailModal({ task, onClose, onEdit, onMutated, canEdit = tr
     }
     try {
       await apiPost(`/api/v1/projects/${encodeURIComponent(task.project)}/tasks/${encodeURIComponent(task.id)}/workflow/review`, {
-        decision,
+        decision: normalizedDecision,
         comments,
         outputs,
       })
@@ -940,10 +942,10 @@ export function WorkflowRuntimePanel({
               <div className="flex justify-end gap-2">
                 {usesDefaultReviewButtons ? (
                   <>
-                    <button type="button" onClick={() => onSubmitReview('needs_changes')} disabled={Boolean(reviewBusy)} className="rounded-lg border border-neutral-300 bg-white px-3 py-2 text-sm font-medium text-neutral-600 hover:bg-neutral-50 disabled:opacity-50 dark:border-zinc-600 dark:bg-zinc-900 dark:text-zinc-300 dark:hover:bg-zinc-800">
+                    <button type="button" onClick={() => onSubmitReview('request_changes')} disabled={Boolean(reviewBusy)} className="rounded-lg border border-neutral-300 bg-white px-3 py-2 text-sm font-medium text-neutral-600 hover:bg-neutral-50 disabled:opacity-50 dark:border-zinc-600 dark:bg-zinc-900 dark:text-zinc-300 dark:hover:bg-zinc-800">
                       {reviewBusy === 'request_changes' ? t('forms.working') : t('workflows.review.requestChanges')}
                     </button>
-                    <button type="button" onClick={() => onSubmitReview('approved')} disabled={Boolean(reviewBusy)} className="rounded-lg border border-sky-600 bg-white px-3 py-2 text-sm font-medium text-sky-700 hover:bg-sky-50 disabled:opacity-50 dark:border-sky-500 dark:bg-zinc-900 dark:text-sky-400 dark:hover:bg-zinc-800">
+                    <button type="button" onClick={() => onSubmitReview('approve')} disabled={Boolean(reviewBusy)} className="rounded-lg border border-sky-600 bg-white px-3 py-2 text-sm font-medium text-sky-700 hover:bg-sky-50 disabled:opacity-50 dark:border-sky-500 dark:bg-zinc-900 dark:text-sky-400 dark:hover:bg-zinc-800">
                       {reviewBusy === 'approve' ? t('forms.working') : t('workflows.review.approve')}
                     </button>
                   </>
@@ -1187,7 +1189,7 @@ function normalizeReviewDecision(decision: string) {
 
 function workflowDecisionOptions(description?: string) {
   const text = String(description || '')
-  const match = /(?:决策|決策|decision)\s*[:：]\s*([^。.;；]+)/i.exec(text)
+  const match = /(?:决策|決策|decision|请选择|請選擇|选择|選擇)\s*[:：]\s*([^。.;；]+)/i.exec(text)
   if (!match) return []
   return match[1]
     .split(/[、,，/|]|(?:\s+or\s+)|(?:\s+或\s+)|(?:\s+或者\s+)/i)
@@ -1196,16 +1198,14 @@ function workflowDecisionOptions(description?: string) {
 }
 
 function isStandardReviewDecisionOptions(options: string[]) {
-  const normalized = new Set(options.map((item) => normalizeReviewDecision(item)))
-  return normalized.has('approve') && normalized.has('request_changes')
+  const normalized = new Set(options.map((item) => normalizeReviewDecision(item)).filter(Boolean))
+  return normalized.size === 2 && normalized.has('approve') && normalized.has('request_changes')
 }
 
 function workflowDecisionLabel(value: string) {
   return value.replaceAll('_', ' ')
 }
 
-const workflowLinkPattern = /https?:\/\/[^\s<>"']+|\bdoc-\d{8}-[a-z0-9]+\b/gi
-const trailingURLPunctuationPattern = /[),.;:!?，。；：！？）】\]]+$/
 let docPreviewZIndexCounter = 90
 
 function nextDocPreviewZIndex() {
@@ -1280,35 +1280,58 @@ function normalizeWorkflowJSON(value: unknown): WorkflowStructuredJSON {
 }
 
 function WorkflowPlainText({ value }: { value: string }) {
-  const text = String(value ?? '')
-  const parts: ReactNode[] = []
-  let lastIndex = 0
-  for (const match of text.matchAll(workflowLinkPattern)) {
-    const raw = match[0]
-    const index = match.index ?? 0
-    if (index > lastIndex) {
-      parts.push(text.slice(lastIndex, index))
-    }
-    if (raw.startsWith('http://') || raw.startsWith('https://')) {
-      const { href, trailing } = splitURLTrailingPunctuation(raw)
-      parts.push(<ExternalURLLink key={`${href}-${index}`} href={href} />)
-      if (trailing) parts.push(trailing)
-    } else {
-      parts.push(<DocIDLink key={`${raw}-${index}`} docID={raw} />)
-    }
-    lastIndex = index + raw.length
-  }
-  if (lastIndex < text.length) {
-    parts.push(text.slice(lastIndex))
-  }
-  return <span className="whitespace-pre-wrap">{parts.length > 0 ? parts : text}</span>
+  const text = prepareWorkflowMarkdownValue(String(value ?? ''))
+  return (
+    <div className="prose prose-sm max-w-none text-neutral-800 prose-p:my-1.5 prose-ul:my-1.5 prose-ol:my-1.5 prose-li:my-0.5 prose-strong:text-neutral-900 dark:prose-invert dark:text-zinc-200 dark:prose-strong:text-zinc-100">
+      <ReactMarkdown remarkPlugins={[remarkGfm]} components={workflowValueMarkdownComponents}>{text}</ReactMarkdown>
+    </div>
+  )
 }
 
-function splitURLTrailingPunctuation(raw: string) {
-  const match = trailingURLPunctuationPattern.exec(raw)
-  if (!match) return { href: raw, trailing: '' }
-  const trailing = match[0]
-  return { href: raw.slice(0, -trailing.length), trailing }
+const workflowValueMarkdownComponents: Components = {
+  p: ({ children }) => <p className="whitespace-pre-wrap leading-relaxed">{children}</p>,
+  a: ({ href, children }) => {
+    const rawHref = String(href || '')
+    if (rawHref.startsWith('#doc-')) {
+      const docID = decodeURIComponent(rawHref.slice('#doc-'.length))
+      return <DocIDLink docID={docID} />
+    }
+    if (rawHref.startsWith('http://') || rawHref.startsWith('https://')) {
+      return (
+        <a
+          href={rawHref}
+          target="_blank"
+          rel="noreferrer"
+          className="font-medium text-sky-700 underline decoration-sky-300 underline-offset-2 hover:text-sky-800 dark:text-sky-400 dark:decoration-sky-700 dark:hover:text-sky-300"
+          onClick={(e) => e.stopPropagation()}
+        >
+          {children}
+        </a>
+      )
+    }
+    return <a href={rawHref}>{children}</a>
+  },
+  code: ({ children }) => <code className="rounded bg-neutral-100 px-1 py-0.5 text-[0.86em] text-neutral-700 dark:bg-zinc-800 dark:text-zinc-200">{children}</code>,
+}
+
+function prepareWorkflowMarkdownValue(value: string) {
+  return linkWorkflowDocIDs(formatWorkflowReadableText(unescapeBreaks(value)))
+}
+
+function formatWorkflowReadableText(value: string) {
+  return value
+    .replace(/([;；])\s*(?=\d+[)）])/g, '$1\n')
+    .replace(/([。.!?！？])\s*(?=\(\d+[)）]|\d+[)）])/g, '$1\n')
+    .replace(/([;；])\s*(?=[（(]\d+[)）])/g, '$1\n')
+    .replace(/([。.!?！？])\s*(?=[（(]\d+[)）])/g, '$1\n')
+}
+
+function linkWorkflowDocIDs(value: string) {
+  return value.replace(/\bdoc-\d{8}-[a-z0-9]+\b/gi, (docID, offset, fullText) => {
+    const previous = fullText.slice(Math.max(0, offset - 8), offset)
+    if (/]\($/.test(previous) || /https?:\/\/\S*$/i.test(previous)) return docID
+    return `[${docID}](#doc-${encodeURIComponent(docID)})`
+  })
 }
 
 function DocIDLink({ docID }: { docID: string }) {
@@ -1326,7 +1349,10 @@ function DocIDLink({ docID }: { docID: string }) {
   const dragRef = useRef({ active: false, startX: 0, startY: 0, originX: 0, originY: 0 })
   const resizeRef = useRef({ active: false, startX: 0, startY: 0, width: 768, height: 560 })
   const title = docTitles.get(docID)
-  const label = doc?.title || title || docID
+  const parsedDoc = useMemo(() => parseDocPreviewContent(doc?.content || '', docID), [doc?.content, docID])
+  const docMeta = parsedDoc.meta
+  const bodyContent = parsedDoc.body
+  const label = doc?.title || docMeta.title || title || docID
 
   const bringToFront = useCallback(() => {
     setZIndex(nextDocPreviewZIndex())
@@ -1445,8 +1471,8 @@ function DocIDLink({ docID }: { docID: string }) {
             }}
           >
             <div className="min-w-0">
-              <p className="font-mono text-[11px] uppercase tracking-wide text-neutral-400 dark:text-zinc-500">{docID}</p>
-              <h3 className="mt-1 truncate text-base font-semibold text-neutral-900 dark:text-zinc-100">{label}</h3>
+              <h3 className="truncate text-base font-semibold text-neutral-900 dark:text-zinc-100">{label}</h3>
+              <p className="mt-1 truncate font-mono text-[11px] text-neutral-400 dark:text-zinc-500">{docMeta.docId || docID}</p>
             </div>
             <div className="flex shrink-0 items-center gap-2">
               <a
@@ -1467,8 +1493,9 @@ function DocIDLink({ docID }: { docID: string }) {
             {err && <p className="text-sm text-red-600 dark:text-red-400">{err}</p>}
             {!loading && !err && (
               <div className="prose prose-sm max-w-none dark:prose-invert">
+                <DocPreviewMetaBar meta={docMeta} updatedAt={doc?.updatedAt} />
                 <div style={{ transform: `scale(${zoom})`, transformOrigin: 'top left', width: `${100 / zoom}%` }}>
-                  <ReactMarkdown remarkPlugins={[remarkGfm]}>{unescapeBreaks(doc?.content || '') || t('docs.emptyContent', { defaultValue: 'No content.' })}</ReactMarkdown>
+                  <ReactMarkdown remarkPlugins={[remarkGfm]}>{bodyContent || t('docs.emptyContent', { defaultValue: 'No content.' })}</ReactMarkdown>
                 </div>
               </div>
             )}
@@ -1506,6 +1533,104 @@ function DocIDLink({ docID }: { docID: string }) {
   )
 }
 
+function parseDocPreviewContent(content: string, fallbackDocID: string): { meta: DocPreviewMeta; body: string } {
+  const raw = unescapeBreaks(content || '').trimStart()
+  if (!raw) return { meta: { docId: fallbackDocID }, body: '' }
+
+  const frontmatter = /^---\s*\n([\s\S]*?)\n---\s*\n?/.exec(raw)
+  if (frontmatter) {
+    const meta = parseDocMetaLines(frontmatter[1].split(/\r?\n/), fallbackDocID)
+    return { meta, body: raw.slice(frontmatter[0].length).trimStart() }
+  }
+
+  const lines = raw.split(/\r?\n/)
+  const metaLines: string[] = []
+  let cursor = 0
+  for (; cursor < lines.length; cursor += 1) {
+    const line = lines[cursor]
+    const trimmed = line.trim()
+    if (!trimmed) {
+      if (metaLines.length > 0) {
+        cursor += 1
+        break
+      }
+      break
+    }
+    if (/^#{1,6}\s/.test(trimmed)) break
+    if (!/^(doc_id|docid|id|title|author|created_at|createdAt|tags)\s*:/i.test(trimmed)) break
+    metaLines.push(line)
+  }
+
+  if (metaLines.length === 0) return { meta: { docId: fallbackDocID }, body: raw }
+  const meta = parseDocMetaLines(metaLines, fallbackDocID)
+  const body = lines.slice(cursor).join('\n').trimStart()
+  return { meta, body }
+}
+
+function parseDocMetaLines(lines: string[], fallbackDocID: string): DocPreviewMeta {
+  const meta: DocPreviewMeta = { docId: fallbackDocID }
+  for (const line of lines) {
+    const match = /^\s*([A-Za-z_][\w-]*)\s*:\s*(.*?)\s*$/.exec(line)
+    if (!match) continue
+    const key = match[1].toLowerCase().replace(/_/g, '')
+    const value = match[2].trim().replace(/^["']|["']$/g, '')
+    if (!value) continue
+    if (key === 'docid' || key === 'id') meta.docId = value
+    if (key === 'title') meta.title = value
+    if (key === 'author') meta.author = value
+    if (key === 'createdat') meta.createdAt = value
+    if (key === 'tags') meta.tags = parseDocMetaTags(value)
+  }
+  return meta
+}
+
+function parseDocMetaTags(value: string): string[] {
+  const normalized = value.replace(/^\[/, '').replace(/\]$/, '')
+  return normalized
+    .split(/[,，]/)
+    .map((item) => item.trim().replace(/^["']|["']$/g, ''))
+    .filter(Boolean)
+}
+
+function DocPreviewMetaBar({ meta, updatedAt }: { meta: DocPreviewMeta; updatedAt?: string }) {
+  const { t } = useTranslation()
+  const items = [
+    meta.author ? { label: t('docs.meta.author', { defaultValue: '作者' }), value: meta.author } : null,
+    meta.createdAt ? { label: t('docs.meta.createdAt', { defaultValue: '创建时间' }), value: formatDocMetaDate(meta.createdAt) } : null,
+    !meta.createdAt && updatedAt ? { label: t('docs.meta.updatedAt', { defaultValue: '更新时间' }), value: formatDocMetaDate(updatedAt) } : null,
+  ].filter(Boolean) as Array<{ label: string; value: string }>
+
+  if (items.length === 0 && (!meta.tags || meta.tags.length === 0)) return null
+  return (
+    <div className="not-prose mb-5 rounded-lg border border-neutral-200/70 bg-neutral-50/70 px-3.5 py-2.5 text-xs text-neutral-500 dark:border-zinc-800 dark:bg-zinc-900/50 dark:text-zinc-400">
+      <div className="flex flex-wrap items-center gap-x-4 gap-y-2">
+        {items.map((item) => (
+          <span key={item.label} className="inline-flex items-center gap-1.5">
+            <span className="text-neutral-400 dark:text-zinc-500">{item.label}</span>
+            <span className="font-medium text-neutral-700 dark:text-zinc-200">{item.value}</span>
+          </span>
+        ))}
+        {meta.tags && meta.tags.length > 0 && (
+          <span className="inline-flex min-w-0 flex-wrap items-center gap-1.5">
+            <span className="text-neutral-400 dark:text-zinc-500">{t('docs.meta.tags', { defaultValue: '标签' })}</span>
+            {meta.tags.map((tag) => (
+              <span key={tag} className="rounded-full border border-neutral-200 bg-white px-2 py-0.5 text-[11px] text-neutral-600 dark:border-zinc-700 dark:bg-zinc-950 dark:text-zinc-300">
+                {tag}
+              </span>
+            ))}
+          </span>
+        )}
+      </div>
+    </div>
+  )
+}
+
+function formatDocMetaDate(value: string) {
+  const date = new Date(value)
+  if (Number.isNaN(date.getTime())) return value
+  return date.toLocaleString()
+}
+
 function DocPreviewSkeleton() {
   return (
     <div className="space-y-5">
@@ -1536,20 +1661,6 @@ function DocPreviewSkeleton() {
 
 function clampNumber(value: number, min: number, max: number) {
   return Math.min(max, Math.max(min, value))
-}
-
-function ExternalURLLink({ href }: { href: string }) {
-  return (
-    <a
-      href={href}
-      target="_blank"
-      rel="noreferrer"
-      className="font-medium text-sky-700 underline decoration-sky-300 underline-offset-2 hover:text-sky-800 dark:text-sky-400 dark:decoration-sky-700 dark:hover:text-sky-300"
-      onClick={(e) => e.stopPropagation()}
-    >
-      {href}
-    </a>
-  )
 }
 
 function WorkflowArtifact({ value, compact = false }: { value: string; compact?: boolean }) {

@@ -605,15 +605,49 @@ type runtimeReadinessResponse struct {
 }
 
 func buildRuntimeReadiness(meta *entity.AgentMeta) runtimeReadinessResponse {
-	return buildRuntimeReadinessWithOptions(meta, runtimeReadinessOptions{CheckContainer: true})
+	return buildRuntimeReadinessWithOptions(meta, runtimeReadinessOptions{ProbeRuntime: true, CheckContainer: true})
 }
 
 func buildRuntimeReadinessLight(meta *entity.AgentMeta) runtimeReadinessResponse {
-	return buildRuntimeReadinessWithOptions(meta, runtimeReadinessOptions{CheckContainer: false})
+	return buildRuntimeReadinessWithOptions(meta, runtimeReadinessOptions{ProbeRuntime: false, CheckContainer: false})
 }
 
 type runtimeReadinessOptions struct {
+	ProbeRuntime   bool
 	CheckContainer bool
+	DockerCache    *runtimeReadinessDockerCache
+}
+
+type runtimeReadinessDockerCache struct {
+	checked bool
+	err     error
+	images  map[string]bool
+}
+
+func (c *runtimeReadinessDockerCache) checkDocker() error {
+	if c == nil {
+		return sandbox.CheckDocker()
+	}
+	if !c.checked {
+		c.err = sandbox.CheckDocker()
+		c.checked = true
+	}
+	return c.err
+}
+
+func (c *runtimeReadinessDockerCache) imageAvailable(image string) bool {
+	if c == nil {
+		return sandbox.ImageAvailable(image)
+	}
+	if c.images == nil {
+		c.images = map[string]bool{}
+	}
+	if available, ok := c.images[image]; ok {
+		return available
+	}
+	available := sandbox.ImageAvailable(image)
+	c.images[image] = available
+	return available
 }
 
 func buildRuntimeReadinessWithOptions(meta *entity.AgentMeta, opts runtimeReadinessOptions) runtimeReadinessResponse {
@@ -636,7 +670,7 @@ func buildRuntimeReadinessWithOptions(meta *entity.AgentMeta, opts runtimeReadin
 				Key: "runtime_node", Label: "Runtime node", Status: "ok",
 				Detail: "Direct host execution on the assigned trusted runtime node.",
 			})
-		} else {
+		} else if opts.ProbeRuntime {
 			if !directHostExecutionEnabled() {
 				checks = append(checks, setupCheck{
 					Key:      "sandbox",
@@ -662,7 +696,7 @@ func buildRuntimeReadinessWithOptions(meta *entity.AgentMeta, opts runtimeReadin
 				})
 			}
 		}
-	} else if provider == entity.SandboxE2B {
+	} else if provider == entity.SandboxE2B && opts.ProbeRuntime {
 		caps := sandbox.DetectCapabilities()
 		if caps.E2B.Available {
 			checks = append(checks, setupCheck{Key: "sandbox", Label: "E2B", Status: "ok"})
@@ -677,10 +711,10 @@ func buildRuntimeReadinessWithOptions(meta *entity.AgentMeta, opts runtimeReadin
 
 	// 1. CLI tool check
 	cliName, installCmd := cliInfoForModel(model)
-	if cliName != "" {
+	if cliName != "" && opts.ProbeRuntime {
 		if isDocker {
 			image := sandbox.EffectiveImage(model, dockerSandboxConfig(meta))
-			if sandbox.ImageAvailable(image) {
+			if opts.DockerCache.imageAvailable(image) {
 				checks = append(checks, setupCheck{
 					Key: "cli", Label: cliName + " CLI", Status: "warning",
 					Detail: "Agent CLI toolchain is installed on first use unless prepared in advance. First run may spend several minutes installing it.",
@@ -706,14 +740,14 @@ func buildRuntimeReadinessWithOptions(meta *entity.AgentMeta, opts runtimeReadin
 	}
 
 	// 2. Docker check (if using docker sandbox)
-	if isDocker {
-		if err := sandbox.CheckDocker(); err == nil {
+	if isDocker && opts.ProbeRuntime {
+		if err := opts.DockerCache.checkDocker(); err == nil {
 			image := sandbox.EffectiveImage(model, dockerSandboxConfig(meta))
 			checks = append(checks, setupCheck{
 				Key: "docker", Label: "Docker", Status: "ok",
 				Detail: "Docker CLI: " + sandbox.DockerExecutable(),
 			})
-			if sandbox.ImageAvailable(image) {
+			if opts.DockerCache.imageAvailable(image) {
 				checks = append(checks, setupCheck{
 					Key: "runtime_image", Label: "Runtime image", Status: "ok",
 					Detail: image,
@@ -730,6 +764,25 @@ func buildRuntimeReadinessWithOptions(meta *entity.AgentMeta, opts runtimeReadin
 							Key: "runtime_container", Label: "Runtime container", Status: "ok",
 							Detail: "Container startup check passed.",
 						})
+						if apiURL := strings.TrimSpace(os.Getenv("MULTIGENT_API_URL")); apiURL != "" {
+							if err := sandbox.RuntimeAPIReachableFromContainer(image, apiURL, 4*time.Second); err != nil {
+								checks = append(checks, setupCheck{
+									Key:      "runtime_api",
+									Label:    "Runtime API",
+									Status:   "error",
+									Blocking: true,
+									Detail:   err.Error(),
+									Action:   "Start Multigent with --addr 0.0.0.0:<port>, or set MULTIGENT_API_URL to an address reachable from Docker.",
+								})
+							} else {
+								checks = append(checks, setupCheck{
+									Key:    "runtime_api",
+									Label:  "Runtime API",
+									Status: "ok",
+									Detail: "Container callback check passed.",
+								})
+							}
+						}
 					}
 				}
 			} else {
@@ -749,9 +802,11 @@ func buildRuntimeReadinessWithOptions(meta *entity.AgentMeta, opts runtimeReadin
 	}
 
 	// 3. Auth / credential check
-	authCheck := checkAuthForModel(model, isDocker)
-	if authCheck != nil {
-		checks = append(checks, *authCheck)
+	if opts.ProbeRuntime {
+		authCheck := checkAuthForModel(model, isDocker)
+		if authCheck != nil {
+			checks = append(checks, *authCheck)
+		}
 	}
 
 	// 4. Model account check. Multigent is a control-plane product: runnable

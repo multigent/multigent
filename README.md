@@ -220,8 +220,12 @@ project-specific compilers belong in custom runtime images or templates.
 The production-style command serves the API and embedded frontend from one binary:
 
 ```bash
-multigent --dir ./data start --addr 127.0.0.1:27892 --open
+multigent --dir ./data start --addr 0.0.0.0:27892 --open
 ```
+
+Open the UI at `http://127.0.0.1:27892`. The `0.0.0.0` listen address lets
+Docker sandbox agents call back into the local Runtime API through
+`host.docker.internal`.
 
 For frontend development with Vite hot reload:
 
@@ -318,7 +322,7 @@ Useful commands:
 ./dist/multigent --dir ./data api serve --addr 127.0.0.1:27893
 
 # Start API + embedded web
-./dist/multigent --dir ./data start --addr 127.0.0.1:27892
+./dist/multigent --dir ./data start --addr 0.0.0.0:27892
 
 # Inspect worker/runtime configuration
 ./dist/multigent worker inspect

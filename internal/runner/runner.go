@@ -39,6 +39,7 @@ import (
 	"github.com/multigent/multigent/internal/runtimeauth"
 	"github.com/multigent/multigent/internal/runtimecli"
 	"github.com/multigent/multigent/internal/runtimeguide"
+	"github.com/multigent/multigent/internal/sandbox"
 	"github.com/multigent/multigent/internal/store"
 	"github.com/multigent/multigent/internal/taskstore"
 	"github.com/multigent/multigent/internal/telemetry"
@@ -88,7 +89,7 @@ If a regular task cannot be completed, run:
 For a workflow task, do not complete the whole task directly. Complete only the current step with:
   mga task step done --id %s --status success --output <field>=<value>
 
-Important: do not use Claude Code built-in Task, TaskUpdate, or Todo tools to update Multigent task/workflow state. They are model-local planning tools and do not change Multigent records. Use mga task ... only.
+Important: do not use Claude Code built-in Task, TaskCreate, TaskUpdate, TaskOutput, TaskStop, or Todo tools to update Multigent task/workflow state. They are model-local planning tools and do not change Multigent records. Use mga task ... only.
 `
 
 // Runner executes tasks for agents using their configured CLI.
@@ -190,7 +191,7 @@ func (r *Runner) ExecPromptWithRuntimeControlEnvContext(ctx context.Context, pro
 		}
 		runtimeCfg := cloneRuntimeCfg(meta.Sandbox)
 		agentCLI := agentcli.Effective(model, runtimeCfg.AgentCLI)
-		processRuntimeEnv := runtimeControlEnvForProvider(runtimeEnv, meta.Sandbox.Provider)
+		processRuntimeEnv := runtimeControlEnvForProvider(runtimeEnv, meta.Sandbox.Provider, agentDir)
 		effectiveEnv = mergeEnv(effectiveEnv, processRuntimeEnv)
 		injectProviderEnvIntoRuntime(runtimeCfg, agentEnv)
 		injectRuntimeControlEnvIntoRuntime(runtimeCfg, processRuntimeEnv)
@@ -409,7 +410,7 @@ func (r *Runner) RunTaskWithContext(ctx context.Context, project, agentName stri
 
 		runtimeCfg := cloneRuntimeCfg(meta.Sandbox)
 		agentCLI := agentcli.Effective(model, runtimeCfg.AgentCLI)
-		processRuntimeEnv := runtimeControlEnvForProvider(runtimeEnv, meta.Sandbox.Provider)
+		processRuntimeEnv := runtimeControlEnvForProvider(runtimeEnv, meta.Sandbox.Provider, agentDir)
 		effectiveEnv = mergeEnv(effectiveEnv, processRuntimeEnv)
 		injectProviderEnvIntoRuntime(runtimeCfg, agentEnv)
 		injectRuntimeControlEnvIntoRuntime(runtimeCfg, processRuntimeEnv)
@@ -659,6 +660,7 @@ func (r *Runner) workflowPromptContext(project, agentName, taskID string) string
 	}
 	b.WriteString("Instructions:\n")
 	b.WriteString("- Treat the current step as the workflow contract for this task.\n")
+	b.WriteString("- Do not use Claude Code built-in Task, TaskCreate, TaskUpdate, TaskOutput, TaskStop, Todo, or TodoWrite tools for workflow state changes or planning. They do not advance this Multigent workflow.\n")
 	b.WriteString("- Do not stop after asking the user a clarifying question in natural language. Workflow execution must end with an explicit Multigent state change.\n")
 	b.WriteString("- If the step description is incomplete but the inputs and previous outputs are enough to make reasonable assumptions, state those assumptions in the output and continue.\n")
 	b.WriteString("- Finish workflow steps with structured outputs using `mga task step done --id ")
@@ -675,6 +677,9 @@ func (r *Runner) workflowPromptContext(project, agentName, taskID string) string
 	b.WriteString("- To inspect the task record, run `mga task show ")
 	b.WriteString(taskID)
 	b.WriteString("`.\n")
+	b.WriteString("- For GitHub repository reads and writes, prefer `mga runtime action --connection github ...` so credentials, rate limits, and audit logs stay inside Multigent-managed connections.\n")
+	b.WriteString("- Do not fetch GitHub repository content from raw.githubusercontent.com in workflow runs; use GitHub API/connection actions or a checked-out repository instead.\n")
+	b.WriteString("- Every network shell command must have a bounded timeout, for example `timeout 30s ...`. If a dependency is slow or unavailable, fail the step with a clear error instead of hanging.\n")
 	return b.String()
 }
 
@@ -2752,7 +2757,7 @@ func normalizeRuntimeAPIURL(value string) string {
 	return "http://" + strings.TrimRight(value, "/")
 }
 
-func runtimeControlEnvForProvider(env map[string]string, provider entity.SandboxProvider) map[string]string {
+func runtimeControlEnvForProvider(env map[string]string, provider entity.SandboxProvider, agentDir string) map[string]string {
 	if len(env) == 0 {
 		return env
 	}
@@ -2761,37 +2766,76 @@ func runtimeControlEnvForProvider(env map[string]string, provider entity.Sandbox
 	}
 	out := make(map[string]string, len(env))
 	for k, v := range env {
-		out[k] = v
+		out[k] = dockerRuntimeEnvValue(agentDir, k, v)
 	}
-	if apiURL := dockerReachableRuntimeAPIURL(env["MULTIGENT_API_URL"]); apiURL != "" {
+	if apiURL := sandbox.DockerReachableRuntimeAPIURL(env["MULTIGENT_API_URL"]); apiURL != "" {
 		out["MULTIGENT_API_URL"] = apiURL
 	}
 	return out
 }
 
-func dockerReachableRuntimeAPIURL(raw string) string {
-	raw = strings.TrimSpace(raw)
-	if raw == "" {
-		return ""
+func dockerRuntimeEnvValue(agentDir, key, value string) string {
+	if value == "" || !dockerRuntimePathEnvKey(key) {
+		return value
 	}
-	u, err := url.Parse(raw)
-	if err != nil || u.Scheme == "" || u.Host == "" {
-		return ""
+	agentDir = strings.TrimSpace(agentDir)
+	if agentDir == "" {
+		return value
 	}
-	host := u.Hostname()
-	if host != "127.0.0.1" && host != "localhost" && host != "::1" {
-		return strings.TrimRight(raw, "/")
+	absAgentDir, err := filepath.Abs(agentDir)
+	if err != nil {
+		absAgentDir = agentDir
 	}
-	port := u.Port()
-	if port == "" {
-		if u.Scheme == "https" {
-			port = "443"
-		} else {
-			port = "80"
+	for _, root := range uniqueNonEmptyStrings(filepath.Clean(absAgentDir), filepath.Clean(agentDir)) {
+		if root == "." || root == string(filepath.Separator) {
+			continue
 		}
+		value = strings.ReplaceAll(value, root, sandbox.WorkspaceMount)
 	}
-	u.Host = net.JoinHostPort("host.docker.internal", port)
-	return strings.TrimRight(u.String(), "/")
+	return value
+}
+
+func dockerRuntimePathEnvKey(key string) bool {
+	switch key {
+	case runtimeConnectionsFileEnv,
+		runtimeToolsFileEnv,
+		runtimeToolDirEnv,
+		runtimeToolBinDirEnv,
+		runtimeToolCacheBinDirEnv,
+		runtimeToolBootstrapEnv,
+		runtimeToolSkillsFileEnv,
+		runtimeToolCLIAuditEnv,
+		"PATH",
+		"GH_CONFIG_DIR",
+		"MULTIGENT_SSH_KEY_FILE",
+		"MULTIGENT_GIT_SSH_KEY_FILE",
+		"GIT_SSH_COMMAND",
+		"GIT_CONFIG_GLOBAL",
+		"NPM_CONFIG_USERCONFIG",
+		"DOCKER_CONFIG",
+		"AWS_SHARED_CREDENTIALS_FILE",
+		"AWS_CONFIG_FILE",
+		"GOOGLE_APPLICATION_CREDENTIALS",
+		"CLOUDSDK_AUTH_CREDENTIAL_FILE_OVERRIDE",
+		"MULTIGENT_LARK_HOME":
+		return true
+	default:
+		return false
+	}
+}
+
+func uniqueNonEmptyStrings(values ...string) []string {
+	seen := map[string]bool{}
+	var out []string
+	for _, value := range values {
+		value = strings.TrimSpace(value)
+		if value == "" || seen[value] {
+			continue
+		}
+		seen[value] = true
+		out = append(out, value)
+	}
+	return out
 }
 
 func resolveRuntimeWorkspaceID(root string, controlDB controldb.Store) string {

@@ -3,7 +3,7 @@ import { QRCodeSVG } from 'qrcode.react'
 import { X } from 'lucide-react'
 import { useSearchParams } from 'react-router-dom'
 import { useTranslation } from 'react-i18next'
-import { apiDelete, apiFetch, apiPost, apiPut } from '../lib/api'
+import { apiDelete, apiFetch, apiPost } from '../lib/api'
 import { useAuth } from '../lib/auth'
 import { cn } from '../lib/cn'
 import { confirmDialog } from '../components/ui/ConfirmDialog'
@@ -58,6 +58,7 @@ type ConnectionProfileSummary = {
   }
 }
 type ConnectionTestResult = { ok: boolean; status: number; message: string }
+type CustomMCPToolGroup = { key: string; displayName: string; description?: string; serverUrl?: string; connections: Connection[] }
 type OAuthAuthorizationStart = { authorizationUrl: string; state: string }
 type DeviceSetupBegin = { deviceCode: string; qrUrl: string; userCode?: string; interval?: number; expiresIn?: number; baseUrl?: string }
 type DeviceSetupPoll = { status: string; stage?: string; deviceCode?: string; qrUrl?: string; userCode?: string; interval?: number; expiresIn?: number; baseUrl?: string; slowDown?: boolean; error?: string; connection?: Connection }
@@ -81,6 +82,7 @@ const inputCls = 'w-full rounded-lg border border-neutral-200 bg-white px-3 py-2
 const selectCls = 'w-full rounded-lg border border-neutral-200 bg-white px-3 py-2 text-sm outline-none focus:border-sky-400 dark:border-zinc-700 dark:bg-zinc-950 dark:text-zinc-100 dark:[color-scheme:dark]'
 const customMCPProviderID = 'custom-mcp'
 const customMCPCategory = 'Custom MCP Tools'
+const maskedSecretValue = '••••••••'
 
 export default function ConnectionsPage() {
   const { t } = useTranslation()
@@ -92,7 +94,10 @@ export default function ConnectionsPage() {
   const [connections, setConnections] = useState<Connection[]>([])
   const [loading, setLoading] = useState(true)
   const [creatingProvider, setCreatingProvider] = useState<string | null>(null)
+  const [creatingCustomMCPDefaults, setCreatingCustomMCPDefaults] = useState<{ toolName?: string; serverUrl?: string } | null>(null)
   const [editing, setEditing] = useState<Connection | null>(null)
+  const [managingProvider, setManagingProvider] = useState<string | null>(null)
+  const [managingCustomMCPTool, setManagingCustomMCPTool] = useState<CustomMCPToolGroup | null>(null)
   const [testResults, setTestResults] = useState<Record<string, { loading?: boolean; ok?: boolean; message?: string }>>({})
   const [oauthMessage, setOauthMessage] = useState<{ kind: 'success' | 'error'; text: string } | null>(null)
   const [installingConnection, setInstallingConnection] = useState<Connection | null>(null)
@@ -185,11 +190,14 @@ export default function ConnectionsPage() {
   const customMCPConnections = connections
     .filter(connection => connection.provider === customMCPProviderID)
     .sort((a, b) => (b.updatedAt || b.createdAt).localeCompare(a.updatedAt || a.createdAt))
-  const filteredCustomMCPConnections = useMemo(() => {
+  const customMCPToolGroups = useMemo(() => (
+    customMCPProvider ? customMCPToolGroupsForConnections(customMCPProvider, customMCPConnections, t) : []
+  ), [customMCPProvider, customMCPConnections, t])
+  const filteredCustomMCPToolGroups = useMemo(() => {
     const query = normalizeToolSearch(toolSearch)
-    if (!customMCPProvider || !query) return customMCPConnections
-    return customMCPConnections.filter(connection => customMCPConnectionMatchesSearch(customMCPProvider, connection, query, t))
-  }, [customMCPProvider, customMCPConnections, toolSearch, t])
+    if (!query) return customMCPToolGroups
+    return customMCPToolGroups.filter(group => customMCPToolGroupMatchesSearch(group, query))
+  }, [customMCPToolGroups, toolSearch])
 
   const categoryOptions = useMemo(() => {
     const categories = new Set<string>()
@@ -208,7 +216,7 @@ export default function ConnectionsPage() {
       const category = provider.category || 'Other Tools'
       if (categoryFilter !== 'all' && category !== categoryFilter) continue
       if (query && !providerMatchesSearch(provider, query, t)) continue
-      const connected = !!primaryConnectionForProvider(connections, provider.provider)
+      const connected = connectionsForProvider(connections, provider.provider).length > 0
       if (statusFilter === 'configured' && !connected) continue
       if (statusFilter === 'not_configured' && connected) continue
       groups.set(category, [...(groups.get(category) ?? []), provider])
@@ -218,15 +226,34 @@ export default function ConnectionsPage() {
       .map(([category, items]) => [category, items.sort((a, b) => a.displayName.localeCompare(b.displayName))] as const)
   }, [providers, connections, statusFilter, categoryFilter, toolSearch, t])
   const showCustomMCPConnections = !!customMCPProvider
-    && filteredCustomMCPConnections.length > 0
-    && statusFilter !== 'not_configured'
+    && filteredCustomMCPToolGroups.length > 0
     && (categoryFilter === 'all' || categoryFilter === customMCPCategory)
+    && (
+      statusFilter === 'all'
+      || (statusFilter === 'configured' && customMCPToolGroups.length > 0)
+      || (statusFilter === 'not_configured' && customMCPToolGroups.length === 0)
+    )
   const hasFilteredTools = showCustomMCPConnections || filteredProvidersByCategory.length > 0
 
   function resetFilters() {
     setStatusFilter('all')
     setCategoryFilter('all')
     setToolSearch('')
+  }
+
+  if (!loading && !isWorkspaceAdmin) {
+    return (
+      <div className="animate-fade-in px-8 py-6">
+        <div className="pb-5">
+          <h1 className="text-xl font-semibold text-neutral-900 dark:text-zinc-100">{t('connections.title')}</h1>
+          <p className="mt-0.5 text-sm text-neutral-500 dark:text-zinc-500">{t('connections.adminOnlyHint')}</p>
+        </div>
+        <div className="rounded-xl border border-dashed border-neutral-200 bg-white px-6 py-12 text-center dark:border-zinc-700 dark:bg-zinc-900/40">
+          <p className="text-sm font-medium text-neutral-700 dark:text-zinc-200">{t('connections.adminOnlyTitle')}</p>
+          <p className="mx-auto mt-2 max-w-xl text-sm leading-6 text-neutral-500 dark:text-zinc-400">{t('connections.adminOnlyDescription')}</p>
+        </div>
+      </div>
+    )
   }
 
   return (
@@ -237,7 +264,7 @@ export default function ConnectionsPage() {
           <p className="mt-0.5 text-sm text-neutral-500 dark:text-zinc-500">{t('connections.subtitle')}</p>
         </div>
         {customMCPProvider && isWorkspaceAdmin && (
-          <button type="button" onClick={() => setCreatingProvider(customMCPProviderID)} className={primaryOutlineButton}>
+          <button type="button" onClick={() => { setCreatingCustomMCPDefaults(null); setCreatingProvider(customMCPProviderID) }} className={primaryOutlineButton}>
             {t('connections.newMCPTool')}
           </button>
         )}
@@ -299,18 +326,18 @@ export default function ConnectionsPage() {
             <section>
               <div className="mb-3 flex items-center justify-between">
                 <h2 className="text-sm font-semibold text-neutral-900 dark:text-zinc-100">{t('connections.customMCPTools')}</h2>
-                <span className="text-xs text-neutral-400 dark:text-zinc-500">{t('connections.toolCount', { count: filteredCustomMCPConnections.length })}</span>
+                <span className="text-xs text-neutral-400 dark:text-zinc-500">{t('connections.toolCount', { count: filteredCustomMCPToolGroups.length })}</span>
               </div>
               <div className="grid gap-4 xl:grid-cols-2">
-                {filteredCustomMCPConnections.map(connection => (
+                {filteredCustomMCPToolGroups.map(group => (
                   <ExternalToolCard
-                    key={connection.id}
-                    provider={providerForCustomMCPConnection(customMCPProvider, connection)}
-                    connection={connection}
+                    key={group.key}
+                    provider={providerForCustomMCPToolGroup(customMCPProvider, group)}
+                    connections={group.connections}
                     isWorkspaceAdmin={isWorkspaceAdmin}
                     testResults={testResults}
-                    onConfigure={() => setCreatingProvider(customMCPProviderID)}
-                    onEdit={setEditing}
+                    onConfigure={() => { setCreatingCustomMCPDefaults(null); setCreatingProvider(customMCPProviderID) }}
+                    onManage={() => setManagingCustomMCPTool(group)}
                   />
                 ))}
               </div>
@@ -327,12 +354,12 @@ export default function ConnectionsPage() {
               <ExternalToolCard
                     key={provider.provider}
                     provider={provider}
-                    connection={primaryConnectionForProvider(connections, provider.provider)}
+                    connections={connectionsForProvider(connections, provider.provider)}
                     oauthConfig={oauthConfigs.find(config => config.provider === provider.provider)}
                     isWorkspaceAdmin={isWorkspaceAdmin}
                     testResults={testResults}
                     onConfigure={() => setCreatingProvider(provider.provider)}
-                    onEdit={setEditing}
+                    onManage={() => setManagingProvider(provider.provider)}
                   />
                 ))}
               </div>
@@ -355,8 +382,41 @@ export default function ConnectionsPage() {
           oauthConfigs={oauthConfigs}
           isWorkspaceAdmin={isWorkspaceAdmin}
           fixedProviderId={creatingProvider}
+          initialCustomMCPTool={creatingProvider === customMCPProviderID ? creatingCustomMCPDefaults ?? undefined : undefined}
           onClose={() => setCreatingProvider(null)}
-          onCreated={() => { setCreatingProvider(null); setReloadKey(k => k + 1) }}
+          onCreated={() => { setCreatingProvider(null); setCreatingCustomMCPDefaults(null); setReloadKey(k => k + 1) }}
+        />
+      )}
+      {managingProvider && (
+        <ProviderConnectionsDialog
+          provider={providers.find(provider => provider.provider === managingProvider)}
+          connections={connectionsForProvider(connections, managingProvider)}
+          testResults={testResults}
+          isWorkspaceAdmin={isWorkspaceAdmin}
+          onClose={() => setManagingProvider(null)}
+          onCreate={() => { setManagingProvider(null); setCreatingProvider(managingProvider) }}
+          onOpenConnection={setEditing}
+          onTest={connection => void testConnection(connection)}
+          onDelete={connection => void removeConnection(connection)}
+          onInstallToProject={connection => { setManagingProvider(null); setInstallingConnection(connection) }}
+        />
+      )}
+      {managingCustomMCPTool && customMCPProvider && (
+        <ProviderConnectionsDialog
+          provider={providerForCustomMCPToolGroup(customMCPProvider, managingCustomMCPTool)}
+          connections={managingCustomMCPTool.connections}
+          testResults={testResults}
+          isWorkspaceAdmin={isWorkspaceAdmin}
+          onClose={() => setManagingCustomMCPTool(null)}
+          onCreate={() => {
+            setCreatingCustomMCPDefaults({ toolName: managingCustomMCPTool.displayName, serverUrl: managingCustomMCPTool.serverUrl })
+            setManagingCustomMCPTool(null)
+            setCreatingProvider(customMCPProviderID)
+          }}
+          onOpenConnection={setEditing}
+          onTest={connection => void testConnection(connection)}
+          onDelete={connection => void removeConnection(connection)}
+          onInstallToProject={connection => { setManagingCustomMCPTool(null); setInstallingConnection(connection) }}
         />
       )}
       {editing && (
@@ -403,36 +463,39 @@ export default function ConnectionsPage() {
 
 function ExternalToolCard({
   provider,
-  connection,
+  connections,
   oauthConfig,
   isWorkspaceAdmin,
   testResults,
   onConfigure,
-  onEdit,
+  onManage,
 }: {
   provider: Provider
-  connection?: Connection
+  connections: Connection[]
   oauthConfig?: OAuthClientConfig
   isWorkspaceAdmin: boolean
   testResults: Record<string, { loading?: boolean; ok?: boolean; message?: string }>
   onConfigure: () => void
-  onEdit: (connection: Connection) => void
+  onManage: () => void
 }) {
   const { t } = useTranslation()
   const fmtDateTime = useFormatDateTime()
-  const latestValidation = connection ? connectionValidation(connection, fmtDateTime) : null
+  const primaryConnection = connections[0]
+  const latestValidation = primaryConnection ? connectionValidation(primaryConnection, fmtDateTime) : null
   const oauthSupported = provider.authTypes.includes('oauth2')
   const staticAuthTypes = provider.authTypes.filter(type => type !== 'oauth2')
   const oauthAvailable = oauthSupported && oauthConfig?.configured === true
   const canConfigure = isWorkspaceAdmin && !provider.comingSoon && (staticAuthTypes.length > 0 || oauthAvailable)
-  const canManageConnection = Boolean(connection && isWorkspaceAdmin)
+  const canManageConnection = isWorkspaceAdmin && connections.length > 0
+  const showStats = provider.provider !== customMCPProviderID
   const statusLabel = provider.comingSoon
     ? t('connections.comingSoon')
-    : connection
-      ? t('connections.configured')
+    : connections.length > 0
+      ? t('connections.connectionCountValue', { count: connections.length })
       : oauthSupported && staticAuthTypes.length === 0 && !oauthAvailable
         ? t('connections.adminSetupRequired')
         : t('connections.notConfigured')
+  const totalGrants = connections.reduce((sum, item) => sum + (item.grants?.length ?? 0), 0)
   return (
     <section className="rounded-xl border border-neutral-200/80 bg-white p-5 dark:border-zinc-700/60 dark:bg-zinc-900/40">
       <div className="flex items-start justify-between gap-4">
@@ -445,7 +508,7 @@ function ExternalToolCard({
                 'rounded-full px-2 py-0.5 text-[11px] font-medium',
                 provider.comingSoon
                   ? 'bg-neutral-100 text-neutral-500 dark:bg-zinc-800 dark:text-zinc-400'
-                  : connection
+                  : connections.length > 0
                     ? 'bg-emerald-100 text-emerald-700 dark:bg-emerald-900/30 dark:text-emerald-300'
                     : 'bg-amber-100 text-amber-700 dark:bg-amber-900/30 dark:text-amber-300',
               )}>
@@ -455,17 +518,19 @@ function ExternalToolCard({
             <p className="mt-2 line-clamp-2 text-sm text-neutral-500 dark:text-zinc-400">{providerDescription(provider, t)}</p>
           </div>
         </div>
-        {(canManageConnection || (!connection && canConfigure)) && (
-          <button type="button" onClick={() => connection ? onEdit(connection) : onConfigure()} className={cn(primaryOutlineButton, 'shrink-0 justify-center')}>
-            {connection ? t('connections.manageConnection') : t('connections.configureTool')}
+        {(canManageConnection || (connections.length === 0 && canConfigure)) && (
+          <button type="button" onClick={() => connections.length > 0 ? onManage() : onConfigure()} className={cn(primaryOutlineButton, 'shrink-0 justify-center')}>
+            {connections.length > 0 ? t('connections.manageConnection') : t('connections.configureTool')}
           </button>
         )}
       </div>
-      <div className="mt-4 grid gap-3 sm:grid-cols-3">
-        <ToolStat label={t('connections.authMethods')} value={formatAuthTypes(provider.authTypes, oauthAvailable, isWorkspaceAdmin, t)} />
-        <ToolStat label={t('connections.credentials')} value={connection ? t('connections.connected') : t('connections.notConfigured')} />
-        <ToolStat label={t('connections.actions')} value={provider.provider === customMCPProviderID ? 'MCP' : String(provider.actions?.length ?? 0)} />
-      </div>
+      {showStats && (
+        <div className="mt-4 grid gap-3 sm:grid-cols-3">
+          <ToolStat label={t('connections.authMethods')} value={formatAuthTypes(provider.authTypes, oauthAvailable, isWorkspaceAdmin, t)} />
+          <ToolStat label={t('connections.connectionInstances')} value={String(connections.length)} />
+          <ToolStat label={t('connections.grants')} value={String(totalGrants)} />
+        </div>
+      )}
       <div className="mt-4 flex flex-wrap items-center gap-2 text-xs text-neutral-400 dark:text-zinc-500">
         {oauthSupported && oauthAvailable && (
           <span>{t('connections.oauthEnabled')}</span>
@@ -474,12 +539,106 @@ function ExternalToolCard({
           <span>{latestValidation.ok ? t('connections.healthy') : t('connections.failed')} · {latestValidation.atLabel}</span>
         )}
       </div>
-      {connection && testResults[connection.id]?.message && (
-        <p className={cn('mt-3 truncate text-xs', testResults[connection.id]?.ok ? 'text-emerald-600 dark:text-emerald-300' : 'text-red-600 dark:text-red-300')}>
-          {testResults[connection.id]?.message}
+      {primaryConnection && testResults[primaryConnection.id]?.message && (
+        <p className={cn('mt-3 truncate text-xs', testResults[primaryConnection.id]?.ok ? 'text-emerald-600 dark:text-emerald-300' : 'text-red-600 dark:text-red-300')}>
+          {testResults[primaryConnection.id]?.message}
         </p>
       )}
     </section>
+  )
+}
+
+function ProviderConnectionsDialog({
+  provider,
+  connections,
+  testResults,
+  isWorkspaceAdmin,
+  onClose,
+  onCreate,
+  onOpenConnection,
+  onTest,
+  onDelete,
+  onInstallToProject,
+}: {
+  provider?: Provider
+  connections: Connection[]
+  testResults: Record<string, { loading?: boolean; ok?: boolean; message?: string }>
+  isWorkspaceAdmin: boolean
+  onClose: () => void
+  onCreate: () => void
+  onOpenConnection: (connection: Connection) => void
+  onTest: (connection: Connection) => void
+  onDelete: (connection: Connection) => void
+  onInstallToProject: (connection: Connection) => void
+}) {
+  const { t } = useTranslation()
+  const fmtDateTime = useFormatDateTime()
+  if (!provider) return null
+  return (
+    <Modal title={t('connections.manageProviderConnections', { name: provider.displayName })} onClose={onClose}>
+      <div className="space-y-4">
+        <div className="flex items-start justify-between gap-3">
+          <div className="min-w-0">
+            <p className="text-sm text-neutral-500 dark:text-zinc-400">{providerDescription(provider, t)}</p>
+            <p className="mt-1 text-xs text-neutral-400 dark:text-zinc-500">{t('connections.providerConnectionPolicyHint')}</p>
+          </div>
+          {isWorkspaceAdmin && (
+            <button type="button" onClick={onCreate} className={cn(primaryOutlineButton, 'shrink-0 justify-center')}>
+              {t('connections.newConnection')}
+            </button>
+          )}
+        </div>
+        {connections.length === 0 ? (
+          <div className="rounded-xl border border-dashed border-neutral-200 px-4 py-8 text-center dark:border-zinc-700">
+            <p className="text-sm font-medium text-neutral-700 dark:text-zinc-200">{t('connections.noConnections')}</p>
+            <p className="mt-1 text-sm text-neutral-500 dark:text-zinc-400">{t('connections.noConnectionsHint')}</p>
+          </div>
+        ) : (
+          <div className="space-y-3">
+            {connections.map(connection => {
+              const testState = testResults[connection.id]
+              const validation = connectionValidation(connection, fmtDateTime)
+              return (
+                <div key={connection.id} className="rounded-xl border border-neutral-200 bg-white p-4 dark:border-zinc-700 dark:bg-zinc-900/40">
+                  <div className="flex flex-wrap items-start justify-between gap-3">
+                    <div className="min-w-0">
+                      <div className="flex flex-wrap items-center gap-2">
+                        <p className="truncate text-sm font-semibold text-neutral-900 dark:text-zinc-100">{connectionDisplayName(connection, t)}</p>
+                        <span className={cn(
+                          'rounded-full px-2 py-0.5 text-[11px] font-medium',
+                          connection.status === 'active'
+                            ? 'bg-emerald-100 text-emerald-700 dark:bg-emerald-900/30 dark:text-emerald-300'
+                            : 'bg-neutral-100 text-neutral-500 dark:bg-zinc-800 dark:text-zinc-400',
+                        )}>
+                          {connectionStatusLabel(connection.status, t)}
+                        </span>
+                      </div>
+                      <p className="mt-1 text-xs text-neutral-400 dark:text-zinc-500">
+                        {authTypeLabel(connection.authType, t)} · {t('connections.grantCountValue', { count: connection.grants?.length ?? 0 })}
+                        {validation ? ` · ${validation.ok ? t('connections.healthy') : t('connections.failed')} ${validation.atLabel}` : ''}
+                      </p>
+                      {testState?.message && (
+                        <p className={cn('mt-2 truncate text-xs', testState.ok ? 'text-emerald-600 dark:text-emerald-300' : 'text-red-600 dark:text-red-300')}>
+                          {testState.message}
+                        </p>
+                      )}
+                    </div>
+                    <div className="flex flex-wrap justify-end gap-2">
+                      <button type="button" onClick={() => onOpenConnection(connection)} className="rounded-lg border border-neutral-300 px-3 py-2 text-sm font-medium text-neutral-700 hover:bg-neutral-50 dark:border-zinc-600 dark:text-zinc-200 dark:hover:bg-zinc-800">{t('connections.details')}</button>
+                      {connection.ownerType === 'workspace' && (
+                        <button type="button" onClick={() => onInstallToProject(connection)} className="rounded-lg border border-neutral-300 px-3 py-2 text-sm font-medium text-neutral-700 hover:bg-neutral-50 dark:border-zinc-600 dark:text-zinc-200 dark:hover:bg-zinc-800">{t('connections.installToProject')}</button>
+                      )}
+                      <button type="button" onClick={() => onTest(connection)} disabled={testState?.loading} className="rounded-lg border border-neutral-300 px-3 py-2 text-sm font-medium text-neutral-700 hover:bg-neutral-50 disabled:opacity-50 dark:border-zinc-600 dark:text-zinc-200 dark:hover:bg-zinc-800">{testState?.loading ? t('common.loading') : t('connections.test')}</button>
+                      <button type="button" onClick={() => onDelete(connection)} className="rounded-lg border border-red-200 px-3 py-2 text-sm font-medium text-red-600 hover:bg-red-50 dark:border-red-900/60 dark:text-red-300 dark:hover:bg-red-900/20">{t('common.delete')}</button>
+                    </div>
+                  </div>
+                </div>
+              )
+            })}
+          </div>
+        )}
+      </div>
+    </Modal>
   )
 }
 
@@ -613,26 +772,55 @@ function providerMatchesSearch(provider: Provider, query: string, t: TFn): boole
   return haystack.includes(query)
 }
 
-function customMCPConnectionMatchesSearch(provider: Provider, connection: Connection, query: string, t: TFn): boolean {
-  if (!query) return true
-  return providerMatchesSearch(providerForCustomMCPConnection(provider, connection), query, t)
-    || [
-      connection.connectionName,
-      connection.provider,
-      connection.ownerType,
-      connection.ownerId || '',
-    ].join(' ').toLowerCase().includes(query)
+function customMCPToolGroupsForConnections(provider: Provider, connections: Connection[], t: TFn): CustomMCPToolGroup[] {
+  const groups = new Map<string, CustomMCPToolGroup>()
+  for (const connection of connections) {
+    const profile = connection.profile ?? {}
+    const serverUrl = customMCPServerURL(connection)
+    const displayName = customMCPToolDisplayName(provider, connection)
+    const key = serverUrl ? `url:${serverUrl}` : `name:${displayName.toLowerCase()}`
+    const description = typeof profile.description === 'string' && profile.description.trim()
+      ? profile.description.trim()
+      : provider.description
+    const existing = groups.get(key)
+    if (existing) {
+      existing.connections.push(connection)
+      continue
+    }
+    groups.set(key, { key, displayName: displayName || t('connections.customMCPTools'), description, serverUrl, connections: [connection] })
+  }
+  return Array.from(groups.values()).sort((a, b) => a.displayName.localeCompare(b.displayName))
 }
 
-function providerForCustomMCPConnection(provider: Provider, connection: Connection): Provider {
+function providerForCustomMCPToolGroup(provider: Provider, group: CustomMCPToolGroup): Provider {
+  return {
+    ...provider,
+    displayName: group.displayName || provider.displayName,
+    description: group.description || provider.description,
+  }
+}
+
+function customMCPToolGroupMatchesSearch(group: CustomMCPToolGroup, query: string): boolean {
+  return [
+    group.displayName,
+    group.description || '',
+    group.serverUrl || '',
+    ...group.connections.map(connection => connection.connectionName),
+  ].join(' ').toLowerCase().includes(query)
+}
+
+function customMCPToolDisplayName(provider: Provider, connection: Connection): string {
   const profile = connection.profile ?? {}
-  const displayName = typeof profile.displayName === 'string' && profile.displayName.trim()
-    ? profile.displayName.trim()
-    : connection.connectionName || provider.displayName
-  const description = typeof profile.description === 'string' && profile.description.trim()
-    ? profile.description.trim()
-    : provider.description
-  return { ...provider, displayName, description }
+  const toolName = typeof profile.toolName === 'string' && profile.toolName.trim() ? profile.toolName.trim() : ''
+  const displayName = typeof profile.displayName === 'string' && profile.displayName.trim() ? profile.displayName.trim() : ''
+  return toolName || displayName || connection.connectionName || provider.displayName
+}
+
+function customMCPServerURL(connection: Connection): string {
+  const profile = connection.profile ?? {}
+  const serverUrl = typeof profile.serverUrl === 'string' && profile.serverUrl.trim() ? profile.serverUrl.trim() : ''
+  const mcpServerUrl = typeof profile.mcpServerUrl === 'string' && profile.mcpServerUrl.trim() ? profile.mcpServerUrl.trim() : ''
+  return serverUrl || mcpServerUrl
 }
 
 function categoryKey(category: string): string {
@@ -709,13 +897,24 @@ const providerLogoDomains: Record<string, string> = {
   brave_search: 'search.brave.com',
 }
 
-function primaryConnectionForProvider(connections: Connection[], provider: string): Connection | undefined {
+function connectionsForProvider(connections: Connection[], provider: string): Connection[] {
   return connections
     .filter(connection => connection.provider === provider)
     .sort((a, b) => {
       if (a.ownerType !== b.ownerType) return a.ownerType === 'workspace' ? -1 : 1
       return (b.updatedAt || b.createdAt).localeCompare(a.updatedAt || a.createdAt)
-    })[0]
+    })
+}
+
+function connectionDisplayName(connection: Connection, t: TFn): string {
+  const name = connection.connectionName?.trim()
+  return name && name !== 'default' ? name : t('connections.defaultConnectionName')
+}
+
+function connectionStatusLabel(status: string, t: TFn): string {
+  if (status === 'active') return t('connections.connected')
+  if (status === 'disabled') return t('connections.disabled')
+  return status || t('connections.notConfigured')
 }
 
 function formatAuthTypes(authTypes: string[], oauthAvailable: boolean, isWorkspaceAdmin: boolean, t: TFn): string {
@@ -777,6 +976,7 @@ function ConnectionDialog({
   oauthConfigs,
   isWorkspaceAdmin,
   fixedProviderId,
+  initialCustomMCPTool,
   connection,
   testState,
   onTest,
@@ -789,6 +989,7 @@ function ConnectionDialog({
   oauthConfigs: OAuthClientConfig[]
   isWorkspaceAdmin: boolean
   fixedProviderId?: string
+  initialCustomMCPTool?: { toolName?: string; serverUrl?: string }
   connection?: Connection
   testState?: { loading?: boolean; ok?: boolean; message?: string }
   onTest?: (connection: Connection) => void
@@ -808,8 +1009,9 @@ function ConnectionDialog({
   }, [provider, oauthConfig])
   const ownerType = connection?.ownerType ?? (isWorkspaceAdmin ? 'workspace' : 'user')
   const [authType, setAuthType] = useState(connection?.authType ?? availableAuthTypes[0] ?? 'api_key')
-  const [connectionName, setConnectionName] = useState(connection?.connectionName ?? (providerId === customMCPProviderID ? '' : 'default'))
-  const [values, setValues] = useState<Record<string, string>>({})
+  const [connectionName, setConnectionName] = useState(connection?.connectionName ?? 'default')
+  const [customMCPToolName, setCustomMCPToolName] = useState(initialCustomMCPTool?.toolName ?? '')
+  const [values, setValues] = useState<Record<string, string>>(initialCustomMCPTool?.serverUrl ? { serverUrl: initialCustomMCPTool.serverUrl } : {})
   const [saving, setSaving] = useState(false)
   const [deviceSetup, setDeviceSetup] = useState<
     | { step: 'idle' }
@@ -825,18 +1027,20 @@ function ConnectionDialog({
     providerId === 'lark' ||
     providerId === 'github'
   )
-  const readonlyConnection = isEditing && connection?.authType === 'oauth2'
+  const readonlyConnection = isEditing
+  const showCredentialForm = !isEditing
 
   useEffect(() => {
     if (isEditing) return
     const p = providers.find(x => x.provider === providerId)
     const nextAuthTypes = (p?.authTypes ?? []).filter(type => type !== 'oauth2' || oauthConfigs.find(config => config.provider === p?.provider)?.configured)
     setAuthType(nextAuthTypes[0] ?? 'api_key')
-    setValues({})
-    setConnectionName(p?.provider === customMCPProviderID ? '' : 'default')
+    setValues(p?.provider === customMCPProviderID && initialCustomMCPTool?.serverUrl ? { serverUrl: initialCustomMCPTool.serverUrl } : {})
+    setConnectionName('default')
+    setCustomMCPToolName(p?.provider === customMCPProviderID ? initialCustomMCPTool?.toolName ?? '' : '')
     stopDevicePoll()
     setDeviceSetup({ step: 'idle' })
-  }, [providerId, providers, oauthConfigs, isEditing])
+  }, [providerId, providers, oauthConfigs, isEditing, initialCustomMCPTool?.serverUrl, initialCustomMCPTool?.toolName])
 
   useEffect(() => () => stopDevicePoll(), [])
 
@@ -849,9 +1053,14 @@ function ConnectionDialog({
     if (!provider || provider.comingSoon) return
     setSaving(true)
     try {
-      const cleanValues = Object.fromEntries(Object.entries(values).filter(([, value]) => value.trim() !== ''))
+      const cleanValues = Object.fromEntries(Object.entries(values).filter(([, value]) => {
+        const trimmed = value.trim()
+        return trimmed !== '' && trimmed !== maskedSecretValue
+      }))
+      const customToolName = customMCPToolName.trim()
       const profile = {
-        displayName: provider.provider === customMCPProviderID ? (connectionName.trim() || provider.displayName) : provider.displayName,
+        displayName: provider.provider === customMCPProviderID ? (customToolName || provider.displayName) : provider.displayName,
+        ...(provider.provider === customMCPProviderID && customToolName ? { toolName: customToolName } : {}),
         ...(provider.provider === customMCPProviderID && cleanValues.serverUrl ? { serverUrl: cleanValues.serverUrl } : {}),
       }
       if (!connection && authType === 'oauth2') {
@@ -872,11 +1081,8 @@ function ConnectionDialog({
         values: cleanValues,
         profile,
       }
-      if (connection) {
-        await apiPut(`/api/v1/connections/${encodeURIComponent(connection.id)}`, body)
-      } else {
-        await apiPost('/api/v1/connections', body)
-      }
+      if (connection) return
+      await apiPost('/api/v1/connections', body)
       onCreated()
     } finally {
       setSaving(false)
@@ -970,7 +1176,7 @@ function ConnectionDialog({
             </select>
           </label>
         )}
-        {provider?.description && (
+        {!isEditing && provider?.description && (
           <div className="rounded-lg bg-neutral-50 px-3 py-2 text-sm text-neutral-600 dark:bg-zinc-800/50 dark:text-zinc-300">
             {providerDescription(provider, t)}
           </div>
@@ -980,14 +1186,27 @@ function ConnectionDialog({
             <span className="text-xs font-medium text-neutral-500 dark:text-zinc-400">{t('connections.mcpToolName')} *</span>
             <input
               className={inputCls}
-              value={connectionName}
-              onChange={e => setConnectionName(e.target.value)}
+              value={customMCPToolName}
+              onChange={e => setCustomMCPToolName(e.target.value)}
               placeholder={t('connections.mcpToolNamePlaceholder')}
             />
           </label>
         )}
+        {!isEditing && (
+          <label className="block">
+            <span className="text-xs font-medium text-neutral-500 dark:text-zinc-400">
+              {provider?.provider === customMCPProviderID ? t('connections.credentialName') : t('connections.connectionName')} *
+            </span>
+            <input
+              className={inputCls}
+              value={connectionName}
+              onChange={e => setConnectionName(e.target.value)}
+              placeholder={provider?.provider === customMCPProviderID ? t('connections.credentialNamePlaceholder') : t('connections.connectionNamePlaceholder')}
+            />
+          </label>
+        )}
         {isEditing && connection && (
-          <SavedConnectionSummary connection={connection} />
+          <SavedConnectionSummary connection={connection} provider={provider} />
         )}
         {readonlyConnection && connection ? (
           <>
@@ -1003,33 +1222,16 @@ function ConnectionDialog({
             <div className="flex justify-between gap-2 pt-2">
               <button type="button" onClick={onClose} className="rounded-lg border border-neutral-300 px-3 py-2 text-sm dark:border-zinc-600">{t('common.close')}</button>
               <div className="flex gap-2">
-                {isWorkspaceAdmin && connection.ownerType === 'workspace' && (
-                  <button type="button" onClick={() => onInstallToProject?.(connection)} className="rounded-lg border border-neutral-300 px-3 py-2 text-sm font-medium text-neutral-700 hover:bg-neutral-50 dark:border-zinc-600 dark:text-zinc-200 dark:hover:bg-zinc-800">{t('connections.installToProject')}</button>
+                {isWorkspaceAdmin && connection?.ownerType === 'workspace' && (
+                  <button type="button" onClick={() => connection && onInstallToProject?.(connection)} className="rounded-lg border border-neutral-300 px-3 py-2 text-sm font-medium text-neutral-700 hover:bg-neutral-50 dark:border-zinc-600 dark:text-zinc-200 dark:hover:bg-zinc-800">{t('connections.installToProject')}</button>
                 )}
-                <button type="button" onClick={() => onTest?.(connection)} disabled={testState?.loading} className="rounded-lg border border-neutral-300 px-3 py-2 text-sm font-medium text-neutral-700 hover:bg-neutral-50 disabled:opacity-50 dark:border-zinc-600 dark:text-zinc-200 dark:hover:bg-zinc-800">{t('connections.test')}</button>
-                <button type="button" onClick={() => onDelete?.(connection)} className="rounded-lg border border-red-200 px-3 py-2 text-sm font-medium text-red-600 hover:bg-red-50 dark:border-red-900/60 dark:text-red-300 dark:hover:bg-red-900/20">{t('connections.disconnect')}</button>
+                <button type="button" onClick={() => connection && onTest?.(connection)} disabled={testState?.loading} className="rounded-lg border border-neutral-300 px-3 py-2 text-sm font-medium text-neutral-700 hover:bg-neutral-50 disabled:opacity-50 dark:border-zinc-600 dark:text-zinc-200 dark:hover:bg-zinc-800">{t('connections.test')}</button>
+                <button type="button" onClick={() => connection && onDelete?.(connection)} className="rounded-lg border border-red-200 px-3 py-2 text-sm font-medium text-red-600 hover:bg-red-50 dark:border-red-900/60 dark:text-red-300 dark:hover:bg-red-900/20">{t('connections.disconnect')}</button>
               </div>
             </div>
           </>
-        ) : (
+        ) : showCredentialForm ? (
           <>
-        {isEditing && connection && (
-          <div className="flex flex-wrap items-center justify-between gap-2 rounded-lg border border-neutral-200 bg-white p-3 dark:border-zinc-700 dark:bg-zinc-900/40">
-            <p className="text-xs leading-5 text-neutral-500 dark:text-zinc-400">{t('connections.credentialsHiddenHint')}</p>
-            <div className="flex flex-wrap gap-2">
-              {isWorkspaceAdmin && connection.ownerType === 'workspace' && (
-                <button type="button" onClick={() => onInstallToProject?.(connection)} className="rounded-lg border border-neutral-300 px-3 py-2 text-sm font-medium text-neutral-700 hover:bg-neutral-50 dark:border-zinc-600 dark:text-zinc-200 dark:hover:bg-zinc-800">{t('connections.installToProject')}</button>
-              )}
-              <button type="button" onClick={() => onTest?.(connection)} disabled={testState?.loading} className="rounded-lg border border-neutral-300 px-3 py-2 text-sm font-medium text-neutral-700 hover:bg-neutral-50 disabled:opacity-50 dark:border-zinc-600 dark:text-zinc-200 dark:hover:bg-zinc-800">{t('connections.test')}</button>
-              <button type="button" onClick={() => onDelete?.(connection)} className="rounded-lg border border-red-200 px-3 py-2 text-sm font-medium text-red-600 hover:bg-red-50 dark:border-red-900/60 dark:text-red-300 dark:hover:bg-red-900/20">{t('connections.disconnect')}</button>
-            </div>
-            {testState?.message && (
-              <p className={cn('w-full truncate text-xs', testState.ok ? 'text-emerald-600 dark:text-emerald-300' : 'text-red-600 dark:text-red-300')}>
-                {testState.message}
-              </p>
-            )}
-          </div>
-        )}
         {canQuickAuthorize && (
           <div className="rounded-lg border border-sky-100 bg-sky-50 p-3 dark:border-sky-900/60 dark:bg-sky-950/20">
             <div className="flex items-start justify-between gap-3">
@@ -1091,7 +1293,6 @@ function ConnectionDialog({
                 className={cn(inputCls, 'min-h-28 resize-y font-mono text-xs leading-5')}
                 value={values[field.key] ?? ''}
                 onChange={e => setValues(v => ({ ...v, [field.key]: e.target.value }))}
-                placeholder={isEditing ? t('connections.keepCurrentValue') : ''}
               />
             ) : (
               <input
@@ -1099,7 +1300,6 @@ function ConnectionDialog({
                 className={inputCls}
                 value={values[field.key] ?? ''}
                 onChange={e => setValues(v => ({ ...v, [field.key]: e.target.value }))}
-                placeholder={isEditing ? t('connections.keepCurrentValue') : ''}
               />
             )}
           </label>
@@ -1122,8 +1322,34 @@ function ConnectionDialog({
         )}
         <div className="flex justify-end gap-2 pt-2">
           <button type="button" onClick={onClose} disabled={saving} className="rounded-lg border border-neutral-300 px-3 py-2 text-sm dark:border-zinc-600">{t('common.cancel')}</button>
-          <button type="button" onClick={() => void submit()} disabled={saving || !provider || provider.comingSoon || availableAuthTypes.length === 0 || (provider.provider === customMCPProviderID && !connectionName.trim())} className="rounded-lg bg-sky-600 px-3 py-2 text-sm font-medium text-white disabled:opacity-50">{authType === 'oauth2' && !isEditing ? t('connections.startOAuth') : isEditing ? t('common.save') : t('common.create')}</button>
+          <button type="button" onClick={() => void submit()} disabled={saving || !provider || provider.comingSoon || availableAuthTypes.length === 0 || !connectionName.trim() || (provider.provider === customMCPProviderID && !customMCPToolName.trim())} className="rounded-lg bg-sky-600 px-3 py-2 text-sm font-medium text-white disabled:opacity-50">{authType === 'oauth2' && !isEditing ? t('connections.startOAuth') : t('common.create')}</button>
         </div>
+          </>
+        ) : (
+          <>
+            <div className="rounded-lg border border-neutral-200 bg-white p-3 dark:border-zinc-700 dark:bg-zinc-900/40">
+              <div className="flex flex-wrap items-start justify-between gap-3">
+                <div>
+                  <p className="text-sm font-medium text-neutral-900 dark:text-zinc-100">{t('connections.credentialsConfiguredTitle')}</p>
+                  <p className="mt-1 text-xs leading-5 text-neutral-500 dark:text-zinc-400">{t('connections.credentialsConfiguredHint')}</p>
+                </div>
+              </div>
+              {testState?.message && (
+                <p className={cn('mt-2 truncate text-xs', testState.ok ? 'text-emerald-600 dark:text-emerald-300' : 'text-red-600 dark:text-red-300')}>
+                  {testState.message}
+                </p>
+              )}
+            </div>
+            <div className="flex justify-between gap-2 pt-2">
+              <button type="button" onClick={onClose} className="rounded-lg border border-neutral-300 px-3 py-2 text-sm dark:border-zinc-600">{t('common.close')}</button>
+              <div className="flex flex-wrap justify-end gap-2">
+                {isWorkspaceAdmin && connection?.ownerType === 'workspace' && (
+                  <button type="button" onClick={() => connection && onInstallToProject?.(connection)} className="rounded-lg border border-neutral-300 px-3 py-2 text-sm font-medium text-neutral-700 hover:bg-neutral-50 dark:border-zinc-600 dark:text-zinc-200 dark:hover:bg-zinc-800">{t('connections.installToProject')}</button>
+                )}
+                <button type="button" onClick={() => connection && onTest?.(connection)} disabled={testState?.loading} className="rounded-lg border border-neutral-300 px-3 py-2 text-sm font-medium text-neutral-700 hover:bg-neutral-50 disabled:opacity-50 dark:border-zinc-600 dark:text-zinc-200 dark:hover:bg-zinc-800">{t('connections.test')}</button>
+                <button type="button" onClick={() => connection && onDelete?.(connection)} className="rounded-lg border border-red-200 px-3 py-2 text-sm font-medium text-red-600 hover:bg-red-50 dark:border-red-900/60 dark:text-red-300 dark:hover:bg-red-900/20">{t('connections.disconnect')}</button>
+              </div>
+            </div>
           </>
         )}
       </div>
@@ -1131,7 +1357,7 @@ function ConnectionDialog({
   )
 }
 
-function SavedConnectionSummary({ connection }: { connection: Connection }) {
+function SavedConnectionSummary({ connection, provider }: { connection: Connection; provider?: Provider }) {
   const { t } = useTranslation()
   const profile = connection.profile ?? {}
   const summary = connection.profileSummary
@@ -1139,18 +1365,32 @@ function SavedConnectionSummary({ connection }: { connection: Connection }) {
   const baseUrl = typeof profile.baseUrl === 'string' ? profile.baseUrl : ''
   const serverUrl = typeof profile.serverUrl === 'string' ? profile.serverUrl : ''
   const ownerOpenId = typeof profile.ownerOpenId === 'string' ? profile.ownerOpenId : ''
+  const accountId = summary?.accountId && summary.accountId !== 'oauth2' ? summary.accountId : ''
+  const providerFieldKeys = new Set((provider?.fields ?? []).map(field => field.key))
   const fields = [
     { label: t('connections.appId'), value: appId },
     { label: t('connections.baseUrl'), value: baseUrl },
-    { label: t('connections.mcpServerUrl'), value: serverUrl },
-    { label: t('connections.openId'), value: ownerOpenId || summary?.accountId || '' },
-    { label: t('connections.authType'), value: authTypeLabel(connection.authType, t) },
+    { label: t('connections.mcpServerUrl'), value: providerFieldKeys.has('serverUrl') ? '' : serverUrl },
+    { label: t('connections.openId'), value: ownerOpenId || accountId },
   ].filter(item => item.value)
-  if (fields.length === 0) return null
+  const credentialFields = (provider?.fields ?? [])
+    .filter(field => connection.authType !== 'no_auth' && connection.authType !== 'oauth2' && field.key)
+    .map(field => {
+      const value = field.secret ? maskedSecretValue : safeProfileFieldValue(profile, field.key)
+      return { label: providerFieldLabel(field, t), value, secret: field.secret }
+    })
+    .filter(item => item.value)
+  if (fields.length === 0 && credentialFields.length === 0) return null
   return (
     <div className="rounded-lg border border-neutral-200 bg-neutral-50 p-3 dark:border-zinc-700 dark:bg-zinc-900/50">
-      <p className="text-xs font-medium text-neutral-500 dark:text-zinc-400">{t('connections.savedCredentialSummary')}</p>
+      <p className="text-xs font-medium text-neutral-500 dark:text-zinc-400">{t('connections.savedCredentialDetails')}</p>
       <div className="mt-2 grid gap-2 sm:grid-cols-2">
+        {credentialFields.map(item => (
+          <div key={`credential-${item.label}`} className="min-w-0">
+            <p className="text-[11px] text-neutral-400 dark:text-zinc-500">{item.label}</p>
+            <p className={cn('truncate text-xs font-medium text-neutral-700 dark:text-zinc-200', item.secret && 'font-mono tracking-wider')} title={item.secret ? undefined : item.value}>{item.value}</p>
+          </div>
+        ))}
         {fields.map(item => (
           <div key={item.label} className="min-w-0">
             <p className="text-[11px] text-neutral-400 dark:text-zinc-500">{item.label}</p>
@@ -1160,6 +1400,13 @@ function SavedConnectionSummary({ connection }: { connection: Connection }) {
       </div>
     </div>
   )
+}
+
+function safeProfileFieldValue(profile: Record<string, unknown>, key: string): string {
+  const value = profile[key]
+  if (typeof value === 'string') return value
+  if (typeof value === 'number' || typeof value === 'boolean') return String(value)
+  return ''
 }
 
 function Modal({ title, children, onClose }: { title: string; children: ReactNode; onClose: () => void }) {

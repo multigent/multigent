@@ -345,7 +345,7 @@ func (s *Server) reconcileActiveWorkflowTaskQueue(workspaceID, project, taskID s
 	if err != nil {
 		return nil
 	}
-	if task.Status.IsTerminal() || task.Status == entity.TaskStatusBlocked {
+	if task.Status == entity.TaskStatusBlocked {
 		return nil
 	}
 	now := time.Now().UTC()

@@ -74,6 +74,7 @@ Authorization: Bearer <key>.`,
 			if err := configureRuntimeAPIURL(addr); err != nil {
 				return err
 			}
+			warnIfDockerCallbackMayFail(addr)
 			logCloser, err := initServiceLogger(resolveServiceLogOptions(cfg, logFile, logLevel, logFormat, logMaxSizeMB, cmd.Flags().Changed), "api")
 			if err != nil {
 				return fmt.Errorf("init logger: %w", err)

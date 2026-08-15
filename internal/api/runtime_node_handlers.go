@@ -1047,8 +1047,13 @@ func (s *Server) finalizeRuntimeTaskRun(run *controldb.RuntimeRun, body runtimeR
 		return
 	}
 	if s.runtimeTaskHasWorkflow(run.WorkspaceID, run.ProjectID, run.TaskID) {
-		if run.Status != "failed" && (task.Status == entity.TaskStatusInProgress || task.Status == entity.TaskStatusPending) {
-			msg := runtimeWorkflowStepNotCompletedError
+		if task.Status == entity.TaskStatusInProgress || task.Status == entity.TaskStatusPending {
+			msg := firstNonEmpty(strings.TrimSpace(body.ErrorMessage), strings.TrimSpace(body.ErrorCode), "runtime run failed")
+			errorCode := firstNonEmpty(strings.TrimSpace(body.ErrorCode), "runtime_run_failed")
+			if run.Status != "failed" {
+				msg = runtimeWorkflowStepNotCompletedError
+				errorCode = "workflow_step_not_completed"
+			}
 			prev := task.Status
 			task.Status = entity.TaskStatusDoneFailed
 			task.LastError = msg
@@ -1056,7 +1061,7 @@ func (s *Server) finalizeRuntimeTaskRun(run *controldb.RuntimeRun, body runtimeR
 			entity.ApplyStatusTimestamps(task, prev, now)
 			_ = s.ts.ArchiveTask(run.ProjectID, run.AgentID, task)
 			run.Status = "failed"
-			run.ErrorCode = "workflow_step_not_completed"
+			run.ErrorCode = errorCode
 			run.ErrorMessage = msg
 			if body.Result == nil {
 				body.Result = map[string]any{}

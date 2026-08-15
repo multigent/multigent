@@ -15,6 +15,8 @@ package sandbox
 import (
 	"context"
 	"fmt"
+	"net"
+	"net/url"
 	"os"
 	"os/exec"
 	"path/filepath"
@@ -380,6 +382,78 @@ func RuntimeContainerAvailable(image string, timeout time.Duration) error {
 	return nil
 }
 
+// DockerReachableRuntimeAPIURL rewrites a loopback control-plane URL into the
+// host alias that Docker containers can use. It does not prove that the host
+// service is listening on a non-loopback interface; call RuntimeAPIReachableFromContainer
+// when deciding whether an agent run can actually call back into Multigent.
+func DockerReachableRuntimeAPIURL(raw string) string {
+	raw = strings.TrimSpace(raw)
+	if raw == "" {
+		return ""
+	}
+	u, err := url.Parse(raw)
+	if err != nil || u.Scheme == "" || u.Host == "" {
+		return ""
+	}
+	host := u.Hostname()
+	if host != "127.0.0.1" && host != "localhost" && host != "::1" {
+		return strings.TrimRight(raw, "/")
+	}
+	port := u.Port()
+	if port == "" {
+		if u.Scheme == "https" {
+			port = "443"
+		} else {
+			port = "80"
+		}
+	}
+	u.Host = net.JoinHostPort("host.docker.internal", port)
+	return strings.TrimRight(u.String(), "/")
+}
+
+// RuntimeAPIReachableFromContainer verifies that a container can reach the
+// public health endpoint exposed by the control plane. This catches the common
+// case where Multigent listens on 127.0.0.1 and Docker rewrites the URL to
+// host.docker.internal, but the host service refuses non-loopback connections.
+func RuntimeAPIReachableFromContainer(image, rawURL string, timeout time.Duration) error {
+	image = strings.TrimSpace(image)
+	if image == "" {
+		return fmt.Errorf("runtime image is empty")
+	}
+	apiURL := DockerReachableRuntimeAPIURL(rawURL)
+	if apiURL == "" {
+		return fmt.Errorf("MULTIGENT_API_URL is empty or invalid")
+	}
+	if timeout <= 0 {
+		timeout = 4 * time.Second
+	}
+	script := `set -eu
+url="${MULTIGENT_API_URL%/}/api/v1/health"
+if command -v curl >/dev/null 2>&1; then
+  curl -fsS --connect-timeout 2 --max-time 3 "$url" >/dev/null
+elif command -v wget >/dev/null 2>&1; then
+  wget -q -T 3 -O /dev/null "$url"
+else
+  echo "runtime image has neither curl nor wget for API reachability check" >&2
+  exit 127
+fi`
+	ctx, cancel := context.WithTimeout(context.Background(), timeout)
+	defer cancel()
+	cmd := DockerCommandContext(ctx, "run", "--rm", "--pull=never", "--network=bridge", "--add-host=host.docker.internal:host-gateway", "-e", "MULTIGENT_API_URL="+apiURL, image, "/bin/sh", "-lc", script)
+	out, err := cmd.CombinedOutput()
+	if err != nil {
+		if ctx.Err() != nil {
+			return fmt.Errorf("runtime API did not respond from Docker within %s; API URL inside container: %s", timeout, apiURL)
+		}
+		msg := strings.TrimSpace(string(out))
+		if msg != "" {
+			return fmt.Errorf("runtime API is not reachable from Docker at %s: %w: %s", apiURL, err, msg)
+		}
+		return fmt.Errorf("runtime API is not reachable from Docker at %s: %w", apiURL, err)
+	}
+	return nil
+}
+
 // ToolchainBinaryAvailable checks whether a binary is already present in the
 // persistent Multigent toolchain volume for the given runtime image. It assumes
 // the image is already local and uses a short timeout so readiness checks do not
@@ -696,13 +770,37 @@ func forwardHostEnvIntoDocker(envKey string) bool {
 		_, set := os.LookupEnv(envKey)
 		return set
 	}
-	return os.Getenv(envKey) != ""
+	value := os.Getenv(envKey)
+	if value == "" {
+		return false
+	}
+	if isLoopbackProxyEnv(envKey, value) {
+		return false
+	}
+	return true
+}
+
+func isLoopbackProxyEnv(envKey, value string) bool {
+	key := strings.ToUpper(strings.TrimSpace(envKey))
+	if key == "NO_PROXY" || !strings.HasSuffix(key, "_PROXY") {
+		return false
+	}
+	u, err := url.Parse(strings.TrimSpace(value))
+	if err != nil || u.Host == "" {
+		return false
+	}
+	host := u.Hostname()
+	if strings.EqualFold(host, "localhost") {
+		return true
+	}
+	ip := net.ParseIP(host)
+	return ip != nil && ip.IsLoopback()
 }
 
 func wellKnownEnvKeys(model entity.AgentModel) []string {
 	// Keys common to all models.
 	common := []string{
-		"HTTPS_PROXY", "HTTP_PROXY", "NO_PROXY", // honour proxy settings
+		"HTTPS_PROXY", "HTTP_PROXY", "NO_PROXY", // honour container-reachable proxy settings
 		"NPM_CONFIG_REGISTRY", // allow regional npm mirrors for agent CLI installs
 	}
 	var modelKeys []string

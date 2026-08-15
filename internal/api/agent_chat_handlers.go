@@ -428,6 +428,15 @@ func (s *Server) readAgentSessionHistory(workspaceID, project, agent, sessionID 
 	if sessionID == "" && resolvedFromRuntime != "" {
 		sessionID = resolvedFromRuntime
 	}
+	if len(segments) == 0 && sessionID != "" {
+		nativeSegment, err := s.readNativeClaudeAgentSessionHistory(project, agent, sessionID)
+		if err != nil {
+			return "", nil, sessionID, false, err
+		}
+		if nativeSegment != nil {
+			segments = append(segments, *nativeSegment)
+		}
+	}
 
 	sort.SliceStable(segments, func(i, j int) bool {
 		return segments[i].startedAt.Before(segments[j].startedAt)
@@ -474,6 +483,48 @@ func (s *Server) readAgentSessionHistory(workspaceID, project, agent, sessionID 
 	log.Printf("[chat-history] %s/%s: returning %d runs, resolvedSession=%q, totalBytes=%d, truncated=%v",
 		project, agent, len(outRuns), sessionID, sb.Len(), truncated)
 	return sb.String(), outRuns, sessionID, truncated, nil
+}
+
+func (s *Server) readNativeClaudeAgentSessionHistory(project, agent, sessionID string) (*historySegment, error) {
+	if strings.TrimSpace(sessionID) == "" {
+		return nil, nil
+	}
+	claudeProjectsDir := filepath.Join(s.st.AgentDir(project, agent), ".multigent", "runtime-home", "claudecode", ".claude", "projects")
+	matches, err := filepath.Glob(filepath.Join(claudeProjectsDir, "*", sessionID+".jsonl"))
+	if err != nil {
+		return nil, err
+	}
+	if len(matches) == 0 {
+		matches, err = filepath.Glob(filepath.Join(claudeProjectsDir, "*", sessionID))
+		if err != nil {
+			return nil, err
+		}
+	}
+	if len(matches) == 0 {
+		return nil, nil
+	}
+	sort.Strings(matches)
+	path := matches[len(matches)-1]
+	data, err := os.ReadFile(path)
+	if err != nil {
+		if os.IsNotExist(err) {
+			return nil, nil
+		}
+		return nil, err
+	}
+	if strings.TrimSpace(string(data)) == "" {
+		return nil, nil
+	}
+	startedAt := time.Now().UTC()
+	if stat, err := os.Stat(path); err == nil {
+		startedAt = stat.ModTime().UTC()
+	}
+	return &historySegment{
+		startedAt: startedAt,
+		status:    "native",
+		logPath:   path,
+		data:      data,
+	}, nil
 }
 
 func (s *Server) readTelemetryAgentSessionHistory(project, agent, sessionID string, maxRuns int) ([]historySegment, string, error) {
@@ -1084,11 +1135,14 @@ func extractAgentChatError(line string) string {
 		return ""
 	}
 	var ev struct {
-		Type    string   `json:"type"`
-		Subtype string   `json:"subtype"`
-		Message string   `json:"message"`
-		Errors  []string `json:"errors"`
-		Error   struct {
+		Type              string          `json:"type"`
+		Subtype           string          `json:"subtype"`
+		Message           json.RawMessage `json:"message"`
+		Result            string          `json:"result"`
+		IsError           bool            `json:"is_error"`
+		IsAPIErrorMessage bool            `json:"is_api_error_message"`
+		Errors            []string        `json:"errors"`
+		Error             struct {
 			Message string `json:"message"`
 		} `json:"error"`
 		Item struct {
@@ -1101,8 +1155,17 @@ func extractAgentChatError(line string) string {
 	}
 	switch ev.Type {
 	case "error":
-		return strings.TrimSpace(ev.Message)
+		return strings.TrimSpace(agentChatRawMessageText(ev.Message))
+	case "assistant":
+		if ev.IsAPIErrorMessage {
+			if text := agentChatRawMessageText(ev.Message); text != "" {
+				return text
+			}
+		}
 	case "result":
+		if ev.IsError && strings.TrimSpace(ev.Result) != "" {
+			return strings.TrimSpace(ev.Result)
+		}
 		if ev.Subtype == "error_during_execution" && len(ev.Errors) > 0 {
 			return strings.TrimSpace(strings.Join(ev.Errors, "; "))
 		}
@@ -1111,6 +1174,31 @@ func extractAgentChatError(line string) string {
 	case "item.completed":
 		if ev.Item.Type == "error" {
 			return strings.TrimSpace(ev.Item.Message)
+		}
+	}
+	return ""
+}
+
+func agentChatRawMessageText(raw json.RawMessage) string {
+	if len(raw) == 0 {
+		return ""
+	}
+	var text string
+	if err := json.Unmarshal(raw, &text); err == nil {
+		return strings.TrimSpace(text)
+	}
+	var obj struct {
+		Content []struct {
+			Type string `json:"type"`
+			Text string `json:"text"`
+		} `json:"content"`
+	}
+	if err := json.Unmarshal(raw, &obj); err != nil {
+		return ""
+	}
+	for _, block := range obj.Content {
+		if block.Type == "text" && strings.TrimSpace(block.Text) != "" {
+			return strings.TrimSpace(block.Text)
 		}
 	}
 	return ""

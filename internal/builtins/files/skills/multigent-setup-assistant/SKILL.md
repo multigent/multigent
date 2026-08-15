@@ -83,6 +83,17 @@ multigent sandbox doctor
 multigent sandbox prepare
 ```
 
+Start the Multigent web console with a Docker-reachable listen address:
+
+```bash
+multigent --dir ./multigent-data start --addr 0.0.0.0:27892 --open
+```
+
+The user should still open `http://127.0.0.1:27892` in the browser. Do not
+recommend `--addr 127.0.0.1:<port>` for Docker sandbox usage: the browser may
+work, but the container will call back through `host.docker.internal:<port>`
+and can get `connection refused` if the server only listens on loopback.
+
 If Docker is missing or unhealthy:
 
 - Ask the user to install/start Docker Desktop on macOS or Windows.

@@ -260,7 +260,7 @@ func TestRuntimeConnectionAlias(t *testing.T) {
 	}
 }
 
-func TestResolveAgentRuntimeConnectionsUsesWorkspaceDefaultAndGrantRules(t *testing.T) {
+func TestResolveAgentRuntimeConnectionsUsesExplicitGrantRules(t *testing.T) {
 	users := newTestUserStore(t)
 	s := &Server{controlDB: users.db, users: users}
 	workspaceID := "ws-one"
@@ -283,17 +283,11 @@ func TestResolveAgentRuntimeConnectionsUsesWorkspaceDefaultAndGrantRules(t *test
 	ungranted.ConnectionName = "other"
 	ungranted.OwnerType = ConnectionOwnerUser
 	ungranted.OwnerID = "owner"
-	workspaceDefault := granted
-	workspaceDefault.ID = "conn-workspace-default"
-	workspaceDefault.ConnectionName = "default-tools"
 	if err := users.db.UpsertConnection(granted); err != nil {
 		t.Fatalf("granted connection: %v", err)
 	}
 	if err := users.db.UpsertConnection(ungranted); err != nil {
 		t.Fatalf("ungranted connection: %v", err)
-	}
-	if err := users.db.UpsertConnection(workspaceDefault); err != nil {
-		t.Fatalf("workspace default connection: %v", err)
 	}
 	if err := users.db.CreateConnectionGrant(controldb.ConnectionGrant{
 		ID:           "grant-project",
@@ -312,7 +306,7 @@ func TestResolveAgentRuntimeConnectionsUsesWorkspaceDefaultAndGrantRules(t *test
 	for _, connection := range connections {
 		gotIDs[connection.ID] = true
 	}
-	if len(connections) != 2 || !gotIDs[granted.ID] || !gotIDs[workspaceDefault.ID] {
+	if len(connections) != 1 || !gotIDs[granted.ID] {
 		t.Fatalf("connections=%#v", connections)
 	}
 	for _, connection := range connections {
@@ -348,6 +342,15 @@ func TestResolveAgentRuntimeConnectionsUsesExplicitToolBindings(t *testing.T) {
 	}
 	if err := users.db.UpsertConnection(lark); err != nil {
 		t.Fatalf("lark connection: %v", err)
+	}
+	if err := users.db.CreateConnectionGrant(controldb.ConnectionGrant{
+		ID:           "grant-github-project",
+		WorkspaceID:  workspaceID,
+		ConnectionID: github.ID,
+		TargetType:   ConnectionTargetProject,
+		TargetID:     "sample",
+	}); err != nil {
+		t.Fatalf("github grant: %v", err)
 	}
 	if err := users.db.UpsertAgentToolBinding(controldb.AgentToolBinding{
 		ID:           "bind-github",

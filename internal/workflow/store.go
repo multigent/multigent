@@ -935,6 +935,10 @@ func (s *Store) DeleteDefinition(id string) error {
 }
 
 func (s *Store) StartRun(project, taskID, definitionID string, actorBindings map[string]entity.WorkflowActorBinding) (entity.WorkflowRun, []entity.WorkflowStepInstance, error) {
+	return s.StartRunWithInput(project, taskID, definitionID, actorBindings, nil)
+}
+
+func (s *Store) StartRunWithInput(project, taskID, definitionID string, actorBindings map[string]entity.WorkflowActorBinding, initialInputValues map[string]string) (entity.WorkflowRun, []entity.WorkflowStepInstance, error) {
 	def, ok, err := s.Definition(definitionID)
 	if err != nil {
 		return entity.WorkflowRun{}, nil, err
@@ -973,12 +977,38 @@ func (s *Store) StartRun(project, taskID, definitionID string, actorBindings map
 			inst.ActorType = binding.Type
 			inst.ActorID = binding.ID
 		}
+		if step.ID == def.StartStepID {
+			inst.InputValues = workflowInitialInputValues(step, initialInputValues)
+			if len(inst.InputValues) > 0 {
+				inst.InputArtifact = workflowValuesJSON(inst.InputValues)
+			}
+		}
 		if err := s.SaveStepInstance(&inst); err != nil {
 			return entity.WorkflowRun{}, nil, err
 		}
 		instances = append(instances, inst)
 	}
 	return run, instances, nil
+}
+
+func workflowInitialInputValues(step entity.WorkflowStep, values map[string]string) map[string]string {
+	if len(values) == 0 {
+		return nil
+	}
+	out := make(map[string]string)
+	for _, field := range step.InputFields {
+		name := strings.TrimSpace(field.Name)
+		if name == "" {
+			continue
+		}
+		if value := strings.TrimSpace(values[name]); value != "" {
+			out[name] = value
+		}
+	}
+	if len(out) == 0 {
+		return nil
+	}
+	return out
 }
 
 func (s *Store) SaveRun(run *entity.WorkflowRun) error {
@@ -997,6 +1027,60 @@ func (s *Store) RunForTask(project, taskID string) (entity.WorkflowRun, bool, er
 	var run entity.WorkflowRun
 	if err := json.Unmarshal([]byte(recs[0].Payload), &run); err != nil {
 		return entity.WorkflowRun{}, false, err
+	}
+	return run, true, nil
+}
+
+func (s *Store) CancelRunForTask(project, taskID, reason string) (entity.WorkflowRun, bool, error) {
+	run, ok, err := s.RunForTask(project, taskID)
+	if err != nil || !ok {
+		return entity.WorkflowRun{}, ok, err
+	}
+	if strings.TrimSpace(run.Status) == "completed" || strings.TrimSpace(run.Status) == "cancelled" {
+		return run, false, nil
+	}
+	now := time.Now().UTC()
+	activeStepID := strings.TrimSpace(run.ActiveStepID)
+	run.Status = "cancelled"
+	run.ActiveStepID = ""
+	run.UpdatedAt = now
+	run.FinishedAt = now
+	if err := s.SaveRun(&run); err != nil {
+		return entity.WorkflowRun{}, false, err
+	}
+	if activeStepID == "" {
+		return run, true, nil
+	}
+	instances, err := s.ListStepInstances(run.ID)
+	if err != nil {
+		return entity.WorkflowRun{}, false, err
+	}
+	for i := range instances {
+		if instances[i].StepID != activeStepID {
+			continue
+		}
+		if strings.TrimSpace(instances[i].Status) == "completed" || strings.TrimSpace(instances[i].Status) == "cancelled" {
+			continue
+		}
+		instances[i].Status = "cancelled"
+		instances[i].Summary = strings.TrimSpace(reason)
+		instances[i].UpdatedAt = now
+		instances[i].FinishedAt = now
+		if err := s.SaveStepInstance(&instances[i]); err != nil {
+			return entity.WorkflowRun{}, false, err
+		}
+		_ = s.SaveStepEvent(&entity.WorkflowStepEvent{
+			RunID:      instances[i].RunID,
+			StepID:     instances[i].StepID,
+			Status:     instances[i].Status,
+			ActorType:  instances[i].ActorType,
+			ActorID:    instances[i].ActorID,
+			Summary:    instances[i].Summary,
+			StartedAt:  instances[i].StartedAt,
+			FinishedAt: instances[i].FinishedAt,
+			CreatedAt:  now,
+		})
+		break
 	}
 	return run, true, nil
 }
@@ -1330,6 +1414,10 @@ func (s *Store) CompleteAndAdvance(project, taskID, summary, output string, outp
 	if strings.TrimSpace(summary) == "" {
 		summary = workflowSummaryFromValues(values)
 	}
+	edge, hasNext := chooseNextEdge(def.Edges, currentStep.ID, values, output)
+	if !hasNext && workflowHasOutgoingEdges(def.Edges, currentStep.ID) {
+		return result, fmt.Errorf("workflow step %q output did not match any outgoing route", currentStep.Title)
+	}
 	for i := range instances {
 		if instances[i].StepID != run.ActiveStepID {
 			continue
@@ -1364,7 +1452,6 @@ func (s *Store) CompleteAndAdvance(project, taskID, summary, output string, outp
 		result.Current = instances[i]
 		break
 	}
-	edge, hasNext := chooseNextEdge(def.Edges, currentStep.ID, values, output)
 	if !hasNext {
 		run.Status = "completed"
 		run.ActiveStepID = ""
@@ -1423,6 +1510,19 @@ func (s *Store) CompleteAndAdvance(project, taskID, summary, output string, outp
 	return result, nil
 }
 
+func workflowHasOutgoingEdges(edges []entity.WorkflowEdge, from string) bool {
+	from = strings.TrimSpace(from)
+	if from == "" {
+		return false
+	}
+	for _, edge := range edges {
+		if strings.TrimSpace(edge.From) == from {
+			return true
+		}
+	}
+	return false
+}
+
 func normalizeWorkflowOutputValues(step entity.WorkflowStep, values map[string]string, summary, output string, failed bool) (map[string]string, error) {
 	out := make(map[string]string)
 	for key, value := range values {
@@ -1468,6 +1568,9 @@ func normalizeWorkflowOutputValues(step entity.WorkflowStep, values map[string]s
 			return nil, fmt.Errorf("workflow output field %q is required for step %q", name, step.Title)
 		}
 		if workflowFieldRequiresDocID(field) && !workflowDocIDValueValid(out[name]) {
+			if workflowFieldAllowsNone(field) && strings.EqualFold(strings.TrimSpace(out[name]), "none") {
+				continue
+			}
 			return nil, fmt.Errorf("workflow output field %q for step %q must be a knowledge docID like doc-20260728-abc123", name, step.Title)
 		}
 	}
@@ -1503,6 +1606,16 @@ func workflowFieldRequiresDocID(field entity.WorkflowField) bool {
 	default:
 		return false
 	}
+}
+
+func workflowFieldAllowsNone(field entity.WorkflowField) bool {
+	desc := strings.ToLower(strings.TrimSpace(field.Description))
+	return strings.Contains(desc, "fill none") ||
+		strings.Contains(desc, "use none") ||
+		strings.Contains(desc, "or none") ||
+		strings.Contains(desc, "没有则填 none") ||
+		strings.Contains(desc, "不需要则填 none") ||
+		strings.Contains(desc, "无需则填 none")
 }
 
 func workflowDocIDValueValid(value string) bool {

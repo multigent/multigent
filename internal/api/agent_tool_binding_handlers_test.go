@@ -10,7 +10,7 @@ import (
 	"github.com/multigent/multigent/internal/entity"
 )
 
-func TestAgentToolBindingRequiresGrantedConnection(t *testing.T) {
+func TestAgentToolBindingCreatesAgentGrantForConnectionManager(t *testing.T) {
 	s, workspaceID := newConnectionGrantPolicyServer(t)
 	connection := controldb.Connection{
 		ID:             "conn-github",
@@ -28,26 +28,16 @@ func TestAgentToolBindingRequiresGrantedConnection(t *testing.T) {
 		t.Fatalf("connection: %v", err)
 	}
 
-	blockedReq := agentToolBindingRequest("owner", "sample", "pm", upsertAgentToolBindingRequest{
+	blockedReq := agentToolBindingRequest("viewer", "sample", "pm", upsertAgentToolBindingRequest{
 		ConnectionID: connection.ID,
 		AdapterType:  "http_action",
 	})
 	blockedRec := httptest.NewRecorder()
 	s.handleUpsertAgentToolBinding(blockedRec, blockedReq)
-	if blockedRec.Code != http.StatusBadRequest {
-		t.Fatalf("ungranted binding status=%d body=%s", blockedRec.Code, blockedRec.Body.String())
+	if blockedRec.Code != http.StatusForbidden {
+		t.Fatalf("viewer binding status=%d body=%s", blockedRec.Code, blockedRec.Body.String())
 	}
 
-	if err := s.controlDB.CreateConnectionGrant(controldb.ConnectionGrant{
-		ID:           "grant-agent",
-		WorkspaceID:  workspaceID,
-		ConnectionID: connection.ID,
-		TargetType:   ConnectionTargetAgent,
-		TargetID:     "sample/pm",
-		CreatedBy:    "owner",
-	}); err != nil {
-		t.Fatalf("grant: %v", err)
-	}
 	allowedReq := agentToolBindingRequest("owner", "sample", "pm", upsertAgentToolBindingRequest{
 		ConnectionID: connection.ID,
 		AdapterType:  "http_action",
@@ -63,6 +53,13 @@ func TestAgentToolBindingRequiresGrantedConnection(t *testing.T) {
 	}
 	if body.ConnectionID != connection.ID || body.AdapterType != "http_action" || body.Status != "enabled" {
 		t.Fatalf("binding=%#v", body)
+	}
+	grants, err := s.controlDB.ListConnectionGrants(connection.ID)
+	if err != nil {
+		t.Fatalf("list grants: %v", err)
+	}
+	if len(matchingAgentConnectionGrants(grants, workspaceID, "sample", "pm")) != 1 {
+		t.Fatalf("agent grant missing: %#v", grants)
 	}
 }
 

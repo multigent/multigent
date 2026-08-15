@@ -236,7 +236,7 @@ Use a persistent data directory:
 
 ```bash
 mkdir -p ./multigent-data
-multigent --dir ./multigent-data start --addr 127.0.0.1:27892 --open
+multigent --dir ./multigent-data start --addr 0.0.0.0:27892 --open
 ```
 
 Open:
@@ -244,6 +244,11 @@ Open:
 ```text
 http://127.0.0.1:27892
 ```
+
+Why `0.0.0.0`? Docker sandbox agents call back into Multigent through
+`host.docker.internal:<port>`. If the server only listens on `127.0.0.1`,
+the browser may work but agents can fail with `connection refused` when they
+run `mga` commands. You can still open the UI with `http://127.0.0.1:27892`.
 
 Default initial login:
 
@@ -411,7 +416,7 @@ multigent sandbox prepare
 Use another port:
 
 ```bash
-multigent --dir ./multigent-data start --addr 127.0.0.1:27992 --open
+multigent --dir ./multigent-data start --addr 0.0.0.0:27992 --open
 ```
 
 ### Runtime Image Pull Fails

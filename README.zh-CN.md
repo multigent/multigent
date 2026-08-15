@@ -210,8 +210,11 @@ multigent sandbox prepare
 生产式启动：一个二进制同时提供 API 和内置前端。
 
 ```bash
-multigent --dir ./data start --addr 127.0.0.1:27892 --open
+multigent --dir ./data start --addr 0.0.0.0:27892 --open
 ```
+
+浏览器仍然打开 `http://127.0.0.1:27892`。这里监听 `0.0.0.0` 是为了让
+Docker Sandbox 里的 Agent 可以通过 `host.docker.internal` 回连本机 Runtime API。
 
 前端开发模式：API 与 Vite 热更新分开启动。
 
@@ -308,7 +311,7 @@ make build-go
 ./dist/multigent --dir ./data api serve --addr 127.0.0.1:27893
 
 # 启动 API + 内置 Web
-./dist/multigent --dir ./data start --addr 127.0.0.1:27892
+./dist/multigent --dir ./data start --addr 0.0.0.0:27892
 
 # 查看 worker/runtime 配置
 ./dist/multigent worker inspect

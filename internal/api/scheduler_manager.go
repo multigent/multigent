@@ -549,14 +549,6 @@ func (s *Server) handleStartProjectTask(w http.ResponseWriter, r *http.Request) 
 		s.jsonErrorCode(w, http.StatusNotFound, ErrCodeValidationFailed, "task not found")
 		return
 	}
-	if task.Status.IsTerminal() {
-		s.jsonErrorCode(w, http.StatusConflict, ErrCodeValidationFailed, "task is already finished")
-		return
-	}
-	if task.Status == entity.TaskStatusAwaitingConfirmation {
-		s.jsonErrorCode(w, http.StatusConflict, ErrCodeValidationFailed, "current assignee is not an agent")
-		return
-	}
 	if err := s.reconcileWorkflowTaskBeforeManualStart(workspaceID, project, taskID, r); err != nil {
 		s.serverError(w, err)
 		return
@@ -1065,11 +1057,35 @@ func (s *Server) hasActiveRuntimeRun(workspaceID, project, agent, taskID string)
 	for _, status := range []string{"queued", "running"} {
 		filter.Status = status
 		runs, err := s.controlDB.ListRuntimeRuns(filter)
-		if err == nil && len(runs) > 0 {
-			return true
+		if err != nil {
+			continue
+		}
+		for _, run := range runs {
+			if runtimeRunBlocksAgent(run, time.Now().UTC()) {
+				return true
+			}
 		}
 	}
 	return false
+}
+
+func runtimeRunBlocksAgent(run controldb.RuntimeRun, now time.Time) bool {
+	switch strings.TrimSpace(run.Status) {
+	case "queued":
+		return true
+	case "running":
+		lease := strings.TrimSpace(run.LeaseExpiresAt)
+		if lease == "" {
+			return true
+		}
+		expiresAt, err := time.Parse(time.RFC3339, lease)
+		if err != nil {
+			return true
+		}
+		return expiresAt.After(now)
+	default:
+		return false
+	}
 }
 
 func runtimeActiveHourAt(activeHours string, t time.Time) (bool, time.Duration) {
