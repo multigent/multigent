@@ -70,3 +70,20 @@ func TestValidateWorkflowDefinitionRejectsBrokenBranchSubflow(t *testing.T) {
 		t.Fatalf("unexpected error: %v", err)
 	}
 }
+
+func TestValidateWorkflowDefinitionAllowsTerminalEdge(t *testing.T) {
+	def := entity.WorkflowDefinition{
+		ID:          "terminal-flow",
+		Name:        "Terminal Flow",
+		StartStepID: "review",
+		Steps: []entity.WorkflowStep{
+			{ID: "review", Type: "human_review", Title: "Review"},
+		},
+		Edges: []entity.WorkflowEdge{
+			{ID: "done", From: "review", To: "", Condition: &entity.WorkflowEdgeCondition{Field: "decision", Operator: "eq", Value: "approve"}},
+		},
+	}
+	if err := validateWorkflowDefinition(def); err != nil {
+		t.Fatalf("validateWorkflowDefinition: %v", err)
+	}
+}

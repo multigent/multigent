@@ -11,6 +11,7 @@ import (
 
 	"github.com/multigent/multigent/internal/entity"
 	"github.com/multigent/multigent/internal/taskstore"
+	workflowstore "github.com/multigent/multigent/internal/workflow"
 )
 
 const maxJSONBody = 1 << 20 // 1 MiB
@@ -145,8 +146,9 @@ func (s *Server) createProjectTaskFromBody(w http.ResponseWriter, r *http.Reques
 
 	var workflowStore interface {
 		Definition(string) (entity.WorkflowDefinition, bool, error)
-		StartRun(string, string, string, map[string]entity.WorkflowActorBinding) (entity.WorkflowRun, []entity.WorkflowStepInstance, error)
+		StartRunWithInput(string, string, string, map[string]entity.WorkflowActorBinding, map[string]string) (entity.WorkflowRun, []entity.WorkflowStepInstance, error)
 	}
+	var workflowDef entity.WorkflowDefinition
 	if workflowID != "" {
 		wfStore, ok := s.workflowStoreForRequest(w, r)
 		if !ok {
@@ -162,6 +164,7 @@ func (s *Server) createProjectTaskFromBody(w http.ResponseWriter, r *http.Reques
 			s.jsonError(w, http.StatusNotFound, "workflow definition not found")
 			return
 		}
+		workflowDef = def
 		if _, inst, ok := workflowStartActor(def, body.WorkflowActorBindings); ok {
 			switch inst.ActorType {
 			case "agent":
@@ -222,7 +225,8 @@ func (s *Server) createProjectTaskFromBody(w http.ResponseWriter, r *http.Reques
 			s.serverError(w, fmt.Errorf("workflow store unavailable"))
 			return
 		}
-		if _, _, err := workflowStore.StartRun(name, t.ID, workflowID, body.WorkflowActorBindings); err != nil {
+		initialInputs := workflowInitialInputsFromPrompt(workflowDef, promptText)
+		if _, _, err := workflowStore.StartRunWithInput(name, t.ID, workflowID, body.WorkflowActorBindings, initialInputs); err != nil {
 			s.serverError(w, err)
 			return
 		}
@@ -305,6 +309,11 @@ func (s *Server) handlePostCancelTask(w http.ResponseWriter, r *http.Request) {
 	t.UpdatedAt = now
 	entity.ApplyStatusTimestamps(t, prev, now)
 	if err := s.ts.UpdateTask(project, agent, t); err != nil {
+		s.serverError(w, err)
+		return
+	}
+	wfStore := workflowstore.NewStore(s.controlDB, workspaceID)
+	if _, _, err := wfStore.CancelRunForTask(project, id, "task cancelled"); err != nil {
 		s.serverError(w, err)
 		return
 	}
@@ -595,6 +604,71 @@ func normalizeToRecipients(v any) ([]string, error) {
 	default:
 		return nil, fmt.Errorf("to must be a string or array of strings")
 	}
+}
+
+func workflowInitialInputsFromPrompt(def entity.WorkflowDefinition, prompt string) map[string]string {
+	startStep, ok := workflowDefinitionStartStep(def)
+	if !ok || len(startStep.InputFields) == 0 {
+		return nil
+	}
+	allowed := make(map[string]struct{}, len(startStep.InputFields))
+	for _, field := range startStep.InputFields {
+		name := strings.TrimSpace(field.Name)
+		if name != "" {
+			allowed[name] = struct{}{}
+		}
+	}
+	if len(allowed) == 0 {
+		return nil
+	}
+	out := make(map[string]string)
+	for _, line := range strings.Split(prompt, "\n") {
+		key, value, ok := splitWorkflowPromptKV(line)
+		if !ok {
+			continue
+		}
+		if _, exists := allowed[key]; !exists {
+			continue
+		}
+		if value != "" {
+			out[key] = value
+		}
+	}
+	if len(out) == 0 {
+		return nil
+	}
+	return out
+}
+
+func workflowDefinitionStartStep(def entity.WorkflowDefinition) (entity.WorkflowStep, bool) {
+	for _, step := range def.Steps {
+		if step.ID == def.StartStepID {
+			return step, true
+		}
+	}
+	return entity.WorkflowStep{}, false
+}
+
+func splitWorkflowPromptKV(line string) (string, string, bool) {
+	trimmed := strings.TrimSpace(line)
+	if trimmed == "" {
+		return "", "", false
+	}
+	idx := strings.Index(trimmed, ":")
+	sepLen := len(":")
+	if alt := strings.Index(trimmed, "："); idx < 0 || (alt >= 0 && alt < idx) {
+		idx = alt
+		sepLen = len("：")
+	}
+	if idx <= 0 {
+		return "", "", false
+	}
+	key := strings.Trim(strings.TrimSpace(trimmed[:idx]), "`")
+	value := strings.TrimSpace(trimmed[idx+sepLen:])
+	if key == "" || value == "" || strings.ContainsAny(key, " \t") {
+		return "", "", false
+	}
+	return key, value, true
 }
 
 func (s *Server) handlePostMessage(w http.ResponseWriter, r *http.Request) {

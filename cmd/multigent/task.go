@@ -260,7 +260,11 @@ func newTaskAddCmd() *cobra.Command {
 					return err
 				}
 				if workflowID != "" {
-					if err := startWorkflowForTaskCLI(project, t.ID, workflowID, workflowBindings); err != nil {
+					initialInputs, err := workflowInitialInputsForTaskCLI(workflowID, templateValues, promptText)
+					if err != nil {
+						return err
+					}
+					if err := startWorkflowForTaskCLI(project, t.ID, workflowID, workflowBindings, initialInputs); err != nil {
 						return err
 					}
 				}
@@ -278,7 +282,11 @@ func newTaskAddCmd() *cobra.Command {
 				return addErr
 			}
 			if workflowID != "" {
-				if err := startWorkflowForTaskCLI(project, t.ID, workflowID, workflowBindings); err != nil {
+				initialInputs, err := workflowInitialInputsForTaskCLI(workflowID, templateValues, promptText)
+				if err != nil {
+					return err
+				}
+				if err := startWorkflowForTaskCLI(project, t.ID, workflowID, workflowBindings, initialInputs); err != nil {
 					return err
 				}
 			}
@@ -391,13 +399,96 @@ func workflowStartActorForCLI(workflowID string, bindings map[string]entity.Work
 	return entity.WorkflowActorBinding{}, nil
 }
 
-func startWorkflowForTaskCLI(project, taskID, workflowID string, bindings map[string]entity.WorkflowActorBinding) error {
+func workflowInitialInputsForTaskCLI(workflowID string, templateValues map[string]string, prompt string) (map[string]string, error) {
+	ctx, err := openCLIWorkspaceDB("")
+	if err != nil {
+		return nil, err
+	}
+	defer ctx.Close()
+	def, ok, err := workflowstore.NewStore(ctx.db, ctx.workspaceID).Definition(workflowID)
+	if err != nil {
+		return nil, err
+	}
+	if !ok {
+		return nil, fmt.Errorf("workflow definition %q not found", workflowID)
+	}
+	startStep, ok := workflowDefinitionStartStepForCLI(def)
+	if !ok || len(startStep.InputFields) == 0 {
+		return nil, nil
+	}
+	allowed := make(map[string]struct{}, len(startStep.InputFields))
+	for _, field := range startStep.InputFields {
+		if name := strings.TrimSpace(field.Name); name != "" {
+			allowed[name] = struct{}{}
+		}
+	}
+	out := make(map[string]string)
+	for key, value := range templateValues {
+		key = strings.TrimSpace(key)
+		if _, ok := allowed[key]; !ok {
+			continue
+		}
+		if value = strings.TrimSpace(value); value != "" {
+			out[key] = value
+		}
+	}
+	for _, line := range strings.Split(prompt, "\n") {
+		key, value, ok := splitWorkflowPromptKVForCLI(line)
+		if !ok {
+			continue
+		}
+		if _, exists := allowed[key]; !exists {
+			continue
+		}
+		if _, exists := out[key]; exists {
+			continue
+		}
+		out[key] = value
+	}
+	if len(out) == 0 {
+		return nil, nil
+	}
+	return out, nil
+}
+
+func workflowDefinitionStartStepForCLI(def entity.WorkflowDefinition) (entity.WorkflowStep, bool) {
+	for _, step := range def.Steps {
+		if step.ID == def.StartStepID {
+			return step, true
+		}
+	}
+	return entity.WorkflowStep{}, false
+}
+
+func splitWorkflowPromptKVForCLI(line string) (string, string, bool) {
+	trimmed := strings.TrimSpace(line)
+	if trimmed == "" {
+		return "", "", false
+	}
+	idx := strings.Index(trimmed, ":")
+	sepLen := len(":")
+	if alt := strings.Index(trimmed, "："); idx < 0 || (alt >= 0 && alt < idx) {
+		idx = alt
+		sepLen = len("：")
+	}
+	if idx <= 0 {
+		return "", "", false
+	}
+	key := strings.Trim(strings.TrimSpace(trimmed[:idx]), "`")
+	value := strings.TrimSpace(trimmed[idx+sepLen:])
+	if key == "" || value == "" || strings.ContainsAny(key, " \t") {
+		return "", "", false
+	}
+	return key, value, true
+}
+
+func startWorkflowForTaskCLI(project, taskID, workflowID string, bindings map[string]entity.WorkflowActorBinding, initialInputs map[string]string) error {
 	ctx, err := openCLIWorkspaceDB("")
 	if err != nil {
 		return err
 	}
 	defer ctx.Close()
-	_, _, err = workflowstore.NewStore(ctx.db, ctx.workspaceID).StartRun(project, taskID, workflowID, bindings)
+	_, _, err = workflowstore.NewStore(ctx.db, ctx.workspaceID).StartRunWithInput(project, taskID, workflowID, bindings, initialInputs)
 	return err
 }
 

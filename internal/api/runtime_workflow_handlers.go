@@ -385,8 +385,9 @@ func (s *Server) createRuntimeTaskFromBody(w http.ResponseWriter, r *http.Reques
 	workflowID := strings.TrimSpace(body.WorkflowDefinitionID)
 	var workflowStore interface {
 		Definition(string) (entity.WorkflowDefinition, bool, error)
-		StartRun(string, string, string, map[string]entity.WorkflowActorBinding) (entity.WorkflowRun, []entity.WorkflowStepInstance, error)
+		StartRunWithInput(string, string, string, map[string]entity.WorkflowActorBinding, map[string]string) (entity.WorkflowRun, []entity.WorkflowStepInstance, error)
 	}
+	var workflowDef entity.WorkflowDefinition
 	if workflowID != "" {
 		wfStore := workflowstore.NewStore(s.controlDB, principal.WorkspaceID)
 		workflowStore = wfStore
@@ -399,6 +400,7 @@ func (s *Server) createRuntimeTaskFromBody(w http.ResponseWriter, r *http.Reques
 			s.jsonError(w, http.StatusNotFound, "workflow definition not found")
 			return
 		}
+		workflowDef = def
 		if _, inst, ok := workflowStartActor(def, body.WorkflowActorBindings); ok {
 			switch inst.ActorType {
 			case "agent":
@@ -473,7 +475,8 @@ func (s *Server) createRuntimeTaskFromBody(w http.ResponseWriter, r *http.Reques
 			s.serverError(w, fmt.Errorf("workflow store unavailable"))
 			return
 		}
-		if _, _, err := workflowStore.StartRun(principal.Project, t.ID, workflowID, body.WorkflowActorBindings); err != nil {
+		initialInputs := workflowInitialInputsFromPrompt(workflowDef, prompt)
+		if _, _, err := workflowStore.StartRunWithInput(principal.Project, t.ID, workflowID, body.WorkflowActorBindings, initialInputs); err != nil {
 			s.serverError(w, err)
 			return
 		}
@@ -951,6 +954,7 @@ func (s *Server) moveWorkflowTaskToAgent(project, previousAgent, nextAgent strin
 	task.Assignee = project + "/" + nextAgent
 	task.UpdatedAt = now
 	task.FinishedAt = nil
+	task.LastError = ""
 	if previousAgent == nextAgent {
 		if err := s.ts.PersistTask(project, nextAgent, task); err != nil {
 			return err

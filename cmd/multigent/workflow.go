@@ -456,13 +456,13 @@ func validateWorkflowDefinitionAt(def entity.WorkflowDefinition, path string) er
 		return fmt.Errorf("%s startStepId %q does not match any step", path, def.StartStepID)
 	}
 	for _, edge := range def.Edges {
-		if edge.From == "" || edge.To == "" {
-			return fmt.Errorf("%s edge must include from and to", path)
+		if edge.From == "" {
+			return fmt.Errorf("%s edge must include from", path)
 		}
 		if !stepIDs[edge.From] {
 			return fmt.Errorf("%s edge references missing from step %q", path, edge.From)
 		}
-		if !stepIDs[edge.To] {
+		if edge.To != "" && !stepIDs[edge.To] {
 			return fmt.Errorf("%s edge references missing to step %q", path, edge.To)
 		}
 	}
