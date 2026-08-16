@@ -194,8 +194,21 @@ func (s *Server) handleGetAgentContext(w http.ResponseWriter, r *http.Request) {
 	}
 
 	contextFile := contextFileName(string(meta.Model))
-	mergedPath := filepath.Join(agentDir, contextFile)
-	merged, _ := os.ReadFile(mergedPath)
+	includeMerged := true
+	switch strings.ToLower(strings.TrimSpace(r.URL.Query().Get("includeMerged"))) {
+	case "0", "false", "no":
+		includeMerged = false
+	}
+	includeReadiness := true
+	switch strings.ToLower(strings.TrimSpace(r.URL.Query().Get("includeReadiness"))) {
+	case "0", "false", "no":
+		includeReadiness = false
+	}
+	var merged []byte
+	if includeMerged {
+		mergedPath := filepath.Join(agentDir, contextFile)
+		merged, _ = os.ReadFile(mergedPath)
+	}
 
 	wakeupPath := filepath.Join(agentDir, ".multigent", "context", "wakeup.md")
 	wakeup, _ := os.ReadFile(wakeupPath)
@@ -283,13 +296,15 @@ func (s *Server) handleGetAgentContext(w http.ResponseWriter, r *http.Request) {
 		resp["goals"] = goalSummary
 	}
 
-	workspaceID := ""
-	if id, ok := s.currentWorkspaceForRequest(w, r); ok {
-		workspaceID = id
-	}
 	readiness := buildRuntimeReadinessLight(meta)
-	if workspaceID != "" {
-		readiness = s.runtimeReadinessForExecution(workspaceID, meta)
+	if includeReadiness {
+		workspaceID := ""
+		if id, ok := s.currentWorkspaceForRequest(w, r); ok {
+			workspaceID = id
+		}
+		if workspaceID != "" {
+			readiness = s.runtimeReadinessForExecution(workspaceID, meta)
+		}
 	}
 	resp["setupChecks"] = readiness.Checks
 	resp["runtimeReadiness"] = readiness

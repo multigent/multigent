@@ -1,5 +1,12 @@
 # Changelog
 
+## [v0.1.30] - 2026-08-16
+
+### Improved
+
+- Agent detail pages now load the large merged context lazily, making member detail views open faster and avoiding unnecessary runtime readiness checks during initial page load.
+- Context building now follows symlinked skill package roots, so installed skills with bundled files or scripts are synced into agent sandboxes correctly.
+
 ## [v0.1.29] - 2026-08-15
 
 ### Fixed

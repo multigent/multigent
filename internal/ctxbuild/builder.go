@@ -180,7 +180,11 @@ func LayerHashes(mc *MergedContext) map[string]string {
 // gracefully (skills without bundled files are perfectly valid).
 func loadSkillFiles(skillDir string) []SkillFile {
 	var files []SkillFile
-	_ = filepath.WalkDir(skillDir, func(path string, d fs.DirEntry, err error) error {
+	walkRoot := skillDir
+	if resolved, err := filepath.EvalSymlinks(skillDir); err == nil {
+		walkRoot = resolved
+	}
+	_ = filepath.WalkDir(walkRoot, func(path string, d fs.DirEntry, err error) error {
 		if err != nil {
 			return nil
 		}
@@ -190,7 +194,7 @@ func loadSkillFiles(skillDir string) []SkillFile {
 			}
 			return nil
 		}
-		rel, err := filepath.Rel(skillDir, path)
+		rel, err := filepath.Rel(walkRoot, path)
 		if err != nil {
 			return nil
 		}

@@ -102,7 +102,7 @@ type AgentCLIConfig = {
 
 type AgentContext = {
   contextFile: string
-  context: string
+  context?: string
   wakeup: string
   model: string
   runtimeModel?: string
@@ -429,6 +429,9 @@ export default function ProjectAgentDetailPage() {
   const { projectId, agentName } = useParams<{ projectId: string; agentName: string }>()
 
   const ctxPath = projectId && agentName
+    ? `/api/v1/projects/${encodeURIComponent(projectId)}/agents/${encodeURIComponent(agentName)}/context?includeMerged=false&includeReadiness=false`
+    : null
+  const fullContextPath = projectId && agentName
     ? `/api/v1/projects/${encodeURIComponent(projectId)}/agents/${encodeURIComponent(agentName)}/context`
     : null
   const [ctxReload, setCtxReload] = useState(0)
@@ -684,9 +687,7 @@ export default function ProjectAgentDetailPage() {
                     initialContent={ctx.wakeup}
                     canEdit={canConfigureThisAgent}
                   />
-                  {ctx.context && (
-                    <ContextPanel context={ctx.context} contextFile={ctx.contextFile} syncedAt={ctx.syncedAt} />
-                  )}
+                  <ContextPanel apiPath={fullContextPath} contextFile={ctx.contextFile} syncedAt={ctx.syncedAt} />
                 </div>
               </section>
 
@@ -1293,11 +1294,28 @@ function runtimeModelOptionsFor(model: string, provider?: ProviderOption, catalo
   ])
 }
 
-function ContextPanel({ context, contextFile, syncedAt }: { context: string; contextFile?: string; syncedAt?: string | null }) {
+function ContextPanel({ apiPath, contextFile, syncedAt }: { apiPath: string | null; contextFile?: string; syncedAt?: string | null }) {
   const { t } = useTranslation()
   const fmt = useFormatDateTime()
+  const [context, setContext] = useState<string | null>(null)
+  const [loading, setLoading] = useState(false)
+  const [error, setError] = useState<string | null>(null)
+  const loadContext = useCallback(() => {
+    if (!apiPath || loading || context !== null) return
+    setLoading(true)
+    setError(null)
+    apiFetch<AgentContext>(apiPath)
+      .then((data) => setContext(data.context ?? ''))
+      .catch((e) => setError(e instanceof Error ? e.message : String(e)))
+      .finally(() => setLoading(false))
+  }, [apiPath, context, loading])
   return (
-    <details className="group mt-3 rounded-lg border border-neutral-200/80 bg-white dark:border-zinc-700/60 dark:bg-zinc-900/40">
+    <details
+      className="group mt-3 rounded-lg border border-neutral-200/80 bg-white dark:border-zinc-700/60 dark:bg-zinc-900/40"
+      onToggle={(e) => {
+        if ((e.currentTarget as HTMLDetailsElement).open) loadContext()
+      }}
+    >
       <summary className="flex cursor-pointer items-center justify-between gap-3 px-4 py-3">
         <div className="flex min-w-0 items-center gap-2 text-sm font-medium text-neutral-700 dark:text-zinc-300">
           <ChevronRight className="size-4 shrink-0 transition-transform group-open:rotate-90" strokeWidth={2} />
@@ -1307,9 +1325,18 @@ function ContextPanel({ context, contextFile, syncedAt }: { context: string; con
         {syncedAt && <span className="shrink-0 text-xs text-neutral-400 dark:text-zinc-500">{fmt(syncedAt)}</span>}
       </summary>
       <div className="border-t border-neutral-100 bg-neutral-50/60 p-4 dark:border-zinc-800 dark:bg-zinc-950/40">
-        <div className="prose prose-sm prose-neutral dark:prose-invert max-w-none">
-          <Markdown remarkPlugins={[remarkGfm]}>{context || t('agentDetail.contextEmpty')}</Markdown>
-        </div>
+        {loading && (
+          <div className="flex items-center gap-2 py-4 text-sm text-neutral-500 dark:text-zinc-400">
+            <div className="size-4 animate-spin rounded-full border-2 border-neutral-300 border-t-sky-600 dark:border-zinc-600 dark:border-t-sky-400" />
+            <span>{t('api.loading')}</span>
+          </div>
+        )}
+        {error && <p className="py-3 text-sm text-red-500">{error}</p>}
+        {!loading && !error && context !== null && (
+          <div className="prose prose-sm prose-neutral dark:prose-invert max-w-none">
+            <Markdown remarkPlugins={[remarkGfm]}>{context || t('agentDetail.contextEmpty')}</Markdown>
+          </div>
+        )}
       </div>
     </details>
   )
