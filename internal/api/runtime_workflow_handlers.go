@@ -922,7 +922,7 @@ func (s *Server) activateNextWorkflowStep(workspaceID, project, previousAgent st
 		}
 		if strings.TrimSpace(workspaceID) != "" {
 			wfStore := workflowstore.NewStore(s.controlDB, workspaceID)
-			def, found, err := wfStore.Definition(transition.Run.DefinitionID)
+			def, found, err := wfStore.RunDefinition(transition.Run)
 			if err == nil && found {
 				s.fireWorkflowStepTriggers(workspaceID, workflowTriggerEvent{
 					Type:       "workflow.human_review.required",
@@ -1333,9 +1333,12 @@ func workflowBranchTaskPrompt(root *entity.Task, step entity.WorkflowStep, branc
 	b.WriteString("When finished, report completion with:\n")
 	b.WriteString("mga task step done --id \"$MULTIGENT_TASK_ID\" --summary \"...\"")
 	if len(startStep.OutputFields) > 0 {
-		b.WriteString(" --output field=value")
+		b.WriteString(" --output-json '{\"field\":\"value\"}'")
 	}
 	b.WriteString("\n")
+	if len(startStep.OutputFields) > 0 {
+		b.WriteString("Prefer --output-json for workflow outputs. Use --output field=value only for simple ASCII field names with no spaces; Chinese field names or field names with spaces must use --output-json.\n")
+	}
 	b.WriteString("Do not complete the root task directly. Multigent will advance the parent workflow after this branch sub-workflow reaches a terminal node.\n")
 	return b.String()
 }

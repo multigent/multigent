@@ -264,7 +264,7 @@ func (s *Server) handleGetTaskWorkflow(w http.ResponseWriter, r *http.Request) {
 		s.jsonError(w, http.StatusNotFound, "workflow run not found")
 		return
 	}
-	def, found, err := wfStore.Definition(run.DefinitionID)
+	def, found, err := wfStore.RunDefinition(run)
 	if err != nil {
 		s.serverError(w, err)
 		return
@@ -391,7 +391,7 @@ func (s *Server) activeWorkflowTaskView(workspaceID, project, taskID string, tas
 	if err != nil || !found || strings.TrimSpace(run.ActiveStepID) == "" || strings.TrimSpace(run.Status) == "completed" {
 		return out, false
 	}
-	def, found, err := wfStore.Definition(run.DefinitionID)
+	def, found, err := wfStore.RunDefinition(run)
 	if err != nil || !found {
 		return out, false
 	}
@@ -577,7 +577,7 @@ func (s *Server) handlePostTaskWorkflowReview(w http.ResponseWriter, r *http.Req
 		s.serverError(w, err)
 		return
 	}
-	def, found, err := wfStore.Definition(transition.Run.DefinitionID)
+	def, found, err := wfStore.RunDefinition(transition.Run)
 	if err != nil {
 		s.serverError(w, err)
 		return
@@ -659,7 +659,7 @@ func (s *Server) handleRuntimeTaskWorkflow(w http.ResponseWriter, r *http.Reques
 		s.jsonError(w, http.StatusNotFound, "workflow run not found")
 		return
 	}
-	def, found, err := wfStore.Definition(run.DefinitionID)
+	def, found, err := wfStore.RunDefinition(run)
 	if err != nil {
 		s.serverError(w, err)
 		return

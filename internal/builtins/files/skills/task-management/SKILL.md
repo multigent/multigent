@@ -74,11 +74,12 @@ mga task complete --id <task-id> --status success --summary "What was accomplish
 mga task complete --id <task-id> --status failed --error "Reason"
 
 # If the task is inside a workflow, submit every required workflow output field
-# with --output or --output-json. Field names are validated by the server.
+# with --output-json. Field names are validated by the server.
+# Use repeated --output field=value only for simple ASCII field names with no
+# spaces; Chinese labels or field names with spaces must use --output-json.
 mga task step done --id <task-id> --status success \
   --summary "One-line completion summary" \
-  --output technical_spec_doc_id="doc-..." \
-  --output test_plan_doc_id="doc-..."
+  --output-json '{"technical_spec_doc_id":"doc-...","test_plan_doc_id":"doc-..."}'
 ```
 
 Completion summaries must describe actual output, produced files/links, residual risks, and whether human follow-up is needed.

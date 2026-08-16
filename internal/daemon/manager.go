@@ -145,6 +145,52 @@ func LoadWebRuntimeMeta(workDir string) (*WebRuntimeMeta, error) {
 	return &m, nil
 }
 
+func LoadAnyWebRuntimeMeta(dataRoot string) (*WebRuntimeMeta, error) {
+	dataRoot = strings.TrimSpace(dataRoot)
+	if dataRoot == "" {
+		dataRoot = DefaultDataDir()
+	}
+	dir := filepath.Join(dataRoot, ".multigent", "web-runtimes")
+	entries, err := os.ReadDir(dir)
+	if err != nil {
+		return nil, err
+	}
+	var (
+		best     *WebRuntimeMeta
+		bestTime time.Time
+	)
+	for _, entry := range entries {
+		if entry.IsDir() || !strings.HasSuffix(entry.Name(), ".json") {
+			continue
+		}
+		path := filepath.Join(dir, entry.Name())
+		info, err := entry.Info()
+		if err != nil {
+			continue
+		}
+		data, err := os.ReadFile(path)
+		if err != nil {
+			continue
+		}
+		var m WebRuntimeMeta
+		if err := json.Unmarshal(data, &m); err != nil {
+			continue
+		}
+		if strings.TrimSpace(m.Addr) == "" {
+			continue
+		}
+		if best == nil || info.ModTime().After(bestTime) {
+			copy := m
+			best = &copy
+			bestTime = info.ModTime()
+		}
+	}
+	if best == nil {
+		return nil, os.ErrNotExist
+	}
+	return best, nil
+}
+
 func RemoveWebRuntimeMeta(workDir string) {
 	os.Remove(webRuntimeMetaPath(workDir))
 }

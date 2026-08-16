@@ -45,6 +45,24 @@ func TestResolveRuntimeAPIURLFallsBackToDaemonAcrossWorkspaces(t *testing.T) {
 	}
 }
 
+func TestResolveRuntimeAPIURLFallsBackToSiblingWebRuntimeMeta(t *testing.T) {
+	dataDir := t.TempDir()
+	t.Setenv("MULTIGENT_DATA_DIR", dataDir)
+	t.Setenv("MULTIGENT_API_URL", "")
+	activeRoot := filepath.Join(dataDir, "active-workspace")
+	otherRoot := filepath.Join(dataDir, "other-workspace")
+	if err := daemon.SaveWebRuntimeMeta(&daemon.WebRuntimeMeta{
+		WorkDir: activeRoot,
+		Addr:    "0.0.0.0:27894",
+		PID:     os.Getpid(),
+	}); err != nil {
+		t.Fatal(err)
+	}
+	if got := resolveRuntimeAPIURL(otherRoot); got != "http://127.0.0.1:27894" {
+		t.Fatalf("resolveRuntimeAPIURL()=%q", got)
+	}
+}
+
 func TestInjectRuntimeControlEnvIntoRuntimeUsesInheritedEnv(t *testing.T) {
 	cfg := &entity.SandboxConfig{}
 	injectRuntimeControlEnvIntoRuntime(cfg, map[string]string{

@@ -87,7 +87,9 @@ If a regular task cannot be completed, run:
   mga task complete --id %s --status failed --error "reason"
 
 For a workflow task, do not complete the whole task directly. Complete only the current step with:
-  mga task step done --id %s --status success --output <field>=<value>
+  mga task step done --id %s --status success --output-json '{"field":"value"}'
+
+Prefer --output-json for workflow outputs. Use --output field=value only for simple ASCII field names with no spaces.
 
 Important: do not use Claude Code built-in Task, TaskCreate, TaskUpdate, TaskOutput, TaskStop, or Todo tools to update Multigent task/workflow state. They are model-local planning tools and do not change Multigent records. Use mga task ... only.
 `
@@ -604,7 +606,7 @@ func (r *Runner) workflowPromptContext(project, agentName, taskID string) string
 	if err != nil || !ok {
 		return ""
 	}
-	def, ok, err := wfStore.Definition(run.DefinitionID)
+	def, ok, err := wfStore.RunDefinition(run)
 	if err != nil || !ok {
 		return ""
 	}
@@ -665,7 +667,8 @@ func (r *Runner) workflowPromptContext(project, agentName, taskID string) string
 	b.WriteString("- If the step description is incomplete but the inputs and previous outputs are enough to make reasonable assumptions, state those assumptions in the output and continue.\n")
 	b.WriteString("- Finish workflow steps with structured outputs using `mga task step done --id ")
 	b.WriteString(taskID)
-	b.WriteString(" --status success --output <field>=<value>` for every required output field, or use `--output-json '{...}'`.\n")
+	b.WriteString(" --status success --output-json '{...}'` with every required output field.\n")
+	b.WriteString("- Prefer `--output-json` for all workflow steps. Use repeated `--output field=value` only when every field name is simple ASCII and contains no spaces. Chinese field names or field names with spaces must use `--output-json`.\n")
 	b.WriteString("- If the step truly cannot be completed, run `mga task step done --id ")
 	b.WriteString(taskID)
 	b.WriteString(" --status failed --error \"clear reason\"` instead of leaving the task running.\n")
@@ -2725,6 +2728,12 @@ func resolveRuntimeAPIURL(root string) string {
 	if err == nil && meta != nil && strings.TrimSpace(meta.Addr) != "" {
 		return normalizeRuntimeAPIURL(meta.Addr)
 	}
+	for _, dataRoot := range runtimeDataRootCandidates(root) {
+		meta, err := daemon.LoadAnyWebRuntimeMeta(dataRoot)
+		if err == nil && meta != nil && strings.TrimSpace(meta.Addr) != "" {
+			return normalizeRuntimeAPIURL(meta.Addr)
+		}
+	}
 	// A daemon serves all workspaces beneath its data directory, while legacy
 	// web runtime metadata is keyed only by the workspace active at startup.
 	// Fall back to daemon metadata so switching workspaces does not silently
@@ -2734,6 +2743,35 @@ func resolveRuntimeAPIURL(root string) string {
 		return normalizeRuntimeAPIURL(daemonMeta.Addr)
 	}
 	return ""
+}
+
+func runtimeDataRootCandidates(root string) []string {
+	var out []string
+	add := func(value string) {
+		value = strings.TrimSpace(value)
+		if value == "" {
+			return
+		}
+		abs, err := filepath.Abs(value)
+		if err == nil {
+			value = abs
+		}
+		for _, existing := range out {
+			if sameRuntimePath(existing, value) {
+				return
+			}
+		}
+		out = append(out, value)
+	}
+	add(os.Getenv("MULTIGENT_DATA_DIR"))
+	if root != "" {
+		absRoot, err := filepath.Abs(root)
+		if err != nil {
+			absRoot = root
+		}
+		add(filepath.Dir(absRoot))
+	}
+	return out
 }
 
 func normalizeRuntimeAPIURL(value string) string {

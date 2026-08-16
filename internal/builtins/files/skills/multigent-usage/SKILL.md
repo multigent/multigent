@@ -51,14 +51,16 @@ mga task complete --id <task-id> --status success --summary "What was actually d
 mga task complete --id <task-id> --status failed --error "Failure reason"
 
 # Workflow tasks must submit every required output field structurally.
+# Prefer --output-json, especially when field names contain spaces or non-ASCII
+# characters such as Chinese labels.
 mga task step done --id <task-id> --status success \
   --summary "One-line completion summary" \
-  --output product_spec_doc_id="doc-..." \
-  --output acceptance_criteria_doc_id="doc-..."
+  --output-json '{"product_spec_doc_id":"doc-...","acceptance_criteria_doc_id":"doc-..."}'
 
-# For large or many fields, use a JSON object.
+# Repeated --output field=value is only safe for simple ASCII field names with
+# no spaces.
 mga task step done --id <task-id> --status success \
-  --output-json '{"summary":"done","product_spec_doc_id":"doc-..."}'
+  --output product_spec_doc_id="doc-..."
 
 # Ask for human or agent confirmation.
 mga task confirm-request --id <task-id> --summary "Decision needed" --action-item "Approve X" --action-item "Reject with reason"

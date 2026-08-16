@@ -947,16 +947,18 @@ func (s *Store) StartRunWithInput(project, taskID, definitionID string, actorBin
 		return entity.WorkflowRun{}, nil, errs.NotFound("workflow_definition", definitionID)
 	}
 	now := time.Now().UTC()
+	snapshot := cloneWorkflowDefinition(def)
 	run := entity.WorkflowRun{
-		ID:            entity.NewWorkflowRunID(),
-		DefinitionID:  def.ID,
-		Project:       project,
-		TaskID:        taskID,
-		Status:        "active",
-		ActiveStepID:  def.StartStepID,
-		ActorBindings: actorBindings,
-		StartedAt:     now,
-		UpdatedAt:     now,
+		ID:                 entity.NewWorkflowRunID(),
+		DefinitionID:       def.ID,
+		DefinitionSnapshot: &snapshot,
+		Project:            project,
+		TaskID:             taskID,
+		Status:             "active",
+		ActiveStepID:       def.StartStepID,
+		ActorBindings:      actorBindings,
+		StartedAt:          now,
+		UpdatedAt:          now,
 	}
 	if err := s.SaveRun(&run); err != nil {
 		return entity.WorkflowRun{}, nil, err
@@ -989,6 +991,28 @@ func (s *Store) StartRunWithInput(project, taskID, definitionID string, actorBin
 		instances = append(instances, inst)
 	}
 	return run, instances, nil
+}
+
+func cloneWorkflowDefinition(def entity.WorkflowDefinition) entity.WorkflowDefinition {
+	raw, err := json.Marshal(def)
+	if err != nil {
+		def.Provenance = nil
+		return def
+	}
+	var out entity.WorkflowDefinition
+	if err := json.Unmarshal(raw, &out); err != nil {
+		def.Provenance = nil
+		return def
+	}
+	out.Provenance = nil
+	return out
+}
+
+func (s *Store) RunDefinition(run entity.WorkflowRun) (entity.WorkflowDefinition, bool, error) {
+	if run.DefinitionSnapshot != nil && strings.TrimSpace(run.DefinitionSnapshot.ID) != "" {
+		return cloneWorkflowDefinition(*run.DefinitionSnapshot), true, nil
+	}
+	return s.Definition(run.DefinitionID)
 }
 
 func workflowInitialInputValues(step entity.WorkflowStep, values map[string]string) map[string]string {
@@ -1255,7 +1279,7 @@ func (s *Store) CompleteBranchAndMaybeAdvance(project, taskID, runID, stepID, br
 		return result, fmt.Errorf("workflow branch step %q is no longer active", strings.TrimSpace(stepID))
 	}
 	result.Transition.Run = run
-	def, ok, err := s.Definition(run.DefinitionID)
+	def, ok, err := s.RunDefinition(run)
 	if err != nil || !ok {
 		return result, err
 	}
@@ -1393,7 +1417,7 @@ func (s *Store) CompleteAndAdvance(project, taskID, summary, output string, outp
 	if err != nil || !ok {
 		return result, err
 	}
-	def, ok, err := s.Definition(run.DefinitionID)
+	def, ok, err := s.RunDefinition(run)
 	if err != nil || !ok {
 		return result, err
 	}

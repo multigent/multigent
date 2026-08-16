@@ -243,6 +243,72 @@ func TestCompleteAndAdvanceErrorsWhenOutgoingEdgesDoNotMatch(t *testing.T) {
 	}
 }
 
+func TestWorkflowRunUsesDefinitionSnapshotAfterDefinitionChanges(t *testing.T) {
+	controlDB, err := db.Open(filepath.Join(t.TempDir(), "control.db"))
+	if err != nil {
+		t.Fatalf("open db: %v", err)
+	}
+	defer controlDB.Close()
+	if err := controlDB.UpsertWorkspace(db.Workspace{ID: "workspace-1", Name: "Workspace", Slug: "workspace", Root: t.TempDir()}); err != nil {
+		t.Fatalf("create workspace: %v", err)
+	}
+
+	store := NewStore(controlDB, "workspace-1")
+	now := time.Now().UTC()
+	def := &entity.WorkflowDefinition{
+		ID:          "wf-snapshot",
+		Name:        "Snapshot Test",
+		Version:     1,
+		Scope:       "workspace",
+		StartStepID: "draft",
+		Steps: []entity.WorkflowStep{
+			{
+				ID:           "draft",
+				Type:         "agent_task",
+				Title:        "Draft",
+				ActorRole:    "writer",
+				OutputFields: []entity.WorkflowField{{Name: "decision", Description: "next route"}},
+			},
+			{ID: "review", Type: "human_review", Title: "Review", ActorRole: "reviewer"},
+		},
+		Edges:     []entity.WorkflowEdge{{ID: "approve", From: "draft", To: "review", Condition: &entity.WorkflowEdgeCondition{Field: "decision", Operator: "eq", Value: "approve"}}},
+		CreatedAt: now,
+		UpdatedAt: now,
+	}
+	if err := store.SaveDefinition(def); err != nil {
+		t.Fatalf("save definition: %v", err)
+	}
+	run, _, err := store.StartRun("project", "task-1", def.ID, map[string]entity.WorkflowActorBinding{
+		"writer":   {Type: "agent", ID: "writer-agent"},
+		"reviewer": {Type: "human", ID: "owner"},
+	})
+	if err != nil {
+		t.Fatalf("start run: %v", err)
+	}
+	if run.DefinitionSnapshot == nil {
+		t.Fatal("expected workflow run to store a definition snapshot")
+	}
+
+	def.Edges[0].Condition.Value = "renamed-after-task-start"
+	def.Steps[1].Title = "Edited Review"
+	def.Version = 2
+	def.UpdatedAt = now.Add(time.Minute)
+	if err := store.SaveDefinition(def); err != nil {
+		t.Fatalf("update definition: %v", err)
+	}
+
+	transition, err := store.CompleteAndAdvance("project", "task-1", "draft done", "", map[string]string{"decision": "approve"}, "completed")
+	if err != nil {
+		t.Fatalf("complete with original snapshot route: %v", err)
+	}
+	if transition.Next == nil || transition.Next.ID != "review" {
+		t.Fatalf("expected transition to original review step, got %#v", transition.Next)
+	}
+	if transition.Next.Title != "Review" {
+		t.Fatalf("expected snapshot step title, got %q", transition.Next.Title)
+	}
+}
+
 func workflowStepInstanceByIDForTest(steps []entity.WorkflowStepInstance, stepID string) (entity.WorkflowStepInstance, bool) {
 	for _, step := range steps {
 		if step.StepID == stepID {

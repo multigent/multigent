@@ -671,7 +671,7 @@ func (s *Server) reconcileWorkflowTaskBeforeManualStart(workspaceID, project, ta
 	if err != nil || !found || strings.TrimSpace(run.ActiveStepID) == "" || strings.TrimSpace(run.Status) == "completed" {
 		return err
 	}
-	def, found, err := wfStore.Definition(run.DefinitionID)
+	def, found, err := wfStore.RunDefinition(run)
 	if err != nil || !found {
 		return err
 	}
