@@ -1820,6 +1820,14 @@
     "contextHint": "这里展示 Agent 实际收到的完整合并上下文，用来排查 Prompt、角色、项目和 Skill 是否正确注入。",
     "fullContext": "完整合并 Context",
     "contextEmpty": "暂无 Context",
+    "linkedContext": "关联资料",
+    "linkedContextHint": "把知识库文档关联给这个 Agent。运行时只注入资料清单，Agent 可按需用 mga context 读取正文。",
+    "noLinkedContext": "暂无关联资料。",
+    "requiredContext": "必须读取",
+    "selectContextDoc": "选择知识库文档…",
+    "scopeWorkspace": "工作区",
+    "scopeProject": "项目",
+    "scopeAgent": "当前 Agent",
     "enabledToolCount": "已启用工具（{{count}}）"
   },
   "runs": {

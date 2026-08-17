@@ -245,7 +245,7 @@ func (s *Server) hireAgent(project, agentName, team, role, model string) (string
 
 	if agentModel != entity.ModelHuman {
 		builder := ctxbuild.NewBuilder(s.st)
-		mc, err := builder.Build(project, team, role)
+		mc, err := builder.BuildForAgent(project, agentName, team, role)
 		if err != nil {
 			return "", hireAgentError{status: http.StatusBadRequest, code: ErrCodeValidationFailed, message: "agent context is invalid", err: err}
 		}

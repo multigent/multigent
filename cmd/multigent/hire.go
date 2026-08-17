@@ -161,7 +161,7 @@ To switch an existing agent to another runtime (e.g. claudecode → codex), use
 			}
 
 			builder := ctxbuild.NewBuilder(s)
-			mc, err := builder.Build(project, team, role)
+			mc, err := builder.BuildForAgent(project, agentName, team, role)
 			if err != nil {
 				return fmt.Errorf("%s: build context: %w", use, err)
 			}

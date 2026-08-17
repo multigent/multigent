@@ -121,6 +121,33 @@ type AgentContext = {
   addDirs?: string[]
 }
 
+type KnowledgeDoc = {
+  id: string
+  title: string
+  index?: string
+  description?: string
+}
+
+type ContextBindingView = {
+  binding: {
+    id: string
+    docId?: string
+    scopeType: string
+    scopeId?: string
+    required?: boolean
+  }
+  artifact: {
+    id?: string
+    docId?: string
+    title?: string
+    summary?: string
+    kind?: string
+  }
+  doc?: KnowledgeDoc
+}
+
+type ContextBindingsResponse = { bindings?: ContextBindingView[] }
+
 type RuntimeNode = {
   id: string
   name: string
@@ -688,6 +715,12 @@ export default function ProjectAgentDetailPage() {
                     canEdit={canConfigureThisAgent}
                   />
                   <ContextPanel apiPath={fullContextPath} contextFile={ctx.contextFile} syncedAt={ctx.syncedAt} />
+                  <AgentContextBindingsPanel
+                    project={projectId}
+                    agentName={agentName}
+                    canEdit={canConfigureThisAgent}
+                    onChanged={() => setCtxReload((k) => k + 1)}
+                  />
                 </div>
               </section>
 
@@ -1339,6 +1372,150 @@ function ContextPanel({ apiPath, contextFile, syncedAt }: { apiPath: string | nu
         )}
       </div>
     </details>
+  )
+}
+
+function AgentContextBindingsPanel({ project, agentName, canEdit, onChanged }: {
+  project: string
+  agentName: string
+  canEdit: boolean
+  onChanged: () => void
+}) {
+  const { t } = useTranslation()
+  const [reloadKey, setReloadKey] = useState(0)
+  const [docs, setDocs] = useState<KnowledgeDoc[]>([])
+  const [docId, setDocId] = useState('')
+  const [required, setRequired] = useState(true)
+  const [saving, setSaving] = useState(false)
+  const path = `/api/v1/projects/${encodeURIComponent(project)}/agents/${encodeURIComponent(agentName)}/context-bindings`
+  const state = useApiJson<ContextBindingsResponse>(path, reloadKey, { keepPreviousDataOnReload: true })
+
+  useEffect(() => {
+    if (!canEdit) return
+    apiFetch<KnowledgeDoc[]>('/api/v1/docs')
+      .then((data) => setDocs(data ?? []))
+      .catch(() => setDocs([]))
+  }, [canEdit])
+
+  async function addBinding() {
+    if (!docId.trim()) return
+    setSaving(true)
+    try {
+      await apiPost('/api/v1/context/bindings', {
+        docId: docId.trim(),
+        scopeType: 'agent',
+        scopeId: `${project}/${agentName}`,
+        required,
+      })
+      setDocId('')
+      setReloadKey((k) => k + 1)
+      onChanged()
+    } finally {
+      setSaving(false)
+    }
+  }
+
+  async function removeBinding(id: string) {
+    await apiDelete(`/api/v1/context/bindings/${encodeURIComponent(id)}`)
+    setReloadKey((k) => k + 1)
+    onChanged()
+  }
+
+  const bindings: ContextBindingView[] = state.status === 'ok' ? (state.data.bindings ?? []) : []
+  const directlyBoundDocIds = new Set(
+    bindings
+      .filter((item) => item.binding.scopeType === 'agent' && item.binding.scopeId === `${project}/${agentName}`)
+      .map((item) => item.artifact.docId || item.binding.docId || item.doc?.id)
+      .filter(Boolean) as string[],
+  )
+  const availableDocs = docs.filter((doc) => !directlyBoundDocIds.has(doc.id))
+  const scopeLabel = (binding: ContextBindingView['binding']) => {
+    if (binding.scopeType === 'workspace') return t('agentDetail.scopeWorkspace', { defaultValue: 'Workspace' })
+    if (binding.scopeType === 'project') return t('agentDetail.scopeProject', { defaultValue: 'Project' })
+    return t('agentDetail.scopeAgent', { defaultValue: 'This agent' })
+  }
+  return (
+    <div className="rounded-lg border border-neutral-200/80 bg-white dark:border-zinc-700/60 dark:bg-zinc-900/40">
+      <div className="border-b border-neutral-100 px-4 py-3 dark:border-zinc-800">
+        <div className="flex items-center justify-between gap-3">
+          <div>
+            <p className="text-sm font-medium text-neutral-800 dark:text-zinc-100">
+              {t('agentDetail.linkedContext', { defaultValue: 'Reference material' })}
+            </p>
+            <p className="mt-1 text-xs text-neutral-500 dark:text-zinc-500">
+              {t('agentDetail.linkedContextHint', { defaultValue: 'Link knowledge docs to this agent. Runs receive a reference list, and the agent can read the content with mga context when needed.' })}
+            </p>
+          </div>
+          {state.status === 'loading' && <div className="size-4 animate-spin rounded-full border-2 border-neutral-300 border-t-sky-600 dark:border-zinc-600 dark:border-t-sky-400" />}
+        </div>
+      </div>
+      <div className="space-y-3 p-4">
+        {bindings.length === 0 && (
+          <p className="rounded-md bg-neutral-50 px-3 py-2 text-sm text-neutral-500 dark:bg-zinc-950/40 dark:text-zinc-500">
+            {t('agentDetail.noLinkedContext', { defaultValue: 'No reference material linked yet.' })}
+          </p>
+        )}
+        {bindings.map((item) => {
+          const doc = item.doc
+          const title = item.artifact.title || doc?.title || item.artifact.docId || item.binding.docId || item.binding.id
+          const docTarget = item.artifact.docId || item.binding.docId || doc?.id
+          return (
+            <div key={item.binding.id} className="flex items-start justify-between gap-3 rounded-md border border-neutral-100 bg-neutral-50/70 p-3 dark:border-zinc-800 dark:bg-zinc-950/30">
+              <div className="min-w-0">
+                <div className="flex flex-wrap items-center gap-2">
+                  {docTarget ? (
+                    <Link to={`/docs/${encodeURIComponent(docTarget)}`} className="truncate text-sm font-medium text-neutral-800 hover:text-sky-600 dark:text-zinc-100 dark:hover:text-sky-300">
+                      {title}
+                    </Link>
+                  ) : (
+                    <p className="truncate text-sm font-medium text-neutral-800 dark:text-zinc-100">{title}</p>
+                  )}
+                  {item.binding.required && (
+                    <span className="rounded-full bg-amber-100 px-2 py-0.5 text-xs font-medium text-amber-700 dark:bg-amber-900/30 dark:text-amber-300">
+                      {t('agentDetail.requiredContext', { defaultValue: 'Required' })}
+                    </span>
+                  )}
+                  <span className="rounded-full bg-neutral-100 px-2 py-0.5 text-xs font-medium text-neutral-500 dark:bg-zinc-800 dark:text-zinc-400">
+                    {scopeLabel(item.binding)}
+                  </span>
+                </div>
+                {(item.artifact.summary || doc?.description) && (
+                  <p className="mt-1 line-clamp-2 text-xs text-neutral-500 dark:text-zinc-500">
+                    {item.artifact.summary || doc?.description}
+                  </p>
+                )}
+              </div>
+              {canEdit && item.binding.scopeType === 'agent' && item.binding.scopeId === `${project}/${agentName}` && (
+                <button type="button" onClick={() => void removeBinding(item.binding.id)} className="shrink-0 text-xs font-medium text-neutral-400 hover:text-red-500">
+                  {t('common.delete')}
+                </button>
+              )}
+            </div>
+          )
+        })}
+        {canEdit && (
+          <div className="grid gap-2 border-t border-neutral-100 pt-3 dark:border-zinc-800 sm:grid-cols-[1fr_auto_auto]">
+            <select
+              value={docId}
+              onChange={(e) => setDocId(e.target.value)}
+              className="min-w-0 rounded-md border border-neutral-200 bg-white px-3 py-2 text-sm text-neutral-800 outline-none focus:border-sky-400 dark:border-zinc-700 dark:bg-zinc-950 dark:text-zinc-100"
+            >
+              <option value="">{t('agentDetail.selectContextDoc', { defaultValue: 'Select a knowledge doc...' })}</option>
+              {availableDocs.map((doc) => (
+                <option key={doc.id} value={doc.id}>{doc.title || doc.id} · {doc.id}</option>
+              ))}
+            </select>
+            <label className="inline-flex items-center gap-2 rounded-md border border-neutral-200 px-3 py-2 text-sm text-neutral-600 dark:border-zinc-700 dark:text-zinc-300">
+              <input type="checkbox" checked={required} onChange={(e) => setRequired(e.target.checked)} />
+              {t('agentDetail.requiredContext', { defaultValue: 'Required' })}
+            </label>
+            <button type="button" onClick={() => void addBinding()} disabled={!docId || saving} className={primaryButtonCls}>
+              {saving ? t('common.saving') : t('common.add')}
+            </button>
+          </div>
+        )}
+      </div>
+    </div>
   )
 }
 

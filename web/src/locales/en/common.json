@@ -1820,6 +1820,14 @@
     "contextHint": "Review the complete merged context the agent receives, including prompt, role, project, and skill content.",
     "fullContext": "Complete Merged Context",
     "contextEmpty": "No context yet",
+    "linkedContext": "Reference Material",
+    "linkedContextHint": "Link knowledge docs to this agent. Runs receive a reference list, and the agent can read the content with mga context when needed.",
+    "noLinkedContext": "No reference material linked yet.",
+    "requiredContext": "Required",
+    "selectContextDoc": "Select a knowledge doc...",
+    "scopeWorkspace": "Workspace",
+    "scopeProject": "Project",
+    "scopeAgent": "This agent",
     "enabledToolCount": "Enabled tools ({{count}})"
   },
   "runs": {

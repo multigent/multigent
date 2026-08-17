@@ -191,7 +191,7 @@ func newShowAgentCmd() *cobra.Command {
 			}
 
 			builder := ctxbuild.NewBuilder(s)
-			mc, err := builder.Build(project, meta.Team, meta.Role)
+			mc, err := builder.BuildForAgent(project, agentName, meta.Team, meta.Role)
 			if err != nil {
 				return err
 			}

@@ -8,6 +8,7 @@ import (
 	"path/filepath"
 	"strings"
 
+	"github.com/multigent/multigent/internal/contextpack"
 	"github.com/multigent/multigent/internal/store"
 )
 
@@ -142,6 +143,26 @@ func (b *Builder) Build(projectName, teamPath, roleName string) (*MergedContext,
 		})
 	}
 
+	return mc, nil
+}
+
+// BuildForAgent assembles the base context and appends any context assets
+// explicitly bound to the workspace, project, or agent.
+func (b *Builder) BuildForAgent(projectName, agentName, teamPath, roleName string) (*MergedContext, error) {
+	mc, err := b.Build(projectName, teamPath, roleName)
+	if err != nil {
+		return nil, err
+	}
+	layer, err := contextpack.BuildAgentContextLayer(b.store.Root(), projectName, agentName)
+	if err != nil {
+		return nil, fmt.Errorf("ctxbuild: context bindings: %w", err)
+	}
+	if strings.TrimSpace(layer) != "" {
+		mc.Layers = append(mc.Layers, ContextLayer{
+			Source:  "context-bindings:" + projectName + "/" + agentName,
+			Content: layer,
+		})
+	}
 	return mc, nil
 }
 

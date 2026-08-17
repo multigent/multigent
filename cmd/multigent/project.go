@@ -255,7 +255,7 @@ func applyAgentSpec(root, project string, spec entity.AgentSpec,
 				if meta, err2 := s.AgentMeta(project, spec.Name); err2 == nil {
 					if f2, err3 := formatter.New(meta.Model); err3 == nil {
 						bld := ctxbuild.NewBuilder(s)
-						if mc2, err4 := bld.Build(project, spec.Team, spec.Role); err4 == nil {
+						if mc2, err4 := bld.BuildForAgent(project, spec.Name, spec.Team, spec.Role); err4 == nil {
 							_ = f2.Format(mc2, agentDir)
 						}
 					}
@@ -352,7 +352,7 @@ func hireAgentFromSpec(root, project string, spec entity.AgentSpec,
 	}
 
 	builder := ctxbuild.NewBuilder(s)
-	mc, err := builder.Build(project, spec.Team, spec.Role)
+	mc, err := builder.BuildForAgent(project, spec.Name, spec.Team, spec.Role)
 	if err != nil {
 		return fmt.Errorf("build context: %w", err)
 	}

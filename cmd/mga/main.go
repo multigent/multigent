@@ -50,6 +50,7 @@ func main() {
 		newInboxCmd(),
 		newContactsCmd(),
 		newDocsCmd(),
+		newContextCmd(),
 		newSkillCmd(),
 		newWorkflowCmd(),
 	)
@@ -1020,6 +1021,50 @@ func newContactsListCmd() *cobra.Command {
 func newDocsCmd() *cobra.Command {
 	cmd := &cobra.Command{Use: "docs", Short: "Read and create knowledge base documents"}
 	cmd.AddCommand(newDocsListCmd(), newDocsSearchCmd(), newDocsShowCmd(), newDocsCreateCmd())
+	return cmd
+}
+
+func newContextCmd() *cobra.Command {
+	cmd := &cobra.Command{
+		Use:   "context",
+		Short: "Read context assets linked to the current agent",
+		Long: `Read context assets linked to the current agent.
+
+These are workspace, project, or agent-level context bindings configured in Multigent.
+Use this before working on tasks that depend on imported sessions, external docs, or project background.`,
+	}
+	cmd.AddCommand(newContextListCmd(), newContextReadCmd())
+	return cmd
+}
+
+func newContextListCmd() *cobra.Command {
+	cmd := &cobra.Command{
+		Use:   "list",
+		Short: "List linked context assets for the current agent",
+		RunE: func(cmd *cobra.Command, args []string) error {
+			body, err := requestJSON(http.MethodGet, "/api/v1/runtime/context", nil, nil)
+			if err != nil {
+				return err
+			}
+			return writeJSON(body)
+		},
+	}
+	return cmd
+}
+
+func newContextReadCmd() *cobra.Command {
+	cmd := &cobra.Command{
+		Use:   "read <context-id-or-doc-id>",
+		Short: "Read one linked context asset with content",
+		Args:  cobra.ExactArgs(1),
+		RunE: func(cmd *cobra.Command, args []string) error {
+			body, err := requestJSON(http.MethodGet, "/api/v1/runtime/context/"+url.PathEscape(args[0]), nil, nil)
+			if err != nil {
+				return err
+			}
+			return writeJSON(body)
+		},
+	}
 	return cmd
 }
 
