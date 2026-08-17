@@ -29,6 +29,7 @@ type contextKey string
 
 const ctxUserKey contextKey = "auth-user"
 const ctxAuthSourceKey contextKey = "auth-source"
+const ctxAuthScopesKey contextKey = "auth-scopes"
 const ctxEntitlementsKey contextKey = "billing-entitlements"
 const requestedWorkspaceHeader = "X-Multigent-Workspace-ID"
 const trustedProxyUserIDHeader = "X-Multigent-Proxy-User-ID"
@@ -421,8 +422,12 @@ func (s *Server) Handler() http.Handler {
 	mux.HandleFunc("GET /api/v1/docs/{id}/refs", s.handleDocsGetRefs)
 	mux.HandleFunc("POST /api/v1/docs/{id}/refs", s.handleDocsAddRef)
 	mux.HandleFunc("DELETE /api/v1/docs/{id}/refs/{refId}", s.handleDocsRemoveRef)
+	mux.HandleFunc("GET /api/v1/client-tokens", s.handleClientTokensList)
+	mux.HandleFunc("POST /api/v1/client-tokens", s.handleClientTokensCreate)
+	mux.HandleFunc("DELETE /api/v1/client-tokens/{id}", s.handleClientTokensDelete)
 	mux.HandleFunc("GET /api/v1/context/collectors", s.handleContextCollectors)
 	mux.HandleFunc("GET /api/v1/context/artifacts", s.handleContextArtifacts)
+	mux.HandleFunc("POST /api/v1/context/import", s.handleContextImport)
 	mux.HandleFunc("POST /api/v1/context/import/manual", s.handleContextImportManual)
 	mux.HandleFunc("POST /api/v1/context/import/file", s.handleContextImportFile)
 	mux.HandleFunc("POST /api/v1/context/bindings", s.handleContextCreateBinding)
@@ -603,6 +608,9 @@ func (s *Server) withTokenAuth(next http.Handler) http.Handler {
 		}
 		ctx := context.WithValue(r.Context(), ctxUserKey, identity.Username)
 		ctx = context.WithValue(ctx, ctxAuthSourceKey, identity.Source)
+		if len(identity.Scopes) > 0 {
+			ctx = context.WithValue(ctx, ctxAuthScopesKey, identity.Scopes)
+		}
 		if identity.Entitlements != nil {
 			ctx = context.WithValue(ctx, ctxEntitlementsKey, *identity.Entitlements)
 		}

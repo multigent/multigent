@@ -14,7 +14,8 @@
     "loading": "読み込み中…",
     "creating": "作成中…",
     "saving": "保存中…",
-    "copied": "コピー済み"
+    "copied": "コピー済み",
+    "copy": "コピー"
   },
   "apiErrors": {
     "bad_request": "リクエストを処理できませんでした。",
@@ -818,7 +819,24 @@
     "billingRuntimeNodes": "実行ノード",
     "billingUnlimited": "無制限",
     "billingPendingSeats": "{{count}} 件の保留中招待",
-    "billingLimitHint": "このワークスペースはプラン制限に達しています。ワークスペース所有者または Multigent sales に連絡してアップグレードしてください。"
+    "billingLimitHint": "このワークスペースはプラン制限に達しています。ワークスペース所有者または Multigent sales に連絡してアップグレードしてください。",
+    "clientTokensTitle": "Client Access Tokens",
+    "clientTokensIntro": "Issue limited workspace tokens for local CLI uploads of files, agent sessions, and other reference material. These are not runtime node credentials and cannot execute agents.",
+    "createClientToken": "Create token",
+    "createClientTokenDesc": "Tokens are scoped to the current workspace. The first version grants only context.write. Use least privilege and revoke tokens when they are no longer needed.",
+    "clientTokenNamePlaceholder": "Example: My MacBook uploader",
+    "createClientTokenButton": "Generate token",
+    "clientTokenCreated": "Token generated",
+    "clientTokenCreatedDesc": "Copy it now. The plaintext token is shown only once; after closing this panel, revoke and regenerate if needed.",
+    "clientTokenCommandExample": "CLI upload example",
+    "clientTokenName": "Name",
+    "clientTokenScopes": "Scopes",
+    "clientTokenLastUsed": "Last used",
+    "clientTokenCreatedAt": "Created at",
+    "noClientTokens": "No client access tokens yet.",
+    "revokeClientToken": "Revoke",
+    "clientTokenRevokeTitle": "Revoke access token?",
+    "clientTokenRevokeConfirm": "Revoke \"{{name}}\"? Local CLI commands using this token will no longer be able to upload reference material."
   },
   "account": {
     "title": "アカウント設定",
@@ -842,7 +860,25 @@
     "passwordDescription": "現在の Multigent アカウントのログインパスワードを更新します。",
     "currentPasswordDescription": "本人確認のため、現在のパスワードを入力します。",
     "newPasswordDescription": "6 文字以上の新しいパスワードを設定します。",
-    "confirmPasswordDescription": "入力ミスを避けるため、新しいパスワードをもう一度入力します。"
+    "confirmPasswordDescription": "入力ミスを避けるため、新しいパスワードをもう一度入力します。",
+    "clientTokensTitle": "CLI access tokens",
+    "clientTokensDescription": "Generate credentials for your own local CLI. A token only represents your identity; project, agent, and document operations are still checked against your workspace permissions.",
+    "createClientToken": "Create token",
+    "createClientTokenDesc": "Use it to upload local files, agent sessions, and other reference material. Tokens are scoped to the current workspace and grant only the context.write scope by default.",
+    "clientTokenNamePlaceholder": "Example: My MacBook CLI",
+    "createClientTokenButton": "Generate token",
+    "clientTokenCreated": "Token generated",
+    "clientTokenCreatedDesc": "Copy it now. The plaintext token is shown only once; after closing this panel, revoke and regenerate if needed.",
+    "clientTokenCommandExample": "CLI upload example",
+    "copyCommand": "Copy command",
+    "clientTokenName": "Name",
+    "clientTokenScopes": "Scopes",
+    "clientTokenLastUsed": "Last used",
+    "clientTokenCreatedAt": "Created at",
+    "noClientTokens": "No CLI access tokens yet.",
+    "revokeClientToken": "Revoke",
+    "clientTokenRevokeTitle": "Revoke access token?",
+    "clientTokenRevokeConfirm": "Revoke \"{{name}}\"? Local CLI commands using this token will no longer be able to connect."
   },
   "overview": {
     "eyebrow": "ワークベンチ",

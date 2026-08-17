@@ -1,11 +1,13 @@
-import { useEffect, useState, type FormEvent, type ReactNode } from 'react'
+import { useCallback, useEffect, useState, type FormEvent, type ReactNode } from 'react'
 import { useTranslation } from 'react-i18next'
-import { Camera, ImagePlus, X } from 'lucide-react'
+import { Camera, Check, Copy, ImagePlus, KeyRound, Plus, Trash2, X } from 'lucide-react'
 import { i18n } from '../i18n'
-import { apiFetch, apiPut } from '../lib/api'
+import { WORKSPACE_ID_KEY, apiDelete, apiFetch, apiPost, apiPut } from '../lib/api'
 import { getStoredToken, useAuth, type AuthUser } from '../lib/auth'
+import { useFormatDateTime } from '../lib/format-datetime'
 import type { ThemeMode } from '../theme/ThemeProvider'
 import { useTheme } from '../theme/ThemeProvider'
+import { confirmDialog } from '../components/ui/ConfirmDialog'
 
 const selectCls =
   'h-9 w-52 rounded-md border border-neutral-200/80 bg-white px-2.5 text-sm text-neutral-800 outline-none transition-colors focus:border-sky-400 dark:border-zinc-700/60 dark:bg-zinc-900 dark:text-zinc-200 dark:[color-scheme:dark] [&>option]:dark:bg-zinc-900 [&>option]:dark:text-zinc-200'
@@ -40,6 +42,20 @@ function SectionHeader({ title, description }: { title: string; description: str
     </div>
   )
 }
+
+type ClientToken = {
+  id: string
+  name: string
+  username: string
+  scopes: string[]
+  createdAt?: string
+  lastUsedAt?: string
+  expiresAt?: string
+  revokedAt?: string
+}
+
+type ClientTokenListResp = { tokens: ClientToken[] }
+type ClientTokenCreateResp = { token: ClientToken; rawToken: string }
 
 function ProfileForm({ user, workspaceRole }: { user: AuthUser; workspaceRole: string }) {
   const { t } = useTranslation()
@@ -302,6 +318,199 @@ function cropAvatar(src: string, zoom: number, offsetX: number, offsetY: number)
   })
 }
 
+function ClientTokensSection() {
+  const { t } = useTranslation()
+  const formatDateTime = useFormatDateTime()
+  const [tokens, setTokens] = useState<ClientToken[]>([])
+  const [loading, setLoading] = useState(true)
+  const [creating, setCreating] = useState(false)
+  const [name, setName] = useState('')
+  const [createdToken, setCreatedToken] = useState<ClientTokenCreateResp | null>(null)
+  const [copied, setCopied] = useState('')
+
+  const load = useCallback(async () => {
+    setLoading(true)
+    try {
+      const data = await apiFetch<ClientTokenListResp>('/api/v1/client-tokens')
+      setTokens(data.tokens ?? [])
+    } finally {
+      setLoading(false)
+    }
+  }, [])
+
+  useEffect(() => { void load() }, [load])
+
+  const activeTokens = tokens.filter(token => !token.revokedAt)
+  const workspaceID = localStorage.getItem(WORKSPACE_ID_KEY) || '<workspace-id>'
+  const sampleCommand = createdToken ? [
+    `export MULTIGENT_API_URL=${window.location.origin}`,
+    `export MULTIGENT_WORKSPACE_ID=${workspaceID}`,
+    `export MULTIGENT_CLIENT_TOKEN=${createdToken.rawToken}`,
+    'multigent context import-session --path ~/.codex/sessions/example.jsonl --cli codex --bind-agent demo/Lina --required',
+  ].join('\n') : ''
+
+  async function copyText(text: string, key: string) {
+    await navigator.clipboard?.writeText(text)
+    setCopied(key)
+    window.setTimeout(() => setCopied(current => current === key ? '' : current), 1600)
+  }
+
+  async function createToken() {
+    const trimmed = name.trim()
+    if (!trimmed) return
+    setCreating(true)
+    try {
+      const data = await apiPost<ClientTokenCreateResp>('/api/v1/client-tokens', {
+        name: trimmed,
+        scopes: ['context.write'],
+      })
+      setCreatedToken(data)
+      setName('')
+      await load()
+    } finally {
+      setCreating(false)
+    }
+  }
+
+  async function revokeToken(token: ClientToken) {
+    const ok = await confirmDialog({
+      title: t('account.clientTokenRevokeTitle'),
+      description: t('account.clientTokenRevokeConfirm', { name: token.name }),
+      confirmLabel: t('forms.delete'),
+      cancelLabel: t('forms.cancel'),
+      tone: 'danger',
+    })
+    if (!ok) return
+    await apiDelete(`/api/v1/client-tokens/${encodeURIComponent(token.id)}`)
+    await load()
+  }
+
+  return (
+    <section className="mt-4 overflow-hidden rounded-lg border border-neutral-200/80 bg-white dark:border-zinc-700/60 dark:bg-zinc-900/40">
+      <SectionHeader title={t('account.clientTokensTitle')} description={t('account.clientTokensDescription')} />
+      <div className="space-y-4 px-5 py-5">
+        <div className="rounded-lg border border-neutral-200/80 bg-neutral-50/40 p-4 dark:border-zinc-700/60 dark:bg-zinc-800/30">
+          <div className="flex items-start gap-2">
+            <KeyRound className="mt-0.5 size-4 text-neutral-500 dark:text-zinc-500" strokeWidth={1.8} />
+            <div className="min-w-0 flex-1">
+              <p className="text-sm font-medium text-neutral-900 dark:text-zinc-100">{t('account.createClientToken')}</p>
+              <p className="mt-1 text-xs leading-5 text-neutral-500 dark:text-zinc-500">{t('account.createClientTokenDesc')}</p>
+              <div className="mt-3 flex flex-col gap-2 sm:flex-row sm:items-center">
+                <input
+                  className="h-9 w-full max-w-md rounded-md border border-neutral-200/80 bg-white px-2.5 text-sm text-neutral-800 outline-none transition-colors placeholder:text-neutral-400 focus:border-sky-400 dark:border-zinc-700/60 dark:bg-zinc-900 dark:text-zinc-200 dark:placeholder:text-zinc-600"
+                  value={name}
+                  onChange={event => setName(event.target.value)}
+                  placeholder={t('account.clientTokenNamePlaceholder')}
+                />
+                <button
+                  type="button"
+                  onClick={() => void createToken()}
+                  disabled={creating || !name.trim()}
+                  className="inline-flex h-9 items-center justify-center gap-1.5 rounded-md bg-sky-600 px-3 text-sm font-medium text-white transition-colors hover:bg-sky-700 disabled:opacity-50"
+                >
+                  <Plus className="size-4" />
+                  {creating ? t('common.creating') : t('account.createClientTokenButton')}
+                </button>
+              </div>
+            </div>
+          </div>
+        </div>
+
+        {createdToken && (
+          <div className="rounded-lg border border-emerald-200 bg-emerald-50/70 p-4 dark:border-emerald-900/50 dark:bg-emerald-950/20">
+            <div className="flex items-start justify-between gap-3">
+              <div>
+                <p className="text-sm font-semibold text-emerald-800 dark:text-emerald-200">{t('account.clientTokenCreated')}</p>
+                <p className="mt-1 text-xs leading-5 text-emerald-700/80 dark:text-emerald-300/80">{t('account.clientTokenCreatedDesc')}</p>
+              </div>
+              <button
+                type="button"
+                onClick={() => setCreatedToken(null)}
+                className="rounded-md p-1 text-emerald-700 hover:bg-emerald-100 dark:text-emerald-300 dark:hover:bg-emerald-900/40"
+                aria-label={t('common.close')}
+              >
+                <X className="size-4" />
+              </button>
+            </div>
+            <div className="mt-3 flex items-center gap-2 rounded-md border border-emerald-200 bg-white px-3 py-2 dark:border-emerald-900/50 dark:bg-zinc-950">
+              <code className="min-w-0 flex-1 truncate text-xs text-neutral-700 dark:text-zinc-200">{createdToken.rawToken}</code>
+              <button
+                type="button"
+                onClick={() => void copyText(createdToken.rawToken, 'token')}
+                className="inline-flex items-center gap-1 rounded-md px-2 py-1 text-xs font-medium text-neutral-500 hover:bg-neutral-100 hover:text-neutral-700 dark:text-zinc-400 dark:hover:bg-zinc-800 dark:hover:text-zinc-200"
+              >
+                {copied === 'token' ? <Check className="size-3.5" /> : <Copy className="size-3.5" />}
+                {copied === 'token' ? t('common.copied') : t('common.copy')}
+              </button>
+            </div>
+            <div className="mt-3 rounded-md border border-emerald-200 bg-white p-3 dark:border-emerald-900/50 dark:bg-zinc-950">
+              <div className="flex items-center justify-between gap-3">
+                <p className="text-xs font-medium text-neutral-500 dark:text-zinc-400">{t('account.clientTokenCommandExample')}</p>
+                <button
+                  type="button"
+                  onClick={() => void copyText(sampleCommand, 'command')}
+                  className="inline-flex items-center gap-1 rounded-md px-2 py-1 text-xs font-medium text-neutral-500 hover:bg-neutral-100 hover:text-neutral-700 dark:text-zinc-400 dark:hover:bg-zinc-800 dark:hover:text-zinc-200"
+                >
+                  {copied === 'command' ? <Check className="size-3.5" /> : <Copy className="size-3.5" />}
+                  {copied === 'command' ? t('common.copied') : t('account.copyCommand')}
+                </button>
+              </div>
+              <pre className="mt-2 overflow-x-auto whitespace-pre-wrap font-mono text-xs leading-5 text-neutral-700 dark:text-zinc-300">{sampleCommand}</pre>
+            </div>
+          </div>
+        )}
+
+        <div className="overflow-hidden rounded-lg border border-neutral-200/80 dark:border-zinc-700/60">
+          <table className="w-full text-left">
+            <thead className="bg-neutral-50 text-xs text-neutral-500 dark:bg-zinc-800/50 dark:text-zinc-400">
+              <tr>
+                <th className="px-4 py-2.5 font-medium">{t('account.clientTokenName')}</th>
+                <th className="px-4 py-2.5 font-medium">{t('account.clientTokenScopes')}</th>
+                <th className="px-4 py-2.5 font-medium">{t('account.clientTokenLastUsed')}</th>
+                <th className="px-4 py-2.5 font-medium">{t('account.clientTokenCreatedAt')}</th>
+                <th className="px-4 py-2.5 text-right font-medium">{t('common.actions')}</th>
+              </tr>
+            </thead>
+            <tbody className="divide-y divide-neutral-200/80 dark:divide-zinc-700/60">
+              {loading ? (
+                <tr><td colSpan={5} className="px-4 py-6 text-center text-sm text-neutral-400">{t('forms.loading')}</td></tr>
+              ) : activeTokens.length === 0 ? (
+                <tr><td colSpan={5} className="px-4 py-6 text-center text-sm text-neutral-400">{t('account.noClientTokens')}</td></tr>
+              ) : activeTokens.map(token => (
+                <tr key={token.id}>
+                  <td className="px-4 py-3">
+                    <p className="text-sm font-medium text-neutral-900 dark:text-zinc-100">{token.name}</p>
+                    <p className="mt-0.5 font-mono text-xs text-neutral-400 dark:text-zinc-500">{token.id}</p>
+                  </td>
+                  <td className="px-4 py-3">
+                    <div className="flex flex-wrap gap-1">
+                      {(token.scopes ?? []).map(scope => (
+                        <span key={scope} className="rounded-md bg-sky-50 px-2 py-0.5 font-mono text-[11px] text-sky-700 dark:bg-sky-900/20 dark:text-sky-300">{scope}</span>
+                      ))}
+                    </div>
+                  </td>
+                  <td className="px-4 py-3 text-xs text-neutral-500 dark:text-zinc-400">{token.lastUsedAt ? formatDateTime(token.lastUsedAt) : '-'}</td>
+                  <td className="px-4 py-3 text-xs text-neutral-500 dark:text-zinc-400">{token.createdAt ? formatDateTime(token.createdAt) : '-'}</td>
+                  <td className="px-4 py-3 text-right">
+                    <button
+                      type="button"
+                      onClick={() => void revokeToken(token)}
+                      className="inline-flex items-center gap-1 rounded-md border border-red-200 px-2.5 py-1.5 text-xs font-medium text-red-600 hover:bg-red-50 dark:border-red-900/60 dark:text-red-300 dark:hover:bg-red-950/30"
+                    >
+                      <Trash2 className="size-3.5" />
+                      {t('account.revokeClientToken')}
+                    </button>
+                  </td>
+                </tr>
+              ))}
+            </tbody>
+          </table>
+        </div>
+      </div>
+    </section>
+  )
+}
+
 function PasswordForm() {
   const { t } = useTranslation()
   const [oldPwd, setOldPwd] = useState('')
@@ -433,6 +642,8 @@ export default function AccountPage() {
             </select>
           </PreferenceRow>
         </section>
+
+        {user && <ClientTokensSection />}
 
         <section className="mt-4 overflow-hidden rounded-lg border border-neutral-200/80 bg-white dark:border-zinc-700/60 dark:bg-zinc-900/40">
           <SectionHeader title={t('auth.changePassword')} description={t('account.passwordDescription')} />

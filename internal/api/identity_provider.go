@@ -23,11 +23,13 @@ const (
 	identitySourceLocalToken   identitySource = "local_token"
 	identitySourceStaticAPIKey identitySource = "static_api_key"
 	identitySourceTrustedProxy identitySource = "trusted_proxy"
+	identitySourceClientToken  identitySource = "client_token"
 )
 
 type authenticatedIdentity struct {
 	Username     string
 	Source       identitySource
+	Scopes       []string
 	Entitlements *workspaceEntitlements
 	Err          error
 }
@@ -39,6 +41,7 @@ type identityProvider interface {
 func (s *Server) authenticateRequest(r *http.Request) (authenticatedIdentity, bool) {
 	for _, provider := range []identityProvider{
 		trustedProxyIdentityProvider{server: s},
+		clientTokenIdentityProvider{server: s},
 		localTokenIdentityProvider{server: s},
 	} {
 		identity, handled := provider.Authenticate(r)
@@ -51,6 +54,45 @@ func (s *Server) authenticateRequest(r *http.Request) (authenticatedIdentity, bo
 
 type localTokenIdentityProvider struct {
 	server *Server
+}
+
+type clientTokenIdentityProvider struct {
+	server *Server
+}
+
+func (p clientTokenIdentityProvider) Authenticate(r *http.Request) (authenticatedIdentity, bool) {
+	token := bearerOrQueryToken(r)
+	if token == "" || !strings.HasPrefix(token, clientTokenPrefix) {
+		return authenticatedIdentity{}, false
+	}
+	workspaceID := strings.TrimSpace(r.Header.Get(requestedWorkspaceHeader))
+	if workspaceID == "" {
+		id, err := p.server.currentWorkspaceID()
+		if err != nil {
+			return authenticatedIdentity{Err: err}, true
+		}
+		workspaceID = id
+	}
+	rec, err := p.server.findClientTokenByRaw(workspaceID, token)
+	if err != nil {
+		return authenticatedIdentity{Err: err}, true
+	}
+	if rec == nil {
+		return authenticatedIdentity{Err: errors.New("invalid or expired client token")}, true
+	}
+	u := p.server.users.GetUser(rec.Username)
+	if u == nil {
+		return authenticatedIdentity{Err: errors.New("invalid or expired client token")}, true
+	}
+	if u.Disabled {
+		return authenticatedIdentity{Err: errIdentityForbidden}, true
+	}
+	p.server.markClientTokenUsed(workspaceID, *rec)
+	return authenticatedIdentity{
+		Username: rec.Username,
+		Source:   identitySourceClientToken,
+		Scopes:   append([]string(nil), rec.Scopes...),
+	}, true
 }
 
 func (p localTokenIdentityProvider) Authenticate(r *http.Request) (authenticatedIdentity, bool) {

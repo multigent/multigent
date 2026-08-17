@@ -22,6 +22,12 @@ func (s *Server) readJSON(w http.ResponseWriter, r *http.Request, dst any) error
 	return json.NewDecoder(r.Body).Decode(dst)
 }
 
+func (s *Server) readJSONMax(w http.ResponseWriter, r *http.Request, dst any, maxBytes int64) error {
+	r.Body = http.MaxBytesReader(w, r.Body, maxBytes)
+	defer r.Body.Close()
+	return json.NewDecoder(r.Body).Decode(dst)
+}
+
 func validTaskType(s string) bool {
 	return entity.ValidTaskType(s)
 }

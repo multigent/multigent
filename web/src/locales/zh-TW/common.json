@@ -14,7 +14,8 @@
     "loading": "載入中…",
     "creating": "建立中…",
     "saving": "儲存中…",
-    "copied": "已複製"
+    "copied": "已複製",
+    "copy": "複製"
   },
   "apiErrors": {
     "bad_request": "請求無法處理。",
@@ -818,7 +819,24 @@
     "billingRuntimeNodes": "執行節點",
     "billingUnlimited": "不限",
     "billingPendingSeats": "{{count}} 個待接受邀請",
-    "billingLimitHint": "目前工作區已達方案限制。請聯絡工作區擁有者或 Multigent 商務升級。"
+    "billingLimitHint": "目前工作區已達方案限制。請聯絡工作區擁有者或 Multigent 商務升級。",
+    "clientTokensTitle": "用戶端存取令牌",
+    "clientTokensIntro": "為本機 CLI 簽發目前工作區的受限存取令牌，用於上傳本機檔案、Agent 會話等上下文資料。它不是執行節點憑證，也不能執行 Agent。",
+    "createClientToken": "新增令牌",
+    "createClientTokenDesc": "第一版令牌限定在目前工作區，預設只授予 context.write 權限。請按最小權限使用，並在不再需要時撤銷。",
+    "clientTokenNamePlaceholder": "例如：我的 MacBook 上傳令牌",
+    "createClientTokenButton": "產生令牌",
+    "clientTokenCreated": "令牌已產生",
+    "clientTokenCreatedDesc": "請立即複製保存。關閉後將無法再次查看明文，只能撤銷後重新產生。",
+    "clientTokenCommandExample": "CLI 上傳範例",
+    "clientTokenName": "名稱",
+    "clientTokenScopes": "權限",
+    "clientTokenLastUsed": "最近使用",
+    "clientTokenCreatedAt": "建立時間",
+    "noClientTokens": "暫無用戶端存取令牌。",
+    "revokeClientToken": "撤銷",
+    "clientTokenRevokeTitle": "撤銷存取令牌？",
+    "clientTokenRevokeConfirm": "確定撤銷「{{name}}」嗎？使用這個令牌的本機 CLI 將無法繼續上傳資料。"
   },
   "account": {
     "title": "帳號設定",
@@ -842,7 +860,25 @@
     "passwordDescription": "更新目前 Multigent 帳號的登入密碼。",
     "currentPasswordDescription": "輸入目前密碼以確認這是你本人操作。",
     "newPasswordDescription": "設定一個不少於 6 個字元的新密碼。",
-    "confirmPasswordDescription": "再次輸入新密碼，避免輸錯。"
+    "confirmPasswordDescription": "再次輸入新密碼，避免輸錯。",
+    "clientTokensTitle": "CLI 存取令牌",
+    "clientTokensDescription": "為你自己的本機 CLI 產生連線憑證。令牌只代表你的身份，實際能操作哪些專案、Agent 和資料，仍按你在目前工作區裡的權限校驗。",
+    "createClientToken": "新增令牌",
+    "createClientTokenDesc": "用於上傳本機檔案、Agent 會話等上下文資料。令牌限定目前工作區，預設只授予 context.write scope。",
+    "clientTokenNamePlaceholder": "例如：我的 MacBook CLI",
+    "createClientTokenButton": "產生令牌",
+    "clientTokenCreated": "令牌已產生",
+    "clientTokenCreatedDesc": "請立即複製保存。關閉後將無法再次查看明文，只能撤銷後重新產生。",
+    "clientTokenCommandExample": "CLI 上傳範例",
+    "copyCommand": "複製命令",
+    "clientTokenName": "名稱",
+    "clientTokenScopes": "Scope",
+    "clientTokenLastUsed": "最近使用",
+    "clientTokenCreatedAt": "建立時間",
+    "noClientTokens": "暫無 CLI 存取令牌。",
+    "revokeClientToken": "撤銷",
+    "clientTokenRevokeTitle": "撤銷存取令牌？",
+    "clientTokenRevokeConfirm": "確定撤銷「{{name}}」嗎？使用這個令牌的本機 CLI 將無法繼續連線服務。"
   },
   "overview": {
     "eyebrow": "工作臺",

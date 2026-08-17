@@ -28,7 +28,7 @@ Collector 负责“从哪里发现和拿资料”，不负责解释资料。
 
 - Manual Upload Collector：用户手动粘贴或上传 Markdown、JSONL、TXT 等文本内容。
 - Workspace File Collector：从 Multigent 文件管理中选择已有文本文件导入。
-- Local Agent Session Collector：扫描运行节点上的 Claude Code、Codex、Cursor 等 session 文件。
+- Local Agent Session Collector：扫描用户本机或受管机器上的 Claude Code、Codex、Cursor 等 session 文件。
 - Local Directory Collector：导入某个目录下的资料。
 - Git Repository Collector：导入仓库文档、README、ADR、CHANGELOG。
 - Feishu Doc Collector：导入飞书文档。
@@ -132,6 +132,12 @@ Agent 运行时不应默认塞入全文，而是注入一个上下文清单和�
 - Agent context build 时注入绑定上下文清单。
 - Runtime API 支持当前 Agent 查看和读取绑定上下文。
 - `mga context list/read`。
+- 控制面 CLI：
+  - `multigent context scan-sessions`
+  - `multigent context import-session --path ... --bind-agent project/agent`
+  - `multigent context import-file --path ... --bind-project project`
+  - `multigent context bind --doc doc-xxx --agent project/agent`
+- Client Token / PAT：本地 CLI 可用 workspace-scoped token 调控制面 API 上传文件或 session；这不是运行节点 token。
 
 第一版暂不做：
 
@@ -152,10 +158,64 @@ Agent 运行时不应默认塞入全文，而是注入一个上下文清单和�
 
 底层保留 Source / Asset / Artifact / Binding，是为了未来能平滑接入本地 Agent session、飞书文档、仓库文档、GitHub issue/PR 等 collector，而不改变 Agent 运行时协议。
 
+本地 Agent session 扫描优先放在用户本机 CLI 侧，而不是 Web 服务侧，也不是运行节点侧的必备能力。原因：
+
+- session 文件在用户本机，SaaS 控制面不应该主动扫描用户 home 目录。
+- 扫描只读取候选文件前 256KB 推断标题；真正导入必须由用户显式指定文件。
+- 导入后原始文件会复制到 `.multigent/context-assets/`，同时生成知识库文档，后续运行节点不依赖原始本机路径。
+
+这里要明确区分两类机器能力：
+
+- 本地 CLI 上传：用户在自己的电脑上运行 `multigent context import-*`，用自己生成的 Client Token / PAT 把文件内容上传到控制面。Token 只证明“我是这个用户”，不代表自动拥有项目、Agent 或工作区管理权限。
+- 运行节点：负责执行 Agent、拉取 run、回传输出、提供 runtime capability。运行节点 token 只用于 worker 身份和执行链路，不用于普通用户上传资料。
+
+认证抽象：
+
+- 第一版：用户在账号设置里自助生成静态 Client Token / PAT，scope 先支持 `context.write`。
+- 后续：可以把设备码登录、OAuth、SSO、短期 token 都作为不同 token issuer，最终仍签发同一种 client credential 给 CLI 使用。
+- token 必须绑定 workspace 和用户，服务端只保存 hash，不保存明文。用户创建后只显示一次。
+- 服务端仍按绑定用户的 RBAC 校验资源权限：绑定 workspace 资料需要工作区管理权限；绑定 project 资料需要项目 operator 以上权限；绑定 agent 资料需要该 Agent operator 以上权限。
+
+第一版控制面 API：
+
+- `GET /api/v1/client-tokens`：列出当前用户在当前工作区的 client tokens，不返回 hash 或明文。
+- `POST /api/v1/client-tokens`：创建 token，body 示例 `{"name":"MacBook context uploader","scopes":["context.write"]}`，响应里的 `rawToken` 只显示一次。
+- `DELETE /api/v1/client-tokens/{id}`：撤销 token。
+- `POST /api/v1/context/import`：CLI 上传内容到知识库并可同时绑定到 workspace/project/agent。
+
+常用命令示例：
+
+```bash
+# 扫描本机 Codex 会话候选
+multigent context scan-sessions --cli codex --limit 20
+
+# 导入一个 Claude Code 会话，并绑定给 demo/Lina
+multigent context import-session \
+  --path ~/.claude/projects/example/session.jsonl \
+  --cli claudecode \
+  --title "旧 Claude Code 上下文" \
+  --bind-agent demo/Lina \
+  --required
+
+# 上传到远端 / SaaS 控制面，不要求本地是 multigent workspace
+export MULTIGENT_API_URL=https://app.multigent.dev
+export MULTIGENT_WORKSPACE_ID=my-workspace
+export MULTIGENT_CLIENT_TOKEN=mgpat_xxx
+multigent context import-session \
+  --path ~/.codex/sessions/example.jsonl \
+  --cli codex \
+  --title "旧 Codex 会话" \
+  --bind-agent demo/Lina \
+  --required
+
+# 直接把已有知识库文档绑定给某个 Agent
+multigent context bind --doc doc-20260817-abc123 --agent demo/Lina --required
+```
+
 ## 权限原则
 
 - 导入原始 session 可能包含敏感信息，默认不应 workspace 全员可见。
-- 第一版以 workspace admin 管理导入和绑定为主。
+- 第一版中，用户可以生成自己的 CLI token；导入和绑定动作按用户在 workspace / project / agent 上的权限校验。
 - Agent 只能看到与自己相关的 workspace/project/agent 绑定。
 - 后续在 Source、Asset、Artifact 层增加 visibility、allowed projects、allowed agents 和 sensitivity level。
 

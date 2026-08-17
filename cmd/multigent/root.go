@@ -100,6 +100,7 @@ func init() {
 		newCheckUpdateCmd(),
 		newUpdateCmd(),
 		newDocsCmd(),
+		newContextCmd(),
 		newOKRCmd(),
 		newMilestoneCmd(),
 		newEnvVarCmd(),

@@ -158,6 +158,37 @@ type ImportFileInput struct {
 	Required    bool
 }
 
+type ImportLocalPathInput struct {
+	Path          string
+	CollectorType string
+	Title         string
+	CreatedBy     string
+	Project       string
+	Tags          []string
+	Description   string
+	BindScope     string
+	BindScopeID   string
+	Required      bool
+	Metadata      map[string]string
+}
+
+type ImportContentInput struct {
+	Path          string
+	CollectorType string
+	Title         string
+	Content       string
+	SourceName    string
+	FilePath      string
+	CreatedBy     string
+	Project       string
+	Tags          []string
+	Description   string
+	BindScope     string
+	BindScopeID   string
+	Required      bool
+	Metadata      map[string]string
+}
+
 type ImportManualResult struct {
 	Source   Source          `json:"source"`
 	Asset    Asset           `json:"asset"`
@@ -167,25 +198,18 @@ type ImportManualResult struct {
 }
 
 func (s *Store) ImportManual(input ImportManualInput) (*ImportManualResult, error) {
-	items, err := NewRegistry().Collect(context.Background(), CollectorManualUpload, CollectInput{
-		Title:       input.Title,
-		Content:     input.Content,
-		SourceName:  input.SourceName,
-		Project:     input.Project,
-		Tags:        input.Tags,
-		Description: input.Description,
-		CreatedBy:   input.CreatedBy,
-	})
-	if err != nil {
-		return nil, err
-	}
-	if len(items) == 0 {
-		return nil, fmt.Errorf("collector returned no items")
-	}
-	return s.importCollectedItem(CollectorManualUpload, input.CreatedBy, input.Project, items[0], Binding{
-		ScopeType: strings.TrimSpace(input.BindScope),
-		ScopeID:   strings.TrimSpace(input.BindScopeID),
-		Required:  input.Required,
+	return s.ImportContent(ImportContentInput{
+		CollectorType: CollectorManualUpload,
+		Title:         input.Title,
+		Content:       input.Content,
+		SourceName:    input.SourceName,
+		Project:       input.Project,
+		Tags:          input.Tags,
+		Description:   input.Description,
+		CreatedBy:     input.CreatedBy,
+		BindScope:     input.BindScope,
+		BindScopeID:   input.BindScopeID,
+		Required:      input.Required,
 	})
 }
 
@@ -233,6 +257,99 @@ func (s *Store) ImportFile(input ImportFileInput) (*ImportManualResult, error) {
 		return nil, fmt.Errorf("collector returned no items")
 	}
 	return s.importCollectedItem(CollectorLocalFile, input.CreatedBy, input.Project, items[0], Binding{
+		ScopeType: strings.TrimSpace(input.BindScope),
+		ScopeID:   strings.TrimSpace(input.BindScopeID),
+		Required:  input.Required,
+	})
+}
+
+func (s *Store) ImportLocalPath(input ImportLocalPathInput) (*ImportManualResult, error) {
+	path := strings.TrimSpace(input.Path)
+	if path == "" {
+		return nil, fmt.Errorf("path is required")
+	}
+	abs, err := filepath.Abs(path)
+	if err != nil {
+		return nil, err
+	}
+	info, err := os.Stat(abs)
+	if err != nil {
+		return nil, err
+	}
+	if info.IsDir() {
+		return nil, fmt.Errorf("path must be a file")
+	}
+	limit := maxCollectedFileBytes
+	if strings.TrimSpace(input.CollectorType) == CollectorLocalAgentSession {
+		limit = maxSessionImportBytes
+	}
+	if info.Size() > int64(limit) {
+		return nil, fmt.Errorf("file is too large for import: %d bytes", info.Size())
+	}
+	raw, err := os.ReadFile(abs)
+	if err != nil {
+		return nil, err
+	}
+	if !looksText(raw) {
+		return nil, fmt.Errorf("only text files can be imported as agent reference material")
+	}
+	collectorType := strings.TrimSpace(input.CollectorType)
+	if collectorType == "" {
+		collectorType = CollectorLocalFile
+	}
+	meta := cloneMap(input.Metadata)
+	meta["originalPath"] = abs
+	return s.ImportContent(ImportContentInput{
+		CollectorType: collectorType,
+		Title:         input.Title,
+		Content:       string(raw),
+		SourceName:    filepath.Base(abs),
+		FilePath:      abs,
+		Project:       input.Project,
+		Tags:          input.Tags,
+		Description:   input.Description,
+		CreatedBy:     input.CreatedBy,
+		Metadata:      meta,
+		BindScope:     input.BindScope,
+		BindScopeID:   input.BindScopeID,
+		Required:      input.Required,
+	})
+}
+
+func (s *Store) ImportContent(input ImportContentInput) (*ImportManualResult, error) {
+	collectorType := strings.TrimSpace(input.CollectorType)
+	if collectorType == "" {
+		collectorType = CollectorManualUpload
+	}
+	limit := maxCollectedFileBytes
+	if collectorType == CollectorLocalAgentSession {
+		limit = maxSessionImportBytes
+	}
+	raw := []byte(input.Content)
+	if len(raw) > limit {
+		return nil, fmt.Errorf("content is too large for import: %d bytes", len(raw))
+	}
+	if !looksText(raw) {
+		return nil, fmt.Errorf("only text content can be imported as agent reference material")
+	}
+	items, err := NewRegistry().Collect(context.Background(), collectorType, CollectInput{
+		Title:       input.Title,
+		Content:     input.Content,
+		SourceName:  input.SourceName,
+		FilePath:    input.FilePath,
+		Project:     input.Project,
+		Tags:        input.Tags,
+		Description: input.Description,
+		CreatedBy:   input.CreatedBy,
+		Metadata:    cloneMap(input.Metadata),
+	})
+	if err != nil {
+		return nil, err
+	}
+	if len(items) == 0 {
+		return nil, fmt.Errorf("collector returned no items")
+	}
+	return s.importCollectedItem(collectorType, input.CreatedBy, input.Project, items[0], Binding{
 		ScopeType: strings.TrimSpace(input.BindScope),
 		ScopeID:   strings.TrimSpace(input.BindScopeID),
 		Required:  input.Required,

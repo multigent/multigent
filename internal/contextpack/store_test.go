@@ -118,3 +118,62 @@ func TestImportFileCreatesKnowledgeDocAndBinding(t *testing.T) {
 		t.Fatalf("unexpected views: %#v", views)
 	}
 }
+
+func TestScanLocalAgentSessionsFindsCodexSession(t *testing.T) {
+	home := t.TempDir()
+	sessionDir := filepath.Join(home, ".codex", "sessions")
+	if err := os.MkdirAll(sessionDir, 0o755); err != nil {
+		t.Fatal(err)
+	}
+	sessionPath := filepath.Join(sessionDir, "session.jsonl")
+	body := `{"session_id":"abc123","message":{"content":[{"type":"text","text":"Plan the launch workflow"}]}}` + "\n"
+	if err := os.WriteFile(sessionPath, []byte(body), 0o644); err != nil {
+		t.Fatal(err)
+	}
+
+	candidates, err := ScanLocalAgentSessions(SessionScanOptions{Home: home, CLI: "codex"})
+	if err != nil {
+		t.Fatalf("ScanLocalAgentSessions failed: %v", err)
+	}
+	if len(candidates) != 1 {
+		t.Fatalf("expected one candidate, got %#v", candidates)
+	}
+	if candidates[0].CLI != "codex" || !strings.Contains(candidates[0].Title, "Plan the launch workflow") {
+		t.Fatalf("unexpected candidate: %#v", candidates[0])
+	}
+	if candidates[0].Metadata["sessionId"] != "abc123" {
+		t.Fatalf("expected session id metadata, got %#v", candidates[0].Metadata)
+	}
+}
+
+func TestImportLocalAgentSession(t *testing.T) {
+	root := t.TempDir()
+	sessionPath := filepath.Join(t.TempDir(), "claude-session.jsonl")
+	if err := os.WriteFile(sessionPath, []byte(`{"type":"user","message":"Ship it"}`), 0o644); err != nil {
+		t.Fatal(err)
+	}
+	res, err := NewStore(root).ImportLocalPath(ImportLocalPathInput{
+		Path:          sessionPath,
+		CollectorType: CollectorLocalAgentSession,
+		Title:         "Claude Launch Session",
+		CreatedBy:     "admin",
+		Project:       "demo",
+		BindScope:     ScopeAgent,
+		BindScopeID:   "demo/Lina",
+		Required:      true,
+		Metadata:      map[string]string{"cli": "claudecode"},
+	})
+	if err != nil {
+		t.Fatalf("ImportLocalPath failed: %v", err)
+	}
+	if res.Asset.Kind != "agent-session" || res.Binding == nil {
+		t.Fatalf("unexpected import result: %#v", res)
+	}
+	views, err := NewStore(root).ListBindingViews(AgentScopes("demo", "Lina"))
+	if err != nil {
+		t.Fatalf("ListBindingViews failed: %v", err)
+	}
+	if len(views) != 1 || views[0].Artifact.Title != "Claude Launch Session" {
+		t.Fatalf("unexpected views: %#v", views)
+	}
+}
