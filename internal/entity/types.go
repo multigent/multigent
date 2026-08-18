@@ -619,6 +619,7 @@ type Task struct {
 	UpdatedAt  time.Time  `yaml:"updated_at"`
 	StartedAt  *time.Time `yaml:"started_at,omitempty"`
 	FinishedAt *time.Time `yaml:"finished_at,omitempty"`
+	ArchivedAt *time.Time `yaml:"archived_at,omitempty"` // nil = visible in active task lists
 	DueDate    *time.Time `yaml:"due_date,omitempty"`
 	// EstimateDuration is expected wall-clock effort (Go duration string, e.g. "30m", "2h").
 	EstimateDuration string `yaml:"estimate_duration,omitempty"`

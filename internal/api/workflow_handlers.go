@@ -282,6 +282,11 @@ func (s *Server) handleGetTaskWorkflow(w http.ResponseWriter, r *http.Request) {
 		s.serverError(w, err)
 		return
 	}
+	steps, err = wfStore.ListStepInstances(run.ID)
+	if err != nil {
+		s.serverError(w, err)
+		return
+	}
 	history, err := wfStore.ListStepEvents(run.ID)
 	if err != nil {
 		s.serverError(w, err)
@@ -474,6 +479,19 @@ func workflowActorIDForStep(bindings map[string]entity.WorkflowActorBinding, ste
 		if ok {
 			return strings.TrimSpace(binding.ID)
 		}
+	}
+	if strings.TrimSpace(step.ActorRole) == "" && strings.TrimSpace(step.Type) == "human_review" {
+		out := ""
+		for _, binding := range bindings {
+			if strings.TrimSpace(binding.Type) != "human" || strings.TrimSpace(binding.ID) == "" {
+				continue
+			}
+			if out != "" {
+				return ""
+			}
+			out = strings.TrimSpace(binding.ID)
+		}
+		return out
 	}
 	return ""
 }

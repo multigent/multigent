@@ -63,6 +63,7 @@ const (
 	runtimeToolSkillsFileEnv  = "MULTIGENT_TOOL_SKILLS_FILE"
 	runtimeToolCLIAuditEnv    = "MULTIGENT_TOOL_CLI_AUDIT_FILE"
 	runtimeMCPConfigEnv       = "MULTIGENT_MCP_CONFIGURED"
+	runtimeFilesDirEnv        = "MULTIGENT_FILES_DIR"
 	maxRuntimeConnectionsFile = 1 << 20
 )
 
@@ -90,6 +91,8 @@ For a workflow task, do not complete the whole task directly. Complete only the 
   mga task step done --id %s --status success --output-json '{"field":"value"}'
 
 Prefer --output-json for workflow outputs. Use --output field=value only for simple ASCII field names with no spaces.
+
+Uploaded workspace files and context attachments are available at $MULTIGENT_FILES_DIR when the variable is set. In Docker sandboxes this is a read-only container path; do not use host absolute paths from knowledge documents directly.
 
 Important: do not use Claude Code built-in Task, TaskCreate, TaskUpdate, TaskOutput, TaskStop, or Todo tools to update Multigent task/workflow state. They are model-local planning tools and do not change Multigent records. Use mga task ... only.
 `
@@ -198,6 +201,7 @@ func (r *Runner) ExecPromptWithRuntimeControlEnvContext(ctx context.Context, pro
 		injectProviderEnvIntoRuntime(runtimeCfg, agentEnv)
 		injectRuntimeControlEnvIntoRuntime(runtimeCfg, processRuntimeEnv)
 		mounts := append([]entity.RuntimeMount(nil), runtimeCfg.Mounts...)
+		mounts = r.appendWorkspaceFilesMount(mounts, meta.Sandbox.Provider, runtimeCfg)
 		r.addRuntimeDockerSystemMounts(runtimeCfg)
 		containerPromptFile := "/workspace/" + filepath.Base(promptFile)
 		remappedInner := remapPromptFile(innerArgs, promptFile, containerPromptFile)
@@ -221,6 +225,7 @@ func (r *Runner) ExecPromptWithRuntimeControlEnvContext(ctx context.Context, pro
 		}
 	} else {
 		effectiveEnv = mergeEnv(effectiveEnv, directHostRuntimeEnv(model))
+		effectiveEnv = mergeEnv(effectiveEnv, r.workspaceFilesEnv(filepath.Join(r.root, ".multigent", "files")))
 		if err := validateDirectHostExecution(model, innerArgs, effectiveEnv); err != nil {
 			return nil, err
 		}
@@ -417,6 +422,7 @@ func (r *Runner) RunTaskWithContext(ctx context.Context, project, agentName stri
 		injectProviderEnvIntoRuntime(runtimeCfg, agentEnv)
 		injectRuntimeControlEnvIntoRuntime(runtimeCfg, processRuntimeEnv)
 		mounts := append([]entity.RuntimeMount(nil), runtimeCfg.Mounts...)
+		mounts = r.appendWorkspaceFilesMount(mounts, meta.Sandbox.Provider, runtimeCfg)
 
 		r.addRuntimeDockerSystemMounts(runtimeCfg)
 
@@ -448,6 +454,7 @@ func (r *Runner) RunTaskWithContext(ctx context.Context, project, agentName stri
 	} else {
 		// Direct host execution.
 		effectiveEnv = mergeEnv(effectiveEnv, directHostRuntimeEnv(model))
+		effectiveEnv = mergeEnv(effectiveEnv, r.workspaceFilesEnv(filepath.Join(r.root, ".multigent", "files")))
 		if err := validateDirectHostExecution(model, innerArgs, effectiveEnv); err != nil {
 			return nil, err
 		}
@@ -1223,6 +1230,61 @@ func cloneRuntimeCfg(cfg *entity.SandboxConfig) *entity.SandboxConfig {
 		cp.E2B = &e2b
 	}
 	return &cp
+}
+
+func (r *Runner) appendWorkspaceFilesMount(mounts []entity.RuntimeMount, provider entity.SandboxProvider, runtimeCfg *entity.SandboxConfig) []entity.RuntimeMount {
+	hostDir := filepath.Join(r.root, ".multigent", "files")
+	if err := os.MkdirAll(hostDir, 0o755); err != nil {
+		return mounts
+	}
+	target := hostDir
+	mode := runenv.MountModeReadWrite
+	if provider == entity.SandboxDocker {
+		target = sandbox.WorkspaceFilesMount
+		mode = runenv.MountModeReadOnly
+	}
+	if !hasRuntimeMountTarget(mounts, target) {
+		mounts = append(mounts, entity.RuntimeMount{
+			Source: hostDir,
+			Target: target,
+			Mode:   mode,
+			Kind:   "context",
+		})
+	}
+	if runtimeCfg != nil && !runtimeEnvHasName(runtimeCfg.Env, runtimeFilesDirEnv) {
+		runtimeCfg.Env = append(runtimeCfg.Env, entity.RuntimeEnvVar{Name: runtimeFilesDirEnv, Value: target})
+	}
+	return mounts
+}
+
+func (r *Runner) workspaceFilesEnv(path string) map[string]string {
+	path = strings.TrimSpace(path)
+	if path == "" {
+		return nil
+	}
+	if err := os.MkdirAll(path, 0o755); err != nil {
+		return nil
+	}
+	return map[string]string{runtimeFilesDirEnv: path}
+}
+
+func hasRuntimeMountTarget(mounts []entity.RuntimeMount, target string) bool {
+	target = strings.TrimSpace(target)
+	for _, mount := range mounts {
+		if strings.TrimSpace(mount.Target) == target {
+			return true
+		}
+	}
+	return false
+}
+
+func runtimeEnvHasName(envs []entity.RuntimeEnvVar, name string) bool {
+	for _, env := range envs {
+		if env.Name == name {
+			return true
+		}
+	}
+	return false
 }
 
 func (r *Runner) addRuntimeDockerSystemMounts(runtimeCfg *entity.SandboxConfig) {

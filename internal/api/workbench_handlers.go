@@ -154,7 +154,7 @@ func (s *Server) handleWorkbenchTasks(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	q := r.URL.Query()
-	statusFilter := strings.TrimSpace(q.Get("status"))
+	statusFilters := parseTaskStatusFilters(q["status"])
 	projectFilter := strings.TrimSpace(q.Get("project"))
 	workspaceID, err := s.currentWorkspaceID()
 	if err != nil {
@@ -204,7 +204,7 @@ func (s *Server) handleWorkbenchTasks(w http.ResponseWriter, r *http.Request) {
 						continue
 					}
 				}
-				if statusFilter != "" && string(t.Status) != statusFilter {
+				if len(statusFilters) > 0 && !statusFilters[string(t.Status)] {
 					continue
 				}
 				isArchived := !containsTask(active, t.ID)
@@ -223,6 +223,22 @@ func containsTask(tasks []*entity.Task, id string) bool {
 		}
 	}
 	return false
+}
+
+func parseTaskStatusFilters(values []string) map[string]bool {
+	out := map[string]bool{}
+	for _, raw := range values {
+		for _, part := range strings.Split(raw, ",") {
+			status := strings.TrimSpace(part)
+			if status != "" {
+				out[status] = true
+			}
+		}
+	}
+	if len(out) == 0 {
+		return nil
+	}
+	return out
 }
 
 // ── Project overview for workbench ──────────────────────────────────────────

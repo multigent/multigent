@@ -36,6 +36,7 @@ import { RunAgentDialog } from '../components/project/RunAgentDialog'
 import { Pagination } from '../components/ui/Pagination'
 import { confirmDialog } from '../components/ui/ConfirmDialog'
 import { TaskKanban } from '../components/task/TaskKanban'
+import { TaskStatusFilter } from '../components/task/TaskStatusFilter'
 import { TaskTable } from '../components/task/TaskTable'
 import { getQuickLinks, removeQuickLink, type QuickLink } from '../lib/quick-links'
 import { useWorkspaceAccess } from '../lib/workspace-access'
@@ -46,7 +47,6 @@ import {
   statusColor,
   priorityLabel,
   isTerminal,
-  STATUS_KEYS,
 } from '../components/task/TaskModals'
 
 type ProjectAgents = { projectId: string; agents: { name: string; model?: string }[] }
@@ -479,7 +479,7 @@ function TasksPanel({ projectsAgents, onMutated }: { projectsAgents: ProjectAgen
   const { t } = useTranslation()
   const fmt = useFormatDateTime()
   const [view, setView] = useState<TaskView>('list')
-  const [statusFilter, setStatusFilter] = useState('')
+  const [statusFilters, setStatusFilters] = useState<string[]>([])
   const [projectFilter, setProjectFilter] = useState('')
   const [priorityFilter, setPriorityFilter] = useState<string>('')
   const [taskSort, setTaskSort] = useState<'newest' | 'oldest' | 'priority'>('newest')
@@ -491,7 +491,7 @@ function TasksPanel({ projectsAgents, onMutated }: { projectsAgents: ProjectAgen
   const firstProject = projectsAgents[0]
 
   const qp = new URLSearchParams()
-  if (view === 'list' && statusFilter) qp.set('status', statusFilter)
+  for (const status of statusFilters) qp.append('status', status)
   if (projectFilter) qp.set('project', projectFilter)
   const qs = qp.toString() ? `?${qp.toString()}` : ''
   const [wbTaskPage, setWbTaskPage] = useState(1)
@@ -520,7 +520,7 @@ function TasksPanel({ projectsAgents, onMutated }: { projectsAgents: ProjectAgen
     return tasks.slice(start, start + wbTasksPerPage)
   }, [tasks, wbTaskPage])
 
-  useEffect(() => { setWbTaskPage(1) }, [statusFilter, projectFilter, priorityFilter, taskSort, view])
+  useEffect(() => { setWbTaskPage(1) }, [statusFilters, projectFilter, priorityFilter, taskSort, view])
 
   const projects = useMemo(() => {
     const s = new Set(tasks.map((t) => t.project))
@@ -639,12 +639,7 @@ function TasksPanel({ projectsAgents, onMutated }: { projectsAgents: ProjectAgen
               <KanbanSquare className="size-3.5" strokeWidth={2} />
             </button>
           </div>
-          {view === 'list' && (
-            <select value={statusFilter} onChange={(e) => { setStatusFilter(e.target.value); setChecked(new Set()) }} className={selectCls}>
-              <option value="">{t('tasks.filterStatus')}: {t('messages.readAll')}</option>
-              {STATUS_KEYS.map((s) => <option key={s} value={s}>{t(`tasks.status.${s}`)}</option>)}
-            </select>
-          )}
+          <TaskStatusFilter value={statusFilters} onChange={(value) => { setStatusFilters(value); setChecked(new Set()) }} />
           <select value={priorityFilter} onChange={(e) => { setPriorityFilter(e.target.value); setChecked(new Set()) }} className={selectCls}>
             <option value="">{t('workbench.priorityAll')}</option>
             {[0, 1, 2, 3].map((p) => <option key={p} value={p}>P{p}</option>)}

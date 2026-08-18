@@ -79,7 +79,7 @@ func (s *DBStore) ListTasks(project, agent string, filter ...entity.TaskStatus) 
 	}
 	out := make([]*entity.Task, 0, len(all))
 	for _, t := range all {
-		if t.Status.IsTerminal() {
+		if t.Status.IsTerminal() || t.ArchivedAt != nil {
 			continue
 		}
 		if len(set) > 0 && !set[t.Status] {
@@ -92,6 +92,9 @@ func (s *DBStore) ListTasks(project, agent string, filter ...entity.TaskStatus) 
 }
 
 func (s *DBStore) ArchiveTask(project, agent string, t *entity.Task) error {
+	now := time.Now().UTC()
+	t.ArchivedAt = &now
+	t.UpdatedAt = now
 	return s.putJSON("tasks", []string{project, agent, t.ID}, t)
 }
 
@@ -102,7 +105,7 @@ func (s *DBStore) ListArchivedTasks(project, agent string) ([]*entity.Task, erro
 	}
 	var out []*entity.Task
 	for _, t := range all {
-		if t.Status.IsTerminal() {
+		if t.Status.IsTerminal() || t.ArchivedAt != nil {
 			out = append(out, t)
 		}
 	}

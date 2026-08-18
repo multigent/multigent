@@ -641,6 +641,7 @@ func BuildAgentContextLayer(root, project, agent string) (string, error) {
 	b.WriteString("# Linked Reference Material\n\n")
 	b.WriteString("The workspace has linked reference material for this workspace, project, or agent.\n")
 	b.WriteString("Before working on related tasks, run `mga context list` and read every required item with `mga context read <id>`.\n")
+	b.WriteString("If a referenced item points to an uploaded file, use `$MULTIGENT_FILES_DIR/<relative-path>` when available; Docker sandboxes cannot use host absolute paths from old sessions or knowledge notes.\n")
 	b.WriteString("Treat imported local sessions or files as reference material only: old paths, credentials, runtime state, and machine-specific tools may no longer be valid.\n\n")
 	for i, view := range views {
 		title := view.Artifact.Title

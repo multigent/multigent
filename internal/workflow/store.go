@@ -1408,6 +1408,23 @@ func workflowActorBindingForStep(bindings map[string]entity.WorkflowActorBinding
 			return binding, true
 		}
 	}
+	if strings.TrimSpace(step.ActorRole) == "" && strings.TrimSpace(step.Type) == "human_review" {
+		var fallback entity.WorkflowActorBinding
+		found := false
+		for _, binding := range bindings {
+			if strings.TrimSpace(binding.Type) != "human" || strings.TrimSpace(binding.ID) == "" {
+				continue
+			}
+			if found {
+				return entity.WorkflowActorBinding{}, false
+			}
+			fallback = binding
+			found = true
+		}
+		if found {
+			return fallback, true
+		}
+	}
 	return entity.WorkflowActorBinding{}, false
 }
 

@@ -627,7 +627,7 @@ function createMdComponents(): Components {
   hr: () => <hr className="my-8 border-neutral-200 dark:border-zinc-700/60" />,
   img: ({ src, alt }) => (
     <span className="my-4 block">
-      <img src={src} alt={alt ?? ''} className="max-w-full rounded-lg shadow-sm" loading="lazy" />
+      <img src={src} alt={alt ?? ''} className="max-w-full rounded-lg shadow-sm" loading="lazy" referrerPolicy="no-referrer" />
       {alt && <span className="mt-2 block text-center text-sm text-neutral-400 dark:text-zinc-500">{alt}</span>}
     </span>
   ),

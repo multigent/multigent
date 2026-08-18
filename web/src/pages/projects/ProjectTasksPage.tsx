@@ -4,6 +4,7 @@ import { useTranslation } from 'react-i18next'
 import { Kanban, LayoutList, ListTodo, RefreshCw, X } from 'lucide-react'
 import { CreateTaskDialog } from '../../components/project/CreateTaskDialog'
 import { TaskKanban } from '../../components/task/TaskKanban'
+import { TaskStatusFilter } from '../../components/task/TaskStatusFilter'
 import { TaskTable } from '../../components/task/TaskTable'
 import { Pagination } from '../../components/ui/Pagination'
 import { PlaceholderCard } from '../../components/ui/PlaceholderCard'
@@ -17,19 +18,18 @@ import {
   EditTaskModal,
   TaskDetailModal,
   type TaskRow,
-  STATUS_KEYS,
   isTerminal,
 } from '../../components/task/TaskModals'
 
 type AgentRow = { name: string; model?: string }
 
 type ViewMode = 'table' | 'board'
-type Filters = { status: string; agent: string; priority: string; scope: string }
-const defaultFilters: Filters = { status: '', agent: '', priority: '', scope: 'all' }
+type Filters = { statuses: string[]; agent: string; priority: string; scope: string }
+const defaultFilters: Filters = { statuses: [], agent: '', priority: '', scope: 'all' }
 
 function buildQuery(f: Filters) {
   const p = new URLSearchParams()
-  if (f.status) p.set('status', f.status)
+  for (const status of f.statuses) p.append('status', status)
   if (f.agent) p.set('agent', f.agent)
   if (f.priority) p.set('priority', f.priority)
   p.set('scope', f.scope || 'all')
@@ -96,7 +96,7 @@ export default function ProjectTasksPage() {
     setFilters({ ...defaultFilters })
     setChecked(new Set())
   }
-  const hasFilters = filters.status !== '' || filters.agent !== '' || filters.priority !== '' || filters.scope !== 'all'
+  const hasFilters = filters.statuses.length > 0 || filters.agent !== '' || filters.priority !== '' || filters.scope !== 'all'
 
   const actionableTasks = useMemo(() => tasks.filter((r) => canMutateTask(r) || canDeleteTask(r)), [tasks, canMutateTask, canDeleteTask])
   const allChecked = actionableTasks.length > 0 && checked.size === actionableTasks.length
@@ -220,10 +220,7 @@ export default function ProjectTasksPage() {
             <option value="active">{t('tasks.scopeActive')}</option>
             <option value="archived">{t('tasks.scopeArchived')}</option>
           </select>
-          <select value={filters.status} onChange={(e) => setFilter('status', e.target.value)} className={selectCls}>
-            <option value="">{t('tasks.filterStatus')}: {t('messages.readAll')}</option>
-            {STATUS_KEYS.map((s) => <option key={s} value={s}>{t(`tasks.status.${s}`)}</option>)}
-          </select>
+          <TaskStatusFilter value={filters.statuses} onChange={(value) => setFilter('statuses', value)} />
           <select value={filters.agent} onChange={(e) => setFilter('agent', e.target.value)} className={cn(selectCls, 'font-mono')}>
             <option value="">{t('tasks.filterAgent')}: {t('messages.readAll')}</option>
             <option value="human">human</option>

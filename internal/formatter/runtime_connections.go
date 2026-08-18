@@ -26,6 +26,7 @@ At runtime, Multigent injects:
 - `+"`MULTIGENT_API_URL`"+`: Multigent control API base URL.
 - `+"`MULTIGENT_AGENT_TOKEN`"+`: scoped runtime token for this agent/run.
 - `+"`MULTIGENT_RUN_ID`"+` and `+"`MULTIGENT_WORKSPACE_ID`"+`: run and workspace identifiers.
+- `+"`MULTIGENT_FILES_DIR`"+`: read-only directory containing workspace files uploaded to Multigent. In Docker sandboxes this is a container path, not the host path.
 
 Use these commands when available:
 
@@ -43,6 +44,7 @@ Rules:
 - If a tool recommends a platform CLI, use that CLI and its bundled skill, for example `+"`gh`"+` for GitHub or `+"`lark-cli`"+` for Feishu/Lark.
 - If a tool recommends HTTP actions, call it with `+"`mga runtime action --connection <alias>`"+` so Multigent can enforce authorization and audit usage.
 - MCP Gateway tools are server-side external tools. Use the runtime skill guide to list or call them only when they are granted to you and relevant to the task.
+- When a knowledge document references a file under `+"`.multigent/files`"+`, resolve it from `+"`$MULTIGENT_FILES_DIR`"+` instead of using host absolute paths.
 - Do not read or expose raw provider secrets. Use the configured CLI, MCP Gateway, or Multigent runtime proxy.
 - If a needed connection is missing, report the missing provider and target agent instead of inventing credentials.
 `) + "\n"

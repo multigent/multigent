@@ -128,16 +128,16 @@ func (s *FSStore) ListTasks(project, agent string, filter ...entity.TaskStatus) 
 	if err != nil {
 		return nil, err
 	}
-	if len(filter) == 0 {
-		return tasks, nil
-	}
 	set := make(map[entity.TaskStatus]bool, len(filter))
 	for _, f := range filter {
 		set[f] = true
 	}
 	var out []*entity.Task
 	for _, t := range tasks {
-		if set[t.Status] {
+		if t.Status.IsTerminal() || t.ArchivedAt != nil {
+			continue
+		}
+		if len(set) == 0 || set[t.Status] {
 			out = append(out, t)
 		}
 	}
@@ -145,12 +145,25 @@ func (s *FSStore) ListTasks(project, agent string, filter ...entity.TaskStatus) 
 }
 
 func (s *FSStore) ArchiveTask(project, agent string, t *entity.Task) error {
+	now := time.Now().UTC()
+	t.ArchivedAt = &now
+	t.UpdatedAt = now
 	// Append to archive
 	archived, err := s.ListArchivedTasks(project, agent)
 	if err != nil {
 		return err
 	}
-	archived = append(archived, t)
+	replaced := false
+	for i, existing := range archived {
+		if existing != nil && existing.ID == t.ID {
+			archived[i] = t
+			replaced = true
+			break
+		}
+	}
+	if !replaced {
+		archived = append(archived, t)
+	}
 	dir := s.systemDir(project, agent)
 	if err := writeYAMLAtomic(filepath.Join(dir, archiveFile), archived); err != nil {
 		return err

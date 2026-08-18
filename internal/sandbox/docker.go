@@ -62,6 +62,10 @@ const (
 	// prepended to PATH so those binaries are directly accessible.
 	UserBin = "/multigent/bin"
 
+	// WorkspaceFilesMount is the stable read-only location for workspace files
+	// managed by Multigent (host: <workspace>/.multigent/files).
+	WorkspaceFilesMount = "/mnt/multigent/files"
+
 	// ContainerDefaultPATH mirrors the tool locations provided by the sandbox
 	// images. Keep Go paths here because Docker -e PATH=... replaces the image
 	// ENV PATH instead of expanding it.

@@ -82,6 +82,39 @@ func TestInjectRuntimeControlEnvIntoRuntimeUsesInheritedEnv(t *testing.T) {
 	}
 }
 
+func TestAppendWorkspaceFilesMountForDocker(t *testing.T) {
+	root := t.TempDir()
+	r := New(root, nil, nil)
+	cfg := &entity.SandboxConfig{}
+	mounts := r.appendWorkspaceFilesMount(nil, entity.SandboxDocker, cfg)
+	if len(mounts) != 1 {
+		t.Fatalf("mounts=%#v", mounts)
+	}
+	wantSource := filepath.Join(root, ".multigent", "files")
+	if mounts[0].Source != wantSource {
+		t.Fatalf("source=%q, want %q", mounts[0].Source, wantSource)
+	}
+	if mounts[0].Target != "/mnt/multigent/files" || mounts[0].Mode != "ro" || mounts[0].Kind != "context" {
+		t.Fatalf("unexpected mount=%#v", mounts[0])
+	}
+	if len(cfg.Env) != 1 || cfg.Env[0].Name != runtimeFilesDirEnv || cfg.Env[0].Value != "/mnt/multigent/files" {
+		t.Fatalf("env=%#v", cfg.Env)
+	}
+}
+
+func TestWorkspaceFilesEnvForDirectHost(t *testing.T) {
+	root := t.TempDir()
+	r := New(root, nil, nil)
+	filesDir := filepath.Join(root, ".multigent", "files")
+	env := r.workspaceFilesEnv(filesDir)
+	if got := env[runtimeFilesDirEnv]; got != filesDir {
+		t.Fatalf("MULTIGENT_FILES_DIR=%q, want %q", got, filesDir)
+	}
+	if fi, err := os.Stat(filesDir); err != nil || !fi.IsDir() {
+		t.Fatalf("files dir not created: fi=%#v err=%v", fi, err)
+	}
+}
+
 func TestInjectProviderEnvIntoRuntimeSkipsRuntimeControlKeys(t *testing.T) {
 	cfg := &entity.SandboxConfig{}
 	injectProviderEnvIntoRuntime(cfg, map[string]string{

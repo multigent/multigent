@@ -79,6 +79,7 @@ export function isOptionalTerminalReviewDecision(step?: WorkflowStep, definition
 }
 
 export const STATUS_KEYS = ['pending', 'in_progress', 'awaiting_confirmation', 'blocked', 'done_success', 'done_failed', 'cancelled'] as const
+export type TaskStatus = typeof STATUS_KEYS[number]
 
 export const statusColor: Record<string, string> = {
   pending: 'bg-amber-100 text-amber-800 dark:bg-amber-900/40 dark:text-amber-300',
@@ -1290,6 +1291,9 @@ function WorkflowPlainText({ value }: { value: string }) {
 
 const workflowValueMarkdownComponents: Components = {
   p: ({ children }) => <p className="whitespace-pre-wrap leading-relaxed">{children}</p>,
+  img: ({ src, alt }) => (
+    <img src={src} alt={alt ?? ''} className="max-w-full rounded-lg shadow-sm" loading="lazy" referrerPolicy="no-referrer" />
+  ),
   a: ({ href, children }) => {
     const rawHref = String(href || '')
     if (rawHref.startsWith('#doc-')) {
@@ -1312,6 +1316,12 @@ const workflowValueMarkdownComponents: Components = {
     return <a href={rawHref}>{children}</a>
   },
   code: ({ children }) => <code className="rounded bg-neutral-100 px-1 py-0.5 text-[0.86em] text-neutral-700 dark:bg-zinc-800 dark:text-zinc-200">{children}</code>,
+}
+
+const documentPreviewMarkdownComponents: Components = {
+  img: ({ src, alt }) => (
+    <img src={src} alt={alt ?? ''} className="max-w-full rounded-lg shadow-sm" loading="lazy" referrerPolicy="no-referrer" />
+  ),
 }
 
 function prepareWorkflowMarkdownValue(value: string) {
@@ -1495,7 +1505,7 @@ function DocIDLink({ docID }: { docID: string }) {
               <div className="prose prose-sm max-w-none dark:prose-invert">
                 <DocPreviewMetaBar meta={docMeta} updatedAt={doc?.updatedAt} />
                 <div style={{ transform: `scale(${zoom})`, transformOrigin: 'top left', width: `${100 / zoom}%` }}>
-                  <ReactMarkdown remarkPlugins={[remarkGfm]}>{bodyContent || t('docs.emptyContent', { defaultValue: 'No content.' })}</ReactMarkdown>
+                  <ReactMarkdown remarkPlugins={[remarkGfm]} components={documentPreviewMarkdownComponents}>{bodyContent || t('docs.emptyContent', { defaultValue: 'No content.' })}</ReactMarkdown>
                 </div>
               </div>
             )}
@@ -1667,7 +1677,7 @@ function WorkflowArtifact({ value, compact = false }: { value: string; compact?:
   return (
     <div className={cn('rounded-lg bg-neutral-50 p-3 text-sm text-neutral-700 dark:bg-zinc-900 dark:text-zinc-300', compact ? 'max-h-40 overflow-y-auto' : 'max-h-64 overflow-y-auto')}>
       <div className="prose prose-sm max-w-none dark:prose-invert">
-        <ReactMarkdown remarkPlugins={[remarkGfm]}>{unescapeBreaks(value)}</ReactMarkdown>
+        <ReactMarkdown remarkPlugins={[remarkGfm]} components={documentPreviewMarkdownComponents}>{unescapeBreaks(value)}</ReactMarkdown>
       </div>
     </div>
   )

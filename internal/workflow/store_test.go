@@ -178,6 +178,72 @@ func TestWorkflowActorBindingPrefersStepIDOverRole(t *testing.T) {
 	}
 }
 
+func TestWorkflowHumanReviewWithoutActorRoleUsesSingleHumanBinding(t *testing.T) {
+	controlDB, err := db.Open(filepath.Join(t.TempDir(), "control.db"))
+	if err != nil {
+		t.Fatalf("open db: %v", err)
+	}
+	defer controlDB.Close()
+	if err := controlDB.UpsertWorkspace(db.Workspace{ID: "workspace-1", Name: "Workspace", Slug: "workspace", Root: t.TempDir()}); err != nil {
+		t.Fatalf("create workspace: %v", err)
+	}
+
+	store := NewStore(controlDB, "workspace-1")
+	now := time.Now().UTC()
+	def := &entity.WorkflowDefinition{
+		ID:          "wf-human-fallback",
+		Name:        "Human Fallback Test",
+		Version:     1,
+		Scope:       "workspace",
+		StartStepID: "draft",
+		Steps: []entity.WorkflowStep{
+			{
+				ID:           "draft",
+				Type:         "agent_task",
+				Title:        "Draft",
+				ActorRole:    "developer",
+				OutputFields: []entity.WorkflowField{{Name: "needs_review", Description: "yes or no."}},
+			},
+			{
+				ID:    "technical_design_review",
+				Type:  "human_review",
+				Title: "Technical Design Review",
+			},
+		},
+		Edges:     []entity.WorkflowEdge{{ID: "e1", From: "draft", To: "technical_design_review", Condition: &entity.WorkflowEdgeCondition{Field: "needs_review", Operator: "eq", Value: "yes"}}},
+		CreatedAt: now,
+		UpdatedAt: now,
+	}
+	if err := store.SaveDefinition(def); err != nil {
+		t.Fatalf("save definition: %v", err)
+	}
+	_, steps, err := store.StartRun("project", "task-1", def.ID, map[string]entity.WorkflowActorBinding{
+		"developer":  {Type: "agent", ID: "dev"},
+		"maintainer": {Type: "human", ID: "admin"},
+	})
+	if err != nil {
+		t.Fatalf("start run: %v", err)
+	}
+	review, ok := workflowStepInstanceByIDForTest(steps, "technical_design_review")
+	if !ok {
+		t.Fatal("missing review step instance")
+	}
+	if review.ActorType != "human" || review.ActorID != "admin" {
+		t.Fatalf("expected review fallback actor admin, got type=%q id=%q", review.ActorType, review.ActorID)
+	}
+
+	transition, err := store.CompleteAndAdvance("project", "task-1", "draft done", "", map[string]string{"needs_review": "yes"}, "completed")
+	if err != nil {
+		t.Fatalf("complete and advance: %v", err)
+	}
+	if transition.NextInst == nil {
+		t.Fatal("expected next instance")
+	}
+	if transition.NextInst.ActorType != "human" || transition.NextInst.ActorID != "admin" {
+		t.Fatalf("expected next review actor admin, got type=%q id=%q", transition.NextInst.ActorType, transition.NextInst.ActorID)
+	}
+}
+
 func TestCompleteAndAdvanceErrorsWhenOutgoingEdgesDoNotMatch(t *testing.T) {
 	controlDB, err := db.Open(filepath.Join(t.TempDir(), "control.db"))
 	if err != nil {

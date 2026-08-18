@@ -1259,7 +1259,7 @@ func (s *Server) handleProjectTasks(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	qStatus := r.URL.Query().Get("status")
+	qStatus := parseTaskStatusFilters(r.URL.Query()["status"])
 	qAgent := r.URL.Query().Get("agent")
 	qPriority := r.URL.Query().Get("priority")
 	qLabel := r.URL.Query().Get("label")
@@ -1289,7 +1289,7 @@ func (s *Server) handleProjectTasks(w http.ResponseWriter, r *http.Request) {
 		if isWakeupTask(t) {
 			return false
 		}
-		if qStatus != "" && string(t.Status) != qStatus {
+		if len(qStatus) > 0 && !qStatus[string(t.Status)] {
 			return false
 		}
 		if qPriority != "" && fmt.Sprintf("%d", t.Priority) != qPriority {

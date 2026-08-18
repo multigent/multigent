@@ -306,7 +306,8 @@ func (s *Server) handlePostCancelTask(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	if t.Status.IsTerminal() {
-		s.jsonError(w, http.StatusBadRequest, "task is already in terminal state")
+		_ = s.ts.RemoveFromInbox(id)
+		_ = json.NewEncoder(w).Encode(map[string]bool{"ok": true})
 		return
 	}
 	prev := t.Status
@@ -314,7 +315,11 @@ func (s *Server) handlePostCancelTask(w http.ResponseWriter, r *http.Request) {
 	t.Status = entity.TaskStatusCancelled
 	t.UpdatedAt = now
 	entity.ApplyStatusTimestamps(t, prev, now)
-	if err := s.ts.UpdateTask(project, agent, t); err != nil {
+	if err := s.ts.PersistTask(project, agent, t); err != nil {
+		s.serverError(w, err)
+		return
+	}
+	if err := s.ts.RemoveFromInbox(id); err != nil {
 		s.serverError(w, err)
 		return
 	}
@@ -360,6 +365,10 @@ func (s *Server) handlePostArchiveTask(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	if err := s.ts.ArchiveTask(project, agent, t); err != nil {
+		s.serverError(w, err)
+		return
+	}
+	if err := s.ts.RemoveFromInbox(id); err != nil {
 		s.serverError(w, err)
 		return
 	}

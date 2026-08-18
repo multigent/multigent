@@ -3,6 +3,7 @@ package main
 import (
 	"fmt"
 	"os"
+	"path/filepath"
 	"strings"
 
 	"github.com/multigent/multigent/internal/agentcli"
@@ -118,6 +119,7 @@ func newSandboxShowCmd() *cobra.Command {
 
 			fmt.Printf("\nWorkspace isolation:\n")
 			fmt.Printf("  workspace root is not mounted; agents coordinate through the runtime API\n")
+			fmt.Printf("  workspace files are mounted read-only at %s\n", sandbox.WorkspaceFilesMount)
 
 			// Optional agent runtime CLI override for local development.
 			fmt.Printf("\nAgent runtime CLI mount (optional development override):\n")
@@ -133,6 +135,10 @@ func newSandboxShowCmd() *cobra.Command {
 			if mgaMount != "" {
 				previewCfg.ExtraVolumes = append(previewCfg.ExtraVolumes, mgaMount)
 			}
+			filesDir := filepath.Join(root, ".multigent", "files")
+			_ = os.MkdirAll(filesDir, 0o755)
+			previewCfg.ExtraVolumes = append(previewCfg.ExtraVolumes, filesDir+":"+sandbox.WorkspaceFilesMount+":ro")
+			previewCfg.ExtraEnv = append(previewCfg.ExtraEnv, "MULTIGENT_FILES_DIR="+sandbox.WorkspaceFilesMount)
 			innerArgs := agentInnerArgs(meta.Model)
 			dockerArgs, err := sandbox.BuildArgs(agentDir, meta.Model, previewCfg, innerArgs)
 			if err != nil {
