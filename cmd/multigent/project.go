@@ -210,6 +210,11 @@ func applyAgentSpec(root, project string, spec entity.AgentSpec,
 	if _, err := os.Stat(filepath.Join(agentDir, ".multigent", "agent.yaml")); err == nil {
 		alreadyExists = true
 	}
+	if !alreadyExists {
+		if meta, err := s.AgentMeta(project, spec.Name); err == nil && meta != nil {
+			alreadyExists = true
+		}
+	}
 
 	// ── Hire ──────────────────────────────────────────────────────────────────
 
@@ -234,7 +239,7 @@ func applyAgentSpec(root, project string, spec entity.AgentSpec,
 	// ── Playbook → wakeup.md ──────────────────────────────────────────────────
 
 	if spec.Playbook != "" && entity.AgentModel(spec.Model) != entity.ModelHuman {
-		playbookSrc := filepath.Join(root, "project-blueprints", project, spec.Playbook)
+		playbookSrc := resolveProjectPlaybookPath(root, project, spec.Playbook)
 		wakeupDst := filepath.Join(agentDir, ".multigent/context", "wakeup.md")
 		if dryRun {
 			fmt.Printf("    [dry-run] would install playbook %s → .multigent/context/wakeup.md\n", spec.Playbook)
@@ -332,6 +337,7 @@ func hireAgentFromSpec(root, project string, spec entity.AgentSpec,
 	s store.Store, force bool) error {
 
 	agentModel := entity.AgentModel(spec.Model)
+	existing, _ := s.AgentMeta(project, spec.Name)
 
 	agentDir := filepath.Join(root, "projects", project, "agents", spec.Name)
 	if err := os.MkdirAll(agentDir, 0o755); err != nil {
@@ -348,6 +354,7 @@ func hireAgentFromSpec(root, project string, spec entity.AgentSpec,
 			Model:   agentModel,
 			HiredAt: time.Now().UTC(),
 		}
+		preserveRuntimeSettings(meta, existing)
 		return s.SaveAgentMeta(project, spec.Name, meta)
 	}
 
@@ -418,6 +425,9 @@ func hireAgentFromSpec(root, project string, spec entity.AgentSpec,
 		if err != nil {
 			return fmt.Errorf("default sandbox: %w", err)
 		}
+		if existing != nil && existing.Sandbox != nil {
+			sandboxCfg = existing.Sandbox
+		}
 	}
 
 	meta := &entity.AgentMeta{
@@ -432,7 +442,55 @@ func hireAgentFromSpec(root, project string, spec entity.AgentSpec,
 		AddDirs:     addDirs,
 		Playbook:    spec.Playbook,
 	}
+	preserveRuntimeSettings(meta, existing)
 	return s.SaveAgentMeta(project, spec.Name, meta)
+}
+
+func resolveProjectPlaybookPath(root, project, playbook string) string {
+	candidates := []string{
+		filepath.Join(root, "projects", project, playbook),
+		filepath.Join(root, "project-blueprints", project, playbook),
+	}
+	for _, candidate := range candidates {
+		if _, err := os.Stat(candidate); err == nil {
+			return candidate
+		}
+	}
+	return candidates[0]
+}
+
+func preserveRuntimeSettings(next, existing *entity.AgentMeta) {
+	if next == nil || existing == nil {
+		return
+	}
+	next.Avatar = existing.Avatar
+	next.Owners = append([]string(nil), existing.Owners...)
+	next.RuntimeMode = existing.RuntimeMode
+	next.RuntimeNodeID = existing.RuntimeNodeID
+	next.AutonomyLevel = existing.AutonomyLevel
+	next.SyncedAt = existing.SyncedAt
+	next.RunCommand = existing.RunCommand
+	next.HTTPAgent = existing.HTTPAgent
+	next.Env = cloneStringMap(existing.Env)
+
+	// Model provider bindings are runtime/user settings, not declarative
+	// project topology. Preserve them across project apply as long as the CLI
+	// family has not changed.
+	if existing.Model == next.Model {
+		next.Provider = existing.Provider
+		next.RuntimeModel = existing.RuntimeModel
+	}
+}
+
+func cloneStringMap(in map[string]string) map[string]string {
+	if len(in) == 0 {
+		return nil
+	}
+	out := make(map[string]string, len(in))
+	for k, v := range in {
+		out[k] = v
+	}
+	return out
 }
 
 // ── display helpers ───────────────────────────────────────────────────────────

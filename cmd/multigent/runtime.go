@@ -65,6 +65,7 @@ execute agents for a Multigent workspace.`,
 		newRuntimeServiceStatusCmd(),
 		newRuntimeServiceLogsCmd(),
 		newRuntimeConnectionsCmd(),
+		newRuntimeChannelsCmd(),
 		newRuntimeActionCmd(),
 		newRuntimeMCPCmd(),
 	)
@@ -260,6 +261,54 @@ func printRuntimeConnectionsTable(body []byte) error {
 	fmt.Fprintln(os.Stdout, "ID\tPROVIDER\tNAME\tALIAS")
 	for _, c := range doc.Connections {
 		fmt.Fprintf(os.Stdout, "%s\t%s\t%s\t%s\n", c.ID, c.Provider, c.ConnectionName, c.Runtime.Alias)
+	}
+	return nil
+}
+
+type runtimeChannelDocument struct {
+	Project  string              `json:"project"`
+	Agent    string              `json:"agent"`
+	Channels []runtimeChannelRow `json:"channels"`
+}
+
+type runtimeChannelRow struct {
+	ID         string `json:"id"`
+	Provider   string `json:"provider"`
+	Status     string `json:"status"`
+	CanNotify  bool   `json:"canNotify"`
+	OwnerBound bool   `json:"ownerBound"`
+	ChatBound  bool   `json:"chatBound"`
+}
+
+func newRuntimeChannelsCmd() *cobra.Command {
+	var format string
+	cmd := &cobra.Command{
+		Use:   "channels",
+		Short: "Print human collaboration channels bound to the current agent",
+		RunE: func(cmd *cobra.Command, args []string) error {
+			body, err := runtimeGetJSON("/api/v1/runtime/channels", nil)
+			if err != nil {
+				return err
+			}
+			if resolveFormat(format) == "table" {
+				return printRuntimeChannelsTable(body)
+			}
+			_, err = os.Stdout.Write(append(bytes.TrimSpace(body), '\n'))
+			return err
+		},
+	}
+	cmd.Flags().StringVar(&format, "format", "", "output format: json or table")
+	return cmd
+}
+
+func printRuntimeChannelsTable(body []byte) error {
+	var doc runtimeChannelDocument
+	if err := json.Unmarshal(body, &doc); err != nil {
+		return err
+	}
+	fmt.Fprintln(os.Stdout, "ID\tPROVIDER\tSTATUS\tCAN_NOTIFY\tOWNER\tCHAT")
+	for _, c := range doc.Channels {
+		fmt.Fprintf(os.Stdout, "%s\t%s\t%s\t%t\t%t\t%t\n", c.ID, c.Provider, c.Status, c.CanNotify, c.OwnerBound, c.ChatBound)
 	}
 	return nil
 }

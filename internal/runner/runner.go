@@ -1954,6 +1954,7 @@ func writeRuntimeToolsFile(workspaceRoot, agentDir, runID, connectionsPath strin
 	cliAuditPath := filepath.Join(toolDir, "cli-audit.jsonl")
 	extraEnv[runtimeToolCLIAuditEnv] = cliAuditPath
 	var bootstrapSteps []string
+	bootstrapSteps = append(bootstrapSteps, runtimeMGAInstallerScript()...)
 	for ti := range manifest.Tools {
 		var secretValues map[string]string
 		if secretResolver != nil {
@@ -2019,6 +2020,19 @@ func writeRuntimeToolsFile(workspaceRoot, agentDir, runID, connectionsPath strin
 	}
 	extraEnv[runtimeToolSkillsFileEnv] = guidePath
 	return toolDir, planPath, extraEnv, nil
+}
+
+func runtimeMGAInstallerScript() []string {
+	return []string{
+		"export MULTIGENT_TOOLCHAIN_HOME=" + shellQuote(agentcli.ToolchainHome),
+		"mkdir -p \"$MULTIGENT_TOOLCHAIN_HOME/mga/bin\"",
+		"if [ -x /opt/multigent/mga/bin/mga ]; then",
+		"  cp /opt/multigent/mga/bin/mga \"$MULTIGENT_TOOLCHAIN_HOME/mga/bin/mga\"",
+		"  chmod 0755 \"$MULTIGENT_TOOLCHAIN_HOME/mga/bin/mga\"",
+		"fi",
+		"export PATH=\"$MULTIGENT_TOOLCHAIN_HOME/mga/bin:$PATH\"",
+		"command -v mga >/dev/null 2>&1",
+	}
 }
 
 func runtimeGuideTools(tools []runtimeToolRef) []runtimeguide.Tool {

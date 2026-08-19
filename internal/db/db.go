@@ -83,6 +83,13 @@ type Store interface {
 	UpsertExternalIdentity(identity ExternalIdentity) error
 	ExternalIdentityByExternalID(workspaceID, provider, externalUserID string) (ExternalIdentity, bool, error)
 	ListExternalIdentities(filter ExternalIdentityFilter) ([]ExternalIdentity, error)
+	UpsertUserChannelIdentity(identity UserChannelIdentity) error
+	ListUserChannelIdentities(filter UserChannelIdentityFilter) ([]UserChannelIdentity, error)
+	UpsertAgentChannelTarget(target AgentChannelTarget) error
+	ListAgentChannelTargets(filter AgentChannelTargetFilter) ([]AgentChannelTarget, error)
+	CreateAgentChannelBindCode(code AgentChannelBindCode) error
+	AgentChannelBindCodeByCode(code string) (AgentChannelBindCode, bool, error)
+	MarkAgentChannelBindCodeUsed(code, usedAt string) error
 
 	CreateInteractionSession(session InteractionSession) error
 	UpdateInteractionSession(session InteractionSession) error
@@ -342,6 +349,65 @@ type ExternalIdentityFilter struct {
 	Provider       string
 	ExternalUserID string
 	UserID         string
+}
+
+type UserChannelIdentity struct {
+	ID               string
+	WorkspaceID      string
+	UserID           string
+	ChannelBindingID string
+	Provider         string
+	ExternalUserID   string
+	ExternalChatID   string
+	MetadataJSON     string
+	CreatedBy        string
+	CreatedAt        string
+	UpdatedAt        string
+}
+
+type UserChannelIdentityFilter struct {
+	WorkspaceID      string
+	UserID           string
+	ChannelBindingID string
+	Provider         string
+	ExternalUserID   string
+}
+
+type AgentChannelTarget struct {
+	ID               string
+	WorkspaceID      string
+	ChannelBindingID string
+	Provider         string
+	TargetType       string
+	DisplayName      string
+	ExternalUserID   string
+	ExternalChatID   string
+	MetadataJSON     string
+	CreatedBy        string
+	CreatedAt        string
+	UpdatedAt        string
+	LastActivityAt   string
+}
+
+type AgentChannelTargetFilter struct {
+	WorkspaceID      string
+	ChannelBindingID string
+	Provider         string
+	TargetType       string
+	DisplayName      string
+	ExternalChatID   string
+}
+
+type AgentChannelBindCode struct {
+	Code             string
+	WorkspaceID      string
+	ChannelBindingID string
+	UserID           string
+	TargetType       string
+	TargetName       string
+	ExpiresAt        string
+	UsedAt           string
+	CreatedAt        string
 }
 
 type InteractionSession struct {

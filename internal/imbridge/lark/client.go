@@ -60,6 +60,115 @@ func (c OpenAPIClient) ReplyText(ctx context.Context, messageID, text string) er
 	return nil
 }
 
+func (c OpenAPIClient) SendText(ctx context.Context, receiveIDType, receiveID, text string) error {
+	receiveIDType = strings.TrimSpace(receiveIDType)
+	receiveID = strings.TrimSpace(receiveID)
+	text = strings.TrimSpace(text)
+	if receiveIDType == "" {
+		receiveIDType = "open_id"
+	}
+	if receiveID == "" {
+		return fmt.Errorf("receive id is required")
+	}
+	if text == "" {
+		text = "(empty message)"
+	}
+	token, err := c.tenantAccessToken(ctx)
+	if err != nil {
+		return err
+	}
+	body, _ := json.Marshal(map[string]string{
+		"receive_id": receiveID,
+		"msg_type":   "text",
+		"content":    mustJSON(map[string]string{"text": text}),
+	})
+	u := strings.TrimRight(c.openBaseURL(), "/") + "/open-apis/im/v1/messages?receive_id_type=" + receiveIDType
+	req, err := http.NewRequestWithContext(ctx, http.MethodPost, u, bytes.NewReader(body))
+	if err != nil {
+		return err
+	}
+	req.Header.Set("Content-Type", "application/json")
+	req.Header.Set("Authorization", "Bearer "+token)
+	resp, err := c.httpClient().Do(req)
+	if err != nil {
+		return err
+	}
+	defer resp.Body.Close()
+	raw, _ := io.ReadAll(io.LimitReader(resp.Body, 1<<20))
+	if resp.StatusCode < 200 || resp.StatusCode >= 300 {
+		return fmt.Errorf("send message http %d: %s", resp.StatusCode, string(raw))
+	}
+	var parsed struct {
+		Code int    `json:"code"`
+		Msg  string `json:"msg"`
+	}
+	if json.Unmarshal(raw, &parsed) == nil && parsed.Code != 0 {
+		return fmt.Errorf("send message failed: code=%d msg=%s", parsed.Code, parsed.Msg)
+	}
+	return nil
+}
+
+func (c OpenAPIClient) SendMarkdown(ctx context.Context, receiveIDType, receiveID, title, markdown string) error {
+	receiveIDType = strings.TrimSpace(receiveIDType)
+	receiveID = strings.TrimSpace(receiveID)
+	title = strings.TrimSpace(title)
+	markdown = strings.TrimSpace(markdown)
+	if receiveIDType == "" {
+		receiveIDType = "open_id"
+	}
+	if receiveID == "" {
+		return fmt.Errorf("receive id is required")
+	}
+	if title == "" {
+		title = "Multigent notification"
+	}
+	if markdown == "" {
+		markdown = "(empty message)"
+	}
+	token, err := c.tenantAccessToken(ctx)
+	if err != nil {
+		return err
+	}
+	card := map[string]any{
+		"config": map[string]any{"wide_screen_mode": true},
+		"header": map[string]any{
+			"title": map[string]string{"tag": "plain_text", "content": title},
+		},
+		"elements": []map[string]any{
+			{"tag": "markdown", "content": markdown},
+		},
+	}
+	body, _ := json.Marshal(map[string]string{
+		"receive_id": receiveID,
+		"msg_type":   "interactive",
+		"content":    mustJSON(card),
+	})
+	u := strings.TrimRight(c.openBaseURL(), "/") + "/open-apis/im/v1/messages?receive_id_type=" + receiveIDType
+	req, err := http.NewRequestWithContext(ctx, http.MethodPost, u, bytes.NewReader(body))
+	if err != nil {
+		return err
+	}
+	req.Header.Set("Content-Type", "application/json")
+	req.Header.Set("Authorization", "Bearer "+token)
+	resp, err := c.httpClient().Do(req)
+	if err != nil {
+		return err
+	}
+	defer resp.Body.Close()
+	raw, _ := io.ReadAll(io.LimitReader(resp.Body, 1<<20))
+	if resp.StatusCode < 200 || resp.StatusCode >= 300 {
+		return fmt.Errorf("send markdown message http %d: %s", resp.StatusCode, string(raw))
+	}
+	var parsed struct {
+		Code int    `json:"code"`
+		Msg  string `json:"msg"`
+	}
+	if json.Unmarshal(raw, &parsed) == nil && parsed.Code != 0 {
+		return fmt.Errorf("send markdown message failed: code=%d msg=%s", parsed.Code, parsed.Msg)
+	}
+	return nil
+}
+
 func (c OpenAPIClient) tenantAccessToken(ctx context.Context) (string, error) {
 	body, _ := json.Marshal(map[string]string{
 		"app_id":     strings.TrimSpace(c.AppID),

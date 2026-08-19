@@ -61,6 +61,18 @@ type IncomingMessage struct {
 	RawContent   string
 }
 
+type OutgoingTarget struct {
+	ReceiveID     string
+	ReceiveIDType string
+	ChatID        string
+}
+
+type OutgoingMessage struct {
+	Format  string
+	Subject string
+	Text    string
+}
+
 type ParsedEvent struct {
 	AppID             string
 	VerificationToken string
@@ -81,6 +93,8 @@ type Provider interface {
 	ParseEvent(raw []byte) (ParsedEvent, error)
 	ShouldHandleMessage(boundChatID string, message IncomingMessage) bool
 	ReplyText(ctx context.Context, secrets map[string]string, message IncomingMessage, text string) error
+	SendText(ctx context.Context, secrets map[string]string, target OutgoingTarget, text string) error
+	SendMessage(ctx context.Context, secrets map[string]string, target OutgoingTarget, message OutgoingMessage) error
 }
 
 var registry = []Provider{
@@ -200,6 +214,28 @@ func (p larkFamilyProvider) ReplyText(ctx context.Context, secrets map[string]st
 		AppSecret: secrets["appSecret"],
 	}
 	return client.ReplyText(ctx, message.MessageID, text)
+}
+
+func (p larkFamilyProvider) SendText(ctx context.Context, secrets map[string]string, target OutgoingTarget, text string) error {
+	return p.SendMessage(ctx, secrets, target, OutgoingMessage{Format: "text", Text: text})
+}
+
+func (p larkFamilyProvider) SendMessage(ctx context.Context, secrets map[string]string, target OutgoingTarget, message OutgoingMessage) error {
+	client := larkbridge.OpenAPIClient{
+		BaseURL:   secrets["baseUrl"],
+		AppID:     secrets["appId"],
+		AppSecret: secrets["appSecret"],
+	}
+	receiveIDType := strings.TrimSpace(target.ReceiveIDType)
+	receiveID := strings.TrimSpace(target.ReceiveID)
+	if receiveID == "" {
+		receiveID = strings.TrimSpace(target.ChatID)
+		receiveIDType = "chat_id"
+	}
+	if strings.EqualFold(strings.TrimSpace(message.Format), "markdown") {
+		return client.SendMarkdown(ctx, receiveIDType, receiveID, message.Subject, message.Text)
+	}
+	return client.SendText(ctx, receiveIDType, receiveID, message.Text)
 }
 
 func MustOpenBaseURL(id string) (string, error) {
@@ -356,6 +392,37 @@ func (slackProvider) ReplyText(ctx context.Context, secrets map[string]string, m
 	}
 	return nil
 }
+func (slackProvider) SendText(ctx context.Context, secrets map[string]string, target OutgoingTarget, text string) error {
+	return slackProvider{}.SendMessage(ctx, secrets, target, OutgoingMessage{Format: "text", Text: text})
+}
+
+func (slackProvider) SendMessage(ctx context.Context, secrets map[string]string, target OutgoingTarget, message OutgoingMessage) error {
+	chatID := strings.TrimSpace(target.ChatID)
+	if chatID == "" {
+		chatID = strings.TrimSpace(target.ReceiveID)
+	}
+	if chatID == "" {
+		return fmt.Errorf("slack chat id is required")
+	}
+	form := url.Values{}
+	form.Set("channel", chatID)
+	form.Set("text", emptyDefault(message.Text))
+	body, err := postForm(ctx, "https://slack.com/api/chat.postMessage", secrets["botToken"], form)
+	if err != nil {
+		return err
+	}
+	var parsed struct {
+		OK    bool   `json:"ok"`
+		Error string `json:"error"`
+	}
+	if err := json.Unmarshal(body, &parsed); err != nil {
+		return fmt.Errorf("slack chat.postMessage: %w", err)
+	}
+	if !parsed.OK {
+		return fmt.Errorf("slack chat.postMessage failed: %s", parsed.Error)
+	}
+	return nil
+}
 
 type telegramProvider struct{}
 
@@ -435,6 +502,22 @@ func (telegramProvider) ReplyText(ctx context.Context, secrets map[string]string
 	_, err := httpJSON(ctx, http.MethodPost, "https://api.telegram.org/bot"+secrets["botToken"]+"/sendMessage", "", body)
 	return err
 }
+func (telegramProvider) SendText(ctx context.Context, secrets map[string]string, target OutgoingTarget, text string) error {
+	return telegramProvider{}.SendMessage(ctx, secrets, target, OutgoingMessage{Format: "text", Text: text})
+}
+
+func (telegramProvider) SendMessage(ctx context.Context, secrets map[string]string, target OutgoingTarget, message OutgoingMessage) error {
+	chatID := strings.TrimSpace(target.ChatID)
+	if chatID == "" {
+		chatID = strings.TrimSpace(target.ReceiveID)
+	}
+	if chatID == "" {
+		return fmt.Errorf("telegram chat id is required")
+	}
+	body := map[string]any{"chat_id": chatID, "text": emptyDefault(message.Text)}
+	_, err := httpJSON(ctx, http.MethodPost, "https://api.telegram.org/bot"+secrets["botToken"]+"/sendMessage", "", body)
+	return err
+}
 
 type discordProvider struct{}
 
@@ -500,6 +583,22 @@ func (discordProvider) ShouldHandleMessage(boundChatID string, message IncomingM
 func (discordProvider) ReplyText(ctx context.Context, secrets map[string]string, message IncomingMessage, text string) error {
 	body := map[string]any{"content": emptyDefault(text), "message_reference": map[string]any{"message_id": message.MessageID, "channel_id": message.ChatID, "fail_if_not_exists": false}}
 	_, err := httpJSON(ctx, http.MethodPost, "https://discord.com/api/v10/channels/"+message.ChatID+"/messages", "Bot "+secrets["botToken"], body)
+	return err
+}
+func (discordProvider) SendText(ctx context.Context, secrets map[string]string, target OutgoingTarget, text string) error {
+	return discordProvider{}.SendMessage(ctx, secrets, target, OutgoingMessage{Format: "text", Text: text})
+}
+
+func (discordProvider) SendMessage(ctx context.Context, secrets map[string]string, target OutgoingTarget, message OutgoingMessage) error {
+	chatID := strings.TrimSpace(target.ChatID)
+	if chatID == "" {
+		chatID = strings.TrimSpace(target.ReceiveID)
+	}
+	if chatID == "" {
+		return fmt.Errorf("discord channel id is required")
+	}
+	body := map[string]any{"content": emptyDefault(message.Text)}
+	_, err := httpJSON(ctx, http.MethodPost, "https://discord.com/api/v10/channels/"+chatID+"/messages", "Bot "+secrets["botToken"], body)
 	return err
 }
 

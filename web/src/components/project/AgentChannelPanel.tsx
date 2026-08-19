@@ -1,7 +1,7 @@
 import { useCallback, useEffect, useRef, useState } from 'react'
 import { useTranslation } from 'react-i18next'
 import { QRCodeSVG } from 'qrcode.react'
-import { CheckCircle2, Loader2, MessageSquare, X } from 'lucide-react'
+import { CheckCircle2, Copy, Loader2, MessageSquare, X } from 'lucide-react'
 import { apiDelete, apiFetch, apiPost } from '../../lib/api'
 import { cn } from '../../lib/cn'
 import { confirmDialog } from '../ui/ConfirmDialog'
@@ -69,6 +69,36 @@ type InteractionStatus = {
   }>
 }
 
+type BindCode = {
+  code: string
+  command: string
+  expiresAt: string
+  provider: string
+  project: string
+  agent: string
+  target?: string
+  name?: string
+}
+
+type BoundIdentity = {
+  userId: string
+  displayName?: string
+  email?: string
+  boundAt?: string
+  updatedAt?: string
+}
+
+type BoundTarget = {
+  id: string
+  type: string
+  name: string
+  provider: string
+  externalChatId?: string
+  createdAt?: string
+  updatedAt?: string
+  lastActivityAt?: string
+}
+
 type SetupState =
   | { step: 'idle' }
   | { step: 'beginning'; provider: ChannelProvider }
@@ -89,6 +119,13 @@ export function AgentChannelPanel({ project, agentName }: { project: string; age
   ])
   const [setup, setSetup] = useState<SetupState>({ step: 'idle' })
   const [detail, setDetail] = useState<{ provider: ChannelProvider; channel: AgentChannel } | null>(null)
+  const [boundIdentities, setBoundIdentities] = useState<BoundIdentity[]>([])
+  const [identitiesLoading, setIdentitiesLoading] = useState(false)
+  const [boundTargets, setBoundTargets] = useState<BoundTarget[]>([])
+  const [targetsLoading, setTargetsLoading] = useState(false)
+  const [chatBindName, setChatBindName] = useState('')
+  const [bindCode, setBindCode] = useState<BindCode | null>(null)
+  const [copiedBind, setCopiedBind] = useState(false)
   const pollRef = useRef<ReturnType<typeof setInterval> | null>(null)
 
   const basePath = `/api/v1/projects/${encodeURIComponent(project)}/agents/${encodeURIComponent(agentName)}/channels`
@@ -208,6 +245,49 @@ export function AgentChannelPanel({ project, agentName }: { project: string; age
     await load()
   }
 
+  async function createBindCode(channel: AgentChannel, target: 'user' | 'chat' = 'user') {
+    const res = await apiPost<BindCode>(`${basePath}/${channel.provider}/bind-code`, {
+      target,
+      name: target === 'chat' ? chatBindName.trim() : undefined,
+    })
+    setBindCode(res)
+    setCopiedBind(false)
+  }
+
+  async function openDetail(provider: ChannelProvider, channel: AgentChannel) {
+    setDetail({ provider, channel })
+    setBindCode(null)
+    setCopiedBind(false)
+    setChatBindName('')
+    await Promise.all([loadChannelIdentities(channel), loadChannelTargets(channel)])
+  }
+
+  async function loadChannelIdentities(channel: AgentChannel) {
+    setIdentitiesLoading(true)
+    try {
+      const res = await apiFetch<{ identities?: BoundIdentity[] }>(`${basePath}/${channel.provider}/identities`)
+      setBoundIdentities(res.identities ?? [])
+    } finally {
+      setIdentitiesLoading(false)
+    }
+  }
+
+  async function loadChannelTargets(channel: AgentChannel) {
+    setTargetsLoading(true)
+    try {
+      const res = await apiFetch<{ targets?: BoundTarget[] }>(`${basePath}/${channel.provider}/targets`)
+      setBoundTargets(res.targets ?? [])
+    } finally {
+      setTargetsLoading(false)
+    }
+  }
+
+  async function copyBindCommand(command: string) {
+    await navigator.clipboard?.writeText(command)
+    setCopiedBind(true)
+    window.setTimeout(() => setCopiedBind(false), 1400)
+  }
+
   const byProvider = new Map(channels.map(channel => [channel.provider, channel]))
 
   return (
@@ -279,7 +359,7 @@ export function AgentChannelPanel({ project, agentName }: { project: string; age
                 </div>
                 {channel ? (
                   <div className="flex items-center gap-1">
-                    <button type="button" onClick={() => setDetail({ provider, channel })} className="rounded-md border border-neutral-200 bg-white px-2.5 py-1 text-xs font-medium text-neutral-600 hover:border-neutral-300 hover:bg-neutral-50 dark:border-zinc-700 dark:bg-zinc-900 dark:text-zinc-300 dark:hover:border-zinc-600 dark:hover:bg-zinc-800">
+                    <button type="button" onClick={() => void openDetail(provider, channel)} className="rounded-md border border-neutral-200 bg-white px-2.5 py-1 text-xs font-medium text-neutral-600 hover:border-neutral-300 hover:bg-neutral-50 dark:border-zinc-700 dark:bg-zinc-900 dark:text-zinc-300 dark:hover:border-zinc-600 dark:hover:bg-zinc-800">
                       {t('agentChannels.details')}
                     </button>
                   </div>
@@ -417,6 +497,111 @@ export function AgentChannelPanel({ project, agentName }: { project: string; age
               ) : (
                 <ChannelDetail label={t('agentChannels.lastEventLabel')} value={t('agentChannels.eventPending')} />
               )}
+            </div>
+            <div className="mt-4 rounded-lg border border-sky-100 bg-sky-50/70 p-3 dark:border-sky-900/50 dark:bg-sky-950/20">
+              <p className="text-xs font-medium text-sky-800 dark:text-sky-200">{t('agentChannels.identityBindingNoticeTitle')}</p>
+              <p className="mt-1 text-xs leading-5 text-sky-700/80 dark:text-sky-300/80">
+                {t('agentChannels.identityBindingNotice')}
+              </p>
+            </div>
+            <div className="mt-4 rounded-lg border border-neutral-200/70 bg-white p-3 dark:border-zinc-700/60 dark:bg-zinc-950/30">
+              <div className="flex items-center justify-between gap-3">
+                <div>
+                  <p className="text-xs font-medium text-neutral-700 dark:text-zinc-200">
+                    {t('agentChannels.boundUsersTitle', { count: boundIdentities.length })}
+                  </p>
+                  <p className="mt-1 text-xs text-neutral-400 dark:text-zinc-500">{t('agentChannels.boundUsersHint')}</p>
+                </div>
+                <button type="button" onClick={() => void loadChannelIdentities(detail.channel)} disabled={identitiesLoading} className="shrink-0 rounded-md px-2 py-1 text-xs font-medium text-neutral-500 hover:bg-neutral-100 hover:text-neutral-800 disabled:opacity-50 dark:text-zinc-400 dark:hover:bg-zinc-800 dark:hover:text-zinc-100">
+                  {identitiesLoading ? t('common.loading') : t('common.refresh')}
+                </button>
+              </div>
+              {boundIdentities.length ? (
+                <div className="mt-3 space-y-2">
+                  {boundIdentities.map(identity => (
+                    <div key={identity.userId} className="flex min-w-0 items-center justify-between gap-3 rounded-md bg-neutral-50 px-2.5 py-2 dark:bg-zinc-900">
+                      <div className="min-w-0">
+                        <p className="truncate text-xs font-medium text-neutral-700 dark:text-zinc-200">{identity.displayName || identity.userId}</p>
+                        <p className="truncate text-[11px] text-neutral-400 dark:text-zinc-500">{identity.email || identity.userId}</p>
+                      </div>
+                      <span className="shrink-0 text-[11px] text-neutral-400 dark:text-zinc-500">{fmtDateTime(identity.updatedAt || identity.boundAt)}</span>
+                    </div>
+                  ))}
+                </div>
+              ) : (
+                <p className="mt-3 rounded-md bg-neutral-50 px-2.5 py-2 text-xs text-neutral-400 dark:bg-zinc-900 dark:text-zinc-500">
+                  {t('agentChannels.noBoundUsers')}
+                </p>
+              )}
+            </div>
+            <div className="mt-4 rounded-lg border border-neutral-200/70 bg-white p-3 dark:border-zinc-700/60 dark:bg-zinc-950/30">
+              <div className="flex items-center justify-between gap-3">
+                <div>
+                  <p className="text-xs font-medium text-neutral-700 dark:text-zinc-200">
+                    {t('agentChannels.boundChatsTitle', { count: boundTargets.length })}
+                  </p>
+                  <p className="mt-1 text-xs text-neutral-400 dark:text-zinc-500">{t('agentChannels.boundChatsHint')}</p>
+                </div>
+                <button type="button" onClick={() => void loadChannelTargets(detail.channel)} disabled={targetsLoading} className="shrink-0 rounded-md px-2 py-1 text-xs font-medium text-neutral-500 hover:bg-neutral-100 hover:text-neutral-800 disabled:opacity-50 dark:text-zinc-400 dark:hover:bg-zinc-800 dark:hover:text-zinc-100">
+                  {targetsLoading ? t('common.loading') : t('common.refresh')}
+                </button>
+              </div>
+              {boundTargets.length ? (
+                <div className="mt-3 space-y-2">
+                  {boundTargets.map(target => (
+                    <div key={target.id} className="flex min-w-0 items-center justify-between gap-3 rounded-md bg-neutral-50 px-2.5 py-2 dark:bg-zinc-900">
+                      <div className="min-w-0">
+                        <p className="truncate text-xs font-medium text-neutral-700 dark:text-zinc-200">{target.name || target.id}</p>
+                        <p className="truncate font-mono text-[11px] text-neutral-400 dark:text-zinc-500">{target.externalChatId || target.type}</p>
+                      </div>
+                      <span className="shrink-0 text-[11px] text-neutral-400 dark:text-zinc-500">{fmtDateTime(target.updatedAt || target.createdAt)}</span>
+                    </div>
+                  ))}
+                </div>
+              ) : (
+                <p className="mt-3 rounded-md bg-neutral-50 px-2.5 py-2 text-xs text-neutral-400 dark:bg-zinc-900 dark:text-zinc-500">
+                  {t('agentChannels.noBoundChats')}
+                </p>
+              )}
+              <div className="mt-3 flex gap-2">
+                <input
+                  value={chatBindName}
+                  onChange={event => setChatBindName(event.target.value)}
+                  placeholder={t('agentChannels.chatNamePlaceholder')}
+                  className="min-w-0 flex-1 rounded-md border border-neutral-200 bg-white px-2.5 py-1.5 text-xs text-neutral-700 outline-none transition focus:border-sky-300 focus:ring-2 focus:ring-sky-100 dark:border-zinc-700 dark:bg-zinc-900 dark:text-zinc-100 dark:focus:border-sky-700 dark:focus:ring-sky-950"
+                />
+                <button
+                  type="button"
+                  onClick={() => void createBindCode(detail.channel, 'chat')}
+                  disabled={!chatBindName.trim()}
+                  className="shrink-0 rounded-md border border-neutral-200 bg-white px-2.5 py-1 text-xs font-medium text-neutral-600 hover:bg-neutral-50 disabled:cursor-not-allowed disabled:opacity-50 dark:border-zinc-700 dark:bg-zinc-900 dark:text-zinc-300 dark:hover:bg-zinc-800"
+                >
+                  {t('agentChannels.createChatBindCode')}
+                </button>
+              </div>
+            </div>
+            <div className="mt-4 rounded-lg border border-neutral-200/70 bg-white p-3 dark:border-zinc-700/60 dark:bg-zinc-950/30">
+              <div className="flex items-start justify-between gap-3">
+                <div>
+                  <p className="text-xs font-medium text-neutral-700 dark:text-zinc-200">{t('agentChannels.bindIdentityTitle')}</p>
+                  <p className="mt-1 text-xs leading-5 text-neutral-500 dark:text-zinc-400">{t('agentChannels.bindIdentityHint')}</p>
+                </div>
+                <button type="button" onClick={() => void createBindCode(detail.channel)} className="shrink-0 rounded-md border border-neutral-200 bg-white px-2.5 py-1 text-xs font-medium text-neutral-600 hover:bg-neutral-50 dark:border-zinc-700 dark:bg-zinc-900 dark:text-zinc-300 dark:hover:bg-zinc-800">
+                  {t('agentChannels.createBindCode')}
+                </button>
+              </div>
+              {bindCode ? (
+                <div className="mt-3 rounded-lg bg-neutral-50 p-3 dark:bg-zinc-900">
+                  <div className="flex items-center justify-between gap-2">
+                    <code className="min-w-0 truncate font-mono text-sm text-neutral-800 dark:text-zinc-100">{bindCode.command}</code>
+                    <button type="button" onClick={() => void copyBindCommand(bindCode.command)} className="inline-flex shrink-0 items-center gap-1 rounded-md px-2 py-1 text-xs font-medium text-neutral-500 hover:bg-neutral-100 hover:text-neutral-800 dark:text-zinc-400 dark:hover:bg-zinc-800 dark:hover:text-zinc-100">
+                      <Copy className="size-3.5" />
+                      {copiedBind ? t('common.copied') : t('common.copy')}
+                    </button>
+                  </div>
+                  <p className="mt-2 text-xs text-neutral-400 dark:text-zinc-500">{t('agentChannels.bindCodeExpires', { time: fmtDateTime(bindCode.expiresAt) })}</p>
+                </div>
+              ) : null}
             </div>
             <div className="mt-4 flex justify-end gap-2">
               <button type="button" onClick={() => setDetail(null)} className="rounded-lg border border-neutral-200 bg-white px-3 py-2 text-sm font-medium text-neutral-600 hover:bg-neutral-50 dark:border-zinc-700 dark:bg-zinc-900 dark:text-zinc-300 dark:hover:bg-zinc-800">

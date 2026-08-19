@@ -6,6 +6,7 @@ import (
 	"encoding/hex"
 	"encoding/json"
 	"fmt"
+	"io"
 	"net/http"
 	"strings"
 	"time"
@@ -54,6 +55,41 @@ type channelManualSetupRequest struct {
 type agentChannelSecurityRequest struct {
 	VerificationToken *string `json:"verificationToken"`
 	EncryptKey        *string `json:"encryptKey"`
+}
+
+type agentChannelBindCodeResponse struct {
+	Code      string `json:"code"`
+	Command   string `json:"command"`
+	ExpiresAt string `json:"expiresAt"`
+	Provider  string `json:"provider"`
+	Project   string `json:"project"`
+	Agent     string `json:"agent"`
+	Target    string `json:"target"`
+	Name      string `json:"name,omitempty"`
+}
+
+type agentChannelIdentityResponse struct {
+	UserID      string `json:"userId"`
+	DisplayName string `json:"displayName,omitempty"`
+	Email       string `json:"email,omitempty"`
+	BoundAt     string `json:"boundAt,omitempty"`
+	UpdatedAt   string `json:"updatedAt,omitempty"`
+}
+
+type agentChannelTargetResponse struct {
+	ID             string `json:"id"`
+	Type           string `json:"type"`
+	Name           string `json:"name"`
+	Provider       string `json:"provider"`
+	ExternalChatID string `json:"externalChatId,omitempty"`
+	CreatedAt      string `json:"createdAt,omitempty"`
+	UpdatedAt      string `json:"updatedAt,omitempty"`
+	LastActivityAt string `json:"lastActivityAt,omitempty"`
+}
+
+type agentChannelBindCodeRequest struct {
+	Target string `json:"target"`
+	Name   string `json:"name"`
 }
 
 func (s *Server) handleAgentChannels(w http.ResponseWriter, r *http.Request) {
@@ -347,6 +383,206 @@ func (s *Server) handleAgentChannelSetupManual(w http.ResponseWriter, r *http.Re
 	_ = json.NewEncoder(w).Encode(map[string]any{
 		"status":  "connected",
 		"channel": resp,
+	})
+}
+
+func (s *Server) handleAgentChannelIdentities(w http.ResponseWriter, r *http.Request) {
+	project, agent, provider, ok := s.parseProjectAgentProvider(w, r)
+	if !ok {
+		return
+	}
+	if !s.checkProjectAccess(w, r, project) {
+		return
+	}
+	workspaceID, ok := s.currentWorkspaceForRequest(w, r)
+	if !ok {
+		return
+	}
+	binding, found, err := s.findAgentChannelBinding(workspaceID, project, agent, provider)
+	if err != nil {
+		s.serverError(w, err)
+		return
+	}
+	if !found {
+		s.jsonError(w, http.StatusNotFound, "agent channel not found")
+		return
+	}
+	identities, err := s.controlDB.ListUserChannelIdentities(controldb.UserChannelIdentityFilter{
+		WorkspaceID:      workspaceID,
+		ChannelBindingID: binding.ID,
+		Provider:         provider,
+	})
+	if err != nil {
+		s.serverError(w, err)
+		return
+	}
+	out := make([]agentChannelIdentityResponse, 0, len(identities))
+	for _, identity := range identities {
+		item := agentChannelIdentityResponse{
+			UserID:    identity.UserID,
+			BoundAt:   identity.CreatedAt,
+			UpdatedAt: identity.UpdatedAt,
+		}
+		if user := s.users.GetUser(identity.UserID); user != nil {
+			item.DisplayName = user.DisplayName
+			item.Email = user.Email
+		}
+		out = append(out, item)
+	}
+	_ = json.NewEncoder(w).Encode(map[string]any{
+		"provider":   provider,
+		"channelId":  binding.ID,
+		"identities": out,
+	})
+}
+
+func (s *Server) handleAgentChannelTargets(w http.ResponseWriter, r *http.Request) {
+	project, agent, provider, ok := s.parseProjectAgentProvider(w, r)
+	if !ok {
+		return
+	}
+	if !s.checkProjectAccess(w, r, project) {
+		return
+	}
+	workspaceID, ok := s.currentWorkspaceForRequest(w, r)
+	if !ok {
+		return
+	}
+	binding, found, err := s.findAgentChannelBinding(workspaceID, project, agent, provider)
+	if err != nil {
+		s.serverError(w, err)
+		return
+	}
+	if !found {
+		s.jsonError(w, http.StatusNotFound, "agent channel not found")
+		return
+	}
+	targets, err := s.controlDB.ListAgentChannelTargets(controldb.AgentChannelTargetFilter{
+		WorkspaceID:      workspaceID,
+		ChannelBindingID: binding.ID,
+		Provider:         provider,
+	})
+	if err != nil {
+		s.serverError(w, err)
+		return
+	}
+	out := make([]agentChannelTargetResponse, 0, len(targets))
+	for _, target := range targets {
+		out = append(out, agentChannelTargetResponse{
+			ID:             target.ID,
+			Type:           target.TargetType,
+			Name:           target.DisplayName,
+			Provider:       target.Provider,
+			ExternalChatID: target.ExternalChatID,
+			CreatedAt:      target.CreatedAt,
+			UpdatedAt:      target.UpdatedAt,
+			LastActivityAt: target.LastActivityAt,
+		})
+	}
+	_ = json.NewEncoder(w).Encode(map[string]any{
+		"provider":  provider,
+		"channelId": binding.ID,
+		"targets":   out,
+	})
+}
+
+func (s *Server) handleAgentChannelBindCode(w http.ResponseWriter, r *http.Request) {
+	project, agent, provider, ok := s.parseProjectAgentProvider(w, r)
+	if !ok {
+		return
+	}
+	if !s.checkProjectAccess(w, r, project) {
+		return
+	}
+	workspaceID, ok := s.currentWorkspaceForRequest(w, r)
+	if !ok {
+		return
+	}
+	username := currentUsername(s.currentUser(r))
+	if username == "" || username == "system" || username == "apikey" {
+		s.jsonError(w, http.StatusUnauthorized, "login is required to create a bind code")
+		return
+	}
+	var req agentChannelBindCodeRequest
+	if r.Body != nil {
+		if err := json.NewDecoder(r.Body).Decode(&req); err != nil && err != io.EOF {
+			s.jsonError(w, http.StatusBadRequest, "invalid JSON body")
+			return
+		}
+	}
+	target := strings.ToLower(strings.TrimSpace(req.Target))
+	if target == "" {
+		target = "user"
+	}
+	if target != "user" && target != "chat" {
+		s.jsonError(w, http.StatusBadRequest, "unsupported bind target")
+		return
+	}
+	targetName := strings.TrimSpace(req.Name)
+	if target == "chat" && targetName == "" {
+		s.jsonError(w, http.StatusBadRequest, "chat name is required")
+		return
+	}
+	binding, found, err := s.findAgentChannelBinding(workspaceID, project, agent, provider)
+	if err != nil {
+		s.serverError(w, err)
+		return
+	}
+	if !found || binding.Status != "connected" {
+		s.jsonError(w, http.StatusNotFound, "agent channel is not connected")
+		return
+	}
+	code, err := newHumanBindCode()
+	if err != nil {
+		s.serverError(w, err)
+		return
+	}
+	now := time.Now().UTC()
+	expiresAt := now.Add(10 * time.Minute).Format(time.RFC3339)
+	if err := s.controlDB.CreateAgentChannelBindCode(controldb.AgentChannelBindCode{
+		Code:             code,
+		WorkspaceID:      workspaceID,
+		ChannelBindingID: binding.ID,
+		UserID:           username,
+		TargetType:       target,
+		TargetName:       targetName,
+		ExpiresAt:        expiresAt,
+		CreatedAt:        now.Format(time.RFC3339),
+	}); err != nil {
+		s.serverError(w, err)
+		return
+	}
+	s.auditLog(auditLogInput{
+		WorkspaceID:  workspaceID,
+		ActorType:    "user",
+		ActorID:      username,
+		Action:       "agent_channel.bind_code.create",
+		ResourceType: "agent_channel",
+		ResourceID:   binding.ID,
+		Summary:      fmt.Sprintf("Created %s %s bind code for %s/%s", provider, target, project, agent),
+		After: map[string]any{
+			"provider":  provider,
+			"project":   project,
+			"agent":     agent,
+			"target":    target,
+			"name":      targetName,
+			"expiresAt": expiresAt,
+		},
+		Request: r,
+	})
+	command := "/bind " + code
+	if target == "chat" {
+		command = "/bind-chat " + code
+	}
+	_ = json.NewEncoder(w).Encode(agentChannelBindCodeResponse{
+		Code:      code,
+		Command:   command,
+		ExpiresAt: expiresAt,
+		Provider:  provider,
+		Project:   project,
+		Agent:     agent,
+		Target:    target,
+		Name:      targetName,
 	})
 }
 
@@ -732,6 +968,14 @@ func newChannelID(prefix string) string {
 		return fmt.Sprintf("%s-%d", prefix, time.Now().UnixNano())
 	}
 	return prefix + "-" + hex.EncodeToString(b[:])
+}
+
+func newHumanBindCode() (string, error) {
+	var b [5]byte
+	if _, err := rand.Read(b[:]); err != nil {
+		return "", err
+	}
+	return "MG-" + strings.ToUpper(hex.EncodeToString(b[:]))[:8], nil
 }
 
 func contextWithRequestTimeout(r *http.Request, timeout time.Duration) (context.Context, context.CancelFunc) {

@@ -34,6 +34,9 @@ Use these commands when available:
 mga runtime tools --format table
 mga runtime skill-guide
 mga runtime connections --format table
+mga runtime channels --format table
+mga notify send --to human --subject "Review needed: <task>" --message-format markdown --body "## Decision needed\n\n- Impact: high\n- Recommended action: approve\n- Link: <task or doc URL>" --task <task-id> --urgency review
+mga notify send --to chat:<group-name> --subject "Team update" --message-format markdown --body "## Update\n\n- Status: running\n- Blocker: none"
 mga runtime action --connection <alias> --data '{"method":"GET","endpoint":"/path"}'
 `+"```"+`
 
@@ -44,9 +47,11 @@ Rules:
 - If a tool recommends a platform CLI, use that CLI and its bundled skill, for example `+"`gh`"+` for GitHub or `+"`lark-cli`"+` for Feishu/Lark.
 - If a tool recommends HTTP actions, call it with `+"`mga runtime action --connection <alias>`"+` so Multigent can enforce authorization and audit usage.
 - MCP Gateway tools are server-side external tools. Use the runtime skill guide to list or call them only when they are granted to you and relevant to the task.
+- Use `+"`mga runtime channels --format table`"+` to see human collaboration channels bound to you, including named group chat targets. When a task is blocked, needs review, or needs a time-sensitive human action, use `+"`mga notify send`"+`. Send to `+"`human`"+`, `+"`user:<username-or-email>`"+`, or `+"`chat:<group-name>`"+` when a named group target is listed. Prefer `+"`--message-format markdown`"+` for structured summaries, checklists, links, and review requests. Multigent sends the external message server-side and keeps an internal inbox copy.
 - When a knowledge document references a file under `+"`.multigent/files`"+`, resolve it from `+"`$MULTIGENT_FILES_DIR`"+` instead of using host absolute paths.
 - Do not read or expose raw provider secrets. Use the configured CLI, MCP Gateway, or Multigent runtime proxy.
-- If a needed connection is missing, report the missing provider and target agent instead of inventing credentials.
+- Do not spam humans. Batch low-priority updates, and notify immediately only for review gates, blockers, external publishing, money/account actions, or explicit human decisions.
+- If a needed connection or collaboration channel is missing, report the missing provider and target agent instead of inventing credentials.
 `) + "\n"
 }
 

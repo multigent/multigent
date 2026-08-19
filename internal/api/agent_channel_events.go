@@ -81,6 +81,9 @@ func (s *Server) acceptIMMessage(channelProvider imbridge.Provider, appID, verif
 	if text == "" {
 		return map[string]any{"ok": true, "ignored": true}, nil
 	}
+	if bindCmd, code, ok := parseAgentChannelBindCommand(text); ok {
+		return s.acceptAgentChannelBindCommand(channelProvider, appID, verificationToken, message, bindCmd, code)
+	}
 	resolution, err := s.resolveChannelEventBindingDetailed(provider, appID, message.ChatID, message.SenderOpenID)
 	if err != nil {
 		return nil, err
@@ -194,6 +197,231 @@ func (s *Server) acceptIMMessage(channelProvider imbridge.Provider, appID, verif
 	return map[string]any{"ok": true}, nil
 }
 
+func (s *Server) acceptAgentChannelBindCommand(channelProvider imbridge.Provider, appID, verificationToken string, message imbridge.IncomingMessage, bindCmd, code string) (map[string]any, error) {
+	provider := channelProvider.Info().ID
+	codeRow, found, err := s.controlDB.AgentChannelBindCodeByCode(code)
+	if err != nil {
+		return nil, err
+	}
+	if !found {
+		return s.replyBindCommandFailure(channelProvider, nil, nil, message, "绑定码无效。请在 Multigent 中重新生成绑定码后再试。", "invalid_code")
+	}
+	now := time.Now().UTC()
+	if strings.TrimSpace(codeRow.UsedAt) != "" {
+		return s.replyBindCommandFailure(channelProvider, nil, nil, message, "绑定码已使用。请在 Multigent 中重新生成绑定码。", "used_code")
+	}
+	expiresAt, err := time.Parse(time.RFC3339, strings.TrimSpace(codeRow.ExpiresAt))
+	if err != nil || now.After(expiresAt) {
+		return s.replyBindCommandFailure(channelProvider, nil, nil, message, "绑定码已过期。请在 Multigent 中重新生成绑定码。", "expired_code")
+	}
+	targetType := strings.TrimSpace(codeRow.TargetType)
+	if targetType == "" {
+		targetType = "user"
+	}
+	expectedCmd := "bind"
+	if targetType == "chat" {
+		expectedCmd = "bind-chat"
+	}
+	if bindCmd != expectedCmd {
+		return s.replyBindCommandFailure(channelProvider, nil, nil, message, fmt.Sprintf("绑定码类型不匹配。请使用 /%s %s。", expectedCmd, codeRow.Code), "target_mismatch")
+	}
+	if targetType == "chat" && strings.TrimSpace(message.ChatID) == "" {
+		return s.replyBindCommandFailure(channelProvider, nil, nil, message, "绑定群聊失败：当前消息没有可识别的群聊 ID。", "chat_missing")
+	}
+	matches, err := s.matchChannelEventBindings(provider, appID, message.ChatID)
+	if err != nil {
+		return nil, err
+	}
+	var binding *controldb.AgentChannelBinding
+	for i := range matches {
+		if matches[i].WorkspaceID == codeRow.WorkspaceID && matches[i].ID == codeRow.ChannelBindingID {
+			binding = &matches[i]
+			break
+		}
+	}
+	if binding == nil {
+		return s.replyBindCommandFailure(channelProvider, nil, nil, message, "绑定码不属于当前机器人或会话。请确认你正在给对应 Agent 的机器人发送绑定命令。", "channel_mismatch")
+	}
+	secret, ok, err := s.controlDB.ConnectionSecret(binding.ConnectionID)
+	if err != nil {
+		return nil, err
+	}
+	if !ok {
+		return s.replyBindCommandFailure(channelProvider, binding, nil, message, "绑定失败：协作渠道凭证不存在。请联系管理员重新连接该 Agent 的协作渠道。", "secret_missing")
+	}
+	values, err := openConnectionSecret(secret)
+	if err != nil {
+		return nil, err
+	}
+	resolved := resolvedChannelEventBinding{Binding: *binding, SecretValues: values, Identity: controldb.ExternalIdentity{WorkspaceID: binding.WorkspaceID, Provider: provider, ExternalUserID: message.SenderOpenID, UserID: codeRow.UserID}}
+	if !verifyIMEventToken(verificationToken, values) {
+		_, _ = s.replyBindCommandFailure(channelProvider, binding, values, message, "绑定失败：事件校验未通过。请联系管理员检查协作渠道配置。", "verification_failed")
+		return map[string]any{"ok": true, "ignored": true, "reason": "verification_failed"}, nil
+	}
+	if targetType == "chat" {
+		return s.acceptAgentChannelChatBindCommand(channelProvider, *binding, values, codeRow, message, now)
+	}
+	metaRaw, _ := json.Marshal(map[string]any{
+		"source":      "agent_channel_bind_code",
+		"project":     binding.ProjectID,
+		"agent":       binding.AgentID,
+		"provider":    provider,
+		"boundAt":     now.Format(time.RFC3339),
+		"chatId":      message.ChatID,
+		"messageId":   message.MessageID,
+		"bindCode":    codeRow.Code,
+		"channelId":   binding.ID,
+		"workspaceId": binding.WorkspaceID,
+	})
+	if err := s.controlDB.UpsertUserChannelIdentity(controldb.UserChannelIdentity{
+		ID:               newChannelID("uch"),
+		WorkspaceID:      binding.WorkspaceID,
+		UserID:           codeRow.UserID,
+		ChannelBindingID: binding.ID,
+		Provider:         provider,
+		ExternalUserID:   strings.TrimSpace(message.SenderOpenID),
+		ExternalChatID:   strings.TrimSpace(message.ChatID),
+		MetadataJSON:     string(metaRaw),
+		CreatedBy:        codeRow.UserID,
+		CreatedAt:        now.Format(time.RFC3339),
+		UpdatedAt:        now.Format(time.RFC3339),
+	}); err != nil {
+		return nil, err
+	}
+	_ = s.controlDB.UpsertExternalIdentity(controldb.ExternalIdentity{
+		ID:             newChannelID("ext"),
+		WorkspaceID:    binding.WorkspaceID,
+		Provider:       provider,
+		ExternalUserID: strings.TrimSpace(message.SenderOpenID),
+		UserID:         codeRow.UserID,
+		MetadataJSON:   string(metaRaw),
+		CreatedBy:      codeRow.UserID,
+		CreatedAt:      now.Format(time.RFC3339),
+		UpdatedAt:      now.Format(time.RFC3339),
+	})
+	binding.LastActivityAt = now.Format(time.RFC3339)
+	binding.UpdatedAt = now.Format(time.RFC3339)
+	_ = s.controlDB.UpsertAgentChannelBinding(*binding)
+	_ = s.controlDB.MarkAgentChannelBindCodeUsed(codeRow.Code, now.Format(time.RFC3339))
+	s.recordAgentChannelCallback(*binding, "accepted", "identity_bound", message, "")
+	s.auditLog(auditLogInput{
+		WorkspaceID:  binding.WorkspaceID,
+		ActorType:    "user",
+		ActorID:      codeRow.UserID,
+		Action:       "agent_channel.identity_bound",
+		ResourceType: "agent_channel",
+		ResourceID:   binding.ID,
+		Summary:      fmt.Sprintf("Bound %s user to %s/%s channel", provider, binding.ProjectID, binding.AgentID),
+		After: map[string]any{
+			"provider":       provider,
+			"project":        binding.ProjectID,
+			"agent":          binding.AgentID,
+			"externalUserId": message.SenderOpenID,
+			"chatId":         message.ChatID,
+		},
+	})
+	reply := fmt.Sprintf("绑定成功。之后 %s/%s 可以通过 %s 通知你。", binding.ProjectID, binding.AgentID, channelProvider.Info().Label)
+	if err := s.replyToIMEvent(context.Background(), channelProvider, resolved, message, reply); err != nil {
+		s.recordAgentChannelCallback(*binding, "reply_failed", "identity_bound", message, err.Error())
+	}
+	return map[string]any{"ok": true, "bound": true, "user": codeRow.UserID, "channelId": binding.ID}, nil
+}
+
+func (s *Server) acceptAgentChannelChatBindCommand(channelProvider imbridge.Provider, binding controldb.AgentChannelBinding, values map[string]string, codeRow controldb.AgentChannelBindCode, message imbridge.IncomingMessage, now time.Time) (map[string]any, error) {
+	provider := channelProvider.Info().ID
+	chatName := strings.TrimSpace(codeRow.TargetName)
+	if chatName == "" {
+		chatName = strings.TrimSpace(message.ChatID)
+	}
+	metaRaw, _ := json.Marshal(map[string]any{
+		"source":      "agent_channel_bind_code",
+		"project":     binding.ProjectID,
+		"agent":       binding.AgentID,
+		"provider":    provider,
+		"targetType":  "chat",
+		"boundAt":     now.Format(time.RFC3339),
+		"chatId":      message.ChatID,
+		"messageId":   message.MessageID,
+		"bindCode":    codeRow.Code,
+		"channelId":   binding.ID,
+		"workspaceId": binding.WorkspaceID,
+	})
+	if err := s.controlDB.UpsertAgentChannelTarget(controldb.AgentChannelTarget{
+		ID:               newChannelID("cht"),
+		WorkspaceID:      binding.WorkspaceID,
+		ChannelBindingID: binding.ID,
+		Provider:         provider,
+		TargetType:       "chat",
+		DisplayName:      chatName,
+		ExternalUserID:   strings.TrimSpace(message.SenderOpenID),
+		ExternalChatID:   strings.TrimSpace(message.ChatID),
+		MetadataJSON:     string(metaRaw),
+		CreatedBy:        codeRow.UserID,
+		CreatedAt:        now.Format(time.RFC3339),
+		UpdatedAt:        now.Format(time.RFC3339),
+		LastActivityAt:   now.Format(time.RFC3339),
+	}); err != nil {
+		return nil, err
+	}
+	binding.ExternalChatID = strings.TrimSpace(message.ChatID)
+	binding.LastActivityAt = now.Format(time.RFC3339)
+	binding.UpdatedAt = now.Format(time.RFC3339)
+	_ = s.controlDB.UpsertAgentChannelBinding(binding)
+	_ = s.controlDB.MarkAgentChannelBindCodeUsed(codeRow.Code, now.Format(time.RFC3339))
+	s.recordAgentChannelCallback(binding, "accepted", "chat_bound", message, "")
+	s.auditLog(auditLogInput{
+		WorkspaceID:  binding.WorkspaceID,
+		ActorType:    "user",
+		ActorID:      codeRow.UserID,
+		Action:       "agent_channel.chat_bound",
+		ResourceType: "agent_channel",
+		ResourceID:   binding.ID,
+		Summary:      fmt.Sprintf("Bound %s chat target %q to %s/%s channel", provider, chatName, binding.ProjectID, binding.AgentID),
+		After: map[string]any{
+			"provider": provider,
+			"project":  binding.ProjectID,
+			"agent":    binding.AgentID,
+			"name":     chatName,
+			"chatId":   message.ChatID,
+		},
+	})
+	resolved := resolvedChannelEventBinding{Binding: binding, SecretValues: values, Identity: controldb.ExternalIdentity{WorkspaceID: binding.WorkspaceID, Provider: provider, ExternalUserID: message.SenderOpenID, UserID: codeRow.UserID}}
+	reply := fmt.Sprintf("群聊绑定成功。之后 %s/%s 可以通过 %s 通知群聊「%s」。", binding.ProjectID, binding.AgentID, channelProvider.Info().Label, chatName)
+	if err := s.replyToIMEvent(context.Background(), channelProvider, resolved, message, reply); err != nil {
+		s.recordAgentChannelCallback(binding, "reply_failed", "chat_bound", message, err.Error())
+	}
+	return map[string]any{"ok": true, "bound": true, "target": "chat", "name": chatName, "channelId": binding.ID}, nil
+}
+
+func (s *Server) replyBindCommandFailure(channelProvider imbridge.Provider, binding *controldb.AgentChannelBinding, values map[string]string, message imbridge.IncomingMessage, reply, reason string) (map[string]any, error) {
+	if binding != nil && values != nil {
+		resolved := resolvedChannelEventBinding{Binding: *binding, SecretValues: values, Identity: controldb.ExternalIdentity{WorkspaceID: binding.WorkspaceID, Provider: channelProvider.Info().ID, ExternalUserID: message.SenderOpenID}}
+		if err := s.replyToIMEvent(context.Background(), channelProvider, resolved, message, reply); err != nil {
+			s.recordAgentChannelCallback(*binding, "reply_failed", reason, message, err.Error())
+		} else {
+			s.recordAgentChannelCallback(*binding, "rejected", reason, message, "")
+		}
+	}
+	return map[string]any{"ok": true, "ignored": true, "reason": reason}, nil
+}
+
+func parseAgentChannelBindCommand(text string) (string, string, bool) {
+	fields := strings.Fields(strings.TrimSpace(text))
+	if len(fields) < 2 {
+		return "", "", false
+	}
+	cmd := strings.ToLower(strings.TrimSpace(fields[0]))
+	cmd = strings.TrimPrefix(cmd, "/")
+	if cmd != "bind" && cmd != "bind-chat" {
+		return "", "", false
+	}
+	code := strings.ToUpper(strings.TrimSpace(fields[1]))
+	if !strings.HasPrefix(code, "MG-") {
+		return "", "", false
+	}
+	return cmd, code, true
+}
+
 func (s *Server) decryptIMEvent(provider imbridge.Provider, encryptedPayload string) ([]byte, bool, error) {
 	providerID := provider.Info().ID
 	bindings, err := s.controlDB.ListAgentChannelBindings(controldb.AgentChannelBindingFilter{
@@ -247,49 +475,38 @@ func (s *Server) resolveChannelEventBindingDetailed(provider, appID, chatID, ext
 	if err != nil {
 		return channelEventResolution{}, err
 	}
-	if len(identities) == 0 {
-		if len(bindings) == 1 && strings.TrimSpace(bindings[0].ExternalOwnerID) == "" && strings.TrimSpace(externalUserID) != "" {
-			binding := bindings[0]
+	userChannelIdentities, err := s.controlDB.ListUserChannelIdentities(controldb.UserChannelIdentityFilter{
+		Provider:       provider,
+		ExternalUserID: strings.TrimSpace(externalUserID),
+	})
+	if err != nil {
+		return channelEventResolution{}, err
+	}
+	for _, binding := range bindings {
+		for _, identity := range userChannelIdentities {
+			if identity.WorkspaceID != binding.WorkspaceID || identity.ChannelBindingID != binding.ID {
+				continue
+			}
 			secret, ok, err := s.controlDB.ConnectionSecret(binding.ConnectionID)
 			if err != nil {
 				return channelEventResolution{}, err
 			}
-			if ok && strings.TrimSpace(binding.CreatedBy) != "" {
-				values, err := openConnectionSecret(secret)
-				if err != nil {
-					return channelEventResolution{}, err
-				}
-				now := time.Now().UTC().Format(time.RFC3339)
-				binding.ExternalOwnerID = strings.TrimSpace(externalUserID)
-				binding.UpdatedAt = now
-				_ = s.controlDB.UpsertAgentChannelBinding(binding)
-				metadataRaw, _ := json.Marshal(map[string]any{
-					"source":      "agent_channel_first_message",
-					"project":     binding.ProjectID,
-					"agent":       binding.AgentID,
-					"connectedAt": now,
-				})
-				if err := s.controlDB.UpsertExternalIdentity(controldb.ExternalIdentity{
-					ID:             newChannelID("ext"),
-					WorkspaceID:    binding.WorkspaceID,
-					Provider:       provider,
-					ExternalUserID: strings.TrimSpace(externalUserID),
-					UserID:         binding.CreatedBy,
-					MetadataJSON:   string(metadataRaw),
-					CreatedBy:      binding.CreatedBy,
-					CreatedAt:      now,
-					UpdatedAt:      now,
-				}); err != nil {
-					return channelEventResolution{}, err
-				}
-				return channelEventResolution{
-					Resolved: resolvedChannelEventBinding{Binding: binding, SecretValues: values, Identity: controldb.ExternalIdentity{
-						WorkspaceID: binding.WorkspaceID, Provider: provider, ExternalUserID: externalUserID, UserID: binding.CreatedBy,
-					}},
-					Found: true,
-				}, nil
+			if !ok {
+				continue
 			}
+			values, err := openConnectionSecret(secret)
+			if err != nil {
+				return channelEventResolution{}, err
+			}
+			return channelEventResolution{
+				Resolved: resolvedChannelEventBinding{Binding: binding, SecretValues: values, Identity: controldb.ExternalIdentity{
+					WorkspaceID: binding.WorkspaceID, Provider: provider, ExternalUserID: externalUserID, UserID: identity.UserID,
+				}},
+				Found: true,
+			}, nil
 		}
+	}
+	if len(identities) == 0 {
 		return channelEventResolution{Candidate: bindings[0], HasCandidate: true}, nil
 	}
 	identityByWorkspace := map[string]controldb.ExternalIdentity{}
@@ -338,9 +555,6 @@ func (s *Server) matchChannelEventBindings(provider, appID, chatID string) ([]co
 }
 
 func channelEventBindingMatches(binding controldb.AgentChannelBinding, appID, chatID string) bool {
-	if strings.TrimSpace(binding.ExternalChatID) != "" && strings.TrimSpace(chatID) != "" && strings.TrimSpace(binding.ExternalChatID) != strings.TrimSpace(chatID) {
-		return false
-	}
 	var meta struct {
 		AppID string `json:"appId"`
 	}

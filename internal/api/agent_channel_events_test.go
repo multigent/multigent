@@ -11,11 +11,48 @@ import (
 	"net/http/httptest"
 	"strings"
 	"testing"
+	"time"
 
 	controldb "github.com/multigent/multigent/internal/db"
 	"github.com/multigent/multigent/internal/imbridge"
 	"github.com/multigent/multigent/internal/interaction"
 )
+
+type testIMProvider struct {
+	id      string
+	label   string
+	replies []string
+}
+
+func (p *testIMProvider) Info() imbridge.ProviderInfo {
+	return imbridge.ProviderInfo{ID: p.id, Label: p.label, SetupMode: "manual"}
+}
+func (p *testIMProvider) OpenBaseURL() string { return "" }
+func (p *testIMProvider) BeginSetup(context.Context) (imbridge.SetupBeginResponse, error) {
+	return imbridge.SetupBeginResponse{}, nil
+}
+func (p *testIMProvider) PollSetup(context.Context, string, string) (imbridge.SetupPollResponse, error) {
+	return imbridge.SetupPollResponse{}, nil
+}
+func (p *testIMProvider) ManualSetup(context.Context, imbridge.ManualSetupRequest) (imbridge.ManualSetupResult, error) {
+	return imbridge.ManualSetupResult{}, nil
+}
+func (p *testIMProvider) ExtractEncryptedPayload([]byte) (string, bool) { return "", false }
+func (p *testIMProvider) DecryptEvent(string, string) ([]byte, error)   { return nil, nil }
+func (p *testIMProvider) ParseEvent([]byte) (imbridge.ParsedEvent, error) {
+	return imbridge.ParsedEvent{}, nil
+}
+func (p *testIMProvider) ShouldHandleMessage(string, imbridge.IncomingMessage) bool { return true }
+func (p *testIMProvider) ReplyText(ctx context.Context, secrets map[string]string, message imbridge.IncomingMessage, text string) error {
+	p.replies = append(p.replies, text)
+	return nil
+}
+func (p *testIMProvider) SendText(context.Context, map[string]string, imbridge.OutgoingTarget, string) error {
+	return nil
+}
+func (p *testIMProvider) SendMessage(context.Context, map[string]string, imbridge.OutgoingTarget, imbridge.OutgoingMessage) error {
+	return nil
+}
 
 func TestChannelEventBindingRequiresExternalIdentity(t *testing.T) {
 	s, workspaceID := newConnectionGrantPolicyServer(t)
@@ -71,6 +108,206 @@ func TestChannelEventBindingRequiresExternalIdentity(t *testing.T) {
 	}
 	if resolved.Identity.UserID != "owner" || resolved.Binding.ID != "chan-feishu" || resolved.SecretValues["appSecret"] != "secret" {
 		t.Fatalf("resolved=%#v secrets=%#v", resolved, resolved.SecretValues)
+	}
+}
+
+func TestAgentChannelBindCommandLinksExternalUserToChannel(t *testing.T) {
+	s, workspaceID := newConnectionGrantPolicyServer(t)
+	if err := s.users.CreateUser("reviewer", "pass123", RoleMember, "", "", "", "", ""); err != nil {
+		t.Fatalf("create reviewer: %v", err)
+	}
+	if err := s.controlDB.UpsertWorkspaceMember(workspaceID, "reviewer", WorkspaceRoleMember); err != nil {
+		t.Fatalf("reviewer member: %v", err)
+	}
+	if err := s.controlDB.UpsertConnection(controldb.Connection{
+		ID:             "conn-feishu",
+		WorkspaceID:    workspaceID,
+		Provider:       "feishu",
+		ConnectionName: "agent-sample-pm",
+		OwnerType:      ConnectionOwnerWorkspace,
+		OwnerID:        workspaceID,
+		AuthType:       "app_secret",
+		Status:         "active",
+		ProfileJSON:    "{}",
+	}); err != nil {
+		t.Fatalf("connection: %v", err)
+	}
+	secret, err := sealConnectionSecret(map[string]string{"baseUrl": "https://open.feishu.cn", "appId": "cli_app", "appSecret": "secret"})
+	if err != nil {
+		t.Fatalf("seal secret: %v", err)
+	}
+	secret.ConnectionID = "conn-feishu"
+	if err := s.controlDB.UpsertConnectionSecret(secret); err != nil {
+		t.Fatalf("secret: %v", err)
+	}
+	if err := s.controlDB.UpsertAgentChannelBinding(controldb.AgentChannelBinding{
+		ID:           "chan-feishu",
+		WorkspaceID:  workspaceID,
+		ProjectID:    "sample",
+		AgentID:      "pm",
+		Provider:     "feishu",
+		ConnectionID: "conn-feishu",
+		Status:       "connected",
+		MetadataJSON: `{"appId":"cli_app"}`,
+	}); err != nil {
+		t.Fatalf("binding: %v", err)
+	}
+	if err := s.controlDB.CreateAgentChannelBindCode(controldb.AgentChannelBindCode{
+		Code:             "MG-ABC12345",
+		WorkspaceID:      workspaceID,
+		ChannelBindingID: "chan-feishu",
+		UserID:           "owner",
+		ExpiresAt:        time.Now().UTC().Add(10 * time.Minute).Format(time.RFC3339),
+	}); err != nil {
+		t.Fatalf("bind code: %v", err)
+	}
+	if err := s.controlDB.CreateAgentChannelBindCode(controldb.AgentChannelBindCode{
+		Code:             "MG-DEF67890",
+		WorkspaceID:      workspaceID,
+		ChannelBindingID: "chan-feishu",
+		UserID:           "reviewer",
+		ExpiresAt:        time.Now().UTC().Add(10 * time.Minute).Format(time.RFC3339),
+	}); err != nil {
+		t.Fatalf("second bind code: %v", err)
+	}
+	provider := &testIMProvider{id: "feishu", label: "Feishu"}
+	result, err := s.acceptAgentChannelBindCommand(provider, "cli_app", "", imbridge.IncomingMessage{
+		MessageID:    "om_msg",
+		ChatID:       "oc_dm",
+		SenderOpenID: "ou_sender",
+		Text:         "/bind MG-ABC12345",
+	}, "bind", "MG-ABC12345")
+	if err != nil {
+		t.Fatalf("bind command: %v", err)
+	}
+	if result["bound"] != true {
+		t.Fatalf("unexpected result: %#v", result)
+	}
+	result, err = s.acceptAgentChannelBindCommand(provider, "cli_app", "", imbridge.IncomingMessage{
+		MessageID:    "om_msg_2",
+		ChatID:       "oc_reviewer_dm",
+		SenderOpenID: "ou_reviewer",
+		Text:         "/bind MG-DEF67890",
+	}, "bind", "MG-DEF67890")
+	if err != nil {
+		t.Fatalf("second bind command: %v", err)
+	}
+	if result["bound"] != true {
+		t.Fatalf("unexpected second result: %#v", result)
+	}
+	identities, err := s.controlDB.ListUserChannelIdentities(controldb.UserChannelIdentityFilter{
+		WorkspaceID:      workspaceID,
+		UserID:           "owner",
+		ChannelBindingID: "chan-feishu",
+		Provider:         "feishu",
+	})
+	if err != nil {
+		t.Fatalf("list identities: %v", err)
+	}
+	if len(identities) != 1 || identities[0].ExternalUserID != "ou_sender" || identities[0].ExternalChatID != "oc_dm" {
+		t.Fatalf("unexpected identities: %#v", identities)
+	}
+	identities, err = s.controlDB.ListUserChannelIdentities(controldb.UserChannelIdentityFilter{
+		WorkspaceID:      workspaceID,
+		ChannelBindingID: "chan-feishu",
+		Provider:         "feishu",
+	})
+	if err != nil {
+		t.Fatalf("list all identities: %v", err)
+	}
+	if len(identities) != 2 {
+		t.Fatalf("expected two users bound to one agent channel, got %#v", identities)
+	}
+	code, found, err := s.controlDB.AgentChannelBindCodeByCode("MG-ABC12345")
+	if err != nil || !found || code.UsedAt == "" {
+		t.Fatalf("code found=%v usedAt=%q err=%v", found, code.UsedAt, err)
+	}
+	if len(provider.replies) != 2 || !strings.Contains(provider.replies[0], "绑定成功") || !strings.Contains(provider.replies[1], "绑定成功") {
+		t.Fatalf("unexpected replies: %#v", provider.replies)
+	}
+}
+
+func TestAgentChannelBindCommandLinksChatTargetToChannel(t *testing.T) {
+	s, workspaceID := newConnectionGrantPolicyServer(t)
+	if err := s.controlDB.UpsertConnection(controldb.Connection{
+		ID:             "conn-feishu",
+		WorkspaceID:    workspaceID,
+		Provider:       "feishu",
+		ConnectionName: "agent-sample-pm",
+		OwnerType:      ConnectionOwnerWorkspace,
+		OwnerID:        workspaceID,
+		AuthType:       "app_secret",
+		Status:         "active",
+		ProfileJSON:    "{}",
+	}); err != nil {
+		t.Fatalf("connection: %v", err)
+	}
+	secret, err := sealConnectionSecret(map[string]string{"baseUrl": "https://open.feishu.cn", "appId": "cli_app", "appSecret": "secret"})
+	if err != nil {
+		t.Fatalf("seal secret: %v", err)
+	}
+	secret.ConnectionID = "conn-feishu"
+	if err := s.controlDB.UpsertConnectionSecret(secret); err != nil {
+		t.Fatalf("secret: %v", err)
+	}
+	if err := s.controlDB.UpsertAgentChannelBinding(controldb.AgentChannelBinding{
+		ID:           "chan-feishu",
+		WorkspaceID:  workspaceID,
+		ProjectID:    "sample",
+		AgentID:      "pm",
+		Provider:     "feishu",
+		ConnectionID: "conn-feishu",
+		Status:       "connected",
+		MetadataJSON: `{"appId":"cli_app"}`,
+	}); err != nil {
+		t.Fatalf("binding: %v", err)
+	}
+	if err := s.controlDB.CreateAgentChannelBindCode(controldb.AgentChannelBindCode{
+		Code:             "MG-CHAT123",
+		WorkspaceID:      workspaceID,
+		ChannelBindingID: "chan-feishu",
+		UserID:           "owner",
+		TargetType:       "chat",
+		TargetName:       "发布评审群",
+		ExpiresAt:        time.Now().UTC().Add(10 * time.Minute).Format(time.RFC3339),
+	}); err != nil {
+		t.Fatalf("bind code: %v", err)
+	}
+	provider := &testIMProvider{id: "feishu", label: "Feishu"}
+	result, err := s.acceptAgentChannelBindCommand(provider, "cli_app", "", imbridge.IncomingMessage{
+		MessageID:    "om_group_msg",
+		ChatID:       "oc_release_room",
+		ChatType:     "group",
+		SenderOpenID: "ou_sender",
+		Text:         "/bind-chat MG-CHAT123",
+	}, "bind-chat", "MG-CHAT123")
+	if err != nil {
+		t.Fatalf("bind command: %v", err)
+	}
+	if result["bound"] != true || result["target"] != "chat" {
+		t.Fatalf("unexpected result: %#v", result)
+	}
+	targets, err := s.controlDB.ListAgentChannelTargets(controldb.AgentChannelTargetFilter{
+		WorkspaceID:      workspaceID,
+		ChannelBindingID: "chan-feishu",
+		Provider:         "feishu",
+		TargetType:       "chat",
+	})
+	if err != nil {
+		t.Fatalf("list targets: %v", err)
+	}
+	if len(targets) != 1 || targets[0].DisplayName != "发布评审群" || targets[0].ExternalChatID != "oc_release_room" {
+		t.Fatalf("unexpected targets: %#v", targets)
+	}
+	updated, ok, err := s.controlDB.AgentChannelBindingByID("chan-feishu")
+	if err != nil || !ok {
+		t.Fatalf("binding lookup ok=%v err=%v", ok, err)
+	}
+	if updated.ExternalChatID != "oc_release_room" {
+		t.Fatalf("expected binding chat id to be updated, got %#v", updated)
+	}
+	if len(provider.replies) != 1 || !strings.Contains(provider.replies[0], "群聊绑定成功") || !strings.Contains(provider.replies[0], "发布评审群") {
+		t.Fatalf("unexpected replies: %#v", provider.replies)
 	}
 }
 

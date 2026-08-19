@@ -48,6 +48,7 @@ func main() {
 		newRuntimeCmd(),
 		newTaskCmd(),
 		newInboxCmd(),
+		newNotifyCmd(),
 		newContactsCmd(),
 		newDocsCmd(),
 		newContextCmd(),
@@ -269,7 +270,7 @@ func newRuntimeCmd() *cobra.Command {
 		Use:   "runtime",
 		Short: "Use scoped runtime tool connections",
 	}
-	cmd.AddCommand(newRuntimeConnectionsCmd(), newRuntimeToolsCmd(), newRuntimeSkillGuideCmd(), newRuntimeActionCmd(), newRuntimeMCPCmd(), newRuntimeMCPServerCmd(), newRuntimeGatewayCmd())
+	cmd.AddCommand(newRuntimeConnectionsCmd(), newRuntimeChannelsCmd(), newRuntimeToolsCmd(), newRuntimeSkillGuideCmd(), newRuntimeActionCmd(), newRuntimeMCPCmd(), newRuntimeMCPServerCmd(), newRuntimeGatewayCmd())
 	cmd.AddCommand(newRuntimeVersionCmd())
 	return cmd
 }
@@ -309,6 +310,69 @@ func newRuntimeConnectionsCmd() *cobra.Command {
 	}
 	cmd.Flags().StringVar(&format, "format", "json", "output format: json or table")
 	cmd.Flags().BoolVar(&refresh, "refresh", false, "refresh from runtime API instead of using materialized manifest")
+	return cmd
+}
+
+func newRuntimeChannelsCmd() *cobra.Command {
+	var format string
+	cmd := &cobra.Command{
+		Use:   "channels",
+		Short: "List human collaboration channels bound to this agent",
+		RunE: func(cmd *cobra.Command, args []string) error {
+			body, err := requestJSON(http.MethodGet, "/api/v1/runtime/channels", nil, nil)
+			if err != nil {
+				return err
+			}
+			if format == "table" {
+				return printChannelsTable(body)
+			}
+			return writeJSON(body)
+		},
+	}
+	cmd.Flags().StringVar(&format, "format", "json", "output format: json or table")
+	return cmd
+}
+
+func newNotifyCmd() *cobra.Command {
+	cmd := &cobra.Command{Use: "notify", Short: "Notify humans through agent collaboration channels"}
+	cmd.AddCommand(newNotifySendCmd())
+	return cmd
+}
+
+func newNotifySendCmd() *cobra.Command {
+	var to, channel, subject, body, taskID, urgency, messageFormat, format string
+	cmd := &cobra.Command{
+		Use:   "send",
+		Short: "Send a human notification from the current runtime agent",
+		RunE: func(cmd *cobra.Command, args []string) error {
+			if strings.TrimSpace(to) == "" {
+				to = "human"
+			}
+			if strings.TrimSpace(body) == "" {
+				return fmt.Errorf("--body is required")
+			}
+			raw, _ := json.Marshal(map[string]any{
+				"to": to, "channel": channel, "subject": subject,
+				"body": body, "taskId": taskID, "urgency": urgency, "messageFormat": messageFormat,
+			})
+			resp, err := requestJSON(http.MethodPost, "/api/v1/runtime/notify", nil, raw)
+			if err != nil {
+				return err
+			}
+			if format == "table" {
+				return printNotifySendTable(resp)
+			}
+			return writeJSON(resp)
+		},
+	}
+	cmd.Flags().StringVar(&to, "to", "human", "recipient: human, owner, user:<username>, or chat:<group-name>")
+	cmd.Flags().StringVar(&channel, "channel", "auto", "channel provider: auto, feishu, lark, slack, telegram, discord")
+	cmd.Flags().StringVar(&subject, "subject", "", "notification subject")
+	cmd.Flags().StringVar(&body, "body", "", "notification body")
+	cmd.Flags().StringVar(&taskID, "task", "", "related task id")
+	cmd.Flags().StringVar(&urgency, "urgency", "", "urgency label: normal, review, blocking")
+	cmd.Flags().StringVar(&messageFormat, "message-format", "text", "message content format: text or markdown")
+	cmd.Flags().StringVar(&format, "format", "json", "output format: json or table")
 	return cmd
 }
 
@@ -1559,6 +1623,58 @@ func printConnectionsTable(body []byte) error {
 	for _, c := range doc.Connections {
 		fmt.Fprintf(tw, "%s\t%s\t%s\t%s\n", c.Runtime.Alias, c.Provider, c.ConnectionName, c.ID)
 	}
+	return tw.Flush()
+}
+
+func printChannelsTable(body []byte) error {
+	var doc struct {
+		Channels []struct {
+			ID         string `json:"id"`
+			Provider   string `json:"provider"`
+			Status     string `json:"status"`
+			CanNotify  bool   `json:"canNotify"`
+			OwnerBound bool   `json:"ownerBound"`
+			ChatBound  bool   `json:"chatBound"`
+			Targets    []struct {
+				Type string `json:"type"`
+				Name string `json:"name"`
+			} `json:"targets"`
+		} `json:"channels"`
+	}
+	if err := json.Unmarshal(body, &doc); err != nil {
+		return err
+	}
+	tw := tabwriter.NewWriter(os.Stdout, 0, 4, 2, ' ', 0)
+	fmt.Fprintln(tw, "PROVIDER\tSTATUS\tCAN_NOTIFY\tOWNER\tCHAT\tTARGETS\tID")
+	for _, c := range doc.Channels {
+		targets := make([]string, 0, len(c.Targets))
+		for _, target := range c.Targets {
+			if strings.TrimSpace(target.Name) == "" {
+				continue
+			}
+			targets = append(targets, target.Type+":"+target.Name)
+		}
+		fmt.Fprintf(tw, "%s\t%s\t%t\t%t\t%t\t%s\t%s\n", c.Provider, c.Status, c.CanNotify, c.OwnerBound, c.ChatBound, strings.Join(targets, ","), c.ID)
+	}
+	return tw.Flush()
+}
+
+func printNotifySendTable(body []byte) error {
+	var resp struct {
+		MessageID     string `json:"messageId"`
+		Provider      string `json:"provider"`
+		ChannelID     string `json:"channelId"`
+		InternalSent  bool   `json:"internalSent"`
+		ExternalSent  bool   `json:"externalSent"`
+		ExternalError string `json:"externalError"`
+		MessageFormat string `json:"messageFormat"`
+	}
+	if err := json.Unmarshal(body, &resp); err != nil {
+		return err
+	}
+	tw := tabwriter.NewWriter(os.Stdout, 0, 4, 2, ' ', 0)
+	fmt.Fprintln(tw, "MESSAGE_ID\tINTERNAL_SENT\tEXTERNAL_SENT\tFORMAT\tPROVIDER\tCHANNEL_ID\tEXTERNAL_ERROR")
+	fmt.Fprintf(tw, "%s\t%t\t%t\t%s\t%s\t%s\t%s\n", resp.MessageID, resp.InternalSent, resp.ExternalSent, resp.MessageFormat, resp.Provider, resp.ChannelID, resp.ExternalError)
 	return tw.Flush()
 }
 
