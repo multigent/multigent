@@ -78,6 +78,7 @@ type Binding struct {
 type BindingView struct {
 	Binding  Binding         `json:"binding"`
 	Artifact Artifact        `json:"artifact"`
+	Asset    *Asset          `json:"asset,omitempty"`
 	Doc      *store.DocEntry `json:"doc,omitempty"`
 }
 
@@ -374,12 +375,8 @@ func (s *Store) importCollectedItem(collectorType, createdBy, project string, it
 	if ext == "" {
 		ext = ".md"
 	}
-	if err := os.MkdirAll(s.assetDir(), 0o755); err != nil {
-		return nil, err
-	}
-	fileName := assetID + "-" + slug(title) + ext
-	relPath := filepath.Join(".multigent", "context-assets", fileName)
-	if err := os.WriteFile(filepath.Join(s.root, relPath), []byte(content), 0o644); err != nil {
+	relPath, docContent, docSourceName, metadata, err := s.storeCollectedAsset(assetID, title, ext, content, item)
+	if err != nil {
 		return nil, err
 	}
 	asset := Asset{
@@ -393,7 +390,7 @@ func (s *Store) importCollectedItem(collectorType, createdBy, project string, it
 		Size:        int64(len([]byte(content))),
 		CreatedBy:   createdBy,
 		CreatedAt:   now,
-		Metadata:    mergeStringMaps(map[string]string{"sourceName": item.SourceName}, item.Metadata),
+		Metadata:    metadata,
 	}
 	idx.Assets = append(idx.Assets, asset)
 
@@ -405,7 +402,7 @@ func (s *Store) importCollectedItem(collectorType, createdBy, project string, it
 		Description: firstNonEmpty(item.Description, "Imported reference material."),
 	}
 	ds := store.NewDocsStore(s.root)
-	if err := ds.AddManagedContent(doc, content, item.SourceName); err != nil {
+	if err := ds.AddManagedContent(doc, docContent, docSourceName); err != nil {
 		return nil, err
 	}
 	artifact := Artifact{
@@ -445,6 +442,64 @@ func (s *Store) importCollectedItem(collectorType, createdBy, project string, it
 		return nil, err
 	}
 	return &ImportManualResult{Source: source, Asset: asset, Artifact: artifact, Binding: binding, Doc: doc}, nil
+}
+
+func (s *Store) storeCollectedAsset(assetID, title, ext, content string, item CollectedItem) (string, string, string, map[string]string, error) {
+	fileName := assetID + "-" + slug(title) + ext
+	metadata := mergeStringMaps(map[string]string{"sourceName": item.SourceName}, item.Metadata)
+	if item.Kind == "agent-session" {
+		managedRel := filepath.Join("context", "sessions", fileName)
+		abs := filepath.Join(s.root, ".multigent", "files", managedRel)
+		if err := os.MkdirAll(filepath.Dir(abs), 0o755); err != nil {
+			return "", "", "", nil, err
+		}
+		if err := os.WriteFile(abs, []byte(content), 0o644); err != nil {
+			return "", "", "", nil, err
+		}
+		metadata = mergeStringMaps(metadata, map[string]string{
+			"managedFilePath": filepath.ToSlash(managedRel),
+			"storageKind":     "workspace-file",
+		})
+		docContent := sessionReferenceDocContent(title, content, item, managedRel)
+		return filepath.Join(".multigent", "files", managedRel), docContent, slug(title) + ".md", metadata, nil
+	}
+	if err := os.MkdirAll(s.assetDir(), 0o755); err != nil {
+		return "", "", "", nil, err
+	}
+	relPath := filepath.Join(".multigent", "context-assets", fileName)
+	if err := os.WriteFile(filepath.Join(s.root, relPath), []byte(content), 0o644); err != nil {
+		return "", "", "", nil, err
+	}
+	return relPath, content, item.SourceName, metadata, nil
+}
+
+func sessionReferenceDocContent(title, content string, item CollectedItem, managedRel string) string {
+	var b strings.Builder
+	b.WriteString("# ")
+	b.WriteString(title)
+	b.WriteString("\n\n")
+	b.WriteString("This is an imported local agent session. The original session transcript is stored as a workspace file instead of being rendered as a knowledge-base article.\n\n")
+	b.WriteString("## Original file\n\n")
+	fmt.Fprintf(&b, "- Workspace file: `%s`\n", filepath.ToSlash(managedRel))
+	fmt.Fprintf(&b, "- Source file: `%s`\n", strings.TrimSpace(item.SourceName))
+	if cli := strings.TrimSpace(item.Metadata["cli"]); cli != "" {
+		fmt.Fprintf(&b, "- Agent CLI: `%s`\n", cli)
+	}
+	if sessionID := strings.TrimSpace(item.Metadata["sessionId"]); sessionID != "" {
+		fmt.Fprintf(&b, "- Session ID: `%s`\n", sessionID)
+	}
+	fmt.Fprintf(&b, "- Size: %d bytes\n", len([]byte(content)))
+	b.WriteString("\n")
+	if strings.TrimSpace(item.Description) != "" {
+		b.WriteString("## Notes\n\n")
+		b.WriteString(strings.TrimSpace(item.Description))
+		b.WriteString("\n\n")
+	}
+	b.WriteString("## Runtime usage\n\n")
+	b.WriteString("Agents should read the original file from `$MULTIGENT_FILES_DIR/")
+	b.WriteString(filepath.ToSlash(managedRel))
+	b.WriteString("` when they need detailed historical context. Treat old paths, credentials, runtime state, and machine-specific assumptions inside the session as stale unless revalidated.\n")
+	return b.String()
 }
 
 func (s *Store) ensureManualSource(idx *Index, createdBy string, now time.Time) Source {
@@ -581,6 +636,10 @@ func (s *Store) ListBindingViews(scopes []ScopeRef) ([]BindingView, error) {
 	for _, artifact := range idx.Artifacts {
 		artifactByID[artifact.ID] = artifact
 	}
+	assetByID := map[string]Asset{}
+	for _, asset := range idx.Assets {
+		assetByID[asset.ID] = asset
+	}
 	ds := store.NewDocsStore(s.root)
 	var views []BindingView
 	for _, binding := range idx.Bindings {
@@ -600,7 +659,13 @@ func (s *Store) ListBindingViews(scopes []ScopeRef) ([]BindingView, error) {
 				doc = d
 			}
 		}
-		views = append(views, BindingView{Binding: binding, Artifact: artifact, Doc: doc})
+		var asset *Asset
+		if artifact.AssetID != "" {
+			if a, ok := assetByID[artifact.AssetID]; ok {
+				asset = &a
+			}
+		}
+		views = append(views, BindingView{Binding: binding, Artifact: artifact, Asset: asset, Doc: doc})
 	}
 	sort.SliceStable(views, func(i, j int) bool {
 		if views[i].Binding.Required != views[j].Binding.Required {
@@ -660,6 +725,11 @@ func BuildAgentContextLayer(root, project, agent string) (string, error) {
 		fmt.Fprintf(&b, "   - Context ID: `%s`\n", contextID)
 		if view.Artifact.DocID != "" {
 			fmt.Fprintf(&b, "   - Knowledge doc: `%s`\n", view.Artifact.DocID)
+		}
+		if view.Asset != nil {
+			if managedPath := strings.TrimSpace(view.Asset.Metadata["managedFilePath"]); managedPath != "" {
+				fmt.Fprintf(&b, "   - Workspace file: `$MULTIGENT_FILES_DIR/%s`\n", filepath.ToSlash(managedPath))
+			}
 		}
 		fmt.Fprintf(&b, "   - Scope: `%s", view.Binding.ScopeType)
 		if view.Binding.ScopeID != "" {

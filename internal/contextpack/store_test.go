@@ -149,7 +149,8 @@ func TestScanLocalAgentSessionsFindsCodexSession(t *testing.T) {
 func TestImportLocalAgentSession(t *testing.T) {
 	root := t.TempDir()
 	sessionPath := filepath.Join(t.TempDir(), "claude-session.jsonl")
-	if err := os.WriteFile(sessionPath, []byte(`{"type":"user","message":"Ship it"}`), 0o644); err != nil {
+	rawSession := `{"type":"user","message":"Ship it"}`
+	if err := os.WriteFile(sessionPath, []byte(rawSession), 0o644); err != nil {
 		t.Fatal(err)
 	}
 	res, err := NewStore(root).ImportLocalPath(ImportLocalPathInput{
@@ -168,6 +169,27 @@ func TestImportLocalAgentSession(t *testing.T) {
 	}
 	if res.Asset.Kind != "agent-session" || res.Binding == nil {
 		t.Fatalf("unexpected import result: %#v", res)
+	}
+	managedPath := res.Asset.Metadata["managedFilePath"]
+	if managedPath == "" {
+		t.Fatalf("expected managed file path metadata: %#v", res.Asset.Metadata)
+	}
+	raw, err := os.ReadFile(filepath.Join(root, ".multigent", "files", managedPath))
+	if err != nil {
+		t.Fatalf("expected session file in workspace files: %v", err)
+	}
+	if string(raw) != rawSession {
+		t.Fatalf("managed session file mismatch: %q", string(raw))
+	}
+	docContent, err := store.NewDocsStore(root).ReadContent(res.Doc.FilePath)
+	if err != nil {
+		t.Fatalf("ReadContent failed: %v", err)
+	}
+	if strings.Contains(docContent, rawSession) {
+		t.Fatalf("session raw JSONL should not be rendered as knowledge doc content:\n%s", docContent)
+	}
+	if !strings.Contains(docContent, managedPath) || !strings.Contains(docContent, "$MULTIGENT_FILES_DIR") {
+		t.Fatalf("knowledge doc should point to managed session file:\n%s", docContent)
 	}
 	views, err := NewStore(root).ListBindingViews(AgentScopes("demo", "Lina"))
 	if err != nil {

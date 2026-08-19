@@ -20,8 +20,10 @@ func newContextCmd() *cobra.Command {
 		Short: "Import and link reference material for agents",
 		Long: `Import and link reference material for agents.
 
-Reference material is stored as knowledge-base documents first. Bindings decide
-which workspace, project, or agent can see it at runtime through mga context.`,
+Reference material is stored as managed context artifacts. Text notes become
+knowledge-base documents; raw agent sessions are kept as workspace files with
+a small knowledge-base index card. Bindings decide which workspace, project,
+or agent can see it at runtime through mga context.`,
 	}
 	cmd.AddCommand(
 		newContextCollectorsCmd(),
@@ -75,7 +77,7 @@ func newContextImportSessionCmd() *cobra.Command {
 	var required bool
 	cmd := &cobra.Command{
 		Use:   "import-session",
-		Short: "Import a local agent session file into the knowledge base",
+		Short: "Import a local agent session file as reference material",
 		RunE: func(cmd *cobra.Command, args []string) error {
 			if strings.TrimSpace(path) == "" {
 				return fmt.Errorf("--path is required")
@@ -136,7 +138,7 @@ func newContextImportSessionCmd() *cobra.Command {
 	}
 	cmd.Flags().StringVar(&path, "path", "", "local session file path")
 	cmd.Flags().StringVar(&cli, "cli", "", "source agent CLI: claudecode, codex, cursor, or custom")
-	cmd.Flags().StringVar(&title, "title", "", "knowledge document title")
+	cmd.Flags().StringVar(&title, "title", "", "reference material title")
 	cmd.Flags().StringVar(&project, "project", "", "project used for knowledge-base index")
 	cmd.Flags().StringVar(&bindAgent, "bind-agent", "", "bind to one agent, format: project/agent")
 	cmd.Flags().StringVar(&bindProject, "bind-project", "", "bind to one project")
