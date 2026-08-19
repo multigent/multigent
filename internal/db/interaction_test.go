@@ -85,3 +85,51 @@ func TestInteractionSessionsPersistActiveLockAndEvents(t *testing.T) {
 		t.Fatalf("events=%#v", events)
 	}
 }
+
+func TestInteractionRequestLifecycle(t *testing.T) {
+	db, err := Open(filepath.Join(t.TempDir(), "multigent.db"))
+	if err != nil {
+		t.Fatalf("open db: %v", err)
+	}
+	defer db.Close()
+
+	if err := db.UpsertWorkspace(Workspace{ID: "ws-ir", Name: "IR", Slug: "ir", Root: "/tmp/ir", CreatedAt: nowUTC()}); err != nil {
+		t.Fatalf("workspace: %v", err)
+	}
+	req := InteractionRequest{
+		ID:               "ir_test",
+		WorkspaceID:      "ws-ir",
+		ProjectID:        "sample",
+		AgentID:          "pm",
+		ChannelBindingID: "chan-one",
+		Provider:         "feishu",
+		Recipient:        "owner",
+		TargetType:       "user",
+		TargetUserID:     "owner",
+		Title:            "Decision",
+		Body:             "Choose one",
+		SchemaJSON:       `{"actions":[{"id":"approve"}]}`,
+		ContextJSON:      `{"taskId":"t-1"}`,
+		HandlerType:      "agent_event",
+	}
+	if err := db.CreateInteractionRequest(req); err != nil {
+		t.Fatalf("create request: %v", err)
+	}
+	got, ok, err := db.InteractionRequestByID("ws-ir", req.ID)
+	if err != nil || !ok {
+		t.Fatalf("lookup ok=%v err=%v", ok, err)
+	}
+	if got.Status != "active" || got.Title != "Decision" || got.TargetUserID != "owner" {
+		t.Fatalf("unexpected request: %#v", got)
+	}
+	got.Status = "submitted"
+	got.SubmittedBy = "owner"
+	got.SubmissionJSON = `{"actionId":"approve"}`
+	if err := db.UpdateInteractionRequest(got); err != nil {
+		t.Fatalf("update request: %v", err)
+	}
+	got, ok, err = db.InteractionRequestByID("ws-ir", req.ID)
+	if err != nil || !ok || got.Status != "submitted" || got.SubmittedBy != "owner" {
+		t.Fatalf("updated request ok=%v err=%v got=%#v", ok, err, got)
+	}
+}

@@ -531,6 +531,7 @@ func (s *Server) Handler() http.Handler {
 	runtimeMux.HandleFunc("POST /api/v1/runtime/tasks/{id}/workflow/branch/complete", s.handleRuntimeWorkflowBranchComplete)
 	runtimeMux.HandleFunc("POST /api/v1/runtime/tasks/{id}/confirm-request", s.handleRuntimeTaskConfirmRequest)
 	runtimeMux.HandleFunc("GET /api/v1/runtime/tasks/{id}/workflow", s.handleRuntimeTaskWorkflow)
+	runtimeMux.HandleFunc("POST /api/v1/runtime/workflow/decision", s.handleRuntimeWorkflowDecision)
 	runtimeMux.HandleFunc("GET /api/v1/runtime/contacts", s.handleRuntimeContacts)
 	runtimeMux.HandleFunc("GET /api/v1/runtime/channels", s.handleRuntimeChannels)
 	runtimeMux.HandleFunc("POST /api/v1/runtime/notify", s.handleRuntimeNotify)

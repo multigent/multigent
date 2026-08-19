@@ -63,6 +63,15 @@ func (s *Server) handleIMEvent(w http.ResponseWriter, r *http.Request) {
 		_ = json.NewEncoder(w).Encode(map[string]string{"challenge": parsed.Challenge})
 		return
 	}
+	if parsed.IsInteraction {
+		result, err := s.acceptIMInteractionCallback(channelProvider, parsed.AppID, parsed.VerificationToken, parsed.Interaction)
+		if err != nil {
+			s.serverError(w, err)
+			return
+		}
+		_ = json.NewEncoder(w).Encode(result)
+		return
+	}
 	if !parsed.IsMessage {
 		_ = json.NewEncoder(w).Encode(map[string]any{"ok": true, "ignored": true})
 		return
@@ -73,6 +82,134 @@ func (s *Server) handleIMEvent(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	_ = json.NewEncoder(w).Encode(result)
+}
+
+func (s *Server) acceptIMInteractionCallback(channelProvider imbridge.Provider, appID, verificationToken string, callback imbridge.IncomingInteractionCallback) (map[string]any, error) {
+	provider := channelProvider.Info().ID
+	interactionID := strings.TrimSpace(callback.InteractionID)
+	if interactionID == "" {
+		return map[string]any{"ok": true, "ignored": true, "reason": "interaction_id_missing"}, nil
+	}
+	matches, err := s.matchChannelEventBindings(provider, appID, callback.ChatID)
+	if err != nil {
+		return nil, err
+	}
+	for _, binding := range matches {
+		request, found, err := s.controlDB.InteractionRequestByID(binding.WorkspaceID, interactionID)
+		if err != nil {
+			return nil, err
+		}
+		if !found || request.ChannelBindingID != binding.ID {
+			continue
+		}
+		return s.acceptBoundIMInteractionCallback(channelProvider, binding, request, verificationToken, callback)
+	}
+	log.Printf("[im:%s] interaction request not found app=%s chat=%s interaction=%s sender=%s", provider, appID, callback.ChatID, interactionID, callback.SenderOpenID)
+	return map[string]any{"ok": true, "ignored": true, "reason": "interaction_not_found"}, nil
+}
+
+func (s *Server) acceptBoundIMInteractionCallback(channelProvider imbridge.Provider, binding controldb.AgentChannelBinding, request controldb.InteractionRequest, verificationToken string, callback imbridge.IncomingInteractionCallback) (map[string]any, error) {
+	providerID := channelProvider.Info().ID
+	secret, ok, err := s.controlDB.ConnectionSecret(binding.ConnectionID)
+	if err != nil {
+		return nil, err
+	}
+	if !ok {
+		return map[string]any{"ok": true, "ignored": true, "reason": "secret_missing"}, nil
+	}
+	values, err := openConnectionSecret(secret)
+	if err != nil {
+		return nil, err
+	}
+	if !verifyIMEventToken(verificationToken, values) {
+		return map[string]any{"ok": true, "ignored": true, "reason": "verification_failed"}, nil
+	}
+	identities, err := s.controlDB.ListUserChannelIdentities(controldb.UserChannelIdentityFilter{
+		WorkspaceID:      binding.WorkspaceID,
+		ChannelBindingID: binding.ID,
+		Provider:         providerID,
+		ExternalUserID:   callback.SenderOpenID,
+	})
+	if err != nil {
+		return nil, err
+	}
+	if len(identities) == 0 {
+		return map[string]any{"ok": true, "ignored": true, "reason": "unknown_identity"}, nil
+	}
+	identity := controldb.ExternalIdentity{WorkspaceID: binding.WorkspaceID, Provider: providerID, ExternalUserID: callback.SenderOpenID, UserID: identities[0].UserID}
+	userID := identity.UserID
+	if strings.TrimSpace(request.TargetUserID) != "" && request.TargetUserID != userID {
+		return map[string]any{"ok": true, "ignored": true, "reason": "actor_not_allowed"}, nil
+	}
+	if strings.TrimSpace(request.Status) != "" && request.Status != "active" {
+		return map[string]any{"ok": true, "ignored": true, "reason": "interaction_not_active"}, nil
+	}
+	if exp := strings.TrimSpace(request.ExpiresAt); exp != "" {
+		expiresAt, err := time.Parse(time.RFC3339, exp)
+		if err == nil && time.Now().UTC().After(expiresAt) {
+			request.Status = "expired"
+			_ = s.controlDB.UpdateInteractionRequest(request)
+			return map[string]any{"ok": true, "ignored": true, "reason": "interaction_expired"}, nil
+		}
+	}
+	submission := map[string]any{
+		"interactionId": request.ID,
+		"actionId":      strings.TrimSpace(callback.ActionID),
+		"actionLabel":   strings.TrimSpace(callback.ActionLabel),
+		"inputs":        callback.Inputs,
+		"userId":        userID,
+		"provider":      providerID,
+		"chatId":        callback.ChatID,
+		"messageId":     callback.MessageID,
+		"context":       rawJSONToMap(request.ContextJSON),
+		"handlerType":   request.HandlerType,
+	}
+	rawSubmission, _ := json.Marshal(submission)
+	now := time.Now().UTC().Format(time.RFC3339)
+	request.Status = "submitted"
+	request.SubmittedAt = now
+	request.SubmittedBy = userID
+	request.SubmissionJSON = string(rawSubmission)
+	if err := s.controlDB.UpdateInteractionRequest(request); err != nil {
+		return nil, err
+	}
+	resolved := resolvedChannelEventBinding{Binding: binding, SecretValues: values, Identity: identity}
+	go func() {
+		ctx, cancel := context.WithTimeout(context.Background(), 10*time.Second)
+		defer cancel()
+		if err := s.updateIMInteractionCardAccepted(ctx, channelProvider, resolved, callback, request); err != nil {
+			log.Printf("[im:%s] interaction card update failed for %s/%s interaction=%s: %v", providerID, binding.ProjectID, binding.AgentID, request.ID, err)
+			if replyErr := s.replyToIMInteraction(ctx, channelProvider, resolved, callback, "已收到你的选择，Agent 正在处理。"); replyErr != nil {
+				log.Printf("[im:%s] interaction ack reply failed for %s/%s interaction=%s: %v", providerID, binding.ProjectID, binding.AgentID, request.ID, replyErr)
+			}
+		}
+	}()
+	go s.runAgentForInteractionCallback(channelProvider, resolved, callback, request, string(rawSubmission))
+	return map[string]any{"ok": true, "interactionId": request.ID, "status": "accepted"}, nil
+}
+
+func (s *Server) updateIMInteractionCardAccepted(ctx context.Context, provider imbridge.Provider, resolved resolvedChannelEventBinding, callback imbridge.IncomingInteractionCallback, request controldb.InteractionRequest) error {
+	updater, ok := provider.(imbridge.InteractionCardUpdater)
+	if !ok {
+		return fmt.Errorf("provider %s does not support interaction card updates", provider.Info().ID)
+	}
+	action := strings.TrimSpace(callback.ActionLabel)
+	if action == "" {
+		action = strings.TrimSpace(callback.ActionID)
+	}
+	if action == "" {
+		action = "已选择"
+	}
+	fields := []imbridge.InteractiveCardField{{Label: "选择", Value: action}}
+	if comment := strings.TrimSpace(firstNonEmpty(callback.Inputs["comment"], callback.Inputs["comments"], callback.Inputs["reason"])); comment != "" {
+		fields = append(fields, imbridge.InteractiveCardField{Label: "补充说明", Value: comment})
+	}
+	return updater.UpdateInteractionCard(ctx, resolved.SecretValues, callback, imbridge.OutgoingMessage{Card: &imbridge.InteractiveCard{
+		InteractionID: request.ID,
+		Title:         "已提交，Agent 正在处理",
+		Body:          "你的选择已经提交给 Multigent。Agent 会把这次卡片回调当作结构化消息继续处理。",
+		Fields:        fields,
+	}})
 }
 
 func (s *Server) acceptIMMessage(channelProvider imbridge.Provider, appID, verificationToken string, message imbridge.IncomingMessage) (map[string]any, error) {
@@ -681,6 +818,165 @@ func (s *Server) runAgentForIMEvent(provider imbridge.Provider, resolved resolve
 			"error":     errString(replyErr),
 		},
 	})
+}
+
+func (s *Server) runAgentForInteractionCallback(provider imbridge.Provider, resolved resolvedChannelEventBinding, callback imbridge.IncomingInteractionCallback, request controldb.InteractionRequest, submissionJSON string) {
+	ctx, cancel := context.WithTimeout(context.Background(), 30*time.Minute)
+	defer cancel()
+	binding := resolved.Binding
+	providerID := provider.Info().ID
+	source := interaction.Source{
+		Kind:    providerID + "_callback",
+		ActorID: resolved.Identity.UserID,
+		Channel: callback.ChatID,
+	}
+	lease, err := s.acquireAgentInteractionLease(s.interactionAgentRef(binding.WorkspaceID, binding.ProjectID, binding.AgentID), source, "interactive_callback")
+	if err != nil {
+		log.Printf("[im:%s] acquire callback session failed for %s/%s: %v", providerID, binding.ProjectID, binding.AgentID, err)
+		return
+	}
+	defer lease.Release()
+	prompt := formatInteractionCallbackPrompt(request, submissionJSON)
+	_ = s.createInteractionEvent(lease.session, "user", resolved.Identity.UserID, providerID, "interaction.callback", prompt, map[string]any{
+		"interactionId": request.ID,
+		"actionId":      callback.ActionID,
+		"messageId":     callback.MessageID,
+		"chatId":        callback.ChatID,
+		"submission":    rawJSONToMap(submissionJSON),
+	})
+	_ = s.createInteractionEvent(lease.session, "system", "", providerID, "run_started", "", map[string]any{
+		"interactionId": request.ID,
+	})
+	output, detectedRuntimeSessionID, err := s.execAgentPrompt(ctx, binding.ProjectID, binding.AgentID, prompt, "")
+	if detectedRuntimeSessionID != "" {
+		lease.SetRuntimeSessionID(detectedRuntimeSessionID)
+	}
+	reply := extractAgentChatReply(output)
+	if err != nil {
+		lease.Fail(err.Error())
+		_ = s.createInteractionEvent(lease.session, "system", "", providerID, "run_failed", output, map[string]any{
+			"interactionId":    request.ID,
+			"error":            err.Error(),
+			"runtimeSessionId": detectedRuntimeSessionID,
+		})
+		return
+	}
+	if strings.TrimSpace(reply) == "" {
+		reply = "已收到你的选择。"
+	}
+	if err := s.updateIMInteractionCardCompleted(ctx, provider, resolved, callback, request, reply); err != nil {
+		log.Printf("[im:%s] interaction completion card update failed for %s/%s interaction=%s: %v", providerID, binding.ProjectID, binding.AgentID, request.ID, err)
+		_ = s.replyToIMInteraction(ctx, provider, resolved, callback, trimForIM(reply, 3500))
+	}
+	_ = s.createInteractionEvent(lease.session, "agent", binding.ProjectID+"/"+binding.AgentID, providerID, "run_completed", reply, map[string]any{
+		"interactionId":    request.ID,
+		"runtimeSessionId": detectedRuntimeSessionID,
+	})
+}
+
+func (s *Server) updateIMInteractionCardCompleted(ctx context.Context, provider imbridge.Provider, resolved resolvedChannelEventBinding, callback imbridge.IncomingInteractionCallback, request controldb.InteractionRequest, reply string) error {
+	updater, ok := provider.(imbridge.InteractionCardUpdater)
+	if !ok {
+		return fmt.Errorf("provider %s does not support interaction card updates", provider.Info().ID)
+	}
+	action := strings.TrimSpace(callback.ActionLabel)
+	if action == "" {
+		action = strings.TrimSpace(callback.ActionID)
+	}
+	fields := []imbridge.InteractiveCardField{}
+	if action != "" {
+		fields = append(fields, imbridge.InteractiveCardField{Label: "选择", Value: action})
+	}
+	if comment := strings.TrimSpace(firstNonEmpty(callback.Inputs["comment"], callback.Inputs["comments"], callback.Inputs["reason"])); comment != "" {
+		fields = append(fields, imbridge.InteractiveCardField{Label: "补充说明", Value: comment})
+	}
+	result := summarizeInteractionReplyForCard(reply)
+	if result != "" {
+		fields = append(fields, imbridge.InteractiveCardField{Label: "处理结果", Value: result})
+	}
+	return updater.UpdateInteractionCard(ctx, resolved.SecretValues, callback, imbridge.OutgoingMessage{Card: &imbridge.InteractiveCard{
+		InteractionID: request.ID,
+		Title:         "处理完成",
+		Body:          "Agent 已完成这次卡片回调处理，结果已记录到 Multigent。",
+		Fields:        fields,
+	}})
+}
+
+func summarizeInteractionReplyForCard(reply string) string {
+	text := strings.TrimSpace(reply)
+	if text == "" {
+		return ""
+	}
+	replacer := strings.NewReplacer("**", "", "`", "", "✅", "", "❌", "", "###", "", "##", "", "#", "")
+	lines := strings.Split(text, "\n")
+	for _, line := range lines {
+		line = strings.TrimSpace(replacer.Replace(line))
+		line = strings.TrimLeft(line, "-*0123456789. \t")
+		if line == "" {
+			continue
+		}
+		runes := []rune(line)
+		if len(runes) > 120 {
+			line = string(runes[:120]) + "..."
+		}
+		return line
+	}
+	return ""
+}
+
+func formatInteractionCallbackPrompt(request controldb.InteractionRequest, submissionJSON string) string {
+	var b strings.Builder
+	b.WriteString("A user responded to an interactive card you sent through a collaboration channel.\n")
+	b.WriteString("Treat this callback like a structured user message. Decide the next step yourself.\n")
+	b.WriteString("If this callback should control a workflow or another protected resource, use the appropriate mga command; Multigent will enforce permissions and audit the action.\n\n")
+	if strings.EqualFold(strings.TrimSpace(request.HandlerType), "workflow_decision") {
+		b.WriteString("This interaction is intended to submit a human workflow decision.\n")
+		b.WriteString("If the interaction context contains a taskId, run `mga workflow current --task-id <taskId>` first, then submit the user's selected action with `mga workflow decision submit --interaction <interactionId> --task <taskId> --decision <actionId>`.\n")
+		b.WriteString("Map extra comments or form fields to `--comments` or `--output key=value` when useful. Do not invent a decision that the user did not choose.\n\n")
+	} else {
+		b.WriteString("If the interaction context contains a taskId and the current workflow step is a human review step, you may use `mga workflow decision submit` to apply the user's selected action when that is clearly the card's purpose.\n\n")
+	}
+	b.WriteString("Interaction request:\n")
+	b.WriteString("```json\n")
+	raw, _ := json.MarshalIndent(map[string]any{
+		"id":          request.ID,
+		"title":       request.Title,
+		"body":        request.Body,
+		"recipient":   request.Recipient,
+		"handlerType": request.HandlerType,
+		"context":     rawJSONToMap(request.ContextJSON),
+		"schema":      rawJSONToMap(request.SchemaJSON),
+	}, "", "  ")
+	b.Write(raw)
+	b.WriteString("\n```\n\n")
+	b.WriteString("User callback:\n")
+	b.WriteString("```json\n")
+	if json.Valid([]byte(submissionJSON)) {
+		var decoded any
+		_ = json.Unmarshal([]byte(submissionJSON), &decoded)
+		raw, _ = json.MarshalIndent(decoded, "", "  ")
+		b.Write(raw)
+	} else {
+		b.WriteString(submissionJSON)
+	}
+	b.WriteString("\n```\n")
+	return b.String()
+}
+
+func (s *Server) replyToIMInteraction(ctx context.Context, provider imbridge.Provider, resolved resolvedChannelEventBinding, callback imbridge.IncomingInteractionCallback, reply string) error {
+	target := imbridge.OutgoingTarget{ReceiveID: strings.TrimSpace(callback.ChatID), ReceiveIDType: "chat_id", ChatID: strings.TrimSpace(callback.ChatID)}
+	if target.ReceiveID == "" {
+		target = imbridge.OutgoingTarget{ReceiveID: resolved.Identity.ExternalUserID, ReceiveIDType: "open_id"}
+	}
+	return provider.SendText(ctx, resolved.SecretValues, target, reply)
+}
+
+func rawJSONToMap(raw string) map[string]any {
+	var out map[string]any
+	if json.Unmarshal([]byte(strings.TrimSpace(raw)), &out) != nil || out == nil {
+		return map[string]any{}
+	}
+	return out
 }
 
 func (s *Server) replyToIMEvent(ctx context.Context, provider imbridge.Provider, resolved resolvedChannelEventBinding, message imbridge.IncomingMessage, reply string) error {

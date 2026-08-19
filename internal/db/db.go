@@ -98,6 +98,9 @@ type Store interface {
 	ListInteractionSessions(filter InteractionSessionFilter) ([]InteractionSession, error)
 	CreateInteractionEvent(event InteractionEvent) error
 	ListInteractionEvents(filter InteractionEventFilter) ([]InteractionEvent, error)
+	CreateInteractionRequest(request InteractionRequest) error
+	InteractionRequestByID(workspaceID, id string) (InteractionRequest, bool, error)
+	UpdateInteractionRequest(request InteractionRequest) error
 
 	UpsertRuntimeNode(node RuntimeNode) error
 	RuntimeNodeByID(workspaceID, id string) (RuntimeNode, bool, error)
@@ -456,6 +459,31 @@ type InteractionEventFilter struct {
 	WorkspaceID string
 	SessionID   string
 	Limit       int
+}
+
+type InteractionRequest struct {
+	ID               string
+	WorkspaceID      string
+	ProjectID        string
+	AgentID          string
+	ChannelBindingID string
+	Provider         string
+	Recipient        string
+	TargetType       string
+	TargetUserID     string
+	TargetChatID     string
+	Title            string
+	Body             string
+	SchemaJSON       string
+	ContextJSON      string
+	HandlerType      string
+	Status           string
+	CreatedBy        string
+	CreatedAt        string
+	ExpiresAt        string
+	SubmittedAt      string
+	SubmittedBy      string
+	SubmissionJSON   string
 }
 
 type RuntimeNode struct {

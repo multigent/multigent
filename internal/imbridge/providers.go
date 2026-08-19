@@ -71,6 +71,46 @@ type OutgoingMessage struct {
 	Format  string
 	Subject string
 	Text    string
+	Card    *InteractiveCard
+}
+
+type InteractiveCard struct {
+	InteractionID string
+	Title         string
+	Body          string
+	Fields        []InteractiveCardField
+	Actions       []InteractiveCardAction
+	Links         []InteractiveCardLink
+	Context       map[string]any
+}
+
+type InteractiveCardField struct {
+	Label string
+	Value string
+}
+
+type InteractiveCardAction struct {
+	ID           string
+	Label        string
+	Style        string
+	RequiresText bool
+}
+
+type InteractiveCardLink struct {
+	Label string
+	URL   string
+}
+
+type IncomingInteractionCallback struct {
+	InteractionID string
+	MessageID     string
+	ChatID        string
+	SenderOpenID  string
+	UpdateToken   string
+	ActionID      string
+	ActionLabel   string
+	Inputs        map[string]string
+	Raw           json.RawMessage
 }
 
 type ParsedEvent struct {
@@ -80,6 +120,8 @@ type ParsedEvent struct {
 	Challenge         string
 	IsMessage         bool
 	Message           IncomingMessage
+	IsInteraction     bool
+	Interaction       IncomingInteractionCallback
 }
 
 type Provider interface {
@@ -95,6 +137,10 @@ type Provider interface {
 	ReplyText(ctx context.Context, secrets map[string]string, message IncomingMessage, text string) error
 	SendText(ctx context.Context, secrets map[string]string, target OutgoingTarget, text string) error
 	SendMessage(ctx context.Context, secrets map[string]string, target OutgoingTarget, message OutgoingMessage) error
+}
+
+type InteractionCardUpdater interface {
+	UpdateInteractionCard(ctx context.Context, secrets map[string]string, callback IncomingInteractionCallback, message OutgoingMessage) error
 }
 
 var registry = []Provider{
@@ -172,6 +218,22 @@ func (p larkFamilyProvider) ParseEvent(raw []byte) (ParsedEvent, error) {
 		IsURLVerification: larkbridge.IsURLVerification(env),
 		Challenge:         env.Challenge,
 	}
+	callback, isCallback, err := larkbridge.ParseCardActionEvent(env)
+	if err != nil || isCallback {
+		out.IsInteraction = isCallback
+		out.Interaction = IncomingInteractionCallback{
+			InteractionID: callback.InteractionID,
+			MessageID:     callback.MessageID,
+			ChatID:        callback.ChatID,
+			SenderOpenID:  callback.OperatorOpenID,
+			UpdateToken:   callback.UpdateToken,
+			ActionID:      callback.ActionID,
+			ActionLabel:   callback.ActionLabel,
+			Inputs:        callback.Inputs,
+			Raw:           callback.Raw,
+		}
+		return out, err
+	}
 	event, isMessage, err := larkbridge.ParseMessageEvent(env)
 	if err != nil || !isMessage {
 		return out, err
@@ -232,10 +294,63 @@ func (p larkFamilyProvider) SendMessage(ctx context.Context, secrets map[string]
 		receiveID = strings.TrimSpace(target.ChatID)
 		receiveIDType = "chat_id"
 	}
+	if message.Card != nil {
+		return client.SendInteractiveCard(ctx, receiveIDType, receiveID, larkbridge.InteractiveCard{
+			InteractionID: message.Card.InteractionID,
+			Title:         message.Card.Title,
+			Body:          message.Card.Body,
+			Fields:        larkCardFields(message.Card.Fields),
+			Actions:       larkCardActions(message.Card.Actions),
+			Links:         larkCardLinks(message.Card.Links),
+		})
+	}
 	if strings.EqualFold(strings.TrimSpace(message.Format), "markdown") {
 		return client.SendMarkdown(ctx, receiveIDType, receiveID, message.Subject, message.Text)
 	}
 	return client.SendText(ctx, receiveIDType, receiveID, message.Text)
+}
+
+func (p larkFamilyProvider) UpdateInteractionCard(ctx context.Context, secrets map[string]string, callback IncomingInteractionCallback, message OutgoingMessage) error {
+	if message.Card == nil {
+		return fmt.Errorf("interactive card is required")
+	}
+	client := larkbridge.OpenAPIClient{
+		BaseURL:   secrets["baseUrl"],
+		AppID:     secrets["appId"],
+		AppSecret: secrets["appSecret"],
+	}
+	return client.UpdateInteractiveCard(ctx, callback.UpdateToken, callback.SenderOpenID, larkbridge.InteractiveCard{
+		InteractionID: message.Card.InteractionID,
+		Title:         message.Card.Title,
+		Body:          message.Card.Body,
+		Fields:        larkCardFields(message.Card.Fields),
+		Actions:       larkCardActions(message.Card.Actions),
+		Links:         larkCardLinks(message.Card.Links),
+	})
+}
+
+func larkCardFields(fields []InteractiveCardField) []larkbridge.InteractiveCardField {
+	out := make([]larkbridge.InteractiveCardField, 0, len(fields))
+	for _, field := range fields {
+		out = append(out, larkbridge.InteractiveCardField{Label: field.Label, Value: field.Value})
+	}
+	return out
+}
+
+func larkCardActions(actions []InteractiveCardAction) []larkbridge.InteractiveCardAction {
+	out := make([]larkbridge.InteractiveCardAction, 0, len(actions))
+	for _, action := range actions {
+		out = append(out, larkbridge.InteractiveCardAction{ID: action.ID, Label: action.Label, Style: action.Style, RequiresText: action.RequiresText})
+	}
+	return out
+}
+
+func larkCardLinks(links []InteractiveCardLink) []larkbridge.InteractiveCardLink {
+	out := make([]larkbridge.InteractiveCardLink, 0, len(links))
+	for _, link := range links {
+		out = append(out, larkbridge.InteractiveCardLink{Label: link.Label, URL: link.URL})
+	}
+	return out
 }
 
 func MustOpenBaseURL(id string) (string, error) {

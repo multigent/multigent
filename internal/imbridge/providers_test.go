@@ -70,6 +70,40 @@ func TestProviderParsesIMMessageEvent(t *testing.T) {
 	}
 }
 
+func TestFeishuAndLarkProvidersParseInteractionCallback(t *testing.T) {
+	raw := []byte(`{
+		"schema":"2.0",
+		"token":"verify-one",
+		"header":{"event_type":"card.action.trigger","app_id":"cli_app"},
+		"event":{
+			"token":"update-one",
+			"operator":{"operator_id":{"open_id":"ou_user"}},
+			"context":{"open_message_id":"om_card","open_chat_id":"oc_card"},
+			"action":{
+				"value":{"interaction_id":"ir_123","action_id":"approve","action_label":"Approve"},
+				"form_value":{"comment":"looks good"}
+			}
+		}
+	}`)
+	for _, id := range []string{"feishu", "lark"} {
+		provider, ok := LookupProvider(id)
+		if !ok {
+			t.Fatalf("%s provider not found", id)
+		}
+		parsed, err := provider.ParseEvent(raw)
+		if err != nil {
+			t.Fatalf("%s parse: %v", id, err)
+		}
+		if !parsed.IsInteraction || parsed.AppID != "cli_app" || parsed.VerificationToken != "verify-one" {
+			t.Fatalf("%s unexpected parsed event: %#v", id, parsed)
+		}
+		got := parsed.Interaction
+		if got.InteractionID != "ir_123" || got.ActionID != "approve" || got.SenderOpenID != "ou_user" || got.UpdateToken != "update-one" || got.Inputs["comment"] != "looks good" {
+			t.Fatalf("%s unexpected callback: %#v", id, got)
+		}
+	}
+}
+
 func TestProviderParsesSlackMessageEvent(t *testing.T) {
 	provider, ok := LookupProvider("slack")
 	if !ok {

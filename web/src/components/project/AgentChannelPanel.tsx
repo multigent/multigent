@@ -450,8 +450,9 @@ export function AgentChannelPanel({ project, agentName }: { project: string; age
 
       {detail && (
         <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/40 px-4">
-          <div className="w-full max-w-xl rounded-xl border border-neutral-200 bg-white p-5 shadow-xl dark:border-zinc-700 dark:bg-zinc-900">
-            <div className="flex items-start justify-between gap-3">
+          <div className="flex max-h-[88vh] w-full max-w-xl flex-col overflow-hidden rounded-xl border border-neutral-200 bg-white shadow-xl dark:border-zinc-700 dark:bg-zinc-900">
+            <div className="shrink-0 border-b border-neutral-100 px-5 py-4 dark:border-zinc-800">
+              <div className="flex items-start justify-between gap-3">
               <div>
                 <h3 className="text-base font-semibold text-neutral-900 dark:text-zinc-100">
                   {t('agentChannels.detailsTitle', { provider: detail.provider.label })}
@@ -462,7 +463,9 @@ export function AgentChannelPanel({ project, agentName }: { project: string; age
                 <X className="size-4" />
               </button>
             </div>
-            <div className="mt-4 grid gap-2 rounded-lg border border-neutral-200/70 bg-neutral-50 p-3 dark:border-zinc-700/60 dark:bg-zinc-950/40">
+            </div>
+            <div className="min-h-0 flex-1 space-y-4 overflow-y-auto px-5 py-4">
+            <div className="grid gap-2 rounded-lg border border-neutral-200/70 bg-neutral-50 p-3 dark:border-zinc-700/60 dark:bg-zinc-950/40">
               <ChannelDetail label={t('agentChannels.statusLabel')} value={t('agentChannels.connected')} />
               <ChannelDetail label={t('agentChannels.connectedByLabel')} value={detail.channel.createdBy || '-'} />
               {detail.channel.appId && <ChannelDetail label={t('agentChannels.appIdLabel')} value={detail.channel.appId} mono />}
@@ -498,13 +501,13 @@ export function AgentChannelPanel({ project, agentName }: { project: string; age
                 <ChannelDetail label={t('agentChannels.lastEventLabel')} value={t('agentChannels.eventPending')} />
               )}
             </div>
-            <div className="mt-4 rounded-lg border border-sky-100 bg-sky-50/70 p-3 dark:border-sky-900/50 dark:bg-sky-950/20">
+            <div className="rounded-lg border border-sky-100 bg-sky-50/70 p-3 dark:border-sky-900/50 dark:bg-sky-950/20">
               <p className="text-xs font-medium text-sky-800 dark:text-sky-200">{t('agentChannels.identityBindingNoticeTitle')}</p>
               <p className="mt-1 text-xs leading-5 text-sky-700/80 dark:text-sky-300/80">
                 {t('agentChannels.identityBindingNotice')}
               </p>
             </div>
-            <div className="mt-4 rounded-lg border border-neutral-200/70 bg-white p-3 dark:border-zinc-700/60 dark:bg-zinc-950/30">
+            <div className="rounded-lg border border-neutral-200/70 bg-white p-3 dark:border-zinc-700/60 dark:bg-zinc-950/30">
               <div className="flex items-center justify-between gap-3">
                 <div>
                   <p className="text-xs font-medium text-neutral-700 dark:text-zinc-200">
@@ -534,7 +537,7 @@ export function AgentChannelPanel({ project, agentName }: { project: string; age
                 </p>
               )}
             </div>
-            <div className="mt-4 rounded-lg border border-neutral-200/70 bg-white p-3 dark:border-zinc-700/60 dark:bg-zinc-950/30">
+            <div className="rounded-lg border border-neutral-200/70 bg-white p-3 dark:border-zinc-700/60 dark:bg-zinc-950/30">
               <div className="flex items-center justify-between gap-3">
                 <div>
                   <p className="text-xs font-medium text-neutral-700 dark:text-zinc-200">
@@ -580,7 +583,7 @@ export function AgentChannelPanel({ project, agentName }: { project: string; age
                 </button>
               </div>
             </div>
-            <div className="mt-4 rounded-lg border border-neutral-200/70 bg-white p-3 dark:border-zinc-700/60 dark:bg-zinc-950/30">
+            <div className="rounded-lg border border-neutral-200/70 bg-white p-3 dark:border-zinc-700/60 dark:bg-zinc-950/30">
               <div className="flex items-start justify-between gap-3">
                 <div>
                   <p className="text-xs font-medium text-neutral-700 dark:text-zinc-200">{t('agentChannels.bindIdentityTitle')}</p>
@@ -603,13 +606,16 @@ export function AgentChannelPanel({ project, agentName }: { project: string; age
                 </div>
               ) : null}
             </div>
-            <div className="mt-4 flex justify-end gap-2">
+            </div>
+            <div className="shrink-0 border-t border-neutral-100 bg-white px-5 py-4 dark:border-zinc-800 dark:bg-zinc-900">
+              <div className="flex justify-end gap-2">
               <button type="button" onClick={() => setDetail(null)} className="rounded-lg border border-neutral-200 bg-white px-3 py-2 text-sm font-medium text-neutral-600 hover:bg-neutral-50 dark:border-zinc-700 dark:bg-zinc-900 dark:text-zinc-300 dark:hover:bg-zinc-800">
                 {t('common.close')}
               </button>
               <button type="button" onClick={() => void disconnect(detail.channel)} className="rounded-lg border border-red-200 bg-white px-3 py-2 text-sm font-medium text-red-600 hover:bg-red-50 dark:border-red-900/70 dark:bg-zinc-900 dark:text-red-300 dark:hover:bg-red-950/30">
                 {t('agentChannels.disconnect')}
               </button>
+              </div>
             </div>
           </div>
         </div>

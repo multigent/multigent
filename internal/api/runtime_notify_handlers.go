@@ -2,6 +2,8 @@ package api
 
 import (
 	"context"
+	"crypto/rand"
+	"encoding/hex"
 	"encoding/json"
 	"fmt"
 	"net/http"
@@ -33,13 +35,43 @@ type runtimeChannelTargetRow struct {
 }
 
 type runtimeNotifyBody struct {
-	To            string `json:"to"`
-	Channel       string `json:"channel"`
-	Subject       string `json:"subject"`
-	Body          string `json:"body"`
-	TaskID        string `json:"taskId"`
-	Urgency       string `json:"urgency"`
-	MessageFormat string `json:"messageFormat"`
+	To            string                 `json:"to"`
+	Channel       string                 `json:"channel"`
+	Subject       string                 `json:"subject"`
+	Body          string                 `json:"body"`
+	TaskID        string                 `json:"taskId"`
+	Urgency       string                 `json:"urgency"`
+	MessageFormat string                 `json:"messageFormat"`
+	Card          *runtimeNotifyCardBody `json:"card,omitempty"`
+	Context       map[string]any         `json:"context,omitempty"`
+	ExpiresInSec  int                    `json:"expiresInSec,omitempty"`
+}
+
+type runtimeNotifyCardBody struct {
+	Title       string                        `json:"title"`
+	Body        string                        `json:"body"`
+	Fields      []runtimeNotifyCardFieldBody  `json:"fields,omitempty"`
+	Actions     []runtimeNotifyCardActionBody `json:"actions,omitempty"`
+	Links       []runtimeNotifyCardLinkBody   `json:"links,omitempty"`
+	HandlerType string                        `json:"handlerType,omitempty"`
+	Context     map[string]any                `json:"context,omitempty"`
+}
+
+type runtimeNotifyCardFieldBody struct {
+	Label string `json:"label"`
+	Value string `json:"value"`
+}
+
+type runtimeNotifyCardActionBody struct {
+	ID           string `json:"id"`
+	Label        string `json:"label"`
+	Style        string `json:"style,omitempty"`
+	RequiresText bool   `json:"requiresText,omitempty"`
+}
+
+type runtimeNotifyCardLinkBody struct {
+	Label string `json:"label"`
+	URL   string `json:"url"`
 }
 
 func (s *Server) handleRuntimeChannels(w http.ResponseWriter, r *http.Request) {
@@ -79,6 +111,9 @@ func (s *Server) handleRuntimeNotify(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	text := strings.TrimSpace(body.Body)
+	if body.Card != nil && text == "" {
+		text = strings.TrimSpace(body.Card.Body)
+	}
 	if text == "" {
 		s.jsonError(w, http.StatusBadRequest, "body is required")
 		return
@@ -164,6 +199,16 @@ func (s *Server) handleRuntimeNotify(w http.ResponseWriter, r *http.Request) {
 	ctx, cancel := context.WithTimeout(r.Context(), 20*time.Second)
 	defer cancel()
 	notifyMessage := formatRuntimeNotifyMessage(principal, body, subject, text)
+	if body.Card != nil {
+		card, interactionID, err := s.runtimeNotifyCreateInteractionRequest(principal, binding, recipient, body, text)
+		if err != nil {
+			s.jsonError(w, http.StatusBadRequest, err.Error())
+			return
+		}
+		notifyMessage.Card = card
+		result["interactionId"] = interactionID
+		result["messageFormat"] = "card"
+	}
 	notifyMessage.Text = trimForIM(notifyMessage.Text, 3500)
 	if err := channelProvider.SendMessage(ctx, secrets, target, notifyMessage); err != nil {
 		result["provider"] = binding.Provider
@@ -182,6 +227,113 @@ func (s *Server) handleRuntimeNotify(w http.ResponseWriter, r *http.Request) {
 	result["externalSent"] = true
 	s.auditRuntimeNotify(r, principal, msg.ID, binding.Provider, subject, true, "")
 	_ = json.NewEncoder(w).Encode(result)
+}
+
+func (s *Server) runtimeNotifyCreateInteractionRequest(principal runtimeAgentPrincipal, binding controldb.AgentChannelBinding, recipient string, body runtimeNotifyBody, fallbackText string) (*imbridge.InteractiveCard, string, error) {
+	cardBody := body.Card
+	if cardBody == nil {
+		return nil, "", fmt.Errorf("card is required")
+	}
+	actions := make([]imbridge.InteractiveCardAction, 0, len(cardBody.Actions))
+	for _, action := range cardBody.Actions {
+		id := strings.TrimSpace(action.ID)
+		label := strings.TrimSpace(action.Label)
+		if id == "" || label == "" {
+			continue
+		}
+		actions = append(actions, imbridge.InteractiveCardAction{ID: id, Label: label, Style: action.Style, RequiresText: action.RequiresText})
+	}
+	if len(actions) == 0 {
+		return nil, "", fmt.Errorf("card.actions must include at least one action")
+	}
+	fields := make([]imbridge.InteractiveCardField, 0, len(cardBody.Fields))
+	for _, field := range cardBody.Fields {
+		if strings.TrimSpace(field.Label) == "" && strings.TrimSpace(field.Value) == "" {
+			continue
+		}
+		fields = append(fields, imbridge.InteractiveCardField{Label: strings.TrimSpace(field.Label), Value: strings.TrimSpace(field.Value)})
+	}
+	links := make([]imbridge.InteractiveCardLink, 0, len(cardBody.Links))
+	for _, link := range cardBody.Links {
+		if strings.TrimSpace(link.Label) == "" || strings.TrimSpace(link.URL) == "" {
+			continue
+		}
+		links = append(links, imbridge.InteractiveCardLink{Label: strings.TrimSpace(link.Label), URL: strings.TrimSpace(link.URL)})
+	}
+	interactionID := newRuntimeInteractionRequestID()
+	contextMap := map[string]any{}
+	for k, v := range body.Context {
+		contextMap[k] = v
+	}
+	for k, v := range cardBody.Context {
+		contextMap[k] = v
+	}
+	if taskID := strings.TrimSpace(body.TaskID); taskID != "" {
+		contextMap["taskId"] = taskID
+	}
+	schemaRaw, _ := json.Marshal(map[string]any{"actions": cardBody.Actions, "fields": cardBody.Fields, "links": cardBody.Links})
+	contextRaw, _ := json.Marshal(contextMap)
+	expiresIn := time.Duration(body.ExpiresInSec) * time.Second
+	if expiresIn <= 0 {
+		expiresIn = time.Hour
+	}
+	if expiresIn > 24*time.Hour {
+		expiresIn = 24 * time.Hour
+	}
+	now := time.Now().UTC()
+	targetType := "user"
+	targetUserID := recipient
+	targetChatID := ""
+	if recipient == "human" {
+		targetUserID = ""
+	}
+	if strings.HasPrefix(recipient, "chat:") {
+		targetType = "chat"
+		targetUserID = ""
+		targetChatID = strings.TrimPrefix(recipient, "chat:")
+	}
+	title := firstNonEmpty(strings.TrimSpace(cardBody.Title), strings.TrimSpace(body.Subject), "Multigent")
+	cardText := firstNonEmpty(strings.TrimSpace(cardBody.Body), fallbackText)
+	if err := s.controlDB.CreateInteractionRequest(controldb.InteractionRequest{
+		ID:               interactionID,
+		WorkspaceID:      principal.WorkspaceID,
+		ProjectID:        principal.Project,
+		AgentID:          principal.Agent,
+		ChannelBindingID: binding.ID,
+		Provider:         binding.Provider,
+		Recipient:        recipient,
+		TargetType:       targetType,
+		TargetUserID:     targetUserID,
+		TargetChatID:     targetChatID,
+		Title:            title,
+		Body:             cardText,
+		SchemaJSON:       string(schemaRaw),
+		ContextJSON:      string(contextRaw),
+		HandlerType:      firstNonEmpty(strings.TrimSpace(cardBody.HandlerType), "agent_event"),
+		Status:           "active",
+		CreatedBy:        runtimeAgentAddress(principal),
+		CreatedAt:        now.Format(time.RFC3339),
+		ExpiresAt:        now.Add(expiresIn).Format(time.RFC3339),
+	}); err != nil {
+		return nil, "", err
+	}
+	return &imbridge.InteractiveCard{
+		InteractionID: interactionID,
+		Title:         title,
+		Body:          cardText,
+		Fields:        fields,
+		Actions:       actions,
+		Links:         links,
+		Context:       contextMap,
+	}, interactionID, nil
+}
+
+func newRuntimeInteractionRequestID() string {
+	var b [12]byte
+	if _, err := rand.Read(b[:]); err != nil {
+		return fmt.Sprintf("ir_%d", time.Now().UnixNano())
+	}
+	return "ir_" + hex.EncodeToString(b[:])
 }
 
 func (s *Server) runtimeAgentChannelBindings(principal runtimeAgentPrincipal) ([]controldb.AgentChannelBinding, error) {

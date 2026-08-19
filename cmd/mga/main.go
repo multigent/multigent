@@ -222,6 +222,7 @@ func newWorkflowCmd() *cobra.Command {
 		Short: "Inspect the current task workflow",
 	}
 	cmd.AddCommand(newWorkflowCurrentCmd())
+	cmd.AddCommand(newWorkflowDecisionCmd())
 	return cmd
 }
 
@@ -250,6 +251,55 @@ func newWorkflowCurrentCmd() *cobra.Command {
 	}
 	cmd.Flags().StringVar(&taskID, "task-id", "", "task id")
 	cmd.Flags().StringVar(&agent, "agent", "", "agent that owns the task")
+	return cmd
+}
+
+func newWorkflowDecisionCmd() *cobra.Command {
+	cmd := &cobra.Command{
+		Use:   "decision",
+		Short: "Submit a human workflow decision from an interaction callback",
+	}
+	cmd.AddCommand(newWorkflowDecisionSubmitCmd())
+	return cmd
+}
+
+func newWorkflowDecisionSubmitCmd() *cobra.Command {
+	var interactionID, taskID, decision, comments, outputJSON string
+	var outputPairs []string
+	cmd := &cobra.Command{
+		Use:   "submit",
+		Short: "Submit the selected decision for a human review step",
+		RunE: func(cmd *cobra.Command, args []string) error {
+			if strings.TrimSpace(interactionID) == "" {
+				return fmt.Errorf("--interaction is required")
+			}
+			if strings.TrimSpace(taskID) == "" {
+				return fmt.Errorf("--task is required")
+			}
+			outputs, err := parseStructuredOutputs(outputPairs, outputJSON)
+			if err != nil {
+				return err
+			}
+			body, _ := json.Marshal(map[string]any{
+				"interactionId": strings.TrimSpace(interactionID),
+				"taskId":        strings.TrimSpace(taskID),
+				"decision":      strings.TrimSpace(decision),
+				"comments":      strings.TrimSpace(comments),
+				"outputs":       outputs,
+			})
+			resp, err := requestJSON(http.MethodPost, "/api/v1/runtime/workflow/decision", nil, body)
+			if err != nil {
+				return err
+			}
+			return writeJSON(resp)
+		},
+	}
+	cmd.Flags().StringVar(&interactionID, "interaction", "", "interaction request id from the callback event")
+	cmd.Flags().StringVar(&taskID, "task", "", "workflow task id")
+	cmd.Flags().StringVar(&decision, "decision", "", "decision value, for example approve or request_changes")
+	cmd.Flags().StringVar(&comments, "comments", "", "optional review comments")
+	cmd.Flags().StringArrayVar(&outputPairs, "output", nil, "structured workflow output as field=value, repeatable")
+	cmd.Flags().StringVar(&outputJSON, "output-json", "", "structured workflow outputs as a JSON object")
 	return cmd
 }
 
@@ -336,6 +386,9 @@ func newRuntimeChannelsCmd() *cobra.Command {
 func newNotifyCmd() *cobra.Command {
 	cmd := &cobra.Command{Use: "notify", Short: "Notify humans through agent collaboration channels"}
 	cmd.AddCommand(newNotifySendCmd())
+	cardCmd := &cobra.Command{Use: "card", Short: "Send interactive cards through collaboration channels"}
+	cardCmd.AddCommand(newNotifyCardSendCmd())
+	cmd.AddCommand(cardCmd)
 	return cmd
 }
 
@@ -372,6 +425,69 @@ func newNotifySendCmd() *cobra.Command {
 	cmd.Flags().StringVar(&taskID, "task", "", "related task id")
 	cmd.Flags().StringVar(&urgency, "urgency", "", "urgency label: normal, review, blocking")
 	cmd.Flags().StringVar(&messageFormat, "message-format", "text", "message content format: text or markdown")
+	cmd.Flags().StringVar(&format, "format", "json", "output format: json or table")
+	return cmd
+}
+
+func newNotifyCardSendCmd() *cobra.Command {
+	var to, channel, title, body, taskID, handlerType, contextJSON, format string
+	var actions, fields, links []string
+	var expiresIn int
+	cmd := &cobra.Command{
+		Use:   "send",
+		Short: "Send an interactive card from the current runtime agent",
+		RunE: func(cmd *cobra.Command, args []string) error {
+			if strings.TrimSpace(to) == "" {
+				to = "human"
+			}
+			if strings.TrimSpace(body) == "" {
+				return fmt.Errorf("--body is required")
+			}
+			cardActions, err := parseCardActions(actions)
+			if err != nil {
+				return err
+			}
+			cardFields, err := parseCardFields(fields)
+			if err != nil {
+				return err
+			}
+			cardLinks, err := parseCardLinks(links)
+			if err != nil {
+				return err
+			}
+			contextMap, err := parseJSONMapFlag(contextJSON, "--context-json")
+			if err != nil {
+				return err
+			}
+			raw, _ := json.Marshal(map[string]any{
+				"to": to, "channel": channel, "subject": title, "body": body, "taskId": taskID,
+				"messageFormat": "card", "expiresInSec": expiresIn, "context": contextMap,
+				"card": map[string]any{
+					"title": title, "body": body, "actions": cardActions, "fields": cardFields,
+					"links": cardLinks, "handlerType": handlerType, "context": contextMap,
+				},
+			})
+			resp, err := requestJSON(http.MethodPost, "/api/v1/runtime/notify", nil, raw)
+			if err != nil {
+				return err
+			}
+			if format == "table" {
+				return printNotifySendTable(resp)
+			}
+			return writeJSON(resp)
+		},
+	}
+	cmd.Flags().StringVar(&to, "to", "human", "recipient: human, owner, user:<username>, or chat:<group-name>")
+	cmd.Flags().StringVar(&channel, "channel", "auto", "channel provider: auto, feishu, lark, slack, telegram, discord")
+	cmd.Flags().StringVar(&title, "title", "", "card title")
+	cmd.Flags().StringVar(&body, "body", "", "card markdown/body text")
+	cmd.Flags().StringArrayVar(&actions, "action", nil, "card action as id=Label, id=Label:style, or id=Label:style:input, repeatable")
+	cmd.Flags().StringArrayVar(&fields, "field", nil, "card field as label=value, repeatable")
+	cmd.Flags().StringArrayVar(&links, "link", nil, "card link as label=url, repeatable")
+	cmd.Flags().StringVar(&taskID, "task", "", "related task id")
+	cmd.Flags().StringVar(&handlerType, "handler", "agent_event", "interaction handler type; default is agent_event")
+	cmd.Flags().StringVar(&contextJSON, "context-json", "", "additional card context as a JSON object")
+	cmd.Flags().IntVar(&expiresIn, "expires-in", 3600, "interaction expiration in seconds")
 	cmd.Flags().StringVar(&format, "format", "json", "output format: json or table")
 	return cmd
 }
@@ -1002,6 +1118,81 @@ func parseStringPairs(pairs []string, flagName string) (map[string]string, error
 			return nil, fmt.Errorf("%s must use key=value", flagName)
 		}
 		out[strings.TrimSpace(key)] = strings.TrimSpace(value)
+	}
+	return out, nil
+}
+
+func parseJSONMapFlag(raw, flagName string) (map[string]any, error) {
+	if strings.TrimSpace(raw) == "" {
+		return nil, nil
+	}
+	var out map[string]any
+	if err := json.Unmarshal([]byte(raw), &out); err != nil {
+		return nil, fmt.Errorf("%s must be a JSON object: %w", flagName, err)
+	}
+	return out, nil
+}
+
+func parseCardActions(values []string) ([]map[string]any, error) {
+	out := make([]map[string]any, 0, len(values))
+	for _, value := range values {
+		id, rest, ok := strings.Cut(value, "=")
+		id = strings.TrimSpace(id)
+		rest = strings.TrimSpace(rest)
+		if !ok || id == "" || rest == "" {
+			return nil, fmt.Errorf("--action must use id=Label, id=Label:style, or id=Label:style:input")
+		}
+		label := rest
+		style := ""
+		requiresText := false
+		if before, after, ok := strings.Cut(rest, ":"); ok {
+			label = strings.TrimSpace(before)
+			parts := strings.Split(after, ":")
+			if len(parts) > 0 {
+				style = strings.TrimSpace(parts[0])
+			}
+			for _, part := range parts[1:] {
+				switch strings.ToLower(strings.TrimSpace(part)) {
+				case "input", "text", "comment", "reason":
+					requiresText = true
+				}
+			}
+		}
+		if label == "" {
+			return nil, fmt.Errorf("--action label is required")
+		}
+		out = append(out, map[string]any{"id": id, "label": label, "style": style, "requiresText": requiresText})
+	}
+	if len(out) == 0 {
+		return nil, fmt.Errorf("at least one --action is required")
+	}
+	return out, nil
+}
+
+func parseCardFields(values []string) ([]map[string]string, error) {
+	out := make([]map[string]string, 0, len(values))
+	for _, value := range values {
+		label, text, ok := strings.Cut(value, "=")
+		label = strings.TrimSpace(label)
+		text = strings.TrimSpace(text)
+		if !ok || label == "" {
+			return nil, fmt.Errorf("--field must use label=value")
+		}
+		out = append(out, map[string]string{"label": label, "value": text})
+	}
+	return out, nil
+}
+
+func parseCardLinks(values []string) ([]map[string]string, error) {
+	out := make([]map[string]string, 0, len(values))
+	for _, value := range values {
+		label, urlValue, ok := strings.Cut(value, "=")
+		label = strings.TrimSpace(label)
+		urlValue = strings.TrimSpace(urlValue)
+		if !ok || label == "" || urlValue == "" {
+			return nil, fmt.Errorf("--link must use label=url")
+		}
+		out = append(out, map[string]string{"label": label, "url": urlValue})
 	}
 	return out, nil
 }
@@ -1662,6 +1853,7 @@ func printChannelsTable(body []byte) error {
 func printNotifySendTable(body []byte) error {
 	var resp struct {
 		MessageID     string `json:"messageId"`
+		InteractionID string `json:"interactionId"`
 		Provider      string `json:"provider"`
 		ChannelID     string `json:"channelId"`
 		InternalSent  bool   `json:"internalSent"`
@@ -1673,8 +1865,8 @@ func printNotifySendTable(body []byte) error {
 		return err
 	}
 	tw := tabwriter.NewWriter(os.Stdout, 0, 4, 2, ' ', 0)
-	fmt.Fprintln(tw, "MESSAGE_ID\tINTERNAL_SENT\tEXTERNAL_SENT\tFORMAT\tPROVIDER\tCHANNEL_ID\tEXTERNAL_ERROR")
-	fmt.Fprintf(tw, "%s\t%t\t%t\t%s\t%s\t%s\t%s\n", resp.MessageID, resp.InternalSent, resp.ExternalSent, resp.MessageFormat, resp.Provider, resp.ChannelID, resp.ExternalError)
+	fmt.Fprintln(tw, "MESSAGE_ID\tINTERACTION_ID\tINTERNAL_SENT\tEXTERNAL_SENT\tFORMAT\tPROVIDER\tCHANNEL_ID\tEXTERNAL_ERROR")
+	fmt.Fprintf(tw, "%s\t%s\t%t\t%t\t%s\t%s\t%s\t%s\n", resp.MessageID, resp.InteractionID, resp.InternalSent, resp.ExternalSent, resp.MessageFormat, resp.Provider, resp.ChannelID, resp.ExternalError)
 	return tw.Flush()
 }
 

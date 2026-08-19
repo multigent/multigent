@@ -517,21 +517,30 @@ func (s *Server) handlePostTaskWorkflowReview(w http.ResponseWriter, r *http.Req
 		s.jsonError(w, http.StatusBadRequest, "invalid JSON body")
 		return
 	}
-	decision := normalizeWorkflowReviewDecision(body.Decision)
-	t, agent, err := s.findTaskInProject(project, taskID)
-	if err != nil {
-		s.jsonError(w, http.StatusNotFound, "task not found")
-		return
-	}
-	wfStore, ok := s.workflowStoreForRequest(w, r)
-	if !ok {
-		return
-	}
 	currentWorkspaceID, err := s.currentWorkspaceID()
 	if err != nil {
 		s.serverError(w, err)
 		return
 	}
+	resp, status, err := s.submitTaskWorkflowReview(r, currentWorkspaceID, project, taskID, body)
+	if err != nil {
+		if status == http.StatusInternalServerError {
+			s.serverError(w, err)
+			return
+		}
+		s.jsonError(w, status, err.Error())
+		return
+	}
+	_ = json.NewEncoder(w).Encode(resp)
+}
+
+func (s *Server) submitTaskWorkflowReview(r *http.Request, workspaceID, project, taskID string, body workflowReviewBody) (taskWorkflowResponse, int, error) {
+	decision := normalizeWorkflowReviewDecision(body.Decision)
+	t, agent, err := s.findTaskInProject(project, taskID)
+	if err != nil {
+		return taskWorkflowResponse{}, http.StatusNotFound, errors.New("task not found")
+	}
+	wfStore := workflowstore.NewStore(s.controlDB, workspaceID)
 	outputs := body.Outputs
 	if outputs == nil {
 		outputs = map[string]string{}
@@ -551,8 +560,7 @@ func (s *Server) handlePostTaskWorkflowReview(w http.ResponseWriter, r *http.Req
 	summary := formatWorkflowReviewFields(outputs)
 	transition, err := wfStore.CompleteAndAdvance(project, taskID, summary, "", outputs, "completed")
 	if err != nil {
-		s.jsonError(w, http.StatusBadRequest, err.Error())
-		return
+		return taskWorkflowResponse{}, http.StatusBadRequest, err
 	}
 	_ = s.ts.RemoveFromInbox(taskID)
 	if transition.Done {
@@ -562,49 +570,40 @@ func (s *Server) handlePostTaskWorkflowReview(w http.ResponseWriter, r *http.Req
 		t.UpdatedAt = now
 		t.FinishedAt = &now
 		if err := s.ts.PersistTask(project, agent, t); err != nil {
-			s.serverError(w, err)
-			return
+			return taskWorkflowResponse{}, http.StatusInternalServerError, err
 		}
 		if strings.TrimSpace(t.Vars[workflowBranchIDVar]) != "" {
-			branchResult, err := s.completeRuntimeWorkflowBranch(currentWorkspaceID, project, t, outputs, "completed")
+			branchResult, err := s.completeRuntimeWorkflowBranch(workspaceID, project, t, outputs, "completed")
 			if err != nil {
-				s.jsonError(w, http.StatusBadRequest, err.Error())
-				return
+				return taskWorkflowResponse{}, http.StatusBadRequest, err
 			}
-			if err := s.advanceParentAfterBranchCompletion(currentWorkspaceID, project, branchResult, r); err != nil {
-				s.serverError(w, err)
-				return
+			if err := s.advanceParentAfterBranchCompletion(workspaceID, project, branchResult, r); err != nil {
+				return taskWorkflowResponse{}, http.StatusInternalServerError, err
 			}
 		}
-	} else if err := s.activateNextWorkflowStep(currentWorkspaceID, project, agent, t, transition, r); err != nil {
-		s.serverError(w, err)
-		return
+	} else if err := s.activateNextWorkflowStep(workspaceID, project, agent, t, transition, r); err != nil {
+		return taskWorkflowResponse{}, http.StatusInternalServerError, err
 	}
 	steps, err := wfStore.ListStepInstances(transition.Run.ID)
 	if err != nil {
-		s.serverError(w, err)
-		return
+		return taskWorkflowResponse{}, http.StatusInternalServerError, err
 	}
 	history, err := wfStore.ListStepEvents(transition.Run.ID)
 	if err != nil {
-		s.serverError(w, err)
-		return
+		return taskWorkflowResponse{}, http.StatusInternalServerError, err
 	}
 	branches, err := wfStore.ListBranchInstances(transition.Run.ID)
 	if err != nil {
-		s.serverError(w, err)
-		return
+		return taskWorkflowResponse{}, http.StatusInternalServerError, err
 	}
 	def, found, err := wfStore.RunDefinition(transition.Run)
 	if err != nil {
-		s.serverError(w, err)
-		return
+		return taskWorkflowResponse{}, http.StatusInternalServerError, err
 	}
 	if !found {
-		s.jsonError(w, http.StatusNotFound, "workflow definition not found")
-		return
+		return taskWorkflowResponse{}, http.StatusNotFound, errors.New("workflow definition not found")
 	}
-	_ = json.NewEncoder(w).Encode(taskWorkflowResponse{Definition: def, Run: transition.Run, Steps: steps, Branches: branches, History: history})
+	return taskWorkflowResponse{Definition: def, Run: transition.Run, Steps: steps, Branches: branches, History: history}, http.StatusOK, nil
 }
 
 func formatWorkflowReviewFields(fields map[string]string) string {

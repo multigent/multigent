@@ -211,6 +211,68 @@ func TestRuntimeNotifyTargetUsesNamedChatTarget(t *testing.T) {
 	}
 }
 
+func TestRuntimeNotifyCreateInteractionRequestForCard(t *testing.T) {
+	s, workspaceID := newConnectionGrantPolicyServer(t)
+	binding := controldb.AgentChannelBinding{
+		ID:           "chan-feishu",
+		WorkspaceID:  workspaceID,
+		ProjectID:    "sample",
+		AgentID:      "pm",
+		Provider:     "feishu",
+		ConnectionID: "conn-feishu",
+		Status:       "connected",
+	}
+	card, interactionID, err := s.runtimeNotifyCreateInteractionRequest(runtimeAgentPrincipal{
+		WorkspaceID: workspaceID,
+		Project:     "sample",
+		Agent:       "pm",
+	}, binding, "owner", runtimeNotifyBody{
+		Subject: "Decision",
+		Body:    "Choose one",
+		TaskID:  "t-1",
+		Card: &runtimeNotifyCardBody{
+			Actions: []runtimeNotifyCardActionBody{{ID: "approve", Label: "通过", Style: "primary"}},
+			Fields:  []runtimeNotifyCardFieldBody{{Label: "风险", Value: "低"}},
+			Context: map[string]any{"stepId": "review"},
+		},
+	}, "Choose one")
+	if err != nil {
+		t.Fatalf("create card request: %v", err)
+	}
+	if card == nil || card.InteractionID == "" || interactionID != card.InteractionID || len(card.Actions) != 1 {
+		t.Fatalf("unexpected card: %#v id=%s", card, interactionID)
+	}
+	req, ok, err := s.controlDB.InteractionRequestByID(workspaceID, interactionID)
+	if err != nil || !ok {
+		t.Fatalf("lookup interaction ok=%v err=%v", ok, err)
+	}
+	if req.TargetUserID != "owner" || req.HandlerType != "agent_event" || !strings.Contains(req.ContextJSON, "t-1") {
+		t.Fatalf("unexpected request: %#v", req)
+	}
+}
+
+func TestRuntimeNotifyCreateInteractionRequestHumanDoesNotLockToLiteralHuman(t *testing.T) {
+	s, workspaceID := newConnectionGrantPolicyServer(t)
+	_, interactionID, err := s.runtimeNotifyCreateInteractionRequest(runtimeAgentPrincipal{
+		WorkspaceID: workspaceID,
+		Project:     "sample",
+		Agent:       "pm",
+	}, controldb.AgentChannelBinding{ID: "chan-feishu", WorkspaceID: workspaceID, ProjectID: "sample", AgentID: "pm", Provider: "feishu"}, "human", runtimeNotifyBody{
+		Body: "Choose one",
+		Card: &runtimeNotifyCardBody{Actions: []runtimeNotifyCardActionBody{{ID: "ack", Label: "收到"}}},
+	}, "Choose one")
+	if err != nil {
+		t.Fatalf("create card request: %v", err)
+	}
+	req, ok, err := s.controlDB.InteractionRequestByID(workspaceID, interactionID)
+	if err != nil || !ok {
+		t.Fatalf("lookup interaction ok=%v err=%v", ok, err)
+	}
+	if req.TargetUserID != "" {
+		t.Fatalf("human recipient should not lock to literal user, got %#v", req)
+	}
+}
+
 func TestFormatRuntimeNotifyMarkdownPreservesBodyAndMetadata(t *testing.T) {
 	msg := formatRuntimeNotifyMessage(runtimeAgentPrincipal{
 		Project: "sample",

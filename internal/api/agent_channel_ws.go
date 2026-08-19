@@ -14,6 +14,7 @@ import (
 	"github.com/gorilla/websocket"
 	larkcore "github.com/larksuite/oapi-sdk-go/v3/core"
 	"github.com/larksuite/oapi-sdk-go/v3/event/dispatcher"
+	"github.com/larksuite/oapi-sdk-go/v3/event/dispatcher/callback"
 	larkim "github.com/larksuite/oapi-sdk-go/v3/service/im/v1"
 	larkws "github.com/larksuite/oapi-sdk-go/v3/ws"
 	controldb "github.com/multigent/multigent/internal/db"
@@ -144,6 +145,23 @@ func (s *Server) runAgentIMBridge(ctx context.Context, key string, cfg imBridgeC
 			}
 			_ = eventCtx
 			return nil
+		}).
+		OnP2CardActionTrigger(func(eventCtx context.Context, event *callback.CardActionTriggerEvent) (*callback.CardActionTriggerResponse, error) {
+			interaction, ok := larkSDKCardActionToIncoming(event)
+			if !ok {
+				return &callback.CardActionTriggerResponse{}, nil
+			}
+			result, err := s.acceptIMInteractionCallback(cfg.provider, cfg.appID, "", interaction)
+			if err != nil {
+				log.Printf("[im:%s] websocket card action failed app=%s interaction=%s: %v", providerID, cfg.appID, interaction.InteractionID, err)
+				return &callback.CardActionTriggerResponse{}, nil
+			}
+			if ignored, _ := result["ignored"].(bool); ignored {
+				log.Printf("[im:%s] websocket card action ignored app=%s interaction=%s reason=%v", providerID, cfg.appID, interaction.InteractionID, result["reason"])
+				return &callback.CardActionTriggerResponse{}, nil
+			}
+			_ = eventCtx
+			return &callback.CardActionTriggerResponse{}, nil
 		}).
 		OnP2MessageReadV1(func(context.Context, *larkim.P2MessageReadV1) error {
 			return nil
@@ -407,6 +425,59 @@ func larkSDKMessageToIncoming(event *larkim.P2MessageReceiveV1) (imbridge.Incomi
 		out.MessageID = "im-" + time.Now().UTC().Format("20060102150405.000000000")
 	}
 	return out, true
+}
+
+func larkSDKCardActionToIncoming(event *callback.CardActionTriggerEvent) (imbridge.IncomingInteractionCallback, bool) {
+	if event == nil || event.Event == nil || event.Event.Action == nil {
+		return imbridge.IncomingInteractionCallback{}, false
+	}
+	out := imbridge.IncomingInteractionCallback{Inputs: map[string]string{}}
+	out.UpdateToken = strings.TrimSpace(event.Event.Token)
+	if event.Event.Operator != nil {
+		out.SenderOpenID = strings.TrimSpace(event.Event.Operator.OpenID)
+	}
+	if event.Event.Context != nil {
+		out.MessageID = strings.TrimSpace(event.Event.Context.OpenMessageID)
+		out.ChatID = strings.TrimSpace(event.Event.Context.OpenChatID)
+	}
+	action := event.Event.Action
+	if value := action.Value; value != nil {
+		out.InteractionID = stringFromAny(value["interaction_id"])
+		out.ActionID = stringFromAny(value["action_id"])
+		out.ActionLabel = stringFromAny(value["action_label"])
+	}
+	if out.ActionID == "" {
+		out.ActionID = strings.TrimSpace(action.Name)
+	}
+	if form := action.FormValue; form != nil {
+		for key, value := range form {
+			key = strings.TrimSpace(key)
+			if key == "" {
+				continue
+			}
+			out.Inputs[key] = strings.TrimSpace(stringFromAny(value))
+		}
+	}
+	if strings.TrimSpace(action.InputValue) != "" && out.Inputs["comment"] == "" {
+		out.Inputs["comment"] = strings.TrimSpace(action.InputValue)
+	}
+	raw, _ := json.Marshal(event.Event)
+	out.Raw = raw
+	return out, out.InteractionID != "" && out.SenderOpenID != ""
+}
+
+func stringFromAny(value any) string {
+	switch v := value.(type) {
+	case string:
+		return strings.TrimSpace(v)
+	case fmt.Stringer:
+		return strings.TrimSpace(v.String())
+	case nil:
+		return ""
+	default:
+		raw, _ := json.Marshal(v)
+		return strings.TrimSpace(string(raw))
+	}
 }
 
 func larkSDKUserID(id *larkim.UserId) string {

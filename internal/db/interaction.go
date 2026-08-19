@@ -200,3 +200,73 @@ func boolInt(v bool) int {
 	}
 	return 0
 }
+
+func (db *SQLiteStore) CreateInteractionRequest(request InteractionRequest) error {
+	if request.CreatedAt == "" {
+		request.CreatedAt = nowUTC()
+	}
+	if request.Status == "" {
+		request.Status = "active"
+	}
+	if request.SchemaJSON == "" {
+		request.SchemaJSON = "{}"
+	}
+	if request.ContextJSON == "" {
+		request.ContextJSON = "{}"
+	}
+	if request.HandlerType == "" {
+		request.HandlerType = "agent_event"
+	}
+	_, err := db.sql.Exec(`INSERT INTO interaction_requests (
+id, workspace_id, project_id, agent_id, channel_binding_id, provider, recipient,
+target_type, target_user_id, target_chat_id, title, body, schema_json, context_json,
+handler_type, status, created_by, created_at, expires_at, submitted_at, submitted_by, submission_json
+) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
+		request.ID, request.WorkspaceID, request.ProjectID, request.AgentID, request.ChannelBindingID,
+		request.Provider, request.Recipient, request.TargetType, request.TargetUserID, request.TargetChatID,
+		request.Title, request.Body, request.SchemaJSON, request.ContextJSON, request.HandlerType,
+		request.Status, request.CreatedBy, request.CreatedAt, request.ExpiresAt, request.SubmittedAt,
+		request.SubmittedBy, request.SubmissionJSON)
+	return err
+}
+
+func (db *SQLiteStore) InteractionRequestByID(workspaceID, id string) (InteractionRequest, bool, error) {
+	row := db.sql.QueryRow(`SELECT id, workspace_id, project_id, agent_id, channel_binding_id, provider, recipient,
+target_type, target_user_id, target_chat_id, title, body, schema_json, context_json,
+handler_type, status, created_by, created_at, expires_at, submitted_at, submitted_by, submission_json
+FROM interaction_requests WHERE workspace_id = ? AND id = ?`, strings.TrimSpace(workspaceID), strings.TrimSpace(id))
+	var request InteractionRequest
+	err := row.Scan(&request.ID, &request.WorkspaceID, &request.ProjectID, &request.AgentID,
+		&request.ChannelBindingID, &request.Provider, &request.Recipient, &request.TargetType,
+		&request.TargetUserID, &request.TargetChatID, &request.Title, &request.Body, &request.SchemaJSON,
+		&request.ContextJSON, &request.HandlerType, &request.Status, &request.CreatedBy,
+		&request.CreatedAt, &request.ExpiresAt, &request.SubmittedAt, &request.SubmittedBy,
+		&request.SubmissionJSON)
+	if errors.Is(err, sql.ErrNoRows) {
+		return InteractionRequest{}, false, nil
+	}
+	if err != nil {
+		return InteractionRequest{}, false, err
+	}
+	return request, true, nil
+}
+
+func (db *SQLiteStore) UpdateInteractionRequest(request InteractionRequest) error {
+	if request.SchemaJSON == "" {
+		request.SchemaJSON = "{}"
+	}
+	if request.ContextJSON == "" {
+		request.ContextJSON = "{}"
+	}
+	_, err := db.sql.Exec(`UPDATE interaction_requests SET
+	channel_binding_id = ?, provider = ?, recipient = ?, target_type = ?, target_user_id = ?, target_chat_id = ?,
+	title = ?, body = ?, schema_json = ?, context_json = ?, handler_type = ?, status = ?, created_by = ?,
+	created_at = ?, expires_at = ?, submitted_at = ?, submitted_by = ?, submission_json = ?
+WHERE workspace_id = ? AND id = ?`,
+		request.ChannelBindingID, request.Provider, request.Recipient, request.TargetType,
+		request.TargetUserID, request.TargetChatID, request.Title, request.Body, request.SchemaJSON,
+		request.ContextJSON, request.HandlerType, request.Status, request.CreatedBy, request.CreatedAt,
+		request.ExpiresAt, request.SubmittedAt, request.SubmittedBy, request.SubmissionJSON,
+		request.WorkspaceID, request.ID)
+	return err
+}
