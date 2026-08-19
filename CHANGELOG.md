@@ -1,5 +1,25 @@
 # Changelog
 
+## [v0.1.32] - 2026-08-19
+
+### Added
+
+- Agent collaboration channels now support interactive Feishu/Lark cards with multiple action buttons, optional comment input, status updates, and callback handling.
+- Runtime agents can send interactive cards with `mga notify card send`, including fields, links, actions, handler hints, and task context.
+- Card callbacks now wake the sending Agent as structured interaction events, allowing the Agent to decide the next step instead of hardcoding business behavior in the IM handler.
+- Human workflow decisions can now be submitted by Agents only with a short-lived user delegation token through `mga workflow decision submit`.
+
+### Improved
+
+- Workflow decision submission now verifies both the Agent runtime token and the delegated user's authority, preventing Agents from operating human-review steps without user delegation.
+- Feishu/Lark card completion updates now avoid dumping long Markdown into cards and show a concise structured result instead.
+- Interactive card layout now avoids duplicate separators around input fields and action buttons.
+
+### Tested
+
+- Added coverage for interactive card sending/updating, card callback parsing, interaction request lifecycle, runtime workflow decision delegation, and delegation-token validation.
+- Verified the end-to-end path: workflow human review → Feishu card → user click → Agent callback wakeup → delegated `mga workflow decision submit` → workflow completion.
+
 ## [v0.1.31] - 2026-08-19
 
 ### Added
