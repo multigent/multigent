@@ -13,11 +13,12 @@ import (
 )
 
 type runtimeWorkflowDecisionBody struct {
-	InteractionID string            `json:"interactionId"`
-	TaskID        string            `json:"taskId"`
-	Decision      string            `json:"decision"`
-	Comments      string            `json:"comments"`
-	Outputs       map[string]string `json:"outputs"`
+	InteractionID   string            `json:"interactionId"`
+	DelegationToken string            `json:"delegationToken"`
+	TaskID          string            `json:"taskId"`
+	Decision        string            `json:"decision"`
+	Comments        string            `json:"comments"`
+	Outputs         map[string]string `json:"outputs"`
 }
 
 type runtimeWorkflowDecisionResponse struct {
@@ -46,6 +47,10 @@ func (s *Server) handleRuntimeWorkflowDecision(w http.ResponseWriter, r *http.Re
 		s.jsonError(w, http.StatusBadRequest, "taskId is required")
 		return
 	}
+	delegation, ok := s.validateWorkflowDecisionDelegation(w, principal, strings.TrimSpace(body.DelegationToken), interactionID)
+	if !ok {
+		return
+	}
 	request, found, err := s.controlDB.InteractionRequestByID(principal.WorkspaceID, interactionID)
 	if err != nil {
 		s.serverError(w, err)
@@ -59,7 +64,11 @@ func (s *Server) handleRuntimeWorkflowDecision(w http.ResponseWriter, r *http.Re
 		s.jsonError(w, http.StatusForbidden, err.Error())
 		return
 	}
-	if err := s.validateWorkflowDecisionReviewer(principal.WorkspaceID, principal.Project, taskID, request.SubmittedBy); err != nil {
+	if strings.TrimSpace(request.SubmittedBy) != "" && request.SubmittedBy != delegation.UserID {
+		s.jsonError(w, http.StatusForbidden, "delegation user does not match interaction submitter")
+		return
+	}
+	if err := s.validateWorkflowDecisionReviewer(principal.WorkspaceID, principal.Project, taskID, delegation.UserID); err != nil {
 		status := http.StatusBadRequest
 		if errors.Is(err, errWorkflowDecisionReviewerForbidden) {
 			status = http.StatusForbidden
@@ -102,13 +111,52 @@ func (s *Server) handleRuntimeWorkflowDecision(w http.ResponseWriter, r *http.Re
 		ResourceType: "interaction_request",
 		ResourceID:   request.ID,
 		Summary:      "Runtime agent submitted a workflow decision from an interaction callback",
-		Request:      r,
+		After: map[string]any{
+			"delegatedUser": delegation.UserID,
+			"interactionId": request.ID,
+			"taskId":        taskID,
+		},
+		Request: r,
 	})
 	_ = json.NewEncoder(w).Encode(runtimeWorkflowDecisionResponse{
 		InteractionID: request.ID,
-		SubmittedBy:   request.SubmittedBy,
+		SubmittedBy:   delegation.UserID,
 		Workflow:      resp,
 	})
+}
+
+func (s *Server) validateWorkflowDecisionDelegation(w http.ResponseWriter, principal runtimeAgentPrincipal, token, interactionID string) (runtimeDelegationPrincipal, bool) {
+	if strings.TrimSpace(token) == "" {
+		s.jsonError(w, http.StatusForbidden, "delegation token is required")
+		return runtimeDelegationPrincipal{}, false
+	}
+	delegation, ok := s.validateRuntimeDelegationToken(token)
+	if !ok {
+		s.jsonError(w, http.StatusForbidden, "invalid or expired delegation token")
+		return runtimeDelegationPrincipal{}, false
+	}
+	if delegation.WorkspaceID != principal.WorkspaceID || delegation.Project != principal.Project || delegation.Agent != principal.Agent {
+		s.jsonError(w, http.StatusForbidden, "delegation token does not belong to this runtime agent")
+		return runtimeDelegationPrincipal{}, false
+	}
+	if strings.TrimSpace(delegation.InteractionID) != "" && delegation.InteractionID != interactionID {
+		s.jsonError(w, http.StatusForbidden, "delegation token does not match interaction")
+		return runtimeDelegationPrincipal{}, false
+	}
+	if !runtimeDelegationHasScope(delegation, "act_as_user") && !runtimeDelegationHasScope(delegation, "workflow.decision") {
+		s.jsonError(w, http.StatusForbidden, "delegation token lacks workflow decision scope")
+		return runtimeDelegationPrincipal{}, false
+	}
+	return delegation, true
+}
+
+func runtimeDelegationHasScope(delegation runtimeDelegationPrincipal, scope string) bool {
+	for _, value := range delegation.Scopes {
+		if strings.TrimSpace(value) == scope {
+			return true
+		}
+	}
+	return false
 }
 
 func validateRuntimeWorkflowDecisionInteraction(principal runtimeAgentPrincipal, request controldb.InteractionRequest, taskID string) error {

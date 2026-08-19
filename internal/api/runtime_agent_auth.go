@@ -15,6 +15,8 @@ const ctxRuntimeAgentKey contextKey = "runtime-agent"
 
 type runtimeAgentPrincipal = runtimeauth.Principal
 type runtimeAgentTokenPayload = runtimeauth.Payload
+type runtimeDelegationPrincipal = runtimeauth.DelegationPrincipal
+type runtimeDelegationTokenPayload = runtimeauth.DelegationPayload
 
 type issueAgentRuntimeTokenRequest struct {
 	RunID        string   `json:"runId"`
@@ -132,6 +134,14 @@ func (s *Server) issueAgentRuntimeToken(payload runtimeAgentTokenPayload, ttl ti
 
 func (s *Server) validateAgentRuntimeToken(token string) (runtimeAgentPrincipal, bool) {
 	return runtimeauth.Validate(s.runtimeSecret(), token)
+}
+
+func (s *Server) issueRuntimeDelegationToken(payload runtimeDelegationTokenPayload, ttl time.Duration) string {
+	return runtimeauth.IssueDelegation(s.runtimeSecret(), payload, ttl)
+}
+
+func (s *Server) validateRuntimeDelegationToken(token string) (runtimeDelegationPrincipal, bool) {
+	return runtimeauth.ValidateDelegation(s.runtimeSecret(), token)
 }
 
 func (s *Server) runtimeSecret() string {

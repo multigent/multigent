@@ -836,13 +836,19 @@ func (s *Server) runAgentForInteractionCallback(provider imbridge.Provider, reso
 		return
 	}
 	defer lease.Release()
-	prompt := formatInteractionCallbackPrompt(request, submissionJSON)
-	_ = s.createInteractionEvent(lease.session, "user", resolved.Identity.UserID, providerID, "interaction.callback", prompt, map[string]any{
+	delegationToken, delegationExpiresAt := s.issueInteractionDelegationToken(request, resolved.Identity.UserID)
+	prompt := formatInteractionCallbackPrompt(request, submissionJSON, delegationToken, delegationExpiresAt)
+	logPrompt := formatInteractionCallbackPrompt(request, submissionJSON, "<redacted>", delegationExpiresAt)
+	_ = s.createInteractionEvent(lease.session, "user", resolved.Identity.UserID, providerID, "interaction.callback", logPrompt, map[string]any{
 		"interactionId": request.ID,
 		"actionId":      callback.ActionID,
 		"messageId":     callback.MessageID,
 		"chatId":        callback.ChatID,
 		"submission":    rawJSONToMap(submissionJSON),
+		"delegation": map[string]any{
+			"expiresAt": delegationExpiresAt,
+			"redacted":  true,
+		},
 	})
 	_ = s.createInteractionEvent(lease.session, "system", "", providerID, "run_started", "", map[string]any{
 		"interactionId": request.ID,
@@ -924,17 +930,52 @@ func summarizeInteractionReplyForCard(reply string) string {
 	return ""
 }
 
-func formatInteractionCallbackPrompt(request controldb.InteractionRequest, submissionJSON string) string {
+func (s *Server) issueInteractionDelegationToken(request controldb.InteractionRequest, userID string) (string, string) {
+	now := time.Now().UTC()
+	ttl := 30 * time.Minute
+	if exp := strings.TrimSpace(request.ExpiresAt); exp != "" {
+		if expiresAt, err := time.Parse(time.RFC3339, exp); err == nil {
+			remaining := time.Until(expiresAt)
+			if remaining > 0 && remaining < ttl {
+				ttl = remaining
+			}
+		}
+	}
+	if ttl <= 0 {
+		ttl = time.Minute
+	}
+	expiresAt := now.Add(ttl).Format(time.RFC3339)
+	token := s.issueRuntimeDelegationToken(runtimeDelegationTokenPayload{
+		WorkspaceID:   request.WorkspaceID,
+		Project:       request.ProjectID,
+		Agent:         request.AgentID,
+		UserID:        strings.TrimSpace(userID),
+		InteractionID: request.ID,
+		Scopes:        []string{"act_as_user"},
+	}, ttl)
+	return token, expiresAt
+}
+
+func formatInteractionCallbackPrompt(request controldb.InteractionRequest, submissionJSON, delegationToken, delegationExpiresAt string) string {
 	var b strings.Builder
 	b.WriteString("A user responded to an interactive card you sent through a collaboration channel.\n")
 	b.WriteString("Treat this callback like a structured user message. Decide the next step yourself.\n")
 	b.WriteString("If this callback should control a workflow or another protected resource, use the appropriate mga command; Multigent will enforce permissions and audit the action.\n\n")
+	if strings.TrimSpace(delegationToken) != "" {
+		b.WriteString("Delegation token:\n")
+		b.WriteString("The user has delegated short-lived authority to you for this interaction. Use this token only for actions that match the user's callback and intent.\n")
+		b.WriteString("Set `MULTIGENT_DELEGATION_TOKEN` for mga commands or pass `--delegation-token` explicitly.\n")
+		if strings.TrimSpace(delegationExpiresAt) != "" {
+			b.WriteString("Expires at: " + strings.TrimSpace(delegationExpiresAt) + "\n")
+		}
+		b.WriteString("Token: " + strings.TrimSpace(delegationToken) + "\n\n")
+	}
 	if strings.EqualFold(strings.TrimSpace(request.HandlerType), "workflow_decision") {
 		b.WriteString("This interaction is intended to submit a human workflow decision.\n")
-		b.WriteString("If the interaction context contains a taskId, run `mga workflow current --task-id <taskId>` first, then submit the user's selected action with `mga workflow decision submit --interaction <interactionId> --task <taskId> --decision <actionId>`.\n")
+		b.WriteString("If the interaction context contains a taskId, run `mga workflow current --task-id <taskId>` first, then submit the user's selected action with `mga workflow decision submit --interaction <interactionId> --task <taskId> --decision <actionId> --delegation-token <token>`.\n")
 		b.WriteString("Map extra comments or form fields to `--comments` or `--output key=value` when useful. Do not invent a decision that the user did not choose.\n\n")
 	} else {
-		b.WriteString("If the interaction context contains a taskId and the current workflow step is a human review step, you may use `mga workflow decision submit` to apply the user's selected action when that is clearly the card's purpose.\n\n")
+		b.WriteString("If the interaction context contains a taskId and the current workflow step is a human review step, you may use `mga workflow decision submit --delegation-token <token>` to apply the user's selected action when that is clearly the card's purpose.\n\n")
 	}
 	b.WriteString("Interaction request:\n")
 	b.WriteString("```json\n")

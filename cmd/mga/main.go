@@ -24,6 +24,7 @@ import (
 const (
 	envAPIURL          = "MULTIGENT_API_URL"
 	envAgentToken      = "MULTIGENT_AGENT_TOKEN"
+	envDelegationToken = "MULTIGENT_DELEGATION_TOKEN"
 	envConnectionsFile = "MULTIGENT_CONNECTIONS_FILE"
 	envToolsFile       = "MULTIGENT_TOOLS_FILE"
 	envToolSkillsFile  = "MULTIGENT_TOOL_SKILLS_FILE"
@@ -264,7 +265,7 @@ func newWorkflowDecisionCmd() *cobra.Command {
 }
 
 func newWorkflowDecisionSubmitCmd() *cobra.Command {
-	var interactionID, taskID, decision, comments, outputJSON string
+	var interactionID, delegationToken, taskID, decision, comments, outputJSON string
 	var outputPairs []string
 	cmd := &cobra.Command{
 		Use:   "submit",
@@ -276,16 +277,23 @@ func newWorkflowDecisionSubmitCmd() *cobra.Command {
 			if strings.TrimSpace(taskID) == "" {
 				return fmt.Errorf("--task is required")
 			}
+			if strings.TrimSpace(delegationToken) == "" {
+				delegationToken = strings.TrimSpace(os.Getenv(envDelegationToken))
+			}
+			if strings.TrimSpace(delegationToken) == "" {
+				return fmt.Errorf("--delegation-token is required, or set %s", envDelegationToken)
+			}
 			outputs, err := parseStructuredOutputs(outputPairs, outputJSON)
 			if err != nil {
 				return err
 			}
 			body, _ := json.Marshal(map[string]any{
-				"interactionId": strings.TrimSpace(interactionID),
-				"taskId":        strings.TrimSpace(taskID),
-				"decision":      strings.TrimSpace(decision),
-				"comments":      strings.TrimSpace(comments),
-				"outputs":       outputs,
+				"interactionId":   strings.TrimSpace(interactionID),
+				"delegationToken": strings.TrimSpace(delegationToken),
+				"taskId":          strings.TrimSpace(taskID),
+				"decision":        strings.TrimSpace(decision),
+				"comments":        strings.TrimSpace(comments),
+				"outputs":         outputs,
 			})
 			resp, err := requestJSON(http.MethodPost, "/api/v1/runtime/workflow/decision", nil, body)
 			if err != nil {
@@ -295,6 +303,7 @@ func newWorkflowDecisionSubmitCmd() *cobra.Command {
 		},
 	}
 	cmd.Flags().StringVar(&interactionID, "interaction", "", "interaction request id from the callback event")
+	cmd.Flags().StringVar(&delegationToken, "delegation-token", "", "short-lived user delegation token; defaults to MULTIGENT_DELEGATION_TOKEN")
 	cmd.Flags().StringVar(&taskID, "task", "", "workflow task id")
 	cmd.Flags().StringVar(&decision, "decision", "", "decision value, for example approve or request_changes")
 	cmd.Flags().StringVar(&comments, "comments", "", "optional review comments")

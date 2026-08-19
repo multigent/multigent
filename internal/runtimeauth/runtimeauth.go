@@ -29,6 +29,18 @@ type Payload struct {
 	Iat          int64    `json:"iat"`
 }
 
+type DelegationPayload struct {
+	Type          string   `json:"typ"`
+	WorkspaceID   string   `json:"workspaceId"`
+	Project       string   `json:"project"`
+	Agent         string   `json:"agent"`
+	UserID        string   `json:"userId"`
+	InteractionID string   `json:"interactionId,omitempty"`
+	Scopes        []string `json:"scopes,omitempty"`
+	Exp           int64    `json:"exp"`
+	Iat           int64    `json:"iat"`
+}
+
 type Principal struct {
 	WorkspaceID  string   `json:"workspaceId"`
 	Project      string   `json:"project"`
@@ -37,6 +49,17 @@ type Principal struct {
 	Capabilities []string `json:"capabilities,omitempty"`
 	Exp          int64    `json:"exp"`
 	Iat          int64    `json:"iat"`
+}
+
+type DelegationPrincipal struct {
+	WorkspaceID   string   `json:"workspaceId"`
+	Project       string   `json:"project"`
+	Agent         string   `json:"agent"`
+	UserID        string   `json:"userId"`
+	InteractionID string   `json:"interactionId,omitempty"`
+	Scopes        []string `json:"scopes,omitempty"`
+	Exp           int64    `json:"exp"`
+	Iat           int64    `json:"iat"`
 }
 
 func EnsureSecret(store SettingStore) string {
@@ -62,6 +85,18 @@ func GenerateSecret() string {
 func Issue(secret string, payload Payload, ttl time.Duration) string {
 	now := time.Now().UTC()
 	payload.Type = "agent_runtime"
+	payload.Iat = now.Unix()
+	payload.Exp = now.Add(ttl).Unix()
+	header := encode([]byte(`{"alg":"HS256","typ":"JWT"}`))
+	raw, _ := json.Marshal(payload)
+	body := encode(raw)
+	sig := sign(secret, header+"."+body)
+	return header + "." + body + "." + sig
+}
+
+func IssueDelegation(secret string, payload DelegationPayload, ttl time.Duration) string {
+	now := time.Now().UTC()
+	payload.Type = "agent_delegation"
 	payload.Iat = now.Unix()
 	payload.Exp = now.Add(ttl).Unix()
 	header := encode([]byte(`{"alg":"HS256","typ":"JWT"}`))
@@ -101,6 +136,40 @@ func Validate(secret, token string) (Principal, bool) {
 		Capabilities: payload.Capabilities,
 		Exp:          payload.Exp,
 		Iat:          payload.Iat,
+	}, true
+}
+
+func ValidateDelegation(secret, token string) (DelegationPrincipal, bool) {
+	parts := strings.SplitN(strings.TrimSpace(token), ".", 3)
+	if len(parts) != 3 {
+		return DelegationPrincipal{}, false
+	}
+	if !hmac.Equal([]byte(parts[2]), []byte(sign(secret, parts[0]+"."+parts[1]))) {
+		return DelegationPrincipal{}, false
+	}
+	raw, err := base64.RawURLEncoding.DecodeString(parts[1])
+	if err != nil {
+		return DelegationPrincipal{}, false
+	}
+	var payload DelegationPayload
+	if err := json.Unmarshal(raw, &payload); err != nil {
+		return DelegationPrincipal{}, false
+	}
+	if payload.Type != "agent_delegation" || payload.WorkspaceID == "" || payload.Project == "" || payload.Agent == "" || payload.UserID == "" {
+		return DelegationPrincipal{}, false
+	}
+	if time.Now().Unix() > payload.Exp {
+		return DelegationPrincipal{}, false
+	}
+	return DelegationPrincipal{
+		WorkspaceID:   payload.WorkspaceID,
+		Project:       payload.Project,
+		Agent:         payload.Agent,
+		UserID:        payload.UserID,
+		InteractionID: payload.InteractionID,
+		Scopes:        payload.Scopes,
+		Exp:           payload.Exp,
+		Iat:           payload.Iat,
 	}, true
 }
 

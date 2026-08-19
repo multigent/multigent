@@ -76,12 +76,21 @@ func TestRuntimeWorkflowDecisionSubmitAdvancesHumanReview(t *testing.T) {
 	}); err != nil {
 		t.Fatalf("create interaction request: %v", err)
 	}
+	delegationToken := s.issueRuntimeDelegationToken(runtimeDelegationTokenPayload{
+		WorkspaceID:   workspaceID,
+		Project:       "sample",
+		Agent:         "pm",
+		UserID:        "owner",
+		InteractionID: "ir_decision_ok",
+		Scopes:        []string{"act_as_user"},
+	}, time.Minute)
 
 	req := providerTestRequest(http.MethodPost, "/api/v1/runtime/workflow/decision", "", runtimeWorkflowDecisionBody{
-		InteractionID: "ir_decision_ok",
-		TaskID:        taskID,
-		Decision:      "approve",
-		Comments:      "ok",
+		InteractionID:   "ir_decision_ok",
+		DelegationToken: delegationToken,
+		TaskID:          taskID,
+		Decision:        "approve",
+		Comments:        "ok",
 	})
 	req = req.WithContext(context.WithValue(req.Context(), ctxRuntimeAgentKey, runtimeAgentPrincipal{
 		WorkspaceID:  workspaceID,
@@ -160,11 +169,20 @@ func TestRuntimeWorkflowDecisionRejectsWrongReviewer(t *testing.T) {
 	}); err != nil {
 		t.Fatalf("create interaction request: %v", err)
 	}
+	delegationToken := s.issueRuntimeDelegationToken(runtimeDelegationTokenPayload{
+		WorkspaceID:   workspaceID,
+		Project:       "sample",
+		Agent:         "pm",
+		UserID:        "other-user",
+		InteractionID: "ir_decision_wrong_user",
+		Scopes:        []string{"act_as_user"},
+	}, time.Minute)
 
 	req := providerTestRequest(http.MethodPost, "/api/v1/runtime/workflow/decision", "", runtimeWorkflowDecisionBody{
-		InteractionID: "ir_decision_wrong_user",
-		TaskID:        taskID,
-		Decision:      "approve",
+		InteractionID:   "ir_decision_wrong_user",
+		DelegationToken: delegationToken,
+		TaskID:          taskID,
+		Decision:        "approve",
 	})
 	req = req.WithContext(context.WithValue(req.Context(), ctxRuntimeAgentKey, runtimeAgentPrincipal{
 		WorkspaceID:  workspaceID,
@@ -187,5 +205,29 @@ func TestRuntimeWorkflowDecisionRejectsWrongReviewer(t *testing.T) {
 	}
 	if got.Status != entity.TaskStatusAwaitingConfirmation {
 		t.Fatalf("task status changed to %s", got.Status)
+	}
+}
+
+func TestRuntimeWorkflowDecisionRequiresDelegationToken(t *testing.T) {
+	s, workspaceID := newConnectionGrantPolicyServer(t)
+	req := providerTestRequest(http.MethodPost, "/api/v1/runtime/workflow/decision", "", runtimeWorkflowDecisionBody{
+		InteractionID: "ir_missing_delegation",
+		TaskID:        "task-one",
+		Decision:      "approve",
+	})
+	req = req.WithContext(context.WithValue(req.Context(), ctxRuntimeAgentKey, runtimeAgentPrincipal{
+		WorkspaceID:  workspaceID,
+		Project:      "sample",
+		Agent:        "pm",
+		Capabilities: []string{"task.use"},
+	}))
+	rec := httptest.NewRecorder()
+	s.handleRuntimeWorkflowDecision(rec, req)
+
+	if rec.Code != http.StatusForbidden {
+		t.Fatalf("status=%d body=%s", rec.Code, rec.Body.String())
+	}
+	if !strings.Contains(rec.Body.String(), "delegation token is required") {
+		t.Fatalf("unexpected body=%s", rec.Body.String())
 	}
 }
