@@ -3006,7 +3006,10 @@ func injectProviderEnvIntoRuntime(cfg *entity.SandboxConfig, env map[string]stri
 		if isRuntimeControlEnvKey(k) {
 			continue
 		}
-		cfg.Env = append(cfg.Env, entity.RuntimeEnvVar{Name: k, Value: v})
+		if strings.TrimSpace(v) == "" {
+			continue
+		}
+		cfg.Env = append(cfg.Env, entity.RuntimeEnvVar{Name: k, Inherit: true})
 	}
 }
 

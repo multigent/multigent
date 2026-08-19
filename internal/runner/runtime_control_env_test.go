@@ -128,8 +128,8 @@ func TestInjectProviderEnvIntoRuntimeSkipsRuntimeControlKeys(t *testing.T) {
 	if len(cfg.Env) != 1 {
 		t.Fatalf("env=%#v", cfg.Env)
 	}
-	if cfg.Env[0].Name != "OPENAI_API_KEY" || cfg.Env[0].Value != "provider-key" {
-		t.Fatalf("provider env not preserved: %#v", cfg.Env)
+	if cfg.Env[0].Name != "OPENAI_API_KEY" || !cfg.Env[0].Inherit || cfg.Env[0].Value != "" {
+		t.Fatalf("provider env should be inherited without argv value: %#v", cfg.Env)
 	}
 }
 

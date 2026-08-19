@@ -142,3 +142,42 @@ func TestDockerProviderRunsRuntimeToolBootstrap(t *testing.T) {
 		t.Fatalf("docker args missing command handoff:\n%s", joined)
 	}
 }
+
+func TestDockerProviderDoesNotExposeInheritedSecretsInArgs(t *testing.T) {
+	dir := t.TempDir()
+	runtime := &entity.SandboxConfig{
+		Provider: entity.SandboxDocker,
+		Image:    sandbox.BaseImage,
+		Docker:   &entity.DockerSandboxConfig{Image: sandbox.BaseImage},
+		Env: []entity.RuntimeEnvVar{
+			{Name: "ANTHROPIC_API_KEY", Inherit: true},
+		},
+	}
+
+	_, args, err := DockerProvider{}.Command(ProcessSpec{
+		AgentDir: dir,
+		Model:    entity.ModelClaudeCode,
+		Runtime:  runtime,
+		Command:  []string{"claude", "-p"},
+	})
+	if err != nil {
+		t.Fatalf("Command: %v", err)
+	}
+
+	joined := strings.Join(args, "\n")
+	if strings.Contains(joined, "ANTHROPIC_API_KEY=") {
+		t.Fatalf("docker args leaked secret value:\n%s", joined)
+	}
+	if !containsEnvArg(args, "ANTHROPIC_API_KEY") {
+		t.Fatalf("docker args should inherit ANTHROPIC_API_KEY without value:\n%s", joined)
+	}
+}
+
+func containsEnvArg(args []string, key string) bool {
+	for i := 0; i < len(args)-1; i++ {
+		if args[i] == "-e" && args[i+1] == key {
+			return true
+		}
+	}
+	return false
+}

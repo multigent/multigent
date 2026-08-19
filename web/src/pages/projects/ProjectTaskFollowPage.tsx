@@ -48,6 +48,7 @@ export default function ProjectTaskFollowPage() {
   const [reviewOutputs, setReviewOutputs] = useState<Record<string, string>>({})
   const [reviewBusy, setReviewBusy] = useState<string | null>(null)
   const [reviewErr, setReviewErr] = useState<string | null>(null)
+  const [missingReviewField, setMissingReviewField] = useState<string | null>(null)
   const [startBusy, setStartBusy] = useState(false)
   const [optimisticStartedAt, setOptimisticStartedAt] = useState<string | null>(null)
   const [handoffStartedAt, setHandoffStartedAt] = useState<string | null>(null)
@@ -300,6 +301,7 @@ export default function ProjectTaskFollowPage() {
   async function submitWorkflowReview(decision?: string) {
     if (!displayTask || !activeStep) return
     setReviewErr(null)
+    setMissingReviewField(null)
     const normalizedDecision = normalizeReviewDecision(decision || reviewOutputs.decision || '')
     setReviewBusy(normalizedDecision || 'submit')
     const outputs: Record<string, string> = Object.fromEntries(Object.entries(reviewOutputs).map(([key, value]) => [key, String(value ?? '').trim()]))
@@ -310,6 +312,7 @@ export default function ProjectTaskFollowPage() {
     const decisionOptional = isOptionalTerminalReviewDecision(activeStep, workflowData?.definition)
     const missingField = outputFieldNames.find((name) => !(name === 'decision' && decisionOptional) && !String(outputs[name] ?? '').trim())
     if (missingField) {
+      setMissingReviewField(missingField)
       setReviewErr(`${t('forms.fillRequired')} ${missingField}`)
       setReviewBusy(null)
       return
@@ -430,12 +433,17 @@ export default function ProjectTaskFollowPage() {
               reviewComments={reviewComments}
               reviewBusy={reviewBusy}
               reviewErr={reviewErr}
+              missingReviewField={missingReviewField}
               docTitles={visibleWorkflowData.docTitles}
               onChangeOutput={(name, value) => {
+                if (missingReviewField === name && String(value ?? '').trim()) setMissingReviewField(null)
                 setReviewOutputs((current) => ({ ...current, [name]: value }))
                 if (name === 'comments') setReviewComments(value)
               }}
-              onChangeComments={setReviewComments}
+              onChangeComments={(value) => {
+                if (missingReviewField === 'comments' && value.trim()) setMissingReviewField(null)
+                setReviewComments(value)
+              }}
               onSubmitReview={(decision) => void submitWorkflowReview(decision)}
             />
           )}

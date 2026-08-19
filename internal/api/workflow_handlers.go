@@ -32,6 +32,16 @@ type taskWorkflowResponse struct {
 	DocTitles  map[string]string               `json:"docTitles,omitempty"`
 }
 
+type taskWorkflowReviewResponse struct {
+	OK            bool                         `json:"ok"`
+	TaskID        string                       `json:"taskId"`
+	WorkflowRunID string                       `json:"workflowRunId"`
+	Status        string                       `json:"status"`
+	ActiveStepID  string                       `json:"activeStepId,omitempty"`
+	Done          bool                         `json:"done"`
+	NextActor     *entity.WorkflowActorBinding `json:"nextActor,omitempty"`
+}
+
 type workflowReviewBody struct {
 	Decision string            `json:"decision"`
 	Comments string            `json:"comments"`
@@ -531,7 +541,21 @@ func (s *Server) handlePostTaskWorkflowReview(w http.ResponseWriter, r *http.Req
 		s.jsonError(w, status, err.Error())
 		return
 	}
-	_ = json.NewEncoder(w).Encode(resp)
+	out := taskWorkflowReviewResponse{
+		OK:            true,
+		TaskID:        taskID,
+		WorkflowRunID: resp.Run.ID,
+		Status:        resp.Run.Status,
+		ActiveStepID:  resp.Run.ActiveStepID,
+		Done:          strings.TrimSpace(resp.Run.Status) == "completed",
+	}
+	for _, step := range resp.Steps {
+		if step.StepID == resp.Run.ActiveStepID {
+			out.NextActor = &entity.WorkflowActorBinding{Type: step.ActorType, ID: step.ActorID}
+			break
+		}
+	}
+	_ = json.NewEncoder(w).Encode(out)
 }
 
 func (s *Server) submitTaskWorkflowReview(r *http.Request, workspaceID, project, taskID string, body workflowReviewBody) (taskWorkflowResponse, int, error) {

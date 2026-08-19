@@ -269,6 +269,7 @@ export function TaskDetailModal({ task, onClose, onEdit, onMutated, canEdit = tr
   const [reviewOutputs, setReviewOutputs] = useState<Record<string, string>>({})
   const [reviewBusy, setReviewBusy] = useState<string | null>(null)
   const [reviewErr, setReviewErr] = useState<string | null>(null)
+  const [missingReviewField, setMissingReviewField] = useState<string | null>(null)
   const [assigneeEditing, setAssigneeEditing] = useState(false)
   const [assigneeDraft, setAssigneeDraft] = useState(task.assignee || `${task.project}/${task.agent}`)
   const [assigneeBusy, setAssigneeBusy] = useState(false)
@@ -333,6 +334,7 @@ export function TaskDetailModal({ task, onClose, onEdit, onMutated, canEdit = tr
     setReviewComments('')
     setReviewOutputs({})
     setReviewErr(null)
+    setMissingReviewField(null)
   }, [activeWorkflowStep?.id])
 
   useEffect(() => {
@@ -370,6 +372,7 @@ export function TaskDetailModal({ task, onClose, onEdit, onMutated, canEdit = tr
 
   async function submitWorkflowReview(decision?: string) {
     setReviewErr(null)
+    setMissingReviewField(null)
     const normalizedDecision = normalizeReviewDecision(decision || reviewOutputs.decision || '')
     setReviewBusy(normalizedDecision || 'submit')
     const outputs: Record<string, string> = Object.fromEntries(Object.entries(reviewOutputs).map(([key, value]) => [key, String(value ?? '').trim()]))
@@ -381,6 +384,7 @@ export function TaskDetailModal({ task, onClose, onEdit, onMutated, canEdit = tr
     const missingField = outputFieldNames
       .find((name) => !(name === 'decision' && decisionOptional) && !String(outputs[name] ?? '').trim())
     if (missingField) {
+      setMissingReviewField(missingField)
       setReviewErr(`${t('forms.fillRequired')} ${missingField}`)
       setReviewBusy(null)
       return
@@ -585,11 +589,16 @@ export function TaskDetailModal({ task, onClose, onEdit, onMutated, canEdit = tr
                   reviewComments={reviewComments}
                   reviewBusy={reviewBusy}
                   reviewErr={reviewErr}
+                  missingReviewField={missingReviewField}
                   onChangeOutput={(name, value) => {
+                    if (missingReviewField === name && String(value ?? '').trim()) setMissingReviewField(null)
                     setReviewOutputs((current) => ({ ...current, [name]: value }))
                     if (name === 'comments') setReviewComments(value)
                   }}
-                  onChangeComments={setReviewComments}
+                  onChangeComments={(value) => {
+                    if (missingReviewField === 'comments' && value.trim()) setMissingReviewField(null)
+                    setReviewComments(value)
+                  }}
                   onSubmitReview={(decision) => void submitWorkflowReview(decision)}
                 />
               </div>
@@ -798,6 +807,7 @@ export function WorkflowRuntimePanel({
   reviewComments,
   reviewBusy,
   reviewErr,
+  missingReviewField,
   onChangeOutput,
   onChangeComments,
   onSubmitReview,
@@ -816,6 +826,7 @@ export function WorkflowRuntimePanel({
   reviewComments: string
   reviewBusy: string | null
   reviewErr: string | null
+  missingReviewField?: string | null
   onChangeOutput: (name: string, value: string) => void
   onChangeComments: (value: string) => void
   onSubmitReview: (decision?: string) => void
@@ -847,6 +858,12 @@ export function WorkflowRuntimePanel({
   const decisionOptions = decisionField ? workflowDecisionOptions(decisionField.description) : []
   const usesDefaultReviewButtons = !decisionField || decisionOptions.length === 0 || isStandardReviewDecisionOptions(decisionOptions)
   const editableOutputFields = (step.outputFields ?? []).filter((field) => field.name !== 'decision')
+  const reviewInputClass = (fieldName: string) => cn(
+    'mt-1 w-full rounded-lg border bg-white px-3 py-2 text-sm text-neutral-900 outline-none dark:bg-zinc-900 dark:text-zinc-100',
+    missingReviewField === fieldName
+      ? 'border-red-400 focus:border-red-500 dark:border-red-500'
+      : 'border-neutral-300 focus:border-sky-400 dark:border-zinc-700',
+  )
   const hasInput = Boolean(instance?.inputArtifact?.trim()) || (step.inputFields ?? []).length > 0
   const showReadonlyOutput = !canReview && !isWorkflowStepOpen(instance?.status) && (
     Object.keys(outputValues).length > 0 ||
@@ -909,7 +926,7 @@ export function WorkflowRuntimePanel({
                   onChange={(e) => onChangeComments(e.target.value)}
                   rows={4}
                   placeholder={t('workflows.review.commentsPlaceholder')}
-                  className="w-full resize-y rounded-lg border border-neutral-300 bg-white px-3 py-2 text-sm text-neutral-900 outline-none focus:border-sky-400 dark:border-zinc-700 dark:bg-zinc-900 dark:text-zinc-100"
+                  className={cn(reviewInputClass('comments'), 'resize-y')}
                 />
               )}
               {decisionField && !usesDefaultReviewButtons && (
@@ -918,7 +935,7 @@ export function WorkflowRuntimePanel({
                   <select
                     value={reviewOutputs.decision || ''}
                     onChange={(e) => onChangeOutput('decision', e.target.value)}
-                    className="mt-1 w-full rounded-lg border border-neutral-300 bg-white px-3 py-2 text-sm text-neutral-900 outline-none focus:border-sky-400 dark:border-zinc-700 dark:bg-zinc-900 dark:text-zinc-100"
+                    className={reviewInputClass('decision')}
                   >
                     <option value="">{t('workflows.review.selectDecision')}</option>
                     {decisionOptions.map((item) => (
@@ -935,7 +952,7 @@ export function WorkflowRuntimePanel({
                     onChange={(e) => onChangeOutput(field.name, e.target.value)}
                     rows={field.name === 'comments' ? 3 : 2}
                     placeholder={field.description || field.name}
-                    className="mt-1 w-full resize-y rounded-lg border border-neutral-300 bg-white px-3 py-2 text-sm text-neutral-900 outline-none focus:border-sky-400 dark:border-zinc-700 dark:bg-zinc-900 dark:text-zinc-100"
+                    className={cn(reviewInputClass(field.name), 'resize-y')}
                   />
                 </label>
               ))}
