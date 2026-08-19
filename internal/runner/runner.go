@@ -1526,6 +1526,22 @@ func runtimeModelEnv(model entity.AgentModel, runtimeModel string) map[string]st
 }
 
 func (r *Runner) resolveRuntimeControlEnv(project, agentName, runID string) map[string]string {
+	if apiURL := strings.TrimSpace(os.Getenv("MULTIGENT_API_URL")); apiURL != "" {
+		if token := strings.TrimSpace(os.Getenv("MULTIGENT_AGENT_TOKEN")); token != "" {
+			workspaceID := strings.TrimSpace(os.Getenv("MULTIGENT_WORKSPACE_ID"))
+			if workspaceID != "" {
+				if inheritedRunID := strings.TrimSpace(os.Getenv("MULTIGENT_RUN_ID")); inheritedRunID != "" {
+					runID = inheritedRunID
+				}
+				return map[string]string{
+					"MULTIGENT_API_URL":      strings.TrimRight(apiURL, "/"),
+					"MULTIGENT_AGENT_TOKEN":  token,
+					"MULTIGENT_RUN_ID":       runID,
+					"MULTIGENT_WORKSPACE_ID": workspaceID,
+				}
+			}
+		}
+	}
 	apiURL := resolveRuntimeAPIURL(r.root)
 	if apiURL == "" {
 		return nil
@@ -1563,10 +1579,12 @@ func (r *Runner) materializeRuntimeFiles(agentDir string, env map[string]string)
 	}
 	body, err := fetchRuntimeConnectionsManifest(apiURL, token)
 	if err != nil {
+		fmt.Fprintf(os.Stderr, "multigent: runtime connections unavailable: %v\n", err)
 		return nil
 	}
 	path, err := writeRuntimeConnectionsFile(agentDir, body)
 	if err != nil {
+		fmt.Fprintf(os.Stderr, "multigent: write runtime connections file failed: %v\n", err)
 		return nil
 	}
 	env[runtimeConnectionsFileEnv] = path
@@ -1578,6 +1596,9 @@ func (r *Runner) materializeRuntimeFiles(agentDir string, env map[string]string)
 		defer closeResolver()
 	}
 	toolDir, toolsPath, extraEnv, err := writeRuntimeToolsFile(r.root, agentDir, env["MULTIGENT_RUN_ID"], path, body, secretResolver)
+	if err != nil {
+		fmt.Fprintf(os.Stderr, "multigent: write runtime tools file failed: %v\n", err)
+	}
 	if err == nil && toolDir != "" && toolsPath != "" {
 		env[runtimeToolDirEnv] = toolDir
 		env[runtimeToolsFileEnv] = toolsPath
@@ -1901,6 +1922,7 @@ type runtimeAdapterRef struct {
 
 type runtimeCLIRef struct {
 	Binary      string                 `json:"binary"`
+	Executable  string                 `json:"executable,omitempty"`
 	Installer   *runtimeInstallerRef   `json:"installer,omitempty"`
 	ConfigFiles []runtimeConfigFileRef `json:"configFiles,omitempty"`
 }
@@ -1960,7 +1982,8 @@ func writeRuntimeToolsFile(workspaceRoot, agentDir, runID, connectionsPath strin
 		if secretResolver != nil {
 			values, ok, err := secretResolver(manifest.Tools[ti].ConnectionID)
 			if err != nil {
-				return "", "", nil, err
+				fmt.Fprintf(os.Stderr, "multigent: skipping runtime tool %s/%s: decrypt connection secret: %v\n", manifest.Tools[ti].Provider, manifest.Tools[ti].ConnectionName, err)
+				continue
 			}
 			if ok {
 				secretValues = values
@@ -1968,6 +1991,15 @@ func writeRuntimeToolsFile(workspaceRoot, agentDir, runID, connectionsPath strin
 		}
 		for ai := range manifest.Tools[ti].Adapters {
 			adapter := &manifest.Tools[ti].Adapters[ai]
+			if strings.TrimSpace(adapter.CredentialMaterialize) == "runtime_env" {
+				env, err := materializeRuntimeEnvConfig(manifest.Tools[ti], secretValues)
+				if err != nil {
+					return "", "", nil, err
+				}
+				for key, value := range env {
+					extraEnv[key] = value
+				}
+			}
 			if adapter.CLI == nil {
 				continue
 			}
@@ -2020,6 +2052,39 @@ func writeRuntimeToolsFile(workspaceRoot, agentDir, runID, connectionsPath strin
 	}
 	extraEnv[runtimeToolSkillsFileEnv] = guidePath
 	return toolDir, planPath, extraEnv, nil
+}
+
+func materializeRuntimeEnvConfig(tool runtimeToolRef, secretValues map[string]string) (map[string]string, error) {
+	switch strings.TrimSpace(tool.Provider) {
+	case "runtime_secret":
+		envName := strings.TrimSpace(secretValues["envName"])
+		if envName == "" {
+			return nil, nil
+		}
+		if !validRuntimeSecretEnvName(envName) {
+			return nil, fmt.Errorf("runtime_secret %s has invalid environment variable name %q", tool.ConnectionName, envName)
+		}
+		envValue, ok := secretValues["envValue"]
+		if !ok || envValue == "" {
+			return nil, fmt.Errorf("runtime_secret %s is missing envValue", tool.ConnectionName)
+		}
+		return map[string]string{envName: envValue}, nil
+	default:
+		return nil, nil
+	}
+}
+
+func validRuntimeSecretEnvName(name string) bool {
+	if name == "" {
+		return false
+	}
+	for i, r := range name {
+		if r == '_' || ('A' <= r && r <= 'Z') || ('a' <= r && r <= 'z') || (i > 0 && '0' <= r && r <= '9') {
+			continue
+		}
+		return false
+	}
+	return true
 }
 
 func runtimeMGAInstallerScript() []string {
@@ -2199,11 +2264,15 @@ func materializeCLIWrapper(toolDir string, tool runtimeToolRef, adapter runtimeA
 	if binary == "" {
 		return nil
 	}
+	executable := strings.TrimSpace(adapter.CLI.Executable)
+	if executable == "" {
+		executable = binary
+	}
 	wrapperPath := filepath.Join(toolDir, "bin", binary)
 	if fileExists(wrapperPath) {
 		return nil
 	}
-	return os.WriteFile(wrapperPath, []byte(runtimeCLIWrapperScript(binary, tool, nil)), 0o700)
+	return os.WriteFile(wrapperPath, []byte(runtimeCLIWrapperScript(binary, executable, tool, nil)), 0o700)
 }
 
 func runtimeToolInstallerMarker(markerDir string, installer runtimeInstallerRef, binary string) string {
@@ -2449,15 +2518,15 @@ func materializeGCloudCLIConfig(cfg runtimeConfigFileRef, secretValues map[strin
 	if cfg.MaterializedPath == "" || !strings.HasSuffix(strings.TrimSpace(cfg.Path), "application_default_credentials.json") {
 		return nil, nil
 	}
-	serviceAccountJSON := strings.TrimSpace(secretValues["serviceAccountJson"])
+	credentialJSON := strings.TrimSpace(firstNonEmpty(secretValues["credentialJson"], secretValues["serviceAccountJson"]))
 	projectID := strings.TrimSpace(secretValues["projectId"])
-	if serviceAccountJSON == "" {
+	if credentialJSON == "" {
 		return nil, nil
 	}
-	if !json.Valid([]byte(serviceAccountJSON)) {
-		return nil, fmt.Errorf("serviceAccountJson must be valid JSON")
+	if err := validateGCloudRuntimeCredentialJSON(credentialJSON); err != nil {
+		return nil, err
 	}
-	if err := os.WriteFile(cfg.MaterializedPath, []byte(serviceAccountJSON+"\n"), 0o600); err != nil {
+	if err := os.WriteFile(cfg.MaterializedPath, []byte(credentialJSON+"\n"), 0o600); err != nil {
 		return nil, err
 	}
 	env := map[string]string{
@@ -2475,6 +2544,24 @@ func materializeGCloudCLIConfig(cfg runtimeConfigFileRef, secretValues map[strin
 		env["CLOUDSDK_COMPUTE_ZONE"] = zone
 	}
 	return env, nil
+}
+
+func validateGCloudRuntimeCredentialJSON(value string) error {
+	raw := strings.TrimSpace(value)
+	if !json.Valid([]byte(raw)) {
+		return fmt.Errorf("gcloud credential JSON must be valid JSON")
+	}
+	var parsed map[string]any
+	if err := json.Unmarshal([]byte(raw), &parsed); err != nil {
+		return fmt.Errorf("gcloud credential JSON must be valid JSON")
+	}
+	typ, _ := parsed["type"].(string)
+	switch strings.TrimSpace(typ) {
+	case "service_account", "authorized_user", "external_account":
+		return nil
+	default:
+		return fmt.Errorf("gcloud credential JSON type must be service_account, authorized_user, or external_account")
+	}
 }
 
 func materializeCloudflareCLIConfig(cfg runtimeConfigFileRef, secretValues map[string]string) (map[string]string, error) {
@@ -2537,7 +2624,7 @@ func materializeLarkCLIConfig(tool runtimeToolRef, adapter runtimeAdapterRef, cf
 		return nil, err
 	}
 	wrapperPath := filepath.Join(binDir, "lark-cli")
-	if err := os.WriteFile(wrapperPath, []byte(runtimeCLIWrapperScript("lark-cli", tool, map[string]string{"HOME": larkHome})), 0o700); err != nil {
+	if err := os.WriteFile(wrapperPath, []byte(runtimeCLIWrapperScript("lark-cli", "lark-cli", tool, map[string]string{"HOME": larkHome})), 0o700); err != nil {
 		return nil, err
 	}
 	return map[string]string{"MULTIGENT_LARK_HOME": larkHome}, nil
@@ -2567,7 +2654,7 @@ func runtimeToolDirFromConfigPath(path string) string {
 	}
 }
 
-func runtimeCLIWrapperScript(binary string, tool runtimeToolRef, env map[string]string) string {
+func runtimeCLIWrapperScript(binary, executable string, tool runtimeToolRef, env map[string]string) string {
 	var exports []string
 	for key, value := range env {
 		key = strings.TrimSpace(key)
@@ -2600,7 +2687,7 @@ export PATH=$clean_path
 ` + strings.Join(exports, "\n") + `
 start_sec=$(date +%s 2>/dev/null || printf 0)
 status=0
-` + shellQuote(binary) + ` "$@" || status=$?
+` + shellQuote(firstNonEmpty(executable, binary)) + ` "$@" || status=$?
 end_sec=$(date +%s 2>/dev/null || printf "$start_sec")
 duration_ms=$(( (end_sec - start_sec) * 1000 ))
 if [ -n "${MULTIGENT_TOOL_CLI_AUDIT_FILE:-}" ]; then
@@ -3022,6 +3109,10 @@ func injectRuntimeControlEnvIntoRuntime(cfg *entity.SandboxConfig, env map[strin
 			continue
 		}
 		if k == runtimeToolBinDirEnv || k == runtimeToolCacheBinDirEnv || k == runtimeToolBootstrapEnv || k == runtimeToolSkillsFileEnv || k == runtimeToolCLIAuditEnv || k == "PATH" {
+			cfg.Env = append(cfg.Env, entity.RuntimeEnvVar{Name: k, Value: v})
+			continue
+		}
+		if !isRuntimeControlEnvKey(k) {
 			cfg.Env = append(cfg.Env, entity.RuntimeEnvVar{Name: k, Value: v})
 			continue
 		}

@@ -73,6 +73,7 @@ type ToolRuntimeAdapter struct {
 
 type ToolCLIAdapter struct {
 	Binary      string               `json:"binary"`
+	Executable  string               `json:"executable,omitempty"`
 	Installer   *ToolInstallerSpec   `json:"installer,omitempty"`
 	ConfigFiles []ToolConfigFileSpec `json:"configFiles,omitempty"`
 }
@@ -203,6 +204,7 @@ func Defaults() []Provider {
 		awsProvider(),
 		gcloudProvider(),
 		cloudflareProvider(),
+		runtimeSecretProvider(),
 		customMCPProvider(),
 		{
 			Provider:    "feishu",
@@ -429,22 +431,52 @@ func DefaultRuntimeAdapters(provider Provider) []ToolRuntimeAdapter {
 		return []ToolRuntimeAdapter{{
 			Type:        RuntimeAdapterCLI,
 			Priority:    100,
-			Description: "Use Google Cloud CLI with an agent-scoped service account key and project configuration.",
+			Description: "Use Google Cloud CLI with an agent-scoped credential JSON and project configuration.",
 			Skills:      []string{"gcloud"},
 			CLI: &ToolCLIAdapter{
-				Binary: "gcloud",
+				Binary:     "gcloud",
+				Executable: "/opt/multigent/toolchains/gcloud/google-cloud-sdk/bin/gcloud",
 				Installer: &ToolInstallerSpec{
-					Type:    "system",
+					Type:    "script",
 					Package: "google-cloud-cli",
-					Version: "latest",
-					Check:   []string{"gcloud --version"},
+					Version: "538.0.0",
+					Command: []string{
+						`gcloud_arch="$(uname -m)"`,
+						`case "$gcloud_arch" in x86_64|amd64) gcloud_arch="x86_64" ;; aarch64|arm64) gcloud_arch="arm" ;; *) echo "Unsupported Google Cloud CLI architecture: $gcloud_arch" >&2; exit 1 ;; esac`,
+						`gcloud_root="$MULTIGENT_TOOLCHAIN_HOME/gcloud"`,
+						`gcloud_home="$gcloud_root/google-cloud-sdk"`,
+						`if [ ! -x "$gcloud_home/bin/gcloud" ] || [ "${MULTIGENT_TOOL_FORCE_INSTALL:-}" = "1" ]; then`,
+						`  command -v curl >/dev/null 2>&1 || { echo "curl is required to install Google Cloud CLI" >&2; exit 127; }`,
+						`  command -v tar >/dev/null 2>&1 || { echo "tar is required to install Google Cloud CLI" >&2; exit 127; }`,
+						`  mkdir -p "$gcloud_root"`,
+						`  tmp_dir="$(mktemp -d)"`,
+						`  trap 'rm -rf "$tmp_dir"' EXIT HUP INT TERM`,
+						`  curl -fsSL "https://dl.google.com/dl/cloudsdk/channels/rapid/downloads/google-cloud-cli-538.0.0-linux-${gcloud_arch}.tar.gz" -o "$tmp_dir/google-cloud-cli.tar.gz"`,
+						`  rm -rf "$gcloud_home"`,
+						`  tar -xzf "$tmp_dir/google-cloud-cli.tar.gz" -C "$gcloud_root"`,
+						`  "$gcloud_home/install.sh" --quiet --path-update=false --command-completion=false --usage-reporting=false >/dev/null`,
+						`  rm -rf "$tmp_dir"`,
+						`  trap - EXIT HUP INT TERM`,
+						`fi`,
+						`mkdir -p "$NPM_CONFIG_PREFIX/bin"`,
+						`ln -sf "$gcloud_home/bin/gcloud" "$NPM_CONFIG_PREFIX/bin/gcloud"`,
+					},
+					Check: []string{"gcloud --version"},
 				},
 				ConfigFiles: []ToolConfigFileSpec{
-					{Path: "~/.config/gcloud/application_default_credentials.json", Format: "json", Description: "Agent-scoped Google Cloud service account key."},
+					{Path: "~/.config/gcloud/application_default_credentials.json", Format: "json", Description: "Agent-scoped Google Cloud credential JSON."},
 				},
 			},
 			CredentialMaterialize: CredentialMaterializeRuntimeFile,
 			Audit:                 ToolRuntimeAuditPolicy{CommandAudit: "best_effort", ProxyAudit: "none"},
+		}}
+	case "runtime_secret":
+		return []ToolRuntimeAdapter{{
+			Type:                  RuntimeAdapterSkillOnly,
+			Priority:              100,
+			Description:           "Inject a scoped environment secret into this agent runtime.",
+			CredentialMaterialize: CredentialMaterializeRuntimeEnv,
+			Audit:                 ToolRuntimeAuditPolicy{CommandAudit: "none", ProxyAudit: "none"},
 		}}
 	case "cloudflare":
 		return []ToolRuntimeAdapter{
@@ -730,13 +762,31 @@ func gcloudProvider() Provider {
 		Category:    "Cloud And Infrastructure",
 		AuthTypes:   []string{AuthCustomCredential},
 		Fields: []ProviderField{
-			{Key: "serviceAccountJson", Label: "Service account JSON", InputType: "textarea", Required: true, Secret: true},
-			{Key: "projectId", Label: "Project ID", InputType: "text", Required: true},
+			{Key: "projectId", Label: "Project ID", InputType: "text"},
 			{Key: "region", Label: "Region", InputType: "text"},
 			{Key: "zone", Label: "Zone", InputType: "text"},
+			{Key: "serviceAccountJson", Label: "Credential JSON", InputType: "textarea", Secret: true},
 		},
 		Guides: []ProviderGuide{
-			credentialGuide("Google Cloud service account", "Create a dedicated service account, grant the smallest set of IAM roles needed by agents, then paste its JSON key here. Avoid using personal account credentials in production workspaces.", "Google Cloud service account keys", "https://cloud.google.com/iam/docs/keys-create-delete"),
+			credentialGuide("Google Cloud authorization", "Use quick authorization to sign in through the Google Cloud SDK installed on this Multigent host, or paste a dedicated credential JSON manually. Multigent stores the credential as an agent-scoped file and injects it with CLOUDSDK_AUTH_CREDENTIAL_FILE_OVERRIDE.", "Google Cloud authentication", "https://cloud.google.com/sdk/docs/authenticate"),
+		},
+		Enabled: true,
+	}
+}
+
+func runtimeSecretProvider() Provider {
+	return Provider{
+		Provider:    "runtime_secret",
+		DisplayName: "Runtime Secret",
+		Description: "Inject agent-scoped environment variables for internal APIs, deployment tokens, or private automation endpoints.",
+		Category:    "Cloud And Infrastructure",
+		AuthTypes:   []string{AuthCustomCredential},
+		Fields: []ProviderField{
+			{Key: "envName", Label: "Environment variable", InputType: "text", Required: true},
+			{Key: "envValue", Label: "Secret value", InputType: "password", Required: true, Secret: true},
+		},
+		Guides: []ProviderGuide{
+			credentialGuide("Scoped runtime secret", "Create one connection per secret, grant it only to the agents that need it, and prefer short-lived or narrow-scope values. Multigent injects the variable only when a granted agent runs.", "", ""),
 		},
 		Enabled: true,
 	}

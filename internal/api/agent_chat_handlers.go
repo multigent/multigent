@@ -6,6 +6,7 @@ import (
 	"fmt"
 	"io"
 	"log"
+	"net"
 	"net/http"
 	"os"
 	"os/exec"
@@ -25,6 +26,29 @@ type agentChatBody struct {
 	Message   string `json:"message"`
 	SessionID string `json:"sessionId"`
 	NoSession bool   `json:"noSession,omitempty"`
+}
+
+func localRuntimeAPIURLForRequest(r *http.Request) string {
+	host := ""
+	if r != nil {
+		host = strings.TrimSpace(r.Host)
+	}
+	port := ""
+	if host != "" {
+		if _, p, err := net.SplitHostPort(host); err == nil {
+			port = p
+		} else if i := strings.LastIndex(host, ":"); i >= 0 && i+1 < len(host) {
+			port = host[i+1:]
+		}
+	}
+	if port == "" {
+		if r != nil && r.TLS != nil {
+			port = "443"
+		} else {
+			port = "80"
+		}
+	}
+	return "http://" + net.JoinHostPort("127.0.0.1", port)
 }
 
 type agentChatHistoryRun struct {
@@ -760,6 +784,20 @@ func (s *Server) handleAgentChat(w http.ResponseWriter, r *http.Request) {
 	// prevent run logs and telemetry from being recorded.
 	cmd := exec.Command(s.sched.binPath, args...)
 	cmd.Dir = s.root
+	runID := "exec-" + time.Now().UTC().Format("20060102-150405")
+	runtimeToken := s.issueAgentRuntimeToken(runtimeAgentTokenPayload{
+		WorkspaceID:  workspaceID,
+		Project:      project,
+		Agent:        agent,
+		RunID:        runID,
+		Capabilities: defaultRuntimeCapabilities(),
+	}, 6*time.Hour)
+	cmd.Env = append(os.Environ(),
+		"MULTIGENT_API_URL="+localRuntimeAPIURLForRequest(r),
+		"MULTIGENT_AGENT_TOKEN="+runtimeToken,
+		"MULTIGENT_RUN_ID="+runID,
+		"MULTIGENT_WORKSPACE_ID="+workspaceID,
+	)
 	setProcGroup(cmd)
 
 	stdout, err := cmd.StdoutPipe()

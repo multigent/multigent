@@ -2,6 +2,7 @@ package api
 
 import (
 	"encoding/json"
+	"net/http"
 	"strings"
 	"testing"
 
@@ -140,6 +141,17 @@ func TestExtractAgentChatReplyFallsBackToAssistantText(t *testing.T) {
 	}, "\n")
 	if got := extractAgentChatReply(output); got != "visible reply" {
 		t.Fatalf("extractAgentChatReply() = %q", got)
+	}
+}
+
+func TestLocalRuntimeAPIURLForRequestUsesLoopbackPort(t *testing.T) {
+	req, err := http.NewRequest(http.MethodPost, "http://35.243.103.114:27892/api/v1/projects/p/agents/a/chat", nil)
+	if err != nil {
+		t.Fatal(err)
+	}
+	req.Host = "35.243.103.114:27892"
+	if got := localRuntimeAPIURLForRequest(req); got != "http://127.0.0.1:27892" {
+		t.Fatalf("localRuntimeAPIURLForRequest() = %q", got)
 	}
 }
 

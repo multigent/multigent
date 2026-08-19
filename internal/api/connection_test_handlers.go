@@ -344,7 +344,7 @@ func (s *Server) testConnection(r *http.Request, connection controldb.Connection
 	switch connection.Provider {
 	case "custom-mcp":
 		return s.testCustomMCPConnection(r, connection)
-	case "ssh_key", "git_ssh", "npm_registry", "docker_registry", "aws", "gcloud":
+	case "ssh_key", "git_ssh", "npm_registry", "docker_registry", "aws", "gcloud", "runtime_secret":
 		return s.testStaticRuntimeCredentialConnection(connection)
 	case "custom-http", "github", "gitlab", "gitee", "linear", "notion", "figma", "airtable", "asana", "clickup", "sentry", "vercel", "cloudflare", "exa", "brave_search", "feishu", "lark", "dingtalk_bot":
 		return s.testHTTPConnection(r, connection, body)
@@ -397,16 +397,45 @@ func (s *Server) testStaticRuntimeCredentialConnection(connection controldb.Conn
 		}
 	case "gcloud":
 		if strings.TrimSpace(values["serviceAccountJson"]) == "" {
-			return testConnectionResult{}, fmt.Errorf("serviceAccountJson is required")
+			return testConnectionResult{}, fmt.Errorf("credential JSON is required")
 		}
-		if !json.Valid([]byte(strings.TrimSpace(values["serviceAccountJson"]))) {
-			return testConnectionResult{}, fmt.Errorf("serviceAccountJson must be valid JSON")
+		if err := validateGCloudCredentialJSON(values["serviceAccountJson"]); err != nil {
+			return testConnectionResult{}, err
 		}
-		if strings.TrimSpace(values["projectId"]) == "" {
-			return testConnectionResult{}, fmt.Errorf("projectId is required")
+	case "runtime_secret":
+		envName := strings.TrimSpace(values["envName"])
+		if envName == "" {
+			return testConnectionResult{}, fmt.Errorf("envName is required")
+		}
+		if !isRuntimeSecretEnvName(envName) {
+			return testConnectionResult{}, fmt.Errorf("envName must be a valid environment variable name")
+		}
+		if values["envValue"] == "" {
+			return testConnectionResult{}, fmt.Errorf("envValue is required")
 		}
 	}
 	return testConnectionResult{OK: true, Status: http.StatusOK, Message: "credential format looks valid"}, nil
+}
+
+func validateGCloudCredentialJSON(value string) error {
+	raw := strings.TrimSpace(value)
+	if raw == "" {
+		return fmt.Errorf("credential JSON is required")
+	}
+	if !json.Valid([]byte(raw)) {
+		return fmt.Errorf("credential JSON must be valid JSON")
+	}
+	var parsed map[string]any
+	if err := json.Unmarshal([]byte(raw), &parsed); err != nil {
+		return fmt.Errorf("credential JSON must be valid JSON")
+	}
+	typ := strings.TrimSpace(stringValue(parsed["type"]))
+	switch typ {
+	case "service_account", "authorized_user", "external_account":
+		return nil
+	default:
+		return fmt.Errorf("credential JSON type must be service_account, authorized_user, or external_account")
+	}
 }
 
 func normalizePrivateCredential(value string) string {

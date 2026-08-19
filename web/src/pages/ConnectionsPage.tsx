@@ -60,7 +60,7 @@ type ConnectionProfileSummary = {
 type ConnectionTestResult = { ok: boolean; status: number; message: string }
 type CustomMCPToolGroup = { key: string; displayName: string; description?: string; serverUrl?: string; connections: Connection[] }
 type OAuthAuthorizationStart = { authorizationUrl: string; state: string }
-type DeviceSetupBegin = { deviceCode: string; qrUrl: string; userCode?: string; interval?: number; expiresIn?: number; baseUrl?: string }
+type DeviceSetupBegin = { deviceCode: string; qrUrl: string; userCode?: string; interval?: number; expiresIn?: number; baseUrl?: string; stage?: string }
 type DeviceSetupPoll = { status: string; stage?: string; deviceCode?: string; qrUrl?: string; userCode?: string; interval?: number; expiresIn?: number; baseUrl?: string; slowDown?: boolean; error?: string; connection?: Connection }
 type WorkspaceSummary = { id: string; name: string; currentUserRole?: string; currentUserCanAdmin?: boolean }
 type ProjectSummary = { name: string; description?: string }
@@ -1016,16 +1016,18 @@ function ConnectionDialog({
   const [deviceSetup, setDeviceSetup] = useState<
     | { step: 'idle' }
     | { step: 'beginning' }
-    | { step: 'scanning'; deviceCode: string; qrUrl: string; userCode?: string; baseUrl: string; interval: number }
+    | { step: 'scanning'; deviceCode: string; qrUrl: string; userCode?: string; baseUrl: string; interval: number; stage?: string }
     | { step: 'connected' }
     | { step: 'error'; message: string }
   >({ step: 'idle' })
   const pollRef = useRef<ReturnType<typeof setTimeout> | null>(null)
   const pollGenerationRef = useRef(0)
+  const [verificationCode, setVerificationCode] = useState('')
   const canQuickAuthorize = !isEditing && (
     providerId === 'feishu' ||
     providerId === 'lark' ||
-    providerId === 'github'
+    providerId === 'github' ||
+    providerId === 'gcloud'
   )
   const readonlyConnection = isEditing
   const showCredentialForm = !isEditing
@@ -1062,6 +1064,7 @@ function ConnectionDialog({
         displayName: provider.provider === customMCPProviderID ? (customToolName || provider.displayName) : provider.displayName,
         ...(provider.provider === customMCPProviderID && customToolName ? { toolName: customToolName } : {}),
         ...(provider.provider === customMCPProviderID && cleanValues.serverUrl ? { serverUrl: cleanValues.serverUrl } : {}),
+        ...(provider.provider === 'runtime_secret' && cleanValues.envName ? { envName: cleanValues.envName } : {}),
       }
       if (!connection && authType === 'oauth2') {
         const started = await apiPost<OAuthAuthorizationStart>('/api/v1/oauth/authorizations', {
@@ -1102,7 +1105,11 @@ function ConnectionDialog({
     stopDevicePoll()
     setDeviceSetup({ step: 'beginning' })
     try {
-      const res = await apiPost<DeviceSetupBegin>(`/api/v1/connectors/providers/${encodeURIComponent(provider.provider)}/setup/begin`, {})
+      const cleanValues = Object.fromEntries(Object.entries(values).filter(([, value]) => {
+        const trimmed = value.trim()
+        return trimmed !== '' && trimmed !== maskedSecretValue
+      }))
+      const res = await apiPost<DeviceSetupBegin>(`/api/v1/connectors/providers/${encodeURIComponent(provider.provider)}/setup/begin`, { values: cleanValues })
       const next = {
         step: 'scanning' as const,
         deviceCode: res.deviceCode,
@@ -1110,10 +1117,11 @@ function ConnectionDialog({
         userCode: res.userCode,
         baseUrl: res.baseUrl || '',
         interval: Math.max(3, res.interval || 5),
+        stage: res.stage,
       }
       setDeviceSetup(next)
       window.open(res.qrUrl, '_blank', 'noopener,noreferrer')
-      startDevicePoll(provider.provider, next)
+      if (res.stage !== 'verification_code') startDevicePoll(provider.provider, next)
     } catch (e) {
       setDeviceSetup({ step: 'error', message: e instanceof Error ? e.message : String(e) })
     }
@@ -1142,6 +1150,7 @@ function ConnectionDialog({
             userCode: res.userCode,
             baseUrl: res.baseUrl || '',
             interval: Math.max(3, res.interval || interval),
+            stage: res.stage,
           }
           setDeviceSetup(next)
           window.open(res.qrUrl, '_blank', 'noopener,noreferrer')
@@ -1163,6 +1172,31 @@ function ConnectionDialog({
       }
     }
     schedule()
+  }
+
+  async function completeDeviceSetup() {
+    if (!provider || deviceSetup.step !== 'scanning') return
+    setSaving(true)
+    try {
+      const res = await apiPost<DeviceSetupPoll>(`/api/v1/connectors/providers/${encodeURIComponent(provider.provider)}/setup/poll`, {
+        deviceCode: deviceSetup.deviceCode,
+        baseUrl: deviceSetup.baseUrl || undefined,
+        verificationCode: verificationCode.trim(),
+      })
+      if (res.status === 'connected' && res.connection) {
+        stopDevicePoll()
+        setDeviceSetup({ step: 'connected' })
+        onCreated()
+      } else if (res.status === 'pending') {
+        setDeviceSetup(deviceSetup)
+      } else {
+        setDeviceSetup({ step: 'error', message: res.error || t('connections.authorizationFailed') })
+      }
+    } catch (e) {
+      setDeviceSetup({ step: 'error', message: e instanceof Error ? e.message : String(e) })
+    } finally {
+      setSaving(false)
+    }
   }
 
   return (
@@ -1256,6 +1290,27 @@ function ConnectionDialog({
                   <a href={deviceSetup.qrUrl} target="_blank" rel="noreferrer" className="mt-1 block truncate text-xs font-medium text-sky-700 hover:underline dark:text-sky-300">
                     {deviceSetup.qrUrl}
                   </a>
+                  {deviceSetup.stage === 'verification_code' && (
+                    <div className="mt-3 space-y-2">
+                      <p className="text-xs leading-5 text-neutral-500 dark:text-zinc-400">{t('connections.gcloudVerificationHint')}</p>
+                      <div className="flex flex-col gap-2 sm:flex-row">
+                        <input
+                          className={cn(inputCls, 'font-mono text-xs')}
+                          value={verificationCode}
+                          onChange={e => setVerificationCode(e.target.value)}
+                          placeholder={t('connections.verificationCode')}
+                        />
+                        <button
+                          type="button"
+                          disabled={saving || !verificationCode.trim()}
+                          onClick={() => void completeDeviceSetup()}
+                          className="shrink-0 rounded-lg bg-sky-600 px-3 py-2 text-sm font-medium text-white disabled:opacity-50"
+                        >
+                          {saving ? t('common.loading') : t('connections.completeAuthorization')}
+                        </button>
+                      </div>
+                    </div>
+                  )}
                 </div>
               </div>
             )}

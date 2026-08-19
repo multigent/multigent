@@ -63,6 +63,20 @@ func TestResolveRuntimeAPIURLFallsBackToSiblingWebRuntimeMeta(t *testing.T) {
 	}
 }
 
+func TestResolveRuntimeControlEnvPrefersInheritedRuntimeToken(t *testing.T) {
+	t.Setenv("MULTIGENT_API_URL", "http://127.0.0.1:27892/")
+	t.Setenv("MULTIGENT_AGENT_TOKEN", "runtime-token")
+	t.Setenv("MULTIGENT_RUN_ID", "exec-web")
+	t.Setenv("MULTIGENT_WORKSPACE_ID", "workspace-real")
+	env := (&Runner{root: t.TempDir()}).resolveRuntimeControlEnv("project", "agent", "fallback-run")
+	if env["MULTIGENT_API_URL"] != "http://127.0.0.1:27892" {
+		t.Fatalf("api url=%q", env["MULTIGENT_API_URL"])
+	}
+	if env["MULTIGENT_AGENT_TOKEN"] != "runtime-token" || env["MULTIGENT_RUN_ID"] != "exec-web" || env["MULTIGENT_WORKSPACE_ID"] != "workspace-real" {
+		t.Fatalf("unexpected runtime env: %#v", env)
+	}
+}
+
 func TestInjectRuntimeControlEnvIntoRuntimeUsesInheritedEnv(t *testing.T) {
 	cfg := &entity.SandboxConfig{}
 	injectRuntimeControlEnvIntoRuntime(cfg, map[string]string{
@@ -79,6 +93,30 @@ func TestInjectRuntimeControlEnvIntoRuntimeUsesInheritedEnv(t *testing.T) {
 		if env.Value != "" || env.SecretRef != "" {
 			t.Fatalf("runtime env leaked value: %#v", env)
 		}
+	}
+}
+
+func TestInjectRuntimeControlEnvIntoRuntimeEmbedsMaterializedToolEnv(t *testing.T) {
+	cfg := &entity.SandboxConfig{}
+	injectRuntimeControlEnvIntoRuntime(cfg, map[string]string{
+		"MULTIGENT_AGENT_TOKEN": "secret-token",
+		"TAPNOW_INTERNAL_TOKEN": "runtime-secret",
+	})
+	if len(cfg.Env) != 2 {
+		t.Fatalf("env=%#v", cfg.Env)
+	}
+	var found bool
+	for _, env := range cfg.Env {
+		if env.Name != "TAPNOW_INTERNAL_TOKEN" {
+			continue
+		}
+		found = true
+		if env.Inherit || env.Value != "runtime-secret" {
+			t.Fatalf("materialized runtime env should be embedded for docker: %#v", env)
+		}
+	}
+	if !found {
+		t.Fatalf("missing materialized runtime env: %#v", cfg.Env)
 	}
 }
 
@@ -308,6 +346,80 @@ func TestMaterializeRuntimeFilesWritesToolPlan(t *testing.T) {
 		if strings.Contains(text, token) {
 			t.Fatalf("MCP config leaked token %s: %s", path, text)
 		}
+	}
+}
+
+func TestWriteRuntimeToolsFileSkipsToolWithSecretError(t *testing.T) {
+	body := []byte(`{"tools":[
+		{
+			"provider":"runtime_secret",
+			"connectionId":"conn_bad",
+			"connectionAlias":"bad-secret",
+			"connectionName":"bad-secret",
+			"adapters":[{"type":"skill_only","credentialMaterialize":"runtime_env"}]
+		},
+		{
+			"provider":"github",
+			"connectionId":"conn_good",
+			"connectionAlias":"github",
+			"connectionName":"default",
+			"adapters":[{
+				"type":"cli",
+				"priority":100,
+				"cli":{"binary":"gh","configFiles":[{"path":"~/.config/gh/hosts.yml","format":"yaml"}]},
+				"credentialMaterialize":"runtime_file"
+			}]
+		}
+	]}`)
+	agentDir := t.TempDir()
+	connectionsPath := filepath.Join(agentDir, "connections.json")
+	if err := os.WriteFile(connectionsPath, []byte(`{}`), 0o600); err != nil {
+		t.Fatal(err)
+	}
+	_, toolsPath, _, err := writeRuntimeToolsFile(t.TempDir(), agentDir, "run", connectionsPath, body, func(connectionID string) (map[string]string, bool, error) {
+		if connectionID == "conn_bad" {
+			return nil, true, os.ErrPermission
+		}
+		return map[string]string{"apiKey": "gh_token"}, true, nil
+	})
+	if err != nil {
+		t.Fatalf("write runtime tools: %v", err)
+	}
+	toolsBody, err := os.ReadFile(toolsPath)
+	if err != nil {
+		t.Fatalf("read tools plan: %v", err)
+	}
+	if !strings.Contains(string(toolsBody), `"provider": "github"`) {
+		t.Fatalf("good tool was not materialized: %s", string(toolsBody))
+	}
+}
+
+func TestMaterializeGCloudCLIConfigSupportsAuthorizedUserCredentialJSON(t *testing.T) {
+	path := filepath.Join(t.TempDir(), "application_default_credentials.json")
+	env, err := materializeGCloudCLIConfig(runtimeConfigFileRef{
+		Path:             "~/.config/gcloud/application_default_credentials.json",
+		MaterializedPath: path,
+	}, map[string]string{
+		"credentialJson": `{"type":"authorized_user","client_id":"client","client_secret":"secret","refresh_token":"refresh"}`,
+		"projectId":      "tap-testing-env",
+		"region":         "asia-northeast1",
+		"zone":           "asia-northeast1-c",
+	})
+	if err != nil {
+		t.Fatalf("materialize gcloud: %v", err)
+	}
+	if env["GOOGLE_APPLICATION_CREDENTIALS"] != path || env["CLOUDSDK_AUTH_CREDENTIAL_FILE_OVERRIDE"] != path {
+		t.Fatalf("credential env not set: %#v", env)
+	}
+	if env["GOOGLE_CLOUD_PROJECT"] != "tap-testing-env" || env["CLOUDSDK_CORE_PROJECT"] != "tap-testing-env" {
+		t.Fatalf("project env not set: %#v", env)
+	}
+	body, err := os.ReadFile(path)
+	if err != nil {
+		t.Fatalf("read materialized credential: %v", err)
+	}
+	if !strings.Contains(string(body), `"authorized_user"`) {
+		t.Fatalf("credential json not written: %s", string(body))
 	}
 }
 
@@ -796,6 +908,47 @@ func TestMaterializeRuntimeConnectionsFileSkipsWithoutRuntimeEnv(t *testing.T) {
 	}
 	if env[runtimeConnectionsFileEnv] != "" {
 		t.Fatalf("unexpected manifest path: %q", env[runtimeConnectionsFileEnv])
+	}
+}
+
+func TestWriteRuntimeToolsFileInjectsRuntimeSecretEnv(t *testing.T) {
+	body := []byte(`{
+		"tools":[{
+			"provider":"runtime_secret",
+			"displayName":"Runtime Secret",
+			"connectionId":"conn_secret",
+			"connectionAlias":"runtime-secret",
+			"connectionName":"tapnow-internal-token",
+			"recommendedAdapter":"skill_only",
+			"adapters":[{
+				"type":"skill_only",
+				"priority":100,
+				"credentialMaterialize":"runtime_env"
+			}]
+		}]
+	}`)
+	agentDir := t.TempDir()
+	_, toolsPath, env, err := writeRuntimeToolsFile("", agentDir, "run-secret", "/tmp/connections.json", body, func(connectionID string) (map[string]string, bool, error) {
+		if connectionID != "conn_secret" {
+			t.Fatalf("connectionID=%q", connectionID)
+		}
+		return map[string]string{
+			"envName":  "TAPNOW_INTERNAL_TOKEN",
+			"envValue": "secret-token",
+		}, true, nil
+	})
+	if err != nil {
+		t.Fatalf("write tools file: %v", err)
+	}
+	if env["TAPNOW_INTERNAL_TOKEN"] != "secret-token" {
+		t.Fatalf("runtime secret env not injected: %#v", env)
+	}
+	toolsBody, err := os.ReadFile(toolsPath)
+	if err != nil {
+		t.Fatalf("read tools plan: %v", err)
+	}
+	if strings.Contains(string(toolsBody), "secret-token") {
+		t.Fatalf("tools file leaked runtime secret: %s", string(toolsBody))
 	}
 }
 

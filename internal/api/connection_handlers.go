@@ -1,6 +1,7 @@
 package api
 
 import (
+	"bufio"
 	"context"
 	"crypto/aes"
 	"crypto/cipher"
@@ -142,8 +143,13 @@ type createConnectionRequest struct {
 }
 
 type connectorProviderSetupPollRequest struct {
-	DeviceCode string `json:"deviceCode"`
-	BaseURL    string `json:"baseUrl"`
+	DeviceCode       string `json:"deviceCode"`
+	BaseURL          string `json:"baseUrl"`
+	VerificationCode string `json:"verificationCode"`
+}
+
+type connectorProviderSetupBeginRequest struct {
+	Values map[string]string `json:"values"`
 }
 
 type connectorProviderSetupBeginResponse struct {
@@ -318,8 +324,23 @@ func (s *Server) handleConnectorProviderSetupBegin(w http.ResponseWriter, r *htt
 		s.jsonErrorCode(w, http.StatusBadRequest, ErrCodeUnsupportedProvider, "unsupported provider")
 		return
 	}
+	var req connectorProviderSetupBeginRequest
+	if r.Body != nil {
+		if err := json.NewDecoder(io.LimitReader(r.Body, maxJSONBody)).Decode(&req); err != nil && err != io.EOF {
+			s.jsonErrorCode(w, http.StatusBadRequest, ErrCodeInvalidJSON, "invalid JSON body")
+			return
+		}
+	}
 	if provider.Provider == "github" {
 		resp, ok := s.beginGitHubDeviceSetup(w, r, workspaceID, provider)
+		if !ok {
+			return
+		}
+		_ = json.NewEncoder(w).Encode(resp)
+		return
+	}
+	if provider.Provider == "gcloud" {
+		resp, ok := s.beginGCloudDeviceSetup(w, r, workspaceID, provider, req.Values)
 		if !ok {
 			return
 		}
@@ -384,6 +405,14 @@ func (s *Server) handleConnectorProviderSetupPoll(w http.ResponseWriter, r *http
 	}
 	if provider.Provider == "github" {
 		resp, ok := s.pollGitHubDeviceSetup(w, r, workspaceID, provider, req.DeviceCode)
+		if !ok {
+			return
+		}
+		_ = json.NewEncoder(w).Encode(resp)
+		return
+	}
+	if provider.Provider == "gcloud" {
+		resp, ok := s.pollGCloudDeviceSetup(w, r, workspaceID, provider, req.DeviceCode, req.VerificationCode)
 		if !ok {
 			return
 		}
@@ -540,14 +569,31 @@ func (s *Server) deleteConnectorSetupSession(deviceCode string) {
 	}
 	s.connectorSetupMu.Lock()
 	defer s.connectorSetupMu.Unlock()
-	delete(s.connectorSetupSessions, deviceCode)
+	if session, ok := s.connectorSetupSessions[deviceCode]; ok {
+		cleanupConnectorSetupSession(session)
+		delete(s.connectorSetupSessions, deviceCode)
+	}
 }
 
 func (s *Server) pruneConnectorSetupSessionsLocked(now time.Time) {
 	for deviceCode, session := range s.connectorSetupSessions {
 		if now.Sub(session.CreatedAt) > 30*time.Minute {
+			cleanupConnectorSetupSession(session)
 			delete(s.connectorSetupSessions, deviceCode)
 		}
+	}
+}
+
+func cleanupConnectorSetupSession(session connectorDeviceAuthSession) {
+	if session.Stdin != nil {
+		_ = session.Stdin.Close()
+	}
+	if session.Cmd != nil && session.Cmd.Process != nil {
+		_ = session.Cmd.Process.Kill()
+		_, _ = session.Cmd.Process.Wait()
+	}
+	if strings.TrimSpace(session.ConfigDir) != "" {
+		_ = os.RemoveAll(session.ConfigDir)
 	}
 }
 
@@ -717,6 +763,255 @@ func (s *Server) pollGitHubDeviceSetup(w http.ResponseWriter, r *http.Request, w
 		"status":     "connected",
 		"connection": connectionToResponse(connection, nil),
 	}, true
+}
+
+func (s *Server) beginGCloudDeviceSetup(w http.ResponseWriter, r *http.Request, workspaceID string, provider connector.Provider, values map[string]string) (connectorProviderSetupBeginResponse, bool) {
+	ctx, cancel := contextWithRequestTimeout(r, 20*time.Second)
+	defer cancel()
+	authURL, cmd, stdin, configDir, err := startGCloudADCLogin(ctx)
+	if err != nil {
+		s.jsonErrorCode(w, http.StatusBadGateway, ErrCodeUpstreamError, err.Error())
+		return connectorProviderSetupBeginResponse{}, false
+	}
+	deviceCode := newConnectionID("gcloudauth")
+	resp := connectorProviderSetupBeginResponse{
+		DeviceCode: deviceCode,
+		QRURL:      authURL,
+		Interval:   0,
+		ExpiresIn:  1800,
+		BaseURL:    "https://accounts.google.com",
+		Stage:      "verification_code",
+	}
+	s.auditLog(auditLogInput{
+		WorkspaceID:  workspaceID,
+		Action:       "connection.setup_begin",
+		ResourceType: "connector_provider",
+		ResourceID:   provider.Provider,
+		Summary:      "Started Google Cloud device authorization",
+		Request:      r,
+	})
+	s.putConnectorSetupSession(deviceCode, connectorDeviceAuthSession{
+		Provider: provider.Provider,
+		Values: map[string]string{
+			"projectId": strings.TrimSpace(values["projectId"]),
+			"region":    strings.TrimSpace(values["region"]),
+			"zone":      strings.TrimSpace(values["zone"]),
+		},
+		Cmd:       cmd,
+		Stdin:     stdin,
+		ConfigDir: configDir,
+		CreatedAt: time.Now(),
+	})
+	return resp, true
+}
+
+func (s *Server) pollGCloudDeviceSetup(w http.ResponseWriter, r *http.Request, workspaceID string, provider connector.Provider, deviceCode, verificationCode string) (map[string]any, bool) {
+	deviceCode = strings.TrimSpace(deviceCode)
+	verificationCode = strings.TrimSpace(verificationCode)
+	if deviceCode == "" {
+		s.jsonErrorCode(w, http.StatusBadRequest, ErrCodeValidationFailed, "deviceCode is required")
+		return nil, false
+	}
+	if verificationCode == "" {
+		return map[string]any{"status": "pending", "stage": "verification_code"}, true
+	}
+	session, ok := s.connectorSetupSession(deviceCode)
+	if !ok || session.Provider != provider.Provider {
+		s.jsonErrorCode(w, http.StatusBadRequest, ErrCodeValidationFailed, "authorization session is missing or expired")
+		return nil, false
+	}
+	if session.Cmd == nil || session.Stdin == nil || strings.TrimSpace(session.ConfigDir) == "" {
+		s.jsonErrorCode(w, http.StatusBadRequest, ErrCodeValidationFailed, "Google Cloud authorization session is incomplete")
+		return nil, false
+	}
+	if _, err := session.Stdin.Write([]byte(verificationCode + "\n")); err != nil {
+		s.jsonErrorCode(w, http.StatusBadGateway, ErrCodeUpstreamError, err.Error())
+		return nil, false
+	}
+	_ = session.Stdin.Close()
+	done := make(chan error, 1)
+	go func() { done <- session.Cmd.Wait() }()
+	select {
+	case err := <-done:
+		if err != nil {
+			s.deleteConnectorSetupSession(deviceCode)
+			s.jsonErrorCode(w, http.StatusBadGateway, ErrCodeUpstreamError, fmt.Sprintf("Google Cloud authorization failed: %v", err))
+			return nil, false
+		}
+	case <-time.After(90 * time.Second):
+		s.deleteConnectorSetupSession(deviceCode)
+		s.jsonErrorCode(w, http.StatusGatewayTimeout, ErrCodeUpstreamError, "Google Cloud authorization timed out")
+		return nil, false
+	}
+	connection, err := s.saveGCloudADCConnection(r, workspaceID, provider, session.Values, session.ConfigDir)
+	if err != nil {
+		s.deleteConnectorSetupSession(deviceCode)
+		s.serverError(w, err)
+		return nil, false
+	}
+	s.deleteConnectorSetupSession(deviceCode)
+	s.auditLog(auditLogInput{
+		WorkspaceID:  workspaceID,
+		Action:       "connection.connected",
+		ResourceType: "connection",
+		ResourceID:   connection.ID,
+		Summary:      "Google Cloud device authorization completed",
+		After:        connectionAuditPayload(connection),
+		Request:      r,
+	})
+	s.prepareConnectorToolCacheAsync(provider)
+	return map[string]any{
+		"status":     "connected",
+		"connection": connectionToResponse(connection, nil),
+	}, true
+}
+
+func startGCloudADCLogin(ctx context.Context) (string, *exec.Cmd, io.WriteCloser, string, error) {
+	if _, err := exec.LookPath("gcloud"); err != nil {
+		return "", nil, nil, "", fmt.Errorf("Google Cloud SDK is required for quick authorization: install gcloud CLI on the Multigent host")
+	}
+	configDir, err := os.MkdirTemp("", "multigent-gcloud-auth-*")
+	if err != nil {
+		return "", nil, nil, "", err
+	}
+	cmd := exec.Command("gcloud", "auth", "application-default", "login", "--no-launch-browser", "--quiet")
+	cmd.Env = append(os.Environ(), "CLOUDSDK_CONFIG="+configDir)
+	stdin, err := cmd.StdinPipe()
+	if err != nil {
+		_ = os.RemoveAll(configDir)
+		return "", nil, nil, "", err
+	}
+	stdout, err := cmd.StdoutPipe()
+	if err != nil {
+		_ = os.RemoveAll(configDir)
+		return "", nil, nil, "", err
+	}
+	stderr, err := cmd.StderrPipe()
+	if err != nil {
+		_ = os.RemoveAll(configDir)
+		return "", nil, nil, "", err
+	}
+	if err := cmd.Start(); err != nil {
+		_ = os.RemoveAll(configDir)
+		return "", nil, nil, "", err
+	}
+	lines := make(chan string, 32)
+	scan := func(r io.Reader) {
+		scanner := bufio.NewScanner(r)
+		scanner.Buffer(make([]byte, 0, 64*1024), 1024*1024)
+		for scanner.Scan() {
+			lines <- scanner.Text()
+		}
+	}
+	go scan(stdout)
+	go scan(stderr)
+	deadline := time.After(20 * time.Second)
+	for {
+		select {
+		case <-ctx.Done():
+			_ = cmd.Process.Kill()
+			_, _ = cmd.Process.Wait()
+			_ = os.RemoveAll(configDir)
+			return "", nil, nil, "", ctx.Err()
+		case <-deadline:
+			_ = cmd.Process.Kill()
+			_, _ = cmd.Process.Wait()
+			_ = os.RemoveAll(configDir)
+			return "", nil, nil, "", fmt.Errorf("Google Cloud authorization link was not produced in time")
+		case line := <-lines:
+			if authURL := extractGCloudAuthURL(line); authURL != "" {
+				return authURL, cmd, stdin, configDir, nil
+			}
+		}
+	}
+}
+
+func extractGCloudAuthURL(line string) string {
+	line = strings.TrimSpace(line)
+	if !strings.HasPrefix(line, "https://accounts.google.com/") {
+		return ""
+	}
+	fields := strings.Fields(line)
+	if len(fields) == 0 {
+		return ""
+	}
+	return strings.TrimSpace(fields[0])
+}
+
+func (s *Server) saveGCloudADCConnection(r *http.Request, workspaceID string, provider connector.Provider, values map[string]string, configDir string) (controldb.Connection, error) {
+	credentialPath := filepath.Join(configDir, "application_default_credentials.json")
+	body, err := os.ReadFile(credentialPath)
+	if err != nil {
+		return controldb.Connection{}, fmt.Errorf("read Google Cloud ADC credentials: %w", err)
+	}
+	if err := validateGCloudCredentialJSON(string(body)); err != nil {
+		return controldb.Connection{}, err
+	}
+	ownerType := ConnectionOwnerWorkspace
+	ownerID := workspaceID
+	connectionName := "default"
+	now := time.Now().UTC().Format(time.RFC3339)
+	connectionID := newConnectionID("conn")
+	createdBy := requestUsername(r)
+	createdAt := now
+	isNewConnection := true
+	if existing, ok := s.existingConnection(workspaceID, provider.Provider, ownerType, ownerID, connectionName); ok {
+		connectionID = existing.ID
+		createdBy = existing.CreatedBy
+		createdAt = existing.CreatedAt
+		isNewConnection = false
+	}
+	if isNewConnection {
+		ent := s.currentEntitlements(r)
+		if ent.ConnectionLimit > 0 {
+			usage, err := s.entitlementUsage(workspaceID)
+			if err != nil {
+				return controldb.Connection{}, err
+			}
+			if entitlementLimitExceeded(ent.ConnectionLimit, usage.Connections, 1) {
+				return controldb.Connection{}, fmt.Errorf("connections limit exceeded")
+			}
+		}
+	}
+	profileRaw, _ := json.Marshal(map[string]any{
+		"displayName":    provider.DisplayName,
+		"provider":       provider.Provider,
+		"connectionName": connectionName,
+		"accountId":      "google-oauth",
+		"credentialType": "authorized_user",
+		"projectId":      strings.TrimSpace(values["projectId"]),
+	})
+	connection := controldb.Connection{
+		ID:             connectionID,
+		WorkspaceID:    workspaceID,
+		Provider:       provider.Provider,
+		ConnectionName: connectionName,
+		OwnerType:      ownerType,
+		OwnerID:        ownerID,
+		AuthType:       ConnectionAuthCustomCredential,
+		Status:         "active",
+		ProfileJSON:    string(profileRaw),
+		CreatedBy:      createdBy,
+		CreatedAt:      createdAt,
+		UpdatedAt:      now,
+	}
+	if err := s.controlDB.UpsertConnection(connection); err != nil {
+		return controldb.Connection{}, err
+	}
+	secret, err := sealConnectionSecret(map[string]string{
+		"serviceAccountJson": string(body),
+		"projectId":          strings.TrimSpace(values["projectId"]),
+		"region":             strings.TrimSpace(values["region"]),
+		"zone":               strings.TrimSpace(values["zone"]),
+	})
+	if err != nil {
+		return controldb.Connection{}, err
+	}
+	secret.ConnectionID = connectionID
+	if err := s.controlDB.UpsertConnectionSecret(secret); err != nil {
+		return controldb.Connection{}, err
+	}
+	return connection, nil
 }
 
 func (s *Server) deviceOAuthConnectionState(r *http.Request, workspaceID string, provider connector.Provider) oauthAuthorizationState {
@@ -1341,6 +1636,13 @@ func validateConnectionValues(provider connector.Provider, authType string, valu
 	if authType == ConnectionAuthAPIKey {
 		required["apiKey"] = true
 	}
+	if provider.Provider == "gcloud" && authType == ConnectionAuthCustomCredential {
+		required["serviceAccountJson"] = true
+	}
+	if provider.Provider == "runtime_secret" && authType == ConnectionAuthCustomCredential {
+		required["envName"] = true
+		required["envValue"] = true
+	}
 	for key := range values {
 		if key == "" {
 			return fmt.Errorf("empty credential key")
@@ -1366,7 +1668,25 @@ func validateConnectionValues(provider connector.Provider, authType string, valu
 			return err
 		}
 	}
+	if provider.Provider == "runtime_secret" {
+		if envName := strings.TrimSpace(values["envName"]); envName != "" && !isRuntimeSecretEnvName(envName) {
+			return fmt.Errorf("credential field %q must be a valid environment variable name", "envName")
+		}
+	}
 	return nil
+}
+
+func isRuntimeSecretEnvName(name string) bool {
+	if name == "" {
+		return false
+	}
+	for i, r := range name {
+		if r == '_' || ('A' <= r && r <= 'Z') || ('a' <= r && r <= 'z') || (i > 0 && '0' <= r && r <= '9') {
+			continue
+		}
+		return false
+	}
+	return true
 }
 
 func sealConnectionSecret(values map[string]string) (controldb.ConnectionSecret, error) {
@@ -1601,6 +1921,7 @@ func sanitizeConnectionProfile(providerID string, profile map[string]any) map[st
 		"secretAccessKey":    true,
 		"sessionToken":       true,
 		"serviceAccountJson": true,
+		"envValue":           true,
 		"token":              true,
 		"credential":         true,
 	}

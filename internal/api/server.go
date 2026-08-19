@@ -6,6 +6,7 @@ import (
 	"encoding/json"
 	"errors"
 	"fmt"
+	"io"
 	"log"
 	"net/http"
 	"os"
@@ -59,6 +60,10 @@ type connectorDeviceAuthSession struct {
 	AppSecret   string
 	OwnerOpenID string
 	Brand       string
+	Values      map[string]string
+	Cmd         *exec.Cmd
+	Stdin       io.WriteCloser
+	ConfigDir   string
 	CreatedAt   time.Time
 }
 
