@@ -1,5 +1,24 @@
 # Changelog
 
+## [v0.1.31] - 2026-08-19
+
+### Added
+
+- Agent collaboration channels now support explicit user identity binding, so one agent channel can notify multiple workspace users without mixing external IM identities.
+- Agent collaboration channels can bind named group chats. Agents can discover these targets and send notifications with `mga notify send --to chat:<group-name>`.
+- Runtime agents can send server-side human notifications through connected Feishu/Lark/Slack/Telegram/Discord channels, with internal inbox audit records.
+- `mga notify send` and `multigent notify send` now support `--message-format markdown` for structured review requests, blockers, and status updates.
+
+### Improved
+
+- Agent channel details now show bound users and bound group chats, plus clearer binding guidance for connected IM channels.
+- Runtime connection guidance now tells agents how to inspect collaboration channels and when to notify humans or group chats.
+- Sandbox runs refresh the mounted `mga` runtime CLI from the current Multigent server, reducing stale runtime-command failures after upgrades.
+
+### Tested
+
+- Added coverage for per-agent user binding, named group-chat binding, user-target notification routing, chat-target notification routing, and markdown notification formatting.
+
 ## [v0.1.30] - 2026-08-16
 
 ### Improved
