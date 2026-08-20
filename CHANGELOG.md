@@ -1,5 +1,24 @@
 # Changelog
 
+## [v0.1.33] - 2026-08-20
+
+### Added
+
+- Agents can now inspect pending human-review workflow gates with `mga workflow pending-reviews`, making it possible to build scheduled review reminders without hardcoded workflow logic.
+- Runtime agents receive updated guidance for discovering pending workflow reviews and notifying the right human through collaboration channels.
+- External tools now include gcloud credential support for runtime agents.
+
+### Improved
+
+- Feishu/Lark agent conversations now keep per-user interaction sessions, improve progress-card rendering, and avoid losing important final replies.
+- Imported local Agent sessions are stored as workspace files instead of empty knowledge documents, making handoff context easier to preserve and reference.
+- Invite-link copy now has a clipboard fallback and clearer copied feedback.
+- Workflow review and runtime environment handling is more stable around human-review gates and SaaS runtime-node mode.
+
+### Tested
+
+- Added coverage for pending-review discovery, gcloud runtime credential injection, imported session storage, IM interaction sessions, card rendering, and workflow review handling.
+
 ## [v0.1.32] - 2026-08-19
 
 ### Added
