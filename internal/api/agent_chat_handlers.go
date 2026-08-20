@@ -450,30 +450,92 @@ func readFileWindowBefore(path, beforeCursor string, maxBytes int64) ([]byte, bo
 			end = parsed
 		}
 	}
-	start := end - maxBytes
-	if start < 0 {
-		start = 0
+	window := maxBytes
+	var data []byte
+	var returnedStart int64
+	var truncated bool
+	for {
+		start := end - window
+		if start < 0 {
+			start = 0
+		}
+		if _, err := f.Seek(start, io.SeekStart); err != nil {
+			return nil, false, "", false, err
+		}
+		raw := make([]byte, end-start)
+		if _, err := io.ReadFull(f, raw); err != nil && err != io.ErrUnexpectedEOF {
+			return nil, false, "", false, err
+		}
+		returnedStart = start
+		truncated = start > 0
+		data = raw
+		if truncated {
+			dropped := dropPartialFirstLine(raw)
+			returnedStart += int64(len(raw) - len(dropped))
+			data = dropped
+		}
+		if len(data) > 0 || start == 0 {
+			break
+		}
+		if window >= 8*maxBytes {
+			break
+		}
+		window *= 2
 	}
-	if _, err := f.Seek(start, io.SeekStart); err != nil {
-		return nil, false, "", false, err
-	}
-	data := make([]byte, end-start)
-	if _, err := io.ReadFull(f, data); err != nil && err != io.ErrUnexpectedEOF {
-		return nil, false, "", false, err
-	}
-	returnedStart := start
-	truncated := start > 0
-	if truncated {
-		dropped := dropPartialFirstLine(data)
-		returnedStart += int64(len(data) - len(dropped))
-		data = dropped
-	}
+	data = keepCompleteJSONLLines(data)
 	cursor := ""
 	hasMore := returnedStart > 0
 	if hasMore {
 		cursor = strconv.FormatInt(returnedStart, 10)
 	}
 	return data, truncated, cursor, hasMore, nil
+}
+
+func keepCompleteJSONLLines(data []byte) []byte {
+	if len(data) == 0 {
+		return data
+	}
+	lines := bytes.Split(data, []byte{'\n'})
+	out := make([][]byte, 0, len(lines))
+	for _, line := range lines {
+		line = bytes.TrimSpace(line)
+		if len(line) == 0 {
+			continue
+		}
+		var raw map[string]any
+		if json.Unmarshal(line, &raw) != nil {
+			continue
+		}
+		if !nativeChatHistoryLineRelevant(raw) {
+			continue
+		}
+		out = append(out, line)
+	}
+	return bytes.Join(out, []byte{'\n'})
+}
+
+func nativeChatHistoryLineRelevant(raw map[string]any) bool {
+	typ, _ := raw["type"].(string)
+	if typ == "event_msg" {
+		payload, _ := raw["payload"].(map[string]any)
+		payloadType, _ := payload["type"].(string)
+		switch payloadType {
+		case "task_complete", "turn_completed", "token_count":
+			return payloadType != "token_count"
+		}
+		item, _ := payload["item"].(map[string]any)
+		itemType, _ := item["type"].(string)
+		switch itemType {
+		case "AgentMessage", "UserMessage", "Reasoning", "agent_message", "user_message", "reasoning", "agent_reasoning":
+			return true
+		default:
+			return false
+		}
+	}
+	if typ == "response_item" {
+		return false
+	}
+	return typ == "assistant" || typ == "user" || typ == "human" || typ == "result"
 }
 
 func nativeAgentSessionFiles(agentDir, sessionID string) ([]string, error) {
@@ -636,8 +698,9 @@ type historySegment struct {
 
 const (
 	agentChatHistoryMaxRuns        = 6
-	agentChatHistoryMaxBytes       = 384 * 1024
+	agentChatHistoryMaxBytes       = 1024 * 1024
 	agentChatHistoryMaxBytesPerRun = 160 * 1024
+	nativeAgentChatHistoryMaxBytes = 1024 * 1024
 )
 
 func (s *Server) readAgentSessionHistory(workspaceID, project, agent, sessionID, beforeCursor string) (string, []agentChatHistoryRun, string, bool, string, bool, error) {
@@ -739,7 +802,7 @@ func (s *Server) readNativeAgentSessionHistory(project, agent, sessionID, before
 	}
 	sort.Strings(matches)
 	path := matches[len(matches)-1]
-	data, truncated, cursor, hasMore, err := readFileWindowBefore(path, beforeCursor, agentChatHistoryMaxBytesPerRun)
+	data, truncated, cursor, hasMore, err := readFileWindowBefore(path, beforeCursor, nativeAgentChatHistoryMaxBytes)
 	if err != nil {
 		if os.IsNotExist(err) {
 			return nil, nil
