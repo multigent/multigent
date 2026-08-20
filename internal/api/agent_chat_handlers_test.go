@@ -74,6 +74,20 @@ func TestSummarizeSessionTitleFromClaudeUserLog(t *testing.T) {
 	}
 }
 
+func TestSummarizeSessionTitleFromCodexEventMsgUserLog(t *testing.T) {
+	log := `{"type":"event_msg","payload":{"type":"item_completed","thread_id":"01a01f42-4128-74d3-8c6c-af980283229a","item":{"type":"UserMessage","text":"回顾一下 MCP Server 的 OAuth 接入"}}}`
+	if got := summarizeSessionTitleFromLog(log); got != "回顾一下 MCP Server 的 OAuth 接入" {
+		t.Fatalf("summarizeSessionTitleFromLog() = %q", got)
+	}
+}
+
+func TestNativeSessionIDFromCodexRolloutPath(t *testing.T) {
+	path := "/tmp/.codex/sessions/2026/08/20/rollout-2026-08-20T13-00-30-01a01f42-4128-74d3-8c6c-af980283229a.jsonl"
+	if got := nativeSessionIDFromPath(path); got != "01a01f42-4128-74d3-8c6c-af980283229a" {
+		t.Fatalf("nativeSessionIDFromPath() = %q", got)
+	}
+}
+
 func TestExtractAgentChatError(t *testing.T) {
 	tests := []struct {
 		name string

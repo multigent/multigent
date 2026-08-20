@@ -97,6 +97,9 @@ func (s *Server) listAgentChatSessions(workspaceID, project, agent string) ([]ag
 	if err := s.addRuntimeNodeAgentChatSessions(byID, workspaceID, project, agent); err != nil {
 		return nil, err
 	}
+	if err := s.addNativeAgentChatSessions(byID, project, agent); err != nil {
+		return nil, err
+	}
 
 	out := make([]agentChatSessionInfo, 0, len(byID))
 	for _, item := range byID {
@@ -389,6 +392,18 @@ func (s *Server) readSmallRunLog(logPath string) ([]byte, error) {
 	return io.ReadAll(limited)
 }
 
+func readFileHead(path string, maxBytes int64) ([]byte, error) {
+	if maxBytes <= 0 {
+		return nil, nil
+	}
+	f, err := os.Open(path)
+	if err != nil {
+		return nil, err
+	}
+	defer f.Close()
+	return io.ReadAll(io.LimitReader(f, maxBytes))
+}
+
 func readFileTail(path string, maxBytes int64) ([]byte, bool, error) {
 	if maxBytes <= 0 {
 		return nil, false, nil
@@ -412,6 +427,115 @@ func readFileTail(path string, maxBytes int64) ([]byte, bool, error) {
 	}
 	data, err := io.ReadAll(f)
 	return data, true, err
+}
+
+func nativeAgentSessionFiles(agentDir, sessionID string) ([]string, error) {
+	agentDir = strings.TrimSpace(agentDir)
+	if agentDir == "" {
+		return nil, nil
+	}
+	sessionID = strings.TrimSpace(sessionID)
+	var matches []string
+
+	claudeProjectsDir := filepath.Join(agentDir, ".multigent", "runtime-home", "claudecode", ".claude", "projects")
+	if sessionID != "" {
+		found, err := filepath.Glob(filepath.Join(claudeProjectsDir, "*", sessionID+".jsonl"))
+		if err != nil {
+			return nil, err
+		}
+		matches = append(matches, found...)
+		found, err = filepath.Glob(filepath.Join(claudeProjectsDir, "*", sessionID))
+		if err != nil {
+			return nil, err
+		}
+		matches = append(matches, found...)
+	} else {
+		found, err := filepath.Glob(filepath.Join(claudeProjectsDir, "*", "*.jsonl"))
+		if err != nil {
+			return nil, err
+		}
+		matches = append(matches, found...)
+	}
+
+	for _, root := range []string{
+		filepath.Join(agentDir, ".multigent", "runtime-home", "codex", ".codex", "sessions"),
+		filepath.Join(agentDir, ".multigent", "runtime-home", "cursor", ".cursor", "projects", "workspace", "agent-transcripts"),
+	} {
+		found, err := walkNativeSessionFiles(root, sessionID)
+		if err != nil {
+			return nil, err
+		}
+		matches = append(matches, found...)
+	}
+
+	sort.Strings(matches)
+	out := matches[:0]
+	seen := map[string]bool{}
+	for _, path := range matches {
+		if path == "" || seen[path] {
+			continue
+		}
+		seen[path] = true
+		out = append(out, path)
+	}
+	return out, nil
+}
+
+func walkNativeSessionFiles(root, sessionID string) ([]string, error) {
+	if _, err := os.Stat(root); err != nil {
+		if os.IsNotExist(err) {
+			return nil, nil
+		}
+		return nil, err
+	}
+	var matches []string
+	err := filepath.WalkDir(root, func(path string, d os.DirEntry, err error) error {
+		if err != nil {
+			return err
+		}
+		if d.IsDir() {
+			return nil
+		}
+		name := d.Name()
+		if !strings.HasSuffix(name, ".jsonl") {
+			return nil
+		}
+		if sessionID != "" && !strings.Contains(name, sessionID) {
+			return nil
+		}
+		matches = append(matches, path)
+		return nil
+	})
+	return matches, err
+}
+
+func nativeSessionIDFromPath(path string) string {
+	name := strings.TrimSuffix(filepath.Base(path), ".jsonl")
+	if strings.HasPrefix(name, "rollout-") {
+		const uuidLen = 36
+		if len(name) >= uuidLen {
+			candidate := name[len(name)-uuidLen:]
+			if strings.Count(candidate, "-") == 4 {
+				return candidate
+			}
+		}
+		return ""
+	}
+	return strings.TrimSpace(name)
+}
+
+func nativeSessionSourceFromPath(path string) string {
+	normalized := filepath.ToSlash(path)
+	switch {
+	case strings.Contains(normalized, "/runtime-home/codex/"):
+		return "codex-native"
+	case strings.Contains(normalized, "/runtime-home/cursor/"):
+		return "cursor-native"
+	case strings.Contains(normalized, "/runtime-home/claudecode/"):
+		return "claude-native"
+	default:
+		return "native"
+	}
 }
 
 func (s *Server) handleAgentChatHistory(w http.ResponseWriter, r *http.Request) {
@@ -483,7 +607,7 @@ func (s *Server) readAgentSessionHistory(workspaceID, project, agent, sessionID 
 		sessionID = resolvedFromRuntime
 	}
 	if len(segments) == 0 && sessionID != "" {
-		nativeSegment, err := s.readNativeClaudeAgentSessionHistory(project, agent, sessionID)
+		nativeSegment, err := s.readNativeAgentSessionHistory(project, agent, sessionID)
 		if err != nil {
 			return "", nil, sessionID, false, err
 		}
@@ -538,27 +662,20 @@ func (s *Server) readAgentSessionHistory(workspaceID, project, agent, sessionID 
 	return sb.String(), outRuns, sessionID, truncated, nil
 }
 
-func (s *Server) readNativeClaudeAgentSessionHistory(project, agent, sessionID string) (*historySegment, error) {
+func (s *Server) readNativeAgentSessionHistory(project, agent, sessionID string) (*historySegment, error) {
 	if strings.TrimSpace(sessionID) == "" {
 		return nil, nil
 	}
-	claudeProjectsDir := filepath.Join(s.st.AgentDir(project, agent), ".multigent", "runtime-home", "claudecode", ".claude", "projects")
-	matches, err := filepath.Glob(filepath.Join(claudeProjectsDir, "*", sessionID+".jsonl"))
+	matches, err := nativeAgentSessionFiles(s.st.AgentDir(project, agent), sessionID)
 	if err != nil {
 		return nil, err
-	}
-	if len(matches) == 0 {
-		matches, err = filepath.Glob(filepath.Join(claudeProjectsDir, "*", sessionID))
-		if err != nil {
-			return nil, err
-		}
 	}
 	if len(matches) == 0 {
 		return nil, nil
 	}
 	sort.Strings(matches)
 	path := matches[len(matches)-1]
-	data, err := os.ReadFile(path)
+	data, truncated, err := readFileTail(path, agentChatHistoryMaxBytesPerRun)
 	if err != nil {
 		if os.IsNotExist(err) {
 			return nil, nil
@@ -567,6 +684,9 @@ func (s *Server) readNativeClaudeAgentSessionHistory(project, agent, sessionID s
 	}
 	if strings.TrimSpace(string(data)) == "" {
 		return nil, nil
+	}
+	if truncated {
+		data = append([]byte("=== earlier native session content truncated ===\n"), data...)
 	}
 	startedAt := time.Now().UTC()
 	if stat, err := os.Stat(path); err == nil {
@@ -578,6 +698,59 @@ func (s *Server) readNativeClaudeAgentSessionHistory(project, agent, sessionID s
 		logPath:   path,
 		data:      data,
 	}, nil
+}
+
+func (s *Server) addNativeAgentChatSessions(byID map[string]*agentChatSessionAcc, project, agent string) error {
+	agentDir := s.st.AgentDir(project, agent)
+	files, err := nativeAgentSessionFiles(agentDir, "")
+	if err != nil {
+		return err
+	}
+	for _, path := range files {
+		sessionID := nativeSessionIDFromPath(path)
+		if sessionID == "" {
+			data, err := readFileHead(path, 64*1024)
+			if err != nil {
+				if os.IsNotExist(err) {
+					continue
+				}
+				return err
+			}
+			sessionID = extractAgentChatSessionID(string(data))
+		}
+		if sessionID == "" {
+			continue
+		}
+		item := ensureAgentChatSessionAcc(byID, sessionID)
+		if item.info.Source == "" {
+			item.info.Source = nativeSessionSourceFromPath(path)
+		}
+		if item.info.Status == "" {
+			item.info.Status = "native"
+		}
+		if item.logPath == "" {
+			item.logPath = path
+		}
+		if item.info.RunCount == 0 {
+			item.info.RunCount = 1
+		}
+		startedAt := time.Time{}
+		if stat, err := os.Stat(path); err == nil {
+			startedAt = stat.ModTime().UTC()
+		}
+		updateAgentChatSessionTimes(item, startedAt, startedAt)
+		if item.info.Title == "" {
+			data, err := readFileHead(path, 256*1024)
+			if err != nil {
+				if os.IsNotExist(err) {
+					continue
+				}
+				return err
+			}
+			item.info.Title = summarizeSessionTitleFromLog(string(data))
+		}
+	}
+	return nil
 }
 
 func (s *Server) readTelemetryAgentSessionHistory(project, agent, sessionID string, maxRuns int) ([]historySegment, string, error) {
@@ -1384,6 +1557,14 @@ func extractAgentChatSessionID(line string) string {
 		if sid, ok := raw["thread_id"].(string); ok && sid != "" {
 			return sid
 		}
+		if payload, ok := raw["payload"].(map[string]any); ok {
+			if sid, ok := payload["session_id"].(string); ok && sid != "" {
+				return sid
+			}
+			if sid, ok := payload["thread_id"].(string); ok && sid != "" {
+				return sid
+			}
+		}
 	}
 	trimmed := strings.TrimSpace(line)
 	lower := strings.ToLower(trimmed)
@@ -1419,6 +1600,13 @@ func extractUserTitleFromJSONLine(line string) string {
 	if err := json.Unmarshal([]byte(line), &raw); err != nil {
 		return ""
 	}
+	if typ, _ := raw["type"].(string); typ == "event_msg" {
+		if payload, ok := raw["payload"].(map[string]any); ok {
+			if title := extractUserTitleFromCodexPayload(payload); title != "" {
+				return title
+			}
+		}
+	}
 	if typ, _ := raw["type"].(string); typ == "human" {
 		return stringField(raw, "content")
 	}
@@ -1441,6 +1629,26 @@ func extractUserTitleFromJSONLine(line string) string {
 	}
 	if role, _ := msg["role"].(string); role == "user" {
 		return messageText(msg)
+	}
+	return ""
+}
+
+func extractUserTitleFromCodexPayload(payload map[string]any) string {
+	item, ok := payload["item"].(map[string]any)
+	if !ok {
+		return ""
+	}
+	typ, _ := item["type"].(string)
+	if typ != "UserMessage" && typ != "user_message" {
+		return ""
+	}
+	for _, key := range []string{"text", "message", "content"} {
+		if text := stringField(item, key); text != "" {
+			return text
+		}
+	}
+	if text := contentText(item["content"]); text != "" {
+		return text
 	}
 	return ""
 }

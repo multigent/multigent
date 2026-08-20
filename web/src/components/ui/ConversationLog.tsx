@@ -38,12 +38,14 @@ type StreamEvent = {
     message?: string
     name?: string
     input?: unknown
+    content?: unknown
     output?: string
     command?: string
     aggregated_output?: string
     exit_code?: number | null
     status?: string
   }
+  payload?: any
   content?: ContentBlock[] | string
   role?: string
   // claude -p stream-json content block events
@@ -465,6 +467,7 @@ function parseLog(content: string): ConversationItem[] {
       items.push({ kind: 'header', text: `[raw:json-err] ${jsonLine.slice(0, 120)}` })
       continue
     }
+    ev = normalizeCodexEventMsg(ev)
 
     // --- Thinking deltas (Cursor) ---
     if (ev.type === 'thinking') {
@@ -489,8 +492,17 @@ function parseLog(content: string): ConversationItem[] {
     }
 
     if ((ev.type === 'item.started' || ev.type === 'item.completed') && ev.item) {
-      if (ev.item.type === 'agent_message' && ev.item.text) {
+      if ((ev.item.type === 'agent_message' || ev.item.type === 'AgentMessage') && ev.item.text) {
         pushAssistantText(items, ev.item.text)
+      } else if ((ev.item.type === 'UserMessage' || ev.item.type === 'user_message') && (ev.item.text || ev.item.message || ev.item.content)) {
+        const text = typeof ev.item.text === 'string'
+          ? ev.item.text
+          : typeof ev.item.message === 'string'
+              ? ev.item.message
+              : typeof ev.item.content === 'string'
+                ? ev.item.content
+                : ''
+        if (text) pushHumanText(items, text)
       } else if (ev.item.type === 'tool_call' && ev.item.name) {
         pushToolUse(items, ev.item.name, ev.item.input)
       } else if (ev.item.type === 'command_execution' && ev.item.command) {
@@ -675,6 +687,17 @@ function parseLog(content: string): ConversationItem[] {
 
   flushThinking()
   return items
+}
+
+function normalizeCodexEventMsg(ev: StreamEvent): StreamEvent {
+  if (ev.type !== 'event_msg' || !ev.payload || typeof ev.payload !== 'object') return ev
+  const payload = ev.payload as Record<string, any>
+  const typ = typeof payload.type === 'string' ? payload.type : ''
+  const normalizedType = typ.replace(/_/g, '.')
+  return {
+    ...payload,
+    type: normalizedType || typ || ev.type,
+  } as StreamEvent
 }
 
 function truncateStr(s: string, max: number): string {
