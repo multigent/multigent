@@ -496,9 +496,9 @@ func sessionReferenceDocContent(title, content string, item CollectedItem, manag
 		b.WriteString("\n\n")
 	}
 	b.WriteString("## Runtime usage\n\n")
-	b.WriteString("Agents should read the original file from `$MULTIGENT_FILES_DIR/")
+	b.WriteString("Agents should treat this as a raw archive, not prompt context. Prefer the summary/index document first. When detailed evidence is needed, inspect only relevant slices from `$MULTIGENT_FILES_DIR/")
 	b.WriteString(filepath.ToSlash(managedRel))
-	b.WriteString("` when they need detailed historical context. Treat old paths, credentials, runtime state, and machine-specific assumptions inside the session as stale unless revalidated.\n")
+	b.WriteString("` with selective commands such as `rg`, `sed -n`, `head`, `tail`, or small scripts. Do not `cat` or paste the whole JSONL into the model context. Treat old paths, credentials, runtime state, and machine-specific assumptions inside the session as stale unless revalidated.\n")
 	return b.String()
 }
 
@@ -707,7 +707,8 @@ func BuildAgentContextLayer(root, project, agent string) (string, error) {
 	b.WriteString("The workspace has linked reference material for this workspace, project, or agent.\n")
 	b.WriteString("Before working on related tasks, run `mga context list` and read every required item with `mga context read <id>`.\n")
 	b.WriteString("If a referenced item points to an uploaded file, use `$MULTIGENT_FILES_DIR/<relative-path>` when available; Docker sandboxes cannot use host absolute paths from old sessions or knowledge notes.\n")
-	b.WriteString("Treat imported local sessions or files as reference material only: old paths, credentials, runtime state, and machine-specific tools may no longer be valid.\n\n")
+	b.WriteString("Treat imported local sessions or files as reference material only: old paths, credentials, runtime state, and machine-specific tools may no longer be valid.\n")
+	b.WriteString("Large imported sessions are raw archives, not prompt context. Do not `cat` or paste an entire large JSONL session into the model context; inspect it selectively with tools such as `rg`, `sed -n`, `head`, `tail`, or small scripts, and prefer the linked summary/index document first.\n\n")
 	for i, view := range views {
 		title := view.Artifact.Title
 		if title == "" && view.Doc != nil {
