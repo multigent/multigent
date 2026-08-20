@@ -389,6 +389,31 @@ func (s *Server) readSmallRunLog(logPath string) ([]byte, error) {
 	return io.ReadAll(limited)
 }
 
+func readFileTail(path string, maxBytes int64) ([]byte, bool, error) {
+	if maxBytes <= 0 {
+		return nil, false, nil
+	}
+	f, err := os.Open(path)
+	if err != nil {
+		return nil, false, err
+	}
+	defer f.Close()
+	stat, err := f.Stat()
+	if err != nil {
+		return nil, false, err
+	}
+	size := stat.Size()
+	if size <= maxBytes {
+		data, err := io.ReadAll(f)
+		return data, false, err
+	}
+	if _, err := f.Seek(size-maxBytes, io.SeekStart); err != nil {
+		return nil, false, err
+	}
+	data, err := io.ReadAll(f)
+	return data, true, err
+}
+
 func (s *Server) handleAgentChatHistory(w http.ResponseWriter, r *http.Request) {
 	project, agent, ok := s.parseProjectAgent(w, r)
 	if !ok {
@@ -431,11 +456,16 @@ type historySegment struct {
 	data      []byte
 }
 
-func (s *Server) readAgentSessionHistory(workspaceID, project, agent, sessionID string) (string, []agentChatHistoryRun, string, bool, error) {
-	const maxRuns = 8
-	segments := make([]historySegment, 0, maxRuns)
+const (
+	agentChatHistoryMaxRuns        = 6
+	agentChatHistoryMaxBytes       = 384 * 1024
+	agentChatHistoryMaxBytesPerRun = 160 * 1024
+)
 
-	telemetrySegments, resolvedFromTelemetry, err := s.readTelemetryAgentSessionHistory(project, agent, sessionID, maxRuns)
+func (s *Server) readAgentSessionHistory(workspaceID, project, agent, sessionID string) (string, []agentChatHistoryRun, string, bool, error) {
+	segments := make([]historySegment, 0, agentChatHistoryMaxRuns)
+
+	telemetrySegments, resolvedFromTelemetry, err := s.readTelemetryAgentSessionHistory(project, agent, sessionID, agentChatHistoryMaxRuns)
 	if err != nil {
 		return "", nil, sessionID, false, err
 	}
@@ -444,7 +474,7 @@ func (s *Server) readAgentSessionHistory(workspaceID, project, agent, sessionID 
 		sessionID = resolvedFromTelemetry
 	}
 
-	runtimeSegments, resolvedFromRuntime, err := s.readRuntimeNodeAgentSessionHistory(workspaceID, project, agent, sessionID, maxRuns)
+	runtimeSegments, resolvedFromRuntime, err := s.readRuntimeNodeAgentSessionHistory(workspaceID, project, agent, sessionID, agentChatHistoryMaxRuns)
 	if err != nil {
 		return "", nil, sessionID, false, err
 	}
@@ -465,18 +495,17 @@ func (s *Server) readAgentSessionHistory(workspaceID, project, agent, sessionID 
 	sort.SliceStable(segments, func(i, j int) bool {
 		return segments[i].startedAt.Before(segments[j].startedAt)
 	})
-	if len(segments) > maxRuns {
-		segments = segments[len(segments)-maxRuns:]
+	if len(segments) > agentChatHistoryMaxRuns {
+		segments = segments[len(segments)-agentChatHistoryMaxRuns:]
 	}
 
-	const maxBytes = 768 * 1024
 	total := 0
 	selected := make([]historySegment, 0, len(segments))
 	truncated := false
 	for i := len(segments) - 1; i >= 0; i-- {
 		seg := segments[i]
-		if total+len(seg.data) > maxBytes {
-			remaining := maxBytes - total
+		if total+len(seg.data) > agentChatHistoryMaxBytes {
+			remaining := agentChatHistoryMaxBytes - total
 			if remaining <= 0 {
 				truncated = true
 				break
@@ -592,12 +621,15 @@ func (s *Server) readTelemetryAgentSessionHistory(project, agent, sessionID stri
 		if !filepath.IsAbs(absLogPath) {
 			absLogPath = filepath.Join(s.root, absLogPath)
 		}
-		data, err := os.ReadFile(absLogPath)
+		data, truncated, err := readFileTail(absLogPath, agentChatHistoryMaxBytesPerRun)
 		if err != nil {
 			if os.IsNotExist(err) {
 				continue
 			}
 			return nil, sessionID, err
+		}
+		if truncated {
+			data = append([]byte("=== earlier run log content truncated ===\n"), data...)
 		}
 		if sessionID == "" {
 			if row.SessionID.Valid && row.SessionID.String != "" {
@@ -653,6 +685,10 @@ func (s *Server) readRuntimeNodeAgentSessionHistory(workspaceID, project, agent,
 		if strings.TrimSpace(logText) == "" {
 			continue
 		}
+		logData := []byte(logText)
+		if len(logData) > agentChatHistoryMaxBytesPerRun {
+			logData = append([]byte("=== earlier runtime log content truncated ===\n"), logData[len(logData)-agentChatHistoryMaxBytesPerRun:]...)
+		}
 		startedAt := latestDBTime(run.StartedAt, run.CreatedAt)
 		if startedAt.IsZero() {
 			startedAt = time.Now().UTC()
@@ -661,7 +697,7 @@ func (s *Server) readRuntimeNodeAgentSessionHistory(workspaceID, project, agent,
 			startedAt: startedAt,
 			status:    run.Status,
 			logPath:   result["logPath"],
-			data:      []byte(logText),
+			data:      logData,
 		})
 		if len(segments) >= maxRuns {
 			break
