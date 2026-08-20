@@ -85,6 +85,7 @@ Authorization: Bearer <key>.`,
 			srv.SetVersion(version)
 			srv.SetUpdateChecker(GetCachedUpdateInfo)
 			srv.SetDaemonStatus(daemonStatusJSON)
+			srv.SetLocalRuntimeAPIURL(os.Getenv("MULTIGENT_API_URL"))
 			log.Printf("multigent api listening on http://%s (workspace %s)", addr, root)
 			if err := daemon.SaveWebRuntimeMeta(&daemon.WebRuntimeMeta{
 				WorkDir:   root,

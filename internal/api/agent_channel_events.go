@@ -1,6 +1,7 @@
 package api
 
 import (
+	"bufio"
 	"bytes"
 	"context"
 	"encoding/json"
@@ -9,8 +10,10 @@ import (
 	"io"
 	"log"
 	"net/http"
+	"os"
 	"os/exec"
 	"strings"
+	"sync"
 	"time"
 
 	controldb "github.com/multigent/multigent/internal/db"
@@ -64,7 +67,7 @@ func (s *Server) handleIMEvent(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	if parsed.IsInteraction {
-		result, err := s.acceptIMInteractionCallback(channelProvider, parsed.AppID, parsed.VerificationToken, parsed.Interaction)
+		result, err := s.acceptIMInteractionCallback(channelProvider, parsed.AppID, parsed.VerificationToken, parsed.Interaction, localRuntimeAPIURLForRequest(r))
 		if err != nil {
 			s.serverError(w, err)
 			return
@@ -76,7 +79,7 @@ func (s *Server) handleIMEvent(w http.ResponseWriter, r *http.Request) {
 		_ = json.NewEncoder(w).Encode(map[string]any{"ok": true, "ignored": true})
 		return
 	}
-	result, err := s.acceptIMMessage(channelProvider, parsed.AppID, parsed.VerificationToken, parsed.Message)
+	result, err := s.acceptIMMessage(channelProvider, parsed.AppID, parsed.VerificationToken, parsed.Message, localRuntimeAPIURLForRequest(r))
 	if err != nil {
 		s.serverError(w, err)
 		return
@@ -84,7 +87,7 @@ func (s *Server) handleIMEvent(w http.ResponseWriter, r *http.Request) {
 	_ = json.NewEncoder(w).Encode(result)
 }
 
-func (s *Server) acceptIMInteractionCallback(channelProvider imbridge.Provider, appID, verificationToken string, callback imbridge.IncomingInteractionCallback) (map[string]any, error) {
+func (s *Server) acceptIMInteractionCallback(channelProvider imbridge.Provider, appID, verificationToken string, callback imbridge.IncomingInteractionCallback, runtimeAPIURL string) (map[string]any, error) {
 	provider := channelProvider.Info().ID
 	interactionID := strings.TrimSpace(callback.InteractionID)
 	if interactionID == "" {
@@ -102,13 +105,13 @@ func (s *Server) acceptIMInteractionCallback(channelProvider imbridge.Provider, 
 		if !found || request.ChannelBindingID != binding.ID {
 			continue
 		}
-		return s.acceptBoundIMInteractionCallback(channelProvider, binding, request, verificationToken, callback)
+		return s.acceptBoundIMInteractionCallback(channelProvider, binding, request, verificationToken, callback, runtimeAPIURL)
 	}
 	log.Printf("[im:%s] interaction request not found app=%s chat=%s interaction=%s sender=%s", provider, appID, callback.ChatID, interactionID, callback.SenderOpenID)
 	return map[string]any{"ok": true, "ignored": true, "reason": "interaction_not_found"}, nil
 }
 
-func (s *Server) acceptBoundIMInteractionCallback(channelProvider imbridge.Provider, binding controldb.AgentChannelBinding, request controldb.InteractionRequest, verificationToken string, callback imbridge.IncomingInteractionCallback) (map[string]any, error) {
+func (s *Server) acceptBoundIMInteractionCallback(channelProvider imbridge.Provider, binding controldb.AgentChannelBinding, request controldb.InteractionRequest, verificationToken string, callback imbridge.IncomingInteractionCallback, runtimeAPIURL string) (map[string]any, error) {
 	providerID := channelProvider.Info().ID
 	secret, ok, err := s.controlDB.ConnectionSecret(binding.ConnectionID)
 	if err != nil {
@@ -184,7 +187,7 @@ func (s *Server) acceptBoundIMInteractionCallback(channelProvider imbridge.Provi
 			}
 		}
 	}()
-	go s.runAgentForInteractionCallback(channelProvider, resolved, callback, request, string(rawSubmission))
+	go s.runAgentForInteractionCallback(channelProvider, resolved, callback, request, string(rawSubmission), runtimeAPIURL)
 	return map[string]any{"ok": true, "interactionId": request.ID, "status": "accepted"}, nil
 }
 
@@ -212,7 +215,7 @@ func (s *Server) updateIMInteractionCardAccepted(ctx context.Context, provider i
 	}})
 }
 
-func (s *Server) acceptIMMessage(channelProvider imbridge.Provider, appID, verificationToken string, message imbridge.IncomingMessage) (map[string]any, error) {
+func (s *Server) acceptIMMessage(channelProvider imbridge.Provider, appID, verificationToken string, message imbridge.IncomingMessage, runtimeAPIURL string) (map[string]any, error) {
 	provider := channelProvider.Info().ID
 	text := strings.TrimSpace(message.Text)
 	if text == "" {
@@ -330,7 +333,7 @@ func (s *Server) acceptIMMessage(channelProvider imbridge.Provider, appID, verif
 		return map[string]any{"ok": true, "ignored": true, "reason": "runtime_not_ready"}, nil
 	}
 	s.recordAgentChannelCallback(resolved.Binding, "accepted", "", message, "")
-	go s.runAgentForIMEvent(channelProvider, resolved, message, text)
+	go s.runAgentForIMEvent(channelProvider, resolved, message, text, runtimeAPIURL)
 	return map[string]any{"ok": true}, nil
 }
 
@@ -702,16 +705,35 @@ func channelEventBindingMatches(binding controldb.AgentChannelBinding, appID, ch
 	return true
 }
 
-func (s *Server) runAgentForIMEvent(provider imbridge.Provider, resolved resolvedChannelEventBinding, message imbridge.IncomingMessage, text string) {
+func imConversationSource(providerID, userID, chatID, chatType string) interaction.Source {
+	providerID = strings.TrimSpace(providerID)
+	userID = strings.TrimSpace(userID)
+	chatID = strings.TrimSpace(chatID)
+	chatType = strings.TrimSpace(chatType)
+	kind := providerID
+	if chatID == "" {
+		chatID = "direct"
+	}
+	if chatType == "" {
+		chatType = "chat"
+	}
+	channel := "im:" + providerID + ":" + chatType + ":" + chatID
+	if userID != "" {
+		channel += ":user:" + userID
+	}
+	return interaction.Source{
+		Kind:    kind,
+		ActorID: userID,
+		Channel: channel,
+	}
+}
+
+func (s *Server) runAgentForIMEvent(provider imbridge.Provider, resolved resolvedChannelEventBinding, message imbridge.IncomingMessage, text string, runtimeAPIURL string) {
 	ctx, cancel := context.WithTimeout(context.Background(), 30*time.Minute)
 	defer cancel()
 	binding := resolved.Binding
 	providerID := provider.Info().ID
-	source := interaction.Source{
-		Kind:    providerID,
-		ActorID: resolved.Identity.UserID,
-		Channel: message.ChatID,
-	}
+	source := imConversationSource(providerID, resolved.Identity.UserID, message.ChatID, message.ChatType)
 	lease, err := s.acquireAgentInteractionLease(s.interactionAgentRef(binding.WorkspaceID, binding.ProjectID, binding.AgentID), source, "interactive")
 	if err != nil {
 		if errors.Is(err, interaction.ErrAgentLocked) {
@@ -764,26 +786,42 @@ func (s *Server) runAgentForIMEvent(provider imbridge.Provider, resolved resolve
 	_ = s.createInteractionEvent(lease.session, "system", "", providerID, "run_started", "", map[string]any{
 		"messageId": message.MessageID,
 	})
-	if err := s.replyToIMEvent(ctx, provider, resolved, message, "⏳"); err != nil {
-		s.recordAgentChannelCallback(binding, "ack_failed", "", message, err.Error())
-	}
-	output, detectedRuntimeSessionID, err := s.execAgentPrompt(ctx, binding.ProjectID, binding.AgentID, text, "")
+	stopIndicator := s.startIMProcessingIndicator(ctx, provider, resolved, message)
+	defer stopIndicator()
+	progress := newIMProgressReporter(ctx, provider, resolved, message, agentChannelReplySubject(binding.AgentID))
+	prompt := formatIMAgentPrompt(providerID, binding, resolved.Identity, message, text)
+	output, detectedRuntimeSessionID, err := s.execAgentPromptStream(ctx, binding.WorkspaceID, binding.ProjectID, binding.AgentID, prompt, lease.session.RuntimeSessionID, runtimeAPIURL, func(line string) {
+		progress.Observe(line)
+	})
 	if detectedRuntimeSessionID != "" {
 		lease.SetRuntimeSessionID(detectedRuntimeSessionID)
 	}
 	reply := extractAgentChatReply(output)
 	if err != nil {
 		lease.Fail(err.Error())
-		reply = "Agent run failed: " + err.Error()
+		reply = "### 处理失败\n\nAgent 运行失败，已记录到 Multigent 运行日志。\n\n**错误**：" + err.Error()
 		if cleaned := extractAgentChatReply(output); cleaned != "" {
 			reply += "\n\n" + cleaned
 		}
 	}
 	if strings.TrimSpace(reply) == "" {
-		reply = "已处理，但没有生成可展示的回复。"
+		reply = "Agent 已处理完成，但没有返回明确的最终文本。你可以继续补充问题，我会让它给出结论和下一步。"
 	}
 	reply = trimForIM(reply, 3500)
-	replyErr := s.replyToIMEvent(ctx, provider, resolved, message, reply)
+	state := "completed"
+	if err != nil {
+		state = "failed"
+	}
+	progressErr := progress.Finalize(state, reply)
+	finalReplyErr := s.replyMessageToIMEvent(ctx, provider, resolved, message, imbridge.OutgoingMessage{
+		Format:  "markdown",
+		Subject: agentChannelReplySubject(binding.AgentID),
+		Text:    reply,
+	})
+	replyErr := finalReplyErr
+	if replyErr == nil && progressErr != nil {
+		s.recordAgentChannelCallback(binding, "progress_card_failed", "", message, progressErr.Error())
+	}
 	if replyErr != nil {
 		s.recordAgentChannelCallback(binding, "reply_failed", "", message, replyErr.Error())
 	} else if err != nil {
@@ -820,16 +858,343 @@ func (s *Server) runAgentForIMEvent(provider imbridge.Provider, resolved resolve
 	})
 }
 
-func (s *Server) runAgentForInteractionCallback(provider imbridge.Provider, resolved resolvedChannelEventBinding, callback imbridge.IncomingInteractionCallback, request controldb.InteractionRequest, submissionJSON string) {
+func formatIMAgentPrompt(providerID string, binding controldb.AgentChannelBinding, identity controldb.ExternalIdentity, message imbridge.IncomingMessage, text string) string {
+	var b strings.Builder
+	b.WriteString("You received a message from a human through an external collaboration channel.\n")
+	b.WriteString("Handle it as a direct conversation with the user, using Multigent tools when useful.\n\n")
+	b.WriteString("Channel context:\n")
+	b.WriteString("- Provider: " + strings.TrimSpace(providerID) + "\n")
+	b.WriteString("- Agent: " + strings.TrimSpace(binding.ProjectID) + "/" + strings.TrimSpace(binding.AgentID) + "\n")
+	if username := strings.TrimSpace(identity.UserID); username != "" {
+		b.WriteString("- Multigent user: " + username + "\n")
+	}
+	if chatID := strings.TrimSpace(message.ChatID); chatID != "" {
+		b.WriteString("- Chat ID: " + chatID + "\n")
+	}
+	b.WriteString("\nReply contract:\n")
+	b.WriteString("- Always finish with a concise, human-facing final reply. Do not end silently after tool calls.\n")
+	b.WriteString("- Reply in the same language as the user's message unless the user asks otherwise.\n")
+	b.WriteString("- Prefer short Markdown: one conclusion first, then bullets for details or next steps.\n")
+	b.WriteString("- If you cannot complete the request, explain the blocker and the exact next action needed.\n")
+	b.WriteString("- If you sent a separate notification/card, still return a brief summary here so the user sees a complete response.\n\n")
+	b.WriteString("User message:\n")
+	b.WriteString("```text\n")
+	b.WriteString(strings.TrimSpace(text))
+	b.WriteString("\n```\n")
+	return b.String()
+}
+
+func agentChannelReplySubject(agentID string) string {
+	agentID = strings.TrimSpace(agentID)
+	if agentID == "" {
+		return "Multigent"
+	}
+	return "Multigent · " + agentID
+}
+
+func (s *Server) startIMProcessingIndicator(ctx context.Context, provider imbridge.Provider, resolved resolvedChannelEventBinding, message imbridge.IncomingMessage) func() {
+	reactionProvider, ok := provider.(imbridge.ReactionProvider)
+	if !ok {
+		return func() {}
+	}
+	reactionID, err := reactionProvider.AddReaction(ctx, resolved.SecretValues, message, "OK")
+	if err != nil || strings.TrimSpace(reactionID) == "" {
+		return func() {}
+	}
+	return func() {
+		stopCtx, cancel := context.WithTimeout(context.Background(), 10*time.Second)
+		defer cancel()
+		if err := reactionProvider.RemoveReaction(stopCtx, resolved.SecretValues, message, reactionID); err != nil {
+			log.Printf("[im:%s] remove processing reaction failed: %v", provider.Info().ID, err)
+		}
+	}
+}
+
+type imProgressReporter struct {
+	ctx        context.Context
+	provider   imbridge.Provider
+	resolved   resolvedChannelEventBinding
+	message    imbridge.IncomingMessage
+	title      string
+	started    bool
+	handle     any
+	reasoning  []imbridge.ProgressCardEntry
+	tools      []imbridge.ProgressCardEntry
+	lastUpdate time.Time
+	lastErr    error
+}
+
+func newIMProgressReporter(ctx context.Context, provider imbridge.Provider, resolved resolvedChannelEventBinding, message imbridge.IncomingMessage, title string) *imProgressReporter {
+	return &imProgressReporter{ctx: ctx, provider: provider, resolved: resolved, message: message, title: title}
+}
+
+func (r *imProgressReporter) Started() bool {
+	return r != nil && r.started
+}
+
+func (r *imProgressReporter) Observe(line string) {
+	if r == nil {
+		return
+	}
+	entries := parseIMProgressEntries(line)
+	if len(entries) == 0 {
+		return
+	}
+	for _, entry := range entries {
+		switch strings.ToLower(strings.TrimSpace(entry.Kind)) {
+		case "tool", "tool_use", "tool_result":
+			r.tools = append(r.tools, entry)
+		default:
+			r.reasoning = append(r.reasoning, entry)
+		}
+	}
+	r.update("running", "", false)
+}
+
+func (r *imProgressReporter) Finalize(state, final string) error {
+	if r == nil {
+		return nil
+	}
+	return r.update(state, final, true)
+}
+
+func (r *imProgressReporter) update(state, final string, force bool) error {
+	progressProvider, ok := r.provider.(imbridge.ProgressCardReplyProvider)
+	if !ok {
+		return fmt.Errorf("provider %s does not support progress cards", r.provider.Info().ID)
+	}
+	now := time.Now()
+	if !force && r.started && now.Sub(r.lastUpdate) < 1200*time.Millisecond {
+		return r.lastErr
+	}
+	card := imbridge.ProgressCard{
+		Title:     r.title,
+		State:     state,
+		Reasoning: r.reasoning,
+		Tools:     r.tools,
+		Final:     final,
+	}
+	if !r.started {
+		handle, err := progressProvider.StartProgressCardReply(r.ctx, r.resolved.SecretValues, r.message, card)
+		if err != nil {
+			r.lastErr = err
+			return err
+		}
+		r.handle = handle
+		r.started = true
+		r.lastUpdate = now
+		return nil
+	}
+	err := progressProvider.UpdateProgressCardReply(r.ctx, r.resolved.SecretValues, r.handle, card)
+	r.lastErr = err
+	if err == nil {
+		r.lastUpdate = now
+	}
+	return err
+}
+
+func parseIMProgressEntries(line string) []imbridge.ProgressCardEntry {
+	line = strings.TrimSpace(line)
+	if line == "" || !strings.HasPrefix(line, "{") {
+		return nil
+	}
+	var raw map[string]any
+	if json.Unmarshal([]byte(line), &raw) != nil {
+		return nil
+	}
+	typ, _ := raw["type"].(string)
+	switch typ {
+	case "assistant":
+		return parseAssistantProgress(raw)
+	case "human", "user":
+		return parseUserProgress(raw)
+	case "tool_call":
+		if tc, _ := raw["tool_call"].(map[string]any); tc != nil {
+			name, _ := tc["name"].(string)
+			if name == "" {
+				name, _ = tc["tool_name"].(string)
+			}
+			return []imbridge.ProgressCardEntry{{Kind: "tool_use", Title: firstNonEmpty(name, "Tool call"), Content: compactJSON(tc)}}
+		}
+	case "item.started", "item.completed":
+		if item, _ := raw["item"].(map[string]any); item != nil {
+			itemType, _ := item["type"].(string)
+			switch itemType {
+			case "agent_message":
+				text := stringValue(item["text"])
+				if strings.TrimSpace(text) != "" {
+					return []imbridge.ProgressCardEntry{{Kind: "thinking", Title: "Response", Content: trimForIM(text, 900)}}
+				}
+			case "tool_call":
+				name, _ := item["name"].(string)
+				return []imbridge.ProgressCardEntry{{Kind: "tool_use", Title: firstNonEmpty(name, "Tool call"), Content: compactJSON(item)}}
+			case "command_execution":
+				command := stringValue(item["command"])
+				status := stringValue(item["status"])
+				output := stringValue(item["aggregated_output"])
+				if typ == "item.started" || status == "in_progress" {
+					return []imbridge.ProgressCardEntry{{Kind: "tool_use", Title: "Shell", Content: trimForIM(command, 600), Status: "running"}}
+				}
+				exitCode := ""
+				if v, ok := item["exit_code"].(float64); ok {
+					exitCode = fmt.Sprintf("exit %.0f", v)
+				}
+				return []imbridge.ProgressCardEntry{{Kind: "tool_result", Title: "Shell result", Content: trimForIM(firstNonEmpty(output, exitCode, "completed"), 900), Status: codexToolStatus(item)}}
+			case "reasoning", "agent_reasoning":
+				text := stringValue(item["text"])
+				if strings.TrimSpace(text) != "" {
+					return []imbridge.ProgressCardEntry{{Kind: "thinking", Title: "Reasoning", Content: trimForIM(text, 900)}}
+				}
+			case "error":
+				msg, _ := item["message"].(string)
+				return []imbridge.ProgressCardEntry{{Kind: "error", Title: "Error", Content: msg, Status: "failed"}}
+			default:
+				if output := stringValue(item["output"]); strings.TrimSpace(output) != "" {
+					return []imbridge.ProgressCardEntry{{Kind: "tool_result", Title: firstNonEmpty(itemType, "Tool result"), Content: trimForIM(output, 900)}}
+				}
+			}
+		}
+	case "content":
+		if block, _ := raw["content_block"].(map[string]any); block != nil {
+			return parseContentBlockProgress(block)
+		}
+	case "thinking":
+		if text, _ := raw["text"].(string); text != "" {
+			return []imbridge.ProgressCardEntry{{Kind: "thinking", Title: "Thinking", Content: text}}
+		}
+	case "error":
+		if text := agentChatRawMessageText(jsonRaw(raw["message"])); text != "" {
+			return []imbridge.ProgressCardEntry{{Kind: "error", Title: "Error", Content: text, Status: "failed"}}
+		}
+	}
+	return nil
+}
+
+func codexToolStatus(item map[string]any) string {
+	if v, ok := item["exit_code"].(float64); ok && v != 0 {
+		return "failed"
+	}
+	status := strings.TrimSpace(stringValue(item["status"]))
+	if status != "" {
+		return status
+	}
+	return "completed"
+}
+
+func parseContentBlockProgress(block map[string]any) []imbridge.ProgressCardEntry {
+	blockType, _ := block["type"].(string)
+	switch blockType {
+	case "text":
+		text := stringValue(block["text"])
+		if strings.TrimSpace(text) != "" {
+			return []imbridge.ProgressCardEntry{{Kind: "thinking", Title: "Response", Content: trimForIM(text, 900)}}
+		}
+	case "thinking":
+		text := stringValue(block["thinking"])
+		if strings.TrimSpace(text) != "" {
+			return []imbridge.ProgressCardEntry{{Kind: "thinking", Title: "Reasoning", Content: trimForIM(text, 900)}}
+		}
+	case "tool_use":
+		name := stringValue(block["name"])
+		return []imbridge.ProgressCardEntry{{Kind: "tool_use", Title: firstNonEmpty(name, "Tool use"), Content: compactJSON(block), Status: "running"}}
+	case "tool_result":
+		content := firstNonEmpty(stringValue(block["content"]), stringValue(block["output"]))
+		status := "completed"
+		if isErr, _ := block["is_error"].(bool); isErr {
+			status = "failed"
+		}
+		return []imbridge.ProgressCardEntry{{Kind: "tool_result", Title: "Tool result", Content: trimForIM(content, 900), Status: status}}
+	}
+	return nil
+}
+
+func parseAssistantProgress(raw map[string]any) []imbridge.ProgressCardEntry {
+	msg, _ := raw["message"].(map[string]any)
+	content, _ := msg["content"].([]any)
+	if len(content) == 0 {
+		content, _ = raw["content"].([]any)
+	}
+	var out []imbridge.ProgressCardEntry
+	for _, blockAny := range content {
+		block, _ := blockAny.(map[string]any)
+		if block == nil {
+			continue
+		}
+		blockType, _ := block["type"].(string)
+		switch blockType {
+		case "text":
+			text, _ := block["text"].(string)
+			if strings.TrimSpace(text) != "" {
+				out = append(out, imbridge.ProgressCardEntry{Kind: "thinking", Title: "Reasoning", Content: trimForIM(text, 600)})
+			}
+		case "thinking":
+			text := stringValue(block["thinking"])
+			if strings.TrimSpace(text) != "" {
+				out = append(out, imbridge.ProgressCardEntry{Kind: "thinking", Title: "Reasoning", Content: trimForIM(text, 900)})
+			}
+		case "tool_use":
+			name, _ := block["name"].(string)
+			out = append(out, imbridge.ProgressCardEntry{Kind: "tool_use", Title: firstNonEmpty(name, "Tool use"), Content: compactJSON(block)})
+		case "tool_result":
+			content := firstNonEmpty(stringValue(block["content"]), stringValue(block["output"]))
+			status := "completed"
+			if isErr, _ := block["is_error"].(bool); isErr {
+				status = "failed"
+			}
+			out = append(out, imbridge.ProgressCardEntry{Kind: "tool_result", Title: "Tool result", Content: trimForIM(content, 600), Status: status})
+		}
+	}
+	return out
+}
+
+func parseUserProgress(raw map[string]any) []imbridge.ProgressCardEntry {
+	msg, _ := raw["message"].(map[string]any)
+	content, _ := msg["content"].([]any)
+	if len(content) == 0 {
+		content, _ = raw["content"].([]any)
+	}
+	var out []imbridge.ProgressCardEntry
+	for _, blockAny := range content {
+		block, _ := blockAny.(map[string]any)
+		if block == nil {
+			continue
+		}
+		blockType := stringValue(block["type"])
+		if blockType != "tool_result" {
+			continue
+		}
+		content := firstNonEmpty(stringValue(block["content"]), stringValue(block["output"]))
+		if strings.TrimSpace(content) == "" {
+			continue
+		}
+		status := "completed"
+		if isErr, _ := block["is_error"].(bool); isErr {
+			status = "failed"
+		}
+		out = append(out, imbridge.ProgressCardEntry{Kind: "tool_result", Title: "Tool result", Content: trimForIM(content, 900), Status: status})
+	}
+	return out
+}
+
+func compactJSON(v any) string {
+	raw, err := json.Marshal(v)
+	if err != nil {
+		return ""
+	}
+	return trimForIM(string(raw), 600)
+}
+
+func jsonRaw(v any) json.RawMessage {
+	raw, _ := json.Marshal(v)
+	return raw
+}
+
+func (s *Server) runAgentForInteractionCallback(provider imbridge.Provider, resolved resolvedChannelEventBinding, callback imbridge.IncomingInteractionCallback, request controldb.InteractionRequest, submissionJSON string, runtimeAPIURL string) {
 	ctx, cancel := context.WithTimeout(context.Background(), 30*time.Minute)
 	defer cancel()
 	binding := resolved.Binding
 	providerID := provider.Info().ID
-	source := interaction.Source{
-		Kind:    providerID + "_callback",
-		ActorID: resolved.Identity.UserID,
-		Channel: callback.ChatID,
-	}
+	source := imConversationSource(providerID, resolved.Identity.UserID, callback.ChatID, "")
 	lease, err := s.acquireAgentInteractionLease(s.interactionAgentRef(binding.WorkspaceID, binding.ProjectID, binding.AgentID), source, "interactive_callback")
 	if err != nil {
 		log.Printf("[im:%s] acquire callback session failed for %s/%s: %v", providerID, binding.ProjectID, binding.AgentID, err)
@@ -853,7 +1218,7 @@ func (s *Server) runAgentForInteractionCallback(provider imbridge.Provider, reso
 	_ = s.createInteractionEvent(lease.session, "system", "", providerID, "run_started", "", map[string]any{
 		"interactionId": request.ID,
 	})
-	output, detectedRuntimeSessionID, err := s.execAgentPrompt(ctx, binding.ProjectID, binding.AgentID, prompt, "")
+	output, detectedRuntimeSessionID, err := s.execAgentPrompt(ctx, binding.WorkspaceID, binding.ProjectID, binding.AgentID, prompt, lease.session.RuntimeSessionID, runtimeAPIURL)
 	if detectedRuntimeSessionID != "" {
 		lease.SetRuntimeSessionID(detectedRuntimeSessionID)
 	}
@@ -1029,6 +1394,26 @@ func (s *Server) replyToIMEvent(ctx context.Context, provider imbridge.Provider,
 	return nil
 }
 
+func (s *Server) replyMessageToIMEvent(ctx context.Context, provider imbridge.Provider, resolved resolvedChannelEventBinding, message imbridge.IncomingMessage, reply imbridge.OutgoingMessage) error {
+	binding := resolved.Binding
+	if richProvider, ok := provider.(imbridge.RichReplyProvider); ok {
+		if err := richProvider.ReplyMessage(ctx, resolved.SecretValues, message, reply); err != nil {
+			log.Printf("[im:%s] rich reply failed for %s/%s: %v", provider.Info().ID, binding.ProjectID, binding.AgentID, err)
+			return err
+		}
+		return nil
+	}
+	text := reply.Text
+	if strings.TrimSpace(text) == "" && reply.Card != nil {
+		text = reply.Card.Body
+	}
+	if err := provider.ReplyText(ctx, resolved.SecretValues, message, text); err != nil {
+		log.Printf("[im:%s] reply failed for %s/%s: %v", provider.Info().ID, binding.ProjectID, binding.AgentID, err)
+		return err
+	}
+	return nil
+}
+
 func (s *Server) recordAgentChannelCallback(binding controldb.AgentChannelBinding, status, reason string, message imbridge.IncomingMessage, errorText string) {
 	now := time.Now().UTC().Format(time.RFC3339)
 	meta := map[string]any{}
@@ -1112,7 +1497,7 @@ func subtleConstantTimeEqual(a, b string) bool {
 	return diff == 0
 }
 
-func (s *Server) execAgentPrompt(ctx context.Context, project, agent, prompt, sessionID string) (string, string, error) {
+func (s *Server) execAgentPrompt(ctx context.Context, workspaceID, project, agent, prompt, sessionID, runtimeAPIURL string) (string, string, error) {
 	args := []string{"--dir", s.root, "exec", "--project", project, "--agent", agent, "--prompt", prompt, "--no-save-session"}
 	if strings.TrimSpace(sessionID) != "" {
 		args = append(args, "--session", strings.TrimSpace(sessionID))
@@ -1121,12 +1506,87 @@ func (s *Server) execAgentPrompt(ctx context.Context, project, agent, prompt, se
 	}
 	cmd := exec.CommandContext(ctx, s.sched.binPath, args...)
 	cmd.Dir = s.root
+	s.configureAgentExecEnv(cmd, workspaceID, project, agent, runtimeAPIURL)
 	var out bytes.Buffer
 	cmd.Stdout = &out
 	cmd.Stderr = &out
 	err := cmd.Run()
 	output := out.String()
 	return output, extractAgentChatSessionID(output), err
+}
+
+func (s *Server) execAgentPromptStream(ctx context.Context, workspaceID, project, agent, prompt, sessionID, runtimeAPIURL string, onLine func(string)) (string, string, error) {
+	args := []string{"--dir", s.root, "exec", "--project", project, "--agent", agent, "--prompt", prompt, "--no-save-session"}
+	if strings.TrimSpace(sessionID) != "" {
+		args = append(args, "--session", strings.TrimSpace(sessionID))
+	} else {
+		args = append(args, "--no-session")
+	}
+	cmd := exec.CommandContext(ctx, s.sched.binPath, args...)
+	cmd.Dir = s.root
+	s.configureAgentExecEnv(cmd, workspaceID, project, agent, runtimeAPIURL)
+	stdout, err := cmd.StdoutPipe()
+	if err != nil {
+		return "", "", err
+	}
+	stderr, err := cmd.StderrPipe()
+	if err != nil {
+		return "", "", err
+	}
+	if err := cmd.Start(); err != nil {
+		return "", "", err
+	}
+	lines := make(chan string, 64)
+	var wg sync.WaitGroup
+	scan := func(r io.Reader) {
+		defer wg.Done()
+		scanner := bufio.NewScanner(r)
+		scanner.Buffer(make([]byte, 0, 256*1024), 2*1024*1024)
+		for scanner.Scan() {
+			lines <- scanner.Text()
+		}
+	}
+	wg.Add(2)
+	go scan(stdout)
+	go scan(stderr)
+	go func() {
+		wg.Wait()
+		close(lines)
+	}()
+	var out bytes.Buffer
+	for line := range lines {
+		out.WriteString(line)
+		out.WriteByte('\n')
+		if onLine != nil {
+			onLine(line)
+		}
+	}
+	err = cmd.Wait()
+	output := out.String()
+	return output, extractAgentChatSessionID(output), err
+}
+
+func (s *Server) configureAgentExecEnv(cmd *exec.Cmd, workspaceID, project, agent, runtimeAPIURL string) {
+	if cmd == nil {
+		return
+	}
+	if strings.TrimSpace(runtimeAPIURL) == "" {
+		runtimeAPIURL = "http://127.0.0.1"
+	}
+	runID := "im-" + time.Now().UTC().Format("20060102-150405")
+	token := s.issueAgentRuntimeToken(runtimeAgentTokenPayload{
+		WorkspaceID:  workspaceID,
+		Project:      project,
+		Agent:        agent,
+		RunID:        runID,
+		Capabilities: defaultRuntimeCapabilities(),
+	}, 6*time.Hour)
+	cmd.Env = append(os.Environ(),
+		"MULTIGENT_API_URL="+strings.TrimRight(runtimeAPIURL, "/"),
+		"MULTIGENT_AGENT_TOKEN="+token,
+		"MULTIGENT_RUN_ID="+runID,
+		"MULTIGENT_WORKSPACE_ID="+workspaceID,
+	)
 }
 
 func trimForIM(s string, max int) string {

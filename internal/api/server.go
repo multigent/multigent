@@ -84,6 +84,7 @@ type Server struct {
 	msStore                *store.MilestoneStore
 	updateCheck            UpdateChecker
 	daemonStatus           DaemonStatusFunc
+	localRuntimeAPIURL     string
 	execMu                 sync.Mutex
 	execProcs              map[string]*execProcess // key = "project/agent"
 	interactions           *interaction.Manager
@@ -233,6 +234,22 @@ func (s *Server) SetUpdateChecker(fn UpdateChecker) { s.updateCheck = fn }
 
 // SetDaemonStatus sets the function used to get daemon status.
 func (s *Server) SetDaemonStatus(fn DaemonStatusFunc) { s.daemonStatus = fn }
+
+// SetLocalRuntimeAPIURL sets the loopback Runtime API URL for internally
+// initiated runs that do not have an HTTP request to infer the listen port from.
+func (s *Server) SetLocalRuntimeAPIURL(url string) {
+	s.localRuntimeAPIURL = strings.TrimRight(strings.TrimSpace(url), "/")
+}
+
+func (s *Server) runtimeAPIURLForInternalEvent() string {
+	if strings.TrimSpace(s.localRuntimeAPIURL) != "" {
+		return s.localRuntimeAPIURL
+	}
+	if env := strings.TrimSpace(os.Getenv("MULTIGENT_API_URL")); env != "" {
+		return strings.TrimRight(env, "/")
+	}
+	return "http://127.0.0.1"
+}
 
 // Shutdown stops all managed scheduler processes and the trigger poller.
 func (s *Server) Shutdown() {

@@ -37,37 +37,53 @@ func TestInteractionSessionsPersistActiveLockAndEvents(t *testing.T) {
 		SourceChannel: "chat",
 		ActorType:     "user",
 		ActorID:       "owner",
+	}); err != nil {
+		t.Fatalf("different active source should be allowed: %v", err)
+	}
+	if err := db.CreateInteractionSession(InteractionSession{
+		ID:            "sess-same-source",
+		WorkspaceID:   "ws-one",
+		ProjectID:     "project",
+		AgentID:       "pm",
+		SourceKind:    "web_chat",
+		SourceChannel: "web",
+		ActorType:     "user",
+		ActorID:       "owner",
 	}); err == nil {
-		t.Fatalf("second active session should violate unique active lock")
+		t.Fatalf("same active source should violate unique active lock")
 	}
 	active, ok, err := db.ActiveInteractionSession("ws-one", "project", "pm")
-	if err != nil || !ok || active.ID != "sess-one" {
+	if err != nil || !ok {
 		t.Fatalf("active ok=%v err=%v session=%#v", ok, err, active)
+	}
+	active, ok, err = db.ActiveInteractionSessionForSource("ws-one", "project", "pm", "web_chat", "web", "owner")
+	if err != nil || !ok || active.ID != "sess-one" {
+		t.Fatalf("active source ok=%v err=%v session=%#v", ok, err, active)
 	}
 	active.Status = "completed"
 	active.CompletedAt = nowUTC()
 	if err := db.UpdateInteractionSession(active); err != nil {
 		t.Fatalf("complete first: %v", err)
 	}
-	if _, ok, err := db.ActiveInteractionSession("ws-one", "project", "pm"); err != nil || ok {
-		t.Fatalf("active after complete ok=%v err=%v", ok, err)
+	if _, ok, err := db.ActiveInteractionSessionForSource("ws-one", "project", "pm", "web_chat", "web", "owner"); err != nil || ok {
+		t.Fatalf("active source after complete ok=%v err=%v", ok, err)
 	}
 	if err := db.CreateInteractionSession(InteractionSession{
-		ID:            "sess-two",
+		ID:            "sess-three",
 		WorkspaceID:   "ws-one",
 		ProjectID:     "project",
 		AgentID:       "pm",
-		SourceKind:    "lark",
-		SourceChannel: "chat",
+		SourceKind:    "web_chat",
+		SourceChannel: "web",
 		ActorType:     "user",
 		ActorID:       "owner",
 	}); err != nil {
-		t.Fatalf("create second after complete: %v", err)
+		t.Fatalf("create same source after complete: %v", err)
 	}
 
 	if err := db.CreateInteractionEvent(InteractionEvent{
 		ID:          "evt-one",
-		SessionID:   "sess-two",
+		SessionID:   "sess-three",
 		WorkspaceID: "ws-one",
 		ActorType:   "user",
 		ActorID:     "owner",
@@ -77,7 +93,7 @@ func TestInteractionSessionsPersistActiveLockAndEvents(t *testing.T) {
 	}); err != nil {
 		t.Fatalf("create event: %v", err)
 	}
-	events, err := db.ListInteractionEvents(InteractionEventFilter{WorkspaceID: "ws-one", SessionID: "sess-two"})
+	events, err := db.ListInteractionEvents(InteractionEventFilter{WorkspaceID: "ws-one", SessionID: "sess-three"})
 	if err != nil {
 		t.Fatalf("list events: %v", err)
 	}

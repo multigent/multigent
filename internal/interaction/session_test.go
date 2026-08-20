@@ -5,20 +5,26 @@ import (
 	"testing"
 )
 
-func TestManagerAllowsOneActiveSessionPerAgent(t *testing.T) {
+func TestManagerAllowsOneActiveSessionPerConversationSource(t *testing.T) {
 	m := NewManager()
 	m.nextIDFn = func() string { return "sess-one" }
 	agent := AgentRef{WorkspaceID: "ws", ProjectID: "project", AgentID: "pm"}
+	source := Source{Kind: "web_chat", ActorID: "owner", Channel: "web"}
 
-	session, lease, err := m.Acquire(agent, Source{Kind: "web_chat", ActorID: "owner"}, "interactive")
+	session, lease, err := m.Acquire(agent, source, "interactive")
 	if err != nil {
 		t.Fatalf("acquire: %v", err)
 	}
 	if session.ID != "sess-one" || session.Source.Kind != "web_chat" {
 		t.Fatalf("session=%#v", session)
 	}
-	if _, _, err := m.Acquire(agent, Source{Kind: "lark", ActorID: "ou_one"}, "interactive"); !errors.Is(err, ErrAgentLocked) {
-		t.Fatalf("second acquire err=%v", err)
+	if _, _, err := m.Acquire(agent, source, "interactive"); !errors.Is(err, ErrAgentLocked) {
+		t.Fatalf("same source acquire err=%v", err)
+	}
+	if _, second, err := m.Acquire(agent, Source{Kind: "lark", ActorID: "ou_one", Channel: "oc_one"}, "interactive"); err != nil {
+		t.Fatalf("different source should not conflict: %v", err)
+	} else {
+		second.Release()
 	}
 	lease.Release()
 	if _, _, err := m.Acquire(agent, Source{Kind: "lark", ActorID: "ou_one"}, "interactive"); err != nil {

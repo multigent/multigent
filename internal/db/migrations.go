@@ -267,7 +267,8 @@ func (db *SQLiteStore) migrate() error {
 	completed_at TEXT NOT NULL DEFAULT ''
 )`,
 		`CREATE INDEX IF NOT EXISTS idx_interactive_sessions_agent ON interactive_sessions(workspace_id, project_id, agent_id, status)`,
-		`CREATE UNIQUE INDEX IF NOT EXISTS idx_interactive_sessions_one_active_agent ON interactive_sessions(workspace_id, project_id, agent_id) WHERE status IN ('active', 'waiting_input')`,
+		`DROP INDEX IF EXISTS idx_interactive_sessions_one_active_agent`,
+		`CREATE UNIQUE INDEX IF NOT EXISTS idx_interactive_sessions_one_active_source ON interactive_sessions(workspace_id, project_id, agent_id, source_kind, source_channel, actor_id) WHERE status IN ('active', 'waiting_input')`,
 		`CREATE TABLE IF NOT EXISTS interaction_events (
 	id TEXT PRIMARY KEY,
 	session_id TEXT NOT NULL REFERENCES interactive_sessions(id) ON DELETE CASCADE,

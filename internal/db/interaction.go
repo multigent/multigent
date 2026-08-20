@@ -65,6 +65,18 @@ ORDER BY updated_at DESC, created_at DESC LIMIT 1`, workspaceID, projectID, agen
 	return scanInteractionSessionFound(row)
 }
 
+func (db *SQLiteStore) ActiveInteractionSessionForSource(workspaceID, projectID, agentID, sourceKind, sourceChannel, actorID string) (InteractionSession, bool, error) {
+	row := db.sql.QueryRow(`SELECT id, workspace_id, project_id, agent_id, source_kind, source_channel,
+actor_type, actor_id, status, lock_reason, runtime_session_id, current_run_id, human_intervened,
+metadata_json, created_at, updated_at, last_activity_at, completed_at
+FROM interactive_sessions
+WHERE workspace_id = ? AND project_id = ? AND agent_id = ?
+  AND source_kind = ? AND source_channel = ? AND actor_id = ?
+  AND status IN ('active', 'waiting_input')
+ORDER BY updated_at DESC, created_at DESC LIMIT 1`, strings.TrimSpace(workspaceID), strings.TrimSpace(projectID), strings.TrimSpace(agentID), strings.TrimSpace(sourceKind), strings.TrimSpace(sourceChannel), strings.TrimSpace(actorID))
+	return scanInteractionSessionFound(row)
+}
+
 func (db *SQLiteStore) InteractionSessionByID(id string) (InteractionSession, bool, error) {
 	row := db.sql.QueryRow(`SELECT id, workspace_id, project_id, agent_id, source_kind, source_channel,
 actor_type, actor_id, status, lock_reason, runtime_session_id, current_run_id, human_intervened,
@@ -95,9 +107,24 @@ FROM interactive_sessions WHERE 1=1`
 		query += ` AND agent_id = ?`
 		args = append(args, strings.TrimSpace(filter.AgentID))
 	}
+	if strings.TrimSpace(filter.SourceKind) != "" {
+		query += ` AND source_kind = ?`
+		args = append(args, strings.TrimSpace(filter.SourceKind))
+	}
+	if strings.TrimSpace(filter.SourceChannel) != "" {
+		query += ` AND source_channel = ?`
+		args = append(args, strings.TrimSpace(filter.SourceChannel))
+	}
+	if strings.TrimSpace(filter.ActorID) != "" {
+		query += ` AND actor_id = ?`
+		args = append(args, strings.TrimSpace(filter.ActorID))
+	}
 	if strings.TrimSpace(filter.Status) != "" {
 		query += ` AND status = ?`
 		args = append(args, strings.TrimSpace(filter.Status))
+	}
+	if filter.RuntimeSession {
+		query += ` AND runtime_session_id != ''`
 	}
 	query += ` ORDER BY updated_at DESC, created_at DESC LIMIT ?`
 	args = append(args, limit)

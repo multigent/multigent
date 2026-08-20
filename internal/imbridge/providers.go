@@ -101,6 +101,21 @@ type InteractiveCardLink struct {
 	URL   string
 }
 
+type ProgressCardEntry struct {
+	Kind    string
+	Title   string
+	Content string
+	Status  string
+}
+
+type ProgressCard struct {
+	Title     string
+	State     string
+	Reasoning []ProgressCardEntry
+	Tools     []ProgressCardEntry
+	Final     string
+}
+
 type IncomingInteractionCallback struct {
 	InteractionID string
 	MessageID     string
@@ -137,6 +152,20 @@ type Provider interface {
 	ReplyText(ctx context.Context, secrets map[string]string, message IncomingMessage, text string) error
 	SendText(ctx context.Context, secrets map[string]string, target OutgoingTarget, text string) error
 	SendMessage(ctx context.Context, secrets map[string]string, target OutgoingTarget, message OutgoingMessage) error
+}
+
+type RichReplyProvider interface {
+	ReplyMessage(ctx context.Context, secrets map[string]string, message IncomingMessage, reply OutgoingMessage) error
+}
+
+type ReactionProvider interface {
+	AddReaction(ctx context.Context, secrets map[string]string, message IncomingMessage, emoji string) (string, error)
+	RemoveReaction(ctx context.Context, secrets map[string]string, message IncomingMessage, reactionID string) error
+}
+
+type ProgressCardReplyProvider interface {
+	StartProgressCardReply(ctx context.Context, secrets map[string]string, message IncomingMessage, card ProgressCard) (any, error)
+	UpdateProgressCardReply(ctx context.Context, secrets map[string]string, handle any, card ProgressCard) error
 }
 
 type InteractionCardUpdater interface {
@@ -278,6 +307,77 @@ func (p larkFamilyProvider) ReplyText(ctx context.Context, secrets map[string]st
 	return client.ReplyText(ctx, message.MessageID, text)
 }
 
+func (p larkFamilyProvider) ReplyMessage(ctx context.Context, secrets map[string]string, message IncomingMessage, reply OutgoingMessage) error {
+	client := larkbridge.OpenAPIClient{
+		BaseURL:   secrets["baseUrl"],
+		AppID:     secrets["appId"],
+		AppSecret: secrets["appSecret"],
+	}
+	if reply.Card != nil {
+		return client.ReplyInteractiveCard(ctx, message.MessageID, larkbridge.InteractiveCard{
+			InteractionID: reply.Card.InteractionID,
+			Title:         reply.Card.Title,
+			Body:          reply.Card.Body,
+			Fields:        larkCardFields(reply.Card.Fields),
+			Actions:       larkCardActions(reply.Card.Actions),
+			Links:         larkCardLinks(reply.Card.Links),
+		})
+	}
+	if strings.EqualFold(strings.TrimSpace(reply.Format), "markdown") {
+		return client.ReplyMarkdown(ctx, message.MessageID, reply.Subject, reply.Text)
+	}
+	return client.ReplyText(ctx, message.MessageID, reply.Text)
+}
+
+func (p larkFamilyProvider) AddReaction(ctx context.Context, secrets map[string]string, message IncomingMessage, emoji string) (string, error) {
+	client := larkbridge.OpenAPIClient{
+		BaseURL:   secrets["baseUrl"],
+		AppID:     secrets["appId"],
+		AppSecret: secrets["appSecret"],
+	}
+	return client.AddReaction(ctx, message.MessageID, emoji)
+}
+
+func (p larkFamilyProvider) RemoveReaction(ctx context.Context, secrets map[string]string, message IncomingMessage, reactionID string) error {
+	client := larkbridge.OpenAPIClient{
+		BaseURL:   secrets["baseUrl"],
+		AppID:     secrets["appId"],
+		AppSecret: secrets["appSecret"],
+	}
+	return client.RemoveReaction(ctx, message.MessageID, reactionID)
+}
+
+func (p larkFamilyProvider) StartProgressCardReply(ctx context.Context, secrets map[string]string, message IncomingMessage, card ProgressCard) (any, error) {
+	client := larkbridge.OpenAPIClient{
+		BaseURL:   secrets["baseUrl"],
+		AppID:     secrets["appId"],
+		AppSecret: secrets["appSecret"],
+	}
+	return client.ReplyProgressCard(ctx, message.MessageID, larkbridge.ProgressCard{
+		Title:     card.Title,
+		State:     card.State,
+		Reasoning: larkProgressEntries(card.Reasoning),
+		Tools:     larkProgressEntries(card.Tools),
+		Final:     card.Final,
+	})
+}
+
+func (p larkFamilyProvider) UpdateProgressCardReply(ctx context.Context, secrets map[string]string, handle any, card ProgressCard) error {
+	messageID, _ := handle.(string)
+	client := larkbridge.OpenAPIClient{
+		BaseURL:   secrets["baseUrl"],
+		AppID:     secrets["appId"],
+		AppSecret: secrets["appSecret"],
+	}
+	return client.PatchProgressCard(ctx, messageID, larkbridge.ProgressCard{
+		Title:     card.Title,
+		State:     card.State,
+		Reasoning: larkProgressEntries(card.Reasoning),
+		Tools:     larkProgressEntries(card.Tools),
+		Final:     card.Final,
+	})
+}
+
 func (p larkFamilyProvider) SendText(ctx context.Context, secrets map[string]string, target OutgoingTarget, text string) error {
 	return p.SendMessage(ctx, secrets, target, OutgoingMessage{Format: "text", Text: text})
 }
@@ -349,6 +449,19 @@ func larkCardLinks(links []InteractiveCardLink) []larkbridge.InteractiveCardLink
 	out := make([]larkbridge.InteractiveCardLink, 0, len(links))
 	for _, link := range links {
 		out = append(out, larkbridge.InteractiveCardLink{Label: link.Label, URL: link.URL})
+	}
+	return out
+}
+
+func larkProgressEntries(entries []ProgressCardEntry) []larkbridge.ProgressCardEntry {
+	out := make([]larkbridge.ProgressCardEntry, 0, len(entries))
+	for _, entry := range entries {
+		out = append(out, larkbridge.ProgressCardEntry{
+			Kind:    entry.Kind,
+			Title:   entry.Title,
+			Content: entry.Content,
+			Status:  entry.Status,
+		})
 	}
 	return out
 }

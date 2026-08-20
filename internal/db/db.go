@@ -94,6 +94,7 @@ type Store interface {
 	CreateInteractionSession(session InteractionSession) error
 	UpdateInteractionSession(session InteractionSession) error
 	ActiveInteractionSession(workspaceID, projectID, agentID string) (InteractionSession, bool, error)
+	ActiveInteractionSessionForSource(workspaceID, projectID, agentID, sourceKind, sourceChannel, actorID string) (InteractionSession, bool, error)
 	InteractionSessionByID(id string) (InteractionSession, bool, error)
 	ListInteractionSessions(filter InteractionSessionFilter) ([]InteractionSession, error)
 	CreateInteractionEvent(event InteractionEvent) error
@@ -435,11 +436,15 @@ type InteractionSession struct {
 }
 
 type InteractionSessionFilter struct {
-	WorkspaceID string
-	ProjectID   string
-	AgentID     string
-	Status      string
-	Limit       int
+	WorkspaceID    string
+	ProjectID      string
+	AgentID        string
+	SourceKind     string
+	SourceChannel  string
+	ActorID        string
+	Status         string
+	RuntimeSession bool
+	Limit          int
 }
 
 type InteractionEvent struct {

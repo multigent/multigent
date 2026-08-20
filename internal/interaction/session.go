@@ -59,7 +59,7 @@ func (m *Manager) Acquire(agent AgentRef, source Source, reason string) (Session
 	if m == nil {
 		return Session{}, nil, fmt.Errorf("interaction manager is nil")
 	}
-	key := agentKey(agent)
+	key := sessionKey(agent, source)
 	if key == "" {
 		return Session{}, nil, fmt.Errorf("agent ref is required")
 	}
@@ -138,4 +138,18 @@ func agentKey(agent AgentRef) string {
 		return ""
 	}
 	return workspace + "/" + project + "/" + name
+}
+
+func sessionKey(agent AgentRef, source Source) string {
+	base := agentKey(agent)
+	if base == "" {
+		return ""
+	}
+	kind := strings.TrimSpace(source.Kind)
+	channel := strings.TrimSpace(source.Channel)
+	actor := strings.TrimSpace(source.ActorID)
+	if kind == "" && channel == "" && actor == "" {
+		return base
+	}
+	return base + "|" + kind + "|" + channel + "|" + actor
 }

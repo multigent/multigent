@@ -88,6 +88,7 @@ remote server. For local development with hot-reload, use
 			srv.SetVersion(version)
 			srv.SetUpdateChecker(GetCachedUpdateInfo)
 			srv.SetDaemonStatus(daemonStatusJSON)
+			srv.SetLocalRuntimeAPIURL(os.Getenv("MULTIGENT_API_URL"))
 
 			handler := newSPAHandler(srv.Handler())
 

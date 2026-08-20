@@ -135,7 +135,7 @@ func (s *Server) runAgentIMBridge(ctx context.Context, key string, cfg imBridgeC
 			if !ok {
 				return nil
 			}
-			result, err := s.acceptIMMessage(cfg.provider, cfg.appID, "", message)
+			result, err := s.acceptIMMessage(cfg.provider, cfg.appID, "", message, s.runtimeAPIURLForInternalEvent())
 			if err != nil {
 				log.Printf("[im:%s] websocket event failed app=%s message=%s: %v", providerID, cfg.appID, message.MessageID, err)
 				return nil
@@ -151,7 +151,7 @@ func (s *Server) runAgentIMBridge(ctx context.Context, key string, cfg imBridgeC
 			if !ok {
 				return &callback.CardActionTriggerResponse{}, nil
 			}
-			result, err := s.acceptIMInteractionCallback(cfg.provider, cfg.appID, "", interaction)
+			result, err := s.acceptIMInteractionCallback(cfg.provider, cfg.appID, "", interaction, s.runtimeAPIURLForInternalEvent())
 			if err != nil {
 				log.Printf("[im:%s] websocket card action failed app=%s interaction=%s: %v", providerID, cfg.appID, interaction.InteractionID, err)
 				return &callback.CardActionTriggerResponse{}, nil
@@ -222,7 +222,7 @@ func (s *Server) runTelegramIMBridge(ctx context.Context, key string, cfg imBrid
 			if err != nil || !parsed.IsMessage {
 				continue
 			}
-			result, err := s.acceptIMMessage(cfg.provider, cfg.appID, "", parsed.Message)
+			result, err := s.acceptIMMessage(cfg.provider, cfg.appID, "", parsed.Message, s.runtimeAPIURLForInternalEvent())
 			if err != nil {
 				log.Printf("[im:telegram] event failed key=%s message=%s: %v", key, parsed.Message.MessageID, err)
 				continue
@@ -331,7 +331,7 @@ func (s *Server) runDiscordGatewayOnce(ctx context.Context, key string, cfg imBr
 			if !ok {
 				continue
 			}
-			result, err := s.acceptIMMessage(cfg.provider, cfg.appID, "", message)
+			result, err := s.acceptIMMessage(cfg.provider, cfg.appID, "", message, s.runtimeAPIURLForInternalEvent())
 			if err != nil {
 				log.Printf("[im:discord] event failed key=%s message=%s: %v", key, message.MessageID, err)
 				continue

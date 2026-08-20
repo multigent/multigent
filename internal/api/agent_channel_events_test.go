@@ -758,11 +758,12 @@ func TestRecordAgentChannelCallbackPreservesMetadata(t *testing.T) {
 
 func TestAPIInteractionLeasePersistsRuntimeSessionID(t *testing.T) {
 	s, workspaceID := newConnectionGrantPolicyServer(t)
-	lease, err := s.acquireAgentInteractionLease(s.interactionAgentRef(workspaceID, "sample", "pm"), interaction.Source{
+	source := interaction.Source{
 		Kind:    "web_chat",
 		ActorID: "owner",
 		Channel: "web",
-	}, "interactive")
+	}
+	lease, err := s.acquireAgentInteractionLease(s.interactionAgentRef(workspaceID, "sample", "pm"), source, "interactive")
 	if err != nil {
 		t.Fatalf("acquire lease: %v", err)
 	}
@@ -775,6 +776,87 @@ func TestAPIInteractionLeasePersistsRuntimeSessionID(t *testing.T) {
 		t.Fatalf("runtime session id=%q", stored.RuntimeSessionID)
 	}
 	lease.Release()
+
+	next, err := s.acquireAgentInteractionLease(s.interactionAgentRef(workspaceID, "sample", "pm"), source, "interactive")
+	if err != nil {
+		t.Fatalf("reacquire lease: %v", err)
+	}
+	if next.session.RuntimeSessionID != "runtime-one" {
+		t.Fatalf("reused runtime session id=%q", next.session.RuntimeSessionID)
+	}
+	next.Release()
+}
+
+func TestAPIInteractionLeaseAllowsDifferentConversationSources(t *testing.T) {
+	s, workspaceID := newConnectionGrantPolicyServer(t)
+	agent := s.interactionAgentRef(workspaceID, "sample", "pm")
+	one, err := s.acquireAgentInteractionLease(agent, imConversationSource("lark", "alice", "oc_one", "p2p"), "interactive")
+	if err != nil {
+		t.Fatalf("first source: %v", err)
+	}
+	defer one.Release()
+	two, err := s.acquireAgentInteractionLease(agent, imConversationSource("lark", "bob", "oc_one", "p2p"), "interactive")
+	if err != nil {
+		t.Fatalf("second source should not conflict: %v", err)
+	}
+	defer two.Release()
+	if one.SessionID() == two.SessionID() {
+		t.Fatalf("different sources should get different interaction sessions")
+	}
+}
+
+func TestFormatIMAgentPromptRequiresHumanFacingReply(t *testing.T) {
+	prompt := formatIMAgentPrompt("lark", controldb.AgentChannelBinding{
+		ProjectID: "tapnow-agent-platform",
+		AgentID:   "nova",
+	}, controldb.ExternalIdentity{UserID: "admin"}, imbridge.IncomingMessage{ChatID: "oc_one"}, "帮我看一下当前任务")
+	for _, want := range []string{
+		"Always finish with a concise, human-facing final reply",
+		"Reply in the same language as the user's message",
+		"tapnow-agent-platform/nova",
+		"帮我看一下当前任务",
+	} {
+		if !strings.Contains(prompt, want) {
+			t.Fatalf("prompt missing %q:\n%s", want, prompt)
+		}
+	}
+}
+
+func TestParseIMProgressEntriesCodexCommandAndMessage(t *testing.T) {
+	start := parseIMProgressEntries(`{"type":"item.started","item":{"type":"command_execution","command":"pwd","status":"in_progress"}}`)
+	if len(start) != 1 || start[0].Kind != "tool_use" || start[0].Title != "Shell" || !strings.Contains(start[0].Content, "pwd") {
+		t.Fatalf("unexpected command start entries: %#v", start)
+	}
+	done := parseIMProgressEntries(`{"type":"item.completed","item":{"type":"command_execution","command":"pwd","aggregated_output":"/workspace\n","exit_code":0,"status":"completed"}}`)
+	if len(done) != 1 || done[0].Kind != "tool_result" || !strings.Contains(done[0].Content, "/workspace") {
+		t.Fatalf("unexpected command done entries: %#v", done)
+	}
+	msg := parseIMProgressEntries(`{"type":"item.completed","item":{"type":"agent_message","text":"结论：可以继续。"}}`)
+	if len(msg) != 1 || msg[0].Kind != "thinking" || !strings.Contains(msg[0].Content, "可以继续") {
+		t.Fatalf("unexpected agent message entries: %#v", msg)
+	}
+}
+
+func TestParseIMProgressEntriesClaudeContentBlocks(t *testing.T) {
+	tool := parseIMProgressEntries(`{"type":"content","content_block":{"type":"tool_use","name":"Bash","input":{"command":"pwd"}}}`)
+	if len(tool) != 1 || tool[0].Kind != "tool_use" || tool[0].Title != "Bash" {
+		t.Fatalf("unexpected tool entry: %#v", tool)
+	}
+	text := parseIMProgressEntries(`{"type":"content","content_block":{"type":"text","text":"已经检查完成。"}}`)
+	if len(text) != 1 || text[0].Kind != "thinking" || !strings.Contains(text[0].Content, "检查完成") {
+		t.Fatalf("unexpected text entry: %#v", text)
+	}
+}
+
+func TestParseIMProgressEntriesClaudeThinkingAndToolResult(t *testing.T) {
+	thinking := parseIMProgressEntries(`{"type":"assistant","message":{"content":[{"type":"thinking","thinking":"I will inspect the workspace."}]}}`)
+	if len(thinking) != 1 || thinking[0].Kind != "thinking" || !strings.Contains(thinking[0].Content, "inspect") {
+		t.Fatalf("unexpected thinking entry: %#v", thinking)
+	}
+	result := parseIMProgressEntries(`{"type":"user","message":{"content":[{"tool_use_id":"call_one","type":"tool_result","content":"/workspace\nCLAUDE.md","is_error":false}]}}`)
+	if len(result) != 1 || result[0].Kind != "tool_result" || !strings.Contains(result[0].Content, "CLAUDE.md") {
+		t.Fatalf("unexpected tool result entry: %#v", result)
+	}
 }
 
 func encryptLarkEventForAPITest(t *testing.T, plaintext []byte, encryptKey string) string {

@@ -144,6 +144,25 @@ func TestExtractAgentChatReplyFallsBackToAssistantText(t *testing.T) {
 	}
 }
 
+func TestExtractAgentChatReplyFromCodexAgentMessage(t *testing.T) {
+	output := strings.Join([]string{
+		`{"type":"item.started","item":{"type":"command_execution","command":"pwd","status":"in_progress"}}`,
+		`{"type":"item.completed","item":{"type":"agent_message","text":"结论：nova 可以正常响应。"}}`,
+	}, "\n")
+	if got := extractAgentChatReply(output); got != "结论：nova 可以正常响应。" {
+		t.Fatalf("extractAgentChatReply() = %q", got)
+	}
+}
+
+func TestExtractAgentChatReplyFromContentBlock(t *testing.T) {
+	output := strings.Join([]string{
+		`{"type":"content","content_block":{"type":"text","text":"已经处理完成。"}}`,
+	}, "\n")
+	if got := extractAgentChatReply(output); got != "已经处理完成。" {
+		t.Fatalf("extractAgentChatReply() = %q", got)
+	}
+}
+
 func TestLocalRuntimeAPIURLForRequestUsesLoopbackPort(t *testing.T) {
 	req, err := http.NewRequest(http.MethodPost, "http://35.243.103.114:27892/api/v1/projects/p/agents/a/chat", nil)
 	if err != nil {

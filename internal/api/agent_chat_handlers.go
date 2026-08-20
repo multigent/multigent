@@ -1260,6 +1260,14 @@ func extractAgentChatReply(output string) string {
 			Type    string `json:"type"`
 			IsError bool   `json:"is_error"`
 			Result  string `json:"result"`
+			Item    struct {
+				Type string `json:"type"`
+				Text string `json:"text"`
+			} `json:"item"`
+			ContentBlock struct {
+				Type string `json:"type"`
+				Text string `json:"text"`
+			} `json:"content_block"`
 			Message struct {
 				Content []struct {
 					Type string `json:"type"`
@@ -1289,6 +1297,12 @@ func extractAgentChatReply(output string) string {
 					assistantParts = append(assistantParts, strings.TrimSpace(block.Text))
 				}
 			}
+		}
+		if ev.Type == "item.completed" && ev.Item.Type == "agent_message" && strings.TrimSpace(ev.Item.Text) != "" {
+			assistantParts = append(assistantParts, strings.TrimSpace(ev.Item.Text))
+		}
+		if ev.Type == "content" && ev.ContentBlock.Type == "text" && strings.TrimSpace(ev.ContentBlock.Text) != "" {
+			assistantParts = append(assistantParts, strings.TrimSpace(ev.ContentBlock.Text))
 		}
 	}
 	if result != "" {

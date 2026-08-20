@@ -44,6 +44,21 @@ type InteractiveCardLink struct {
 	URL   string
 }
 
+type ProgressCardEntry struct {
+	Kind    string
+	Title   string
+	Content string
+	Status  string
+}
+
+type ProgressCard struct {
+	Title     string
+	State     string
+	Reasoning []ProgressCardEntry
+	Tools     []ProgressCardEntry
+	Final     string
+}
+
 func (c OpenAPIClient) ReplyText(ctx context.Context, messageID, text string) error {
 	messageID = strings.TrimSpace(messageID)
 	text = strings.TrimSpace(text)
@@ -82,6 +97,221 @@ func (c OpenAPIClient) ReplyText(ctx context.Context, messageID, text string) er
 	}
 	if json.Unmarshal(raw, &parsed) == nil && parsed.Code != 0 {
 		return fmt.Errorf("reply message failed: code=%d msg=%s", parsed.Code, parsed.Msg)
+	}
+	return nil
+}
+
+func (c OpenAPIClient) AddReaction(ctx context.Context, messageID, emoji string) (string, error) {
+	messageID = strings.TrimSpace(messageID)
+	emoji = strings.TrimSpace(emoji)
+	if messageID == "" {
+		return "", fmt.Errorf("message id is required")
+	}
+	if emoji == "" {
+		emoji = "OK"
+	}
+	token, err := c.tenantAccessToken(ctx)
+	if err != nil {
+		return "", err
+	}
+	body, _ := json.Marshal(map[string]any{
+		"reaction_type": map[string]string{"emoji_type": emoji},
+	})
+	req, err := http.NewRequestWithContext(ctx, http.MethodPost, strings.TrimRight(c.openBaseURL(), "/")+"/open-apis/im/v1/messages/"+messageID+"/reactions", bytes.NewReader(body))
+	if err != nil {
+		return "", err
+	}
+	req.Header.Set("Content-Type", "application/json")
+	req.Header.Set("Authorization", "Bearer "+token)
+	resp, err := c.httpClient().Do(req)
+	if err != nil {
+		return "", err
+	}
+	defer resp.Body.Close()
+	raw, _ := io.ReadAll(io.LimitReader(resp.Body, 1<<20))
+	if resp.StatusCode < 200 || resp.StatusCode >= 300 {
+		return "", fmt.Errorf("add reaction http %d: %s", resp.StatusCode, string(raw))
+	}
+	var parsed struct {
+		Code int    `json:"code"`
+		Msg  string `json:"msg"`
+		Data struct {
+			ReactionID string `json:"reaction_id"`
+			Reaction   struct {
+				ReactionID string `json:"reaction_id"`
+			} `json:"reaction"`
+		} `json:"data"`
+	}
+	if json.Unmarshal(raw, &parsed) == nil {
+		if parsed.Code != 0 {
+			return "", fmt.Errorf("add reaction failed: code=%d msg=%s", parsed.Code, parsed.Msg)
+		}
+		if parsed.Data.ReactionID != "" {
+			return parsed.Data.ReactionID, nil
+		}
+		return parsed.Data.Reaction.ReactionID, nil
+	}
+	return "", nil
+}
+
+func (c OpenAPIClient) RemoveReaction(ctx context.Context, messageID, reactionID string) error {
+	messageID = strings.TrimSpace(messageID)
+	reactionID = strings.TrimSpace(reactionID)
+	if messageID == "" || reactionID == "" {
+		return nil
+	}
+	token, err := c.tenantAccessToken(ctx)
+	if err != nil {
+		return err
+	}
+	req, err := http.NewRequestWithContext(ctx, http.MethodDelete, strings.TrimRight(c.openBaseURL(), "/")+"/open-apis/im/v1/messages/"+messageID+"/reactions/"+reactionID, nil)
+	if err != nil {
+		return err
+	}
+	req.Header.Set("Authorization", "Bearer "+token)
+	resp, err := c.httpClient().Do(req)
+	if err != nil {
+		return err
+	}
+	defer resp.Body.Close()
+	raw, _ := io.ReadAll(io.LimitReader(resp.Body, 1<<20))
+	if resp.StatusCode < 200 || resp.StatusCode >= 300 {
+		return fmt.Errorf("remove reaction http %d: %s", resp.StatusCode, string(raw))
+	}
+	var parsed struct {
+		Code int    `json:"code"`
+		Msg  string `json:"msg"`
+	}
+	if json.Unmarshal(raw, &parsed) == nil && parsed.Code != 0 {
+		return fmt.Errorf("remove reaction failed: code=%d msg=%s", parsed.Code, parsed.Msg)
+	}
+	return nil
+}
+
+func (c OpenAPIClient) ReplyMarkdown(ctx context.Context, messageID, title, markdown string) error {
+	messageID = strings.TrimSpace(messageID)
+	title = strings.TrimSpace(title)
+	markdown = strings.TrimSpace(markdown)
+	if messageID == "" {
+		return fmt.Errorf("message id is required")
+	}
+	if title == "" {
+		title = "Multigent"
+	}
+	if markdown == "" {
+		markdown = "(empty message)"
+	}
+	return c.replyRaw(ctx, messageID, "interactive", mustJSON(buildMarkdownCardBody(title, markdown)), "reply markdown message")
+}
+
+func (c OpenAPIClient) ReplyProgressCard(ctx context.Context, messageID string, card ProgressCard) (string, error) {
+	messageID = strings.TrimSpace(messageID)
+	if messageID == "" {
+		return "", fmt.Errorf("message id is required")
+	}
+	return c.replyRawWithMessageID(ctx, messageID, "interactive", mustJSON(buildProgressCardBody(card)), "reply progress card")
+}
+
+func (c OpenAPIClient) PatchProgressCard(ctx context.Context, messageID string, card ProgressCard) error {
+	messageID = strings.TrimSpace(messageID)
+	if messageID == "" {
+		return fmt.Errorf("message id is required")
+	}
+	return c.patchRaw(ctx, messageID, mustJSON(buildProgressCardBody(card)), "patch progress card")
+}
+
+func (c OpenAPIClient) ReplyInteractiveCard(ctx context.Context, messageID string, card InteractiveCard) error {
+	messageID = strings.TrimSpace(messageID)
+	if messageID == "" {
+		return fmt.Errorf("message id is required")
+	}
+	if strings.TrimSpace(card.Title) == "" {
+		card.Title = "Multigent"
+	}
+	if strings.TrimSpace(card.Body) == "" {
+		card.Body = "请选择一个操作。"
+	}
+	if strings.TrimSpace(card.InteractionID) == "" {
+		return fmt.Errorf("interaction id is required")
+	}
+	return c.replyRaw(ctx, messageID, "interactive", mustJSON(buildInteractiveCardBody(card, nil)), "reply interactive card")
+}
+
+func (c OpenAPIClient) replyRaw(ctx context.Context, messageID, msgType, content, op string) error {
+	_, err := c.replyRawWithMessageID(ctx, messageID, msgType, content, op)
+	return err
+}
+
+func (c OpenAPIClient) replyRawWithMessageID(ctx context.Context, messageID, msgType, content, op string) (string, error) {
+	token, err := c.tenantAccessToken(ctx)
+	if err != nil {
+		return "", err
+	}
+	body, _ := json.Marshal(map[string]string{
+		"msg_type": msgType,
+		"content":  content,
+	})
+	req, err := http.NewRequestWithContext(ctx, http.MethodPost, strings.TrimRight(c.openBaseURL(), "/")+"/open-apis/im/v1/messages/"+messageID+"/reply", bytes.NewReader(body))
+	if err != nil {
+		return "", err
+	}
+	req.Header.Set("Content-Type", "application/json")
+	req.Header.Set("Authorization", "Bearer "+token)
+	resp, err := c.httpClient().Do(req)
+	if err != nil {
+		return "", err
+	}
+	defer resp.Body.Close()
+	raw, _ := io.ReadAll(io.LimitReader(resp.Body, 1<<20))
+	if resp.StatusCode < 200 || resp.StatusCode >= 300 {
+		return "", fmt.Errorf("%s http %d: %s", op, resp.StatusCode, string(raw))
+	}
+	var parsed struct {
+		Code int    `json:"code"`
+		Msg  string `json:"msg"`
+		Data struct {
+			MessageID string `json:"message_id"`
+			Message   struct {
+				MessageID string `json:"message_id"`
+			} `json:"message"`
+		} `json:"data"`
+	}
+	if json.Unmarshal(raw, &parsed) == nil && parsed.Code != 0 {
+		return "", fmt.Errorf("%s failed: code=%d msg=%s", op, parsed.Code, parsed.Msg)
+	}
+	if parsed.Data.MessageID != "" {
+		return parsed.Data.MessageID, nil
+	}
+	return parsed.Data.Message.MessageID, nil
+}
+
+func (c OpenAPIClient) patchRaw(ctx context.Context, messageID, content, op string) error {
+	token, err := c.tenantAccessToken(ctx)
+	if err != nil {
+		return err
+	}
+	body, _ := json.Marshal(map[string]string{"content": content})
+	req, err := http.NewRequestWithContext(ctx, http.MethodPatch, strings.TrimRight(c.openBaseURL(), "/")+"/open-apis/im/v1/messages/"+messageID, bytes.NewReader(body))
+	if err != nil {
+		return err
+	}
+	req.Header.Set("Content-Type", "application/json")
+	req.Header.Set("Authorization", "Bearer "+token)
+	resp, err := c.httpClient().Do(req)
+	if err != nil {
+		return err
+	}
+	defer resp.Body.Close()
+	raw, _ := io.ReadAll(io.LimitReader(resp.Body, 1<<20))
+	if resp.StatusCode < 200 || resp.StatusCode >= 300 {
+		return fmt.Errorf("%s http %d: %s", op, resp.StatusCode, string(raw))
+	}
+	var parsed struct {
+		Code int    `json:"code"`
+		Msg  string `json:"msg"`
+	}
+	if json.Unmarshal(raw, &parsed) == nil && parsed.Code != 0 {
+		return fmt.Errorf("%s failed: code=%d msg=%s", op, parsed.Code, parsed.Msg)
 	}
 	return nil
 }
@@ -155,19 +385,10 @@ func (c OpenAPIClient) SendMarkdown(ctx context.Context, receiveIDType, receiveI
 	if err != nil {
 		return err
 	}
-	card := map[string]any{
-		"config": map[string]any{"wide_screen_mode": true},
-		"header": map[string]any{
-			"title": map[string]string{"tag": "plain_text", "content": title},
-		},
-		"elements": []map[string]any{
-			{"tag": "markdown", "content": markdown},
-		},
-	}
 	body, _ := json.Marshal(map[string]string{
 		"receive_id": receiveID,
 		"msg_type":   "interactive",
-		"content":    mustJSON(card),
+		"content":    mustJSON(buildMarkdownCardBody(title, markdown)),
 	})
 	u := strings.TrimRight(c.openBaseURL(), "/") + "/open-apis/im/v1/messages?receive_id_type=" + receiveIDType
 	req, err := http.NewRequestWithContext(ctx, http.MethodPost, u, bytes.NewReader(body))
@@ -193,6 +414,29 @@ func (c OpenAPIClient) SendMarkdown(ctx context.Context, receiveIDType, receiveI
 		return fmt.Errorf("send markdown message failed: code=%d msg=%s", parsed.Code, parsed.Msg)
 	}
 	return nil
+}
+
+func buildMarkdownCardBody(title, markdown string) map[string]any {
+	title = strings.TrimSpace(title)
+	if title == "" {
+		title = "Multigent"
+	}
+	markdown = strings.TrimSpace(markdown)
+	if markdown == "" {
+		markdown = "(empty message)"
+	}
+	return map[string]any{
+		"schema": "2.0",
+		"config": map[string]any{"wide_screen_mode": true},
+		"header": map[string]any{
+			"title": map[string]string{"tag": "plain_text", "content": title},
+		},
+		"body": map[string]any{
+			"elements": []map[string]any{
+				{"tag": "markdown", "content": markdown},
+			},
+		},
+	}
 }
 
 func (c OpenAPIClient) SendInteractiveCard(ctx context.Context, receiveIDType, receiveID string, card InteractiveCard) error {
@@ -396,6 +640,187 @@ func buildInteractiveCardBody(card InteractiveCard, openIDs []string) map[string
 		cardBody["open_ids"] = openIDs
 	}
 	return cardBody
+}
+
+func buildProgressCardBody(card ProgressCard) map[string]any {
+	title := strings.TrimSpace(card.Title)
+	if title == "" {
+		title = "Multigent"
+	}
+	state := strings.ToLower(strings.TrimSpace(card.State))
+	template := "blue"
+	switch state {
+	case "completed", "done", "success":
+		template = "green"
+	case "failed", "error":
+		template = "red"
+	case "running", "":
+		template = "blue"
+	default:
+		template = "grey"
+	}
+	running := state == "running" || state == ""
+	elements := make([]map[string]any, 0, 4)
+	showReasoningPlaceholder := running || len(card.Reasoning) > 0
+	if showReasoningPlaceholder {
+		elements = append(elements, progressPanel("Reasoning", len(card.Reasoning), shouldExpandReasoningPanel(state, card.Reasoning), progressEntryElements(card.Reasoning, "Thinking...")))
+	}
+	if len(card.Tools) > 0 {
+		elements = append(elements, progressPanel("Tools", len(card.Tools), running, progressEntryElements(card.Tools, "No tool calls yet")))
+	}
+	if running {
+		elements = append(elements, map[string]any{
+			"tag": "div",
+			"text": map[string]any{
+				"tag":        "plain_text",
+				"content":    "Running...",
+				"text_size":  "notation",
+				"text_color": "grey",
+			},
+		})
+	} else {
+		footer := "Progress card stopped. Full response is in the next message."
+		if strings.TrimSpace(card.Final) == "" {
+			footer = "Progress card stopped."
+		}
+		elements = append(elements, map[string]any{"tag": "hr"})
+		elements = append(elements, map[string]any{
+			"tag": "div",
+			"text": map[string]any{
+				"tag":        "plain_text",
+				"content":    footer,
+				"text_size":  "notation",
+				"text_color": "grey",
+			},
+		})
+	}
+	return map[string]any{
+		"schema": "2.0",
+		"config": map[string]any{"wide_screen_mode": true},
+		"header": map[string]any{
+			"template": template,
+			"title":    map[string]string{"tag": "plain_text", "content": title},
+		},
+		"body": map[string]any{
+			"elements": elements,
+		},
+	}
+}
+
+func shouldExpandReasoningPanel(state string, entries []ProgressCardEntry) bool {
+	if state != "" && state != "running" {
+		return false
+	}
+	const maxExpandedChars = 900
+	total := 0
+	for _, entry := range entries {
+		total += len([]rune(entry.Title)) + len([]rune(entry.Content))
+		if total > maxExpandedChars {
+			return false
+		}
+	}
+	return true
+}
+
+func progressPanel(label string, count int, expanded bool, elements []map[string]any) map[string]any {
+	title := label
+	if count > 0 {
+		title = fmt.Sprintf("%s (%d)", label, count)
+	}
+	return map[string]any{
+		"tag":              "collapsible_panel",
+		"expanded":         expanded,
+		"background_color": "grey",
+		"header": map[string]any{
+			"title": map[string]string{"tag": "plain_text", "content": title},
+		},
+		"elements": elements,
+	}
+}
+
+func progressEntryElements(entries []ProgressCardEntry, empty string) []map[string]any {
+	if len(entries) == 0 {
+		return []map[string]any{{
+			"tag": "div",
+			"text": map[string]any{
+				"tag":        "plain_text",
+				"content":    empty,
+				"text_size":  "notation",
+				"text_color": "grey",
+			},
+		}}
+	}
+	const maxEntries = 8
+	visible := entries
+	hidden := 0
+	if len(entries) > maxEntries {
+		hidden = len(entries) - maxEntries
+		visible = entries[hidden:]
+	}
+	out := make([]map[string]any, 0, len(visible)+1)
+	if hidden > 0 {
+		out = append(out, map[string]any{
+			"tag": "div",
+			"text": map[string]any{
+				"tag":        "plain_text",
+				"content":    fmt.Sprintf("... %d earlier steps hidden", hidden),
+				"text_size":  "notation",
+				"text_color": "grey",
+			},
+		})
+	}
+	for _, entry := range visible {
+		content := strings.TrimSpace(entry.Title)
+		if body := strings.TrimSpace(entry.Content); body != "" {
+			if content != "" {
+				content += "\n"
+			}
+			content += body
+		}
+		if status := strings.TrimSpace(entry.Status); status != "" {
+			if content != "" {
+				content += "\n"
+			}
+			content += "status: " + status
+		}
+		if content == "" {
+			continue
+		}
+		content = trimProgressEntryContent(content)
+		out = append(out, map[string]any{
+			"tag": "div",
+			"text": map[string]any{
+				"tag":        "plain_text",
+				"content":    content,
+				"text_size":  "notation",
+				"text_color": progressTextColor(entry),
+			},
+		})
+	}
+	if len(out) == 0 {
+		return progressEntryElements(nil, empty)
+	}
+	return out
+}
+
+func trimProgressEntryContent(content string) string {
+	content = strings.TrimSpace(content)
+	const maxRunes = 600
+	runes := []rune(content)
+	if len(runes) <= maxRunes {
+		return content
+	}
+	return string(runes[:maxRunes]) + "\n..."
+}
+
+func progressTextColor(entry ProgressCardEntry) string {
+	if strings.EqualFold(strings.TrimSpace(entry.Kind), "thinking") {
+		return "grey"
+	}
+	if strings.EqualFold(strings.TrimSpace(entry.Status), "failed") || strings.EqualFold(strings.TrimSpace(entry.Status), "error") {
+		return "red"
+	}
+	return "default"
 }
 
 func cardHeaderTemplate(title string) string {

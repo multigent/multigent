@@ -35,7 +35,7 @@ func (s *Server) acquireAgentInteraction(w http.ResponseWriter, agent interactio
 		return lease, true
 	}
 	if errors.Is(err, interaction.ErrAgentLocked) {
-		active, _, _ := s.controlDB.ActiveInteractionSession(agent.WorkspaceID, agent.ProjectID, agent.AgentID)
+		active, _, _ := s.controlDB.ActiveInteractionSessionForSource(agent.WorkspaceID, agent.ProjectID, agent.AgentID, source.Kind, source.Channel, source.ActorID)
 		s.jsonError(w, http.StatusConflict, fmt.Sprintf("agent is busy in %s session from %s", active.SourceKind, active.SourceChannel))
 		return nil, false
 	}
@@ -52,9 +52,10 @@ func (s *Server) acquireAgentInteractionLease(agent interaction.AgentRef, source
 		return nil, err
 	}
 	record := interactionSessionRecord(session, source)
+	record.RuntimeSessionID = s.latestRuntimeSessionForInteractionSource(agent, source)
 	if err := s.controlDB.CreateInteractionSession(record); err != nil {
 		lease.Release()
-		if active, found, lookupErr := s.controlDB.ActiveInteractionSession(agent.WorkspaceID, agent.ProjectID, agent.AgentID); lookupErr == nil && found {
+		if active, found, lookupErr := s.controlDB.ActiveInteractionSessionForSource(agent.WorkspaceID, agent.ProjectID, agent.AgentID, source.Kind, source.Channel, source.ActorID); lookupErr == nil && found {
 			syncInteractionSession(s.interactions, active)
 			return nil, interaction.ErrAgentLocked
 		}
@@ -161,6 +162,26 @@ func interactionSessionRecord(session interaction.Session, source interaction.So
 		UpdatedAt:      now,
 		LastActivityAt: now,
 	}
+}
+
+func (s *Server) latestRuntimeSessionForInteractionSource(agent interaction.AgentRef, source interaction.Source) string {
+	if s == nil || s.controlDB == nil {
+		return ""
+	}
+	sessions, err := s.controlDB.ListInteractionSessions(controldb.InteractionSessionFilter{
+		WorkspaceID:    agent.WorkspaceID,
+		ProjectID:      agent.ProjectID,
+		AgentID:        agent.AgentID,
+		SourceKind:     strings.TrimSpace(source.Kind),
+		SourceChannel:  strings.TrimSpace(source.Channel),
+		ActorID:        strings.TrimSpace(source.ActorID),
+		RuntimeSession: true,
+		Limit:          1,
+	})
+	if err != nil || len(sessions) == 0 {
+		return ""
+	}
+	return strings.TrimSpace(sessions[0].RuntimeSessionID)
 }
 
 func (s *Server) createInteractionEvent(session controldb.InteractionSession, actorType, actorID, channel, eventType, content string, metadata map[string]any) error {
