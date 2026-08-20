@@ -13,6 +13,7 @@ import (
 	"os/exec"
 	"path/filepath"
 	"sort"
+	"strconv"
 	"strings"
 	"sync"
 	"time"
@@ -430,6 +431,51 @@ func readFileTail(path string, maxBytes int64) ([]byte, bool, error) {
 	return data, true, err
 }
 
+func readFileWindowBefore(path, beforeCursor string, maxBytes int64) ([]byte, bool, string, bool, error) {
+	if maxBytes <= 0 {
+		return nil, false, "", false, nil
+	}
+	f, err := os.Open(path)
+	if err != nil {
+		return nil, false, "", false, err
+	}
+	defer f.Close()
+	stat, err := f.Stat()
+	if err != nil {
+		return nil, false, "", false, err
+	}
+	end := stat.Size()
+	if beforeCursor != "" {
+		if parsed, err := strconv.ParseInt(beforeCursor, 10, 64); err == nil && parsed > 0 && parsed < end {
+			end = parsed
+		}
+	}
+	start := end - maxBytes
+	if start < 0 {
+		start = 0
+	}
+	if _, err := f.Seek(start, io.SeekStart); err != nil {
+		return nil, false, "", false, err
+	}
+	data := make([]byte, end-start)
+	if _, err := io.ReadFull(f, data); err != nil && err != io.ErrUnexpectedEOF {
+		return nil, false, "", false, err
+	}
+	returnedStart := start
+	truncated := start > 0
+	if truncated {
+		dropped := dropPartialFirstLine(data)
+		returnedStart += int64(len(data) - len(dropped))
+		data = dropped
+	}
+	cursor := ""
+	hasMore := returnedStart > 0
+	if hasMore {
+		cursor = strconv.FormatInt(returnedStart, 10)
+	}
+	return data, truncated, cursor, hasMore, nil
+}
+
 func nativeAgentSessionFiles(agentDir, sessionID string) ([]string, error) {
 	agentDir = strings.TrimSpace(agentDir)
 	if agentDir == "" {
@@ -553,13 +599,16 @@ func (s *Server) handleAgentChatHistory(w http.ResponseWriter, r *http.Request) 
 	}
 
 	sessionID := strings.TrimSpace(r.URL.Query().Get("sessionId"))
+	beforeCursor := strings.TrimSpace(r.URL.Query().Get("before"))
 	resolvedSessionID := sessionID
 	content := ""
 	truncated := false
+	cursor := ""
+	hasMore := false
 	runs := []agentChatHistoryRun{}
 	if sessionID != "" {
 		var err error
-		content, runs, resolvedSessionID, truncated, err = s.readAgentSessionHistory(workspaceID, project, agent, sessionID)
+		content, runs, resolvedSessionID, truncated, cursor, hasMore, err = s.readAgentSessionHistory(workspaceID, project, agent, sessionID, beforeCursor)
 		if err != nil {
 			s.serverError(w, err)
 			return
@@ -571,6 +620,8 @@ func (s *Server) handleAgentChatHistory(w http.ResponseWriter, r *http.Request) 
 		"content":   content,
 		"runs":      runs,
 		"truncated": truncated,
+		"cursor":    cursor,
+		"hasMore":   hasMore,
 	})
 }
 
@@ -579,6 +630,8 @@ type historySegment struct {
 	status    string
 	logPath   string
 	data      []byte
+	cursor    string
+	hasMore   bool
 }
 
 const (
@@ -587,30 +640,34 @@ const (
 	agentChatHistoryMaxBytesPerRun = 160 * 1024
 )
 
-func (s *Server) readAgentSessionHistory(workspaceID, project, agent, sessionID string) (string, []agentChatHistoryRun, string, bool, error) {
+func (s *Server) readAgentSessionHistory(workspaceID, project, agent, sessionID, beforeCursor string) (string, []agentChatHistoryRun, string, bool, string, bool, error) {
 	segments := make([]historySegment, 0, agentChatHistoryMaxRuns)
 
 	telemetrySegments, resolvedFromTelemetry, err := s.readTelemetryAgentSessionHistory(project, agent, sessionID, agentChatHistoryMaxRuns)
 	if err != nil {
-		return "", nil, sessionID, false, err
+		return "", nil, sessionID, false, "", false, err
 	}
-	segments = append(segments, telemetrySegments...)
+	if beforeCursor == "" {
+		segments = append(segments, telemetrySegments...)
+	}
 	if sessionID == "" && resolvedFromTelemetry != "" {
 		sessionID = resolvedFromTelemetry
 	}
 
 	runtimeSegments, resolvedFromRuntime, err := s.readRuntimeNodeAgentSessionHistory(workspaceID, project, agent, sessionID, agentChatHistoryMaxRuns)
 	if err != nil {
-		return "", nil, sessionID, false, err
+		return "", nil, sessionID, false, "", false, err
 	}
-	segments = append(segments, runtimeSegments...)
+	if beforeCursor == "" {
+		segments = append(segments, runtimeSegments...)
+	}
 	if sessionID == "" && resolvedFromRuntime != "" {
 		sessionID = resolvedFromRuntime
 	}
 	if len(segments) == 0 && sessionID != "" {
-		nativeSegment, err := s.readNativeAgentSessionHistory(project, agent, sessionID)
+		nativeSegment, err := s.readNativeAgentSessionHistory(project, agent, sessionID, beforeCursor)
 		if err != nil {
-			return "", nil, sessionID, false, err
+			return "", nil, sessionID, false, "", false, err
 		}
 		if nativeSegment != nil {
 			segments = append(segments, *nativeSegment)
@@ -647,6 +704,8 @@ func (s *Server) readAgentSessionHistory(workspaceID, project, agent, sessionID 
 
 	var sb strings.Builder
 	outRuns := make([]agentChatHistoryRun, 0, len(selected))
+	cursor := ""
+	hasMore := false
 	for _, seg := range selected {
 		if sb.Len() > 0 {
 			sb.WriteString("\n\n")
@@ -657,13 +716,17 @@ func (s *Server) readAgentSessionHistory(workspaceID, project, agent, sessionID 
 			Status:    seg.status,
 			LogPath:   seg.logPath,
 		})
+		if seg.hasMore && seg.cursor != "" {
+			cursor = seg.cursor
+			hasMore = true
+		}
 	}
 	log.Printf("[chat-history] %s/%s: returning %d runs, resolvedSession=%q, totalBytes=%d, truncated=%v",
-		project, agent, len(outRuns), sessionID, sb.Len(), truncated)
-	return sb.String(), outRuns, sessionID, truncated, nil
+		project, agent, len(outRuns), sessionID, sb.Len(), truncated || hasMore)
+	return sb.String(), outRuns, sessionID, truncated || hasMore, cursor, hasMore, nil
 }
 
-func (s *Server) readNativeAgentSessionHistory(project, agent, sessionID string) (*historySegment, error) {
+func (s *Server) readNativeAgentSessionHistory(project, agent, sessionID, beforeCursor string) (*historySegment, error) {
 	if strings.TrimSpace(sessionID) == "" {
 		return nil, nil
 	}
@@ -676,7 +739,7 @@ func (s *Server) readNativeAgentSessionHistory(project, agent, sessionID string)
 	}
 	sort.Strings(matches)
 	path := matches[len(matches)-1]
-	data, truncated, err := readFileTail(path, agentChatHistoryMaxBytesPerRun)
+	data, truncated, cursor, hasMore, err := readFileWindowBefore(path, beforeCursor, agentChatHistoryMaxBytesPerRun)
 	if err != nil {
 		if os.IsNotExist(err) {
 			return nil, nil
@@ -686,8 +749,7 @@ func (s *Server) readNativeAgentSessionHistory(project, agent, sessionID string)
 	if strings.TrimSpace(string(data)) == "" {
 		return nil, nil
 	}
-	if truncated {
-		data = dropPartialFirstLine(data)
+	if truncated || hasMore {
 		data = append([]byte("=== earlier native session content truncated ===\n"), data...)
 	}
 	startedAt := time.Now().UTC()
@@ -699,6 +761,8 @@ func (s *Server) readNativeAgentSessionHistory(project, agent, sessionID string)
 		status:    "native",
 		logPath:   path,
 		data:      data,
+		cursor:    cursor,
+		hasMore:   hasMore,
 	}, nil
 }
 

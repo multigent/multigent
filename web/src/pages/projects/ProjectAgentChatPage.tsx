@@ -11,6 +11,8 @@ type HistoryResp = {
   sessionId?: string
   content?: string
   truncated?: boolean
+  cursor?: string
+  hasMore?: boolean
   runs?: Array<{ startedAt: string; status: string; logPath: string }>
 }
 
@@ -164,7 +166,10 @@ export default function ProjectAgentChatPage() {
   const [replyPending, setReplyPending] = useState(false)
   const [runNotice, setRunNotice] = useState<string | null>(null)
   const [historyLoading, setHistoryLoading] = useState(false)
+  const [olderHistoryLoading, setOlderHistoryLoading] = useState(false)
   const [historyTruncated, setHistoryTruncated] = useState(false)
+  const [historyCursor, setHistoryCursor] = useState('')
+  const [historyHasMore, setHistoryHasMore] = useState(false)
   const [error, setError] = useState<string | null>(null)
   const [runtimeReadiness, setRuntimeReadiness] = useState<RuntimeReadiness | null>(null)
   const [runtimeChecking, setRuntimeChecking] = useState(false)
@@ -185,6 +190,7 @@ export default function ProjectAgentChatPage() {
   const sessionIdRef = useRef(routeSessionId)
   const freshNextRef = useRef(false)
   const historyRequestRef = useRef(0)
+  const suppressNextAutoScrollRef = useRef(false)
   const initializedChatKeyRef = useRef('')
   const loadedHistoryKeyRef = useRef('')
   const replyPendingRef = useRef(false)
@@ -228,10 +234,14 @@ export default function ProjectAgentChatPage() {
     }, { replace: true })
   }, [setSearchParams])
 
-  const historyPath = useCallback((project: string | undefined, agent: string | undefined, sid: string) => {
+  const historyPath = useCallback((project: string | undefined, agent: string | undefined, sid: string, before?: string) => {
     if (!project || !agent) return null
     const base = `/api/v1/projects/${encodeURIComponent(project)}/agents/${encodeURIComponent(agent)}/chat/history`
-    return sid ? `${base}?sessionId=${encodeURIComponent(sid)}` : base
+    const qs = new URLSearchParams()
+    if (sid) qs.set('sessionId', sid)
+    if (before) qs.set('before', before)
+    const suffix = qs.toString()
+    return suffix ? `${base}?${suffix}` : base
   }, [])
 
   const readinessPath = useCallback((project: string | undefined, agent: string | undefined) => {
@@ -268,6 +278,8 @@ export default function ProjectAgentChatPage() {
       updateSessionId(data.sessionId ?? sid)
       setContent(data.content ?? '')
       setHistoryTruncated(Boolean(data.truncated))
+      setHistoryCursor(data.cursor ?? '')
+      setHistoryHasMore(Boolean(data.hasMore && data.cursor))
       loadedHistoryKeyRef.current = `${expectedKey}:${data.sessionId ?? sid}`
     } catch (e) {
       if (historyRequestRef.current !== requestId) return
@@ -278,6 +290,40 @@ export default function ProjectAgentChatPage() {
       if (activeChatKeyRef.current === expectedKey) setHistoryLoading(false)
     }
   }, [agentName, chatKey, historyPath, projectId, updateSessionId])
+
+  const loadOlderHistory = useCallback(async () => {
+    const sid = sessionIdRef.current
+    const cursor = historyCursor
+    if (!sid || !cursor || !historyHasMore || olderHistoryLoading || historyLoading || loading) return
+    const expectedKey = activeChatKeyRef.current
+    const path = historyPath(projectId, agentName, sid, cursor)
+    const scroller = scrollRef.current
+    const prevHeight = scroller?.scrollHeight ?? 0
+    const prevTop = scroller?.scrollTop ?? 0
+    if (!path) return
+    setOlderHistoryLoading(true)
+    try {
+      const data = await apiFetch<HistoryResp>(path)
+      if (activeChatKeyRef.current !== expectedKey) return
+      const older = data.content ?? ''
+      if (older.trim()) {
+        suppressNextAutoScrollRef.current = true
+        setContent((current) => current ? `${older}\n\n${current}` : older)
+      }
+      setHistoryTruncated(Boolean(data.truncated))
+      setHistoryCursor(data.cursor ?? '')
+      setHistoryHasMore(Boolean(data.hasMore && data.cursor))
+      window.requestAnimationFrame(() => {
+        const node = scrollRef.current
+        if (!node) return
+        node.scrollTop = node.scrollHeight - prevHeight + prevTop
+      })
+    } catch (e) {
+      if (activeChatKeyRef.current === expectedKey) setError(e instanceof Error ? e.message : String(e))
+    } finally {
+      if (activeChatKeyRef.current === expectedKey) setOlderHistoryLoading(false)
+    }
+  }, [agentName, historyCursor, historyHasMore, historyLoading, historyPath, loading, olderHistoryLoading, projectId])
 
   const loadSessionOptions = useCallback(async (project = projectId, agent = agentName, expectedKey = chatKey) => {
     if (!project || !agent) return
@@ -319,6 +365,8 @@ export default function ProjectAgentChatPage() {
     setRunNotice(null)
     setHistoryLoading(false)
     setHistoryTruncated(false)
+    setHistoryCursor('')
+    setHistoryHasMore(false)
     freshNextRef.current = false
     setFreshNext(false)
     setRuntimeReadiness(null)
@@ -357,6 +405,8 @@ export default function ProjectAgentChatPage() {
     }
     setRunNotice(null)
     setHistoryTruncated(false)
+    setHistoryCursor('')
+    setHistoryHasMore(false)
     loadedHistoryKeyRef.current = ''
     if (routeSessionId) {
       void loadHistory(routeSessionId, projectId, agentName, expectedKey)
@@ -386,9 +436,23 @@ export default function ProjectAgentChatPage() {
 
   useEffect(() => {
     requestAnimationFrame(() => {
+      if (suppressNextAutoScrollRef.current) {
+        suppressNextAutoScrollRef.current = false
+        return
+      }
       if (scrollRef.current) scrollRef.current.scrollTop = scrollRef.current.scrollHeight
     })
   }, [content, loading])
+
+  useEffect(() => {
+    const node = scrollRef.current
+    if (!node) return
+    const onScroll = () => {
+      if (node.scrollTop <= 32) void loadOlderHistory()
+    }
+    node.addEventListener('scroll', onScroll, { passive: true })
+    return () => node.removeEventListener('scroll', onScroll)
+  }, [loadOlderHistory])
 
   useEffect(() => {
     if (!draftKey) return
@@ -812,6 +876,19 @@ export default function ProjectAgentChatPage() {
           </div>
         ) : (
           <div className="space-y-4">
+            {(olderHistoryLoading || historyHasMore) && (
+              <div className="flex justify-center">
+                <button
+                  type="button"
+                  onClick={() => void loadOlderHistory()}
+                  disabled={olderHistoryLoading || !historyHasMore}
+                  className="inline-flex items-center gap-1.5 rounded-full border border-neutral-200 bg-white px-3 py-1 text-xs text-neutral-500 transition-colors hover:bg-neutral-50 disabled:cursor-default disabled:opacity-60 dark:border-zinc-700 dark:bg-zinc-900 dark:text-zinc-400 dark:hover:bg-zinc-800"
+                >
+                  {olderHistoryLoading && <RefreshCw className="size-3 animate-spin" />}
+                  {olderHistoryLoading ? t('agentChat.historyLoading') : t('agentChat.loadOlder', { defaultValue: '加载更早消息' })}
+                </button>
+              </div>
+            )}
             <ConversationLog content={content} mode="chat" user={userParticipant} assistant={assistantParticipant} animateLatest={loading} />
             {loading && replyPending && <AgentReplyLoading notice={runNotice} assistant={assistantParticipant} />}
           </div>
