@@ -52,6 +52,21 @@ func acquireCLIInteraction(root, project, agent, sourceKind, sourceChannel, acto
 	if session.LockReason == "" {
 		session.LockReason = "running_task"
 	}
+	if active, found, lookupErr := db.ActiveInteractionSession(workspaceID, session.ProjectID, session.AgentID); lookupErr == nil && found && strings.TrimSpace(active.LockReason) == "running_task" {
+		if shouldRecoverStaleCLIInteraction(active, sourceKind, reason) {
+			active.Status = "failed"
+			active.UpdatedAt = now
+			active.LastActivityAt = now
+			active.CompletedAt = now
+			_ = db.UpdateInteractionSession(active)
+		} else {
+			_ = db.Close()
+			return &cliInteractionLease{session: active}, true, nil
+		}
+	} else if lookupErr != nil {
+		_ = db.Close()
+		return nil, false, lookupErr
+	}
 	if err := db.CreateInteractionSession(session); err != nil {
 		if active, found, lookupErr := db.ActiveInteractionSession(workspaceID, project, agent); lookupErr == nil && found {
 			if shouldRecoverStaleCLIInteraction(active, sourceKind, reason) {
