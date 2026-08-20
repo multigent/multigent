@@ -454,6 +454,7 @@ func readFileWindowBefore(path, beforeCursor string, maxBytes int64) ([]byte, bo
 	var data []byte
 	var returnedStart int64
 	var truncated bool
+	var firstLineOffset int64 = -1
 	for {
 		start := end - window
 		if start < 0 {
@@ -474,6 +475,7 @@ func readFileWindowBefore(path, beforeCursor string, maxBytes int64) ([]byte, bo
 			returnedStart += int64(len(raw) - len(dropped))
 			data = dropped
 		}
+		data, firstLineOffset = keepCompleteJSONLLines(data, returnedStart)
 		if len(data) > 0 || start == 0 {
 			break
 		}
@@ -482,23 +484,30 @@ func readFileWindowBefore(path, beforeCursor string, maxBytes int64) ([]byte, bo
 		}
 		window *= 2
 	}
-	data = keepCompleteJSONLLines(data)
 	cursor := ""
-	hasMore := returnedStart > 0
+	hasMore := firstLineOffset > 0
 	if hasMore {
-		cursor = strconv.FormatInt(returnedStart, 10)
+		cursor = strconv.FormatInt(firstLineOffset, 10)
 	}
 	return data, truncated, cursor, hasMore, nil
 }
 
-func keepCompleteJSONLLines(data []byte) []byte {
+func keepCompleteJSONLLines(data []byte, baseOffset int64) ([]byte, int64) {
 	if len(data) == 0 {
-		return data
+		return data, -1
 	}
-	lines := bytes.Split(data, []byte{'\n'})
-	out := make([][]byte, 0, len(lines))
-	for _, line := range lines {
-		line = bytes.TrimSpace(line)
+	out := make([][]byte, 0, bytes.Count(data, []byte{'\n'})+1)
+	firstLineOffset := int64(-1)
+	for pos := 0; pos < len(data); {
+		lineStart := pos
+		lineEnd := len(data)
+		if idx := bytes.IndexByte(data[pos:], '\n'); idx >= 0 {
+			lineEnd = pos + idx
+			pos = lineEnd + 1
+		} else {
+			pos = len(data)
+		}
+		line := bytes.TrimSpace(data[lineStart:lineEnd])
 		if len(line) == 0 {
 			continue
 		}
@@ -509,9 +518,12 @@ func keepCompleteJSONLLines(data []byte) []byte {
 		if !nativeChatHistoryLineRelevant(raw) {
 			continue
 		}
+		if firstLineOffset < 0 {
+			firstLineOffset = baseOffset + int64(lineStart)
+		}
 		out = append(out, line)
 	}
-	return bytes.Join(out, []byte{'\n'})
+	return bytes.Join(out, []byte{'\n'}), firstLineOffset
 }
 
 func nativeChatHistoryLineRelevant(raw map[string]any) bool {

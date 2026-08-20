@@ -777,7 +777,20 @@ export default function ProjectAgentChatPage() {
           </div>
         </div>
         {historyTruncated && (
-          <p className="mt-2 text-xs text-amber-600 dark:text-amber-400">{t('agentChat.historyTruncated')}</p>
+          <div className="mt-2 flex flex-wrap items-center gap-2 text-xs text-amber-600 dark:text-amber-400">
+            <span>{t('agentChat.historyTruncated')}</span>
+            {historyHasMore && (
+              <button
+                type="button"
+                onClick={() => void loadOlderHistory()}
+                disabled={olderHistoryLoading}
+                className="inline-flex items-center gap-1 rounded-md border border-amber-200/80 bg-amber-50 px-2 py-0.5 font-medium text-amber-700 transition-colors hover:bg-amber-100 disabled:opacity-60 dark:border-amber-800/50 dark:bg-amber-950/30 dark:text-amber-300 dark:hover:bg-amber-900/40"
+              >
+                {olderHistoryLoading && <RefreshCw className="size-3 animate-spin" />}
+                {olderHistoryLoading ? t('agentChat.historyLoading') : t('agentChat.loadOlder', { defaultValue: '加载更早消息' })}
+              </button>
+            )}
+          </div>
         )}
         {sessionEditorOpen && (
           <div className="mt-3 rounded-xl border border-sky-200/70 bg-sky-50/40 p-3 dark:border-sky-800/50 dark:bg-sky-950/20">
