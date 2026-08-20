@@ -82,6 +82,78 @@ func TestRuntimeReadinessAllowsExplicitDirectHostProcess(t *testing.T) {
 	}
 }
 
+func TestRuntimeReadinessUsesAgentScopedCursorAuth(t *testing.T) {
+	binDir := t.TempDir()
+	agentPath := filepath.Join(binDir, "agent")
+	if err := os.WriteFile(agentPath, []byte("#!/bin/sh\nexit 0\n"), 0o755); err != nil {
+		t.Fatalf("write fake cursor agent: %v", err)
+	}
+	t.Setenv("PATH", binDir+string(os.PathListSeparator)+os.Getenv("PATH"))
+
+	agentDir := t.TempDir()
+	authPath := filepath.Join(agentDir, ".multigent", "runtime-home", string(entity.ModelCursor), ".config", "cursor", "auth.json")
+	if err := os.MkdirAll(filepath.Dir(authPath), 0o700); err != nil {
+		t.Fatalf("mkdir cursor auth dir: %v", err)
+	}
+	if err := os.WriteFile(authPath, []byte(`{"token":"redacted"}`), 0o600); err != nil {
+		t.Fatalf("write cursor auth: %v", err)
+	}
+
+	meta := &entity.AgentMeta{
+		Name:     "linus",
+		Project:  "tapnow-connectors",
+		Model:    entity.ModelCursor,
+		Provider: "cursor-official",
+		Sandbox: &entity.SandboxConfig{
+			Provider: entity.SandboxNone,
+		},
+	}
+
+	readiness := buildRuntimeReadinessWithOptions(meta, runtimeReadinessOptions{
+		ProbeRuntime:   true,
+		CheckContainer: true,
+		AgentDir:       agentDir,
+	})
+	if readiness.Blocking {
+		t.Fatalf("expected agent-scoped cursor auth to be runnable, got %#v", readiness.Checks)
+	}
+	for _, check := range readiness.Checks {
+		if check.Key == "auth" && check.Status == "ok" {
+			return
+		}
+	}
+	t.Fatalf("expected cursor auth check to pass, got %#v", readiness.Checks)
+}
+
+func TestRuntimeReadinessSkipsLocalCursorLoginWhenProviderBound(t *testing.T) {
+	binDir := t.TempDir()
+	agentPath := filepath.Join(binDir, "agent")
+	if err := os.WriteFile(agentPath, []byte("#!/bin/sh\nexit 0\n"), 0o755); err != nil {
+		t.Fatalf("write fake cursor agent: %v", err)
+	}
+	t.Setenv("PATH", binDir+string(os.PathListSeparator)+os.Getenv("PATH"))
+
+	meta := &entity.AgentMeta{
+		Name:     "linus",
+		Project:  "tapnow-connectors",
+		Model:    entity.ModelCursor,
+		Provider: "cursor-api-key",
+		Sandbox: &entity.SandboxConfig{
+			Provider: entity.SandboxNone,
+		},
+	}
+
+	readiness := buildRuntimeReadiness(meta)
+	if readiness.Blocking {
+		t.Fatalf("expected provider-bound cursor agent not to require host login, got %#v", readiness.Checks)
+	}
+	for _, check := range readiness.Checks {
+		if check.Key == "auth" {
+			t.Fatalf("provider-bound cursor agent should not emit host auth check, got %#v", readiness.Checks)
+		}
+	}
+}
+
 func TestRuntimeReadinessBlocksDirectHostWhenDisabled(t *testing.T) {
 	t.Setenv("MULTIGENT_ALLOW_DIRECT_HOST", "false")
 	meta := &entity.AgentMeta{

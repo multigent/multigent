@@ -631,6 +631,7 @@ type runtimeReadinessOptions struct {
 	ProbeRuntime   bool
 	CheckContainer bool
 	DockerCache    *runtimeReadinessDockerCache
+	AgentDir       string
 }
 
 type runtimeReadinessDockerCache struct {
@@ -818,7 +819,7 @@ func buildRuntimeReadinessWithOptions(meta *entity.AgentMeta, opts runtimeReadin
 
 	// 3. Auth / credential check
 	if opts.ProbeRuntime {
-		authCheck := checkAuthForModel(model, isDocker)
+		authCheck := checkAuthForModel(model, isDocker, opts.AgentDir, strings.TrimSpace(meta.Provider) != "")
 		if authCheck != nil {
 			checks = append(checks, *authCheck)
 		}
@@ -945,10 +946,17 @@ func cliInfoForModel(model entity.AgentModel) (name, install string) {
 	return "", ""
 }
 
-func checkAuthForModel(model entity.AgentModel, isDocker bool) *setupCheck {
+func checkAuthForModel(model entity.AgentModel, isDocker bool, agentDir string, hasProvider bool) *setupCheck {
 	home, _ := os.UserHomeDir()
 	switch model {
 	case entity.ModelCursor:
+		if agentRuntimeCredentialExists(agentDir, model, filepath.Join(".config", "cursor", "auth.json")) ||
+			agentRuntimeCredentialExists(agentDir, model, filepath.Join(".cursor", "cli-config.json")) {
+			return &setupCheck{Key: "auth", Label: "Cursor 认证", Status: "ok"}
+		}
+		if hasProvider {
+			return nil
+		}
 		authFile := filepath.Join(home, ".config", "cursor", "auth.json")
 		if _, err := os.Stat(authFile); err == nil {
 			return &setupCheck{Key: "auth", Label: "Cursor 认证", Status: "ok"}
@@ -958,6 +966,13 @@ func checkAuthForModel(model entity.AgentModel, isDocker bool) *setupCheck {
 			Detail: "未登录。请运行: agent login",
 		}
 	case entity.ModelClaudeCode:
+		if agentRuntimeCredentialExists(agentDir, model, ".claude.json") ||
+			agentRuntimeCredentialExists(agentDir, model, filepath.Join(".claude", ".credentials.json")) {
+			return &setupCheck{Key: "auth", Label: "Claude 认证", Status: "ok"}
+		}
+		if hasProvider {
+			return nil
+		}
 		claudeJSON := filepath.Join(home, ".claude.json")
 		if _, err := os.Stat(claudeJSON); err == nil {
 			return &setupCheck{Key: "auth", Label: "Claude 认证", Status: "ok"}
@@ -968,4 +983,15 @@ func checkAuthForModel(model entity.AgentModel, isDocker bool) *setupCheck {
 		}
 	}
 	return nil
+}
+
+func agentRuntimeCredentialExists(agentDir string, model entity.AgentModel, rel string) bool {
+	if strings.TrimSpace(agentDir) == "" || strings.TrimSpace(rel) == "" {
+		return false
+	}
+	path := filepath.Join(agentDir, ".multigent", "runtime-home", string(entity.NormaliseModel(model)), rel)
+	if _, err := os.Stat(path); err == nil {
+		return true
+	}
+	return false
 }

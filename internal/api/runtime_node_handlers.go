@@ -151,7 +151,11 @@ func (s *Server) runtimeReadinessForExecution(workspaceID string, meta *entity.A
 	if requireNode && nodeID == "" {
 		return runtimeNodeBlockingReadiness("Runtime node is required before this agent can run.", "This workspace is configured for customer-provided Runtime Nodes. Add a Runtime Node in Settings, then bind this agent to that node.")
 	}
-	readiness := buildRuntimeReadiness(meta)
+	readiness := buildRuntimeReadinessWithOptions(meta, runtimeReadinessOptions{
+		ProbeRuntime:   true,
+		CheckContainer: true,
+		AgentDir:       s.st.AgentDir(meta.Project, meta.Name),
+	})
 	if nodeID == "" {
 		return readiness
 	}
