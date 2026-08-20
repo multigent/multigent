@@ -137,8 +137,7 @@ func (LocalAgentSessionCollector) Collect(ctx context.Context, input CollectInpu
 		return nil, ctx.Err()
 	default:
 	}
-	content := strings.TrimSpace(input.Content)
-	if content == "" {
+	if strings.TrimSpace(input.Content) == "" {
 		return nil, fmt.Errorf("content is required")
 	}
 	meta := cloneMap(input.Metadata)
@@ -151,7 +150,7 @@ func (LocalAgentSessionCollector) Collect(ctx context.Context, input CollectInpu
 	}
 	return []CollectedItem{{
 		Title:       title,
-		Content:     content,
+		Content:     input.Content,
 		SourceName:  input.SourceName,
 		Kind:        "agent-session",
 		Tags:        append([]string{"agent-session"}, input.Tags...),

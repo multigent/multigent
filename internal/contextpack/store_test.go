@@ -199,3 +199,53 @@ func TestImportLocalAgentSession(t *testing.T) {
 		t.Fatalf("unexpected views: %#v", views)
 	}
 }
+
+func TestImportLargeLocalAgentSessionAsManagedFile(t *testing.T) {
+	root := t.TempDir()
+	sessionPath := filepath.Join(t.TempDir(), "large-codex-session.jsonl")
+	line := `{"type":"message","message":{"content":[{"type":"text","text":"historical context"}]}}` + "\n"
+	var b strings.Builder
+	for b.Len() <= maxCollectedFileBytes+1024 {
+		b.WriteString(line)
+	}
+	rawSession := b.String()
+	if err := os.WriteFile(sessionPath, []byte(rawSession), 0o644); err != nil {
+		t.Fatal(err)
+	}
+
+	res, err := NewStore(root).ImportLocalPath(ImportLocalPathInput{
+		Path:          sessionPath,
+		CollectorType: CollectorLocalAgentSession,
+		Title:         "Large Codex Session",
+		CreatedBy:     "admin",
+		Project:       "demo",
+		BindScope:     ScopeAgent,
+		BindScopeID:   "demo/Mason",
+		Required:      true,
+		Metadata:      map[string]string{"cli": "codex"},
+	})
+	if err != nil {
+		t.Fatalf("ImportLocalPath should allow large agent sessions: %v", err)
+	}
+	managedPath := res.Asset.Metadata["managedFilePath"]
+	if managedPath == "" {
+		t.Fatalf("expected managed file path metadata: %#v", res.Asset.Metadata)
+	}
+	raw, err := os.ReadFile(filepath.Join(root, ".multigent", "files", managedPath))
+	if err != nil {
+		t.Fatalf("expected large session file in workspace files: %v", err)
+	}
+	if len(raw) != len(rawSession) {
+		t.Fatalf("managed session size mismatch: got %d want %d", len(raw), len(rawSession))
+	}
+	docContent, err := store.NewDocsStore(root).ReadContent(res.Doc.FilePath)
+	if err != nil {
+		t.Fatalf("ReadContent failed: %v", err)
+	}
+	if strings.Contains(docContent, `{"type":"message"`) {
+		t.Fatalf("large session body should not be inlined into knowledge doc")
+	}
+	if !strings.Contains(docContent, managedPath) || !strings.Contains(docContent, "$MULTIGENT_FILES_DIR") {
+		t.Fatalf("knowledge doc should point to managed session file:\n%s", docContent)
+	}
+}

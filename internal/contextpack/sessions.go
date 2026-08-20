@@ -18,7 +18,7 @@ const (
 	CollectorLocalAgentSession = "local-agent-session"
 
 	maxSessionScanBytes   = 256 << 10
-	maxSessionImportBytes = 20 << 20
+	maxSessionImportBytes = 200 << 20
 )
 
 type SessionCandidate struct {

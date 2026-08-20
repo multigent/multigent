@@ -358,10 +358,10 @@ func (s *Store) ImportContent(input ImportContentInput) (*ImportManualResult, er
 }
 
 func (s *Store) importCollectedItem(collectorType, createdBy, project string, item CollectedItem, bindingTemplate Binding) (*ImportManualResult, error) {
-	content := strings.TrimSpace(item.Content)
-	if content == "" {
+	if strings.TrimSpace(item.Content) == "" {
 		return nil, fmt.Errorf("content is required")
 	}
+	content := item.Content
 	title := normalizeTitle(item.Title, item.SourceName)
 	now := time.Now().UTC()
 	idx, err := s.Load()

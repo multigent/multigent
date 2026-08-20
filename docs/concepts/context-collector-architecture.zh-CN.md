@@ -183,6 +183,12 @@ Agent 运行时不应默认塞入全文，而是注入一个上下文清单和�
 - `DELETE /api/v1/client-tokens/{id}`：撤销 token。
 - `POST /api/v1/context/import`：CLI 上传内容到知识库并可同时绑定到 workspace/project/agent。
 
+导入大小边界：
+
+- 普通文本资料仍按轻量知识库资料处理，默认上限 5MB。
+- 本地 Agent session 作为原始历史材料处理，默认允许到 200MB。原始 JSONL 不会内联进知识库文档，而是保存为 workspace managed file，并生成一张知识库索引卡片。
+- Agent 需要完整历史时，通过 `mga context read <id>` 看到 managed file 路径，再按 `$MULTIGENT_FILES_DIR/<relative-path>` 读取原始文件。旧 session 里的路径、凭证和运行状态只能作为历史参考。
+
 常用命令示例：
 
 ```bash

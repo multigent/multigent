@@ -9,7 +9,7 @@ import (
 	"github.com/multigent/multigent/internal/store"
 )
 
-const contextImportMaxJSONBody = 25 << 20
+const contextImportMaxJSONBody = 225 << 20
 
 type contextImportManualBody struct {
 	Title       string   `json:"title"`
