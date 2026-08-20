@@ -2045,6 +2045,7 @@
     "inviteStatus_unknown": "未知",
     "inviteExpiresAt": "{{time}} 过期",
     "copyInviteLink": "复制链接",
+    "copyInviteFailed": "复制失败，请手动选中邀请链接复制。",
     "revokeInvite": "撤销",
     "inviteResults": "邀请结果",
     "exampleReadonly": "这是教学演示工作区。这里不能邀请用户或调整工作区成员，也不会计入真实付费工作区数量。",

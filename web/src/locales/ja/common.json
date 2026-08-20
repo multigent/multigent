@@ -2011,6 +2011,7 @@
     "inviteStatus_unknown": "不明",
     "inviteExpiresAt": "{{time}} に期限切れ",
     "copyInviteLink": "リンクをコピー",
+    "copyInviteFailed": "コピーに失敗しました。招待リンクを選択して手動でコピーしてください。",
     "revokeInvite": "取り消す",
     "inviteResults": "招待結果",
     "manageAccess": "権限設定",

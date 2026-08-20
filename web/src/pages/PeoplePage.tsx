@@ -118,6 +118,34 @@ function roleKey(role: string): string {
   }
 }
 
+async function writeClipboardText(text: string): Promise<boolean> {
+  if (!text) return false
+  try {
+    if (navigator.clipboard?.writeText && window.isSecureContext) {
+      await navigator.clipboard.writeText(text)
+      return true
+    }
+  } catch {
+    // Fall through to the legacy selection-based copy path below.
+  }
+  try {
+    const textarea = document.createElement('textarea')
+    textarea.value = text
+    textarea.setAttribute('readonly', '')
+    textarea.style.position = 'fixed'
+    textarea.style.left = '-9999px'
+    textarea.style.top = '0'
+    document.body.appendChild(textarea)
+    textarea.focus()
+    textarea.select()
+    const ok = document.execCommand('copy')
+    document.body.removeChild(textarea)
+    return ok
+  } catch {
+    return false
+  }
+}
+
 export default function PeoplePage() {
   const { t } = useTranslation()
   const { isExample } = useWorkspaceAccess()
@@ -235,7 +263,12 @@ export default function PeoplePage() {
 
   async function copyInviteLink(link: string, key: string) {
     if (!link) return
-    await navigator.clipboard?.writeText(link)
+    const ok = await writeClipboardText(link)
+    if (!ok) {
+      setErr(t('people.copyInviteFailed'))
+      return
+    }
+    setErr(null)
     setCopiedInviteKey(key)
     window.setTimeout(() => {
       setCopiedInviteKey(prev => prev === key ? '' : prev)

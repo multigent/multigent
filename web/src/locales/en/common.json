@@ -2045,6 +2045,7 @@
     "inviteStatus_unknown": "Unknown",
     "inviteExpiresAt": "expires {{time}}",
     "copyInviteLink": "Copy link",
+    "copyInviteFailed": "Copy failed. Select the invite link and copy it manually.",
     "revokeInvite": "Revoke",
     "inviteResults": "Invite results",
     "exampleReadonly": "This is a learning workspace. Inviting users and changing workspace membership are disabled here, so it does not count as a real billable workspace.",

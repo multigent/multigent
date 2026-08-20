@@ -2022,6 +2022,7 @@
     "inviteStatus_unknown": "未知",
     "inviteExpiresAt": "{{time}} 過期",
     "copyInviteLink": "複製連結",
+    "copyInviteFailed": "複製失敗，請手動選取邀請連結複製。",
     "revokeInvite": "撤銷",
     "inviteResults": "邀請結果",
     "manageAccess": "權限設定",
