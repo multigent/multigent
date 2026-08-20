@@ -2,6 +2,7 @@ package api
 
 import (
 	"bufio"
+	"bytes"
 	"encoding/json"
 	"fmt"
 	"io"
@@ -686,6 +687,7 @@ func (s *Server) readNativeAgentSessionHistory(project, agent, sessionID string)
 		return nil, nil
 	}
 	if truncated {
+		data = dropPartialFirstLine(data)
 		data = append([]byte("=== earlier native session content truncated ===\n"), data...)
 	}
 	startedAt := time.Now().UTC()
@@ -698,6 +700,16 @@ func (s *Server) readNativeAgentSessionHistory(project, agent, sessionID string)
 		logPath:   path,
 		data:      data,
 	}, nil
+}
+
+func dropPartialFirstLine(data []byte) []byte {
+	if len(data) == 0 {
+		return data
+	}
+	if idx := bytes.IndexByte(data, '\n'); idx >= 0 && idx+1 < len(data) {
+		return data[idx+1:]
+	}
+	return data
 }
 
 func (s *Server) addNativeAgentChatSessions(byID map[string]*agentChatSessionAcc, project, agent string) error {

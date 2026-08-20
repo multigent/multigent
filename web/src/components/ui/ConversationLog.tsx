@@ -492,16 +492,11 @@ function parseLog(content: string): ConversationItem[] {
     }
 
     if ((ev.type === 'item.started' || ev.type === 'item.completed') && ev.item) {
-      if ((ev.item.type === 'agent_message' || ev.item.type === 'AgentMessage') && ev.item.text) {
-        pushAssistantText(items, ev.item.text)
+      if (ev.item.type === 'agent_message' || ev.item.type === 'AgentMessage') {
+        const text = codexContentText(ev.item.text ?? ev.item.content)
+        if (text) pushAssistantText(items, text)
       } else if ((ev.item.type === 'UserMessage' || ev.item.type === 'user_message') && (ev.item.text || ev.item.message || ev.item.content)) {
-        const text = typeof ev.item.text === 'string'
-          ? ev.item.text
-          : typeof ev.item.message === 'string'
-              ? ev.item.message
-              : typeof ev.item.content === 'string'
-                ? ev.item.content
-                : ''
+        const text = codexContentText(ev.item.text ?? ev.item.message ?? ev.item.content)
         if (text) pushHumanText(items, text)
       } else if (ev.item.type === 'tool_call' && ev.item.name) {
         pushToolUse(items, ev.item.name, ev.item.input)
@@ -515,8 +510,9 @@ function parseLog(content: string): ConversationItem[] {
         } else {
           pushToolResult(items, output || `exit ${exitCode}`, exitCode !== 0)
         }
-      } else if ((ev.item.type === 'reasoning' || ev.item.type === 'agent_reasoning') && ev.item.text) {
-        items.push({ kind: 'thinking', text: ev.item.text })
+      } else if (ev.item.type === 'reasoning' || ev.item.type === 'agent_reasoning' || ev.item.type === 'Reasoning') {
+        const text = codexContentText(ev.item.text ?? (ev.item as any).summary_text ?? (ev.item as any).raw_content)
+        if (text) items.push({ kind: 'thinking', text })
       } else if (ev.item.type === 'error') {
         const msg = streamEventErrorMessage(ev)
         items.push({ kind: 'result', text: msg || 'Error', isError: true })
@@ -698,6 +694,29 @@ function normalizeCodexEventMsg(ev: StreamEvent): StreamEvent {
     ...payload,
     type: normalizedType || typ || ev.type,
   } as StreamEvent
+}
+
+function codexContentText(value: unknown): string {
+  if (typeof value === 'string') return value.trim()
+  if (!Array.isArray(value)) return ''
+  const parts: string[] = []
+  for (const item of value) {
+    if (typeof item === 'string') {
+      if (item.trim()) parts.push(item.trim())
+      continue
+    }
+    if (!item || typeof item !== 'object') continue
+    const obj = item as Record<string, unknown>
+    const typ = typeof obj.type === 'string' ? obj.type.toLowerCase() : ''
+    if (typ && typ !== 'text' && typ !== 'output_text' && typ !== 'summary_text') continue
+    const text = typeof obj.text === 'string'
+      ? obj.text
+      : typeof obj.content === 'string'
+        ? obj.content
+        : ''
+    if (text.trim()) parts.push(text.trim())
+  }
+  return parts.join('\n\n').trim()
 }
 
 function truncateStr(s: string, max: number): string {
