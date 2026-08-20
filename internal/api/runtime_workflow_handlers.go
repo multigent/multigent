@@ -5,7 +5,9 @@ import (
 	"errors"
 	"fmt"
 	"net/http"
+	"regexp"
 	"sort"
+	"strconv"
 	"strings"
 	"time"
 
@@ -82,6 +84,50 @@ type runtimeReplyMessageBody struct {
 	Subject string `json:"subject"`
 	Body    string `json:"body"`
 }
+
+type runtimeWorkflowPendingReviewsResponse struct {
+	Reviews []runtimeWorkflowPendingReview `json:"reviews"`
+}
+
+type runtimeWorkflowPendingReview struct {
+	Project        string                  `json:"project"`
+	TaskID         string                  `json:"taskId"`
+	TaskTitle      string                  `json:"taskTitle"`
+	TaskStatus     string                  `json:"taskStatus"`
+	TaskAgent      string                  `json:"taskAgent"`
+	TaskAssignee   string                  `json:"taskAssignee,omitempty"`
+	WorkflowRunID  string                  `json:"workflowRunId"`
+	WorkflowID     string                  `json:"workflowId"`
+	WorkflowName   string                  `json:"workflowName"`
+	StepID         string                  `json:"stepId"`
+	StepTitle      string                  `json:"stepTitle"`
+	StepStatus     string                  `json:"stepStatus"`
+	Reviewer       string                  `json:"reviewer,omitempty"`
+	WaitingSeconds int64                   `json:"waitingSeconds,omitempty"`
+	UpdatedAt      time.Time               `json:"updatedAt"`
+	InputValues    map[string]string       `json:"inputValues,omitempty"`
+	OutputValues   map[string]string       `json:"outputValues,omitempty"`
+	InputArtifact  string                  `json:"inputArtifact,omitempty"`
+	OutputArtifact string                  `json:"outputArtifact,omitempty"`
+	OutputFields   []entity.WorkflowField  `json:"outputFields,omitempty"`
+	DocumentRefs   []runtimeWorkflowDocRef `json:"documentRefs,omitempty"`
+	RouteOptions   []runtimeWorkflowRoute  `json:"routeOptions,omitempty"`
+}
+
+type runtimeWorkflowDocRef struct {
+	Field string `json:"field,omitempty"`
+	ID    string `json:"id"`
+}
+
+type runtimeWorkflowRoute struct {
+	ID        string                        `json:"id"`
+	Label     string                        `json:"label,omitempty"`
+	To        string                        `json:"to"`
+	Default   bool                          `json:"default,omitempty"`
+	Condition *entity.WorkflowEdgeCondition `json:"condition,omitempty"`
+}
+
+var workflowDocIDPattern = regexp.MustCompile(`\bkb-doc-[A-Za-z0-9_-]+\b`)
 
 func (s *Server) runtimeRequireCapability(w http.ResponseWriter, r *http.Request, capability string) (runtimeAgentPrincipal, bool) {
 	principal, ok := runtimeAgentFromRequest(r)
@@ -206,6 +252,192 @@ func (s *Server) handleRuntimeTask(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	_ = json.NewEncoder(w).Encode(taskToRow(t, principal.Project, agent, archived))
+}
+
+func (s *Server) handleRuntimeWorkflowPendingReviews(w http.ResponseWriter, r *http.Request) {
+	principal, ok := s.runtimeRequireCapability(w, r, "task.use")
+	if !ok {
+		return
+	}
+	reviewer := strings.TrimSpace(r.URL.Query().Get("reviewer"))
+	limit := 50
+	if rawLimit := strings.TrimSpace(r.URL.Query().Get("limit")); rawLimit != "" {
+		parsed, err := strconv.Atoi(rawLimit)
+		if err != nil || parsed < 1 || parsed > 200 {
+			s.jsonError(w, http.StatusBadRequest, "limit must be between 1 and 200")
+			return
+		}
+		limit = parsed
+	}
+	agents, err := s.st.ListAgents(principal.Project)
+	if err != nil {
+		s.serverError(w, err)
+		return
+	}
+	wfStore := workflowstore.NewStore(s.controlDB, principal.WorkspaceID)
+	reviews := make([]runtimeWorkflowPendingReview, 0)
+	for _, ag := range agents {
+		if ag == nil {
+			continue
+		}
+		tasks, err := s.ts.ListTasks(principal.Project, ag.Name)
+		if err != nil {
+			continue
+		}
+		for _, task := range tasks {
+			if task == nil || task.Status.IsTerminal() {
+				continue
+			}
+			run, found, err := wfStore.RunForTask(principal.Project, task.ID)
+			if err != nil {
+				s.serverError(w, err)
+				return
+			}
+			if !found || strings.TrimSpace(run.ActiveStepID) == "" || isWorkflowRunTerminal(run.Status) {
+				continue
+			}
+			def, found, err := wfStore.RunDefinition(run)
+			if err != nil {
+				s.serverError(w, err)
+				return
+			}
+			if !found {
+				continue
+			}
+			step, found := workflowDefinitionStepByID(def.Steps, run.ActiveStepID)
+			if !found || step.Type != "human_review" {
+				continue
+			}
+			instances, err := wfStore.ListStepInstances(run.ID)
+			if err != nil {
+				s.serverError(w, err)
+				return
+			}
+			inst, found := workflowStepInstanceByStepID(instances, run.ActiveStepID)
+			if !found || !workflowStepInstanceOpen(inst.Status) {
+				continue
+			}
+			actorType := strings.TrimSpace(inst.ActorType)
+			if actorType == "" {
+				actorType = workflowActorTypeForStep(step)
+			}
+			actorID := strings.TrimSpace(inst.ActorID)
+			if actorID == "" {
+				actorID = workflowActorIDForStep(run.ActorBindings, step)
+			}
+			if actorType != "" && actorType != "human" {
+				continue
+			}
+			if reviewer != "" && !strings.EqualFold(actorID, reviewer) {
+				continue
+			}
+			reviews = append(reviews, runtimeWorkflowPendingReviewFromTask(principal.Project, ag.Name, task, run, def, step, inst))
+		}
+	}
+	sort.SliceStable(reviews, func(i, j int) bool {
+		return reviews[i].UpdatedAt.Before(reviews[j].UpdatedAt)
+	})
+	if len(reviews) > limit {
+		reviews = reviews[:limit]
+	}
+	_ = json.NewEncoder(w).Encode(runtimeWorkflowPendingReviewsResponse{Reviews: reviews})
+}
+
+func isWorkflowRunTerminal(status string) bool {
+	switch strings.TrimSpace(status) {
+	case "completed", "done", "done_success", "done_failed", "failed", "cancelled":
+		return true
+	default:
+		return false
+	}
+}
+
+func runtimeWorkflowPendingReviewFromTask(project, agent string, task *entity.Task, run entity.WorkflowRun, def entity.WorkflowDefinition, step entity.WorkflowStep, inst entity.WorkflowStepInstance) runtimeWorkflowPendingReview {
+	updatedAt := inst.UpdatedAt
+	if updatedAt.IsZero() {
+		updatedAt = run.UpdatedAt
+	}
+	waitingSeconds := int64(0)
+	if !updatedAt.IsZero() {
+		waitingSeconds = int64(time.Since(updatedAt).Seconds())
+		if waitingSeconds < 0 {
+			waitingSeconds = 0
+		}
+	}
+	reviewer := strings.TrimSpace(inst.ActorID)
+	if reviewer == "" {
+		reviewer = workflowActorIDForStep(run.ActorBindings, step)
+	}
+	return runtimeWorkflowPendingReview{
+		Project:        project,
+		TaskID:         task.ID,
+		TaskTitle:      task.Title,
+		TaskStatus:     string(task.Status),
+		TaskAgent:      agent,
+		TaskAssignee:   task.Assignee,
+		WorkflowRunID:  run.ID,
+		WorkflowID:     def.ID,
+		WorkflowName:   def.Name,
+		StepID:         step.ID,
+		StepTitle:      step.Title,
+		StepStatus:     inst.Status,
+		Reviewer:       reviewer,
+		WaitingSeconds: waitingSeconds,
+		UpdatedAt:      updatedAt,
+		InputValues:    inst.InputValues,
+		OutputValues:   inst.OutputValues,
+		InputArtifact:  inst.InputArtifact,
+		OutputArtifact: inst.OutputArtifact,
+		OutputFields:   step.OutputFields,
+		DocumentRefs:   runtimeWorkflowDocumentRefs(inst),
+		RouteOptions:   runtimeWorkflowRoutes(def.Edges, step.ID),
+	}
+}
+
+func runtimeWorkflowRoutes(edges []entity.WorkflowEdge, stepID string) []runtimeWorkflowRoute {
+	routes := make([]runtimeWorkflowRoute, 0)
+	for _, edge := range edges {
+		if edge.From != stepID {
+			continue
+		}
+		routes = append(routes, runtimeWorkflowRoute{
+			ID:        edge.ID,
+			Label:     edge.Label,
+			To:        edge.To,
+			Default:   edge.IsDefault,
+			Condition: edge.Condition,
+		})
+	}
+	return routes
+}
+
+func runtimeWorkflowDocumentRefs(inst entity.WorkflowStepInstance) []runtimeWorkflowDocRef {
+	seen := map[string]bool{}
+	refs := make([]runtimeWorkflowDocRef, 0)
+	add := func(field, value string) {
+		for _, match := range workflowDocIDPattern.FindAllString(value, -1) {
+			if seen[match] {
+				continue
+			}
+			seen[match] = true
+			refs = append(refs, runtimeWorkflowDocRef{Field: field, ID: match})
+		}
+	}
+	for field, value := range inst.InputValues {
+		add(field, value)
+	}
+	for field, value := range inst.OutputValues {
+		add(field, value)
+	}
+	add("inputArtifact", inst.InputArtifact)
+	add("outputArtifact", inst.OutputArtifact)
+	sort.SliceStable(refs, func(i, j int) bool {
+		if refs[i].Field == refs[j].Field {
+			return refs[i].ID < refs[j].ID
+		}
+		return refs[i].Field < refs[j].Field
+	})
+	return refs
 }
 
 func (s *Server) handleRuntimeTaskTemplates(w http.ResponseWriter, r *http.Request) {

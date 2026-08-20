@@ -223,6 +223,7 @@ func newWorkflowCmd() *cobra.Command {
 		Short: "Inspect the current task workflow",
 	}
 	cmd.AddCommand(newWorkflowCurrentCmd())
+	cmd.AddCommand(newWorkflowPendingReviewsCmd())
 	cmd.AddCommand(newWorkflowDecisionCmd())
 	return cmd
 }
@@ -252,6 +253,36 @@ func newWorkflowCurrentCmd() *cobra.Command {
 	}
 	cmd.Flags().StringVar(&taskID, "task-id", "", "task id")
 	cmd.Flags().StringVar(&agent, "agent", "", "agent that owns the task")
+	return cmd
+}
+
+func newWorkflowPendingReviewsCmd() *cobra.Command {
+	var reviewer, format string
+	var limit int
+	cmd := &cobra.Command{
+		Use:   "pending-reviews",
+		Short: "List workflow human review steps waiting in this project",
+		RunE: func(cmd *cobra.Command, args []string) error {
+			q := url.Values{}
+			if strings.TrimSpace(reviewer) != "" {
+				q.Set("reviewer", reviewer)
+			}
+			if limit > 0 {
+				q.Set("limit", strconv.Itoa(limit))
+			}
+			body, err := requestJSON(http.MethodGet, "/api/v1/runtime/workflow/pending-reviews", q, nil)
+			if err != nil {
+				return err
+			}
+			if format == "table" {
+				return printWorkflowPendingReviewsTable(body)
+			}
+			return writeJSON(body)
+		},
+	}
+	cmd.Flags().StringVar(&reviewer, "reviewer", "", "filter by Multigent user id/name assigned to review")
+	cmd.Flags().IntVar(&limit, "limit", 50, "maximum reviews to return")
+	cmd.Flags().StringVar(&format, "format", "json", "output format: json or table")
 	return cmd
 }
 
@@ -1980,6 +2011,46 @@ func printTasksTable(body []byte) error {
 		fmt.Fprintf(tw, "%s\t%s\t%s\t%d\t%s\n", r.ID, r.Agent, r.Status, r.Priority, r.Title)
 	}
 	return tw.Flush()
+}
+
+func printWorkflowPendingReviewsTable(body []byte) error {
+	var doc struct {
+		Reviews []struct {
+			TaskID         string `json:"taskId"`
+			TaskAgent      string `json:"taskAgent"`
+			TaskStatus     string `json:"taskStatus"`
+			TaskTitle      string `json:"taskTitle"`
+			Reviewer       string `json:"reviewer"`
+			WorkflowName   string `json:"workflowName"`
+			StepTitle      string `json:"stepTitle"`
+			WaitingSeconds int64  `json:"waitingSeconds"`
+		} `json:"reviews"`
+	}
+	if err := json.Unmarshal(body, &doc); err != nil {
+		return err
+	}
+	tw := tabwriter.NewWriter(os.Stdout, 0, 4, 2, ' ', 0)
+	fmt.Fprintln(tw, "TASK\tAGENT\tSTATUS\tREVIEWER\tWAITING\tWORKFLOW\tSTEP\tTITLE")
+	for _, r := range doc.Reviews {
+		fmt.Fprintf(tw, "%s\t%s\t%s\t%s\t%s\t%s\t%s\t%s\n",
+			r.TaskID,
+			r.TaskAgent,
+			r.TaskStatus,
+			r.Reviewer,
+			formatSecondsDuration(r.WaitingSeconds),
+			r.WorkflowName,
+			r.StepTitle,
+			r.TaskTitle,
+		)
+	}
+	return tw.Flush()
+}
+
+func formatSecondsDuration(seconds int64) string {
+	if seconds <= 0 {
+		return "0s"
+	}
+	return (time.Duration(seconds) * time.Second).Round(time.Second).String()
 }
 
 func printTaskTemplatesTable(body []byte) error {

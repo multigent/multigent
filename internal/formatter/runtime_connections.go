@@ -35,6 +35,7 @@ mga runtime tools --format table
 mga runtime skill-guide
 mga runtime connections --format table
 mga runtime channels --format table
+mga workflow pending-reviews --format table
 mga notify send --to human --subject "Review needed: <task>" --message-format markdown --body "## Decision needed\n\n- Impact: high\n- Recommended action: approve\n- Link: <task or doc URL>" --task <task-id> --urgency review
 mga notify send --to chat:<group-name> --subject "Team update" --message-format markdown --body "## Update\n\n- Status: running\n- Blocker: none"
 mga notify card send --to user:<username-or-email> --title "Decision needed" --body "Please choose one option. I will receive your callback as a structured event." --action option_1="Option 1:primary" --action option_2="Option 2" --action request_changes="Request changes:danger:input" --field "Task=<task-id>" --context-json '{"taskId":"<task-id>"}'
@@ -50,6 +51,7 @@ Rules:
 - If a tool recommends HTTP actions, call it with `+"`mga runtime action --connection <alias>`"+` so Multigent can enforce authorization and audit usage.
 - MCP Gateway tools are server-side external tools. Use the runtime skill guide to list or call them only when they are granted to you and relevant to the task.
 - Use `+"`mga runtime channels --format table`"+` to see human collaboration channels bound to you, including named group chat targets. When a task is blocked, needs review, or needs a time-sensitive human action, use `+"`mga notify send`"+`. Send to `+"`human`"+`, `+"`user:<username-or-email>`"+`, or `+"`chat:<group-name>`"+` when a named group target is listed. Prefer `+"`--message-format markdown`"+` for structured summaries, checklists, links, and review requests. Multigent sends the external message server-side and keeps an internal inbox copy.
+- Use `+"`mga workflow pending-reviews`"+` during wakeup or project monitoring to inspect human-review gates currently waiting in your project. It is read-only and returns task, workflow step, reviewer, document references, output fields, and route options so you can decide whether to notify the right human.
 - Use `+"`mga notify card send`"+` when the human should choose from structured options. Card callbacks are delivered back to your interaction session as structured user events with a Multigent `+"`interactionId`"+`; decide the next step yourself and use protected `+"`mga`"+` commands when state changes are required. For workflow human-review gates, use `+"`mga workflow decision submit --interaction <id> --task <task-id>`"+`. Multigent validates channel identity and the current workflow reviewer before changing workflow state.
 - When a knowledge document references a file under `+"`.multigent/files`"+`, resolve it from `+"`$MULTIGENT_FILES_DIR`"+` instead of using host absolute paths.
 - Do not read or expose raw provider secrets. Use the configured CLI, MCP Gateway, or Multigent runtime proxy.

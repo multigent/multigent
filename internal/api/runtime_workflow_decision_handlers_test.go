@@ -2,6 +2,7 @@ package api
 
 import (
 	"context"
+	"encoding/json"
 	"net/http"
 	"net/http/httptest"
 	"strings"
@@ -229,5 +230,111 @@ func TestRuntimeWorkflowDecisionRequiresDelegationToken(t *testing.T) {
 	}
 	if !strings.Contains(rec.Body.String(), "delegation token is required") {
 		t.Fatalf("unexpected body=%s", rec.Body.String())
+	}
+}
+
+func TestRuntimeWorkflowPendingReviewsListsHumanSteps(t *testing.T) {
+	s, workspaceID := newConnectionGrantPolicyServer(t)
+	taskID := "task-pending-review"
+	now := time.Now().UTC().Add(-10 * time.Minute)
+	task := &entity.Task{
+		ID:        taskID,
+		Title:     "Review launch note",
+		Priority:  2,
+		Assignee:  "owner",
+		Status:    entity.TaskStatusAwaitingConfirmation,
+		CreatedAt: now,
+		UpdatedAt: now,
+	}
+	if err := s.ts.AddTask("sample", "pm", task); err != nil {
+		t.Fatalf("add task: %v", err)
+	}
+	wfStore := workflowstore.NewStore(s.controlDB, workspaceID)
+	def := &entity.WorkflowDefinition{
+		ID:          "wf-pending-review",
+		Name:        "Pending Review",
+		Version:     1,
+		Scope:       "workspace",
+		StartStepID: "review",
+		Steps: []entity.WorkflowStep{{
+			ID:    "review",
+			Type:  "human_review",
+			Title: "Owner Review",
+			InputFields: []entity.WorkflowField{{
+				Name:        "review_doc_id",
+				Description: "Review context doc",
+			}},
+			OutputFields: []entity.WorkflowField{{
+				Name:        "decision",
+				Description: "approve or request_changes",
+			}},
+		}, {
+			ID:    "ship",
+			Type:  "agent_task",
+			Title: "Ship",
+		}},
+		Edges: []entity.WorkflowEdge{{
+			ID:    "approve-route",
+			From:  "review",
+			To:    "ship",
+			Label: "通过",
+			Condition: &entity.WorkflowEdgeCondition{
+				Field:    "decision",
+				Operator: "eq",
+				Value:    "approve",
+			},
+		}},
+		CreatedAt: now,
+		UpdatedAt: now,
+	}
+	if err := wfStore.SaveDefinition(def); err != nil {
+		t.Fatalf("save workflow definition: %v", err)
+	}
+	run, steps, err := wfStore.StartRunWithInput("sample", taskID, def.ID, map[string]entity.WorkflowActorBinding{
+		"review": {Type: "human", ID: "owner"},
+		"ship":   {Type: "agent", ID: "dev"},
+	}, map[string]string{"review_doc_id": "kb-doc-review-123"})
+	if err != nil {
+		t.Fatalf("start workflow run: %v", err)
+	}
+	steps[0].UpdatedAt = now
+	steps[0].OutputValues = map[string]string{"summary_doc_id": "kb-doc-summary-456"}
+	if err := wfStore.SaveStepInstance(&steps[0]); err != nil {
+		t.Fatalf("save step instance: %v", err)
+	}
+	run.UpdatedAt = now
+	if err := wfStore.SaveRun(&run); err != nil {
+		t.Fatalf("save run: %v", err)
+	}
+
+	req := providerTestRequest(http.MethodGet, "/api/v1/runtime/workflow/pending-reviews?reviewer=owner", "", nil)
+	req = req.WithContext(context.WithValue(req.Context(), ctxRuntimeAgentKey, runtimeAgentPrincipal{
+		WorkspaceID:  workspaceID,
+		Project:      "sample",
+		Agent:        "pm",
+		Capabilities: []string{"task.use"},
+	}))
+	rec := httptest.NewRecorder()
+	s.handleRuntimeWorkflowPendingReviews(rec, req)
+
+	if rec.Code != http.StatusOK {
+		t.Fatalf("status=%d body=%s", rec.Code, rec.Body.String())
+	}
+	var body runtimeWorkflowPendingReviewsResponse
+	if err := json.Unmarshal(rec.Body.Bytes(), &body); err != nil {
+		t.Fatalf("decode response: %v", err)
+	}
+	if len(body.Reviews) != 1 {
+		t.Fatalf("reviews=%d body=%s", len(body.Reviews), rec.Body.String())
+	}
+	got := body.Reviews[0]
+	if got.TaskID != taskID || got.TaskAgent != "pm" || got.Reviewer != "owner" || got.StepTitle != "Owner Review" {
+		t.Fatalf("unexpected review=%+v", got)
+	}
+	if len(got.RouteOptions) != 1 || got.RouteOptions[0].ID != "approve-route" {
+		t.Fatalf("route options=%+v", got.RouteOptions)
+	}
+	if len(got.DocumentRefs) != 2 {
+		t.Fatalf("document refs=%+v", got.DocumentRefs)
 	}
 }
