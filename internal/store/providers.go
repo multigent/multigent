@@ -53,6 +53,30 @@ func ProviderCredentialDir(root, providerID string, model entity.AgentModel) str
 	return filepath.Join(root, ".multigent", "model-providers", providerID, string(entity.NormaliseModel(model)))
 }
 
+func (ps *ProviderStore) CredentialDir(providerID string, model entity.AgentModel) (string, error) {
+	db, workspaceID, cleanup, err := ps.openWorkspaceDB()
+	if err != nil {
+		if ps.db == nil {
+			fallbackDB, openErr := controldb.OpenDefault()
+			if openErr != nil {
+				return "", err
+			}
+			defer fallbackDB.Close()
+			return ps.credentialDirAcrossWorkspaces(fallbackDB, providerID, model)
+		}
+		return "", err
+	}
+	defer cleanup()
+	row, ok, err := db.ModelProviderByID(workspaceID, providerID)
+	if err != nil {
+		return "", err
+	}
+	if !ok {
+		return "", fmt.Errorf("provider %q not found", providerID)
+	}
+	return ProviderCredentialDir(ps.root, row.ID, model), nil
+}
+
 func NewProviderStore(root string) *ProviderStore {
 	return &ProviderStore{root: root}
 }
@@ -95,6 +119,14 @@ func (ps *ProviderStore) List() ([]entity.APIProvider, error) {
 func (ps *ProviderStore) Get(id string) (*entity.APIProvider, error) {
 	db, workspaceID, cleanup, err := ps.openWorkspaceDB()
 	if err != nil {
+		if ps.db == nil {
+			fallbackDB, openErr := controldb.OpenDefault()
+			if openErr != nil {
+				return nil, err
+			}
+			defer fallbackDB.Close()
+			return ps.getByIDAcrossWorkspaces(fallbackDB, id)
+		}
 		return nil, err
 	}
 	defer cleanup()
@@ -110,6 +142,52 @@ func (ps *ProviderStore) Get(id string) (*entity.APIProvider, error) {
 		return nil, err
 	}
 	return &provider, nil
+}
+
+func (ps *ProviderStore) getByIDAcrossWorkspaces(db controldb.Store, id string) (*entity.APIProvider, error) {
+	workspaces, err := db.ListWorkspaces()
+	if err != nil {
+		return nil, err
+	}
+	for _, workspace := range workspaces {
+		if strings.TrimSpace(workspace.ID) == "" {
+			continue
+		}
+		row, ok, err := db.ModelProviderByID(workspace.ID, id)
+		if err != nil {
+			return nil, err
+		}
+		if !ok {
+			continue
+		}
+		provider, err := modelProviderFromDB(row)
+		if err != nil {
+			return nil, err
+		}
+		return &provider, nil
+	}
+	return nil, fmt.Errorf("provider %q not found", id)
+}
+
+func (ps *ProviderStore) credentialDirAcrossWorkspaces(db controldb.Store, id string, model entity.AgentModel) (string, error) {
+	workspaces, err := db.ListWorkspaces()
+	if err != nil {
+		return "", err
+	}
+	for _, workspace := range workspaces {
+		if strings.TrimSpace(workspace.ID) == "" || strings.TrimSpace(workspace.Root) == "" {
+			continue
+		}
+		row, ok, err := db.ModelProviderByID(workspace.ID, id)
+		if err != nil {
+			return "", err
+		}
+		if !ok {
+			continue
+		}
+		return ProviderCredentialDir(workspace.Root, row.ID, model), nil
+	}
+	return "", fmt.Errorf("provider %q not found", id)
 }
 
 func (ps *ProviderStore) Add(p entity.APIProvider) (*entity.APIProvider, error) {

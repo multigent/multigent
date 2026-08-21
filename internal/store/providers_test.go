@@ -2,8 +2,11 @@ package store
 
 import (
 	"testing"
+	"time"
 
+	controldb "github.com/multigent/multigent/internal/db"
 	"github.com/multigent/multigent/internal/entity"
+	"github.com/multigent/multigent/internal/secretbox"
 )
 
 func TestProviderEnvForClaudeCodeUsesAnthropicCompatibleVars(t *testing.T) {
@@ -60,5 +63,57 @@ func TestProviderEnvForCodexUsesOpenAICompatibleVars(t *testing.T) {
 	}
 	if env["ANTHROPIC_AUTH_TOKEN"] != "" {
 		t.Fatalf("unexpected ANTHROPIC_AUTH_TOKEN=%q", env["ANTHROPIC_AUTH_TOKEN"])
+	}
+}
+
+func TestProviderStoreGetFallsBackAcrossWorkspacesWhenRootIsDataRoot(t *testing.T) {
+	dataRoot := t.TempDir()
+	workspaceRoot := dataRoot + "/workspace-one"
+	t.Setenv("MULTIGENT_DATA_DIR", dataRoot)
+	db, err := controldb.OpenDefault()
+	if err != nil {
+		t.Fatalf("open db: %v", err)
+	}
+	defer db.Close()
+	now := time.Now().UTC().Format(time.RFC3339)
+	if err := db.UpsertWorkspace(controldb.Workspace{
+		ID:        "ws-one",
+		Name:      "Workspace One",
+		Slug:      "workspace-one",
+		Root:      workspaceRoot,
+		CreatedAt: now,
+		UpdatedAt: now,
+	}); err != nil {
+		t.Fatalf("workspace: %v", err)
+	}
+	sealed, err := secretbox.SealString("sk-test")
+	if err != nil {
+		t.Fatalf("seal: %v", err)
+	}
+	if err := db.UpsertModelProvider("ws-one", controldb.ModelProvider{
+		ID:        "prov-codex",
+		Name:      "Codex",
+		Type:      "openai",
+		APIKey:    sealed,
+		Model:     "gpt-5.5",
+		EnvJSON:   "{}",
+		CreatedAt: now,
+		UpdatedAt: now,
+	}); err != nil {
+		t.Fatalf("provider: %v", err)
+	}
+	env, err := NewProviderStore(dataRoot).ResolveEnvForModel("prov-codex", entity.ModelCodex)
+	if err != nil {
+		t.Fatalf("resolve env from data root: %v", err)
+	}
+	if env["OPENAI_API_KEY"] != "sk-test" || env["CODEX_MODEL"] != "gpt-5.5" {
+		t.Fatalf("unexpected env: %#v", env)
+	}
+	credentialDir, err := NewProviderStore(dataRoot).CredentialDir("prov-codex", entity.ModelCodex)
+	if err != nil {
+		t.Fatalf("credential dir from data root: %v", err)
+	}
+	if want := ProviderCredentialDir(workspaceRoot, "prov-codex", entity.ModelCodex); credentialDir != want {
+		t.Fatalf("credential dir = %q, want %q", credentialDir, want)
 	}
 }

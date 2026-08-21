@@ -254,7 +254,9 @@ func (r *Runner) ExecPromptWithRuntimeControlEnvContext(ctx context.Context, pro
 		}
 	} else {
 		effectiveEnv = mergeEnv(effectiveEnv, directHostRuntimeEnv(model))
+		effectiveEnv = mergeEnv(effectiveEnv, directHostRuntimeHomeEnv(agentDir, model))
 		effectiveEnv = mergeEnv(effectiveEnv, r.workspaceFilesEnv(filepath.Join(r.root, ".multigent", "files")))
+		innerArgs = adaptDirectHostArgs(model, innerArgs)
 		if err := validateDirectHostExecution(model, innerArgs, effectiveEnv); err != nil {
 			return nil, err
 		}
@@ -485,7 +487,9 @@ func (r *Runner) RunTaskWithContext(ctx context.Context, project, agentName stri
 	} else {
 		// Direct host execution.
 		effectiveEnv = mergeEnv(effectiveEnv, directHostRuntimeEnv(model))
+		effectiveEnv = mergeEnv(effectiveEnv, directHostRuntimeHomeEnv(agentDir, model))
 		effectiveEnv = mergeEnv(effectiveEnv, r.workspaceFilesEnv(filepath.Join(r.root, ".multigent", "files")))
+		innerArgs = adaptDirectHostArgs(model, innerArgs)
 		if err := validateDirectHostExecution(model, innerArgs, effectiveEnv); err != nil {
 			return nil, err
 		}
@@ -921,6 +925,51 @@ func directHostRuntimeEnv(model entity.AgentModel) map[string]string {
 	default:
 		return nil
 	}
+}
+
+func directHostRuntimeHomeEnv(agentDir string, model entity.AgentModel) map[string]string {
+	home := filepath.Join(agentDir, ".multigent", "runtime-home", string(entity.NormaliseModel(model)))
+	switch entity.NormaliseModel(model) {
+	case entity.ModelCodex, entity.ModelQoder:
+		return map[string]string{
+			"HOME":       home,
+			"CODEX_HOME": filepath.Join(home, ".codex"),
+		}
+	case entity.ModelCursor:
+		return map[string]string{
+			"HOME":            home,
+			"XDG_CONFIG_HOME": filepath.Join(home, ".config"),
+		}
+	case entity.ModelClaudeCode:
+		return map[string]string{"HOME": home}
+	default:
+		return nil
+	}
+}
+
+func adaptDirectHostArgs(model entity.AgentModel, args []string) []string {
+	switch entity.NormaliseModel(model) {
+	case entity.ModelCodex, entity.ModelQoder:
+		return ensureCodexBypassSandboxArg(args)
+	default:
+		return args
+	}
+}
+
+func ensureCodexBypassSandboxArg(args []string) []string {
+	const bypassArg = "--dangerously-bypass-approvals-and-sandbox"
+	if len(args) < 2 || args[0] != "codex" || args[1] != "exec" {
+		return args
+	}
+	for _, arg := range args {
+		if arg == bypassArg {
+			return args
+		}
+	}
+	out := make([]string, 0, len(args)+1)
+	out = append(out, args[0], args[1], bypassArg)
+	out = append(out, args[2:]...)
+	return out
 }
 
 func adaptSandboxArgs(model entity.AgentModel, args []string) []string {
@@ -1701,14 +1750,21 @@ func (r *Runner) materializeProviderCredentials(agentDir string, meta *entity.Ag
 	model := entity.NormaliseModel(meta.Model)
 	switch {
 	case method == store.ProviderAuthMethodCodexChatGPT && (model == entity.ModelCodex || model == entity.ModelQoder):
-		src := filepath.Join(store.ProviderCredentialDir(r.root, provider.ID, entity.ModelCodex), ".codex", "auth.json")
+		credentialDir, err := ps.CredentialDir(provider.ID, entity.ModelCodex)
+		if err != nil {
+			return err
+		}
+		src := filepath.Join(credentialDir, ".codex", "auth.json")
 		if !fileExists(src) {
 			return fmt.Errorf("codex ChatGPT auth file is missing for provider %s", provider.ID)
 		}
 		dst := filepath.Join(agentDir, ".multigent", "runtime-home", string(model), ".codex", "auth.json")
 		return copyRuntimeCredentialFile(src, dst)
 	case method == store.ProviderAuthMethodClaudeBrowser && model == entity.ModelClaudeCode:
-		srcRoot := store.ProviderCredentialDir(r.root, provider.ID, entity.ModelClaudeCode)
+		srcRoot, err := ps.CredentialDir(provider.ID, entity.ModelClaudeCode)
+		if err != nil {
+			return err
+		}
 		hasCredential := false
 		for _, rel := range []string{".claude.json", filepath.Join(".claude", ".credentials.json")} {
 			src := filepath.Join(srcRoot, rel)
@@ -1725,7 +1781,10 @@ func (r *Runner) materializeProviderCredentials(agentDir string, meta *entity.Ag
 		}
 		return nil
 	case method == store.ProviderAuthMethodCursorBrowser && model == entity.ModelCursor:
-		srcRoot := store.ProviderCredentialDir(r.root, provider.ID, entity.ModelCursor)
+		srcRoot, err := ps.CredentialDir(provider.ID, entity.ModelCursor)
+		if err != nil {
+			return err
+		}
 		hasCredential := false
 		for _, rel := range []string{
 			filepath.Join(".config", "cursor", "cli-config.json"),
@@ -2152,10 +2211,13 @@ func runtimeMGAInstallerScript() []string {
 	return []string{
 		"export MULTIGENT_TOOLCHAIN_HOME=" + shellQuote(agentcli.ToolchainHome),
 		"mkdir -p \"$MULTIGENT_TOOLCHAIN_HOME/mga/bin\"",
-		"if [ -x /opt/multigent/mga/bin/mga ]; then",
-		"  cp /opt/multigent/mga/bin/mga \"$MULTIGENT_TOOLCHAIN_HOME/mga/bin/mga\"",
-		"  chmod 0755 \"$MULTIGENT_TOOLCHAIN_HOME/mga/bin/mga\"",
-		"fi",
+		"for mga_src in /opt/multigent/mga/bin/mga /opt/multigent/current/mga; do",
+		"  if [ -x \"$mga_src\" ]; then",
+		"    cp \"$mga_src\" \"$MULTIGENT_TOOLCHAIN_HOME/mga/bin/mga\"",
+		"    chmod 0755 \"$MULTIGENT_TOOLCHAIN_HOME/mga/bin/mga\"",
+		"    break",
+		"  fi",
+		"done",
 		"export PATH=\"$MULTIGENT_TOOLCHAIN_HOME/mga/bin:$PATH\"",
 		"command -v mga >/dev/null 2>&1",
 	}

@@ -61,6 +61,24 @@ func TestDirectHostRuntimeEnvMarksClaudeAsSandboxed(t *testing.T) {
 	}
 }
 
+func TestAdaptDirectHostArgsAddsCodexBypassSandbox(t *testing.T) {
+	args := []string{"codex", "exec", "--json", "--skip-git-repo-check", "-"}
+	got := adaptDirectHostArgs(entity.ModelCodex, args)
+	want := []string{"codex", "exec", "--dangerously-bypass-approvals-and-sandbox", "--json", "--skip-git-repo-check", "-"}
+	if !slices.Equal(got, want) {
+		t.Fatalf("args = %#v, want %#v", got, want)
+	}
+}
+
+func TestAdaptDirectHostArgsAddsCodexBypassBeforeResume(t *testing.T) {
+	args := []string{"codex", "exec", "--json", "resume", "session-1", "-"}
+	got := adaptDirectHostArgs(entity.ModelCodex, args)
+	want := []string{"codex", "exec", "--dangerously-bypass-approvals-and-sandbox", "--json", "resume", "session-1", "-"}
+	if !slices.Equal(got, want) {
+		t.Fatalf("args = %#v, want %#v", got, want)
+	}
+}
+
 func TestAdaptSandboxArgsKeepsClaudeDangerousBypass(t *testing.T) {
 	args := []string{"claude", "-p", "--permission-mode", "bypassPermissions", "--output-format", "stream-json"}
 	got := adaptSandboxArgs(entity.ModelClaudeCode, args)
