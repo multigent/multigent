@@ -56,12 +56,13 @@ func (s *Server) handleTelemetrySummary(w http.ResponseWriter, r *http.Request) 
 	rows = s.enrichTelemetryUsageFromLogs(rows)
 	sum := telemetry.Summarize(rows)
 	byAgent := telemetry.SummarizeByAgent(rows)
+	agentMeta := s.telemetryAgentMetadata()
 
 	_ = json.NewEncoder(w).Encode(map[string]any{
 		"window":    windowJSON(from, to, allTime),
 		"available": true,
 		"summary":   summaryJSON(sum),
-		"byAgent":   agentSummariesJSON(byAgent),
+		"byAgent":   s.agentSummariesJSON(byAgent, agentMeta),
 	})
 }
 
@@ -94,10 +95,10 @@ func summaryJSON(sum telemetry.Summary) map[string]any {
 	}
 }
 
-func agentSummariesJSON(in []telemetry.AgentSummary) []map[string]any {
+func (s *Server) agentSummariesJSON(in []telemetry.AgentSummary, meta telemetryAgentMetaMap) []map[string]any {
 	out := make([]map[string]any, 0, len(in))
 	for _, a := range in {
-		out = append(out, map[string]any{
+		item := map[string]any{
 			"project":         a.Project,
 			"agent":           a.Agent,
 			"runs":            a.Runs,
@@ -113,7 +114,9 @@ func agentSummariesJSON(in []telemetry.AgentSummary) []map[string]any {
 			"awaiting":        a.Awaiting,
 			"other":           a.Other,
 			"wallDurationMs":  a.WallDuration.Milliseconds(),
-		})
+		}
+		s.applyTelemetryAgentMetadata(item, meta, a.Project, a.Agent, "", "")
+		out = append(out, item)
 	}
 	return out
 }
@@ -162,6 +165,7 @@ func (s *Server) handleTelemetryRuns(w http.ResponseWriter, r *http.Request) {
 	}
 	rows = s.filterTelemetryRunsForRequest(r, rows)
 	rows = s.enrichTelemetryUsageFromLogs(rows)
+	agentMeta := s.telemetryAgentMetadata()
 	// Newest first
 	for i, j := 0, len(rows)-1; i < j; i, j = i+1, j-1 {
 		rows[i], rows[j] = rows[j], rows[i]
@@ -210,9 +214,10 @@ func (s *Server) handleTelemetryRuns(w http.ResponseWriter, r *http.Request) {
 		if row.APIBaseURL != "" {
 			m["apiBaseUrl"] = row.APIBaseURL
 		}
+		s.applyTelemetryAgentMetadata(m, agentMeta, row.Project, row.Agent, "", "")
 		runOut = append(runOut, m)
 	}
-	runOut = append(runOut, s.runtimeRunRowsForTelemetry(project, limit)...)
+	runOut = append(runOut, s.runtimeRunRowsForTelemetry(project, limit, agentMeta)...)
 	sortRunRowsNewestFirst(runOut)
 	if len(runOut) > limit {
 		runOut = runOut[:limit]
@@ -225,7 +230,7 @@ func (s *Server) handleTelemetryRuns(w http.ResponseWriter, r *http.Request) {
 	})
 }
 
-func (s *Server) runtimeRunRowsForTelemetry(project string, limit int) []map[string]any {
+func (s *Server) runtimeRunRowsForTelemetry(project string, limit int, meta telemetryAgentMetaMap) []map[string]any {
 	if s == nil || s.controlDB == nil {
 		return nil
 	}
@@ -270,9 +275,113 @@ func (s *Server) runtimeRunRowsForTelemetry(project string, limit int) []map[str
 		if run.ErrorMessage != "" {
 			row["errorMsg"] = run.ErrorMessage
 		}
+		s.applyTelemetryAgentMetadata(row, meta, run.ProjectID, run.AgentID, run.AgentWorkerID, run.ProjectMembershipID)
 		out = append(out, row)
 	}
 	return out
+}
+
+type telemetryAgentMeta struct {
+	Worker     controldb.AgentWorker
+	Membership controldb.ProjectMembership
+	Team       string
+}
+
+type telemetryAgentMetaMap struct {
+	byProjectAgent map[string]telemetryAgentMeta
+	byWorkerID     map[string]telemetryAgentMeta
+	byMembershipID map[string]telemetryAgentMeta
+}
+
+func (s *Server) telemetryAgentMetadata() telemetryAgentMetaMap {
+	out := telemetryAgentMetaMap{
+		byProjectAgent: make(map[string]telemetryAgentMeta),
+		byWorkerID:     make(map[string]telemetryAgentMeta),
+		byMembershipID: make(map[string]telemetryAgentMeta),
+	}
+	if s == nil || s.controlDB == nil {
+		return out
+	}
+	workspaceID, err := s.currentWorkspaceID()
+	if err != nil || strings.TrimSpace(workspaceID) == "" {
+		return out
+	}
+	workers, err := s.controlDB.ListAgentWorkers(workspaceID)
+	if err != nil {
+		return out
+	}
+	workersByID := make(map[string]controldb.AgentWorker, len(workers))
+	for _, worker := range workers {
+		workersByID[worker.ID] = worker
+	}
+	memberships, err := s.controlDB.ListProjectMemberships(controldb.ProjectMembershipFilter{
+		WorkspaceID: workspaceID,
+		MemberType:  "agent_worker",
+	})
+	if err != nil {
+		return out
+	}
+	roleTeams := s.projectMembershipRoleTeams()
+	for _, membership := range memberships {
+		worker, ok := workersByID[membership.MemberID]
+		if !ok {
+			continue
+		}
+		meta := telemetryAgentMeta{
+			Worker:     worker,
+			Membership: membership,
+			Team:       s.projectMembershipTeam(membership, worker, roleTeams),
+		}
+		if membership.ID != "" {
+			out.byMembershipID[membership.ID] = meta
+		}
+		if worker.ID != "" {
+			if _, exists := out.byWorkerID[worker.ID]; !exists {
+				out.byWorkerID[worker.ID] = meta
+			}
+		}
+		for _, agentRef := range []string{membership.Title, worker.Name, worker.DisplayName} {
+			agentRef = strings.TrimSpace(agentRef)
+			if agentRef == "" {
+				continue
+			}
+			out.byProjectAgent[telemetryProjectAgentKey(membership.ProjectID, agentRef)] = meta
+		}
+	}
+	return out
+}
+
+func (s *Server) applyTelemetryAgentMetadata(row map[string]any, meta telemetryAgentMetaMap, project, agent, workerID, membershipID string) {
+	resolved, ok := meta.byMembershipID[strings.TrimSpace(membershipID)]
+	if !ok {
+		resolved, ok = meta.byWorkerID[strings.TrimSpace(workerID)]
+	}
+	if !ok {
+		resolved, ok = meta.byProjectAgent[telemetryProjectAgentKey(project, agent)]
+	}
+	if !ok {
+		return
+	}
+	worker := resolved.Worker
+	membership := resolved.Membership
+	row["agentWorkerId"] = worker.ID
+	row["agentWorkerName"] = worker.Name
+	row["agentDisplayName"] = firstNonEmpty(worker.DisplayName, worker.Name)
+	row["agentAvatar"] = agentWorkerAvatar(worker)
+	row["projectMembershipId"] = membership.ID
+	if membership.Role != "" {
+		row["role"] = membership.Role
+	}
+	if membership.Title != "" {
+		row["projectTitle"] = membership.Title
+	}
+	if resolved.Team != "" {
+		row["team"] = resolved.Team
+	}
+}
+
+func telemetryProjectAgentKey(project, agent string) string {
+	return strings.ToLower(strings.TrimSpace(project)) + "/" + strings.ToLower(strings.TrimSpace(agent))
 }
 
 func runtimeRunTelemetryStatus(status string, result map[string]any) string {

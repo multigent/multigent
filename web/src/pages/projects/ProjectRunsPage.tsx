@@ -29,6 +29,14 @@ type Summary = {
 type AgentSum = {
   project: string
   agent: string
+  agentWorkerId?: string
+  agentWorkerName?: string
+  agentDisplayName?: string
+  agentAvatar?: string
+  projectMembershipId?: string
+  projectTitle?: string
+  role?: string
+  team?: string
   runs: number
   inputTokens: number
   outputTokens: number
@@ -48,6 +56,14 @@ type TelemetrySummary = {
 type RunRow = {
   project: string
   agent: string
+  agentWorkerId?: string
+  agentWorkerName?: string
+  agentDisplayName?: string
+  agentAvatar?: string
+  projectMembershipId?: string
+  projectTitle?: string
+  role?: string
+  team?: string
   kind: string
   status: string
   startedAt: string
@@ -126,6 +142,32 @@ function isFailed(status: string) {
   return status === 'failed' || status === 'done_failed' || status === 'error'
 }
 
+function agentDisplayLabel(row: Pick<RunRow | AgentSum, 'agent' | 'agentDisplayName' | 'agentWorkerName'>) {
+  return row.agentDisplayName || row.agentWorkerName || row.agent
+}
+
+function agentFilterKey(row: Pick<RunRow | AgentSum, 'project' | 'agent' | 'agentWorkerId' | 'agentWorkerName'>) {
+  return row.agentWorkerId || row.agentWorkerName || `${row.project}/${row.agent}`
+}
+
+function agentContextLabel(row: Pick<RunRow | AgentSum, 'project' | 'projectTitle' | 'role' | 'team'>) {
+  const parts = [row.team, row.role].filter(Boolean)
+  const context = parts.length > 0 ? parts.join(' / ') : ''
+  return context ? `${row.project} · ${context}` : row.project
+}
+
+function agentDetailPath(row: Pick<RunRow | AgentSum, 'agentWorkerId' | 'project' | 'agent'>) {
+  if (row.agentWorkerId) return `/agents/${encodeURIComponent(row.agentWorkerId)}`
+  return `/projects/${encodeURIComponent(row.project)}/members/${encodeURIComponent(row.agent)}`
+}
+
+function agentChatPath(row: RunRow) {
+  if (row.sessionId) {
+    return `/projects/${encodeURIComponent(row.project)}/members/${encodeURIComponent(row.agent)}/chat?sessionId=${encodeURIComponent(row.sessionId)}`
+  }
+  return agentDetailPath(row)
+}
+
 const kindStyles: Record<string, { text: string; cls: string }> = {
   wakeup: { text: 'Wakeup', cls: 'bg-sky-100 text-sky-700 dark:bg-sky-900/30 dark:text-sky-400' },
   chat: { text: 'Chat', cls: 'bg-emerald-100 text-emerald-700 dark:bg-emerald-900/30 dark:text-emerald-400' },
@@ -200,9 +242,12 @@ export default function ProjectRunsPage() {
   const allRuns = runsState.status === 'ok' && runsState.data.available ? runsState.data.runs : []
 
   const agentOptions = useMemo(() => {
-    const set = new Set<string>()
-    for (const r of allRuns) set.add(`${r.project}/${r.agent}`)
-    return Array.from(set).sort()
+    const options = new Map<string, string>()
+    for (const r of allRuns) {
+      const key = agentFilterKey(r)
+      if (!options.has(key)) options.set(key, agentDisplayLabel(r))
+    }
+    return Array.from(options.entries()).map(([value, label]) => ({ value, label })).sort((a, b) => a.label.localeCompare(b.label))
   }, [allRuns])
 
   const statusOptions = useMemo(() => {
@@ -215,7 +260,7 @@ export default function ProjectRunsPage() {
     return allRuns.filter((r) => {
       if (filterKind !== 'all' && resolveKind(r) !== filterKind) return false
       if (filterStatus !== 'all' && r.status !== filterStatus) return false
-      if (filterAgent !== 'all' && `${r.project}/${r.agent}` !== filterAgent) return false
+      if (filterAgent !== 'all' && agentFilterKey(r) !== filterAgent) return false
       return true
     })
   }, [allRuns, filterKind, filterStatus, filterAgent])
@@ -326,7 +371,12 @@ export default function ProjectRunsPage() {
               <tbody className="divide-y divide-neutral-100 dark:divide-zinc-800/40">
                 {sumState.data.byAgent.map((a) => (
                   <tr key={`${a.project}/${a.agent}`} className="bg-white transition-colors duration-100 hover:bg-neutral-50/80 dark:bg-zinc-900/20 dark:hover:bg-zinc-800/30">
-                    <td className="whitespace-nowrap px-4 py-3 text-center font-mono text-sm text-neutral-800 dark:text-zinc-300">{a.project}/{a.agent}</td>
+                    <td className="whitespace-nowrap px-4 py-3 text-center">
+                      <Link to={agentDetailPath(a)} className="text-sm font-medium text-neutral-800 transition-colors hover:text-sky-700 hover:underline dark:text-zinc-200 dark:hover:text-sky-300">
+                        {agentDisplayLabel(a)}
+                      </Link>
+                      <p className="mt-0.5 text-xs text-neutral-400 dark:text-zinc-500">{agentContextLabel(a)}</p>
+                    </td>
                     <td className="px-4 py-3 text-center text-sm tabular-nums text-neutral-700 dark:text-zinc-400">{a.runs}</td>
                     <td className="px-4 py-3 text-center text-sm tabular-nums text-neutral-700 dark:text-zinc-400">{fmtNum(totalTokens(a.inputTokens, a.outputTokens, a.cacheReadTokens))}</td>
                     <td className="px-4 py-3 text-center text-sm tabular-nums text-neutral-700 dark:text-zinc-400">{fmtPct(successRate(a.success, a.runs))}</td>
@@ -365,7 +415,7 @@ export default function ProjectRunsPage() {
               <select value={filterAgent} onChange={(e) => setFilterAgent(e.target.value)} className={filterSelect}>
                 <option value="all">{t('runs.filterAgent')}</option>
                 {agentOptions.map((a) => (
-                  <option key={a} value={a}>{a}</option>
+                  <option key={a.value} value={a.value}>{a.label}</option>
                 ))}
               </select>
             )}
@@ -398,7 +448,10 @@ export default function ProjectRunsPage() {
                       onClick={() => setSelectedRun(r)}
                     >
                       <td className="whitespace-nowrap px-4 py-3 text-center text-[13px] text-neutral-500 dark:text-zinc-500">{fmt(r.startedAt)}</td>
-                      <td className="whitespace-nowrap px-4 py-3 text-center font-mono text-[13px] text-neutral-800 dark:text-zinc-300">{r.project}/{r.agent}</td>
+                      <td className="whitespace-nowrap px-4 py-3 text-center">
+                        <span className="text-[13px] font-medium text-neutral-800 dark:text-zinc-200">{agentDisplayLabel(r)}</span>
+                        <p className="mt-0.5 text-xs text-neutral-400 dark:text-zinc-500">{agentContextLabel(r)}</p>
+                      </td>
                       <td className="whitespace-nowrap px-4 py-3 text-center">
                         <span className={cn('rounded-full px-2 py-0.5 text-[11px] font-semibold', kl.cls)}>
                           {kl.text}
@@ -467,7 +520,8 @@ function RunDetailModal({ run, onClose }: { run: RunRow; onClose: () => void }) 
         <div className="flex items-center justify-between border-b border-neutral-200/80 px-5 py-3 dark:border-zinc-700/60">
           <div className="flex items-center gap-3">
             <span className={cn('rounded-full px-2 py-0.5 text-[11px] font-semibold', kl.cls)}>{kl.text}</span>
-            <span className="font-mono text-sm font-medium text-neutral-900 dark:text-zinc-100">{run.project}/{run.agent}</span>
+            <span className="text-sm font-medium text-neutral-900 dark:text-zinc-100">{agentDisplayLabel(run)}</span>
+            <span className="text-xs text-neutral-400 dark:text-zinc-500">{agentContextLabel(run)}</span>
             <span className={cn('text-sm font-medium', statusCls[run.status] ?? 'text-neutral-600')}>{t(`runs.status.${run.status}`, { defaultValue: run.status })}</span>
           </div>
           <button type="button" onClick={onClose} className="rounded-md p-1 text-neutral-400 transition-colors hover:bg-neutral-100 hover:text-neutral-700 dark:text-zinc-500 dark:hover:bg-zinc-800 dark:hover:text-zinc-300">
@@ -503,7 +557,7 @@ function RunDetailModal({ run, onClose }: { run: RunRow; onClose: () => void }) 
               <div className="mt-0.5 flex items-center gap-2">
                 <p className="font-mono text-xs text-neutral-700 dark:text-zinc-300" title={run.sessionId}>{run.sessionId.length > 20 ? run.sessionId.slice(0, 20) + '…' : run.sessionId}</p>
                 <Link
-                  to={`/projects/${encodeURIComponent(run.project)}/members/${encodeURIComponent(run.agent)}/chat?sessionId=${encodeURIComponent(run.sessionId)}`}
+                  to={agentChatPath(run)}
                   className="inline-flex items-center gap-1 rounded-md px-1.5 py-0.5 text-[11px] font-medium text-sky-700 hover:bg-sky-50 dark:text-sky-400 dark:hover:bg-sky-900/20"
                 >
                   <MessageSquareText className="size-3" strokeWidth={2} />
@@ -582,7 +636,7 @@ function RunDetailModal({ run, onClose }: { run: RunRow; onClose: () => void }) 
                     content={logState.data.content}
                     mode="chat"
                     user={userParticipant}
-                    assistant={{ name: run.agent }}
+                    assistant={{ name: agentDisplayLabel(run), avatar: run.agentAvatar }}
                   />
                 </section>
                 <TechnicalLog content={logState.data.content} truncated={logState.data.truncated} />

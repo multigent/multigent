@@ -91,3 +91,43 @@ func TestTelemetryRunsAreFilteredByAgentAccess(t *testing.T) {
 		t.Fatalf("admin runs should include all accessible runs: %#v", adminBody.Runs)
 	}
 }
+
+func TestTelemetryRunsIncludeAgentWorkerMetadata(t *testing.T) {
+	s, workspaceID := newConnectionGrantPolicyServer(t)
+	seedSampleAgentsForTest(t, s, workspaceID)
+	seedTelemetryRun(t, s, "sample", "pm", "pm log")
+
+	rec := httptest.NewRecorder()
+	s.handleTelemetryRuns(rec, providerTestRequest(http.MethodGet, "/api/v1/telemetry/runs?allTime=1", "admin", nil))
+	if rec.Code != http.StatusOK {
+		t.Fatalf("runs status=%d body=%s", rec.Code, rec.Body.String())
+	}
+	var body struct {
+		Runs []map[string]any `json:"runs"`
+	}
+	if err := json.Unmarshal(rec.Body.Bytes(), &body); err != nil {
+		t.Fatalf("decode runs: %v", err)
+	}
+	if len(body.Runs) != 1 {
+		t.Fatalf("expected one run, got %#v", body.Runs)
+	}
+	run := body.Runs[0]
+	if run["agentWorkerId"] != "aw-pm" || run["agentDisplayName"] != "pm" {
+		t.Fatalf("run missing agent worker metadata: %#v", run)
+	}
+
+	sumRec := httptest.NewRecorder()
+	s.handleTelemetrySummary(sumRec, providerTestRequest(http.MethodGet, "/api/v1/telemetry/summary?allTime=1", "admin", nil))
+	if sumRec.Code != http.StatusOK {
+		t.Fatalf("summary status=%d body=%s", sumRec.Code, sumRec.Body.String())
+	}
+	var sumBody struct {
+		ByAgent []map[string]any `json:"byAgent"`
+	}
+	if err := json.Unmarshal(sumRec.Body.Bytes(), &sumBody); err != nil {
+		t.Fatalf("decode summary: %v", err)
+	}
+	if len(sumBody.ByAgent) != 1 || sumBody.ByAgent[0]["agentWorkerId"] != "aw-pm" {
+		t.Fatalf("summary missing agent worker metadata: %#v", sumBody.ByAgent)
+	}
+}
