@@ -8,6 +8,7 @@ import (
 	"fmt"
 	"io"
 	"io/fs"
+	"mime/multipart"
 	"net/http"
 	"net/url"
 	"os"
@@ -501,6 +502,12 @@ func newNotifyCmd() *cobra.Command {
 	cmd := &cobra.Command{Use: "notify", Short: "Notify humans through agent collaboration channels"}
 	cmd.AddCommand(newNotifySendCmd())
 	cmd.AddCommand(newNotifyReactionCmd())
+	fileCmd := &cobra.Command{Use: "file", Short: "Send files through collaboration channels"}
+	fileCmd.AddCommand(newNotifyFileSendCmd("file"))
+	cmd.AddCommand(fileCmd)
+	imageCmd := &cobra.Command{Use: "image", Short: "Send images through collaboration channels"}
+	imageCmd.AddCommand(newNotifyFileSendCmd("image"))
+	cmd.AddCommand(imageCmd)
 	cardCmd := &cobra.Command{Use: "card", Short: "Send interactive cards through collaboration channels"}
 	cardCmd.AddCommand(newNotifyCardSendCmd())
 	cmd.AddCommand(cardCmd)
@@ -573,6 +580,66 @@ func newNotifyReactionCmd() *cobra.Command {
 	cmd.Flags().StringVar(&channel, "channel", "auto", "channel provider: auto, feishu, lark")
 	cmd.Flags().StringVar(&emoji, "emoji", "OK", "reaction emoji, e.g. OK, THINKING, THUMBSUP")
 	cmd.Flags().StringVar(&taskID, "task", "", "related task id")
+	cmd.Flags().StringVar(&format, "format", "json", "output format: json or table")
+	return cmd
+}
+
+func newNotifyFileSendCmd(defaultKind string) *cobra.Command {
+	var to, channel, path, docID, caption, filename, mimeType, kind, taskID, subject, format string
+	cmd := &cobra.Command{
+		Use:   "send",
+		Short: "Send a file or knowledge document from the current runtime agent",
+		RunE: func(cmd *cobra.Command, args []string) error {
+			if strings.TrimSpace(to) == "" {
+				to = "human"
+			}
+			if strings.TrimSpace(kind) == "" {
+				kind = defaultKind
+			}
+			var fileData []byte
+			if strings.TrimSpace(path) != "" {
+				raw, err := os.ReadFile(path)
+				if err != nil {
+					return err
+				}
+				fileData = raw
+				if strings.TrimSpace(filename) == "" {
+					filename = filepath.Base(path)
+				}
+			}
+			if len(fileData) == 0 && strings.TrimSpace(docID) == "" {
+				return fmt.Errorf("--path or --doc is required")
+			}
+			resp, err := requestMultipart("/api/v1/runtime/notify/file", map[string]string{
+				"to":       to,
+				"channel":  channel,
+				"caption":  caption,
+				"filename": filename,
+				"mime":     mimeType,
+				"kind":     kind,
+				"taskId":   taskID,
+				"subject":  subject,
+				"docId":    docID,
+			}, "file", filename, fileData)
+			if err != nil {
+				return err
+			}
+			if format == "table" {
+				return printNotifySendTable(resp)
+			}
+			return writeJSON(resp)
+		},
+	}
+	cmd.Flags().StringVar(&to, "to", "human", "recipient: human, owner, source, user:<username>, or chat:<group-name>")
+	cmd.Flags().StringVar(&channel, "channel", "auto", "channel provider: auto, feishu, lark, slack, telegram, discord")
+	cmd.Flags().StringVar(&path, "path", "", "local file path readable by this agent runtime")
+	cmd.Flags().StringVar(&docID, "doc", "", "knowledge document ID to export and send as a file")
+	cmd.Flags().StringVar(&caption, "caption", "", "optional text sent before the attachment")
+	cmd.Flags().StringVar(&filename, "filename", "", "override attachment filename")
+	cmd.Flags().StringVar(&mimeType, "mime", "", "override attachment MIME type")
+	cmd.Flags().StringVar(&kind, "kind", defaultKind, "attachment kind: file or image")
+	cmd.Flags().StringVar(&taskID, "task", "", "related task id")
+	cmd.Flags().StringVar(&subject, "subject", "", "internal notification subject")
 	cmd.Flags().StringVar(&format, "format", "json", "output format: json or table")
 	return cmd
 }
@@ -1665,6 +1732,62 @@ func requestJSON(method, path string, query url.Values, body []byte) ([]byte, er
 		return nil, fmt.Errorf("runtime API returned HTTP %d: %s", status, strings.TrimSpace(string(resp)))
 	}
 	return resp, nil
+}
+
+func requestMultipart(path string, fields map[string]string, fileField, fileName string, data []byte) ([]byte, error) {
+	base := strings.TrimRight(os.Getenv(envAPIURL), "/")
+	if base == "" {
+		return nil, fmt.Errorf("%s is not set", envAPIURL)
+	}
+	var buf bytes.Buffer
+	writer := multipart.NewWriter(&buf)
+	for k, v := range fields {
+		if strings.TrimSpace(v) == "" {
+			continue
+		}
+		if err := writer.WriteField(k, v); err != nil {
+			return nil, err
+		}
+	}
+	if len(data) > 0 {
+		if strings.TrimSpace(fileName) == "" {
+			fileName = "attachment"
+		}
+		part, err := writer.CreateFormFile(fileField, fileName)
+		if err != nil {
+			return nil, err
+		}
+		if _, err := part.Write(data); err != nil {
+			return nil, err
+		}
+	}
+	if err := writer.Close(); err != nil {
+		return nil, err
+	}
+	req, err := http.NewRequest(http.MethodPost, base+path, &buf)
+	if err != nil {
+		return nil, err
+	}
+	req.Header.Set("Content-Type", writer.FormDataContentType())
+	if token := strings.TrimSpace(os.Getenv(envAgentToken)); token != "" {
+		req.Header.Set("Authorization", "Bearer "+token)
+	}
+	resp, err := http.DefaultClient.Do(req)
+	if err != nil {
+		return nil, err
+	}
+	defer resp.Body.Close()
+	raw, _ := io.ReadAll(io.LimitReader(resp.Body, maxJSONBody))
+	if resp.StatusCode < 200 || resp.StatusCode >= 300 {
+		if len(raw) == 0 {
+			return nil, fmt.Errorf("HTTP %d", resp.StatusCode)
+		}
+		return nil, fmt.Errorf("HTTP %d: %s", resp.StatusCode, strings.TrimSpace(string(raw)))
+	}
+	if len(raw) == 0 {
+		return []byte("{}"), nil
+	}
+	return raw, nil
 }
 
 func requestJSONWithStatus(method, path string, query url.Values, body []byte) ([]byte, int, error) {

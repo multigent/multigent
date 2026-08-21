@@ -92,6 +92,14 @@ type OutgoingMessage struct {
 	Card          *InteractiveCard
 }
 
+type OutgoingAttachment struct {
+	Kind     string
+	FileName string
+	MIME     string
+	Data     []byte
+	Caption  string
+}
+
 type InteractiveCard struct {
 	InteractionID string
 	Title         string
@@ -179,6 +187,11 @@ type RichReplyProvider interface {
 type ReactionProvider interface {
 	AddReaction(ctx context.Context, secrets map[string]string, message IncomingMessage, emoji string) (string, error)
 	RemoveReaction(ctx context.Context, secrets map[string]string, message IncomingMessage, reactionID string) error
+}
+
+type AttachmentSender interface {
+	SendAttachment(ctx context.Context, secrets map[string]string, target OutgoingTarget, attachment OutgoingAttachment) error
+	ReplyAttachment(ctx context.Context, secrets map[string]string, message IncomingMessage, attachment OutgoingAttachment) error
 }
 
 type ProgressCardReplyProvider interface {
@@ -445,6 +458,52 @@ func (p larkFamilyProvider) SendMessage(ctx context.Context, secrets map[string]
 		return client.SendMarkdown(ctx, receiveIDType, receiveID, message.Subject, message.Text)
 	}
 	return client.SendText(ctx, receiveIDType, receiveID, message.Text)
+}
+
+func (p larkFamilyProvider) SendAttachment(ctx context.Context, secrets map[string]string, target OutgoingTarget, attachment OutgoingAttachment) error {
+	client := larkbridge.OpenAPIClient{
+		BaseURL:   secrets["baseUrl"],
+		AppID:     secrets["appId"],
+		AppSecret: secrets["appSecret"],
+	}
+	receiveIDType := strings.TrimSpace(target.ReceiveIDType)
+	receiveID := strings.TrimSpace(target.ReceiveID)
+	if receiveID == "" {
+		receiveID = strings.TrimSpace(target.ChatID)
+		receiveIDType = "chat_id"
+	}
+	if strings.TrimSpace(attachment.Caption) != "" {
+		caption := larkMentionPrefixedText(target.ChatType, target.MentionOpenID, attachment.Caption)
+		if err := client.SendText(ctx, receiveIDType, receiveID, caption); err != nil {
+			return err
+		}
+	}
+	return client.SendAttachment(ctx, receiveIDType, receiveID, larkbridge.OutgoingAttachment{
+		Kind:     attachment.Kind,
+		FileName: attachment.FileName,
+		MIME:     attachment.MIME,
+		Data:     attachment.Data,
+	})
+}
+
+func (p larkFamilyProvider) ReplyAttachment(ctx context.Context, secrets map[string]string, message IncomingMessage, attachment OutgoingAttachment) error {
+	client := larkbridge.OpenAPIClient{
+		BaseURL:   secrets["baseUrl"],
+		AppID:     secrets["appId"],
+		AppSecret: secrets["appSecret"],
+	}
+	if strings.TrimSpace(attachment.Caption) != "" {
+		caption := larkMentionPrefixedText(message.ChatType, message.SenderOpenID, attachment.Caption)
+		if err := client.ReplyText(ctx, message.MessageID, caption); err != nil {
+			return err
+		}
+	}
+	return client.ReplyAttachment(ctx, message.MessageID, larkbridge.OutgoingAttachment{
+		Kind:     attachment.Kind,
+		FileName: attachment.FileName,
+		MIME:     attachment.MIME,
+		Data:     attachment.Data,
+	})
 }
 
 func larkMentionPrefixedText(chatType, openID, text string) string {

@@ -583,6 +583,7 @@ func (s *Server) Handler() http.Handler {
 	runtimeMux.HandleFunc("GET /api/v1/runtime/contacts", s.handleRuntimeContacts)
 	runtimeMux.HandleFunc("GET /api/v1/runtime/channels", s.handleRuntimeChannels)
 	runtimeMux.HandleFunc("POST /api/v1/runtime/notify", s.handleRuntimeNotify)
+	runtimeMux.HandleFunc("POST /api/v1/runtime/notify/file", s.handleRuntimeNotifyFile)
 	runtimeMux.HandleFunc("POST /api/v1/runtime/notify/reaction", s.handleRuntimeNotifyReaction)
 	runtimeMux.HandleFunc("GET /api/v1/runtime/attention", s.handleRuntimeAttentionSignals)
 	runtimeMux.HandleFunc("PATCH /api/v1/runtime/attention/{id}", s.handleRuntimePatchAttentionSignal)

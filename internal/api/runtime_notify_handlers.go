@@ -6,7 +6,10 @@ import (
 	"encoding/hex"
 	"encoding/json"
 	"fmt"
+	"io"
+	"mime"
 	"net/http"
+	"path/filepath"
 	"regexp"
 	"strings"
 	"time"
@@ -55,6 +58,8 @@ type runtimeNotifyReactionBody struct {
 	Emoji   string `json:"emoji"`
 	TaskID  string `json:"taskId"`
 }
+
+const maxRuntimeNotifyAttachmentBytes = 50 << 20
 
 type runtimeNotifyCardBody struct {
 	Title       string                        `json:"title"`
@@ -423,6 +428,190 @@ func (s *Server) handleRuntimeNotifyReaction(w http.ResponseWriter, r *http.Requ
 	_ = json.NewEncoder(w).Encode(result)
 }
 
+func (s *Server) handleRuntimeNotifyFile(w http.ResponseWriter, r *http.Request) {
+	principal, ok := s.runtimeRequireCapability(w, r, "message.use")
+	if !ok {
+		return
+	}
+	if err := r.ParseMultipartForm(maxRuntimeNotifyAttachmentBytes + (1 << 20)); err != nil {
+		s.jsonError(w, http.StatusBadRequest, "parse multipart form: "+err.Error())
+		return
+	}
+	to := strings.TrimSpace(r.FormValue("to"))
+	if to == "" {
+		to = "human"
+	}
+	channel := strings.TrimSpace(r.FormValue("channel"))
+	caption := strings.TrimSpace(r.FormValue("caption"))
+	taskID := strings.TrimSpace(r.FormValue("taskId"))
+	kind := strings.TrimSpace(r.FormValue("kind"))
+	fileName := strings.TrimSpace(r.FormValue("filename"))
+	mimeType := strings.TrimSpace(r.FormValue("mime"))
+	docID := strings.TrimSpace(r.FormValue("docId"))
+
+	var data []byte
+	var err error
+	if docID != "" {
+		data, fileName, mimeType, err = s.runtimeNotifyDocAttachment(docID, fileName, mimeType)
+		if err != nil {
+			s.jsonError(w, http.StatusBadRequest, err.Error())
+			return
+		}
+		if caption == "" {
+			caption = "相关文档：" + docID
+		}
+	} else {
+		data, fileName, mimeType, err = runtimeNotifyUploadedAttachment(r, fileName, mimeType)
+		if err != nil {
+			s.jsonError(w, http.StatusBadRequest, err.Error())
+			return
+		}
+	}
+	if len(data) == 0 {
+		s.jsonError(w, http.StatusBadRequest, "file is required")
+		return
+	}
+	if len(data) > maxRuntimeNotifyAttachmentBytes {
+		s.jsonError(w, http.StatusBadRequest, "file is too large; max 50 MiB")
+		return
+	}
+	if fileName == "" {
+		fileName = "attachment"
+	}
+	if mimeType == "" {
+		mimeType = mime.TypeByExtension(filepath.Ext(fileName))
+	}
+	if kind == "" {
+		kind = runtimeNotifyAttachmentKind(fileName, mimeType)
+	}
+
+	recipient, err := s.resolveRuntimeNotifyRecipient(principal, to)
+	if err != nil {
+		s.jsonError(w, http.StatusBadRequest, err.Error())
+		return
+	}
+	subject := strings.TrimSpace(r.FormValue("subject"))
+	if subject == "" {
+		subject = "Attachment: " + fileName
+	}
+	msg := &entity.Message{
+		ID:      entity.NewMessageID(),
+		From:    runtimeAgentAddress(principal),
+		To:      recipient,
+		Subject: subject,
+		Body:    runtimeNotifyAttachmentInboxBody(fileName, caption, docID),
+		SentAt:  time.Now().UTC(),
+	}
+	if err := s.ts.SendMessage(msg); err != nil {
+		s.serverError(w, err)
+		return
+	}
+
+	binding, found, err := s.selectRuntimeNotifyChannel(principal, channel)
+	if err != nil {
+		s.serverError(w, err)
+		return
+	}
+	result := map[string]any{
+		"messageId":     msg.ID,
+		"internalSent":  true,
+		"externalSent":  false,
+		"externalError": "",
+		"messageFormat": kind,
+		"fileName":      fileName,
+		"mime":          mimeType,
+		"size":          len(data),
+	}
+	if taskID != "" {
+		result["taskId"] = taskID
+	}
+	if !found {
+		result["externalError"] = "no connected human collaboration channel for this agent"
+		s.auditRuntimeNotify(r, principal, msg.ID, "", subject, false, result["externalError"].(string))
+		_ = json.NewEncoder(w).Encode(result)
+		return
+	}
+	target, targetOK, err := s.runtimeNotifyTargetForRecipient(principal, binding, recipient)
+	if err != nil {
+		s.serverError(w, err)
+		return
+	}
+	if !targetOK {
+		result["provider"] = binding.Provider
+		result["channelId"] = binding.ID
+		if strings.HasPrefix(recipient, "chat:") {
+			result["externalError"] = fmt.Sprintf("chat target %q is not bound for this %s agent channel", strings.TrimPrefix(recipient, "chat:"), binding.Provider)
+		} else {
+			result["externalError"] = fmt.Sprintf("recipient %q has not bound a %s collaboration account for this agent channel", recipient, binding.Provider)
+		}
+		s.auditRuntimeNotify(r, principal, msg.ID, binding.Provider, subject, false, result["externalError"].(string))
+		_ = json.NewEncoder(w).Encode(result)
+		return
+	}
+	channelProvider, ok := imbridge.LookupProvider(binding.Provider)
+	if !ok {
+		result["externalError"] = "unsupported IM provider: " + binding.Provider
+		s.auditRuntimeNotify(r, principal, msg.ID, binding.Provider, subject, false, result["externalError"].(string))
+		_ = json.NewEncoder(w).Encode(result)
+		return
+	}
+	attachmentProvider, ok := channelProvider.(imbridge.AttachmentSender)
+	if !ok {
+		result["provider"] = binding.Provider
+		result["channelId"] = binding.ID
+		result["externalError"] = fmt.Sprintf("%s collaboration channel does not support file sending yet", binding.Provider)
+		s.auditRuntimeNotify(r, principal, msg.ID, binding.Provider, subject, false, result["externalError"].(string))
+		_ = json.NewEncoder(w).Encode(result)
+		return
+	}
+	secret, ok, err := s.controlDB.ConnectionSecret(binding.ConnectionID)
+	if err != nil {
+		s.serverError(w, err)
+		return
+	}
+	if !ok {
+		result["externalError"] = "channel connection secret not found"
+		s.auditRuntimeNotify(r, principal, msg.ID, binding.Provider, subject, false, result["externalError"].(string))
+		_ = json.NewEncoder(w).Encode(result)
+		return
+	}
+	secrets, err := openConnectionSecret(secret)
+	if err != nil {
+		s.serverError(w, err)
+		return
+	}
+	ctx, cancel := context.WithTimeout(r.Context(), 45*time.Second)
+	defer cancel()
+	attachment := imbridge.OutgoingAttachment{Kind: kind, FileName: fileName, MIME: mimeType, Data: data, Caption: caption}
+	if target.ReplyToMessageID != "" {
+		err = attachmentProvider.ReplyAttachment(ctx, secrets, imbridge.IncomingMessage{
+			MessageID:    target.ReplyToMessageID,
+			ChatID:       target.ChatID,
+			ChatType:     target.ChatType,
+			SenderOpenID: target.MentionOpenID,
+		}, attachment)
+	} else {
+		err = attachmentProvider.SendAttachment(ctx, secrets, target, attachment)
+	}
+	if err != nil {
+		result["provider"] = binding.Provider
+		result["channelId"] = binding.ID
+		result["externalError"] = err.Error()
+		s.auditRuntimeNotify(r, principal, msg.ID, binding.Provider, subject, false, err.Error())
+		_ = json.NewEncoder(w).Encode(result)
+		return
+	}
+	now := time.Now().UTC().Format(time.RFC3339)
+	binding.LastActivityAt = now
+	binding.UpdatedAt = now
+	_ = s.controlDB.UpsertAgentChannelBinding(binding)
+	result["provider"] = binding.Provider
+	result["channelId"] = binding.ID
+	result["externalSent"] = true
+	s.auditRuntimeNotify(r, principal, msg.ID, binding.Provider, subject, true, "")
+	_ = json.NewEncoder(w).Encode(result)
+}
+
 func (s *Server) runtimeNotifyCreateInteractionRequest(principal runtimeAgentPrincipal, binding controldb.AgentChannelBinding, recipient string, body runtimeNotifyBody, fallbackText string) (*imbridge.InteractiveCard, string, error) {
 	cardBody := body.Card
 	if cardBody == nil {
@@ -529,6 +718,105 @@ func newRuntimeInteractionRequestID() string {
 		return fmt.Sprintf("ir_%d", time.Now().UnixNano())
 	}
 	return "ir_" + hex.EncodeToString(b[:])
+}
+
+func runtimeNotifyUploadedAttachment(r *http.Request, fileName, mimeType string) ([]byte, string, string, error) {
+	file, header, err := r.FormFile("file")
+	if err != nil {
+		return nil, "", "", fmt.Errorf("file is required")
+	}
+	defer file.Close()
+	if header != nil {
+		if fileName == "" {
+			fileName = filepath.Base(header.Filename)
+		}
+		if mimeType == "" {
+			mimeType = header.Header.Get("Content-Type")
+		}
+	}
+	data, err := io.ReadAll(io.LimitReader(file, maxRuntimeNotifyAttachmentBytes+1))
+	if err != nil {
+		return nil, "", "", err
+	}
+	return data, fileName, mimeType, nil
+}
+
+func (s *Server) runtimeNotifyDocAttachment(docID, fileName, mimeType string) ([]byte, string, string, error) {
+	ds := store.NewDocsStore(s.root)
+	doc, err := ds.Get(docID)
+	if err != nil {
+		return nil, "", "", err
+	}
+	content, err := ds.ReadContent(doc.FilePath)
+	if err != nil {
+		return nil, "", "", err
+	}
+	if fileName == "" {
+		ext := filepath.Ext(doc.FilePath)
+		if ext == "" {
+			ext = ".md"
+		}
+		fileName = slugForNotifyAttachment(firstNonEmpty(doc.Title, doc.ID)) + ext
+	}
+	if mimeType == "" {
+		mimeType = mime.TypeByExtension(filepath.Ext(fileName))
+	}
+	return []byte(content), fileName, mimeType, nil
+}
+
+func runtimeNotifyAttachmentKind(fileName, mimeType string) string {
+	mimeType = strings.ToLower(strings.TrimSpace(mimeType))
+	name := strings.ToLower(strings.TrimSpace(fileName))
+	if strings.HasPrefix(mimeType, "image/") ||
+		strings.HasSuffix(name, ".png") || strings.HasSuffix(name, ".jpg") ||
+		strings.HasSuffix(name, ".jpeg") || strings.HasSuffix(name, ".gif") ||
+		strings.HasSuffix(name, ".webp") {
+		return "image"
+	}
+	return "file"
+}
+
+func runtimeNotifyAttachmentInboxBody(fileName, caption, docID string) string {
+	var b strings.Builder
+	b.WriteString("Sent attachment: ")
+	b.WriteString(fileName)
+	if docID != "" {
+		b.WriteString("\nDoc ID: ")
+		b.WriteString(docID)
+	}
+	if caption != "" {
+		b.WriteString("\n\n")
+		b.WriteString(caption)
+	}
+	return b.String()
+}
+
+func slugForNotifyAttachment(value string) string {
+	value = strings.TrimSpace(value)
+	if value == "" {
+		return "attachment"
+	}
+	var b strings.Builder
+	for _, r := range value {
+		switch {
+		case r >= 'a' && r <= 'z', r >= 'A' && r <= 'Z', r >= '0' && r <= '9':
+			b.WriteRune(r)
+		case r == '-' || r == '_' || r == '.':
+			b.WriteRune(r)
+		case r > 127:
+			b.WriteRune(r)
+		default:
+			b.WriteRune('-')
+		}
+		if b.Len() >= 80 {
+			break
+		}
+	}
+	out := strings.Trim(b.String(), ".-_")
+	if out == "" {
+		return "attachment"
+	}
+	return out
 }
 
 func (s *Server) runtimeAgentChannelBindings(principal runtimeAgentPrincipal) ([]controldb.AgentChannelBinding, error) {

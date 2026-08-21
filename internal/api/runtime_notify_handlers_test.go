@@ -4,6 +4,7 @@ import (
 	"bytes"
 	"context"
 	"encoding/json"
+	"mime/multipart"
 	"net/http"
 	"net/http/httptest"
 	"strings"
@@ -546,6 +547,59 @@ func TestRuntimeNotifyDocLinksIgnoreUnknownIDs(t *testing.T) {
 	got := s.enrichRuntimeNotifyDocLinks(req, "markdown", "请看 doc-20260822-missing。")
 	if got != "请看 doc-20260822-missing。" {
 		t.Fatalf("unknown doc ids should not be linked: %q", got)
+	}
+}
+
+func TestRuntimeNotifyUploadedAttachmentReadsMultipartFile(t *testing.T) {
+	var body bytes.Buffer
+	writer := multipart.NewWriter(&body)
+	part, err := writer.CreateFormFile("file", "report.md")
+	if err != nil {
+		t.Fatalf("create file part: %v", err)
+	}
+	if _, err := part.Write([]byte("# Report\n")); err != nil {
+		t.Fatalf("write file part: %v", err)
+	}
+	if err := writer.Close(); err != nil {
+		t.Fatalf("close writer: %v", err)
+	}
+	req := httptest.NewRequest(http.MethodPost, "/api/v1/runtime/notify/file", &body)
+	req.Header.Set("Content-Type", writer.FormDataContentType())
+	if err := req.ParseMultipartForm(1 << 20); err != nil {
+		t.Fatalf("parse multipart: %v", err)
+	}
+
+	data, fileName, mimeType, err := runtimeNotifyUploadedAttachment(req, "", "")
+	if err != nil {
+		t.Fatalf("attachment: %v", err)
+	}
+	if string(data) != "# Report\n" || fileName != "report.md" {
+		t.Fatalf("unexpected upload attachment: data=%q file=%q mime=%q", string(data), fileName, mimeType)
+	}
+}
+
+func TestRuntimeNotifyDocAttachmentUsesDocTitleAsFilename(t *testing.T) {
+	s, _ := newConnectionGrantPolicyServer(t)
+	ds := store.NewDocsStore(s.root)
+	if err := ds.AddManagedContent(&store.DocEntry{
+		ID:    "doc-20260822-file01",
+		Title: "发布评审说明",
+	}, "# 发布评审说明\n", "review.md"); err != nil {
+		t.Fatalf("add doc: %v", err)
+	}
+
+	data, fileName, mimeType, err := s.runtimeNotifyDocAttachment("doc-20260822-file01", "", "")
+	if err != nil {
+		t.Fatalf("doc attachment: %v", err)
+	}
+	if !strings.Contains(string(data), "发布评审说明") {
+		t.Fatalf("unexpected doc data: %q", string(data))
+	}
+	if !strings.HasSuffix(fileName, ".md") || !strings.Contains(fileName, "发布评审说明") {
+		t.Fatalf("unexpected doc attachment name: %q", fileName)
+	}
+	if mimeType == "" {
+		t.Fatalf("mime type should be inferred for markdown attachment")
 	}
 }
 

@@ -6,6 +6,7 @@ import (
 	"encoding/json"
 	"fmt"
 	"io"
+	"mime/multipart"
 	"net/http"
 	"strings"
 	"time"
@@ -57,6 +58,13 @@ type ProgressCard struct {
 	Reasoning []ProgressCardEntry
 	Tools     []ProgressCardEntry
 	Final     string
+}
+
+type OutgoingAttachment struct {
+	Kind     string
+	FileName string
+	MIME     string
+	Data     []byte
 }
 
 func (c OpenAPIClient) ReplyText(ctx context.Context, messageID, text string) error {
@@ -237,6 +245,18 @@ func (c OpenAPIClient) ReplyInteractiveCard(ctx context.Context, messageID strin
 	return c.replyRaw(ctx, messageID, "interactive", mustJSON(buildInteractiveCardBody(card, nil)), "reply interactive card")
 }
 
+func (c OpenAPIClient) ReplyAttachment(ctx context.Context, messageID string, attachment OutgoingAttachment) error {
+	messageID = strings.TrimSpace(messageID)
+	if messageID == "" {
+		return fmt.Errorf("message id is required")
+	}
+	msgType, content, err := c.prepareAttachmentMessage(ctx, attachment)
+	if err != nil {
+		return err
+	}
+	return c.replyRaw(ctx, messageID, msgType, content, "reply attachment")
+}
+
 func (c OpenAPIClient) replyRaw(ctx context.Context, messageID, msgType, content, op string) error {
 	_, err := c.replyRawWithMessageID(ctx, messageID, msgType, content, op)
 	return err
@@ -314,6 +334,178 @@ func (c OpenAPIClient) patchRaw(ctx context.Context, messageID, content, op stri
 		return fmt.Errorf("%s failed: code=%d msg=%s", op, parsed.Code, parsed.Msg)
 	}
 	return nil
+}
+
+func (c OpenAPIClient) SendAttachment(ctx context.Context, receiveIDType, receiveID string, attachment OutgoingAttachment) error {
+	receiveIDType = strings.TrimSpace(receiveIDType)
+	receiveID = strings.TrimSpace(receiveID)
+	if receiveIDType == "" {
+		receiveIDType = "open_id"
+	}
+	if receiveID == "" {
+		return fmt.Errorf("receive id is required")
+	}
+	msgType, content, err := c.prepareAttachmentMessage(ctx, attachment)
+	if err != nil {
+		return err
+	}
+	token, err := c.tenantAccessToken(ctx)
+	if err != nil {
+		return err
+	}
+	body, _ := json.Marshal(map[string]string{
+		"receive_id": receiveID,
+		"msg_type":   msgType,
+		"content":    content,
+	})
+	u := strings.TrimRight(c.openBaseURL(), "/") + "/open-apis/im/v1/messages?receive_id_type=" + receiveIDType
+	req, err := http.NewRequestWithContext(ctx, http.MethodPost, u, bytes.NewReader(body))
+	if err != nil {
+		return err
+	}
+	req.Header.Set("Content-Type", "application/json")
+	req.Header.Set("Authorization", "Bearer "+token)
+	resp, err := c.httpClient().Do(req)
+	if err != nil {
+		return err
+	}
+	defer resp.Body.Close()
+	raw, _ := io.ReadAll(io.LimitReader(resp.Body, 1<<20))
+	if resp.StatusCode < 200 || resp.StatusCode >= 300 {
+		return fmt.Errorf("send attachment message http %d: %s", resp.StatusCode, string(raw))
+	}
+	var parsed struct {
+		Code int    `json:"code"`
+		Msg  string `json:"msg"`
+	}
+	if json.Unmarshal(raw, &parsed) == nil && parsed.Code != 0 {
+		return fmt.Errorf("send attachment message failed: code=%d msg=%s", parsed.Code, parsed.Msg)
+	}
+	return nil
+}
+
+func (c OpenAPIClient) prepareAttachmentMessage(ctx context.Context, attachment OutgoingAttachment) (string, string, error) {
+	if len(attachment.Data) == 0 {
+		return "", "", fmt.Errorf("attachment data is required")
+	}
+	kind := strings.ToLower(strings.TrimSpace(attachment.Kind))
+	if kind == "" {
+		kind = inferAttachmentKind(attachment.FileName, attachment.MIME)
+	}
+	if kind == "image" {
+		imageKey, err := c.uploadImage(ctx, attachment.Data)
+		if err != nil {
+			return "", "", err
+		}
+		return "image", mustJSON(map[string]string{"image_key": imageKey}), nil
+	}
+	fileName := strings.TrimSpace(attachment.FileName)
+	if fileName == "" {
+		fileName = "attachment"
+	}
+	fileType := detectLarkFileType(attachment.MIME, fileName)
+	fileKey, err := c.uploadFile(ctx, fileType, fileName, attachment.Data)
+	if err != nil {
+		return "", "", err
+	}
+	msgType := larkFileMessageType(fileType)
+	switch msgType {
+	case "audio", "media":
+		return msgType, mustJSON(map[string]string{"file_key": fileKey}), nil
+	default:
+		return "file", mustJSON(map[string]string{"file_key": fileKey}), nil
+	}
+}
+
+func (c OpenAPIClient) uploadImage(ctx context.Context, data []byte) (string, error) {
+	raw, err := c.postMultipart(ctx, "/open-apis/im/v1/images", map[string]string{"image_type": "message"}, "image", "image", data)
+	if err != nil {
+		return "", fmt.Errorf("upload image: %w", err)
+	}
+	var parsed struct {
+		Code int    `json:"code"`
+		Msg  string `json:"msg"`
+		Data struct {
+			ImageKey string `json:"image_key"`
+		} `json:"data"`
+	}
+	if err := json.Unmarshal(raw, &parsed); err != nil {
+		return "", fmt.Errorf("upload image response: %w", err)
+	}
+	if parsed.Code != 0 {
+		return "", fmt.Errorf("upload image failed: code=%d msg=%s", parsed.Code, parsed.Msg)
+	}
+	if strings.TrimSpace(parsed.Data.ImageKey) == "" {
+		return "", fmt.Errorf("upload image: no image_key returned")
+	}
+	return parsed.Data.ImageKey, nil
+}
+
+func (c OpenAPIClient) uploadFile(ctx context.Context, fileType, fileName string, data []byte) (string, error) {
+	raw, err := c.postMultipart(ctx, "/open-apis/im/v1/files", map[string]string{
+		"file_type": fileType,
+		"file_name": fileName,
+	}, "file", fileName, data)
+	if err != nil {
+		return "", fmt.Errorf("upload file: %w", err)
+	}
+	var parsed struct {
+		Code int    `json:"code"`
+		Msg  string `json:"msg"`
+		Data struct {
+			FileKey string `json:"file_key"`
+		} `json:"data"`
+	}
+	if err := json.Unmarshal(raw, &parsed); err != nil {
+		return "", fmt.Errorf("upload file response: %w", err)
+	}
+	if parsed.Code != 0 {
+		return "", fmt.Errorf("upload file failed: code=%d msg=%s", parsed.Code, parsed.Msg)
+	}
+	if strings.TrimSpace(parsed.Data.FileKey) == "" {
+		return "", fmt.Errorf("upload file: no file_key returned")
+	}
+	return parsed.Data.FileKey, nil
+}
+
+func (c OpenAPIClient) postMultipart(ctx context.Context, path string, fields map[string]string, fileField, fileName string, data []byte) ([]byte, error) {
+	token, err := c.tenantAccessToken(ctx)
+	if err != nil {
+		return nil, err
+	}
+	var buf bytes.Buffer
+	writer := multipart.NewWriter(&buf)
+	for k, v := range fields {
+		if err := writer.WriteField(k, v); err != nil {
+			return nil, err
+		}
+	}
+	part, err := writer.CreateFormFile(fileField, fileName)
+	if err != nil {
+		return nil, err
+	}
+	if _, err := part.Write(data); err != nil {
+		return nil, err
+	}
+	if err := writer.Close(); err != nil {
+		return nil, err
+	}
+	req, err := http.NewRequestWithContext(ctx, http.MethodPost, strings.TrimRight(c.openBaseURL(), "/")+path, &buf)
+	if err != nil {
+		return nil, err
+	}
+	req.Header.Set("Content-Type", writer.FormDataContentType())
+	req.Header.Set("Authorization", "Bearer "+token)
+	resp, err := c.httpClient().Do(req)
+	if err != nil {
+		return nil, err
+	}
+	defer resp.Body.Close()
+	raw, _ := io.ReadAll(io.LimitReader(resp.Body, 1<<20))
+	if resp.StatusCode < 200 || resp.StatusCode >= 300 {
+		return nil, fmt.Errorf("http %d: %s", resp.StatusCode, string(raw))
+	}
+	return raw, nil
 }
 
 func (c OpenAPIClient) SendText(ctx context.Context, receiveIDType, receiveID, text string) error {
@@ -458,6 +650,51 @@ func buildMarkdownPostBody(title, markdown string) string {
 	}
 	raw, _ := json.Marshal(body)
 	return string(raw)
+}
+
+func inferAttachmentKind(fileName, mimeType string) string {
+	name := strings.ToLower(fileName)
+	mimeType = strings.ToLower(strings.TrimSpace(mimeType))
+	switch {
+	case strings.HasPrefix(mimeType, "image/"):
+		return "image"
+	case strings.HasSuffix(name, ".png") || strings.HasSuffix(name, ".jpg") || strings.HasSuffix(name, ".jpeg") || strings.HasSuffix(name, ".gif") || strings.HasSuffix(name, ".webp") || strings.HasSuffix(name, ".bmp"):
+		return "image"
+	default:
+		return "file"
+	}
+}
+
+func detectLarkFileType(mimeType, fileName string) string {
+	name := strings.ToLower(fileName)
+	mimeType = strings.ToLower(strings.TrimSpace(mimeType))
+	switch {
+	case mimeType == "application/pdf" || strings.HasSuffix(name, ".pdf"):
+		return "pdf"
+	case strings.HasSuffix(name, ".doc") || strings.HasSuffix(name, ".docx"):
+		return "doc"
+	case strings.HasSuffix(name, ".xls") || strings.HasSuffix(name, ".xlsx") || strings.HasSuffix(name, ".csv"):
+		return "xls"
+	case strings.HasSuffix(name, ".ppt") || strings.HasSuffix(name, ".pptx"):
+		return "ppt"
+	case strings.HasPrefix(mimeType, "video/") || strings.HasSuffix(name, ".mp4") || strings.HasSuffix(name, ".mov") || strings.HasSuffix(name, ".m4v") || strings.HasSuffix(name, ".webm") || strings.HasSuffix(name, ".mkv"):
+		return "mp4"
+	case mimeType == "audio/ogg" || mimeType == "audio/opus" || mimeType == "application/ogg" || strings.HasSuffix(name, ".ogg") || strings.HasSuffix(name, ".opus"):
+		return "opus"
+	default:
+		return "stream"
+	}
+}
+
+func larkFileMessageType(fileType string) string {
+	switch fileType {
+	case "opus":
+		return "audio"
+	case "mp4":
+		return "media"
+	default:
+		return "file"
+	}
 }
 
 func (c OpenAPIClient) SendInteractiveCard(ctx context.Context, receiveIDType, receiveID string, card InteractiveCard) error {

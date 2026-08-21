@@ -154,3 +154,94 @@ func TestProgressCardCollapsesLongRunningReasoning(t *testing.T) {
 		t.Fatalf("long running reasoning panel should be collapsed: %#v", elements[0]["expanded"])
 	}
 }
+
+func TestAttachmentTypeInference(t *testing.T) {
+	cases := []struct {
+		name        string
+		mimeType    string
+		wantKind    string
+		wantFile    string
+		wantMessage string
+	}{
+		{name: "screenshot.png", mimeType: "image/png", wantKind: "image", wantFile: "stream", wantMessage: "file"},
+		{name: "report.pdf", mimeType: "application/pdf", wantKind: "file", wantFile: "pdf", wantMessage: "file"},
+		{name: "clip.mp4", mimeType: "video/mp4", wantKind: "file", wantFile: "mp4", wantMessage: "media"},
+		{name: "voice.opus", mimeType: "audio/opus", wantKind: "file", wantFile: "opus", wantMessage: "audio"},
+		{name: "debug.log", mimeType: "text/plain", wantKind: "file", wantFile: "stream", wantMessage: "file"},
+	}
+	for _, tc := range cases {
+		if got := inferAttachmentKind(tc.name, tc.mimeType); got != tc.wantKind {
+			t.Fatalf("%s kind=%s, want %s", tc.name, got, tc.wantKind)
+		}
+		fileType := detectLarkFileType(tc.mimeType, tc.name)
+		if fileType != tc.wantFile {
+			t.Fatalf("%s fileType=%s, want %s", tc.name, fileType, tc.wantFile)
+		}
+		if got := larkFileMessageType(fileType); got != tc.wantMessage {
+			t.Fatalf("%s messageType=%s, want %s", tc.name, got, tc.wantMessage)
+		}
+	}
+}
+
+func TestReplyAttachmentUploadsFileThenReplies(t *testing.T) {
+	var replyBody map[string]any
+	uploaded := false
+	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		switch r.URL.Path {
+		case "/open-apis/auth/v3/tenant_access_token/internal":
+			_ = json.NewEncoder(w).Encode(map[string]any{"code": 0, "tenant_access_token": "tenant-token"})
+		case "/open-apis/im/v1/files":
+			if got := r.Header.Get("Authorization"); got != "Bearer tenant-token" {
+				t.Fatalf("unexpected upload auth header: %s", got)
+			}
+			if err := r.ParseMultipartForm(1 << 20); err != nil {
+				t.Fatalf("parse upload form: %v", err)
+			}
+			if r.FormValue("file_type") != "pdf" || r.FormValue("file_name") != "report.pdf" {
+				t.Fatalf("unexpected upload fields: file_type=%q file_name=%q", r.FormValue("file_type"), r.FormValue("file_name"))
+			}
+			file, _, err := r.FormFile("file")
+			if err != nil {
+				t.Fatalf("uploaded file missing: %v", err)
+			}
+			raw, _ := io.ReadAll(file)
+			_ = file.Close()
+			if string(raw) != "pdf-bytes" {
+				t.Fatalf("unexpected uploaded file body: %q", string(raw))
+			}
+			uploaded = true
+			_ = json.NewEncoder(w).Encode(map[string]any{"code": 0, "data": map[string]any{"file_key": "file_v2_key"}})
+		case "/open-apis/im/v1/messages/om_one/reply":
+			if !uploaded {
+				t.Fatalf("reply called before upload")
+			}
+			if err := json.NewDecoder(r.Body).Decode(&replyBody); err != nil {
+				t.Fatalf("decode reply body: %v", err)
+			}
+			_ = json.NewEncoder(w).Encode(map[string]any{"code": 0})
+		default:
+			t.Fatalf("unexpected path: %s", r.URL.Path)
+		}
+	}))
+	defer server.Close()
+
+	client := OpenAPIClient{BaseURL: server.URL, AppID: "cli_app", AppSecret: "secret", HTTPClient: server.Client()}
+	if err := client.ReplyAttachment(context.Background(), "om_one", OutgoingAttachment{
+		Kind:     "file",
+		FileName: "report.pdf",
+		MIME:     "application/pdf",
+		Data:     []byte("pdf-bytes"),
+	}); err != nil {
+		t.Fatalf("reply attachment: %v", err)
+	}
+	if replyBody["msg_type"] != "file" {
+		t.Fatalf("msg_type=%#v, want file", replyBody["msg_type"])
+	}
+	var content map[string]string
+	if err := json.Unmarshal([]byte(replyBody["content"].(string)), &content); err != nil {
+		t.Fatalf("content JSON: %v", err)
+	}
+	if content["file_key"] != "file_v2_key" {
+		t.Fatalf("unexpected file key: %#v", content)
+	}
+}
