@@ -2,14 +2,10 @@ package main
 
 import (
 	"fmt"
-	"os"
-	"path/filepath"
 	"strings"
 	"time"
 
-	"github.com/multigent/multigent/internal/ctxbuild"
 	"github.com/multigent/multigent/internal/entity"
-	"github.com/multigent/multigent/internal/formatter"
 	"github.com/spf13/cobra"
 )
 
@@ -29,11 +25,10 @@ func newAgentSetModelCmd() *cobra.Command {
 	cmd := &cobra.Command{
 		Use:   "set-model",
 		Short: "Switch an agent to a different runtime (e.g. claudecode → codex)",
-		Long: `set-model updates the agent's model in .multigent/agent.yaml, removes files
-from the previous runtime (CLAUDE.md vs AGENTS.md, etc.), and regenerates
-context for the new runtime. Team, role, hire time, playbook link, sandbox,
-and add_dirs are preserved unless incompatible fields are cleared (http_agent
-is removed when leaving http-agent).
+		Long: `set-model updates a workspace Agent Worker's runtime model.
+Agent context is resolved dynamically from workspace, team, role, project,
+membership, skills, and bound context sources; this command does not rewrite
+project agent directories.
 
 Examples:
   multigent agent set-model --project my-api --name dev --model codex
@@ -50,24 +45,22 @@ Examples:
 					model, joinModels(entity.KnownModels))
 			}
 			if newModel == entity.ModelHuman {
-				return fmt.Errorf("use hire --force to replace a normal agent with a human agent")
+				return fmt.Errorf("human is not a runtime model for an Agent Worker")
 			}
 
 			root, err := resolveRoot()
 			if err != nil {
 				return err
 			}
-			s := mustStore(root)
-
-			meta, err := s.AgentMeta(project, agentName)
+			worker, ok, db, _, err := resolveCLIProjectWorker(root, project, agentName)
 			if err != nil {
 				return err
 			}
-			if meta.Model == entity.ModelHuman {
-				return fmt.Errorf("human agents have no runtime model to change")
+			if !ok {
+				return fmt.Errorf("agent worker membership %s/%s not found", project, agentName)
 			}
 
-			oldModel := entity.NormaliseModel(meta.Model)
+			oldModel := entity.NormaliseModel(entity.AgentModel(worker.Model))
 			if oldModel == newModel {
 				return fmt.Errorf("agent %s/%s already uses model %q", project, agentName, newModel)
 			}
@@ -76,70 +69,14 @@ Examples:
 				return fmt.Errorf("--http-url is required when switching to http-agent")
 			}
 
-			builder := ctxbuild.NewBuilder(s)
-			mc, err := builder.BuildForAgent(project, agentName, meta.Team, meta.Role)
-			if err != nil {
-				return fmt.Errorf("build context: %w", err)
-			}
-
-			if meta.Playbook == "" {
-				if cfg, cerr := s.ProjectConfig(project); cerr == nil && cfg != nil {
-					for _, spec := range cfg.Agents {
-						if spec.Name == agentName && spec.Playbook != "" {
-							meta.Playbook = spec.Playbook
-							break
-						}
-					}
-				}
-			}
-
-			var playbookData []byte
-			if meta.Playbook != "" {
-				playbookPath := filepath.Join(root, "project-blueprints", project, meta.Playbook)
-				playbookData, _ = os.ReadFile(playbookPath)
-			}
-
-			newHashes := ctxbuild.LayerHashes(mc)
-			if meta.Playbook != "" && len(playbookData) > 0 {
-				newHashes["playbook:"+meta.Playbook] = ctxbuild.ContentHash(string(playbookData))
-			}
-
-			agentDir := s.AgentDir(project, agentName)
-			if err := os.MkdirAll(agentDir, 0o755); err != nil {
-				return err
-			}
-
-			// Drop previous runtime's files first (may remove stale .multigent/context/*.md).
-			if err := formatter.RemoveOutputsFromOtherModels(agentDir, newModel); err != nil {
-				return err
-			}
-
-			if meta.Playbook != "" && len(playbookData) > 0 {
-				ctxDir := filepath.Join(agentDir, ".multigent", "context")
-				if err := os.MkdirAll(ctxDir, 0o755); err != nil {
-					return err
-				}
-				if err := os.WriteFile(filepath.Join(ctxDir, "wakeup.md"), playbookData, 0o644); err != nil {
-					return fmt.Errorf("write wakeup.md: %w", err)
-				}
-			}
-
-			f, err := formatter.New(newModel)
-			if err != nil {
-				return err
-			}
-			if err := f.Format(mc, agentDir); err != nil {
-				return fmt.Errorf("format context: %w", err)
-			}
-
-			meta.Model = newModel
-			meta.RunCommand = "" // custom invoker is model-specific; use defaults for the new runtime
-			meta.ContextHash = newHashes
+			cfg := decodeCLIWorkerRuntimeConfig(worker.RuntimeConfigJSON)
 			now := time.Now().UTC()
-			meta.SyncedAt = &now
+			worker.Model = string(newModel)
+			worker.RuntimeModel = ""
+			worker.UpdatedAt = now.Format(time.RFC3339)
 
 			if newModel == entity.ModelHTTPAgent {
-				cfg := &entity.HTTPAgentConfig{
+				cfg.HTTPAgent = &entity.HTTPAgentConfig{
 					URL:     httpURL,
 					Model:   httpModel,
 					APIKey:  httpAPIKey,
@@ -147,33 +84,24 @@ Examples:
 					Stream:  httpStream,
 				}
 				if len(httpHeaders) > 0 {
-					cfg.ExtraHeaders = make(map[string]string, len(httpHeaders))
+					cfg.HTTPAgent.ExtraHeaders = make(map[string]string, len(httpHeaders))
 					for _, h := range httpHeaders {
 						k, v, ok := strings.Cut(h, ":")
 						if !ok {
 							return fmt.Errorf("--http-header %q: expected \"Key: Value\" format", h)
 						}
-						cfg.ExtraHeaders[strings.TrimSpace(k)] = strings.TrimSpace(v)
+						cfg.HTTPAgent.ExtraHeaders[strings.TrimSpace(k)] = strings.TrimSpace(v)
 					}
 				}
-				meta.HTTPAgent = cfg
 			} else {
-				meta.HTTPAgent = nil
+				cfg.HTTPAgent = nil
+			}
+			worker.RuntimeConfigJSON = encodeCLIWorkerRuntimeConfig(cfg)
+			if err := db.UpsertAgentWorker(worker); err != nil {
+				return fmt.Errorf("save agent worker: %w", err)
 			}
 
-			if err := s.SaveAgentMeta(project, agentName, meta); err != nil {
-				return fmt.Errorf("save agent meta: %w", err)
-			}
-
-			if meta.Sandbox != nil && meta.Sandbox.Provider == entity.SandboxDocker &&
-				meta.Sandbox.Docker != nil && meta.Sandbox.Docker.Image != "" {
-				_, _ = fmt.Fprintf(os.Stderr,
-					"Note: sandbox.docker.image is still %q — if runs fail, clear it in agent.yaml so the default image for %q is used, or set an image for the new model.\n",
-					meta.Sandbox.Docker.Image, newModel)
-			}
-
-			fmt.Printf("✓ %s/%s: model %q → %q (context regenerated)\n", project, agentName, oldModel, newModel)
-			fmt.Printf("  Directory: %s\n", agentDir)
+			fmt.Printf("✓ %s/%s: model %q → %q\n", project, agentName, oldModel, newModel)
 			return nil
 		},
 	}

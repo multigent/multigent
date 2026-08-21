@@ -373,39 +373,6 @@ func (s *Server) clearDeletedModelProviderRefs(workspaceID, providerID string) (
 			cleared = append(cleared, "agent_worker:"+worker.Name)
 		}
 	}
-	if s.st == nil {
-		return cleared, nil
-	}
-	projects, err := s.st.ListProjects()
-	if err != nil {
-		return nil, err
-	}
-	for _, project := range projects {
-		if project == nil || strings.TrimSpace(project.Name) == "" {
-			continue
-		}
-		agents, err := s.st.ListAgents(project.Name)
-		if err != nil {
-			return nil, err
-		}
-		for _, agent := range agents {
-			if agent == nil || strings.TrimSpace(agent.Name) == "" {
-				continue
-			}
-			meta, err := s.st.AgentMeta(project.Name, agent.Name)
-			if err != nil {
-				return nil, err
-			}
-			if meta.Provider != providerID {
-				continue
-			}
-			meta.Provider = ""
-			if err := s.st.SaveAgentMeta(project.Name, agent.Name, meta); err != nil {
-				return nil, err
-			}
-			cleared = append(cleared, project.Name+"/"+agent.Name)
-		}
-	}
 	return cleared, nil
 }
 

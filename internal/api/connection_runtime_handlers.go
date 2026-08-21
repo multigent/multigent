@@ -134,7 +134,7 @@ func (s *Server) handleRuntimeConnections(w http.ResponseWriter, r *http.Request
 		s.jsonErrorCode(w, http.StatusForbidden, ErrCodeRuntimeCapabilityRequired, "runtime token lacks connection.use capability")
 		return
 	}
-	out, err := s.resolveAgentRuntimeConnections(principal.WorkspaceID, principal.Project, principal.Agent)
+	out, err := s.resolveAgentRuntimeConnections(principal.WorkspaceID, principal.Project, principal.Agent, principal.AgentWorkerID)
 	if err != nil {
 		s.serverError(w, err)
 		return
@@ -159,7 +159,11 @@ func (s *Server) handleRuntimeConnections(w http.ResponseWriter, r *http.Request
 	s.writeAgentRuntimeConnections(w, principal.Project, principal.Agent, out)
 }
 
-func (s *Server) resolveAgentRuntimeConnections(workspaceID, project, agent string) ([]agentRuntimeConnectionResponse, error) {
+func (s *Server) resolveAgentRuntimeConnections(workspaceID, project, agent string, workerIDs ...string) ([]agentRuntimeConnectionResponse, error) {
+	workerID := ""
+	if len(workerIDs) > 0 {
+		workerID = strings.TrimSpace(workerIDs[0])
+	}
 	connections, err := s.controlDB.ListConnections(controldb.ConnectionFilter{
 		WorkspaceID: workspaceID,
 		Status:      "active",
@@ -188,6 +192,9 @@ func (s *Server) resolveAgentRuntimeConnections(workspaceID, project, agent stri
 			return nil, err
 		}
 		matched := s.matchingAgentConnectionGrants(grants, workspaceID, project, agent)
+		if len(matched) == 0 && workerID != "" {
+			matched = matchingAgentConnectionGrantsForTargets(grants, workspaceID, project, agent, workerID)
+		}
 		if len(matched) == 0 {
 			continue
 		}
@@ -270,9 +277,6 @@ func connectionGrantMatchesAgent(grant controldb.ConnectionGrant, workspaceID, p
 	case ConnectionTargetProject:
 		return targetID != "" && targetID == project
 	case ConnectionTargetAgent:
-		if targetID != "" && targetID == project+"/"+agent {
-			return true
-		}
 		return strings.TrimSpace(workerID) != "" && targetID == connectionAgentWorkerTargetID(workerID)
 	default:
 		return false
@@ -288,6 +292,15 @@ func connectionAgentTargetID(project, agent, workerID string) string {
 
 func connectionAgentWorkerTargetID(workerID string) string {
 	return "agent_worker:" + strings.TrimSpace(workerID)
+}
+
+func connectionAgentWorkerIDFromTarget(targetID string) (string, bool) {
+	targetID = strings.TrimSpace(targetID)
+	workerID := strings.TrimPrefix(targetID, "agent_worker:")
+	if workerID == targetID || strings.TrimSpace(workerID) == "" {
+		return "", false
+	}
+	return strings.TrimSpace(workerID), true
 }
 
 func agentRuntimeConnectionToResponse(connection controldb.Connection, grants []controldb.ConnectionGrant, binding *controldb.AgentToolBinding, actions []connector.ProviderAction, adapters []connector.ToolRuntimeAdapter) agentRuntimeConnectionResponse {

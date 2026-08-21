@@ -23,7 +23,7 @@ func grantRuntimeConnectionToSamplePM(t *testing.T, db connectionGrantCreator, w
 		WorkspaceID:  workspaceID,
 		ConnectionID: connectionID,
 		TargetType:   ConnectionTargetAgent,
-		TargetID:     "sample/pm",
+		TargetID:     "agent_worker:aw-pm",
 	}); err != nil {
 		t.Fatalf("grant connection %s: %v", connectionID, err)
 	}
@@ -83,17 +83,18 @@ func TestRuntimeMCPProxyForwardsCustomMCPWithServerSideToken(t *testing.T) {
 		WorkspaceID:  workspaceID,
 		ConnectionID: connection.ID,
 		TargetType:   ConnectionTargetAgent,
-		TargetID:     "sample/pm",
+		TargetID:     "agent_worker:aw-pm",
 	}); err != nil {
 		t.Fatalf("grant: %v", err)
 	}
 
 	principal := runtimeAgentPrincipal{
-		WorkspaceID:  workspaceID,
-		Project:      "sample",
-		Agent:        "pm",
-		RunID:        "run-one",
-		Capabilities: []string{"connection.use"},
+		WorkspaceID:   workspaceID,
+		Project:       "sample",
+		Agent:         "pm",
+		AgentWorkerID: "aw-pm",
+		RunID:         "run-one",
+		Capabilities:  []string{"connection.use"},
 	}
 	req := httptest.NewRequest(http.MethodPost, "/api/v1/runtime/mcp", stringsReader(`{"jsonrpc":"2.0","id":1,"method":"tools/list"}`))
 	req.Header.Set(agentConnectionManifest().ConnectionIDHeader, connection.ID)
@@ -143,11 +144,12 @@ func TestRuntimeMCPGatewayListsBrokerAndRuntimeTools(t *testing.T) {
 	}
 	grantRuntimeConnectionToSamplePM(t, users.db, workspaceID, connection.ID)
 	principal := runtimeAgentPrincipal{
-		WorkspaceID:  workspaceID,
-		Project:      "sample",
-		Agent:        "pm",
-		RunID:        "run-one",
-		Capabilities: []string{"connection.use"},
+		WorkspaceID:   workspaceID,
+		Project:       "sample",
+		Agent:         "pm",
+		AgentWorkerID: "aw-pm",
+		RunID:         "run-one",
+		Capabilities:  []string{"connection.use"},
 	}
 
 	listReq := httptest.NewRequest(http.MethodPost, "/api/v1/runtime/mcp/gateway", stringsReader(`{"jsonrpc":"2.0","id":1,"method":"tools/list"}`))
@@ -233,11 +235,12 @@ func TestRuntimeMCPGatewayCallToolRoutesThroughActionProxy(t *testing.T) {
 		t.Fatalf("runtime action auth=%q", cfg.AuthValue)
 	}
 	principal := runtimeAgentPrincipal{
-		WorkspaceID:  workspaceID,
-		Project:      "sample",
-		Agent:        "pm",
-		RunID:        "run-one",
-		Capabilities: []string{"connection.use"},
+		WorkspaceID:   workspaceID,
+		Project:       "sample",
+		Agent:         "pm",
+		AgentWorkerID: "aw-pm",
+		RunID:         "run-one",
+		Capabilities:  []string{"connection.use"},
 	}
 	found, ok, err := s.findRuntimeConnection(principal, "", "github")
 	if err != nil || !ok {
@@ -350,11 +353,12 @@ func TestRuntimeMCPGatewayRoutesProviderUpstreamTools(t *testing.T) {
 		t.Fatalf("secret: %v", err)
 	}
 	principal := runtimeAgentPrincipal{
-		WorkspaceID:  workspaceID,
-		Project:      "sample",
-		Agent:        "pm",
-		RunID:        "run-one",
-		Capabilities: []string{"connection.use"},
+		WorkspaceID:   workspaceID,
+		Project:       "sample",
+		Agent:         "pm",
+		AgentWorkerID: "aw-pm",
+		RunID:         "run-one",
+		Capabilities:  []string{"connection.use"},
 	}
 	listReq := httptest.NewRequest(http.MethodPost, "/api/v1/runtime/mcp/gateway", stringsReader(`{
 		"jsonrpc":"2.0",
@@ -724,17 +728,18 @@ func TestRuntimeActionProxyForwardsCustomHTTPWithServerSideCredential(t *testing
 		WorkspaceID:  workspaceID,
 		ConnectionID: connection.ID,
 		TargetType:   ConnectionTargetAgent,
-		TargetID:     "sample/pm",
+		TargetID:     "agent_worker:aw-pm",
 	}); err != nil {
 		t.Fatalf("grant: %v", err)
 	}
 
 	principal := runtimeAgentPrincipal{
-		WorkspaceID:  workspaceID,
-		Project:      "sample",
-		Agent:        "pm",
-		RunID:        "run-one",
-		Capabilities: []string{"connection.use"},
+		WorkspaceID:   workspaceID,
+		Project:       "sample",
+		Agent:         "pm",
+		AgentWorkerID: "aw-pm",
+		RunID:         "run-one",
+		Capabilities:  []string{"connection.use"},
 	}
 	req := httptest.NewRequest(http.MethodPost, "/api/v1/runtime/actions", stringsReader(`{
 		"method":"POST",
@@ -912,17 +917,18 @@ func TestRuntimeActionProxyForwardsFeishuWithTenantToken(t *testing.T) {
 		WorkspaceID:  workspaceID,
 		ConnectionID: connection.ID,
 		TargetType:   ConnectionTargetAgent,
-		TargetID:     "sample/pm",
+		TargetID:     "agent_worker:aw-pm",
 	}); err != nil {
 		t.Fatalf("grant: %v", err)
 	}
 
 	principal := runtimeAgentPrincipal{
-		WorkspaceID:  workspaceID,
-		Project:      "sample",
-		Agent:        "pm",
-		RunID:        "run-one",
-		Capabilities: []string{"connection.use"},
+		WorkspaceID:   workspaceID,
+		Project:       "sample",
+		Agent:         "pm",
+		AgentWorkerID: "aw-pm",
+		RunID:         "run-one",
+		Capabilities:  []string{"connection.use"},
 	}
 	req := httptest.NewRequest(http.MethodPost, "/api/v1/runtime/actions", stringsReader(`{
 		"method":"GET",
@@ -978,16 +984,17 @@ func TestRuntimeActionProxyRejectsUnsafeEndpoint(t *testing.T) {
 		WorkspaceID:  "ws-one",
 		ConnectionID: connection.ID,
 		TargetType:   ConnectionTargetAgent,
-		TargetID:     "sample/pm",
+		TargetID:     "agent_worker:aw-pm",
 	}); err != nil {
 		t.Fatalf("grant: %v", err)
 	}
 	principal := runtimeAgentPrincipal{
-		WorkspaceID:  "ws-one",
-		Project:      "sample",
-		Agent:        "pm",
-		RunID:        "run-one",
-		Capabilities: []string{"connection.use"},
+		WorkspaceID:   "ws-one",
+		Project:       "sample",
+		Agent:         "pm",
+		AgentWorkerID: "aw-pm",
+		RunID:         "run-one",
+		Capabilities:  []string{"connection.use"},
 	}
 	req := httptest.NewRequest(http.MethodPost, "/api/v1/runtime/actions", stringsReader(`{"method":"GET","endpoint":"https://evil.test/x"}`))
 	req.Header.Set(agentConnectionManifest().ConnectionIDHeader, connection.ID)
@@ -1041,16 +1048,17 @@ func TestRuntimeActionProxyEnforcesConnectionActionPolicy(t *testing.T) {
 		WorkspaceID:  workspaceID,
 		ConnectionID: connection.ID,
 		TargetType:   ConnectionTargetAgent,
-		TargetID:     "sample/pm",
+		TargetID:     "agent_worker:aw-pm",
 	}); err != nil {
 		t.Fatalf("grant: %v", err)
 	}
 	principal := runtimeAgentPrincipal{
-		WorkspaceID:  workspaceID,
-		Project:      "sample",
-		Agent:        "pm",
-		RunID:        "run-one",
-		Capabilities: []string{"connection.use"},
+		WorkspaceID:   workspaceID,
+		Project:       "sample",
+		Agent:         "pm",
+		AgentWorkerID: "aw-pm",
+		RunID:         "run-one",
+		Capabilities:  []string{"connection.use"},
 	}
 	for _, tc := range []struct {
 		name     string

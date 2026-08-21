@@ -81,9 +81,6 @@ func TestRuntimeAgentChannelBindingsUseAgentWorker(t *testing.T) {
 	if err := s.st.SaveProject("other", &entity.Project{Name: "other"}); err != nil {
 		t.Fatalf("save other project: %v", err)
 	}
-	if err := s.st.SaveAgentMeta("other", "pm", &entity.AgentMeta{Name: "pm", Project: "other"}); err != nil {
-		t.Fatalf("save other agent: %v", err)
-	}
 	if err := s.controlDB.UpsertAgentWorker(controldb.AgentWorker{
 		ID:          "aw-pm",
 		WorkspaceID: workspaceID,

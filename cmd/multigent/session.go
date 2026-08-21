@@ -42,7 +42,7 @@ func newSessionShowCmd() *cobra.Command {
 				return fmt.Errorf("--project and --agent are required")
 			}
 			ts := mustTaskStore(root)
-			hb, err := ts.GetHeartbeat(project, agentName)
+			hb, err := loadSchedulerHeartbeat(root, project, agentName, ts)
 			if err != nil {
 				return err
 			}
@@ -81,14 +81,14 @@ func newSessionSetCmd() *cobra.Command {
 				return fmt.Errorf("--project, --agent, and --id are required")
 			}
 			ts := mustTaskStore(root)
-			hb, err := ts.GetHeartbeat(project, agentName)
+			hb, err := loadSchedulerHeartbeat(root, project, agentName, ts)
 			if err != nil {
 				return err
 			}
 			now := time.Now().UTC()
 			hb.SessionID = sessionID
 			hb.SessionStartedAt = &now
-			if err := ts.SaveHeartbeat(project, agentName, hb); err != nil {
+			if err := saveSchedulerHeartbeat(root, project, agentName, ts, hb); err != nil {
 				return err
 			}
 			fmt.Printf("✓ Session ID set for %s/%s: %s\n", project, agentName, sessionID)
@@ -118,14 +118,14 @@ func newSessionResetCmd() *cobra.Command {
 				return fmt.Errorf("--project and --agent are required")
 			}
 			ts := mustTaskStore(root)
-			hb, err := ts.GetHeartbeat(project, agentName)
+			hb, err := loadSchedulerHeartbeat(root, project, agentName, ts)
 			if err != nil {
 				return err
 			}
 			old := hb.SessionID
 			hb.SessionID = ""
 			hb.SessionStartedAt = nil
-			if err := ts.SaveHeartbeat(project, agentName, hb); err != nil {
+			if err := saveSchedulerHeartbeat(root, project, agentName, ts, hb); err != nil {
 				return err
 			}
 			if old != "" {

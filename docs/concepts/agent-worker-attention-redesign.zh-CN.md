@@ -1892,7 +1892,7 @@ Runs 页面需要从 project-only 改成支持 worker 维度。
 第一版可以接受这个物理存储方式，但运行时代码必须逐步做到：
 
 - 任务负责人判断优先读 `assigneeType / assigneeId / assigneeMembershipId`。
-- `project/agent` 只作为 legacy mailbox / URL 兼容入口，不再作为身份主键。
+- `project/agent` 只作为项目内路由别名和任务队列地址，不再作为身份主键，也不作为旧结构兼容入口。
 - 后续如果需要彻底清理，可以把任务物理 key 改成 `project/task_id`，负责人只存在 payload 里。
 
 ### 3. IM channel 已优先按 worker 使用，但表结构仍有旧字段
@@ -1919,7 +1919,7 @@ IM channel 已经补了 `agent_worker_id`，但表结构和部分代码仍保留
 - 项目成员页仍可以作为入口给 agent 配置外部工具。
 - 如果该项目成员解析到 Agent Worker，保存的 tool binding 会绑定到 `agent_worker_id`。
 - 同一个 Agent Worker 在另一个项目 membership 下运行时，也能看到同一份 tool binding。
-- connection grant 匹配同时支持旧 `project/agent` 和新的 `agent_worker:<id>` 目标。
+- connection grant 匹配只接受 `agent_worker:<id>` 目标，不再接受旧 `project/agent` 目标。
 
 仍需继续收口：
 
@@ -1963,10 +1963,10 @@ IM channel 已经补了 `agent_worker_id`，但表结构和部分代码仍保留
 
 - Command Palette 的项目成员搜索不再直接读取旧 `/projects/:project/agents` 列表，改为读取 `/projects/:project/memberships` 并只展示 `agent_worker` membership。
 - Workbench 创建任务 / 运行 agent 所需的项目 agent 选项也改为读取 memberships。
-- 旧 `/projects/:project/agents` 后端 endpoint 在迁移后 workspace 中已经变成 membership-backed 兼容壳：优先从 `project_memberships` 返回项目内 alias/title、worker id、membership id 和模型信息；只有未迁移 workspace 没有 memberships 时才 fallback 到旧文件 agent 列表。
-- 已补 `TestProjectAgentsEndpointReadsAgentWorkerMemberships`，约束该兼容 endpoint 返回项目内 membership title，而不是 worker 全局 name，避免路由和任务负责人错位。
+- `/projects/:project/agents` 后端 endpoint 在 2.x 中是 membership-backed 项目成员视图：只从 `project_memberships` 返回项目内 alias/title、worker id、membership id 和模型信息，不再读取旧文件 agent 列表。
+- 已补 `TestProjectAgentsEndpointReadsAgentWorkerMemberships`，约束该 endpoint 返回项目内 membership title，而不是 worker 全局 name，避免路由和任务负责人错位。
 - `PATCH /projects/:project/agents/:agent` 在能解析到 Project Membership 时已经切到 2.x 写路径：项目内改名只更新 membership title；头像和默认运行节点更新 Agent Worker；不会再 rename 旧 agent 目录或写旧 agent meta。已补 `TestPatchProjectAgentUpdatesMembershipBackedWorker`。
-- `agentExistsInProject` 已改为优先解析 Project Worker / Membership，未迁移 workspace 才 fallback 到旧 agent 列表。这样任务创建、runtime token、connection grant、workflow runtime 等共享存在性校验不会因为旧 agent 文件缺失而误判。已在 `TestValidateIdentityResolvesAgentWorkerMembership` 覆盖。
+- `agentExistsInProject` 已改为只解析 Project Worker / Membership。任务创建、runtime token、connection grant、workflow runtime 等共享存在性校验都不再依赖旧 agent 文件。已在 `TestValidateIdentityResolvesAgentWorkerMembership` 覆盖。
 
 仍未完成：
 
@@ -1977,7 +1977,7 @@ Trigger manager 的调用入口目前仍保持 `project / agent` 参数形态，
 
 - 触发前先通过 `project_memberships` 解析 `project / agent` 背后的 Agent Worker。
 - 如果该 Agent Worker 的 `schedule_json.triggers` 已配置，则以 worker schedule 为准。
-- 如果没有解析到 Agent Worker，则 fallback 到旧项目 heartbeat，服务未迁移 workspace。
+- 如果没有解析到 Agent Worker，触发会被跳过并记录原因；2.x 不再读取旧项目 heartbeat。
 - 合法 trigger 已统一为 `message / task / attention / im_direct_message / im_mention / workflow_step_assigned / card_action`。
 
 这意味着 IM 私聊、群聊 @、卡片点击等强 attention 是否立即唤醒，已经可以由 Agent Worker 的工作节奏配置表达，而不是由 Feishu / Lark connector 写死。
@@ -2000,22 +2000,22 @@ Runtime principal 也已开始携带 2.x 身份：
 - runtime run 记录会写入 `agent_worker_id` 和 `project_membership_id`。
 - agent runtime token 会携带 `agentWorkerId` 和 `projectMembershipId`，不再只依赖 `project/agent` 反查。
 - runtime node 注入环境变量时会提供 `MULTIGENT_AGENT_WORKER_ID` 和 `MULTIGENT_PROJECT_MEMBERSHIP_ID`。
-- runtime attention / notify 入口会优先使用 principal 中的 `agentWorkerId`，只有旧 token 才 fallback 到 `project/agent` 解析。
+- runtime attention / notify 入口要求 principal 携带 `agentWorkerId` / `projectMembershipId`，不再从旧 token 或旧 `project/agent` 元信息兜底。
 - Web chat / readiness 入口已改为通过 Project Membership 解析 Agent Worker meta，避免迁移后忽略 worker 上配置的默认模型账号、运行节点和 runtime model。
-- Web chat session 列表和历史读取已优先按 `agent_worker_id / project_membership_id` 查询 runtime-node run，再用旧 `project_id / agent_id` 兜底，避免 worker-only runtime run 在项目成员会话页里消失。
-- 项目 schedule API 已优先枚举 Project Membership，并通过 Agent Worker 的 `schedule_json` 显示 heartbeat；没有 membership 时再回退旧项目 agent 目录。
+- Web chat session 列表和历史读取按 `agent_worker_id / project_membership_id` 查询 runtime-node run；项目内 `project/agent` 仅作为当前 membership 的显示和路由别名。
+- 项目 schedule API 枚举 Project Membership，并通过 Agent Worker 的 `schedule_json` 显示 heartbeat；没有 membership 时不再回退旧项目 agent 目录。
 - IM 强 attention 即时处理前的 runtime readiness 检查、Web 手动运行前的 readiness 检查，已统一通过 Project Membership 解析 Agent Worker meta，避免读取旧 `project/agent` meta 后忽略 worker 上的模型账号、运行节点和 runtime model。
-- 项目成员详情页保存 CLI 类型、模型账号和 runtime model 时，已优先写入 Agent Worker；旧 workspace 或无法解析 Project Membership 时才 fallback 到旧项目 agent 写法。这样从项目入口配置同一个 Agent Worker，不会只改当前项目里的旧影子配置。
+- 项目成员详情页保存 CLI 类型、模型账号和 runtime model 时，只写入 Agent Worker；无法解析 Project Membership 时直接报错。这样从项目入口配置同一个 Agent Worker，不会只改当前项目里的影子配置。
 - 项目成员入口配置模型账号时，授权校验也已改为 worker-aware：能解析到 Agent Worker + Project Membership 时，不再依赖旧 `AgentMeta` 文件判断模型类型和权限，避免纯 2.x 成员无法绑定模型账号。
 - runtime task API 与 workflow pending review 枚举项目成员时，已优先读取 Project Membership。迁移后只有 `agent_workers/project_memberships`、没有旧项目 agent 目录的成员，也能通过 `mga tasks` / runtime task API 看到自己的任务和待审核项。
 - 项目任务列表、项目消息列表和首页 stats 统计已改为 Project Membership 优先枚举。迁移后只有 worker/membership、没有旧 agent 目录的项目成员，也能在 Web 项目任务、项目消息和总览统计中出现。
-- 计费用量的 Agent 数已改为 workspace 级 Agent Worker 口径。同一个 Agent Worker 加入多个项目只计一次；未配置模型的 Agent Worker 也会计入额度，避免通过先创建未配置 agent 绕过限制。旧 workspace 没有 Agent Worker 时才 fallback 到旧项目 agent 目录计数。
+- 计费用量的 Agent 数已改为 workspace 级 Agent Worker 口径。同一个 Agent Worker 加入多个项目只计一次；未配置模型的 Agent Worker 也会计入额度，避免通过先创建未配置 agent 绕过限制。
 - workflow、scheduler、review 等共用的 `findTaskInProject` 已改为 Project Membership 优先查找任务，避免 worker-only 任务在流程推进、人工审核或调度路径里找不到。
 - runtime contacts 已改为 Project Membership 优先枚举同项目 agent。迁移后 agent 通过 `mga contacts` 仍能看到同项目 worker 成员，而不依赖旧 agent 目录。
-- 删除模型账号时会同步清理 Agent Worker 的 `DefaultModelAccountID`，避免 2.x worker 继续引用已经删除的 provider。旧 workspace 仍 fallback 清理 legacy agent meta。
-- Agent Worker 已新增 `runtime_config_json`，用于承载 worker 级运行配置。当前已接入 `env / sandbox / addDirs`：从项目成员入口保存这些配置时，如果能解析到 Agent Worker，会写入 worker runtime config；`agentMetaForProjectMember` 合成运行 meta 时会读出这些配置。旧 workspace 无 worker membership 时才 fallback 写 legacy agent meta。
-- CLI `multigent agent set-env / unset-env / list-env` 也已改为 worker-aware：迁移后的 workspace 中，命令会优先解析项目 membership 背后的 Agent Worker，并读写 `runtime_config_json.env`；未迁移 workspace 才继续使用旧 `AgentMeta.Env`。
-- wakeup prompt 编辑已从旧 `projects/<project>/agents/<agent>/.multigent/context/wakeup.md` 写路径迁到 Agent Worker schedule：项目成员入口保存 wakeup 时，如果能解析到 Agent Worker，会直接写入 `schedule_json.wakeupPrompt`；`GET context` 也会优先从 heartbeat / schedule 读取 wakeup 文本。旧 workspace 仍能读取旧 `@file` 路径作为 fallback。
+- 删除模型账号时会同步清理 Agent Worker 的 `DefaultModelAccountID`，避免 2.x worker 继续引用已经删除的 provider。
+- Agent Worker 已新增 `runtime_config_json`，用于承载 worker 级运行配置。当前已接入 `env / sandbox / addDirs`：从项目成员入口保存这些配置时，会写入 worker runtime config；`agentMetaForProjectMember` 合成运行 meta 时会读出这些配置。
+- CLI `multigent agent set-env / unset-env / list-env` 也已改为 worker-only：命令会解析项目 membership 背后的 Agent Worker，并读写 `runtime_config_json.env`；无法解析 worker 时直接报错。
+- wakeup prompt 编辑已从旧 `projects/<project>/agents/<agent>/.multigent/context/wakeup.md` 写路径迁到 Agent Worker schedule：项目成员入口保存 wakeup 时，会直接写入 `schedule_json.wakeupPrompt`；`GET context` 也会从 worker schedule 读取 wakeup 文本，不再读取旧 `@file` 路径。
 
 仍未完成：
 

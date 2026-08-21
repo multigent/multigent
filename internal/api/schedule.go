@@ -12,6 +12,7 @@ import (
 	"syscall"
 	"time"
 
+	controldb "github.com/multigent/multigent/internal/db"
 	"github.com/multigent/multigent/internal/entity"
 	"github.com/multigent/multigent/internal/telemetry"
 )
@@ -105,7 +106,7 @@ func (s *Server) handleGetProjectSchedule(w http.ResponseWriter, r *http.Request
 			if ag.ProjectMembershipID != "" {
 				entry["projectMembershipId"] = ag.ProjectMembershipID
 			}
-			entry["runtimeReadiness"] = buildRuntimeReadinessLight(meta)
+			entry["runtimeReadiness"] = s.runtimeReadinessForProjectList(workspaceID, meta)
 		}
 		if hb.SessionID != "" {
 			if usageDB != nil {
@@ -139,50 +140,34 @@ type projectScheduleAgent struct {
 }
 
 func (s *Server) projectScheduleAgents(workspaceID, project string) ([]projectScheduleAgent, error) {
-	if s != nil && s.agentDirectory != nil && strings.TrimSpace(workspaceID) != "" {
-		workers, err := s.agentDirectory.ProjectWorkers(workspaceID, project)
-		if err != nil {
-			return nil, err
-		}
-		if len(workers) > 0 {
-			out := make([]projectScheduleAgent, 0, len(workers))
-			for _, resolved := range workers {
-				name := strings.TrimSpace(resolved.Membership.Title)
-				if name == "" {
-					name = strings.TrimSpace(resolved.Worker.DisplayName)
-				}
-				if name == "" {
-					name = strings.TrimSpace(resolved.Worker.Name)
-				}
-				if name == "" {
-					continue
-				}
-				out = append(out, projectScheduleAgent{
-					Name:                name,
-					AgentWorkerID:       resolved.Worker.ID,
-					ProjectMembershipID: resolved.Membership.ID,
-				})
-			}
-			sort.Slice(out, func(i, j int) bool {
-				return strings.ToLower(out[i].Name) < strings.ToLower(out[j].Name)
-			})
-			return out, nil
-		}
+	if s == nil || s.agentDirectory == nil || strings.TrimSpace(workspaceID) == "" {
+		return nil, nil
 	}
-	legacyAgents, err := s.st.ListAgents(project)
+	workers, err := s.agentDirectory.ProjectWorkers(workspaceID, project)
 	if err != nil {
 		return nil, err
 	}
-	out := make([]projectScheduleAgent, 0, len(legacyAgents))
-	for _, ag := range legacyAgents {
-		if ag == nil {
+	out := make([]projectScheduleAgent, 0, len(workers))
+	for _, resolved := range workers {
+		name := strings.TrimSpace(resolved.Membership.Title)
+		if name == "" {
+			name = strings.TrimSpace(resolved.Worker.DisplayName)
+		}
+		if name == "" {
+			name = strings.TrimSpace(resolved.Worker.Name)
+		}
+		if name == "" {
 			continue
 		}
 		out = append(out, projectScheduleAgent{
-			Name:     ag.Name,
-			AgentDir: s.st.AgentDir(project, ag.Name),
+			Name:                name,
+			AgentWorkerID:       resolved.Worker.ID,
+			ProjectMembershipID: resolved.Membership.ID,
 		})
 	}
+	sort.Slice(out, func(i, j int) bool {
+		return strings.ToLower(out[i].Name) < strings.ToLower(out[j].Name)
+	})
 	return out, nil
 }
 
@@ -277,16 +262,20 @@ func (s *Server) toggleHeartbeatPause(w http.ResponseWriter, r *http.Request, pa
 	if !s.checkProjectManager(w, r, name) {
 		return
 	}
-	if pause {
-		if err := s.ts.PauseHeartbeat(name, agent); err != nil {
-			s.serverError(w, err)
-			return
-		}
-	} else {
-		if err := s.ts.ResumeHeartbeat(name, agent); err != nil {
-			s.serverError(w, err)
-			return
-		}
+	workspaceID, workspaceOK := s.currentWorkspaceForRequest(w, r)
+	if !workspaceOK {
+		return
+	}
+	target := s.runtimeSchedulerTargetForProjectAgent(workspaceID, name, agent)
+	hb, err := s.loadSchedulerTargetHeartbeat(workspaceID, target)
+	if err != nil {
+		s.serverError(w, err)
+		return
+	}
+	hb.Paused = pause
+	if err := s.saveSchedulerTargetHeartbeat(workspaceID, target, hb); err != nil {
+		s.serverError(w, err)
+		return
 	}
 	_ = json.NewEncoder(w).Encode(map[string]bool{"ok": true})
 }
@@ -337,15 +326,28 @@ func (s *Server) projectAgentLookupDetails(project, agent string) map[string]any
 		sort.Strings(names)
 		details["availableProjects"] = names
 	}
-	if agents, err := s.st.ListAgents(project); err == nil {
-		names := make([]string, 0, len(agents))
-		for _, a := range agents {
-			if a != nil && strings.TrimSpace(a.Name) != "" {
-				names = append(names, a.Name)
+	if workspaceID, ok := details["workspaceId"].(string); ok && workspaceID != "" && s.controlDB != nil {
+		memberships, err := s.controlDB.ListProjectMemberships(controldb.ProjectMembershipFilter{
+			WorkspaceID: workspaceID,
+			ProjectID:   project,
+			MemberType:  "agent_worker",
+		})
+		if err == nil {
+			names := make([]string, 0, len(memberships))
+			for _, membership := range memberships {
+				name := strings.TrimSpace(membership.Title)
+				if name == "" && s.agentDirectory != nil {
+					if worker, ok, err := s.agentDirectory.Worker(workspaceID, membership.MemberID); err == nil && ok {
+						name = strings.TrimSpace(worker.Name)
+					}
+				}
+				if name != "" {
+					names = append(names, name)
+				}
 			}
+			sort.Strings(names)
+			details["availableAgents"] = names
 		}
-		sort.Strings(names)
-		details["availableAgents"] = names
 	}
 	return details
 }
@@ -373,7 +375,12 @@ func (s *Server) handleGetHeartbeat(w http.ResponseWriter, r *http.Request) {
 	if !ok {
 		return
 	}
-	hb, err := s.ts.GetHeartbeat(name, agent)
+	workspaceID, workspaceOK := s.currentWorkspaceForRequest(w, r)
+	if !workspaceOK {
+		return
+	}
+	target := s.runtimeSchedulerTargetForProjectAgent(workspaceID, name, agent)
+	hb, err := s.loadSchedulerTargetHeartbeat(workspaceID, target)
 	if err != nil {
 		s.serverError(w, err)
 		return
@@ -395,7 +402,12 @@ func (s *Server) handlePatchHeartbeat(w http.ResponseWriter, r *http.Request) {
 		s.jsonErrorCode(w, http.StatusBadRequest, ErrCodeInvalidJSON, "invalid JSON body")
 		return
 	}
-	hb, err := s.ts.GetHeartbeat(name, agent)
+	workspaceID, workspaceOK := s.currentWorkspaceForRequest(w, r)
+	if !workspaceOK {
+		return
+	}
+	target := s.runtimeSchedulerTargetForProjectAgent(workspaceID, name, agent)
+	hb, err := s.loadSchedulerTargetHeartbeat(workspaceID, target)
 	if err != nil {
 		s.serverError(w, err)
 		return
@@ -492,7 +504,7 @@ func (s *Server) handlePatchHeartbeat(w http.ResponseWriter, r *http.Request) {
 		}
 		hb.MaxCycleDuration = strings.TrimSpace(*body.MaxCycleDuration)
 	}
-	if err := s.ts.SaveHeartbeat(name, agent, hb); err != nil {
+	if err := s.saveSchedulerTargetHeartbeat(workspaceID, target, hb); err != nil {
 		s.serverError(w, err)
 		return
 	}

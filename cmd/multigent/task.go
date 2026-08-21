@@ -1236,7 +1236,7 @@ func resolveTaskOwner(root, taskID string) (project, agent string, err error) {
 		return "", "", err
 	}
 	for _, p := range projects {
-		agents, err := ts.ListAgents(p)
+		agents, err := listCLIProjectAgentNames(root, p)
 		if err != nil {
 			continue
 		}
@@ -1363,7 +1363,7 @@ Use --no-pending to skip pending tasks and only cancel in-progress ones.`,
 			// Collect agents to process.
 			var agents []string
 			if allAgents {
-				agents, err = ts.ListAgents(project)
+				agents, err = listCLIProjectAgentNames(root, project)
 				if err != nil {
 					return err
 				}
@@ -1479,7 +1479,7 @@ Cost is estimated using Anthropic's Claude pricing (configurable via env):
 
 			var agentList []string
 			if allAgentsFlag {
-				agentList, err = ts.ListAgents(project)
+				agentList, err = listCLIProjectAgentNames(root, project)
 				if err != nil {
 					return err
 				}

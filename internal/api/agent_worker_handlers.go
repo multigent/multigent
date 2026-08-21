@@ -582,23 +582,6 @@ func projectMembershipResponses(memberships []controldb.ProjectMembership, worke
 }
 
 func (s *Server) projectMembershipTeam(membership controldb.ProjectMembership, worker controldb.AgentWorker) string {
-	if s == nil || s.st == nil {
-		return ""
-	}
-	names := []string{membership.Title, worker.DisplayName, worker.Name}
-	for _, name := range names {
-		name = strings.TrimSpace(name)
-		if name == "" {
-			continue
-		}
-		meta, err := s.st.AgentMeta(membership.ProjectID, name)
-		if err != nil || meta == nil {
-			continue
-		}
-		if team := strings.TrimSpace(meta.Team); team != "" {
-			return team
-		}
-	}
 	return ""
 }
 

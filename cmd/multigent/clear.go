@@ -44,7 +44,7 @@ Use --project to limit to one project, --tasks/--inbox for partial clearing.`,
 			var targets []agentTarget
 
 			if project != "" {
-				agents, err := ts.ListAgents(project)
+				agents, err := listCLIProjectAgentNames(root, project)
 				if err != nil {
 					return err
 				}
@@ -57,7 +57,7 @@ Use --project to limit to one project, --tasks/--inbox for partial clearing.`,
 					return err
 				}
 				for _, p := range projects {
-					agents, err := ts.ListAgents(p)
+					agents, err := listCLIProjectAgentNames(root, p)
 					if err != nil {
 						return err
 					}

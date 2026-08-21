@@ -3,6 +3,7 @@ package main
 import (
 	"bytes"
 	"context"
+	"encoding/json"
 	"fmt"
 	"math/rand"
 	"os"
@@ -191,7 +192,7 @@ func newSchedulerStartCmd() *cobra.Command {
 
 			if a := strings.TrimSpace(startAgent); a != "" {
 				p := strings.TrimSpace(startProject)
-				names, err := ts.ListAgents(p)
+				names, err := listCLIProjectAgentNames(root, p)
 				if err != nil {
 					return fmt.Errorf("list agents: %w", err)
 				}
@@ -244,7 +245,7 @@ func newSchedulerStartCmd() *cobra.Command {
 
 			maxIntvLen := 0
 			for _, k := range heartbeatAgents {
-				hb, _ := ts.GetHeartbeat(k.key.project, k.key.agent)
+				hb, _ := loadSchedulerHeartbeat(root, k.key.project, k.key.agent, ts)
 				if len(hb.Interval) > maxIntvLen {
 					maxIntvLen = len(hb.Interval)
 				}
@@ -289,7 +290,7 @@ func newSchedulerStartCmd() *cobra.Command {
 						lastProj = k.key.project
 						fmt.Println(boxRow(col(ansiSilver, "  "+lastProj)))
 					}
-					hb, _ := ts.GetHeartbeat(k.key.project, k.key.agent)
+					hb, _ := loadSchedulerHeartbeat(root, k.key.project, k.key.agent, ts)
 					fmt.Println(boxRow(schedulerStartHeartbeatRow(k.key.agent, hb, maxIntvLen)))
 				}
 			}
@@ -364,11 +365,46 @@ func newSchedulerStartCmd() *cobra.Command {
 }
 
 func collectSchedulerStartTargets(root string, projects []string, startAgent string, ts taskstore.Store) ([]schedulerStartTarget, []schedulerStartTarget) {
-	heartbeatTargets, cronTargets, seen := collectAgentWorkerSchedulerTargets(root, projects, startAgent, ts)
-	legacyHeartbeat, legacyCron := collectLegacySchedulerTargets(projects, startAgent, ts, seen)
-	heartbeatTargets = append(heartbeatTargets, legacyHeartbeat...)
-	cronTargets = append(cronTargets, legacyCron...)
+	heartbeatTargets, cronTargets, _ := collectAgentWorkerSchedulerTargets(root, projects, startAgent, ts)
 	return heartbeatTargets, cronTargets
+}
+
+func loadSchedulerHeartbeat(root, project, agent string, ts taskstore.Store) (*entity.HeartbeatConfig, error) {
+	_ = ts
+	worker, ok, db, _, err := resolveCLIProjectWorker(root, project, agent)
+	if err != nil {
+		return nil, err
+	}
+	_ = db
+	if !ok {
+		return nil, fmt.Errorf("agent worker membership %s/%s not found", project, agent)
+	}
+	var hb entity.HeartbeatConfig
+	if strings.TrimSpace(worker.ScheduleJSON) != "" {
+		_ = json.Unmarshal([]byte(worker.ScheduleJSON), &hb)
+	}
+	return &hb, nil
+}
+
+func saveSchedulerHeartbeat(root, project, agent string, ts taskstore.Store, hb *entity.HeartbeatConfig) error {
+	_ = ts
+	if hb == nil {
+		return fmt.Errorf("heartbeat config is nil")
+	}
+	worker, ok, db, _, err := resolveCLIProjectWorker(root, project, agent)
+	if err != nil {
+		return err
+	}
+	if !ok {
+		return fmt.Errorf("agent worker membership %s/%s not found", project, agent)
+	}
+	raw, err := json.Marshal(hb)
+	if err != nil {
+		return err
+	}
+	worker.ScheduleJSON = string(raw)
+	worker.UpdatedAt = time.Now().UTC().Format(time.RFC3339)
+	return db.UpsertAgentWorker(worker)
 }
 
 func collectAgentWorkerSchedulerTargets(root string, projects []string, startAgent string, ts taskstore.Store) ([]schedulerStartTarget, []schedulerStartTarget, map[schedulerAgentKey]bool) {
@@ -425,7 +461,7 @@ func collectAgentWorkerSchedulerTargets(root string, projects []string, startAge
 	cron := make([]schedulerStartTarget, 0, len(order))
 	for _, workerID := range order {
 		target := *byWorker[workerID]
-		hb, err := ts.GetHeartbeat(target.key.project, target.key.agent)
+		hb, err := loadSchedulerHeartbeat(root, target.key.project, target.key.agent, ts)
 		if err == nil && hb.Enabled {
 			heartbeat = append(heartbeat, target)
 		}
@@ -441,39 +477,6 @@ func collectAgentWorkerSchedulerTargets(root string, projects []string, startAge
 		}
 	}
 	return heartbeat, cron, seen
-}
-
-func collectLegacySchedulerTargets(projects []string, startAgent string, ts taskstore.Store, seen map[schedulerAgentKey]bool) ([]schedulerStartTarget, []schedulerStartTarget) {
-	var heartbeatTargets []schedulerStartTarget
-	var cronTargets []schedulerStartTarget
-	for _, p := range projects {
-		agents, err := ts.ListAgents(p)
-		if err != nil {
-			continue
-		}
-		for _, a := range agents {
-			if len(a) > 0 && a[0] == '.' {
-				continue
-			}
-			if want := strings.TrimSpace(startAgent); want != "" && a != want {
-				continue
-			}
-			key := schedulerAgentKey{project: p, agent: a}
-			if seen[key] {
-				continue
-			}
-			target := schedulerStartTarget{key: key, memberships: []schedulerAgentKey{key}}
-			hb, err := ts.GetHeartbeat(p, a)
-			if err == nil && hb.Enabled {
-				heartbeatTargets = append(heartbeatTargets, target)
-			}
-			crons, err := ts.ListCrons(p, a)
-			if err == nil && hasEnabledCron(crons) {
-				cronTargets = append(cronTargets, target)
-			}
-		}
-	}
-	return heartbeatTargets, cronTargets
 }
 
 func schedulerMembershipAgentName(membership controldb.ProjectMembership, worker controldb.AgentWorker) string {
@@ -541,11 +544,11 @@ func runHeartbeatLoop(ctx context.Context, root, project, agentName string,
 
 	// Persist scheduler start time on first invocation.
 	{
-		hbInit, _ := ts.GetHeartbeat(project, agentName)
+		hbInit, _ := loadSchedulerHeartbeat(root, project, agentName, ts)
 		if hbInit != nil {
 			startedNow := time.Now().UTC()
 			hbInit.SchedulerStartedAt = &startedNow
-			_ = ts.SaveHeartbeat(project, agentName, hbInit)
+			_ = saveSchedulerHeartbeat(root, project, agentName, ts, hbInit)
 		}
 	}
 
@@ -554,7 +557,7 @@ func runHeartbeatLoop(ctx context.Context, root, project, agentName string,
 	firstCycle := true
 
 	for {
-		hb, err := ts.GetHeartbeat(project, agentName)
+		hb, err := loadSchedulerHeartbeat(root, project, agentName, ts)
 		if err != nil {
 			return
 		}
@@ -622,7 +625,7 @@ func runHeartbeatLoop(ctx context.Context, root, project, agentName string,
 					if nextWake > 0 {
 						nextOpenUTC := time.Now().Add(nextWake).UTC()
 						hb.NextWakeupAt = &nextOpenUTC
-						_ = ts.SaveHeartbeat(project, agentName, hb)
+						_ = saveSchedulerHeartbeat(root, project, agentName, ts, hb)
 						agentLog("%s outside active window — sleeping %s until window opens at %s",
 							colorDim+"○", nextWake.Round(time.Minute), hb.ActiveHours)
 						select {
@@ -654,7 +657,7 @@ func runHeartbeatLoop(ctx context.Context, root, project, agentName string,
 				} else {
 					hb.NextWakeupAt = nil
 				}
-				_ = ts.SaveHeartbeat(project, agentName, hb)
+				_ = saveSchedulerHeartbeat(root, project, agentName, ts, hb)
 				if hb.LastWakeup == nil {
 					agentLog("%s first wakeup deferred — waiting for active window at %s",
 						colorDim+"○", hb.ActiveHours)
@@ -668,7 +671,7 @@ func runHeartbeatLoop(ctx context.Context, root, project, agentName string,
 			nextAt := nextAtStr(projectedNext)
 			nextUTC := projectedNext.UTC()
 			hb.NextWakeupAt = &nextUTC
-			_ = ts.SaveHeartbeat(project, agentName, hb)
+			_ = saveSchedulerHeartbeat(root, project, agentName, ts, hb)
 			if hb.LastWakeup == nil {
 				agentLog("%s sleeping %s before first wakeup — next at %s",
 					colorDim+"○", waitDur.Round(time.Second), nextAt)
@@ -693,7 +696,7 @@ func runHeartbeatLoop(ctx context.Context, root, project, agentName string,
 			if nextWake > 0 {
 				nextOpenUTC := time.Now().Add(nextWake).UTC()
 				hb.NextWakeupAt = &nextOpenUTC
-				_ = ts.SaveHeartbeat(project, agentName, hb)
+				_ = saveSchedulerHeartbeat(root, project, agentName, ts, hb)
 				agentLog("%s outside active window — sleeping %s until window opens",
 					colorDim+"○", nextWake.Round(time.Minute))
 				sleepWithCronCheck(ctx, nextWake, root, project, agentName, ts, s, agentLog)
@@ -745,13 +748,13 @@ func runHeartbeatLoop(ctx context.Context, root, project, agentName string,
 						reasons = append(reasons, truncate(output, 80))
 					}
 				}
-				_ = ts.SaveHeartbeat(project, agentName, hb)
+				_ = saveSchedulerHeartbeat(root, project, agentName, ts, hb)
 			}
 
 			if !conditionMet {
 				nextCheckUTC := time.Now().Add(interval).UTC()
 				hb.NextWakeupAt = &nextCheckUTC
-				_ = ts.SaveHeartbeat(project, agentName, hb)
+				_ = saveSchedulerHeartbeat(root, project, agentName, ts, hb)
 				if len(reasons) > 0 {
 					agentLog("%s wakeup conditions not met (%s) — skipping cycle, next check in %s",
 						colorYellow+"⏸", strings.Join(reasons, "; "), interval.Round(time.Second))
@@ -772,7 +775,7 @@ func runHeartbeatLoop(ctx context.Context, root, project, agentName string,
 		hb.LastWakeup = &now
 		hb.LastWakeupStatus = "running"
 		hb.PID = os.Getpid()
-		_ = ts.SaveHeartbeat(project, agentName, hb)
+		_ = saveSchedulerHeartbeat(root, project, agentName, ts, hb)
 
 		// Increment wake count (resets each day).
 		today := now.Format("2006-01-02")
@@ -788,7 +791,7 @@ func runHeartbeatLoop(ctx context.Context, root, project, agentName string,
 		}
 		hb.WakeupCountToday++
 		hb.NextWakeupAt = nil
-		_ = ts.SaveHeartbeat(project, agentName, hb)
+		_ = saveSchedulerHeartbeat(root, project, agentName, ts, hb)
 
 		execTarget := selectSchedulerExecutionTarget(ts, memberships)
 		execProject, execAgent := execTarget.project, execTarget.agent
@@ -812,18 +815,18 @@ func runHeartbeatLoop(ctx context.Context, root, project, agentName string,
 
 		if cycleResult != nil {
 			agentLog("%s wakeup failed after %s — %v", colorRed+"✗", dur, cycleResult)
-			hb, _ = ts.GetHeartbeat(project, agentName)
+			hb, _ = loadSchedulerHeartbeat(root, project, agentName, ts)
 			hb.LastWakeupStatus = "failed"
 			hb.PID = 0
 			hb.LastCycleDuration = dur.String()
 		} else {
 			agentLog("%s wakeup done %sin %s", colorGreen+"✓", colorReset, dur)
-			hb, _ = ts.GetHeartbeat(project, agentName)
+			hb, _ = loadSchedulerHeartbeat(root, project, agentName, ts)
 			hb.LastWakeupStatus = "done"
 			hb.PID = 0
 			hb.LastCycleDuration = dur.String()
 		}
-		_ = ts.SaveHeartbeat(project, agentName, hb)
+		_ = saveSchedulerHeartbeat(root, project, agentName, ts, hb)
 	}
 }
 
@@ -840,6 +843,13 @@ func runAllPendingTasks(ctx context.Context, root, project, agentName string,
 	}
 
 	r := runner.New(root, ts, s)
+	r.ClearSession = func(project, agent string) {
+		if hb, err := loadSchedulerHeartbeat(root, project, agent, ts); err == nil && hb != nil {
+			hb.SessionID = ""
+			hb.SessionStartedAt = nil
+			_ = saveSchedulerHeartbeat(root, project, agent, ts, hb)
+		}
+	}
 	sessionID := hb.SessionID
 	i18n := wakeupStrings(agencyLang(s))
 	sourceChannel := "scheduler"
@@ -979,9 +989,9 @@ func runAllPendingTasks(ctx context.Context, root, project, agentName string,
 						interactionLease.SetRuntimeSessionID(result.SessionID)
 					}
 					sessionID = result.SessionID
-					latestHB, _ := ts.GetHeartbeat(project, agentName)
+					latestHB, _ := loadSchedulerHeartbeat(root, project, agentName, ts)
 					latestHB.SessionID = sessionID
-					_ = ts.SaveHeartbeat(project, agentName, latestHB)
+					_ = saveSchedulerHeartbeat(root, project, agentName, ts, latestHB)
 				}
 
 				finished := time.Now().UTC()
@@ -1112,13 +1122,13 @@ func runAllPendingTasks(ctx context.Context, root, project, agentName string,
 		// Update session ID for the cycle (per-cycle scope by default).
 		if result.SessionID != "" {
 			sessionID = result.SessionID
-			latestHB, _ := ts.GetHeartbeat(project, agentName)
+			latestHB, _ := loadSchedulerHeartbeat(root, project, agentName, ts)
 			latestHB.SessionID = sessionID
 			if latestHB.SessionStartedAt == nil {
 				t := time.Now().UTC()
 				latestHB.SessionStartedAt = &t
 			}
-			_ = ts.SaveHeartbeat(project, agentName, latestHB)
+			_ = saveSchedulerHeartbeat(root, project, agentName, ts, latestHB)
 		}
 
 		// Propagate session ID + run status back to the originating cron.
@@ -1364,7 +1374,7 @@ func pendingAttentionSection(root, project, agentName string, i18n wakeupI18n) (
 	if err != nil || strings.TrimSpace(workspaceID) == "" {
 		return "", nil, err
 	}
-	resolved, ok, err := agentdir.New(db).ResolveLegacyMailbox(workspaceID, project+"/"+agentName)
+	resolved, ok, err := agentdir.New(db).ResolveProjectMailbox(workspaceID, project+"/"+agentName)
 	if err != nil || !ok {
 		return "", nil, err
 	}
@@ -1500,7 +1510,7 @@ func sleepWithCronCheck(ctx context.Context, dur time.Duration,
 			n := fireDueCrons(ts, project, agentName)
 			if n > 0 {
 				logFn("%s cron fired %d task(s) during sleep — executing", colorYellow+"◆", n)
-				hb, _ := ts.GetHeartbeat(project, agentName)
+				hb, _ := loadSchedulerHeartbeat(root, project, agentName, ts)
 				if err := runAllPendingTasks(ctx, root, project, agentName, ts, s, hb); err != nil {
 					logFn("%s cron task execution error: %v", colorRed+"✗", err)
 				}
@@ -1512,7 +1522,7 @@ func sleepWithCronCheck(ctx context.Context, dur time.Duration,
 			n := fireDueCrons(ts, project, agentName)
 			if n > 0 {
 				logFn("%s cron fired %d task(s) during sleep — executing", colorYellow+"◆", n)
-				hb, _ := ts.GetHeartbeat(project, agentName)
+				hb, _ := loadSchedulerHeartbeat(root, project, agentName, ts)
 				if err := runAllPendingTasks(ctx, root, project, agentName, ts, s, hb); err != nil {
 					logFn("%s cron task execution error: %v", colorRed+"✗", err)
 				}
@@ -1642,7 +1652,7 @@ func runCronOnlyLoop(ctx context.Context, root, project, agentName string,
 		n := fireDueCrons(ts, project, agentName)
 		if n > 0 {
 			cronLog("%s fired %d cron(s) — running pending tasks", colorYellow+"◆", n)
-			hb, _ := ts.GetHeartbeat(project, agentName)
+			hb, _ := loadSchedulerHeartbeat(root, project, agentName, ts)
 			if err := runAllPendingTasks(ctx, root, project, agentName, ts, s, hb); err != nil {
 				cronLog("%s task execution error: %v", colorRed+"✗", err)
 			}
@@ -2061,7 +2071,7 @@ useful for testing and for agent-to-agent wakeup from inside a task.`,
 			ts := mustTaskStore(root)
 			s := mustStore(root)
 
-			hb, err := ts.GetHeartbeat(project, agentName)
+			hb, err := loadSchedulerHeartbeat(root, project, agentName, ts)
 			if err != nil {
 				return err
 			}
@@ -2078,14 +2088,14 @@ useful for testing and for agent-to-agent wakeup from inside a task.`,
 			hb.LastWakeup = &now
 			hb.LastWakeupStatus = "running"
 			hb.PID = os.Getpid()
-			_ = ts.SaveHeartbeat(project, agentName, hb)
+			_ = saveSchedulerHeartbeat(root, project, agentName, ts, hb)
 
 			// Ensure cleanup even on panic so status doesn't stay "running" forever.
 			defer func() {
-				if latest, err := ts.GetHeartbeat(project, agentName); err == nil && latest.LastWakeupStatus == "running" {
+				if latest, err := loadSchedulerHeartbeat(root, project, agentName, ts); err == nil && latest.LastWakeupStatus == "running" {
 					latest.PID = 0
 					latest.LastWakeupStatus = "done"
-					_ = ts.SaveHeartbeat(project, agentName, latest)
+					_ = saveSchedulerHeartbeat(root, project, agentName, ts, latest)
 				}
 			}()
 
@@ -2097,15 +2107,15 @@ useful for testing and for agent-to-agent wakeup from inside a task.`,
 
 			cycleErr := runAllPendingTasks(context.Background(), root, project, agentName, ts, s, hb)
 
-			hb, _ = ts.GetHeartbeat(project, agentName)
+			hb, _ = loadSchedulerHeartbeat(root, project, agentName, ts)
 			hb.PID = 0
 			if cycleErr != nil {
 				hb.LastWakeupStatus = "failed"
-				_ = ts.SaveHeartbeat(project, agentName, hb)
+				_ = saveSchedulerHeartbeat(root, project, agentName, ts, hb)
 				return fmt.Errorf("[wakeup %s/%s] cycle failed: %w", project, agentName, cycleErr)
 			}
 			hb.LastWakeupStatus = "done"
-			_ = ts.SaveHeartbeat(project, agentName, hb)
+			_ = saveSchedulerHeartbeat(root, project, agentName, ts, hb)
 
 			fmt.Printf("[wakeup %s/%s] cycle complete\n", project, agentName)
 			return nil
@@ -2199,7 +2209,7 @@ func newSchedulerHeartbeatConfigureCmd() *cobra.Command {
 			}
 
 			ts := mustTaskStore(root)
-			hb, err := ts.GetHeartbeat(project, agentName)
+			hb, err := loadSchedulerHeartbeat(root, project, agentName, ts)
 			if err != nil {
 				return err
 			}
@@ -2311,7 +2321,7 @@ func newSchedulerHeartbeatConfigureCmd() *cobra.Command {
 			}
 
 			if changed {
-				if err := ts.SaveHeartbeat(project, agentName, hb); err != nil {
+				if err := saveSchedulerHeartbeat(root, project, agentName, ts, hb); err != nil {
 					return err
 				}
 			}
@@ -2431,7 +2441,12 @@ func newSchedulerHeartbeatPauseCmd() *cobra.Command {
 				return err
 			}
 			ts := mustTaskStore(root)
-			if err := ts.PauseHeartbeat(project, agent); err != nil {
+			hb, err := loadSchedulerHeartbeat(root, project, agent, ts)
+			if err != nil {
+				return err
+			}
+			hb.Paused = true
+			if err := saveSchedulerHeartbeat(root, project, agent, ts, hb); err != nil {
 				return err
 			}
 			fmt.Printf("Heartbeat paused for %s/%s — scheduler stays alive and will resume when you call 'scheduler heartbeat resume'\n", project, agent)
@@ -2457,7 +2472,12 @@ func newSchedulerHeartbeatResumeCmd() *cobra.Command {
 				return err
 			}
 			ts := mustTaskStore(root)
-			if err := ts.ResumeHeartbeat(project, agent); err != nil {
+			hb, err := loadSchedulerHeartbeat(root, project, agent, ts)
+			if err != nil {
+				return err
+			}
+			hb.Paused = false
+			if err := saveSchedulerHeartbeat(root, project, agent, ts, hb); err != nil {
 				return err
 			}
 			fmt.Printf("Heartbeat resumed for %s/%s\n", project, agent)

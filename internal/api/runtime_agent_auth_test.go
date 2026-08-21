@@ -61,6 +61,7 @@ func TestNormalizeRuntimeCapabilitiesFiltersUnsupportedValues(t *testing.T) {
 
 func TestIssueAgentRuntimeTokenRequiresAgentOperatorAccess(t *testing.T) {
 	s, workspaceID := newConnectionGrantPolicyServer(t)
+	seedSampleAgentsForTest(t, s, workspaceID)
 	seedTaskAttentionWorker(t, s, workspaceID, "sample", "backend", true)
 	grantProjectRoleForTest(t, s, workspaceID, "viewer", ProjectRoleViewer)
 	grantProjectRoleForTest(t, s, workspaceID, "operator", ProjectRoleOperator)

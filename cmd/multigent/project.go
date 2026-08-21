@@ -1,6 +1,7 @@
 package main
 
 import (
+	"encoding/json"
 	"fmt"
 	"os"
 	"path/filepath"
@@ -8,9 +9,8 @@ import (
 	"time"
 
 	"github.com/multigent/multigent/internal/agentcli"
-	"github.com/multigent/multigent/internal/ctxbuild"
+	controldb "github.com/multigent/multigent/internal/db"
 	"github.com/multigent/multigent/internal/entity"
-	"github.com/multigent/multigent/internal/formatter"
 	"github.com/multigent/multigent/internal/sandbox"
 	"github.com/multigent/multigent/internal/store"
 	"github.com/multigent/multigent/internal/taskstore"
@@ -203,79 +203,50 @@ func newProjectBlueprintsCmd() *cobra.Command {
 
 func applyAgentSpec(root, project string, spec entity.AgentSpec,
 	s store.Store, ts taskstore.Store, force, dryRun bool) error {
+	_ = ts
 
-	agentDir := filepath.Join(root, "projects", project, "agents", spec.Name)
-
-	alreadyExists := false
-	if _, err := os.Stat(filepath.Join(agentDir, ".multigent", "agent.yaml")); err == nil {
-		alreadyExists = true
+	db, err := openControlDBForRoot(root)
+	if err != nil {
+		return err
 	}
-	if !alreadyExists {
-		if meta, err := s.AgentMeta(project, spec.Name); err == nil && meta != nil {
-			alreadyExists = true
-		}
+	workspaceID, err := workspaceIDForRoot(db, root)
+	if err != nil {
+		return err
 	}
-
-	// ── Hire ──────────────────────────────────────────────────────────────────
-
+	worker, alreadyExists, err := db.AgentWorkerByName(workspaceID, spec.Name)
+	if err != nil {
+		return err
+	}
 	if !alreadyExists || force {
 		action := "hire"
 		if alreadyExists {
-			action = "re-hire"
+			action = "update"
 		}
 		if dryRun {
 			fmt.Printf("  [dry-run] would %s agent %s (model=%s role=%s team=%s)\n",
 				action, spec.Name, spec.Model, spec.Role, spec.Team)
 		} else {
-			if err := hireAgentFromSpec(root, project, spec, s, force); err != nil {
-				return fmt.Errorf("hire: %w", err)
+			created, err := hireAgentFromSpec(root, project, spec, s, force)
+			if err != nil {
+				return fmt.Errorf("assign worker: %w", err)
 			}
+			worker = created
 			fmt.Printf("  ✓ %s agent %s (model=%s)\n", action, spec.Name, spec.Model)
 		}
 	} else {
 		fmt.Printf("  · agent %s already exists, skipping hire (use --force to re-hire)\n", spec.Name)
 	}
 
-	// ── Playbook → wakeup.md ──────────────────────────────────────────────────
-
-	if spec.Playbook != "" && entity.AgentModel(spec.Model) != entity.ModelHuman {
-		playbookSrc := resolveProjectPlaybookPath(root, project, spec.Playbook)
-		wakeupDst := filepath.Join(agentDir, ".multigent/context", "wakeup.md")
-		if dryRun {
-			fmt.Printf("    [dry-run] would install playbook %s → .multigent/context/wakeup.md\n", spec.Playbook)
-		} else {
-			data, err := os.ReadFile(playbookSrc)
-			if err != nil {
-				fmt.Printf("    ⚠ playbook %s not found: %v (skipping)\n", spec.Playbook, err)
-			} else {
-				if err := os.MkdirAll(filepath.Dir(wakeupDst), 0o755); err != nil {
-					return fmt.Errorf("create .multigent/context: %w", err)
-				}
-				if err := os.WriteFile(wakeupDst, data, 0644); err != nil {
-					return fmt.Errorf("write wakeup.md: %w", err)
-				}
-				fmt.Printf("    ✓ playbook installed: %s → .multigent/context/wakeup.md\n", spec.Playbook)
-
-				// Re-run formatter so CLAUDE.md gains the @import for wakeup.md.
-				if meta, err2 := s.AgentMeta(project, spec.Name); err2 == nil {
-					if f2, err3 := formatter.New(meta.Model); err3 == nil {
-						bld := ctxbuild.NewBuilder(s)
-						if mc2, err4 := bld.BuildForAgent(project, spec.Name, spec.Team, spec.Role); err4 == nil {
-							_ = f2.Format(mc2, agentDir)
-						}
-					}
-				}
-			}
-		}
-	}
-
-	// ── Heartbeat ─────────────────────────────────────────────────────────────
-
 	if spec.Heartbeat != nil && entity.AgentModel(spec.Model) != entity.ModelHuman {
 		hb := spec.Heartbeat
-		// If a playbook is configured, auto-set wakeup prompt.
 		if spec.Playbook != "" && hb.WakeupPrompt == "" {
-			hb.WakeupPrompt = "@.multigent/context/wakeup.md"
+			playbookSrc := resolveProjectPlaybookPath(root, project, spec.Playbook)
+			data, err := os.ReadFile(playbookSrc)
+			if err != nil {
+				fmt.Printf("    ⚠ playbook %s not found: %v (skipping wakeup prompt)\n", spec.Playbook, err)
+			} else {
+				hb.WakeupPrompt = string(data)
+			}
 		}
 		if dryRun {
 			interval := "not set"
@@ -285,8 +256,10 @@ func applyAgentSpec(root, project string, spec entity.AgentSpec,
 			fmt.Printf("    [dry-run] would configure heartbeat: enabled=%v interval=%s active_hours=%s active_days=%s\n",
 				hb.Enabled, interval, hb.ActiveHours, hb.ActiveDays)
 		} else {
-			if err := ts.SaveHeartbeat(project, spec.Name, hb); err != nil {
-				return fmt.Errorf("save heartbeat: %w", err)
+			worker.ScheduleJSON = marshalProjectApplyHeartbeat(hb)
+			worker.UpdatedAt = time.Now().UTC().Format(time.RFC3339)
+			if err := db.UpsertAgentWorker(worker); err != nil {
+				return fmt.Errorf("save worker heartbeat: %w", err)
 			}
 			status := "disabled"
 			if hb.Enabled {
@@ -305,26 +278,11 @@ func applyAgentSpec(root, project string, spec entity.AgentSpec,
 		}
 	}
 
-	// ── Crons ─────────────────────────────────────────────────────────────────
-
 	if len(spec.Crons) > 0 {
-		var crons []*entity.Cron
-		for _, cs := range spec.Crons {
-			crons = append(crons, &entity.Cron{
-				ID:       cs.ID,
-				Schedule: cs.Schedule,
-				Title:    cs.Title,
-				Prompt:   cs.Prompt,
-				Enabled:  true,
-			})
-		}
 		if dryRun {
-			fmt.Printf("    [dry-run] would configure %d cron(s)\n", len(crons))
+			fmt.Printf("    [dry-run] would skip %d cron(s): worker-level cron storage is not enabled yet\n", len(spec.Crons))
 		} else {
-			if err := ts.SaveCrons(project, spec.Name, crons); err != nil {
-				return fmt.Errorf("save crons: %w", err)
-			}
-			fmt.Printf("    ✓ %d cron(s) configured\n", len(crons))
+			fmt.Printf("    ⚠ skipped %d cron(s): worker-level cron storage is not enabled yet\n", len(spec.Crons))
 		}
 	}
 
@@ -334,45 +292,14 @@ func applyAgentSpec(root, project string, spec entity.AgentSpec,
 // hireAgentFromSpec performs the same work as the `hire` command but driven
 // from an AgentSpec struct (used by `project apply`).
 func hireAgentFromSpec(root, project string, spec entity.AgentSpec,
-	s store.Store, force bool) error {
+	s store.Store, force bool) (controldb.AgentWorker, error) {
+	_ = force
 
 	agentModel := entity.AgentModel(spec.Model)
-	existing, _ := s.AgentMeta(project, spec.Name)
-
-	agentDir := filepath.Join(root, "projects", project, "agents", spec.Name)
-	if err := os.MkdirAll(agentDir, 0o755); err != nil {
-		return err
-	}
-
-	// Human agents need no context files, sandbox, or repo mounting.
 	if agentModel == entity.ModelHuman {
-		meta := &entity.AgentMeta{
-			Name:    spec.Name,
-			Project: project,
-			Team:    spec.Team,
-			Role:    spec.Role,
-			Model:   agentModel,
-			HiredAt: time.Now().UTC(),
-		}
-		preserveRuntimeSettings(meta, existing)
-		return s.SaveAgentMeta(project, spec.Name, meta)
+		return controldb.AgentWorker{}, fmt.Errorf("human members are workspace users/project members in 2.x; project apply creates Agent Workers only")
 	}
 
-	builder := ctxbuild.NewBuilder(s)
-	mc, err := builder.BuildForAgent(project, spec.Name, spec.Team, spec.Role)
-	if err != nil {
-		return fmt.Errorf("build context: %w", err)
-	}
-
-	f, err := formatter.New(agentModel)
-	if err != nil {
-		return fmt.Errorf("formatter: %w", err)
-	}
-	if err := f.Format(mc, agentDir); err != nil {
-		return fmt.Errorf("write context: %w", err)
-	}
-
-	// Resolve repo add-dirs from project metadata.
 	var addDirs []string
 	if projMeta, err2 := s.Project(project); err2 == nil && projMeta != nil && projMeta.Repo != "" {
 		repoAbs := projMeta.Repo
@@ -389,23 +316,11 @@ func hireAgentFromSpec(root, project string, spec entity.AgentSpec,
 		addDirs = append(addDirs, r)
 	}
 
-	// Role workspace setup.
-	if spec.Role != "" {
-		roleMeta, err2 := s.Role(spec.Team, spec.Role)
-		if err2 == nil {
-			if err3 := applyRoleSetup(roleMeta.Setup, agentDir); err3 != nil {
-				return fmt.Errorf("role setup: %w", err3)
-			}
-		}
-	}
-
-	// Build sandbox config. Non-human CLI agents default to Docker isolation.
 	var sandboxCfg *entity.SandboxConfig
 	if spec.Sandbox != nil {
 		if err := sandbox.CheckDocker(); err != nil {
-			return fmt.Errorf("sandbox requires Docker: %w", err)
+			return controldb.AgentWorker{}, fmt.Errorf("sandbox requires Docker: %w", err)
 		}
-		// Use the spec's sandbox config, but fill in defaults for image if not set.
 		sandboxCfg = spec.Sandbox
 		if sandboxCfg.Provider == "" {
 			sandboxCfg.Provider = entity.SandboxDocker
@@ -423,27 +338,75 @@ func hireAgentFromSpec(root, project string, spec entity.AgentSpec,
 		var err error
 		sandboxCfg, err = buildDefaultSandboxConfig(agentModel, string(entity.SandboxDocker), "", "bridge", 0, 0, false)
 		if err != nil {
-			return fmt.Errorf("default sandbox: %w", err)
-		}
-		if existing != nil && existing.Sandbox != nil {
-			sandboxCfg = existing.Sandbox
+			return controldb.AgentWorker{}, fmt.Errorf("default sandbox: %w", err)
 		}
 	}
 
-	meta := &entity.AgentMeta{
-		Name:        spec.Name,
-		Project:     project,
-		Team:        spec.Team,
-		Role:        spec.Role,
-		Model:       agentModel,
-		HiredAt:     time.Now().UTC(),
-		ContextHash: ctxbuild.LayerHashes(mc),
-		Sandbox:     sandboxCfg,
-		AddDirs:     addDirs,
-		Playbook:    spec.Playbook,
+	db, err := openControlDBForRoot(root)
+	if err != nil {
+		return controldb.AgentWorker{}, err
 	}
-	preserveRuntimeSettings(meta, existing)
-	return s.SaveAgentMeta(project, spec.Name, meta)
+	workspaceID, err := workspaceIDForRoot(db, root)
+	if err != nil {
+		return controldb.AgentWorker{}, err
+	}
+	nowText := time.Now().UTC().Format(time.RFC3339)
+	worker := controldb.AgentWorker{
+		ID:                  "aw_" + randomID(12),
+		WorkspaceID:         workspaceID,
+		Name:                spec.Name,
+		DisplayName:         spec.Name,
+		Status:              "available",
+		Model:               string(agentModel),
+		ScheduleJSON:        "{}",
+		AttentionPolicyJSON: "{}",
+		MemoryPolicyJSON:    "{}",
+		SkillsJSON:          "[]",
+		RuntimeConfigJSON:   encodeCLIWorkerRuntimeConfig(cliAgentRuntimeConfig{Sandbox: sandboxCfg, AddDirs: addDirs}),
+		PrimarySessionID:    "sess_" + randomID(16),
+		CreatedAt:           nowText,
+		UpdatedAt:           nowText,
+	}
+	if existing, ok, err := db.AgentWorkerByName(workspaceID, spec.Name); err != nil {
+		return controldb.AgentWorker{}, err
+	} else if ok {
+		worker.ID = existing.ID
+		worker.PrimarySessionID = existing.PrimarySessionID
+		worker.CreatedAt = existing.CreatedAt
+	}
+	if err := db.UpsertAgentWorker(worker); err != nil {
+		return controldb.AgentWorker{}, err
+	}
+	membership := controldb.ProjectMembership{
+		ID:               "pm_" + randomID(12),
+		WorkspaceID:      workspaceID,
+		ProjectID:        project,
+		MemberType:       "agent_worker",
+		MemberID:         worker.ID,
+		Role:             spec.Role,
+		Title:            spec.Name,
+		PermissionsJSON:  "[]",
+		AutoPickTasks:    true,
+		AttentionEnabled: true,
+		PriorityWeight:   1,
+		CreatedAt:        nowText,
+		UpdatedAt:        nowText,
+	}
+	if err := db.UpsertProjectMembership(membership); err != nil {
+		return controldb.AgentWorker{}, err
+	}
+	return worker, nil
+}
+
+func marshalProjectApplyHeartbeat(hb *entity.HeartbeatConfig) string {
+	if hb == nil {
+		return "{}"
+	}
+	raw, err := json.Marshal(hb)
+	if err != nil {
+		return "{}"
+	}
+	return string(raw)
 }
 
 func resolveProjectPlaybookPath(root, project, playbook string) string {

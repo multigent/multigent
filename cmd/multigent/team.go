@@ -156,7 +156,7 @@ func newTeamSkillAddCmd() *cobra.Command {
 
 			fmt.Printf("✓ Added %d skill(s) to team %q\n", added, teamPath)
 			fmt.Printf("  Skills now: %s\n", strings.Join(t.Skills, ", "))
-			fmt.Printf("\n  Run `multigent sync` to push the updated context to hired agents.\n")
+			fmt.Printf("\n  Agent context is resolved dynamically from Agent Workers and project memberships.\n")
 			return nil
 		},
 	}
@@ -221,7 +221,7 @@ func newTeamSkillRemoveCmd() *cobra.Command {
 			} else {
 				fmt.Printf("  Skills now: (none)\n")
 			}
-			fmt.Printf("\n  Run `multigent sync` to push the updated context to hired agents.\n")
+			fmt.Printf("\n  Agent context is resolved dynamically from Agent Workers and project memberships.\n")
 			return nil
 		},
 	}

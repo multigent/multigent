@@ -27,6 +27,7 @@ func grantProjectRoleForTest(t *testing.T, s *Server, workspaceID, username, rol
 
 func TestProjectWriteRBACDistinguishesViewerOperatorAndLinkedAgent(t *testing.T) {
 	s, workspaceID := newConnectionGrantPolicyServer(t)
+	seedSampleAgentsForTest(t, s, workspaceID)
 	grantProjectRoleForTest(t, s, workspaceID, "viewer", ProjectRoleViewer)
 	grantProjectRoleForTest(t, s, workspaceID, "operator", ProjectRoleOperator)
 
@@ -67,6 +68,7 @@ func TestProjectWriteRBACDistinguishesViewerOperatorAndLinkedAgent(t *testing.T)
 
 func TestCreateWorkflowTaskDoesNotStartTask(t *testing.T) {
 	s, workspaceID := newConnectionGrantPolicyServer(t)
+	seedSampleAgentsForTest(t, s, workspaceID)
 	now := time.Now().UTC()
 	wfStore := workflowstore.NewStore(s.controlDB, workspaceID)
 	def := entity.WorkflowDefinition{
@@ -158,6 +160,7 @@ func TestCreateWorkflowTaskDoesNotStartTask(t *testing.T) {
 
 func TestProjectAndAgentConfigRequireManager(t *testing.T) {
 	s, workspaceID := newConnectionGrantPolicyServer(t)
+	seedSampleAgentsForTest(t, s, workspaceID)
 	grantProjectRoleForTest(t, s, workspaceID, "viewer", ProjectRoleViewer)
 	grantProjectRoleForTest(t, s, workspaceID, "operator", ProjectRoleOperator)
 
@@ -190,16 +193,8 @@ func TestProjectAndAgentConfigRequireManager(t *testing.T) {
 }
 
 func TestPatchAgentAllowsUnicodeName(t *testing.T) {
-	s, _ := newConnectionGrantPolicyServer(t)
-	if err := s.st.SaveAgentMeta("sample", "开发者", &entity.AgentMeta{
-		Name:    "开发者",
-		Project: "sample",
-		Team:    "engineering",
-		Model:   entity.ModelClaudeCode,
-		HiredAt: time.Now().UTC(),
-	}); err != nil {
-		t.Fatalf("save unicode agent: %v", err)
-	}
+	s, workspaceID := newConnectionGrantPolicyServer(t)
+	seedAgentWorkerForTest(t, s, workspaceID, "sample", "开发者")
 
 	req := providerTestRequest(http.MethodPatch, "/api/v1/projects/sample/agents/%E5%BC%80%E5%8F%91%E8%80%85", "admin", map[string]string{
 		"name":   "开发者",
@@ -216,6 +211,7 @@ func TestPatchAgentAllowsUnicodeName(t *testing.T) {
 
 func TestSessionResetRequiresAgentManagementAccess(t *testing.T) {
 	s, workspaceID := newConnectionGrantPolicyServer(t)
+	seedSampleAgentsForTest(t, s, workspaceID)
 	grantProjectRoleForTest(t, s, workspaceID, "viewer", ProjectRoleViewer)
 	grantProjectRoleForTest(t, s, workspaceID, "operator", ProjectRoleOperator)
 
@@ -242,6 +238,7 @@ func TestSessionResetRequiresAgentManagementAccess(t *testing.T) {
 
 func TestSetModelRequiresAgentManagementAccess(t *testing.T) {
 	s, workspaceID := newConnectionGrantPolicyServer(t)
+	seedSampleAgentsForTest(t, s, workspaceID)
 	grantProjectRoleForTest(t, s, workspaceID, "viewer", ProjectRoleViewer)
 	grantProjectRoleForTest(t, s, workspaceID, "operator", ProjectRoleOperator)
 
@@ -261,6 +258,7 @@ func TestSetModelRequiresAgentManagementAccess(t *testing.T) {
 
 func TestMessageMailboxRBAC(t *testing.T) {
 	s, workspaceID := newConnectionGrantPolicyServer(t)
+	seedSampleAgentsForTest(t, s, workspaceID)
 	grantProjectRoleForTest(t, s, workspaceID, "viewer", ProjectRoleViewer)
 
 	msg := map[string]any{"from": "human", "to": "sample/backend", "body": "hello"}
@@ -288,7 +286,8 @@ func TestMessageMailboxRBAC(t *testing.T) {
 }
 
 func TestLinkedAgentProjectViewsAreFilteredToLinkedAgents(t *testing.T) {
-	s, _ := newConnectionGrantPolicyServer(t)
+	s, workspaceID := newConnectionGrantPolicyServer(t)
+	seedSampleAgentsForTest(t, s, workspaceID)
 	now := time.Now().UTC()
 	for _, tc := range []struct {
 		agent string
@@ -370,7 +369,8 @@ func TestLinkedAgentProjectViewsAreFilteredToLinkedAgents(t *testing.T) {
 }
 
 func TestProjectTasksAgentFilterMatchesAssigneeNotQueue(t *testing.T) {
-	s, _ := newConnectionGrantPolicyServer(t)
+	s, workspaceID := newConnectionGrantPolicyServer(t)
+	seedSampleAgentsForTest(t, s, workspaceID)
 	now := time.Now().UTC()
 	cases := []struct {
 		queue    string
@@ -417,7 +417,8 @@ func TestProjectTasksAgentFilterMatchesAssigneeNotQueue(t *testing.T) {
 }
 
 func TestUpdateTaskAssigneeMovesAgentQueue(t *testing.T) {
-	s, _ := newConnectionGrantPolicyServer(t)
+	s, workspaceID := newConnectionGrantPolicyServer(t)
+	seedSampleAgentsForTest(t, s, workspaceID)
 	now := time.Now().UTC()
 	if err := s.ts.AddTask("sample", "pm", &entity.Task{
 		ID:        "task-reassign-agent",

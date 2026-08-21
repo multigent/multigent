@@ -358,28 +358,16 @@ func (s *Server) renderCurrentAgentContext(project, agent string, meta *entity.A
 }
 
 func (s *Server) readAgentWakeupPrompt(project, agent string) string {
-	hb, err := s.ts.GetHeartbeat(project, agent)
+	workspaceID, _ := s.currentWorkspaceID()
+	target := s.runtimeSchedulerTargetForProjectAgent(workspaceID, project, agent)
+	hb, err := s.loadSchedulerTargetHeartbeat(workspaceID, target)
 	if err == nil && hb != nil {
 		raw := strings.TrimSpace(hb.WakeupPrompt)
 		if raw != "" && !strings.HasPrefix(raw, "@") {
 			return hb.WakeupPrompt
 		}
-		if strings.HasPrefix(raw, "@") {
-			rel := strings.TrimSpace(strings.TrimPrefix(raw, "@"))
-			if rel != "" {
-				path := rel
-				if !filepath.IsAbs(path) {
-					path = filepath.Join(s.st.AgentDir(project, agent), rel)
-				}
-				if body, err := os.ReadFile(path); err == nil {
-					return string(body)
-				}
-			}
-		}
 	}
-	wakeupPath := filepath.Join(s.st.AgentDir(project, agent), ".multigent", "context", "wakeup.md")
-	wakeup, _ := os.ReadFile(wakeupPath)
-	return string(wakeup)
+	return ""
 }
 
 func (s *Server) handleGetAgentRuntimeReadiness(w http.ResponseWriter, r *http.Request) {
@@ -436,16 +424,17 @@ func (s *Server) handlePutAgentWakeup(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	hb, _ := s.ts.GetHeartbeat(project, agent)
+	workspaceID, ok := s.currentWorkspaceForRequest(w, r)
+	if !ok {
+		return
+	}
+	target := s.runtimeSchedulerTargetForProjectAgent(workspaceID, project, agent)
+	hb, _ := s.loadSchedulerTargetHeartbeat(workspaceID, target)
 	if hb == nil {
 		hb = &entity.HeartbeatConfig{}
 	}
 	hb.WakeupPrompt = body.Content
-	if err := s.ts.SaveHeartbeat(project, agent, hb); err != nil {
-		if isNotFoundErr(err) {
-			s.jsonError(w, http.StatusNotFound, "agent not found")
-			return
-		}
+	if err := s.saveSchedulerTargetHeartbeat(workspaceID, target, hb); err != nil {
 		s.serverError(w, err)
 		return
 	}
@@ -647,12 +636,7 @@ func (s *Server) handlePutAgentSandbox(w http.ResponseWriter, r *http.Request) {
 		_ = json.NewEncoder(w).Encode(map[string]any{"ok": true})
 		return
 	}
-
-	if err := s.st.SaveAgentMeta(project, agent, meta); err != nil {
-		s.serverError(w, err)
-		return
-	}
-	_ = json.NewEncoder(w).Encode(map[string]any{"ok": true})
+	s.jsonErrorCode(w, http.StatusNotFound, ErrCodeAgentNotFound, "agent worker membership not found")
 }
 
 func normalizeSandboxProvider(provider string) entity.SandboxProvider {

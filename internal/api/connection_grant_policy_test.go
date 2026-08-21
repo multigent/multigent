@@ -54,16 +54,18 @@ func newConnectionGrantPolicyServer(t *testing.T) (*Server, string) {
 	if err := st.SaveProject("sample", &entity.Project{Name: "sample"}); err != nil {
 		t.Fatalf("save project: %v", err)
 	}
-	for _, agent := range []string{"pm", "backend"} {
-		if err := st.SaveAgentMeta("sample", agent, &entity.AgentMeta{Name: agent, Project: "sample"}); err != nil {
-			t.Fatalf("save agent %s: %v", agent, err)
-		}
-	}
 	return s, workspaceID
+}
+
+func seedSampleAgentsForTest(t *testing.T, s *Server, workspaceID string) {
+	t.Helper()
+	seedAgentWorkerWithIDForTest(t, s, workspaceID, "sample", "pm", "aw-pm", "pm-sample-pm")
+	seedAgentWorkerWithIDForTest(t, s, workspaceID, "sample", "backend", "aw-backend", "pm-sample-backend")
 }
 
 func TestUserOwnedConnectionGrantTargetsAreLimitedToOwnerAndLinkedAgents(t *testing.T) {
 	s, workspaceID := newConnectionGrantPolicyServer(t)
+	seedSampleAgentsForTest(t, s, workspaceID)
 	connection := controldb.Connection{
 		ID:             "conn-owner",
 		WorkspaceID:    workspaceID,
@@ -82,7 +84,7 @@ func TestUserOwnedConnectionGrantTargetsAreLimitedToOwnerAndLinkedAgents(t *test
 		targetID   string
 	}{
 		{ConnectionTargetUser, "owner"},
-		{ConnectionTargetAgent, "sample/pm"},
+		{ConnectionTargetAgent, "agent_worker:aw-pm"},
 	}
 	for _, tc := range allowed {
 		if err := s.validateConnectionGrantTarget(req, connection, tc.targetType, tc.targetID); err != nil {
@@ -97,7 +99,7 @@ func TestUserOwnedConnectionGrantTargetsAreLimitedToOwnerAndLinkedAgents(t *test
 		{ConnectionTargetWorkspace, workspaceID},
 		{ConnectionTargetProject, "sample"},
 		{ConnectionTargetUser, "admin"},
-		{ConnectionTargetAgent, "sample/backend"},
+		{ConnectionTargetAgent, "agent_worker:aw-backend"},
 	}
 	for _, tc := range blocked {
 		if err := s.validateConnectionGrantTarget(req, connection, tc.targetType, tc.targetID); err == nil {
@@ -108,6 +110,7 @@ func TestUserOwnedConnectionGrantTargetsAreLimitedToOwnerAndLinkedAgents(t *test
 
 func TestUserOwnedConnectionGrantMustBeCreatedByOwner(t *testing.T) {
 	s, workspaceID := newConnectionGrantPolicyServer(t)
+	seedSampleAgentsForTest(t, s, workspaceID)
 	connection := controldb.Connection{
 		ID:             "conn-owner",
 		WorkspaceID:    workspaceID,
@@ -127,7 +130,7 @@ func TestUserOwnedConnectionGrantMustBeCreatedByOwner(t *testing.T) {
 	adminRec := httptest.NewRecorder()
 	adminReq := providerTestRequest(http.MethodPost, "/api/v1/connections/conn-owner/grants", "admin", createConnectionGrantRequest{
 		TargetType: ConnectionTargetAgent,
-		TargetID:   "sample/pm",
+		TargetID:   "agent_worker:aw-pm",
 	})
 	adminReq.SetPathValue("id", "conn-owner")
 	s.handleCreateConnectionGrant(adminRec, adminReq)
@@ -138,7 +141,7 @@ func TestUserOwnedConnectionGrantMustBeCreatedByOwner(t *testing.T) {
 	ownerRec := httptest.NewRecorder()
 	ownerReq := providerTestRequest(http.MethodPost, "/api/v1/connections/conn-owner/grants", "owner", createConnectionGrantRequest{
 		TargetType: ConnectionTargetAgent,
-		TargetID:   "sample/pm",
+		TargetID:   "agent_worker:aw-pm",
 	})
 	ownerReq.SetPathValue("id", "conn-owner")
 	s.handleCreateConnectionGrant(ownerRec, ownerReq)
@@ -149,6 +152,7 @@ func TestUserOwnedConnectionGrantMustBeCreatedByOwner(t *testing.T) {
 
 func TestUserOwnedConnectionCanGrantToOperatedProjectAgents(t *testing.T) {
 	s, workspaceID := newConnectionGrantPolicyServer(t)
+	seedSampleAgentsForTest(t, s, workspaceID)
 	grantProjectRoleForTest(t, s, workspaceID, "operator", ProjectRoleOperator)
 	grantProjectRoleForTest(t, s, workspaceID, "viewer", ProjectRoleViewer)
 	for _, username := range []string{"operator", "viewer"} {
@@ -172,7 +176,7 @@ func TestUserOwnedConnectionCanGrantToOperatedProjectAgents(t *testing.T) {
 	operatorRec := httptest.NewRecorder()
 	operatorReq := providerTestRequest(http.MethodPost, "/api/v1/connections/conn-operator/grants", "operator", createConnectionGrantRequest{
 		TargetType: ConnectionTargetAgent,
-		TargetID:   "sample/backend",
+		TargetID:   "agent_worker:aw-backend",
 	})
 	operatorReq.SetPathValue("id", "conn-operator")
 	s.handleCreateConnectionGrant(operatorRec, operatorReq)
@@ -183,7 +187,7 @@ func TestUserOwnedConnectionCanGrantToOperatedProjectAgents(t *testing.T) {
 	viewerRec := httptest.NewRecorder()
 	viewerReq := providerTestRequest(http.MethodPost, "/api/v1/connections/conn-viewer/grants", "viewer", createConnectionGrantRequest{
 		TargetType: ConnectionTargetAgent,
-		TargetID:   "sample/backend",
+		TargetID:   "agent_worker:aw-backend",
 	})
 	viewerReq.SetPathValue("id", "conn-viewer")
 	s.handleCreateConnectionGrant(viewerRec, viewerReq)

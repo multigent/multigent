@@ -15,8 +15,8 @@ type runtimeContactRow struct {
 	Agent       string `json:"agent,omitempty"`
 }
 
-// validateIdentity checks identity is a workspace user, "human" legacy alias,
-// or an existing "project/agent".
+// validateIdentity checks identity is a workspace user, "human" alias,
+// or an existing project agent worker membership addressed as "project/agent".
 func (s *Server) validateIdentity(identity, fieldName string) error {
 	identity = strings.TrimSpace(identity)
 	if identity == "human" {
@@ -43,21 +43,10 @@ func (s *Server) validateIdentity(identity, fieldName string) error {
 	if err != nil {
 		return fmt.Errorf("resolve workspace for %s: %w", fieldName, err)
 	}
-	if s.agentDirectory != nil {
-		if _, ok, err := s.agentDirectory.ResolveLegacyMailbox(workspaceID, identity); err != nil {
-			return fmt.Errorf("resolve agent worker %q: %w", identity, err)
-		} else if ok {
-			return nil
-		}
-	}
-	agents, err := s.st.ListAgents(project)
-	if err != nil {
-		return fmt.Errorf("list agents for %s: %w", project, err)
-	}
-	for _, a := range agents {
-		if a.Name == agentName {
-			return nil
-		}
+	if _, ok, err := s.agentDirectory.ProjectWorker(workspaceID, project, agentName); err != nil {
+		return fmt.Errorf("resolve agent worker %q: %w", identity, err)
+	} else if ok {
+		return nil
 	}
 	return fmt.Errorf("agent %q not found in project %q", agentName, project)
 }
@@ -217,15 +206,6 @@ func (s *Server) agentExistsInProject(project, agentName string) bool {
 			if _, ok, err := s.agentDirectory.ProjectWorker(workspaceID, project, agentName); err == nil && ok {
 				return true
 			}
-		}
-	}
-	agents, err := s.st.ListAgents(project)
-	if err != nil {
-		return false
-	}
-	for _, a := range agents {
-		if a.Name == agentName {
-			return true
 		}
 	}
 	return false

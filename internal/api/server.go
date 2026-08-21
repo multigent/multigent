@@ -1016,84 +1016,55 @@ func (s *Server) handleProjectAgents(w http.ResponseWriter, r *http.Request) {
 		s.serverError(w, err)
 		return
 	}
-	if s.controlDB != nil && s.agentDirectory != nil {
-		workspaceID, err := s.currentWorkspaceID()
-		if err != nil {
-			s.serverError(w, err)
-			return
-		}
-		memberships, err := s.controlDB.ListProjectMemberships(controldb.ProjectMembershipFilter{
-			WorkspaceID: workspaceID,
-			ProjectID:   name,
-			MemberType:  "agent_worker",
-		})
-		if err != nil {
-			s.serverError(w, err)
-			return
-		}
-		if len(memberships) > 0 {
-			out := make([]map[string]any, 0, len(memberships))
-			for _, membership := range memberships {
-				worker, ok, err := s.agentDirectory.Worker(workspaceID, membership.MemberID)
-				if err != nil {
-					s.serverError(w, err)
-					return
-				}
-				if !ok {
-					continue
-				}
-				agentName := strings.TrimSpace(membership.Title)
-				if agentName == "" {
-					agentName = strings.TrimSpace(worker.Name)
-				}
-				if agentName == "" || !s.canAccessAgent(r, name, agentName) {
-					continue
-				}
-				out = append(out, map[string]any{
-					"name":                   agentName,
-					"model":                  worker.Model,
-					"team":                   membership.Role,
-					"project":                name,
-					"hiredAt":                membership.CreatedAt,
-					"avatar":                 worker.Avatar,
-					"agentWorkerId":          worker.ID,
-					"projectMembershipId":    membership.ID,
-					"agentWorkerName":        worker.Name,
-					"agentWorkerDisplayName": worker.DisplayName,
-				})
-			}
-			sort.Slice(out, func(i, j int) bool {
-				left, _ := out[i]["name"].(string)
-				right, _ := out[j]["name"].(string)
-				return left < right
-			})
-			_ = json.NewEncoder(w).Encode(out)
-			return
-		}
-	}
-	agents, err := s.st.ListAgents(name)
+	workspaceID, err := s.currentWorkspaceID()
 	if err != nil {
 		s.serverError(w, err)
 		return
 	}
-	sort.Slice(agents, func(i, j int) bool { return agents[i].Name < agents[j].Name })
-	out := make([]map[string]any, 0, len(agents))
-	for _, a := range agents {
-		if a.Meta == nil {
+	memberships, err := s.controlDB.ListProjectMemberships(controldb.ProjectMembershipFilter{
+		WorkspaceID: workspaceID,
+		ProjectID:   name,
+		MemberType:  "agent_worker",
+	})
+	if err != nil {
+		s.serverError(w, err)
+		return
+	}
+	out := make([]map[string]any, 0, len(memberships))
+	for _, membership := range memberships {
+		worker, ok, err := s.agentDirectory.Worker(workspaceID, membership.MemberID)
+		if err != nil {
+			s.serverError(w, err)
+			return
+		}
+		if !ok {
 			continue
 		}
-		if !s.canAccessAgent(r, name, a.Name) {
+		agentName := strings.TrimSpace(membership.Title)
+		if agentName == "" {
+			agentName = strings.TrimSpace(worker.Name)
+		}
+		if agentName == "" || !s.canAccessAgent(r, name, agentName) {
 			continue
 		}
 		out = append(out, map[string]any{
-			"name":    a.Name,
-			"model":   string(a.Meta.Model),
-			"team":    a.Meta.Team,
-			"project": a.Meta.Project,
-			"hiredAt": a.Meta.HiredAt.UTC().Format(time.RFC3339Nano),
-			"avatar":  a.Meta.Avatar,
+			"name":                   agentName,
+			"model":                  worker.Model,
+			"team":                   membership.Role,
+			"project":                name,
+			"hiredAt":                membership.CreatedAt,
+			"avatar":                 worker.Avatar,
+			"agentWorkerId":          worker.ID,
+			"projectMembershipId":    membership.ID,
+			"agentWorkerName":        worker.Name,
+			"agentWorkerDisplayName": worker.DisplayName,
 		})
 	}
+	sort.Slice(out, func(i, j int) bool {
+		left, _ := out[i]["name"].(string)
+		right, _ := out[j]["name"].(string)
+		return left < right
+	})
 	_ = json.NewEncoder(w).Encode(out)
 }
 
@@ -1120,142 +1091,42 @@ func (s *Server) handlePatchAgent(w http.ResponseWriter, r *http.Request) {
 		s.jsonErrorCode(w, http.StatusBadRequest, ErrCodeInvalidAgentName, "invalid agent name")
 		return
 	}
-	if s.controlDB != nil && s.agentDirectory != nil {
-		workspaceID, err := s.currentWorkspaceID()
-		if err != nil {
-			s.serverError(w, err)
-			return
-		}
-		resolved, ok, err := s.agentDirectory.ProjectWorker(workspaceID, project, agent)
-		if err != nil {
-			s.serverError(w, err)
-			return
-		}
-		if ok {
-			worker := resolved.Worker
-			membership := resolved.Membership
-			if newName != agent {
-				existing, exists, err := s.agentDirectory.ProjectWorker(workspaceID, project, newName)
-				if err != nil {
-					s.serverError(w, err)
-					return
-				}
-				if exists && existing.Membership.ID != membership.ID {
-					s.jsonErrorCode(w, http.StatusConflict, ErrCodeAgentAlreadyExists, "target agent already exists")
-					return
-				}
-				membership.Title = newName
-				membership.UpdatedAt = time.Now().UTC().Format(time.RFC3339)
-			}
-			if body.Avatar != nil {
-				worker.Avatar = strings.TrimSpace(*body.Avatar)
-				worker.UpdatedAt = time.Now().UTC().Format(time.RFC3339)
-			}
-			if body.RuntimeNodeID != nil {
-				nodeID := strings.TrimSpace(*body.RuntimeNodeID)
-				if nodeID != "" {
-					if _, found, err := s.controlDB.RuntimeNodeByID(workspaceID, nodeID); err != nil {
-						s.serverError(w, err)
-						return
-					} else if !found {
-						s.jsonErrorCode(w, http.StatusBadRequest, ErrCodeValidationFailed, "runtime node not found")
-						return
-					}
-				}
-				worker.DefaultRuntimeNodeID = nodeID
-				worker.UpdatedAt = time.Now().UTC().Format(time.RFC3339)
-			}
-			if err := s.controlDB.UpsertAgentWorker(worker); err != nil {
-				s.serverError(w, err)
-				return
-			}
-			if err := s.controlDB.UpsertProjectMembership(membership); err != nil {
-				s.serverError(w, err)
-				return
-			}
-			_ = json.NewEncoder(w).Encode(map[string]any{"ok": true, "name": newName, "avatar": worker.Avatar, "runtimeNodeId": worker.DefaultRuntimeNodeID})
-			return
-		}
-	}
-	meta, err := s.st.AgentMeta(project, agent)
+	workspaceID, err := s.currentWorkspaceID()
 	if err != nil {
-		if isNotFoundErr(err) {
-			s.jsonErrorCode(w, http.StatusNotFound, ErrCodeAgentNotFound, "agent not found")
-			return
-		}
 		s.serverError(w, err)
 		return
 	}
-
+	resolved, ok, err := s.agentDirectory.ProjectWorker(workspaceID, project, agent)
+	if err != nil {
+		s.serverError(w, err)
+		return
+	}
+	if !ok {
+		s.jsonErrorCode(w, http.StatusNotFound, ErrCodeAgentNotFound, "agent worker membership not found")
+		return
+	}
+	worker := resolved.Worker
+	membership := resolved.Membership
 	if newName != agent {
-		hb, _ := s.ts.GetHeartbeat(project, agent)
-		if hb != nil && hb.LastWakeupStatus == "running" && hb.PID > 0 && processAlive(hb.PID) {
-			s.jsonError(w, http.StatusConflict, "cannot rename a running agent")
+		existing, exists, err := s.agentDirectory.ProjectWorker(workspaceID, project, newName)
+		if err != nil {
+			s.serverError(w, err)
 			return
 		}
-		if _, err := s.st.AgentMeta(project, newName); err == nil {
+		if exists && existing.Membership.ID != membership.ID {
 			s.jsonErrorCode(w, http.StatusConflict, ErrCodeAgentAlreadyExists, "target agent already exists")
 			return
-		} else if !isNotFoundErr(err) {
-			s.serverError(w, err)
-			return
 		}
-		oldDir := s.st.AgentDir(project, agent)
-		newDir := s.st.AgentDir(project, newName)
-		if _, err := os.Stat(newDir); err == nil {
-			if err := os.RemoveAll(newDir); err != nil {
-				s.serverError(w, err)
-				return
-			}
-		} else if !os.IsNotExist(err) {
-			s.serverError(w, err)
-			return
-		}
-		if err := os.Rename(oldDir, newDir); err != nil {
-			if os.IsNotExist(err) {
-				if err := os.MkdirAll(newDir, 0o755); err != nil {
-					s.serverError(w, err)
-					return
-				}
-			} else {
-				s.serverError(w, err)
-				return
-			}
-		}
-		meta.Name = newName
-		meta.Project = project
-		if err := s.st.SaveAgentMeta(project, newName, meta); err != nil {
-			s.serverError(w, err)
-			return
-		}
-		if err := s.st.DeleteAgentMeta(project, agent); err != nil && !isNotFoundErr(err) {
-			s.serverError(w, err)
-			return
-		}
-		if cfg, err := s.ts.GetProjectConfig(project); err == nil && cfg != nil {
-			changed := false
-			for i := range cfg.Agents {
-				if cfg.Agents[i].Name == agent {
-					cfg.Agents[i].Name = newName
-					changed = true
-				}
-			}
-			if changed {
-				_ = s.ts.SaveProjectConfig(project, cfg)
-			}
-		}
+		membership.Title = newName
+		membership.UpdatedAt = time.Now().UTC().Format(time.RFC3339)
 	}
-
 	if body.Avatar != nil {
-		meta.Avatar = strings.TrimSpace(*body.Avatar)
+		worker.Avatar = strings.TrimSpace(*body.Avatar)
+		worker.UpdatedAt = time.Now().UTC().Format(time.RFC3339)
 	}
 	if body.RuntimeNodeID != nil {
 		nodeID := strings.TrimSpace(*body.RuntimeNodeID)
 		if nodeID != "" {
-			workspaceID, ok := s.currentWorkspaceForRequest(w, r)
-			if !ok {
-				return
-			}
 			if _, found, err := s.controlDB.RuntimeNodeByID(workspaceID, nodeID); err != nil {
 				s.serverError(w, err)
 				return
@@ -1264,13 +1135,18 @@ func (s *Server) handlePatchAgent(w http.ResponseWriter, r *http.Request) {
 				return
 			}
 		}
-		meta.RuntimeNodeID = nodeID
+		worker.DefaultRuntimeNodeID = nodeID
+		worker.UpdatedAt = time.Now().UTC().Format(time.RFC3339)
 	}
-	if err := s.st.SaveAgentMeta(project, newName, meta); err != nil {
+	if err := s.controlDB.UpsertAgentWorker(worker); err != nil {
 		s.serverError(w, err)
 		return
 	}
-	_ = json.NewEncoder(w).Encode(map[string]any{"ok": true, "name": newName, "avatar": meta.Avatar, "runtimeNodeId": meta.RuntimeNodeID})
+	if err := s.controlDB.UpsertProjectMembership(membership); err != nil {
+		s.serverError(w, err)
+		return
+	}
+	_ = json.NewEncoder(w).Encode(map[string]any{"ok": true, "name": newName, "avatar": worker.Avatar, "runtimeNodeId": worker.DefaultRuntimeNodeID})
 }
 
 func validAgentName(name string) bool {

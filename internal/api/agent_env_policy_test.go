@@ -32,7 +32,8 @@ func agentEnvPolicyRequest(method, path, username, project, agent string, body a
 }
 
 func TestAgentEnvHandlersRequireAgentManagementAccess(t *testing.T) {
-	s, _ := newConnectionGrantPolicyServer(t)
+	s, workspaceID := newConnectionGrantPolicyServer(t)
+	seedSampleAgentsForTest(t, s, workspaceID)
 
 	req := agentEnvPolicyRequest(http.MethodGet, "/api/v1/projects/sample/agents/pm/env", "admin", "sample", "pm", nil)
 	rec := httptest.NewRecorder()
@@ -61,6 +62,7 @@ func TestAgentEnvHandlersRequireAgentManagementAccess(t *testing.T) {
 
 func TestPutAgentEnvValidatesProviderAndAuditsWithoutValues(t *testing.T) {
 	s, workspaceID := newConnectionGrantPolicyServer(t)
+	seedSampleAgentsForTest(t, s, workspaceID)
 	sealedKey, err := secretbox.SealString("sk-secret")
 	if err != nil {
 		t.Fatalf("seal key: %v", err)
@@ -101,7 +103,7 @@ func TestPutAgentEnvValidatesProviderAndAuditsWithoutValues(t *testing.T) {
 	if rec.Code != http.StatusOK {
 		t.Fatalf("put env status=%d body=%s", rec.Code, rec.Body.String())
 	}
-	meta, err := s.st.AgentMeta("sample", "pm")
+	meta, err := s.agentMetaForProjectMember(workspaceID, "sample", "pm")
 	if err != nil {
 		t.Fatalf("agent meta: %v", err)
 	}
@@ -111,8 +113,8 @@ func TestPutAgentEnvValidatesProviderAndAuditsWithoutValues(t *testing.T) {
 	events, err := s.controlDB.ListAuditEvents(controldb.AuditEventFilter{
 		WorkspaceID:  workspaceID,
 		Action:       "agent.env.update",
-		ResourceType: "agent",
-		ResourceID:   "sample/pm",
+		ResourceType: "agent_worker",
+		ResourceID:   "aw-pm",
 		Limit:        10,
 	})
 	if err != nil {
@@ -132,6 +134,7 @@ func TestPutAgentEnvValidatesProviderAndAuditsWithoutValues(t *testing.T) {
 
 func TestSetModelUpdatesAgentWorkerFromProjectMemberRoute(t *testing.T) {
 	s, workspaceID := newConnectionGrantPolicyServer(t)
+	seedSampleAgentsForTest(t, s, workspaceID)
 	now := "2026-08-21T00:00:00Z"
 	if err := s.controlDB.UpsertAgentWorker(controldb.AgentWorker{
 		ID:          "aw-worker-model",
@@ -177,6 +180,7 @@ func TestSetModelUpdatesAgentWorkerFromProjectMemberRoute(t *testing.T) {
 
 func TestPutAgentEnvUpdatesAgentWorkerModelAccountFromProjectMemberRoute(t *testing.T) {
 	s, workspaceID := newConnectionGrantPolicyServer(t)
+	seedSampleAgentsForTest(t, s, workspaceID)
 	now := "2026-08-21T00:00:00Z"
 	if err := s.controlDB.UpsertAgentWorker(controldb.AgentWorker{
 		ID:                    "aw-worker-provider",
@@ -246,6 +250,7 @@ func TestPutAgentEnvUpdatesAgentWorkerModelAccountFromProjectMemberRoute(t *test
 
 func TestAgentEnvCRUDUsesAgentWorkerRuntimeConfig(t *testing.T) {
 	s, workspaceID := newConnectionGrantPolicyServer(t)
+	seedSampleAgentsForTest(t, s, workspaceID)
 	now := "2026-08-21T00:00:00Z"
 	if err := s.controlDB.UpsertAgentWorker(controldb.AgentWorker{
 		ID:                "aw-worker-env",
@@ -318,6 +323,7 @@ func TestAgentEnvCRUDUsesAgentWorkerRuntimeConfig(t *testing.T) {
 
 func TestPutAgentSandboxUsesAgentWorkerRuntimeConfig(t *testing.T) {
 	s, workspaceID := newConnectionGrantPolicyServer(t)
+	seedSampleAgentsForTest(t, s, workspaceID)
 	now := "2026-08-21T00:00:00Z"
 	if err := s.controlDB.UpsertAgentWorker(controldb.AgentWorker{
 		ID:          "aw-worker-sandbox",
@@ -379,6 +385,7 @@ func TestPutAgentSandboxUsesAgentWorkerRuntimeConfig(t *testing.T) {
 
 func TestPutAgentEnvRestrictsPersonalModelProviders(t *testing.T) {
 	s, workspaceID := newConnectionGrantPolicyServer(t)
+	seedSampleAgentsForTest(t, s, workspaceID)
 	sealedKey, err := secretbox.SealString("sk-owner")
 	if err != nil {
 		t.Fatalf("seal key: %v", err)

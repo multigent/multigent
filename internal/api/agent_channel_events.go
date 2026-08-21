@@ -48,14 +48,7 @@ func (s *Server) shouldWakeAgentForAttention(binding controldb.AgentChannelBindi
 			}
 		}
 	}
-	if s.ts == nil {
-		return false
-	}
-	hb, err := s.ts.GetHeartbeat(binding.ProjectID, binding.AgentID)
-	if err != nil || hb == nil {
-		return false
-	}
-	return hb.HasAttentionTrigger(reason)
+	return false
 }
 
 func (s *Server) requestAgentAttentionWakeup(binding controldb.AgentChannelBinding, reason, runtimeAPIURL, actor, attentionID string) {

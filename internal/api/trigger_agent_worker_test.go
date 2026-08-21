@@ -8,14 +8,9 @@ import (
 	"github.com/multigent/multigent/internal/entity"
 )
 
-func TestTriggerManagerUsesAgentWorkerScheduleBeforeLegacyHeartbeat(t *testing.T) {
+func TestTriggerManagerUsesAgentWorkerSchedule(t *testing.T) {
 	s, workspaceID := newConnectionGrantPolicyServer(t)
 	now := time.Now().UTC().Format(time.RFC3339)
-	if err := s.ts.SaveHeartbeat("sample", "pm", &entity.HeartbeatConfig{
-		Triggers: []entity.TriggerType{entity.TriggerOnMessage},
-	}); err != nil {
-		t.Fatalf("legacy heartbeat: %v", err)
-	}
 	worker := controldb.AgentWorker{
 		ID:           "aw-nova-trigger",
 		WorkspaceID:  workspaceID,
@@ -59,23 +54,6 @@ func TestTriggerManagerUsesAgentWorkerScheduleBeforeLegacyHeartbeat(t *testing.T
 		t.Fatalf("expected worker task trigger: %#v", hb.Triggers)
 	}
 	if hb.HasTrigger(entity.TriggerOnMessage) {
-		t.Fatalf("worker schedule should take precedence over legacy heartbeat: %#v", hb.Triggers)
-	}
-}
-
-func TestTriggerManagerFallsBackToLegacyHeartbeatWithoutWorkerTriggers(t *testing.T) {
-	s, _ := newConnectionGrantPolicyServer(t)
-	if err := s.ts.SaveHeartbeat("sample", "pm", &entity.HeartbeatConfig{
-		Triggers: []entity.TriggerType{entity.TriggerOnMessage},
-	}); err != nil {
-		t.Fatalf("legacy heartbeat: %v", err)
-	}
-
-	hb, configured := s.triggers.heartbeatForTrigger("sample", "pm")
-	if !configured || hb == nil {
-		t.Fatalf("expected fallback heartbeat")
-	}
-	if !hb.HasTrigger(entity.TriggerOnMessage) {
-		t.Fatalf("expected legacy message trigger fallback: %#v", hb.Triggers)
+		t.Fatalf("unexpected message trigger: %#v", hb.Triggers)
 	}
 }

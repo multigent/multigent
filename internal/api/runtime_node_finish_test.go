@@ -16,6 +16,7 @@ import (
 
 func TestRuntimeNodeCompleteMarksNonWorkflowTaskDone(t *testing.T) {
 	s, workspaceID := newConnectionGrantPolicyServer(t)
+	seedSampleAgentsForTest(t, s, workspaceID)
 	now := time.Now().UTC()
 	nowText := now.Format(time.RFC3339)
 
@@ -51,7 +52,7 @@ func TestRuntimeNodeCompleteMarksNonWorkflowTaskDone(t *testing.T) {
 		WorkspaceID:         workspaceID,
 		RuntimeNodeID:       node.ID,
 		AgentWorkerID:       "aw-pm",
-		ProjectMembershipID: "pm-aw-pm",
+		ProjectMembershipID: "pm-sample-pm",
 		ProjectID:           "sample",
 		AgentID:             "pm",
 		TaskID:              task.ID,
@@ -109,10 +110,14 @@ func TestRuntimeNodeCompleteMarksNonWorkflowTaskDone(t *testing.T) {
 	if done.Status != entity.TaskStatusDoneSuccess || done.Summary != "runtime completed successfully" {
 		t.Fatalf("task was not marked success: %#v", done)
 	}
-	hb, err := s.ts.GetHeartbeat("sample", "pm")
+	worker, ok, err := s.controlDB.AgentWorkerByID(workspaceID, "aw-pm")
 	if err != nil {
-		t.Fatalf("heartbeat: %v", err)
+		t.Fatalf("worker: %v", err)
 	}
+	if !ok {
+		t.Fatalf("worker not found")
+	}
+	hb := agentWorkerScheduleForTest(t, worker)
 	if hb == nil || hb.SessionID != "session-runtime-success" || hb.LastWakeupStatus != "done" {
 		t.Fatalf("heartbeat was not updated: %#v", hb)
 	}

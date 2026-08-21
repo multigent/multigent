@@ -14,7 +14,6 @@ import (
 	"time"
 
 	controldb "github.com/multigent/multigent/internal/db"
-	"github.com/multigent/multigent/internal/entity"
 	"github.com/multigent/multigent/internal/imbridge"
 	"github.com/multigent/multigent/internal/interaction"
 )
@@ -636,6 +635,7 @@ func TestChannelEventBindingRequiresMatchingAppIDWhenConfigured(t *testing.T) {
 
 func TestAgentChannelSecurityPreservesConnectionSecret(t *testing.T) {
 	s, workspaceID := newConnectionGrantPolicyServer(t)
+	seedSampleAgentsForTest(t, s, workspaceID)
 	if err := s.controlDB.UpsertConnection(controldb.Connection{
 		ID:             "conn-feishu",
 		WorkspaceID:    workspaceID,
@@ -948,11 +948,8 @@ func TestShouldWakeAgentForAttentionUsesWorkerMessageTrigger(t *testing.T) {
 	if err := s.controlDB.UpsertAgentWorker(worker); err != nil {
 		t.Fatalf("clear worker schedule: %v", err)
 	}
-	if err := s.ts.SaveHeartbeat("sample", "pm", &entity.HeartbeatConfig{Triggers: []entity.TriggerType{entity.TriggerOnAttention}}); err != nil {
-		t.Fatalf("save legacy heartbeat: %v", err)
-	}
-	if !s.shouldWakeAgentForAttention(binding, "im_mention") {
-		t.Fatalf("agent should fallback to legacy heartbeat when worker schedule has no triggers")
+	if s.shouldWakeAgentForAttention(binding, "im_mention") {
+		t.Fatalf("agent should not wake when worker schedule has no matching triggers")
 	}
 }
 

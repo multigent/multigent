@@ -12,6 +12,7 @@ import (
 
 func TestAgentToolBindingCreatesAgentGrantForConnectionManager(t *testing.T) {
 	s, workspaceID := newConnectionGrantPolicyServer(t)
+	seedSampleAgentsForTest(t, s, workspaceID)
 	connection := controldb.Connection{
 		ID:             "conn-github",
 		WorkspaceID:    workspaceID,
@@ -58,13 +59,14 @@ func TestAgentToolBindingCreatesAgentGrantForConnectionManager(t *testing.T) {
 	if err != nil {
 		t.Fatalf("list grants: %v", err)
 	}
-	if len(matchingAgentConnectionGrants(grants, workspaceID, "sample", "pm")) != 1 {
+	if len(s.matchingAgentConnectionGrants(grants, workspaceID, "sample", "pm")) != 1 {
 		t.Fatalf("agent grant missing: %#v", grants)
 	}
 }
 
 func TestAgentToolBindingUsesAgentWorkerAcrossProjectMemberships(t *testing.T) {
 	s, workspaceID := newConnectionGrantPolicyServer(t)
+	seedSampleAgentsForTest(t, s, workspaceID)
 	now := "2026-08-21T00:00:00Z"
 	worker := controldb.AgentWorker{
 		ID:          "aw-tooling",
@@ -147,13 +149,7 @@ func TestAgentToolBindingUsesAgentWorkerAcrossProjectMemberships(t *testing.T) {
 
 func TestInstallProjectToolBindingsInstallsWorkspaceConnectionForAllAgents(t *testing.T) {
 	s, workspaceID := newConnectionGrantPolicyServer(t)
-	if err := s.st.SaveAgentMeta("sample", "human-reviewer", &entity.AgentMeta{
-		Name:    "human-reviewer",
-		Project: "sample",
-		Model:   entity.ModelHuman,
-	}); err != nil {
-		t.Fatalf("save human: %v", err)
-	}
+	seedSampleAgentsForTest(t, s, workspaceID)
 	connection := controldb.Connection{
 		ID:             "conn-github-workspace",
 		WorkspaceID:    workspaceID,
@@ -187,7 +183,7 @@ func TestInstallProjectToolBindingsInstallsWorkspaceConnectionForAllAgents(t *te
 	if err := json.Unmarshal(rec.Body.Bytes(), &body); err != nil {
 		t.Fatalf("decode response: %v", err)
 	}
-	if body.Installed != 2 || body.Skipped != 1 {
+	if body.Installed != 2 || body.Skipped != 0 {
 		t.Fatalf("installed/skipped=%d/%d", body.Installed, body.Skipped)
 	}
 	bindings, err := s.controlDB.ListAgentToolBindings(controldb.AgentToolBindingFilter{
@@ -206,7 +202,7 @@ func TestInstallProjectToolBindingsInstallsWorkspaceConnectionForAllAgents(t *te
 	if err != nil {
 		t.Fatalf("grants: %v", err)
 	}
-	if len(matchingAgentConnectionGrants(grants, workspaceID, "sample", "pm")) == 0 {
+	if len(s.matchingAgentConnectionGrants(grants, workspaceID, "sample", "pm")) == 0 {
 		t.Fatalf("expected project grant to match sample/pm")
 	}
 }
@@ -283,6 +279,7 @@ func TestInstallProjectToolBindingsUsesAgentWorkerMemberships(t *testing.T) {
 
 func TestInstallProjectToolBindingsRejectsUserOwnedConnection(t *testing.T) {
 	s, workspaceID := newConnectionGrantPolicyServer(t)
+	seedSampleAgentsForTest(t, s, workspaceID)
 	connection := controldb.Connection{
 		ID:             "conn-github-personal",
 		WorkspaceID:    workspaceID,

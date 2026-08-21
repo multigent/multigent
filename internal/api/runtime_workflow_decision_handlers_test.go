@@ -16,6 +16,7 @@ import (
 
 func TestRuntimeWorkflowDecisionSubmitAdvancesHumanReview(t *testing.T) {
 	s, workspaceID := newConnectionGrantPolicyServer(t)
+	seedSampleAgentsForTest(t, s, workspaceID)
 	taskID := "task-human-review"
 	now := time.Now().UTC()
 	task := &entity.Task{
@@ -123,6 +124,7 @@ func TestRuntimeWorkflowDecisionSubmitAdvancesHumanReview(t *testing.T) {
 
 func TestRuntimeWorkflowDecisionRejectsWrongReviewer(t *testing.T) {
 	s, workspaceID := newConnectionGrantPolicyServer(t)
+	seedSampleAgentsForTest(t, s, workspaceID)
 	taskID := "task-wrong-reviewer"
 	now := time.Now().UTC()
 	task := &entity.Task{
@@ -211,6 +213,7 @@ func TestRuntimeWorkflowDecisionRejectsWrongReviewer(t *testing.T) {
 
 func TestRuntimeWorkflowDecisionRequiresDelegationToken(t *testing.T) {
 	s, workspaceID := newConnectionGrantPolicyServer(t)
+	seedSampleAgentsForTest(t, s, workspaceID)
 	req := providerTestRequest(http.MethodPost, "/api/v1/runtime/workflow/decision", "", runtimeWorkflowDecisionBody{
 		InteractionID: "ir_missing_delegation",
 		TaskID:        "task-one",
@@ -235,6 +238,7 @@ func TestRuntimeWorkflowDecisionRequiresDelegationToken(t *testing.T) {
 
 func TestRuntimeWorkflowPendingReviewsListsHumanSteps(t *testing.T) {
 	s, workspaceID := newConnectionGrantPolicyServer(t)
+	seedSampleAgentsForTest(t, s, workspaceID)
 	taskID := "task-pending-review"
 	now := time.Now().UTC().Add(-10 * time.Minute)
 	task := &entity.Task{

@@ -272,7 +272,11 @@ func (s *Server) findRuntimeConnection(principal runtimeAgentPrincipal, connecti
 		if err != nil {
 			return controldb.Connection{}, false, err
 		}
-		if len(s.matchingAgentConnectionGrants(grants, principal.WorkspaceID, principal.Project, principal.Agent)) == 0 {
+		matched := s.matchingAgentConnectionGrants(grants, principal.WorkspaceID, principal.Project, principal.Agent)
+		if len(matched) == 0 && strings.TrimSpace(principal.AgentWorkerID) != "" {
+			matched = matchingAgentConnectionGrantsForTargets(grants, principal.WorkspaceID, principal.Project, principal.Agent, principal.AgentWorkerID)
+		}
+		if len(matched) == 0 {
 			continue
 		}
 		return connection, true, nil

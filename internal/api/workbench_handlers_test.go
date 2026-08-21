@@ -12,6 +12,7 @@ import (
 
 func TestWorkbenchTasksIncludeDirectHumanAssigneeWithoutProjectAccess(t *testing.T) {
 	s, workspaceID := newConnectionGrantPolicyServer(t)
+	seedSampleAgentsForTest(t, s, workspaceID)
 	if err := s.users.CreateUser("member1", "pass123", RoleMember, "Dashell", "dashell@example.test", "", "", ""); err != nil {
 		t.Fatalf("create member1: %v", err)
 	}
@@ -56,6 +57,7 @@ func TestWorkbenchTasksIncludeDirectHumanAssigneeWithoutProjectAccess(t *testing
 
 func TestWorkbenchTasksExcludeProjectTaskNotAssignedToMember(t *testing.T) {
 	s, workspaceID := newConnectionGrantPolicyServer(t)
+	seedSampleAgentsForTest(t, s, workspaceID)
 	grantProjectRoleForTest(t, s, workspaceID, "member1", ProjectRoleViewer)
 
 	now := time.Now().UTC()
@@ -91,7 +93,8 @@ func TestWorkbenchTasksExcludeProjectTaskNotAssignedToMember(t *testing.T) {
 }
 
 func TestWorkbenchTasksIncludeAdminDirectAssigneeInAgentQueue(t *testing.T) {
-	s, _ := newConnectionGrantPolicyServer(t)
+	s, workspaceID := newConnectionGrantPolicyServer(t)
+	seedSampleAgentsForTest(t, s, workspaceID)
 
 	now := time.Now().UTC()
 	task := &entity.Task{
@@ -126,7 +129,8 @@ func TestWorkbenchTasksIncludeAdminDirectAssigneeInAgentQueue(t *testing.T) {
 }
 
 func TestArchiveAwaitingConfirmationTaskMarksWorkbenchRowArchived(t *testing.T) {
-	s, _ := newConnectionGrantPolicyServer(t)
+	s, workspaceID := newConnectionGrantPolicyServer(t)
+	seedSampleAgentsForTest(t, s, workspaceID)
 
 	now := time.Now().UTC()
 	task := &entity.Task{
@@ -176,6 +180,7 @@ func TestArchiveAwaitingConfirmationTaskMarksWorkbenchRowArchived(t *testing.T) 
 
 func TestWorkbenchMessagesIncludesCurrentUserMailbox(t *testing.T) {
 	s, workspaceID := newConnectionGrantPolicyServer(t)
+	seedSampleAgentsForTest(t, s, workspaceID)
 	if err := s.users.CreateUser("john", "pass123", RoleMember, "John", "john@example.com", "", "", ""); err != nil {
 		t.Fatalf("create john: %v", err)
 	}

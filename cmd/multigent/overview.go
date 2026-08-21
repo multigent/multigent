@@ -193,8 +193,8 @@ type hbSnap struct {
 	isRunning   bool
 }
 
-func loadHBSnap(ts taskstore.Store, project, agent string) hbSnap {
-	hb, err := ts.GetHeartbeat(project, agent)
+func loadHBSnap(root string, ts taskstore.Store, project, agent string) hbSnap {
+	hb, err := loadSchedulerHeartbeat(root, project, agent, ts)
 	if err != nil || hb == nil || !hb.Enabled {
 		return hbSnap{}
 	}
@@ -460,13 +460,11 @@ func runOverview(_ *cobra.Command, _ []string) error {
 	var allAgents []agentData
 
 	for _, proj := range projects {
-		agentNames, _ := ts.ListAgents(proj)
-		for _, agName := range agentNames {
-			if len(agName) > 0 && agName[0] == '.' {
-				continue
-			}
-			meta, _ := s.AgentMeta(proj, agName)
-			snap := loadHBSnap(ts, proj, agName)
+		agents, _ := listCLIProjectWorkers(root, proj)
+		for _, worker := range agents {
+			agName := worker.Name
+			meta := &entity.AgentMeta{Model: entity.AgentModel(worker.Worker.Model)}
+			snap := loadHBSnap(root, ts, proj, agName)
 
 			tasks, _ := ts.ListTasks(proj, agName)
 			pending := 0

@@ -299,23 +299,6 @@ func (s *Server) handleInstallProjectToolBindings(w http.ResponseWriter, r *http
 			})
 		}
 	}
-	if len(targets) == 0 {
-		agents, err := s.st.ListAgents(project)
-		if err != nil {
-			s.serverError(w, err)
-			return
-		}
-		for _, agent := range agents {
-			if agent == nil || agent.Meta == nil {
-				continue
-			}
-			targets = append(targets, installTarget{
-				AgentName: agent.Name,
-				WorkerID:  s.agentWorkerIDForProjectAgent(workspaceID, project, agent.Name),
-				Model:     agent.Meta.Model,
-			})
-		}
-	}
 	bindings := make([]agentToolBindingModel, 0, len(targets))
 	skipped := 0
 	for _, target := range targets {
@@ -419,8 +402,6 @@ func (s *Server) agentToolBindingFilterForProjectAgent(workspaceID, project, age
 		filter.AgentWorkerID = workerID
 		return filter
 	}
-	filter.ProjectID = project
-	filter.AgentID = agent
 	return filter
 }
 
@@ -428,7 +409,7 @@ func (s *Server) agentToolBindingBelongsToProjectAgent(binding controldb.AgentTo
 	if strings.TrimSpace(binding.AgentWorkerID) != "" {
 		return binding.AgentWorkerID == s.agentWorkerIDForProjectAgent(workspaceID, project, agent)
 	}
-	return binding.ProjectID == project && binding.AgentID == agent
+	return false
 }
 
 func (s *Server) connectionAvailableToRuntimeAgent(connection controldb.Connection, workspaceID, project, agent string) (bool, error) {

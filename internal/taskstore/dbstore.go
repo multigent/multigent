@@ -161,13 +161,7 @@ func (s *DBStore) GetHeartbeat(project, agent string) (*entity.HeartbeatConfig, 
 		}
 		return hb, nil
 	}
-	var h entity.HeartbeatConfig
-	if ok, err := s.getJSON("heartbeat", []string{project, agent}, &h); err != nil {
-		return nil, err
-	} else if !ok {
-		return &entity.HeartbeatConfig{}, nil
-	}
-	return &h, nil
+	return nil, fmt.Errorf("agent worker not found for %s/%s", project, agent)
 }
 func (s *DBStore) SaveHeartbeat(project, agent string, h *entity.HeartbeatConfig) error {
 	if worker, ok, err := s.resolveAgentWorker(project, agent); err != nil {
@@ -184,7 +178,7 @@ func (s *DBStore) SaveHeartbeat(project, agent string, h *entity.HeartbeatConfig
 		worker.UpdatedAt = time.Now().UTC().Format(time.RFC3339)
 		return s.db.UpsertAgentWorker(worker)
 	}
-	return s.putJSON("heartbeat", []string{project, agent}, h)
+	return fmt.Errorf("agent worker not found for %s/%s", project, agent)
 }
 func (s *DBStore) PauseHeartbeat(project, agent string) error {
 	h, err := s.GetHeartbeat(project, agent)
@@ -405,17 +399,6 @@ func (s *DBStore) ListAgents(project string) ([]string, error) {
 			seen[rec.Key[1]] = true
 			out = append(out, rec.Key[1])
 		}
-	}
-	fileAgents, fileErr := s.files.ListAgents(project)
-	if fileErr != nil && len(out) == 0 {
-		return nil, fileErr
-	}
-	for _, agent := range fileAgents {
-		if agent == "" || seen[agent] {
-			continue
-		}
-		seen[agent] = true
-		out = append(out, agent)
 	}
 	sort.Strings(out)
 	return out, nil

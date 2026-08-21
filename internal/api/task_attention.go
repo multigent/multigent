@@ -21,7 +21,7 @@ func (s *Server) recordTaskAttentionSignal(workspaceID, project, agent string, t
 	if workspaceID == "" || project == "" || agent == "" || strings.TrimSpace(task.ID) == "" {
 		return ""
 	}
-	resolved, ok, err := s.agentDirectory.ResolveLegacyMailbox(workspaceID, project+"/"+agent)
+	resolved, ok, err := s.agentDirectory.ResolveProjectMailbox(workspaceID, project+"/"+agent)
 	if err != nil {
 		log.Printf("[attention] resolve agent worker failed for %s/%s task=%s: %v", project, agent, task.ID, err)
 		return ""

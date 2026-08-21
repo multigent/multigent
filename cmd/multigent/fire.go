@@ -2,9 +2,6 @@ package main
 
 import (
 	"fmt"
-	"os"
-	"path/filepath"
-	"time"
 
 	"github.com/spf13/cobra"
 )
@@ -19,15 +16,11 @@ func newFireCmd() *cobra.Command {
 	cmd := &cobra.Command{
 		Use:   "fire",
 		Short: "Fire (remove) an agent from a project",
-		Long: `fire removes an agent from a project.
+		Long: `fire removes an Agent Worker membership from a project.
 
-By default this is a SOFT DELETE: the agent's working directory is moved to
-
-  projects/<project>/agents/.fired/<name>-<timestamp>/
-
-so that it can be inspected or restored later.
-
-Pass --force to permanently delete the directory (irreversible).`,
+The Agent Worker itself remains available at workspace level and can be assigned
+to other projects. Delete the workspace-level Agent Worker separately when it is
+no longer needed.`,
 		Example: `  # Soft-delete — recoverable
   multigent fire --project my-api --agent dev
 
@@ -41,47 +34,41 @@ Pass --force to permanently delete the directory (irreversible).`,
 			if err != nil {
 				return err
 			}
-			s := mustStore(root)
-
-			// Confirm the agent actually exists before doing anything.
-			if _, err := s.AgentMeta(project, agentName); err != nil {
-				return fmt.Errorf("fire: %w", err)
+			_, ok, db, workspaceID, err := resolveCLIProjectWorker(root, project, agentName)
+			if err != nil {
+				return err
 			}
-
-			agentDir := s.AgentDir(project, agentName)
-
-			if force {
-				if err := os.RemoveAll(agentDir); err != nil {
-					return fmt.Errorf("fire: remove agent dir: %w", err)
+			if !ok {
+				return fmt.Errorf("agent worker membership %s/%s not found", project, agentName)
+			}
+			resolved, ok, err := db.ProjectMembershipByID(workspaceID, "pm_"+agentName)
+			if err != nil || !ok || resolved.ProjectID != project {
+				workers, listErr := listCLIProjectWorkers(root, project)
+				if listErr != nil {
+					return listErr
 				}
-				fmt.Printf("✓ Agent %q/%q permanently deleted.\n", project, agentName)
-				return nil
+				for _, worker := range workers {
+					if worker.Name == agentName {
+						resolved = worker.Membership
+						ok = true
+						break
+					}
+				}
 			}
-
-			// Soft delete: move to .fired/<name>-<timestamp>/
-			timestamp := time.Now().UTC().Format("20060102-150405")
-			firedDirName := agentName + "-" + timestamp
-			firedDir := s.FiredAgentDir(project, firedDirName)
-
-			if err := os.MkdirAll(filepath.Dir(firedDir), 0o755); err != nil {
-				return fmt.Errorf("fire: create .fired directory: %w", err)
+			if !ok {
+				return fmt.Errorf("project membership for %s/%s not found", project, agentName)
 			}
-			if err := os.Rename(agentDir, firedDir); err != nil {
-				return fmt.Errorf("fire: archive agent directory: %w", err)
+			if err := db.DeleteProjectMembership(workspaceID, resolved.ID); err != nil {
+				return err
 			}
-
-			fmt.Printf("✓ Agent %q/%q soft-deleted.\n", project, agentName)
-			fmt.Printf("  Archived at: %s\n", firedDir)
-			fmt.Printf("\n  To restore manually: mv %s %s\n", firedDir, agentDir)
-			fmt.Printf("  To permanently delete:\n")
-			fmt.Printf("    rm -rf %s\n", firedDir)
+			fmt.Printf("✓ Removed Agent Worker %q from project %q.\n", agentName, project)
 			return nil
 		},
 	}
 
 	cmd.Flags().StringVar(&project, "project", "", "Project name")
 	cmd.Flags().StringVar(&agentName, "agent", "", "Name of the agent to fire")
-	cmd.Flags().BoolVar(&force, "force", false, "Permanently delete the agent directory (irreversible)")
+	cmd.Flags().BoolVar(&force, "force", false, "deprecated; project removal never deletes the workspace Agent Worker")
 
 	_ = cmd.MarkFlagRequired("project")
 	_ = cmd.MarkFlagRequired("agent")

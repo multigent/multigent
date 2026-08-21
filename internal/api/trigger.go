@@ -94,12 +94,30 @@ func (tm *triggerManager) checkMessageTriggers() {
 		return
 	}
 	now := time.Now()
+	workspaceID := tm.workspaceID()
 	for _, project := range projects {
-		agents, err := tm.ts.ListAgents(project)
+		if tm.db == nil || workspaceID == "" {
+			continue
+		}
+		memberships, err := tm.db.ListProjectMemberships(controldb.ProjectMembershipFilter{
+			WorkspaceID: workspaceID,
+			ProjectID:   project,
+			MemberType:  "agent_worker",
+		})
 		if err != nil {
 			continue
 		}
-		for _, agent := range agents {
+		for _, membership := range memberships {
+			agent := strings.TrimSpace(membership.Title)
+			if agent == "" {
+				worker, ok, err := tm.db.AgentWorkerByID(workspaceID, membership.MemberID)
+				if err == nil && ok {
+					agent = strings.TrimSpace(worker.Name)
+				}
+			}
+			if agent == "" {
+				continue
+			}
 			hb, configured := tm.heartbeatForTrigger(project, agent)
 			if !configured || hb == nil {
 				continue
@@ -215,14 +233,7 @@ func (tm *triggerManager) heartbeatForTrigger(project, agent string) (*entity.He
 			return hb, true
 		}
 	}
-	if tm.ts == nil {
-		return nil, false
-	}
-	hb, err := tm.ts.GetHeartbeat(project, agent)
-	if err != nil || hb == nil {
-		return nil, false
-	}
-	return hb, true
+	return nil, false
 }
 
 func (tm *triggerManager) resolveAgentWorker(project, agent string) (controldb.AgentWorker, bool) {

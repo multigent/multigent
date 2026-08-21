@@ -90,48 +90,22 @@ func (s *Server) entitlementUsage(workspaceID string) (entitlementUsage, error) 
 		}
 		usage.Connections = len(connections)
 	}
-	useLegacyAgentCount := true
 	if s.controlDB != nil && strings.TrimSpace(workspaceID) != "" {
 		workers, err := s.controlDB.ListAgentWorkers(workspaceID)
 		if err != nil {
 			return usage, err
 		}
-		if len(workers) > 0 {
-			useLegacyAgentCount = false
-			for _, worker := range workers {
-				if entity.NormaliseModel(entity.AgentModel(worker.Model)) == entity.ModelHuman {
-					continue
-				}
-				usage.Agents++
+		for _, worker := range workers {
+			if entity.NormaliseModel(entity.AgentModel(worker.Model)) == entity.ModelHuman {
+				continue
 			}
+			usage.Agents++
 		}
 		templates, err := tasktemplate.NewStore(s.controlDB, workspaceID).List()
 		if err != nil {
 			return usage, err
 		}
 		usage.TaskTemplates = len(templates)
-	}
-	if !useLegacyAgentCount {
-		return usage, nil
-	}
-	projects, err := s.st.ListProjects()
-	if err != nil {
-		return usage, err
-	}
-	for _, project := range projects {
-		agents, err := s.st.ListAgents(project.Name)
-		if err != nil {
-			return usage, err
-		}
-		for _, agent := range agents {
-			if agent == nil || agent.Meta == nil {
-				continue
-			}
-			if agent.Meta.Model == "" || agent.Meta.Model == "human" {
-				continue
-			}
-			usage.Agents++
-		}
 	}
 	return usage, nil
 }

@@ -9,15 +9,14 @@ import (
 	"time"
 
 	"github.com/multigent/multigent/internal/entity"
-	"github.com/multigent/multigent/internal/taskstore"
 	"github.com/spf13/cobra"
 )
 
 // validateRecipient checks that recipient is either "human" or "project/agent".
 // If a bare agent name (no "/") is used, it looks up whether it's a known agent
 // and returns an error suggesting the correct project/agent format.
-func validateRecipient(ts taskstore.Store, recipient string) error {
-	ident := validateIdentity(ts, recipient, "recipient")
+func validateRecipient(root, recipient string) error {
+	ident := validateIdentity(root, recipient, "recipient")
 	if ident != nil {
 		return ident
 	}
@@ -28,7 +27,7 @@ func validateRecipient(ts taskstore.Store, recipient string) error {
 // For "project/agent", it also verifies the project and agent exist.
 // If a bare agent name (no "/") is used, it looks up whether it's a known agent
 // and returns an error suggesting the correct project/agent format or using "human".
-func validateIdentity(ts taskstore.Store, identity, fieldName string) error {
+func validateIdentity(root, identity, fieldName string) error {
 	if identity == "human" {
 		return nil
 	}
@@ -39,27 +38,20 @@ func validateIdentity(ts taskstore.Store, identity, fieldName string) error {
 			return fmt.Errorf("invalid %s %q: expected 'human' or 'project/agent'", fieldName, identity)
 		}
 		project, agent := parts[0], parts[1]
-		fs, ok := ts.(*taskstore.FSStore)
-		if !ok {
-			return nil
-		}
-		agents, err := fs.ListAgents(project)
+		agents, err := listCLIProjectAgentNames(root, project)
 		if err != nil || !slices.Contains(agents, agent) {
 			return fmt.Errorf("agent %q not found in project %q (hint: check --dir workspace or verify the project/agent exists)", agent, project)
 		}
 		return nil
 	}
 	// Bare name — check if it's a known agent in any project
-	fs, ok := ts.(*taskstore.FSStore)
-	if !ok {
-		return nil
-	}
-	projects, err := fs.ListProjects()
+	ts := mustTaskStore(root)
+	projects, err := ts.ListProjects()
 	if err != nil {
 		return err
 	}
 	for _, project := range projects {
-		agents, err := fs.ListAgents(project)
+		agents, err := listCLIProjectAgentNames(root, project)
 		if err != nil {
 			continue
 		}
@@ -541,11 +533,11 @@ Examples:
 			ts := mustTaskStore(root)
 
 			// Validate from and to identities exist
-			if err := validateIdentity(ts, sender, "from"); err != nil {
+			if err := validateIdentity(root, sender, "from"); err != nil {
 				return err
 			}
 			for _, recipient := range to {
-				if err := validateIdentity(ts, recipient, "to"); err != nil {
+				if err := validateIdentity(root, recipient, "to"); err != nil {
 					return err
 				}
 			}
@@ -616,7 +608,7 @@ Use --archived to show archived messages.`,
 				recipient = "human"
 			}
 			ts := mustTaskStore(root)
-			if err := validateRecipient(ts, recipient); err != nil {
+			if err := validateRecipient(root, recipient); err != nil {
 				return err
 			}
 			var msgs []*entity.Message
@@ -727,7 +719,7 @@ func newInboxReplyCmd() *cobra.Command {
 
 			// Validate --from if provided (empty means "human" which is always valid)
 			if from != "" {
-				if err := validateIdentity(ts, from, "from"); err != nil {
+				if err := validateIdentity(root, from, "from"); err != nil {
 					return err
 				}
 			}
@@ -738,7 +730,7 @@ func newInboxReplyCmd() *cobra.Command {
 			recipients := []string{"human"}
 			projects, _ := ts.ListProjects()
 			for _, proj := range projects {
-				agents, _ := ts.ListAgents(proj)
+				agents, _ := listCLIProjectAgentNames(root, proj)
 				for _, ag := range agents {
 					recipients = append(recipients, proj+"/"+ag)
 				}
@@ -831,12 +823,12 @@ Supports group forward by repeating --to.
 
 			// Validate identities if provided
 			if from != "" {
-				if err := validateIdentity(ts, from, "from"); err != nil {
+				if err := validateIdentity(root, from, "from"); err != nil {
 					return err
 				}
 			}
 			for _, r := range to {
-				if err := validateIdentity(ts, r, "to"); err != nil {
+				if err := validateIdentity(root, r, "to"); err != nil {
 					return err
 				}
 			}
@@ -846,7 +838,7 @@ Supports group forward by repeating --to.
 			// If recipient not specified (human), also search agent mailboxes.
 			projects, _ := ts.ListProjects()
 			for _, proj := range projects {
-				agents, _ := ts.ListAgents(proj)
+				agents, _ := listCLIProjectAgentNames(root, proj)
 				for _, ag := range agents {
 					searchBoxes = append(searchBoxes, proj+"/"+ag)
 				}
@@ -933,7 +925,7 @@ func newInboxReadCmd() *cobra.Command {
 				recipient = "human"
 			}
 			ts := mustTaskStore(root)
-			if err := validateRecipient(ts, recipient); err != nil {
+			if err := validateRecipient(root, recipient); err != nil {
 				return err
 			}
 			if err := ts.MarkMessageRead(recipient, args[0]); err != nil {
@@ -965,7 +957,7 @@ func newInboxArchiveCmd() *cobra.Command {
 				recipient = "human"
 			}
 			ts := mustTaskStore(root)
-			if err := validateRecipient(ts, recipient); err != nil {
+			if err := validateRecipient(root, recipient); err != nil {
 				return err
 			}
 			if err := ts.ArchiveMessage(recipient, args[0]); err != nil {
@@ -999,7 +991,7 @@ func newInboxDeleteCmd() *cobra.Command {
 				recipient = "human"
 			}
 			ts := mustTaskStore(root)
-			if err := validateRecipient(ts, recipient); err != nil {
+			if err := validateRecipient(root, recipient); err != nil {
 				return err
 			}
 			if err := ts.DeleteMessage(recipient, args[0]); err != nil {

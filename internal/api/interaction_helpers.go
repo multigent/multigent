@@ -28,7 +28,7 @@ func (s *Server) interactionAgentRef(workspaceID, project, agent string) interac
 		AgentID:     agent,
 	}
 	if s != nil && s.agentDirectory != nil {
-		if resolved, ok, err := s.agentDirectory.ResolveLegacyMailbox(workspaceID, project+"/"+agent); err == nil && ok {
+		if resolved, ok, err := s.agentDirectory.ResolveProjectMailbox(workspaceID, project+"/"+agent); err == nil && ok {
 			ref.AgentWorkerID = resolved.Worker.ID
 		}
 	}

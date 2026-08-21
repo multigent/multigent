@@ -1271,7 +1271,7 @@ func (s *Server) handleAgentChat(w http.ResponseWriter, r *http.Request) {
 
 	detectedSessionID := sessionID
 	agentModel := entity.AgentModel("")
-	if meta, err := s.st.AgentMeta(project, agent); err == nil && meta != nil {
+	if meta, err := s.agentMetaForProjectMember(workspaceID, project, agent); err == nil && meta != nil {
 		agentModel = meta.Model
 	}
 	clientGone := false

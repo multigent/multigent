@@ -470,11 +470,13 @@ func runtimeNodeExecuteRun(cfg runtimeNodeConfig, run runtimeNodeRun, workerID i
 		return err
 	}
 	st := store.NewFS(root)
-	if err := st.SaveAgentMeta(spec.ProjectID, spec.AgentID, &meta); err != nil {
+	agentDir := filepath.Join(root, "projects", spec.ProjectID, "agents", spec.AgentID)
+	if err := os.MkdirAll(agentDir, 0o755); err != nil {
 		_ = runtimeNodeFailRun(cfg, run.ID, "agent_prepare_failed", err.Error())
 		return err
 	}
 	r := runner.New(root, taskstore.New(root), st)
+	r.SetAgentMetaOverride(spec.ProjectID, spec.AgentID, &meta)
 	r.SuppressStdout = !streamAgentOutput
 	ctx, stopLease := startRuntimeRunLeaseLoop(cfg, run.ID)
 	defer stopLease()

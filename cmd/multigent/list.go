@@ -153,7 +153,7 @@ func newListAgentsCmd() *cobra.Command {
 			}
 			var rows []agentRow
 			for _, pName := range projectNames {
-				agents, err := s.ListAgents(pName)
+				agents, err := listCLIProjectWorkers(root, pName)
 				if err != nil {
 					continue
 				}
@@ -161,9 +161,9 @@ func newListAgentsCmd() *cobra.Command {
 					rows = append(rows, agentRow{
 						Project: pName,
 						Name:    a.Name,
-						Model:   string(a.Meta.Model),
-						Team:    a.Meta.Team,
-						Dir:     s.AgentDir(pName, a.Name),
+						Model:   a.Worker.Model,
+						Team:    a.Membership.Role,
+						Dir:     cliProjectAgentDir(root, pName, a.Name),
 					})
 				}
 			}

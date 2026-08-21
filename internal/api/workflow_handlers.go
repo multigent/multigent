@@ -686,17 +686,7 @@ func (s *Server) findTaskInProject(project, taskID string) (*entity.Task, string
 		err = workspaceErr
 	}
 	if err != nil {
-		legacy, legacyErr := s.st.ListAgents(project)
-		if legacyErr != nil {
-			return nil, "", err
-		}
-		agents = make([]string, 0, len(legacy))
-		for _, agent := range legacy {
-			if agent == nil || strings.TrimSpace(agent.Name) == "" {
-				continue
-			}
-			agents = append(agents, agent.Name)
-		}
+		return nil, "", err
 	}
 	for _, agentName := range agents {
 		t, err := s.ts.GetTask(project, agentName, taskID)

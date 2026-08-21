@@ -80,7 +80,7 @@ Examples:
 			// Resolve session: --session flag > saved heartbeat session > "".
 			sid := sessionID
 			if !noSession && sid == "" {
-				if hb, err := ts.GetHeartbeat(project, agentName); err == nil && hb.SessionID != "" {
+				if hb, err := loadSchedulerHeartbeat(root, project, agentName, ts); err == nil && hb.SessionID != "" {
 					sid = hb.SessionID
 					fmt.Fprintf(os.Stderr, "↩  resuming session %s  (--no-session to start fresh)\n\n", sid)
 				}
@@ -88,6 +88,13 @@ Examples:
 
 			as := mustStore(root)
 			r := runner.New(root, ts, as)
+			r.ClearSession = func(project, agent string) {
+				if hb, err := loadSchedulerHeartbeat(root, project, agent, ts); err == nil && hb != nil {
+					hb.SessionID = ""
+					hb.SessionStartedAt = nil
+					_ = saveSchedulerHeartbeat(root, project, agent, ts, hb)
+				}
+			}
 
 			fmt.Fprintf(os.Stderr, "▶  exec %s/%s\n\n", project, agentName)
 
@@ -103,9 +110,9 @@ Examples:
 				fmt.Fprintf(os.Stderr, "session : %s\n", result.SessionID)
 				// Auto-save so the next exec resumes this conversation.
 				if !noSession && !noSaveSession && result.Status != entity.TaskStatusDoneFailed {
-					if hb, err2 := ts.GetHeartbeat(project, agentName); err2 == nil {
+					if hb, err2 := loadSchedulerHeartbeat(root, project, agentName, ts); err2 == nil {
 						hb.SessionID = result.SessionID
-						if err2 = ts.SaveHeartbeat(project, agentName, hb); err2 == nil {
+						if err2 = saveSchedulerHeartbeat(root, project, agentName, ts, hb); err2 == nil {
 							fmt.Fprintf(os.Stderr, "         (saved — next exec resumes automatically)\n")
 						}
 					}

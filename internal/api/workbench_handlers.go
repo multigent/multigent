@@ -87,8 +87,13 @@ func (s *Server) handleWorkbenchMessages(w http.ResponseWriter, r *http.Request)
 				s.serverError(w, err)
 				return
 			}
+			workspaceID, err := s.currentWorkspaceID()
+			if err != nil {
+				s.serverError(w, err)
+				return
+			}
 			for _, proj := range projects {
-				agents, err := s.ts.ListAgents(proj)
+				agents, err := s.projectAgentNames(workspaceID, proj)
 				if err != nil {
 					continue
 				}
@@ -178,7 +183,7 @@ func (s *Server) handleWorkbenchTasks(w http.ResponseWriter, r *http.Request) {
 		if projectFilter != "" && proj != projectFilter {
 			continue
 		}
-		agents, err := s.ts.ListAgents(proj)
+		agents, err := s.projectAgentNames(workspaceID, proj)
 		if err != nil {
 			continue
 		}
@@ -277,7 +282,12 @@ func (s *Server) handleWorkbenchOverview(w http.ResponseWriter, r *http.Request)
 		if !s.canAccessProject(r, proj) {
 			continue
 		}
-		agentNames, err := s.ts.ListAgents(proj)
+		workspaceID, err := s.currentWorkspaceID()
+		if err != nil {
+			s.serverError(w, err)
+			return
+		}
+		agentNames, err := s.projectAgentNames(workspaceID, proj)
 		if err != nil {
 			continue
 		}
@@ -285,7 +295,8 @@ func (s *Server) handleWorkbenchOverview(w http.ResponseWriter, r *http.Request)
 		ov := projectOverview{Project: proj, AgentCount: len(agentNames)}
 
 		for _, ag := range agentNames {
-			hb, err := s.ts.GetHeartbeat(proj, ag)
+			target := s.runtimeSchedulerTargetForProjectAgent(workspaceID, proj, ag)
+			hb, err := s.loadSchedulerTargetHeartbeat(workspaceID, target)
 			if err == nil {
 				if hb.Enabled {
 					ov.HeartbeatEnabled++

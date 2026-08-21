@@ -3,8 +3,10 @@ package main
 import (
 	"fmt"
 	"strings"
+	"time"
 
 	"github.com/multigent/multigent/internal/ctxbuild"
+	"github.com/multigent/multigent/internal/entity"
 	"github.com/spf13/cobra"
 )
 
@@ -108,7 +110,7 @@ func newShowProjectCmd() *cobra.Command {
 				return err
 			}
 			prompt, _ := s.ProjectPrompt(name)
-			agents, _ := s.ListAgents(name)
+			agents, _ := listCLIProjectWorkers(root, name)
 
 			if resolveFormat(format) == "json" {
 				type agentSummary struct {
@@ -133,8 +135,8 @@ func newShowProjectCmd() *cobra.Command {
 				for _, a := range agents {
 					out.Agents = append(out.Agents, agentSummary{
 						Name:  a.Name,
-						Model: string(a.Meta.Model),
-						Team:  a.Meta.Team,
+						Model: a.Worker.Model,
+						Team:  a.Membership.Role,
 					})
 				}
 				return printJSON(out)
@@ -151,7 +153,7 @@ func newShowProjectCmd() *cobra.Command {
 				fmt.Printf("  Agents:\n")
 				for _, a := range agents {
 					fmt.Printf("    - %-16s  model:%-12s  team:%s\n",
-						a.Name, a.Meta.Model, a.Meta.Team)
+						a.Name, a.Worker.Model, a.Membership.Role)
 				}
 			}
 			if prompt != "" {
@@ -184,10 +186,33 @@ func newShowAgentCmd() *cobra.Command {
 				return err
 			}
 			s := mustStore(root)
-
-			meta, err := s.AgentMeta(project, agentName)
+			worker, ok, _, _, err := resolveCLIProjectWorker(root, project, agentName)
 			if err != nil {
 				return err
+			}
+			if !ok {
+				return fmt.Errorf("agent worker membership %s/%s not found", project, agentName)
+			}
+			var membershipRole string
+			if workers, listErr := listCLIProjectWorkers(root, project); listErr == nil {
+				for _, item := range workers {
+					if item.Name == agentName {
+						membershipRole = item.Membership.Role
+						break
+					}
+				}
+			}
+			hiredAt := time.Now().UTC()
+			if parsed, parseErr := time.Parse(time.RFC3339, worker.CreatedAt); parseErr == nil {
+				hiredAt = parsed
+			}
+			meta := &entity.AgentMeta{
+				Name:    agentName,
+				Project: project,
+				Model:   entity.AgentModel(worker.Model),
+				Team:    membershipRole,
+				Role:    membershipRole,
+				HiredAt: hiredAt,
 			}
 
 			builder := ctxbuild.NewBuilder(s)
@@ -219,7 +244,7 @@ func newShowAgentCmd() *cobra.Command {
 					Team:    meta.Team,
 					Role:    meta.Role,
 					HiredAt: meta.HiredAt.Format("2006-01-02T15:04:05Z"),
-					Dir:     s.AgentDir(project, agentName),
+					Dir:     cliProjectAgentDir(root, project, agentName),
 					Layers:  []layerSummary{},
 					Skills:  []string{},
 				}
@@ -239,7 +264,7 @@ func newShowAgentCmd() *cobra.Command {
 			fmt.Printf("Model:     %s\n", meta.Model)
 			fmt.Printf("Team:      %s\n", meta.Team)
 			fmt.Printf("Hired at:  %s\n", meta.HiredAt.Format("2006-01-02 15:04:05 UTC"))
-			fmt.Printf("Agent dir: %s\n", s.AgentDir(project, agentName))
+			fmt.Printf("Agent dir: %s\n", cliProjectAgentDir(root, project, agentName))
 
 			if raw {
 				fmt.Printf("\n%s\n", separator("MERGED CONTEXT"))

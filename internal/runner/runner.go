@@ -100,15 +100,43 @@ Important: do not use Claude Code built-in Task, TaskCreate, TaskUpdate, TaskOut
 
 // Runner executes tasks for agents using their configured CLI.
 type Runner struct {
-	root           string
-	ts             taskstore.Store
-	agentStore     store.Store
-	SuppressStdout bool
+	root               string
+	ts                 taskstore.Store
+	agentStore         store.Store
+	agentMetaOverrides map[string]*entity.AgentMeta
+	ClearSession       func(project, agent string)
+	SuppressStdout     bool
 }
 
 // New creates a Runner. root is the workspace root.
 func New(root string, ts taskstore.Store, as store.Store) *Runner {
 	return &Runner{root: root, ts: ts, agentStore: as}
+}
+
+func (r *Runner) SetAgentMetaOverride(project, agentName string, meta *entity.AgentMeta) {
+	if r.agentMetaOverrides == nil {
+		r.agentMetaOverrides = map[string]*entity.AgentMeta{}
+	}
+	if meta == nil {
+		delete(r.agentMetaOverrides, project+"/"+agentName)
+		return
+	}
+	copied := *meta
+	r.agentMetaOverrides[project+"/"+agentName] = &copied
+}
+
+func (r *Runner) loadAgentMeta(project, agentName string) (*entity.AgentMeta, error) {
+	if r != nil && r.agentMetaOverrides != nil {
+		if meta := r.agentMetaOverrides[project+"/"+agentName]; meta != nil {
+			copied := *meta
+			return &copied, nil
+		}
+	}
+	meta, err := r.agentStore.AgentMeta(project, agentName)
+	if err != nil {
+		return nil, fmt.Errorf("load agent meta: %w", err)
+	}
+	return meta, nil
 }
 
 // RunResult holds the outcome of a single task execution.
@@ -144,9 +172,9 @@ func (r *Runner) ExecPromptWithRuntimeControlEnvContext(ctx context.Context, pro
 	if ctx == nil {
 		ctx = context.Background()
 	}
-	meta, err := r.agentStore.AgentMeta(project, agentName)
+	meta, err := r.loadAgentMeta(project, agentName)
 	if err != nil {
-		return nil, fmt.Errorf("load agent meta: %w", err)
+		return nil, err
 	}
 
 	agentDir := filepath.Join(r.root, "projects", project, "agents", agentName)
@@ -308,12 +336,12 @@ func (r *Runner) ExecPromptWithRuntimeControlEnvContext(ctx context.Context, pro
 
 	ec := exitCodeOrZero(cmd)
 	if runErr != nil {
-		if sessionID != "" && isCodexResumeMissingRolloutError(output) {
-			fmt.Fprintf(logFile, "\n=== codex rollout missing for saved session — clearing heartbeat session + retrying fresh ===\n")
+		if sessionID != "" && isResumeSessionMissingError(output) {
+			fmt.Fprintf(logFile, "\n=== saved session is missing — clearing heartbeat session + retrying fresh ===\n")
 			r.recordAgentRun(telemetry.KindExec, project, agentName, "", "", string(model), sandboxLabel,
 				apiModel, apiBaseURL,
 				runStarted, runFinished, entity.TaskStatusDoneFailed, &ec, result.SessionID,
-				"codex rollout missing for saved session, retrying fresh",
+				"saved session missing, retrying fresh",
 				logPath, telemetry.FormatExecCommand(executable, args), prompt, outBuf.Bytes())
 			r.clearHeartbeatSession(project, agentName)
 			return r.ExecPromptWithRuntimeControlEnvContext(ctx, project, agentName, prompt, "", runtimeControlEnv)
@@ -361,9 +389,9 @@ func (r *Runner) RunTaskWithContext(ctx context.Context, project, agentName stri
 	if ctx == nil {
 		ctx = context.Background()
 	}
-	meta, err := r.agentStore.AgentMeta(project, agentName)
+	meta, err := r.loadAgentMeta(project, agentName)
 	if err != nil {
-		return nil, fmt.Errorf("load agent meta: %w", err)
+		return nil, err
 	}
 
 	agentDir := filepath.Join(r.root, "projects", project, "agents", agentName)
@@ -547,12 +575,12 @@ func (r *Runner) RunTaskWithContext(ctx context.Context, project, agentName stri
 	}
 
 	if runErr != nil {
-		if sessionID != "" && isCodexResumeMissingRolloutError(output) {
-			fmt.Fprintf(logFile, "\n=== codex rollout missing for saved session — clearing heartbeat session + retrying fresh ===\n")
+		if sessionID != "" && isResumeSessionMissingError(output) {
+			fmt.Fprintf(logFile, "\n=== saved session is missing — clearing heartbeat session + retrying fresh ===\n")
 			r.recordAgentRun(telemetry.KindTask, project, agentName, task.ID, task.Title, string(model), sandboxLabel,
 				apiModel, apiBaseURL,
 				runStarted, runFinished, entity.TaskStatusDoneFailed, &ec, result.SessionID,
-				"codex rollout missing for saved session, retrying fresh",
+				"saved session missing, retrying fresh",
 				logPath, cmdSummary, fullPrompt, outBuf.Bytes())
 			r.clearHeartbeatSession(project, agentName)
 			return r.RunTaskWithContext(ctx, project, agentName, task, "")
@@ -819,6 +847,11 @@ func isCodexResumeMissingRolloutError(output string) bool {
 		strings.Contains(output, "no rollout found for thread id")
 }
 
+func isResumeSessionMissingError(output string) bool {
+	return strings.Contains(output, "No conversation found with session ID") ||
+		isCodexResumeMissingRolloutError(output)
+}
+
 func discardSessionIDOnFailure(model entity.AgentModel) bool {
 	switch entity.NormaliseModel(model) {
 	case entity.ModelCodex, entity.ModelQoder:
@@ -831,13 +864,9 @@ func discardSessionIDOnFailure(model entity.AgentModel) bool {
 // clearHeartbeatSession zeroes the stored session ID in the heartbeat config
 // so subsequent heartbeat triggers don't reuse a stale/invalid session.
 func (r *Runner) clearHeartbeatSession(project, agent string) {
-	hb, err := r.ts.GetHeartbeat(project, agent)
-	if err != nil || hb == nil {
-		return
+	if r != nil && r.ClearSession != nil {
+		r.ClearSession(project, agent)
 	}
-	hb.SessionID = ""
-	hb.SessionStartedAt = nil
-	_ = r.ts.SaveHeartbeat(project, agent, hb)
 }
 
 func exitCodeOrZero(cmd *exec.Cmd) int {

@@ -85,19 +85,8 @@ func (s *Server) handleWorkspace(w http.ResponseWriter, r *http.Request) {
 
 	agentCount := 0
 	if workspaceID, ok := s.currentWorkspaceForRequest(w, r); ok && s.controlDB != nil {
-		if workers, err := s.controlDB.ListAgentWorkers(workspaceID); err == nil && len(workers) > 0 {
+		if workers, err := s.controlDB.ListAgentWorkers(workspaceID); err == nil {
 			agentCount = len(workers)
-		}
-	}
-	if agentCount == 0 {
-		for _, project := range projects {
-			if project == nil {
-				continue
-			}
-			agents, err := s.st.ListAgents(project.Name)
-			if err == nil {
-				agentCount += len(agents)
-			}
 		}
 	}
 

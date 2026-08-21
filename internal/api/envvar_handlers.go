@@ -152,23 +152,20 @@ func (s *Server) handleGetAgentEnv(w http.ResponseWriter, r *http.Request) {
 	if !ok {
 		return
 	}
-	var env map[string]string
-	if s.agentDirectory != nil {
-		if resolved, found, err := s.agentDirectory.ProjectWorker(workspaceID, project, agent); err != nil {
-			s.serverError(w, err)
-			return
-		} else if found {
-			env = decodeAgentWorkerRuntimeConfig(resolved.Worker).Env
-		}
+	if s.agentDirectory == nil {
+		s.jsonErrorCode(w, http.StatusNotFound, ErrCodeAgentNotFound, "agent worker directory is not available")
+		return
 	}
-	if env == nil {
-		meta, err := s.st.AgentMeta(project, agent)
-		if err != nil {
-			s.jsonError(w, http.StatusNotFound, err.Error())
-			return
-		}
-		env = meta.Env
+	resolved, found, err := s.agentDirectory.ProjectWorker(workspaceID, project, agent)
+	if err != nil {
+		s.serverError(w, err)
+		return
 	}
+	if !found {
+		s.jsonErrorCode(w, http.StatusNotFound, ErrCodeAgentNotFound, "agent worker membership not found")
+		return
+	}
+	env := decodeAgentWorkerRuntimeConfig(resolved.Worker).Env
 	if env == nil {
 		env = make(map[string]string)
 	}
@@ -211,62 +208,41 @@ func (s *Server) handleSetAgentEnv(w http.ResponseWriter, r *http.Request) {
 	if !ok {
 		return
 	}
-	if s.agentDirectory != nil {
-		if resolved, found, err := s.agentDirectory.ProjectWorker(workspaceID, project, agent); err != nil {
-			s.serverError(w, err)
-			return
-		} else if found {
-			cfg := decodeAgentWorkerRuntimeConfig(resolved.Worker)
-			if cfg.Env == nil {
-				cfg.Env = make(map[string]string)
-			}
-			cfg.Env[req.Key] = req.Value
-			worker := resolved.Worker
-			worker.RuntimeConfigJSON = encodeAgentWorkerRuntimeConfig(cfg)
-			worker.UpdatedAt = time.Now().UTC().Format(time.RFC3339)
-			if err := s.controlDB.UpsertAgentWorker(worker); err != nil {
-				s.serverError(w, err)
-				return
-			}
-			s.auditLog(auditLogInput{
-				Action:       "agent.env.set",
-				ResourceType: "agent_worker",
-				ResourceID:   worker.ID,
-				Summary:      "Agent Worker environment variable set",
-				After: map[string]any{
-					"project":       project,
-					"agent":         agent,
-					"agentWorkerId": worker.ID,
-					"envKey":        req.Key,
-				},
-				Request: r,
-			})
-			w.WriteHeader(http.StatusNoContent)
-			return
-		}
-	}
-	meta, err := s.st.AgentMeta(project, agent)
-	if err != nil {
-		s.jsonError(w, http.StatusNotFound, err.Error())
+	if s.agentDirectory == nil {
+		s.jsonErrorCode(w, http.StatusNotFound, ErrCodeAgentNotFound, "agent worker directory is not available")
 		return
 	}
-	if meta.Env == nil {
-		meta.Env = make(map[string]string)
+	resolved, found, err := s.agentDirectory.ProjectWorker(workspaceID, project, agent)
+	if err != nil {
+		s.serverError(w, err)
+		return
 	}
-	meta.Env[req.Key] = req.Value
-	if err := s.st.SaveAgentMeta(project, agent, meta); err != nil {
+	if !found {
+		s.jsonErrorCode(w, http.StatusNotFound, ErrCodeAgentNotFound, "agent worker membership not found")
+		return
+	}
+	cfg := decodeAgentWorkerRuntimeConfig(resolved.Worker)
+	if cfg.Env == nil {
+		cfg.Env = make(map[string]string)
+	}
+	cfg.Env[req.Key] = req.Value
+	worker := resolved.Worker
+	worker.RuntimeConfigJSON = encodeAgentWorkerRuntimeConfig(cfg)
+	worker.UpdatedAt = time.Now().UTC().Format(time.RFC3339)
+	if err := s.controlDB.UpsertAgentWorker(worker); err != nil {
 		s.serverError(w, err)
 		return
 	}
 	s.auditLog(auditLogInput{
 		Action:       "agent.env.set",
-		ResourceType: "agent",
-		ResourceID:   project + "/" + agent,
-		Summary:      "Agent environment variable set",
+		ResourceType: "agent_worker",
+		ResourceID:   worker.ID,
+		Summary:      "Agent Worker environment variable set",
 		After: map[string]any{
-			"project": project,
-			"agent":   agent,
-			"envKey":  req.Key,
+			"project":       project,
+			"agent":         agent,
+			"agentWorkerId": worker.ID,
+			"envKey":        req.Key,
 		},
 		Request: r,
 	})
@@ -293,60 +269,40 @@ func (s *Server) handleDeleteAgentEnv(w http.ResponseWriter, r *http.Request) {
 	if !ok {
 		return
 	}
-	if s.agentDirectory != nil {
-		if resolved, found, err := s.agentDirectory.ProjectWorker(workspaceID, project, agent); err != nil {
-			s.serverError(w, err)
-			return
-		} else if found {
-			cfg := decodeAgentWorkerRuntimeConfig(resolved.Worker)
-			if cfg.Env != nil {
-				delete(cfg.Env, key)
-			}
-			worker := resolved.Worker
-			worker.RuntimeConfigJSON = encodeAgentWorkerRuntimeConfig(cfg)
-			worker.UpdatedAt = time.Now().UTC().Format(time.RFC3339)
-			if err := s.controlDB.UpsertAgentWorker(worker); err != nil {
-				s.serverError(w, err)
-				return
-			}
-			s.auditLog(auditLogInput{
-				Action:       "agent.env.delete",
-				ResourceType: "agent_worker",
-				ResourceID:   worker.ID,
-				Summary:      "Agent Worker environment variable deleted",
-				Before: map[string]any{
-					"project":       project,
-					"agent":         agent,
-					"agentWorkerId": worker.ID,
-					"envKey":        key,
-				},
-				Request: r,
-			})
-			w.WriteHeader(http.StatusNoContent)
-			return
-		}
-	}
-	meta, err := s.st.AgentMeta(project, agent)
-	if err != nil {
-		s.jsonError(w, http.StatusNotFound, err.Error())
+	if s.agentDirectory == nil {
+		s.jsonErrorCode(w, http.StatusNotFound, ErrCodeAgentNotFound, "agent worker directory is not available")
 		return
 	}
-	if meta.Env != nil {
-		delete(meta.Env, key)
+	resolved, found, err := s.agentDirectory.ProjectWorker(workspaceID, project, agent)
+	if err != nil {
+		s.serverError(w, err)
+		return
 	}
-	if err := s.st.SaveAgentMeta(project, agent, meta); err != nil {
+	if !found {
+		s.jsonErrorCode(w, http.StatusNotFound, ErrCodeAgentNotFound, "agent worker membership not found")
+		return
+	}
+	cfg := decodeAgentWorkerRuntimeConfig(resolved.Worker)
+	if cfg.Env != nil {
+		delete(cfg.Env, key)
+	}
+	worker := resolved.Worker
+	worker.RuntimeConfigJSON = encodeAgentWorkerRuntimeConfig(cfg)
+	worker.UpdatedAt = time.Now().UTC().Format(time.RFC3339)
+	if err := s.controlDB.UpsertAgentWorker(worker); err != nil {
 		s.serverError(w, err)
 		return
 	}
 	s.auditLog(auditLogInput{
 		Action:       "agent.env.delete",
-		ResourceType: "agent",
-		ResourceID:   project + "/" + agent,
-		Summary:      "Agent environment variable deleted",
+		ResourceType: "agent_worker",
+		ResourceID:   worker.ID,
+		Summary:      "Agent Worker environment variable deleted",
 		Before: map[string]any{
-			"project": project,
-			"agent":   agent,
-			"envKey":  key,
+			"project":       project,
+			"agent":         agent,
+			"agentWorkerId": worker.ID,
+			"envKey":        key,
 		},
 		Request: r,
 	})

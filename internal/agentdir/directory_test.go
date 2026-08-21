@@ -81,12 +81,12 @@ func TestDirectoryResolvesProjectWorkers(t *testing.T) {
 		t.Fatalf("unexpected membership worker: ok=%v value=%+v", ok, byMembership)
 	}
 
-	legacy, ok, err := dir.ResolveLegacyMailbox(workspaceID, "tapnow-cli/pm")
+	resolved, ok, err := dir.ResolveProjectMailbox(workspaceID, "tapnow-cli/pm")
 	if err != nil {
-		t.Fatalf("resolve legacy mailbox: %v", err)
+		t.Fatalf("resolve project mailbox: %v", err)
 	}
-	if !ok || legacy.Worker.ID != worker.ID || legacy.Membership.ID != membership.ID {
-		t.Fatalf("unexpected legacy resolution: ok=%v value=%+v", ok, legacy)
+	if !ok || resolved.Worker.ID != worker.ID || resolved.Membership.ID != membership.ID {
+		t.Fatalf("unexpected project mailbox resolution: ok=%v value=%+v", ok, resolved)
 	}
 }
 

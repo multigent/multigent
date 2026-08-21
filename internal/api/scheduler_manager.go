@@ -655,7 +655,6 @@ func (s *Server) handleStartProjectTask(w http.ResponseWriter, r *http.Request) 
 	hb.LastWakeup = &now
 	hb.LastWakeupStatus = "running"
 	hb.PID = pid
-	_ = s.ts.SaveHeartbeat(project, agent, hb)
 	_ = s.saveSchedulerTargetHeartbeat(workspaceID, target, hb)
 	go func() {
 		if err := cmd.Wait(); err != nil {
@@ -733,7 +732,6 @@ func (s *Server) enqueueSpecificRuntimeTaskRunFromRequest(workspaceID, project, 
 		hb.LastWakeup = &now
 		hb.LastWakeupStatus = "running"
 		hb.PID = 0
-		_ = s.ts.SaveHeartbeat(project, agent, hb)
 	}
 	return run, nil
 }
@@ -762,7 +760,6 @@ func (s *Server) enqueueRuntimeWakeupRunFromRequest(workspaceID, project, agent 
 	hb.LastWakeup = &now
 	hb.LastWakeupStatus = "running"
 	hb.PID = 0
-	_ = s.ts.SaveHeartbeat(project, agent, hb)
 	return run, task, nil
 }
 
@@ -887,16 +884,8 @@ func (s *Server) handleSchedulerStop(w http.ResponseWriter, r *http.Request) {
 	}
 	key := s.schedulerProcessKeyForProjectAgent(workspaceID, project, agent, schedulerModeRuntimeNode)
 	if err := s.sched.StopKey(key); err != nil {
-		legacyKey := schedKey(project, agent)
-		if key == legacyKey {
-			s.jsonErrorCode(w, http.StatusNotFound, ErrCodeSchedulerNotFound, err.Error())
-			return
-		}
-		if fallbackErr := s.sched.StopKey(legacyKey); fallbackErr != nil {
-			s.jsonErrorCode(w, http.StatusNotFound, ErrCodeSchedulerNotFound, err.Error())
-			return
-		}
-		s.setSchedulerDesiredKey(legacyKey, project, agent, "", false)
+		s.jsonErrorCode(w, http.StatusNotFound, ErrCodeSchedulerNotFound, err.Error())
+		return
 	}
 	s.setSchedulerDesiredKey(key, project, agent, "", false)
 
@@ -946,16 +935,12 @@ func (s *Server) clearSchedulerRuntimeFields(workspaceID, project, agent string)
 		_ = s.saveSchedulerTargetHeartbeat(workspaceID, target, hb)
 		return
 	}
-	agents := []string{agent}
+	targets := []runtimeSchedulerAgentTarget{s.runtimeSchedulerTargetForProjectAgent(workspaceID, project, agent)}
 	if agent == "" {
-		projAgents, err := s.ts.ListAgents(project)
-		if err != nil {
-			return
-		}
-		agents = projAgents
+		targets = s.runtimeSchedulerTargets(workspaceID, project, "")
 	}
-	for _, ag := range agents {
-		hb, err := s.ts.GetHeartbeat(project, ag)
+	for _, target := range targets {
+		hb, err := s.loadSchedulerTargetHeartbeat(workspaceID, target)
 		if err != nil || hb == nil {
 			continue
 		}
@@ -965,7 +950,7 @@ func (s *Server) clearSchedulerRuntimeFields(workspaceID, project, agent string)
 		if hb.LastWakeupStatus == "running" {
 			hb.LastWakeupStatus = "done"
 		}
-		_ = s.ts.SaveHeartbeat(project, ag, hb)
+		_ = s.saveSchedulerTargetHeartbeat(workspaceID, target, hb)
 	}
 }
 
@@ -1051,7 +1036,6 @@ func (s *Server) runtimeSchedulerTargets(workspaceID, project, agent string) []r
 	seen := map[string]bool{}
 	seenWorkers := map[string]bool{}
 	for _, p := range projects {
-		hasWorkerMemberships := false
 		if s != nil && s.controlDB != nil && strings.TrimSpace(workspaceID) != "" {
 			memberships, err := s.controlDB.ListProjectMemberships(controldb.ProjectMembershipFilter{
 				WorkspaceID: workspaceID,
@@ -1059,7 +1043,6 @@ func (s *Server) runtimeSchedulerTargets(workspaceID, project, agent string) []r
 				MemberType:  "agent_worker",
 			})
 			if err == nil {
-				hasWorkerMemberships = len(memberships) > 0
 				for _, membership := range memberships {
 					if !membership.AutoPickTasks {
 						continue
@@ -1095,25 +1078,6 @@ func (s *Server) runtimeSchedulerTargets(workspaceID, project, agent string) []r
 					})
 				}
 			}
-		}
-		if hasWorkerMemberships {
-			continue
-		}
-		agents, err := s.ts.ListAgents(p)
-		if err != nil {
-			continue
-		}
-		for _, a := range agents {
-			a = strings.TrimSpace(a)
-			if a == "" || strings.HasPrefix(a, ".") {
-				continue
-			}
-			key := p + "/" + a
-			if seen[key] {
-				continue
-			}
-			seen[key] = true
-			out = append(out, runtimeSchedulerAgentTarget{project: p, agent: a})
 		}
 	}
 	return out
@@ -1198,7 +1162,7 @@ func (s *Server) runtimeSchedulerTargetForProjectAgent(workspaceID, project, age
 	if s == nil || s.agentDirectory == nil || strings.TrimSpace(workspaceID) == "" {
 		return target
 	}
-	resolved, ok, err := s.agentDirectory.ResolveLegacyMailbox(workspaceID, target.project+"/"+target.agent)
+	resolved, ok, err := s.agentDirectory.ResolveProjectMailbox(workspaceID, target.project+"/"+target.agent)
 	if err == nil && ok {
 		target.workerID = resolved.Worker.ID
 		target.membershipID = resolved.Membership.ID
@@ -1240,14 +1204,14 @@ func (s *Server) selectRuntimeSchedulerExecutionTarget(target runtimeSchedulerAg
 
 func (s *Server) loadSchedulerTargetHeartbeat(workspaceID string, target runtimeSchedulerAgentTarget) (*entity.HeartbeatConfig, error) {
 	if strings.TrimSpace(target.workerID) == "" {
-		return s.ts.GetHeartbeat(target.project, target.agent)
+		return nil, fmt.Errorf("agent worker membership not found for %s/%s", target.project, target.agent)
 	}
 	worker, ok, err := s.controlDB.AgentWorkerByID(workspaceID, target.workerID)
 	if err != nil {
 		return nil, err
 	}
 	if !ok {
-		return s.ts.GetHeartbeat(target.project, target.agent)
+		return nil, fmt.Errorf("agent worker %s not found", target.workerID)
 	}
 	hb := &entity.HeartbeatConfig{}
 	if raw := strings.TrimSpace(worker.ScheduleJSON); raw != "" && raw != "{}" {
@@ -1263,14 +1227,14 @@ func (s *Server) saveSchedulerTargetHeartbeat(workspaceID string, target runtime
 		return nil
 	}
 	if strings.TrimSpace(target.workerID) == "" {
-		return s.ts.SaveHeartbeat(target.project, target.agent, hb)
+		return fmt.Errorf("agent worker membership not found for %s/%s", target.project, target.agent)
 	}
 	worker, ok, err := s.controlDB.AgentWorkerByID(workspaceID, target.workerID)
 	if err != nil {
 		return err
 	}
 	if !ok {
-		return s.ts.SaveHeartbeat(target.project, target.agent, hb)
+		return fmt.Errorf("agent worker %s not found", target.workerID)
 	}
 	raw, err := json.Marshal(hb)
 	if err != nil {
@@ -1484,7 +1448,8 @@ func (s *Server) handleSchedulerAbort(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	hb, err := s.ts.GetHeartbeat(project, agent)
+	target := s.runtimeSchedulerTargetForProjectAgent(currentWorkspaceID, project, agent)
+	hb, err := s.loadSchedulerTargetHeartbeat(currentWorkspaceID, target)
 	if err != nil || hb == nil {
 		s.jsonErrorCode(w, http.StatusNotFound, ErrCodeHeartbeatNotFound, "heartbeat config not found")
 		return
@@ -1500,7 +1465,7 @@ func (s *Server) handleSchedulerAbort(w http.ResponseWriter, r *http.Request) {
 		if cancelledRemote > 0 {
 			hb.PID = 0
 			hb.LastWakeupStatus = "aborted"
-			_ = s.ts.SaveHeartbeat(project, agent, hb)
+			_ = s.saveSchedulerTargetHeartbeat(currentWorkspaceID, target, hb)
 			s.auditLog(auditLogInput{
 				Action:       "scheduler.abort",
 				ResourceType: "agent",
@@ -1532,7 +1497,7 @@ func (s *Server) handleSchedulerAbort(w http.ResponseWriter, r *http.Request) {
 	if err := proc.Signal(syscall.Signal(0)); err != nil {
 		hb.PID = 0
 		hb.LastWakeupStatus = "aborted"
-		_ = s.ts.SaveHeartbeat(project, agent, hb)
+		_ = s.saveSchedulerTargetHeartbeat(currentWorkspaceID, target, hb)
 		_ = json.NewEncoder(w).Encode(map[string]any{"ok": true, "msg": "process already dead, status updated"})
 		return
 	}
@@ -1548,7 +1513,7 @@ func (s *Server) handleSchedulerAbort(w http.ResponseWriter, r *http.Request) {
 
 	hb.PID = 0
 	hb.LastWakeupStatus = "aborted"
-	_ = s.ts.SaveHeartbeat(project, agent, hb)
+	_ = s.saveSchedulerTargetHeartbeat(currentWorkspaceID, target, hb)
 	s.auditLog(auditLogInput{
 		Action:       "scheduler.abort",
 		ResourceType: "agent",

@@ -4,8 +4,6 @@ import (
 	"encoding/json"
 	"fmt"
 	"net/http"
-	"os"
-	"path/filepath"
 	"strings"
 	"time"
 
@@ -588,7 +586,7 @@ func (s *Server) annotateTaskAssignee(workspaceID, project string, task *entity.
 		if targetProject != project || s.agentDirectory == nil {
 			return
 		}
-		resolved, ok, err := s.agentDirectory.ResolveLegacyMailbox(workspaceID, assignee)
+		resolved, ok, err := s.agentDirectory.ResolveProjectMailbox(workspaceID, assignee)
 		if err != nil || !ok {
 			return
 		}
@@ -1182,35 +1180,27 @@ func (s *Server) handleFireAgent(w http.ResponseWriter, r *http.Request) {
 	if !s.checkProjectManager(w, r, project) {
 		return
 	}
-	if _, err := s.st.AgentMeta(project, agent); err != nil {
-		s.jsonError(w, http.StatusNotFound, "agent not found")
+	if s.controlDB == nil || s.agentDirectory == nil {
+		s.jsonErrorCode(w, http.StatusServiceUnavailable, ErrCodeWorkspaceDatabaseUnavailable, "agent worker directory unavailable")
 		return
 	}
-
-	force := r.URL.Query().Get("force") == "true"
-	agentDir := s.st.AgentDir(project, agent)
-
-	if force {
-		if err := s.st.DeleteAgentMeta(project, agent); err != nil {
-			s.serverError(w, fmt.Errorf("fire: %w", err))
-			return
-		}
-	} else {
-		timestamp := time.Now().UTC().Format("20060102-150405")
-		firedDirName := agent + "-" + timestamp
-		firedDir := s.st.FiredAgentDir(project, firedDirName)
-		if err := os.MkdirAll(filepath.Dir(firedDir), 0o755); err != nil {
-			s.serverError(w, fmt.Errorf("fire: %w", err))
-			return
-		}
-		if err := os.Rename(agentDir, firedDir); err != nil {
-			s.serverError(w, fmt.Errorf("fire: %w", err))
-			return
-		}
-		if err := s.st.DeleteAgentMeta(project, agent); err != nil {
-			s.serverError(w, fmt.Errorf("fire: %w", err))
-			return
-		}
+	workspaceID, err := s.currentWorkspaceID()
+	if err != nil {
+		s.serverError(w, err)
+		return
+	}
+	resolved, ok, err := s.agentDirectory.ProjectWorker(workspaceID, project, agent)
+	if err != nil {
+		s.serverError(w, err)
+		return
+	}
+	if !ok {
+		s.jsonError(w, http.StatusNotFound, "agent worker membership not found")
+		return
+	}
+	if err := s.controlDB.DeleteProjectMembership(workspaceID, resolved.Membership.ID); err != nil {
+		s.serverError(w, fmt.Errorf("fire: %w", err))
+		return
 	}
 	_ = json.NewEncoder(w).Encode(map[string]bool{"ok": true})
 }

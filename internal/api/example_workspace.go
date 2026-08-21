@@ -250,22 +250,12 @@ func seedExampleWorkspace(root, workspaceID, username string, spec exampleLocale
 	if err := st.SaveProjectPrompt(exampleProjectName, spec.ProjectPrompt); err != nil {
 		return fmt.Errorf("save example project prompt: %w", err)
 	}
-	for _, agent := range exampleAgents(username) {
-		if err := os.MkdirAll(st.AgentDir(exampleProjectName, agent.Name), 0o755); err != nil {
-			return fmt.Errorf("create example agent dir %s: %w", agent.Name, err)
-		}
-		if err := st.SaveAgentMeta(exampleProjectName, agent.Name, agent); err != nil {
-			return fmt.Errorf("save example agent %s: %w", agent.Name, err)
-		}
+	agents := exampleAgents(username)
+	if err := seedExampleAgentWorkers(db, workspaceID, agents, spec); err != nil {
+		return fmt.Errorf("seed example agent workers: %w", err)
 	}
 	if err := seedExampleDocs(root, username, spec); err != nil {
 		return fmt.Errorf("seed example docs: %w", err)
-	}
-	if err := seedExampleWakeupPrompts(st, spec); err != nil {
-		return fmt.Errorf("seed example wakeup prompts: %w", err)
-	}
-	if err := seedExampleSchedules(ts, spec); err != nil {
-		return fmt.Errorf("seed example schedules: %w", err)
 	}
 	wfStore := workflowstore.NewStore(db, workspaceID)
 	def := exampleWorkflowDefinition(spec)
@@ -827,31 +817,16 @@ func seedExampleDocs(root, username string, spec exampleLocaleSpec) error {
 	}, spec.DocBody, "hello-world-relay-guide.md")
 }
 
-func seedExampleWakeupPrompts(st store.Store, spec exampleLocaleSpec) error {
-	for agent, prompt := range map[string]string{
-		exampleGreeterAgent:   spec.Schedules.GreeterWakeup,
-		exampleResponderAgent: spec.Schedules.ResponderWakeup,
-		exampleRecorderAgent:  spec.Schedules.RecorderWakeup,
-	} {
-		wakeupDir := filepath.Join(st.AgentDir(exampleProjectName, agent), ".multigent", "context")
-		if err := os.MkdirAll(wakeupDir, 0o755); err != nil {
-			return fmt.Errorf("create wakeup dir %s: %w", agent, err)
-		}
-		if err := os.WriteFile(filepath.Join(wakeupDir, "wakeup.md"), []byte(prompt), 0o644); err != nil {
-			return fmt.Errorf("write wakeup prompt %s: %w", agent, err)
-		}
+func seedExampleAgentWorkers(db controldb.Store, workspaceID string, agents []*entity.AgentMeta, spec exampleLocaleSpec) error {
+	if db == nil {
+		return fmt.Errorf("control database unavailable")
 	}
-	return nil
-}
-
-func seedExampleSchedules(ts taskstore.Store, spec exampleLocaleSpec) error {
-	const wakeupFile = "@.multigent/context/wakeup.md"
 	heartbeats := map[string]*entity.HeartbeatConfig{
 		exampleGreeterAgent: {
 			Enabled:          false,
 			Interval:         "30m",
 			WakeupPreset:     "require_tasks",
-			WakeupPrompt:     wakeupFile,
+			WakeupPrompt:     spec.Schedules.GreeterWakeup,
 			Triggers:         []entity.TriggerType{entity.TriggerOnTask, entity.TriggerOnMessage},
 			TriggerDebounce:  "1m",
 			SessionScope:     entity.SessionScopeCycle,
@@ -862,7 +837,7 @@ func seedExampleSchedules(ts taskstore.Store, spec exampleLocaleSpec) error {
 			Enabled:          false,
 			Interval:         "1h",
 			WakeupPreset:     "require_any",
-			WakeupPrompt:     wakeupFile,
+			WakeupPrompt:     spec.Schedules.ResponderWakeup,
 			Triggers:         []entity.TriggerType{entity.TriggerOnTask, entity.TriggerOnMessage},
 			TriggerDebounce:  "2m",
 			SessionScope:     entity.SessionScopeCycle,
@@ -873,7 +848,7 @@ func seedExampleSchedules(ts taskstore.Store, spec exampleLocaleSpec) error {
 			Enabled:          false,
 			Interval:         "2h",
 			WakeupPreset:     "require_any",
-			WakeupPrompt:     wakeupFile,
+			WakeupPrompt:     spec.Schedules.RecorderWakeup,
 			Triggers:         []entity.TriggerType{entity.TriggerOnTask, entity.TriggerOnMessage},
 			TriggerDebounce:  "5m",
 			SessionScope:     entity.SessionScopeCycle,
@@ -881,35 +856,89 @@ func seedExampleSchedules(ts taskstore.Store, spec exampleLocaleSpec) error {
 			Jitter:           "5m",
 		},
 	}
-	for agent, hb := range heartbeats {
-		if err := ts.SaveHeartbeat(exampleProjectName, agent, hb); err != nil {
-			return err
+	now := time.Now().UTC().Format(time.RFC3339)
+	for _, meta := range agents {
+		if meta == nil {
+			continue
+		}
+		workerID := exampleAgentWorkerID(meta.Name)
+		runtimeConfig := agentWorkerRuntimeConfig{Sandbox: meta.Sandbox, AddDirs: meta.AddDirs}
+		worker := controldb.AgentWorker{
+			ID:                  workerID,
+			WorkspaceID:         workspaceID,
+			Name:                meta.Name,
+			DisplayName:         meta.Name,
+			Avatar:              meta.Avatar,
+			Status:              "available",
+			Model:               string(meta.Model),
+			DefaultRuntimeMode:  meta.RuntimeMode,
+			ScheduleJSON:        marshalExampleHeartbeat(heartbeats[meta.Name]),
+			AttentionPolicyJSON: "{}",
+			MemoryPolicyJSON:    "{}",
+			SkillsJSON:          "[]",
+			RuntimeConfigJSON:   encodeAgentWorkerRuntimeConfig(runtimeConfig),
+			PrimarySessionID:    "sess_" + randomHex(16),
+			CreatedAt:           now,
+			UpdatedAt:           now,
+		}
+		if err := db.UpsertAgentWorker(worker); err != nil {
+			return fmt.Errorf("upsert worker %s: %w", meta.Name, err)
+		}
+		membership := controldb.ProjectMembership{
+			ID:               "pm_" + stableExampleID(exampleProjectName+"-"+meta.Name),
+			WorkspaceID:      workspaceID,
+			ProjectID:        exampleProjectName,
+			MemberType:       "agent_worker",
+			MemberID:         worker.ID,
+			Role:             meta.Role,
+			Title:            meta.Name,
+			PermissionsJSON:  "[]",
+			AutoPickTasks:    true,
+			AttentionEnabled: true,
+			PriorityWeight:   1,
+			CreatedAt:        now,
+			UpdatedAt:        now,
+		}
+		if err := db.UpsertProjectMembership(membership); err != nil {
+			return fmt.Errorf("upsert project membership %s: %w", meta.Name, err)
 		}
 	}
-	if err := ts.SaveCrons(exampleProjectName, exampleGreeterAgent, []*entity.Cron{
-		{
-			ID:           "example-daily-review",
-			Title:        spec.Schedules.DailyReviewTitle,
-			Schedule:     "0 9 * * 1-5",
-			Enabled:      false,
-			Prompt:       spec.Schedules.DailyReviewPrompt,
-			SessionScope: string(entity.SessionScopeTask),
-			Jitter:       "10m",
-		},
-	}); err != nil {
-		return err
+	return nil
+}
+
+func marshalExampleHeartbeat(hb *entity.HeartbeatConfig) string {
+	if hb == nil {
+		return "{}"
 	}
-	return ts.SaveCrons(exampleProjectName, exampleRecorderAgent, []*entity.Cron{
-		{
-			ID:           "example-weekly-summary",
-			Title:        spec.Schedules.WeeklySummaryTitle,
-			Schedule:     "0 17 * * 5",
-			Enabled:      false,
-			Prompt:       spec.Schedules.WeeklySummaryPrompt,
-			SessionScope: string(entity.SessionScopeTask),
-			Jitter:       "15m",
-		},
-	})
+	copy := *hb
+	copy.Triggers = normalizeHeartbeatTriggers(copy.Triggers)
+	raw, err := json.Marshal(&copy)
+	if err != nil {
+		return "{}"
+	}
+	return string(raw)
+}
+
+func exampleAgentWorkerID(name string) string {
+	return "aw_" + stableExampleID(exampleProjectName+"-"+name)
+}
+
+func stableExampleID(raw string) string {
+	id := strings.ToLower(strings.TrimSpace(raw))
+	id = strings.Map(func(r rune) rune {
+		if r >= 'a' && r <= 'z' {
+			return r
+		}
+		if r >= '0' && r <= '9' {
+			return r
+		}
+		return '_'
+	}, id)
+	id = strings.Trim(id, "_")
+	if id == "" {
+		return randomHex(8)
+	}
+	return id
 }
 
 func exampleWorkflowDefinition(spec exampleLocaleSpec) entity.WorkflowDefinition {

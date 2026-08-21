@@ -144,6 +144,21 @@ func (s *Server) usesAssignedRuntimeNode(workspaceID string, meta *entity.AgentM
 }
 
 func (s *Server) runtimeReadinessForExecution(workspaceID string, meta *entity.AgentMeta) runtimeReadinessResponse {
+	return s.runtimeReadinessForRuntimeNode(workspaceID, meta, runtimeReadinessOptions{
+		ProbeRuntime:   true,
+		CheckContainer: true,
+		AgentDir:       s.st.AgentDir(meta.Project, meta.Name),
+	})
+}
+
+func (s *Server) runtimeReadinessForProjectList(workspaceID string, meta *entity.AgentMeta) runtimeReadinessResponse {
+	return s.runtimeReadinessForRuntimeNode(workspaceID, meta, runtimeReadinessOptions{
+		ProbeRuntime:   false,
+		CheckContainer: false,
+	})
+}
+
+func (s *Server) runtimeReadinessForRuntimeNode(workspaceID string, meta *entity.AgentMeta, opts runtimeReadinessOptions) runtimeReadinessResponse {
 	requireNode := runtimeNodeRequired()
 	nodeID := ""
 	if meta != nil {
@@ -152,11 +167,7 @@ func (s *Server) runtimeReadinessForExecution(workspaceID string, meta *entity.A
 	if requireNode && nodeID == "" {
 		return runtimeNodeBlockingReadiness("Runtime node is required before this agent can run.", "This workspace is configured for customer-provided Runtime Nodes. Add a Runtime Node in Settings, then bind this agent to that node.")
 	}
-	readiness := buildRuntimeReadinessWithOptions(meta, runtimeReadinessOptions{
-		ProbeRuntime:   true,
-		CheckContainer: true,
-		AgentDir:       s.st.AgentDir(meta.Project, meta.Name),
-	})
+	readiness := buildRuntimeReadinessWithOptions(meta, opts)
 	if nodeID == "" {
 		return readiness
 	}
@@ -1155,14 +1166,14 @@ func (s *Server) runtimeRunHeartbeat(run *controldb.RuntimeRun) (*entity.Heartbe
 		return nil, nil
 	}
 	if strings.TrimSpace(run.AgentWorkerID) == "" || s.controlDB == nil {
-		return s.ts.GetHeartbeat(run.ProjectID, run.AgentID)
+		return nil, fmt.Errorf("runtime run %s has no agent worker identity", run.ID)
 	}
 	worker, ok, err := s.controlDB.AgentWorkerByID(run.WorkspaceID, run.AgentWorkerID)
 	if err != nil {
 		return nil, err
 	}
 	if !ok {
-		return s.ts.GetHeartbeat(run.ProjectID, run.AgentID)
+		return nil, fmt.Errorf("agent worker %s not found", run.AgentWorkerID)
 	}
 	hb := &entity.HeartbeatConfig{}
 	if raw := strings.TrimSpace(worker.ScheduleJSON); raw != "" && raw != "{}" {
@@ -1178,14 +1189,14 @@ func (s *Server) saveRuntimeRunHeartbeat(run *controldb.RuntimeRun, hb *entity.H
 		return nil
 	}
 	if strings.TrimSpace(run.AgentWorkerID) == "" || s.controlDB == nil {
-		return s.ts.SaveHeartbeat(run.ProjectID, run.AgentID, hb)
+		return fmt.Errorf("runtime run %s has no agent worker identity", run.ID)
 	}
 	worker, ok, err := s.controlDB.AgentWorkerByID(run.WorkspaceID, run.AgentWorkerID)
 	if err != nil {
 		return err
 	}
 	if !ok {
-		return s.ts.SaveHeartbeat(run.ProjectID, run.AgentID, hb)
+		return fmt.Errorf("agent worker %s not found", run.AgentWorkerID)
 	}
 	body, err := json.Marshal(hb)
 	if err != nil {

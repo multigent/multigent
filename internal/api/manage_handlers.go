@@ -14,6 +14,7 @@ import (
 	"github.com/multigent/multigent/internal/agentcli"
 	"github.com/multigent/multigent/internal/avatar"
 	"github.com/multigent/multigent/internal/ctxbuild"
+	controldb "github.com/multigent/multigent/internal/db"
 	"github.com/multigent/multigent/internal/entity"
 	"github.com/multigent/multigent/internal/formatter"
 	"github.com/multigent/multigent/internal/rbac"
@@ -119,11 +120,20 @@ func (s *Server) handleHireAgent(w http.ResponseWriter, r *http.Request) {
 			return
 		}
 	}
-	if _, err := s.st.AgentMeta(project, agentName); err == nil {
-		s.jsonErrorCode(w, http.StatusConflict, ErrCodeAgentAlreadyExists, fmt.Sprintf("agent %q already exists", agentName))
+	if s.controlDB == nil {
+		s.jsonErrorCode(w, http.StatusServiceUnavailable, ErrCodeWorkspaceDatabaseUnavailable, "control database unavailable")
 		return
-	} else if !isNotFoundErr(err) {
+	}
+	workspaceID, err := s.currentWorkspaceID()
+	if err != nil {
 		s.serverError(w, err)
+		return
+	}
+	if _, ok, err := s.controlDB.AgentWorkerByName(workspaceID, agentName); err != nil {
+		s.serverError(w, err)
+		return
+	} else if ok {
+		s.jsonErrorCode(w, http.StatusConflict, ErrCodeAgentAlreadyExists, fmt.Sprintf("agent %q already exists", agentName))
 		return
 	}
 
@@ -224,13 +234,11 @@ func (s *Server) hireAgent(project, agentName, team, role, model string) (string
 		}
 	}
 
-	agentDir := s.st.AgentDir(project, agentName)
-	if err := os.RemoveAll(agentDir); err != nil {
+	agentDir, err := os.MkdirTemp("", "multigent-hire-agent-*")
+	if err != nil {
 		return "", err
 	}
-	if err := os.MkdirAll(agentDir, 0o755); err != nil {
-		return "", err
-	}
+	defer os.RemoveAll(agentDir)
 
 	now := time.Now().UTC()
 	meta := &entity.AgentMeta{
@@ -275,7 +283,54 @@ func (s *Server) hireAgent(project, agentName, team, role, model string) (string
 		}
 	}
 
-	if err := s.st.SaveAgentMeta(project, agentName, meta); err != nil {
+	workspaceID, err := s.currentWorkspaceID()
+	if err != nil {
+		return "", err
+	}
+	if s.controlDB == nil {
+		return "", hireAgentError{status: http.StatusInternalServerError, code: ErrCodeInternal, message: "agent worker database is not available"}
+	}
+	if _, ok, err := s.controlDB.AgentWorkerByName(workspaceID, agentName); err != nil {
+		return "", err
+	} else if ok {
+		return "", hireAgentError{status: http.StatusConflict, code: ErrCodeAgentAlreadyExists, message: fmt.Sprintf("agent %q already exists", agentName)}
+	}
+	nowText := now.Format(time.RFC3339)
+	runtimeConfig := agentWorkerRuntimeConfig{Sandbox: meta.Sandbox, AddDirs: meta.AddDirs}
+	worker := controldb.AgentWorker{
+		ID:                  "aw_" + randomHex(12),
+		WorkspaceID:         workspaceID,
+		Name:                agentName,
+		DisplayName:         agentName,
+		Avatar:              meta.Avatar,
+		Status:              "available",
+		Model:               string(agentModel),
+		RuntimeConfigJSON:   encodeAgentWorkerRuntimeConfig(runtimeConfig),
+		ScheduleJSON:        "{}",
+		AttentionPolicyJSON: "{}",
+		MemoryPolicyJSON:    "{}",
+		SkillsJSON:          "[]",
+		PrimarySessionID:    "sess_" + randomHex(16),
+		CreatedAt:           nowText,
+		UpdatedAt:           nowText,
+	}
+	if err := s.controlDB.UpsertAgentWorker(worker); err != nil {
+		return "", err
+	}
+	membership := controldb.ProjectMembership{
+		ID:              "pm_" + randomHex(12),
+		WorkspaceID:     workspaceID,
+		ProjectID:       project,
+		MemberType:      "agent_worker",
+		MemberID:        worker.ID,
+		Role:            role,
+		Title:           agentName,
+		PermissionsJSON: "[]",
+		PriorityWeight:  1,
+		CreatedAt:       nowText,
+		UpdatedAt:       nowText,
+	}
+	if err := s.controlDB.UpsertProjectMembership(membership); err != nil {
 		return "", err
 	}
 	return fmt.Sprintf("Agent %s/%s added", project, agentName), nil
@@ -550,7 +605,12 @@ func (s *Server) handleSessionReset(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	hb, err := s.ts.GetHeartbeat(project, agent)
+	workspaceID, ok := s.currentWorkspaceForRequest(w, r)
+	if !ok {
+		return
+	}
+	target := s.runtimeSchedulerTargetForProjectAgent(workspaceID, project, agent)
+	hb, err := s.loadSchedulerTargetHeartbeat(workspaceID, target)
 	if err != nil {
 		s.serverError(w, err)
 		return
@@ -558,7 +618,7 @@ func (s *Server) handleSessionReset(w http.ResponseWriter, r *http.Request) {
 	oldID := hb.SessionID
 	hb.SessionID = ""
 	hb.SessionStartedAt = nil
-	if err := s.ts.SaveHeartbeat(project, agent, hb); err != nil {
+	if err := s.saveSchedulerTargetHeartbeat(workspaceID, target, hb); err != nil {
 		s.serverError(w, err)
 		return
 	}
@@ -587,18 +647,6 @@ func (s *Server) handlePutAgentEnv(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	meta, err := s.st.AgentMeta(project, agent)
-	legacyMissing := false
-	if err != nil {
-		if isNotFoundErr(err) {
-			legacyMissing = true
-			meta = &entity.AgentMeta{Name: agent, Project: project}
-		} else {
-			s.serverError(w, err)
-			return
-		}
-	}
-
 	// Remove empty-value entries
 	cleaned := make(map[string]string)
 	for k, v := range body.Env {
@@ -608,10 +656,10 @@ func (s *Server) handlePutAgentEnv(w http.ResponseWriter, r *http.Request) {
 			cleaned[k] = v
 		}
 	}
-	if len(cleaned) == 0 {
+	meta := &entity.AgentMeta{Name: agent, Project: project}
+	meta.Env = cleaned
+	if len(meta.Env) == 0 {
 		meta.Env = nil
-	} else {
-		meta.Env = cleaned
 	}
 	if body.Provider != nil {
 		providerID := strings.TrimSpace(*body.Provider)
@@ -646,49 +694,41 @@ func (s *Server) handlePutAgentEnv(w http.ResponseWriter, r *http.Request) {
 	}
 	var workerID string
 	var membershipID string
-	if s.agentDirectory != nil && s.controlDB != nil && strings.TrimSpace(workspaceID) != "" {
-		if resolved, ok, err := s.agentDirectory.ProjectWorker(workspaceID, project, agent); err != nil {
-			s.serverError(w, err)
-			return
-		} else if ok {
-			worker := resolved.Worker
-			workerID = worker.ID
-			membershipID = resolved.Membership.ID
-			if body.Provider != nil {
-				worker.DefaultModelAccountID = meta.Provider
-			}
-			if body.RuntimeModel != nil {
-				worker.RuntimeModel = meta.RuntimeModel
-			}
-			worker.UpdatedAt = time.Now().UTC().Format(time.RFC3339)
-			if err := s.controlDB.UpsertAgentWorker(worker); err != nil {
-				s.serverError(w, err)
-				return
-			}
-		}
+	if s.agentDirectory == nil || s.controlDB == nil || strings.TrimSpace(workspaceID) == "" {
+		s.jsonErrorCode(w, http.StatusNotFound, ErrCodeAgentNotFound, "agent worker directory is not available")
+		return
 	}
-	if !(legacyMissing && len(cleaned) == 0) {
-		if err := s.st.SaveAgentMeta(project, agent, meta); err != nil {
+	if resolved, ok, err := s.agentDirectory.ProjectWorker(workspaceID, project, agent); err != nil {
+		s.serverError(w, err)
+		return
+	} else if ok {
+		worker := resolved.Worker
+		workerID = worker.ID
+		membershipID = resolved.Membership.ID
+		runtimeConfig := decodeAgentWorkerRuntimeConfig(worker)
+		runtimeConfig.Env = meta.Env
+		if body.Provider != nil {
+			worker.DefaultModelAccountID = meta.Provider
+		}
+		if body.RuntimeModel != nil {
+			worker.RuntimeModel = meta.RuntimeModel
+		}
+		worker.RuntimeConfigJSON = encodeAgentWorkerRuntimeConfig(runtimeConfig)
+		worker.UpdatedAt = time.Now().UTC().Format(time.RFC3339)
+		if err := s.controlDB.UpsertAgentWorker(worker); err != nil {
 			s.serverError(w, err)
 			return
 		}
+	} else {
+		s.jsonErrorCode(w, http.StatusNotFound, ErrCodeAgentNotFound, "agent worker membership not found")
+		return
 	}
 	s.auditLog(auditLogInput{
-		WorkspaceID: workspaceID,
-		Action:      "agent.env.update",
-		ResourceType: func() string {
-			if workerID != "" {
-				return "agent_worker"
-			}
-			return "agent"
-		}(),
-		ResourceID: func() string {
-			if workerID != "" {
-				return workerID
-			}
-			return project + "/" + agent
-		}(),
-		Summary: "Agent environment updated",
+		WorkspaceID:  workspaceID,
+		Action:       "agent.env.update",
+		ResourceType: "agent_worker",
+		ResourceID:   workerID,
+		Summary:      "Agent environment updated",
 		After: map[string]any{
 			"project":      project,
 			"agent":        agent,
@@ -717,6 +757,40 @@ func (s *Server) canOperateAgent(r *http.Request, project, agent string) bool {
 	}
 	role, ok := currentUserAgentRole(s.currentUser(r), project, agent)
 	return ok && agentRoleLevel(role) >= agentRoleLevel(string(rbac.AgentRoleOperator))
+}
+
+func (s *Server) agentWorkerExists(workspaceID, workerID string) bool {
+	if s == nil || s.controlDB == nil {
+		return false
+	}
+	_, ok, err := s.controlDB.AgentWorkerByID(strings.TrimSpace(workspaceID), strings.TrimSpace(workerID))
+	return err == nil && ok
+}
+
+func (s *Server) currentUserCanOperateAgentWorker(r *http.Request, workspaceID, workerID string) bool {
+	if s == nil || s.controlDB == nil {
+		return false
+	}
+	memberships, err := s.controlDB.ListProjectMemberships(controldb.ProjectMembershipFilter{
+		WorkspaceID: strings.TrimSpace(workspaceID),
+		MemberType:  "agent_worker",
+		MemberID:    strings.TrimSpace(workerID),
+	})
+	if err != nil {
+		return false
+	}
+	for _, membership := range memberships {
+		name := strings.TrimSpace(membership.Title)
+		if name == "" && s.agentDirectory != nil {
+			if worker, ok, err := s.agentDirectory.Worker(workspaceID, workerID); err == nil && ok {
+				name = strings.TrimSpace(worker.Name)
+			}
+		}
+		if name != "" && s.canOperateAgent(r, membership.ProjectID, name) {
+			return true
+		}
+	}
+	return false
 }
 
 func (s *Server) canUseModelProviderForAgent(r *http.Request, provider entity.APIProvider, project, agent string) bool {

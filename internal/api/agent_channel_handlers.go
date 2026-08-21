@@ -942,7 +942,7 @@ func (s *Server) agentWorkerContextForProjectAgent(workspaceID, project, agent s
 	if s == nil || s.agentDirectory == nil {
 		return "", ""
 	}
-	resolved, ok, err := s.agentDirectory.ResolveLegacyMailbox(workspaceID, project+"/"+agent)
+	resolved, ok, err := s.agentDirectory.ResolveProjectMailbox(workspaceID, project+"/"+agent)
 	if err != nil || !ok {
 		return "", ""
 	}

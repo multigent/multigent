@@ -83,7 +83,7 @@ This is a one-shot manual trigger. For recurring automated runs, use
 				})
 			}
 
-			hb, err := ts.GetHeartbeat(project, agentName)
+			hb, err := loadSchedulerHeartbeat(root, project, agentName, ts)
 			if err != nil {
 				return err
 			}
@@ -116,6 +116,13 @@ This is a one-shot manual trigger. For recurring automated runs, use
 			}
 
 			r := runner.New(root, ts, s)
+			r.ClearSession = func(project, agent string) {
+				if hb, err := loadSchedulerHeartbeat(root, project, agent, ts); err == nil && hb != nil {
+					hb.SessionID = ""
+					hb.SessionStartedAt = nil
+					_ = saveSchedulerHeartbeat(root, project, agent, ts, hb)
+				}
+			}
 			if interactionLease != nil {
 				_ = interactionLease.event("system", "cli", "cli", "run_started", "", map[string]any{
 					"taskId":    task.ID,
@@ -157,7 +164,7 @@ This is a one-shot manual trigger. For recurring automated runs, use
 				hb.SessionID = result.SessionID
 				now := time.Now().UTC()
 				hb.SessionStartedAt = &now
-				_ = ts.SaveHeartbeat(project, agentName, hb)
+				_ = saveSchedulerHeartbeat(root, project, agentName, ts, hb)
 			}
 
 			if handled, handleErr := taskHandledDuringRun(root, ts, project, agentName, task.ID, result.LogPath); handleErr != nil {

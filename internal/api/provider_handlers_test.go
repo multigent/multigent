@@ -378,6 +378,7 @@ func TestModelProviderListShowsWorkspaceProvidersOnly(t *testing.T) {
 
 func TestModelProviderAgentScopedListFiltersUsableProviders(t *testing.T) {
 	s, workspaceID := newConnectionGrantPolicyServer(t)
+	seedSampleAgentsForTest(t, s, workspaceID)
 	insertProvider := func(p controldb.ModelProvider) {
 		t.Helper()
 		now := time.Now().UTC().Format(time.RFC3339)
@@ -457,6 +458,7 @@ func TestModelProviderAgentScopedListFiltersUsableProviders(t *testing.T) {
 
 func TestModelProviderAgentScopedListRequiresAgentManagementAccess(t *testing.T) {
 	s, workspaceID := newConnectionGrantPolicyServer(t)
+	seedSampleAgentsForTest(t, s, workspaceID)
 	if err := s.users.CreateUser("viewer", "pass123", RoleMember, "", "", "", "", ""); err != nil {
 		t.Fatalf("create viewer: %v", err)
 	}

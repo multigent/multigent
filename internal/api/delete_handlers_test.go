@@ -5,6 +5,7 @@ import (
 	"net/http/httptest"
 	"testing"
 
+	controldb "github.com/multigent/multigent/internal/db"
 	"github.com/multigent/multigent/internal/entity"
 )
 
@@ -76,7 +77,14 @@ func TestDeleteRoleTeamAndProjectRequireWorkspaceAdmin(t *testing.T) {
 	if _, err := s.st.Project("sample"); err == nil {
 		t.Fatalf("project still exists")
 	}
-	if agents, err := s.st.ListAgents("sample"); err != nil || len(agents) != 0 {
-		t.Fatalf("project agents after delete len=%d err=%v", len(agents), err)
+	memberships, err := s.controlDB.ListProjectMemberships(controldb.ProjectMembershipFilter{
+		WorkspaceID: workspaceID,
+		ProjectID:   "sample",
+	})
+	if err != nil {
+		t.Fatalf("project memberships after delete: %v", err)
+	}
+	if len(memberships) != 0 {
+		t.Fatalf("project memberships after delete len=%d", len(memberships))
 	}
 }

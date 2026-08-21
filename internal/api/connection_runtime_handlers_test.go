@@ -19,6 +19,7 @@ func TestConnectionGrantMatchesAgent(t *testing.T) {
 		workspace string
 		project   string
 		agent     string
+		workerID  string
 		want      bool
 	}{
 		{
@@ -46,11 +47,12 @@ func TestConnectionGrantMatchesAgent(t *testing.T) {
 			want:      true,
 		},
 		{
-			name:      "agent grant matches exact agent ref",
-			grant:     controldb.ConnectionGrant{TargetType: ConnectionTargetAgent, TargetID: "sample/dev"},
+			name:      "agent grant matches worker ref",
+			grant:     controldb.ConnectionGrant{TargetType: ConnectionTargetAgent, TargetID: "agent_worker:aw-dev"},
 			workspace: "ws-one",
 			project:   "sample",
 			agent:     "dev",
+			workerID:  "aw-dev",
 			want:      true,
 		},
 		{
@@ -64,7 +66,7 @@ func TestConnectionGrantMatchesAgent(t *testing.T) {
 	}
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
-			got := connectionGrantMatchesAgent(tt.grant, tt.workspace, tt.project, tt.agent)
+			got := connectionGrantMatchesAgent(tt.grant, tt.workspace, tt.project, tt.agent, tt.workerID)
 			if got != tt.want {
 				t.Fatalf("connectionGrantMatchesAgent()=%v, want %v", got, tt.want)
 			}
@@ -83,7 +85,7 @@ func TestAgentRuntimeConnectionResponseDoesNotExposeSecretValues(t *testing.T) {
 		ProfileJSON:    `{"provider":"github","connectionName":"ci","visible":"ok","apiKey":"ghp_secret","token":"secret","accountName":"octo","accountEmail":"octo@example.test","scopes":["repo"],"providerPermissions":["Issues:write"]}`,
 	}
 	resp := agentRuntimeConnectionToResponse(connection, []controldb.ConnectionGrant{
-		{ID: "grant-one", TargetType: ConnectionTargetAgent, TargetID: "sample/dev"},
+		{ID: "grant-one", TargetType: ConnectionTargetAgent, TargetID: "agent_worker:aw-dev"},
 	}, nil, []connector.ProviderAction{{Name: "get_authenticated_user", Method: "GET", Endpoint: "/user"}}, []connector.ToolRuntimeAdapter{
 		{Type: connector.RuntimeAdapterCLI, Priority: 100, Skills: []string{"github"}},
 		{Type: connector.RuntimeAdapterHTTPAction, Priority: 20, HTTPAction: &connector.ToolHTTPActionAdapter{ActionNames: []string{"get_authenticated_user"}}},
@@ -416,6 +418,7 @@ func TestRuntimeConnectionsRequiresConnectionCapability(t *testing.T) {
 
 func TestAgentRuntimeConnectionsRequireAgentOperatorAccess(t *testing.T) {
 	s, workspaceID := newConnectionGrantPolicyServer(t)
+	seedSampleAgentsForTest(t, s, workspaceID)
 	grantProjectRoleForTest(t, s, workspaceID, "viewer", ProjectRoleViewer)
 	grantProjectRoleForTest(t, s, workspaceID, "operator", ProjectRoleOperator)
 

@@ -126,7 +126,7 @@ func mcpGatewayBrokerTools() []map[string]any {
 func (s *Server) mcpGatewayRuntimeTools(ctx context.Context, principal runtimeAgentPrincipal, args map[string]any) ([]mcpGatewayToolInfo, error) {
 	providerFilter := strings.TrimSpace(stringArg(args, "provider"))
 	adapterFilter := strings.TrimSpace(stringArg(args, "adapter"))
-	connections, err := s.resolveAgentRuntimeConnections(principal.WorkspaceID, principal.Project, principal.Agent)
+	connections, err := s.resolveAgentRuntimeConnections(principal.WorkspaceID, principal.Project, principal.Agent, principal.AgentWorkerID)
 	if err != nil {
 		return nil, err
 	}
@@ -331,7 +331,7 @@ func (s *Server) mcpGatewayCallMCPTool(r *http.Request, principal runtimeAgentPr
 }
 
 func (s *Server) runtimeConnectionHasAdapter(principal runtimeAgentPrincipal, alias, adapterType string) (bool, error) {
-	connections, err := s.resolveAgentRuntimeConnections(principal.WorkspaceID, principal.Project, principal.Agent)
+	connections, err := s.resolveAgentRuntimeConnections(principal.WorkspaceID, principal.Project, principal.Agent, principal.AgentWorkerID)
 	if err != nil {
 		return false, err
 	}

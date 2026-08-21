@@ -1336,7 +1336,8 @@ func (s *Server) fireTaskTriggerOrQueueRuntime(workspaceID, project, agent strin
 		return nil
 	}
 	s.recordTaskAttentionSignal(workspaceID, project, agent, task, reason)
-	hb, err := s.ts.GetHeartbeat(project, agent)
+	target := s.runtimeSchedulerTargetForProjectAgent(workspaceID, project, agent)
+	hb, err := s.loadSchedulerTargetHeartbeat(workspaceID, target)
 	if err != nil || hb == nil || hb.Paused || !hb.HasTrigger(entity.TriggerOnTask) {
 		if s.triggers != nil {
 			s.triggers.Fire(project, agent, entity.TriggerOnTask, reason)
@@ -1372,7 +1373,7 @@ func (s *Server) fireTaskTriggerOrQueueRuntime(workspaceID, project, agent strin
 	hb.LastWakeup = &now
 	hb.LastWakeupStatus = "running"
 	hb.PID = 0
-	_ = s.ts.SaveHeartbeat(project, agent, hb)
+	_ = s.saveSchedulerTargetHeartbeat(workspaceID, target, hb)
 	s.auditLog(auditLogInput{
 		WorkspaceID:  workspaceID,
 		Action:       "runtime_run.enqueue",

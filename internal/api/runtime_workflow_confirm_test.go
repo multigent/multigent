@@ -14,6 +14,7 @@ import (
 
 func TestRuntimeConfirmRequestRejectsWorkflowTask(t *testing.T) {
 	s, workspaceID := newConnectionGrantPolicyServer(t)
+	seedSampleAgentsForTest(t, s, workspaceID)
 	now := time.Now().UTC()
 	task := &entity.Task{
 		ID:        "task-workflow",

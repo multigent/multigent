@@ -73,7 +73,7 @@ func (s *Server) pendingAttentionWakeupSection(workspaceID, project, agent strin
 	if workspaceID == "" || project == "" || agent == "" {
 		return "", nil, nil
 	}
-	resolved, ok, err := s.agentDirectory.ResolveLegacyMailbox(workspaceID, project+"/"+agent)
+	resolved, ok, err := s.agentDirectory.ResolveProjectMailbox(workspaceID, project+"/"+agent)
 	if err != nil || !ok {
 		return "", nil, err
 	}

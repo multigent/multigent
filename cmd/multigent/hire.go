@@ -10,8 +10,8 @@ import (
 	"github.com/multigent/multigent/internal/agentcli"
 	"github.com/multigent/multigent/internal/avatar"
 	"github.com/multigent/multigent/internal/ctxbuild"
+	controldb "github.com/multigent/multigent/internal/db"
 	"github.com/multigent/multigent/internal/entity"
-	"github.com/multigent/multigent/internal/formatter"
 	"github.com/multigent/multigent/internal/sandbox"
 	"github.com/spf13/cobra"
 )
@@ -107,11 +107,12 @@ To switch an existing agent to another runtime (e.g. claudecode → codex), use
 			if project == "" || team == "" || model == "" || agentName == "" {
 				return fmt.Errorf("--project, --team, --model and --name are all required")
 			}
-
 			agentModel := entity.NormaliseModel(entity.AgentModel(model))
 			if !entity.IsValidModel(agentModel) {
-				return fmt.Errorf("unknown model %q (supported: %s)",
-					model, joinModels(entity.KnownModels))
+				return fmt.Errorf("unknown model %q (supported: %s)", model, joinModels(entity.KnownModels))
+			}
+			if agentModel == entity.ModelHuman {
+				return fmt.Errorf("human members are workspace users/project members in 2.x; hire creates Agent Workers only")
 			}
 
 			root, err := resolveRoot()
@@ -119,84 +120,44 @@ To switch an existing agent to another runtime (e.g. claudecode → codex), use
 				return err
 			}
 			s := mustStore(root)
-
 			if _, err := s.Project(project); err != nil {
 				return err
 			}
-
-			agentDir := s.AgentDir(project, agentName)
-			if _, err := os.Stat(agentDir); err == nil {
-				if ifNotExists {
-					fmt.Printf("agent %q already exists — skipping (--if-not-exists)\n", agentName)
-					return nil
-				}
-				if !force {
-					return fmt.Errorf(
-						"agent %q already exists at %s\n"+
-							"Use --force to regenerate it, or --if-not-exists to skip silently",
-						agentName, agentDir,
-					)
+			if _, err := s.Team(team); err != nil {
+				return err
+			}
+			if role != "" {
+				if _, err := s.Role(team, role); err != nil {
+					return err
 				}
 			}
-
-			// Human agents need no context files or sandbox — just create the dir and save meta.
-			if agentModel == entity.ModelHuman {
-				if err := os.MkdirAll(agentDir, 0o755); err != nil {
-					return fmt.Errorf("%s: create agent dir: %w", use, err)
-				}
-				meta := &entity.AgentMeta{
-					Name:    agentName,
-					Project: project,
-					Team:    team,
-					Role:    role,
-					Model:   agentModel,
-					HiredAt: time.Now().UTC(),
-					Avatar:  avatar.RandomURL(project, agentName),
-				}
-				if err := s.SaveAgentMeta(project, agentName, meta); err != nil {
-					return fmt.Errorf("%s: save agent meta: %w", use, err)
-				}
-				fmt.Printf("✓ Human agent hired: %s/%s\n", project, agentName)
-				return nil
-			}
-
-			builder := ctxbuild.NewBuilder(s)
-			mc, err := builder.BuildForAgent(project, agentName, team, role)
-			if err != nil {
-				return fmt.Errorf("%s: build context: %w", use, err)
-			}
-
-			if extraPrompt != "" {
-				data, err := os.ReadFile(extraPrompt)
-				if err != nil {
-					return fmt.Errorf("%s: read extra prompt: %w", use, err)
-				}
-				mc.Layers = append(mc.Layers, ctxbuild.ContextLayer{
-					Source:  "extra",
-					Content: string(data),
-				})
-			}
-
-			if err := os.MkdirAll(agentDir, 0o755); err != nil {
-				return fmt.Errorf("%s: create agent dir: %w", use, err)
-			}
-
-			f, err := formatter.New(agentModel)
+			db, err := openControlDBForRoot(root)
 			if err != nil {
 				return err
 			}
-			if err := f.Format(mc, agentDir); err != nil {
-				return fmt.Errorf("%s: format context: %w", use, err)
+			workspaceID, err := workspaceIDForRoot(db, root)
+			if err != nil {
+				return err
+			}
+			if strings.TrimSpace(workspaceID) == "" {
+				return fmt.Errorf("workspace id not found for %s", root)
+			}
+			existing, exists, err := db.AgentWorkerByName(workspaceID, agentName)
+			if err != nil {
+				return err
+			}
+			if exists && !force {
+				if ifNotExists {
+					fmt.Printf("agent worker %q already exists — skipping (--if-not-exists)\n", existing.Name)
+					return nil
+				}
+				return fmt.Errorf("agent worker %q already exists; use --force to update membership, or --if-not-exists to skip silently", agentName)
 			}
 
 			sandboxCfg, err := buildDefaultSandboxConfig(agentModel, sandboxProvider, sandboxImage, sandboxNetwork, sandboxMemoryMB, sandboxCPUs, sandboxNoAutoCreds)
 			if err != nil {
 				return err
 			}
-
-			// Automatically include the project's code repository as an
-			// additional working directory so the agent can read/write it
-			// without leaving its context directory (e.g. --add-dir in claude).
 			var addDirs []string
 			if projMeta, err2 := s.Project(project); err2 == nil && projMeta.Repo != "" {
 				repoAbs := projMeta.Repo
@@ -206,29 +167,12 @@ To switch an existing agent to another runtime (e.g. claudecode → codex), use
 				addDirs = []string{repoAbs}
 			}
 
-			// Run role workspace setup (create dirs/files) if a role was specified.
-			if role != "" {
-				roleMeta, err2 := s.Role(team, role)
-				if err2 == nil {
-					if err3 := applyRoleSetup(roleMeta.Setup, agentDir); err3 != nil {
-						return fmt.Errorf("%s: role setup: %w", use, err3)
-					}
-				}
-			}
-
-			// Build HTTP agent config when --model http-agent is used.
 			var httpAgentCfg *entity.HTTPAgentConfig
 			if agentModel == entity.ModelHTTPAgent {
 				if httpURL == "" {
 					return fmt.Errorf("--http-url is required when --model http-agent")
 				}
-				httpAgentCfg = &entity.HTTPAgentConfig{
-					URL:     httpURL,
-					Model:   httpModel,
-					APIKey:  httpAPIKey,
-					Timeout: httpTimeout,
-					Stream:  httpStream,
-				}
+				httpAgentCfg = &entity.HTTPAgentConfig{URL: httpURL, Model: httpModel, APIKey: httpAPIKey, Timeout: httpTimeout, Stream: httpStream}
 				if len(httpHeaders) > 0 {
 					httpAgentCfg.ExtraHeaders = make(map[string]string, len(httpHeaders))
 					for _, h := range httpHeaders {
@@ -241,24 +185,63 @@ To switch an existing agent to another runtime (e.g. claudecode → codex), use
 				}
 			}
 
-			meta := &entity.AgentMeta{
-				Name:        agentName,
-				Project:     project,
-				Team:        team,
-				Role:        role,
-				Model:       agentModel,
-				HiredAt:     time.Now().UTC(),
-				Avatar:      avatar.RandomURL(project, agentName),
-				ContextHash: ctxbuild.LayerHashes(mc),
-				Sandbox:     sandboxCfg,
-				AddDirs:     addDirs,
-				HTTPAgent:   httpAgentCfg,
-			}
-			if err := s.SaveAgentMeta(project, agentName, meta); err != nil {
-				return fmt.Errorf("%s: save agent meta: %w", use, err)
+			membershipPrompt := ""
+			if extraPrompt != "" {
+				data, err := os.ReadFile(extraPrompt)
+				if err != nil {
+					return fmt.Errorf("%s: read extra prompt: %w", use, err)
+				}
+				membershipPrompt = string(data)
 			}
 
-			printHireSuccess(agentDir, agentModel, mc, project, agentName, sandboxCfg)
+			nowText := time.Now().UTC().Format(time.RFC3339)
+			worker := controldb.AgentWorker{
+				ID:                  "aw_" + randomID(12),
+				WorkspaceID:         workspaceID,
+				Name:                agentName,
+				DisplayName:         agentName,
+				Avatar:              avatar.RandomURL(project, agentName),
+				Status:              "available",
+				Model:               string(agentModel),
+				ScheduleJSON:        "{}",
+				AttentionPolicyJSON: "{}",
+				MemoryPolicyJSON:    "{}",
+				SkillsJSON:          "[]",
+				RuntimeConfigJSON:   encodeCLIWorkerRuntimeConfig(cliAgentRuntimeConfig{Sandbox: sandboxCfg, AddDirs: addDirs, HTTPAgent: httpAgentCfg}),
+				PrimarySessionID:    "sess_" + randomID(16),
+				CreatedAt:           nowText,
+				UpdatedAt:           nowText,
+			}
+			if exists {
+				worker.ID = existing.ID
+				worker.PrimarySessionID = existing.PrimarySessionID
+				worker.CreatedAt = existing.CreatedAt
+			}
+			if err := db.UpsertAgentWorker(worker); err != nil {
+				return fmt.Errorf("%s: save agent worker: %w", use, err)
+			}
+			membership := controldb.ProjectMembership{
+				ID:               "pm_" + randomID(12),
+				WorkspaceID:      workspaceID,
+				ProjectID:        project,
+				MemberType:       "agent_worker",
+				MemberID:         worker.ID,
+				Role:             role,
+				Title:            agentName,
+				Prompt:           membershipPrompt,
+				PermissionsJSON:  "[]",
+				AutoPickTasks:    true,
+				AttentionEnabled: true,
+				PriorityWeight:   1,
+				CreatedAt:        nowText,
+				UpdatedAt:        nowText,
+			}
+			if err := db.UpsertProjectMembership(membership); err != nil {
+				return fmt.Errorf("%s: save project membership: %w", use, err)
+			}
+			fmt.Printf("✓ Agent Worker assigned: %s/%s\n", project, agentName)
+			fmt.Printf("  Worker: %s\n", worker.ID)
+			fmt.Printf("  Model:  %s\n", agentModel)
 			return nil
 		},
 	}

@@ -36,20 +36,13 @@ func encodeAgentWorkerRuntimeConfig(cfg agentWorkerRuntimeConfig) string {
 
 func (s *Server) agentMetaForProjectMember(workspaceID, project, agent string) (*entity.AgentMeta, error) {
 	if s == nil || s.agentDirectory == nil || strings.TrimSpace(workspaceID) == "" {
-		return s.st.AgentMeta(project, agent)
+		return nil, fmt.Errorf("agent worker directory is not available")
 	}
-	legacy, legacyErr := s.st.AgentMeta(project, agent)
 	resolved, ok, resolveErr := s.agentDirectory.ProjectWorker(workspaceID, project, agent)
 	if resolveErr != nil {
 		return nil, resolveErr
 	}
 	if !ok {
-		if legacyErr != nil {
-			return nil, legacyErr
-		}
-		if legacy != nil {
-			return legacy, nil
-		}
 		return nil, fmt.Errorf("agent %q not found in project %q", agent, project)
 	}
 	worker := resolved.Worker
@@ -80,22 +73,6 @@ func (s *Server) agentMetaForProjectMember(workspaceID, project, agent string) (
 		Provider:      strings.TrimSpace(worker.DefaultModelAccountID),
 		Avatar:        strings.TrimSpace(worker.Avatar),
 		HiredAt:       createdAt,
-	}
-	if legacy != nil {
-		meta.Team = legacy.Team
-		meta.Owners = legacy.Owners
-		meta.AutonomyLevel = legacy.AutonomyLevel
-		meta.SyncedAt = legacy.SyncedAt
-		meta.Playbook = legacy.Playbook
-		meta.ContextHash = legacy.ContextHash
-		meta.AddDirs = legacy.AddDirs
-		meta.RunCommand = legacy.RunCommand
-		meta.Sandbox = legacy.Sandbox
-		meta.HTTPAgent = legacy.HTTPAgent
-		meta.Env = legacy.Env
-		if strings.TrimSpace(meta.Avatar) == "" {
-			meta.Avatar = legacy.Avatar
-		}
 	}
 	runtimeConfig := decodeAgentWorkerRuntimeConfig(worker)
 	if runtimeConfig.Env != nil {

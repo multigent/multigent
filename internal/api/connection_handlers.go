@@ -1511,12 +1511,12 @@ func (s *Server) validateConnectionGrantTarget(r *http.Request, connection contr
 			return fmt.Errorf("project not found")
 		}
 	case ConnectionTargetAgent:
-		parts := strings.SplitN(targetID, "/", 2)
-		if len(parts) != 2 || parts[0] == "" || parts[1] == "" || !s.agentExistsInProject(parts[0], parts[1]) {
-			return fmt.Errorf("agent target must be project/agent")
+		workerID, ok := connectionAgentWorkerIDFromTarget(targetID)
+		if !ok || !s.agentWorkerExists(connection.WorkspaceID, workerID) {
+			return fmt.Errorf("agent target must be agent_worker:<id>")
 		}
-		if !s.canAdminWorkspace(r, connection.WorkspaceID) && !currentUserLinkedAgent(s.currentUser(r), targetID) {
-			return fmt.Errorf("agent grant requires workspace admin or linked agent")
+		if !s.canAdminWorkspace(r, connection.WorkspaceID) && !s.currentUserCanOperateAgentWorker(r, connection.WorkspaceID, workerID) {
+			return fmt.Errorf("agent grant requires workspace admin or agent operator")
 		}
 	case ConnectionTargetUser:
 		cur := s.currentUser(r)
@@ -1541,11 +1541,11 @@ func (s *Server) validateUserOwnedConnectionGrantTarget(r *http.Request, connect
 	case ConnectionTargetWorkspace, ConnectionTargetProject:
 		return fmt.Errorf("user-owned connections can only be granted to the owner or the owner's linked agents")
 	case ConnectionTargetAgent:
-		parts := strings.SplitN(targetID, "/", 2)
-		if len(parts) != 2 || parts[0] == "" || parts[1] == "" || !s.agentExistsInProject(parts[0], parts[1]) {
-			return fmt.Errorf("agent target must be project/agent")
+		workerID, ok := connectionAgentWorkerIDFromTarget(targetID)
+		if !ok || !s.agentWorkerExists(connection.WorkspaceID, workerID) {
+			return fmt.Errorf("agent target must be agent_worker:<id>")
 		}
-		if !s.canOperateAgent(r, parts[0], parts[1]) {
+		if !s.currentUserCanOperateAgentWorker(r, connection.WorkspaceID, workerID) {
 			return fmt.Errorf("user-owned connection can only be granted to agents the owner can operate")
 		}
 	case ConnectionTargetUser:

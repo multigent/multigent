@@ -52,7 +52,7 @@ func TestRuntimeSchedulerTargetsIncludeAgentWorkerMemberships(t *testing.T) {
 	}
 }
 
-func TestRuntimeSchedulerTargetsDeduplicateMembershipAndLegacyAgent(t *testing.T) {
+func TestRuntimeSchedulerTargetsUseMembershipIdentity(t *testing.T) {
 	s, workspaceID := newConnectionGrantPolicyServer(t)
 	now := time.Now().UTC().Format(time.RFC3339)
 	worker := controldb.AgentWorker{
@@ -245,10 +245,10 @@ func TestSchedulerProcessKeyUsesAgentWorkerForRuntimeNode(t *testing.T) {
 		t.Fatalf("expected worker scheduler key, got %q", key)
 	}
 	if key := s.schedulerProcessKeyForProjectAgent(workspaceID, "alpha", "legacy", schedulerModeRuntimeNode); key != "alpha/legacy" {
-		t.Fatalf("expected legacy scheduler key, got %q", key)
+		t.Fatalf("expected unresolved scheduler key, got %q", key)
 	}
 	if key := s.schedulerProcessKeyForProjectAgent(workspaceID, "alpha", "nova", schedulerModeLocal); key != "alpha/nova" {
-		t.Fatalf("expected local scheduler key to remain legacy, got %q", key)
+		t.Fatalf("expected local scheduler key to use project route, got %q", key)
 	}
 }
 
@@ -316,10 +316,6 @@ func TestSchedulerTargetHeartbeatUsesAgentWorkerSchedule(t *testing.T) {
 		UpdatedAt:        nowText,
 	}); err != nil {
 		t.Fatalf("membership: %v", err)
-	}
-	legacySchedule, _ := json.Marshal(entity.HeartbeatConfig{Enabled: false, Interval: "99h"})
-	if err := s.controlDB.UpsertRecord("heartbeat", workspaceID, []string{"sample", "pm"}, string(legacySchedule)); err != nil {
-		t.Fatalf("legacy heartbeat record: %v", err)
 	}
 	target := s.runtimeSchedulerTargetForProjectAgent(workspaceID, "sample", "pm")
 	hb, err := s.loadSchedulerTargetHeartbeat(workspaceID, target)

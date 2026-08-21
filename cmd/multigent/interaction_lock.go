@@ -33,7 +33,7 @@ func acquireCLIInteraction(root, project, agent, sourceKind, sourceChannel, acto
 		_ = db.Close()
 		return nil, false, nil
 	}
-	resolved, hasWorker, err := agentdir.New(db).ResolveLegacyMailbox(workspaceID, strings.TrimSpace(project)+"/"+strings.TrimSpace(agent))
+	resolved, hasWorker, err := agentdir.New(db).ResolveProjectMailbox(workspaceID, strings.TrimSpace(project)+"/"+strings.TrimSpace(agent))
 	if err != nil {
 		_ = db.Close()
 		return nil, false, err

@@ -8,11 +8,15 @@ import (
 
 	"github.com/multigent/multigent/internal/agentdir"
 	controldb "github.com/multigent/multigent/internal/db"
+	"github.com/multigent/multigent/internal/entity"
 	"github.com/spf13/cobra"
 )
 
 type cliAgentRuntimeConfig struct {
-	Env map[string]string `json:"env,omitempty"`
+	Env       map[string]string       `json:"env,omitempty"`
+	Sandbox   *entity.SandboxConfig   `json:"sandbox,omitempty"`
+	AddDirs   []string                `json:"addDirs,omitempty"`
+	HTTPAgent *entity.HTTPAgentConfig `json:"httpAgent,omitempty"`
 }
 
 func newAgentSetEnvCmd() *cobra.Command {
@@ -48,21 +52,7 @@ secrets and API provider settings.`,
 				fmt.Printf("Set %s on %s/%s\n", key, project, agentName)
 				return nil
 			}
-
-			st := mustStore(root)
-			meta, err := st.AgentMeta(project, agentName)
-			if err != nil {
-				return fmt.Errorf("agent %s/%s: %w", project, agentName, err)
-			}
-			if meta.Env == nil {
-				meta.Env = make(map[string]string)
-			}
-			meta.Env[key] = value
-			if err := st.SaveAgentMeta(project, agentName, meta); err != nil {
-				return err
-			}
-			fmt.Printf("Set %s on %s/%s\n", key, project, agentName)
-			return nil
+			return fmt.Errorf("agent worker membership %s/%s not found", project, agentName)
 		},
 	}
 	cmd.Flags().StringVarP(&project, "project", "p", "", "Project name (required)")
@@ -104,21 +94,7 @@ func newAgentUnsetEnvCmd() *cobra.Command {
 				fmt.Printf("Unset %s from %s/%s\n", key, project, agentName)
 				return nil
 			}
-
-			st := mustStore(root)
-			meta, err := st.AgentMeta(project, agentName)
-			if err != nil {
-				return fmt.Errorf("agent %s/%s: %w", project, agentName, err)
-			}
-			if meta.Env == nil || meta.Env[key] == "" {
-				return fmt.Errorf("env %q not set on %s/%s", key, project, agentName)
-			}
-			delete(meta.Env, key)
-			if err := st.SaveAgentMeta(project, agentName, meta); err != nil {
-				return err
-			}
-			fmt.Printf("Unset %s from %s/%s\n", key, project, agentName)
-			return nil
+			return fmt.Errorf("agent worker membership %s/%s not found", project, agentName)
 		},
 	}
 	cmd.Flags().StringVarP(&project, "project", "p", "", "Project name (required)")
@@ -156,22 +132,7 @@ func newAgentListEnvCmd() *cobra.Command {
 				}
 				return nil
 			}
-
-			st := mustStore(root)
-			meta, err := st.AgentMeta(project, agentName)
-			if err != nil {
-				return fmt.Errorf("agent %s/%s: %w", project, agentName, err)
-			}
-			if len(meta.Env) == 0 {
-				fmt.Printf("No per-agent env vars set on %s/%s.\n", project, agentName)
-				return nil
-			}
-			fmt.Printf("Per-agent env for %s/%s:\n", project, agentName)
-			for k, v := range meta.Env {
-				masked := maskValue(v)
-				fmt.Printf("  %s=%s\n", k, masked)
-			}
-			return nil
+			return fmt.Errorf("agent worker membership %s/%s not found", project, agentName)
 		},
 	}
 	cmd.Flags().StringVarP(&project, "project", "p", "", "Project name (required)")

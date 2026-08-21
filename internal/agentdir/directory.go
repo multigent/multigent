@@ -129,8 +129,8 @@ func (d *Directory) ProjectWorkers(workspaceID, projectID string) ([]ProjectWork
 	return out, nil
 }
 
-func (d *Directory) ResolveLegacyMailbox(workspaceID, mailbox string) (ProjectWorker, bool, error) {
-	projectID, legacyAgent, ok := SplitLegacyMailbox(mailbox)
+func (d *Directory) ResolveProjectMailbox(workspaceID, mailbox string) (ProjectWorker, bool, error) {
+	projectID, projectAgent, ok := SplitProjectMailbox(mailbox)
 	if !ok {
 		return ProjectWorker{}, false, nil
 	}
@@ -139,16 +139,16 @@ func (d *Directory) ResolveLegacyMailbox(workspaceID, mailbox string) (ProjectWo
 		return ProjectWorker{}, false, err
 	}
 	for _, candidate := range workers {
-		if sameIdentity(candidate.Membership.Title, legacyAgent) ||
-			sameIdentity(candidate.Worker.Name, legacyAgent) ||
-			sameIdentity(candidate.Worker.DisplayName, legacyAgent) {
+		if sameIdentity(candidate.Membership.Title, projectAgent) ||
+			sameIdentity(candidate.Worker.Name, projectAgent) ||
+			sameIdentity(candidate.Worker.DisplayName, projectAgent) {
 			return candidate, true, nil
 		}
 	}
 	return ProjectWorker{}, false, nil
 }
 
-func SplitLegacyMailbox(mailbox string) (projectID, agentName string, ok bool) {
+func SplitProjectMailbox(mailbox string) (projectID, agentName string, ok bool) {
 	parts := strings.SplitN(strings.TrimSpace(mailbox), "/", 2)
 	if len(parts) != 2 {
 		return "", "", false

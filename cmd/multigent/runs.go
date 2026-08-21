@@ -212,7 +212,7 @@ func runRunsAgents(since, until string, allTime bool, project string) error {
 	}
 	var agents []hired
 	for _, proj := range projects {
-		names, err := ts.ListAgents(proj)
+		names, err := listCLIProjectAgentNames(root, proj)
 		if err != nil {
 			continue
 		}

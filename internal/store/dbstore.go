@@ -258,84 +258,51 @@ func (s *dbStore) ListSkills() ([]*entity.Skill, error)     { return s.files.Lis
 func (s *dbStore) SkillDir(name string) string              { return s.files.SkillDir(name) }
 
 func (s *dbStore) AgentMeta(project, name string) (*entity.AgentMeta, error) {
-	var meta entity.AgentMeta
-	if ok, err := s.getJSON("agents", []string{project, name}, &meta); err != nil {
+	worker, membership, ok, err := s.resolveAgentWorkerMembership(project, name)
+	if err != nil {
 		return nil, err
-	} else if !ok {
-		if fileMeta, fileErr := s.files.AgentMeta(project, name); fileErr == nil {
-			return fileMeta, nil
-		}
-		if worker, membership, ok, err := s.resolveAgentWorkerMembership(project, name); err != nil {
-			return nil, err
-		} else if ok {
-			return agentMetaFromWorkerMembership(project, worker, membership), nil
-		}
+	}
+	if !ok {
 		return nil, errs.NotFound("agent", project+"/"+name)
 	}
-	return &meta, nil
+	return agentMetaFromWorkerMembership(project, worker, membership), nil
 }
 
 func (s *dbStore) SaveAgentMeta(project, name string, meta *entity.AgentMeta) error {
-	if meta.Name == "" {
-		meta.Name = name
-	}
-	if meta.Project == "" {
-		meta.Project = project
-	}
-	return s.putJSON("agents", []string{project, name}, meta)
+	return fmt.Errorf("AgentMeta writes are not supported in 2.x; create or update AgentWorker and ProjectMembership instead")
 }
 func (s *dbStore) DeleteAgentMeta(project, name string) error {
 	if err := s.db.DeleteRecord("agents", s.workspaceID, []string{project, name}); err != nil {
 		return err
 	}
-	return s.files.DeleteAgentMeta(project, name)
+	return nil
 }
 func (s *dbStore) ListAgents(project string) ([]*AgentEntry, error) {
-	recs, err := s.db.ListRecords("agents", s.workspaceID, []string{project})
-	if err != nil {
-		return nil, err
-	}
-	out := make([]*AgentEntry, 0, len(recs))
-	seen := make(map[string]bool, len(recs))
-	for _, rec := range recs {
-		var meta entity.AgentMeta
-		if err := json.Unmarshal([]byte(rec.Payload), &meta); err != nil {
-			continue
-		}
-		name := rec.Key[1]
-		seen[name] = true
-		out = append(out, &AgentEntry{Project: project, Name: name, Meta: &meta})
-	}
-	fileAgents, fileErr := s.files.ListAgents(project)
-	if fileErr != nil {
-		return out, nil
-	}
-	for _, agent := range fileAgents {
-		if agent == nil || seen[agent.Name] {
-			continue
-		}
-		out = append(out, agent)
-		seen[agent.Name] = true
-	}
+	out := make([]*AgentEntry, 0)
+	seen := make(map[string]bool)
 	memberships, err := s.db.ListProjectMemberships(controldb.ProjectMembershipFilter{
 		WorkspaceID: s.workspaceID,
 		ProjectID:   project,
 		MemberType:  "agent_worker",
 	})
-	if err == nil {
-		for _, membership := range memberships {
-			worker, ok, err := s.db.AgentWorkerByID(s.workspaceID, membership.MemberID)
-			if err != nil || !ok {
-				continue
-			}
-			name := firstNonEmptyString(membership.Title, worker.Name)
-			if name == "" || seen[name] {
-				continue
-			}
-			meta := agentMetaFromWorkerMembership(project, worker, membership)
-			out = append(out, &AgentEntry{Project: project, Name: name, Meta: meta})
-			seen[name] = true
+	if err != nil {
+		return nil, err
+	}
+	for _, membership := range memberships {
+		worker, ok, err := s.db.AgentWorkerByID(s.workspaceID, membership.MemberID)
+		if err != nil {
+			return nil, err
 		}
+		if !ok {
+			continue
+		}
+		name := firstNonEmptyString(membership.Title, worker.Name)
+		if name == "" || seen[name] {
+			continue
+		}
+		meta := agentMetaFromWorkerMembership(project, worker, membership)
+		out = append(out, &AgentEntry{Project: project, Name: name, Meta: meta})
+		seen[name] = true
 	}
 	return out, nil
 }

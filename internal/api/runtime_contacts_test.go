@@ -14,6 +14,7 @@ import (
 
 func TestRuntimeContactsListUsersAndCurrentProjectAgents(t *testing.T) {
 	s, workspaceID := newConnectionGrantPolicyServer(t)
+	seedSampleAgentsForTest(t, s, workspaceID)
 	if err := s.users.CreateUser("cg33", "pass123", RoleMember, "Glenn Chen", "glenn@example.com", "", "", ""); err != nil {
 		t.Fatalf("create user: %v", err)
 	}
@@ -57,6 +58,7 @@ func TestRuntimeContactsListUsersAndCurrentProjectAgents(t *testing.T) {
 
 func TestRuntimeContactsListProjectMembershipAgents(t *testing.T) {
 	s, workspaceID := newConnectionGrantPolicyServer(t)
+	seedSampleAgentsForTest(t, s, workspaceID)
 	now := "2026-08-21T00:00:00Z"
 	upsertRuntimeAttentionWorker(t, s, workspaceID, "aw-worker-only", "sample", "worker-only", now)
 
@@ -86,6 +88,7 @@ func TestRuntimeContactsListProjectMembershipAgents(t *testing.T) {
 
 func TestRuntimePostMessageResolvesDisplayNameUsernameForm(t *testing.T) {
 	s, workspaceID := newConnectionGrantPolicyServer(t)
+	seedSampleAgentsForTest(t, s, workspaceID)
 	if err := s.users.CreateUser("cg33", "pass123", RoleMember, "Glenn Chen", "glenn@example.com", "", "", ""); err != nil {
 		t.Fatalf("create user: %v", err)
 	}
@@ -124,6 +127,7 @@ func TestRuntimePostMessageResolvesDisplayNameUsernameForm(t *testing.T) {
 
 func TestRuntimePostMessageResolvesEmailRecipient(t *testing.T) {
 	s, workspaceID := newConnectionGrantPolicyServer(t)
+	seedSampleAgentsForTest(t, s, workspaceID)
 	if err := s.users.CreateUser("cg33", "pass123", RoleMember, "Glenn Chen", "glenn@example.com", "", "", ""); err != nil {
 		t.Fatalf("create user: %v", err)
 	}
@@ -159,6 +163,7 @@ func TestRuntimePostMessageResolvesEmailRecipient(t *testing.T) {
 
 func TestRuntimePostMessageSuggestsFuzzyContacts(t *testing.T) {
 	s, workspaceID := newConnectionGrantPolicyServer(t)
+	seedSampleAgentsForTest(t, s, workspaceID)
 	if err := s.users.CreateUser("cg33", "pass123", RoleMember, "Glenn Chen", "glenn@example.com", "", "", ""); err != nil {
 		t.Fatalf("create user: %v", err)
 	}
@@ -192,12 +197,11 @@ func TestRuntimePostMessageSuggestsFuzzyContacts(t *testing.T) {
 
 func TestRuntimePostMessageRejectsCrossProjectAgentContact(t *testing.T) {
 	s, workspaceID := newConnectionGrantPolicyServer(t)
+	seedSampleAgentsForTest(t, s, workspaceID)
 	if err := s.st.SaveProject("other", &entity.Project{Name: "other"}); err != nil {
 		t.Fatalf("save project: %v", err)
 	}
-	if err := s.st.SaveAgentMeta("other", "qa", &entity.AgentMeta{Name: "qa", Project: "other"}); err != nil {
-		t.Fatalf("save agent: %v", err)
-	}
+	seedAgentWorkerForTest(t, s, workspaceID, "other", "qa")
 
 	raw, _ := json.Marshal(runtimeMessageBody{To: "other/qa", Body: "hello"})
 	req := httptest.NewRequest(http.MethodPost, "/api/v1/runtime/messages", bytes.NewReader(raw))

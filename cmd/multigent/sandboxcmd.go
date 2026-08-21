@@ -47,12 +47,21 @@ func newSandboxShowCmd() *cobra.Command {
 				return fmt.Errorf("--project and --agent are required")
 			}
 
-			s := mustStore(root)
-			meta, err := s.AgentMeta(project, agentName)
+			worker, ok, _, _, err := resolveCLIProjectWorker(root, project, agentName)
 			if err != nil {
 				return err
 			}
-			agentDir := s.AgentDir(project, agentName)
+			if !ok {
+				return fmt.Errorf("agent worker membership %s/%s not found", project, agentName)
+			}
+			cfg := decodeCLIWorkerRuntimeConfig(worker.RuntimeConfigJSON)
+			meta := &entity.AgentMeta{
+				Name:    agentName,
+				Project: project,
+				Model:   entity.AgentModel(worker.Model),
+				Sandbox: cfg.Sandbox,
+			}
+			agentDir := cliProjectAgentDir(root, project, agentName)
 
 			fmt.Printf("Agent   : %s/%s\n", project, agentName)
 			fmt.Printf("Model   : %s\n", meta.Model)
@@ -60,8 +69,7 @@ func newSandboxShowCmd() *cobra.Command {
 			if meta.Sandbox == nil || meta.Sandbox.Provider == entity.SandboxNone {
 				fmt.Printf("Sandbox : none (agent runs directly on host)\n\n")
 				fmt.Printf("To enable:\n")
-				fmt.Printf("  multigent hire --project %s --team %s --model %s --name %s --sandbox docker --force\n",
-					project, meta.Team, meta.Model, agentName)
+				fmt.Printf("  multigent agent update --project %s --agent %s --runtime docker\n", project, agentName)
 				return nil
 			}
 
@@ -327,10 +335,19 @@ func newSandboxTestCmd() *cobra.Command {
 				return fmt.Errorf("--project and --agent are required")
 			}
 
-			s := mustStore(root)
-			meta, err := s.AgentMeta(project, agentName)
+			worker, ok, _, _, err := resolveCLIProjectWorker(root, project, agentName)
 			if err != nil {
 				return err
+			}
+			if !ok {
+				return fmt.Errorf("agent worker membership %s/%s not found", project, agentName)
+			}
+			cfg := decodeCLIWorkerRuntimeConfig(worker.RuntimeConfigJSON)
+			meta := &entity.AgentMeta{
+				Name:    agentName,
+				Project: project,
+				Model:   entity.AgentModel(worker.Model),
+				Sandbox: cfg.Sandbox,
 			}
 
 			if meta.Sandbox == nil || meta.Sandbox.Provider == entity.SandboxNone {
@@ -342,7 +359,7 @@ func newSandboxTestCmd() *cobra.Command {
 				return err
 			}
 
-			agentDir := s.AgentDir(project, agentName)
+			agentDir := cliProjectAgentDir(root, project, agentName)
 			dockerCfg := meta.Sandbox.Docker
 
 			image := sandbox.EffectiveImage(meta.Model, dockerCfg)
