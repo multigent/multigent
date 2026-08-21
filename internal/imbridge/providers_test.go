@@ -223,6 +223,9 @@ func TestLarkReplyMarkdownDoesNotMutateBodyWithMention(t *testing.T) {
 	if err != nil {
 		t.Fatalf("reply markdown: %v", err)
 	}
+	if replyBody["msg_type"] != "post" {
+		t.Fatalf("markdown reply should use post msg_type, got %#v", replyBody["msg_type"])
+	}
 	content, _ := replyBody["content"].(string)
 	if strings.Contains(content, "ou_sender") || strings.Contains(content, "<at") {
 		t.Fatalf("markdown reply body should not be mention-prefixed: %s", content)

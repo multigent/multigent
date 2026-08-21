@@ -201,7 +201,7 @@ func (c OpenAPIClient) ReplyMarkdown(ctx context.Context, messageID, title, mark
 	if markdown == "" {
 		markdown = "(empty message)"
 	}
-	return c.replyRaw(ctx, messageID, "interactive", mustJSON(buildMarkdownCardBody(title, markdown)), "reply markdown message")
+	return c.replyRaw(ctx, messageID, "post", buildMarkdownPostBody(title, markdown), "reply markdown message")
 }
 
 func (c OpenAPIClient) ReplyProgressCard(ctx context.Context, messageID string, card ProgressCard) (string, error) {
@@ -387,8 +387,8 @@ func (c OpenAPIClient) SendMarkdown(ctx context.Context, receiveIDType, receiveI
 	}
 	body, _ := json.Marshal(map[string]string{
 		"receive_id": receiveID,
-		"msg_type":   "interactive",
-		"content":    mustJSON(buildMarkdownCardBody(title, markdown)),
+		"msg_type":   "post",
+		"content":    buildMarkdownPostBody(title, markdown),
 	})
 	u := strings.TrimRight(c.openBaseURL(), "/") + "/open-apis/im/v1/messages?receive_id_type=" + receiveIDType
 	req, err := http.NewRequestWithContext(ctx, http.MethodPost, u, bytes.NewReader(body))
@@ -438,6 +438,26 @@ func buildMarkdownCardBody(title, markdown string) map[string]any {
 			}},
 		},
 	}
+}
+
+func buildMarkdownPostBody(title, markdown string) string {
+	title = strings.TrimSpace(title)
+	markdown = strings.TrimSpace(markdown)
+	if markdown == "" {
+		markdown = "(empty message)"
+	}
+	body := map[string]any{
+		"zh_cn": map[string]any{
+			"content": [][]map[string]any{{
+				{"tag": "md", "text": markdown},
+			}},
+		},
+	}
+	if title != "" {
+		body["zh_cn"].(map[string]any)["title"] = title
+	}
+	raw, _ := json.Marshal(body)
+	return string(raw)
 }
 
 func (c OpenAPIClient) SendInteractiveCard(ctx context.Context, receiveIDType, receiveID string, card InteractiveCard) error {

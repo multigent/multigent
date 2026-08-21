@@ -52,7 +52,7 @@ func TestUpdateInteractiveCardUsesDelayedUpdateAPI(t *testing.T) {
 	}
 }
 
-func TestReplyMarkdownUsesInteractiveReplyAPI(t *testing.T) {
+func TestReplyMarkdownUsesPostReplyAPI(t *testing.T) {
 	var replyBody map[string]any
 	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		switch r.URL.Path {
@@ -76,33 +76,32 @@ func TestReplyMarkdownUsesInteractiveReplyAPI(t *testing.T) {
 	if err := client.ReplyMarkdown(context.Background(), "om_one", "Nova", "## 结论\n\n- 已处理"); err != nil {
 		t.Fatalf("reply markdown: %v", err)
 	}
-	if replyBody["msg_type"] != "interactive" {
-		t.Fatalf("msg_type=%#v, want interactive", replyBody["msg_type"])
+	if replyBody["msg_type"] != "post" {
+		t.Fatalf("msg_type=%#v, want post", replyBody["msg_type"])
 	}
 	content, _ := replyBody["content"].(string)
-	var card map[string]any
-	if err := json.Unmarshal([]byte(content), &card); err != nil {
-		t.Fatalf("content is not card JSON: %v", err)
+	var post map[string]any
+	if err := json.Unmarshal([]byte(content), &post); err != nil {
+		t.Fatalf("content is not post JSON: %v", err)
 	}
-	header, _ := card["header"].(map[string]any)
-	if header == nil {
-		t.Fatalf("missing card header: %#v", card)
+	zh, _ := post["zh_cn"].(map[string]any)
+	if zh == nil {
+		t.Fatalf("missing zh_cn post body: %#v", post)
 	}
-	body, _ := card["body"].(map[string]any)
-	if body == nil {
-		t.Fatalf("missing card body: %#v", card)
+	if zh["title"] != "Nova" {
+		t.Fatalf("unexpected post title: %#v", zh["title"])
 	}
-	elements, _ := body["elements"].([]any)
-	if len(elements) != 1 {
-		t.Fatalf("unexpected elements: %#v", body["elements"])
+	contentRows, _ := zh["content"].([]any)
+	if len(contentRows) != 1 {
+		t.Fatalf("unexpected post rows: %#v", zh["content"])
 	}
-	element, _ := elements[0].(map[string]any)
-	if element["tag"] != "div" {
-		t.Fatalf("final reply should render as lark_md div, got %#v", element)
+	row, _ := contentRows[0].([]any)
+	if len(row) != 1 {
+		t.Fatalf("unexpected post row: %#v", contentRows[0])
 	}
-	text, _ := element["text"].(map[string]any)
-	if text["tag"] != "lark_md" || !strings.Contains(text["content"].(string), "## 结论") {
-		t.Fatalf("final reply should render markdown as lark_md text, got %#v", text)
+	element, _ := row[0].(map[string]any)
+	if element["tag"] != "md" || !strings.Contains(element["text"].(string), "## 结论") {
+		t.Fatalf("final reply should render markdown as post md, got %#v", element)
 	}
 }
 

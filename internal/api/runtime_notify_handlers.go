@@ -821,29 +821,10 @@ func normalizeRuntimeNotifyMessageFormat(format, text string) string {
 	case "markdown", "md":
 		return "markdown"
 	case "", "auto":
-		if looksLikeMarkdown(text) {
-			return "markdown"
-		}
 		return "text"
 	default:
 		return "text"
 	}
-}
-
-func looksLikeMarkdown(text string) bool {
-	for _, line := range strings.Split(strings.TrimSpace(text), "\n") {
-		line = strings.TrimSpace(line)
-		if line == "" {
-			continue
-		}
-		if strings.HasPrefix(line, "#") || strings.HasPrefix(line, "- ") || strings.HasPrefix(line, "* ") || strings.HasPrefix(line, "> ") || strings.HasPrefix(line, "```") {
-			return true
-		}
-		if strings.Contains(line, "**") || strings.Contains(line, "`") || strings.Contains(line, "](") {
-			return true
-		}
-	}
-	return false
 }
 
 func prepareRuntimeNotifyExternalMessage(message *imbridge.OutgoingMessage, target imbridge.OutgoingTarget) {
