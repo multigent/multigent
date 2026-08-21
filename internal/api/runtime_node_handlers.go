@@ -452,25 +452,29 @@ func (s *Server) enqueueRuntimeTaskRun(workspaceID, project, agent string, task 
 		Capabilities:        defaultRuntimeCapabilities(),
 	}, 6*time.Hour)
 	preparedPrompt := runner.New(s.root, s.ts, s.st).BuildTaskPrompt(project, agent, task)
+	runtimeControlEnv := map[string]string{
+		"MULTIGENT_API_URL":               strings.TrimRight(serverURL, "/"),
+		"MULTIGENT_AGENT_TOKEN":           token,
+		"MULTIGENT_RUN_ID":                runID,
+		"MULTIGENT_TASK_ID":               task.ID,
+		"MULTIGENT_WORKSPACE_ID":          workspaceID,
+		"MULTIGENT_AGENT_WORKER_ID":       workerID,
+		"MULTIGENT_PROJECT_MEMBERSHIP_ID": membershipID,
+	}
+	for k, v := range runtimeTaskControlEnv(task.Vars) {
+		runtimeControlEnv[k] = v
+	}
 	spec := runtimeexec.Spec{
-		Kind:        runtimeexec.KindTask,
-		WorkspaceID: workspaceID,
-		ProjectID:   project,
-		AgentID:     agent,
-		TaskID:      task.ID,
-		SessionID:   sessionID,
-		Prompt:      preparedPrompt,
-		Agent:       *meta,
-		ProviderEnv: s.runtimeProviderEnvForAgent(workspaceID, project, agent, meta),
-		RuntimeControlEnv: map[string]string{
-			"MULTIGENT_API_URL":               strings.TrimRight(serverURL, "/"),
-			"MULTIGENT_AGENT_TOKEN":           token,
-			"MULTIGENT_RUN_ID":                runID,
-			"MULTIGENT_TASK_ID":               task.ID,
-			"MULTIGENT_WORKSPACE_ID":          workspaceID,
-			"MULTIGENT_AGENT_WORKER_ID":       workerID,
-			"MULTIGENT_PROJECT_MEMBERSHIP_ID": membershipID,
-		},
+		Kind:              runtimeexec.KindTask,
+		WorkspaceID:       workspaceID,
+		ProjectID:         project,
+		AgentID:           agent,
+		TaskID:            task.ID,
+		SessionID:         sessionID,
+		Prompt:            preparedPrompt,
+		Agent:             *meta,
+		ProviderEnv:       s.runtimeProviderEnvForAgent(workspaceID, project, agent, meta),
+		RuntimeControlEnv: runtimeControlEnv,
 	}
 	specBody, err := json.Marshal(spec)
 	if err != nil {
@@ -510,6 +514,33 @@ func (s *Server) enqueueRuntimeTaskRun(workspaceID, project, agent string, task 
 		},
 	})
 	return run, nil
+}
+
+func runtimeTaskControlEnv(vars map[string]string) map[string]string {
+	if len(vars) == 0 {
+		return nil
+	}
+	out := map[string]string{}
+	for k, v := range vars {
+		k = strings.TrimSpace(k)
+		if !isRuntimeTaskControlEnvKey(k) || strings.TrimSpace(v) == "" {
+			continue
+		}
+		out[k] = v
+	}
+	if len(out) == 0 {
+		return nil
+	}
+	return out
+}
+
+func isRuntimeTaskControlEnvKey(key string) bool {
+	switch key {
+	case "MULTIGENT_DELEGATION_TOKEN", "MULTIGENT_DELEGATION_EXPIRES_AT", "MULTIGENT_DELEGATION_INTERACTION_ID", "MULTIGENT_DELEGATION_TOKENS_JSON", "MULTIGENT_DELEGATION_EXPIRES_AT_JSON":
+		return true
+	default:
+		return false
+	}
 }
 
 func (s *Server) runtimeProviderEnvForAgent(workspaceID, project, agent string, meta *entity.AgentMeta) map[string]string {

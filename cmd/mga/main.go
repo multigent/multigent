@@ -23,13 +23,14 @@ import (
 )
 
 const (
-	envAPIURL          = "MULTIGENT_API_URL"
-	envAgentToken      = "MULTIGENT_AGENT_TOKEN"
-	envDelegationToken = "MULTIGENT_DELEGATION_TOKEN"
-	envConnectionsFile = "MULTIGENT_CONNECTIONS_FILE"
-	envToolsFile       = "MULTIGENT_TOOLS_FILE"
-	envToolSkillsFile  = "MULTIGENT_TOOL_SKILLS_FILE"
-	maxJSONBody        = 1 << 20
+	envAPIURL              = "MULTIGENT_API_URL"
+	envAgentToken          = "MULTIGENT_AGENT_TOKEN"
+	envDelegationToken     = "MULTIGENT_DELEGATION_TOKEN"
+	envDelegationTokensMap = "MULTIGENT_DELEGATION_TOKENS_JSON"
+	envConnectionsFile     = "MULTIGENT_CONNECTIONS_FILE"
+	envToolsFile           = "MULTIGENT_TOOLS_FILE"
+	envToolSkillsFile      = "MULTIGENT_TOOL_SKILLS_FILE"
+	maxJSONBody            = 1 << 20
 )
 
 var (
@@ -380,14 +381,11 @@ func newWorkflowDecisionSubmitCmd() *cobra.Command {
 			if strings.TrimSpace(interactionID) == "" {
 				return fmt.Errorf("--interaction is required")
 			}
-			if strings.TrimSpace(taskID) == "" {
-				return fmt.Errorf("--task is required")
+			if strings.TrimSpace(delegationToken) == "" {
+				delegationToken = delegationTokenForInteraction(strings.TrimSpace(interactionID))
 			}
 			if strings.TrimSpace(delegationToken) == "" {
-				delegationToken = strings.TrimSpace(os.Getenv(envDelegationToken))
-			}
-			if strings.TrimSpace(delegationToken) == "" {
-				return fmt.Errorf("--delegation-token is required, or set %s", envDelegationToken)
+				return fmt.Errorf("--delegation-token is required, or set %s/%s", envDelegationToken, envDelegationTokensMap)
 			}
 			outputs, err := parseStructuredOutputs(outputPairs, outputJSON)
 			if err != nil {
@@ -410,12 +408,25 @@ func newWorkflowDecisionSubmitCmd() *cobra.Command {
 	}
 	cmd.Flags().StringVar(&interactionID, "interaction", "", "interaction request id from the callback event")
 	cmd.Flags().StringVar(&delegationToken, "delegation-token", "", "short-lived user delegation token; defaults to MULTIGENT_DELEGATION_TOKEN")
-	cmd.Flags().StringVar(&taskID, "task", "", "workflow task id")
+	cmd.Flags().StringVar(&taskID, "task", "", "workflow task id; defaults to the taskId stored in the interaction context")
 	cmd.Flags().StringVar(&decision, "decision", "", "decision value, for example approve or request_changes")
 	cmd.Flags().StringVar(&comments, "comments", "", "optional review comments")
 	cmd.Flags().StringArrayVar(&outputPairs, "output", nil, "structured workflow output as field=value, repeatable")
 	cmd.Flags().StringVar(&outputJSON, "output-json", "", "structured workflow outputs as a JSON object")
 	return cmd
+}
+
+func delegationTokenForInteraction(interactionID string) string {
+	interactionID = strings.TrimSpace(interactionID)
+	if interactionID != "" {
+		var tokens map[string]string
+		if raw := strings.TrimSpace(os.Getenv(envDelegationTokensMap)); raw != "" && json.Unmarshal([]byte(raw), &tokens) == nil {
+			if token := strings.TrimSpace(tokens[interactionID]); token != "" {
+				return token
+			}
+		}
+	}
+	return strings.TrimSpace(os.Getenv(envDelegationToken))
 }
 
 func newVersionCmd() *cobra.Command {

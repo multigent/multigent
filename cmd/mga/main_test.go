@@ -56,6 +56,18 @@ func TestRuntimeSkillGuideRenderJSON(t *testing.T) {
 	}
 }
 
+func TestDelegationTokenForInteractionPrefersMap(t *testing.T) {
+	t.Setenv(envDelegationToken, "fallback-token")
+	t.Setenv(envDelegationTokensMap, `{"ir-a":"token-a","ir-b":"token-b"}`)
+
+	if got := delegationTokenForInteraction("ir-b"); got != "token-b" {
+		t.Fatalf("expected mapped token, got %q", got)
+	}
+	if got := delegationTokenForInteraction("ir-missing"); got != "fallback-token" {
+		t.Fatalf("expected fallback token, got %q", got)
+	}
+}
+
 func TestServeRuntimeMCPStdioForwardsFrames(t *testing.T) {
 	const token = "agent-token"
 	var forwardedAuth string

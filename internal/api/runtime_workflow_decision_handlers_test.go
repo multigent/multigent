@@ -14,7 +14,7 @@ import (
 	workflowstore "github.com/multigent/multigent/internal/workflow"
 )
 
-func TestRuntimeWorkflowDecisionSubmitAdvancesHumanReview(t *testing.T) {
+func TestRuntimeWorkflowDecisionSubmitAdvancesHumanReviewFromInteractionContext(t *testing.T) {
 	s, workspaceID := newConnectionGrantPolicyServer(t)
 	seedSampleAgentsForTest(t, s, workspaceID)
 	taskID := "task-human-review"
@@ -90,7 +90,6 @@ func TestRuntimeWorkflowDecisionSubmitAdvancesHumanReview(t *testing.T) {
 	req := providerTestRequest(http.MethodPost, "/api/v1/runtime/workflow/decision", "", runtimeWorkflowDecisionBody{
 		InteractionID:   "ir_decision_ok",
 		DelegationToken: delegationToken,
-		TaskID:          taskID,
 		Decision:        "approve",
 		Comments:        "ok",
 	})
@@ -233,6 +232,17 @@ func TestRuntimeWorkflowDecisionRequiresDelegationToken(t *testing.T) {
 	}
 	if !strings.Contains(rec.Body.String(), "delegation token is required") {
 		t.Fatalf("unexpected body=%s", rec.Body.String())
+	}
+}
+
+func TestWorkflowReviewActorTypeIsHumanAcceptsUserAlias(t *testing.T) {
+	for _, actorType := range []string{"human", "user"} {
+		if !workflowReviewActorTypeIsHuman(actorType) {
+			t.Fatalf("expected %q to be accepted as a human reviewer actor type", actorType)
+		}
+	}
+	if workflowReviewActorTypeIsHuman("agent") {
+		t.Fatal("agent actor type should not be accepted as a human reviewer")
 	}
 }
 

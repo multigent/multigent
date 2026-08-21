@@ -1722,12 +1722,16 @@ func (r *Runner) materializeRuntimeFiles(agentDir string, env map[string]string)
 		env[runtimeToolDirEnv] = toolDir
 		env[runtimeToolsFileEnv] = toolsPath
 		env[runtimeToolBinDirEnv] = filepath.Join(toolDir, "bin")
+		pathPrefix := []string{filepath.Join(toolDir, "bin")}
+		if cliBinDir := hostRuntimeCLIBinDir(r.root); cliBinDir != "" {
+			pathPrefix = append(pathPrefix, cliBinDir)
+		}
 		if cacheBin := workspaceToolCacheBinDir(r.root); cacheBin != "" {
 			env[runtimeToolCacheBinDirEnv] = cacheBin
-			env["PATH"] = filepath.Join(toolDir, "bin") + string(os.PathListSeparator) + cacheBin + string(os.PathListSeparator) + os.Getenv("PATH")
-		} else {
-			env["PATH"] = filepath.Join(toolDir, "bin") + string(os.PathListSeparator) + os.Getenv("PATH")
+			pathPrefix = append(pathPrefix, cacheBin)
 		}
+		pathPrefix = append(pathPrefix, os.Getenv("PATH"))
+		env["PATH"] = strings.Join(pathPrefix, string(os.PathListSeparator))
 		if bootstrap := filepath.Join(toolDir, "bootstrap-tools.sh"); fileExists(bootstrap) {
 			env[runtimeToolBootstrapEnv] = bootstrap
 		}
@@ -1744,6 +1748,47 @@ func (r *Runner) materializeRuntimeFiles(agentDir string, env map[string]string)
 			_ = os.RemoveAll(toolDir)
 		}
 	}
+}
+
+func hostRuntimeCLIBinDir(root string) string {
+	for _, candidate := range runtimeCLIBinaryCandidates(root) {
+		if isExecutableFile(candidate) {
+			return filepath.Dir(candidate)
+		}
+	}
+	return ""
+}
+
+func runtimeCLIBinaryCandidates(root string) []string {
+	candidates := []string{}
+	if override := strings.TrimSpace(os.Getenv(runtimecli.HostBinaryEnv)); override != "" {
+		candidates = append(candidates, override)
+	}
+	if exe, err := os.Executable(); err == nil && exe != "" {
+		candidates = append(candidates, filepath.Join(filepath.Dir(exe), runtimecli.BinaryName))
+	}
+	if cwd, err := os.Getwd(); err == nil && cwd != "" {
+		candidates = append(candidates, filepath.Join(cwd, "dist", runtimecli.BinaryName))
+	}
+	if strings.TrimSpace(root) != "" {
+		candidates = append(candidates,
+			filepath.Join(root, "dist", runtimecli.BinaryName),
+			filepath.Join(filepath.Dir(root), "dist", runtimecli.BinaryName),
+		)
+	}
+	return uniqueNonEmptyStrings(candidates...)
+}
+
+func isExecutableFile(path string) bool {
+	path = strings.TrimSpace(path)
+	if path == "" {
+		return false
+	}
+	info, err := os.Stat(path)
+	if err != nil || info.IsDir() {
+		return false
+	}
+	return info.Mode()&0o111 != 0
 }
 
 func (r *Runner) materializeProviderCredentials(agentDir string, meta *entity.AgentMeta) error {
@@ -3254,7 +3299,7 @@ func injectRuntimeControlEnvIntoRuntime(cfg *entity.SandboxConfig, env map[strin
 
 func isRuntimeControlEnvKey(key string) bool {
 	switch key {
-	case "MULTIGENT_API_URL", "MULTIGENT_AGENT_TOKEN", "MULTIGENT_RUN_ID", "MULTIGENT_TASK_ID", "MULTIGENT_WORKSPACE_ID", runtimeConnectionsFileEnv, runtimeToolsFileEnv, runtimeToolDirEnv, runtimeToolBinDirEnv, runtimeToolCacheBinDirEnv, runtimeToolBootstrapEnv, runtimeToolSkillsFileEnv, runtimeToolCLIAuditEnv:
+	case "MULTIGENT_API_URL", "MULTIGENT_AGENT_TOKEN", "MULTIGENT_RUN_ID", "MULTIGENT_TASK_ID", "MULTIGENT_WORKSPACE_ID", "MULTIGENT_DELEGATION_TOKEN", "MULTIGENT_DELEGATION_EXPIRES_AT", "MULTIGENT_DELEGATION_INTERACTION_ID", "MULTIGENT_DELEGATION_TOKENS_JSON", "MULTIGENT_DELEGATION_EXPIRES_AT_JSON", runtimeConnectionsFileEnv, runtimeToolsFileEnv, runtimeToolDirEnv, runtimeToolBinDirEnv, runtimeToolCacheBinDirEnv, runtimeToolBootstrapEnv, runtimeToolSkillsFileEnv, runtimeToolCLIAuditEnv:
 		return true
 	default:
 		return false

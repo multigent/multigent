@@ -1,12 +1,14 @@
 package api
 
 import (
+	"encoding/json"
 	"strings"
 	"testing"
 	"time"
 
 	controldb "github.com/multigent/multigent/internal/db"
 	"github.com/multigent/multigent/internal/entity"
+	"github.com/multigent/multigent/internal/runtimeexec"
 )
 
 func TestRuntimeWakeupTaskIncludesPendingAttentionSignals(t *testing.T) {
@@ -259,5 +261,172 @@ func TestRuntimeWakeupRunMarksAttentionSeenAfterEnqueue(t *testing.T) {
 	}
 	if updated.Status != "seen" || strings.TrimSpace(updated.SeenAt) == "" {
 		t.Fatalf("signal should be marked seen after enqueue succeeds: %#v", updated)
+	}
+}
+
+func TestRuntimeWakeupRunInjectsDelegationEnvForCardAction(t *testing.T) {
+	s, workspaceID := newConnectionGrantPolicyServer(t)
+	seedTaskAttentionWorker(t, s, workspaceID, "sample", "pm", true)
+	now := time.Now().UTC().Format(time.RFC3339)
+	if err := s.controlDB.UpsertRuntimeNode(controldb.RuntimeNode{
+		ID:               "rnode-card-action",
+		WorkspaceID:      workspaceID,
+		Name:             "local card node",
+		Kind:             "local",
+		Status:           "online",
+		LastSeenAt:       now,
+		CapabilitiesJSON: `{"agents":["codex"]}`,
+		PolicyJSON:       `{}`,
+		CreatedAt:        now,
+		UpdatedAt:        now,
+	}); err != nil {
+		t.Fatalf("runtime node: %v", err)
+	}
+	worker, found, err := s.controlDB.AgentWorkerByID(workspaceID, "aw-pm")
+	if err != nil || !found {
+		t.Fatalf("worker lookup: found=%v err=%v", found, err)
+	}
+	worker.Model = string(entity.ModelCodex)
+	worker.DefaultRuntimeNodeID = "rnode-card-action"
+	if err := s.controlDB.UpsertAgentWorker(worker); err != nil {
+		t.Fatalf("update worker runtime node: %v", err)
+	}
+	if err := s.controlDB.CreateInteractionRequest(controldb.InteractionRequest{
+		ID:             "ir-card-action",
+		WorkspaceID:    workspaceID,
+		AgentWorkerID:  "aw-pm",
+		ProjectID:      "sample",
+		AgentID:        "pm",
+		HandlerType:    "agent_event",
+		Status:         "submitted",
+		SubmittedBy:    "admin",
+		SubmissionJSON: `{"actionId":"approve"}`,
+		ContextJSON:    `{"taskId":"task-workflow"}`,
+		CreatedAt:      now,
+		SubmittedAt:    now,
+	}); err != nil {
+		t.Fatalf("interaction request: %v", err)
+	}
+	if err := s.controlDB.UpsertAttentionSignal(controldb.AttentionSignal{
+		ID:            "sig-card-action",
+		WorkspaceID:   workspaceID,
+		AgentWorkerID: "aw-pm",
+		DedupeKey:     "test:card-action",
+		SourceKind:    "im_card_action",
+		SourceID:      "ir-card-action",
+		Reason:        "card_action",
+		Summary:       "批准",
+		Status:        "pending",
+		CreatedAt:     now,
+	}); err != nil {
+		t.Fatalf("upsert attention: %v", err)
+	}
+
+	run, task, err := s.enqueueRuntimeWakeupRunFromRequest(workspaceID, "sample", "pm", &entity.HeartbeatConfig{
+		WakeupPrompt: "Check pending attention and decide what to do.",
+	}, "http://127.0.0.1:27893", "admin")
+	if err != nil {
+		t.Fatalf("enqueue wakeup run: %v", err)
+	}
+	if task == nil || strings.TrimSpace(task.Vars["MULTIGENT_DELEGATION_TOKEN"]) == "" {
+		t.Fatalf("expected delegation vars on attention task: %#v", task)
+	}
+	if strings.Contains(task.Prompt, task.Vars["MULTIGENT_DELEGATION_TOKEN"]) {
+		t.Fatalf("attention prompt leaked delegation token")
+	}
+	var spec runtimeexec.Spec
+	if err := json.Unmarshal([]byte(run.SpecJSON), &spec); err != nil {
+		t.Fatalf("decode runtime spec: %v", err)
+	}
+	if spec.RuntimeControlEnv["MULTIGENT_DELEGATION_TOKEN"] == "" {
+		t.Fatalf("runtime spec missing delegation token env: %#v", spec.RuntimeControlEnv)
+	}
+	if spec.RuntimeControlEnv["MULTIGENT_DELEGATION_INTERACTION_ID"] != "ir-card-action" {
+		t.Fatalf("runtime spec missing interaction id env: %#v", spec.RuntimeControlEnv)
+	}
+}
+
+func TestRuntimeWakeupRunInjectsDelegationEnvMapForMultipleCardActions(t *testing.T) {
+	s, workspaceID := newConnectionGrantPolicyServer(t)
+	seedTaskAttentionWorker(t, s, workspaceID, "sample", "pm", true)
+	now := time.Now().UTC().Format(time.RFC3339)
+	if err := s.controlDB.UpsertRuntimeNode(controldb.RuntimeNode{
+		ID:               "rnode-card-actions",
+		WorkspaceID:      workspaceID,
+		Name:             "card action node",
+		Kind:             "local",
+		Status:           "online",
+		LastSeenAt:       now,
+		CapabilitiesJSON: `{"agents":["codex"]}`,
+		PolicyJSON:       `{}`,
+		CreatedAt:        now,
+		UpdatedAt:        now,
+	}); err != nil {
+		t.Fatalf("runtime node: %v", err)
+	}
+	worker, found, err := s.controlDB.AgentWorkerByID(workspaceID, "aw-pm")
+	if err != nil || !found {
+		t.Fatalf("worker lookup: found=%v err=%v", found, err)
+	}
+	worker.Model = string(entity.ModelCodex)
+	worker.DefaultRuntimeNodeID = "rnode-card-actions"
+	if err := s.controlDB.UpsertAgentWorker(worker); err != nil {
+		t.Fatalf("update worker runtime node: %v", err)
+	}
+	for _, id := range []string{"ir-card-a", "ir-card-b"} {
+		if err := s.controlDB.CreateInteractionRequest(controldb.InteractionRequest{
+			ID:             id,
+			WorkspaceID:    workspaceID,
+			AgentWorkerID:  "aw-pm",
+			ProjectID:      "sample",
+			AgentID:        "pm",
+			HandlerType:    "agent_event",
+			Status:         "submitted",
+			SubmittedBy:    "admin",
+			SubmissionJSON: `{"actionId":"approve"}`,
+			ContextJSON:    `{"taskId":"task-workflow"}`,
+			CreatedAt:      now,
+			SubmittedAt:    now,
+		}); err != nil {
+			t.Fatalf("interaction request %s: %v", id, err)
+		}
+		if err := s.controlDB.UpsertAttentionSignal(controldb.AttentionSignal{
+			ID:            "sig-" + id,
+			WorkspaceID:   workspaceID,
+			AgentWorkerID: "aw-pm",
+			DedupeKey:     "test:" + id,
+			SourceKind:    "im_card_action",
+			SourceID:      id,
+			Reason:        "card_action",
+			Summary:       "批准",
+			Status:        "pending",
+			CreatedAt:     now,
+		}); err != nil {
+			t.Fatalf("upsert attention %s: %v", id, err)
+		}
+	}
+
+	run, task, err := s.enqueueRuntimeWakeupRunFromRequest(workspaceID, "sample", "pm", &entity.HeartbeatConfig{
+		WakeupPrompt: "Check pending attention and decide what to do.",
+	}, "http://127.0.0.1:27893", "admin")
+	if err != nil {
+		t.Fatalf("enqueue wakeup run: %v", err)
+	}
+	if task == nil || strings.TrimSpace(task.Vars["MULTIGENT_DELEGATION_TOKENS_JSON"]) == "" {
+		t.Fatalf("expected delegation token map on attention task: %#v", task)
+	}
+	if strings.Contains(task.Prompt, "MULTIGENT_DELEGATION_TOKENS_JSON") || strings.Contains(task.Prompt, task.Vars["MULTIGENT_DELEGATION_TOKENS_JSON"]) {
+		t.Fatalf("attention prompt leaked delegation token map")
+	}
+	var spec runtimeexec.Spec
+	if err := json.Unmarshal([]byte(run.SpecJSON), &spec); err != nil {
+		t.Fatalf("decode runtime spec: %v", err)
+	}
+	var tokens map[string]string
+	if err := json.Unmarshal([]byte(spec.RuntimeControlEnv["MULTIGENT_DELEGATION_TOKENS_JSON"]), &tokens); err != nil {
+		t.Fatalf("decode delegation token map: %v", err)
+	}
+	if strings.TrimSpace(tokens["ir-card-a"]) == "" || strings.TrimSpace(tokens["ir-card-b"]) == "" {
+		t.Fatalf("runtime spec missing per-interaction delegation tokens: %#v", spec.RuntimeControlEnv)
 	}
 }

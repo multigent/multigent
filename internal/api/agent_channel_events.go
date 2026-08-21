@@ -1717,7 +1717,10 @@ func (s *Server) runAgentForInteractionCallback(provider imbridge.Provider, reso
 	_ = s.createInteractionEvent(lease.session, "system", "", providerID, "run_started", "", map[string]any{
 		"interactionId": request.ID,
 	})
-	output, detectedRuntimeSessionID, err := s.execAgentPrompt(ctx, binding.WorkspaceID, binding.ProjectID, binding.AgentID, prompt, lease.session.RuntimeSessionID, runtimeAPIURL)
+	output, detectedRuntimeSessionID, err := s.execAgentPrompt(ctx, binding.WorkspaceID, binding.ProjectID, binding.AgentID, prompt, lease.session.RuntimeSessionID, runtimeAPIURL, map[string]string{
+		"MULTIGENT_DELEGATION_TOKEN":      delegationToken,
+		"MULTIGENT_DELEGATION_EXPIRES_AT": delegationExpiresAt,
+	})
 	if detectedRuntimeSessionID != "" {
 		lease.SetRuntimeSessionID(detectedRuntimeSessionID)
 	}
@@ -1833,19 +1836,19 @@ func formatInteractionCallbackPrompt(request controldb.InteractionRequest, submi
 	b.WriteString("If this callback should control a workflow or another protected resource, use the appropriate mga command; Multigent will enforce permissions and audit the action.\n\n")
 	if strings.TrimSpace(delegationToken) != "" {
 		b.WriteString("Delegation token:\n")
-		b.WriteString("The user has delegated short-lived authority to you for this interaction. Use this token only for actions that match the user's callback and intent.\n")
-		b.WriteString("Set `MULTIGENT_DELEGATION_TOKEN` for mga commands or pass `--delegation-token` explicitly.\n")
+		b.WriteString("The user has delegated short-lived authority to you for this interaction. Use it only for actions that match the user's callback and intent.\n")
+		b.WriteString("The runtime has already provided it as `MULTIGENT_DELEGATION_TOKEN`; do not print or persist the token.\n")
 		if strings.TrimSpace(delegationExpiresAt) != "" {
 			b.WriteString("Expires at: " + strings.TrimSpace(delegationExpiresAt) + "\n")
 		}
-		b.WriteString("Token: " + strings.TrimSpace(delegationToken) + "\n\n")
+		b.WriteString("\n")
 	}
 	if strings.EqualFold(strings.TrimSpace(request.HandlerType), "workflow_decision") {
 		b.WriteString("This interaction is intended to submit a human workflow decision.\n")
-		b.WriteString("If the interaction context contains a taskId, run `mga workflow current --task-id <taskId>` first, then submit the user's selected action with `mga workflow decision submit --interaction <interactionId> --task <taskId> --decision <actionId> --delegation-token <token>`.\n")
+		b.WriteString("If the interaction context contains a taskId, run `mga workflow current --task-id <taskId>` first, then submit the user's selected action with `mga workflow decision submit --interaction <interactionId> --task <taskId> --decision <actionId>`.\n")
 		b.WriteString("Map extra comments or form fields to `--comments` or `--output key=value` when useful. Do not invent a decision that the user did not choose.\n\n")
 	} else {
-		b.WriteString("If the interaction context contains a taskId and the current workflow step is a human review step, you may use `mga workflow decision submit --delegation-token <token>` to apply the user's selected action when that is clearly the card's purpose.\n\n")
+		b.WriteString("If the interaction context contains a taskId and the current workflow step is a human review step, you may use `mga workflow decision submit` to apply the user's selected action when that is clearly the card's purpose.\n\n")
 	}
 	b.WriteString("Interaction request:\n")
 	b.WriteString("```json\n")
@@ -2020,7 +2023,7 @@ func subtleConstantTimeEqual(a, b string) bool {
 	return diff == 0
 }
 
-func (s *Server) execAgentPrompt(ctx context.Context, workspaceID, project, agent, prompt, sessionID, runtimeAPIURL string) (string, string, error) {
+func (s *Server) execAgentPrompt(ctx context.Context, workspaceID, project, agent, prompt, sessionID, runtimeAPIURL string, extraEnv ...map[string]string) (string, string, error) {
 	args := []string{"--dir", s.root, "exec", "--project", project, "--agent", agent, "--prompt", prompt, "--no-save-session"}
 	if strings.TrimSpace(sessionID) != "" {
 		args = append(args, "--session", strings.TrimSpace(sessionID))
@@ -2029,7 +2032,7 @@ func (s *Server) execAgentPrompt(ctx context.Context, workspaceID, project, agen
 	}
 	cmd := exec.CommandContext(ctx, s.sched.binPath, args...)
 	cmd.Dir = s.root
-	s.configureAgentExecEnv(cmd, workspaceID, project, agent, runtimeAPIURL)
+	s.configureAgentExecEnv(cmd, workspaceID, project, agent, runtimeAPIURL, mergeExtraEnv(extraEnv...))
 	var out bytes.Buffer
 	cmd.Stdout = &out
 	cmd.Stderr = &out
@@ -2047,7 +2050,7 @@ func (s *Server) execAgentPromptStream(ctx context.Context, workspaceID, project
 	}
 	cmd := exec.CommandContext(ctx, s.sched.binPath, args...)
 	cmd.Dir = s.root
-	s.configureAgentExecEnv(cmd, workspaceID, project, agent, runtimeAPIURL)
+	s.configureAgentExecEnv(cmd, workspaceID, project, agent, runtimeAPIURL, nil)
 	stdout, err := cmd.StdoutPipe()
 	if err != nil {
 		return "", "", err
@@ -2089,7 +2092,7 @@ func (s *Server) execAgentPromptStream(ctx context.Context, workspaceID, project
 	return output, extractAgentChatSessionID(output), err
 }
 
-func (s *Server) configureAgentExecEnv(cmd *exec.Cmd, workspaceID, project, agent, runtimeAPIURL string) {
+func (s *Server) configureAgentExecEnv(cmd *exec.Cmd, workspaceID, project, agent, runtimeAPIURL string, extraEnv map[string]string) {
 	if cmd == nil {
 		return
 	}
@@ -2110,6 +2113,30 @@ func (s *Server) configureAgentExecEnv(cmd *exec.Cmd, workspaceID, project, agen
 		"MULTIGENT_RUN_ID="+runID,
 		"MULTIGENT_WORKSPACE_ID="+workspaceID,
 	)
+	for k, v := range extraEnv {
+		k = strings.TrimSpace(k)
+		if k == "" || strings.Contains(k, "=") || strings.TrimSpace(v) == "" {
+			continue
+		}
+		cmd.Env = append(cmd.Env, k+"="+v)
+	}
+}
+
+func mergeExtraEnv(envs ...map[string]string) map[string]string {
+	merged := map[string]string{}
+	for _, env := range envs {
+		for k, v := range env {
+			k = strings.TrimSpace(k)
+			if k == "" {
+				continue
+			}
+			merged[k] = v
+		}
+	}
+	if len(merged) == 0 {
+		return nil
+	}
+	return merged
 }
 
 func trimForIM(s string, max int) string {

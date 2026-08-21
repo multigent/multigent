@@ -43,10 +43,6 @@ func (s *Server) handleRuntimeWorkflowDecision(w http.ResponseWriter, r *http.Re
 		s.jsonError(w, http.StatusBadRequest, "interactionId is required")
 		return
 	}
-	if taskID == "" {
-		s.jsonError(w, http.StatusBadRequest, "taskId is required")
-		return
-	}
 	delegation, ok := s.validateWorkflowDecisionDelegation(w, principal, strings.TrimSpace(body.DelegationToken), interactionID)
 	if !ok {
 		return
@@ -58,6 +54,13 @@ func (s *Server) handleRuntimeWorkflowDecision(w http.ResponseWriter, r *http.Re
 	}
 	if !found {
 		s.jsonError(w, http.StatusNotFound, "interaction request not found")
+		return
+	}
+	if taskID == "" {
+		taskID = taskIDFromInteractionContext(request.ContextJSON)
+	}
+	if taskID == "" {
+		s.jsonError(w, http.StatusBadRequest, "taskId is required")
 		return
 	}
 	if err := validateRuntimeWorkflowDecisionInteraction(principal, request, taskID); err != nil {
@@ -182,6 +185,17 @@ func validateRuntimeWorkflowDecisionInteraction(principal runtimeAgentPrincipal,
 	return nil
 }
 
+func taskIDFromInteractionContext(contextJSON string) string {
+	var contextValues map[string]any
+	if strings.TrimSpace(contextJSON) == "" || json.Unmarshal([]byte(contextJSON), &contextValues) != nil {
+		return ""
+	}
+	if taskID, ok := contextValues["taskId"].(string); ok {
+		return strings.TrimSpace(taskID)
+	}
+	return ""
+}
+
 var errWorkflowDecisionReviewerForbidden = errors.New("interaction submitter is not the current workflow reviewer")
 
 func (s *Server) validateWorkflowDecisionReviewer(workspaceID, project, taskID, submittedBy string) error {
@@ -215,7 +229,7 @@ func (s *Server) validateWorkflowDecisionReviewer(workspaceID, project, taskID, 
 		if inst.StepID != run.ActiveStepID {
 			continue
 		}
-		if strings.TrimSpace(inst.ActorType) != "human" {
+		if !workflowReviewActorTypeIsHuman(inst.ActorType) {
 			return errWorkflowDecisionReviewerForbidden
 		}
 		if strings.TrimSpace(inst.ActorID) != strings.TrimSpace(submittedBy) {
@@ -227,6 +241,15 @@ func (s *Server) validateWorkflowDecisionReviewer(workspaceID, project, taskID, 
 		return nil
 	}
 	return fmt.Errorf("active workflow step instance not found")
+}
+
+func workflowReviewActorTypeIsHuman(actorType string) bool {
+	switch strings.TrimSpace(actorType) {
+	case "human", "user":
+		return true
+	default:
+		return false
+	}
 }
 
 func (s *Server) markInteractionRequestHandled(request controldb.InteractionRequest, outputs map[string]string) error {

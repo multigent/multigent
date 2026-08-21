@@ -15,6 +15,7 @@ import (
 	controldb "github.com/multigent/multigent/internal/db"
 	"github.com/multigent/multigent/internal/entity"
 	"github.com/multigent/multigent/internal/runtimeauth"
+	"github.com/multigent/multigent/internal/runtimecli"
 )
 
 func TestNormalizeRuntimeAPIURL(t *testing.T) {
@@ -230,6 +231,21 @@ func TestDropUnreachableDockerLoopbackProxyEnvCanBeOptedOut(t *testing.T) {
 	got := envSliceToMap(env)
 	if got["HTTPS_PROXY"] != "http://127.0.0.1:7890" {
 		t.Fatalf("opt-in should preserve loopback proxy env: %#v", got)
+	}
+}
+
+func TestHostRuntimeCLIBinDirFindsWorkspaceDistMGA(t *testing.T) {
+	root := t.TempDir()
+	binDir := filepath.Join(root, "dist")
+	if err := os.MkdirAll(binDir, 0o755); err != nil {
+		t.Fatalf("mkdir dist: %v", err)
+	}
+	mgaPath := filepath.Join(binDir, runtimecli.BinaryName)
+	if err := os.WriteFile(mgaPath, []byte("#!/bin/sh\n"), 0o755); err != nil {
+		t.Fatalf("write mga: %v", err)
+	}
+	if got := hostRuntimeCLIBinDir(root); got != binDir {
+		t.Fatalf("hostRuntimeCLIBinDir=%q, want %q", got, binDir)
 	}
 }
 
