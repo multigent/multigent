@@ -108,6 +108,9 @@ func (s *Server) pendingAttentionWakeupSection(workspaceID, project, agent strin
 		}
 		if signal.ActorID != "" {
 			b.WriteString(fmt.Sprintf("Actor: `%s`", signal.ActorID))
+			if label := strings.TrimSpace(s.attentionActorDisplayLabel(workspaceID, signal.ActorType, signal.ActorID)); label != "" && label != signal.ActorID {
+				b.WriteString(" — " + label)
+			}
 			if signal.ActorType != "" {
 				b.WriteString(fmt.Sprintf(" (%s)", signal.ActorType))
 			}
@@ -127,6 +130,26 @@ func (s *Server) pendingAttentionWakeupSection(workspaceID, project, agent strin
 	b.WriteString("---\n\n")
 	b.WriteString(i18n.AttentionHint)
 	return b.String(), ids, nil
+}
+
+func (s *Server) attentionActorDisplayLabel(workspaceID, actorType, actorID string) string {
+	if !strings.EqualFold(strings.TrimSpace(actorType), "user") {
+		return ""
+	}
+	actorID = strings.TrimSpace(actorID)
+	if actorID == "" || s == nil || s.users == nil {
+		return ""
+	}
+	if s.controlDB != nil {
+		if _, ok, err := s.controlDB.WorkspaceMember(strings.TrimSpace(workspaceID), actorID); err != nil || !ok {
+			return ""
+		}
+	}
+	user := s.users.GetUser(actorID)
+	if user == nil {
+		return ""
+	}
+	return formatUserIdentityLabel(user.Username, user.DisplayName, user.Email)
 }
 
 func (s *Server) markAttentionSignalsSeen(workspaceID string, ids []string) {

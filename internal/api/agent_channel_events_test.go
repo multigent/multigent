@@ -1110,14 +1110,15 @@ func TestAPIInteractionLeaseAllowsDifferentConversationSources(t *testing.T) {
 }
 
 func TestFormatIMAgentPromptRequiresHumanFacingReply(t *testing.T) {
-	prompt := formatIMAgentPrompt("lark", controldb.AgentChannelBinding{
+	prompt := formatIMAgentPromptWithSender("lark", controldb.AgentChannelBinding{
 		ProjectID: "tapnow-agent-platform",
 		AgentID:   "nova",
-	}, controldb.ExternalIdentity{UserID: "admin"}, imbridge.IncomingMessage{ChatID: "oc_one"}, "帮我看一下当前任务")
+	}, controldb.ExternalIdentity{UserID: "admin"}, "Glenn Chen (admin) <glenn@example.com>", imbridge.IncomingMessage{ChatID: "oc_one"}, "帮我看一下当前任务")
 	for _, want := range []string{
 		"Always finish with a concise, human-facing final reply",
 		"Reply in the same language as the user's message",
 		"tapnow-agent-platform/nova",
+		"Glenn Chen (admin) <glenn@example.com>",
 		"帮我看一下当前任务",
 	} {
 		if !strings.Contains(prompt, want) {

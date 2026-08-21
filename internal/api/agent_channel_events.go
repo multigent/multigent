@@ -939,7 +939,7 @@ func (s *Server) runAgentForIMEvent(provider imbridge.Provider, resolved resolve
 	stopIndicator := s.startIMProcessingIndicator(ctx, provider, resolved, message)
 	defer stopIndicator()
 	progress := newIMProgressReporter(ctx, provider, resolved, message, agentChannelReplySubject(binding.AgentID))
-	prompt := formatIMAgentPrompt(providerID, binding, resolved.Identity, message, text)
+	prompt := formatIMAgentPromptWithSender(providerID, binding, resolved.Identity, s.imIdentityDisplayLabel(resolved.Identity), message, text)
 	output, detectedRuntimeSessionID, err := s.execAgentPromptStream(ctx, binding.WorkspaceID, binding.ProjectID, binding.AgentID, prompt, lease.session.RuntimeSessionID, runtimeAPIURL, func(line string) {
 		progress.Observe(line)
 	})
@@ -1032,6 +1032,14 @@ func (s *Server) recordIMAttentionSignal(resolved resolvedChannelEventBinding, p
 	if messageID == "" {
 		messageID = strings.TrimSpace(message.ChatID) + ":" + strings.TrimSpace(message.SenderOpenID) + ":" + fmt.Sprintf("%x", sha256.Sum256([]byte(text)))
 	}
+	senderDisplayName := ""
+	senderEmail := ""
+	if s != nil && s.users != nil {
+		if user := s.users.GetUser(resolved.Identity.UserID); user != nil {
+			senderDisplayName = strings.TrimSpace(user.DisplayName)
+			senderEmail = strings.TrimSpace(user.Email)
+		}
+	}
 	dedupeKey := "im:" + strings.TrimSpace(providerID) + ":" + messageID
 	refsRaw, _ := json.Marshal(map[string]any{
 		"bindingId":   binding.ID,
@@ -1048,6 +1056,8 @@ func (s *Server) recordIMAttentionSignal(resolved resolvedChannelEventBinding, p
 		"mentionCount":   len(message.Mentions),
 		"senderOpenId":   message.SenderOpenID,
 		"multigentUser":  resolved.Identity.UserID,
+		"senderName":     senderDisplayName,
+		"senderEmail":    senderEmail,
 		"externalChatId": message.ChatID,
 		"messageType":    message.MessageType,
 		"attachments":    message.Attachments,
@@ -1179,6 +1189,10 @@ func imAttentionReason(message imbridge.IncomingMessage) string {
 }
 
 func formatIMAgentPrompt(providerID string, binding controldb.AgentChannelBinding, identity controldb.ExternalIdentity, message imbridge.IncomingMessage, text string) string {
+	return formatIMAgentPromptWithSender(providerID, binding, identity, "", message, text)
+}
+
+func formatIMAgentPromptWithSender(providerID string, binding controldb.AgentChannelBinding, identity controldb.ExternalIdentity, userLabel string, message imbridge.IncomingMessage, text string) string {
 	var b strings.Builder
 	b.WriteString("You received a message from a human through an external collaboration channel.\n")
 	b.WriteString("Handle it as a direct conversation with the user, using Multigent tools when useful.\n\n")
@@ -1187,6 +1201,9 @@ func formatIMAgentPrompt(providerID string, binding controldb.AgentChannelBindin
 	b.WriteString("- Agent: " + strings.TrimSpace(binding.ProjectID) + "/" + strings.TrimSpace(binding.AgentID) + "\n")
 	if username := strings.TrimSpace(identity.UserID); username != "" {
 		b.WriteString("- Multigent user: " + username + "\n")
+	}
+	if label := strings.TrimSpace(userLabel); label != "" && label != strings.TrimSpace(identity.UserID) {
+		b.WriteString("- Sender identity: " + label + "\n")
 	}
 	if chatID := strings.TrimSpace(message.ChatID); chatID != "" {
 		b.WriteString("- Chat ID: " + chatID + "\n")
@@ -1230,6 +1247,41 @@ func formatIMAgentPrompt(providerID string, binding controldb.AgentChannelBindin
 	b.WriteString(strings.TrimSpace(text))
 	b.WriteString("\n```\n")
 	return b.String()
+}
+
+func (s *Server) imIdentityDisplayLabel(identity controldb.ExternalIdentity) string {
+	userID := strings.TrimSpace(identity.UserID)
+	if userID == "" {
+		return ""
+	}
+	if s != nil && s.users != nil {
+		if user := s.users.GetUser(userID); user != nil {
+			return formatUserIdentityLabel(user.Username, user.DisplayName, user.Email)
+		}
+	}
+	return userID
+}
+
+func formatUserIdentityLabel(username, displayName, email string) string {
+	username = strings.TrimSpace(username)
+	displayName = strings.TrimSpace(displayName)
+	email = strings.TrimSpace(email)
+	label := username
+	if displayName != "" && displayName != username {
+		if label != "" {
+			label = displayName + " (" + label + ")"
+		} else {
+			label = displayName
+		}
+	}
+	if email != "" {
+		if label != "" {
+			label += " <" + email + ">"
+		} else {
+			label = email
+		}
+	}
+	return label
 }
 
 func incomingMessageFallbackText(message imbridge.IncomingMessage) string {
