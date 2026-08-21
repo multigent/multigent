@@ -589,17 +589,27 @@ func listLegacyMigrationAgents(root, project string) ([]*store.AgentEntry, error
 		if !entry.IsDir() || strings.HasPrefix(entry.Name(), ".") {
 			continue
 		}
-		metaPath := filepath.Join(base, entry.Name(), ".agencycli", "agent.yaml")
+		agentDir := filepath.Join(base, entry.Name())
+		metaPath := filepath.Join(agentDir, ".agencycli", "agent.yaml")
 		data, err := os.ReadFile(metaPath)
-		if errors.Is(err, os.ErrNotExist) {
-			continue
-		}
-		if err != nil {
+		if err != nil && !errors.Is(err, os.ErrNotExist) {
 			return nil, err
 		}
 		var meta entity.AgentMeta
-		if err := yaml.Unmarshal(data, &meta); err != nil {
-			return nil, fmt.Errorf("%s: %w", metaPath, err)
+		if err == nil {
+			if err := yaml.Unmarshal(data, &meta); err != nil {
+				return nil, fmt.Errorf("%s: %w", metaPath, err)
+			}
+		} else {
+			model, ok := inferMigrationAgentModelFromDir(agentDir)
+			if !ok {
+				continue
+			}
+			meta = entity.AgentMeta{
+				Name:    entry.Name(),
+				Project: project,
+				Model:   model,
+			}
 		}
 		if meta.Name == "" {
 			meta.Name = entry.Name()
@@ -610,6 +620,24 @@ func listLegacyMigrationAgents(root, project string) ([]*store.AgentEntry, error
 		agents = append(agents, &store.AgentEntry{Project: project, Name: entry.Name(), Meta: &meta})
 	}
 	return agents, nil
+}
+
+func inferMigrationAgentModelFromDir(agentDir string) (entity.AgentModel, bool) {
+	if fileExists(filepath.Join(agentDir, "AGENTS.md")) {
+		return entity.ModelCodex, true
+	}
+	if fileExists(filepath.Join(agentDir, "CLAUDE.md")) {
+		return entity.ModelClaudeCode, true
+	}
+	if fileExists(filepath.Join(agentDir, ".cursorrules")) {
+		return entity.ModelCursor, true
+	}
+	return "", false
+}
+
+func fileExists(path string) bool {
+	info, err := os.Stat(path)
+	return err == nil && !info.IsDir()
 }
 
 func applyAgentWorkerMigrationPlan(db controldb.Store, ts taskstore.Store, plan agentWorkerMigrationPlan) error {
