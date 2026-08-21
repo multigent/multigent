@@ -1,5 +1,38 @@
 # Changelog
 
+## [v2.0.1] - 2026-08-22
+
+### Added
+
+- Introduced the 2.x workspace-level Agent Worker model: agents now live at the workspace level and can participate in multiple projects through project memberships.
+- Added workspace-level agent and schedule surfaces, with project membership remaining as the project-specific role/context assignment.
+- Added Attention Signal handling for IM and other attention sources, including debounced wakeups and permission-aware signal context for agents.
+- Feishu/Lark collaboration channels now support workspace-agent binding, user identity mapping, group targets, markdown/text replies, reactions, attachments, interactive cards, and delegated workflow decisions.
+- Runtime agents can submit workflow human-review decisions through short-lived delegated user tokens without exposing those tokens in prompts.
+- Run telemetry now enriches legacy project/agent records with workspace agent metadata and supports workspace-agent, project, team, and role filtering.
+- Added internal E2E documentation for IM agent collaboration and permission testing.
+
+### Improved
+
+- Agent execution now better preserves 2.x identity, model account bindings, runtime-home permissions, and current `mga` runtime CLI materialization after migration or deployment.
+- Run pages now show the workspace agent identity instead of `project/agent` labels, and aggregate summaries by workspace agent across projects.
+- IM chat behavior now avoids system-injected branding text, uses native markdown/text formats where appropriate, and keeps cards for structured choices rather than every reply.
+- Runtime and scheduler prompts now treat IM events as attention signals instead of hardcoded trigger behavior.
+
+### Fixed
+
+- Fixed migrated agents losing model-account configuration.
+- Fixed Codex runtime failures caused by missing CLI path resolution or unreadable runtime config files.
+- Fixed workflow decision callbacks that needed task IDs or single delegated-token env vars, allowing multiple pending card interactions to be handled safely.
+- Fixed stale runtime `mga` usage by preferring the current server release's CLI binary.
+- Fixed run-page display issues where project context made workspace agents appear as different project-scoped agents.
+
+### Tested
+
+- Verified local GitHub sandbox IM collaboration flows, delegated card decision handling, workspace-level agent runs, and telemetry display.
+- Verified TapNow remote deployment on `35.243.103.114` with updated binaries and active systemd service.
+- Added regression coverage for delegated workflow decisions, attention wakeup env injection, runtime CLI path selection, and telemetry agent metadata enrichment.
+
 ## [v0.1.33] - 2026-08-20
 
 ### Added
