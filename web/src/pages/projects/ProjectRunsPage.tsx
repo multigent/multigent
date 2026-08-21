@@ -150,12 +150,6 @@ function agentFilterKey(row: Pick<RunRow | AgentSum, 'project' | 'agent' | 'agen
   return row.agentWorkerId || row.agentWorkerName || `${row.project}/${row.agent}`
 }
 
-function agentContextLabel(row: Pick<RunRow | AgentSum, 'project' | 'projectTitle' | 'role' | 'team'>) {
-  const parts = [row.team, row.role].filter(Boolean)
-  const context = parts.length > 0 ? parts.join(' / ') : ''
-  return context ? `${row.project} · ${context}` : row.project
-}
-
 function agentDetailPath(row: Pick<RunRow | AgentSum, 'agentWorkerId' | 'project' | 'agent'>) {
   if (row.agentWorkerId) return `/agents/${encodeURIComponent(row.agentWorkerId)}`
   return `/projects/${encodeURIComponent(row.project)}/members/${encodeURIComponent(row.agent)}`
@@ -193,6 +187,9 @@ export default function ProjectRunsPage() {
   const [filterKind, setFilterKind] = useState<string>('all')
   const [filterStatus, setFilterStatus] = useState<string>('all')
   const [filterAgent, setFilterAgent] = useState<string>(() => searchParams.get('agent') ?? 'all')
+  const [filterProject, setFilterProject] = useState<string>('all')
+  const [filterTeam, setFilterTeam] = useState<string>('all')
+  const [filterRole, setFilterRole] = useState<string>('all')
   const [runsPage, setRunsPage] = useState(1)
   const runsPerPage = 20
 
@@ -256,14 +253,41 @@ export default function ProjectRunsPage() {
     return Array.from(set).sort()
   }, [allRuns])
 
+  const projectOptions = useMemo(() => {
+    const set = new Set<string>()
+    for (const r of allRuns) {
+      if (r.project) set.add(r.project)
+    }
+    return Array.from(set).sort()
+  }, [allRuns])
+
+  const teamOptions = useMemo(() => {
+    const set = new Set<string>()
+    for (const r of allRuns) {
+      if (r.team) set.add(r.team)
+    }
+    return Array.from(set).sort()
+  }, [allRuns])
+
+  const roleOptions = useMemo(() => {
+    const set = new Set<string>()
+    for (const r of allRuns) {
+      if (r.role) set.add(r.role)
+    }
+    return Array.from(set).sort()
+  }, [allRuns])
+
   const filteredRuns = useMemo(() => {
     return allRuns.filter((r) => {
       if (filterKind !== 'all' && resolveKind(r) !== filterKind) return false
       if (filterStatus !== 'all' && r.status !== filterStatus) return false
       if (filterAgent !== 'all' && agentFilterKey(r) !== filterAgent) return false
+      if (filterProject !== 'all' && r.project !== filterProject) return false
+      if (filterTeam !== 'all' && r.team !== filterTeam) return false
+      if (filterRole !== 'all' && r.role !== filterRole) return false
       return true
     })
-  }, [allRuns, filterKind, filterStatus, filterAgent])
+  }, [allRuns, filterKind, filterStatus, filterAgent, filterProject, filterTeam, filterRole])
 
   const totalRunPages = Math.ceil(filteredRuns.length / runsPerPage)
   const pagedRuns = useMemo(() => {
@@ -273,7 +297,7 @@ export default function ProjectRunsPage() {
 
   useEffect(() => {
     setRunsPage(1)
-  }, [filterKind, filterStatus, filterAgent, windowKey])
+  }, [filterKind, filterStatus, filterAgent, filterProject, filterTeam, filterRole, windowKey])
 
   return (
     <div className="flex h-full flex-col overflow-hidden">
@@ -370,12 +394,11 @@ export default function ProjectRunsPage() {
               </thead>
               <tbody className="divide-y divide-neutral-100 dark:divide-zinc-800/40">
                 {sumState.data.byAgent.map((a) => (
-                  <tr key={`${a.project}/${a.agent}`} className="bg-white transition-colors duration-100 hover:bg-neutral-50/80 dark:bg-zinc-900/20 dark:hover:bg-zinc-800/30">
+                  <tr key={agentFilterKey(a)} className="bg-white transition-colors duration-100 hover:bg-neutral-50/80 dark:bg-zinc-900/20 dark:hover:bg-zinc-800/30">
                     <td className="whitespace-nowrap px-4 py-3 text-center">
                       <Link to={agentDetailPath(a)} className="text-sm font-medium text-neutral-800 transition-colors hover:text-sky-700 hover:underline dark:text-zinc-200 dark:hover:text-sky-300">
                         {agentDisplayLabel(a)}
                       </Link>
-                      <p className="mt-0.5 text-xs text-neutral-400 dark:text-zinc-500">{agentContextLabel(a)}</p>
                     </td>
                     <td className="px-4 py-3 text-center text-sm tabular-nums text-neutral-700 dark:text-zinc-400">{a.runs}</td>
                     <td className="px-4 py-3 text-center text-sm tabular-nums text-neutral-700 dark:text-zinc-400">{fmtNum(totalTokens(a.inputTokens, a.outputTokens, a.cacheReadTokens))}</td>
@@ -419,6 +442,30 @@ export default function ProjectRunsPage() {
                 ))}
               </select>
             )}
+            {projectOptions.length > 1 && (
+              <select value={filterProject} onChange={(e) => setFilterProject(e.target.value)} className={filterSelect}>
+                <option value="all">{t('runs.filterProject')}</option>
+                {projectOptions.map((p) => (
+                  <option key={p} value={p}>{p}</option>
+                ))}
+              </select>
+            )}
+            {teamOptions.length > 1 && (
+              <select value={filterTeam} onChange={(e) => setFilterTeam(e.target.value)} className={filterSelect}>
+                <option value="all">{t('runs.filterTeam')}</option>
+                {teamOptions.map((team) => (
+                  <option key={team} value={team}>{team}</option>
+                ))}
+              </select>
+            )}
+            {roleOptions.length > 1 && (
+              <select value={filterRole} onChange={(e) => setFilterRole(e.target.value)} className={filterSelect}>
+                <option value="all">{t('runs.filterRole')}</option>
+                {roleOptions.map((role) => (
+                  <option key={role} value={role}>{role}</option>
+                ))}
+              </select>
+            )}
           </div>
         </div>
         {runsState.status === 'ok' && runsState.data.available && filteredRuns.length === 0 && (
@@ -450,7 +497,6 @@ export default function ProjectRunsPage() {
                       <td className="whitespace-nowrap px-4 py-3 text-center text-[13px] text-neutral-500 dark:text-zinc-500">{fmt(r.startedAt)}</td>
                       <td className="whitespace-nowrap px-4 py-3 text-center">
                         <span className="text-[13px] font-medium text-neutral-800 dark:text-zinc-200">{agentDisplayLabel(r)}</span>
-                        <p className="mt-0.5 text-xs text-neutral-400 dark:text-zinc-500">{agentContextLabel(r)}</p>
                       </td>
                       <td className="whitespace-nowrap px-4 py-3 text-center">
                         <span className={cn('rounded-full px-2 py-0.5 text-[11px] font-semibold', kl.cls)}>
@@ -521,7 +567,6 @@ function RunDetailModal({ run, onClose }: { run: RunRow; onClose: () => void }) 
           <div className="flex items-center gap-3">
             <span className={cn('rounded-full px-2 py-0.5 text-[11px] font-semibold', kl.cls)}>{kl.text}</span>
             <span className="text-sm font-medium text-neutral-900 dark:text-zinc-100">{agentDisplayLabel(run)}</span>
-            <span className="text-xs text-neutral-400 dark:text-zinc-500">{agentContextLabel(run)}</span>
             <span className={cn('text-sm font-medium', statusCls[run.status] ?? 'text-neutral-600')}>{t(`runs.status.${run.status}`, { defaultValue: run.status })}</span>
           </div>
           <button type="button" onClick={onClose} className="rounded-md p-1 text-neutral-400 transition-colors hover:bg-neutral-100 hover:text-neutral-700 dark:text-zinc-500 dark:hover:bg-zinc-800 dark:hover:text-zinc-300">

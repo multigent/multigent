@@ -97,6 +97,8 @@ func summaryJSON(sum telemetry.Summary) map[string]any {
 
 func (s *Server) agentSummariesJSON(in []telemetry.AgentSummary, meta telemetryAgentMetaMap) []map[string]any {
 	out := make([]map[string]any, 0, len(in))
+	merged := make(map[string]map[string]any)
+	order := make([]string, 0, len(in))
 	for _, a := range in {
 		item := map[string]any{
 			"project":         a.Project,
@@ -116,9 +118,43 @@ func (s *Server) agentSummariesJSON(in []telemetry.AgentSummary, meta telemetryA
 			"wallDurationMs":  a.WallDuration.Milliseconds(),
 		}
 		s.applyTelemetryAgentMetadata(item, meta, a.Project, a.Agent, "", "")
-		out = append(out, item)
+		key := strings.TrimSpace(stringFromAny(item["agentWorkerId"]))
+		if key == "" {
+			key = telemetryProjectAgentKey(a.Project, a.Agent)
+		}
+		if existing, ok := merged[key]; ok {
+			addInt64Field(existing, "runs", a.Runs)
+			addInt64Field(existing, "task", a.Task)
+			addInt64Field(existing, "exec", a.Exec)
+			addInt64Field(existing, "inputTokens", a.InputTokens)
+			addInt64Field(existing, "outputTokens", a.OutputTokens)
+			addInt64Field(existing, "cacheReadTokens", a.CacheReadTokens)
+			addFloat64Field(existing, "costUSD", a.CostUSD)
+			addInt64Field(existing, "runsWithCost", a.RunsWithCost)
+			addInt64Field(existing, "success", a.Success)
+			addInt64Field(existing, "failed", a.Failed)
+			addInt64Field(existing, "awaiting", a.Awaiting)
+			addInt64Field(existing, "other", a.Other)
+			addInt64Field(existing, "wallDurationMs", a.WallDuration.Milliseconds())
+			continue
+		}
+		merged[key] = item
+		order = append(order, key)
+	}
+	for _, key := range order {
+		out = append(out, merged[key])
 	}
 	return out
+}
+
+func addInt64Field(row map[string]any, key string, delta int64) {
+	current, _ := row[key].(int64)
+	row[key] = current + delta
+}
+
+func addFloat64Field(row map[string]any, key string, delta float64) {
+	current, _ := row[key].(float64)
+	row[key] = current + delta
 }
 
 func (s *Server) handleTelemetryRuns(w http.ResponseWriter, r *http.Request) {

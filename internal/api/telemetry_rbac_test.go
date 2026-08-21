@@ -10,6 +10,7 @@ import (
 	"testing"
 	"time"
 
+	controldb "github.com/multigent/multigent/internal/db"
 	"github.com/multigent/multigent/internal/telemetry"
 )
 
@@ -96,6 +97,21 @@ func TestTelemetryRunsIncludeAgentWorkerMetadata(t *testing.T) {
 	s, workspaceID := newConnectionGrantPolicyServer(t)
 	seedSampleAgentsForTest(t, s, workspaceID)
 	seedTelemetryRun(t, s, "sample", "pm", "pm log")
+	now := time.Now().UTC().Format(time.RFC3339)
+	if err := s.controlDB.UpsertProjectMembership(controldb.ProjectMembership{
+		ID:          "pm-other-pm",
+		WorkspaceID: workspaceID,
+		ProjectID:   "other",
+		MemberType:  "agent_worker",
+		MemberID:    "aw-pm",
+		Title:       "pm",
+		Role:        "delivery-manager",
+		CreatedAt:   now,
+		UpdatedAt:   now,
+	}); err != nil {
+		t.Fatalf("seed second membership: %v", err)
+	}
+	seedTelemetryRun(t, s, "other", "pm", "other pm log")
 
 	rec := httptest.NewRecorder()
 	s.handleTelemetryRuns(rec, providerTestRequest(http.MethodGet, "/api/v1/telemetry/runs?allTime=1", "admin", nil))
@@ -108,8 +124,8 @@ func TestTelemetryRunsIncludeAgentWorkerMetadata(t *testing.T) {
 	if err := json.Unmarshal(rec.Body.Bytes(), &body); err != nil {
 		t.Fatalf("decode runs: %v", err)
 	}
-	if len(body.Runs) != 1 {
-		t.Fatalf("expected one run, got %#v", body.Runs)
+	if len(body.Runs) != 2 {
+		t.Fatalf("expected two runs, got %#v", body.Runs)
 	}
 	run := body.Runs[0]
 	if run["agentWorkerId"] != "aw-pm" || run["agentDisplayName"] != "pm" {
@@ -127,7 +143,7 @@ func TestTelemetryRunsIncludeAgentWorkerMetadata(t *testing.T) {
 	if err := json.Unmarshal(sumRec.Body.Bytes(), &sumBody); err != nil {
 		t.Fatalf("decode summary: %v", err)
 	}
-	if len(sumBody.ByAgent) != 1 || sumBody.ByAgent[0]["agentWorkerId"] != "aw-pm" {
+	if len(sumBody.ByAgent) != 1 || sumBody.ByAgent[0]["agentWorkerId"] != "aw-pm" || sumBody.ByAgent[0]["runs"] != float64(2) {
 		t.Fatalf("summary missing agent worker metadata: %#v", sumBody.ByAgent)
 	}
 }
