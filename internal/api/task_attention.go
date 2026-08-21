@@ -44,7 +44,7 @@ func (s *Server) recordTaskAttentionSignal(workspaceID, project, agent string, t
 		refs["currentAssigneeId"] = run.CurrentAssigneeID
 		refs["currentAssigneeMembershipId"] = run.CurrentAssigneeMembershipID
 	}
-	payloadRaw, _ := json.Marshal(map[string]any{
+	payload := trustedSystemAttentionPayload(map[string]any{
 		"title":       task.Title,
 		"description": task.Description,
 		"prompt":      task.Prompt,
@@ -78,7 +78,7 @@ func (s *Server) recordTaskAttentionSignal(workspaceID, project, agent string, t
 		ActorID:       "",
 		Summary:       trimForIM(summary, 240),
 		RefsJSON:      string(refsRaw),
-		PayloadJSON:   string(payloadRaw),
+		PayloadJSON:   attentionPayloadJSON(payload),
 		Status:        "pending",
 		CreatedAt:     now.Format(time.RFC3339),
 		ExpiresAt:     now.Add(14 * 24 * time.Hour).Format(time.RFC3339),

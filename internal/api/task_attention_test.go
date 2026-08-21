@@ -46,6 +46,10 @@ func TestRecordTaskAttentionSignalCreatesAndDedupes(t *testing.T) {
 	if signals[0].SourceKind != "task" || signals[0].SourceID != task.ID || signals[0].SourceChannel != "project:sample" {
 		t.Fatalf("unexpected signal source: %+v", signals[0])
 	}
+	trust := attentionSignalTrust(signals[0])
+	if trust["trustLevel"] != "system" || trust["actorAuthorized"] != true || trust["instructionsTrusted"] != true {
+		t.Fatalf("unexpected task trust context: %#v", trust)
+	}
 }
 
 func TestRecordTaskAttentionSignalSkipsDisabledMembership(t *testing.T) {

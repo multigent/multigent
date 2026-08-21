@@ -108,6 +108,29 @@ func (s *Server) handlePatchAttentionSignal(w http.ResponseWriter, r *http.Reque
 		s.serverError(w, err)
 		return
 	}
+	cur := s.currentUser(r)
+	s.auditLog(auditLogInput{
+		WorkspaceID:  workspaceID,
+		ActorType:    "user",
+		ActorID:      cur.Username,
+		Action:       "attention.status_updated",
+		ResourceType: "attention_signal",
+		ResourceID:   id,
+		Summary:      "Updated attention signal status",
+		Before: map[string]any{
+			"status": signal.Status,
+		},
+		After: map[string]any{
+			"status":        status,
+			"agentWorkerId": signal.AgentWorkerID,
+			"sourceKind":    signal.SourceKind,
+			"reason":        signal.Reason,
+			"actorType":     signal.ActorType,
+			"actorId":       signal.ActorID,
+			"trust":         attentionSignalTrust(signal),
+		},
+		Request: r,
+	})
 	signal, _, err = s.controlDB.AttentionSignalByID(workspaceID, id)
 	if err != nil {
 		s.serverError(w, err)
@@ -149,6 +172,7 @@ func attentionSignalResponse(signal controldb.AttentionSignal) map[string]any {
 		"summary":       signal.Summary,
 		"refs":          decodeJSONValue(signal.RefsJSON, map[string]any{}),
 		"payload":       decodeJSONValue(signal.PayloadJSON, map[string]any{}),
+		"trust":         attentionSignalTrust(signal),
 		"resultRef":     signal.ResultRef,
 		"status":        signal.Status,
 		"createdAt":     signal.CreatedAt,

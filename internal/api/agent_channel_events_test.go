@@ -819,6 +819,13 @@ func TestRecordIMAttentionSignalPersistsSignalAndCursor(t *testing.T) {
 	if len(signals) != 1 || signals[0].DedupeKey != "im:feishu:om_one" || signals[0].Reason != "im_direct_message" {
 		t.Fatalf("unexpected signals: %+v", signals)
 	}
+	trust := attentionSignalTrust(signals[0])
+	if trust["trustLevel"] != "authenticated_user" || trust["actorAuthenticated"] != true || trust["actorAuthorized"] != true {
+		t.Fatalf("unexpected IM trust context: %#v", trust)
+	}
+	if trust["identitySubject"] != "owner" || trust["authorizationScope"] != "sample/pm" {
+		t.Fatalf("unexpected IM trust identity/scope: %#v", trust)
+	}
 	cursor, ok, err := s.controlDB.AttentionCursorBySource(workspaceID, "aw-pm", "im_message", "im:feishu:p2p:oc_one:user:owner")
 	if err != nil || !ok {
 		t.Fatalf("cursor ok=%v err=%v", ok, err)

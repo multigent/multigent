@@ -121,6 +121,28 @@ func (s *Server) handleRuntimePatchAttentionSignal(w http.ResponseWriter, r *htt
 		s.serverError(w, err)
 		return
 	}
+	s.auditLog(auditLogInput{
+		WorkspaceID:  principal.WorkspaceID,
+		ActorType:    "agent",
+		ActorID:      principal.Project + "/" + principal.Agent,
+		Action:       "attention.status_updated",
+		ResourceType: "attention_signal",
+		ResourceID:   id,
+		Summary:      "Runtime agent updated attention signal status",
+		Before: map[string]any{
+			"status": signal.Status,
+		},
+		After: map[string]any{
+			"status":        status,
+			"agentWorkerId": signal.AgentWorkerID,
+			"sourceKind":    signal.SourceKind,
+			"reason":        signal.Reason,
+			"actorType":     signal.ActorType,
+			"actorId":       signal.ActorID,
+			"trust":         attentionSignalTrust(signal),
+		},
+		Request: r,
+	})
 	updated, _, err := s.controlDB.AttentionSignalByID(principal.WorkspaceID, id)
 	if err != nil {
 		s.serverError(w, err)
