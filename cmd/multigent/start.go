@@ -14,6 +14,7 @@ import (
 	"runtime"
 	"strings"
 	"syscall"
+	"time"
 
 	"github.com/multigent/multigent/internal/api"
 	"github.com/multigent/multigent/internal/daemon"
@@ -31,6 +32,7 @@ func newStartCmd() *cobra.Command {
 		logLevel     string
 		logFormat    string
 		logMaxSizeMB int
+		shutdownWait time.Duration
 	)
 
 	cmd := &cobra.Command{
@@ -64,6 +66,9 @@ remote server. For local development with hot-reload, use
 			}
 			if !cmd.Flags().Changed("api-key") && apiKey == "" {
 				apiKey = effectiveAPIKey(cfg)
+			}
+			if !cmd.Flags().Changed("shutdown-timeout") {
+				shutdownWait = effectiveShutdownTimeout(shutdownWait)
 			}
 			logCloser, err := initServiceLogger(resolveServiceLogOptions(cfg, logFile, logLevel, logFormat, logMaxSizeMB, cmd.Flags().Changed), "web")
 			if err != nil {
@@ -114,16 +119,29 @@ remote server. For local development with hot-reload, use
 
 			quit := make(chan os.Signal, 1)
 			signal.Notify(quit, syscall.SIGINT, syscall.SIGTERM)
+			shutdownStarted := make(chan struct{})
+			shutdownDone := make(chan struct{})
 			go func() {
-				<-quit
-				log.Println("shutting down — stopping schedulers…")
-				srv.Shutdown()
-				_ = httpSrv.Shutdown(context.Background())
+				sig := <-quit
+				close(shutdownStarted)
+				log.Printf("received %s — draining HTTP and waiting up to %s for active agents", sig, shutdownWait)
+				httpCtx, cancelHTTP := context.WithTimeout(context.Background(), 15*time.Second)
+				_ = httpSrv.Shutdown(httpCtx)
+				cancelHTTP()
+				srvCtx, cancelSrv := context.WithTimeout(context.Background(), shutdownWait)
+				srv.ShutdownGracefully(srvCtx)
+				cancelSrv()
+				close(shutdownDone)
 			}()
 
 			err = httpSrv.ListenAndServe()
 			if err != nil && err != http.ErrServerClosed {
 				return fmt.Errorf("http server: %w", err)
+			}
+			select {
+			case <-shutdownStarted:
+				<-shutdownDone
+			default:
 			}
 			return nil
 		},
@@ -136,7 +154,20 @@ remote server. For local development with hot-reload, use
 	cmd.Flags().StringVar(&logLevel, "log-level", "", "log level: debug|info|warn|error")
 	cmd.Flags().StringVar(&logFormat, "log-format", "", "log format: json|text")
 	cmd.Flags().IntVar(&logMaxSizeMB, "log-max-size", 0, "max log file size in MB")
+	cmd.Flags().DurationVar(&shutdownWait, "shutdown-timeout", 10*time.Minute, "maximum time to wait for active agent runs during graceful shutdown")
 	return cmd
+}
+
+func effectiveShutdownTimeout(fallback time.Duration) time.Duration {
+	if raw := strings.TrimSpace(os.Getenv("MULTIGENT_SHUTDOWN_TIMEOUT")); raw != "" {
+		if d, err := time.ParseDuration(raw); err == nil && d >= 0 {
+			return d
+		}
+	}
+	if fallback < 0 {
+		return 0
+	}
+	return fallback
 }
 
 func logDockerReadiness() {

@@ -2070,6 +2070,8 @@ useful for testing and for agent-to-agent wakeup from inside a task.`,
 
 			ts := mustTaskStore(root)
 			s := mustStore(root)
+			runCtx, stopSignals := signal.NotifyContext(context.Background(), syscall.SIGINT, syscall.SIGTERM)
+			defer stopSignals()
 
 			hb, err := loadSchedulerHeartbeat(root, project, agentName, ts)
 			if err != nil {
@@ -2094,7 +2096,11 @@ useful for testing and for agent-to-agent wakeup from inside a task.`,
 			defer func() {
 				if latest, err := loadSchedulerHeartbeat(root, project, agentName, ts); err == nil && latest.LastWakeupStatus == "running" {
 					latest.PID = 0
-					latest.LastWakeupStatus = "done"
+					if runCtx.Err() != nil {
+						latest.LastWakeupStatus = "interrupted"
+					} else {
+						latest.LastWakeupStatus = "done"
+					}
 					_ = saveSchedulerHeartbeat(root, project, agentName, ts, latest)
 				}
 			}()
@@ -2105,10 +2111,15 @@ useful for testing and for agent-to-agent wakeup from inside a task.`,
 				fmt.Printf("[wakeup %s/%s] cron: enqueued %d task(s)\n", project, agentName, n)
 			}
 
-			cycleErr := runAllPendingTasks(context.Background(), root, project, agentName, ts, s, hb)
+			cycleErr := runAllPendingTasks(runCtx, root, project, agentName, ts, s, hb)
 
 			hb, _ = loadSchedulerHeartbeat(root, project, agentName, ts)
 			hb.PID = 0
+			if runCtx.Err() != nil {
+				hb.LastWakeupStatus = "interrupted"
+				_ = saveSchedulerHeartbeat(root, project, agentName, ts, hb)
+				return fmt.Errorf("[wakeup %s/%s] interrupted: %w", project, agentName, runCtx.Err())
+			}
 			if cycleErr != nil {
 				hb.LastWakeupStatus = "failed"
 				_ = saveSchedulerHeartbeat(root, project, agentName, ts, hb)

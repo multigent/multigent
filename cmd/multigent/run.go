@@ -1,7 +1,10 @@
 package main
 
 import (
+	"context"
 	"fmt"
+	"os/signal"
+	"syscall"
 	"time"
 
 	"github.com/multigent/multigent/internal/entity"
@@ -129,13 +132,27 @@ This is a one-shot manual trigger. For recurring automated runs, use
 					"sessionId": hb.SessionID,
 				})
 			}
-			result, err := r.RunTask(project, agentName, task, hb.SessionID)
+			runCtx, stopSignals := signal.NotifyContext(context.Background(), syscall.SIGINT, syscall.SIGTERM)
+			defer stopSignals()
+			result, err := r.RunTaskWithContext(runCtx, project, agentName, task, hb.SessionID)
 			if err != nil {
 				if handled, handleErr := taskHandledDuringRun(root, ts, project, agentName, task.ID, runResultLogPath(result)); handleErr != nil {
 					return handleErr
 				} else if handled {
 					fmt.Printf("↪ Task %s was updated by runtime workflow\n", task.ID)
 					return nil
+				}
+				if runCtx.Err() != nil {
+					task.Status = entity.TaskStatusPending
+					task.StartedAt = nil
+					task.FinishedAt = nil
+					task.LastError = fmt.Sprintf("run interrupted: %v", runCtx.Err())
+					task.UpdatedAt = time.Now().UTC()
+					_ = ts.UpdateTask(project, agentName, task)
+					if interactionLease != nil {
+						interactionLease.Fail(task.LastError)
+					}
+					return runCtx.Err()
 				}
 				if interactionLease != nil {
 					interactionLease.Fail(err.Error())

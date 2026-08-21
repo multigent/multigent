@@ -256,6 +256,14 @@ func (s *Server) runtimeAPIURLForInternalEvent() string {
 
 // Shutdown stops all managed scheduler processes and the trigger poller.
 func (s *Server) Shutdown() {
+	ctx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
+	defer cancel()
+	s.ShutdownGracefully(ctx)
+}
+
+// ShutdownGracefully first stops new event sources, then waits for active
+// agent runs to finish before falling back to force cleanup when ctx expires.
+func (s *Server) ShutdownGracefully(ctx context.Context) {
 	if s.connectionHealthCancel != nil {
 		s.connectionHealthCancel()
 	}
@@ -264,7 +272,15 @@ func (s *Server) Shutdown() {
 	}
 	s.stopAgentIMBridges()
 	s.triggers.StopPoller()
-	s.sched.Cleanup()
+	if ctx == nil {
+		ctx = context.Background()
+	}
+	if running := s.sched.GracefulShutdown(ctx); len(running) > 0 {
+		for _, status := range running {
+			log.Printf("graceful shutdown timed out with active agent process key=%s project=%s agent=%s mode=%s pid=%d", status.Key, status.Project, status.Agent, status.Mode, status.PID)
+		}
+		s.sched.Cleanup()
+	}
 	_ = s.controlDB.Close()
 }
 

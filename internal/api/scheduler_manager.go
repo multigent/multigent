@@ -37,6 +37,8 @@ type schedulerProcess struct {
 const (
 	schedulerModeLocal       = "local"
 	schedulerModeRuntimeNode = "runtime-node"
+	schedulerModeWakeup      = "wakeup"
+	schedulerModeManualTask  = "manual-task"
 )
 
 type SchedulerManager struct {
@@ -66,19 +68,7 @@ func schedKey(project, agent string) string {
 }
 
 func (m *SchedulerManager) Start(project, agent string) error {
-	m.mu.Lock()
-	defer m.mu.Unlock()
-
 	key := schedKey(project, agent)
-	if p, ok := m.procs[key]; ok {
-		select {
-		case <-p.doneCh:
-			// process already exited, allow restart
-		default:
-			return fmt.Errorf("scheduler already running for %q", key)
-		}
-	}
-
 	args := []string{"--dir", m.root, "scheduler", "start"}
 	if project != "" {
 		args = append(args, "--project", project)
@@ -92,13 +82,38 @@ func (m *SchedulerManager) Start(project, agent string) error {
 	cmd.Stderr = os.Stderr
 	setProcGroup(cmd)
 
+	_, err := m.StartManagedCommand(key, project, agent, schedulerModeLocal, cmd)
+	return err
+}
+
+func (m *SchedulerManager) StartManagedCommand(key, project, agent, mode string, cmd *exec.Cmd) (int, error) {
+	if cmd == nil {
+		return 0, fmt.Errorf("command is nil")
+	}
+	key = strings.TrimSpace(key)
+	if key == "" {
+		key = schedKey(project, agent)
+	}
+	if strings.TrimSpace(mode) == "" {
+		mode = schedulerModeLocal
+	}
+	m.mu.Lock()
+	defer m.mu.Unlock()
+	if p, ok := m.procs[key]; ok {
+		select {
+		case <-p.doneCh:
+			// process already exited, allow restart
+		default:
+			return 0, fmt.Errorf("scheduler already running for %q", key)
+		}
+	}
 	if err := cmd.Start(); err != nil {
-		return fmt.Errorf("start scheduler: %w", err)
+		return 0, fmt.Errorf("start managed command: %w", err)
 	}
 
 	proc := &schedulerProcess{
 		cmd:       cmd,
-		mode:      schedulerModeLocal,
+		mode:      mode,
 		project:   project,
 		agent:     agent,
 		startedAt: time.Now(),
@@ -115,7 +130,11 @@ func (m *SchedulerManager) Start(project, agent string) error {
 	}()
 
 	m.procs[key] = proc
-	return nil
+	pid := 0
+	if cmd.Process != nil {
+		pid = cmd.Process.Pid
+	}
+	return pid, nil
 }
 
 func (m *SchedulerManager) StartLoop(project, agent, mode string, loop func(context.Context)) error {
@@ -245,6 +264,21 @@ func (m *SchedulerManager) Status() []schedStatus {
 	return out
 }
 
+func (m *SchedulerManager) WaitKey(key string) error {
+	m.mu.Lock()
+	proc, ok := m.procs[strings.TrimSpace(key)]
+	m.mu.Unlock()
+	if !ok {
+		return fmt.Errorf("no scheduler running for %q", key)
+	}
+	<-proc.doneCh
+	proc.mu.Lock()
+	err := proc.exitErr
+	proc.mu.Unlock()
+	m.pruneStopped()
+	return err
+}
+
 type desiredSchedulerSpec struct {
 	Key     string `json:"key,omitempty"`
 	Project string `json:"project,omitempty"`
@@ -348,6 +382,65 @@ func (m *SchedulerManager) Cleanup() {
 
 	for _, k := range keys {
 		_ = m.StopKey(k)
+	}
+}
+
+func (m *SchedulerManager) GracefulShutdown(ctx context.Context) []schedStatus {
+	m.mu.Lock()
+	procs := make(map[string]*schedulerProcess, len(m.procs))
+	for key, proc := range m.procs {
+		procs[key] = proc
+	}
+	m.mu.Unlock()
+
+	for _, proc := range procs {
+		if proc.cancel != nil {
+			proc.cancel()
+			continue
+		}
+		// Long-lived scheduler commands should stop accepting new work. One-shot
+		// manual runs and wakeups are left alone so the active agent can finish.
+		if proc.mode == schedulerModeLocal && proc.cmd != nil && proc.cmd.Process != nil {
+			_ = proc.cmd.Process.Signal(syscall.SIGTERM)
+		}
+	}
+
+	ticker := time.NewTicker(250 * time.Millisecond)
+	defer ticker.Stop()
+	for {
+		running := m.runningStatuses()
+		if len(running) == 0 {
+			m.pruneStopped()
+			return nil
+		}
+		select {
+		case <-ctx.Done():
+			return running
+		case <-ticker.C:
+		}
+	}
+}
+
+func (m *SchedulerManager) runningStatuses() []schedStatus {
+	statuses := m.Status()
+	running := make([]schedStatus, 0, len(statuses))
+	for _, status := range statuses {
+		if status.Running {
+			running = append(running, status)
+		}
+	}
+	return running
+}
+
+func (m *SchedulerManager) pruneStopped() {
+	m.mu.Lock()
+	defer m.mu.Unlock()
+	for key, proc := range m.procs {
+		select {
+		case <-proc.doneCh:
+			delete(m.procs, key)
+		default:
+		}
 	}
 }
 
@@ -523,16 +616,14 @@ func (s *Server) handleSchedulerWakeup(w http.ResponseWriter, r *http.Request) {
 	cmd.Stdout = os.Stdout
 	cmd.Stderr = os.Stderr
 	setProcGroup(cmd)
-	if err := cmd.Start(); err != nil {
+	procKey := fmt.Sprintf("wakeup/%s/%s/%d", project, agent, time.Now().UnixNano())
+	pid, err := s.sched.StartManagedCommand(procKey, project, agent, schedulerModeWakeup, cmd)
+	if err != nil {
 		s.jsonErrorCode(w, http.StatusInternalServerError, ErrCodeSchedulerWakeupFailed, fmt.Sprintf("start wakeup failed: %v", err))
 		return
 	}
-	pid := 0
-	if cmd.Process != nil {
-		pid = cmd.Process.Pid
-	}
 	go func() {
-		if err := cmd.Wait(); err != nil {
+		if err := s.sched.WaitKey(procKey); err != nil {
 			log.Printf("scheduler wakeup %s/%s exited with error: %v", project, agent, err)
 		}
 	}()
@@ -643,13 +734,11 @@ func (s *Server) handleStartProjectTask(w http.ResponseWriter, r *http.Request) 
 	cmd.Stdout = os.Stdout
 	cmd.Stderr = os.Stderr
 	setProcGroup(cmd)
-	if err := cmd.Start(); err != nil {
+	procKey := fmt.Sprintf("manual-task/%s/%s/%s", project, agent, task.ID)
+	pid, err := s.sched.StartManagedCommand(procKey, project, agent, schedulerModeManualTask, cmd)
+	if err != nil {
 		s.jsonErrorCode(w, http.StatusInternalServerError, ErrCodeSchedulerWakeupFailed, fmt.Sprintf("start task run failed: %v", err))
 		return
-	}
-	pid := 0
-	if cmd.Process != nil {
-		pid = cmd.Process.Pid
 	}
 	now := time.Now().UTC()
 	hb.LastWakeup = &now
@@ -657,7 +746,7 @@ func (s *Server) handleStartProjectTask(w http.ResponseWriter, r *http.Request) 
 	hb.PID = pid
 	_ = s.saveSchedulerTargetHeartbeat(workspaceID, target, hb)
 	go func() {
-		if err := cmd.Wait(); err != nil {
+		if err := s.sched.WaitKey(procKey); err != nil {
 			log.Printf("manual task run %s/%s task=%s exited with error: %v", project, agent, task.ID, err)
 		}
 		if hb2, err := s.loadSchedulerTargetHeartbeat(workspaceID, target); err == nil && hb2 != nil && hb2.PID == pid {
