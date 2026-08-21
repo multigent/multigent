@@ -75,6 +75,7 @@ func (s *Server) handleAgentWorkers(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	membershipsByWorker := make(map[string][]controldb.ProjectMembership, len(workers))
+	roleTeams := s.projectMembershipRoleTeams()
 	membershipTeams := make(map[string]string, len(memberships))
 	workersByID := make(map[string]controldb.AgentWorker, len(workers))
 	for _, worker := range workers {
@@ -83,7 +84,7 @@ func (s *Server) handleAgentWorkers(w http.ResponseWriter, r *http.Request) {
 	for _, membership := range memberships {
 		membershipsByWorker[membership.MemberID] = append(membershipsByWorker[membership.MemberID], membership)
 		if worker, ok := workersByID[membership.MemberID]; ok {
-			membershipTeams[membership.ID] = s.projectMembershipTeam(membership, worker)
+			membershipTeams[membership.ID] = s.projectMembershipTeam(membership, worker, roleTeams)
 		}
 	}
 	if !s.canAdminWorkspace(r, workspaceID) {
@@ -177,9 +178,10 @@ func (s *Server) handleAgentWorker(w http.ResponseWriter, r *http.Request) {
 		s.serverError(w, err)
 		return
 	}
+	roleTeams := s.projectMembershipRoleTeams()
 	membershipTeams := make(map[string]string, len(memberships))
 	for _, membership := range memberships {
-		membershipTeams[membership.ID] = s.projectMembershipTeam(membership, worker)
+		membershipTeams[membership.ID] = s.projectMembershipTeam(membership, worker, roleTeams)
 	}
 	if !s.canAdminWorkspace(r, workspaceID) {
 		memberships = s.visibleAgentWorkerMembershipsForRequest(r, worker, memberships)
@@ -581,8 +583,42 @@ func projectMembershipResponses(memberships []controldb.ProjectMembership, worke
 	return out
 }
 
-func (s *Server) projectMembershipTeam(membership controldb.ProjectMembership, worker controldb.AgentWorker) string {
-	return ""
+func (s *Server) projectMembershipRoleTeams() map[string]string {
+	teams, err := s.st.ListTeams()
+	if err != nil {
+		return nil
+	}
+	out := make(map[string]string)
+	for _, team := range teams {
+		if team == nil || strings.TrimSpace(team.Path) == "" {
+			continue
+		}
+		roles, err := s.st.ListRoles(team.Path)
+		if err != nil {
+			continue
+		}
+		for _, role := range roles {
+			if role == nil {
+				continue
+			}
+			name := strings.TrimSpace(role.Name)
+			if name == "" {
+				continue
+			}
+			if _, exists := out[name]; !exists {
+				out[name] = team.Path
+			}
+		}
+	}
+	return out
+}
+
+func (s *Server) projectMembershipTeam(membership controldb.ProjectMembership, worker controldb.AgentWorker, roleTeams map[string]string) string {
+	role := strings.TrimSpace(membership.Role)
+	if role == "" || len(roleTeams) == 0 {
+		return ""
+	}
+	return strings.TrimSpace(roleTeams[role])
 }
 
 func projectMembershipResponse(membership controldb.ProjectMembership, worker *controldb.AgentWorker) map[string]any {

@@ -262,9 +262,9 @@ function AgentCard({ agent, onOpen }: { agent: AgentWorker; onOpen: () => void }
   const skills = Array.isArray(agent.skills) ? agent.skills : []
   const memberships = agent.memberships ?? []
   const membershipLabels = memberships
-    .map(member => [member.team, member.role].filter(Boolean).join(' / ') || member.projectId || member.title || '')
+    .map(member => [member.team, member.role].filter(Boolean).join(' / '))
     .filter(Boolean)
-  const primaryMembershipLabel = membershipLabels.slice(0, 2).join(' · ')
+  const primaryMembershipLabel = membershipLabels.slice(0, 2).join(' · ') || t('agents.unassignedRole')
   return (
     <div
       role="button"

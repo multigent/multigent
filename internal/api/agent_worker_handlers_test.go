@@ -8,6 +8,7 @@ import (
 	"testing"
 
 	controldb "github.com/multigent/multigent/internal/db"
+	"github.com/multigent/multigent/internal/entity"
 )
 
 func TestAgentWorkerAndProjectMembershipHandlers(t *testing.T) {
@@ -62,6 +63,12 @@ func TestAgentWorkerAndProjectMembershipHandlers(t *testing.T) {
 	if len(listed.Agents) != 1 || listed.Agents[0]["name"] != "nova" {
 		t.Fatalf("unexpected workers: %#v", listed.Agents)
 	}
+	if err := s.st.SaveTeam("product", &entity.Team{Name: "product"}); err != nil {
+		t.Fatalf("save team: %v", err)
+	}
+	if err := s.st.SaveRole("product", "project-manager", &entity.Role{Name: "project-manager"}); err != nil {
+		t.Fatalf("save role: %v", err)
+	}
 
 	memberReq := providerTestRequest(http.MethodPost, "/api/v1/projects/sample/memberships", "admin", projectMembershipRequest{
 		WorkerID:      workerID,
@@ -98,6 +105,22 @@ func TestAgentWorkerAndProjectMembershipHandlers(t *testing.T) {
 	}
 	if _, ok := projectMembers.Memberships[0]["agent"].(map[string]any); !ok {
 		t.Fatalf("membership did not include agent: %#v", projectMembers.Memberships[0])
+	}
+	listRec = httptest.NewRecorder()
+	s.handleAgentWorkers(listRec, listReq)
+	if listRec.Code != http.StatusOK {
+		t.Fatalf("list workers after membership status=%d body=%s", listRec.Code, listRec.Body.String())
+	}
+	if err := json.Unmarshal(listRec.Body.Bytes(), &listed); err != nil {
+		t.Fatalf("decode list after membership: %v", err)
+	}
+	memberships, _ := listed.Agents[0]["memberships"].([]any)
+	if len(memberships) != 1 {
+		t.Fatalf("expected membership in worker response: %#v", listed.Agents[0])
+	}
+	membership, _ := memberships[0].(map[string]any)
+	if membership["team"] != "product" || membership["role"] != "project-manager" {
+		t.Fatalf("worker membership should include derived team and role: %#v", membership)
 	}
 }
 
