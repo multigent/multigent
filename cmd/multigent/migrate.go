@@ -433,26 +433,23 @@ func buildAgentWorkerMigrationPlan(root, workspaceID string, s store.Store, ts i
 		agents, err := s.ListAgents(project.Name)
 		if err != nil {
 			plan.Warnings = append(plan.Warnings, fmt.Sprintf("list agents for %s: %v", project.Name, err))
-			continue
 		}
-		if len(agents) == 0 {
-			var legacyAgents []*store.AgentEntry
-			if db != nil {
-				recordAgents, err := listLegacyMigrationRecordAgents(db, workspaceID, project.Name)
-				if err != nil {
-					plan.Warnings = append(plan.Warnings, fmt.Sprintf("list legacy DB agents for %s: %v", project.Name, err))
-				} else {
-					legacyAgents = append(legacyAgents, recordAgents...)
-				}
-			}
-			fileAgents, err := listLegacyMigrationAgents(root, project.Name)
+		var legacyAgents []*store.AgentEntry
+		if db != nil {
+			recordAgents, err := listLegacyMigrationRecordAgents(db, workspaceID, project.Name)
 			if err != nil {
-				plan.Warnings = append(plan.Warnings, fmt.Sprintf("list legacy agents for %s: %v", project.Name, err))
+				plan.Warnings = append(plan.Warnings, fmt.Sprintf("list legacy DB agents for %s: %v", project.Name, err))
 			} else {
-				legacyAgents = mergeLegacyMigrationAgents(legacyAgents, fileAgents)
+				legacyAgents = append(legacyAgents, recordAgents...)
 			}
-			agents = legacyAgents
 		}
+		fileAgents, err := listLegacyMigrationAgents(root, project.Name)
+		if err != nil {
+			plan.Warnings = append(plan.Warnings, fmt.Sprintf("list legacy agents for %s: %v", project.Name, err))
+		} else {
+			legacyAgents = mergeLegacyMigrationAgents(legacyAgents, fileAgents)
+		}
+		agents = mergeLegacyMigrationAgents(agents, legacyAgents)
 		for _, agent := range agents {
 			if agent == nil || agent.Meta == nil {
 				continue

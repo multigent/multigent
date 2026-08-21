@@ -247,6 +247,54 @@ func TestAgentWorkerMigrationReadsLegacyDBAgentProviders(t *testing.T) {
 	}
 }
 
+func TestAgentWorkerMigrationMergesLegacyDBProviderIntoFileAgent(t *testing.T) {
+	root := t.TempDir()
+	writeYAMLForTest(t, filepath.Join(root, ".agencycli", "agency.yaml"), map[string]string{"name": "Legacy"})
+	writeYAMLForTest(t, filepath.Join(root, "projects", "sample", "project.yaml"), entity.Project{Name: "sample"})
+	writeYAMLForTest(t, filepath.Join(root, "projects", "sample", "agents", "dev", ".multigent", "agent.yaml"), entity.AgentMeta{
+		Name:    "dev",
+		Project: "sample",
+		Team:    "engineering",
+		Role:    "developer",
+		Model:   entity.ModelCodex,
+	})
+	db, err := controldb.Open(filepath.Join(t.TempDir(), "multigent.db"))
+	if err != nil {
+		t.Fatalf("open db: %v", err)
+	}
+	defer db.Close()
+	workspaceID := legacyMigrationWorkspaceID(root)
+	if err := ensureMigrationWorkspace(db, root, workspaceID); err != nil {
+		t.Fatalf("ensure workspace: %v", err)
+	}
+	legacyMeta := entity.AgentMeta{
+		Name:          "dev",
+		Project:       "sample",
+		Model:         entity.ModelCodex,
+		Provider:      "prov-codex",
+		RuntimeModel:  "gpt-5.5",
+		RuntimeNodeID: "node-one",
+	}
+	raw, err := json.Marshal(legacyMeta)
+	if err != nil {
+		t.Fatalf("marshal meta: %v", err)
+	}
+	if err := db.UpsertRecord("agents", workspaceID, []string{"sample", "dev"}, string(raw)); err != nil {
+		t.Fatalf("upsert legacy agent record: %v", err)
+	}
+	plan, err := buildAgentWorkerMigrationPlan(root, workspaceID, store.NewFS(root), taskstore.New(root), db)
+	if err != nil {
+		t.Fatalf("build plan: %v", err)
+	}
+	if len(plan.Workers) != 1 {
+		t.Fatalf("expected one worker: %+v", plan.Workers)
+	}
+	worker := plan.Workers[0]
+	if worker.Provider != "prov-codex" || worker.RuntimeModel != "gpt-5.5" || worker.RuntimeNodeID != "node-one" {
+		t.Fatalf("legacy DB provider fields were not merged into file agent: %+v", worker)
+	}
+}
+
 func TestAgentWorkerMigrationKeepsHumanMembersOutOfWorkers(t *testing.T) {
 	root := t.TempDir()
 	writeYAMLForTest(t, filepath.Join(root, ".agencycli", "agency.yaml"), map[string]string{"name": "Legacy"})
