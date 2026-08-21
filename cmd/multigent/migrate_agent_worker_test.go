@@ -189,6 +189,64 @@ func TestOpenMigrationWorkspaceDBUsesDataRootControlDB(t *testing.T) {
 	}
 }
 
+func TestAgentWorkerMigrationReadsLegacyDBAgentProviders(t *testing.T) {
+	root := t.TempDir()
+	writeYAMLForTest(t, filepath.Join(root, ".agencycli", "agency.yaml"), map[string]string{"name": "Legacy"})
+	writeYAMLForTest(t, filepath.Join(root, "projects", "sample", "project.yaml"), entity.Project{Name: "sample"})
+	if err := os.MkdirAll(filepath.Join(root, "projects", "sample", "agents", "dev"), 0o755); err != nil {
+		t.Fatalf("mkdir agent dir: %v", err)
+	}
+	if err := os.WriteFile(filepath.Join(root, "projects", "sample", "agents", "dev", "AGENTS.md"), []byte("# Agent\n"), 0o644); err != nil {
+		t.Fatalf("write context marker: %v", err)
+	}
+	db, err := controldb.Open(filepath.Join(t.TempDir(), "multigent.db"))
+	if err != nil {
+		t.Fatalf("open db: %v", err)
+	}
+	defer db.Close()
+	workspaceID := legacyMigrationWorkspaceID(root)
+	if err := ensureMigrationWorkspace(db, root, workspaceID); err != nil {
+		t.Fatalf("ensure workspace: %v", err)
+	}
+	legacyMeta := entity.AgentMeta{
+		Name:         "dev",
+		Project:      "sample",
+		Team:         "engineering",
+		Role:         "developer",
+		Model:        entity.ModelCodex,
+		Provider:     "prov-codex",
+		RuntimeModel: "gpt-5.5",
+	}
+	raw, err := json.Marshal(legacyMeta)
+	if err != nil {
+		t.Fatalf("marshal meta: %v", err)
+	}
+	if err := db.UpsertRecord("agents", workspaceID, []string{"sample", "dev"}, string(raw)); err != nil {
+		t.Fatalf("upsert legacy agent record: %v", err)
+	}
+	plan, err := buildAgentWorkerMigrationPlan(root, workspaceID, store.NewDB(root, db), taskstore.NewDB(root, db), db)
+	if err != nil {
+		t.Fatalf("build plan: %v", err)
+	}
+	if len(plan.Workers) != 1 {
+		t.Fatalf("expected one worker: %+v", plan.Workers)
+	}
+	worker := plan.Workers[0]
+	if worker.Provider != "prov-codex" || worker.RuntimeModel != "gpt-5.5" || worker.Membership.Role != "developer" {
+		t.Fatalf("legacy DB metadata was not preserved: %+v", worker)
+	}
+	if err := applyAgentWorkerMigrationPlan(db, taskstore.NewDB(root, db), plan); err != nil {
+		t.Fatalf("apply plan: %v", err)
+	}
+	created, ok, err := db.AgentWorkerByName(workspaceID, "dev")
+	if err != nil || !ok {
+		t.Fatalf("created worker ok=%v err=%v", ok, err)
+	}
+	if created.DefaultModelAccountID != "prov-codex" || created.RuntimeModel != "gpt-5.5" {
+		t.Fatalf("worker model account was not migrated: %+v", created)
+	}
+}
+
 func TestAgentWorkerMigrationKeepsHumanMembersOutOfWorkers(t *testing.T) {
 	root := t.TempDir()
 	writeYAMLForTest(t, filepath.Join(root, ".agencycli", "agency.yaml"), map[string]string{"name": "Legacy"})

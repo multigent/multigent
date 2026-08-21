@@ -124,6 +124,7 @@ func newMigrateAgentWorkerCmd() *cobra.Command {
 			var db *controldb.SQLiteStore
 			var channelDB interface {
 				ListAgentChannelBindings(filter controldb.AgentChannelBindingFilter) ([]controldb.AgentChannelBinding, error)
+				ListRecords(table string, workspaceID string, keyPrefix []string) ([]controldb.Record, error)
 			}
 			if apply || migrationControlDBExists(root) {
 				var err error
@@ -409,6 +410,7 @@ func buildAgentWorkerMigrationPlan(root, workspaceID string, s store.Store, ts i
 	ListArchivedTasks(project, agent string) ([]*entity.Task, error)
 }, db interface {
 	ListAgentChannelBindings(filter controldb.AgentChannelBindingFilter) ([]controldb.AgentChannelBinding, error)
+	ListRecords(table string, workspaceID string, keyPrefix []string) ([]controldb.Record, error)
 }) (agentWorkerMigrationPlan, error) {
 	projects, err := s.ListProjects()
 	if err != nil {
@@ -434,12 +436,22 @@ func buildAgentWorkerMigrationPlan(root, workspaceID string, s store.Store, ts i
 			continue
 		}
 		if len(agents) == 0 {
-			legacyAgents, err := listLegacyMigrationAgents(root, project.Name)
+			var legacyAgents []*store.AgentEntry
+			if db != nil {
+				recordAgents, err := listLegacyMigrationRecordAgents(db, workspaceID, project.Name)
+				if err != nil {
+					plan.Warnings = append(plan.Warnings, fmt.Sprintf("list legacy DB agents for %s: %v", project.Name, err))
+				} else {
+					legacyAgents = append(legacyAgents, recordAgents...)
+				}
+			}
+			fileAgents, err := listLegacyMigrationAgents(root, project.Name)
 			if err != nil {
 				plan.Warnings = append(plan.Warnings, fmt.Sprintf("list legacy agents for %s: %v", project.Name, err))
 			} else {
-				agents = legacyAgents
+				legacyAgents = mergeLegacyMigrationAgents(legacyAgents, fileAgents)
 			}
+			agents = legacyAgents
 		}
 		for _, agent := range agents {
 			if agent == nil || agent.Meta == nil {
@@ -620,6 +632,99 @@ func listLegacyMigrationAgents(root, project string) ([]*store.AgentEntry, error
 		agents = append(agents, &store.AgentEntry{Project: project, Name: entry.Name(), Meta: &meta})
 	}
 	return agents, nil
+}
+
+func listLegacyMigrationRecordAgents(db interface {
+	ListRecords(table string, workspaceID string, keyPrefix []string) ([]controldb.Record, error)
+}, workspaceID, project string) ([]*store.AgentEntry, error) {
+	records, err := db.ListRecords("agents", workspaceID, []string{project})
+	if err != nil {
+		return nil, err
+	}
+	agents := make([]*store.AgentEntry, 0, len(records))
+	for _, record := range records {
+		if len(record.Key) < 2 {
+			continue
+		}
+		name := strings.TrimSpace(record.Key[1])
+		if name == "" {
+			continue
+		}
+		var meta entity.AgentMeta
+		if err := json.Unmarshal([]byte(record.Payload), &meta); err != nil {
+			return nil, fmt.Errorf("legacy agent record %s/%s: %w", project, name, err)
+		}
+		if meta.Name == "" {
+			meta.Name = name
+		}
+		if meta.Project == "" {
+			meta.Project = project
+		}
+		agents = append(agents, &store.AgentEntry{Project: project, Name: name, Meta: &meta})
+	}
+	return agents, nil
+}
+
+func mergeLegacyMigrationAgents(preferred, fallback []*store.AgentEntry) []*store.AgentEntry {
+	out := make([]*store.AgentEntry, 0, len(preferred)+len(fallback))
+	seen := make(map[string]int, len(preferred)+len(fallback))
+	for _, agent := range preferred {
+		if agent == nil || strings.TrimSpace(agent.Name) == "" {
+			continue
+		}
+		seen[agent.Name] = len(out)
+		out = append(out, agent)
+	}
+	for _, agent := range fallback {
+		if agent == nil || strings.TrimSpace(agent.Name) == "" {
+			continue
+		}
+		if idx, ok := seen[agent.Name]; ok {
+			out[idx] = mergeLegacyMigrationAgent(out[idx], agent)
+			continue
+		}
+		seen[agent.Name] = len(out)
+		out = append(out, agent)
+	}
+	return out
+}
+
+func mergeLegacyMigrationAgent(preferred, fallback *store.AgentEntry) *store.AgentEntry {
+	if preferred == nil || preferred.Meta == nil {
+		return fallback
+	}
+	if fallback == nil || fallback.Meta == nil {
+		return preferred
+	}
+	meta := *preferred.Meta
+	if meta.Model == "" {
+		meta.Model = fallback.Meta.Model
+	}
+	if strings.TrimSpace(meta.Team) == "" {
+		meta.Team = fallback.Meta.Team
+	}
+	if strings.TrimSpace(meta.Role) == "" {
+		meta.Role = fallback.Meta.Role
+	}
+	if strings.TrimSpace(meta.Provider) == "" {
+		meta.Provider = fallback.Meta.Provider
+	}
+	if strings.TrimSpace(meta.RuntimeModel) == "" {
+		meta.RuntimeModel = fallback.Meta.RuntimeModel
+	}
+	if strings.TrimSpace(meta.RuntimeNodeID) == "" {
+		meta.RuntimeNodeID = fallback.Meta.RuntimeNodeID
+	}
+	if strings.TrimSpace(meta.RuntimeMode) == "" {
+		meta.RuntimeMode = fallback.Meta.RuntimeMode
+	}
+	if strings.TrimSpace(meta.Avatar) == "" {
+		meta.Avatar = fallback.Meta.Avatar
+	}
+	if meta.HiredAt.IsZero() {
+		meta.HiredAt = fallback.Meta.HiredAt
+	}
+	return &store.AgentEntry{Project: firstNonEmptyString(preferred.Project, fallback.Project), Name: preferred.Name, Meta: &meta}
 }
 
 func inferMigrationAgentModelFromDir(agentDir string) (entity.AgentModel, bool) {
