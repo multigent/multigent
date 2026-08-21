@@ -149,6 +149,7 @@ function AuthenticatedRoutes() {
         {canAdmin && <Route path="agents" element={<AgentsPage />} />}
         {canAdmin && <Route path="agents/:agentId" element={<AgentDetailPage />} />}
         {canAdmin && <Route path="schedule" element={<SchedulePage />} />}
+        {canAdmin && <Route path="runs" element={<ProjectRunsPage />} />}
         <Route path="projects" element={<ProjectsListPage />} />
         <Route path="projects/:projectId" element={<ProjectBranch />}>
           <Route index element={<Navigate to="tasks" replace />} />

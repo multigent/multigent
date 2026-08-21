@@ -131,6 +131,7 @@ export function CommandPalette({
       { id: 'nav-overview', label: t('nav.overview'), group: t('search.groupNav'), icon: LayoutDashboard, to: '/' },
       { id: 'nav-teams', label: t('nav.teams'), group: t('search.groupNav'), icon: Users, to: '/teams' },
       { id: 'nav-projects', label: t('nav.projects'), group: t('search.groupNav'), icon: FolderKanban, to: '/projects' },
+      { id: 'nav-runs', label: t('nav.runs'), group: t('search.groupNav'), icon: BarChart3, to: '/runs' },
       { id: 'nav-workflows', label: t('nav.workflows'), group: t('search.groupNav'), icon: GitBranch, to: '/workflows' },
       { id: 'nav-playbooks', label: t('nav.playbooks'), group: t('search.groupNav'), icon: LibraryBig, to: '/playbooks' },
       { id: 'nav-workbench', label: t('nav.workbench'), group: t('search.groupNav'), icon: Briefcase, to: '/workbench' },
@@ -138,7 +139,7 @@ export function CommandPalette({
       { id: 'nav-skills', label: t('nav.skills'), group: t('search.groupNav'), icon: Puzzle, to: '/skills' },
       { id: 'nav-audit', label: t('nav.audit'), group: t('search.groupNav'), icon: ShieldCheck, to: '/audit' },
       { id: 'nav-settings', label: t('nav.settings'), group: t('search.groupNav'), icon: Settings, to: '/settings' },
-    ].filter(item => canAdmin || !['nav-overview', 'nav-teams', 'nav-playbooks', 'nav-audit', 'nav-settings'].includes(item.id))
+    ].filter(item => canAdmin || !['nav-overview', 'nav-teams', 'nav-runs', 'nav-playbooks', 'nav-audit', 'nav-settings'].includes(item.id))
 
     const proj: SearchItem[] = projects.flatMap((p) => {
       const base = `/projects/${encodeURIComponent(p.name)}`

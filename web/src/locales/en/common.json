@@ -108,6 +108,7 @@
     "workspace": "Workspace",
     "agents": "Agents",
     "schedule": "Schedule",
+    "runs": "Runs",
     "teams": "Teams",
     "projects": "Projects",
     "workflows": "Workflows",

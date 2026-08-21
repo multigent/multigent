@@ -29,6 +29,7 @@ export type NavKey =
   | 'workspace'
   | 'agents'
   | 'schedule'
+  | 'runs'
   | 'teams'
   | 'projects'
   | 'workflows'
@@ -74,6 +75,7 @@ export const workspaceNav: NavItem[] = [
   },
   { to: '/agents', navKey: 'agents', icon: Bot, activePrefix: '/agents', adminOnly: true },
   { to: '/schedule', navKey: 'schedule', icon: Clock3, activePrefix: '/schedule', adminOnly: true },
+  { to: '/runs', navKey: 'runs', icon: BarChart3, activePrefix: '/runs', adminOnly: true },
   { to: '/workflows', navKey: 'workflows', icon: GitBranch, activePrefix: '/workflows' },
   { to: '/playbooks', navKey: 'playbooks', icon: LibraryBig, activePrefix: '/playbooks', adminOnly: true },
   { to: '/goals', navKey: 'goals', icon: Target, activePrefix: '/goals' },
@@ -105,6 +107,7 @@ export function navKeyFromPath(pathname: string): NavKey {
     workspace: 'workspace',
     agents: 'agents',
     schedule: 'schedule',
+    runs: 'runs',
     teams: 'teams',
     projects: 'projects',
     workflows: 'workflows',

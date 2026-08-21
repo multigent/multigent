@@ -108,6 +108,7 @@
     "workspace": "ワークスペース",
     "agents": "エージェント",
     "schedule": "スケジュール",
+    "runs": "実行履歴",
     "teams": "チーム",
     "projects": "プロジェクト",
     "workflows": "ワークフロー",
