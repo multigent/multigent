@@ -12,7 +12,9 @@ import (
 
 	"github.com/multigent/multigent/internal/agentcli"
 	"github.com/multigent/multigent/internal/ctxbuild"
+	controldb "github.com/multigent/multigent/internal/db"
 	"github.com/multigent/multigent/internal/entity"
+	"github.com/multigent/multigent/internal/formatter"
 	"github.com/multigent/multigent/internal/sandbox"
 )
 
@@ -183,7 +185,11 @@ func (s *Server) handleGetAgentContext(w http.ResponseWriter, r *http.Request) {
 	}
 	agentDir := s.st.AgentDir(project, agent)
 
-	meta, err := s.st.AgentMeta(project, agent)
+	workspaceID, ok := s.currentWorkspaceForRequest(w, r)
+	if !ok {
+		return
+	}
+	meta, err := s.agentMetaForProjectMember(workspaceID, project, agent)
 	if err != nil {
 		if isNotFoundErr(err) {
 			s.jsonError(w, http.StatusNotFound, "agent not found")
@@ -205,13 +211,18 @@ func (s *Server) handleGetAgentContext(w http.ResponseWriter, r *http.Request) {
 		includeReadiness = false
 	}
 	var merged []byte
+	var mergedContext *ctxbuild.MergedContext
 	if includeMerged {
-		mergedPath := filepath.Join(agentDir, contextFile)
-		merged, _ = os.ReadFile(mergedPath)
+		if content, mc, err := s.renderCurrentAgentContext(project, agent, meta, contextFile); err == nil {
+			merged = content
+			mergedContext = mc
+		} else {
+			mergedPath := filepath.Join(agentDir, contextFile)
+			merged, _ = os.ReadFile(mergedPath)
+		}
 	}
 
-	wakeupPath := filepath.Join(agentDir, ".multigent", "context", "wakeup.md")
-	wakeup, _ := os.ReadFile(wakeupPath)
+	wakeup := s.readAgentWakeupPrompt(project, agent)
 
 	var skills []string
 	var skillDetails []map[string]string
@@ -233,18 +244,24 @@ func (s *Server) handleGetAgentContext(w http.ResponseWriter, r *http.Request) {
 		}
 		skillDetails = append(skillDetails, detail)
 	}
-	for _, sk := range ctxbuild.DefaultSkillNames() {
-		addSkill(sk)
-	}
-	if t, err := s.st.Team(meta.Team); err == nil && t != nil {
-		for _, sk := range t.Skills {
+	if mergedContext != nil {
+		for _, sk := range mergedContext.Skills {
+			addSkill(sk.Name)
+		}
+	} else {
+		for _, sk := range ctxbuild.DefaultSkillNames() {
 			addSkill(sk)
 		}
-	}
-	if meta.Role != "" {
-		if rl, err := s.st.Role(meta.Team, meta.Role); err == nil && rl != nil {
-			for _, sk := range rl.Skills {
+		if t, err := s.st.Team(meta.Team); err == nil && t != nil {
+			for _, sk := range t.Skills {
 				addSkill(sk)
+			}
+		}
+		if meta.Role != "" {
+			if rl, err := s.st.Role(meta.Team, meta.Role); err == nil && rl != nil {
+				for _, sk := range rl.Skills {
+					addSkill(sk)
+				}
 			}
 		}
 	}
@@ -298,10 +315,6 @@ func (s *Server) handleGetAgentContext(w http.ResponseWriter, r *http.Request) {
 
 	readiness := buildRuntimeReadinessLight(meta)
 	if includeReadiness {
-		workspaceID := ""
-		if id, ok := s.currentWorkspaceForRequest(w, r); ok {
-			workspaceID = id
-		}
 		if workspaceID != "" {
 			readiness = s.runtimeReadinessForExecution(workspaceID, meta)
 		}
@@ -312,23 +325,80 @@ func (s *Server) handleGetAgentContext(w http.ResponseWriter, r *http.Request) {
 	_ = json.NewEncoder(w).Encode(resp)
 }
 
+func (s *Server) renderCurrentAgentContext(project, agent string, meta *entity.AgentMeta, contextFile string) ([]byte, *ctxbuild.MergedContext, error) {
+	if meta == nil {
+		return nil, nil, os.ErrInvalid
+	}
+	team := strings.TrimSpace(meta.Team)
+	role := strings.TrimSpace(meta.Role)
+	if team == "" {
+		role = ""
+	}
+	mc, err := ctxbuild.NewBuilder(s.st).BuildForAgent(project, agent, team, role)
+	if err != nil {
+		return nil, nil, err
+	}
+	f, err := formatter.New(meta.Model)
+	if err != nil {
+		return nil, nil, err
+	}
+	dir, err := os.MkdirTemp("", "multigent-agent-context-*")
+	if err != nil {
+		return nil, nil, err
+	}
+	defer os.RemoveAll(dir)
+	if err := f.Format(mc, dir); err != nil {
+		return nil, nil, err
+	}
+	content, err := os.ReadFile(filepath.Join(dir, contextFile))
+	if err != nil {
+		return nil, nil, err
+	}
+	return content, mc, nil
+}
+
+func (s *Server) readAgentWakeupPrompt(project, agent string) string {
+	hb, err := s.ts.GetHeartbeat(project, agent)
+	if err == nil && hb != nil {
+		raw := strings.TrimSpace(hb.WakeupPrompt)
+		if raw != "" && !strings.HasPrefix(raw, "@") {
+			return hb.WakeupPrompt
+		}
+		if strings.HasPrefix(raw, "@") {
+			rel := strings.TrimSpace(strings.TrimPrefix(raw, "@"))
+			if rel != "" {
+				path := rel
+				if !filepath.IsAbs(path) {
+					path = filepath.Join(s.st.AgentDir(project, agent), rel)
+				}
+				if body, err := os.ReadFile(path); err == nil {
+					return string(body)
+				}
+			}
+		}
+	}
+	wakeupPath := filepath.Join(s.st.AgentDir(project, agent), ".multigent", "context", "wakeup.md")
+	wakeup, _ := os.ReadFile(wakeupPath)
+	return string(wakeup)
+}
+
 func (s *Server) handleGetAgentRuntimeReadiness(w http.ResponseWriter, r *http.Request) {
 	project := r.PathValue("name")
 	agent := r.PathValue("agent")
 	if !s.checkAgentAccess(w, r, project, agent) {
 		return
 	}
-	meta, err := s.st.AgentMeta(project, agent)
+	workspaceID, ok := s.currentWorkspaceForRequest(w, r)
+	if !ok {
+		return
+	}
+	meta, err := s.agentMetaForProjectMember(workspaceID, project, agent)
 	if err != nil {
 		if isNotFoundErr(err) {
 			s.jsonErrorCode(w, http.StatusNotFound, ErrCodeNotFound, "agent not found")
 			return
 		}
 		s.serverError(w, err)
-		return
-	}
-	workspaceID, ok := s.currentWorkspaceForRequest(w, r)
-	if !ok {
 		return
 	}
 	_ = json.NewEncoder(w).Encode(s.runtimeReadinessForExecution(workspaceID, meta))
@@ -360,7 +430,18 @@ func (s *Server) handlePutAgentWakeup(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	if _, err := s.st.AgentMeta(project, agent); err != nil {
+	var body promptSaveBody
+	if err := s.readJSON(w, r, &body); err != nil {
+		s.jsonError(w, http.StatusBadRequest, "invalid JSON body")
+		return
+	}
+
+	hb, _ := s.ts.GetHeartbeat(project, agent)
+	if hb == nil {
+		hb = &entity.HeartbeatConfig{}
+	}
+	hb.WakeupPrompt = body.Content
+	if err := s.ts.SaveHeartbeat(project, agent, hb); err != nil {
 		if isNotFoundErr(err) {
 			s.jsonError(w, http.StatusNotFound, "agent not found")
 			return
@@ -368,36 +449,6 @@ func (s *Server) handlePutAgentWakeup(w http.ResponseWriter, r *http.Request) {
 		s.serverError(w, err)
 		return
 	}
-
-	var body promptSaveBody
-	if err := s.readJSON(w, r, &body); err != nil {
-		s.jsonError(w, http.StatusBadRequest, "invalid JSON body")
-		return
-	}
-
-	agentDir := s.st.AgentDir(project, agent)
-	wakeupDir := filepath.Join(agentDir, ".multigent", "context")
-	if err := os.MkdirAll(wakeupDir, 0o755); err != nil {
-		s.serverError(w, err)
-		return
-	}
-	if err := os.WriteFile(filepath.Join(wakeupDir, "wakeup.md"), []byte(body.Content), 0o644); err != nil {
-		s.serverError(w, err)
-		return
-	}
-
-	// Ensure heartbeat.yaml references the wakeup file.
-	hb, _ := s.ts.GetHeartbeat(project, agent)
-	if hb == nil {
-		hb = &entity.HeartbeatConfig{}
-	}
-	if hb.WakeupPrompt != "@.multigent/context/wakeup.md" {
-		hb.WakeupPrompt = "@.multigent/context/wakeup.md"
-		_ = s.ts.SaveHeartbeat(project, agent, hb)
-	}
-
-	// Re-sync so CLAUDE.md/@import picks up wakeup.md.
-	s.syncAgent(project, agent)
 
 	_ = json.NewEncoder(w).Encode(map[string]bool{"ok": true})
 }
@@ -471,7 +522,24 @@ func (s *Server) handlePutAgentSandbox(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	meta, err := s.st.AgentMeta(project, agent)
+	workspaceID, ok := s.currentWorkspaceForRequest(w, r)
+	if !ok {
+		return
+	}
+	var worker controldb.AgentWorker
+	workerBacked := false
+	if s.agentDirectory != nil {
+		resolved, found, err := s.agentDirectory.ProjectWorker(workspaceID, project, agent)
+		if err != nil {
+			s.serverError(w, err)
+			return
+		}
+		if found {
+			worker = resolved.Worker
+			workerBacked = true
+		}
+	}
+	meta, err := s.agentMetaForProjectMember(workspaceID, project, agent)
 	if err != nil {
 		if isNotFoundErr(err) {
 			s.jsonError(w, http.StatusNotFound, "agent not found")
@@ -562,6 +630,22 @@ func (s *Server) handlePutAgentSandbox(w http.ResponseWriter, r *http.Request) {
 	// nil body.AddDirs (field absent) is treated as "no change"; empty slice clears all.
 	if body.AddDirs != nil {
 		meta.AddDirs = body.AddDirs
+	}
+
+	if workerBacked {
+		cfg := decodeAgentWorkerRuntimeConfig(worker)
+		cfg.Sandbox = meta.Sandbox
+		if body.AddDirs != nil {
+			cfg.AddDirs = body.AddDirs
+		}
+		worker.RuntimeConfigJSON = encodeAgentWorkerRuntimeConfig(cfg)
+		worker.UpdatedAt = time.Now().UTC().Format(time.RFC3339)
+		if err := s.controlDB.UpsertAgentWorker(worker); err != nil {
+			s.serverError(w, err)
+			return
+		}
+		_ = json.NewEncoder(w).Encode(map[string]any{"ok": true})
+		return
 	}
 
 	if err := s.st.SaveAgentMeta(project, agent, meta); err != nil {

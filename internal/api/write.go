@@ -91,6 +91,11 @@ func (s *Server) createProjectTaskFromBody(w http.ResponseWriter, r *http.Reques
 		s.jsonError(w, http.StatusForbidden, "agent operator access required")
 		return
 	}
+	workspaceID, err := s.currentWorkspaceID()
+	if err != nil {
+		s.serverError(w, err)
+		return
+	}
 
 	taskType := strings.TrimSpace(body.Type)
 	if taskType == "" {
@@ -197,6 +202,7 @@ func (s *Server) createProjectTaskFromBody(w http.ResponseWriter, r *http.Reques
 			}
 		}
 	}
+	s.annotateTaskAssignee(workspaceID, name, t)
 
 	if assignee == "human" || !strings.Contains(assignee, "/") {
 		if err := s.ts.AddTask(name, agentName, t); err != nil {
@@ -220,6 +226,7 @@ func (s *Server) createProjectTaskFromBody(w http.ResponseWriter, r *http.Reques
 			s.jsonError(w, http.StatusBadRequest, err.Error())
 			return
 		}
+		s.annotateTaskAssignee(workspaceID, name, t)
 		if err := s.ts.AddTask(name, agentName, t); err != nil {
 			s.serverError(w, err)
 			return
@@ -236,6 +243,9 @@ func (s *Server) createProjectTaskFromBody(w http.ResponseWriter, r *http.Reques
 			s.serverError(w, err)
 			return
 		}
+	}
+	if strings.Contains(assignee, "/") {
+		s.recordTaskAttentionSignal(workspaceID, name, agentName, t, "task_assigned")
 	}
 
 	w.WriteHeader(http.StatusCreated)
@@ -414,6 +424,11 @@ func (s *Server) handlePutUpdateTask(w http.ResponseWriter, r *http.Request) {
 		s.jsonError(w, http.StatusForbidden, "agent operator access required")
 		return
 	}
+	workspaceID, err := s.currentWorkspaceID()
+	if err != nil {
+		s.serverError(w, err)
+		return
+	}
 	hasUpdate := body.Status != nil || body.Priority != nil || body.Type != nil || body.Summary != nil ||
 		body.Title != nil || body.Description != nil || body.Labels != nil || body.ParentID != nil ||
 		body.DueDate != nil || body.EstimateDuration != nil || body.Position != nil || body.Assignee != nil || body.Prompt != nil
@@ -505,6 +520,9 @@ func (s *Server) handlePutUpdateTask(w http.ResponseWriter, r *http.Request) {
 		s.jsonError(w, http.StatusBadRequest, err.Error())
 		return
 	}
+	if body.Assignee != nil {
+		s.annotateTaskAssignee(workspaceID, project, t)
+	}
 
 	if routeToAgent != agent {
 		if err := s.ts.DeleteTask(project, agent, id); err != nil {
@@ -535,6 +553,7 @@ func (s *Server) handlePutUpdateTask(w http.ResponseWriter, r *http.Request) {
 	}
 	if body.Assignee != nil && strings.TrimSpace(t.Assignee) != oldAssignee {
 		if _, targetAgent, ok := splitAgentMailbox(t.Assignee); ok && !t.Status.IsTerminal() {
+			s.recordTaskAttentionSignal(workspaceID, project, targetAgent, t, "task_assigned")
 			s.triggers.Fire(project, targetAgent, entity.TriggerOnTask, "task reassigned "+t.ID)
 		} else if strings.TrimSpace(t.Assignee) != "" && !strings.Contains(t.Assignee, "/") {
 			if err := s.ts.AddToInbox(&entity.InboxItem{
@@ -552,6 +571,34 @@ func (s *Server) handlePutUpdateTask(w http.ResponseWriter, r *http.Request) {
 	}
 
 	_ = json.NewEncoder(w).Encode(map[string]bool{"ok": true})
+}
+
+func (s *Server) annotateTaskAssignee(workspaceID, project string, task *entity.Task) {
+	if task == nil {
+		return
+	}
+	task.AssigneeType = ""
+	task.AssigneeID = ""
+	task.AssigneeMembershipID = ""
+	assignee := strings.TrimSpace(task.Assignee)
+	if assignee == "" {
+		return
+	}
+	if targetProject, _, ok := splitAgentMailbox(assignee); ok {
+		if targetProject != project || s.agentDirectory == nil {
+			return
+		}
+		resolved, ok, err := s.agentDirectory.ResolveLegacyMailbox(workspaceID, assignee)
+		if err != nil || !ok {
+			return
+		}
+		task.AssigneeType = "agent_worker"
+		task.AssigneeID = resolved.Worker.ID
+		task.AssigneeMembershipID = resolved.Membership.ID
+		return
+	}
+	task.AssigneeType = "user"
+	task.AssigneeID = assignee
 }
 
 func (s *Server) handlePostDeleteTask(w http.ResponseWriter, r *http.Request) {
@@ -987,17 +1034,22 @@ func (s *Server) handlePostProjectMarkAllMessagesRead(w http.ResponseWriter, r *
 		return
 	}
 
-	agents, err := s.st.ListAgents(name)
+	workspaceID, err := s.currentWorkspaceID()
+	if err != nil {
+		s.serverError(w, err)
+		return
+	}
+	agents, err := s.projectAgentNames(workspaceID, name)
 	if err != nil {
 		s.serverError(w, err)
 		return
 	}
 	mailboxes := make([]string, 0, len(agents))
-	for _, ag := range agents {
-		if !s.canOperateAgent(r, name, ag.Name) {
+	for _, agent := range agents {
+		if !s.canOperateAgent(r, name, agent) {
 			continue
 		}
-		mb := name + "/" + ag.Name
+		mb := name + "/" + agent
 		mailboxes = append(mailboxes, mb)
 		if err := s.ts.MarkMessagesRead(mb); err != nil {
 			s.serverError(w, err)

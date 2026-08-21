@@ -38,11 +38,11 @@ func NewDocsStore(root string) *DocsStore {
 }
 
 func (ds *DocsStore) filePath() string {
-	return filepath.Join(ds.root, ".multigent", "docs.yaml")
+	return workspaceConfigPath(ds.root, "docs.yaml")
 }
 
 func (ds *DocsStore) contentDir() string {
-	return filepath.Join(ds.root, ".multigent", "docs-content")
+	return workspaceConfigPath(ds.root, "docs-content")
 }
 
 func newDocID() string {
@@ -122,7 +122,7 @@ func (ds *DocsStore) AddManagedContent(e *DocEntry, content, sourceName string) 
 		return err
 	}
 	fileName := e.ID + "-" + slugifyDocFilename(e.Title, sourceName) + ext
-	relPath := filepath.Join(".multigent", "docs-content", fileName)
+	relPath := filepath.Join(workspaceConfigDir(ds.root), "docs-content", fileName)
 	absPath := filepath.Join(ds.root, relPath)
 	if err := os.WriteFile(absPath, []byte(content), 0o644); err != nil {
 		return err

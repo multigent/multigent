@@ -148,7 +148,7 @@ func (s *Server) handleRuntimeNotify(w http.ResponseWriter, r *http.Request) {
 		"internalSent":  true,
 		"externalSent":  false,
 		"externalError": "",
-		"messageFormat": normalizeRuntimeNotifyMessageFormat(body.MessageFormat),
+		"messageFormat": normalizeRuntimeNotifyMessageFormat(body.MessageFormat, text),
 	}
 	if !found {
 		result["externalError"] = "no connected human collaboration channel for this agent"
@@ -209,7 +209,33 @@ func (s *Server) handleRuntimeNotify(w http.ResponseWriter, r *http.Request) {
 		result["interactionId"] = interactionID
 		result["messageFormat"] = "card"
 	}
+	notifyMessage.MentionOpenID = target.MentionOpenID
 	notifyMessage.Text = trimForIM(notifyMessage.Text, 3500)
+	prepareRuntimeNotifyExternalMessage(&notifyMessage, target)
+	if target.ReplyToMessageID != "" {
+		if replyProvider, ok := channelProvider.(imbridge.RichReplyProvider); ok {
+			err := replyProvider.ReplyMessage(ctx, secrets, imbridge.IncomingMessage{
+				MessageID:    target.ReplyToMessageID,
+				ChatID:       target.ChatID,
+				ChatType:     target.ChatType,
+				SenderOpenID: target.MentionOpenID,
+			}, notifyMessage)
+			if err == nil {
+				now := time.Now().UTC().Format(time.RFC3339)
+				binding.LastActivityAt = now
+				binding.UpdatedAt = now
+				_ = s.controlDB.UpsertAgentChannelBinding(binding)
+				result["provider"] = binding.Provider
+				result["channelId"] = binding.ID
+				result["externalSent"] = true
+				result["externalReply"] = true
+				s.auditRuntimeNotify(r, principal, msg.ID, binding.Provider, subject, true, "")
+				_ = json.NewEncoder(w).Encode(result)
+				return
+			}
+			result["externalReplyError"] = err.Error()
+		}
+	}
 	if err := channelProvider.SendMessage(ctx, secrets, target, notifyMessage); err != nil {
 		result["provider"] = binding.Provider
 		result["channelId"] = binding.ID
@@ -297,6 +323,7 @@ func (s *Server) runtimeNotifyCreateInteractionRequest(principal runtimeAgentPri
 	if err := s.controlDB.CreateInteractionRequest(controldb.InteractionRequest{
 		ID:               interactionID,
 		WorkspaceID:      principal.WorkspaceID,
+		AgentWorkerID:    binding.AgentWorkerID,
 		ProjectID:        principal.Project,
 		AgentID:          principal.Agent,
 		ChannelBindingID: binding.ID,
@@ -337,6 +364,13 @@ func newRuntimeInteractionRequestID() string {
 }
 
 func (s *Server) runtimeAgentChannelBindings(principal runtimeAgentPrincipal) ([]controldb.AgentChannelBinding, error) {
+	if workerID := s.runtimePrincipalAgentWorkerID(principal); strings.TrimSpace(workerID) != "" {
+		return s.controlDB.ListAgentChannelBindings(controldb.AgentChannelBindingFilter{
+			WorkspaceID:   principal.WorkspaceID,
+			AgentWorkerID: workerID,
+			Status:        "connected",
+		})
+	}
 	return s.controlDB.ListAgentChannelBindings(controldb.AgentChannelBindingFilter{
 		WorkspaceID: principal.WorkspaceID,
 		ProjectID:   principal.Project,
@@ -410,6 +444,9 @@ func (s *Server) resolveRuntimeNotifyRecipient(principal runtimeAgentPrincipal, 
 	if strings.EqualFold(raw, "owner") || strings.EqualFold(raw, "human") {
 		return "human", nil
 	}
+	if strings.EqualFold(raw, "source") {
+		return "source", nil
+	}
 	if strings.HasPrefix(strings.ToLower(raw), "chat:") || strings.HasPrefix(strings.ToLower(raw), "group:") {
 		prefix, value, _ := strings.Cut(raw, ":")
 		value = strings.TrimSpace(value)
@@ -430,6 +467,9 @@ func (s *Server) resolveRuntimeNotifyRecipient(principal runtimeAgentPrincipal, 
 }
 
 func (s *Server) runtimeNotifyTargetForRecipient(principal runtimeAgentPrincipal, binding controldb.AgentChannelBinding, recipient string) (imbridge.OutgoingTarget, bool, error) {
+	if recipient == "source" {
+		return s.runtimeNotifySourceTarget(principal, binding)
+	}
 	if recipient == "human" {
 		if owner := strings.TrimSpace(binding.ExternalOwnerID); owner != "" {
 			return imbridge.OutgoingTarget{ReceiveID: owner, ReceiveIDType: "open_id", ChatID: strings.TrimSpace(binding.ExternalChatID)}, true, nil
@@ -483,59 +523,166 @@ func (s *Server) runtimeNotifyTargetForRecipient(principal runtimeAgentPrincipal
 	return imbridge.OutgoingTarget{}, false, nil
 }
 
+func (s *Server) runtimeNotifySourceTarget(principal runtimeAgentPrincipal, binding controldb.AgentChannelBinding) (imbridge.OutgoingTarget, bool, error) {
+	runID := strings.TrimSpace(principal.RunID)
+	if runID == "" {
+		return imbridge.OutgoingTarget{}, false, nil
+	}
+	taskID := ""
+	if s.controlDB != nil {
+		run, found, err := s.controlDB.RuntimeRunByID(principal.WorkspaceID, runID)
+		if err != nil {
+			return imbridge.OutgoingTarget{}, false, err
+		}
+		if found {
+			taskID = strings.TrimSpace(run.TaskID)
+		}
+	}
+	if taskID == "" {
+		// Local scheduler/runner tokens use the task id itself as RunID and do not
+		// create a runtime_runs row. Fall back to that id so --to source works in
+		// both local and remote runtime execution modes.
+		taskID = runID
+	}
+	task, err := s.ts.GetTask(principal.Project, principal.Agent, taskID)
+	if err != nil || task == nil {
+		return imbridge.OutgoingTarget{}, false, err
+	}
+	source, ok := runtimeNotifySourceFromPrompt(task.Prompt, binding.Provider)
+	if !ok {
+		return imbridge.OutgoingTarget{}, false, nil
+	}
+	return imbridge.OutgoingTarget{
+		ReceiveID:        source.ChatID,
+		ReceiveIDType:    "chat_id",
+		ChatID:           source.ChatID,
+		ChatType:         source.ChatType,
+		ReplyToMessageID: source.MessageID,
+		MentionOpenID:    source.SenderOpenID,
+	}, true, nil
+}
+
+func runtimeNotifySourceChatID(prompt, provider string) (string, bool) {
+	source, ok := runtimeNotifySourceFromPrompt(prompt, provider)
+	return source.ChatID, ok
+}
+
+type runtimeNotifySourceInfo struct {
+	ChatID       string
+	ChatType     string
+	MessageID    string
+	SenderOpenID string
+}
+
+func runtimeNotifySourceFromPrompt(prompt, provider string) (runtimeNotifySourceInfo, bool) {
+	provider = strings.TrimSpace(strings.ToLower(provider))
+	if provider == "" {
+		return runtimeNotifySourceInfo{}, false
+	}
+	lines := strings.Split(prompt, "\n")
+	for i := 0; i < len(lines); i++ {
+		line := strings.TrimSpace(lines[i])
+		if !strings.HasPrefix(line, "Source:") || !strings.Contains(line, "im:"+provider+":") {
+			continue
+		}
+		info := runtimeNotifySourceInfo{}
+		for j := i + 1; j < len(lines) && j <= i+12; j++ {
+			refLine := strings.TrimSpace(lines[j])
+			if !strings.HasPrefix(refLine, "Refs:") && !strings.HasPrefix(refLine, "Payload:") {
+				continue
+			}
+			raw := strings.TrimSpace(strings.TrimPrefix(strings.TrimPrefix(refLine, "Refs:"), "Payload:"))
+			raw = strings.Trim(raw, "`")
+			var refs map[string]any
+			if err := json.Unmarshal([]byte(raw), &refs); err != nil {
+				continue
+			}
+			if info.ChatID == "" {
+				if chatID, _ := refs["chatId"].(string); strings.TrimSpace(chatID) != "" {
+					info.ChatID = strings.TrimSpace(chatID)
+				}
+			}
+			if info.ChatID == "" {
+				if chatID, _ := refs["externalChatId"].(string); strings.TrimSpace(chatID) != "" {
+					info.ChatID = strings.TrimSpace(chatID)
+				}
+			}
+			if chatID, _ := refs["chatId"].(string); strings.TrimSpace(chatID) != "" && info.ChatID == "" {
+				info.ChatID = strings.TrimSpace(chatID)
+			}
+			if chatType, _ := refs["chatType"].(string); strings.TrimSpace(chatType) != "" && info.ChatType == "" {
+				info.ChatType = strings.TrimSpace(chatType)
+			}
+			if messageID, _ := refs["messageId"].(string); strings.TrimSpace(messageID) != "" && info.MessageID == "" {
+				info.MessageID = strings.TrimSpace(messageID)
+			}
+			if senderOpenID, _ := refs["senderOpenId"].(string); strings.TrimSpace(senderOpenID) != "" && info.SenderOpenID == "" {
+				info.SenderOpenID = strings.TrimSpace(senderOpenID)
+			}
+		}
+		if info.ChatID != "" {
+			return info, true
+		}
+	}
+	return runtimeNotifySourceInfo{}, false
+}
+
 func formatRuntimeNotifyMessage(principal runtimeAgentPrincipal, body runtimeNotifyBody, subject, text string) imbridge.OutgoingMessage {
-	format := normalizeRuntimeNotifyMessageFormat(body.MessageFormat)
+	format := normalizeRuntimeNotifyMessageFormat(body.MessageFormat, text)
 	if format == "markdown" {
 		return imbridge.OutgoingMessage{
 			Format:  format,
 			Subject: subject,
-			Text:    formatRuntimeNotifyMarkdown(principal, body, text),
+			Text:    strings.TrimSpace(text),
 		}
 	}
 	return imbridge.OutgoingMessage{
 		Format:  "text",
 		Subject: subject,
-		Text:    formatRuntimeNotifyText(principal, body, subject, text),
+		Text:    strings.TrimSpace(text),
 	}
 }
 
-func normalizeRuntimeNotifyMessageFormat(format string) string {
+func normalizeRuntimeNotifyMessageFormat(format, text string) string {
 	switch strings.ToLower(strings.TrimSpace(format)) {
 	case "markdown", "md":
 		return "markdown"
+	case "", "auto":
+		if looksLikeMarkdown(text) {
+			return "markdown"
+		}
+		return "text"
 	default:
 		return "text"
 	}
 }
 
-func formatRuntimeNotifyText(principal runtimeAgentPrincipal, body runtimeNotifyBody, subject, text string) string {
-	parts := make([]string, 0, 5)
-	if subject != "" {
-		parts = append(parts, subject)
+func looksLikeMarkdown(text string) bool {
+	for _, line := range strings.Split(strings.TrimSpace(text), "\n") {
+		line = strings.TrimSpace(line)
+		if line == "" {
+			continue
+		}
+		if strings.HasPrefix(line, "#") || strings.HasPrefix(line, "- ") || strings.HasPrefix(line, "* ") || strings.HasPrefix(line, "> ") || strings.HasPrefix(line, "```") {
+			return true
+		}
+		if strings.Contains(line, "**") || strings.Contains(line, "`") || strings.Contains(line, "](") {
+			return true
+		}
 	}
-	parts = append(parts, text)
-	meta := []string{"From: " + runtimeAgentAddress(principal)}
-	if taskID := strings.TrimSpace(body.TaskID); taskID != "" {
-		meta = append(meta, "Task: "+taskID)
-	}
-	if urgency := strings.TrimSpace(body.Urgency); urgency != "" {
-		meta = append(meta, "Urgency: "+urgency)
-	}
-	parts = append(parts, "\n"+strings.Join(meta, " · "))
-	return strings.Join(parts, "\n\n")
+	return false
 }
 
-func formatRuntimeNotifyMarkdown(principal runtimeAgentPrincipal, body runtimeNotifyBody, text string) string {
-	parts := []string{strings.TrimSpace(text)}
-	meta := []string{"From: `" + runtimeAgentAddress(principal) + "`"}
-	if taskID := strings.TrimSpace(body.TaskID); taskID != "" {
-		meta = append(meta, "Task: `"+taskID+"`")
+func prepareRuntimeNotifyExternalMessage(message *imbridge.OutgoingMessage, target imbridge.OutgoingTarget) {
+	if message == nil {
+		return
 	}
-	if urgency := strings.TrimSpace(body.Urgency); urgency != "" {
-		meta = append(meta, "Urgency: `"+urgency+"`")
+	if strings.TrimSpace(target.ReplyToMessageID) != "" {
+		// IM source replies should feel like normal chat replies. Keep the
+		// subject for Multigent's internal inbox/audit trail, but do not expose
+		// it as an external card title such as "Re: ...".
+		message.Subject = ""
 	}
-	parts = append(parts, "---\n_"+strings.Join(meta, " · ")+"_")
-	return strings.Join(parts, "\n\n")
 }
 
 func (s *Server) auditRuntimeNotify(r *http.Request, principal runtimeAgentPrincipal, messageID, provider, subject string, externalSent bool, externalError string) {

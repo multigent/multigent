@@ -51,7 +51,14 @@ func (s *Server) handleAgentInteractionStatus(w http.ResponseWriter, r *http.Req
 	if !ok {
 		return
 	}
-	session, found, err := s.controlDB.ActiveInteractionSession(workspaceID, project, agent)
+	var session controldb.InteractionSession
+	var found bool
+	var err error
+	if workerID := s.agentWorkerIDForProjectAgent(workspaceID, project, agent); workerID != "" {
+		session, found, err = s.controlDB.ActiveInteractionSessionForWorker(workspaceID, workerID)
+	} else {
+		session, found, err = s.controlDB.ActiveInteractionSession(workspaceID, project, agent)
+	}
 	if err != nil {
 		s.serverError(w, err)
 		return

@@ -167,15 +167,15 @@ func (s *Server) runtimeFindTask(principal runtimeAgentPrincipal, id, requestedA
 		t, err := s.ts.GetTask(principal.Project, agent, id)
 		return t, agent, false, err
 	}
-	agents, err := s.st.ListAgents(principal.Project)
+	agents, err := s.projectAgentNames(principal.WorkspaceID, principal.Project)
 	if err != nil {
 		return nil, "", false, err
 	}
-	for _, ag := range agents {
-		t, err := s.ts.GetTask(principal.Project, ag.Name, id)
+	for _, agent := range agents {
+		t, err := s.ts.GetTask(principal.Project, agent, id)
 		if err == nil {
 			archived := t.Status.IsTerminal()
-			return t, ag.Name, archived, nil
+			return t, agent, archived, nil
 		}
 	}
 	return nil, "", false, fmt.Errorf("task not found")
@@ -197,7 +197,7 @@ func (s *Server) handleRuntimeTasks(w http.ResponseWriter, r *http.Request) {
 		s.jsonError(w, http.StatusBadRequest, "scope must be active, archived, or all")
 		return
 	}
-	agents, err := s.st.ListAgents(principal.Project)
+	agents, err := s.projectAgentNames(principal.WorkspaceID, principal.Project)
 	if err != nil {
 		s.serverError(w, err)
 		return
@@ -224,15 +224,15 @@ func (s *Server) handleRuntimeTasks(w http.ResponseWriter, r *http.Request) {
 			rows = append(rows, taskToRow(t, principal.Project, agent, archived))
 		}
 	}
-	for _, ag := range agents {
-		if qAgent != "" && ag.Name != qAgent {
+	for _, agent := range agents {
+		if qAgent != "" && agent != qAgent {
 			continue
 		}
 		if qScope == "active" || qScope == "all" {
-			addTasks(ag.Name, false)
+			addTasks(agent, false)
 		}
 		if qScope == "archived" || qScope == "all" {
-			addTasks(ag.Name, true)
+			addTasks(agent, true)
 		}
 	}
 	sort.Slice(rows, func(i, j int) bool {
@@ -269,18 +269,15 @@ func (s *Server) handleRuntimeWorkflowPendingReviews(w http.ResponseWriter, r *h
 		}
 		limit = parsed
 	}
-	agents, err := s.st.ListAgents(principal.Project)
+	agents, err := s.projectAgentNames(principal.WorkspaceID, principal.Project)
 	if err != nil {
 		s.serverError(w, err)
 		return
 	}
 	wfStore := workflowstore.NewStore(s.controlDB, principal.WorkspaceID)
 	reviews := make([]runtimeWorkflowPendingReview, 0)
-	for _, ag := range agents {
-		if ag == nil {
-			continue
-		}
-		tasks, err := s.ts.ListTasks(principal.Project, ag.Name)
+	for _, agent := range agents {
+		tasks, err := s.ts.ListTasks(principal.Project, agent)
 		if err != nil {
 			continue
 		}
@@ -331,7 +328,7 @@ func (s *Server) handleRuntimeWorkflowPendingReviews(w http.ResponseWriter, r *h
 			if reviewer != "" && !strings.EqualFold(actorID, reviewer) {
 				continue
 			}
-			reviews = append(reviews, runtimeWorkflowPendingReviewFromTask(principal.Project, ag.Name, task, run, def, step, inst))
+			reviews = append(reviews, runtimeWorkflowPendingReviewFromTask(principal.Project, agent, task, run, def, step, inst))
 		}
 	}
 	sort.SliceStable(reviews, func(i, j int) bool {
@@ -531,10 +528,12 @@ func (s *Server) handleRuntimePostTask(w http.ResponseWriter, r *http.Request) {
 		}
 		t.DueDate = &dd
 	}
+	s.annotateTaskAssignee(principal.WorkspaceID, principal.Project, t)
 	if err := s.ts.AddTask(principal.Project, agent, t); err != nil {
 		s.serverError(w, err)
 		return
 	}
+	s.recordTaskAttentionSignal(principal.WorkspaceID, principal.Project, agent, t, "task_assigned")
 	s.triggers.Fire(principal.Project, agent, entity.TriggerOnTask, "task "+t.ID)
 	s.auditLog(auditLogInput{
 		WorkspaceID:  principal.WorkspaceID,
@@ -691,6 +690,7 @@ func (s *Server) createRuntimeTaskFromBody(w http.ResponseWriter, r *http.Reques
 		}
 		t.DueDate = &dd
 	}
+	s.annotateTaskAssignee(principal.WorkspaceID, principal.Project, t)
 	if err := s.ts.AddTask(principal.Project, agent, t); err != nil {
 		s.serverError(w, err)
 		return
@@ -714,6 +714,7 @@ func (s *Server) createRuntimeTaskFromBody(w http.ResponseWriter, r *http.Reques
 		}
 	}
 	if strings.Contains(assignee, "/") {
+		s.recordTaskAttentionSignal(principal.WorkspaceID, principal.Project, agent, t, "task_assigned")
 		s.triggers.Fire(principal.Project, agent, entity.TriggerOnTask, "task "+t.ID)
 	}
 	s.auditLog(auditLogInput{
@@ -1120,7 +1121,7 @@ func (s *Server) activateNextWorkflowStep(workspaceID, project, previousAgent st
 	now := time.Now().UTC()
 	if inst.ActorType == "agent" && strings.TrimSpace(inst.ActorID) != "" {
 		nextAgent := strings.TrimSpace(inst.ActorID)
-		if err := s.moveWorkflowTaskToAgent(project, previousAgent, nextAgent, completed, entity.TaskStatusPending, now); err != nil {
+		if err := s.moveWorkflowTaskToAgent(workspaceID, project, previousAgent, nextAgent, completed, entity.TaskStatusPending, now); err != nil {
 			return err
 		}
 		return s.fireTaskTriggerOrQueueRuntime(workspaceID, project, nextAgent, completed, r, "workflow task "+completed.ID)
@@ -1137,6 +1138,7 @@ func (s *Server) activateNextWorkflowStep(workspaceID, project, previousAgent st
 		completed.Assignee = reviewer
 		completed.UpdatedAt = now
 		completed.FinishedAt = nil
+		s.annotateTaskAssignee(workspaceID, project, completed)
 		if err := s.ts.PersistTask(project, previousAgent, completed); err != nil {
 			return err
 		}
@@ -1173,7 +1175,7 @@ func (s *Server) activateNextWorkflowStep(workspaceID, project, previousAgent st
 	return nil
 }
 
-func (s *Server) moveWorkflowTaskToAgent(project, previousAgent, nextAgent string, task *entity.Task, status entity.TaskStatus, now time.Time) error {
+func (s *Server) moveWorkflowTaskToAgent(workspaceID, project, previousAgent, nextAgent string, task *entity.Task, status entity.TaskStatus, now time.Time) error {
 	if task == nil {
 		return fmt.Errorf("task is required")
 	}
@@ -1187,6 +1189,7 @@ func (s *Server) moveWorkflowTaskToAgent(project, previousAgent, nextAgent strin
 	task.UpdatedAt = now
 	task.FinishedAt = nil
 	task.LastError = ""
+	s.annotateTaskAssignee(workspaceID, project, task)
 	if previousAgent == nextAgent {
 		if err := s.ts.PersistTask(project, nextAgent, task); err != nil {
 			return err
@@ -1234,6 +1237,7 @@ func (s *Server) activateParallelWorkflowStep(workspaceID, project, previousAgen
 	completed.Assignee = project + "/" + previousAgent
 	completed.UpdatedAt = now
 	completed.FinishedAt = nil
+	s.annotateTaskAssignee(workspaceID, project, completed)
 	if err := s.ts.PersistTask(project, previousAgent, completed); err != nil {
 		return err
 	}
@@ -1277,6 +1281,7 @@ func (s *Server) activateParallelWorkflowStep(workspaceID, project, previousAgen
 				workflowBranchIDVar:   branch.ID,
 			},
 		}
+		s.annotateTaskAssignee(workspaceID, project, branchTask)
 		if branchTask.Type == "" {
 			branchTask.Type = entity.TaskTypeChore
 		}
@@ -1330,6 +1335,7 @@ func (s *Server) fireTaskTriggerOrQueueRuntime(workspaceID, project, agent strin
 	if s == nil || task == nil {
 		return nil
 	}
+	s.recordTaskAttentionSignal(workspaceID, project, agent, task, reason)
 	hb, err := s.ts.GetHeartbeat(project, agent)
 	if err != nil || hb == nil || hb.Paused || !hb.HasTrigger(entity.TriggerOnTask) {
 		if s.triggers != nil {
@@ -1337,7 +1343,7 @@ func (s *Server) fireTaskTriggerOrQueueRuntime(workspaceID, project, agent strin
 		}
 		return nil
 	}
-	meta, err := s.st.AgentMeta(project, agent)
+	meta, err := s.agentMetaForProjectMember(workspaceID, project, agent)
 	if err != nil || meta == nil || !s.usesAssignedRuntimeNode(workspaceID, meta) {
 		if s.triggers != nil {
 			s.triggers.Fire(project, agent, entity.TriggerOnTask, reason)

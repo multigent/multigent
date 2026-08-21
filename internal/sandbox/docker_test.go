@@ -166,7 +166,7 @@ func TestBuildArgsUsesAgentScopedRuntimeHome(t *testing.T) {
 	}
 }
 
-func TestBuildArgsDoesNotForwardLoopbackProxyIntoDocker(t *testing.T) {
+func TestBuildArgsForwardsLoopbackProxyIntoDocker(t *testing.T) {
 	t.Setenv("HTTPS_PROXY", "http://127.0.0.1:7890")
 	t.Setenv("HTTP_PROXY", "http://localhost:7890")
 	t.Setenv("NO_PROXY", "localhost,127.0.0.1")
@@ -174,11 +174,28 @@ func TestBuildArgsDoesNotForwardLoopbackProxyIntoDocker(t *testing.T) {
 	if err != nil {
 		t.Fatalf("BuildArgs: %v", err)
 	}
-	if hasExactEnvArg(args, "HTTPS_PROXY") || hasExactEnvArg(args, "HTTP_PROXY") {
-		t.Fatalf("loopback proxy leaked into docker args: %v", args)
+	if !hasExactEnvArg(args, "HTTPS_PROXY") || !hasExactEnvArg(args, "HTTP_PROXY") {
+		t.Fatalf("loopback proxy should be inherited into docker args: %v", args)
 	}
 	if !hasExactEnvArg(args, "NO_PROXY") {
 		t.Fatalf("NO_PROXY should still be forwarded: %v", args)
+	}
+}
+
+func TestDockerReachableProxyEnvValueRewritesLoopback(t *testing.T) {
+	cases := map[string]string{
+		"HTTPS_PROXY=http://127.0.0.1:7890":  "http://host.docker.internal:7890",
+		"HTTP_PROXY=http://localhost:7890":   "http://host.docker.internal:7890",
+		"http_proxy=http://[::1]:7890":       "http://host.docker.internal:7890",
+		"ALL_PROXY=socks5h://127.0.0.1:7890": "socks5h://host.docker.internal:7890",
+		"NO_PROXY=localhost,127.0.0.1":       "localhost,127.0.0.1",
+		"HTTPS_PROXY=https://proxy.example":  "https://proxy.example",
+	}
+	for input, want := range cases {
+		key, value, _ := strings.Cut(input, "=")
+		if got := DockerReachableProxyEnvValue(key, value); got != want {
+			t.Fatalf("DockerReachableProxyEnvValue(%q, %q) = %q, want %q", key, value, got, want)
+		}
 	}
 }
 

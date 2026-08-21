@@ -104,11 +104,15 @@ func (s *Server) handleAgentChannels(w http.ResponseWriter, r *http.Request) {
 	if !ok {
 		return
 	}
-	bindings, err := s.controlDB.ListAgentChannelBindings(controldb.AgentChannelBindingFilter{
+	filter := controldb.AgentChannelBindingFilter{
 		WorkspaceID: workspaceID,
 		ProjectID:   project,
 		AgentID:     agent,
-	})
+	}
+	if workerID := s.agentWorkerIDForProjectAgent(workspaceID, project, agent); workerID != "" {
+		filter = controldb.AgentChannelBindingFilter{WorkspaceID: workspaceID, AgentWorkerID: workerID}
+	}
+	bindings, err := s.controlDB.ListAgentChannelBindings(filter)
 	if err != nil {
 		s.serverError(w, err)
 		return
@@ -588,6 +592,7 @@ func (s *Server) handleAgentChannelBindCode(w http.ResponseWriter, r *http.Reque
 
 func (s *Server) saveAgentIMChannel(r *http.Request, workspaceID, project, agent, provider string, poll imbridge.SetupPollResponse) (controldb.AgentChannelBinding, error) {
 	now := time.Now().UTC().Format(time.RFC3339)
+	agentWorkerID := s.agentWorkerIDForProjectAgent(workspaceID, project, agent)
 	openBaseURL, err := imbridge.MustOpenBaseURL(provider)
 	if err != nil {
 		return controldb.AgentChannelBinding{}, err
@@ -666,6 +671,7 @@ func (s *Server) saveAgentIMChannel(r *http.Request, workspaceID, project, agent
 	binding := controldb.AgentChannelBinding{
 		ID:              newChannelID("chan"),
 		WorkspaceID:     workspaceID,
+		AgentWorkerID:   agentWorkerID,
 		ProjectID:       project,
 		AgentID:         agent,
 		Provider:        provider,
@@ -723,6 +729,7 @@ func (s *Server) saveAgentIMChannel(r *http.Request, workspaceID, project, agent
 
 func (s *Server) saveManualAgentIMChannel(r *http.Request, workspaceID, project, agent string, result imbridge.ManualSetupResult) (controldb.AgentChannelBinding, error) {
 	now := time.Now().UTC().Format(time.RFC3339)
+	agentWorkerID := s.agentWorkerIDForProjectAgent(workspaceID, project, agent)
 	provider := result.Provider
 	openBaseURL := strings.TrimSpace(result.BaseURL)
 	if openBaseURL == "" {
@@ -810,6 +817,7 @@ func (s *Server) saveManualAgentIMChannel(r *http.Request, workspaceID, project,
 	binding := controldb.AgentChannelBinding{
 		ID:              newChannelID("chan"),
 		WorkspaceID:     workspaceID,
+		AgentWorkerID:   agentWorkerID,
 		ProjectID:       project,
 		AgentID:         agent,
 		Provider:        provider,
@@ -897,6 +905,19 @@ func (s *Server) currentWorkspaceForRequest(w http.ResponseWriter, r *http.Reque
 }
 
 func (s *Server) findAgentChannelBinding(workspaceID, project, agent, provider string) (controldb.AgentChannelBinding, bool, error) {
+	if workerID := s.agentWorkerIDForProjectAgent(workspaceID, project, agent); workerID != "" {
+		bindings, err := s.controlDB.ListAgentChannelBindings(controldb.AgentChannelBindingFilter{
+			WorkspaceID:   workspaceID,
+			AgentWorkerID: workerID,
+			Provider:      provider,
+		})
+		if err != nil {
+			return controldb.AgentChannelBinding{}, false, err
+		}
+		if len(bindings) > 0 {
+			return bindings[0], true, nil
+		}
+	}
 	bindings, err := s.controlDB.ListAgentChannelBindings(controldb.AgentChannelBindingFilter{
 		WorkspaceID: workspaceID,
 		ProjectID:   project,
@@ -910,6 +931,22 @@ func (s *Server) findAgentChannelBinding(workspaceID, project, agent, provider s
 		return controldb.AgentChannelBinding{}, false, nil
 	}
 	return bindings[0], true, nil
+}
+
+func (s *Server) agentWorkerIDForProjectAgent(workspaceID, project, agent string) string {
+	workerID, _ := s.agentWorkerContextForProjectAgent(workspaceID, project, agent)
+	return workerID
+}
+
+func (s *Server) agentWorkerContextForProjectAgent(workspaceID, project, agent string) (workerID, membershipID string) {
+	if s == nil || s.agentDirectory == nil {
+		return "", ""
+	}
+	resolved, ok, err := s.agentDirectory.ResolveLegacyMailbox(workspaceID, project+"/"+agent)
+	if err != nil || !ok {
+		return "", ""
+	}
+	return strings.TrimSpace(resolved.Worker.ID), strings.TrimSpace(resolved.Membership.ID)
 }
 
 func agentChannelToResponse(binding controldb.AgentChannelBinding) agentChannelResponse {

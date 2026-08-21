@@ -110,6 +110,7 @@ func init() {
 		newWorkflowCmd(),
 		newTaskTemplateCmd(),
 		newWorkerCmd(),
+		newMigrateCmd(),
 		newSchemaCmd(),
 	)
 }

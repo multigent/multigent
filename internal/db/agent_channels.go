@@ -20,11 +20,26 @@ func (db *SQLiteStore) UpsertAgentChannelBinding(b AgentChannelBinding) error {
 		b.MetadataJSON = "{}"
 	}
 	_, err := db.sql.Exec(`INSERT INTO agent_channel_bindings (
-	id, workspace_id, project_id, agent_id, provider, connection_id,
+	id, workspace_id, agent_worker_id, project_id, agent_id, provider, connection_id,
 	external_bot_id, external_chat_id, external_owner_id, status, metadata_json,
 	created_by, created_at, updated_at, last_activity_at
-) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
 ON CONFLICT(workspace_id, project_id, agent_id, provider) DO UPDATE SET
+	agent_worker_id = excluded.agent_worker_id,
+	connection_id = excluded.connection_id,
+	external_bot_id = excluded.external_bot_id,
+	external_chat_id = excluded.external_chat_id,
+	external_owner_id = excluded.external_owner_id,
+	status = excluded.status,
+	metadata_json = excluded.metadata_json,
+	updated_at = excluded.updated_at,
+	last_activity_at = excluded.last_activity_at
+ON CONFLICT(id) DO UPDATE SET
+	workspace_id = excluded.workspace_id,
+	agent_worker_id = excluded.agent_worker_id,
+	project_id = excluded.project_id,
+	agent_id = excluded.agent_id,
+	provider = excluded.provider,
 	connection_id = excluded.connection_id,
 	external_bot_id = excluded.external_bot_id,
 	external_chat_id = excluded.external_chat_id,
@@ -33,14 +48,14 @@ ON CONFLICT(workspace_id, project_id, agent_id, provider) DO UPDATE SET
 	metadata_json = excluded.metadata_json,
 	updated_at = excluded.updated_at,
 	last_activity_at = excluded.last_activity_at`,
-		b.ID, b.WorkspaceID, b.ProjectID, b.AgentID, b.Provider, b.ConnectionID,
+		b.ID, b.WorkspaceID, b.AgentWorkerID, b.ProjectID, b.AgentID, b.Provider, b.ConnectionID,
 		b.ExternalBotID, b.ExternalChatID, b.ExternalOwnerID, b.Status, b.MetadataJSON,
 		b.CreatedBy, b.CreatedAt, b.UpdatedAt, b.LastActivityAt)
 	return err
 }
 
 func (db *SQLiteStore) AgentChannelBindingByID(id string) (AgentChannelBinding, bool, error) {
-	row := db.sql.QueryRow(`SELECT id, workspace_id, project_id, agent_id, provider, connection_id,
+	row := db.sql.QueryRow(`SELECT id, workspace_id, agent_worker_id, project_id, agent_id, provider, connection_id,
 external_bot_id, external_chat_id, external_owner_id, status, metadata_json,
 created_by, created_at, updated_at, last_activity_at
 FROM agent_channel_bindings WHERE id = ?`, id)
@@ -55,7 +70,7 @@ FROM agent_channel_bindings WHERE id = ?`, id)
 }
 
 func (db *SQLiteStore) ListAgentChannelBindings(filter AgentChannelBindingFilter) ([]AgentChannelBinding, error) {
-	query := `SELECT id, workspace_id, project_id, agent_id, provider, connection_id,
+	query := `SELECT id, workspace_id, agent_worker_id, project_id, agent_id, provider, connection_id,
 external_bot_id, external_chat_id, external_owner_id, status, metadata_json,
 created_by, created_at, updated_at, last_activity_at
 FROM agent_channel_bindings WHERE 1=1`
@@ -63,6 +78,10 @@ FROM agent_channel_bindings WHERE 1=1`
 	if strings.TrimSpace(filter.WorkspaceID) != "" {
 		query += ` AND workspace_id = ?`
 		args = append(args, strings.TrimSpace(filter.WorkspaceID))
+	}
+	if strings.TrimSpace(filter.AgentWorkerID) != "" {
+		query += ` AND agent_worker_id = ?`
+		args = append(args, strings.TrimSpace(filter.AgentWorkerID))
 	}
 	if strings.TrimSpace(filter.ProjectID) != "" {
 		query += ` AND project_id = ?`
@@ -112,7 +131,7 @@ type agentChannelBindingScanner interface {
 
 func scanAgentChannelBinding(row agentChannelBindingScanner) (AgentChannelBinding, error) {
 	var b AgentChannelBinding
-	err := row.Scan(&b.ID, &b.WorkspaceID, &b.ProjectID, &b.AgentID, &b.Provider, &b.ConnectionID,
+	err := row.Scan(&b.ID, &b.WorkspaceID, &b.AgentWorkerID, &b.ProjectID, &b.AgentID, &b.Provider, &b.ConnectionID,
 		&b.ExternalBotID, &b.ExternalChatID, &b.ExternalOwnerID, &b.Status, &b.MetadataJSON,
 		&b.CreatedBy, &b.CreatedAt, &b.UpdatedAt, &b.LastActivityAt)
 	return b, err

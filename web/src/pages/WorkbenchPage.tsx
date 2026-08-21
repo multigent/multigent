@@ -50,6 +50,15 @@ import {
 } from '../components/task/TaskModals'
 
 type ProjectAgents = { projectId: string; agents: { name: string; model?: string }[] }
+type ProjectMembershipsResp = {
+  memberships?: {
+    memberType?: string
+    agent?: {
+      name?: string
+      model?: string
+    }
+  }[]
+}
 
 function useProjectsAgents() {
   const [data, setData] = useState<ProjectAgents[]>([])
@@ -72,7 +81,13 @@ function useProjectsAgents() {
         const result: ProjectAgents[] = []
         for (const p of projects) {
           try {
-            const agents = await apiFetch<{ name: string; model?: string }[]>(`/api/v1/projects/${encodeURIComponent(p.name)}/agents`)
+            const resp = await apiFetch<ProjectMembershipsResp>(`/api/v1/projects/${encodeURIComponent(p.name)}/memberships`)
+            const agents = (resp.memberships ?? [])
+              .filter((membership) => membership.memberType === 'agent_worker' && membership.agent?.name)
+              .map((membership) => ({
+                name: membership.agent!.name!,
+                model: membership.agent?.model,
+              }))
             result.push({ projectId: p.name, agents })
           } catch { result.push({ projectId: p.name, agents: [] }) }
         }
@@ -977,7 +992,7 @@ function OverviewPanel() {
               return (
                 <div
                   key={p.project}
-                  onClick={() => navigate(`/projects/${encodeURIComponent(p.project)}/schedule`)}
+                  onClick={() => navigate('/agents')}
                   className="group cursor-pointer rounded-xl border border-neutral-200/80 bg-white p-5 transition-all hover:border-neutral-300 hover:shadow-md dark:border-zinc-700/60 dark:bg-zinc-900/40 dark:hover:border-zinc-600"
                 >
                   <div className="flex items-center justify-between">

@@ -26,17 +26,19 @@ func TestRuntimeRunClaimLeaseAndExpiredReclaim(t *testing.T) {
 		}
 	}
 	if err := db.UpsertRuntimeRun(RuntimeRun{
-		ID:          "run-one",
-		WorkspaceID: workspaceID,
-		ProjectID:   "project",
-		AgentID:     "agent",
-		TaskID:      "task-one",
-		Status:      "queued",
-		Priority:    1,
-		SpecJSON:    `{"kind":"exec_prompt"}`,
-		ResultJSON:  `{}`,
-		CreatedAt:   time.Now().UTC().Add(-time.Minute).Format(time.RFC3339),
-		UpdatedAt:   nowUTC(),
+		ID:                  "run-one",
+		WorkspaceID:         workspaceID,
+		AgentWorkerID:       "aw-one",
+		ProjectMembershipID: "pm-one",
+		ProjectID:           "project",
+		AgentID:             "agent",
+		TaskID:              "task-one",
+		Status:              "queued",
+		Priority:            1,
+		SpecJSON:            `{"kind":"exec_prompt"}`,
+		ResultJSON:          `{}`,
+		CreatedAt:           time.Now().UTC().Add(-time.Minute).Format(time.RFC3339),
+		UpdatedAt:           nowUTC(),
 	}); err != nil {
 		t.Fatalf("run: %v", err)
 	}
@@ -54,6 +56,13 @@ func TestRuntimeRunClaimLeaseAndExpiredReclaim(t *testing.T) {
 	}
 	if len(filtered) != 1 || filtered[0].ID != "run-one" {
 		t.Fatalf("unexpected task-filtered runs: %#v", filtered)
+	}
+	workerFiltered, err := db.ListRuntimeRuns(RuntimeRunFilter{WorkspaceID: workspaceID, AgentWorkerID: "aw-one", ProjectMembershipID: "pm-one", Status: "running"})
+	if err != nil {
+		t.Fatalf("filter by worker: %v", err)
+	}
+	if len(workerFiltered) != 1 || workerFiltered[0].ID != "run-one" {
+		t.Fatalf("unexpected worker-filtered runs: %#v", workerFiltered)
 	}
 
 	renewed, found, err := db.ExtendRuntimeRunLease(workspaceID, "run-one", "node-a", 60)
@@ -149,5 +158,59 @@ func TestClaimRuntimeRunSkipsBusyAgent(t *testing.T) {
 	}
 	if claimed.ID != "run-free" {
 		t.Fatalf("expected run-free, got %#v", claimed)
+	}
+}
+
+func TestClaimRuntimeRunSkipsBusyAgentWorker(t *testing.T) {
+	db, err := Open(filepath.Join(t.TempDir(), "multigent.db"))
+	if err != nil {
+		t.Fatalf("open db: %v", err)
+	}
+	defer db.Close()
+
+	workspaceID := "ws-runtime"
+	if err := db.UpsertWorkspace(Workspace{ID: workspaceID, Name: "Runtime", Slug: "runtime", Root: "/tmp/runtime", CreatedAt: nowUTC()}); err != nil {
+		t.Fatalf("workspace: %v", err)
+	}
+	now := time.Now().UTC()
+	for _, run := range []RuntimeRun{
+		{
+			ID:            "run-busy-worker",
+			WorkspaceID:   workspaceID,
+			AgentWorkerID: "aw-busy",
+			ProjectID:     "project-a",
+			AgentID:       "agent-a",
+			Status:        "queued",
+			Priority:      1,
+			SpecJSON:      `{"kind":"exec_prompt"}`,
+			ResultJSON:    `{}`,
+			CreatedAt:     now.Add(-2 * time.Minute).Format(time.RFC3339),
+			UpdatedAt:     nowUTC(),
+		},
+		{
+			ID:            "run-free-worker",
+			WorkspaceID:   workspaceID,
+			AgentWorkerID: "aw-free",
+			ProjectID:     "project-b",
+			AgentID:       "agent-b",
+			Status:        "queued",
+			Priority:      2,
+			SpecJSON:      `{"kind":"exec_prompt"}`,
+			ResultJSON:    `{}`,
+			CreatedAt:     now.Add(-time.Minute).Format(time.RFC3339),
+			UpdatedAt:     nowUTC(),
+		},
+	} {
+		if err := db.UpsertRuntimeRun(run); err != nil {
+			t.Fatalf("run %s: %v", run.ID, err)
+		}
+	}
+
+	claimed, found, err := db.ClaimRuntimeRun(workspaceID, "node-a", 30, []string{"worker/aw-busy"})
+	if err != nil || !found {
+		t.Fatalf("claim found=%v err=%v", found, err)
+	}
+	if claimed.ID != "run-free-worker" {
+		t.Fatalf("expected run-free-worker, got %#v", claimed)
 	}
 }

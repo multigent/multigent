@@ -30,6 +30,10 @@ func (s *fsStore) abs(parts ...string) string {
 	return filepath.Join(append([]string{s.root}, parts...)...)
 }
 
+func (s *fsStore) rootConfigDir() string {
+	return workspaceConfigDir(s.root)
+}
+
 func readYAML(path string, out any) error {
 	data, err := os.ReadFile(path)
 	if err != nil {
@@ -70,7 +74,7 @@ func writeText(path, content string) error {
 // ── Agency ────────────────────────────────────────────────────────────────────
 
 func (s *fsStore) Agency() (*entity.Agency, error) {
-	path := s.abs(".multigent", "agency.yaml")
+	path := s.abs(s.rootConfigDir(), "agency.yaml")
 	var a entity.Agency
 	if err := readYAML(path, &a); err != nil {
 		return nil, fmt.Errorf("store: read agency: %w", err)
@@ -79,7 +83,7 @@ func (s *fsStore) Agency() (*entity.Agency, error) {
 }
 
 func (s *fsStore) SaveAgency(a *entity.Agency) error {
-	path := s.abs(".multigent", "agency.yaml")
+	path := s.abs(s.rootConfigDir(), "agency.yaml")
 	if err := writeYAML(path, a); err != nil {
 		return fmt.Errorf("store: save agency: %w", err)
 	}
@@ -435,8 +439,19 @@ func (s *fsStore) AgentDir(project, name string) string {
 	return s.abs("projects", project, "agents", name)
 }
 
+func (s *fsStore) AgentSystemDir(project, name string) string {
+	agentDir := s.AgentDir(project, name)
+	if _, err := os.Stat(filepath.Join(agentDir, ".multigent", "agent.yaml")); err == nil {
+		return filepath.Join(agentDir, ".multigent")
+	}
+	if _, err := os.Stat(filepath.Join(agentDir, ".agencycli", "agent.yaml")); err == nil {
+		return filepath.Join(agentDir, ".agencycli")
+	}
+	return filepath.Join(agentDir, ".multigent")
+}
+
 func (s *fsStore) AgentMeta(project, name string) (*entity.AgentMeta, error) {
-	path := filepath.Join(s.AgentDir(project, name), ".multigent", "agent.yaml")
+	path := filepath.Join(s.AgentSystemDir(project, name), "agent.yaml")
 	var m entity.AgentMeta
 	if err := readYAML(path, &m); err != nil {
 		if errors.Is(err, os.ErrNotExist) {
@@ -448,7 +463,7 @@ func (s *fsStore) AgentMeta(project, name string) (*entity.AgentMeta, error) {
 }
 
 func (s *fsStore) SaveAgentMeta(project, name string, meta *entity.AgentMeta) error {
-	path := filepath.Join(s.AgentDir(project, name), ".multigent", "agent.yaml")
+	path := filepath.Join(s.AgentSystemDir(project, name), "agent.yaml")
 	if err := writeYAML(path, meta); err != nil {
 		return fmt.Errorf("store: save agent meta %q/%q: %w", project, name, err)
 	}

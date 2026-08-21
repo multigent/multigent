@@ -5,7 +5,10 @@ import (
 	"net/http"
 	"strings"
 	"testing"
+	"time"
 
+	"github.com/multigent/multigent/internal/agentdir"
+	controldb "github.com/multigent/multigent/internal/db"
 	"github.com/multigent/multigent/internal/entity"
 )
 
@@ -185,6 +188,72 @@ func TestLocalRuntimeAPIURLForRequestUsesLoopbackPort(t *testing.T) {
 	req.Host = "35.243.103.114:27892"
 	if got := localRuntimeAPIURLForRequest(req); got != "http://127.0.0.1:27892" {
 		t.Fatalf("localRuntimeAPIURLForRequest() = %q", got)
+	}
+}
+
+func TestAgentChatSessionsIncludeWorkerBackedRuntimeRuns(t *testing.T) {
+	s, workspaceID := newConnectionGrantPolicyServer(t)
+	now := time.Now().UTC().Format(time.RFC3339)
+	if err := s.controlDB.UpsertAgentWorker(controldb.AgentWorker{
+		ID:          "aw-nova",
+		WorkspaceID: workspaceID,
+		Name:        "nova",
+		DisplayName: "Nova",
+		Status:      "active",
+		CreatedAt:   now,
+		UpdatedAt:   now,
+	}); err != nil {
+		t.Fatalf("worker: %v", err)
+	}
+	if err := s.controlDB.UpsertProjectMembership(controldb.ProjectMembership{
+		ID:               "pm-sample-nova",
+		WorkspaceID:      workspaceID,
+		ProjectID:        "sample",
+		MemberType:       agentdir.MemberTypeAgentWorker,
+		MemberID:         "aw-nova",
+		Role:             "pm",
+		Title:            "pm",
+		AutoPickTasks:    true,
+		AttentionEnabled: true,
+		CreatedAt:        now,
+		UpdatedAt:        now,
+	}); err != nil {
+		t.Fatalf("membership: %v", err)
+	}
+	resultJSON, _ := json.Marshal(map[string]string{
+		"sessionId": "sess-worker-only",
+		"logText":   `{"type":"user","message":{"role":"user","content":[{"type":"text","text":"worker backed chat"}]},"session_id":"sess-worker-only"}`,
+	})
+	if err := s.controlDB.UpsertRuntimeRun(controldb.RuntimeRun{
+		ID:                  "run-worker-only",
+		WorkspaceID:         workspaceID,
+		AgentWorkerID:       "aw-nova",
+		ProjectMembershipID: "pm-sample-nova",
+		ProjectID:           "sample",
+		Status:              "succeeded",
+		SpecJSON:            `{}`,
+		ResultJSON:          string(resultJSON),
+		CreatedAt:           now,
+		UpdatedAt:           now,
+		StartedAt:           now,
+		FinishedAt:          now,
+	}); err != nil {
+		t.Fatalf("runtime run: %v", err)
+	}
+
+	sessions, err := s.listAgentChatSessions(workspaceID, "sample", "pm")
+	if err != nil {
+		t.Fatalf("list sessions: %v", err)
+	}
+	if len(sessions) != 1 || sessions[0].SessionID != "sess-worker-only" {
+		t.Fatalf("unexpected sessions: %#v", sessions)
+	}
+	history, resolved, err := s.readRuntimeNodeAgentSessionHistory(workspaceID, "sample", "pm", "sess-worker-only", 5)
+	if err != nil {
+		t.Fatalf("read history: %v", err)
+	}
+	if resolved != "sess-worker-only" || len(history) != 1 || !strings.Contains(string(history[0].data), "worker backed chat") {
+		t.Fatalf("unexpected history resolved=%q history=%#v", resolved, history)
 	}
 }
 

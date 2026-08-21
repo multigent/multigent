@@ -74,7 +74,7 @@ func newNotifySendCmd() *cobra.Command {
 	cmd.Flags().StringVar(&req.Body, "body", "", "notification body")
 	cmd.Flags().StringVar(&req.TaskID, "task", "", "related task id")
 	cmd.Flags().StringVar(&req.Urgency, "urgency", "", "urgency label: normal, review, blocking")
-	cmd.Flags().StringVar(&req.MessageFormat, "message-format", "text", "message content format: text or markdown")
+	cmd.Flags().StringVar(&req.MessageFormat, "message-format", "auto", "message content format: auto, text, or markdown")
 	cmd.Flags().StringVar(&format, "format", "", "output format: json or table")
 	return cmd
 }

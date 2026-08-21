@@ -43,13 +43,15 @@ type runtimeNodeRunEnvelope struct {
 }
 
 type runtimeNodeRun struct {
-	ID            string `json:"id"`
-	WorkspaceID   string `json:"workspaceId"`
-	ProjectID     string `json:"projectId"`
-	AgentID       string `json:"agentId"`
-	TaskID        string `json:"taskId"`
-	RuntimeNodeID string `json:"runtimeNodeId"`
-	Status        string `json:"status"`
+	ID                  string `json:"id"`
+	WorkspaceID         string `json:"workspaceId"`
+	AgentWorkerID       string `json:"agentWorkerId"`
+	ProjectMembershipID string `json:"projectMembershipId"`
+	ProjectID           string `json:"projectId"`
+	AgentID             string `json:"agentId"`
+	TaskID              string `json:"taskId"`
+	RuntimeNodeID       string `json:"runtimeNodeId"`
+	Status              string `json:"status"`
 }
 
 type runtimeNodeSpecEnvelope struct {
@@ -282,7 +284,7 @@ func runtimeNodeLoopOnce(cfg runtimeNodeConfig, workerID int, coord *runtimeNode
 		coord.mu.Unlock()
 		return nil
 	}
-	agentKey := claim.Run.ProjectID + "/" + claim.Run.AgentID
+	agentKey := runtimeNodeRunAgentKey(*claim.Run)
 	coord.busyAgents[agentKey] = struct{}{}
 	coord.mu.Unlock()
 	defer func() {
@@ -292,6 +294,13 @@ func runtimeNodeLoopOnce(cfg runtimeNodeConfig, workerID int, coord *runtimeNode
 	}()
 	slog.Info("runtime run claimed", "worker", workerID, "run", claim.Run.ID, "project", claim.Run.ProjectID, "agent", claim.Run.AgentID)
 	return runtimeNodeExecuteRun(cfg, *claim.Run, workerID, streamAgentOutput)
+}
+
+func runtimeNodeRunAgentKey(run runtimeNodeRun) string {
+	if strings.TrimSpace(run.AgentWorkerID) != "" {
+		return "worker/" + strings.TrimSpace(run.AgentWorkerID)
+	}
+	return strings.TrimSpace(run.ProjectID) + "/" + strings.TrimSpace(run.AgentID)
 }
 
 func resolveRuntimeNodeLogOptions(file, level, format string, maxSizeMB int, logStderr bool, flagChanged func(string) bool) serviceLogOptions {

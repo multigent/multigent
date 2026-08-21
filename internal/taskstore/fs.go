@@ -55,7 +55,14 @@ func (s *FSStore) agentDir(project, agent string) string {
 
 // systemDir returns <root>/projects/<project>/agents/<agent>/.multigent.
 func (s *FSStore) systemDir(project, agent string) string {
-	return filepath.Join(s.agentDir(project, agent), systemDir)
+	agentDir := s.agentDir(project, agent)
+	if _, err := os.Stat(filepath.Join(agentDir, ".multigent", agentMetaFile)); err == nil {
+		return filepath.Join(agentDir, ".multigent")
+	}
+	if _, err := os.Stat(filepath.Join(agentDir, ".agencycli", agentMetaFile)); err == nil {
+		return filepath.Join(agentDir, ".agencycli")
+	}
+	return filepath.Join(agentDir, systemDir)
 }
 
 // projectDir returns <root>/projects/<project>.

@@ -1,6 +1,9 @@
 package lark
 
-import "testing"
+import (
+	"encoding/json"
+	"testing"
+)
 
 func TestMessageAddressingHelpers(t *testing.T) {
 	if !IsDirectChat(EventMessage{ChatType: "p2p"}) {
@@ -11,6 +14,12 @@ func TestMessageAddressingHelpers(t *testing.T) {
 	}
 	if !HasExplicitMention(EventMessage{Content: `{"text":"@bot hi","mentions":[{"key":"@bot"}]}`}) {
 		t.Fatalf("mentions should be detected")
+	}
+	if !HasExplicitMention(EventMessage{Content: `{"text":"@bot hi"}`, Mentions: []json.RawMessage{json.RawMessage(`{"key":"@bot"}`)}}) {
+		t.Fatalf("top-level mentions should be detected")
+	}
+	if !HasExplicitMention(EventMessage{Content: `{"text":"@_user_1 hi"}`}) {
+		t.Fatalf("feishu mention placeholder should be detected")
 	}
 	if HasExplicitMention(EventMessage{Content: `{"text":"hi"}`}) {
 		t.Fatalf("plain text should not count as mention")

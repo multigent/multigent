@@ -227,7 +227,7 @@ func (s *Server) handleDeleteProvider(w http.ResponseWriter, r *http.Request) {
 		s.serverError(w, err)
 		return
 	}
-	clearedAgents, err := s.clearDeletedModelProviderRefs(id)
+	clearedAgents, err := s.clearDeletedModelProviderRefs(workspaceID, id)
 	if err != nil {
 		s.serverError(w, err)
 		return
@@ -355,15 +355,31 @@ func (s *Server) handleImportLocalModelProviders(w http.ResponseWriter, r *http.
 	})
 }
 
-func (s *Server) clearDeletedModelProviderRefs(providerID string) ([]string, error) {
+func (s *Server) clearDeletedModelProviderRefs(workspaceID, providerID string) ([]string, error) {
+	cleared := []string{}
+	if s.controlDB != nil && strings.TrimSpace(workspaceID) != "" {
+		workers, err := s.controlDB.ListAgentWorkers(workspaceID)
+		if err != nil {
+			return nil, err
+		}
+		for _, worker := range workers {
+			if worker.DefaultModelAccountID != providerID {
+				continue
+			}
+			worker.DefaultModelAccountID = ""
+			if err := s.controlDB.UpsertAgentWorker(worker); err != nil {
+				return nil, err
+			}
+			cleared = append(cleared, "agent_worker:"+worker.Name)
+		}
+	}
 	if s.st == nil {
-		return []string{}, nil
+		return cleared, nil
 	}
 	projects, err := s.st.ListProjects()
 	if err != nil {
 		return nil, err
 	}
-	cleared := []string{}
 	for _, project := range projects {
 		if project == nil || strings.TrimSpace(project.Name) == "" {
 			continue

@@ -247,15 +247,15 @@ export default function ProductTour({ workspaceId, example = false, open, onClos
       {
         title: t('productTour.steps.scheduleControl.title'),
         body: t('productTour.steps.scheduleControl.body'),
-        path: '/projects/hello-world-relay/schedule',
+        path: '/agents',
         selector: '[data-tour-scheduler-control]',
         placement: 'bottom',
       },
       {
         title: t('productTour.steps.runtimeSchedule.title'),
         body: t('productTour.steps.runtimeSchedule.body'),
-        path: '/projects/hello-world-relay/schedule',
-        selector: '[data-tour-runtime-table]',
+        path: '/agents',
+        selector: '[data-tour-agent-list]',
         placement: 'bottom',
       },
       {

@@ -1,6 +1,13 @@
 package imbridge
 
-import "testing"
+import (
+	"context"
+	"encoding/json"
+	"net/http"
+	"net/http/httptest"
+	"strings"
+	"testing"
+)
 
 func TestProviderRegistryExposesFeishuAndLark(t *testing.T) {
 	providers := Providers()
@@ -48,7 +55,8 @@ func TestProviderParsesIMMessageEvent(t *testing.T) {
 				"chat_id":"oc_one",
 				"chat_type":"group",
 				"message_type":"text",
-				"content":"{\"text\":\"@bot hello\",\"mentions\":[{\"key\":\"@bot\"}]}"
+				"content":"{\"text\":\"@bot hello\"}",
+				"mentions":[{"key":"@bot","id":{"open_id":"ou_bot"}}]
 			}
 		}
 	}`)
@@ -62,11 +70,75 @@ func TestProviderParsesIMMessageEvent(t *testing.T) {
 	if parsed.Message.MessageID != "om_one" || parsed.Message.SenderOpenID != "ou_one" || parsed.Message.Text != "@bot hello" {
 		t.Fatalf("unexpected message: %#v", parsed.Message)
 	}
+	if len(parsed.Message.Mentions) != 1 {
+		t.Fatalf("expected top-level mention to be parsed: %#v", parsed.Message)
+	}
 	if !provider.ShouldHandleMessage("", parsed.Message) {
 		t.Fatalf("mentioned group message should be handled")
 	}
 	if provider.ShouldHandleMessage("oc_other", IncomingMessage{ChatType: "group", ChatID: "oc_one", RawContent: `{"text":"hello"}`}) {
 		t.Fatalf("unmentioned unbound group should be ignored")
+	}
+}
+
+func TestProviderParsesLarkImageAttachment(t *testing.T) {
+	provider, ok := LookupProvider("feishu")
+	if !ok {
+		t.Fatalf("feishu provider not found")
+	}
+	raw := []byte(`{
+		"schema":"2.0",
+		"token":"verify-one",
+		"header":{"event_type":"im.message.receive_v1","app_id":"cli_app"},
+		"event":{
+			"sender":{"sender_id":{"open_id":"ou_one"}},
+			"message":{
+				"message_id":"om_image",
+				"chat_id":"oc_one",
+				"chat_type":"p2p",
+				"message_type":"image",
+				"content":"{\"image_key\":\"img_v3_abc\"}"
+			}
+		}
+	}`)
+	parsed, err := provider.ParseEvent(raw)
+	if err != nil {
+		t.Fatalf("parse: %v", err)
+	}
+	if !parsed.IsMessage || parsed.Message.Text != "" || parsed.Message.MessageType != "image" {
+		t.Fatalf("unexpected parsed image message: %#v", parsed.Message)
+	}
+	if len(parsed.Message.Attachments) != 1 || parsed.Message.Attachments[0].Type != "image" || parsed.Message.Attachments[0].ID != "img_v3_abc" {
+		t.Fatalf("unexpected attachments: %#v", parsed.Message.Attachments)
+	}
+}
+
+func TestProviderParsesLarkDocumentLinkAttachment(t *testing.T) {
+	provider, ok := LookupProvider("feishu")
+	if !ok {
+		t.Fatalf("feishu provider not found")
+	}
+	raw := []byte(`{
+		"schema":"2.0",
+		"token":"verify-one",
+		"header":{"event_type":"im.message.receive_v1","app_id":"cli_app"},
+		"event":{
+			"sender":{"sender_id":{"open_id":"ou_one"}},
+			"message":{
+				"message_id":"om_doc",
+				"chat_id":"oc_one",
+				"chat_type":"p2p",
+				"message_type":"text",
+				"content":"{\"text\":\"看这个 https://example.feishu.cn/docx/ABC123\"}"
+			}
+		}
+	}`)
+	parsed, err := provider.ParseEvent(raw)
+	if err != nil {
+		t.Fatalf("parse: %v", err)
+	}
+	if len(parsed.Message.Attachments) != 1 || parsed.Message.Attachments[0].Type != "document" || !strings.Contains(parsed.Message.Attachments[0].URL, "/docx/ABC123") {
+		t.Fatalf("unexpected attachments: %#v", parsed.Message.Attachments)
 	}
 }
 
@@ -101,6 +173,62 @@ func TestFeishuAndLarkProvidersParseInteractionCallback(t *testing.T) {
 		if got.InteractionID != "ir_123" || got.ActionID != "approve" || got.SenderOpenID != "ou_user" || got.UpdateToken != "update-one" || got.Inputs["comment"] != "looks good" {
 			t.Fatalf("%s unexpected callback: %#v", id, got)
 		}
+	}
+}
+
+func TestLarkMentionPrefixIsProviderConcernForNonReplySend(t *testing.T) {
+	got := larkMentionPrefixedText("group", "ou_user", "## 结论\n\n- 已处理")
+	if got != `<at user_id="ou_user"></at> ## 结论`+"\n\n- 已处理" {
+		t.Fatalf("unexpected mention prefix: %q", got)
+	}
+	if got := larkMentionPrefixedText("p2p", "ou_user", "hello"); got != "hello" {
+		t.Fatalf("p2p should not add mention: %q", got)
+	}
+	if got := larkMentionPrefixedText("group", "", "hello"); got != "hello" {
+		t.Fatalf("empty open id should not add mention: %q", got)
+	}
+}
+
+func TestLarkReplyMarkdownDoesNotMutateBodyWithMention(t *testing.T) {
+	var replyBody map[string]any
+	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		switch r.URL.Path {
+		case "/open-apis/auth/v3/tenant_access_token/internal":
+			_ = json.NewEncoder(w).Encode(map[string]any{"code": 0, "tenant_access_token": "tenant-token"})
+		case "/open-apis/im/v1/messages/om_one/reply":
+			if err := json.NewDecoder(r.Body).Decode(&replyBody); err != nil {
+				t.Fatalf("decode reply body: %v", err)
+			}
+			_ = json.NewEncoder(w).Encode(map[string]any{"code": 0})
+		default:
+			t.Fatalf("unexpected path: %s", r.URL.Path)
+		}
+	}))
+	defer server.Close()
+
+	provider := larkFamilyProvider{id: "feishu", label: "Feishu"}
+	err := provider.ReplyMessage(context.Background(), map[string]string{
+		"baseUrl":   server.URL,
+		"appId":     "cli_app",
+		"appSecret": "secret",
+	}, IncomingMessage{
+		MessageID:    "om_one",
+		ChatID:       "oc_one",
+		ChatType:     "group",
+		SenderOpenID: "ou_sender",
+	}, OutgoingMessage{
+		Format: "markdown",
+		Text:   "## 结论\n\n- 已处理",
+	})
+	if err != nil {
+		t.Fatalf("reply markdown: %v", err)
+	}
+	content, _ := replyBody["content"].(string)
+	if strings.Contains(content, "ou_sender") || strings.Contains(content, "<at") {
+		t.Fatalf("markdown reply body should not be mention-prefixed: %s", content)
+	}
+	if !strings.Contains(content, "## 结论") {
+		t.Fatalf("markdown body not preserved: %s", content)
 	}
 }
 

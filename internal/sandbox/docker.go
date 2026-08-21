@@ -778,33 +778,38 @@ func forwardHostEnvIntoDocker(envKey string) bool {
 	if value == "" {
 		return false
 	}
-	if isLoopbackProxyEnv(envKey, value) {
-		return false
-	}
 	return true
 }
 
-func isLoopbackProxyEnv(envKey, value string) bool {
+func DockerReachableProxyEnvValue(envKey, value string) string {
 	key := strings.ToUpper(strings.TrimSpace(envKey))
 	if key == "NO_PROXY" || !strings.HasSuffix(key, "_PROXY") {
-		return false
+		return value
 	}
 	u, err := url.Parse(strings.TrimSpace(value))
 	if err != nil || u.Host == "" {
-		return false
+		return value
 	}
 	host := u.Hostname()
-	if strings.EqualFold(host, "localhost") {
-		return true
+	if !strings.EqualFold(host, "localhost") {
+		ip := net.ParseIP(host)
+		if ip == nil || !ip.IsLoopback() {
+			return value
+		}
 	}
-	ip := net.ParseIP(host)
-	return ip != nil && ip.IsLoopback()
+	port := u.Port()
+	if port == "" {
+		return value
+	}
+	u.Host = net.JoinHostPort("host.docker.internal", port)
+	return u.String()
 }
 
 func wellKnownEnvKeys(model entity.AgentModel) []string {
 	// Keys common to all models.
 	common := []string{
-		"HTTPS_PROXY", "HTTP_PROXY", "NO_PROXY", // honour container-reachable proxy settings
+		"HTTPS_PROXY", "HTTP_PROXY", "ALL_PROXY", "NO_PROXY",
+		"https_proxy", "http_proxy", "all_proxy", "no_proxy", // honour container-reachable proxy settings
 		"NPM_CONFIG_REGISTRY", // allow regional npm mirrors for agent CLI installs
 	}
 	var modelKeys []string

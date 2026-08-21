@@ -39,6 +39,17 @@ func (s *Server) validateIdentity(identity, fieldName string) error {
 		return fmt.Errorf("invalid %s: expected workspace user or project/agent", fieldName)
 	}
 	project, agentName := parts[0], parts[1]
+	workspaceID, err := s.currentWorkspaceID()
+	if err != nil {
+		return fmt.Errorf("resolve workspace for %s: %w", fieldName, err)
+	}
+	if s.agentDirectory != nil {
+		if _, ok, err := s.agentDirectory.ResolveLegacyMailbox(workspaceID, identity); err != nil {
+			return fmt.Errorf("resolve agent worker %q: %w", identity, err)
+		} else if ok {
+			return nil
+		}
+	}
 	agents, err := s.st.ListAgents(project)
 	if err != nil {
 		return fmt.Errorf("list agents for %s: %w", project, err)
@@ -77,20 +88,21 @@ func (s *Server) runtimeContacts(workspaceID, project string) ([]runtimeContactR
 		}
 	}
 	if strings.TrimSpace(project) != "" && s.st != nil {
-		agents, err := s.st.ListAgents(project)
+		agents, err := s.projectAgentNames(workspaceID, project)
 		if err != nil {
 			return nil, err
 		}
-		for _, agent := range agents {
-			if agent == nil || strings.TrimSpace(agent.Name) == "" {
+		for _, agentName := range agents {
+			agentName = strings.TrimSpace(agentName)
+			if agentName == "" {
 				continue
 			}
 			rows = append(rows, runtimeContactRow{
 				Type:        "agent",
-				Identity:    project + "/" + agent.Name,
-				DisplayName: agent.Name,
+				Identity:    project + "/" + agentName,
+				DisplayName: agentName,
 				Project:     project,
-				Agent:       agent.Name,
+				Agent:       agentName,
 			})
 		}
 	}
@@ -200,6 +212,13 @@ func formatRuntimeContactSuggestion(contact runtimeContactRow) string {
 }
 
 func (s *Server) agentExistsInProject(project, agentName string) bool {
+	if s != nil && s.agentDirectory != nil {
+		if workspaceID, err := s.currentWorkspaceID(); err == nil && strings.TrimSpace(workspaceID) != "" {
+			if _, ok, err := s.agentDirectory.ProjectWorker(workspaceID, project, agentName); err == nil && ok {
+				return true
+			}
+		}
+	}
 	agents, err := s.st.ListAgents(project)
 	if err != nil {
 		return false

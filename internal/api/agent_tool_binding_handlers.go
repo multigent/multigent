@@ -30,11 +30,7 @@ func (s *Server) handleListAgentToolBindings(w http.ResponseWriter, r *http.Requ
 	if !ok {
 		return
 	}
-	bindings, err := s.controlDB.ListAgentToolBindings(controldb.AgentToolBindingFilter{
-		WorkspaceID: workspaceID,
-		ProjectID:   project,
-		AgentID:     agent,
-	})
+	bindings, err := s.controlDB.ListAgentToolBindings(s.agentToolBindingFilterForProjectAgent(workspaceID, project, agent))
 	if err != nil {
 		s.serverError(w, err)
 		return
@@ -84,6 +80,7 @@ func (s *Server) handleUpsertAgentToolBinding(w http.ResponseWriter, r *http.Req
 		s.jsonErrorCode(w, http.StatusForbidden, ErrCodeConnectionAccessRequired, "connection access required")
 		return
 	}
+	workerID := s.agentWorkerIDForProjectAgent(workspaceID, project, agent)
 	allowed, err := s.connectionAvailableToRuntimeAgent(connection, workspaceID, project, agent)
 	if err != nil {
 		s.serverError(w, err)
@@ -99,7 +96,7 @@ func (s *Server) handleUpsertAgentToolBinding(w http.ResponseWriter, r *http.Req
 			WorkspaceID:  workspaceID,
 			ConnectionID: connection.ID,
 			TargetType:   ConnectionTargetAgent,
-			TargetID:     project + "/" + agent,
+			TargetID:     connectionAgentTargetID(project, agent, workerID),
 			CreatedBy:    cur.Username,
 			CreatedAt:    time.Now().UTC().Format(time.RFC3339),
 		}); err != nil {
@@ -124,29 +121,27 @@ func (s *Server) handleUpsertAgentToolBinding(w http.ResponseWriter, r *http.Req
 	}
 	now := time.Now().UTC().Format(time.RFC3339)
 	binding := controldb.AgentToolBinding{
-		ID:           newConnectionID("toolbind"),
-		WorkspaceID:  workspaceID,
-		ProjectID:    project,
-		AgentID:      agent,
-		ConnectionID: connection.ID,
-		Provider:     connection.Provider,
-		AdapterType:  body.AdapterType,
-		Status:       body.Status,
-		ConfigJSON:   configJSON,
-		CreatedBy:    cur.Username,
-		CreatedAt:    now,
-		UpdatedAt:    now,
+		ID:            newConnectionID("toolbind"),
+		WorkspaceID:   workspaceID,
+		AgentWorkerID: workerID,
+		ProjectID:     project,
+		AgentID:       agent,
+		ConnectionID:  connection.ID,
+		Provider:      connection.Provider,
+		AdapterType:   body.AdapterType,
+		Status:        body.Status,
+		ConfigJSON:    configJSON,
+		CreatedBy:     cur.Username,
+		CreatedAt:     now,
+		UpdatedAt:     now,
 	}
 	if err := s.controlDB.UpsertAgentToolBinding(binding); err != nil {
 		s.serverError(w, err)
 		return
 	}
-	bindings, _ := s.controlDB.ListAgentToolBindings(controldb.AgentToolBindingFilter{
-		WorkspaceID:  workspaceID,
-		ProjectID:    project,
-		AgentID:      agent,
-		ConnectionID: connection.ID,
-	})
+	filter := s.agentToolBindingFilterForProjectAgent(workspaceID, project, agent)
+	filter.ConnectionID = connection.ID
+	bindings, _ := s.controlDB.ListAgentToolBindings(filter)
 	if len(bindings) > 0 {
 		binding = bindings[0]
 	}
@@ -174,7 +169,7 @@ func (s *Server) handleDeleteAgentToolBinding(w http.ResponseWriter, r *http.Req
 		s.serverError(w, err)
 		return
 	}
-	if !exists || binding.WorkspaceID != workspaceID || binding.ProjectID != project || binding.AgentID != agent {
+	if !exists || binding.WorkspaceID != workspaceID || !s.agentToolBindingBelongsToProjectAgent(binding, workspaceID, project, agent) {
 		s.jsonErrorCode(w, http.StatusNotFound, ErrCodeConnectionGrantNotFound, "tool binding not found")
 		return
 	}
@@ -264,47 +259,96 @@ func (s *Server) handleInstallProjectToolBindings(w http.ResponseWriter, r *http
 		s.serverError(w, err)
 		return
 	}
-	agents, err := s.st.ListAgents(project)
-	if err != nil {
-		s.serverError(w, err)
-		return
-	}
 	now := time.Now().UTC().Format(time.RFC3339)
-	bindings := make([]agentToolBindingModel, 0, len(agents))
+	type installTarget struct {
+		AgentName string
+		WorkerID  string
+		Model     entity.AgentModel
+	}
+	targets := []installTarget{}
+	if s.agentDirectory != nil {
+		memberships, err := s.controlDB.ListProjectMemberships(controldb.ProjectMembershipFilter{
+			WorkspaceID: workspaceID,
+			ProjectID:   project,
+			MemberType:  "agent_worker",
+		})
+		if err != nil {
+			s.serverError(w, err)
+			return
+		}
+		for _, membership := range memberships {
+			worker, ok, err := s.agentDirectory.Worker(workspaceID, membership.MemberID)
+			if err != nil {
+				s.serverError(w, err)
+				return
+			}
+			if !ok {
+				continue
+			}
+			agentName := strings.TrimSpace(membership.Title)
+			if agentName == "" {
+				agentName = strings.TrimSpace(worker.Name)
+			}
+			if agentName == "" {
+				continue
+			}
+			targets = append(targets, installTarget{
+				AgentName: agentName,
+				WorkerID:  worker.ID,
+				Model:     entity.AgentModel(strings.TrimSpace(worker.Model)),
+			})
+		}
+	}
+	if len(targets) == 0 {
+		agents, err := s.st.ListAgents(project)
+		if err != nil {
+			s.serverError(w, err)
+			return
+		}
+		for _, agent := range agents {
+			if agent == nil || agent.Meta == nil {
+				continue
+			}
+			targets = append(targets, installTarget{
+				AgentName: agent.Name,
+				WorkerID:  s.agentWorkerIDForProjectAgent(workspaceID, project, agent.Name),
+				Model:     agent.Meta.Model,
+			})
+		}
+	}
+	bindings := make([]agentToolBindingModel, 0, len(targets))
 	skipped := 0
-	for _, agent := range agents {
-		if agent == nil || agent.Meta == nil {
+	for _, target := range targets {
+		if strings.TrimSpace(target.AgentName) == "" {
 			skipped++
 			continue
 		}
-		if entity.NormaliseModel(agent.Meta.Model) == entity.ModelHuman {
+		if entity.NormaliseModel(target.Model) == entity.ModelHuman {
 			skipped++
 			continue
 		}
 		binding := controldb.AgentToolBinding{
-			ID:           newConnectionID("toolbind"),
-			WorkspaceID:  workspaceID,
-			ProjectID:    project,
-			AgentID:      agent.Name,
-			ConnectionID: connection.ID,
-			Provider:     connection.Provider,
-			AdapterType:  body.AdapterType,
-			Status:       "enabled",
-			ConfigJSON:   configJSON,
-			CreatedBy:    cur.Username,
-			CreatedAt:    now,
-			UpdatedAt:    now,
+			ID:            newConnectionID("toolbind"),
+			WorkspaceID:   workspaceID,
+			AgentWorkerID: target.WorkerID,
+			ProjectID:     project,
+			AgentID:       target.AgentName,
+			ConnectionID:  connection.ID,
+			Provider:      connection.Provider,
+			AdapterType:   body.AdapterType,
+			Status:        "enabled",
+			ConfigJSON:    configJSON,
+			CreatedBy:     cur.Username,
+			CreatedAt:     now,
+			UpdatedAt:     now,
 		}
 		if err := s.controlDB.UpsertAgentToolBinding(binding); err != nil {
 			s.serverError(w, err)
 			return
 		}
-		current, err := s.controlDB.ListAgentToolBindings(controldb.AgentToolBindingFilter{
-			WorkspaceID:  workspaceID,
-			ProjectID:    project,
-			AgentID:      agent.Name,
-			ConnectionID: connection.ID,
-		})
+		filter := s.agentToolBindingFilterForProjectAgent(workspaceID, project, target.AgentName)
+		filter.ConnectionID = connection.ID
+		current, err := s.controlDB.ListAgentToolBindings(filter)
 		if err != nil {
 			s.serverError(w, err)
 			return
@@ -369,12 +413,30 @@ func (s *Server) agentToolBindingScope(w http.ResponseWriter, r *http.Request) (
 	return project, agent, workspaceID, true
 }
 
+func (s *Server) agentToolBindingFilterForProjectAgent(workspaceID, project, agent string) controldb.AgentToolBindingFilter {
+	filter := controldb.AgentToolBindingFilter{WorkspaceID: workspaceID}
+	if workerID := s.agentWorkerIDForProjectAgent(workspaceID, project, agent); strings.TrimSpace(workerID) != "" {
+		filter.AgentWorkerID = workerID
+		return filter
+	}
+	filter.ProjectID = project
+	filter.AgentID = agent
+	return filter
+}
+
+func (s *Server) agentToolBindingBelongsToProjectAgent(binding controldb.AgentToolBinding, workspaceID, project, agent string) bool {
+	if strings.TrimSpace(binding.AgentWorkerID) != "" {
+		return binding.AgentWorkerID == s.agentWorkerIDForProjectAgent(workspaceID, project, agent)
+	}
+	return binding.ProjectID == project && binding.AgentID == agent
+}
+
 func (s *Server) connectionAvailableToRuntimeAgent(connection controldb.Connection, workspaceID, project, agent string) (bool, error) {
 	grants, err := s.controlDB.ListConnectionGrants(connection.ID)
 	if err != nil {
 		return false, err
 	}
-	return len(matchingAgentConnectionGrants(grants, workspaceID, project, agent)) > 0, nil
+	return len(s.matchingAgentConnectionGrants(grants, workspaceID, project, agent)) > 0, nil
 }
 
 func (s *Server) validateRuntimeAdapterType(connection controldb.Connection, adapterType string) error {

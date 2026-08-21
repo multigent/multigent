@@ -401,6 +401,44 @@ func TestRequestedWorkspaceHeaderFallsBackWhenUserCannotAccess(t *testing.T) {
 	}
 }
 
+func TestTrustedProxyWorkspaceHeaderSwitchesWorkspaceRoot(t *testing.T) {
+	users := newTestUserStore(t)
+	base := t.TempDir()
+	t.Setenv("MULTIGENT_DATA_DIR", base)
+	rootA := filepath.Join(base, "a")
+	rootB := filepath.Join(base, "b")
+	for _, root := range []string{rootA, rootB} {
+		if err := os.MkdirAll(filepath.Join(root, ".multigent"), 0o755); err != nil {
+			t.Fatalf("mkdir workspace: %v", err)
+		}
+		if err := os.WriteFile(filepath.Join(root, ".multigent", "agency.yaml"), []byte("name: Test\n"), 0o644); err != nil {
+			t.Fatalf("write agency: %v", err)
+		}
+	}
+	if err := users.CreateUser("proxy-user", "pass123", RoleAdmin, "Proxy User", "proxy@example.com", "", "", ""); err != nil {
+		t.Fatalf("create user: %v", err)
+	}
+	for _, row := range []controldb.Workspace{
+		{ID: "ws-a", Name: "Workspace A", Slug: "a", Root: rootA, CreatedBy: "proxy-user", CreatedAt: "2026-08-21T00:00:00Z"},
+		{ID: "ws-b", Name: "Workspace B", Slug: "b", Root: rootB, CreatedBy: "proxy-user", CreatedAt: "2026-08-21T00:00:00Z"},
+	} {
+		if err := users.db.UpsertWorkspace(row); err != nil {
+			t.Fatalf("workspace %s: %v", row.ID, err)
+		}
+	}
+	s := &Server{root: rootA, controlDB: users.db, users: users, st: store.NewDB(rootA, users.db)}
+	rec := httptest.NewRecorder()
+	req := providerTestRequest(http.MethodGet, "/api/v1/workspace", "proxy-user", nil)
+	req = req.WithContext(context.WithValue(req.Context(), ctxAuthSourceKey, identitySourceTrustedProxy))
+	req.Header.Set(trustedProxyWorkspaceIDHeader, "ws-b")
+	if !s.applyRequestedWorkspace(rec, req) {
+		t.Fatalf("trusted proxy workspace should switch, status=%d body=%s", rec.Code, rec.Body.String())
+	}
+	if !samePath(s.root, rootB) {
+		t.Fatalf("root=%q, want %q", s.root, rootB)
+	}
+}
+
 func TestListUsersReturnsWorkspaceRole(t *testing.T) {
 	s, _ := newProviderHandlerTestServer(t)
 	if err := s.users.CreateUser("instance-admin", "pass123", RoleAdmin, "Instance Admin", "instance-admin@example.com", "", "", ""); err != nil {

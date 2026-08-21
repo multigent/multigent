@@ -7,6 +7,7 @@ import (
 	"path/filepath"
 	"testing"
 
+	"github.com/multigent/multigent/internal/agentdir"
 	controldb "github.com/multigent/multigent/internal/db"
 	"github.com/multigent/multigent/internal/entity"
 	"github.com/multigent/multigent/internal/rbac"
@@ -24,8 +25,8 @@ func newConnectionGrantPolicyServer(t *testing.T) (*Server, string) {
 	root := filepath.Join(t.TempDir(), "workspace")
 	st := store.NewDB(root, db)
 	ts := taskstore.NewDB(root, db)
-	s := &Server{root: root, controlDB: db, st: st, ts: ts, users: newUserStore(db)}
-	s.triggers = newTriggerManager(root, "", ts)
+	s := &Server{root: root, controlDB: db, st: st, ts: ts, users: newUserStore(db), agentDirectory: agentdir.New(db)}
+	s.triggers = newTriggerManager(root, "", ts, s.controlDB)
 	workspaceID, err := s.currentWorkspaceID()
 	if err != nil {
 		t.Fatalf("workspace id: %v", err)

@@ -5,6 +5,7 @@ import (
 	"math/rand"
 	"os"
 	"path/filepath"
+	"strings"
 	"time"
 
 	"github.com/multigent/multigent/internal/entity"
@@ -20,7 +21,7 @@ func NewEnvVarStore(root string) *EnvVarStore {
 }
 
 func (es *EnvVarStore) filePath() string {
-	return filepath.Join(es.root, ".multigent", "envvars.yaml")
+	return workspaceConfigPath(es.root, "envvars.yaml")
 }
 
 func newEnvVarID() string {
@@ -144,11 +145,24 @@ func (es *EnvVarStore) Remove(id string) error {
 // that apply to a given agent. Global variables are applied first, then
 // agent-scoped variables override matching keys.
 func (es *EnvVarStore) ResolveEnvForAgent(project, agent string) (map[string]string, error) {
+	return es.ResolveEnvForAgentTargets(project, agent, nil)
+}
+
+// ResolveEnvForAgentTargets resolves env vars for a project membership and any
+// additional stable identities, such as "agent_worker:<id>".
+func (es *EnvVarStore) ResolveEnvForAgentTargets(project, agent string, extraTargets []string) (map[string]string, error) {
 	items, err := es.load()
 	if err != nil {
 		return nil, err
 	}
 	agentID := project + "/" + agent
+	targets := map[string]bool{agentID: true}
+	for _, target := range extraTargets {
+		target = strings.TrimSpace(target)
+		if target != "" {
+			targets[target] = true
+		}
+	}
 	env := make(map[string]string)
 
 	for _, v := range items {
@@ -159,7 +173,7 @@ func (es *EnvVarStore) ResolveEnvForAgent(project, agent string) (map[string]str
 	for _, v := range items {
 		if v.Scope == entity.EnvVarScopeAgents {
 			for _, a := range v.Agents {
-				if a == agentID {
+				if targets[strings.TrimSpace(a)] {
 					env[v.Key] = v.Value
 					break
 				}

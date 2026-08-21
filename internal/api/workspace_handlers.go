@@ -84,13 +84,20 @@ func (s *Server) handleWorkspace(w http.ResponseWriter, r *http.Request) {
 	tasks, _ := s.ts.ListAllTaskRecords("")
 
 	agentCount := 0
-	for _, project := range projects {
-		if project == nil {
-			continue
+	if workspaceID, ok := s.currentWorkspaceForRequest(w, r); ok && s.controlDB != nil {
+		if workers, err := s.controlDB.ListAgentWorkers(workspaceID); err == nil && len(workers) > 0 {
+			agentCount = len(workers)
 		}
-		agents, err := s.st.ListAgents(project.Name)
-		if err == nil {
-			agentCount += len(agents)
+	}
+	if agentCount == 0 {
+		for _, project := range projects {
+			if project == nil {
+				continue
+			}
+			agents, err := s.st.ListAgents(project.Name)
+			if err == nil {
+				agentCount += len(agents)
+			}
 		}
 	}
 
@@ -553,7 +560,7 @@ func (s *Server) switchWorkspaceRoot(root string) error {
 	s.st = store.NewDB(absRoot, s.controlDB)
 	s.ts = taskstore.NewDB(absRoot, s.controlDB)
 	s.sched = newSchedulerManager(absRoot)
-	s.triggers = newTriggerManager(absRoot, s.sched.binPath, s.ts)
+	s.triggers = newTriggerManager(absRoot, s.sched.binPath, s.ts, s.controlDB)
 	s.triggers.StartPoller()
 	s.okrStore = store.NewOKRStore(absRoot)
 	s.msStore = store.NewMilestoneStore(absRoot)
@@ -575,7 +582,7 @@ func (s *Server) clearActiveWorkspaceRoot() {
 	s.st = store.NewDB(root, s.controlDB)
 	s.ts = taskstore.NewDB(root, s.controlDB)
 	s.sched = newSchedulerManager(root)
-	s.triggers = newTriggerManager(root, s.sched.binPath, s.ts)
+	s.triggers = newTriggerManager(root, s.sched.binPath, s.ts, s.controlDB)
 	s.okrStore = store.NewOKRStore(root)
 	s.msStore = store.NewMilestoneStore(root)
 }

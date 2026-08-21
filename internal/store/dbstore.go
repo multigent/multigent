@@ -7,6 +7,7 @@ import (
 	"fmt"
 	"os"
 	"path/filepath"
+	"strings"
 	"time"
 
 	controldb "github.com/multigent/multigent/internal/db"
@@ -43,7 +44,7 @@ func (s *dbStore) Team(path string) (*entity.Team, error) {
 	if ok, err := s.getJSON("teams", []string{path}, &t); err != nil {
 		return nil, err
 	} else if !ok {
-		return nil, errs.NotFound("team", path)
+		return s.files.Team(path)
 	}
 	return &t, nil
 }
@@ -77,16 +78,34 @@ func (s *dbStore) SaveTeamPrompt(path string, content string) error {
 }
 
 func (s *dbStore) ListTeams() ([]*TeamEntry, error) {
+	fileTeams, fileErr := s.files.ListTeams()
 	recs, err := s.db.ListRecords("teams", s.workspaceID, nil)
 	if err != nil {
-		return nil, err
+		if fileErr != nil {
+			return nil, err
+		}
+		return fileTeams, nil
 	}
-	out := make([]*TeamEntry, 0, len(recs))
+	out := make([]*TeamEntry, 0, len(fileTeams)+len(recs))
+	seen := make(map[string]bool, len(fileTeams)+len(recs))
+	if fileErr == nil {
+		for _, entry := range fileTeams {
+			if entry == nil {
+				continue
+			}
+			seen[entry.Path] = true
+			out = append(out, entry)
+		}
+	}
 	for _, rec := range recs {
 		var t entity.Team
 		if err := json.Unmarshal([]byte(rec.Payload), &t); err != nil {
 			continue
 		}
+		if len(rec.Key) == 0 || seen[rec.Key[0]] {
+			continue
+		}
+		seen[rec.Key[0]] = true
 		out = append(out, &TeamEntry{Path: rec.Key[0], Team: &t})
 	}
 	return out, nil
@@ -97,7 +116,7 @@ func (s *dbStore) Role(teamPath, roleName string) (*entity.Role, error) {
 	if ok, err := s.getJSON("roles", []string{teamPath, roleName}, &r); err != nil {
 		return nil, err
 	} else if !ok {
-		return nil, fmt.Errorf("store: role %q/%q not found", teamPath, roleName)
+		return s.files.Role(teamPath, roleName)
 	}
 	return &r, nil
 }
@@ -126,16 +145,34 @@ func (s *dbStore) RoleDir(teamPath, roleName string) string {
 	return filepath.Join(s.root, "teams", teamPath, "roles", roleName)
 }
 func (s *dbStore) ListRoles(teamPath string) ([]*RoleEntry, error) {
+	fileRoles, fileErr := s.files.ListRoles(teamPath)
 	recs, err := s.db.ListRecords("roles", s.workspaceID, []string{teamPath})
 	if err != nil {
-		return nil, err
+		if fileErr != nil {
+			return nil, err
+		}
+		return fileRoles, nil
 	}
-	out := make([]*RoleEntry, 0, len(recs))
+	out := make([]*RoleEntry, 0, len(fileRoles)+len(recs))
+	seen := make(map[string]bool, len(fileRoles)+len(recs))
+	if fileErr == nil {
+		for _, entry := range fileRoles {
+			if entry == nil {
+				continue
+			}
+			seen[entry.Name] = true
+			out = append(out, entry)
+		}
+	}
 	for _, rec := range recs {
 		var r entity.Role
 		if err := json.Unmarshal([]byte(rec.Payload), &r); err != nil {
 			continue
 		}
+		if len(rec.Key) < 2 || seen[rec.Key[1]] {
+			continue
+		}
+		seen[rec.Key[1]] = true
 		out = append(out, &RoleEntry{TeamPath: teamPath, Name: rec.Key[1], Role: &r})
 	}
 	return out, nil
@@ -146,7 +183,7 @@ func (s *dbStore) Project(name string) (*entity.Project, error) {
 	if ok, err := s.getJSON("projects", []string{name}, &p); err != nil {
 		return nil, err
 	} else if !ok {
-		return nil, errs.NotFound("project", name)
+		return s.files.Project(name)
 	}
 	return &p, nil
 }
@@ -184,12 +221,30 @@ func (s *dbStore) ListProjects() ([]*entity.Project, error) {
 		return nil, err
 	}
 	out := make([]*entity.Project, 0, len(recs))
+	seen := make(map[string]bool, len(recs))
 	for _, rec := range recs {
 		var p entity.Project
 		if err := json.Unmarshal([]byte(rec.Payload), &p); err != nil {
 			continue
 		}
+		if len(rec.Key) > 0 {
+			seen[rec.Key[0]] = true
+		}
+		if p.Name != "" {
+			seen[p.Name] = true
+		}
 		out = append(out, &p)
+	}
+	fileProjects, fileErr := s.files.ListProjects()
+	if fileErr != nil {
+		return out, nil
+	}
+	for _, p := range fileProjects {
+		if p == nil || seen[p.Name] {
+			continue
+		}
+		out = append(out, p)
+		seen[p.Name] = true
 	}
 	return out, nil
 }
@@ -207,6 +262,14 @@ func (s *dbStore) AgentMeta(project, name string) (*entity.AgentMeta, error) {
 	if ok, err := s.getJSON("agents", []string{project, name}, &meta); err != nil {
 		return nil, err
 	} else if !ok {
+		if fileMeta, fileErr := s.files.AgentMeta(project, name); fileErr == nil {
+			return fileMeta, nil
+		}
+		if worker, membership, ok, err := s.resolveAgentWorkerMembership(project, name); err != nil {
+			return nil, err
+		} else if ok {
+			return agentMetaFromWorkerMembership(project, worker, membership), nil
+		}
 		return nil, errs.NotFound("agent", project+"/"+name)
 	}
 	return &meta, nil
@@ -233,15 +296,184 @@ func (s *dbStore) ListAgents(project string) ([]*AgentEntry, error) {
 		return nil, err
 	}
 	out := make([]*AgentEntry, 0, len(recs))
+	seen := make(map[string]bool, len(recs))
 	for _, rec := range recs {
 		var meta entity.AgentMeta
 		if err := json.Unmarshal([]byte(rec.Payload), &meta); err != nil {
 			continue
 		}
-		out = append(out, &AgentEntry{Project: project, Name: rec.Key[1], Meta: &meta})
+		name := rec.Key[1]
+		seen[name] = true
+		out = append(out, &AgentEntry{Project: project, Name: name, Meta: &meta})
+	}
+	fileAgents, fileErr := s.files.ListAgents(project)
+	if fileErr != nil {
+		return out, nil
+	}
+	for _, agent := range fileAgents {
+		if agent == nil || seen[agent.Name] {
+			continue
+		}
+		out = append(out, agent)
+		seen[agent.Name] = true
+	}
+	memberships, err := s.db.ListProjectMemberships(controldb.ProjectMembershipFilter{
+		WorkspaceID: s.workspaceID,
+		ProjectID:   project,
+		MemberType:  "agent_worker",
+	})
+	if err == nil {
+		for _, membership := range memberships {
+			worker, ok, err := s.db.AgentWorkerByID(s.workspaceID, membership.MemberID)
+			if err != nil || !ok {
+				continue
+			}
+			name := firstNonEmptyString(membership.Title, worker.Name)
+			if name == "" || seen[name] {
+				continue
+			}
+			meta := agentMetaFromWorkerMembership(project, worker, membership)
+			out = append(out, &AgentEntry{Project: project, Name: name, Meta: meta})
+			seen[name] = true
+		}
 	}
 	return out, nil
 }
+
+func agentMetaFromWorkerMembership(project string, worker controldb.AgentWorker, membership controldb.ProjectMembership) *entity.AgentMeta {
+	name := firstNonEmptyString(membership.Title, worker.DisplayName, worker.Name)
+	model := entity.AgentModel(strings.TrimSpace(worker.Model))
+	if model == "" {
+		model = entity.ModelHuman
+	}
+	createdAt := time.Now().UTC()
+	if parsed, err := time.Parse(time.RFC3339, worker.CreatedAt); err == nil {
+		createdAt = parsed
+	}
+	return &entity.AgentMeta{
+		Name:          name,
+		Project:       strings.TrimSpace(project),
+		Role:          strings.TrimSpace(membership.Role),
+		Model:         model,
+		RuntimeModel:  strings.TrimSpace(worker.RuntimeModel),
+		RuntimeMode:   strings.TrimSpace(worker.DefaultRuntimeMode),
+		RuntimeNodeID: strings.TrimSpace(worker.DefaultRuntimeNodeID),
+		Provider:      strings.TrimSpace(worker.DefaultModelAccountID),
+		Avatar:        strings.TrimSpace(worker.Avatar),
+		HiredAt:       createdAt,
+	}
+}
+
+func (s *dbStore) AgentWorkerContext(projectName, agentName string) (AgentWorkerContext, error) {
+	worker, membership, ok, err := s.resolveAgentWorkerMembership(projectName, agentName)
+	if err != nil || !ok {
+		return AgentWorkerContext{}, err
+	}
+	memberships, err := s.db.ListProjectMemberships(controldb.ProjectMembershipFilter{
+		WorkspaceID: s.workspaceID,
+		MemberType:  "agent_worker",
+		MemberID:    worker.ID,
+	})
+	if err != nil {
+		return AgentWorkerContext{}, err
+	}
+	var skills []string
+	_ = json.Unmarshal([]byte(firstNonEmptyString(worker.SkillsJSON, "[]")), &skills)
+	var b strings.Builder
+	b.WriteString("## Agent Worker Identity\n\n")
+	writeContextLine(&b, "Worker ID", worker.ID)
+	writeContextLine(&b, "Name", worker.Name)
+	writeContextLine(&b, "Display name", firstNonEmptyString(worker.DisplayName, worker.Name))
+	writeContextLine(&b, "Description", worker.Description)
+	writeContextLine(&b, "Default model", worker.Model)
+	writeContextLine(&b, "Runtime model", worker.RuntimeModel)
+	writeContextLine(&b, "Primary session", worker.PrimarySessionID)
+	b.WriteString("\n")
+	b.WriteString("This is your workspace-level identity. Project, task, workflow, and IM channel inputs are contexts for this same Agent Worker; they are not separate agent identities.\n\n")
+
+	b.WriteString("## Current Project Membership\n\n")
+	writeContextLine(&b, "Project", membership.ProjectID)
+	writeContextLine(&b, "Membership ID", membership.ID)
+	writeContextLine(&b, "Project title", firstNonEmptyString(membership.Title, worker.DisplayName, worker.Name))
+	writeContextLine(&b, "Project role", membership.Role)
+	writeContextLine(&b, "Auto-pick project tasks", fmt.Sprintf("%v", membership.AutoPickTasks))
+	writeContextLine(&b, "Project attention enabled", fmt.Sprintf("%v", membership.AttentionEnabled))
+	if strings.TrimSpace(membership.PermissionsJSON) != "" && strings.TrimSpace(membership.PermissionsJSON) != "[]" {
+		writeContextLine(&b, "Project permissions", membership.PermissionsJSON)
+	}
+	if strings.TrimSpace(membership.Prompt) != "" {
+		b.WriteString("\n### Project-specific responsibility\n\n")
+		b.WriteString(strings.TrimSpace(membership.Prompt))
+		b.WriteString("\n")
+	}
+
+	if len(memberships) > 1 {
+		b.WriteString("\n## Other Project Memberships\n\n")
+		for _, item := range memberships {
+			if item.ID == membership.ID {
+				continue
+			}
+			fmt.Fprintf(&b, "- `%s`: role `%s`, title `%s`, auto-pick `%v`, attention `%v`\n",
+				item.ProjectID,
+				firstNonEmptyString(item.Role, "member"),
+				firstNonEmptyString(item.Title, worker.DisplayName, worker.Name),
+				item.AutoPickTasks,
+				item.AttentionEnabled,
+			)
+		}
+		b.WriteString("\nWhen you work on a concrete task, use the project context and permissions for that task's project. Do not read or mutate a project unless you are a member of it.\n")
+	}
+	return AgentWorkerContext{Layer: strings.TrimSpace(b.String()), SkillNames: skills}, nil
+}
+
+func (s *dbStore) resolveAgentWorkerMembership(projectName, agentName string) (controldb.AgentWorker, controldb.ProjectMembership, bool, error) {
+	if s == nil || s.db == nil {
+		return controldb.AgentWorker{}, controldb.ProjectMembership{}, false, nil
+	}
+	memberships, err := s.db.ListProjectMemberships(controldb.ProjectMembershipFilter{
+		WorkspaceID: s.workspaceID,
+		ProjectID:   strings.TrimSpace(projectName),
+		MemberType:  "agent_worker",
+	})
+	if err != nil {
+		return controldb.AgentWorker{}, controldb.ProjectMembership{}, false, err
+	}
+	for _, membership := range memberships {
+		worker, ok, err := s.db.AgentWorkerByID(s.workspaceID, membership.MemberID)
+		if err != nil {
+			return controldb.AgentWorker{}, controldb.ProjectMembership{}, false, err
+		}
+		if !ok {
+			continue
+		}
+		if sameStoreIdentity(membership.Title, agentName) || sameStoreIdentity(worker.Name, agentName) || sameStoreIdentity(worker.DisplayName, agentName) {
+			return worker, membership, true, nil
+		}
+	}
+	return controldb.AgentWorker{}, controldb.ProjectMembership{}, false, nil
+}
+
+func writeContextLine(b *strings.Builder, key, value string) {
+	value = strings.TrimSpace(value)
+	if value == "" {
+		return
+	}
+	fmt.Fprintf(b, "- %s: %s\n", key, value)
+}
+
+func firstNonEmptyString(values ...string) string {
+	for _, value := range values {
+		if strings.TrimSpace(value) != "" {
+			return strings.TrimSpace(value)
+		}
+	}
+	return ""
+}
+
+func sameStoreIdentity(a, b string) bool {
+	return strings.EqualFold(strings.TrimSpace(a), strings.TrimSpace(b))
+}
+
 func (s *dbStore) AgentDir(project, name string) string {
 	return filepath.Join(s.root, "projects", project, "agents", name)
 }
@@ -279,7 +511,7 @@ func ensureWorkspace(root string, db controldb.Store) (string, error) {
 	if err != nil {
 		absRoot = root
 	}
-	if _, err := os.Stat(filepath.Join(absRoot, ".multigent", "agency.yaml")); err != nil {
+	if !hasWorkspaceConfig(absRoot) {
 		return workspaceID(absRoot), nil
 	}
 	if rows, err := db.ListWorkspaces(); err == nil {
@@ -305,6 +537,16 @@ func ensureWorkspace(root string, db controldb.Store) (string, error) {
 		Root:      absRoot,
 		UpdatedAt: now,
 	})
+}
+
+func hasWorkspaceConfig(absRoot string) bool {
+	if _, err := os.Stat(filepath.Join(absRoot, ".multigent", "agency.yaml")); err == nil {
+		return true
+	}
+	if _, err := os.Stat(filepath.Join(absRoot, ".agencycli", "agency.yaml")); err == nil {
+		return true
+	}
+	return false
 }
 
 func samePath(a, b string) bool {

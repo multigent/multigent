@@ -55,6 +55,35 @@ func TestRuntimeContactsListUsersAndCurrentProjectAgents(t *testing.T) {
 	}
 }
 
+func TestRuntimeContactsListProjectMembershipAgents(t *testing.T) {
+	s, workspaceID := newConnectionGrantPolicyServer(t)
+	now := "2026-08-21T00:00:00Z"
+	upsertRuntimeAttentionWorker(t, s, workspaceID, "aw-worker-only", "sample", "worker-only", now)
+
+	req := httptest.NewRequest(http.MethodGet, "/api/v1/runtime/contacts", nil)
+	req = req.WithContext(context.WithValue(req.Context(), ctxRuntimeAgentKey, runtimeAgentPrincipal{
+		WorkspaceID:  workspaceID,
+		Project:      "sample",
+		Agent:        "worker-only",
+		Capabilities: []string{"message.use"},
+	}))
+	rec := httptest.NewRecorder()
+	s.handleRuntimeContacts(rec, req)
+	if rec.Code != http.StatusOK {
+		t.Fatalf("status=%d body=%s", rec.Code, rec.Body.String())
+	}
+	var contacts []runtimeContactRow
+	if err := json.Unmarshal(rec.Body.Bytes(), &contacts); err != nil {
+		t.Fatalf("decode contacts: %v", err)
+	}
+	for _, contact := range contacts {
+		if contact.Type == "agent" && contact.Identity == "sample/worker-only" && contact.Agent == "worker-only" {
+			return
+		}
+	}
+	t.Fatalf("worker-backed agent contact missing: %#v", contacts)
+}
+
 func TestRuntimePostMessageResolvesDisplayNameUsernameForm(t *testing.T) {
 	s, workspaceID := newConnectionGrantPolicyServer(t)
 	if err := s.users.CreateUser("cg33", "pass123", RoleMember, "Glenn Chen", "glenn@example.com", "", "", ""); err != nil {

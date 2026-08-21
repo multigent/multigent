@@ -27,6 +27,7 @@ import (
 	"os"
 	"os/exec"
 	"path/filepath"
+	"runtime"
 	"sort"
 	"strings"
 	"time"
@@ -263,6 +264,8 @@ func (r *Runner) ExecPromptWithRuntimeControlEnvContext(ctx context.Context, pro
 	}
 	if meta.Sandbox != nil && meta.Sandbox.Provider == entity.SandboxDocker {
 		effectiveEnv = ensureHostDockerPATH(effectiveEnv)
+		effectiveEnv = dropUnreachableDockerLoopbackProxyEnv(effectiveEnv)
+		effectiveEnv = ensureDockerReachableProxyEnv(effectiveEnv)
 	}
 	cmd.Env = effectiveEnv
 
@@ -492,6 +495,8 @@ func (r *Runner) RunTaskWithContext(ctx context.Context, project, agentName stri
 	}
 	if meta.Sandbox != nil && meta.Sandbox.Provider == entity.SandboxDocker {
 		effectiveEnv = ensureHostDockerPATH(effectiveEnv)
+		effectiveEnv = dropUnreachableDockerLoopbackProxyEnv(effectiveEnv)
+		effectiveEnv = ensureDockerReachableProxyEnv(effectiveEnv)
 	}
 	cmd.Env = effectiveEnv
 
@@ -1552,13 +1557,16 @@ func (r *Runner) resolveRuntimeControlEnv(project, agentName, runID string) map[
 	}
 	defer controlDB.Close()
 	workspaceID := resolveRuntimeWorkspaceID(r.root, controlDB)
+	workerID, membershipID := resolveRuntimeProjectAgentWorker(controlDB, workspaceID, project, agentName)
 	secret := runtimeauth.EnsureSecret(controlDB)
 	token := runtimeauth.Issue(secret, runtimeauth.Payload{
-		WorkspaceID:  workspaceID,
-		Project:      project,
-		Agent:        agentName,
-		RunID:        runID,
-		Capabilities: []string{"connection.use", "task.use", "message.use", "okr.use", "docs.use"},
+		WorkspaceID:         workspaceID,
+		Project:             project,
+		Agent:               agentName,
+		AgentWorkerID:       workerID,
+		ProjectMembershipID: membershipID,
+		RunID:               runID,
+		Capabilities:        []string{"connection.use", "task.use", "message.use", "okr.use", "docs.use", "attention.use"},
 	}, 6*time.Hour)
 	return map[string]string{
 		"MULTIGENT_API_URL":      apiURL,
@@ -1566,6 +1574,30 @@ func (r *Runner) resolveRuntimeControlEnv(project, agentName, runID string) map[
 		"MULTIGENT_RUN_ID":       runID,
 		"MULTIGENT_WORKSPACE_ID": workspaceID,
 	}
+}
+
+func resolveRuntimeProjectAgentWorker(controlDB controldb.Store, workspaceID, project, agentName string) (string, string) {
+	if controlDB == nil {
+		return "", ""
+	}
+	memberships, err := controlDB.ListProjectMemberships(controldb.ProjectMembershipFilter{
+		WorkspaceID: strings.TrimSpace(workspaceID),
+		ProjectID:   strings.TrimSpace(project),
+		MemberType:  "agent_worker",
+	})
+	if err != nil {
+		return "", ""
+	}
+	for _, membership := range memberships {
+		worker, ok, err := controlDB.AgentWorkerByID(workspaceID, membership.MemberID)
+		if err != nil || !ok {
+			continue
+		}
+		if strings.EqualFold(strings.TrimSpace(worker.Name), strings.TrimSpace(agentName)) {
+			return strings.TrimSpace(worker.ID), strings.TrimSpace(membership.ID)
+		}
+	}
+	return "", ""
 }
 
 func (r *Runner) materializeRuntimeFiles(agentDir string, env map[string]string) func() {
@@ -3189,6 +3221,43 @@ func ensureHostDockerPATH(env []string) []string {
 		parts = append(parts, strings.Split(current, string(os.PathListSeparator))...)
 	}
 	return mergeEnv(env, map[string]string{"PATH": strings.Join(dedupeEnvPath(parts), string(os.PathListSeparator))})
+}
+
+func ensureDockerReachableProxyEnv(env []string) []string {
+	if len(env) == 0 {
+		return env
+	}
+	overrides := map[string]string{}
+	for _, entry := range env {
+		key, value, ok := strings.Cut(entry, "=")
+		if !ok || key == "" || value == "" {
+			continue
+		}
+		next := sandbox.DockerReachableProxyEnvValue(key, value)
+		if next != value {
+			overrides[key] = next
+		}
+	}
+	return mergeEnv(env, overrides)
+}
+
+func dropUnreachableDockerLoopbackProxyEnv(env []string) []string {
+	if runtime.GOOS != "linux" || os.Getenv("MULTIGENT_DOCKER_FORWARD_LOOPBACK_PROXY") == "1" {
+		return env
+	}
+	out := env[:0]
+	for _, entry := range env {
+		key, value, ok := strings.Cut(entry, "=")
+		if !ok || key == "" || value == "" {
+			out = append(out, entry)
+			continue
+		}
+		if sandbox.DockerReachableProxyEnvValue(key, value) != value {
+			continue
+		}
+		out = append(out, entry)
+	}
+	return out
 }
 
 func dedupeEnvPath(parts []string) []string {

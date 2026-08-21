@@ -33,13 +33,16 @@ type taskWorkflowResponse struct {
 }
 
 type taskWorkflowReviewResponse struct {
-	OK            bool                         `json:"ok"`
-	TaskID        string                       `json:"taskId"`
-	WorkflowRunID string                       `json:"workflowRunId"`
-	Status        string                       `json:"status"`
-	ActiveStepID  string                       `json:"activeStepId,omitempty"`
-	Done          bool                         `json:"done"`
-	NextActor     *entity.WorkflowActorBinding `json:"nextActor,omitempty"`
+	OK                          bool                         `json:"ok"`
+	TaskID                      string                       `json:"taskId"`
+	WorkflowRunID               string                       `json:"workflowRunId"`
+	Status                      string                       `json:"status"`
+	ActiveStepID                string                       `json:"activeStepId,omitempty"`
+	CurrentAssigneeType         string                       `json:"currentAssigneeType"`
+	CurrentAssigneeID           string                       `json:"currentAssigneeId"`
+	CurrentAssigneeMembershipID string                       `json:"currentAssigneeMembershipId"`
+	Done                        bool                         `json:"done"`
+	NextActor                   *entity.WorkflowActorBinding `json:"nextActor,omitempty"`
 }
 
 type workflowReviewBody struct {
@@ -356,6 +359,9 @@ func (s *Server) reconcileActiveWorkflowTaskQueue(workspaceID, project, taskID s
 			return err
 		}
 	}
+	if _, _, err := workflowstore.NewStore(s.controlDB, workspaceID).ReconcileRunCurrentAssigneeForTask(project, taskID); err != nil {
+		return err
+	}
 	task, currentAgent, err := s.findTaskInProject(project, taskID)
 	if err != nil {
 		return nil
@@ -374,7 +380,7 @@ func (s *Server) reconcileActiveWorkflowTaskQueue(workspaceID, project, taskID s
 		if s.hasActiveRuntimeRun(workspaceID, project, actorID, task.ID) {
 			status = entity.TaskStatusInProgress
 		}
-		if err := s.moveWorkflowTaskToAgent(project, currentAgent, actorID, task, status, now); err != nil {
+		if err := s.moveWorkflowTaskToAgent(workspaceID, project, currentAgent, actorID, task, status, now); err != nil {
 			return err
 		}
 	case "human":
@@ -385,6 +391,7 @@ func (s *Server) reconcileActiveWorkflowTaskQueue(workspaceID, project, taskID s
 		task.Assignee = actorID
 		task.UpdatedAt = now
 		task.FinishedAt = nil
+		s.annotateTaskAssignee(workspaceID, project, task)
 		return s.ts.PersistTask(project, currentAgent, task)
 	}
 	return nil
@@ -542,12 +549,15 @@ func (s *Server) handlePostTaskWorkflowReview(w http.ResponseWriter, r *http.Req
 		return
 	}
 	out := taskWorkflowReviewResponse{
-		OK:            true,
-		TaskID:        taskID,
-		WorkflowRunID: resp.Run.ID,
-		Status:        resp.Run.Status,
-		ActiveStepID:  resp.Run.ActiveStepID,
-		Done:          strings.TrimSpace(resp.Run.Status) == "completed",
+		OK:                          true,
+		TaskID:                      taskID,
+		WorkflowRunID:               resp.Run.ID,
+		Status:                      resp.Run.Status,
+		ActiveStepID:                resp.Run.ActiveStepID,
+		CurrentAssigneeType:         resp.Run.CurrentAssigneeType,
+		CurrentAssigneeID:           resp.Run.CurrentAssigneeID,
+		CurrentAssigneeMembershipID: resp.Run.CurrentAssigneeMembershipID,
+		Done:                        strings.TrimSpace(resp.Run.Status) == "completed",
 	}
 	for _, step := range resp.Steps {
 		if step.StepID == resp.Run.ActiveStepID {
@@ -667,14 +677,31 @@ func normalizeWorkflowReviewDecision(decision string) string {
 }
 
 func (s *Server) findTaskInProject(project, taskID string) (*entity.Task, string, error) {
-	agents, err := s.st.ListAgents(project)
-	if err != nil {
-		return nil, "", err
+	workspaceID, workspaceErr := s.currentWorkspaceID()
+	var agents []string
+	var err error
+	if workspaceErr == nil && strings.TrimSpace(workspaceID) != "" {
+		agents, err = s.projectAgentNames(workspaceID, project)
+	} else {
+		err = workspaceErr
 	}
-	for _, agent := range agents {
-		t, err := s.ts.GetTask(project, agent.Name, taskID)
+	if err != nil {
+		legacy, legacyErr := s.st.ListAgents(project)
+		if legacyErr != nil {
+			return nil, "", err
+		}
+		agents = make([]string, 0, len(legacy))
+		for _, agent := range legacy {
+			if agent == nil || strings.TrimSpace(agent.Name) == "" {
+				continue
+			}
+			agents = append(agents, agent.Name)
+		}
+	}
+	for _, agentName := range agents {
+		t, err := s.ts.GetTask(project, agentName, taskID)
 		if err == nil {
-			return t, agent.Name, nil
+			return t, agentName, nil
 		}
 	}
 	return nil, "", errors.New("task not found")

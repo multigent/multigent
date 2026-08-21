@@ -75,6 +75,23 @@ type Store interface {
 	ListAgentToolBindings(filter AgentToolBindingFilter) ([]AgentToolBinding, error)
 	DeleteAgentToolBinding(id string) error
 
+	UpsertAgentWorker(worker AgentWorker) error
+	AgentWorkerByID(workspaceID, id string) (AgentWorker, bool, error)
+	AgentWorkerByName(workspaceID, name string) (AgentWorker, bool, error)
+	ListAgentWorkers(workspaceID string) ([]AgentWorker, error)
+	DeleteAgentWorker(workspaceID, id string) error
+	UpsertProjectMembership(membership ProjectMembership) error
+	ProjectMembershipByID(workspaceID, id string) (ProjectMembership, bool, error)
+	ListProjectMemberships(filter ProjectMembershipFilter) ([]ProjectMembership, error)
+	DeleteProjectMembership(workspaceID, id string) error
+	UpsertAttentionSignal(signal AttentionSignal) error
+	AttentionSignalByID(workspaceID, id string) (AttentionSignal, bool, error)
+	ListAttentionSignals(filter AttentionSignalFilter) ([]AttentionSignal, error)
+	MarkAttentionSignalStatus(workspaceID, id, status string) error
+	UpsertAttentionCursor(cursor AttentionCursor) error
+	AttentionCursorBySource(workspaceID, agentWorkerID, sourceKind, sourceChannel string) (AttentionCursor, bool, error)
+	ListAttentionCursors(filter AttentionCursorFilter) ([]AttentionCursor, error)
+
 	UpsertAgentChannelBinding(binding AgentChannelBinding) error
 	AgentChannelBindingByID(id string) (AgentChannelBinding, bool, error)
 	ListAgentChannelBindings(filter AgentChannelBindingFilter) ([]AgentChannelBinding, error)
@@ -94,7 +111,9 @@ type Store interface {
 	CreateInteractionSession(session InteractionSession) error
 	UpdateInteractionSession(session InteractionSession) error
 	ActiveInteractionSession(workspaceID, projectID, agentID string) (InteractionSession, bool, error)
+	ActiveInteractionSessionForWorker(workspaceID, agentWorkerID string) (InteractionSession, bool, error)
 	ActiveInteractionSessionForSource(workspaceID, projectID, agentID, sourceKind, sourceChannel, actorID string) (InteractionSession, bool, error)
+	ActiveInteractionSessionForWorkerSource(workspaceID, agentWorkerID, sourceKind, sourceChannel, actorID string) (InteractionSession, bool, error)
 	InteractionSessionByID(id string) (InteractionSession, bool, error)
 	ListInteractionSessions(filter InteractionSessionFilter) ([]InteractionSession, error)
 	CreateInteractionEvent(event InteractionEvent) error
@@ -102,6 +121,7 @@ type Store interface {
 	CreateInteractionRequest(request InteractionRequest) error
 	InteractionRequestByID(workspaceID, id string) (InteractionRequest, bool, error)
 	UpdateInteractionRequest(request InteractionRequest) error
+	ListInteractionRequests(filter InteractionRequestFilter) ([]InteractionRequest, error)
 
 	UpsertRuntimeNode(node RuntimeNode) error
 	RuntimeNodeByID(workspaceID, id string) (RuntimeNode, bool, error)
@@ -286,32 +306,135 @@ type ConnectionGrant struct {
 }
 
 type AgentToolBinding struct {
-	ID           string
-	WorkspaceID  string
-	ProjectID    string
-	AgentID      string
-	ConnectionID string
-	Provider     string
-	AdapterType  string
-	Status       string
-	ConfigJSON   string
-	CreatedBy    string
-	CreatedAt    string
-	UpdatedAt    string
+	ID            string
+	WorkspaceID   string
+	AgentWorkerID string
+	ProjectID     string
+	AgentID       string
+	ConnectionID  string
+	Provider      string
+	AdapterType   string
+	Status        string
+	ConfigJSON    string
+	CreatedBy     string
+	CreatedAt     string
+	UpdatedAt     string
 }
 
 type AgentToolBindingFilter struct {
-	WorkspaceID  string
-	ProjectID    string
-	AgentID      string
-	ConnectionID string
-	Provider     string
-	Status       string
+	WorkspaceID   string
+	AgentWorkerID string
+	ProjectID     string
+	AgentID       string
+	ConnectionID  string
+	Provider      string
+	Status        string
+}
+
+type AgentWorker struct {
+	ID                    string
+	WorkspaceID           string
+	Name                  string
+	DisplayName           string
+	Description           string
+	Avatar                string
+	Status                string
+	Model                 string
+	RuntimeModel          string
+	DefaultModelAccountID string
+	DefaultRuntimeNodeID  string
+	DefaultRuntimeMode    string
+	ScheduleJSON          string
+	AttentionPolicyJSON   string
+	MemoryPolicyJSON      string
+	SkillsJSON            string
+	RuntimeConfigJSON     string
+	PrimarySessionID      string
+	CreatedAt             string
+	UpdatedAt             string
+}
+
+type ProjectMembership struct {
+	ID               string
+	WorkspaceID      string
+	ProjectID        string
+	MemberType       string
+	MemberID         string
+	Role             string
+	Title            string
+	Prompt           string
+	PermissionsJSON  string
+	AutoPickTasks    bool
+	AttentionEnabled bool
+	PriorityWeight   float64
+	CreatedAt        string
+	UpdatedAt        string
+}
+
+type ProjectMembershipFilter struct {
+	WorkspaceID string
+	ProjectID   string
+	MemberType  string
+	MemberID    string
+}
+
+type AttentionSignal struct {
+	ID            string
+	WorkspaceID   string
+	AgentWorkerID string
+	DedupeKey     string
+	SourceKind    string
+	SourceID      string
+	SourceChannel string
+	Reason        string
+	Priority      string
+	ActorType     string
+	ActorID       string
+	Summary       string
+	RefsJSON      string
+	PayloadJSON   string
+	ResultRef     string
+	Status        string
+	CreatedAt     string
+	ExpiresAt     string
+	SeenAt        string
+	HandlingAt    string
+	HandledAt     string
+}
+
+type AttentionSignalFilter struct {
+	WorkspaceID   string
+	AgentWorkerID string
+	Status        string
+	Statuses      []string
+	SourceKind    string
+	Reason        string
+	Limit         int
+}
+
+type AttentionCursor struct {
+	ID            string
+	WorkspaceID   string
+	AgentWorkerID string
+	SourceKind    string
+	SourceChannel string
+	Cursor        string
+	SeenUntil     string
+	UpdatedAt     string
+}
+
+type AttentionCursorFilter struct {
+	WorkspaceID   string
+	AgentWorkerID string
+	SourceKind    string
+	SourceChannel string
+	Limit         int
 }
 
 type AgentChannelBinding struct {
 	ID              string
 	WorkspaceID     string
+	AgentWorkerID   string
 	ProjectID       string
 	AgentID         string
 	Provider        string
@@ -328,12 +451,13 @@ type AgentChannelBinding struct {
 }
 
 type AgentChannelBindingFilter struct {
-	WorkspaceID  string
-	ProjectID    string
-	AgentID      string
-	Provider     string
-	ConnectionID string
-	Status       string
+	WorkspaceID   string
+	AgentWorkerID string
+	ProjectID     string
+	AgentID       string
+	Provider      string
+	ConnectionID  string
+	Status        string
 }
 
 type ExternalIdentity struct {
@@ -417,6 +541,7 @@ type AgentChannelBindCode struct {
 type InteractionSession struct {
 	ID               string
 	WorkspaceID      string
+	AgentWorkerID    string
 	ProjectID        string
 	AgentID          string
 	SourceKind       string
@@ -437,6 +562,7 @@ type InteractionSession struct {
 
 type InteractionSessionFilter struct {
 	WorkspaceID    string
+	AgentWorkerID  string
 	ProjectID      string
 	AgentID        string
 	SourceKind     string
@@ -469,6 +595,7 @@ type InteractionEventFilter struct {
 type InteractionRequest struct {
 	ID               string
 	WorkspaceID      string
+	AgentWorkerID    string
 	ProjectID        string
 	AgentID          string
 	ChannelBindingID string
@@ -489,6 +616,17 @@ type InteractionRequest struct {
 	SubmittedAt      string
 	SubmittedBy      string
 	SubmissionJSON   string
+}
+
+type InteractionRequestFilter struct {
+	WorkspaceID      string
+	AgentWorkerID    string
+	ProjectID        string
+	AgentID          string
+	ChannelBindingID string
+	Provider         string
+	Status           string
+	Limit            int
 }
 
 type RuntimeNode struct {
@@ -526,6 +664,8 @@ type RuntimeNodeToken struct {
 type RuntimeRun struct {
 	ID                   string
 	WorkspaceID          string
+	AgentWorkerID        string
+	ProjectMembershipID  string
 	ProjectID            string
 	AgentID              string
 	TaskID               string
@@ -548,13 +688,15 @@ type RuntimeRun struct {
 }
 
 type RuntimeRunFilter struct {
-	WorkspaceID   string
-	RuntimeNodeID string
-	ProjectID     string
-	AgentID       string
-	TaskID        string
-	Status        string
-	Limit         int
+	WorkspaceID         string
+	AgentWorkerID       string
+	ProjectMembershipID string
+	RuntimeNodeID       string
+	ProjectID           string
+	AgentID             string
+	TaskID              string
+	Status              string
+	Limit               int
 }
 
 type RuntimeEvent struct {

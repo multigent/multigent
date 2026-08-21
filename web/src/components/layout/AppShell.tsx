@@ -36,6 +36,9 @@ function useBreadcrumbs(): BreadcrumbSegment[] {
   const playbookMatch = /^\/playbooks\/([^/]+)$/.exec(pathname)
   const playbookId = playbookMatch ? decodeURIComponent(playbookMatch[1]) : ''
   const [playbookName, setPlaybookName] = useState('')
+  const workspaceAgentMatch = /^\/agents\/([^/]+)$/.exec(pathname)
+  const workspaceAgentId = workspaceAgentMatch ? decodeURIComponent(workspaceAgentMatch[1]) : ''
+  const [workspaceAgentName, setWorkspaceAgentName] = useState('')
 
   useEffect(() => {
     let cancelled = false
@@ -75,6 +78,32 @@ function useBreadcrumbs(): BreadcrumbSegment[] {
       cancelled = true
     }
   }, [playbookId, i18n.resolvedLanguage, i18n.language])
+
+  useEffect(() => {
+    let cancelled = false
+    if (!workspaceAgentId) {
+      setWorkspaceAgentName('')
+      return
+    }
+    setWorkspaceAgentName('')
+    apiFetch<{ agent?: { name?: string; displayName?: string } }>(`/api/v1/agents/${encodeURIComponent(workspaceAgentId)}`)
+      .then((res) => {
+        if (!cancelled) setWorkspaceAgentName(res.agent?.displayName || res.agent?.name || '')
+      })
+      .catch(() => {
+        if (!cancelled) setWorkspaceAgentName('')
+      })
+    return () => {
+      cancelled = true
+    }
+  }, [workspaceAgentId])
+
+  if (workspaceAgentMatch) {
+    return [
+      { label: t('nav.agents'), to: '/agents' },
+      { label: workspaceAgentName || '…' },
+    ]
+  }
 
   // Check for agent detail page: /projects/:id/members/:agentName
   const agentChatMatch = /^\/projects\/[^/]+\/members\/([^/]+)\/chat$/.exec(pathname)

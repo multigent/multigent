@@ -9,6 +9,7 @@ import (
 	"strings"
 	"time"
 
+	"github.com/multigent/multigent/internal/agentdir"
 	controldb "github.com/multigent/multigent/internal/db"
 )
 
@@ -19,7 +20,7 @@ type cliInteractionLease struct {
 }
 
 func acquireCLIInteraction(root, project, agent, sourceKind, sourceChannel, actorID, reason string) (*cliInteractionLease, bool, error) {
-	db, err := openControlDB()
+	db, err := openControlDBForRoot(root)
 	if err != nil {
 		return nil, false, err
 	}
@@ -32,12 +33,18 @@ func acquireCLIInteraction(root, project, agent, sourceKind, sourceChannel, acto
 		_ = db.Close()
 		return nil, false, nil
 	}
+	resolved, hasWorker, err := agentdir.New(db).ResolveLegacyMailbox(workspaceID, strings.TrimSpace(project)+"/"+strings.TrimSpace(agent))
+	if err != nil {
+		_ = db.Close()
+		return nil, false, err
+	}
 	now := time.Now().UTC().Format(time.RFC3339)
 	session := controldb.InteractionSession{
 		ID:             newCLIInteractionID("sess"),
 		WorkspaceID:    workspaceID,
 		ProjectID:      strings.TrimSpace(project),
 		AgentID:        strings.TrimSpace(agent),
+		AgentWorkerID:  "",
 		SourceKind:     strings.TrimSpace(sourceKind),
 		SourceChannel:  strings.TrimSpace(sourceChannel),
 		ActorType:      "system",
@@ -49,10 +56,14 @@ func acquireCLIInteraction(root, project, agent, sourceKind, sourceChannel, acto
 		UpdatedAt:      now,
 		LastActivityAt: now,
 	}
+	if hasWorker {
+		session.AgentWorkerID = resolved.Worker.ID
+	}
 	if session.LockReason == "" {
 		session.LockReason = "running_task"
 	}
-	if active, found, lookupErr := db.ActiveInteractionSession(workspaceID, session.ProjectID, session.AgentID); lookupErr == nil && found && strings.TrimSpace(active.LockReason) == "running_task" {
+	active, found, lookupErr := activeCLIInteractionSession(db, session)
+	if lookupErr == nil && found && strings.TrimSpace(active.LockReason) == "running_task" {
 		if shouldRecoverStaleCLIInteraction(active, sourceKind, reason) {
 			active.Status = "failed"
 			active.UpdatedAt = now
@@ -68,7 +79,7 @@ func acquireCLIInteraction(root, project, agent, sourceKind, sourceChannel, acto
 		return nil, false, lookupErr
 	}
 	if err := db.CreateInteractionSession(session); err != nil {
-		if active, found, lookupErr := db.ActiveInteractionSession(workspaceID, project, agent); lookupErr == nil && found {
+		if active, found, lookupErr := activeCLIInteractionSession(db, session); lookupErr == nil && found {
 			if shouldRecoverStaleCLIInteraction(active, sourceKind, reason) {
 				active.Status = "failed"
 				active.UpdatedAt = now
@@ -99,6 +110,13 @@ func acquireCLIInteraction(root, project, agent, sourceKind, sourceChannel, acto
 		"lockReason":    session.LockReason,
 	})
 	return lease, false, nil
+}
+
+func activeCLIInteractionSession(db controldb.Store, session controldb.InteractionSession) (controldb.InteractionSession, bool, error) {
+	if strings.TrimSpace(session.AgentWorkerID) != "" {
+		return db.ActiveInteractionSessionForWorker(session.WorkspaceID, session.AgentWorkerID)
+	}
+	return db.ActiveInteractionSession(session.WorkspaceID, session.ProjectID, session.AgentID)
 }
 
 func shouldRecoverStaleCLIInteraction(active controldb.InteractionSession, sourceKind, reason string) bool {

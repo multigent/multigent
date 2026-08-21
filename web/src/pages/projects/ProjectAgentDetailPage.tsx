@@ -1,4 +1,5 @@
 import { useCallback, useEffect, useMemo, useState } from 'react'
+import type { ReactNode } from 'react'
 import { Link, useNavigate, useParams } from 'react-router-dom'
 import { useTranslation } from 'react-i18next'
 import Markdown from 'react-markdown'
@@ -6,7 +7,7 @@ import remarkGfm from 'remark-gfm'
 import {
   ChevronRight, Bot, BookOpen, Check,
   Settings2, Users, UserCog, Activity, User, Mail, ListTodo, Reply, Send, Container,
-  Cable, Server,
+  Cable, Server, Clock3, X,
 } from 'lucide-react'
 import type { LucideIcon } from 'lucide-react'
 import { cn } from '../../lib/cn'
@@ -17,6 +18,7 @@ import { canConfigureAgent, canManageProject, canOperateAgent, isTrustedProxyMod
 import { useWorkspaceAccess } from '../../lib/workspace-access'
 import { Pagination } from '../../components/ui/Pagination'
 import { AgentChannelPanel } from '../../components/project/AgentChannelPanel'
+import { showToast } from '../../components/ui/Toast'
 
 const AGENT_MODELS = [
   'claudecode', 'codex', 'cursor', 'gemini',
@@ -121,6 +123,39 @@ type AgentContext = {
   addDirs?: string[]
 }
 
+type WorkerSchedule = {
+  Enabled?: boolean
+  enabled?: boolean
+  Jitter?: string
+  jitter?: string
+  Interval?: string
+  interval?: string
+  ActiveHours?: string
+  activeHours?: string
+  ActiveDays?: string
+  activeDays?: string
+  MaxTasksPerCycle?: number
+  maxTasksPerCycle?: number
+  MaxCycleDuration?: string
+  maxCycleDuration?: string
+  WakeupPreset?: string
+  wakeupPreset?: string
+  WakeupCondition?: string
+  wakeupCondition?: string
+  SessionScope?: string
+  sessionScope?: string
+  SessionID?: string
+  sessionId?: string
+  triggers?: string[]
+}
+
+type AgentWorkerDetail = {
+  id: string
+  name: string
+  displayName?: string
+  schedule?: WorkerSchedule
+}
+
 type KnowledgeDoc = {
   id: string
   title: string
@@ -192,6 +227,70 @@ const primaryButtonCls = cn(buttonBaseCls, 'border border-sky-200 bg-sky-50 text
 const secondaryButtonCls = cn(buttonBaseCls, 'border border-neutral-200 bg-white text-neutral-700 hover:border-neutral-300 hover:bg-neutral-50 dark:border-zinc-700 dark:bg-zinc-900 dark:text-zinc-300 dark:hover:border-zinc-600 dark:hover:bg-zinc-800')
 const subtleButtonCls = cn(buttonBaseCls, 'text-neutral-500 hover:bg-neutral-100 hover:text-neutral-800 dark:text-zinc-400 dark:hover:bg-zinc-800 dark:hover:text-zinc-200')
 const panelSelectCls = 'h-8 rounded-md border border-neutral-200 bg-white px-2.5 text-sm text-neutral-700 outline-none hover:border-neutral-300 focus:border-sky-400 disabled:opacity-50 dark:border-zinc-700 dark:bg-zinc-800 dark:text-zinc-300 dark:[color-scheme:dark]'
+const panelInputCls = 'h-8 rounded-md border border-neutral-200 bg-white px-2.5 text-sm text-neutral-800 outline-none transition-colors focus:border-sky-400 dark:border-zinc-700 dark:bg-zinc-800 dark:text-zinc-200 dark:[color-scheme:dark]'
+
+const workerScheduleTriggerOptions = [
+  { key: 'message', label: 'schedule.trigger_message' },
+  { key: 'task', label: 'schedule.trigger_task' },
+  { key: 'attention', label: 'schedule.trigger_attention' },
+  { key: 'im_direct_message', label: 'agents.trigger_im_direct_message' },
+  { key: 'im_mention', label: 'agents.trigger_im_mention' },
+  { key: 'workflow_step_assigned', label: 'agents.trigger_workflow_step_assigned' },
+  { key: 'card_action', label: 'agents.trigger_card_action' },
+]
+
+function normalizeWorkerSchedule(schedule?: WorkerSchedule) {
+  return {
+    enabled: Boolean(schedule?.enabled ?? schedule?.Enabled),
+    interval: schedule?.interval || schedule?.Interval || '2h',
+    jitter: schedule?.jitter || schedule?.Jitter || '',
+    activeHours: schedule?.activeHours || schedule?.ActiveHours || '',
+    activeDays: schedule?.activeDays || schedule?.ActiveDays || '',
+    maxTasksPerCycle: Number(schedule?.maxTasksPerCycle ?? schedule?.MaxTasksPerCycle ?? 5),
+    maxCycleDuration: schedule?.maxCycleDuration || schedule?.MaxCycleDuration || '45m',
+    wakeupPreset: schedule?.wakeupPreset || schedule?.WakeupPreset || '',
+    wakeupCondition: schedule?.wakeupCondition || schedule?.WakeupCondition || '',
+    sessionScope: schedule?.sessionScope || schedule?.SessionScope || 'cycle',
+    sessionId: schedule?.sessionId || schedule?.SessionID || '',
+    triggers: Array.isArray(schedule?.triggers) ? schedule.triggers : [],
+  }
+}
+
+const WORKER_SCHEDULE_DAYS = ['Mon', 'Tue', 'Wed', 'Thu', 'Fri', 'Sat', 'Sun'] as const
+const WORKER_SCHEDULE_WEEKDAYS = ['Mon', 'Tue', 'Wed', 'Thu', 'Fri']
+const WORKER_SCHEDULE_WEEKENDS = ['Sat', 'Sun']
+
+function parseScheduleDuration(value: string, fallbackNum: number, fallbackUnit: 'm' | 'h') {
+  const match = value.trim().match(/^(\d+(?:\.\d+)?)\s*(m|h|s)/)
+  if (!match) return { num: fallbackNum, unit: fallbackUnit }
+  return { num: Number.parseFloat(match[1]), unit: match[2] === 'h' ? 'h' as const : 'm' as const }
+}
+
+function parseScheduleActiveHours(value: string) {
+  const match = value.trim().match(/^(\d{1,2}:\d{2})\s*-\s*(\d{1,2}:\d{2})$/)
+  if (!match) return { start: '', end: '' }
+  const pad = (input: string) => {
+    const parts = input.match(/^(\d{1,2}):(\d{2})$/)
+    return parts ? `${parts[1].padStart(2, '0')}:${parts[2]}` : input
+  }
+  return { start: pad(match[1]), end: pad(match[2]) }
+}
+
+function parseScheduleActiveDays(value: string): string[] {
+  if (!value) return []
+  const lower = value.toLowerCase().trim()
+  if (lower === 'weekdays') return [...WORKER_SCHEDULE_WEEKDAYS]
+  if (lower === 'weekends') return [...WORKER_SCHEDULE_WEEKENDS]
+  return value.split(',').map(day => day.trim()).filter(day => (WORKER_SCHEDULE_DAYS as readonly string[]).includes(day))
+}
+
+function buildScheduleActiveDays(days: string[]) {
+  const sorted = WORKER_SCHEDULE_DAYS.filter(day => days.includes(day))
+  if (sorted.length === 0) return ''
+  if (sorted.length === 5 && WORKER_SCHEDULE_WEEKDAYS.every(day => sorted.includes(day as (typeof WORKER_SCHEDULE_DAYS)[number]))) return 'weekdays'
+  if (sorted.length === 2 && sorted.includes('Sat') && sorted.includes('Sun')) return 'weekends'
+  return sorted.join(',')
+}
 
 function PromptEditor({ label, icon: Icon, apiPath, initialContent, canEdit = true }: { label: string; icon: LucideIcon; apiPath: string; initialContent: string; canEdit?: boolean }) {
   const { t } = useTranslation()
@@ -263,6 +362,378 @@ function PromptEditor({ label, icon: Icon, apiPath, initialContent, canEdit = tr
           rows={editorRows} placeholder="Markdown prompt..." />
       )}
     </div>
+  )
+}
+
+function WorkspaceAgentSchedulePanel({ agentId }: { agentId: string }) {
+  const { t } = useTranslation()
+  const [reloadKey, setReloadKey] = useState(0)
+  const [editing, setEditing] = useState(false)
+  const [toggling, setToggling] = useState(false)
+  const state = useApiJson<{ agent?: AgentWorkerDetail }>(`/api/v1/agents/${encodeURIComponent(agentId)}`, reloadKey, { keepPreviousDataOnReload: true })
+  const agent = state.status === 'ok' ? state.data.agent : undefined
+  const schedule = normalizeWorkerSchedule(agent?.schedule)
+
+  async function toggleEnabled() {
+    if (state.status !== 'ok') return
+    setToggling(true)
+    try {
+      await apiPatch<{ agent?: AgentWorkerDetail }>(`/api/v1/agents/${encodeURIComponent(agentId)}`, {
+        schedule: {
+          Enabled: !schedule.enabled,
+          Interval: schedule.interval || '2h',
+          Jitter: schedule.jitter,
+          ActiveHours: schedule.activeHours,
+          ActiveDays: schedule.activeDays,
+          MaxTasksPerCycle: schedule.maxTasksPerCycle || 5,
+          MaxCycleDuration: schedule.maxCycleDuration || '45m',
+          WakeupPreset: schedule.wakeupPreset,
+          WakeupCondition: schedule.wakeupCondition,
+          SessionScope: schedule.sessionScope,
+          SessionID: schedule.sessionId,
+          triggers: schedule.triggers,
+        },
+      })
+      setReloadKey(k => k + 1)
+    } finally {
+      setToggling(false)
+    }
+  }
+
+  return (
+    <section data-tour-scheduler-control>
+      <SectionHeader icon={Clock3} title={t('agents.schedule')} />
+      <p className="mt-1 text-sm text-neutral-500 dark:text-zinc-500">{t('agents.scheduleEnabledHint')}</p>
+      <div className="mt-3 rounded-lg border border-neutral-200/80 bg-white p-4 dark:border-zinc-700/60 dark:bg-zinc-900/40">
+        <div className="flex items-start justify-between gap-4">
+          <div className="min-w-0">
+            <p className="text-sm font-medium text-neutral-800 dark:text-zinc-200">{schedule.enabled ? t('schedule.hbActive') : t('schedule.off')}</p>
+            <p className="mt-1 text-xs text-neutral-500 dark:text-zinc-500">{t('schedule.configEffectHint')}</p>
+          </div>
+          <div className="flex shrink-0 items-center gap-2">
+            <button
+              type="button"
+              onClick={() => void toggleEnabled()}
+              disabled={state.status !== 'ok' || toggling}
+              className={schedule.enabled ? secondaryButtonCls : primaryButtonCls}
+            >
+              {schedule.enabled ? t('schedule.disableHb') : t('schedule.enableHb')}
+            </button>
+            <button type="button" onClick={() => setEditing(true)} className={secondaryButtonCls}>
+              {t('common.edit')}
+            </button>
+          </div>
+        </div>
+        {state.status === 'loading' && <p className="mt-3 text-sm text-neutral-500 dark:text-zinc-500">{t('api.loading')}</p>}
+        {state.status === 'error' && <p className="mt-3 text-sm text-red-500 dark:text-red-400">{state.error.message}</p>}
+        {state.status === 'ok' && (
+          <div className="mt-3 grid grid-cols-2 gap-2 text-xs sm:grid-cols-4">
+            <ScheduleSummaryItem label={t('schedule.statusLabel')} value={schedule.enabled ? t('schedule.hbActive') : t('schedule.off')} />
+            <ScheduleSummaryItem label={t('agents.interval')} value={schedule.enabled ? schedule.interval : '-'} mono />
+            <ScheduleSummaryItem label={t('schedule.jitter')} value={schedule.jitter || '-'} mono />
+            <ScheduleSummaryItem label={t('schedule.conditionLabel')} value={scheduleConditionSummary(schedule.wakeupPreset, schedule.wakeupCondition, t)} />
+            <ScheduleSummaryItem label={t('session.scopeLabel')} value={t(`session.scope${schedule.sessionScope[0]?.toUpperCase() ?? 'C'}${schedule.sessionScope.slice(1)}`, { defaultValue: schedule.sessionScope || '-' })} />
+            <ScheduleSummaryItem label={t('agents.activeHours')} value={schedule.activeHours || '-'} />
+            <ScheduleSummaryItem label={t('agents.activeDays')} value={schedule.activeDays || '-'} />
+            <ScheduleSummaryItem label={t('agents.maxTasksPerCycle')} value={String(schedule.maxTasksPerCycle || '-')} />
+            <ScheduleSummaryItem label={t('agents.maxCycleDuration')} value={schedule.maxCycleDuration || '-'} />
+            <div className="col-span-2">
+              <p className="text-neutral-400 dark:text-zinc-500">{t('agents.wakeupTriggers')}</p>
+              <div className="mt-1 flex flex-wrap gap-1.5">
+                {schedule.triggers.length === 0 ? (
+                  <span className="text-neutral-500 dark:text-zinc-400">-</span>
+                ) : schedule.triggers.map(trigger => (
+                  <span key={trigger} className="rounded-md border border-neutral-200 px-2 py-0.5 text-neutral-500 dark:border-zinc-700 dark:text-zinc-400">
+                    {t(`schedule.trigger_${trigger}`, { defaultValue: t(`agents.trigger_${trigger}`, { defaultValue: trigger }) })}
+                  </span>
+                ))}
+              </div>
+            </div>
+          </div>
+        )}
+      </div>
+      {editing && state.status === 'ok' && (
+        <WorkspaceAgentScheduleDialog
+          agentId={agentId}
+          agentName={agent?.displayName || agent?.name || agentId}
+          schedule={schedule}
+          onClose={() => setEditing(false)}
+          onSaved={() => {
+            setEditing(false)
+            setReloadKey(k => k + 1)
+          }}
+        />
+      )}
+    </section>
+  )
+}
+
+function scheduleConditionSummary(preset: string, script: string, t: (key: string, options?: Record<string, unknown>) => string) {
+  const parts: string[] = []
+  if (preset === 'require_tasks') parts.push(t('schedule.conditionTaskPass'))
+  if (preset === 'require_messages') parts.push(t('schedule.conditionMessagePass'))
+  if (preset === 'require_any') {
+    parts.push(t('schedule.conditionTaskPass'))
+    parts.push(t('schedule.conditionMessagePass'))
+  }
+  if (script.trim()) parts.push(t('schedule.conditionScriptPass'))
+  return parts.length > 0 ? parts.join(' / ') : t('schedule.presetNone')
+}
+
+function ScheduleSummaryItem({ label, value, mono }: { label: string; value: string; mono?: boolean }) {
+  return (
+    <div className="rounded-md bg-neutral-50 px-2.5 py-2 dark:bg-zinc-800/50">
+      <p className="text-neutral-400 dark:text-zinc-500">{label}</p>
+      <p className={cn('mt-0.5 truncate text-neutral-700 dark:text-zinc-300', mono && 'font-mono')}>{value}</p>
+    </div>
+  )
+}
+
+function WorkspaceAgentScheduleDialog({ agentId, agentName, schedule, onClose, onSaved }: {
+  agentId: string
+  agentName: string
+  schedule: ReturnType<typeof normalizeWorkerSchedule>
+  onClose: () => void
+  onSaved: () => void
+}) {
+  const { t } = useTranslation()
+  const intervalParts = parseScheduleDuration(schedule.interval, 2, 'h')
+  const [intervalNum, setIntervalNum] = useState(intervalParts.num)
+  const [intervalUnit, setIntervalUnit] = useState<'m' | 'h'>(intervalParts.unit)
+  const jitterParts = parseScheduleDuration(schedule.jitter, 0, 'm')
+  const [jitterNum, setJitterNum] = useState(jitterParts.num)
+  const [jitterUnit, setJitterUnit] = useState<'m' | 'h'>(jitterParts.unit)
+  const activeHoursParts = parseScheduleActiveHours(schedule.activeHours)
+  const [activeStart, setActiveStart] = useState(activeHoursParts.start)
+  const [activeEnd, setActiveEnd] = useState(activeHoursParts.end)
+  const [days, setDays] = useState<string[]>(parseScheduleActiveDays(schedule.activeDays))
+  const [maxTasks, setMaxTasks] = useState(schedule.maxTasksPerCycle)
+  const durationParts = parseScheduleDuration(schedule.maxCycleDuration, 45, 'm')
+  const [durationNum, setDurationNum] = useState(durationParts.num)
+  const [durationUnit, setDurationUnit] = useState<'m' | 'h'>(durationParts.unit)
+  const [triggers, setTriggers] = useState<string[]>(schedule.triggers)
+  const [wakeupPreset, setWakeupPreset] = useState(schedule.wakeupPreset)
+  const [wakeupCondition, setWakeupCondition] = useState(schedule.wakeupCondition)
+  const [useScriptCondition, setUseScriptCondition] = useState(Boolean(schedule.wakeupCondition))
+  const [sessionScope, setSessionScope] = useState(schedule.sessionScope || 'cycle')
+  const [sessionId, setSessionId] = useState(schedule.sessionId)
+  const [saving, setSaving] = useState(false)
+  const [err, setErr] = useState<string | null>(null)
+
+  const chipCls = 'cursor-pointer rounded-md border px-2 py-1 text-xs font-medium transition-colors'
+  const chipActive = 'border-sky-500 bg-sky-50 text-sky-700 dark:border-sky-600 dark:bg-sky-900/30 dark:text-sky-300'
+  const chipInactive = 'border-neutral-200 bg-white text-neutral-500 hover:border-neutral-300 hover:text-neutral-700 dark:border-zinc-700 dark:bg-zinc-900 dark:text-zinc-500 dark:hover:border-zinc-600'
+  const shortcutCls = 'cursor-pointer text-[11px] text-sky-600 hover:text-sky-800 dark:text-sky-400 dark:hover:text-sky-300'
+
+  function toggleDay(day: string) {
+    setDays(prev => prev.includes(day) ? prev.filter(item => item !== day) : [...prev, day])
+  }
+
+  function toggleTrigger(key: string) {
+    setTriggers(prev => prev.includes(key) ? prev.filter(item => item !== key) : [...prev, key])
+  }
+
+  const presetHasTasks = wakeupPreset === 'require_tasks' || wakeupPreset === 'require_any'
+  const presetHasMessages = wakeupPreset === 'require_messages' || wakeupPreset === 'require_any'
+  function setPresetConditions(next: { tasks: boolean; messages: boolean }) {
+    if (next.tasks && next.messages) setWakeupPreset('require_any')
+    else if (next.tasks) setWakeupPreset('require_tasks')
+    else if (next.messages) setWakeupPreset('require_messages')
+    else setWakeupPreset('')
+  }
+
+  function toggleScriptCondition() {
+    setUseScriptCondition(prev => {
+      if (prev) setWakeupCondition('')
+      return !prev
+    })
+  }
+
+  async function save() {
+    setErr(null)
+    if (useScriptCondition && !wakeupCondition.trim()) {
+      setErr(t('schedule.scriptConditionRequired'))
+      return
+    }
+    setSaving(true)
+    try {
+      await apiPatch<{ agent?: AgentWorkerDetail }>(`/api/v1/agents/${encodeURIComponent(agentId)}`, {
+        schedule: {
+          Enabled: schedule.enabled,
+          Interval: intervalNum > 0 ? `${intervalNum}${intervalUnit}` : '2h',
+          Jitter: jitterNum > 0 ? `${jitterNum}${jitterUnit}` : '',
+          ActiveHours: activeStart && activeEnd ? `${activeStart}-${activeEnd}` : '',
+          ActiveDays: buildScheduleActiveDays(days),
+          MaxTasksPerCycle: maxTasks > 0 ? maxTasks : 5,
+          MaxCycleDuration: durationNum > 0 ? `${durationNum}${durationUnit}` : '45m',
+          WakeupPreset: wakeupPreset,
+          WakeupCondition: useScriptCondition ? wakeupCondition.trim() : '',
+          SessionScope: sessionScope,
+          SessionID: sessionId,
+          triggers,
+        },
+      })
+      showToast(t('agents.scheduleSaved'), 'success')
+      onSaved()
+    } finally {
+      setSaving(false)
+    }
+  }
+
+  return (
+    <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/45 p-4" onClick={() => !saving && onClose()}>
+      <div className="flex max-h-[90vh] w-full max-w-lg flex-col rounded-xl border border-neutral-200 bg-white shadow-lg dark:border-zinc-700 dark:bg-zinc-900 animate-scale-in" onClick={(event) => event.stopPropagation()}>
+        <div className="flex shrink-0 items-center justify-between border-b border-neutral-200 px-5 py-3 dark:border-zinc-700">
+          <h2 className="text-base font-semibold text-neutral-900 dark:text-zinc-100">{t('schedule.editHb')} — <span className="font-mono">{agentName}</span></h2>
+          <button type="button" onClick={onClose} disabled={saving} className="rounded-md p-1 text-neutral-400 hover:bg-neutral-100 dark:text-zinc-500 dark:hover:bg-zinc-800">
+            <X className="size-4" />
+          </button>
+        </div>
+        <div className="flex-1 space-y-4 overflow-y-auto px-5 py-4">
+          <ScheduleDialogField label={t('schedule.interval')}>
+            <div className="flex items-center gap-2">
+              <input type="number" min={1} value={intervalNum} onChange={event => setIntervalNum(Number(event.target.value))} className={cn(panelInputCls, 'w-24 tabular-nums')} />
+              <select value={intervalUnit} onChange={event => setIntervalUnit(event.target.value as 'm' | 'h')} className={cn(panelSelectCls, 'w-28')}>
+                <option value="m">{t('schedule.unitMinutes')}</option>
+                <option value="h">{t('schedule.unitHours')}</option>
+              </select>
+            </div>
+          </ScheduleDialogField>
+
+          <ScheduleDialogField label={t('schedule.jitter')}>
+            <div className="flex items-center gap-2">
+              <input type="number" min={0} value={jitterNum} onChange={event => setJitterNum(Number(event.target.value))} className={cn(panelInputCls, 'w-24 tabular-nums')} />
+              <select value={jitterUnit} onChange={event => setJitterUnit(event.target.value as 'm' | 'h')} className={cn(panelSelectCls, 'w-28')}>
+                <option value="m">{t('schedule.unitMinutes')}</option>
+                <option value="h">{t('schedule.unitHours')}</option>
+              </select>
+            </div>
+            <p className="mt-1 text-xs text-neutral-400 dark:text-zinc-500">{t('schedule.jitterHint')}</p>
+          </ScheduleDialogField>
+
+          <ScheduleDialogField label={t('schedule.activeHours')}>
+            <div className="flex items-center gap-2">
+              <input type="time" value={activeStart} onChange={event => setActiveStart(event.target.value)} className={cn(panelInputCls, 'w-32')} />
+              <span className="text-neutral-400">—</span>
+              <input type="time" value={activeEnd} onChange={event => setActiveEnd(event.target.value)} className={cn(panelInputCls, 'w-32')} />
+            </div>
+          </ScheduleDialogField>
+
+          <ScheduleDialogField label={t('schedule.activeDaysLabel')}>
+            <div className="flex flex-wrap gap-1.5">
+              {WORKER_SCHEDULE_DAYS.map(day => (
+                <button key={day} type="button" onClick={() => toggleDay(day)} className={cn(chipCls, days.includes(day) ? chipActive : chipInactive)}>{day}</button>
+              ))}
+            </div>
+            <div className="mt-1.5 flex gap-3">
+              <button type="button" onClick={() => setDays([...WORKER_SCHEDULE_WEEKDAYS])} className={shortcutCls}>{t('schedule.shortcutWeekdays')}</button>
+              <button type="button" onClick={() => setDays([...WORKER_SCHEDULE_WEEKENDS])} className={shortcutCls}>{t('schedule.shortcutWeekends')}</button>
+              <button type="button" onClick={() => setDays([...WORKER_SCHEDULE_DAYS])} className={shortcutCls}>{t('schedule.shortcutAll')}</button>
+              <button type="button" onClick={() => setDays([])} className={shortcutCls}>{t('schedule.shortcutClear')}</button>
+            </div>
+          </ScheduleDialogField>
+
+          <ScheduleDialogField label={t('schedule.wakeupCondition')}>
+            <div className="space-y-2 rounded-lg border border-neutral-200 bg-neutral-50/50 p-3 dark:border-zinc-700/60 dark:bg-zinc-800/30">
+              <div className="flex flex-wrap gap-2">
+                <button type="button" onClick={() => setPresetConditions({ tasks: !presetHasTasks, messages: presetHasMessages })} className={cn(chipCls, presetHasTasks ? chipActive : chipInactive)}>
+                  {t('schedule.conditionTaskPass')}
+                </button>
+                <button type="button" onClick={() => setPresetConditions({ tasks: presetHasTasks, messages: !presetHasMessages })} className={cn(chipCls, presetHasMessages ? chipActive : chipInactive)}>
+                  {t('schedule.conditionMessagePass')}
+                </button>
+                <button type="button" onClick={toggleScriptCondition} className={cn(chipCls, useScriptCondition ? chipActive : chipInactive)}>
+                  {t('schedule.conditionScriptPass')}
+                </button>
+              </div>
+              {useScriptCondition && (
+                <textarea
+                  value={wakeupCondition}
+                  onChange={event => setWakeupCondition(event.target.value)}
+                  rows={3}
+                  placeholder={t('schedule.wakeupConditionPlaceholder')}
+                  className={cn(panelInputCls, 'min-h-20 w-full resize-y py-2 font-mono text-xs')}
+                />
+              )}
+              <p className="text-xs text-neutral-400 dark:text-zinc-500">{t('schedule.wakeupConditionHint')}</p>
+            </div>
+          </ScheduleDialogField>
+
+          <ScheduleDialogField label={t('schedule.triggers')}>
+            <div className="flex flex-wrap gap-2">
+              {workerScheduleTriggerOptions.map(option => (
+                <button key={option.key} type="button" onClick={() => toggleTrigger(option.key)} className={cn(chipCls, triggers.includes(option.key) ? chipActive : chipInactive)}>
+                  {t(option.label)}
+                </button>
+              ))}
+            </div>
+            <p className="mt-1 text-xs text-neutral-400 dark:text-zinc-500">{t('schedule.triggersHint')}</p>
+          </ScheduleDialogField>
+
+          <div className="rounded-lg border border-neutral-200 bg-neutral-50/50 px-4 py-3 dark:border-zinc-700/60 dark:bg-zinc-800/30">
+            <p className="mb-2.5 text-xs font-semibold uppercase tracking-wider text-neutral-500 dark:text-zinc-400">{t('session.sessionLabel')}</p>
+            <div className="space-y-3">
+              <ScheduleDialogField label={t('session.scopeLabel')}>
+                <select value={sessionScope} onChange={event => setSessionScope(event.target.value)} className={panelSelectCls}>
+                  <option value="cycle">{t('session.scopeCycle')}</option>
+                  <option value="task">{t('session.scopeTask')}</option>
+                  <option value="persistent">{t('session.scopePersistent')}</option>
+                </select>
+                <p className="mt-1 text-xs text-neutral-400 dark:text-zinc-500">{t('session.scopeHint')}</p>
+              </ScheduleDialogField>
+              <ScheduleDialogField label={t('session.sessionIdLabel')}>
+                <div className="flex items-center gap-2">
+                  <input
+                    value={sessionId}
+                    onChange={event => setSessionId(event.target.value)}
+                    placeholder={t('session.sessionIdPlaceholder')}
+                    className={cn(panelInputCls, 'flex-1 font-mono text-xs')}
+                  />
+                  {sessionId && (
+                    <button type="button" onClick={() => setSessionId('')} className={secondaryButtonCls}>
+                      {t('session.clearSession')}
+                    </button>
+                  )}
+                </div>
+                <p className="mt-1 text-xs text-neutral-400 dark:text-zinc-500">{t('session.sessionIdHint')}</p>
+              </ScheduleDialogField>
+            </div>
+          </div>
+
+          <div className="grid grid-cols-2 gap-3">
+            <ScheduleDialogField label={t('schedule.maxTasks')}>
+              <input type="number" min={1} value={maxTasks} onChange={event => setMaxTasks(Number(event.target.value))} className={cn(panelInputCls, 'w-full tabular-nums')} />
+            </ScheduleDialogField>
+            <ScheduleDialogField label={t('schedule.maxDuration')}>
+              <div className="flex items-center gap-2">
+                <input type="number" min={1} value={durationNum} onChange={event => setDurationNum(Number(event.target.value))} className={cn(panelInputCls, 'w-20 tabular-nums')} />
+                <select value={durationUnit} onChange={event => setDurationUnit(event.target.value as 'm' | 'h')} className={cn(panelSelectCls, 'w-24')}>
+                  <option value="m">{t('schedule.unitMinutes')}</option>
+                  <option value="h">{t('schedule.unitHours')}</option>
+                </select>
+              </div>
+            </ScheduleDialogField>
+          </div>
+
+          {err && <p className="text-sm text-red-600 dark:text-red-400">{err}</p>}
+          <div className="flex justify-end gap-2 pt-1">
+            <button type="button" onClick={onClose} disabled={saving} className="rounded-lg border border-neutral-300 px-3 py-1.5 text-sm dark:border-zinc-600">{t('forms.cancel')}</button>
+            <button type="button" onClick={() => void save()} disabled={saving} className="rounded-lg bg-sky-600 px-3 py-1.5 text-sm font-medium text-white disabled:opacity-50">
+              {saving ? t('forms.saving') : t('forms.save')}
+            </button>
+          </div>
+        </div>
+      </div>
+    </div>
+  )
+}
+
+function ScheduleDialogField({ label, children }: { label: string; children: ReactNode }) {
+  return (
+    <label className="block text-sm">
+      <span className="mb-1 block text-xs font-medium text-neutral-500 dark:text-zinc-500">{label}</span>
+      {children}
+    </label>
   )
 }
 
@@ -447,13 +918,21 @@ function ModelSelector({ project, agentName, currentModel, currentHttpAgent, onC
   )
 }
 
-export default function ProjectAgentDetailPage() {
+type ProjectAgentDetailPageProps = {
+  projectIdOverride?: string
+  agentNameOverride?: string
+  workspaceAgentId?: string
+}
+
+export default function ProjectAgentDetailPage({ projectIdOverride, agentNameOverride, workspaceAgentId }: ProjectAgentDetailPageProps = {}) {
   const { t } = useTranslation()
   const { user } = useAuth()
   const { canAdmin: canAdminWorkspace } = useWorkspaceAccess()
   const trustedProxyMode = isTrustedProxyMode()
   const navigate = useNavigate()
-  const { projectId, agentName } = useParams<{ projectId: string; agentName: string }>()
+  const params = useParams<{ projectId: string; agentName: string }>()
+  const projectId = projectIdOverride ?? params.projectId
+  const agentName = agentNameOverride ?? params.agentName
 
   const ctxPath = projectId && agentName
     ? `/api/v1/projects/${encodeURIComponent(projectId)}/agents/${encodeURIComponent(agentName)}/context?includeMerged=false&includeReadiness=false`
@@ -488,7 +967,7 @@ export default function ProjectAgentDetailPage() {
       )
       setEditingIdentity(false)
       if (res.name && res.name !== agentName) {
-        navigate(`/projects/${encodeURIComponent(projectId)}/members/${encodeURIComponent(res.name)}`, { replace: true })
+        navigate(workspaceAgentId ? `/agents/${encodeURIComponent(workspaceAgentId)}` : `/projects/${encodeURIComponent(projectId)}/members/${encodeURIComponent(res.name)}`, { replace: true })
         return
       }
       setIdentityAvatar(res.avatar ?? '')
@@ -498,7 +977,7 @@ export default function ProjectAgentDetailPage() {
     } finally {
       setSavingIdentity(false)
     }
-  }, [projectId, agentName, identityName, identityAvatar, navigate])
+  }, [projectId, agentName, identityName, identityAvatar, navigate, workspaceAgentId])
 
   const identityAvatarChoices = useMemo(
     () => avatarChoices(projectId ?? '', identityName || agentName || 'agent', avatarNonce),
@@ -701,6 +1180,10 @@ export default function ProjectAgentDetailPage() {
                     </div>
                   </section>
                 </>
+              )}
+
+              {workspaceAgentId && canAdminWorkspace && (
+                <WorkspaceAgentSchedulePanel agentId={workspaceAgentId} />
               )}
 
               <section data-tour-agent-wakeup-prompt>

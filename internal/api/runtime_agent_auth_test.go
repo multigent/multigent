@@ -15,11 +15,13 @@ func TestAgentRuntimeTokenValidateAndExpire(t *testing.T) {
 	s := &Server{controlDB: users.db, users: users}
 
 	token := s.issueAgentRuntimeToken(runtimeAgentTokenPayload{
-		WorkspaceID:  "ws-one",
-		Project:      "sample",
-		Agent:        "pm",
-		RunID:        "run-one",
-		Capabilities: []string{"connection.use"},
+		WorkspaceID:         "ws-one",
+		Project:             "sample",
+		Agent:               "pm",
+		AgentWorkerID:       "aw-pm",
+		ProjectMembershipID: "pm-sample-pm",
+		RunID:               "run-one",
+		Capabilities:        []string{"connection.use"},
 	}, time.Minute)
 	principal, ok := s.validateAgentRuntimeToken(token)
 	if !ok {
@@ -27,6 +29,9 @@ func TestAgentRuntimeTokenValidateAndExpire(t *testing.T) {
 	}
 	if principal.WorkspaceID != "ws-one" || principal.Project != "sample" || principal.Agent != "pm" || principal.RunID != "run-one" {
 		t.Fatalf("principal mismatch: %#v", principal)
+	}
+	if principal.AgentWorkerID != "aw-pm" || principal.ProjectMembershipID != "pm-sample-pm" {
+		t.Fatalf("principal worker context mismatch: %#v", principal)
 	}
 	if !runtimeHasCapability(principal, "connection.use") {
 		t.Fatalf("capability missing: %#v", principal.Capabilities)
@@ -56,6 +61,7 @@ func TestNormalizeRuntimeCapabilitiesFiltersUnsupportedValues(t *testing.T) {
 
 func TestIssueAgentRuntimeTokenRequiresAgentOperatorAccess(t *testing.T) {
 	s, workspaceID := newConnectionGrantPolicyServer(t)
+	seedTaskAttentionWorker(t, s, workspaceID, "sample", "backend", true)
 	grantProjectRoleForTest(t, s, workspaceID, "viewer", ProjectRoleViewer)
 	grantProjectRoleForTest(t, s, workspaceID, "operator", ProjectRoleOperator)
 
@@ -73,16 +79,28 @@ func TestIssueAgentRuntimeTokenRequiresAgentOperatorAccess(t *testing.T) {
 		t.Fatalf("operator status=%d body=%s", operatorRec.Code, operatorRec.Body.String())
 	}
 	var body struct {
-		Token        string   `json:"token"`
-		Capabilities []string `json:"capabilities"`
-		Project      string   `json:"project"`
-		Agent        string   `json:"agent"`
+		Token         string   `json:"token"`
+		Capabilities  []string `json:"capabilities"`
+		Project       string   `json:"project"`
+		Agent         string   `json:"agent"`
+		AgentWorkerID string   `json:"agentWorkerId"`
+		MembershipID  string   `json:"membershipId"`
 	}
 	if err := json.Unmarshal(operatorRec.Body.Bytes(), &body); err != nil {
 		t.Fatalf("decode token response: %v", err)
 	}
 	if body.Token == "" || body.Project != "sample" || body.Agent != "backend" {
 		t.Fatalf("bad token response=%#v", body)
+	}
+	if body.AgentWorkerID != "aw-backend" || body.MembershipID != "pm-sample-backend" {
+		t.Fatalf("bad worker context response=%#v", body)
+	}
+	principal, ok := s.validateAgentRuntimeToken(body.Token)
+	if !ok {
+		t.Fatalf("issued token did not validate")
+	}
+	if principal.AgentWorkerID != "aw-backend" || principal.ProjectMembershipID != "pm-sample-backend" {
+		t.Fatalf("bad worker context in token=%#v", principal)
 	}
 	if len(body.Capabilities) != 1 || body.Capabilities[0] != "connection.use" {
 		t.Fatalf("capabilities=%#v", body.Capabilities)

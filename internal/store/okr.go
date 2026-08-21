@@ -21,7 +21,7 @@ func NewOKRStore(root string) *OKRStore {
 }
 
 func (s *OKRStore) filePath() string {
-	return filepath.Join(s.root, ".multigent", "okrs.yaml")
+	return workspaceConfigPath(s.root, "okrs.yaml")
 }
 
 func (s *OKRStore) load() (*entity.OKRFile, error) {

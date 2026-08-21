@@ -19,23 +19,27 @@ func (db *SQLiteStore) UpsertAgentToolBinding(b AgentToolBinding) error {
 	if b.ConfigJSON == "" {
 		b.ConfigJSON = "{}"
 	}
+	conflict := `ON CONFLICT(workspace_id, project_id, agent_id, connection_id) DO UPDATE SET`
+	if strings.TrimSpace(b.AgentWorkerID) != "" {
+		conflict = `ON CONFLICT(workspace_id, agent_worker_id, connection_id) WHERE agent_worker_id != '' DO UPDATE SET`
+	}
 	_, err := db.sql.Exec(`INSERT INTO agent_tool_bindings (
-	id, workspace_id, project_id, agent_id, connection_id, provider, adapter_type,
+	id, workspace_id, agent_worker_id, project_id, agent_id, connection_id, provider, adapter_type,
 	status, config_json, created_by, created_at, updated_at
-) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
-ON CONFLICT(workspace_id, project_id, agent_id, connection_id) DO UPDATE SET
+) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+`+conflict+`
 	provider = excluded.provider,
 	adapter_type = excluded.adapter_type,
 	status = excluded.status,
 	config_json = excluded.config_json,
 	updated_at = excluded.updated_at`,
-		b.ID, b.WorkspaceID, b.ProjectID, b.AgentID, b.ConnectionID, b.Provider, b.AdapterType,
+		b.ID, b.WorkspaceID, b.AgentWorkerID, b.ProjectID, b.AgentID, b.ConnectionID, b.Provider, b.AdapterType,
 		b.Status, b.ConfigJSON, b.CreatedBy, b.CreatedAt, b.UpdatedAt)
 	return err
 }
 
 func (db *SQLiteStore) AgentToolBindingByID(id string) (AgentToolBinding, bool, error) {
-	row := db.sql.QueryRow(`SELECT id, workspace_id, project_id, agent_id, connection_id, provider,
+	row := db.sql.QueryRow(`SELECT id, workspace_id, agent_worker_id, project_id, agent_id, connection_id, provider,
 adapter_type, status, config_json, created_by, created_at, updated_at
 FROM agent_tool_bindings WHERE id = ?`, id)
 	b, err := scanAgentToolBinding(row)
@@ -49,13 +53,17 @@ FROM agent_tool_bindings WHERE id = ?`, id)
 }
 
 func (db *SQLiteStore) ListAgentToolBindings(filter AgentToolBindingFilter) ([]AgentToolBinding, error) {
-	query := `SELECT id, workspace_id, project_id, agent_id, connection_id, provider,
+	query := `SELECT id, workspace_id, agent_worker_id, project_id, agent_id, connection_id, provider,
 adapter_type, status, config_json, created_by, created_at, updated_at
 FROM agent_tool_bindings WHERE 1=1`
 	args := make([]any, 0, 6)
 	if strings.TrimSpace(filter.WorkspaceID) != "" {
 		query += ` AND workspace_id = ?`
 		args = append(args, strings.TrimSpace(filter.WorkspaceID))
+	}
+	if strings.TrimSpace(filter.AgentWorkerID) != "" {
+		query += ` AND agent_worker_id = ?`
+		args = append(args, strings.TrimSpace(filter.AgentWorkerID))
 	}
 	if strings.TrimSpace(filter.ProjectID) != "" {
 		query += ` AND project_id = ?`
@@ -105,7 +113,7 @@ type agentToolBindingScanner interface {
 
 func scanAgentToolBinding(row agentToolBindingScanner) (AgentToolBinding, error) {
 	var b AgentToolBinding
-	err := row.Scan(&b.ID, &b.WorkspaceID, &b.ProjectID, &b.AgentID, &b.ConnectionID, &b.Provider,
+	err := row.Scan(&b.ID, &b.WorkspaceID, &b.AgentWorkerID, &b.ProjectID, &b.AgentID, &b.ConnectionID, &b.Provider,
 		&b.AdapterType, &b.Status, &b.ConfigJSON, &b.CreatedBy, &b.CreatedAt, &b.UpdatedAt)
 	return b, err
 }

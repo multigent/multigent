@@ -7,6 +7,7 @@ import (
 	"encoding/hex"
 	"encoding/json"
 	"fmt"
+	"log/slog"
 	"net/http"
 	"os"
 	"runtime"
@@ -328,7 +329,7 @@ func (s *Server) handleCreateRuntimeExecRun(w http.ResponseWriter, r *http.Reque
 	if !ok {
 		return
 	}
-	meta, err := s.st.AgentMeta(project, agent)
+	meta, err := s.agentMetaForProjectMember(workspaceID, project, agent)
 	if err != nil {
 		s.serverError(w, err)
 		return
@@ -346,18 +347,21 @@ func (s *Server) handleCreateRuntimeExecRun(w http.ResponseWriter, r *http.Reque
 }
 
 func (s *Server) enqueueRuntimeExecRun(workspaceID, project, agent, prompt, sessionID, serverURL, actor string) (controldb.RuntimeRun, error) {
-	meta, err := s.st.AgentMeta(project, agent)
+	meta, err := s.agentMetaForProjectMember(workspaceID, project, agent)
 	if err != nil {
 		return controldb.RuntimeRun{}, err
 	}
+	workerID, membershipID := s.agentWorkerContextForProjectAgent(workspaceID, project, agent)
 	runID := newRuntimeID("rtrun")
 	token := s.issueAgentRuntimeToken(runtimeAgentTokenPayload{
-		Type:         "agent_runtime",
-		WorkspaceID:  workspaceID,
-		Project:      project,
-		Agent:        agent,
-		RunID:        runID,
-		Capabilities: defaultRuntimeCapabilities(),
+		Type:                "agent_runtime",
+		WorkspaceID:         workspaceID,
+		Project:             project,
+		Agent:               agent,
+		AgentWorkerID:       workerID,
+		ProjectMembershipID: membershipID,
+		RunID:               runID,
+		Capabilities:        defaultRuntimeCapabilities(),
 	}, 6*time.Hour)
 	spec := runtimeexec.Spec{
 		Kind:        runtimeexec.KindExecPrompt,
@@ -367,12 +371,14 @@ func (s *Server) enqueueRuntimeExecRun(workspaceID, project, agent, prompt, sess
 		SessionID:   sessionID,
 		Prompt:      prompt,
 		Agent:       *meta,
-		ProviderEnv: s.runtimeProviderEnvForAgent(project, agent, meta),
+		ProviderEnv: s.runtimeProviderEnvForAgent(workspaceID, project, agent, meta),
 		RuntimeControlEnv: map[string]string{
-			"MULTIGENT_API_URL":      strings.TrimRight(serverURL, "/"),
-			"MULTIGENT_AGENT_TOKEN":  token,
-			"MULTIGENT_RUN_ID":       runID,
-			"MULTIGENT_WORKSPACE_ID": workspaceID,
+			"MULTIGENT_API_URL":               strings.TrimRight(serverURL, "/"),
+			"MULTIGENT_AGENT_TOKEN":           token,
+			"MULTIGENT_RUN_ID":                runID,
+			"MULTIGENT_WORKSPACE_ID":          workspaceID,
+			"MULTIGENT_AGENT_WORKER_ID":       workerID,
+			"MULTIGENT_PROJECT_MEMBERSHIP_ID": membershipID,
 		},
 	}
 	specBody, err := json.Marshal(spec)
@@ -383,6 +389,8 @@ func (s *Server) enqueueRuntimeExecRun(workspaceID, project, agent, prompt, sess
 	run := controldb.RuntimeRun{
 		ID:                   runID,
 		WorkspaceID:          workspaceID,
+		AgentWorkerID:        workerID,
+		ProjectMembershipID:  membershipID,
 		ProjectID:            project,
 		AgentID:              agent,
 		DesiredRuntimeNodeID: strings.TrimSpace(meta.RuntimeNodeID),
@@ -416,18 +424,21 @@ func (s *Server) enqueueRuntimeTaskRun(workspaceID, project, agent string, task 
 	if task == nil {
 		return controldb.RuntimeRun{}, fmt.Errorf("task is required")
 	}
-	meta, err := s.st.AgentMeta(project, agent)
+	meta, err := s.agentMetaForProjectMember(workspaceID, project, agent)
 	if err != nil {
 		return controldb.RuntimeRun{}, err
 	}
+	workerID, membershipID := s.agentWorkerContextForProjectAgent(workspaceID, project, agent)
 	runID := newRuntimeID("rtrun")
 	token := s.issueAgentRuntimeToken(runtimeAgentTokenPayload{
-		Type:         "agent_runtime",
-		WorkspaceID:  workspaceID,
-		Project:      project,
-		Agent:        agent,
-		RunID:        runID,
-		Capabilities: defaultRuntimeCapabilities(),
+		Type:                "agent_runtime",
+		WorkspaceID:         workspaceID,
+		Project:             project,
+		Agent:               agent,
+		AgentWorkerID:       workerID,
+		ProjectMembershipID: membershipID,
+		RunID:               runID,
+		Capabilities:        defaultRuntimeCapabilities(),
 	}, 6*time.Hour)
 	preparedPrompt := runner.New(s.root, s.ts, s.st).BuildTaskPrompt(project, agent, task)
 	spec := runtimeexec.Spec{
@@ -439,13 +450,15 @@ func (s *Server) enqueueRuntimeTaskRun(workspaceID, project, agent string, task 
 		SessionID:   sessionID,
 		Prompt:      preparedPrompt,
 		Agent:       *meta,
-		ProviderEnv: s.runtimeProviderEnvForAgent(project, agent, meta),
+		ProviderEnv: s.runtimeProviderEnvForAgent(workspaceID, project, agent, meta),
 		RuntimeControlEnv: map[string]string{
-			"MULTIGENT_API_URL":      strings.TrimRight(serverURL, "/"),
-			"MULTIGENT_AGENT_TOKEN":  token,
-			"MULTIGENT_RUN_ID":       runID,
-			"MULTIGENT_TASK_ID":      task.ID,
-			"MULTIGENT_WORKSPACE_ID": workspaceID,
+			"MULTIGENT_API_URL":               strings.TrimRight(serverURL, "/"),
+			"MULTIGENT_AGENT_TOKEN":           token,
+			"MULTIGENT_RUN_ID":                runID,
+			"MULTIGENT_TASK_ID":               task.ID,
+			"MULTIGENT_WORKSPACE_ID":          workspaceID,
+			"MULTIGENT_AGENT_WORKER_ID":       workerID,
+			"MULTIGENT_PROJECT_MEMBERSHIP_ID": membershipID,
 		},
 	}
 	specBody, err := json.Marshal(spec)
@@ -456,6 +469,8 @@ func (s *Server) enqueueRuntimeTaskRun(workspaceID, project, agent string, task 
 	run := controldb.RuntimeRun{
 		ID:                   runID,
 		WorkspaceID:          workspaceID,
+		AgentWorkerID:        workerID,
+		ProjectMembershipID:  membershipID,
 		ProjectID:            project,
 		AgentID:              agent,
 		TaskID:               task.ID,
@@ -486,7 +501,7 @@ func (s *Server) enqueueRuntimeTaskRun(workspaceID, project, agent string, task 
 	return run, nil
 }
 
-func (s *Server) runtimeProviderEnvForAgent(project, agent string, meta *entity.AgentMeta) map[string]string {
+func (s *Server) runtimeProviderEnvForAgent(workspaceID, project, agent string, meta *entity.AgentMeta) map[string]string {
 	if meta == nil {
 		return nil
 	}
@@ -498,7 +513,11 @@ func (s *Server) runtimeProviderEnvForAgent(project, agent string, meta *entity.
 		"MULTIGENT_ROLE":    meta.Role,
 		"MULTIGENT_MODEL":   string(meta.Model),
 	}
-	if wsEnv, err := store.NewEnvVarStore(s.root).ResolveEnvForAgent(project, agent); err == nil {
+	workerTargets := []string{}
+	if workerID := s.agentWorkerIDForProjectAgent(workspaceID, project, agent); strings.TrimSpace(workerID) != "" {
+		workerTargets = append(workerTargets, connectionAgentWorkerTargetID(workerID))
+	}
+	if wsEnv, err := store.NewEnvVarStore(s.root).ResolveEnvForAgentTargets(project, agent, workerTargets); err == nil {
 		for k, v := range wsEnv {
 			env[k] = v
 		}
@@ -867,16 +886,54 @@ func (s *Server) handleRuntimeNodeClaimRun(w http.ResponseWriter, r *http.Reques
 		s.jsonErrorCode(w, http.StatusForbidden, ErrCodeForbidden, "runtime node is disabled")
 		return
 	}
-	run, found, err := s.controlDB.ClaimRuntimeRun(principal.Node.WorkspaceID, principal.Node.ID, 90, body.BusyAgents)
-	if err != nil {
-		s.serverError(w, err)
+	for attempts := 0; attempts < 10; attempts++ {
+		run, found, err := s.controlDB.ClaimRuntimeRun(principal.Node.WorkspaceID, principal.Node.ID, 90, body.BusyAgents)
+		if err != nil {
+			s.serverError(w, err)
+			return
+		}
+		if !found {
+			_ = json.NewEncoder(w).Encode(map[string]any{"run": nil, "retryAfterMs": 3000})
+			return
+		}
+		if s.finishClaimedRunIfTaskAlreadyTerminal(principal.Node.WorkspaceID, principal.Node.ID, &run) {
+			continue
+		}
+		_ = json.NewEncoder(w).Encode(map[string]any{"run": runtimeRunResponse(run), "retryAfterMs": 0})
 		return
 	}
-	if !found {
-		_ = json.NewEncoder(w).Encode(map[string]any{"run": nil, "retryAfterMs": 3000})
-		return
+	_ = json.NewEncoder(w).Encode(map[string]any{"run": nil, "retryAfterMs": 3000})
+}
+
+func (s *Server) finishClaimedRunIfTaskAlreadyTerminal(workspaceID, nodeID string, run *controldb.RuntimeRun) bool {
+	if s == nil || s.controlDB == nil || s.ts == nil || run == nil || strings.TrimSpace(run.TaskID) == "" {
+		return false
 	}
-	_ = json.NewEncoder(w).Encode(map[string]any{"run": runtimeRunResponse(run), "retryAfterMs": 0})
+	task, err := s.ts.GetTask(run.ProjectID, run.AgentID, run.TaskID)
+	if err != nil || task == nil || !task.Status.IsTerminal() {
+		return false
+	}
+	now := time.Now().UTC().Format(time.RFC3339)
+	run.Status = "succeeded"
+	if task.Status == entity.TaskStatusDoneFailed {
+		run.Status = "failed"
+	}
+	run.RuntimeNodeID = nodeID
+	run.ResultJSON = marshalRuntimeObject(map[string]any{
+		"status":  string(task.Status),
+		"summary": strings.TrimSpace(task.Summary),
+		"skipped": true,
+		"reason":  "task_already_terminal",
+	})
+	run.ErrorCode = ""
+	run.ErrorMessage = ""
+	run.FinishedAt = now
+	run.UpdatedAt = now
+	if err := s.controlDB.UpsertRuntimeRun(*run); err != nil {
+		slog.Warn("runtime terminal task run cleanup failed", "run", run.ID, "task", run.TaskID, "error", err)
+		return false
+	}
+	return true
 }
 
 func (s *Server) handleRuntimeNodeRunSpec(w http.ResponseWriter, r *http.Request) {
@@ -1031,7 +1088,7 @@ func (s *Server) finalizeRuntimeTaskRun(run *controldb.RuntimeRun, body runtimeR
 		return
 	}
 	now := time.Now().UTC()
-	if hb, err := s.ts.GetHeartbeat(run.ProjectID, run.AgentID); err == nil && hb != nil {
+	if hb, err := s.runtimeRunHeartbeat(run); err == nil && hb != nil {
 		if run.Status == "failed" {
 			hb.LastWakeupStatus = "failed"
 		} else {
@@ -1041,7 +1098,7 @@ func (s *Server) finalizeRuntimeTaskRun(run *controldb.RuntimeRun, body runtimeR
 			hb.SessionID = strings.TrimSpace(sid)
 			hb.SessionStartedAt = &now
 		}
-		_ = s.ts.SaveHeartbeat(run.ProjectID, run.AgentID, hb)
+		_ = s.saveRuntimeRunHeartbeat(run, hb)
 	}
 	task, err := s.ts.GetTask(run.ProjectID, run.AgentID, run.TaskID)
 	if err != nil || task == nil {
@@ -1091,6 +1148,52 @@ func (s *Server) finalizeRuntimeTaskRun(run *controldb.RuntimeRun, body runtimeR
 	task.UpdatedAt = now
 	entity.ApplyStatusTimestamps(task, prev, now)
 	_ = s.ts.ArchiveTask(run.ProjectID, run.AgentID, task)
+}
+
+func (s *Server) runtimeRunHeartbeat(run *controldb.RuntimeRun) (*entity.HeartbeatConfig, error) {
+	if s == nil || s.ts == nil || run == nil {
+		return nil, nil
+	}
+	if strings.TrimSpace(run.AgentWorkerID) == "" || s.controlDB == nil {
+		return s.ts.GetHeartbeat(run.ProjectID, run.AgentID)
+	}
+	worker, ok, err := s.controlDB.AgentWorkerByID(run.WorkspaceID, run.AgentWorkerID)
+	if err != nil {
+		return nil, err
+	}
+	if !ok {
+		return s.ts.GetHeartbeat(run.ProjectID, run.AgentID)
+	}
+	hb := &entity.HeartbeatConfig{}
+	if raw := strings.TrimSpace(worker.ScheduleJSON); raw != "" && raw != "{}" {
+		if err := json.Unmarshal([]byte(raw), hb); err != nil {
+			return nil, err
+		}
+	}
+	return hb, nil
+}
+
+func (s *Server) saveRuntimeRunHeartbeat(run *controldb.RuntimeRun, hb *entity.HeartbeatConfig) error {
+	if s == nil || s.ts == nil || run == nil || hb == nil {
+		return nil
+	}
+	if strings.TrimSpace(run.AgentWorkerID) == "" || s.controlDB == nil {
+		return s.ts.SaveHeartbeat(run.ProjectID, run.AgentID, hb)
+	}
+	worker, ok, err := s.controlDB.AgentWorkerByID(run.WorkspaceID, run.AgentWorkerID)
+	if err != nil {
+		return err
+	}
+	if !ok {
+		return s.ts.SaveHeartbeat(run.ProjectID, run.AgentID, hb)
+	}
+	body, err := json.Marshal(hb)
+	if err != nil {
+		return err
+	}
+	worker.ScheduleJSON = string(body)
+	worker.UpdatedAt = time.Now().UTC().Format(time.RFC3339)
+	return s.controlDB.UpsertAgentWorker(worker)
 }
 
 func (s *Server) cancelRuntimeRunsForAgent(workspaceID, project, agent, taskID, reason string) (int, error) {
@@ -1217,6 +1320,8 @@ func runtimeRunResponse(run controldb.RuntimeRun) map[string]any {
 	return map[string]any{
 		"id":                   run.ID,
 		"workspaceId":          run.WorkspaceID,
+		"agentWorkerId":        run.AgentWorkerID,
+		"projectMembershipId":  run.ProjectMembershipID,
 		"projectId":            run.ProjectID,
 		"agentId":              run.AgentID,
 		"taskId":               run.TaskID,

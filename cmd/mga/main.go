@@ -50,6 +50,7 @@ func main() {
 		newTaskCmd(),
 		newInboxCmd(),
 		newNotifyCmd(),
+		newAttentionCmd(),
 		newContactsCmd(),
 		newDocsCmd(),
 		newContextCmd(),
@@ -60,6 +61,79 @@ func main() {
 		fmt.Fprintln(os.Stderr, "Error:", err)
 		os.Exit(1)
 	}
+}
+
+func newAttentionCmd() *cobra.Command {
+	cmd := &cobra.Command{
+		Use:     "attention",
+		Aliases: []string{"signals"},
+		Short:   "List and update attention signals for the current agent",
+		Long: `List and update attention signals for the current agent.
+
+Attention signals are not hard triggers. They represent things Multigent has
+made visible to you: IM mentions, direct messages, card actions, assigned tasks,
+or workflow events. Mark a signal handled only after you have actually handled
+it; mark ignored when you intentionally decide not to act.`,
+	}
+	cmd.AddCommand(newAttentionListCmd(), newAttentionMarkCmd())
+	return cmd
+}
+
+func newAttentionListCmd() *cobra.Command {
+	var status, sourceKind, reason string
+	var limit int
+	cmd := &cobra.Command{
+		Use:   "list",
+		Short: "List attention signals visible to this agent",
+		RunE: func(cmd *cobra.Command, args []string) error {
+			query := url.Values{}
+			if strings.TrimSpace(status) != "" {
+				query.Set("status", strings.TrimSpace(status))
+			}
+			if strings.TrimSpace(sourceKind) != "" {
+				query.Set("sourceKind", strings.TrimSpace(sourceKind))
+			}
+			if strings.TrimSpace(reason) != "" {
+				query.Set("reason", strings.TrimSpace(reason))
+			}
+			if limit > 0 {
+				query.Set("limit", strconv.Itoa(limit))
+			}
+			body, err := requestJSON(http.MethodGet, "/api/v1/runtime/attention", query, nil)
+			if err != nil {
+				return err
+			}
+			return writeJSON(body)
+		},
+	}
+	cmd.Flags().StringVar(&status, "status", "open", "filter by status: open (pending/seen/handling), pending, seen, handling, handled, ignored, expired; empty lists all")
+	cmd.Flags().StringVar(&sourceKind, "source-kind", "", "filter by source kind, e.g. im, workflow, task")
+	cmd.Flags().StringVar(&reason, "reason", "", "filter by reason, e.g. mention, direct_message")
+	cmd.Flags().IntVar(&limit, "limit", 50, "maximum number of signals")
+	return cmd
+}
+
+func newAttentionMarkCmd() *cobra.Command {
+	var status string
+	cmd := &cobra.Command{
+		Use:   "mark <signal-id>",
+		Short: "Mark an attention signal as seen, handling, handled, ignored, or expired",
+		Args:  cobra.ExactArgs(1),
+		RunE: func(cmd *cobra.Command, args []string) error {
+			status = strings.TrimSpace(status)
+			if status == "" {
+				return fmt.Errorf("--status is required")
+			}
+			body, _ := json.Marshal(map[string]string{"status": status})
+			resp, err := requestJSON(http.MethodPatch, "/api/v1/runtime/attention/"+url.PathEscape(args[0]), nil, body)
+			if err != nil {
+				return err
+			}
+			return writeJSON(resp)
+		},
+	}
+	cmd.Flags().StringVar(&status, "status", "handled", "new status: seen, handling, handled, ignored, or expired")
+	return cmd
 }
 
 func newSkillCmd() *cobra.Command {
@@ -458,13 +532,13 @@ func newNotifySendCmd() *cobra.Command {
 			return writeJSON(resp)
 		},
 	}
-	cmd.Flags().StringVar(&to, "to", "human", "recipient: human, owner, user:<username>, or chat:<group-name>")
+	cmd.Flags().StringVar(&to, "to", "human", "recipient: human, owner, source, user:<username>, or chat:<group-name>")
 	cmd.Flags().StringVar(&channel, "channel", "auto", "channel provider: auto, feishu, lark, slack, telegram, discord")
 	cmd.Flags().StringVar(&subject, "subject", "", "notification subject")
 	cmd.Flags().StringVar(&body, "body", "", "notification body")
 	cmd.Flags().StringVar(&taskID, "task", "", "related task id")
 	cmd.Flags().StringVar(&urgency, "urgency", "", "urgency label: normal, review, blocking")
-	cmd.Flags().StringVar(&messageFormat, "message-format", "text", "message content format: text or markdown")
+	cmd.Flags().StringVar(&messageFormat, "message-format", "auto", "message content format: auto, text, or markdown")
 	cmd.Flags().StringVar(&format, "format", "json", "output format: json or table")
 	return cmd
 }
@@ -517,7 +591,7 @@ func newNotifyCardSendCmd() *cobra.Command {
 			return writeJSON(resp)
 		},
 	}
-	cmd.Flags().StringVar(&to, "to", "human", "recipient: human, owner, user:<username>, or chat:<group-name>")
+	cmd.Flags().StringVar(&to, "to", "human", "recipient: human, owner, source, user:<username>, or chat:<group-name>")
 	cmd.Flags().StringVar(&channel, "channel", "auto", "channel provider: auto, feishu, lark, slack, telegram, discord")
 	cmd.Flags().StringVar(&title, "title", "", "card title")
 	cmd.Flags().StringVar(&body, "body", "", "card markdown/body text")

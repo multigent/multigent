@@ -72,14 +72,15 @@ type connectionRuntimeHeader struct {
 }
 
 type agentToolBindingModel struct {
-	ID           string `json:"id"`
-	ConnectionID string `json:"connectionId"`
-	Provider     string `json:"provider"`
-	AdapterType  string `json:"adapterType,omitempty"`
-	Status       string `json:"status"`
-	CreatedBy    string `json:"createdBy,omitempty"`
-	CreatedAt    string `json:"createdAt,omitempty"`
-	UpdatedAt    string `json:"updatedAt,omitempty"`
+	ID            string `json:"id"`
+	AgentWorkerID string `json:"agentWorkerId,omitempty"`
+	ConnectionID  string `json:"connectionId"`
+	Provider      string `json:"provider"`
+	AdapterType   string `json:"adapterType,omitempty"`
+	Status        string `json:"status"`
+	CreatedBy     string `json:"createdBy,omitempty"`
+	CreatedAt     string `json:"createdAt,omitempty"`
+	UpdatedAt     string `json:"updatedAt,omitempty"`
 }
 
 func (s *Server) handleAgentRuntimeConnections(w http.ResponseWriter, r *http.Request) {
@@ -166,11 +167,7 @@ func (s *Server) resolveAgentRuntimeConnections(workspaceID, project, agent stri
 	if err != nil {
 		return nil, err
 	}
-	bindings, err := s.controlDB.ListAgentToolBindings(controldb.AgentToolBindingFilter{
-		WorkspaceID: workspaceID,
-		ProjectID:   project,
-		AgentID:     agent,
-	})
+	bindings, err := s.controlDB.ListAgentToolBindings(s.agentToolBindingFilterForProjectAgent(workspaceID, project, agent))
 	if err != nil {
 		return nil, err
 	}
@@ -190,7 +187,7 @@ func (s *Server) resolveAgentRuntimeConnections(workspaceID, project, agent stri
 		if err != nil {
 			return nil, err
 		}
-		matched := matchingAgentConnectionGrants(grants, workspaceID, project, agent)
+		matched := s.matchingAgentConnectionGrants(grants, workspaceID, project, agent)
 		if len(matched) == 0 {
 			continue
 		}
@@ -239,9 +236,21 @@ func (s *Server) writeAgentRuntimeConnections(w http.ResponseWriter, project, ag
 }
 
 func matchingAgentConnectionGrants(grants []controldb.ConnectionGrant, workspaceID, project, agent string) []controldb.ConnectionGrant {
+	return matchingAgentConnectionGrantsForTargets(grants, workspaceID, project, agent, "")
+}
+
+func (s *Server) matchingAgentConnectionGrants(grants []controldb.ConnectionGrant, workspaceID, project, agent string) []controldb.ConnectionGrant {
+	workerID := ""
+	if s != nil {
+		workerID = s.agentWorkerIDForProjectAgent(workspaceID, project, agent)
+	}
+	return matchingAgentConnectionGrantsForTargets(grants, workspaceID, project, agent, workerID)
+}
+
+func matchingAgentConnectionGrantsForTargets(grants []controldb.ConnectionGrant, workspaceID, project, agent, workerID string) []controldb.ConnectionGrant {
 	out := make([]controldb.ConnectionGrant, 0, len(grants))
 	for _, grant := range grants {
-		if connectionGrantMatchesAgent(grant, workspaceID, project, agent) {
+		if connectionGrantMatchesAgent(grant, workspaceID, project, agent, workerID) {
 			out = append(out, grant)
 		}
 	}
@@ -249,7 +258,11 @@ func matchingAgentConnectionGrants(grants []controldb.ConnectionGrant, workspace
 	return out
 }
 
-func connectionGrantMatchesAgent(grant controldb.ConnectionGrant, workspaceID, project, agent string) bool {
+func connectionGrantMatchesAgent(grant controldb.ConnectionGrant, workspaceID, project, agent string, workerIDs ...string) bool {
+	workerID := ""
+	if len(workerIDs) > 0 {
+		workerID = workerIDs[0]
+	}
 	targetID := strings.TrimSpace(grant.TargetID)
 	switch strings.TrimSpace(grant.TargetType) {
 	case ConnectionTargetWorkspace:
@@ -257,10 +270,24 @@ func connectionGrantMatchesAgent(grant controldb.ConnectionGrant, workspaceID, p
 	case ConnectionTargetProject:
 		return targetID != "" && targetID == project
 	case ConnectionTargetAgent:
-		return targetID != "" && targetID == project+"/"+agent
+		if targetID != "" && targetID == project+"/"+agent {
+			return true
+		}
+		return strings.TrimSpace(workerID) != "" && targetID == connectionAgentWorkerTargetID(workerID)
 	default:
 		return false
 	}
+}
+
+func connectionAgentTargetID(project, agent, workerID string) string {
+	if strings.TrimSpace(workerID) != "" {
+		return connectionAgentWorkerTargetID(workerID)
+	}
+	return strings.TrimSpace(project) + "/" + strings.TrimSpace(agent)
+}
+
+func connectionAgentWorkerTargetID(workerID string) string {
+	return "agent_worker:" + strings.TrimSpace(workerID)
 }
 
 func agentRuntimeConnectionToResponse(connection controldb.Connection, grants []controldb.ConnectionGrant, binding *controldb.AgentToolBinding, actions []connector.ProviderAction, adapters []connector.ToolRuntimeAdapter) agentRuntimeConnectionResponse {
@@ -471,14 +498,15 @@ func enabledAgentToolBindingsByConnection(bindings []controldb.AgentToolBinding)
 
 func agentToolBindingToModel(binding controldb.AgentToolBinding) agentToolBindingModel {
 	return agentToolBindingModel{
-		ID:           binding.ID,
-		ConnectionID: binding.ConnectionID,
-		Provider:     binding.Provider,
-		AdapterType:  binding.AdapterType,
-		Status:       binding.Status,
-		CreatedBy:    binding.CreatedBy,
-		CreatedAt:    binding.CreatedAt,
-		UpdatedAt:    binding.UpdatedAt,
+		ID:            binding.ID,
+		AgentWorkerID: binding.AgentWorkerID,
+		ConnectionID:  binding.ConnectionID,
+		Provider:      binding.Provider,
+		AdapterType:   binding.AdapterType,
+		Status:        binding.Status,
+		CreatedBy:     binding.CreatedBy,
+		CreatedAt:     binding.CreatedAt,
+		UpdatedAt:     binding.UpdatedAt,
 	}
 }
 

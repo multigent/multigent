@@ -6,7 +6,6 @@ import {
   BarChart3,
   Briefcase,
   Cable,
-  CalendarClock,
   GitBranch,
   LibraryBig,
   MessageSquareText,
@@ -28,6 +27,16 @@ import { useWorkspaceAccess } from '../../lib/workspace-access'
 type ProjectRow = { name: string }
 type ProjectAgent = { name: string; model?: string; team?: string; project?: string }
 type ProjectAgents = { project: string; agents: ProjectAgent[] }
+type ProjectMembership = {
+  memberType?: string
+  title?: string
+  agent?: {
+    name?: string
+    model?: string
+    displayName?: string
+  }
+}
+type ProjectMembershipsResp = { memberships?: ProjectMembership[] }
 
 type SearchItem = {
   id: string
@@ -95,10 +104,18 @@ export function CommandPalette({
       for (const project of projects) {
         if (cancelled || requestWorkspaceId !== workspaceId) return
         try {
-          const agents = await apiFetch<ProjectAgent[]>(
-            `/api/v1/projects/${encodeURIComponent(project.name)}/agents`,
+          const resp = await apiFetch<ProjectMembershipsResp>(
+            `/api/v1/projects/${encodeURIComponent(project.name)}/memberships`,
             { suppressToast: true, silentStatuses: [403, 404] },
           )
+          const agents = (resp.memberships ?? [])
+            .filter((membership) => membership.memberType === 'agent_worker' && membership.agent?.name)
+            .map((membership) => ({
+              name: membership.agent!.name!,
+              model: membership.agent?.model,
+              team: membership.title,
+              project: project.name,
+            }))
           rows.push({ project: project.name, agents: agents ?? [] })
         } catch {
           rows.push({ project: project.name, agents: [] })
@@ -130,7 +147,6 @@ export function CommandPalette({
         { id: `p-${p.name}-tasks`, label: `${p.name} / ${t('projectNav.tasks')}`, group: t('search.groupProjects'), icon: ListTodo, to: `${base}/tasks` },
         { id: `p-${p.name}-messages`, label: `${p.name} / ${t('projectNav.messages')}`, group: t('search.groupProjects'), icon: MessageSquare, to: `${base}/messages` },
         { id: `p-${p.name}-members`, label: `${p.name} / ${t('projectNav.members')}`, group: t('search.groupProjects'), icon: Users, to: `${base}/members` },
-        ...(canAdmin ? [{ id: `p-${p.name}-schedule`, label: `${p.name} / ${t('projectNav.schedule')}`, group: t('search.groupProjects'), icon: CalendarClock, to: `${base}/schedule` }] : []),
         { id: `p-${p.name}-runs`, label: `${p.name} / ${t('projectNav.runs')}`, group: t('search.groupProjects'), icon: BarChart3, to: `${base}/runs` },
       ]
     })

@@ -4,6 +4,7 @@ import (
 	"encoding/json"
 	"net/http"
 	"strings"
+	"time"
 
 	"github.com/multigent/multigent/internal/entity"
 	"github.com/multigent/multigent/internal/store"
@@ -147,12 +148,27 @@ func (s *Server) handleGetAgentEnv(w http.ResponseWriter, r *http.Request) {
 		s.jsonError(w, http.StatusForbidden, "agent management access required")
 		return
 	}
-	meta, err := s.st.AgentMeta(project, agent)
-	if err != nil {
-		s.jsonError(w, http.StatusNotFound, err.Error())
+	workspaceID, ok := s.currentWorkspaceForRequest(w, r)
+	if !ok {
 		return
 	}
-	env := meta.Env
+	var env map[string]string
+	if s.agentDirectory != nil {
+		if resolved, found, err := s.agentDirectory.ProjectWorker(workspaceID, project, agent); err != nil {
+			s.serverError(w, err)
+			return
+		} else if found {
+			env = decodeAgentWorkerRuntimeConfig(resolved.Worker).Env
+		}
+	}
+	if env == nil {
+		meta, err := s.st.AgentMeta(project, agent)
+		if err != nil {
+			s.jsonError(w, http.StatusNotFound, err.Error())
+			return
+		}
+		env = meta.Env
+	}
 	if env == nil {
 		env = make(map[string]string)
 	}
@@ -190,6 +206,44 @@ func (s *Server) handleSetAgentEnv(w http.ResponseWriter, r *http.Request) {
 	if req.Key == "" {
 		s.jsonError(w, http.StatusBadRequest, "key is required")
 		return
+	}
+	workspaceID, ok := s.currentWorkspaceForRequest(w, r)
+	if !ok {
+		return
+	}
+	if s.agentDirectory != nil {
+		if resolved, found, err := s.agentDirectory.ProjectWorker(workspaceID, project, agent); err != nil {
+			s.serverError(w, err)
+			return
+		} else if found {
+			cfg := decodeAgentWorkerRuntimeConfig(resolved.Worker)
+			if cfg.Env == nil {
+				cfg.Env = make(map[string]string)
+			}
+			cfg.Env[req.Key] = req.Value
+			worker := resolved.Worker
+			worker.RuntimeConfigJSON = encodeAgentWorkerRuntimeConfig(cfg)
+			worker.UpdatedAt = time.Now().UTC().Format(time.RFC3339)
+			if err := s.controlDB.UpsertAgentWorker(worker); err != nil {
+				s.serverError(w, err)
+				return
+			}
+			s.auditLog(auditLogInput{
+				Action:       "agent.env.set",
+				ResourceType: "agent_worker",
+				ResourceID:   worker.ID,
+				Summary:      "Agent Worker environment variable set",
+				After: map[string]any{
+					"project":       project,
+					"agent":         agent,
+					"agentWorkerId": worker.ID,
+					"envKey":        req.Key,
+				},
+				Request: r,
+			})
+			w.WriteHeader(http.StatusNoContent)
+			return
+		}
 	}
 	meta, err := s.st.AgentMeta(project, agent)
 	if err != nil {
@@ -234,6 +288,43 @@ func (s *Server) handleDeleteAgentEnv(w http.ResponseWriter, r *http.Request) {
 	if key == "" {
 		s.jsonError(w, http.StatusBadRequest, "key query param is required")
 		return
+	}
+	workspaceID, ok := s.currentWorkspaceForRequest(w, r)
+	if !ok {
+		return
+	}
+	if s.agentDirectory != nil {
+		if resolved, found, err := s.agentDirectory.ProjectWorker(workspaceID, project, agent); err != nil {
+			s.serverError(w, err)
+			return
+		} else if found {
+			cfg := decodeAgentWorkerRuntimeConfig(resolved.Worker)
+			if cfg.Env != nil {
+				delete(cfg.Env, key)
+			}
+			worker := resolved.Worker
+			worker.RuntimeConfigJSON = encodeAgentWorkerRuntimeConfig(cfg)
+			worker.UpdatedAt = time.Now().UTC().Format(time.RFC3339)
+			if err := s.controlDB.UpsertAgentWorker(worker); err != nil {
+				s.serverError(w, err)
+				return
+			}
+			s.auditLog(auditLogInput{
+				Action:       "agent.env.delete",
+				ResourceType: "agent_worker",
+				ResourceID:   worker.ID,
+				Summary:      "Agent Worker environment variable deleted",
+				Before: map[string]any{
+					"project":       project,
+					"agent":         agent,
+					"agentWorkerId": worker.ID,
+					"envKey":        key,
+				},
+				Request: r,
+			})
+			w.WriteHeader(http.StatusNoContent)
+			return
+		}
 	}
 	meta, err := s.st.AgentMeta(project, agent)
 	if err != nil {

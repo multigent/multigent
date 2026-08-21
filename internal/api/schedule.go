@@ -41,7 +41,11 @@ func (s *Server) handleGetProjectSchedule(w http.ResponseWriter, r *http.Request
 		s.serverError(w, err)
 		return
 	}
-	agents, err := s.st.ListAgents(name)
+	workspaceID, ok := s.currentWorkspaceForRequest(w, r)
+	if !ok {
+		return
+	}
+	agents, err := s.projectScheduleAgents(workspaceID, name)
 	if err != nil {
 		s.serverError(w, err)
 		return
@@ -52,13 +56,11 @@ func (s *Server) handleGetProjectSchedule(w http.ResponseWriter, r *http.Request
 		defer usageDB.Close()
 	}
 	for _, ag := range agents {
-		if ag == nil {
-			continue
-		}
 		if !s.canAccessAgent(r, name, ag.Name) {
 			continue
 		}
-		hb, err := s.ts.GetHeartbeat(name, ag.Name)
+		target := s.runtimeSchedulerTargetForProjectAgent(workspaceID, name, ag.Name)
+		hb, err := s.loadSchedulerTargetHeartbeat(workspaceID, target)
 		if err != nil {
 			s.serverError(w, err)
 			return
@@ -68,7 +70,7 @@ func (s *Server) handleGetProjectSchedule(w http.ResponseWriter, r *http.Request
 		if hb.LastWakeupStatus == "running" && hb.PID > 0 && !processAlive(hb.PID) {
 			hb.LastWakeupStatus = "done"
 			hb.PID = 0
-			_ = s.ts.SaveHeartbeat(name, ag.Name, hb)
+			_ = s.saveSchedulerTargetHeartbeat(workspaceID, target, hb)
 		}
 		crons, err := s.ts.ListCrons(name, ag.Name)
 		if err != nil {
@@ -91,10 +93,18 @@ func (s *Server) handleGetProjectSchedule(w http.ResponseWriter, r *http.Request
 			"crons":     cronOut,
 		}
 		modelStr := ""
-		if meta, err := s.st.AgentMeta(name, ag.Name); err == nil && meta != nil {
+		if meta, err := s.agentMetaForProjectMember(workspaceID, name, ag.Name); err == nil && meta != nil {
 			modelStr = string(meta.Model)
 			entry["model"] = modelStr
-			entry["agentDir"] = s.st.AgentDir(name, ag.Name)
+			if ag.AgentDir != "" {
+				entry["agentDir"] = ag.AgentDir
+			}
+			if ag.AgentWorkerID != "" {
+				entry["agentWorkerId"] = ag.AgentWorkerID
+			}
+			if ag.ProjectMembershipID != "" {
+				entry["projectMembershipId"] = ag.ProjectMembershipID
+			}
 			entry["runtimeReadiness"] = buildRuntimeReadinessLight(meta)
 		}
 		if hb.SessionID != "" {
@@ -119,6 +129,61 @@ func (s *Server) handleGetProjectSchedule(w http.ResponseWriter, r *http.Request
 		"project": name,
 		"agents":  sortAgents,
 	})
+}
+
+type projectScheduleAgent struct {
+	Name                string
+	AgentDir            string
+	AgentWorkerID       string
+	ProjectMembershipID string
+}
+
+func (s *Server) projectScheduleAgents(workspaceID, project string) ([]projectScheduleAgent, error) {
+	if s != nil && s.agentDirectory != nil && strings.TrimSpace(workspaceID) != "" {
+		workers, err := s.agentDirectory.ProjectWorkers(workspaceID, project)
+		if err != nil {
+			return nil, err
+		}
+		if len(workers) > 0 {
+			out := make([]projectScheduleAgent, 0, len(workers))
+			for _, resolved := range workers {
+				name := strings.TrimSpace(resolved.Membership.Title)
+				if name == "" {
+					name = strings.TrimSpace(resolved.Worker.DisplayName)
+				}
+				if name == "" {
+					name = strings.TrimSpace(resolved.Worker.Name)
+				}
+				if name == "" {
+					continue
+				}
+				out = append(out, projectScheduleAgent{
+					Name:                name,
+					AgentWorkerID:       resolved.Worker.ID,
+					ProjectMembershipID: resolved.Membership.ID,
+				})
+			}
+			sort.Slice(out, func(i, j int) bool {
+				return strings.ToLower(out[i].Name) < strings.ToLower(out[j].Name)
+			})
+			return out, nil
+		}
+	}
+	legacyAgents, err := s.st.ListAgents(project)
+	if err != nil {
+		return nil, err
+	}
+	out := make([]projectScheduleAgent, 0, len(legacyAgents))
+	for _, ag := range legacyAgents {
+		if ag == nil {
+			continue
+		}
+		out = append(out, projectScheduleAgent{
+			Name:     ag.Name,
+			AgentDir: s.st.AgentDir(project, ag.Name),
+		})
+	}
+	return out, nil
 }
 
 func heartbeatToJSON(h *entity.HeartbeatConfig) map[string]any {
@@ -400,8 +465,7 @@ func (s *Server) handlePatchHeartbeat(w http.ResponseWriter, r *http.Request) {
 	if body.Triggers != nil {
 		valid := make([]entity.TriggerType, 0, len(*body.Triggers))
 		for _, t := range *body.Triggers {
-			switch t {
-			case entity.TriggerOnMessage, entity.TriggerOnTask:
+			if entity.IsValidTriggerType(t) {
 				valid = append(valid, t)
 			}
 		}

@@ -220,83 +220,130 @@ func (s *Server) addRuntimeNodeAgentChatSessions(byID map[string]*agentChatSessi
 		return nil
 	}
 
-	sessions, err := s.controlDB.ListInteractionSessions(controldb.InteractionSessionFilter{
-		WorkspaceID: workspaceID,
-		ProjectID:   project,
-		AgentID:     agent,
-		Limit:       500,
-	})
-	if err != nil {
-		return err
-	}
-	for _, session := range sessions {
-		sessionID := strings.TrimSpace(session.RuntimeSessionID)
-		if sessionID == "" {
-			continue
+	seenInteractionSessions := map[string]bool{}
+	for _, filter := range s.agentRuntimeInteractionFilters(workspaceID, project, agent) {
+		sessions, err := s.controlDB.ListInteractionSessions(filter)
+		if err != nil {
+			return err
 		}
-		item := ensureAgentChatSessionAcc(byID, sessionID)
-		if item.info.Source == "" {
-			item.info.Source = firstNonEmpty(session.SourceKind, "runtime-node")
-		}
-		if session.Status != "" {
-			item.info.Status = session.Status
-		}
-		createdAt := parseDBTime(session.CreatedAt)
-		updatedAt := latestDBTime(session.UpdatedAt, session.LastActivityAt, session.CompletedAt, session.CreatedAt)
-		updateAgentChatSessionTimes(item, createdAt, updatedAt)
-		if item.info.Title == "" {
-			title, err := s.interactionSessionTitle(workspaceID, session.ID)
-			if err != nil {
-				return err
+		for _, session := range sessions {
+			if seenInteractionSessions[session.ID] {
+				continue
 			}
-			item.info.Title = title
+			seenInteractionSessions[session.ID] = true
+			sessionID := strings.TrimSpace(session.RuntimeSessionID)
+			if sessionID == "" {
+				continue
+			}
+			item := ensureAgentChatSessionAcc(byID, sessionID)
+			if item.info.Source == "" {
+				item.info.Source = firstNonEmpty(session.SourceKind, "runtime-node")
+			}
+			if session.Status != "" {
+				item.info.Status = session.Status
+			}
+			createdAt := parseDBTime(session.CreatedAt)
+			updatedAt := latestDBTime(session.UpdatedAt, session.LastActivityAt, session.CompletedAt, session.CreatedAt)
+			updateAgentChatSessionTimes(item, createdAt, updatedAt)
+			if item.info.Title == "" {
+				title, err := s.interactionSessionTitle(workspaceID, session.ID)
+				if err != nil {
+					return err
+				}
+				item.info.Title = title
+			}
 		}
 	}
 
-	runs, err := s.controlDB.ListRuntimeRuns(controldb.RuntimeRunFilter{
+	seenRuns := map[string]bool{}
+	for _, filter := range s.agentRuntimeRunFilters(workspaceID, project, agent) {
+		runs, err := s.controlDB.ListRuntimeRuns(filter)
+		if err != nil {
+			return err
+		}
+		for _, run := range runs {
+			if seenRuns[run.ID] {
+				continue
+			}
+			seenRuns[run.ID] = true
+			result := decodeRuntimeRunResult(run.ResultJSON)
+			sessionID := strings.TrimSpace(result["sessionId"])
+			logText := result["logText"]
+			if sessionID == "" && logText != "" {
+				sessionID = extractAgentChatSessionID(logText)
+			}
+			if sessionID == "" {
+				continue
+			}
+			item := ensureAgentChatSessionAcc(byID, sessionID)
+			if item.info.Source == "" {
+				item.info.Source = "runtime-node"
+			}
+			if run.Status != "" {
+				item.info.Status = run.Status
+			}
+			if item.logPath == "" {
+				item.logPath = result["logPath"]
+			}
+			createdAt := latestDBTime(run.StartedAt, run.CreatedAt)
+			updatedAt := latestDBTime(run.FinishedAt, run.UpdatedAt, run.StartedAt, run.CreatedAt)
+			updateAgentChatSessionTimes(item, createdAt, updatedAt)
+			if item.runIDs == nil {
+				item.runIDs = map[string]bool{}
+			}
+			if !item.runIDs[run.ID] {
+				item.runIDs[run.ID] = true
+				item.info.RunCount++
+			}
+			if item.info.Title == "" && logText != "" {
+				item.info.Title = summarizeSessionTitleFromLog(logText)
+			}
+		}
+	}
+	return nil
+}
+
+func (s *Server) agentRuntimeInteractionFilters(workspaceID, project, agent string) []controldb.InteractionSessionFilter {
+	filters := []controldb.InteractionSessionFilter{}
+	if s != nil && s.agentDirectory != nil {
+		if resolved, ok, err := s.agentDirectory.ProjectWorker(workspaceID, project, agent); err == nil && ok {
+			filters = append(filters, controldb.InteractionSessionFilter{
+				WorkspaceID:   workspaceID,
+				AgentWorkerID: resolved.Worker.ID,
+				ProjectID:     project,
+				Limit:         500,
+			})
+		}
+	}
+	filters = append(filters, controldb.InteractionSessionFilter{
 		WorkspaceID: workspaceID,
 		ProjectID:   project,
 		AgentID:     agent,
 		Limit:       500,
 	})
-	if err != nil {
-		return err
-	}
-	for _, run := range runs {
-		result := decodeRuntimeRunResult(run.ResultJSON)
-		sessionID := strings.TrimSpace(result["sessionId"])
-		logText := result["logText"]
-		if sessionID == "" && logText != "" {
-			sessionID = extractAgentChatSessionID(logText)
-		}
-		if sessionID == "" {
-			continue
-		}
-		item := ensureAgentChatSessionAcc(byID, sessionID)
-		if item.info.Source == "" {
-			item.info.Source = "runtime-node"
-		}
-		if run.Status != "" {
-			item.info.Status = run.Status
-		}
-		if item.logPath == "" {
-			item.logPath = result["logPath"]
-		}
-		createdAt := latestDBTime(run.StartedAt, run.CreatedAt)
-		updatedAt := latestDBTime(run.FinishedAt, run.UpdatedAt, run.StartedAt, run.CreatedAt)
-		updateAgentChatSessionTimes(item, createdAt, updatedAt)
-		if item.runIDs == nil {
-			item.runIDs = map[string]bool{}
-		}
-		if !item.runIDs[run.ID] {
-			item.runIDs[run.ID] = true
-			item.info.RunCount++
-		}
-		if item.info.Title == "" && logText != "" {
-			item.info.Title = summarizeSessionTitleFromLog(logText)
+	return filters
+}
+
+func (s *Server) agentRuntimeRunFilters(workspaceID, project, agent string) []controldb.RuntimeRunFilter {
+	filters := []controldb.RuntimeRunFilter{}
+	if s != nil && s.agentDirectory != nil {
+		if resolved, ok, err := s.agentDirectory.ProjectWorker(workspaceID, project, agent); err == nil && ok {
+			filters = append(filters, controldb.RuntimeRunFilter{
+				WorkspaceID:         workspaceID,
+				AgentWorkerID:       resolved.Worker.ID,
+				ProjectMembershipID: resolved.Membership.ID,
+				ProjectID:           project,
+				Limit:               500,
+			})
 		}
 	}
-	return nil
+	filters = append(filters, controldb.RuntimeRunFilter{
+		WorkspaceID: workspaceID,
+		ProjectID:   project,
+		AgentID:     agent,
+		Limit:       500,
+	})
+	return filters
 }
 
 func ensureAgentChatSessionAcc(byID map[string]*agentChatSessionAcc, sessionID string) *agentChatSessionAcc {
@@ -976,53 +1023,57 @@ func (s *Server) readRuntimeNodeAgentSessionHistory(workspaceID, project, agent,
 	if s.controlDB == nil || strings.TrimSpace(workspaceID) == "" {
 		return nil, sessionID, nil
 	}
-	runs, err := s.controlDB.ListRuntimeRuns(controldb.RuntimeRunFilter{
-		WorkspaceID: workspaceID,
-		ProjectID:   project,
-		AgentID:     agent,
-		Limit:       500,
-	})
-	if err != nil {
-		return nil, sessionID, err
-	}
-
 	segments := make([]historySegment, 0, maxRuns)
-	for _, run := range runs {
-		result := decodeRuntimeRunResult(run.ResultJSON)
-		runSessionID := strings.TrimSpace(result["sessionId"])
-		logText := result["logText"]
-		if runSessionID == "" && logText != "" {
-			runSessionID = extractAgentChatSessionID(logText)
+	seenRuns := map[string]bool{}
+	for _, filter := range s.agentRuntimeRunFilters(workspaceID, project, agent) {
+		runs, err := s.controlDB.ListRuntimeRuns(filter)
+		if err != nil {
+			return nil, sessionID, err
 		}
-		if runSessionID == "" {
-			continue
+		for _, run := range runs {
+			if seenRuns[run.ID] {
+				continue
+			}
+			seenRuns[run.ID] = true
+			result := decodeRuntimeRunResult(run.ResultJSON)
+			runSessionID := strings.TrimSpace(result["sessionId"])
+			logText := result["logText"]
+			if runSessionID == "" && logText != "" {
+				runSessionID = extractAgentChatSessionID(logText)
+			}
+			if runSessionID == "" {
+				continue
+			}
+			if sessionID != "" && runSessionID != sessionID {
+				continue
+			}
+			if sessionID == "" {
+				sessionID = runSessionID
+			}
+			if strings.TrimSpace(logText) == "" {
+				logText = s.runtimeRunHistoryFallback(workspaceID, run.ID)
+			}
+			if strings.TrimSpace(logText) == "" {
+				continue
+			}
+			logData := []byte(logText)
+			if len(logData) > agentChatHistoryMaxBytesPerRun {
+				logData = append([]byte("=== earlier runtime log content truncated ===\n"), logData[len(logData)-agentChatHistoryMaxBytesPerRun:]...)
+			}
+			startedAt := latestDBTime(run.StartedAt, run.CreatedAt)
+			if startedAt.IsZero() {
+				startedAt = time.Now().UTC()
+			}
+			segments = append(segments, historySegment{
+				startedAt: startedAt,
+				status:    run.Status,
+				logPath:   result["logPath"],
+				data:      logData,
+			})
+			if len(segments) >= maxRuns {
+				break
+			}
 		}
-		if sessionID != "" && runSessionID != sessionID {
-			continue
-		}
-		if sessionID == "" {
-			sessionID = runSessionID
-		}
-		if strings.TrimSpace(logText) == "" {
-			logText = s.runtimeRunHistoryFallback(workspaceID, run.ID)
-		}
-		if strings.TrimSpace(logText) == "" {
-			continue
-		}
-		logData := []byte(logText)
-		if len(logData) > agentChatHistoryMaxBytesPerRun {
-			logData = append([]byte("=== earlier runtime log content truncated ===\n"), logData[len(logData)-agentChatHistoryMaxBytesPerRun:]...)
-		}
-		startedAt := latestDBTime(run.StartedAt, run.CreatedAt)
-		if startedAt.IsZero() {
-			startedAt = time.Now().UTC()
-		}
-		segments = append(segments, historySegment{
-			startedAt: startedAt,
-			status:    run.Status,
-			logPath:   result["logPath"],
-			data:      logData,
-		})
 		if len(segments) >= maxRuns {
 			break
 		}
@@ -1082,7 +1133,7 @@ func (s *Server) handleAgentChat(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	meta, err := s.st.AgentMeta(project, agent)
+	meta, err := s.agentMetaForProjectMember(workspaceID, project, agent)
 	if err != nil {
 		if isNotFoundErr(err) {
 			s.jsonErrorCode(w, http.StatusNotFound, ErrCodeAgentNotFound, "agent not found")

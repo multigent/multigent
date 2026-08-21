@@ -2,13 +2,16 @@ package api
 
 import (
 	"context"
+	"encoding/json"
 	"fmt"
 	"os"
 	"os/exec"
+	"strings"
 	"sync"
 	"syscall"
 	"time"
 
+	controldb "github.com/multigent/multigent/internal/db"
 	"github.com/multigent/multigent/internal/entity"
 	"github.com/multigent/multigent/internal/taskstore"
 )
@@ -29,6 +32,7 @@ type triggerManager struct {
 	root      string
 	binPath   string
 	ts        taskstore.Store
+	db        controldb.Store
 
 	cancel   context.CancelFunc
 	pollDone chan struct{}
@@ -36,13 +40,14 @@ type triggerManager struct {
 
 const defaultTriggerDebounce = 5 * time.Minute
 
-func newTriggerManager(root, binPath string, ts taskstore.Store) *triggerManager {
+func newTriggerManager(root, binPath string, ts taskstore.Store, db controldb.Store) *triggerManager {
 	return &triggerManager{
 		inflight:  make(map[string]time.Time),
 		firstSeen: make(map[string]time.Time),
 		root:      root,
 		binPath:   binPath,
 		ts:        ts,
+		db:        db,
 	}
 }
 
@@ -95,8 +100,8 @@ func (tm *triggerManager) checkMessageTriggers() {
 			continue
 		}
 		for _, agent := range agents {
-			hb, err := tm.ts.GetHeartbeat(project, agent)
-			if err != nil || hb == nil {
+			hb, configured := tm.heartbeatForTrigger(project, agent)
+			if !configured || hb == nil {
 				continue
 			}
 			if hb.Paused {
@@ -147,9 +152,9 @@ func (tm *triggerManager) checkMessageTriggers() {
 // launches an asynchronous wakeup. It is safe to call from any goroutine.
 // reason is a human-readable label for logging (e.g. "message from pm").
 func (tm *triggerManager) Fire(project, agent string, triggerType entity.TriggerType, reason string) {
-	hb, err := tm.ts.GetHeartbeat(project, agent)
-	if err != nil || hb == nil {
-		fmt.Fprintf(os.Stderr, "[trigger] %s/%s: skip — no heartbeat (err=%v)\n", project, agent, err)
+	hb, configured := tm.heartbeatForTrigger(project, agent)
+	if !configured || hb == nil {
+		fmt.Fprintf(os.Stderr, "[trigger] %s/%s: skip — no heartbeat or worker schedule\n", project, agent)
 		return
 	}
 	if !hb.HasTrigger(triggerType) {
@@ -199,4 +204,92 @@ func (tm *triggerManager) Fire(project, agent string, triggerType entity.Trigger
 			fmt.Fprintf(os.Stderr, "[trigger] %s/%s: wakeup command failed: %v\n", project, agent, err)
 		}
 	}()
+}
+
+func (tm *triggerManager) heartbeatForTrigger(project, agent string) (*entity.HeartbeatConfig, bool) {
+	if tm == nil {
+		return nil, false
+	}
+	if worker, ok := tm.resolveAgentWorker(project, agent); ok {
+		if hb, configured := agentWorkerScheduleHeartbeat(worker); configured {
+			return hb, true
+		}
+	}
+	if tm.ts == nil {
+		return nil, false
+	}
+	hb, err := tm.ts.GetHeartbeat(project, agent)
+	if err != nil || hb == nil {
+		return nil, false
+	}
+	return hb, true
+}
+
+func (tm *triggerManager) resolveAgentWorker(project, agent string) (controldb.AgentWorker, bool) {
+	if tm == nil || tm.db == nil {
+		return controldb.AgentWorker{}, false
+	}
+	workspaceID := tm.workspaceID()
+	if workspaceID == "" {
+		return controldb.AgentWorker{}, false
+	}
+	memberships, err := tm.db.ListProjectMemberships(controldb.ProjectMembershipFilter{
+		WorkspaceID: workspaceID,
+		ProjectID:   strings.TrimSpace(project),
+		MemberType:  "agent_worker",
+	})
+	if err != nil {
+		return controldb.AgentWorker{}, false
+	}
+	for _, membership := range memberships {
+		worker, ok, err := tm.db.AgentWorkerByID(workspaceID, membership.MemberID)
+		if err != nil || !ok {
+			continue
+		}
+		if triggerAgentMatches(agent, membership, worker) {
+			return worker, true
+		}
+	}
+	return controldb.AgentWorker{}, false
+}
+
+func (tm *triggerManager) workspaceID() string {
+	if tm == nil || tm.db == nil {
+		return ""
+	}
+	rows, err := tm.db.ListWorkspaces()
+	if err != nil {
+		return ""
+	}
+	for _, row := range rows {
+		if samePath(row.Root, tm.root) {
+			return strings.TrimSpace(row.ID)
+		}
+	}
+	return workspaceID(tm.root)
+}
+
+func triggerAgentMatches(agent string, membership controldb.ProjectMembership, worker controldb.AgentWorker) bool {
+	want := strings.TrimSpace(strings.ToLower(agent))
+	if want == "" {
+		return false
+	}
+	for _, value := range []string{membership.Title, membership.Role, worker.Name, worker.DisplayName, worker.ID, membership.ID} {
+		if strings.TrimSpace(strings.ToLower(value)) == want {
+			return true
+		}
+	}
+	return false
+}
+
+func agentWorkerScheduleHeartbeat(worker controldb.AgentWorker) (*entity.HeartbeatConfig, bool) {
+	raw := strings.TrimSpace(worker.ScheduleJSON)
+	if raw == "" || raw == "{}" {
+		return nil, false
+	}
+	var hb entity.HeartbeatConfig
+	if err := json.Unmarshal([]byte(raw), &hb); err != nil {
+		return nil, false
+	}
+	return &hb, len(hb.Triggers) > 0
 }

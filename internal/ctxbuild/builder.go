@@ -153,6 +153,23 @@ func (b *Builder) BuildForAgent(projectName, agentName, teamPath, roleName strin
 	if err != nil {
 		return nil, err
 	}
+	if provider, ok := b.store.(store.AgentWorkerContextProvider); ok {
+		workerContext, err := provider.AgentWorkerContext(projectName, agentName)
+		if err != nil {
+			return nil, fmt.Errorf("ctxbuild: agent worker context: %w", err)
+		}
+		if strings.TrimSpace(workerContext.Layer) != "" {
+			mc.Layers = append(mc.Layers, ContextLayer{
+				Source:  "agent-worker:" + projectName + "/" + agentName,
+				Content: workerContext.Layer,
+			})
+		}
+		if len(workerContext.SkillNames) > 0 {
+			if err := b.addSkills(mc, workerContext.SkillNames); err != nil {
+				return nil, err
+			}
+		}
+	}
 	layer, err := contextpack.BuildAgentContextLayer(b.store.Root(), projectName, agentName)
 	if err != nil {
 		return nil, fmt.Errorf("ctxbuild: context bindings: %w", err)
@@ -164,6 +181,37 @@ func (b *Builder) BuildForAgent(projectName, agentName, teamPath, roleName strin
 		})
 	}
 	return mc, nil
+}
+
+func (b *Builder) addSkills(mc *MergedContext, skillNames []string) error {
+	if mc == nil {
+		return nil
+	}
+	seen := make(map[string]bool, len(mc.Skills)+len(skillNames))
+	for _, skill := range mc.Skills {
+		seen[skill.Name] = true
+	}
+	for _, skillName := range skillNames {
+		skillName = strings.TrimSpace(skillName)
+		if skillName == "" || seen[skillName] {
+			continue
+		}
+		seen[skillName] = true
+		skill, err := b.store.Skill(skillName)
+		if err != nil {
+			continue
+		}
+		skillPrompt, _ := b.store.SkillPrompt(skillName)
+		files := loadSkillFiles(b.store.SkillDir(skillName))
+		mc.Skills = append(mc.Skills, SkillDef{
+			Name:        skill.Name,
+			DisplayName: skill.DisplayName,
+			Description: skill.Description,
+			Prompt:      skillPrompt,
+			Files:       files,
+		})
+	}
+	return nil
 }
 
 // ContentHash computes a SHA-256 digest over all layer contents and skill

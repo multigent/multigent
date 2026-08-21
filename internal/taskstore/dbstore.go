@@ -8,6 +8,7 @@ import (
 	"os"
 	"path/filepath"
 	"sort"
+	"strings"
 	"time"
 
 	controldb "github.com/multigent/multigent/internal/db"
@@ -48,7 +49,7 @@ func (s *DBStore) GetTask(project, agent, id string) (*entity.Task, error) {
 	if ok, err := s.getJSON("tasks", []string{project, agent, id}, &t); err != nil {
 		return nil, err
 	} else if !ok {
-		return nil, errs.NotFound("task", id)
+		return s.files.GetTask(project, agent, id)
 	}
 	return &t, nil
 }
@@ -149,6 +150,17 @@ func (s *DBStore) ClearTasks(project, agent string) error {
 }
 
 func (s *DBStore) GetHeartbeat(project, agent string) (*entity.HeartbeatConfig, error) {
+	if worker, ok, err := s.resolveAgentWorker(project, agent); err != nil {
+		return nil, err
+	} else if ok {
+		hb := &entity.HeartbeatConfig{}
+		if raw := strings.TrimSpace(worker.ScheduleJSON); raw != "" && raw != "{}" {
+			if err := json.Unmarshal([]byte(raw), hb); err != nil {
+				return nil, fmt.Errorf("parse agent worker schedule %s: %w", worker.ID, err)
+			}
+		}
+		return hb, nil
+	}
 	var h entity.HeartbeatConfig
 	if ok, err := s.getJSON("heartbeat", []string{project, agent}, &h); err != nil {
 		return nil, err
@@ -158,6 +170,20 @@ func (s *DBStore) GetHeartbeat(project, agent string) (*entity.HeartbeatConfig, 
 	return &h, nil
 }
 func (s *DBStore) SaveHeartbeat(project, agent string, h *entity.HeartbeatConfig) error {
+	if worker, ok, err := s.resolveAgentWorker(project, agent); err != nil {
+		return err
+	} else if ok {
+		if h == nil {
+			h = &entity.HeartbeatConfig{}
+		}
+		raw, err := json.Marshal(h)
+		if err != nil {
+			return err
+		}
+		worker.ScheduleJSON = string(raw)
+		worker.UpdatedAt = time.Now().UTC().Format(time.RFC3339)
+		return s.db.UpsertAgentWorker(worker)
+	}
 	return s.putJSON("heartbeat", []string{project, agent}, h)
 }
 func (s *DBStore) PauseHeartbeat(project, agent string) error {
@@ -345,10 +371,26 @@ func (s *DBStore) ListProjects() ([]string, error) {
 	if err != nil {
 		return nil, err
 	}
+	seen := map[string]bool{}
 	out := make([]string, 0, len(recs))
 	for _, rec := range recs {
-		out = append(out, rec.Key[0])
+		if len(rec.Key) > 0 && rec.Key[0] != "" && !seen[rec.Key[0]] {
+			seen[rec.Key[0]] = true
+			out = append(out, rec.Key[0])
+		}
 	}
+	fileProjects, fileErr := s.files.ListProjects()
+	if fileErr != nil && len(out) == 0 {
+		return nil, fileErr
+	}
+	for _, project := range fileProjects {
+		if project == "" || seen[project] {
+			continue
+		}
+		seen[project] = true
+		out = append(out, project)
+	}
+	sort.Strings(out)
 	return out, nil
 }
 func (s *DBStore) ListAgents(project string) ([]string, error) {
@@ -356,10 +398,26 @@ func (s *DBStore) ListAgents(project string) ([]string, error) {
 	if err != nil {
 		return nil, err
 	}
+	seen := map[string]bool{}
 	out := make([]string, 0, len(recs))
 	for _, rec := range recs {
-		out = append(out, rec.Key[1])
+		if len(rec.Key) > 1 && rec.Key[1] != "" && !seen[rec.Key[1]] {
+			seen[rec.Key[1]] = true
+			out = append(out, rec.Key[1])
+		}
 	}
+	fileAgents, fileErr := s.files.ListAgents(project)
+	if fileErr != nil && len(out) == 0 {
+		return nil, fileErr
+	}
+	for _, agent := range fileAgents {
+		if agent == "" || seen[agent] {
+			continue
+		}
+		seen[agent] = true
+		out = append(out, agent)
+	}
+	sort.Strings(out)
 	return out, nil
 }
 func (s *DBStore) FindTaskByID(id string) (string, string, *entity.Task, error) {
@@ -376,7 +434,7 @@ func (s *DBStore) FindTaskByID(id string) (string, string, *entity.Task, error) 
 			return rec.Key[0], rec.Key[1], &t, nil
 		}
 	}
-	return "", "", nil, errs.NotFound("task", id)
+	return s.files.FindTaskByID(id)
 }
 func (s *DBStore) ListAllTaskRecords(projectFilter string) ([]TaskRecord, error) {
 	prefix := []string{}
@@ -387,12 +445,29 @@ func (s *DBStore) ListAllTaskRecords(projectFilter string) ([]TaskRecord, error)
 	if err != nil {
 		return nil, err
 	}
+	seen := map[string]bool{}
 	out := make([]TaskRecord, 0, len(recs))
 	for _, rec := range recs {
 		var t entity.Task
 		if json.Unmarshal([]byte(rec.Payload), &t) == nil {
+			seen[rec.Key[0]+"\x00"+rec.Key[1]+"\x00"+t.ID] = true
 			out = append(out, TaskRecord{Project: rec.Key[0], Agent: rec.Key[1], Task: &t})
 		}
+	}
+	fileRecords, fileErr := s.files.ListAllTaskRecords(projectFilter)
+	if fileErr != nil && len(out) == 0 {
+		return nil, fileErr
+	}
+	for _, rec := range fileRecords {
+		if rec.Task == nil {
+			continue
+		}
+		key := rec.Project + "\x00" + rec.Agent + "\x00" + rec.Task.ID
+		if seen[key] {
+			continue
+		}
+		seen[key] = true
+		out = append(out, rec)
 	}
 	return out, nil
 }
@@ -440,12 +515,38 @@ func (s *DBStore) listTasks(project, agent string) ([]*entity.Task, error) {
 	if err != nil {
 		return nil, err
 	}
+	seen := map[string]bool{}
 	out := make([]*entity.Task, 0, len(recs))
 	for _, rec := range recs {
 		var t entity.Task
 		if json.Unmarshal([]byte(rec.Payload), &t) == nil {
+			if t.ID != "" {
+				seen[t.ID] = true
+			}
 			out = append(out, &t)
 		}
+	}
+	fileActive, activeErr := s.files.ListTasks(project, agent)
+	if activeErr != nil && len(out) == 0 {
+		return nil, activeErr
+	}
+	for _, t := range fileActive {
+		if t == nil || t.ID == "" || seen[t.ID] {
+			continue
+		}
+		seen[t.ID] = true
+		out = append(out, t)
+	}
+	fileArchived, archivedErr := s.files.ListArchivedTasks(project, agent)
+	if archivedErr != nil && len(out) == 0 {
+		return nil, archivedErr
+	}
+	for _, t := range fileArchived {
+		if t == nil || t.ID == "" || seen[t.ID] {
+			continue
+		}
+		seen[t.ID] = true
+		out = append(out, t)
 	}
 	return out, nil
 }
@@ -505,7 +606,7 @@ func ensureWorkspace(root string, db controldb.Store) (string, error) {
 	if err != nil {
 		absRoot = root
 	}
-	if _, err := os.Stat(filepath.Join(absRoot, ".multigent", "agency.yaml")); err != nil {
+	if !hasWorkspaceConfig(absRoot) {
 		return workspaceID(absRoot), nil
 	}
 	if rows, err := db.ListWorkspaces(); err == nil {
@@ -533,6 +634,16 @@ func ensureWorkspace(root string, db controldb.Store) (string, error) {
 	})
 }
 
+func hasWorkspaceConfig(absRoot string) bool {
+	if _, err := os.Stat(filepath.Join(absRoot, ".multigent", "agency.yaml")); err == nil {
+		return true
+	}
+	if _, err := os.Stat(filepath.Join(absRoot, ".agencycli", "agency.yaml")); err == nil {
+		return true
+	}
+	return false
+}
+
 func samePath(a, b string) bool {
 	aa, errA := filepath.Abs(a)
 	bb, errB := filepath.Abs(b)
@@ -543,6 +654,37 @@ func samePath(a, b string) bool {
 		b = bb
 	}
 	return filepath.Clean(a) == filepath.Clean(b)
+}
+
+func (s *DBStore) resolveAgentWorker(project, agent string) (controldb.AgentWorker, bool, error) {
+	if s == nil || s.db == nil {
+		return controldb.AgentWorker{}, false, nil
+	}
+	memberships, err := s.db.ListProjectMemberships(controldb.ProjectMembershipFilter{
+		WorkspaceID: s.workspaceID,
+		ProjectID:   strings.TrimSpace(project),
+		MemberType:  "agent_worker",
+	})
+	if err != nil {
+		return controldb.AgentWorker{}, false, err
+	}
+	for _, membership := range memberships {
+		worker, ok, err := s.db.AgentWorkerByID(s.workspaceID, membership.MemberID)
+		if err != nil {
+			return controldb.AgentWorker{}, false, err
+		}
+		if !ok {
+			continue
+		}
+		if sameIdentity(membership.Title, agent) || sameIdentity(worker.Name, agent) || sameIdentity(worker.DisplayName, agent) {
+			return worker, true, nil
+		}
+	}
+	return controldb.AgentWorker{}, false, nil
+}
+
+func sameIdentity(a, b string) bool {
+	return strings.EqualFold(strings.TrimSpace(a), strings.TrimSpace(b))
 }
 
 var _ Store = (*DBStore)(nil)

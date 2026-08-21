@@ -189,6 +189,13 @@ func workspaceRootBelongsToDataRoot(dataRoot, root string) bool {
 }
 
 func hasAgency(root string) bool {
-	_, err := os.Stat(filepath.Join(root, ".multigent", "agency.yaml"))
-	return err == nil
+	for _, marker := range []string{
+		filepath.Join(root, ".multigent", "agency.yaml"),
+		filepath.Join(root, ".agencycli", "agency.yaml"),
+	} {
+		if _, err := os.Stat(marker); err == nil {
+			return true
+		}
+	}
+	return false
 }

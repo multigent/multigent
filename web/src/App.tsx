@@ -9,6 +9,9 @@ import { WorkspaceAccessProvider, useWorkspaceAccess } from './lib/workspace-acc
 import LoginPage from './pages/LoginPage'
 import WorkspaceOnboardingPage from './pages/WorkspaceOnboardingPage'
 import WorkspacePage from './pages/WorkspacePage'
+import AgentsPage from './pages/AgentsPage'
+import AgentDetailPage from './pages/AgentDetailPage'
+import SchedulePage from './pages/SchedulePage'
 import WorkflowsPage from './pages/WorkflowsPage'
 import PlaybooksPage from './pages/PlaybooksPage'
 import WorkbenchPage from './pages/WorkbenchPage'
@@ -143,6 +146,9 @@ function AuthenticatedRoutes() {
         {canAdmin && <Route path="playbooks/:playbookId" element={<PlaybooksPage />} />}
         {canAdmin && <Route path="teams/:teamId" element={<TeamDetailPage />} />}
         {canAdmin && <Route path="teams" element={<TeamsPage />} />}
+        {canAdmin && <Route path="agents" element={<AgentsPage />} />}
+        {canAdmin && <Route path="agents/:agentId" element={<AgentDetailPage />} />}
+        {canAdmin && <Route path="schedule" element={<SchedulePage />} />}
         <Route path="projects" element={<ProjectsListPage />} />
         <Route path="projects/:projectId" element={<ProjectBranch />}>
           <Route index element={<Navigate to="tasks" replace />} />

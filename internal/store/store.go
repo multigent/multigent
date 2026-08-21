@@ -112,3 +112,12 @@ type Store interface {
 	// ListFiredAgents returns all soft-deleted agents for a project.
 	ListFiredAgents(project string) ([]*FiredAgentEntry, error)
 }
+
+type AgentWorkerContext struct {
+	Layer      string
+	SkillNames []string
+}
+
+type AgentWorkerContextProvider interface {
+	AgentWorkerContext(projectName, agentName string) (AgentWorkerContext, error)
+}

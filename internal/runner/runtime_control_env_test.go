@@ -7,11 +7,14 @@ import (
 	"net/http/httptest"
 	"os"
 	"path/filepath"
+	"runtime"
 	"strings"
 	"testing"
 
 	"github.com/multigent/multigent/internal/daemon"
+	controldb "github.com/multigent/multigent/internal/db"
 	"github.com/multigent/multigent/internal/entity"
+	"github.com/multigent/multigent/internal/runtimeauth"
 )
 
 func TestNormalizeRuntimeAPIURL(t *testing.T) {
@@ -77,6 +80,58 @@ func TestResolveRuntimeControlEnvPrefersInheritedRuntimeToken(t *testing.T) {
 	}
 }
 
+func TestResolveRuntimeControlEnvIncludesAgentWorkerContext(t *testing.T) {
+	dataDir := t.TempDir()
+	workspaceRoot := filepath.Join(dataDir, "workspace-one")
+	t.Setenv("MULTIGENT_DATA_DIR", dataDir)
+	t.Setenv("MULTIGENT_API_URL", "http://127.0.0.1:27893")
+	t.Setenv("MULTIGENT_AGENT_TOKEN", "")
+	t.Setenv("MULTIGENT_WORKSPACE_ID", "")
+	db, err := controldb.OpenDefault()
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer db.Close()
+	if err := db.UpsertWorkspace(controldb.Workspace{
+		ID:   "ws-one",
+		Name: "One",
+		Slug: "one",
+		Root: workspaceRoot,
+	}); err != nil {
+		t.Fatal(err)
+	}
+	if err := db.UpsertAgentWorker(controldb.AgentWorker{
+		ID:          "aw-pm",
+		WorkspaceID: "ws-one",
+		Name:        "pm",
+		DisplayName: "PM",
+	}); err != nil {
+		t.Fatal(err)
+	}
+	if err := db.UpsertProjectMembership(controldb.ProjectMembership{
+		ID:          "pm-github-pm",
+		WorkspaceID: "ws-one",
+		ProjectID:   "github-sandbox",
+		MemberType:  "agent_worker",
+		MemberID:    "aw-pm",
+		Role:        "pm",
+	}); err != nil {
+		t.Fatal(err)
+	}
+
+	env := (&Runner{root: workspaceRoot}).resolveRuntimeControlEnv("github-sandbox", "pm", "run-one")
+	if env["MULTIGENT_WORKSPACE_ID"] != "ws-one" {
+		t.Fatalf("workspace id=%q", env["MULTIGENT_WORKSPACE_ID"])
+	}
+	principal, ok := runtimeauth.Validate(runtimeauth.EnsureSecret(db), env["MULTIGENT_AGENT_TOKEN"])
+	if !ok {
+		t.Fatal("runtime token did not validate")
+	}
+	if principal.AgentWorkerID != "aw-pm" || principal.ProjectMembershipID != "pm-github-pm" {
+		t.Fatalf("missing worker context in token: %+v", principal)
+	}
+}
+
 func TestInjectRuntimeControlEnvIntoRuntimeUsesInheritedEnv(t *testing.T) {
 	cfg := &entity.SandboxConfig{}
 	injectRuntimeControlEnvIntoRuntime(cfg, map[string]string{
@@ -118,6 +173,76 @@ func TestInjectRuntimeControlEnvIntoRuntimeEmbedsMaterializedToolEnv(t *testing.
 	if !found {
 		t.Fatalf("missing materialized runtime env: %#v", cfg.Env)
 	}
+}
+
+func TestEnsureDockerReachableProxyEnvRewritesLoopback(t *testing.T) {
+	env := ensureDockerReachableProxyEnv([]string{
+		"HTTPS_PROXY=http://127.0.0.1:7890",
+		"HTTP_PROXY=http://localhost:7890",
+		"ALL_PROXY=socks5h://127.0.0.1:7890",
+		"NO_PROXY=localhost,127.0.0.1",
+		"PATH=/usr/bin",
+	})
+	got := envSliceToMap(env)
+	if got["HTTPS_PROXY"] != "http://host.docker.internal:7890" {
+		t.Fatalf("HTTPS_PROXY=%q", got["HTTPS_PROXY"])
+	}
+	if got["HTTP_PROXY"] != "http://host.docker.internal:7890" {
+		t.Fatalf("HTTP_PROXY=%q", got["HTTP_PROXY"])
+	}
+	if got["ALL_PROXY"] != "socks5h://host.docker.internal:7890" {
+		t.Fatalf("ALL_PROXY=%q", got["ALL_PROXY"])
+	}
+	if got["NO_PROXY"] != "localhost,127.0.0.1" {
+		t.Fatalf("NO_PROXY=%q", got["NO_PROXY"])
+	}
+}
+
+func TestDropUnreachableDockerLoopbackProxyEnvOnLinux(t *testing.T) {
+	if runtime.GOOS != "linux" {
+		t.Skip("loopback host proxy is only unreachable from docker host-gateway on linux")
+	}
+	t.Setenv("MULTIGENT_DOCKER_FORWARD_LOOPBACK_PROXY", "")
+	env := dropUnreachableDockerLoopbackProxyEnv([]string{
+		"HTTPS_PROXY=http://127.0.0.1:7890",
+		"HTTP_PROXY=http://localhost:7890",
+		"ALL_PROXY=socks5h://127.0.0.1:7890",
+		"NO_PROXY=localhost,127.0.0.1",
+		"PATH=/usr/bin",
+		"OPENAI_BASE_URL=https://api.openai.com/v1",
+	})
+	got := envSliceToMap(env)
+	for _, key := range []string{"HTTPS_PROXY", "HTTP_PROXY", "ALL_PROXY"} {
+		if _, ok := got[key]; ok {
+			t.Fatalf("%s should be dropped for linux docker sandbox: %#v", key, got)
+		}
+	}
+	if got["NO_PROXY"] != "localhost,127.0.0.1" || got["PATH"] != "/usr/bin" || got["OPENAI_BASE_URL"] == "" {
+		t.Fatalf("non-loopback env should be preserved: %#v", got)
+	}
+}
+
+func TestDropUnreachableDockerLoopbackProxyEnvCanBeOptedOut(t *testing.T) {
+	t.Setenv("MULTIGENT_DOCKER_FORWARD_LOOPBACK_PROXY", "1")
+	env := dropUnreachableDockerLoopbackProxyEnv([]string{
+		"HTTPS_PROXY=http://127.0.0.1:7890",
+	})
+	got := envSliceToMap(env)
+	if got["HTTPS_PROXY"] != "http://127.0.0.1:7890" {
+		t.Fatalf("opt-in should preserve loopback proxy env: %#v", got)
+	}
+}
+
+func envSliceToMap(env []string) map[string]string {
+	out := make(map[string]string, len(env))
+	for _, entry := range env {
+		key, value, ok := strings.Cut(entry, "=")
+		if !ok {
+			continue
+		}
+		out[key] = value
+	}
+	return out
 }
 
 func TestAppendWorkspaceFilesMountForDocker(t *testing.T) {

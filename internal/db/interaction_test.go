@@ -139,6 +139,7 @@ func TestInteractionRequestLifecycle(t *testing.T) {
 		t.Fatalf("unexpected request: %#v", got)
 	}
 	got.Status = "submitted"
+	got.AgentWorkerID = "aw-one"
 	got.SubmittedBy = "owner"
 	got.SubmissionJSON = `{"actionId":"approve"}`
 	if err := db.UpdateInteractionRequest(got); err != nil {
@@ -147,5 +148,12 @@ func TestInteractionRequestLifecycle(t *testing.T) {
 	got, ok, err = db.InteractionRequestByID("ws-ir", req.ID)
 	if err != nil || !ok || got.Status != "submitted" || got.SubmittedBy != "owner" {
 		t.Fatalf("updated request ok=%v err=%v got=%#v", ok, err, got)
+	}
+	requests, err := db.ListInteractionRequests(InteractionRequestFilter{WorkspaceID: "ws-ir", AgentWorkerID: "aw-one", Status: "submitted"})
+	if err != nil {
+		t.Fatalf("list interaction requests: %v", err)
+	}
+	if len(requests) != 1 || requests[0].ID != req.ID {
+		t.Fatalf("unexpected listed requests: %#v", requests)
 	}
 }

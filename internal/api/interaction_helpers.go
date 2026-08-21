@@ -22,11 +22,17 @@ type apiInteractionLease struct {
 }
 
 func (s *Server) interactionAgentRef(workspaceID, project, agent string) interaction.AgentRef {
-	return interaction.AgentRef{
+	ref := interaction.AgentRef{
 		WorkspaceID: workspaceID,
 		ProjectID:   project,
 		AgentID:     agent,
 	}
+	if s != nil && s.agentDirectory != nil {
+		if resolved, ok, err := s.agentDirectory.ResolveLegacyMailbox(workspaceID, project+"/"+agent); err == nil && ok {
+			ref.AgentWorkerID = resolved.Worker.ID
+		}
+	}
+	return ref
 }
 
 func (s *Server) acquireAgentInteraction(w http.ResponseWriter, agent interaction.AgentRef, source interaction.Source, reason string) (*apiInteractionLease, bool) {
@@ -35,7 +41,12 @@ func (s *Server) acquireAgentInteraction(w http.ResponseWriter, agent interactio
 		return lease, true
 	}
 	if errors.Is(err, interaction.ErrAgentLocked) {
-		active, _, _ := s.controlDB.ActiveInteractionSessionForSource(agent.WorkspaceID, agent.ProjectID, agent.AgentID, source.Kind, source.Channel, source.ActorID)
+		var active controldb.InteractionSession
+		if strings.TrimSpace(agent.AgentWorkerID) != "" {
+			active, _, _ = s.controlDB.ActiveInteractionSessionForWorkerSource(agent.WorkspaceID, agent.AgentWorkerID, source.Kind, source.Channel, source.ActorID)
+		} else {
+			active, _, _ = s.controlDB.ActiveInteractionSessionForSource(agent.WorkspaceID, agent.ProjectID, agent.AgentID, source.Kind, source.Channel, source.ActorID)
+		}
 		s.jsonError(w, http.StatusConflict, fmt.Sprintf("agent is busy in %s session from %s", active.SourceKind, active.SourceChannel))
 		return nil, false
 	}
@@ -55,7 +66,15 @@ func (s *Server) acquireAgentInteractionLease(agent interaction.AgentRef, source
 	record.RuntimeSessionID = s.latestRuntimeSessionForInteractionSource(agent, source)
 	if err := s.controlDB.CreateInteractionSession(record); err != nil {
 		lease.Release()
-		if active, found, lookupErr := s.controlDB.ActiveInteractionSessionForSource(agent.WorkspaceID, agent.ProjectID, agent.AgentID, source.Kind, source.Channel, source.ActorID); lookupErr == nil && found {
+		var active controldb.InteractionSession
+		var found bool
+		var lookupErr error
+		if strings.TrimSpace(agent.AgentWorkerID) != "" {
+			active, found, lookupErr = s.controlDB.ActiveInteractionSessionForWorkerSource(agent.WorkspaceID, agent.AgentWorkerID, source.Kind, source.Channel, source.ActorID)
+		} else {
+			active, found, lookupErr = s.controlDB.ActiveInteractionSessionForSource(agent.WorkspaceID, agent.ProjectID, agent.AgentID, source.Kind, source.Channel, source.ActorID)
+		}
+		if lookupErr == nil && found {
 			syncInteractionSession(s.interactions, active)
 			return nil, interaction.ErrAgentLocked
 		}
@@ -74,9 +93,10 @@ func syncInteractionSession(manager *interaction.Manager, session controldb.Inte
 		return
 	}
 	_, _, _ = manager.Acquire(interaction.AgentRef{
-		WorkspaceID: session.WorkspaceID,
-		ProjectID:   session.ProjectID,
-		AgentID:     session.AgentID,
+		WorkspaceID:   session.WorkspaceID,
+		AgentWorkerID: session.AgentWorkerID,
+		ProjectID:     session.ProjectID,
+		AgentID:       session.AgentID,
 	}, interaction.Source{
 		Kind:    session.SourceKind,
 		ActorID: session.ActorID,
@@ -149,6 +169,7 @@ func interactionSessionRecord(session interaction.Session, source interaction.So
 	return controldb.InteractionSession{
 		ID:             session.ID,
 		WorkspaceID:    session.WorkspaceID,
+		AgentWorkerID:  session.AgentWorkerID,
 		ProjectID:      session.ProjectID,
 		AgentID:        session.AgentID,
 		SourceKind:     strings.TrimSpace(source.Kind),
@@ -168,16 +189,20 @@ func (s *Server) latestRuntimeSessionForInteractionSource(agent interaction.Agen
 	if s == nil || s.controlDB == nil {
 		return ""
 	}
-	sessions, err := s.controlDB.ListInteractionSessions(controldb.InteractionSessionFilter{
+	filter := controldb.InteractionSessionFilter{
 		WorkspaceID:    agent.WorkspaceID,
-		ProjectID:      agent.ProjectID,
-		AgentID:        agent.AgentID,
-		SourceKind:     strings.TrimSpace(source.Kind),
-		SourceChannel:  strings.TrimSpace(source.Channel),
-		ActorID:        strings.TrimSpace(source.ActorID),
+		AgentWorkerID:  agent.AgentWorkerID,
 		RuntimeSession: true,
 		Limit:          1,
-	})
+	}
+	if strings.TrimSpace(agent.AgentWorkerID) == "" {
+		filter.ProjectID = agent.ProjectID
+		filter.AgentID = agent.AgentID
+		filter.SourceKind = strings.TrimSpace(source.Kind)
+		filter.SourceChannel = strings.TrimSpace(source.Channel)
+		filter.ActorID = strings.TrimSpace(source.ActorID)
+	}
+	sessions, err := s.controlDB.ListInteractionSessions(filter)
 	if err != nil || len(sessions) == 0 {
 		return ""
 	}

@@ -17,6 +17,7 @@ import (
 	"sync"
 	"time"
 
+	"github.com/multigent/multigent/internal/agentdir"
 	"github.com/multigent/multigent/internal/builtins"
 	controldb "github.com/multigent/multigent/internal/db"
 	"github.com/multigent/multigent/internal/entity"
@@ -88,6 +89,7 @@ type Server struct {
 	execMu                 sync.Mutex
 	execProcs              map[string]*execProcess // key = "project/agent"
 	interactions           *interaction.Manager
+	agentDirectory         *agentdir.Directory
 	connectionHealthCancel func()
 	connectionHealthDone   chan struct{}
 	agentIMMu              sync.Mutex
@@ -113,7 +115,7 @@ func NewServer(root, apiKey string) *Server {
 	}
 	sched := newSchedulerManager(root)
 	ts := taskstore.NewDB(root, controlDB)
-	tm := newTriggerManager(root, sched.binPath, ts)
+	tm := newTriggerManager(root, sched.binPath, ts, controlDB)
 	tm.StartPoller()
 	s := &Server{
 		root:                   root,
@@ -128,6 +130,7 @@ func NewServer(root, apiKey string) *Server {
 		msStore:                store.NewMilestoneStore(root),
 		execProcs:              make(map[string]*execProcess),
 		interactions:           interaction.NewManager(),
+		agentDirectory:         agentdir.New(controlDB),
 		agentIMCancel:          make(map[string]context.CancelFunc),
 		connectorSetupSessions: make(map[string]connectorDeviceAuthSession),
 		modelAuthSessions:      make(map[string]*modelAuthSession),
@@ -311,6 +314,13 @@ func (s *Server) Handler() http.Handler {
 	mux.HandleFunc("GET /api/v1/projects", s.handleProjects)
 	mux.HandleFunc("POST /api/v1/projects", s.handleCreateProject)
 	mux.HandleFunc("DELETE /api/v1/projects/{name}", s.handleDeleteProject)
+	mux.HandleFunc("GET /api/v1/agents", s.handleAgentWorkers)
+	mux.HandleFunc("POST /api/v1/agents", s.handleCreateAgentWorker)
+	mux.HandleFunc("GET /api/v1/agents/{id}", s.handleAgentWorker)
+	mux.HandleFunc("PATCH /api/v1/agents/{id}", s.handlePatchAgentWorker)
+	mux.HandleFunc("DELETE /api/v1/agents/{id}", s.handleDeleteAgentWorker)
+	mux.HandleFunc("GET /api/v1/agents/{id}/attention", s.handleAgentAttentionSignals)
+	mux.HandleFunc("PATCH /api/v1/attention/{id}", s.handlePatchAttentionSignal)
 	mux.HandleFunc("GET /api/v1/rbac/model", s.handleRBACModel)
 	mux.HandleFunc("GET /api/v1/sandbox/capabilities", s.handleSandboxCapabilities)
 	mux.HandleFunc("GET /api/v1/runtime-nodes", s.handleRuntimeNodes)
@@ -355,6 +365,9 @@ func (s *Server) Handler() http.Handler {
 	mux.HandleFunc("GET /api/v1/projects/{name}/task-templates", s.handleListProjectTaskTemplates)
 	mux.HandleFunc("POST /api/v1/projects/{name}/task-templates", s.handleCreateProjectTaskTemplate)
 	mux.HandleFunc("GET /api/v1/projects/{name}/messages", s.handleProjectMessages)
+	mux.HandleFunc("GET /api/v1/projects/{name}/memberships", s.handleProjectMemberships)
+	mux.HandleFunc("POST /api/v1/projects/{name}/memberships", s.handleCreateProjectMembership)
+	mux.HandleFunc("DELETE /api/v1/projects/{name}/memberships/{membershipId}", s.handleDeleteProjectMembership)
 	mux.HandleFunc("GET /api/v1/projects/{name}/agents", s.handleProjectAgents)
 	mux.HandleFunc("PATCH /api/v1/projects/{name}/agents/{agent}", s.handlePatchAgent)
 	mux.HandleFunc("POST /api/v1/projects/{name}/agents/{agent}/runtime/token", s.handleIssueAgentRuntimeToken)
@@ -558,6 +571,8 @@ func (s *Server) Handler() http.Handler {
 	runtimeMux.HandleFunc("GET /api/v1/runtime/contacts", s.handleRuntimeContacts)
 	runtimeMux.HandleFunc("GET /api/v1/runtime/channels", s.handleRuntimeChannels)
 	runtimeMux.HandleFunc("POST /api/v1/runtime/notify", s.handleRuntimeNotify)
+	runtimeMux.HandleFunc("GET /api/v1/runtime/attention", s.handleRuntimeAttentionSignals)
+	runtimeMux.HandleFunc("PATCH /api/v1/runtime/attention/{id}", s.handleRuntimePatchAttentionSignal)
 	runtimeMux.HandleFunc("GET /api/v1/runtime/messages", s.handleRuntimeMessages)
 	runtimeMux.HandleFunc("POST /api/v1/runtime/messages", s.handleRuntimePostMessage)
 	runtimeMux.HandleFunc("POST /api/v1/runtime/messages/{id}/reply", s.handleRuntimeReplyMessage)
@@ -656,6 +671,9 @@ func (s *Server) applyRequestedWorkspace(w http.ResponseWriter, r *http.Request)
 		return true
 	}
 	id := strings.TrimSpace(r.Header.Get(requestedWorkspaceHeader))
+	if source, _ := r.Context().Value(ctxAuthSourceKey).(identitySource); id == "" && source == identitySourceTrustedProxy {
+		id = strings.TrimSpace(r.Header.Get(trustedProxyWorkspaceIDHeader))
+	}
 	if id == "" {
 		return true
 	}
@@ -753,20 +771,24 @@ func (s *Server) handleAgency(w http.ResponseWriter, _ *http.Request) {
 	})
 }
 
-func (s *Server) handleStats(w http.ResponseWriter, _ *http.Request) {
+func (s *Server) handleStats(w http.ResponseWriter, r *http.Request) {
 	projects, err := s.st.ListProjects()
 	if err != nil {
 		s.serverError(w, err)
 		return
 	}
+	workspaceID, ok := s.currentWorkspaceForRequest(w, r)
+	if !ok {
+		return
+	}
 	var pending, inProgress int
 	for _, p := range projects {
-		agents, err := s.st.ListAgents(p.Name)
+		agents, err := s.projectAgentNames(workspaceID, p.Name)
 		if err != nil {
 			continue
 		}
-		for _, ag := range agents {
-			tasks, err := s.ts.ListTasks(p.Name, ag.Name)
+		for _, agentName := range agents {
+			tasks, err := s.ts.ListTasks(p.Name, agentName)
 			if err != nil {
 				continue
 			}
@@ -994,6 +1016,61 @@ func (s *Server) handleProjectAgents(w http.ResponseWriter, r *http.Request) {
 		s.serverError(w, err)
 		return
 	}
+	if s.controlDB != nil && s.agentDirectory != nil {
+		workspaceID, err := s.currentWorkspaceID()
+		if err != nil {
+			s.serverError(w, err)
+			return
+		}
+		memberships, err := s.controlDB.ListProjectMemberships(controldb.ProjectMembershipFilter{
+			WorkspaceID: workspaceID,
+			ProjectID:   name,
+			MemberType:  "agent_worker",
+		})
+		if err != nil {
+			s.serverError(w, err)
+			return
+		}
+		if len(memberships) > 0 {
+			out := make([]map[string]any, 0, len(memberships))
+			for _, membership := range memberships {
+				worker, ok, err := s.agentDirectory.Worker(workspaceID, membership.MemberID)
+				if err != nil {
+					s.serverError(w, err)
+					return
+				}
+				if !ok {
+					continue
+				}
+				agentName := strings.TrimSpace(membership.Title)
+				if agentName == "" {
+					agentName = strings.TrimSpace(worker.Name)
+				}
+				if agentName == "" || !s.canAccessAgent(r, name, agentName) {
+					continue
+				}
+				out = append(out, map[string]any{
+					"name":                   agentName,
+					"model":                  worker.Model,
+					"team":                   membership.Role,
+					"project":                name,
+					"hiredAt":                membership.CreatedAt,
+					"avatar":                 worker.Avatar,
+					"agentWorkerId":          worker.ID,
+					"projectMembershipId":    membership.ID,
+					"agentWorkerName":        worker.Name,
+					"agentWorkerDisplayName": worker.DisplayName,
+				})
+			}
+			sort.Slice(out, func(i, j int) bool {
+				left, _ := out[i]["name"].(string)
+				right, _ := out[j]["name"].(string)
+				return left < right
+			})
+			_ = json.NewEncoder(w).Encode(out)
+			return
+		}
+	}
 	agents, err := s.st.ListAgents(name)
 	if err != nil {
 		s.serverError(w, err)
@@ -1026,15 +1103,6 @@ func (s *Server) handlePatchAgent(w http.ResponseWriter, r *http.Request) {
 	if !s.checkProjectManager(w, r, project) {
 		return
 	}
-	meta, err := s.st.AgentMeta(project, agent)
-	if err != nil {
-		if isNotFoundErr(err) {
-			s.jsonErrorCode(w, http.StatusNotFound, ErrCodeAgentNotFound, "agent not found")
-			return
-		}
-		s.serverError(w, err)
-		return
-	}
 	var body struct {
 		Name          string  `json:"name"`
 		Avatar        *string `json:"avatar,omitempty"`
@@ -1050,6 +1118,72 @@ func (s *Server) handlePatchAgent(w http.ResponseWriter, r *http.Request) {
 	}
 	if !validAgentName(newName) {
 		s.jsonErrorCode(w, http.StatusBadRequest, ErrCodeInvalidAgentName, "invalid agent name")
+		return
+	}
+	if s.controlDB != nil && s.agentDirectory != nil {
+		workspaceID, err := s.currentWorkspaceID()
+		if err != nil {
+			s.serverError(w, err)
+			return
+		}
+		resolved, ok, err := s.agentDirectory.ProjectWorker(workspaceID, project, agent)
+		if err != nil {
+			s.serverError(w, err)
+			return
+		}
+		if ok {
+			worker := resolved.Worker
+			membership := resolved.Membership
+			if newName != agent {
+				existing, exists, err := s.agentDirectory.ProjectWorker(workspaceID, project, newName)
+				if err != nil {
+					s.serverError(w, err)
+					return
+				}
+				if exists && existing.Membership.ID != membership.ID {
+					s.jsonErrorCode(w, http.StatusConflict, ErrCodeAgentAlreadyExists, "target agent already exists")
+					return
+				}
+				membership.Title = newName
+				membership.UpdatedAt = time.Now().UTC().Format(time.RFC3339)
+			}
+			if body.Avatar != nil {
+				worker.Avatar = strings.TrimSpace(*body.Avatar)
+				worker.UpdatedAt = time.Now().UTC().Format(time.RFC3339)
+			}
+			if body.RuntimeNodeID != nil {
+				nodeID := strings.TrimSpace(*body.RuntimeNodeID)
+				if nodeID != "" {
+					if _, found, err := s.controlDB.RuntimeNodeByID(workspaceID, nodeID); err != nil {
+						s.serverError(w, err)
+						return
+					} else if !found {
+						s.jsonErrorCode(w, http.StatusBadRequest, ErrCodeValidationFailed, "runtime node not found")
+						return
+					}
+				}
+				worker.DefaultRuntimeNodeID = nodeID
+				worker.UpdatedAt = time.Now().UTC().Format(time.RFC3339)
+			}
+			if err := s.controlDB.UpsertAgentWorker(worker); err != nil {
+				s.serverError(w, err)
+				return
+			}
+			if err := s.controlDB.UpsertProjectMembership(membership); err != nil {
+				s.serverError(w, err)
+				return
+			}
+			_ = json.NewEncoder(w).Encode(map[string]any{"ok": true, "name": newName, "avatar": worker.Avatar, "runtimeNodeId": worker.DefaultRuntimeNodeID})
+			return
+		}
+	}
+	meta, err := s.st.AgentMeta(project, agent)
+	if err != nil {
+		if isNotFoundErr(err) {
+			s.jsonErrorCode(w, http.StatusNotFound, ErrCodeAgentNotFound, "agent not found")
+			return
+		}
+		s.serverError(w, err)
 		return
 	}
 
@@ -1158,6 +1292,9 @@ type taskRow struct {
 	Title            string    `json:"title"`
 	Type             string    `json:"type,omitempty"`
 	Assignee         string    `json:"assignee,omitempty"`
+	AssigneeType     string    `json:"assigneeType,omitempty"`
+	AssigneeID       string    `json:"assigneeId,omitempty"`
+	AssigneeMemberID string    `json:"assigneeMembershipId,omitempty"`
 	AssigneeLabel    string    `json:"assigneeLabel,omitempty"`
 	Description      string    `json:"description,omitempty"`
 	Prompt           string    `json:"prompt,omitempty"`
@@ -1188,6 +1325,7 @@ func taskToRow(t *entity.Task, project, agent string, archived bool) taskRow {
 	r := taskRow{
 		ID: t.ID, Project: project, Agent: agent,
 		Title: t.Title, Type: string(t.Type), Assignee: t.Assignee,
+		AssigneeType: t.AssigneeType, AssigneeID: t.AssigneeID, AssigneeMemberID: t.AssigneeMembershipID,
 		Description: t.Description, Prompt: userVisibleTaskPrompt(t.Prompt),
 		Priority: t.Priority, Status: string(t.Status),
 		StatusGroup: string(t.Status.Group()),
@@ -1304,7 +1442,7 @@ func (s *Server) handleProjectTasks(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	agents, err := s.st.ListAgents(name)
+	agents, err := s.projectAgentNames(workspaceID, name)
 	if err != nil {
 		s.serverError(w, err)
 		return
@@ -1357,31 +1495,31 @@ func (s *Server) handleProjectTasks(w http.ResponseWriter, r *http.Request) {
 		}
 		return assignee == qAgent || assignee == name+"/"+qAgent
 	}
-	for _, ag := range agents {
-		if !s.canAccessAgent(r, name, ag.Name) {
+	for _, agentName := range agents {
+		if !s.canAccessAgent(r, name, agentName) {
 			continue
 		}
 		if qScope == "active" || qScope == "all" {
-			tasks, err := s.ts.ListTasks(name, ag.Name)
+			tasks, err := s.ts.ListTasks(name, agentName)
 			if err == nil {
 				for _, t := range tasks {
 					if !matchFilter(t) || !matchesAssigneeFilter(t) || seenIDs[t.ID] {
 						continue
 					}
 					seenIDs[t.ID] = true
-					rows = append(rows, s.taskToRowWithWorkflow(workspaceID, t, name, ag.Name, false))
+					rows = append(rows, s.taskToRowWithWorkflow(workspaceID, t, name, agentName, false))
 				}
 			}
 		}
 		if qScope == "archived" || qScope == "all" {
-			archived, err := s.ts.ListArchivedTasks(name, ag.Name)
+			archived, err := s.ts.ListArchivedTasks(name, agentName)
 			if err == nil {
 				for _, t := range archived {
 					if !matchFilter(t) || !matchesAssigneeFilter(t) || seenIDs[t.ID] {
 						continue
 					}
 					seenIDs[t.ID] = true
-					rows = append(rows, s.taskToRowWithWorkflow(workspaceID, t, name, ag.Name, true))
+					rows = append(rows, s.taskToRowWithWorkflow(workspaceID, t, name, agentName, true))
 				}
 			}
 		}
@@ -1420,7 +1558,11 @@ func (s *Server) handleProjectMessages(w http.ResponseWriter, r *http.Request) {
 		s.serverError(w, err)
 		return
 	}
-	agents, err := s.st.ListAgents(name)
+	workspaceID, ok := s.currentWorkspaceForRequest(w, r)
+	if !ok {
+		return
+	}
+	agents, err := s.projectAgentNames(workspaceID, name)
 	if err != nil {
 		s.serverError(w, err)
 		return
@@ -1518,11 +1660,11 @@ func (s *Server) handleProjectMessages(w http.ResponseWriter, r *http.Request) {
 	if mailboxFilter != "" {
 		add(mailboxFilter)
 	} else {
-		for _, ag := range agents {
-			if !s.canAccessAgent(r, name, ag.Name) {
+		for _, agentName := range agents {
+			if !s.canAccessAgent(r, name, agentName) {
 				continue
 			}
-			add(name + "/" + ag.Name)
+			add(name + "/" + agentName)
 		}
 	}
 	sort.Slice(rows, func(i, j int) bool {

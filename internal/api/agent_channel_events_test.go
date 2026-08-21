@@ -14,6 +14,7 @@ import (
 	"time"
 
 	controldb "github.com/multigent/multigent/internal/db"
+	"github.com/multigent/multigent/internal/entity"
 	"github.com/multigent/multigent/internal/imbridge"
 	"github.com/multigent/multigent/internal/interaction"
 )
@@ -692,6 +693,269 @@ func TestAgentChannelSecurityPreservesConnectionSecret(t *testing.T) {
 	}
 }
 
+func TestAgentChannelBindingUsesAgentWorkerIdentity(t *testing.T) {
+	s, workspaceID := newConnectionGrantPolicyServer(t)
+	now := time.Now().UTC().Format(time.RFC3339)
+	if err := s.controlDB.UpsertAgentWorker(controldb.AgentWorker{
+		ID:          "aw-pm",
+		WorkspaceID: workspaceID,
+		Name:        "pm",
+		DisplayName: "PM",
+		Status:      "active",
+		CreatedAt:   now,
+		UpdatedAt:   now,
+	}); err != nil {
+		t.Fatalf("worker: %v", err)
+	}
+	if err := s.controlDB.UpsertProjectMembership(controldb.ProjectMembership{
+		ID:               "pm-sample",
+		WorkspaceID:      workspaceID,
+		ProjectID:        "sample",
+		MemberType:       "agent_worker",
+		MemberID:         "aw-pm",
+		Title:            "pm",
+		AttentionEnabled: true,
+		CreatedAt:        now,
+		UpdatedAt:        now,
+	}); err != nil {
+		t.Fatalf("membership: %v", err)
+	}
+
+	req := httptest.NewRequest(http.MethodPost, "/", nil)
+	req = req.WithContext(context.WithValue(req.Context(), ctxUserKey, "owner"))
+	binding, err := s.saveManualAgentIMChannel(req, workspaceID, "sample", "pm", imbridge.ManualSetupResult{
+		Provider:        "feishu",
+		AppID:           "cli_app",
+		ExternalOwnerID: "ou_owner",
+		SecretValues:    map[string]string{"appSecret": "secret"},
+	})
+	if err != nil {
+		t.Fatalf("save channel: %v", err)
+	}
+	if binding.AgentWorkerID != "aw-pm" {
+		t.Fatalf("binding worker=%q", binding.AgentWorkerID)
+	}
+	bindings, err := s.controlDB.ListAgentChannelBindings(controldb.AgentChannelBindingFilter{
+		WorkspaceID:   workspaceID,
+		AgentWorkerID: "aw-pm",
+		Provider:      "feishu",
+	})
+	if err != nil {
+		t.Fatalf("list by worker: %v", err)
+	}
+	if len(bindings) != 1 || bindings[0].ID != binding.ID {
+		t.Fatalf("unexpected worker bindings: %+v", bindings)
+	}
+}
+
+func TestRecordIMAttentionSignalPersistsSignalAndCursor(t *testing.T) {
+	s, workspaceID := newConnectionGrantPolicyServer(t)
+	now := time.Now().UTC().Format(time.RFC3339)
+	if err := s.controlDB.UpsertAgentWorker(controldb.AgentWorker{
+		ID:          "aw-pm",
+		WorkspaceID: workspaceID,
+		Name:        "pm",
+		Status:      "active",
+		CreatedAt:   now,
+		UpdatedAt:   now,
+	}); err != nil {
+		t.Fatalf("worker: %v", err)
+	}
+	binding := controldb.AgentChannelBinding{
+		ID:            "chan-feishu",
+		WorkspaceID:   workspaceID,
+		AgentWorkerID: "aw-pm",
+		ProjectID:     "sample",
+		AgentID:       "pm",
+		Provider:      "feishu",
+		ConnectionID:  "conn-feishu",
+		Status:        "connected",
+		MetadataJSON:  `{"appId":"cli_app"}`,
+	}
+	signalID := s.recordIMAttentionSignal(resolvedChannelEventBinding{
+		Binding: binding,
+		Identity: controldb.ExternalIdentity{
+			WorkspaceID:    workspaceID,
+			Provider:       "feishu",
+			ExternalUserID: "ou_owner",
+			UserID:         "owner",
+		},
+	}, "feishu", imbridge.IncomingMessage{
+		MessageID:    "om_one",
+		ChatID:       "oc_one",
+		ChatType:     "p2p",
+		SenderOpenID: "ou_owner",
+		RawContent:   `{"text":"hello"}`,
+	}, "hello")
+	if signalID == "" {
+		t.Fatalf("signal id is empty")
+	}
+	duplicateSignalID := s.recordIMAttentionSignal(resolvedChannelEventBinding{
+		Binding: binding,
+		Identity: controldb.ExternalIdentity{
+			WorkspaceID:    workspaceID,
+			Provider:       "feishu",
+			ExternalUserID: "ou_owner",
+			UserID:         "owner",
+		},
+	}, "feishu", imbridge.IncomingMessage{
+		MessageID:    "om_one",
+		ChatID:       "oc_one",
+		ChatType:     "p2p",
+		SenderOpenID: "ou_owner",
+		RawContent:   `{"text":"hello"}`,
+	}, "hello")
+	if duplicateSignalID == "" {
+		t.Fatalf("duplicate signal id is empty")
+	}
+	signals, err := s.controlDB.ListAttentionSignals(controldb.AttentionSignalFilter{
+		WorkspaceID:   workspaceID,
+		AgentWorkerID: "aw-pm",
+		Status:        "pending",
+	})
+	if err != nil {
+		t.Fatalf("list signals: %v", err)
+	}
+	if len(signals) != 1 || signals[0].DedupeKey != "im:feishu:om_one" || signals[0].Reason != "im_direct_message" {
+		t.Fatalf("unexpected signals: %+v", signals)
+	}
+	cursor, ok, err := s.controlDB.AttentionCursorBySource(workspaceID, "aw-pm", "im_message", "im:feishu:p2p:oc_one:user:owner")
+	if err != nil || !ok {
+		t.Fatalf("cursor ok=%v err=%v", ok, err)
+	}
+	if cursor.Cursor != "om_one" || cursor.SeenUntil != "om_one" {
+		t.Fatalf("unexpected cursor: %+v", cursor)
+	}
+}
+
+func TestRecordIMAttentionSignalPersistsAttachmentOnlyMessage(t *testing.T) {
+	s, workspaceID := newConnectionGrantPolicyServer(t)
+	now := time.Now().UTC().Format(time.RFC3339)
+	if err := s.controlDB.UpsertAgentWorker(controldb.AgentWorker{
+		ID:          "aw-pm",
+		WorkspaceID: workspaceID,
+		Name:        "pm",
+		Status:      "active",
+		CreatedAt:   now,
+		UpdatedAt:   now,
+	}); err != nil {
+		t.Fatalf("worker: %v", err)
+	}
+	binding := controldb.AgentChannelBinding{
+		ID:            "chan-feishu",
+		WorkspaceID:   workspaceID,
+		AgentWorkerID: "aw-pm",
+		ProjectID:     "sample",
+		AgentID:       "pm",
+		Provider:      "feishu",
+		ConnectionID:  "conn-feishu",
+		Status:        "connected",
+	}
+	message := imbridge.IncomingMessage{
+		MessageID:    "om_image",
+		ChatID:       "oc_one",
+		ChatType:     "p2p",
+		SenderOpenID: "ou_owner",
+		MessageType:  "image",
+		RawContent:   `{"image_key":"img_v3_abc"}`,
+		Attachments:  []imbridge.IncomingAttachment{{Type: "image", ID: "img_v3_abc"}},
+	}
+	text := incomingMessageFallbackText(message)
+	if !strings.Contains(text, "image") || !strings.Contains(text, "img_v3_abc") {
+		t.Fatalf("unexpected fallback text: %q", text)
+	}
+	signalID := s.recordIMAttentionSignal(resolvedChannelEventBinding{
+		Binding: binding,
+		Identity: controldb.ExternalIdentity{
+			WorkspaceID:    workspaceID,
+			Provider:       "feishu",
+			ExternalUserID: "ou_owner",
+			UserID:         "owner",
+		},
+	}, "feishu", message, text)
+	if signalID == "" {
+		t.Fatalf("signal id is empty")
+	}
+	signal, ok, err := s.controlDB.AttentionSignalByID(workspaceID, signalID)
+	if err != nil || !ok {
+		t.Fatalf("signal ok=%v err=%v", ok, err)
+	}
+	if !strings.Contains(signal.Summary, "img_v3_abc") {
+		t.Fatalf("summary should include attachment fallback: %q", signal.Summary)
+	}
+	if !strings.Contains(signal.PayloadJSON, "attachments") || !strings.Contains(signal.PayloadJSON, "img_v3_abc") {
+		t.Fatalf("payload should include attachment metadata: %s", signal.PayloadJSON)
+	}
+}
+
+func TestShouldWakeAgentForAttentionUsesWorkerMessageTrigger(t *testing.T) {
+	s, workspaceID := newConnectionGrantPolicyServer(t)
+	now := time.Now().UTC().Format(time.RFC3339)
+	worker := controldb.AgentWorker{
+		ID:          "aw-pm",
+		WorkspaceID: workspaceID,
+		Name:        "pm-worker",
+		DisplayName: "PM",
+		Status:      "active",
+		CreatedAt:   now,
+		UpdatedAt:   now,
+	}
+	if err := s.controlDB.UpsertAgentWorker(worker); err != nil {
+		t.Fatalf("worker: %v", err)
+	}
+	if err := s.controlDB.UpsertProjectMembership(controldb.ProjectMembership{
+		ID:          "pm-member",
+		WorkspaceID: workspaceID,
+		ProjectID:   "sample",
+		MemberType:  "agent_worker",
+		MemberID:    worker.ID,
+		Role:        "pm",
+		Title:       "pm",
+		CreatedAt:   now,
+		UpdatedAt:   now,
+	}); err != nil {
+		t.Fatalf("membership: %v", err)
+	}
+	binding := controldb.AgentChannelBinding{WorkspaceID: workspaceID, ProjectID: "sample", AgentID: "pm", AgentWorkerID: worker.ID}
+	if s.shouldWakeAgentForAttention(binding, "im_direct_message") {
+		t.Fatalf("agent should not wake without message trigger")
+	}
+	worker.ScheduleJSON = `{"triggers":["message"]}`
+	if err := s.controlDB.UpsertAgentWorker(worker); err != nil {
+		t.Fatalf("save worker schedule: %v", err)
+	}
+	if !s.shouldWakeAgentForAttention(binding, "im_direct_message") {
+		t.Fatalf("agent should wake when worker schedule enables message trigger")
+	}
+	worker.ScheduleJSON = `{"triggers":["attention"]}`
+	if err := s.controlDB.UpsertAgentWorker(worker); err != nil {
+		t.Fatalf("save worker attention schedule: %v", err)
+	}
+	if !s.shouldWakeAgentForAttention(binding, "im_direct_message") {
+		t.Fatalf("agent should wake when worker schedule enables attention trigger")
+	}
+	worker.ScheduleJSON = `{"triggers":["im_direct_message"]}`
+	if err := s.controlDB.UpsertAgentWorker(worker); err != nil {
+		t.Fatalf("save worker reason schedule: %v", err)
+	}
+	if !s.shouldWakeAgentForAttention(binding, "im_direct_message") {
+		t.Fatalf("agent should wake when worker schedule enables matching attention reason")
+	}
+	if s.shouldWakeAgentForAttention(binding, "im_mention") {
+		t.Fatalf("agent should not wake for unmatched attention reason")
+	}
+	worker.ScheduleJSON = `{}`
+	if err := s.controlDB.UpsertAgentWorker(worker); err != nil {
+		t.Fatalf("clear worker schedule: %v", err)
+	}
+	if err := s.ts.SaveHeartbeat("sample", "pm", &entity.HeartbeatConfig{Triggers: []entity.TriggerType{entity.TriggerOnAttention}}); err != nil {
+		t.Fatalf("save legacy heartbeat: %v", err)
+	}
+	if !s.shouldWakeAgentForAttention(binding, "im_mention") {
+		t.Fatalf("agent should fallback to legacy heartbeat when worker schedule has no triggers")
+	}
+}
+
 func TestAgentChannelResponseIncludesPublicMetadata(t *testing.T) {
 	resp := agentChannelToResponse(controldb.AgentChannelBinding{
 		ID:             "chan-one",
@@ -785,6 +1049,49 @@ func TestAPIInteractionLeasePersistsRuntimeSessionID(t *testing.T) {
 		t.Fatalf("reused runtime session id=%q", next.session.RuntimeSessionID)
 	}
 	next.Release()
+}
+
+func TestAPIInteractionLeaseReusesWorkerRuntimeSessionAcrossSources(t *testing.T) {
+	s, workspaceID := newConnectionGrantPolicyServer(t)
+	now := time.Now().UTC().Format(time.RFC3339)
+	if err := s.controlDB.UpsertAgentWorker(controldb.AgentWorker{
+		ID:          "aw-pm",
+		WorkspaceID: workspaceID,
+		Name:        "pm",
+		Status:      "active",
+		CreatedAt:   now,
+		UpdatedAt:   now,
+	}); err != nil {
+		t.Fatalf("worker: %v", err)
+	}
+	if err := s.controlDB.UpsertProjectMembership(controldb.ProjectMembership{
+		ID:               "pm-sample",
+		WorkspaceID:      workspaceID,
+		ProjectID:        "sample",
+		MemberType:       "agent_worker",
+		MemberID:         "aw-pm",
+		Title:            "pm",
+		AttentionEnabled: true,
+		CreatedAt:        now,
+		UpdatedAt:        now,
+	}); err != nil {
+		t.Fatalf("membership: %v", err)
+	}
+	first, err := s.acquireAgentInteractionLease(s.interactionAgentRef(workspaceID, "sample", "pm"), imConversationSource("lark", "alice", "oc_one", "p2p"), "interactive")
+	if err != nil {
+		t.Fatalf("first source: %v", err)
+	}
+	first.SetRuntimeSessionID("runtime-primary")
+	first.Release()
+
+	second, err := s.acquireAgentInteractionLease(s.interactionAgentRef(workspaceID, "sample", "pm"), imConversationSource("lark", "bob", "oc_two", "p2p"), "interactive")
+	if err != nil {
+		t.Fatalf("second source: %v", err)
+	}
+	defer second.Release()
+	if second.session.RuntimeSessionID != "runtime-primary" {
+		t.Fatalf("expected worker primary runtime session to be reused across sources, got %q", second.session.RuntimeSessionID)
+	}
 }
 
 func TestAPIInteractionLeaseAllowsDifferentConversationSources(t *testing.T) {

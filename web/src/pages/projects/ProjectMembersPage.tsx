@@ -1,36 +1,44 @@
 import { useState } from 'react'
 import { useParams, Link } from 'react-router-dom'
 import { useTranslation } from 'react-i18next'
-import { Users, Bot, User, UserMinus } from 'lucide-react'
-import { HireAgentDialog } from '../../components/project/HireAgentDialog'
+import { Users, Bot, User, UserMinus, Plus, X } from 'lucide-react'
 import { cn } from '../../lib/cn'
 import { PlaceholderCard } from '../../components/ui/PlaceholderCard'
 import { ConfirmDialog } from '../../components/ui/ConfirmDialog'
 import { useFormatDateTime } from '../../lib/format-datetime'
 import { useApiJson } from '../../lib/use-api'
-import { apiDelete } from '../../lib/api'
+import { apiDelete, apiPost } from '../../lib/api'
 import { useWorkspaceAccess } from '../../lib/workspace-access'
 
-const MODEL_COLORS: Record<string, string> = {
-  claudecode:    'bg-orange-100 text-orange-700 dark:bg-orange-900/30 dark:text-orange-300',
-  codex:         'bg-emerald-100 text-emerald-700 dark:bg-emerald-900/30 dark:text-emerald-300',
-  cursor:        'bg-sky-100 text-sky-700 dark:bg-sky-900/30 dark:text-sky-300',
-  gemini:        'bg-blue-100 text-blue-700 dark:bg-blue-900/30 dark:text-blue-300',
-  qoder:         'bg-purple-100 text-purple-700 dark:bg-purple-900/30 dark:text-purple-300',
-  opencode:      'bg-teal-100 text-teal-700 dark:bg-teal-900/30 dark:text-teal-300',
-  iflow:         'bg-pink-100 text-pink-700 dark:bg-pink-900/30 dark:text-pink-300',
-  'generic-cli': 'bg-neutral-200 text-neutral-700 dark:bg-zinc-700 dark:text-zinc-300',
-  'http-agent':  'bg-amber-100 text-amber-700 dark:bg-amber-900/30 dark:text-amber-300',
-  human:         'bg-indigo-100 text-indigo-700 dark:bg-indigo-900/30 dark:text-indigo-300',
+const fieldCls =
+  'mt-1 w-full rounded-lg border border-neutral-300 bg-white px-2.5 py-1.5 text-sm text-neutral-900 outline-none transition-colors focus:border-sky-400 dark:border-zinc-600 dark:bg-zinc-800 dark:text-zinc-100 dark:[color-scheme:dark]'
+
+type AgentWorker = {
+  id: string
+  name: string
+  displayName?: string
+  description?: string
+  avatar?: string
+  status?: string
 }
 
-type AgentRow = {
-  name: string
-  model: string
-  team: string
-  project: string
-  hiredAt: string
-  avatar?: string
+type ProjectMembership = {
+  id: string
+  projectId: string
+  memberType: string
+  memberId: string
+  role?: string
+  title?: string
+  prompt?: string
+  autoPickTasks?: boolean
+  attentionEnabled?: boolean
+  priorityWeight?: number
+  createdAt?: string
+  agent?: AgentWorker
+}
+
+type ProjectMembershipsResp = {
+  memberships?: ProjectMembership[]
 }
 
 type BillingEntitlementsResp = {
@@ -42,8 +50,7 @@ type BillingEntitlementsResp = {
   }
 }
 
-function MemberAvatar({ row }: { row: AgentRow }) {
-  const isHuman = row.model === 'human'
+function MemberAvatar({ avatar, isHuman = false }: { avatar?: string; isHuman?: boolean }) {
   const IconCmp = isHuman ? User : Bot
   const iconBg = isHuman
     ? 'bg-indigo-100 dark:bg-indigo-900/30'
@@ -52,10 +59,10 @@ function MemberAvatar({ row }: { row: AgentRow }) {
     ? 'text-indigo-600 dark:text-indigo-400'
     : 'text-violet-600 dark:text-violet-400'
 
-  if (row.avatar) {
+  if (avatar) {
     return (
       <img
-        src={row.avatar}
+        src={avatar}
         alt=""
         className="size-10 shrink-0 rounded-lg bg-neutral-100 object-cover dark:bg-zinc-800"
         loading="lazy"
@@ -77,15 +84,15 @@ export default function ProjectMembersPage() {
   const { projectId } = useParams<{ projectId: string }>()
 
   const [reloadKey, setReloadKey] = useState(0)
-  const [pendingDelete, setPendingDelete] = useState<AgentRow | null>(null)
+  const [pendingDelete, setPendingDelete] = useState<{ id: string; name: string } | null>(null)
   const [deleting, setDeleting] = useState(false)
-  const agentsPath =
+  const membershipsPath =
     projectId != null && projectId !== ''
-      ? `/api/v1/projects/${encodeURIComponent(projectId)}/agents`
+      ? `/api/v1/projects/${encodeURIComponent(projectId)}/memberships`
       : null
-  const agentsState = useApiJson<AgentRow[]>(agentsPath, reloadKey)
+  const membershipsState = useApiJson<ProjectMembershipsResp>(membershipsPath, reloadKey)
   const billingState = useApiJson<BillingEntitlementsResp>('/api/v1/billing/entitlements', reloadKey)
-  const members = agentsState.status === 'ok' ? (agentsState.data ?? []) : []
+  const memberships = membershipsState.status === 'ok' ? (membershipsState.data.memberships ?? []) : []
   const agentLimit = billingState.status === 'ok' ? (billingState.data?.entitlements?.agentLimit || 0) : 0
   const agentsUsed = billingState.status === 'ok' ? (billingState.data?.usage?.agents || 0) : 0
   const agentLimitReached = agentLimit > 0 && agentsUsed >= agentLimit
@@ -94,7 +101,7 @@ export default function ProjectMembersPage() {
     if (!projectId || !pendingDelete) return
     setDeleting(true)
     try {
-      await apiDelete(`/api/v1/projects/${encodeURIComponent(projectId)}/agents/${encodeURIComponent(pendingDelete.name)}`)
+      await apiDelete(`/api/v1/projects/${encodeURIComponent(projectId)}/memberships/${encodeURIComponent(pendingDelete.id)}`)
       setPendingDelete(null)
       setReloadKey((k) => k + 1)
     } catch (e) {
@@ -113,12 +120,12 @@ export default function ProjectMembersPage() {
             <p className="mt-0.5 text-sm text-neutral-500 dark:text-zinc-500">{t('members.subtitle')}</p>
           </div>
           {projectId && !isExample && (
-            <HireAgentDialog
+            <AssignAgentDialog
               projectId={projectId}
-              existingMemberNames={members.map(member => member.name)}
+              existingWorkerIds={memberships.map(member => member.memberId)}
               agentLimitReached={agentLimitReached}
               agentLimitText={agentLimitReached ? `${agentsUsed} / ${agentLimit}` : ''}
-              onHired={() => setReloadKey((k) => k + 1)}
+              onAssigned={() => setReloadKey((k) => k + 1)}
             />
           )}
         </div>
@@ -135,18 +142,18 @@ export default function ProjectMembersPage() {
       </div>
 
       <div className="flex-1 overflow-y-auto px-6 pb-6">
-        {agentsState.status === 'loading' && (
+        {membershipsState.status === 'loading' && (
           <div className="flex items-center gap-2 py-12 justify-center">
             <div className="size-5 animate-spin rounded-full border-2 border-neutral-300 border-t-sky-600 dark:border-zinc-600 dark:border-t-sky-400" />
             <span className="text-sm text-neutral-500">{t('api.loading')}</span>
           </div>
         )}
-        {agentsState.status === 'error' && (
+        {membershipsState.status === 'error' && (
           <PlaceholderCard title={t('api.loadError')}>
-            <p className="text-[13px]">{agentsState.error.message}</p>
+            <p className="text-[13px]">{membershipsState.error.message}</p>
           </PlaceholderCard>
         )}
-        {agentsState.status === 'ok' && members.length === 0 && (
+        {membershipsState.status === 'ok' && memberships.length === 0 && (
           <div className="flex flex-col items-center justify-center py-20 text-center">
             <div className="mb-3 flex size-14 items-center justify-center rounded-2xl bg-neutral-100 dark:bg-zinc-800/50">
               <Users className="size-6 text-neutral-400 dark:text-zinc-500" strokeWidth={1.5} />
@@ -154,39 +161,56 @@ export default function ProjectMembersPage() {
             <p className="text-base font-medium text-neutral-600 dark:text-zinc-400">{t('members.emptyTitle')}</p>
           </div>
         )}
-        {agentsState.status === 'ok' && members.length > 0 && (
+        {membershipsState.status === 'ok' && memberships.length > 0 && (
           <div className="grid grid-cols-1 gap-4 sm:grid-cols-2 xl:grid-cols-3">
-            {members.map((row) => {
-              const modelCls = MODEL_COLORS[row.model] ?? 'bg-neutral-100 text-neutral-600 dark:bg-zinc-800 dark:text-zinc-400'
-              const isHuman = row.model === 'human'
+            {memberships.map((member) => {
+              const agent = member.agent
+              const name = agent?.name ?? member.memberId
+              const displayName = member.title || agent?.displayName || name
+              const isAgentWorker = member.memberType === 'agent_worker' && !!agent
+              const identityBlock = (
+                <div className="flex items-center gap-3">
+                  <MemberAvatar avatar={agent?.avatar} isHuman={!isAgentWorker} />
+                  <div className="min-w-0 flex-1">
+                    <p className="truncate text-sm font-semibold text-neutral-900 dark:text-zinc-100">{displayName}</p>
+                    <p className="mt-0.5 truncate font-mono text-xs text-neutral-500 dark:text-zinc-500">{name}</p>
+                  </div>
+                </div>
+              )
               return (
                 <div
-                  key={row.name}
-                  data-tour-member-card={row.name}
+                  key={member.id}
+                  data-tour-member-card={name}
                   className="group relative flex flex-col rounded-xl border border-neutral-200/80 bg-white p-4 transition-all duration-150 hover:border-neutral-300 hover:shadow-sm dark:border-zinc-700/60 dark:bg-zinc-900/40 dark:hover:border-zinc-700"
                 >
-                  <Link
-                    to={`/projects/${encodeURIComponent(projectId!)}/members/${encodeURIComponent(row.name)}`}
-                    className="flex items-center gap-3"
-                  >
-                    <MemberAvatar row={row} />
-                    <div className="min-w-0 flex-1">
-                      <p className="truncate font-mono text-sm font-semibold text-neutral-900 dark:text-zinc-100">{row.name}</p>
-                      <p className="mt-0.5 truncate text-xs text-neutral-500 dark:text-zinc-500">{isHuman ? t('members.memberTypeHuman') : row.team}</p>
-                    </div>
-                  </Link>
-                  <div className="mt-3 flex items-center gap-2">
-                    <span className={cn('inline-flex items-center rounded-md px-2 py-0.5 text-[11px] font-bold tracking-wide', modelCls)}>
-                      {row.model}
+                  {isAgentWorker ? (
+                    <Link
+                      to={`/projects/${encodeURIComponent(projectId!)}/members/${encodeURIComponent(name)}`}
+                      className="block"
+                    >
+                      {identityBlock}
+                    </Link>
+                  ) : identityBlock}
+                  {agent?.description && (
+                    <p className="mt-3 line-clamp-2 text-sm leading-6 text-neutral-600 dark:text-zinc-400">{agent.description}</p>
+                  )}
+                  <div className="mt-3 flex flex-wrap items-center gap-2">
+                    <span className="inline-flex items-center rounded-md bg-violet-50 px-2 py-0.5 text-[11px] font-medium text-violet-700 dark:bg-violet-950/40 dark:text-violet-300">
+                      {isAgentWorker ? t('members.agentWorker') : t('members.memberTypeHuman')}
                     </span>
-                    <span className="ml-auto text-[11px] text-neutral-400 dark:text-zinc-500">{fmt(row.hiredAt)}</span>
+                    {member.role && (
+                      <span className="inline-flex items-center rounded-md bg-neutral-100 px-2 py-0.5 text-[11px] font-medium text-neutral-600 dark:bg-zinc-800 dark:text-zinc-300">
+                        {member.role}
+                      </span>
+                    )}
+                    <span className="ml-auto text-[11px] text-neutral-400 dark:text-zinc-500">{member.createdAt ? fmt(member.createdAt) : ''}</span>
                     {!isExample && (
                       <button
                         type="button"
-                        title={t('members.fire')}
+                        title={t('members.removeFromProject')}
                         onClick={(e) => {
                           e.preventDefault()
-                          setPendingDelete(row)
+                          setPendingDelete({ id: member.id, name: displayName })
                         }}
                         className="rounded p-1 text-neutral-400 opacity-0 transition-all hover:bg-red-50 hover:text-red-600 group-hover:opacity-100 dark:hover:bg-red-900/20 dark:hover:text-red-400"
                       >
@@ -211,5 +235,154 @@ export default function ProjectMembersPage() {
         onConfirm={() => void deleteMember()}
       />
     </div>
+  )
+}
+
+function AssignAgentDialog({ projectId, existingWorkerIds, agentLimitReached, agentLimitText, onAssigned }: {
+  projectId: string
+  existingWorkerIds: string[]
+  agentLimitReached?: boolean
+  agentLimitText?: string
+  onAssigned: () => void
+}) {
+  const { t } = useTranslation()
+  const [open, setOpen] = useState(false)
+  const [workerId, setWorkerId] = useState('')
+  const [role, setRole] = useState('')
+  const [title, setTitle] = useState('')
+  const [busy, setBusy] = useState(false)
+  const [err, setErr] = useState<string | null>(null)
+  const workersState = useApiJson<{ agents?: AgentWorker[] }>(open ? '/api/v1/agents' : null)
+  const workers = workersState.status === 'ok' ? (workersState.data.agents ?? []) : []
+  const availableWorkers = workers.filter(worker => !existingWorkerIds.includes(worker.id))
+
+  function reset() {
+    setWorkerId('')
+    setRole('')
+    setTitle('')
+    setErr(null)
+  }
+
+  async function assign() {
+    setErr(null)
+    if (agentLimitReached) {
+      setErr(t('settings.billingLimitHint'))
+      return
+    }
+    if (!workerId.trim()) {
+      setErr(t('forms.fillRequired'))
+      return
+    }
+    setBusy(true)
+    try {
+      await apiPost(`/api/v1/projects/${encodeURIComponent(projectId)}/memberships`, {
+        workerId: workerId.trim(),
+        role: role.trim() || 'member',
+        title: title.trim(),
+        autoPickTasks: true,
+        attentionEnabled: true,
+      })
+      setOpen(false)
+      onAssigned()
+    } catch (e) {
+      setErr(e instanceof Error ? e.message : String(e))
+    } finally {
+      setBusy(false)
+    }
+  }
+
+  return (
+    <>
+      <button
+        type="button"
+        data-tour-member-add
+        onClick={() => { reset(); setOpen(true) }}
+        className="inline-flex items-center gap-2 rounded-lg border border-sky-600 bg-white px-3 py-2 text-sm font-medium text-sky-700 hover:bg-sky-50 dark:border-sky-500 dark:bg-zinc-900 dark:text-sky-400 dark:hover:bg-zinc-800"
+      >
+        <Plus className="size-4" strokeWidth={1.8} />
+        {t('members.addMember')}
+      </button>
+      {open && (
+        <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/45 p-4" role="presentation" onClick={() => !busy && setOpen(false)}>
+          <div
+            className="max-h-[min(90vh,620px)] w-full max-w-md overflow-y-auto rounded-xl border border-neutral-200 bg-white shadow-lg dark:border-zinc-700 dark:bg-zinc-900 animate-scale-in"
+            onClick={(e) => e.stopPropagation()}
+            role="dialog"
+            aria-labelledby="assign-agent-title"
+          >
+            <div className="flex items-start justify-between gap-3 border-b border-neutral-200 px-4 py-3 dark:border-zinc-700">
+              <div>
+                <h2 id="assign-agent-title" className="text-base font-semibold text-neutral-900 dark:text-zinc-100">
+                  {t('members.addMember')}
+                </h2>
+                <p className="mt-0.5 text-xs text-neutral-400 dark:text-zinc-500">
+                  {t('members.assignWorkerDesc')}
+                </p>
+              </div>
+              <button
+                type="button"
+                onClick={() => setOpen(false)}
+                disabled={busy}
+                className="rounded-lg p-1.5 text-neutral-400 hover:bg-neutral-100 hover:text-neutral-700 dark:hover:bg-zinc-800 dark:hover:text-zinc-200"
+              >
+                <X className="size-4" strokeWidth={1.8} />
+              </button>
+            </div>
+            <div className="space-y-3 px-4 py-3">
+              {agentLimitReached && (
+                <div className="rounded-lg border border-amber-200 bg-amber-50 px-3 py-2 text-sm text-amber-800 dark:border-amber-900/50 dark:bg-amber-900/20 dark:text-amber-300">
+                  {t('settings.billingLimitHint')} {agentLimitText && <span className="font-medium">{agentLimitText}</span>}
+                </div>
+              )}
+              <label className="block text-sm">
+                <span className="text-neutral-600 dark:text-zinc-400">{t('members.agentWorker')} *</span>
+                <select value={workerId} onChange={e => setWorkerId(e.target.value)} className={fieldCls} autoFocus>
+                  <option value="">{t('members.selectAgentWorker')}</option>
+                  {availableWorkers.map(worker => (
+                    <option key={worker.id} value={worker.id}>
+                      {(worker.displayName || worker.name)} ({worker.name})
+                    </option>
+                  ))}
+                </select>
+              </label>
+              {workersState.status === 'loading' && <p className="text-xs text-neutral-400">{t('api.loading')}</p>}
+              {workersState.status === 'ok' && workers.length === 0 && (
+                <p className="text-xs text-amber-600 dark:text-amber-400">{t('members.noWorkspaceAgents')}</p>
+              )}
+              {workersState.status === 'ok' && workers.length > 0 && availableWorkers.length === 0 && (
+                <p className="text-xs text-neutral-500 dark:text-zinc-400">{t('members.allWorkspaceAgentsAssigned')}</p>
+              )}
+              <label className="block text-sm">
+                <span className="text-neutral-600 dark:text-zinc-400">{t('members.projectRole')}</span>
+                <input value={role} onChange={e => setRole(e.target.value)} className={fieldCls} placeholder="project-manager" />
+              </label>
+              <label className="block text-sm">
+                <span className="text-neutral-600 dark:text-zinc-400">{t('members.memberTitle')}</span>
+                <input value={title} onChange={e => setTitle(e.target.value)} className={fieldCls} placeholder={t('members.memberTitlePlaceholder')} />
+              </label>
+              {err && <p className="text-sm text-red-600 dark:text-red-400">{err}</p>}
+              <div className="flex justify-end gap-2 pt-1">
+                <button
+                  type="button"
+                  onClick={() => setOpen(false)}
+                  disabled={busy}
+                  className="rounded-lg border border-neutral-300 px-3 py-1.5 text-sm dark:border-zinc-600"
+                >
+                  {t('forms.cancel')}
+                </button>
+                <button
+                  type="button"
+                  onClick={() => void assign()}
+                  disabled={busy || !workerId || agentLimitReached}
+                  className="rounded-lg bg-sky-600 px-3 py-1.5 text-sm font-medium text-white disabled:opacity-50"
+                >
+                  {busy ? t('members.adding') : t('members.add')}
+                </button>
+              </div>
+            </div>
+          </div>
+        </div>
+      )}
+    </>
   )
 }

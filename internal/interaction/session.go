@@ -17,14 +17,16 @@ type Source struct {
 }
 
 type AgentRef struct {
-	WorkspaceID string
-	ProjectID   string
-	AgentID     string
+	WorkspaceID   string
+	AgentWorkerID string
+	ProjectID     string
+	AgentID       string
 }
 
 type Session struct {
 	ID             string
 	WorkspaceID    string
+	AgentWorkerID  string
 	ProjectID      string
 	AgentID        string
 	Source         Source
@@ -72,6 +74,7 @@ func (m *Manager) Acquire(agent AgentRef, source Source, reason string) (Session
 	session := Session{
 		ID:             m.nextIDFn(),
 		WorkspaceID:    strings.TrimSpace(agent.WorkspaceID),
+		AgentWorkerID:  strings.TrimSpace(agent.AgentWorkerID),
 		ProjectID:      strings.TrimSpace(agent.ProjectID),
 		AgentID:        strings.TrimSpace(agent.AgentID),
 		Source:         source,
@@ -132,6 +135,10 @@ func (l *Lease) Release() {
 
 func agentKey(agent AgentRef) string {
 	workspace := strings.TrimSpace(agent.WorkspaceID)
+	worker := strings.TrimSpace(agent.AgentWorkerID)
+	if workspace != "" && worker != "" {
+		return workspace + "/worker/" + worker
+	}
 	project := strings.TrimSpace(agent.ProjectID)
 	name := strings.TrimSpace(agent.AgentID)
 	if workspace == "" || project == "" || name == "" {

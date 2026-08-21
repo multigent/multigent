@@ -25,14 +25,14 @@ type RunRow struct {
 
 	StartedAt, FinishedAt time.Time
 
-	TaskID, TaskTitle   sql.NullString
-	Model               string
-	APIModel            string
-	APIBaseURL          string
-	CommandSummary      string
-	LogPath             string
-	SessionID           sql.NullString
-	ErrorMsg            sql.NullString
+	TaskID, TaskTitle sql.NullString
+	Model             string
+	APIModel          string
+	APIBaseURL        string
+	CommandSummary    string
+	LogPath           string
+	SessionID         sql.NullString
+	ErrorMsg          sql.NullString
 }
 
 // Summary aggregates for a time window.
@@ -214,7 +214,7 @@ func Summarize(rows []RunRow) Summary {
 
 // SessionUsage holds aggregated token/cost data for a specific session.
 type SessionUsage struct {
-	LastInputTokens   int64   // input_tokens from the most recent run (≈ current context fill)
+	LastInputTokens   int64 // input_tokens from the most recent run (≈ current context fill)
 	TotalInputTokens  int64
 	TotalOutputTokens int64
 	TotalCacheRead    int64

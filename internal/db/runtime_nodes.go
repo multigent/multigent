@@ -148,11 +148,13 @@ func (db *SQLiteStore) UpsertRuntimeRun(run RuntimeRun) error {
 		run.Status = "queued"
 	}
 	_, err := db.sql.Exec(`INSERT INTO runtime_runs (
-	id, workspace_id, project_id, agent_id, task_id, workflow_instance_id, workflow_step_id, desired_runtime_node_id, runtime_node_id,
+	id, workspace_id, agent_worker_id, project_membership_id, project_id, agent_id, task_id, workflow_instance_id, workflow_step_id, desired_runtime_node_id, runtime_node_id,
 	status, priority, spec_json, result_json, lease_expires_at, claimed_at, started_at, finished_at,
 	error_code, error_message, created_at, updated_at
-) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
 ON CONFLICT(id) DO UPDATE SET
+	agent_worker_id = excluded.agent_worker_id,
+	project_membership_id = excluded.project_membership_id,
 	desired_runtime_node_id = excluded.desired_runtime_node_id,
 	runtime_node_id = excluded.runtime_node_id,
 	status = excluded.status,
@@ -166,7 +168,7 @@ ON CONFLICT(id) DO UPDATE SET
 	error_code = excluded.error_code,
 	error_message = excluded.error_message,
 	updated_at = excluded.updated_at`,
-		run.ID, run.WorkspaceID, run.ProjectID, run.AgentID, run.TaskID, run.WorkflowInstanceID, run.WorkflowStepID, run.DesiredRuntimeNodeID, run.RuntimeNodeID,
+		run.ID, run.WorkspaceID, run.AgentWorkerID, run.ProjectMembershipID, run.ProjectID, run.AgentID, run.TaskID, run.WorkflowInstanceID, run.WorkflowStepID, run.DesiredRuntimeNodeID, run.RuntimeNodeID,
 		run.Status, run.Priority, defaultJSONObject(run.SpecJSON), defaultJSONObject(run.ResultJSON), run.LeaseExpiresAt, run.ClaimedAt,
 		run.StartedAt, run.FinishedAt, run.ErrorCode, run.ErrorMessage, run.CreatedAt, run.UpdatedAt)
 	return err
@@ -194,6 +196,14 @@ func (db *SQLiteStore) ListRuntimeRuns(filter RuntimeRunFilter) ([]RuntimeRun, e
 	if strings.TrimSpace(filter.RuntimeNodeID) != "" {
 		query += ` AND runtime_node_id = ?`
 		args = append(args, strings.TrimSpace(filter.RuntimeNodeID))
+	}
+	if strings.TrimSpace(filter.AgentWorkerID) != "" {
+		query += ` AND agent_worker_id = ?`
+		args = append(args, strings.TrimSpace(filter.AgentWorkerID))
+	}
+	if strings.TrimSpace(filter.ProjectMembershipID) != "" {
+		query += ` AND project_membership_id = ?`
+		args = append(args, strings.TrimSpace(filter.ProjectMembershipID))
 	}
 	if strings.TrimSpace(filter.ProjectID) != "" {
 		query += ` AND project_id = ?`
@@ -258,7 +268,9 @@ func (db *SQLiteStore) ClaimRuntimeRun(workspaceID, nodeID string, leaseSeconds 
 			args = append(args, agent)
 		}
 		if len(placeholders) > 0 {
-			query += ` AND (project_id || '/' || agent_id) NOT IN (` + strings.Join(placeholders, ",") + `)
+			query += ` AND (
+	CASE WHEN agent_worker_id != '' THEN 'worker/' || agent_worker_id ELSE project_id || '/' || agent_id END
+) NOT IN (` + strings.Join(placeholders, ",") + `)
 `
 		}
 	}
@@ -380,14 +392,14 @@ func scanRuntimeNodeToken(row runtimeNodeScanner) (RuntimeNodeToken, error) {
 }
 
 func runtimeRunSelectSQL() string {
-	return `SELECT id, workspace_id, project_id, agent_id, task_id, workflow_instance_id, workflow_step_id, desired_runtime_node_id, runtime_node_id,
+	return `SELECT id, workspace_id, agent_worker_id, project_membership_id, project_id, agent_id, task_id, workflow_instance_id, workflow_step_id, desired_runtime_node_id, runtime_node_id,
 status, priority, spec_json, result_json, lease_expires_at, claimed_at, started_at, finished_at,
 error_code, error_message, created_at, updated_at FROM runtime_runs`
 }
 
 func scanRuntimeRun(row runtimeNodeScanner) (RuntimeRun, error) {
 	var run RuntimeRun
-	err := row.Scan(&run.ID, &run.WorkspaceID, &run.ProjectID, &run.AgentID, &run.TaskID, &run.WorkflowInstanceID, &run.WorkflowStepID,
+	err := row.Scan(&run.ID, &run.WorkspaceID, &run.AgentWorkerID, &run.ProjectMembershipID, &run.ProjectID, &run.AgentID, &run.TaskID, &run.WorkflowInstanceID, &run.WorkflowStepID,
 		&run.DesiredRuntimeNodeID, &run.RuntimeNodeID, &run.Status, &run.Priority, &run.SpecJSON, &run.ResultJSON, &run.LeaseExpiresAt, &run.ClaimedAt,
 		&run.StartedAt, &run.FinishedAt, &run.ErrorCode, &run.ErrorMessage, &run.CreatedAt, &run.UpdatedAt)
 	return run, err

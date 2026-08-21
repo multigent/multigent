@@ -1,11 +1,19 @@
 package main
 
 import (
+	"encoding/json"
 	"fmt"
 	"strings"
+	"time"
 
+	"github.com/multigent/multigent/internal/agentdir"
+	controldb "github.com/multigent/multigent/internal/db"
 	"github.com/spf13/cobra"
 )
+
+type cliAgentRuntimeConfig struct {
+	Env map[string]string `json:"env,omitempty"`
+}
 
 func newAgentSetEnvCmd() *cobra.Command {
 	var (
@@ -30,6 +38,16 @@ secrets and API provider settings.`,
 				return fmt.Errorf("expected KEY=VALUE format")
 			}
 			key = strings.TrimSpace(key)
+
+			if updated, err := updateWorkerAgentEnv(root, project, agentName, func(env map[string]string) (map[string]string, error) {
+				env[key] = value
+				return env, nil
+			}); err != nil {
+				return err
+			} else if updated {
+				fmt.Printf("Set %s on %s/%s\n", key, project, agentName)
+				return nil
+			}
 
 			st := mustStore(root)
 			meta, err := st.AgentMeta(project, agentName)
@@ -74,6 +92,19 @@ func newAgentUnsetEnvCmd() *cobra.Command {
 				return fmt.Errorf("key is required")
 			}
 
+			if updated, err := updateWorkerAgentEnv(root, project, agentName, func(env map[string]string) (map[string]string, error) {
+				if env == nil || env[key] == "" {
+					return nil, fmt.Errorf("env %q not set on %s/%s", key, project, agentName)
+				}
+				delete(env, key)
+				return env, nil
+			}); err != nil {
+				return err
+			} else if updated {
+				fmt.Printf("Unset %s from %s/%s\n", key, project, agentName)
+				return nil
+			}
+
 			st := mustStore(root)
 			meta, err := st.AgentMeta(project, agentName)
 			if err != nil {
@@ -111,6 +142,21 @@ func newAgentListEnvCmd() *cobra.Command {
 			if err != nil {
 				return err
 			}
+			if env, ok, err := workerAgentEnv(root, project, agentName); err != nil {
+				return err
+			} else if ok {
+				if len(env) == 0 {
+					fmt.Printf("No per-agent env vars set on %s/%s.\n", project, agentName)
+					return nil
+				}
+				fmt.Printf("Per-agent env for %s/%s:\n", project, agentName)
+				for k, v := range env {
+					masked := maskValue(v)
+					fmt.Printf("  %s=%s\n", k, masked)
+				}
+				return nil
+			}
+
 			st := mustStore(root)
 			meta, err := st.AgentMeta(project, agentName)
 			if err != nil {
@@ -133,6 +179,74 @@ func newAgentListEnvCmd() *cobra.Command {
 	_ = cmd.MarkFlagRequired("project")
 	_ = cmd.MarkFlagRequired("agent")
 	return cmd
+}
+
+func workerAgentEnv(root, project, agentName string) (map[string]string, bool, error) {
+	worker, ok, db, workspaceID, err := resolveCLIProjectWorker(root, project, agentName)
+	if err != nil || !ok {
+		return nil, ok, err
+	}
+	cfg := decodeCLIWorkerRuntimeConfig(worker.RuntimeConfigJSON)
+	if cfg.Env == nil {
+		cfg.Env = map[string]string{}
+	}
+	_ = db
+	_ = workspaceID
+	return cfg.Env, true, nil
+}
+
+func updateWorkerAgentEnv(root, project, agentName string, update func(map[string]string) (map[string]string, error)) (bool, error) {
+	worker, ok, db, _, err := resolveCLIProjectWorker(root, project, agentName)
+	if err != nil || !ok {
+		return ok, err
+	}
+	cfg := decodeCLIWorkerRuntimeConfig(worker.RuntimeConfigJSON)
+	if cfg.Env == nil {
+		cfg.Env = map[string]string{}
+	}
+	next, err := update(cfg.Env)
+	if err != nil {
+		return true, err
+	}
+	cfg.Env = next
+	worker.RuntimeConfigJSON = encodeCLIWorkerRuntimeConfig(cfg)
+	worker.UpdatedAt = time.Now().UTC().Format(time.RFC3339)
+	if err := db.UpsertAgentWorker(worker); err != nil {
+		return true, err
+	}
+	return true, nil
+}
+
+func resolveCLIProjectWorker(root, project, agentName string) (controldb.AgentWorker, bool, controldb.Store, string, error) {
+	db, err := openControlDBForRoot(root)
+	if err != nil {
+		return controldb.AgentWorker{}, false, nil, "", err
+	}
+	workspaceID, err := workspaceIDForRoot(db, root)
+	if err != nil || strings.TrimSpace(workspaceID) == "" {
+		return controldb.AgentWorker{}, false, db, workspaceID, err
+	}
+	resolved, ok, err := agentdir.New(db).ProjectWorker(workspaceID, project, agentName)
+	if err != nil || !ok {
+		return controldb.AgentWorker{}, ok, db, workspaceID, err
+	}
+	return resolved.Worker, true, db, workspaceID, nil
+}
+
+func decodeCLIWorkerRuntimeConfig(raw string) cliAgentRuntimeConfig {
+	var cfg cliAgentRuntimeConfig
+	if strings.TrimSpace(raw) != "" {
+		_ = json.Unmarshal([]byte(raw), &cfg)
+	}
+	return cfg
+}
+
+func encodeCLIWorkerRuntimeConfig(cfg cliAgentRuntimeConfig) string {
+	raw, err := json.Marshal(cfg)
+	if err != nil {
+		return "{}"
+	}
+	return string(raw)
 }
 
 func maskValue(v string) string {

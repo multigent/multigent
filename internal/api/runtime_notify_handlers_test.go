@@ -8,8 +8,11 @@ import (
 	"net/http/httptest"
 	"strings"
 	"testing"
+	"time"
 
 	controldb "github.com/multigent/multigent/internal/db"
+	"github.com/multigent/multigent/internal/entity"
+	"github.com/multigent/multigent/internal/imbridge"
 )
 
 func TestRuntimeChannelsListAgentIMBindings(t *testing.T) {
@@ -69,6 +72,83 @@ func TestRuntimeChannelsListAgentIMBindings(t *testing.T) {
 	}
 	if len(body.Channels) != 1 || body.Channels[0].Provider != "feishu" || !body.Channels[0].CanNotify || !body.Channels[0].OwnerBound || len(body.Channels[0].Targets) != 1 {
 		t.Fatalf("unexpected channels: %#v", body.Channels)
+	}
+}
+
+func TestRuntimeAgentChannelBindingsUseAgentWorker(t *testing.T) {
+	s, workspaceID := newConnectionGrantPolicyServer(t)
+	now := time.Now().UTC().Format(time.RFC3339)
+	if err := s.st.SaveProject("other", &entity.Project{Name: "other"}); err != nil {
+		t.Fatalf("save other project: %v", err)
+	}
+	if err := s.st.SaveAgentMeta("other", "pm", &entity.AgentMeta{Name: "pm", Project: "other"}); err != nil {
+		t.Fatalf("save other agent: %v", err)
+	}
+	if err := s.controlDB.UpsertAgentWorker(controldb.AgentWorker{
+		ID:          "aw-pm",
+		WorkspaceID: workspaceID,
+		Name:        "pm",
+		Status:      "active",
+		CreatedAt:   now,
+		UpdatedAt:   now,
+	}); err != nil {
+		t.Fatalf("worker: %v", err)
+	}
+	for _, project := range []string{"sample", "other"} {
+		if err := s.controlDB.UpsertProjectMembership(controldb.ProjectMembership{
+			ID:               "pm-" + project,
+			WorkspaceID:      workspaceID,
+			ProjectID:        project,
+			MemberType:       "agent_worker",
+			MemberID:         "aw-pm",
+			Title:            "pm",
+			AttentionEnabled: true,
+			CreatedAt:        now,
+			UpdatedAt:        now,
+		}); err != nil {
+			t.Fatalf("membership %s: %v", project, err)
+		}
+	}
+	if err := s.controlDB.UpsertConnection(controldb.Connection{
+		ID:             "conn-feishu",
+		WorkspaceID:    workspaceID,
+		Provider:       "feishu",
+		ConnectionName: "default",
+		OwnerType:      ConnectionOwnerWorkspace,
+		OwnerID:        workspaceID,
+		AuthType:       ConnectionAuthAPIKey,
+		Status:         "active",
+		CreatedAt:      now,
+		UpdatedAt:      now,
+	}); err != nil {
+		t.Fatalf("connection: %v", err)
+	}
+	if err := s.controlDB.UpsertAgentChannelBinding(controldb.AgentChannelBinding{
+		ID:            "chan-feishu",
+		WorkspaceID:   workspaceID,
+		AgentWorkerID: "aw-pm",
+		ProjectID:     "sample",
+		AgentID:       "pm",
+		Provider:      "feishu",
+		ConnectionID:  "conn-feishu",
+		Status:        "connected",
+		MetadataJSON:  `{}`,
+		CreatedAt:     now,
+		UpdatedAt:     now,
+	}); err != nil {
+		t.Fatalf("binding: %v", err)
+	}
+
+	bindings, err := s.runtimeAgentChannelBindings(runtimeAgentPrincipal{
+		WorkspaceID: workspaceID,
+		Project:     "other",
+		Agent:       "pm",
+	})
+	if err != nil {
+		t.Fatalf("runtime bindings: %v", err)
+	}
+	if len(bindings) != 1 || bindings[0].ID != "chan-feishu" {
+		t.Fatalf("expected worker channel binding from other project context, got %+v", bindings)
 	}
 }
 
@@ -211,6 +291,156 @@ func TestRuntimeNotifyTargetUsesNamedChatTarget(t *testing.T) {
 	}
 }
 
+func TestRuntimeNotifyTargetUsesAttentionSourceChat(t *testing.T) {
+	s, workspaceID := newConnectionGrantPolicyServer(t)
+	binding := controldb.AgentChannelBinding{
+		ID:           "chan-feishu",
+		WorkspaceID:  workspaceID,
+		ProjectID:    "sample",
+		AgentID:      "pm",
+		Provider:     "feishu",
+		ConnectionID: "conn-feishu",
+		Status:       "connected",
+	}
+	if err := s.controlDB.UpsertConnection(controldb.Connection{
+		ID:             "conn-feishu",
+		WorkspaceID:    workspaceID,
+		Provider:       "feishu",
+		ConnectionName: "default",
+		OwnerType:      ConnectionOwnerWorkspace,
+		OwnerID:        workspaceID,
+		AuthType:       ConnectionAuthAPIKey,
+		Status:         "active",
+	}); err != nil {
+		t.Fatalf("upsert connection: %v", err)
+	}
+	if err := s.controlDB.UpsertAgentChannelBinding(binding); err != nil {
+		t.Fatalf("upsert channel: %v", err)
+	}
+	task := &entity.Task{
+		ID:     "t-attention",
+		Title:  "attention wakeup",
+		Status: entity.TaskStatusInProgress,
+		Prompt: "## Attention Signals\n\n" +
+			"Source: `im_message` / `im:feishu:group:oc_source:user:admin`\n" +
+			"Reason: `im_mention`\n" +
+			"Refs: `{\"chatId\":\"oc_source\",\"chatType\":\"group\",\"messageId\":\"om_one\"}`\n" +
+			"Payload: `{\"senderOpenId\":\"ou_sender\"}`\n",
+	}
+	if err := s.ts.AddTask("sample", "pm", task); err != nil {
+		t.Fatalf("persist task: %v", err)
+	}
+	if err := s.controlDB.UpsertRuntimeRun(controldb.RuntimeRun{
+		ID:          "run-attention",
+		WorkspaceID: workspaceID,
+		ProjectID:   "sample",
+		AgentID:     "pm",
+		TaskID:      task.ID,
+		Status:      "running",
+		CreatedAt:   time.Now().UTC().Format(time.RFC3339),
+	}); err != nil {
+		t.Fatalf("create run: %v", err)
+	}
+	principal := runtimeAgentPrincipal{
+		WorkspaceID: workspaceID,
+		Project:     "sample",
+		Agent:       "pm",
+		RunID:       "run-attention",
+	}
+	recipient, err := s.resolveRuntimeNotifyRecipient(principal, "source")
+	if err != nil || recipient != "source" {
+		t.Fatalf("recipient=%q err=%v", recipient, err)
+	}
+	target, ok, err := s.runtimeNotifyTargetForRecipient(principal, binding, recipient)
+	if err != nil || !ok {
+		t.Fatalf("target ok=%v err=%v", ok, err)
+	}
+	if target.ReceiveID != "oc_source" || target.ReceiveIDType != "chat_id" || target.ChatID != "oc_source" || target.ReplyToMessageID != "om_one" || target.MentionOpenID != "ou_sender" {
+		t.Fatalf("unexpected target: %#v", target)
+	}
+}
+
+func TestRuntimeNotifyTargetUsesLocalRunnerTaskIDAsSource(t *testing.T) {
+	s, workspaceID := newConnectionGrantPolicyServer(t)
+	binding := controldb.AgentChannelBinding{
+		ID:            "chan-feishu",
+		WorkspaceID:   workspaceID,
+		ProjectID:     "sample",
+		AgentID:       "pm",
+		AgentWorkerID: "aw-pm",
+		Provider:      "feishu",
+		ConnectionID:  "conn-feishu",
+		Status:        "connected",
+	}
+	if err := s.controlDB.UpsertConnection(controldb.Connection{
+		ID:             "conn-feishu",
+		WorkspaceID:    workspaceID,
+		Provider:       "feishu",
+		ConnectionName: "default",
+		OwnerType:      ConnectionOwnerWorkspace,
+		OwnerID:        workspaceID,
+		AuthType:       ConnectionAuthAPIKey,
+		Status:         "active",
+	}); err != nil {
+		t.Fatalf("upsert connection: %v", err)
+	}
+	if err := s.controlDB.UpsertAgentChannelBinding(binding); err != nil {
+		t.Fatalf("upsert channel: %v", err)
+	}
+	task := &entity.Task{
+		ID:     "t-local-attention",
+		Title:  "local attention wakeup",
+		Status: entity.TaskStatusInProgress,
+		Prompt: "## Attention Signals\n\n" +
+			"Source: `im_message` / `im:feishu:group:oc_local:user:admin`\n" +
+			"Reason: `im_mention`\n" +
+			"Refs: `{\"chatId\":\"oc_local\",\"chatType\":\"group\",\"messageId\":\"om_local\"}`\n",
+	}
+	if err := s.ts.AddTask("sample", "pm", task); err != nil {
+		t.Fatalf("persist task: %v", err)
+	}
+	principal := runtimeAgentPrincipal{
+		WorkspaceID:   workspaceID,
+		Project:       "sample",
+		Agent:         "pm",
+		AgentWorkerID: "aw-pm",
+		RunID:         task.ID,
+	}
+	target, ok, err := s.runtimeNotifyTargetForRecipient(principal, binding, "source")
+	if err != nil || !ok {
+		t.Fatalf("target ok=%v err=%v", ok, err)
+	}
+	if target.ReceiveID != "oc_local" || target.ReceiveIDType != "chat_id" || target.ChatID != "oc_local" || target.ReplyToMessageID != "om_local" {
+		t.Fatalf("unexpected target: %#v", target)
+	}
+}
+
+func TestRuntimeNotifySourceChatID(t *testing.T) {
+	prompt := "Source: `im_message` / `im:lark:group:oc_lark:user:admin`\n" +
+		"Payload: `{\"externalChatId\":\"oc_lark\"}`\n"
+	chatID, ok := runtimeNotifySourceChatID(prompt, "lark")
+	if !ok || chatID != "oc_lark" {
+		t.Fatalf("chatID=%q ok=%v", chatID, ok)
+	}
+	if _, ok := runtimeNotifySourceChatID(prompt, "feishu"); ok {
+		t.Fatalf("wrong provider should not match")
+	}
+}
+
+func TestRuntimeNotifySourceFromPromptCombinesRefsAndPayload(t *testing.T) {
+	prompt := "Source: `im_message` / `im:feishu:group:oc_one:user:admin`\n" +
+		"Reason: `im_mention`\n" +
+		"Refs: `{\"chatId\":\"oc_one\",\"chatType\":\"group\",\"messageId\":\"om_one\"}`\n" +
+		"Payload: `{\"externalChatId\":\"oc_one\",\"senderOpenId\":\"ou_sender\"}`\n"
+	source, ok := runtimeNotifySourceFromPrompt(prompt, "feishu")
+	if !ok {
+		t.Fatalf("source should resolve")
+	}
+	if source.ChatID != "oc_one" || source.ChatType != "group" || source.MessageID != "om_one" || source.SenderOpenID != "ou_sender" {
+		t.Fatalf("unexpected source: %#v", source)
+	}
+}
+
 func TestRuntimeNotifyCreateInteractionRequestForCard(t *testing.T) {
 	s, workspaceID := newConnectionGrantPolicyServer(t)
 	binding := controldb.AgentChannelBinding{
@@ -273,7 +503,7 @@ func TestRuntimeNotifyCreateInteractionRequestHumanDoesNotLockToLiteralHuman(t *
 	}
 }
 
-func TestFormatRuntimeNotifyMarkdownPreservesBodyAndMetadata(t *testing.T) {
+func TestFormatRuntimeNotifyMarkdownPreservesAgentBodyWithoutPlatformFooter(t *testing.T) {
 	msg := formatRuntimeNotifyMessage(runtimeAgentPrincipal{
 		Project: "sample",
 		Agent:   "pm",
@@ -288,7 +518,55 @@ func TestFormatRuntimeNotifyMarkdownPreservesBodyAndMetadata(t *testing.T) {
 	if !strings.Contains(msg.Text, "## Summary") || !strings.Contains(msg.Text, "- Impact: high") {
 		t.Fatalf("markdown body was not preserved: %q", msg.Text)
 	}
-	if !strings.Contains(msg.Text, "From: `sample/pm`") || !strings.Contains(msg.Text, "Task: `t-1`") || !strings.Contains(msg.Text, "Urgency: `review`") {
-		t.Fatalf("metadata missing: %q", msg.Text)
+	if strings.Contains(msg.Text, "From:") || strings.Contains(msg.Text, "Task:") || strings.Contains(msg.Text, "Urgency:") {
+		t.Fatalf("external message should not include platform footer: %q", msg.Text)
+	}
+}
+
+func TestFormatRuntimeNotifyTextPreservesAgentBodyWithoutPlatformFooter(t *testing.T) {
+	msg := formatRuntimeNotifyMessage(runtimeAgentPrincipal{
+		Project: "sample",
+		Agent:   "pm",
+	}, runtimeNotifyBody{
+		TaskID:  "t-1",
+		Urgency: "review",
+	}, "Need review", "Please review this.")
+	if msg.Format != "text" || msg.Subject != "Need review" {
+		t.Fatalf("unexpected message metadata: %#v", msg)
+	}
+	if msg.Text != "Please review this." {
+		t.Fatalf("unexpected text body: %q", msg.Text)
+	}
+	if strings.Contains(msg.Text, "From:") || strings.Contains(msg.Text, "Task:") || strings.Contains(msg.Text, "Urgency:") {
+		t.Fatalf("external message should not include platform footer: %q", msg.Text)
+	}
+}
+
+func TestPrepareRuntimeNotifySourceReplyHidesExternalSubject(t *testing.T) {
+	msg := formatRuntimeNotifyMessage(runtimeAgentPrincipal{
+		Project: "sample",
+		Agent:   "pm",
+	}, runtimeNotifyBody{
+		MessageFormat: "markdown",
+	}, "Re: 你实际上比较擅长什么呢", "## 结论\n\n- 擅长结构化分流")
+	prepareRuntimeNotifyExternalMessage(&msg, imbridge.OutgoingTarget{ReplyToMessageID: "om_one"})
+	if msg.Subject != "" {
+		t.Fatalf("source reply should hide external subject, got %q", msg.Subject)
+	}
+	if !strings.Contains(msg.Text, "## 结论") {
+		t.Fatalf("body should be preserved: %q", msg.Text)
+	}
+}
+
+func TestPrepareRuntimeNotifyDirectSendKeepsExternalSubject(t *testing.T) {
+	msg := formatRuntimeNotifyMessage(runtimeAgentPrincipal{
+		Project: "sample",
+		Agent:   "pm",
+	}, runtimeNotifyBody{
+		MessageFormat: "markdown",
+	}, "Review needed", "## 结论\n\n- 请确认")
+	prepareRuntimeNotifyExternalMessage(&msg, imbridge.OutgoingTarget{ReceiveID: "ou_owner", ReceiveIDType: "open_id"})
+	if msg.Subject != "Review needed" {
+		t.Fatalf("direct notification should keep subject, got %q", msg.Subject)
 	}
 }

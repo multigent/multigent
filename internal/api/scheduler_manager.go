@@ -43,7 +43,7 @@ type SchedulerManager struct {
 	mu      sync.Mutex
 	root    string
 	binPath string
-	procs   map[string]*schedulerProcess // key = "all" or "project" or "project/agent"
+	procs   map[string]*schedulerProcess // key = "all", "project", "project/agent", or "worker/<id>"
 }
 
 func newSchedulerManager(root string) *SchedulerManager {
@@ -119,10 +119,17 @@ func (m *SchedulerManager) Start(project, agent string) error {
 }
 
 func (m *SchedulerManager) StartLoop(project, agent, mode string, loop func(context.Context)) error {
+	return m.StartLoopWithKey(schedKey(project, agent), project, agent, mode, loop)
+}
+
+func (m *SchedulerManager) StartLoopWithKey(key, project, agent, mode string, loop func(context.Context)) error {
 	m.mu.Lock()
 	defer m.mu.Unlock()
 
-	key := schedKey(project, agent)
+	key = strings.TrimSpace(key)
+	if key == "" {
+		key = schedKey(project, agent)
+	}
 	if p, ok := m.procs[key]; ok {
 		select {
 		case <-p.doneCh:
@@ -156,8 +163,12 @@ func (m *SchedulerManager) StartLoop(project, agent, mode string, loop func(cont
 }
 
 func (m *SchedulerManager) Stop(project, agent string) error {
+	return m.StopKey(schedKey(project, agent))
+}
+
+func (m *SchedulerManager) StopKey(key string) error {
 	m.mu.Lock()
-	key := schedKey(project, agent)
+	key = strings.TrimSpace(key)
 	proc, ok := m.procs[key]
 	m.mu.Unlock()
 
@@ -235,9 +246,17 @@ func (m *SchedulerManager) Status() []schedStatus {
 }
 
 type desiredSchedulerSpec struct {
+	Key     string `json:"key,omitempty"`
 	Project string `json:"project,omitempty"`
 	Agent   string `json:"agent,omitempty"`
 	Mode    string `json:"mode,omitempty"`
+}
+
+func (spec desiredSchedulerSpec) schedulerKey() string {
+	if key := strings.TrimSpace(spec.Key); key != "" {
+		return key
+	}
+	return schedKey(spec.Project, spec.Agent)
 }
 
 func schedulerDesiredSettingKey(root string) string {
@@ -266,6 +285,10 @@ func (s *Server) saveDesiredSchedulers(specs []desiredSchedulerSpec) error {
 }
 
 func (s *Server) setSchedulerDesired(project, agent, mode string, running bool) {
+	s.setSchedulerDesiredKey(schedKey(project, agent), project, agent, mode, running)
+}
+
+func (s *Server) setSchedulerDesiredKey(key, project, agent, mode string, running bool) {
 	s.schedulerDesiredMu.Lock()
 	defer s.schedulerDesiredMu.Unlock()
 
@@ -273,21 +296,24 @@ func (s *Server) setSchedulerDesired(project, agent, mode string, running bool) 
 	if err != nil {
 		return
 	}
-	key := schedKey(project, agent)
+	key = strings.TrimSpace(key)
+	if key == "" {
+		key = schedKey(project, agent)
+	}
 	next := make([]desiredSchedulerSpec, 0, len(specs)+1)
 	found := false
 	for _, spec := range specs {
-		if schedKey(spec.Project, spec.Agent) == key {
+		if spec.schedulerKey() == key {
 			found = true
 			if running {
-				next = append(next, desiredSchedulerSpec{Project: project, Agent: agent, Mode: strings.TrimSpace(mode)})
+				next = append(next, desiredSchedulerSpec{Key: key, Project: project, Agent: agent, Mode: strings.TrimSpace(mode)})
 			}
 			continue
 		}
 		next = append(next, spec)
 	}
 	if running && !found {
-		next = append(next, desiredSchedulerSpec{Project: project, Agent: agent, Mode: strings.TrimSpace(mode)})
+		next = append(next, desiredSchedulerSpec{Key: key, Project: project, Agent: agent, Mode: strings.TrimSpace(mode)})
 	}
 	_ = s.saveDesiredSchedulers(next)
 }
@@ -321,16 +347,7 @@ func (m *SchedulerManager) Cleanup() {
 	m.mu.Unlock()
 
 	for _, k := range keys {
-		parts := strings.SplitN(k, "/", 2)
-		project := ""
-		agent := ""
-		if k != "all" {
-			project = parts[0]
-			if len(parts) > 1 {
-				agent = parts[1]
-			}
-		}
-		_ = m.Stop(project, agent)
+		_ = m.StopKey(k)
 	}
 }
 
@@ -389,9 +406,10 @@ func (s *Server) handleSchedulerStart(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	mode := schedulerModeLocal
+	key := schedKey(project, agent)
 	useRuntimeNode := false
 	if project != "" && agent != "" {
-		if meta, err := s.st.AgentMeta(project, agent); err == nil && meta != nil {
+		if meta, err := s.agentMetaForProjectMember(workspaceID, project, agent); err == nil && meta != nil {
 			useRuntimeNode = s.usesAssignedRuntimeNode(workspaceID, meta)
 		}
 	}
@@ -399,7 +417,8 @@ func (s *Server) handleSchedulerStart(w http.ResponseWriter, r *http.Request) {
 		serverURL := externalServerURL(r)
 		actor := requestUsername(r)
 		mode = schedulerModeRuntimeNode
-		if err := s.sched.StartLoop(project, agent, mode, func(ctx context.Context) {
+		key = s.schedulerProcessKeyForProjectAgent(workspaceID, project, agent, mode)
+		if err := s.sched.StartLoopWithKey(key, project, agent, mode, func(ctx context.Context) {
 			s.runtimeSchedulerLoop(ctx, workspaceID, project, agent, serverURL, actor)
 		}); err != nil {
 			s.jsonErrorCode(w, http.StatusConflict, ErrCodeSchedulerConflict, err.Error())
@@ -409,7 +428,7 @@ func (s *Server) handleSchedulerStart(w http.ResponseWriter, r *http.Request) {
 		s.jsonErrorCode(w, http.StatusConflict, ErrCodeSchedulerConflict, err.Error())
 		return
 	}
-	s.setSchedulerDesired(project, agent, mode, true)
+	s.setSchedulerDesiredKey(key, project, agent, mode, true)
 	s.auditLog(auditLogInput{
 		Action:       "scheduler.start",
 		ResourceType: "scheduler",
@@ -418,13 +437,12 @@ func (s *Server) handleSchedulerStart(w http.ResponseWriter, r *http.Request) {
 		After: map[string]any{
 			"project": project,
 			"agent":   agent,
-			"key":     schedKey(project, agent),
+			"key":     key,
 			"mode":    mode,
 		},
 		Request: r,
 	})
 
-	key := schedKey(project, agent)
 	_ = json.NewEncoder(w).Encode(map[string]any{
 		"ok":   true,
 		"key":  key,
@@ -452,7 +470,8 @@ func (s *Server) handleSchedulerWakeup(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	hb, err := s.ts.GetHeartbeat(project, agent)
+	target := s.runtimeSchedulerTargetForProjectAgent(workspaceID, project, agent)
+	hb, err := s.loadSchedulerTargetHeartbeat(workspaceID, target)
 	if err != nil || hb == nil {
 		s.jsonErrorCode(w, http.StatusNotFound, ErrCodeValidationFailed, "heartbeat not found")
 		return
@@ -461,7 +480,7 @@ func (s *Server) handleSchedulerWakeup(w http.ResponseWriter, r *http.Request) {
 		s.jsonErrorCode(w, http.StatusConflict, ErrCodeSchedulerWakeupFailed, fmt.Sprintf("agent %s/%s is already running", project, agent))
 		return
 	}
-	meta, err := s.st.AgentMeta(project, agent)
+	meta, err := s.agentMetaForProjectMember(workspaceID, project, agent)
 	if err != nil {
 		if isNotFoundErr(err) {
 			s.jsonErrorCode(w, http.StatusNotFound, ErrCodeAgentNotFound, "agent not found")
@@ -480,6 +499,7 @@ func (s *Server) handleSchedulerWakeup(w http.ResponseWriter, r *http.Request) {
 			s.jsonErrorCode(w, http.StatusInternalServerError, ErrCodeSchedulerWakeupFailed, fmt.Sprintf("queue runtime wakeup failed: %v", err))
 			return
 		}
+		_ = s.saveSchedulerTargetHeartbeat(workspaceID, target, hb)
 		s.auditLog(auditLogInput{
 			Action:       "scheduler.wakeup",
 			ResourceType: "agent",
@@ -566,7 +586,8 @@ func (s *Server) handleStartProjectTask(w http.ResponseWriter, r *http.Request) 
 		s.jsonErrorCode(w, http.StatusConflict, ErrCodeValidationFailed, "current assignee is not an agent")
 		return
 	}
-	hb, err := s.ts.GetHeartbeat(project, agent)
+	target := s.runtimeSchedulerTargetForProjectAgent(workspaceID, project, agent)
+	hb, err := s.loadSchedulerTargetHeartbeat(workspaceID, target)
 	if err != nil || hb == nil {
 		s.jsonErrorCode(w, http.StatusNotFound, ErrCodeValidationFailed, "heartbeat not found")
 		return
@@ -575,7 +596,7 @@ func (s *Server) handleStartProjectTask(w http.ResponseWriter, r *http.Request) 
 		s.jsonErrorCode(w, http.StatusConflict, ErrCodeSchedulerWakeupFailed, fmt.Sprintf("agent %s/%s is already running", project, agent))
 		return
 	}
-	meta, err := s.st.AgentMeta(project, agent)
+	meta, err := s.agentMetaForProjectMember(workspaceID, project, agent)
 	if err != nil {
 		if isNotFoundErr(err) {
 			s.jsonErrorCode(w, http.StatusNotFound, ErrCodeAgentNotFound, "agent not found")
@@ -598,6 +619,7 @@ func (s *Server) handleStartProjectTask(w http.ResponseWriter, r *http.Request) 
 			s.jsonErrorCode(w, http.StatusInternalServerError, ErrCodeSchedulerWakeupFailed, fmt.Sprintf("queue task run failed: %v", err))
 			return
 		}
+		_ = s.saveSchedulerTargetHeartbeat(workspaceID, target, hb)
 		s.auditLog(auditLogInput{
 			Action:       "task.start",
 			ResourceType: "task",
@@ -634,16 +656,17 @@ func (s *Server) handleStartProjectTask(w http.ResponseWriter, r *http.Request) 
 	hb.LastWakeupStatus = "running"
 	hb.PID = pid
 	_ = s.ts.SaveHeartbeat(project, agent, hb)
+	_ = s.saveSchedulerTargetHeartbeat(workspaceID, target, hb)
 	go func() {
 		if err := cmd.Wait(); err != nil {
 			log.Printf("manual task run %s/%s task=%s exited with error: %v", project, agent, task.ID, err)
 		}
-		if hb2, err := s.ts.GetHeartbeat(project, agent); err == nil && hb2 != nil && hb2.PID == pid {
+		if hb2, err := s.loadSchedulerTargetHeartbeat(workspaceID, target); err == nil && hb2 != nil && hb2.PID == pid {
 			hb2.PID = 0
 			if hb2.LastWakeupStatus == "running" {
 				hb2.LastWakeupStatus = "done"
 			}
-			_ = s.ts.SaveHeartbeat(project, agent, hb2)
+			_ = s.saveSchedulerTargetHeartbeat(workspaceID, target, hb2)
 		}
 	}()
 	s.auditLog(auditLogInput{
@@ -716,7 +739,7 @@ func (s *Server) enqueueSpecificRuntimeTaskRunFromRequest(workspaceID, project, 
 }
 
 func (s *Server) enqueueRuntimeWakeupRunFromRequest(workspaceID, project, agent string, hb *entity.HeartbeatConfig, serverURL, actor string) (controldb.RuntimeRun, *entity.Task, error) {
-	task, err := s.nextRuntimeWakeupTask(project, agent, hb)
+	task, attentionIDs, err := s.nextRuntimeWakeupTask(workspaceID, project, agent, hb)
 	if err != nil {
 		return controldb.RuntimeRun{}, nil, err
 	}
@@ -735,6 +758,7 @@ func (s *Server) enqueueRuntimeWakeupRunFromRequest(workspaceID, project, agent 
 	if err != nil {
 		return controldb.RuntimeRun{}, nil, err
 	}
+	s.markAttentionSignalsSeen(workspaceID, attentionIDs)
 	hb.LastWakeup = &now
 	hb.LastWakeupStatus = "running"
 	hb.PID = 0
@@ -742,7 +766,54 @@ func (s *Server) enqueueRuntimeWakeupRunFromRequest(workspaceID, project, agent 
 	return run, task, nil
 }
 
-func (s *Server) nextRuntimeWakeupTask(project, agent string, hb *entity.HeartbeatConfig) (*entity.Task, error) {
+func (s *Server) nextRuntimeWakeupTask(workspaceID, project, agent string, hb *entity.HeartbeatConfig) (*entity.Task, []string, error) {
+	if task, ids, err := s.ensurePendingAttentionWakeupTask(workspaceID, project, agent); err != nil {
+		return nil, nil, err
+	} else if task != nil {
+		return task, ids, nil
+	}
+	selected, err := s.nextRuntimePendingTask(project, agent)
+	if err != nil {
+		return nil, nil, err
+	}
+	if selected != nil {
+		return selected, nil, nil
+	}
+	prompt, err := s.resolveRuntimeWakeupPrompt(project, agent, hb)
+	if err != nil {
+		return nil, nil, err
+	}
+	if strings.TrimSpace(prompt) == "" {
+		return nil, nil, nil
+	}
+	var attentionIDs []string
+	if section, ids, err := s.pendingAttentionWakeupSection(workspaceID, project, agent); err == nil && section != "" {
+		prompt = section + prompt
+		attentionIDs = ids
+	}
+	task := s.createRuntimeWakeupTask(project, agent, prompt)
+	if err := s.ts.AddTask(project, agent, task); err != nil {
+		return nil, nil, err
+	}
+	return task, attentionIDs, nil
+}
+
+func (s *Server) createRuntimeWakeupTask(project, agent, prompt string) *entity.Task {
+	now := time.Now().UTC()
+	return &entity.Task{
+		ID:        "t-" + now.Format("20060102") + "-" + randomRuntimeHex(3),
+		Title:     "[wakeup] routine",
+		Status:    entity.TaskStatusPending,
+		Type:      "wakeup",
+		Priority:  9,
+		Prompt:    prompt,
+		CreatedBy: "heartbeat:wakeup",
+		CreatedAt: now,
+		UpdatedAt: now,
+	}
+}
+
+func (s *Server) nextRuntimePendingTask(project, agent string) (*entity.Task, error) {
 	tasks, err := s.ts.ListTasks(project, agent, entity.TaskStatusPending)
 	if err != nil {
 		return nil, err
@@ -759,32 +830,7 @@ func (s *Server) nextRuntimeWakeupTask(project, agent string, hb *entity.Heartbe
 			selected = task
 		}
 	}
-	if selected != nil {
-		return selected, nil
-	}
-	prompt, err := s.resolveRuntimeWakeupPrompt(project, agent, hb)
-	if err != nil {
-		return nil, err
-	}
-	if strings.TrimSpace(prompt) == "" {
-		return nil, nil
-	}
-	now := time.Now().UTC()
-	task := &entity.Task{
-		ID:        "t-" + now.Format("20060102") + "-" + randomRuntimeHex(3),
-		Title:     "[wakeup] routine",
-		Status:    entity.TaskStatusPending,
-		Type:      "wakeup",
-		Priority:  9,
-		Prompt:    prompt,
-		CreatedBy: "heartbeat:wakeup",
-		CreatedAt: now,
-		UpdatedAt: now,
-	}
-	if err := s.ts.AddTask(project, agent, task); err != nil {
-		return nil, err
-	}
-	return task, nil
+	return selected, nil
 }
 
 func (s *Server) resolveRuntimeWakeupPrompt(project, agent string, hb *entity.HeartbeatConfig) (string, error) {
@@ -835,13 +881,26 @@ func (s *Server) handleSchedulerStop(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	if err := s.sched.Stop(project, agent); err != nil {
-		s.jsonErrorCode(w, http.StatusNotFound, ErrCodeSchedulerNotFound, err.Error())
+	workspaceID, workspaceOK := s.currentWorkspaceForRequest(w, r)
+	if !workspaceOK {
 		return
 	}
-	s.setSchedulerDesired(project, agent, "", false)
+	key := s.schedulerProcessKeyForProjectAgent(workspaceID, project, agent, schedulerModeRuntimeNode)
+	if err := s.sched.StopKey(key); err != nil {
+		legacyKey := schedKey(project, agent)
+		if key == legacyKey {
+			s.jsonErrorCode(w, http.StatusNotFound, ErrCodeSchedulerNotFound, err.Error())
+			return
+		}
+		if fallbackErr := s.sched.StopKey(legacyKey); fallbackErr != nil {
+			s.jsonErrorCode(w, http.StatusNotFound, ErrCodeSchedulerNotFound, err.Error())
+			return
+		}
+		s.setSchedulerDesiredKey(legacyKey, project, agent, "", false)
+	}
+	s.setSchedulerDesiredKey(key, project, agent, "", false)
 
-	s.clearSchedulerRuntimeFields(project, agent)
+	s.clearSchedulerRuntimeFields(workspaceID, project, agent)
 	s.auditLog(auditLogInput{
 		Action:       "scheduler.stop",
 		ResourceType: "scheduler",
@@ -858,8 +917,33 @@ func (s *Server) handleSchedulerStop(w http.ResponseWriter, r *http.Request) {
 	_ = json.NewEncoder(w).Encode(map[string]bool{"ok": true})
 }
 
-func (s *Server) clearSchedulerRuntimeFields(project, agent string) {
+func (s *Server) schedulerProcessKeyForProjectAgent(workspaceID, project, agent, mode string) string {
+	if strings.TrimSpace(mode) == schedulerModeRuntimeNode && strings.TrimSpace(project) != "" && strings.TrimSpace(agent) != "" {
+		target := s.runtimeSchedulerTargetForProjectAgent(workspaceID, project, agent)
+		if workerID := strings.TrimSpace(target.workerID); workerID != "" {
+			return "worker/" + workerID
+		}
+	}
+	return schedKey(project, agent)
+}
+
+func (s *Server) clearSchedulerRuntimeFields(workspaceID, project, agent string) {
 	if project == "" {
+		return
+	}
+	if strings.TrimSpace(agent) != "" {
+		target := s.runtimeSchedulerTargetForProjectAgent(workspaceID, project, agent)
+		hb, err := s.loadSchedulerTargetHeartbeat(workspaceID, target)
+		if err != nil || hb == nil {
+			return
+		}
+		hb.NextWakeupAt = nil
+		hb.SchedulerStartedAt = nil
+		hb.PID = 0
+		if hb.LastWakeupStatus == "running" {
+			hb.LastWakeupStatus = "done"
+		}
+		_ = s.saveSchedulerTargetHeartbeat(workspaceID, target, hb)
 		return
 	}
 	agents := []string{agent}
@@ -903,55 +987,59 @@ func (s *Server) runtimeSchedulerTick(ctx context.Context, workspaceID, project,
 	if ctx.Err() != nil {
 		return
 	}
-	targets := s.runtimeSchedulerTargets(project, agent)
+	targets := s.runtimeSchedulerTargets(workspaceID, project, agent)
 	now := time.Now()
 	for _, target := range targets {
 		if ctx.Err() != nil {
 			return
 		}
-		hb, err := s.ts.GetHeartbeat(target.project, target.agent)
+		hb, err := s.loadSchedulerTargetHeartbeat(workspaceID, target)
 		if err != nil || hb == nil {
 			continue
 		}
-		if !s.runtimeHeartbeatDue(target.project, target.agent, hb, now) {
+		if !s.runtimeHeartbeatDue(workspaceID, target, hb, now) {
 			continue
 		}
-		meta, err := s.st.AgentMeta(target.project, target.agent)
+		execTarget := s.selectRuntimeSchedulerExecutionTarget(target)
+		meta, err := s.agentMetaForProjectMember(workspaceID, execTarget.project, execTarget.agent)
 		if err != nil || meta == nil || meta.Model == entity.ModelHuman {
 			continue
 		}
 		if !s.usesAssignedRuntimeNode(workspaceID, meta) {
 			continue
 		}
-		if s.hasActiveRuntimeRun(workspaceID, target.project, target.agent, "") {
+		if s.hasActiveRuntimeRunForTarget(workspaceID, target, "") {
 			continue
 		}
-		run, task, err := s.enqueueRuntimeWakeupRunFromRequest(workspaceID, target.project, target.agent, hb, serverURL, actor)
+		run, task, err := s.enqueueRuntimeWakeupRunFromRequest(workspaceID, execTarget.project, execTarget.agent, hb, serverURL, actor)
 		if err != nil {
-			log.Printf("runtime scheduler enqueue %s/%s failed: %v", target.project, target.agent, err)
+			log.Printf("runtime scheduler enqueue %s/%s failed: %v", execTarget.project, execTarget.agent, err)
 			continue
 		}
-		if hb2, err := s.ts.GetHeartbeat(target.project, target.agent); err == nil && hb2 != nil {
+		if hb2, err := s.loadSchedulerTargetHeartbeat(workspaceID, target); err == nil && hb2 != nil {
 			if next := nextRuntimeHeartbeatAt(hb2, time.Now()); !next.IsZero() {
 				nextUTC := next.UTC()
 				hb2.NextWakeupAt = &nextUTC
 			}
-			_ = s.ts.SaveHeartbeat(target.project, target.agent, hb2)
+			_ = s.saveSchedulerTargetHeartbeat(workspaceID, target, hb2)
 		}
-		log.Printf("runtime scheduler queued %s/%s task=%s run=%s", target.project, target.agent, task.ID, run.ID)
+		log.Printf("runtime scheduler queued %s/%s task=%s run=%s", execTarget.project, execTarget.agent, task.ID, run.ID)
 	}
 }
 
 type runtimeSchedulerAgentTarget struct {
-	project string
-	agent   string
+	project      string
+	agent        string
+	workerID     string
+	membershipID string
+	memberships  []runtimeSchedulerAgentTarget
 }
 
-func (s *Server) runtimeSchedulerTargets(project, agent string) []runtimeSchedulerAgentTarget {
+func (s *Server) runtimeSchedulerTargets(workspaceID, project, agent string) []runtimeSchedulerAgentTarget {
 	project = strings.TrimSpace(project)
 	agent = strings.TrimSpace(agent)
 	if project != "" && agent != "" {
-		return []runtimeSchedulerAgentTarget{{project: project, agent: agent}}
+		return []runtimeSchedulerAgentTarget{s.runtimeSchedulerTargetGroupForProjectAgent(workspaceID, project, agent)}
 	}
 	projects := []string{}
 	if project != "" {
@@ -960,7 +1048,57 @@ func (s *Server) runtimeSchedulerTargets(project, agent string) []runtimeSchedul
 		projects = rows
 	}
 	out := []runtimeSchedulerAgentTarget{}
+	seen := map[string]bool{}
+	seenWorkers := map[string]bool{}
 	for _, p := range projects {
+		hasWorkerMemberships := false
+		if s != nil && s.controlDB != nil && strings.TrimSpace(workspaceID) != "" {
+			memberships, err := s.controlDB.ListProjectMemberships(controldb.ProjectMembershipFilter{
+				WorkspaceID: workspaceID,
+				ProjectID:   p,
+				MemberType:  "agent_worker",
+			})
+			if err == nil {
+				hasWorkerMemberships = len(memberships) > 0
+				for _, membership := range memberships {
+					if !membership.AutoPickTasks {
+						continue
+					}
+					name := strings.TrimSpace(membership.Title)
+					if name == "" {
+						worker, ok, err := s.agentDirectory.Worker(workspaceID, membership.MemberID)
+						if err == nil && ok {
+							name = worker.Name
+						}
+					}
+					if name == "" || strings.HasPrefix(name, ".") {
+						continue
+					}
+					if strings.TrimSpace(membership.MemberID) != "" {
+						if seenWorkers[membership.MemberID] {
+							continue
+						}
+						seenWorkers[membership.MemberID] = true
+						out = append(out, s.runtimeSchedulerTargetGroupForWorker(workspaceID, membership.MemberID, p, name))
+						continue
+					}
+					key := p + "/" + name
+					if seen[key] {
+						continue
+					}
+					seen[key] = true
+					out = append(out, runtimeSchedulerAgentTarget{
+						project:      p,
+						agent:        name,
+						workerID:     membership.MemberID,
+						membershipID: membership.ID,
+					})
+				}
+			}
+		}
+		if hasWorkerMemberships {
+			continue
+		}
 		agents, err := s.ts.ListAgents(p)
 		if err != nil {
 			continue
@@ -970,23 +1108,190 @@ func (s *Server) runtimeSchedulerTargets(project, agent string) []runtimeSchedul
 			if a == "" || strings.HasPrefix(a, ".") {
 				continue
 			}
+			key := p + "/" + a
+			if seen[key] {
+				continue
+			}
+			seen[key] = true
 			out = append(out, runtimeSchedulerAgentTarget{project: p, agent: a})
 		}
 	}
 	return out
 }
 
-func (s *Server) runtimeHeartbeatDue(project, agent string, hb *entity.HeartbeatConfig, now time.Time) bool {
+func (s *Server) runtimeSchedulerTargetGroupForProjectAgent(workspaceID, project, agent string) runtimeSchedulerAgentTarget {
+	target := s.runtimeSchedulerTargetForProjectAgent(workspaceID, project, agent)
+	if strings.TrimSpace(target.workerID) == "" {
+		target.memberships = []runtimeSchedulerAgentTarget{target}
+		return target
+	}
+	group := s.runtimeSchedulerTargetGroupForWorker(workspaceID, target.workerID, target.project, target.agent)
+	if len(group.memberships) == 0 {
+		group.memberships = []runtimeSchedulerAgentTarget{target}
+	}
+	return group
+}
+
+func (s *Server) runtimeSchedulerTargetGroupForWorker(workspaceID, workerID, preferredProject, preferredAgent string) runtimeSchedulerAgentTarget {
+	base := runtimeSchedulerAgentTarget{project: strings.TrimSpace(preferredProject), agent: strings.TrimSpace(preferredAgent), workerID: strings.TrimSpace(workerID)}
+	if s == nil || s.controlDB == nil || strings.TrimSpace(workspaceID) == "" || strings.TrimSpace(workerID) == "" {
+		base.memberships = []runtimeSchedulerAgentTarget{base}
+		return base
+	}
+	memberships, err := s.controlDB.ListProjectMemberships(controldb.ProjectMembershipFilter{
+		WorkspaceID: workspaceID,
+		MemberType:  "agent_worker",
+		MemberID:    workerID,
+	})
+	if err != nil || len(memberships) == 0 {
+		base.memberships = []runtimeSchedulerAgentTarget{base}
+		return base
+	}
+	worker := controldb.AgentWorker{}
+	if loaded, ok, err := s.agentDirectory.Worker(workspaceID, workerID); err == nil && ok {
+		worker = loaded
+	}
+	group := make([]runtimeSchedulerAgentTarget, 0, len(memberships))
+	for _, membership := range memberships {
+		if !membership.AutoPickTasks {
+			continue
+		}
+		name := schedulerMembershipRuntimeAgentName(membership, worker)
+		if name == "" || strings.HasPrefix(name, ".") {
+			continue
+		}
+		item := runtimeSchedulerAgentTarget{
+			project:      strings.TrimSpace(membership.ProjectID),
+			agent:        name,
+			workerID:     workerID,
+			membershipID: membership.ID,
+		}
+		group = append(group, item)
+		if item.project == base.project && item.agent == base.agent {
+			base.membershipID = item.membershipID
+		}
+	}
+	if len(group) == 0 {
+		base.memberships = []runtimeSchedulerAgentTarget{base}
+		return base
+	}
+	base.memberships = group
+	if strings.TrimSpace(base.project) == "" || strings.TrimSpace(base.agent) == "" {
+		base.project = group[0].project
+		base.agent = group[0].agent
+		base.membershipID = group[0].membershipID
+	}
+	return base
+}
+
+func schedulerMembershipRuntimeAgentName(membership controldb.ProjectMembership, worker controldb.AgentWorker) string {
+	for _, value := range []string{membership.Title, membership.Role, worker.Name, worker.DisplayName} {
+		if text := strings.TrimSpace(value); text != "" {
+			return text
+		}
+	}
+	return ""
+}
+
+func (s *Server) runtimeSchedulerTargetForProjectAgent(workspaceID, project, agent string) runtimeSchedulerAgentTarget {
+	target := runtimeSchedulerAgentTarget{project: strings.TrimSpace(project), agent: strings.TrimSpace(agent)}
+	if s == nil || s.agentDirectory == nil || strings.TrimSpace(workspaceID) == "" {
+		return target
+	}
+	resolved, ok, err := s.agentDirectory.ResolveLegacyMailbox(workspaceID, target.project+"/"+target.agent)
+	if err == nil && ok {
+		target.workerID = resolved.Worker.ID
+		target.membershipID = resolved.Membership.ID
+		if title := strings.TrimSpace(resolved.Membership.Title); title != "" {
+			target.agent = title
+		}
+	}
+	return target
+}
+
+func (s *Server) selectRuntimeSchedulerExecutionTarget(target runtimeSchedulerAgentTarget) runtimeSchedulerAgentTarget {
+	memberships := target.memberships
+	if len(memberships) == 0 {
+		return target
+	}
+	best := memberships[0]
+	var bestTask *entity.Task
+	for _, membership := range memberships {
+		task, err := s.nextRuntimePendingTask(membership.project, membership.agent)
+		if err != nil || task == nil {
+			continue
+		}
+		if bestTask == nil ||
+			task.Priority < bestTask.Priority ||
+			(task.Priority == bestTask.Priority && task.CreatedAt.Before(bestTask.CreatedAt)) ||
+			(task.Priority == bestTask.Priority && task.CreatedAt.Equal(bestTask.CreatedAt) && task.ID < bestTask.ID) {
+			best = membership
+			bestTask = task
+		}
+	}
+	if bestTask != nil {
+		return best
+	}
+	if strings.TrimSpace(target.project) != "" && strings.TrimSpace(target.agent) != "" {
+		return target
+	}
+	return best
+}
+
+func (s *Server) loadSchedulerTargetHeartbeat(workspaceID string, target runtimeSchedulerAgentTarget) (*entity.HeartbeatConfig, error) {
+	if strings.TrimSpace(target.workerID) == "" {
+		return s.ts.GetHeartbeat(target.project, target.agent)
+	}
+	worker, ok, err := s.controlDB.AgentWorkerByID(workspaceID, target.workerID)
+	if err != nil {
+		return nil, err
+	}
+	if !ok {
+		return s.ts.GetHeartbeat(target.project, target.agent)
+	}
+	hb := &entity.HeartbeatConfig{}
+	if raw := strings.TrimSpace(worker.ScheduleJSON); raw != "" && raw != "{}" {
+		if err := json.Unmarshal([]byte(raw), hb); err != nil {
+			return nil, fmt.Errorf("parse agent worker schedule %s: %w", worker.ID, err)
+		}
+	}
+	return hb, nil
+}
+
+func (s *Server) saveSchedulerTargetHeartbeat(workspaceID string, target runtimeSchedulerAgentTarget, hb *entity.HeartbeatConfig) error {
+	if hb == nil {
+		return nil
+	}
+	if strings.TrimSpace(target.workerID) == "" {
+		return s.ts.SaveHeartbeat(target.project, target.agent, hb)
+	}
+	worker, ok, err := s.controlDB.AgentWorkerByID(workspaceID, target.workerID)
+	if err != nil {
+		return err
+	}
+	if !ok {
+		return s.ts.SaveHeartbeat(target.project, target.agent, hb)
+	}
+	raw, err := json.Marshal(hb)
+	if err != nil {
+		return err
+	}
+	worker.ScheduleJSON = string(raw)
+	worker.UpdatedAt = time.Now().UTC().Format(time.RFC3339)
+	return s.controlDB.UpsertAgentWorker(worker)
+}
+
+func (s *Server) runtimeHeartbeatDue(workspaceID string, target runtimeSchedulerAgentTarget, hb *entity.HeartbeatConfig, now time.Time) bool {
 	if hb == nil || !hb.Enabled || hb.Paused {
 		return false
 	}
 	if hb.LastWakeupStatus == "running" {
-		if s.hasActiveRuntimeRun("", project, agent, "") {
+		if s.hasActiveRuntimeRunForTarget(workspaceID, target, "") {
 			return false
 		}
 		hb.LastWakeupStatus = "done"
 		hb.PID = 0
-		_ = s.ts.SaveHeartbeat(project, agent, hb)
+		_ = s.saveSchedulerTargetHeartbeat(workspaceID, target, hb)
 	}
 	if !runtimeActiveDay(hb.ActiveDays, now) {
 		return false
@@ -1006,7 +1311,7 @@ func (s *Server) runtimeHeartbeatDue(project, agent string, hb *entity.Heartbeat
 		nextUTC := next.UTC()
 		if hb.NextWakeupAt == nil || !hb.NextWakeupAt.Equal(nextUTC) {
 			hb.NextWakeupAt = &nextUTC
-			_ = s.ts.SaveHeartbeat(project, agent, hb)
+			_ = s.saveSchedulerTargetHeartbeat(workspaceID, target, hb)
 		}
 		return false
 	}
@@ -1036,15 +1341,24 @@ func nextRuntimeHeartbeatAt(hb *entity.HeartbeatConfig, now time.Time) time.Time
 }
 
 func (s *Server) hasActiveRuntimeRun(workspaceID, project, agent, taskID string) bool {
+	target := s.runtimeSchedulerTargetForProjectAgent(workspaceID, project, agent)
+	return s.hasActiveRuntimeRunForTarget(workspaceID, target, taskID)
+}
+
+func (s *Server) hasActiveRuntimeRunForTarget(workspaceID string, target runtimeSchedulerAgentTarget, taskID string) bool {
 	if s == nil || s.controlDB == nil {
 		return false
 	}
 	filter := controldb.RuntimeRunFilter{
 		WorkspaceID: workspaceID,
-		ProjectID:   project,
-		AgentID:     agent,
 		TaskID:      taskID,
 		Limit:       50,
+	}
+	if strings.TrimSpace(target.workerID) != "" {
+		filter.AgentWorkerID = target.workerID
+	} else {
+		filter.ProjectID = target.project
+		filter.AgentID = target.agent
 	}
 	if strings.TrimSpace(filter.WorkspaceID) == "" {
 		if ws, err := s.currentWorkspaceID(); err == nil {

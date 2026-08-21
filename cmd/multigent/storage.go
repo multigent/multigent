@@ -2,6 +2,8 @@ package main
 
 import (
 	"fmt"
+	"os"
+	"strings"
 
 	controldb "github.com/multigent/multigent/internal/db"
 	"github.com/multigent/multigent/internal/store"
@@ -12,8 +14,15 @@ func openControlDB() (controldb.Store, error) {
 	return controldb.OpenDefault()
 }
 
+func openControlDBForRoot(root string) (controldb.Store, error) {
+	if strings.TrimSpace(os.Getenv("MULTIGENT_DATA_DIR")) == "" && strings.TrimSpace(os.Getenv("MULTIGENT_CONTROL_DATA_DIR")) == "" {
+		setCLIDataDirForWorkspace(root)
+	}
+	return controldb.OpenDefault()
+}
+
 func openStore(root string) (store.Store, error) {
-	db, err := openControlDB()
+	db, err := openControlDBForRoot(root)
 	if err != nil {
 		return nil, err
 	}
@@ -21,7 +30,7 @@ func openStore(root string) (store.Store, error) {
 }
 
 func openTaskStore(root string) (taskstore.Store, error) {
-	db, err := openControlDB()
+	db, err := openControlDBForRoot(root)
 	if err != nil {
 		return nil, err
 	}

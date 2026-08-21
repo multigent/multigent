@@ -6,6 +6,7 @@ package entity
 import (
 	"fmt"
 	"math/rand"
+	"strings"
 	"time"
 )
 
@@ -595,13 +596,18 @@ type ConfirmationRequest struct {
 // Task is the atomic unit of work assigned to an agent or human.
 // Stored in <agent-dir>/.multigent/tasks.yaml (active) and .multigent/tasks_archive.yaml (terminal).
 type Task struct {
-	ID        string     `yaml:"id"`
-	Title     string     `yaml:"title"`
-	Type      TaskType   `yaml:"type,omitempty"`
-	Priority  int        `yaml:"priority"` // 0=critical 1=high 2=normal 3=low
-	Assignee  string     `yaml:"assignee"` // "<project>/<agent>" or workspace username
-	CreatedBy string     `yaml:"created_by,omitempty"`
-	Status    TaskStatus `yaml:"status"`
+	ID       string   `yaml:"id"`
+	Title    string   `yaml:"title"`
+	Type     TaskType `yaml:"type,omitempty"`
+	Priority int      `yaml:"priority"` // 0=critical 1=high 2=normal 3=low
+	Assignee string   `yaml:"assignee"` // "<project>/<agent>" or workspace username
+	// 2.x assignee identity. Assignee remains as a human-readable/legacy
+	// mailbox during migration; runtime routing should prefer these fields.
+	AssigneeType         string     `yaml:"assignee_type" json:"assigneeType"` // user | agent_worker
+	AssigneeID           string     `yaml:"assignee_id" json:"assigneeId"`
+	AssigneeMembershipID string     `yaml:"assignee_membership_id" json:"assigneeMembershipId"`
+	CreatedBy            string     `yaml:"created_by,omitempty"`
+	Status               TaskStatus `yaml:"status"`
 
 	Description string            `yaml:"description,omitempty"` // human-readable detail; Prompt is for agents
 	Prompt      string            `yaml:"prompt"`
@@ -768,6 +774,18 @@ type TriggerType string
 const (
 	TriggerOnMessage TriggerType = "message" // incoming message to this agent
 	TriggerOnTask    TriggerType = "task"    // task assigned to this agent
+	// TriggerOnAttention wakes the agent when an external attention signal is
+	// recorded, such as an IM direct message, group mention, or card action.
+	// The signal is still injected as context for autonomous judgment; this
+	// trigger only controls whether to wake immediately.
+	TriggerOnAttention TriggerType = "attention"
+	// Specific attention reasons. These let the work rhythm distinguish private
+	// IM messages from mentions, workflow assignments, and card callbacks
+	// without turning connectors into hard-coded triggers.
+	TriggerOnIMDirectMessage      TriggerType = "im_direct_message"
+	TriggerOnIMMention            TriggerType = "im_mention"
+	TriggerOnWorkflowStepAssigned TriggerType = "workflow_step_assigned"
+	TriggerOnCardAction           TriggerType = "card_action"
 )
 
 // HeartbeatConfig holds the per-agent heartbeat configuration and runtime state.
@@ -845,7 +863,8 @@ type HeartbeatConfig struct {
 	MaxCycleDuration string `yaml:"max_cycle_duration,omitempty"`
 
 	// Triggers lists event types that trigger an immediate wakeup.
-	// Supported values: "message" (incoming message), "task" (task assigned).
+	// Supported values: "message" (inbox message), "task" (task assigned),
+	// "attention" (external attention signal, e.g. IM mention/card action).
 	// When an event fires, the agent is woken up asynchronously if not already
 	// running. Works independently of heartbeat Enabled — an agent can be
 	// trigger-only with no periodic heartbeat.
@@ -896,6 +915,53 @@ func (h *HeartbeatConfig) HasTrigger(t TriggerType) bool {
 		}
 	}
 	return false
+}
+
+// HasAttentionTrigger reports whether this heartbeat should wake immediately
+// for an attention signal with the given reason. The broad "attention" and
+// legacy "message" triggers intentionally match every attention reason.
+func (h *HeartbeatConfig) HasAttentionTrigger(reason string) bool {
+	reason = strings.TrimSpace(reason)
+	for _, trigger := range h.Triggers {
+		switch trigger {
+		case TriggerOnAttention, TriggerOnMessage:
+			return true
+		default:
+			if reason != "" && string(trigger) == reason {
+				return true
+			}
+		}
+	}
+	return false
+}
+
+// IsValidTriggerType reports whether t is a supported immediate wakeup trigger.
+func IsValidTriggerType(t TriggerType) bool {
+	switch t {
+	case TriggerOnMessage,
+		TriggerOnTask,
+		TriggerOnAttention,
+		TriggerOnIMDirectMessage,
+		TriggerOnIMMention,
+		TriggerOnWorkflowStepAssigned,
+		TriggerOnCardAction:
+		return true
+	default:
+		return false
+	}
+}
+
+// SupportedTriggerTypes returns trigger values in display order.
+func SupportedTriggerTypes() []TriggerType {
+	return []TriggerType{
+		TriggerOnMessage,
+		TriggerOnTask,
+		TriggerOnAttention,
+		TriggerOnIMDirectMessage,
+		TriggerOnIMMention,
+		TriggerOnWorkflowStepAssigned,
+		TriggerOnCardAction,
+	}
 }
 
 // ─────────────────────────────────────────────

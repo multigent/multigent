@@ -90,17 +90,20 @@ type WorkflowEdgeCondition struct {
 }
 
 type WorkflowRun struct {
-	ID                 string                          `json:"id" yaml:"id"`
-	DefinitionID       string                          `json:"definitionId" yaml:"definition_id"`
-	DefinitionSnapshot *WorkflowDefinition             `json:"definitionSnapshot,omitempty" yaml:"definition_snapshot,omitempty"`
-	Project            string                          `json:"project" yaml:"project"`
-	TaskID             string                          `json:"taskId" yaml:"task_id"`
-	Status             string                          `json:"status" yaml:"status"`
-	ActiveStepID       string                          `json:"activeStepId,omitempty" yaml:"active_step_id,omitempty"`
-	ActorBindings      map[string]WorkflowActorBinding `json:"actorBindings,omitempty" yaml:"actor_bindings,omitempty"`
-	StartedAt          time.Time                       `json:"startedAt" yaml:"started_at"`
-	UpdatedAt          time.Time                       `json:"updatedAt" yaml:"updated_at"`
-	FinishedAt         time.Time                       `json:"finishedAt,omitempty" yaml:"finished_at,omitempty"`
+	ID                          string                          `json:"id" yaml:"id"`
+	DefinitionID                string                          `json:"definitionId" yaml:"definition_id"`
+	DefinitionSnapshot          *WorkflowDefinition             `json:"definitionSnapshot,omitempty" yaml:"definition_snapshot,omitempty"`
+	Project                     string                          `json:"project" yaml:"project"`
+	TaskID                      string                          `json:"taskId" yaml:"task_id"`
+	Status                      string                          `json:"status" yaml:"status"`
+	ActiveStepID                string                          `json:"activeStepId,omitempty" yaml:"active_step_id,omitempty"`
+	CurrentAssigneeType         string                          `json:"currentAssigneeType" yaml:"current_assignee_type"`
+	CurrentAssigneeID           string                          `json:"currentAssigneeId" yaml:"current_assignee_id"`
+	CurrentAssigneeMembershipID string                          `json:"currentAssigneeMembershipId" yaml:"current_assignee_membership_id"`
+	ActorBindings               map[string]WorkflowActorBinding `json:"actorBindings,omitempty" yaml:"actor_bindings,omitempty"`
+	StartedAt                   time.Time                       `json:"startedAt" yaml:"started_at"`
+	UpdatedAt                   time.Time                       `json:"updatedAt" yaml:"updated_at"`
+	FinishedAt                  time.Time                       `json:"finishedAt,omitempty" yaml:"finished_at,omitempty"`
 }
 
 type WorkflowActorBinding struct {

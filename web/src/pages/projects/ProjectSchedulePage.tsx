@@ -368,7 +368,7 @@ function EditHeartbeatModal({ projectId, agentName, hb, onClose, onSaved }: { pr
   const [useScriptCondition, setUseScriptCondition] = useState(Boolean(hb.wakeupCondition))
 
   // Triggers
-  const TRIGGER_TYPES = ['message', 'task'] as const
+  const TRIGGER_TYPES = ['message', 'task', 'attention'] as const
   const [triggers, setTriggers] = useState<string[]>(hb.triggers ?? [])
   const toggleTrigger = (t: string) => setTriggers(prev => prev.includes(t) ? prev.filter(x => x !== t) : [...prev, t])
 
@@ -1315,9 +1315,14 @@ function triggerSummaryKey(triggers?: string[]): string | null {
   if (!triggers?.length) return null
   const hasTask = triggers.includes('task')
   const hasMessage = triggers.includes('message')
+  const hasAttention = triggers.includes('attention')
+  if (hasTask && hasMessage && hasAttention) return 'schedule.triggerTaskMessageAndAttention'
   if (hasTask && hasMessage) return 'schedule.triggerTaskAndMessage'
+  if (hasTask && hasAttention) return 'schedule.triggerTaskAndAttention'
+  if (hasMessage && hasAttention) return 'schedule.triggerMessageAndAttention'
   if (hasTask) return 'schedule.triggerTaskOnly'
   if (hasMessage) return 'schedule.triggerMessageOnly'
+  if (hasAttention) return 'schedule.triggerAttentionOnly'
   return 'schedule.eventTrigger'
 }
 

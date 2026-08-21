@@ -7,6 +7,7 @@ import (
 	"strings"
 
 	controldb "github.com/multigent/multigent/internal/db"
+	"github.com/multigent/multigent/internal/entity"
 	"github.com/multigent/multigent/internal/tasktemplate"
 )
 
@@ -89,12 +90,29 @@ func (s *Server) entitlementUsage(workspaceID string) (entitlementUsage, error) 
 		}
 		usage.Connections = len(connections)
 	}
+	useLegacyAgentCount := true
 	if s.controlDB != nil && strings.TrimSpace(workspaceID) != "" {
+		workers, err := s.controlDB.ListAgentWorkers(workspaceID)
+		if err != nil {
+			return usage, err
+		}
+		if len(workers) > 0 {
+			useLegacyAgentCount = false
+			for _, worker := range workers {
+				if entity.NormaliseModel(entity.AgentModel(worker.Model)) == entity.ModelHuman {
+					continue
+				}
+				usage.Agents++
+			}
+		}
 		templates, err := tasktemplate.NewStore(s.controlDB, workspaceID).List()
 		if err != nil {
 			return usage, err
 		}
 		usage.TaskTemplates = len(templates)
+	}
+	if !useLegacyAgentCount {
+		return usage, nil
 	}
 	projects, err := s.st.ListProjects()
 	if err != nil {

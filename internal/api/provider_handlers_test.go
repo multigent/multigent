@@ -70,6 +70,38 @@ func providerTestRequest(method, path, username string, body any) *http.Request 
 	return req.WithContext(context.WithValue(req.Context(), ctxUserKey, username))
 }
 
+func TestClearDeletedModelProviderRefsClearsAgentWorkers(t *testing.T) {
+	s, _ := newProviderHandlerTestServer(t)
+	now := "2026-08-21T00:00:00Z"
+	if err := s.controlDB.UpsertAgentWorker(controldb.AgentWorker{
+		ID:                    "aw-provider",
+		WorkspaceID:           "ws-one",
+		Name:                  "provider-worker",
+		Model:                 "codex",
+		DefaultModelAccountID: "provider-one",
+		Status:                "active",
+		CreatedAt:             now,
+		UpdatedAt:             now,
+	}); err != nil {
+		t.Fatalf("worker: %v", err)
+	}
+
+	cleared, err := s.clearDeletedModelProviderRefs("ws-one", "provider-one")
+	if err != nil {
+		t.Fatalf("clear refs: %v", err)
+	}
+	if !containsAll(strings.Join(cleared, ","), "agent_worker:provider-worker") {
+		t.Fatalf("worker was not reported cleared: %#v", cleared)
+	}
+	worker, ok, err := s.controlDB.AgentWorkerByID("ws-one", "aw-provider")
+	if err != nil || !ok {
+		t.Fatalf("worker lookup ok=%v err=%v", ok, err)
+	}
+	if worker.DefaultModelAccountID != "" {
+		t.Fatalf("provider ref was not cleared: %#v", worker)
+	}
+}
+
 func TestModelProviderHandlersScopeWritesByOwner(t *testing.T) {
 	s, _ := newProviderHandlerTestServer(t)
 	body := providerBody{Name: "Main", Type: "openai", APIKey: "sk-secret", Model: "gpt-test"}

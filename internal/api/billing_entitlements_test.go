@@ -6,6 +6,10 @@ import (
 	"net/http"
 	"net/http/httptest"
 	"testing"
+	"time"
+
+	controldb "github.com/multigent/multigent/internal/db"
+	"github.com/multigent/multigent/internal/entity"
 )
 
 func requestWithEntitlements(req *http.Request, ent workspaceEntitlements) *http.Request {
@@ -57,5 +61,34 @@ func TestBillingEntitlementsEndpointReturnsUsage(t *testing.T) {
 	}
 	if body.Entitlements.PlanCode != "business" || body.Usage.Seats == 0 {
 		t.Fatalf("unexpected response: %+v", body)
+	}
+}
+
+func TestBillingUsageCountsAgentWorkersOnceAcrossProjects(t *testing.T) {
+	s, workspaceID := newConnectionGrantPolicyServer(t)
+	if err := s.st.SaveProject("other", &entity.Project{Name: "other"}); err != nil {
+		t.Fatalf("save project: %v", err)
+	}
+	now := time.Now().UTC().Format(time.RFC3339)
+	upsertRuntimeAttentionWorker(t, s, workspaceID, "aw-shared-dev", "sample", "shared-dev", now)
+	if err := s.controlDB.UpsertProjectMembership(controldb.ProjectMembership{
+		ID:          "pm-shared-other",
+		WorkspaceID: workspaceID,
+		ProjectID:   "other",
+		MemberType:  "agent_worker",
+		MemberID:    "aw-shared-dev",
+		Title:       "shared-dev",
+		CreatedAt:   now,
+		UpdatedAt:   now,
+	}); err != nil {
+		t.Fatalf("other membership: %v", err)
+	}
+
+	usage, err := s.entitlementUsage(workspaceID)
+	if err != nil {
+		t.Fatalf("usage: %v", err)
+	}
+	if usage.Agents != 1 {
+		t.Fatalf("expected one workspace-level agent worker, got %+v", usage)
 	}
 }

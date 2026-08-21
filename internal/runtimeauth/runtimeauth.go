@@ -19,14 +19,16 @@ type SettingStore interface {
 }
 
 type Payload struct {
-	Type         string   `json:"typ"`
-	WorkspaceID  string   `json:"workspaceId"`
-	Project      string   `json:"project"`
-	Agent        string   `json:"agent"`
-	RunID        string   `json:"runId,omitempty"`
-	Capabilities []string `json:"capabilities,omitempty"`
-	Exp          int64    `json:"exp"`
-	Iat          int64    `json:"iat"`
+	Type                string   `json:"typ"`
+	WorkspaceID         string   `json:"workspaceId"`
+	Project             string   `json:"project"`
+	Agent               string   `json:"agent"`
+	AgentWorkerID       string   `json:"agentWorkerId,omitempty"`
+	ProjectMembershipID string   `json:"projectMembershipId,omitempty"`
+	RunID               string   `json:"runId,omitempty"`
+	Capabilities        []string `json:"capabilities,omitempty"`
+	Exp                 int64    `json:"exp"`
+	Iat                 int64    `json:"iat"`
 }
 
 type DelegationPayload struct {
@@ -42,13 +44,15 @@ type DelegationPayload struct {
 }
 
 type Principal struct {
-	WorkspaceID  string   `json:"workspaceId"`
-	Project      string   `json:"project"`
-	Agent        string   `json:"agent"`
-	RunID        string   `json:"runId,omitempty"`
-	Capabilities []string `json:"capabilities,omitempty"`
-	Exp          int64    `json:"exp"`
-	Iat          int64    `json:"iat"`
+	WorkspaceID         string   `json:"workspaceId"`
+	Project             string   `json:"project"`
+	Agent               string   `json:"agent"`
+	AgentWorkerID       string   `json:"agentWorkerId,omitempty"`
+	ProjectMembershipID string   `json:"projectMembershipId,omitempty"`
+	RunID               string   `json:"runId,omitempty"`
+	Capabilities        []string `json:"capabilities,omitempty"`
+	Exp                 int64    `json:"exp"`
+	Iat                 int64    `json:"iat"`
 }
 
 type DelegationPrincipal struct {
@@ -129,13 +133,15 @@ func Validate(secret, token string) (Principal, bool) {
 		return Principal{}, false
 	}
 	return Principal{
-		WorkspaceID:  payload.WorkspaceID,
-		Project:      payload.Project,
-		Agent:        payload.Agent,
-		RunID:        payload.RunID,
-		Capabilities: payload.Capabilities,
-		Exp:          payload.Exp,
-		Iat:          payload.Iat,
+		WorkspaceID:         payload.WorkspaceID,
+		Project:             payload.Project,
+		Agent:               payload.Agent,
+		AgentWorkerID:       payload.AgentWorkerID,
+		ProjectMembershipID: payload.ProjectMembershipID,
+		RunID:               payload.RunID,
+		Capabilities:        payload.Capabilities,
+		Exp:                 payload.Exp,
+		Iat:                 payload.Iat,
 	}, true
 }
 

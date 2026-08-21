@@ -1,10 +1,11 @@
 import {
   BarChart3,
   BookOpen,
+  Bot,
   Briefcase,
-  CalendarClock,
   Cable,
   ClipboardList,
+  Clock3,
   FolderKanban,
   FolderOpen,
   GitBranch,
@@ -26,6 +27,8 @@ import type { LucideIcon } from 'lucide-react'
 export type NavKey =
   | 'overview'
   | 'workspace'
+  | 'agents'
+  | 'schedule'
   | 'teams'
   | 'projects'
   | 'workflows'
@@ -69,6 +72,8 @@ export const workspaceNav: NavItem[] = [
     icon: FolderKanban,
     activePrefix: '/projects',
   },
+  { to: '/agents', navKey: 'agents', icon: Bot, activePrefix: '/agents', adminOnly: true },
+  { to: '/schedule', navKey: 'schedule', icon: Clock3, activePrefix: '/schedule', adminOnly: true },
   { to: '/workflows', navKey: 'workflows', icon: GitBranch, activePrefix: '/workflows' },
   { to: '/playbooks', navKey: 'playbooks', icon: LibraryBig, activePrefix: '/playbooks', adminOnly: true },
   { to: '/goals', navKey: 'goals', icon: Target, activePrefix: '/goals' },
@@ -89,7 +94,6 @@ export const projectSubNav: ProjectNavItem[] = [
   { segment: 'milestones', icon: Milestone },
   { segment: 'messages', icon: MessageSquare },
   { segment: 'members', icon: Users },
-  { segment: 'schedule', icon: CalendarClock, adminOnly: true },
   { segment: 'runs', icon: BarChart3 },
   { segment: 'settings', icon: Settings, adminOnly: true },
 ]
@@ -99,6 +103,8 @@ export function navKeyFromPath(pathname: string): NavKey {
   const seg = pathname.split('/').filter(Boolean)[0]
   const map: Record<string, NavKey> = {
     workspace: 'workspace',
+    agents: 'agents',
+    schedule: 'schedule',
     teams: 'teams',
     projects: 'projects',
     workflows: 'workflows',

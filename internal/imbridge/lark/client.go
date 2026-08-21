@@ -432,9 +432,10 @@ func buildMarkdownCardBody(title, markdown string) map[string]any {
 			"title": map[string]string{"tag": "plain_text", "content": title},
 		},
 		"body": map[string]any{
-			"elements": []map[string]any{
-				{"tag": "markdown", "content": markdown},
-			},
+			"elements": []map[string]any{{
+				"tag":  "div",
+				"text": map[string]string{"tag": "lark_md", "content": markdown},
+			}},
 		},
 	}
 }

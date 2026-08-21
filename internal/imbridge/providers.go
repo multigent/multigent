@@ -57,21 +57,39 @@ type IncomingMessage struct {
 	RootID       string
 	ParentID     string
 	SenderOpenID string
+	MessageType  string
 	Text         string
 	RawContent   string
+	Mentions     []json.RawMessage
+	Attachments  []IncomingAttachment
+}
+
+type IncomingAttachment struct {
+	ID      string         `json:"id,omitempty"`
+	Type    string         `json:"type"`
+	Name    string         `json:"name,omitempty"`
+	URL     string         `json:"url,omitempty"`
+	MIME    string         `json:"mime,omitempty"`
+	Size    int64          `json:"size,omitempty"`
+	Preview string         `json:"preview,omitempty"`
+	Raw     map[string]any `json:"raw,omitempty"`
 }
 
 type OutgoingTarget struct {
-	ReceiveID     string
-	ReceiveIDType string
-	ChatID        string
+	ReceiveID        string
+	ReceiveIDType    string
+	ChatID           string
+	ReplyToMessageID string
+	MentionOpenID    string
+	ChatType         string
 }
 
 type OutgoingMessage struct {
-	Format  string
-	Subject string
-	Text    string
-	Card    *InteractiveCard
+	Format        string
+	Subject       string
+	Text          string
+	MentionOpenID string
+	Card          *InteractiveCard
 }
 
 type InteractiveCard struct {
@@ -275,8 +293,22 @@ func (p larkFamilyProvider) ParseEvent(raw []byte) (ParsedEvent, error) {
 		RootID:       event.Message.RootID,
 		ParentID:     event.Message.ParentID,
 		SenderOpenID: event.Sender.SenderID.OpenID,
+		MessageType:  event.Message.MessageType,
 		Text:         larkbridge.ExtractText(event.Message),
 		RawContent:   event.Message.Content,
+		Mentions:     event.Message.Mentions,
+	}
+	for _, attachment := range larkbridge.ExtractAttachments(event.Message) {
+		out.Message.Attachments = append(out.Message.Attachments, IncomingAttachment{
+			ID:      attachment.ID,
+			Type:    attachment.Type,
+			Name:    attachment.Name,
+			URL:     attachment.URL,
+			MIME:    attachment.MIME,
+			Size:    attachment.Size,
+			Preview: attachment.Preview,
+			Raw:     attachment.Raw,
+		})
 	}
 	return out, nil
 }
@@ -288,6 +320,7 @@ func (p larkFamilyProvider) ShouldHandleMessage(boundChatID string, message Inco
 		RootID:   message.RootID,
 		ParentID: message.ParentID,
 		Content:  message.RawContent,
+		Mentions: message.Mentions,
 	}
 	if larkbridge.IsDirectChat(larkMessage) {
 		return true
@@ -313,6 +346,7 @@ func (p larkFamilyProvider) ReplyMessage(ctx context.Context, secrets map[string
 		AppID:     secrets["appId"],
 		AppSecret: secrets["appSecret"],
 	}
+	reply.MentionOpenID = firstNonEmpty(reply.MentionOpenID, message.SenderOpenID)
 	if reply.Card != nil {
 		return client.ReplyInteractiveCard(ctx, message.MessageID, larkbridge.InteractiveCard{
 			InteractionID: reply.Card.InteractionID,
@@ -326,6 +360,7 @@ func (p larkFamilyProvider) ReplyMessage(ctx context.Context, secrets map[string
 	if strings.EqualFold(strings.TrimSpace(reply.Format), "markdown") {
 		return client.ReplyMarkdown(ctx, message.MessageID, reply.Subject, reply.Text)
 	}
+	reply.Text = larkMentionPrefixedText(message.ChatType, reply.MentionOpenID, reply.Text)
 	return client.ReplyText(ctx, message.MessageID, reply.Text)
 }
 
@@ -395,6 +430,7 @@ func (p larkFamilyProvider) SendMessage(ctx context.Context, secrets map[string]
 		receiveIDType = "chat_id"
 	}
 	if message.Card != nil {
+		message.Card.Body = larkMentionPrefixedText(target.ChatType, firstNonEmpty(message.MentionOpenID, target.MentionOpenID), message.Card.Body)
 		return client.SendInteractiveCard(ctx, receiveIDType, receiveID, larkbridge.InteractiveCard{
 			InteractionID: message.Card.InteractionID,
 			Title:         message.Card.Title,
@@ -404,10 +440,20 @@ func (p larkFamilyProvider) SendMessage(ctx context.Context, secrets map[string]
 			Links:         larkCardLinks(message.Card.Links),
 		})
 	}
+	message.Text = larkMentionPrefixedText(target.ChatType, firstNonEmpty(message.MentionOpenID, target.MentionOpenID), message.Text)
 	if strings.EqualFold(strings.TrimSpace(message.Format), "markdown") {
 		return client.SendMarkdown(ctx, receiveIDType, receiveID, message.Subject, message.Text)
 	}
 	return client.SendText(ctx, receiveIDType, receiveID, message.Text)
+}
+
+func larkMentionPrefixedText(chatType, openID, text string) string {
+	text = strings.TrimSpace(text)
+	openID = strings.TrimSpace(openID)
+	if openID == "" || strings.EqualFold(strings.TrimSpace(chatType), "p2p") || strings.Contains(text, openID) {
+		return text
+	}
+	return fmt.Sprintf(`<at user_id="%s"></at> %s`, openID, text)
 }
 
 func (p larkFamilyProvider) UpdateInteractionCard(ctx context.Context, secrets map[string]string, callback IncomingInteractionCallback, message OutgoingMessage) error {

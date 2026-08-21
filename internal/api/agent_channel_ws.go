@@ -410,17 +410,31 @@ func larkSDKMessageToIncoming(event *larkim.P2MessageReceiveV1) (imbridge.Incomi
 		RootID:       stringPtrValue(msg.RootId),
 		ParentID:     stringPtrValue(msg.ParentId),
 		SenderOpenID: larkSDKUserID(event.Event.Sender.SenderId),
+		MessageType:  stringPtrValue(msg.MessageType),
 		RawContent:   stringPtrValue(msg.Content),
 	}
-	out.Text = larkbridge.ExtractText(larkbridge.EventMessage{
+	larkMessage := larkbridge.EventMessage{
 		MessageID:   out.MessageID,
 		RootID:      out.RootID,
 		ParentID:    out.ParentID,
 		ChatID:      out.ChatID,
 		ChatType:    out.ChatType,
-		MessageType: stringPtrValue(msg.MessageType),
+		MessageType: out.MessageType,
 		Content:     out.RawContent,
-	})
+	}
+	out.Text = larkbridge.ExtractText(larkMessage)
+	for _, attachment := range larkbridge.ExtractAttachments(larkMessage) {
+		out.Attachments = append(out.Attachments, imbridge.IncomingAttachment{
+			ID:      attachment.ID,
+			Type:    attachment.Type,
+			Name:    attachment.Name,
+			URL:     attachment.URL,
+			MIME:    attachment.MIME,
+			Size:    attachment.Size,
+			Preview: attachment.Preview,
+			Raw:     attachment.Raw,
+		})
+	}
 	if strings.TrimSpace(out.MessageID) == "" {
 		out.MessageID = "im-" + time.Now().UTC().Format("20060102150405.000000000")
 	}

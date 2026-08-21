@@ -17,10 +17,13 @@ const (
 	AIOSDir = ".multigent"
 	// AgencyFile is the agency config file inside AIOSDir.
 	AgencyFile = "agency.yaml"
+	// LegacyAgencyDir is accepted as migration input for pre-2.x workspaces.
+	LegacyAgencyDir = ".agencycli"
 )
 
 // FindRoot walks up from start until it finds a directory that contains
-// .multigent/agency.yaml, then returns that directory's absolute path.
+// .multigent/agency.yaml or legacy .agencycli/agency.yaml, then returns that
+// directory's absolute path.
 func FindRoot(start string) (string, error) {
 	abs, err := filepath.Abs(start)
 	if err != nil {
@@ -29,20 +32,31 @@ func FindRoot(start string) (string, error) {
 
 	dir := abs
 	for {
-		marker := filepath.Join(dir, AIOSDir, AgencyFile)
-		if _, err := os.Stat(marker); err == nil {
+		if hasAgencyMarker(dir) {
 			return dir, nil
 		}
 		parent := filepath.Dir(dir)
 		if parent == dir {
 			return "", fmt.Errorf(
 				"not inside an multigent workspace "+
-					"(no .multigent/agency.yaml found in %q or any parent directory)",
+					"(no .multigent/agency.yaml or .agencycli/agency.yaml found in %q or any parent directory)",
 				abs,
 			)
 		}
 		dir = parent
 	}
+}
+
+func hasAgencyMarker(dir string) bool {
+	for _, marker := range []string{
+		filepath.Join(dir, AIOSDir, AgencyFile),
+		filepath.Join(dir, LegacyAgencyDir, AgencyFile),
+	} {
+		if _, err := os.Stat(marker); err == nil {
+			return true
+		}
+	}
+	return false
 }
 
 // FindRootFromCWD calls FindRoot starting from the current working directory.

@@ -8,12 +8,14 @@ import (
 	"os"
 	"os/exec"
 	"os/signal"
+	"path/filepath"
 	"regexp"
 	"strings"
 	"sync"
 	"syscall"
 	"time"
 
+	"github.com/multigent/multigent/internal/agentdir"
 	controldb "github.com/multigent/multigent/internal/db"
 	"github.com/multigent/multigent/internal/entity"
 	"github.com/multigent/multigent/internal/runner"
@@ -36,6 +38,17 @@ const (
 	colorMagenta = "\033[35m"
 	colorBlue    = "\033[34m"
 )
+
+type schedulerAgentKey struct {
+	project string
+	agent   string
+}
+
+type schedulerStartTarget struct {
+	key         schedulerAgentKey
+	workerID    string
+	memberships []schedulerAgentKey
+}
 
 // nowStr returns a compact HH:MM:SS timestamp for the current moment.
 func nowStr() string {
@@ -157,8 +170,6 @@ func newSchedulerStartCmd() *cobra.Command {
 			ts := mustTaskStore(root)
 			s := mustStore(root)
 
-			type agentKey struct{ project, agent string }
-
 			projects, err := ts.ListProjects()
 			if err != nil {
 				return err
@@ -196,38 +207,7 @@ func newSchedulerStartCmd() *cobra.Command {
 				}
 			}
 
-			// Collect agents with heartbeat enabled.
-			var heartbeatAgents []agentKey
-			// Collect agents with at least one enabled cron.
-			var cronAgents []agentKey
-
-			for _, p := range projects {
-				agents, err := ts.ListAgents(p)
-				if err != nil {
-					continue
-				}
-				for _, a := range agents {
-					if len(a) > 0 && a[0] == '.' {
-						continue
-					}
-					if want := strings.TrimSpace(startAgent); want != "" && a != want {
-						continue
-					}
-					hb, err := ts.GetHeartbeat(p, a)
-					if err == nil && hb.Enabled {
-						heartbeatAgents = append(heartbeatAgents, agentKey{p, a})
-					}
-					crons, err := ts.ListCrons(p, a)
-					if err == nil {
-						for _, c := range crons {
-							if c.Enabled {
-								cronAgents = append(cronAgents, agentKey{p, a})
-								break
-							}
-						}
-					}
-				}
-			}
+			heartbeatAgents, cronAgents := collectSchedulerStartTargets(root, projects, startAgent, ts)
 
 			if len(heartbeatAgents) == 0 && len(cronAgents) == 0 {
 				fmt.Println("No agents have heartbeat or cron enabled.")
@@ -235,6 +215,11 @@ func newSchedulerStartCmd() *cobra.Command {
 				fmt.Println("  Cron     : multigent cron add --project P --agent A --schedule \"0 9 * * *\" --title T --prompt P")
 				return nil
 			}
+			lock, err := acquireSchedulerStartLock(root, startProject, startAgent)
+			if err != nil {
+				return err
+			}
+			defer lock.Release()
 
 			ctx, cancel := signal.NotifyContext(context.Background(), syscall.SIGINT, syscall.SIGTERM)
 			defer cancel()
@@ -259,7 +244,7 @@ func newSchedulerStartCmd() *cobra.Command {
 
 			maxIntvLen := 0
 			for _, k := range heartbeatAgents {
-				hb, _ := ts.GetHeartbeat(k.project, k.agent)
+				hb, _ := ts.GetHeartbeat(k.key.project, k.key.agent)
 				if len(hb.Interval) > maxIntvLen {
 					maxIntvLen = len(hb.Interval)
 				}
@@ -273,7 +258,7 @@ func newSchedulerStartCmd() *cobra.Command {
 
 			maxSchedLen := 0
 			for _, k := range cronAgents {
-				crons, _ := ts.ListCrons(k.project, k.agent)
+				crons, _ := ts.ListCrons(k.key.project, k.key.agent)
 				for _, c := range crons {
 					if c.Enabled {
 						if len(c.Schedule) > maxSchedLen {
@@ -300,12 +285,12 @@ func newSchedulerStartCmd() *cobra.Command {
 				fmt.Println(boxBlank())
 				lastProj := ""
 				for _, k := range heartbeatAgents {
-					if k.project != lastProj {
-						lastProj = k.project
+					if k.key.project != lastProj {
+						lastProj = k.key.project
 						fmt.Println(boxRow(col(ansiSilver, "  "+lastProj)))
 					}
-					hb, _ := ts.GetHeartbeat(k.project, k.agent)
-					fmt.Println(boxRow(schedulerStartHeartbeatRow(k.agent, hb, maxIntvLen)))
+					hb, _ := ts.GetHeartbeat(k.key.project, k.key.agent)
+					fmt.Println(boxRow(schedulerStartHeartbeatRow(k.key.agent, hb, maxIntvLen)))
 				}
 			}
 
@@ -320,16 +305,16 @@ func newSchedulerStartCmd() *cobra.Command {
 				fmt.Println(boxBlank())
 				lastProj := ""
 				for _, k := range cronAgents {
-					crons, _ := ts.ListCrons(k.project, k.agent)
+					crons, _ := ts.ListCrons(k.key.project, k.key.agent)
 					for _, c := range crons {
 						if !c.Enabled {
 							continue
 						}
-						if k.project != lastProj {
-							lastProj = k.project
+						if k.key.project != lastProj {
+							lastProj = k.key.project
 							fmt.Println(boxRow(col(ansiSilver, "  "+lastProj)))
 						}
-						fmt.Println(boxRow(schedulerStartCronRow(k.agent, c.Schedule, c.Title, maxSchedLen)))
+						fmt.Println(boxRow(schedulerStartCronRow(k.key.agent, c.Schedule, c.Title, maxSchedLen)))
 					}
 				}
 			}
@@ -341,9 +326,9 @@ func newSchedulerStartCmd() *cobra.Command {
 			var wg sync.WaitGroup
 
 			// Deduplicate: if agent is in both lists, heartbeat loop handles cron too.
-			heartbeatSet := map[agentKey]bool{}
+			heartbeatSet := map[schedulerAgentKey]bool{}
 			for _, k := range heartbeatAgents {
-				heartbeatSet[k] = true
+				heartbeatSet[k.key] = true
 			}
 
 			for _, k := range heartbeatAgents {
@@ -351,20 +336,20 @@ func newSchedulerStartCmd() *cobra.Command {
 				wg.Add(1)
 				go func() {
 					defer wg.Done()
-					runHeartbeatLoop(ctx, root, k.project, k.agent, ts, s)
+					runHeartbeatLoop(ctx, root, k.key.project, k.key.agent, ts, s, k.memberships...)
 				}()
 			}
 
 			// Cron-only agents (no heartbeat): run cron loop that executes tasks directly.
 			for _, k := range cronAgents {
-				if heartbeatSet[k] {
+				if heartbeatSet[k.key] {
 					continue // already handled in heartbeat loop
 				}
 				k := k
 				wg.Add(1)
 				go func() {
 					defer wg.Done()
-					runCronOnlyLoop(ctx, root, k.project, k.agent, ts, s)
+					runCronOnlyLoop(ctx, root, k.key.project, k.key.agent, ts, s)
 				}()
 			}
 
@@ -378,11 +363,173 @@ func newSchedulerStartCmd() *cobra.Command {
 	return cmd
 }
 
+func collectSchedulerStartTargets(root string, projects []string, startAgent string, ts taskstore.Store) ([]schedulerStartTarget, []schedulerStartTarget) {
+	heartbeatTargets, cronTargets, seen := collectAgentWorkerSchedulerTargets(root, projects, startAgent, ts)
+	legacyHeartbeat, legacyCron := collectLegacySchedulerTargets(projects, startAgent, ts, seen)
+	heartbeatTargets = append(heartbeatTargets, legacyHeartbeat...)
+	cronTargets = append(cronTargets, legacyCron...)
+	return heartbeatTargets, cronTargets
+}
+
+func collectAgentWorkerSchedulerTargets(root string, projects []string, startAgent string, ts taskstore.Store) ([]schedulerStartTarget, []schedulerStartTarget, map[schedulerAgentKey]bool) {
+	seen := map[schedulerAgentKey]bool{}
+	db, err := openControlDBForRoot(root)
+	if err != nil {
+		return nil, nil, seen
+	}
+	defer db.Close()
+	workspaceID, err := workspaceIDForRoot(db, root)
+	if err != nil || strings.TrimSpace(workspaceID) == "" {
+		return nil, nil, seen
+	}
+	projectSet := map[string]bool{}
+	for _, project := range projects {
+		projectSet[strings.TrimSpace(project)] = true
+	}
+	memberships, err := db.ListProjectMemberships(controldb.ProjectMembershipFilter{
+		WorkspaceID: workspaceID,
+		MemberType:  agentdir.MemberTypeAgentWorker,
+	})
+	if err != nil {
+		return nil, nil, seen
+	}
+	byWorker := map[string]*schedulerStartTarget{}
+	order := make([]string, 0)
+	for _, membership := range memberships {
+		project := strings.TrimSpace(membership.ProjectID)
+		if project == "" || !projectSet[project] {
+			continue
+		}
+		worker, ok, err := db.AgentWorkerByID(workspaceID, membership.MemberID)
+		if err != nil || !ok {
+			continue
+		}
+		agentName := schedulerMembershipAgentName(membership, worker)
+		if agentName == "" {
+			continue
+		}
+		if want := strings.TrimSpace(startAgent); want != "" && !schedulerMatchesAgentRef(want, membership, worker, agentName) {
+			continue
+		}
+		key := schedulerAgentKey{project: project, agent: agentName}
+		seen[key] = true
+		target, ok := byWorker[worker.ID]
+		if !ok {
+			target = &schedulerStartTarget{key: key, workerID: worker.ID}
+			byWorker[worker.ID] = target
+			order = append(order, worker.ID)
+		}
+		target.memberships = append(target.memberships, key)
+	}
+	heartbeat := make([]schedulerStartTarget, 0, len(order))
+	cron := make([]schedulerStartTarget, 0, len(order))
+	for _, workerID := range order {
+		target := *byWorker[workerID]
+		hb, err := ts.GetHeartbeat(target.key.project, target.key.agent)
+		if err == nil && hb.Enabled {
+			heartbeat = append(heartbeat, target)
+		}
+		for _, membership := range target.memberships {
+			crons, err := ts.ListCrons(membership.project, membership.agent)
+			if err != nil {
+				continue
+			}
+			if hasEnabledCron(crons) {
+				cron = append(cron, schedulerStartTarget{key: membership, workerID: target.workerID, memberships: target.memberships})
+				break
+			}
+		}
+	}
+	return heartbeat, cron, seen
+}
+
+func collectLegacySchedulerTargets(projects []string, startAgent string, ts taskstore.Store, seen map[schedulerAgentKey]bool) ([]schedulerStartTarget, []schedulerStartTarget) {
+	var heartbeatTargets []schedulerStartTarget
+	var cronTargets []schedulerStartTarget
+	for _, p := range projects {
+		agents, err := ts.ListAgents(p)
+		if err != nil {
+			continue
+		}
+		for _, a := range agents {
+			if len(a) > 0 && a[0] == '.' {
+				continue
+			}
+			if want := strings.TrimSpace(startAgent); want != "" && a != want {
+				continue
+			}
+			key := schedulerAgentKey{project: p, agent: a}
+			if seen[key] {
+				continue
+			}
+			target := schedulerStartTarget{key: key, memberships: []schedulerAgentKey{key}}
+			hb, err := ts.GetHeartbeat(p, a)
+			if err == nil && hb.Enabled {
+				heartbeatTargets = append(heartbeatTargets, target)
+			}
+			crons, err := ts.ListCrons(p, a)
+			if err == nil && hasEnabledCron(crons) {
+				cronTargets = append(cronTargets, target)
+			}
+		}
+	}
+	return heartbeatTargets, cronTargets
+}
+
+func schedulerMembershipAgentName(membership controldb.ProjectMembership, worker controldb.AgentWorker) string {
+	for _, value := range []string{membership.Title, membership.Role, worker.Name, worker.DisplayName} {
+		if trimmed := strings.TrimSpace(value); trimmed != "" {
+			return trimmed
+		}
+	}
+	return ""
+}
+
+func schedulerMatchesAgentRef(want string, membership controldb.ProjectMembership, worker controldb.AgentWorker, agentName string) bool {
+	for _, value := range []string{agentName, membership.Title, membership.Role, worker.Name, worker.DisplayName, worker.ID, membership.ID} {
+		if strings.EqualFold(strings.TrimSpace(want), strings.TrimSpace(value)) {
+			return true
+		}
+	}
+	return false
+}
+
+func hasEnabledCron(crons []*entity.Cron) bool {
+	for _, c := range crons {
+		if c != nil && c.Enabled {
+			return true
+		}
+	}
+	return false
+}
+
+func selectSchedulerExecutionTarget(ts taskstore.Store, memberships []schedulerAgentKey) schedulerAgentKey {
+	if len(memberships) == 0 {
+		return schedulerAgentKey{}
+	}
+	best := memberships[0]
+	var bestTask *entity.Task
+	for _, membership := range memberships {
+		task, err := nextPendingTask(ts, membership.project, membership.agent)
+		if err != nil || task == nil {
+			continue
+		}
+		if bestTask == nil || task.Priority < bestTask.Priority || (task.Priority == bestTask.Priority && task.CreatedAt.Before(bestTask.CreatedAt)) {
+			best = membership
+			bestTask = task
+		}
+	}
+	return best
+}
+
 // runHeartbeatLoop runs the blocking heartbeat loop for a single agent.
 // It respects the non-overlapping constraint: the interval starts after
 // each run completes, not at fixed wall-clock intervals.
 func runHeartbeatLoop(ctx context.Context, root, project, agentName string,
-	ts taskstore.Store, s store.Store) {
+	ts taskstore.Store, s store.Store, memberships ...schedulerAgentKey) {
+	if len(memberships) == 0 {
+		memberships = []schedulerAgentKey{{project: project, agent: agentName}}
+	}
 
 	// agentLog prints a timestamped, colorized line prefixed with the agent identity.
 	agentLog := func(format string, a ...any) {
@@ -643,8 +790,14 @@ func runHeartbeatLoop(ctx context.Context, root, project, agentName string,
 		hb.NextWakeupAt = nil
 		_ = ts.SaveHeartbeat(project, agentName, hb)
 
+		execTarget := selectSchedulerExecutionTarget(ts, memberships)
+		execProject, execAgent := execTarget.project, execTarget.agent
+
 		// Fire any due cron jobs before processing the queue.
-		cronCount := fireDueCrons(ts, project, agentName)
+		cronCount := 0
+		for _, membership := range memberships {
+			cronCount += fireDueCrons(ts, membership.project, membership.agent)
+		}
 
 		cronInfo := ""
 		if cronCount > 0 {
@@ -654,7 +807,7 @@ func runHeartbeatLoop(ctx context.Context, root, project, agentName string,
 			colorCyan+"♥", wakeCount, cronInfo)
 
 		cycleStart := time.Now()
-		cycleResult := runAllPendingTasks(ctx, root, project, agentName, ts, s, hb)
+		cycleResult := runAllPendingTasks(ctx, root, execProject, execAgent, ts, s, hb)
 		dur := time.Since(cycleStart).Round(time.Second)
 
 		if cycleResult != nil {
@@ -758,9 +911,13 @@ func runAllPendingTasks(ctx context.Context, root, project, agentName string,
 				prompt = i18n.DefaultTrigger
 			}
 			if prompt != "" {
-				// Prepend any unread messages to the wakeup prompt.
+				// Prepend attention signals and unread messages to the wakeup prompt.
 				recipient := project + "/" + agentName
 				unread, _ := ts.ListUnreadMessages(recipient)
+				attentionSection, attentionIDs, _ := pendingAttentionSection(root, project, agentName, i18n)
+				if attentionSection != "" {
+					prompt = attentionSection + prompt
+				}
 				if len(unread) > 0 {
 					var msgSection strings.Builder
 					msgSection.WriteString(i18n.InboxHeader)
@@ -778,8 +935,14 @@ func runAllPendingTasks(ctx context.Context, root, project, agentName string,
 					prompt = msgSection.String() + prompt
 					taskLog("%s ▶ wakeup routine (%d unread message(s))",
 						colorCyan+"▶", len(unread))
+				} else if len(attentionIDs) > 0 {
+					taskLog("%s ▶ wakeup routine (%d attention signal(s))",
+						colorCyan+"▶", len(attentionIDs))
 				} else {
 					taskLog("%s ▶ wakeup routine", colorCyan+"▶")
+				}
+				if len(attentionIDs) > 0 {
+					markAttentionSignalsSeen(root, attentionIDs)
 				}
 
 				now := time.Now().UTC()
@@ -1143,6 +1306,9 @@ type wakeupI18n struct {
 	InboxHeader       string // section heading for unread-message block
 	InboxIntro        string // sentence before the message list
 	InboxReplyHint    string // hint line showing how to reply
+	AttentionHeader   string // section heading for attention signals
+	AttentionIntro    string // sentence before attention signals
+	AttentionHint     string // hint line showing attention semantics
 	DefaultTrigger    string // used when wakeup_prompt is empty and no file reference
 	WakeupFileTrigger string // used when wakeup_prompt references a file (already in CLAUDE.md)
 }
@@ -1156,6 +1322,9 @@ func wakeupStrings(lang string) wakeupI18n {
 			InboxHeader:       "## 📬 未读消息\n\n",
 			InboxIntro:        "你收到了以下消息，请在本次唤醒中处理：\n\n",
 			InboxReplyHint:    "如需回复某条消息：\n  multigent --dir $AGENCY_DIR inbox reply <msg-id> --body \"...\"\n\n",
+			AttentionHeader:   "## 🧭 注意力信号\n\n",
+			AttentionIntro:    "系统记录了以下值得你关注的新信号。它们不是强制触发器，请根据职责、优先级和当前上下文自主判断是否处理、忽略、延后或主动联系相关人：\n\n",
+			AttentionHint:     "看到这些信号后，系统只会把它们标记为 seen；如果你完成处理，请用可用工具推进任务、回复 IM、更新流程或沉淀记录。处理 IM 私聊、群聊 @ 或卡片回调时，如需回复到原始会话，请优先使用 `mga notify send --to source ...` 或 `mga notify card send --to source ...`，不要猜测群聊名称。runtime 环境中可用 `mga attention mark <signal-id> --status handled` 或 `--status ignored` 明确闭环。\n\n",
 			DefaultTrigger:    "执行你的唤醒例程。检查待处理任务、未读消息及计划中的工作事项。",
 			WakeupFileTrigger: "你已被唤醒。请严格按照你的 wakeup.md 中定义的唤醒流程，逐步执行所有步骤。不要跳过任何步骤。",
 		}
@@ -1164,6 +1333,9 @@ func wakeupStrings(lang string) wakeupI18n {
 			InboxHeader:       "## 📬 Unread Messages\n\n",
 			InboxIntro:        "You have the following unread messages. Please handle them in this wakeup cycle:\n\n",
 			InboxReplyHint:    "To reply to a message:\n  multigent --dir $AGENCY_DIR inbox reply <msg-id> --body \"...\"\n\n",
+			AttentionHeader:   "## 🧭 Attention Signals\n\n",
+			AttentionIntro:    "Multigent recorded the following new signals for your attention. They are not hard triggers; decide whether to handle, ignore, defer, or contact someone based on your role, priority, and current context:\n\n",
+			AttentionHint:     "After these signals are shown, Multigent only marks them as seen. If you handle one, use the available tools to advance tasks, reply over IM, update workflows, or record notes. When handling an IM direct message, group mention, or card callback, use `mga notify send --to source ...` or `mga notify card send --to source ...` to reply in the original conversation; do not guess the chat name. In runtime environments, use `mga attention mark <signal-id> --status handled` or `--status ignored` to close the loop explicitly.\n\n",
 			DefaultTrigger:    "Execute your wakeup routine. Check pending tasks, unread messages, and your scheduled activities.",
 			WakeupFileTrigger: "You have been woken up. Follow the wakeup routine defined in your wakeup.md step by step. Do not skip any steps.",
 		}
@@ -1180,6 +1352,129 @@ func agencyLang(s store.Store) string {
 		return "en"
 	}
 	return a.Lang
+}
+
+func pendingAttentionSection(root, project, agentName string, i18n wakeupI18n) (string, []string, error) {
+	db, err := openControlDBForRoot(root)
+	if err != nil {
+		return "", nil, err
+	}
+	defer db.Close()
+	workspaceID, err := schedulerWorkspaceID(root, db)
+	if err != nil || strings.TrimSpace(workspaceID) == "" {
+		return "", nil, err
+	}
+	resolved, ok, err := agentdir.New(db).ResolveLegacyMailbox(workspaceID, project+"/"+agentName)
+	if err != nil || !ok {
+		return "", nil, err
+	}
+	signals, err := db.ListAttentionSignals(controldb.AttentionSignalFilter{
+		WorkspaceID:   workspaceID,
+		AgentWorkerID: resolved.Worker.ID,
+		Statuses:      []string{"pending", "seen", "handling"},
+		Limit:         20,
+	})
+	if err != nil || len(signals) == 0 {
+		return "", nil, err
+	}
+	var b strings.Builder
+	b.WriteString(i18n.AttentionHeader)
+	b.WriteString(i18n.AttentionIntro)
+	ids := make([]string, 0, len(signals))
+	for _, signal := range signals {
+		ids = append(ids, signal.ID)
+		b.WriteString("---\n")
+		b.WriteString(fmt.Sprintf("ID: `%s`\n", signal.ID))
+		b.WriteString(fmt.Sprintf("Source: `%s`", signal.SourceKind))
+		if signal.SourceChannel != "" {
+			b.WriteString(fmt.Sprintf(" / `%s`", signal.SourceChannel))
+		}
+		b.WriteString("\n")
+		if signal.Reason != "" {
+			b.WriteString(fmt.Sprintf("Reason: `%s`\n", signal.Reason))
+		}
+		if signal.Priority != "" {
+			b.WriteString(fmt.Sprintf("Priority: `%s`\n", signal.Priority))
+		}
+		if signal.ActorID != "" {
+			b.WriteString(fmt.Sprintf("Actor: `%s`", signal.ActorID))
+			if signal.ActorType != "" {
+				b.WriteString(fmt.Sprintf(" (%s)", signal.ActorType))
+			}
+			b.WriteString("\n")
+		}
+		if signal.Summary != "" {
+			b.WriteString(fmt.Sprintf("Summary: %s\n", signal.Summary))
+		}
+		if signal.PayloadJSON != "" && signal.PayloadJSON != "{}" {
+			b.WriteString(fmt.Sprintf("Payload: `%s`\n", trimForSchedulerPrompt(signal.PayloadJSON, 800)))
+		}
+		if signal.RefsJSON != "" && signal.RefsJSON != "{}" {
+			b.WriteString(fmt.Sprintf("Refs: `%s`\n", trimForSchedulerPrompt(signal.RefsJSON, 800)))
+		}
+		b.WriteString("\n")
+	}
+	b.WriteString("---\n\n")
+	b.WriteString(i18n.AttentionHint)
+	return b.String(), ids, nil
+}
+
+func markAttentionSignalsSeen(root string, ids []string) {
+	if len(ids) == 0 {
+		return
+	}
+	db, err := openControlDBForRoot(root)
+	if err != nil {
+		return
+	}
+	defer db.Close()
+	workspaceID, err := schedulerWorkspaceID(root, db)
+	if err != nil || strings.TrimSpace(workspaceID) == "" {
+		return
+	}
+	for _, id := range ids {
+		_ = db.MarkAttentionSignalStatus(workspaceID, id, "seen")
+	}
+}
+
+func schedulerWorkspaceID(root string, db controldb.Store) (string, error) {
+	absRoot, err := filepath.Abs(root)
+	if err != nil {
+		absRoot = root
+	}
+	rows, err := db.ListWorkspaces()
+	if err != nil {
+		return "", err
+	}
+	for _, row := range rows {
+		if sameSchedulerPath(row.Root, absRoot) && strings.TrimSpace(row.ID) != "" {
+			return row.ID, nil
+		}
+	}
+	return "", nil
+}
+
+func sameSchedulerPath(a, b string) bool {
+	aa, errA := filepath.Abs(a)
+	bb, errB := filepath.Abs(b)
+	if errA == nil {
+		a = aa
+	}
+	if errB == nil {
+		b = bb
+	}
+	return filepath.Clean(a) == filepath.Clean(b)
+}
+
+func trimForSchedulerPrompt(s string, max int) string {
+	s = strings.TrimSpace(s)
+	if max <= 0 || len(s) <= max {
+		return s
+	}
+	if max <= 3 {
+		return s[:max]
+	}
+	return s[:max-3] + "..."
 }
 
 // sleepWithCronCheck sleeps for the given duration but wakes every minute to
@@ -1995,12 +2290,11 @@ func newSchedulerHeartbeatConfigureCmd() *cobra.Command {
 				if triggerStr != "" {
 					for _, tok := range strings.Split(triggerStr, ",") {
 						t := entity.TriggerType(strings.TrimSpace(tok))
-						switch t {
-						case entity.TriggerOnMessage, entity.TriggerOnTask:
+						if entity.IsValidTriggerType(t) {
 							triggers = append(triggers, t)
-						default:
-							return fmt.Errorf("unknown trigger type %q (supported: message, task)", tok)
+							continue
 						}
+						return fmt.Errorf("unknown trigger type %q (supported: %s)", tok, supportedTriggerTypesString())
 					}
 				}
 				hb.Triggers = triggers
@@ -2106,9 +2400,18 @@ func newSchedulerHeartbeatConfigureCmd() *cobra.Command {
 	cmd.Flags().StringVar(&jitter, "jitter", "", `random delay added before each wakeup, e.g. "5m", "10m" (empty = full interval on first cycle only)`)
 	cmd.Flags().StringVar(&wakeupPromptFile, "wakeup-prompt-file", "", "path to a markdown file used as the default wakeup routine when queue is empty")
 	cmd.Flags().StringVar(&wakeupCondition, "wakeup-condition", "", `shell command evaluated before each wakeup; exit 0 = proceed, non-zero = skip cycle (e.g. "gh issue list --state open | grep -q .")`)
-	cmd.Flags().StringVar(&triggerStr, "trigger", "", `event triggers for immediate wakeup, comma-separated: "message", "task", or "message,task" (empty = disable triggers)`)
+	cmd.Flags().StringVar(&triggerStr, "trigger", "", `event triggers for immediate wakeup, comma-separated: "message", "task", "attention", "im_direct_message", "im_mention", "workflow_step_assigned", "card_action" (empty = disable triggers)`)
 	cmd.Flags().StringVar(&triggerDebounce, "trigger-debounce", "", `delay before poller fires trigger after detecting unread messages, e.g. "5m", "10m" (default: 5m). Only affects CLI/agent-to-agent messages; web API messages fire immediately.`)
 	return cmd
+}
+
+func supportedTriggerTypesString() string {
+	values := entity.SupportedTriggerTypes()
+	out := make([]string, 0, len(values))
+	for _, value := range values {
+		out = append(out, string(value))
+	}
+	return strings.Join(out, ", ")
 }
 
 // ── scheduler heartbeat pause ──────────────────────────────────────────────────

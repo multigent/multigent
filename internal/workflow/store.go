@@ -960,6 +960,9 @@ func (s *Store) StartRunWithInput(project, taskID, definitionID string, actorBin
 		StartedAt:          now,
 		UpdatedAt:          now,
 	}
+	if startStep, ok := stepByID(def.Steps, def.StartStepID); ok {
+		s.annotateRunCurrentAssignee(&run, startStep)
+	}
 	if err := s.SaveRun(&run); err != nil {
 		return entity.WorkflowRun{}, nil, err
 	}
@@ -1055,6 +1058,60 @@ func (s *Store) RunForTask(project, taskID string) (entity.WorkflowRun, bool, er
 	return run, true, nil
 }
 
+func (s *Store) ReconcileRunCurrentAssigneeForTask(project, taskID string) (entity.WorkflowRun, bool, error) {
+	run, ok, err := s.RunForTask(project, taskID)
+	if err != nil || !ok {
+		return entity.WorkflowRun{}, ok, err
+	}
+	run, err = s.ReconcileRunCurrentAssignee(run)
+	if err != nil {
+		return entity.WorkflowRun{}, false, err
+	}
+	return run, true, nil
+}
+
+func (s *Store) ReconcileRunCurrentAssignee(run entity.WorkflowRun) (entity.WorkflowRun, error) {
+	status := strings.TrimSpace(run.Status)
+	if strings.TrimSpace(run.ActiveStepID) == "" || status == "completed" || status == "cancelled" {
+		run.CurrentAssigneeType = ""
+		run.CurrentAssigneeID = ""
+		run.CurrentAssigneeMembershipID = ""
+		if err := s.SaveRun(&run); err != nil {
+			return entity.WorkflowRun{}, err
+		}
+		return run, nil
+	}
+	def, ok, err := s.RunDefinition(run)
+	if err != nil {
+		return entity.WorkflowRun{}, err
+	}
+	if !ok {
+		run.CurrentAssigneeType = ""
+		run.CurrentAssigneeID = ""
+		run.CurrentAssigneeMembershipID = ""
+		if err := s.SaveRun(&run); err != nil {
+			return entity.WorkflowRun{}, err
+		}
+		return run, nil
+	}
+	step, ok := stepByID(def.Steps, run.ActiveStepID)
+	if !ok {
+		run.CurrentAssigneeType = ""
+		run.CurrentAssigneeID = ""
+		run.CurrentAssigneeMembershipID = ""
+		if err := s.SaveRun(&run); err != nil {
+			return entity.WorkflowRun{}, err
+		}
+		return run, nil
+	}
+	s.annotateRunCurrentAssignee(&run, step)
+	run.UpdatedAt = time.Now().UTC()
+	if err := s.SaveRun(&run); err != nil {
+		return entity.WorkflowRun{}, err
+	}
+	return run, nil
+}
+
 func (s *Store) CancelRunForTask(project, taskID, reason string) (entity.WorkflowRun, bool, error) {
 	run, ok, err := s.RunForTask(project, taskID)
 	if err != nil || !ok {
@@ -1067,6 +1124,9 @@ func (s *Store) CancelRunForTask(project, taskID, reason string) (entity.Workflo
 	activeStepID := strings.TrimSpace(run.ActiveStepID)
 	run.Status = "cancelled"
 	run.ActiveStepID = ""
+	run.CurrentAssigneeType = ""
+	run.CurrentAssigneeID = ""
+	run.CurrentAssigneeMembershipID = ""
 	run.UpdatedAt = now
 	run.FinishedAt = now
 	if err := s.SaveRun(&run); err != nil {
@@ -1428,6 +1488,72 @@ func workflowActorBindingForStep(bindings map[string]entity.WorkflowActorBinding
 	return entity.WorkflowActorBinding{}, false
 }
 
+func (s *Store) annotateRunCurrentAssignee(run *entity.WorkflowRun, step entity.WorkflowStep) {
+	if run == nil {
+		return
+	}
+	run.CurrentAssigneeType = ""
+	run.CurrentAssigneeID = ""
+	run.CurrentAssigneeMembershipID = ""
+	binding, ok := workflowActorBindingForStep(run.ActorBindings, step)
+	if !ok {
+		return
+	}
+	actorType := strings.TrimSpace(binding.Type)
+	actorID := strings.TrimSpace(binding.ID)
+	if actorID == "" {
+		return
+	}
+	switch actorType {
+	case "human", "user":
+		run.CurrentAssigneeType = "user"
+		run.CurrentAssigneeID = actorID
+	case "agent", "agent_worker":
+		run.CurrentAssigneeType = "agent_worker"
+		run.CurrentAssigneeID = actorID
+		if s == nil || s.db == nil {
+			return
+		}
+		memberships, err := s.db.ListProjectMemberships(controldb.ProjectMembershipFilter{
+			WorkspaceID: s.workspaceID,
+			ProjectID:   strings.TrimSpace(run.Project),
+			MemberType:  "agent_worker",
+		})
+		if err != nil {
+			return
+		}
+		for _, membership := range memberships {
+			if membershipMatchesActor(s.db, s.workspaceID, membership, actorID) {
+				run.CurrentAssigneeID = membership.MemberID
+				run.CurrentAssigneeMembershipID = membership.ID
+				return
+			}
+		}
+	}
+}
+
+func membershipMatchesActor(db controldb.Store, workspaceID string, membership controldb.ProjectMembership, actorID string) bool {
+	actorID = strings.TrimSpace(actorID)
+	if actorID == "" {
+		return false
+	}
+	if sameWorkflowIdentity(membership.ID, actorID) || sameWorkflowIdentity(membership.MemberID, actorID) || sameWorkflowIdentity(membership.Title, actorID) {
+		return true
+	}
+	if db == nil {
+		return false
+	}
+	worker, ok, err := db.AgentWorkerByID(workspaceID, membership.MemberID)
+	if err != nil || !ok {
+		return false
+	}
+	return sameWorkflowIdentity(worker.ID, actorID) || sameWorkflowIdentity(worker.Name, actorID) || sameWorkflowIdentity(worker.DisplayName, actorID)
+}
+
+func sameWorkflowIdentity(a, b string) bool {
+	return strings.EqualFold(strings.TrimSpace(a), strings.TrimSpace(b))
+}
+
 func (s *Store) CompleteAndAdvance(project, taskID, summary, output string, outputValues map[string]string, status string) (TransitionResult, error) {
 	var result TransitionResult
 	run, ok, err := s.RunForTask(project, taskID)
@@ -1496,6 +1622,9 @@ func (s *Store) CompleteAndAdvance(project, taskID, summary, output string, outp
 	if !hasNext {
 		run.Status = "completed"
 		run.ActiveStepID = ""
+		run.CurrentAssigneeType = ""
+		run.CurrentAssigneeID = ""
+		run.CurrentAssigneeMembershipID = ""
 		run.UpdatedAt = now
 		run.FinishedAt = now
 		if err := s.SaveRun(&run); err != nil {
@@ -1509,6 +1638,9 @@ func (s *Store) CompleteAndAdvance(project, taskID, summary, output string, outp
 	if !ok {
 		run.Status = "completed"
 		run.ActiveStepID = ""
+		run.CurrentAssigneeType = ""
+		run.CurrentAssigneeID = ""
+		run.CurrentAssigneeMembershipID = ""
 		run.UpdatedAt = now
 		run.FinishedAt = now
 		if err := s.SaveRun(&run); err != nil {
@@ -1519,6 +1651,7 @@ func (s *Store) CompleteAndAdvance(project, taskID, summary, output string, outp
 		return result, nil
 	}
 	run.ActiveStepID = nextStep.ID
+	s.annotateRunCurrentAssignee(&run, nextStep)
 	run.UpdatedAt = now
 	if err := s.SaveRun(&run); err != nil {
 		return result, err

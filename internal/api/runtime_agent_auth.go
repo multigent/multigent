@@ -58,13 +58,16 @@ func (s *Server) handleIssueAgentRuntimeToken(w http.ResponseWriter, r *http.Req
 		ttl = 24 * time.Hour
 	}
 	caps := normalizeRuntimeCapabilities(body.Capabilities)
+	workerID, membershipID := s.agentWorkerContextForProjectAgent(workspaceID, project, agent)
 	token := s.issueAgentRuntimeToken(runtimeAgentTokenPayload{
-		Type:         "agent_runtime",
-		WorkspaceID:  workspaceID,
-		Project:      project,
-		Agent:        agent,
-		RunID:        strings.TrimSpace(body.RunID),
-		Capabilities: caps,
+		Type:                "agent_runtime",
+		WorkspaceID:         workspaceID,
+		Project:             project,
+		Agent:               agent,
+		AgentWorkerID:       workerID,
+		ProjectMembershipID: membershipID,
+		RunID:               strings.TrimSpace(body.RunID),
+		Capabilities:        caps,
 	}, ttl)
 	expiresAt := time.Now().UTC().Add(ttl)
 	s.auditLog(auditLogInput{
@@ -74,24 +77,28 @@ func (s *Server) handleIssueAgentRuntimeToken(w http.ResponseWriter, r *http.Req
 		ResourceID:   project + "/" + agent,
 		Summary:      "Agent runtime token issued",
 		After: map[string]any{
-			"project":      project,
-			"agent":        agent,
-			"runId":        strings.TrimSpace(body.RunID),
-			"capabilities": caps,
-			"expiresAt":    expiresAt.Format(time.RFC3339),
+			"project":       project,
+			"agent":         agent,
+			"agentWorkerId": workerID,
+			"membershipId":  membershipID,
+			"runId":         strings.TrimSpace(body.RunID),
+			"capabilities":  caps,
+			"expiresAt":     expiresAt.Format(time.RFC3339),
 		},
 		Request: r,
 	})
 	_ = json.NewEncoder(w).Encode(map[string]any{
-		"tokenType":    "Bearer",
-		"token":        token,
-		"expiresAt":    expiresAt.Format(time.RFC3339),
-		"ttlSeconds":   int64(ttl.Seconds()),
-		"workspaceId":  workspaceID,
-		"project":      project,
-		"agent":        agent,
-		"runId":        strings.TrimSpace(body.RunID),
-		"capabilities": caps,
+		"tokenType":     "Bearer",
+		"token":         token,
+		"expiresAt":     expiresAt.Format(time.RFC3339),
+		"ttlSeconds":    int64(ttl.Seconds()),
+		"workspaceId":   workspaceID,
+		"project":       project,
+		"agent":         agent,
+		"agentWorkerId": workerID,
+		"membershipId":  membershipID,
+		"runId":         strings.TrimSpace(body.RunID),
+		"capabilities":  caps,
 	})
 }
 
@@ -116,12 +123,12 @@ func normalizeRuntimeCapabilities(caps []string) []string {
 }
 
 func defaultRuntimeCapabilities() []string {
-	return []string{"connection.use", "task.use", "message.use", "okr.use", "docs.use"}
+	return []string{"connection.use", "task.use", "message.use", "okr.use", "docs.use", "attention.use"}
 }
 
 func runtimeCapabilityAllowed(capability string) bool {
 	switch capability {
-	case "connection.use", "task.use", "message.use", "okr.use", "docs.use":
+	case "connection.use", "task.use", "message.use", "okr.use", "docs.use", "attention.use":
 		return true
 	default:
 		return false
@@ -195,6 +202,13 @@ func runtimeHasCapability(principal runtimeAgentPrincipal, capability string) bo
 	return false
 }
 
+func (s *Server) runtimePrincipalAgentWorkerID(principal runtimeAgentPrincipal) string {
+	if workerID := strings.TrimSpace(principal.AgentWorkerID); workerID != "" {
+		return workerID
+	}
+	return s.agentWorkerIDForProjectAgent(principal.WorkspaceID, principal.Project, principal.Agent)
+}
+
 func (s *Server) runtimeConnectionForRequest(w http.ResponseWriter, r *http.Request) (runtimeAgentPrincipal, controldb.Connection, bool) {
 	principal, ok := runtimeAgentFromRequest(r)
 	if !ok {
@@ -233,11 +247,7 @@ func (s *Server) findRuntimeConnection(principal runtimeAgentPrincipal, connecti
 	if err != nil {
 		return controldb.Connection{}, false, err
 	}
-	bindings, err := s.controlDB.ListAgentToolBindings(controldb.AgentToolBindingFilter{
-		WorkspaceID: principal.WorkspaceID,
-		ProjectID:   principal.Project,
-		AgentID:     principal.Agent,
-	})
+	bindings, err := s.controlDB.ListAgentToolBindings(s.agentToolBindingFilterForProjectAgent(principal.WorkspaceID, principal.Project, principal.Agent))
 	if err != nil {
 		return controldb.Connection{}, false, err
 	}
@@ -262,7 +272,7 @@ func (s *Server) findRuntimeConnection(principal runtimeAgentPrincipal, connecti
 		if err != nil {
 			return controldb.Connection{}, false, err
 		}
-		if len(matchingAgentConnectionGrants(grants, principal.WorkspaceID, principal.Project, principal.Agent)) == 0 {
+		if len(s.matchingAgentConnectionGrants(grants, principal.WorkspaceID, principal.Project, principal.Agent)) == 0 {
 			continue
 		}
 		return connection, true, nil

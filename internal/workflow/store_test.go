@@ -375,6 +375,78 @@ func TestWorkflowRunUsesDefinitionSnapshotAfterDefinitionChanges(t *testing.T) {
 	}
 }
 
+func TestWorkflowRunAnnotatesCurrentAssigneeMembership(t *testing.T) {
+	controlDB, err := db.Open(filepath.Join(t.TempDir(), "control.db"))
+	if err != nil {
+		t.Fatalf("open db: %v", err)
+	}
+	defer controlDB.Close()
+	if err := controlDB.UpsertWorkspace(db.Workspace{ID: "workspace-1", Name: "Workspace", Slug: "workspace", Root: t.TempDir()}); err != nil {
+		t.Fatalf("create workspace: %v", err)
+	}
+	now := time.Now().UTC().Format(time.RFC3339)
+	if err := controlDB.UpsertAgentWorker(db.AgentWorker{
+		ID:          "aw-dev",
+		WorkspaceID: "workspace-1",
+		Name:        "dev",
+		DisplayName: "Dev",
+		Status:      "active",
+		CreatedAt:   now,
+		UpdatedAt:   now,
+	}); err != nil {
+		t.Fatalf("worker: %v", err)
+	}
+	if err := controlDB.UpsertProjectMembership(db.ProjectMembership{
+		ID:          "pm-dev",
+		WorkspaceID: "workspace-1",
+		ProjectID:   "project",
+		MemberType:  "agent_worker",
+		MemberID:    "aw-dev",
+		Role:        "developer",
+		Title:       "developer",
+		CreatedAt:   now,
+		UpdatedAt:   now,
+	}); err != nil {
+		t.Fatalf("membership: %v", err)
+	}
+
+	store := NewStore(controlDB, "workspace-1")
+	def := &entity.WorkflowDefinition{
+		ID:          "wf-assignee",
+		Name:        "Assignee Test",
+		Version:     1,
+		Scope:       "workspace",
+		StartStepID: "draft",
+		Steps: []entity.WorkflowStep{
+			{ID: "draft", Type: "agent_task", Title: "Draft", ActorRole: "developer", OutputFields: []entity.WorkflowField{{Name: "decision", Description: "Decision."}}},
+			{ID: "review", Type: "human_review", Title: "Review", ActorRole: "owner"},
+		},
+		Edges:     []entity.WorkflowEdge{{ID: "to-review", From: "draft", To: "review", Condition: &entity.WorkflowEdgeCondition{Field: "decision", Operator: "eq", Value: "approve"}}},
+		CreatedAt: time.Now().UTC(),
+		UpdatedAt: time.Now().UTC(),
+	}
+	if err := store.SaveDefinition(def); err != nil {
+		t.Fatalf("save definition: %v", err)
+	}
+	run, _, err := store.StartRun("project", "task-1", def.ID, map[string]entity.WorkflowActorBinding{
+		"developer": {Type: "agent", ID: "developer"},
+		"owner":     {Type: "human", ID: "owner"},
+	})
+	if err != nil {
+		t.Fatalf("start run: %v", err)
+	}
+	if run.CurrentAssigneeType != "agent_worker" || run.CurrentAssigneeID != "aw-dev" || run.CurrentAssigneeMembershipID != "pm-dev" {
+		t.Fatalf("unexpected current assignee on start: %#v", run)
+	}
+	transition, err := store.CompleteAndAdvance("project", "task-1", "done", "", map[string]string{"decision": "approve"}, "completed")
+	if err != nil {
+		t.Fatalf("advance: %v", err)
+	}
+	if transition.Run.ActiveStepID != "review" || transition.Run.CurrentAssigneeType != "user" || transition.Run.CurrentAssigneeID != "owner" || transition.Run.CurrentAssigneeMembershipID != "" {
+		t.Fatalf("unexpected current assignee after advance: %#v", transition.Run)
+	}
+}
+
 func workflowStepInstanceByIDForTest(steps []entity.WorkflowStepInstance, stepID string) (entity.WorkflowStepInstance, bool) {
 	for _, step := range steps {
 		if step.StepID == stepID {

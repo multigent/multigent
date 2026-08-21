@@ -1,6 +1,7 @@
 package main
 
 import (
+	"os"
 	"path/filepath"
 	"testing"
 	"time"
@@ -9,13 +10,9 @@ import (
 )
 
 func TestAcquireCLIInteractionUsesControlDBActiveLock(t *testing.T) {
-	dataDir := t.TempDir()
-	t.Setenv("MULTIGENT_DATA_DIR", dataDir)
 	root := filepath.Join(t.TempDir(), "workspace")
-	db, err := controldb.OpenDefault()
-	if err != nil {
-		t.Fatalf("open db: %v", err)
-	}
+	db := openTestWorkspaceControlDB(t, root)
+	defer db.Close()
 	if err := db.UpsertWorkspace(controldb.Workspace{
 		ID:        "ws-one",
 		Name:      "One",
@@ -25,7 +22,6 @@ func TestAcquireCLIInteractionUsesControlDBActiveLock(t *testing.T) {
 	}); err != nil {
 		t.Fatalf("workspace: %v", err)
 	}
-	_ = db.Close()
 
 	lease, busy, err := acquireCLIInteraction(root, "project", "pm", "scheduler", "heartbeat", "scheduler", "running_task")
 	if err != nil || busy || lease == nil {
@@ -44,13 +40,9 @@ func TestAcquireCLIInteractionUsesControlDBActiveLock(t *testing.T) {
 }
 
 func TestCLIInteractionLeasePersistsRuntimeSessionID(t *testing.T) {
-	dataDir := t.TempDir()
-	t.Setenv("MULTIGENT_DATA_DIR", dataDir)
 	root := filepath.Join(t.TempDir(), "workspace")
-	db, err := controldb.OpenDefault()
-	if err != nil {
-		t.Fatalf("open db: %v", err)
-	}
+	db := openTestWorkspaceControlDB(t, root)
+	defer db.Close()
 	if err := db.UpsertWorkspace(controldb.Workspace{
 		ID:        "ws-one",
 		Name:      "One",
@@ -60,7 +52,6 @@ func TestCLIInteractionLeasePersistsRuntimeSessionID(t *testing.T) {
 	}); err != nil {
 		t.Fatalf("workspace: %v", err)
 	}
-	_ = db.Close()
 
 	lease, busy, err := acquireCLIInteraction(root, "project", "pm", "scheduler", "heartbeat", "scheduler", "running_task")
 	if err != nil || busy || lease == nil {
@@ -75,4 +66,18 @@ func TestCLIInteractionLeasePersistsRuntimeSessionID(t *testing.T) {
 		t.Fatalf("runtime session id=%q", stored.RuntimeSessionID)
 	}
 	lease.Release()
+}
+
+func openTestWorkspaceControlDB(t *testing.T, root string) controldb.Store {
+	t.Helper()
+	t.Setenv("MULTIGENT_CONTROL_DATA_DIR", "")
+	t.Setenv("MULTIGENT_DATA_DIR", root)
+	if err := os.MkdirAll(filepath.Join(root, ".multigent"), 0o755); err != nil {
+		t.Fatalf("mkdir db dir: %v", err)
+	}
+	db, err := controldb.Open(filepath.Join(root, ".multigent", "multigent.db"))
+	if err != nil {
+		t.Fatalf("open db: %v", err)
+	}
+	return db
 }

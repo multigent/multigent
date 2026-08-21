@@ -5,6 +5,7 @@ import (
 	"encoding/json"
 	"net/http"
 	"net/http/httptest"
+	"strings"
 	"testing"
 )
 
@@ -95,9 +96,13 @@ func TestReplyMarkdownUsesInteractiveReplyAPI(t *testing.T) {
 	if len(elements) != 1 {
 		t.Fatalf("unexpected elements: %#v", body["elements"])
 	}
-	markdown, _ := elements[0].(map[string]any)
-	if markdown["tag"] != "markdown" {
-		t.Fatalf("final reply should render as markdown element, got %#v", markdown)
+	element, _ := elements[0].(map[string]any)
+	if element["tag"] != "div" {
+		t.Fatalf("final reply should render as lark_md div, got %#v", element)
+	}
+	text, _ := element["text"].(map[string]any)
+	if text["tag"] != "lark_md" || !strings.Contains(text["content"].(string), "## 结论") {
+		t.Fatalf("final reply should render markdown as lark_md text, got %#v", text)
 	}
 }
 

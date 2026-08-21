@@ -4,6 +4,7 @@ import (
 	"bufio"
 	"bytes"
 	"context"
+	"crypto/sha256"
 	"encoding/json"
 	"errors"
 	"fmt"
@@ -32,6 +33,145 @@ type channelEventResolution struct {
 	Found        bool
 	Candidate    controldb.AgentChannelBinding
 	HasCandidate bool
+}
+
+func (s *Server) shouldWakeAgentForAttention(binding controldb.AgentChannelBinding, reason string) bool {
+	if s == nil {
+		return false
+	}
+	reason = strings.TrimSpace(reason)
+	if strings.TrimSpace(binding.AgentWorkerID) != "" && s.controlDB != nil {
+		worker, ok, err := s.controlDB.AgentWorkerByID(binding.WorkspaceID, binding.AgentWorkerID)
+		if err == nil && ok {
+			if hb, configured := agentWorkerScheduleHeartbeat(worker); configured {
+				return hb.HasAttentionTrigger(reason)
+			}
+		}
+	}
+	if s.ts == nil {
+		return false
+	}
+	hb, err := s.ts.GetHeartbeat(binding.ProjectID, binding.AgentID)
+	if err != nil || hb == nil {
+		return false
+	}
+	return hb.HasAttentionTrigger(reason)
+}
+
+func (s *Server) requestAgentAttentionWakeup(binding controldb.AgentChannelBinding, reason, runtimeAPIURL, actor, attentionID string) {
+	if s == nil {
+		return
+	}
+	providerContext := map[string]any{
+		"project":     binding.ProjectID,
+		"agent":       binding.AgentID,
+		"agentWorker": binding.AgentWorkerID,
+		"reason":      strings.TrimSpace(reason),
+		"attentionId": strings.TrimSpace(attentionID),
+	}
+	target := s.runtimeSchedulerTargetForProjectAgent(binding.WorkspaceID, binding.ProjectID, binding.AgentID)
+	hb, err := s.loadSchedulerTargetHeartbeat(binding.WorkspaceID, target)
+	if err != nil || hb == nil {
+		log.Printf("[attention] load heartbeat failed for %s/%s: %v", binding.ProjectID, binding.AgentID, err)
+		return
+	}
+	attentionTask, _, err := s.ensurePendingAttentionWakeupTask(binding.WorkspaceID, binding.ProjectID, binding.AgentID)
+	if err != nil {
+		log.Printf("[attention] ensure attention wakeup task failed for %s/%s: %v", binding.ProjectID, binding.AgentID, err)
+		return
+	}
+	if attentionTask != nil {
+		providerContext["attentionTaskId"] = attentionTask.ID
+	}
+	if hb.PID > 0 && hb.LastWakeupStatus == "running" && processAlive(hb.PID) {
+		s.auditLog(auditLogInput{
+			WorkspaceID:  binding.WorkspaceID,
+			ActorType:    "system",
+			ActorID:      "attention",
+			Action:       "attention.wakeup_skipped",
+			ResourceType: "agent",
+			ResourceID:   binding.ProjectID + "/" + binding.AgentID,
+			Summary:      "Skipped attention wakeup because agent is already running",
+			After:        providerContext,
+		})
+		return
+	}
+	meta, err := s.agentMetaForProjectMember(binding.WorkspaceID, binding.ProjectID, binding.AgentID)
+	if err != nil || meta == nil {
+		log.Printf("[attention] load agent meta failed for %s/%s: %v", binding.ProjectID, binding.AgentID, err)
+		return
+	}
+	if readiness := s.runtimeReadinessForExecution(binding.WorkspaceID, meta); readiness.Blocking {
+		providerContext["readiness"] = runtimeReadinessErrorMessage(readiness)
+		s.auditLog(auditLogInput{
+			WorkspaceID:  binding.WorkspaceID,
+			ActorType:    "system",
+			ActorID:      "attention",
+			Action:       "attention.wakeup_failed",
+			ResourceType: "agent",
+			ResourceID:   binding.ProjectID + "/" + binding.AgentID,
+			Summary:      "Attention wakeup skipped because runtime is not ready",
+			After:        providerContext,
+		})
+		return
+	}
+	if s.usesAssignedRuntimeNode(binding.WorkspaceID, meta) {
+		if s.hasActiveRuntimeRunForTarget(binding.WorkspaceID, target, "") {
+			return
+		}
+		run, task, err := s.enqueueRuntimeWakeupRunFromRequest(binding.WorkspaceID, binding.ProjectID, binding.AgentID, hb, runtimeAPIURL, actor)
+		if err != nil {
+			log.Printf("[attention] queue runtime wakeup failed for %s/%s: %v", binding.ProjectID, binding.AgentID, err)
+			return
+		}
+		_ = s.saveSchedulerTargetHeartbeat(binding.WorkspaceID, target, hb)
+		providerContext["runtimeRunId"] = run.ID
+		if task != nil {
+			providerContext["taskId"] = task.ID
+		}
+		s.auditLog(auditLogInput{
+			WorkspaceID:  binding.WorkspaceID,
+			ActorType:    "system",
+			ActorID:      "attention",
+			Action:       "attention.wakeup_queued",
+			ResourceType: "agent",
+			ResourceID:   binding.ProjectID + "/" + binding.AgentID,
+			Summary:      "Attention wakeup queued on runtime node",
+			After:        providerContext,
+		})
+		return
+	}
+	if s.sched == nil || strings.TrimSpace(s.sched.binPath) == "" || strings.TrimSpace(s.sched.root) == "" {
+		log.Printf("[attention] scheduler unavailable for %s/%s", binding.ProjectID, binding.AgentID)
+		return
+	}
+	args := []string{"--dir", s.sched.root, "scheduler", "wakeup", "--project", binding.ProjectID, "--agent", binding.AgentID}
+	cmd := exec.Command(s.sched.binPath, args...)
+	cmd.Stdout = os.Stdout
+	cmd.Stderr = os.Stderr
+	setProcGroup(cmd)
+	if err := cmd.Start(); err != nil {
+		log.Printf("[attention] start wakeup failed for %s/%s: %v", binding.ProjectID, binding.AgentID, err)
+		return
+	}
+	if cmd.Process != nil {
+		providerContext["pid"] = cmd.Process.Pid
+	}
+	go func() {
+		if err := cmd.Wait(); err != nil {
+			log.Printf("[attention] wakeup %s/%s exited with error: %v", binding.ProjectID, binding.AgentID, err)
+		}
+	}()
+	s.auditLog(auditLogInput{
+		WorkspaceID:  binding.WorkspaceID,
+		ActorType:    "system",
+		ActorID:      "attention",
+		Action:       "attention.wakeup_started",
+		ResourceType: "agent",
+		ResourceID:   binding.ProjectID + "/" + binding.AgentID,
+		Summary:      "Attention wakeup started",
+		After:        providerContext,
+	})
 }
 
 func (s *Server) handleIMEvent(w http.ResponseWriter, r *http.Request) {
@@ -177,6 +317,7 @@ func (s *Server) acceptBoundIMInteractionCallback(channelProvider imbridge.Provi
 		return nil, err
 	}
 	resolved := resolvedChannelEventBinding{Binding: binding, SecretValues: values, Identity: identity}
+	attentionID := s.recordIMInteractionAttentionSignal(resolved, providerID, callback, request, string(rawSubmission))
 	go func() {
 		ctx, cancel := context.WithTimeout(context.Background(), 10*time.Second)
 		defer cancel()
@@ -187,7 +328,10 @@ func (s *Server) acceptBoundIMInteractionCallback(channelProvider imbridge.Provi
 			}
 		}
 	}()
-	go s.runAgentForInteractionCallback(channelProvider, resolved, callback, request, string(rawSubmission), runtimeAPIURL)
+	if !s.shouldWakeAgentForAttention(binding, "card_action") {
+		return map[string]any{"ok": true, "interactionId": request.ID, "status": "queued", "attentionId": attentionID}, nil
+	}
+	go s.requestAgentAttentionWakeup(binding, "card_action", runtimeAPIURL, userID, attentionID)
 	return map[string]any{"ok": true, "interactionId": request.ID, "status": "accepted"}, nil
 }
 
@@ -219,6 +363,9 @@ func (s *Server) acceptIMMessage(channelProvider imbridge.Provider, appID, verif
 	provider := channelProvider.Info().ID
 	text := strings.TrimSpace(message.Text)
 	if text == "" {
+		text = incomingMessageFallbackText(message)
+	}
+	if text == "" && len(message.Attachments) == 0 {
 		return map[string]any{"ok": true, "ignored": true}, nil
 	}
 	if bindCmd, code, ok := parseAgentChannelBindCommand(text); ok {
@@ -305,7 +452,13 @@ func (s *Server) acceptIMMessage(channelProvider imbridge.Provider, appID, verif
 		})
 		return map[string]any{"ok": true, "ignored": true, "reason": "permission_denied"}, nil
 	}
-	meta, err := s.st.AgentMeta(resolved.Binding.ProjectID, resolved.Binding.AgentID)
+	reason := imAttentionReason(message)
+	attentionID := s.recordIMAttentionSignal(resolved, provider, message, text)
+	if !s.shouldWakeAgentForAttention(resolved.Binding, reason) {
+		s.recordAgentChannelCallback(resolved.Binding, "queued", "attention_pending", message, "")
+		return map[string]any{"ok": true, "queued": true, "attentionId": attentionID}, nil
+	}
+	meta, err := s.agentMetaForProjectMember(resolved.Binding.WorkspaceID, resolved.Binding.ProjectID, resolved.Binding.AgentID)
 	if err != nil {
 		return nil, err
 	}
@@ -333,7 +486,7 @@ func (s *Server) acceptIMMessage(channelProvider imbridge.Provider, appID, verif
 		return map[string]any{"ok": true, "ignored": true, "reason": "runtime_not_ready"}, nil
 	}
 	s.recordAgentChannelCallback(resolved.Binding, "accepted", "", message, "")
-	go s.runAgentForIMEvent(channelProvider, resolved, message, text, runtimeAPIURL)
+	go s.requestAgentAttentionWakeup(resolved.Binding, reason, runtimeAPIURL, resolved.Identity.UserID, attentionID)
 	return map[string]any{"ok": true}, nil
 }
 
@@ -728,11 +881,15 @@ func imConversationSource(providerID, userID, chatID, chatType string) interacti
 	}
 }
 
-func (s *Server) runAgentForIMEvent(provider imbridge.Provider, resolved resolvedChannelEventBinding, message imbridge.IncomingMessage, text string, runtimeAPIURL string) {
+func (s *Server) runAgentForIMEvent(provider imbridge.Provider, resolved resolvedChannelEventBinding, message imbridge.IncomingMessage, text string, runtimeAPIURL string, attentionID string) {
 	ctx, cancel := context.WithTimeout(context.Background(), 30*time.Minute)
 	defer cancel()
 	binding := resolved.Binding
 	providerID := provider.Info().ID
+	if attentionID != "" {
+		_ = s.controlDB.MarkAttentionSignalStatus(binding.WorkspaceID, attentionID, "seen")
+		_ = s.controlDB.MarkAttentionSignalStatus(binding.WorkspaceID, attentionID, "handling")
+	}
 	source := imConversationSource(providerID, resolved.Identity.UserID, message.ChatID, message.ChatType)
 	lease, err := s.acquireAgentInteractionLease(s.interactionAgentRef(binding.WorkspaceID, binding.ProjectID, binding.AgentID), source, "interactive")
 	if err != nil {
@@ -829,6 +986,13 @@ func (s *Server) runAgentForIMEvent(provider imbridge.Provider, resolved resolve
 	} else {
 		s.recordAgentChannelCallback(binding, "replied", "", message, "")
 	}
+	if attentionID != "" {
+		if err != nil || replyErr != nil {
+			_ = s.controlDB.MarkAttentionSignalStatus(binding.WorkspaceID, attentionID, "seen")
+		} else {
+			_ = s.controlDB.MarkAttentionSignalStatus(binding.WorkspaceID, attentionID, "handled")
+		}
+	}
 	if err != nil {
 		_ = s.createInteractionEvent(lease.session, "system", "", providerID, "run_failed", output, map[string]any{
 			"messageId":        message.MessageID,
@@ -858,6 +1022,169 @@ func (s *Server) runAgentForIMEvent(provider imbridge.Provider, resolved resolve
 	})
 }
 
+func (s *Server) recordIMAttentionSignal(resolved resolvedChannelEventBinding, providerID string, message imbridge.IncomingMessage, text string) string {
+	if s == nil || s.controlDB == nil {
+		return ""
+	}
+	binding := resolved.Binding
+	workerID := strings.TrimSpace(binding.AgentWorkerID)
+	if workerID == "" {
+		workerID = s.agentWorkerIDForProjectAgent(binding.WorkspaceID, binding.ProjectID, binding.AgentID)
+	}
+	if workerID == "" {
+		return ""
+	}
+	source := imConversationSource(providerID, resolved.Identity.UserID, message.ChatID, message.ChatType)
+	messageID := strings.TrimSpace(message.MessageID)
+	if messageID == "" {
+		messageID = strings.TrimSpace(message.ChatID) + ":" + strings.TrimSpace(message.SenderOpenID) + ":" + fmt.Sprintf("%x", sha256.Sum256([]byte(text)))
+	}
+	dedupeKey := "im:" + strings.TrimSpace(providerID) + ":" + messageID
+	refsRaw, _ := json.Marshal(map[string]any{
+		"bindingId":   binding.ID,
+		"project":     binding.ProjectID,
+		"agent":       binding.AgentID,
+		"chatId":      message.ChatID,
+		"messageId":   message.MessageID,
+		"chatType":    message.ChatType,
+		"messageType": message.MessageType,
+	})
+	payloadRaw, _ := json.Marshal(map[string]any{
+		"text":           text,
+		"rawContent":     message.RawContent,
+		"mentionCount":   len(message.Mentions),
+		"senderOpenId":   message.SenderOpenID,
+		"multigentUser":  resolved.Identity.UserID,
+		"externalChatId": message.ChatID,
+		"messageType":    message.MessageType,
+		"attachments":    message.Attachments,
+	})
+	reason := imAttentionReason(message)
+	now := time.Now().UTC().Format(time.RFC3339)
+	signalID := newChannelID("asig")
+	if err := s.controlDB.UpsertAttentionSignal(controldb.AttentionSignal{
+		ID:            signalID,
+		WorkspaceID:   binding.WorkspaceID,
+		AgentWorkerID: workerID,
+		DedupeKey:     dedupeKey,
+		SourceKind:    "im_message",
+		SourceID:      messageID,
+		SourceChannel: source.Channel,
+		Reason:        reason,
+		Priority:      "high",
+		ActorType:     "user",
+		ActorID:       resolved.Identity.UserID,
+		Summary:       trimForIM(text, 240),
+		RefsJSON:      string(refsRaw),
+		PayloadJSON:   string(payloadRaw),
+		Status:        "pending",
+		CreatedAt:     now,
+		ExpiresAt:     time.Now().UTC().Add(7 * 24 * time.Hour).Format(time.RFC3339),
+	}); err != nil {
+		log.Printf("[im:%s] record attention failed for %s/%s message=%s: %v", providerID, binding.ProjectID, binding.AgentID, message.MessageID, err)
+		return ""
+	}
+	_ = s.controlDB.UpsertAttentionCursor(controldb.AttentionCursor{
+		ID:            newChannelID("acur"),
+		WorkspaceID:   binding.WorkspaceID,
+		AgentWorkerID: workerID,
+		SourceKind:    "im_message",
+		SourceChannel: source.Channel,
+		Cursor:        messageID,
+		SeenUntil:     messageID,
+		UpdatedAt:     now,
+	})
+	return signalID
+}
+
+func (s *Server) recordIMInteractionAttentionSignal(resolved resolvedChannelEventBinding, providerID string, callback imbridge.IncomingInteractionCallback, request controldb.InteractionRequest, submissionJSON string) string {
+	if s == nil || s.controlDB == nil {
+		return ""
+	}
+	binding := resolved.Binding
+	workerID := strings.TrimSpace(binding.AgentWorkerID)
+	if workerID == "" {
+		workerID = strings.TrimSpace(request.AgentWorkerID)
+	}
+	if workerID == "" {
+		workerID = s.agentWorkerIDForProjectAgent(binding.WorkspaceID, binding.ProjectID, binding.AgentID)
+	}
+	if workerID == "" {
+		return ""
+	}
+	source := imConversationSource(providerID, resolved.Identity.UserID, callback.ChatID, "")
+	eventID := strings.TrimSpace(callback.MessageID)
+	if eventID == "" {
+		eventID = strings.TrimSpace(request.ID) + ":" + strings.TrimSpace(callback.ActionID)
+	}
+	dedupeKey := "im-card:" + strings.TrimSpace(providerID) + ":" + strings.TrimSpace(request.ID) + ":" + eventID + ":" + strings.TrimSpace(callback.ActionID)
+	refsRaw, _ := json.Marshal(map[string]any{
+		"bindingId":     binding.ID,
+		"interactionId": request.ID,
+		"project":       binding.ProjectID,
+		"agent":         binding.AgentID,
+		"chatId":        callback.ChatID,
+		"messageId":     callback.MessageID,
+	})
+	payloadRaw, _ := json.Marshal(map[string]any{
+		"submission":    rawJSONToMap(submissionJSON),
+		"senderOpenId":  callback.SenderOpenID,
+		"multigentUser": resolved.Identity.UserID,
+		"actionId":      callback.ActionID,
+		"actionLabel":   callback.ActionLabel,
+		"interactionId": request.ID,
+	})
+	summary := strings.TrimSpace(callback.ActionLabel)
+	if summary == "" {
+		summary = strings.TrimSpace(callback.ActionID)
+	}
+	if summary == "" {
+		summary = "card action"
+	}
+	now := time.Now().UTC().Format(time.RFC3339)
+	signalID := newChannelID("asig")
+	if err := s.controlDB.UpsertAttentionSignal(controldb.AttentionSignal{
+		ID:            signalID,
+		WorkspaceID:   binding.WorkspaceID,
+		AgentWorkerID: workerID,
+		DedupeKey:     dedupeKey,
+		SourceKind:    "im_card_action",
+		SourceID:      request.ID,
+		SourceChannel: source.Channel,
+		Reason:        "card_action",
+		Priority:      "high",
+		ActorType:     "user",
+		ActorID:       resolved.Identity.UserID,
+		Summary:       trimForIM(summary, 240),
+		RefsJSON:      string(refsRaw),
+		PayloadJSON:   string(payloadRaw),
+		Status:        "pending",
+		CreatedAt:     now,
+		ExpiresAt:     time.Now().UTC().Add(24 * time.Hour).Format(time.RFC3339),
+	}); err != nil {
+		log.Printf("[im:%s] record card attention failed for %s/%s interaction=%s: %v", providerID, binding.ProjectID, binding.AgentID, request.ID, err)
+		return ""
+	}
+	_ = s.controlDB.UpsertAttentionCursor(controldb.AttentionCursor{
+		ID:            newChannelID("acur"),
+		WorkspaceID:   binding.WorkspaceID,
+		AgentWorkerID: workerID,
+		SourceKind:    "im_card_action",
+		SourceChannel: source.Channel,
+		Cursor:        eventID,
+		SeenUntil:     eventID,
+		UpdatedAt:     now,
+	})
+	return signalID
+}
+
+func imAttentionReason(message imbridge.IncomingMessage) string {
+	if strings.TrimSpace(message.ChatType) != "" && strings.TrimSpace(message.ChatType) != "p2p" {
+		return "im_mention"
+	}
+	return "im_direct_message"
+}
+
 func formatIMAgentPrompt(providerID string, binding controldb.AgentChannelBinding, identity controldb.ExternalIdentity, message imbridge.IncomingMessage, text string) string {
 	var b strings.Builder
 	b.WriteString("You received a message from a human through an external collaboration channel.\n")
@@ -871,6 +1198,32 @@ func formatIMAgentPrompt(providerID string, binding controldb.AgentChannelBindin
 	if chatID := strings.TrimSpace(message.ChatID); chatID != "" {
 		b.WriteString("- Chat ID: " + chatID + "\n")
 	}
+	if messageType := strings.TrimSpace(message.MessageType); messageType != "" {
+		b.WriteString("- Message type: " + messageType + "\n")
+	}
+	if len(message.Attachments) > 0 {
+		b.WriteString("\nAttachments:\n")
+		for i, attachment := range message.Attachments {
+			b.WriteString(fmt.Sprintf("%d. %s", i+1, strings.TrimSpace(attachment.Type)))
+			if name := strings.TrimSpace(attachment.Name); name != "" {
+				b.WriteString(" — " + name)
+			}
+			if id := strings.TrimSpace(attachment.ID); id != "" {
+				b.WriteString(" (`" + id + "`)")
+			}
+			if size := attachment.Size; size > 0 {
+				b.WriteString(fmt.Sprintf(" — %d bytes", size))
+			}
+			if url := strings.TrimSpace(attachment.URL); url != "" {
+				b.WriteString("\n   URL: " + url)
+			}
+			if preview := strings.TrimSpace(attachment.Preview); preview != "" {
+				b.WriteString("\n   Preview: " + preview)
+			}
+			b.WriteString("\n")
+		}
+		b.WriteString("\n")
+	}
 	b.WriteString("\nReply contract:\n")
 	b.WriteString("- Always finish with a concise, human-facing final reply. Do not end silently after tool calls.\n")
 	b.WriteString("- Reply in the same language as the user's message unless the user asks otherwise.\n")
@@ -882,6 +1235,31 @@ func formatIMAgentPrompt(providerID string, binding controldb.AgentChannelBindin
 	b.WriteString(strings.TrimSpace(text))
 	b.WriteString("\n```\n")
 	return b.String()
+}
+
+func incomingMessageFallbackText(message imbridge.IncomingMessage) string {
+	if strings.TrimSpace(message.Text) != "" {
+		return strings.TrimSpace(message.Text)
+	}
+	if len(message.Attachments) == 0 {
+		return ""
+	}
+	parts := make([]string, 0, len(message.Attachments))
+	for _, attachment := range message.Attachments {
+		label := strings.TrimSpace(attachment.Type)
+		if label == "" {
+			label = "attachment"
+		}
+		if name := strings.TrimSpace(attachment.Name); name != "" {
+			label += ":" + name
+		} else if url := strings.TrimSpace(attachment.URL); url != "" {
+			label += ":" + url
+		} else if id := strings.TrimSpace(attachment.ID); id != "" {
+			label += ":" + id
+		}
+		parts = append(parts, "["+label+"]")
+	}
+	return strings.Join(parts, " ")
 }
 
 func agentChannelReplySubject(agentID string) string {
@@ -1189,11 +1567,15 @@ func jsonRaw(v any) json.RawMessage {
 	return raw
 }
 
-func (s *Server) runAgentForInteractionCallback(provider imbridge.Provider, resolved resolvedChannelEventBinding, callback imbridge.IncomingInteractionCallback, request controldb.InteractionRequest, submissionJSON string, runtimeAPIURL string) {
+func (s *Server) runAgentForInteractionCallback(provider imbridge.Provider, resolved resolvedChannelEventBinding, callback imbridge.IncomingInteractionCallback, request controldb.InteractionRequest, submissionJSON string, runtimeAPIURL string, attentionID string) {
 	ctx, cancel := context.WithTimeout(context.Background(), 30*time.Minute)
 	defer cancel()
 	binding := resolved.Binding
 	providerID := provider.Info().ID
+	if attentionID != "" {
+		_ = s.controlDB.MarkAttentionSignalStatus(binding.WorkspaceID, attentionID, "seen")
+		_ = s.controlDB.MarkAttentionSignalStatus(binding.WorkspaceID, attentionID, "handling")
+	}
 	source := imConversationSource(providerID, resolved.Identity.UserID, callback.ChatID, "")
 	lease, err := s.acquireAgentInteractionLease(s.interactionAgentRef(binding.WorkspaceID, binding.ProjectID, binding.AgentID), source, "interactive_callback")
 	if err != nil {
@@ -1225,6 +1607,9 @@ func (s *Server) runAgentForInteractionCallback(provider imbridge.Provider, reso
 	reply := extractAgentChatReply(output)
 	if err != nil {
 		lease.Fail(err.Error())
+		if attentionID != "" {
+			_ = s.controlDB.MarkAttentionSignalStatus(binding.WorkspaceID, attentionID, "seen")
+		}
 		_ = s.createInteractionEvent(lease.session, "system", "", providerID, "run_failed", output, map[string]any{
 			"interactionId":    request.ID,
 			"error":            err.Error(),
@@ -1243,6 +1628,9 @@ func (s *Server) runAgentForInteractionCallback(provider imbridge.Provider, reso
 		"interactionId":    request.ID,
 		"runtimeSessionId": detectedRuntimeSessionID,
 	})
+	if attentionID != "" {
+		_ = s.controlDB.MarkAttentionSignalStatus(binding.WorkspaceID, attentionID, "handled")
+	}
 }
 
 func (s *Server) updateIMInteractionCardCompleted(ctx context.Context, provider imbridge.Provider, resolved resolvedChannelEventBinding, callback imbridge.IncomingInteractionCallback, request controldb.InteractionRequest, reply string) error {
@@ -1419,13 +1807,16 @@ func (s *Server) recordAgentChannelCallback(binding controldb.AgentChannelBindin
 	meta := map[string]any{}
 	_ = json.Unmarshal([]byte(binding.MetadataJSON), &meta)
 	meta["lastCallback"] = map[string]any{
-		"at":        now,
-		"status":    strings.TrimSpace(status),
-		"reason":    strings.TrimSpace(reason),
-		"messageId": strings.TrimSpace(message.MessageID),
-		"chatId":    strings.TrimSpace(message.ChatID),
-		"chatType":  strings.TrimSpace(message.ChatType),
-		"error":     strings.TrimSpace(errorText),
+		"at":           now,
+		"status":       strings.TrimSpace(status),
+		"reason":       strings.TrimSpace(reason),
+		"messageId":    strings.TrimSpace(message.MessageID),
+		"chatId":       strings.TrimSpace(message.ChatID),
+		"chatType":     strings.TrimSpace(message.ChatType),
+		"mentionCount": len(message.Mentions),
+		"text":         truncateForMetadata(message.Text, 300),
+		"rawContent":   truncateForMetadata(message.RawContent, 600),
+		"error":        strings.TrimSpace(errorText),
 	}
 	raw, err := json.Marshal(meta)
 	if err != nil {
@@ -1440,6 +1831,21 @@ func (s *Server) recordAgentChannelCallback(binding controldb.AgentChannelBindin
 	if err := s.controlDB.UpsertAgentChannelBinding(binding); err != nil {
 		log.Printf("[im:%s] update callback metadata failed for %s/%s: %v", binding.Provider, binding.ProjectID, binding.AgentID, err)
 	}
+}
+
+func truncateForMetadata(value string, maxRunes int) string {
+	value = strings.TrimSpace(value)
+	if maxRunes <= 0 || value == "" {
+		return value
+	}
+	runes := []rune(value)
+	if len(runes) <= maxRunes {
+		return value
+	}
+	if maxRunes <= 3 {
+		return string(runes[:maxRunes])
+	}
+	return string(runes[:maxRunes-3]) + "..."
 }
 
 func (s *Server) userCanOperateAgent(username, project, agent string) bool {

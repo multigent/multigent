@@ -346,7 +346,12 @@ func (s *Server) handleRunAgent(w http.ResponseWriter, r *http.Request) {
 		s.jsonError(w, http.StatusForbidden, "agent operator access required")
 		return
 	}
-	meta, err := s.st.AgentMeta(project, agent)
+	workspaceID, err := s.currentWorkspaceID()
+	if err != nil {
+		s.serverError(w, err)
+		return
+	}
+	meta, err := s.agentMetaForProjectMember(workspaceID, project, agent)
 	if err != nil {
 		if isNotFoundErr(err) {
 			s.jsonErrorCode(w, http.StatusNotFound, ErrCodeAgentNotFound, "agent not found")
@@ -436,6 +441,47 @@ func (s *Server) handleSetModel(w http.ResponseWriter, r *http.Request) {
 	if model == "" {
 		s.jsonError(w, http.StatusBadRequest, "model is required")
 		return
+	}
+	workspaceID, err := s.currentWorkspaceID()
+	if err != nil {
+		s.serverError(w, err)
+		return
+	}
+	agentModel := entity.NormaliseModel(entity.AgentModel(model))
+	if !entity.IsValidModel(agentModel) {
+		s.jsonErrorCode(w, http.StatusBadRequest, ErrCodeValidationFailed, fmt.Sprintf("unknown agent CLI %q", model))
+		return
+	}
+	if s.agentDirectory != nil && s.controlDB != nil && strings.TrimSpace(workspaceID) != "" {
+		if resolved, ok, err := s.agentDirectory.ProjectWorker(workspaceID, project, agent); err != nil {
+			s.serverError(w, err)
+			return
+		} else if ok {
+			worker := resolved.Worker
+			worker.Model = string(agentModel)
+			worker.UpdatedAt = time.Now().UTC().Format(time.RFC3339)
+			if err := s.controlDB.UpsertAgentWorker(worker); err != nil {
+				s.serverError(w, err)
+				return
+			}
+			s.auditLog(auditLogInput{
+				WorkspaceID:  workspaceID,
+				Action:       "agent.model.update",
+				ResourceType: "agent_worker",
+				ResourceID:   worker.ID,
+				Summary:      "Agent Worker model updated",
+				Request:      r,
+				After: map[string]any{
+					"project":      project,
+					"agent":        agent,
+					"agentWorker":  worker.ID,
+					"model":        worker.Model,
+					"membershipId": resolved.Membership.ID,
+				},
+			})
+			_ = json.NewEncoder(w).Encode(map[string]any{"ok": true})
+			return
+		}
 	}
 
 	args := []string{
@@ -542,13 +588,15 @@ func (s *Server) handlePutAgentEnv(w http.ResponseWriter, r *http.Request) {
 	}
 
 	meta, err := s.st.AgentMeta(project, agent)
+	legacyMissing := false
 	if err != nil {
 		if isNotFoundErr(err) {
-			s.jsonError(w, http.StatusNotFound, "agent not found")
+			legacyMissing = true
+			meta = &entity.AgentMeta{Name: agent, Project: project}
+		} else {
+			s.serverError(w, err)
 			return
 		}
-		s.serverError(w, err)
-		return
 	}
 
 	// Remove empty-value entries
@@ -591,18 +639,61 @@ func (s *Server) handlePutAgentEnv(w http.ResponseWriter, r *http.Request) {
 		meta.RuntimeModel = strings.TrimSpace(*body.RuntimeModel)
 	}
 
-	if err := s.st.SaveAgentMeta(project, agent, meta); err != nil {
+	workspaceID, err := s.currentWorkspaceID()
+	if err != nil {
 		s.serverError(w, err)
 		return
 	}
+	var workerID string
+	var membershipID string
+	if s.agentDirectory != nil && s.controlDB != nil && strings.TrimSpace(workspaceID) != "" {
+		if resolved, ok, err := s.agentDirectory.ProjectWorker(workspaceID, project, agent); err != nil {
+			s.serverError(w, err)
+			return
+		} else if ok {
+			worker := resolved.Worker
+			workerID = worker.ID
+			membershipID = resolved.Membership.ID
+			if body.Provider != nil {
+				worker.DefaultModelAccountID = meta.Provider
+			}
+			if body.RuntimeModel != nil {
+				worker.RuntimeModel = meta.RuntimeModel
+			}
+			worker.UpdatedAt = time.Now().UTC().Format(time.RFC3339)
+			if err := s.controlDB.UpsertAgentWorker(worker); err != nil {
+				s.serverError(w, err)
+				return
+			}
+		}
+	}
+	if !(legacyMissing && len(cleaned) == 0) {
+		if err := s.st.SaveAgentMeta(project, agent, meta); err != nil {
+			s.serverError(w, err)
+			return
+		}
+	}
 	s.auditLog(auditLogInput{
-		Action:       "agent.env.update",
-		ResourceType: "agent",
-		ResourceID:   project + "/" + agent,
-		Summary:      "Agent environment updated",
+		WorkspaceID: workspaceID,
+		Action:      "agent.env.update",
+		ResourceType: func() string {
+			if workerID != "" {
+				return "agent_worker"
+			}
+			return "agent"
+		}(),
+		ResourceID: func() string {
+			if workerID != "" {
+				return workerID
+			}
+			return project + "/" + agent
+		}(),
+		Summary: "Agent environment updated",
 		After: map[string]any{
 			"project":      project,
 			"agent":        agent,
+			"agentWorker":  workerID,
+			"membershipId": membershipID,
 			"provider":     meta.Provider,
 			"runtimeModel": meta.RuntimeModel,
 			"envKeys":      sortedEnvKeys(meta.Env),
@@ -629,7 +720,11 @@ func (s *Server) canOperateAgent(r *http.Request, project, agent string) bool {
 }
 
 func (s *Server) canUseModelProviderForAgent(r *http.Request, provider entity.APIProvider, project, agent string) bool {
-	meta, err := s.st.AgentMeta(project, agent)
+	workspaceID, err := s.currentWorkspaceID()
+	if err != nil {
+		return false
+	}
+	meta, err := s.agentMetaForProjectMember(workspaceID, project, agent)
 	if err != nil || meta == nil || !modelProviderMatchesAgentModel(provider, meta.Model) {
 		return false
 	}
