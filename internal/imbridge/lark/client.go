@@ -196,7 +196,7 @@ func (c OpenAPIClient) ReplyMarkdown(ctx context.Context, messageID, title, mark
 		return fmt.Errorf("message id is required")
 	}
 	if title == "" {
-		title = "Multigent"
+		title = "Agent"
 	}
 	if markdown == "" {
 		markdown = "(empty message)"
@@ -226,7 +226,7 @@ func (c OpenAPIClient) ReplyInteractiveCard(ctx context.Context, messageID strin
 		return fmt.Errorf("message id is required")
 	}
 	if strings.TrimSpace(card.Title) == "" {
-		card.Title = "Multigent"
+		card.Title = "Agent"
 	}
 	if strings.TrimSpace(card.Body) == "" {
 		card.Body = "请选择一个操作。"
@@ -376,7 +376,7 @@ func (c OpenAPIClient) SendMarkdown(ctx context.Context, receiveIDType, receiveI
 		return fmt.Errorf("receive id is required")
 	}
 	if title == "" {
-		title = "Multigent notification"
+		title = "Agent"
 	}
 	if markdown == "" {
 		markdown = "(empty message)"
@@ -419,7 +419,7 @@ func (c OpenAPIClient) SendMarkdown(ctx context.Context, receiveIDType, receiveI
 func buildMarkdownCardBody(title, markdown string) map[string]any {
 	title = strings.TrimSpace(title)
 	if title == "" {
-		title = "Multigent"
+		title = "Agent"
 	}
 	markdown = strings.TrimSpace(markdown)
 	if markdown == "" {
@@ -450,7 +450,7 @@ func (c OpenAPIClient) SendInteractiveCard(ctx context.Context, receiveIDType, r
 		return fmt.Errorf("receive id is required")
 	}
 	if strings.TrimSpace(card.Title) == "" {
-		card.Title = "Multigent"
+		card.Title = "Agent"
 	}
 	if strings.TrimSpace(card.Body) == "" {
 		card.Body = "请选择一个操作。"
@@ -501,7 +501,7 @@ func (c OpenAPIClient) UpdateInteractiveCard(ctx context.Context, updateToken, o
 	}
 	operatorOpenID = strings.TrimSpace(operatorOpenID)
 	if strings.TrimSpace(card.Title) == "" {
-		card.Title = "Multigent"
+		card.Title = "Agent"
 	}
 	if strings.TrimSpace(card.Body) == "" {
 		card.Body = "操作已提交。"
@@ -646,7 +646,7 @@ func buildInteractiveCardBody(card InteractiveCard, openIDs []string) map[string
 func buildProgressCardBody(card ProgressCard) map[string]any {
 	title := strings.TrimSpace(card.Title)
 	if title == "" {
-		title = "Multigent"
+		title = "Agent"
 	}
 	state := strings.ToLower(strings.TrimSpace(card.State))
 	template := "blue"

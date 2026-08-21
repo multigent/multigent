@@ -47,6 +47,13 @@ type runtimeNotifyBody struct {
 	ExpiresInSec  int                    `json:"expiresInSec,omitempty"`
 }
 
+type runtimeNotifyReactionBody struct {
+	To      string `json:"to"`
+	Channel string `json:"channel"`
+	Emoji   string `json:"emoji"`
+	TaskID  string `json:"taskId"`
+}
+
 type runtimeNotifyCardBody struct {
 	Title       string                        `json:"title"`
 	Body        string                        `json:"body"`
@@ -198,6 +205,13 @@ func (s *Server) handleRuntimeNotify(w http.ResponseWriter, r *http.Request) {
 	}
 	ctx, cancel := context.WithTimeout(r.Context(), 20*time.Second)
 	defer cancel()
+	if body.Card == nil && strings.TrimSpace(target.ReplyToMessageID) != "" {
+		switch strings.ToLower(strings.TrimSpace(body.MessageFormat)) {
+		case "", "auto":
+			body.MessageFormat = "text"
+			result["messageFormat"] = "text"
+		}
+	}
 	notifyMessage := formatRuntimeNotifyMessage(principal, body, subject, text)
 	if body.Card != nil {
 		card, interactionID, err := s.runtimeNotifyCreateInteractionRequest(principal, binding, recipient, body, text)
@@ -252,6 +266,152 @@ func (s *Server) handleRuntimeNotify(w http.ResponseWriter, r *http.Request) {
 	result["channelId"] = binding.ID
 	result["externalSent"] = true
 	s.auditRuntimeNotify(r, principal, msg.ID, binding.Provider, subject, true, "")
+	_ = json.NewEncoder(w).Encode(result)
+}
+
+func (s *Server) handleRuntimeNotifyReaction(w http.ResponseWriter, r *http.Request) {
+	principal, ok := s.runtimeRequireCapability(w, r, "message.use")
+	if !ok {
+		return
+	}
+	var body runtimeNotifyReactionBody
+	if err := s.readJSON(w, r, &body); err != nil {
+		s.jsonErrorCode(w, http.StatusBadRequest, ErrCodeInvalidJSON, "invalid JSON body")
+		return
+	}
+	emoji := strings.TrimSpace(body.Emoji)
+	if emoji == "" {
+		emoji = "OK"
+	}
+	if strings.TrimSpace(body.To) == "" {
+		body.To = "source"
+	}
+	recipient, err := s.resolveRuntimeNotifyRecipient(principal, body.To)
+	if err != nil {
+		s.jsonError(w, http.StatusBadRequest, err.Error())
+		return
+	}
+	binding, found, err := s.selectRuntimeNotifyChannel(principal, body.Channel)
+	if err != nil {
+		s.serverError(w, err)
+		return
+	}
+	result := map[string]any{
+		"recipient":     recipient,
+		"emoji":         emoji,
+		"externalSent":  false,
+		"externalError": "",
+	}
+	if !found {
+		result["externalError"] = "no connected human collaboration channel for this agent"
+		_ = json.NewEncoder(w).Encode(result)
+		return
+	}
+	target, targetOK, err := s.runtimeNotifyTargetForRecipient(principal, binding, recipient)
+	if err != nil {
+		s.serverError(w, err)
+		return
+	}
+	if !targetOK {
+		result["provider"] = binding.Provider
+		result["channelId"] = binding.ID
+		result["externalError"] = fmt.Sprintf("recipient %q is not bound for this %s agent channel", recipient, binding.Provider)
+		_ = json.NewEncoder(w).Encode(result)
+		return
+	}
+	if strings.TrimSpace(target.ReplyToMessageID) == "" {
+		s.jsonError(w, http.StatusBadRequest, "reaction requires a source message; use --to source from an IM attention wakeup")
+		return
+	}
+	channelProvider, ok := imbridge.LookupProvider(binding.Provider)
+	if !ok {
+		result["externalError"] = "unsupported IM provider: " + binding.Provider
+		_ = json.NewEncoder(w).Encode(result)
+		return
+	}
+	reactionProvider, ok := channelProvider.(imbridge.ReactionProvider)
+	if !ok {
+		result["provider"] = binding.Provider
+		result["channelId"] = binding.ID
+		result["externalError"] = "IM provider does not support reactions"
+		_ = json.NewEncoder(w).Encode(result)
+		return
+	}
+	secret, ok, err := s.controlDB.ConnectionSecret(binding.ConnectionID)
+	if err != nil {
+		s.serverError(w, err)
+		return
+	}
+	if !ok {
+		result["externalError"] = "channel connection secret not found"
+		_ = json.NewEncoder(w).Encode(result)
+		return
+	}
+	secrets, err := openConnectionSecret(secret)
+	if err != nil {
+		s.serverError(w, err)
+		return
+	}
+	ctx, cancel := context.WithTimeout(r.Context(), 10*time.Second)
+	defer cancel()
+	reactionID, err := reactionProvider.AddReaction(ctx, secrets, imbridge.IncomingMessage{
+		MessageID:    target.ReplyToMessageID,
+		ChatID:       target.ChatID,
+		ChatType:     target.ChatType,
+		SenderOpenID: target.MentionOpenID,
+	}, emoji)
+	if err != nil {
+		result["provider"] = binding.Provider
+		result["channelId"] = binding.ID
+		result["externalError"] = err.Error()
+		s.auditLog(auditLogInput{
+			WorkspaceID:  principal.WorkspaceID,
+			ActorType:    "agent",
+			ActorID:      runtimeAgentAddress(principal),
+			Action:       "runtime.notify.react",
+			ResourceType: "message",
+			ResourceID:   target.ReplyToMessageID,
+			Summary:      fmt.Sprintf("Runtime agent reacted via %s", binding.Provider),
+			After: map[string]any{
+				"project":       principal.Project,
+				"agent":         principal.Agent,
+				"runId":         principal.RunID,
+				"provider":      binding.Provider,
+				"emoji":         emoji,
+				"externalSent":  false,
+				"externalError": err.Error(),
+			},
+			Request: r,
+		})
+		_ = json.NewEncoder(w).Encode(result)
+		return
+	}
+	now := time.Now().UTC().Format(time.RFC3339)
+	binding.LastActivityAt = now
+	binding.UpdatedAt = now
+	_ = s.controlDB.UpsertAgentChannelBinding(binding)
+	result["provider"] = binding.Provider
+	result["channelId"] = binding.ID
+	result["reactionId"] = reactionID
+	result["externalSent"] = true
+	s.auditLog(auditLogInput{
+		WorkspaceID:  principal.WorkspaceID,
+		ActorType:    "agent",
+		ActorID:      runtimeAgentAddress(principal),
+		Action:       "runtime.notify.react",
+		ResourceType: "message",
+		ResourceID:   target.ReplyToMessageID,
+		Summary:      fmt.Sprintf("Runtime agent reacted via %s", binding.Provider),
+		After: map[string]any{
+			"project":      principal.Project,
+			"agent":        principal.Agent,
+			"runId":        principal.RunID,
+			"provider":     binding.Provider,
+			"emoji":        emoji,
+			"externalSent": true,
+		},
+		Request: r,
+	})
 	_ = json.NewEncoder(w).Encode(result)
 }
 
@@ -318,7 +478,7 @@ func (s *Server) runtimeNotifyCreateInteractionRequest(principal runtimeAgentPri
 		targetUserID = ""
 		targetChatID = strings.TrimPrefix(recipient, "chat:")
 	}
-	title := firstNonEmpty(strings.TrimSpace(cardBody.Title), strings.TrimSpace(body.Subject), "Multigent")
+	title := firstNonEmpty(strings.TrimSpace(cardBody.Title), strings.TrimSpace(body.Subject), runtimeNotifyDefaultSubject(principal))
 	cardText := firstNonEmpty(strings.TrimSpace(cardBody.Body), fallbackText)
 	if err := s.controlDB.CreateInteractionRequest(controldb.InteractionRequest{
 		ID:               interactionID,
@@ -628,6 +788,9 @@ func runtimeNotifySourceFromPrompt(prompt, provider string) (runtimeNotifySource
 }
 
 func formatRuntimeNotifyMessage(principal runtimeAgentPrincipal, body runtimeNotifyBody, subject, text string) imbridge.OutgoingMessage {
+	if strings.TrimSpace(subject) == "" {
+		subject = runtimeNotifyDefaultSubject(principal)
+	}
 	format := normalizeRuntimeNotifyMessageFormat(body.MessageFormat, text)
 	if format == "markdown" {
 		return imbridge.OutgoingMessage{
@@ -641,6 +804,16 @@ func formatRuntimeNotifyMessage(principal runtimeAgentPrincipal, body runtimeNot
 		Subject: subject,
 		Text:    strings.TrimSpace(text),
 	}
+}
+
+func runtimeNotifyDefaultSubject(principal runtimeAgentPrincipal) string {
+	if agent := strings.TrimSpace(principal.Agent); agent != "" {
+		return agent
+	}
+	if project := strings.TrimSpace(principal.Project); project != "" {
+		return project
+	}
+	return "Agent"
 }
 
 func normalizeRuntimeNotifyMessageFormat(format, text string) string {
@@ -678,10 +851,12 @@ func prepareRuntimeNotifyExternalMessage(message *imbridge.OutgoingMessage, targ
 		return
 	}
 	if strings.TrimSpace(target.ReplyToMessageID) != "" {
-		// IM source replies should feel like normal chat replies. Keep the
-		// subject for Multigent's internal inbox/audit trail, but do not expose
-		// it as an external card title such as "Re: ...".
-		message.Subject = ""
+		// IM source replies should feel like normal chat replies. Strip obvious
+		// mail-style subjects, but keep agent-provided/default names as card
+		// titles because some IM card formats require a header.
+		if strings.HasPrefix(strings.ToLower(strings.TrimSpace(message.Subject)), "re:") {
+			message.Subject = ""
+		}
 	}
 }
 

@@ -500,6 +500,7 @@ func newRuntimeChannelsCmd() *cobra.Command {
 func newNotifyCmd() *cobra.Command {
 	cmd := &cobra.Command{Use: "notify", Short: "Notify humans through agent collaboration channels"}
 	cmd.AddCommand(newNotifySendCmd())
+	cmd.AddCommand(newNotifyReactionCmd())
 	cardCmd := &cobra.Command{Use: "card", Short: "Send interactive cards through collaboration channels"}
 	cardCmd.AddCommand(newNotifyCardSendCmd())
 	cmd.AddCommand(cardCmd)
@@ -538,7 +539,40 @@ func newNotifySendCmd() *cobra.Command {
 	cmd.Flags().StringVar(&body, "body", "", "notification body")
 	cmd.Flags().StringVar(&taskID, "task", "", "related task id")
 	cmd.Flags().StringVar(&urgency, "urgency", "", "urgency label: normal, review, blocking")
-	cmd.Flags().StringVar(&messageFormat, "message-format", "auto", "message content format: auto, text, or markdown")
+	cmd.Flags().StringVar(&messageFormat, "message-format", "text", "message content format: text, markdown, or auto")
+	cmd.Flags().StringVar(&format, "format", "json", "output format: json or table")
+	return cmd
+}
+
+func newNotifyReactionCmd() *cobra.Command {
+	var to, channel, emoji, taskID, format string
+	cmd := &cobra.Command{
+		Use:   "react",
+		Short: "Add a quick reaction to the source IM message",
+		RunE: func(cmd *cobra.Command, args []string) error {
+			if strings.TrimSpace(to) == "" {
+				to = "source"
+			}
+			if strings.TrimSpace(emoji) == "" {
+				emoji = "OK"
+			}
+			raw, _ := json.Marshal(map[string]any{
+				"to": to, "channel": channel, "emoji": emoji, "taskId": taskID,
+			})
+			resp, err := requestJSON(http.MethodPost, "/api/v1/runtime/notify/reaction", nil, raw)
+			if err != nil {
+				return err
+			}
+			if format == "table" {
+				return printNotifySendTable(resp)
+			}
+			return writeJSON(resp)
+		},
+	}
+	cmd.Flags().StringVar(&to, "to", "source", "recipient source; reactions currently require source")
+	cmd.Flags().StringVar(&channel, "channel", "auto", "channel provider: auto, feishu, lark")
+	cmd.Flags().StringVar(&emoji, "emoji", "OK", "reaction emoji, e.g. OK, EYES, THUMBSUP")
+	cmd.Flags().StringVar(&taskID, "task", "", "related task id")
 	cmd.Flags().StringVar(&format, "format", "json", "output format: json or table")
 	return cmd
 }

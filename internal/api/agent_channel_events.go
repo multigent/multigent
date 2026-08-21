@@ -1221,6 +1221,8 @@ func formatIMAgentPrompt(providerID string, binding controldb.AgentChannelBindin
 	b.WriteString("- Always finish with a concise, human-facing final reply. Do not end silently after tool calls.\n")
 	b.WriteString("- Reply in the same language as the user's message unless the user asks otherwise.\n")
 	b.WriteString("- Prefer short Markdown: one conclusion first, then bullets for details or next steps.\n")
+	b.WriteString("- For chat-like conversations, behave like a responsive coworker: you may first acknowledge with `mga notify react --to source --emoji EYES` or send a short `mga notify send --to source --body \"我先看下\"`, then continue working.\n")
+	b.WriteString("- You may send several short source replies when that feels more natural than one long final block. Avoid spam; each message should move the conversation forward.\n")
 	b.WriteString("- If you cannot complete the request, explain the blocker and the exact next action needed.\n")
 	b.WriteString("- If you sent a separate notification/card, still return a brief summary here so the user sees a complete response.\n\n")
 	b.WriteString("User message:\n")
@@ -1258,9 +1260,9 @@ func incomingMessageFallbackText(message imbridge.IncomingMessage) string {
 func agentChannelReplySubject(agentID string) string {
 	agentID = strings.TrimSpace(agentID)
 	if agentID == "" {
-		return "Multigent"
+		return "Agent"
 	}
-	return "Multigent · " + agentID
+	return agentID
 }
 
 func (s *Server) startIMProcessingIndicator(ctx context.Context, provider imbridge.Provider, resolved resolvedChannelEventBinding, message imbridge.IncomingMessage) func() {

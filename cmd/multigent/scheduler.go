@@ -1334,7 +1334,7 @@ func wakeupStrings(lang string) wakeupI18n {
 			InboxReplyHint:    "如需回复某条消息：\n  multigent --dir $AGENCY_DIR inbox reply <msg-id> --body \"...\"\n\n",
 			AttentionHeader:   "## 🧭 注意力信号\n\n",
 			AttentionIntro:    "系统记录了以下值得你关注的新信号。它们不是强制触发器，请根据职责、优先级和当前上下文自主判断是否处理、忽略、延后或主动联系相关人：\n\n",
-			AttentionHint:     "看到这些信号后，系统只会把它们标记为 seen；如果你完成处理，请用可用工具推进任务、回复 IM、更新流程或沉淀记录。处理 IM 私聊、群聊 @ 或卡片回调时，如需回复到原始会话，请优先使用 `mga notify send --to source ...` 或 `mga notify card send --to source ...`，不要猜测群聊名称。runtime 环境中可用 `mga attention mark <signal-id> --status handled` 或 `--status ignored` 明确闭环。\n\n",
+			AttentionHint:     "看到这些信号后，系统只会把它们标记为 seen；如果你完成处理，请用可用工具推进任务、回复 IM、更新流程或沉淀记录。处理 IM 私聊、群聊 @ 或卡片回调时，如需回复到原始会话，请优先使用 `mga notify send --to source ...` 或 `mga notify card send --to source ...`，不要猜测群聊名称。你也可以先用 `mga notify react --to source --emoji EYES` 表示已看到，或先发一句短消息再继续深入处理；必要时可以分多条短消息回复，但不要刷屏。runtime 环境中可用 `mga attention mark <signal-id> --status handled` 或 `--status ignored` 明确闭环。\n\n",
 			DefaultTrigger:    "执行你的唤醒例程。检查待处理任务、未读消息及计划中的工作事项。",
 			WakeupFileTrigger: "你已被唤醒。请严格按照你的 wakeup.md 中定义的唤醒流程，逐步执行所有步骤。不要跳过任何步骤。",
 		}
@@ -1345,7 +1345,7 @@ func wakeupStrings(lang string) wakeupI18n {
 			InboxReplyHint:    "To reply to a message:\n  multigent --dir $AGENCY_DIR inbox reply <msg-id> --body \"...\"\n\n",
 			AttentionHeader:   "## 🧭 Attention Signals\n\n",
 			AttentionIntro:    "Multigent recorded the following new signals for your attention. They are not hard triggers; decide whether to handle, ignore, defer, or contact someone based on your role, priority, and current context:\n\n",
-			AttentionHint:     "After these signals are shown, Multigent only marks them as seen. If you handle one, use the available tools to advance tasks, reply over IM, update workflows, or record notes. When handling an IM direct message, group mention, or card callback, use `mga notify send --to source ...` or `mga notify card send --to source ...` to reply in the original conversation; do not guess the chat name. In runtime environments, use `mga attention mark <signal-id> --status handled` or `--status ignored` to close the loop explicitly.\n\n",
+			AttentionHint:     "After these signals are shown, Multigent only marks them as seen. If you handle one, use the available tools to advance tasks, reply over IM, update workflows, or record notes. When handling an IM direct message, group mention, or card callback, use `mga notify send --to source ...` or `mga notify card send --to source ...` to reply in the original conversation; do not guess the chat name. You may first use `mga notify react --to source --emoji EYES` to acknowledge that you saw it, or send one short reply before continuing deeper work. Multiple short replies are acceptable when they make the conversation clearer, but avoid spam. In runtime environments, use `mga attention mark <signal-id> --status handled` or `--status ignored` to close the loop explicitly.\n\n",
 			DefaultTrigger:    "Execute your wakeup routine. Check pending tasks, unread messages, and your scheduled activities.",
 			WakeupFileTrigger: "You have been woken up. Follow the wakeup routine defined in your wakeup.md step by step. Do not skip any steps.",
 		}
