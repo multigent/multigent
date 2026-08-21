@@ -4,12 +4,14 @@ import (
 	"bufio"
 	"bytes"
 	"context"
+	crand "crypto/rand"
 	"crypto/sha256"
 	"encoding/json"
 	"errors"
 	"fmt"
 	"io"
 	"log"
+	"math/big"
 	"net/http"
 	"os"
 	"os/exec"
@@ -34,6 +36,8 @@ type channelEventResolution struct {
 	Candidate    controldb.AgentChannelBinding
 	HasCandidate bool
 }
+
+const imSystemAckReaction = "THINKING"
 
 func (s *Server) shouldWakeAgentForAttention(binding controldb.AgentChannelBinding, reason string) bool {
 	if s == nil {
@@ -165,6 +169,50 @@ func (s *Server) requestAgentAttentionWakeup(binding controldb.AgentChannelBindi
 		Summary:      "Attention wakeup started",
 		After:        providerContext,
 	})
+}
+
+func (s *Server) requestAgentAttentionWakeupAfterDebounce(binding controldb.AgentChannelBinding, reason, runtimeAPIURL, actor, attentionID string) {
+	delay := randomizedAttentionWakeupDelay(reason)
+	if delay > 0 {
+		timer := time.NewTimer(delay)
+		<-timer.C
+	}
+	s.requestAgentAttentionWakeup(binding, reason, runtimeAPIURL, actor, attentionID)
+}
+
+func randomizedAttentionWakeupDelay(reason string) time.Duration {
+	var minDelay, maxDelay time.Duration
+	switch strings.TrimSpace(reason) {
+	case "im_direct_message":
+		minDelay, maxDelay = 8*time.Second, 18*time.Second
+	case "im_mention":
+		minDelay, maxDelay = 15*time.Second, 45*time.Second
+	case "card_action":
+		minDelay, maxDelay = 3*time.Second, 8*time.Second
+	default:
+		minDelay, maxDelay = 10*time.Second, 30*time.Second
+	}
+	if maxDelay <= minDelay {
+		return minDelay
+	}
+	spanMillis := int64((maxDelay - minDelay) / time.Millisecond)
+	n, err := crand.Int(crand.Reader, big.NewInt(spanMillis+1))
+	if err != nil {
+		return minDelay + (maxDelay-minDelay)/2
+	}
+	return minDelay + time.Duration(n.Int64())*time.Millisecond
+}
+
+func (s *Server) acknowledgeIMAccepted(provider imbridge.Provider, resolved resolvedChannelEventBinding, message imbridge.IncomingMessage) {
+	reactionProvider, ok := provider.(imbridge.ReactionProvider)
+	if !ok {
+		return
+	}
+	ctx, cancel := context.WithTimeout(context.Background(), 8*time.Second)
+	defer cancel()
+	if _, err := reactionProvider.AddReaction(ctx, resolved.SecretValues, message, imSystemAckReaction); err != nil {
+		log.Printf("[im:%s] add accepted reaction failed: %v", provider.Info().ID, err)
+	}
 }
 
 func (s *Server) handleIMEvent(w http.ResponseWriter, r *http.Request) {
@@ -448,6 +496,7 @@ func (s *Server) acceptIMMessage(channelProvider imbridge.Provider, appID, verif
 	reason := imAttentionReason(message)
 	attentionID := s.recordIMAttentionSignal(resolved, provider, message, text)
 	if !s.shouldWakeAgentForAttention(resolved.Binding, reason) {
+		s.acknowledgeIMAccepted(channelProvider, resolved, message)
 		s.recordAgentChannelCallback(resolved.Binding, "queued", "attention_pending", message, "")
 		return map[string]any{"ok": true, "queued": true, "attentionId": attentionID}, nil
 	}
@@ -479,7 +528,8 @@ func (s *Server) acceptIMMessage(channelProvider imbridge.Provider, appID, verif
 		return map[string]any{"ok": true, "ignored": true, "reason": "runtime_not_ready"}, nil
 	}
 	s.recordAgentChannelCallback(resolved.Binding, "accepted", "", message, "")
-	go s.requestAgentAttentionWakeup(resolved.Binding, reason, runtimeAPIURL, resolved.Identity.UserID, attentionID)
+	s.acknowledgeIMAccepted(channelProvider, resolved, message)
+	go s.requestAgentAttentionWakeupAfterDebounce(resolved.Binding, reason, runtimeAPIURL, resolved.Identity.UserID, attentionID)
 	return map[string]any{"ok": true}, nil
 }
 
@@ -1238,7 +1288,7 @@ func formatIMAgentPromptWithSender(providerID string, binding controldb.AgentCha
 	b.WriteString("- Always finish with a concise, human-facing final reply. Do not end silently after tool calls.\n")
 	b.WriteString("- Reply in the same language as the user's message unless the user asks otherwise.\n")
 	b.WriteString("- Prefer short Markdown: one conclusion first, then bullets for details or next steps.\n")
-	b.WriteString("- For chat-like conversations, behave like a responsive coworker: you may first acknowledge with `mga notify react --to source --emoji EYES` or send a short `mga notify send --to source --body \"我先看下\"`, then continue working.\n")
+	b.WriteString("- For chat-like conversations, behave like a responsive coworker: you may first acknowledge with `mga notify react --to source --emoji THINKING` or send a short `mga notify send --to source --body \"我先看下\"`, then continue working.\n")
 	b.WriteString("- You may send several short source replies when that feels more natural than one long final block. Avoid spam; each message should move the conversation forward.\n")
 	b.WriteString("- If you cannot complete the request, explain the blocker and the exact next action needed.\n")
 	b.WriteString("- If you sent a separate notification/card, still return a brief summary here so the user sees a complete response.\n\n")
@@ -1322,7 +1372,7 @@ func (s *Server) startIMProcessingIndicator(ctx context.Context, provider imbrid
 	if !ok {
 		return func() {}
 	}
-	reactionID, err := reactionProvider.AddReaction(ctx, resolved.SecretValues, message, "OK")
+	reactionID, err := reactionProvider.AddReaction(ctx, resolved.SecretValues, message, imSystemAckReaction)
 	if err != nil || strings.TrimSpace(reactionID) == "" {
 		return func() {}
 	}

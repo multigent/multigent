@@ -21,6 +21,22 @@ func (db *SQLiteStore) UpsertAgentToolBinding(b AgentToolBinding) error {
 	}
 	conflict := `ON CONFLICT(workspace_id, project_id, agent_id, connection_id) DO UPDATE SET`
 	if strings.TrimSpace(b.AgentWorkerID) != "" {
+		res, err := db.sql.Exec(`UPDATE agent_tool_bindings SET
+	agent_worker_id = ?,
+	provider = ?,
+	adapter_type = ?,
+	status = ?,
+	config_json = ?,
+	updated_at = ?
+WHERE workspace_id = ? AND project_id = ? AND agent_id = ? AND connection_id = ?`,
+			b.AgentWorkerID, b.Provider, b.AdapterType, b.Status, b.ConfigJSON, b.UpdatedAt,
+			b.WorkspaceID, b.ProjectID, b.AgentID, b.ConnectionID)
+		if err != nil {
+			return err
+		}
+		if n, err := res.RowsAffected(); err == nil && n > 0 {
+			return nil
+		}
 		conflict = `ON CONFLICT(workspace_id, agent_worker_id, connection_id) WHERE agent_worker_id != '' DO UPDATE SET`
 	}
 	_, err := db.sql.Exec(`INSERT INTO agent_tool_bindings (

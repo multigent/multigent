@@ -74,8 +74,8 @@ type BindCode = {
   command: string
   expiresAt: string
   provider: string
-  project: string
-  agent: string
+  project?: string
+  agent?: string
   target?: string
   name?: string
 }
@@ -107,7 +107,7 @@ type SetupState =
   | { step: 'connected'; provider: ChannelProvider }
   | { step: 'error'; provider?: ChannelProvider; message: string }
 
-export function AgentChannelPanel({ project, agentName }: { project: string; agentName: string }) {
+export function AgentChannelPanel({ project, agentName, agentWorkerId }: { project: string; agentName: string; agentWorkerId?: string }) {
   const { t } = useTranslation()
   const fmtDateTime = useFormatDateTime()
   const [loading, setLoading] = useState(true)
@@ -128,7 +128,10 @@ export function AgentChannelPanel({ project, agentName }: { project: string; age
   const [copiedBind, setCopiedBind] = useState(false)
   const pollRef = useRef<ReturnType<typeof setInterval> | null>(null)
 
-  const basePath = `/api/v1/projects/${encodeURIComponent(project)}/agents/${encodeURIComponent(agentName)}/channels`
+  const basePath = agentWorkerId
+    ? `/api/v1/agents/${encodeURIComponent(agentWorkerId)}/channels`
+    : `/api/v1/projects/${encodeURIComponent(project)}/agents/${encodeURIComponent(agentName)}/channels`
+  const interactionPath = `/api/v1/projects/${encodeURIComponent(project)}/agents/${encodeURIComponent(agentName)}/interactions/active`
 
   const load = useCallback(async () => {
     setLoading(true)
@@ -136,12 +139,12 @@ export function AgentChannelPanel({ project, agentName }: { project: string; age
       const res = await apiFetch<ChannelsResponse>(basePath)
       setChannels(res.channels ?? [])
       if (res.providers?.length) setProviders(res.providers)
-      const active = await apiFetch<InteractionStatus>(`/api/v1/projects/${encodeURIComponent(project)}/agents/${encodeURIComponent(agentName)}/interactions/active`)
+      const active = await apiFetch<InteractionStatus>(interactionPath)
       setInteraction(active)
     } finally {
       setLoading(false)
     }
-  }, [basePath])
+  }, [basePath, interactionPath])
 
   useEffect(() => { void load() }, [load])
   useEffect(() => () => {

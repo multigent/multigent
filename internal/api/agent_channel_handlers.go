@@ -135,6 +135,37 @@ func (s *Server) handleAgentChannels(w http.ResponseWriter, r *http.Request) {
 	})
 }
 
+func (s *Server) handleAgentWorkerChannels(w http.ResponseWriter, r *http.Request) {
+	scope, ok := s.agentWorkerToolBindingScope(w, r)
+	if !ok {
+		return
+	}
+	bindings, err := s.controlDB.ListAgentChannelBindings(controldb.AgentChannelBindingFilter{
+		WorkspaceID:   scope.workspaceID,
+		AgentWorkerID: scope.worker.ID,
+	})
+	if err != nil {
+		s.serverError(w, err)
+		return
+	}
+	out := make([]agentChannelResponse, 0, len(bindings))
+	for _, binding := range bindings {
+		resp := agentChannelToResponse(binding)
+		resp.CallbackURL = requestBaseURL(r) + "/api/v1/im/" + binding.Provider + "/events"
+		if secret, ok, err := s.controlDB.ConnectionSecret(binding.ConnectionID); err == nil && ok {
+			if values, err := openConnectionSecret(secret); err == nil {
+				resp.Security.VerificationTokenConfigured = strings.TrimSpace(values["verificationToken"]) != ""
+				resp.Security.EncryptKeyConfigured = strings.TrimSpace(values["encryptKey"]) != ""
+			}
+		}
+		out = append(out, resp)
+	}
+	_ = json.NewEncoder(w).Encode(map[string]any{
+		"channels":  out,
+		"providers": imbridge.Providers(),
+	})
+}
+
 func (s *Server) handleAgentChannelDelete(w http.ResponseWriter, r *http.Request) {
 	project, agent, provider, ok := s.parseProjectAgentProvider(w, r)
 	if !ok {
@@ -174,6 +205,37 @@ func (s *Server) handleAgentChannelDelete(w http.ResponseWriter, r *http.Request
 	_ = json.NewEncoder(w).Encode(map[string]any{"ok": true})
 }
 
+func (s *Server) handleAgentWorkerChannelDelete(w http.ResponseWriter, r *http.Request) {
+	scope, provider, ok := s.parseAgentWorkerProvider(w, r)
+	if !ok {
+		return
+	}
+	binding, found, err := s.findAgentWorkerChannelBinding(scope.workspaceID, scope.worker.ID, provider)
+	if err != nil {
+		s.serverError(w, err)
+		return
+	}
+	if !found {
+		_ = json.NewEncoder(w).Encode(map[string]any{"ok": true})
+		return
+	}
+	if err := s.controlDB.DeleteAgentChannelBinding(binding.ID); err != nil {
+		s.serverError(w, err)
+		return
+	}
+	go s.refreshAgentIMBridges()
+	s.auditLog(auditLogInput{
+		WorkspaceID:  scope.workspaceID,
+		Action:       "agent_channel.disconnect",
+		ResourceType: "agent_channel",
+		ResourceID:   binding.ID,
+		Summary:      fmt.Sprintf("Disconnected %s channel for agent worker %s", provider, scope.worker.Name),
+		Before:       agentChannelToResponse(binding),
+		Request:      r,
+	})
+	_ = json.NewEncoder(w).Encode(map[string]any{"ok": true})
+}
+
 func (s *Server) handleAgentChannelSetupBegin(w http.ResponseWriter, r *http.Request) {
 	project, agent, provider, ok := s.parseProjectAgentProvider(w, r)
 	if !ok {
@@ -203,6 +265,38 @@ func (s *Server) handleAgentChannelSetupBegin(w http.ResponseWriter, r *http.Req
 		ResourceType: "agent",
 		ResourceID:   project + "/" + agent,
 		Summary:      fmt.Sprintf("Started %s channel setup for %s/%s", provider, project, agent),
+		After: map[string]any{
+			"provider": provider,
+			"baseUrl":  resp.BaseURL,
+		},
+		Request: r,
+	})
+	_ = json.NewEncoder(w).Encode(resp)
+}
+
+func (s *Server) handleAgentWorkerChannelSetupBegin(w http.ResponseWriter, r *http.Request) {
+	scope, provider, ok := s.parseAgentWorkerProvider(w, r)
+	if !ok {
+		return
+	}
+	channelProvider, ok := imbridge.LookupProvider(provider)
+	if !ok {
+		s.jsonError(w, http.StatusBadRequest, "unsupported channel provider")
+		return
+	}
+	ctx, cancel := contextWithRequestTimeout(r, 20*time.Second)
+	defer cancel()
+	resp, err := channelProvider.BeginSetup(ctx)
+	if err != nil {
+		s.jsonError(w, http.StatusBadGateway, err.Error())
+		return
+	}
+	s.auditLog(auditLogInput{
+		WorkspaceID:  scope.workspaceID,
+		Action:       "agent_channel.setup_begin",
+		ResourceType: "agent",
+		ResourceID:   scope.worker.ID,
+		Summary:      fmt.Sprintf("Started %s channel setup for agent worker %s", provider, scope.worker.Name),
 		After: map[string]any{
 			"provider": provider,
 			"baseUrl":  resp.BaseURL,
@@ -293,6 +387,66 @@ func (s *Server) handleAgentChannelSecurity(w http.ResponseWriter, r *http.Reque
 	_ = json.NewEncoder(w).Encode(resp)
 }
 
+func (s *Server) handleAgentWorkerChannelSecurity(w http.ResponseWriter, r *http.Request) {
+	scope, provider, ok := s.parseAgentWorkerProvider(w, r)
+	if !ok {
+		return
+	}
+	var req agentChannelSecurityRequest
+	if err := s.readJSON(w, r, &req); err != nil {
+		s.jsonError(w, http.StatusBadRequest, "invalid JSON body")
+		return
+	}
+	binding, found, err := s.findAgentWorkerChannelBinding(scope.workspaceID, scope.worker.ID, provider)
+	if err != nil {
+		s.serverError(w, err)
+		return
+	}
+	if !found {
+		s.jsonError(w, http.StatusNotFound, "agent channel is not connected")
+		return
+	}
+	secret, found, err := s.controlDB.ConnectionSecret(binding.ConnectionID)
+	if err != nil {
+		s.serverError(w, err)
+		return
+	}
+	values := map[string]string{}
+	if found {
+		values, err = openConnectionSecret(secret)
+		if err != nil {
+			s.serverError(w, err)
+			return
+		}
+	}
+	if req.VerificationToken != nil {
+		values["verificationToken"] = strings.TrimSpace(*req.VerificationToken)
+	}
+	if req.EncryptKey != nil {
+		values["encryptKey"] = strings.TrimSpace(*req.EncryptKey)
+	}
+	next, err := sealConnectionSecret(values)
+	if err != nil {
+		s.serverError(w, err)
+		return
+	}
+	next.ConnectionID = binding.ConnectionID
+	if err := s.controlDB.UpsertConnectionSecret(next); err != nil {
+		s.serverError(w, err)
+		return
+	}
+	binding.UpdatedAt = time.Now().UTC().Format(time.RFC3339)
+	if err := s.controlDB.UpsertAgentChannelBinding(binding); err != nil {
+		s.serverError(w, err)
+		return
+	}
+	resp := agentChannelToResponse(binding)
+	resp.CallbackURL = requestBaseURL(r) + "/api/v1/im/" + binding.Provider + "/events"
+	resp.Security.VerificationTokenConfigured = strings.TrimSpace(values["verificationToken"]) != ""
+	resp.Security.EncryptKeyConfigured = strings.TrimSpace(values["encryptKey"]) != ""
+	_ = json.NewEncoder(w).Encode(resp)
+}
+
 func (s *Server) handleAgentChannelSetupPoll(w http.ResponseWriter, r *http.Request) {
 	project, agent, provider, ok := s.parseProjectAgentProvider(w, r)
 	if !ok {
@@ -344,6 +498,49 @@ func (s *Server) handleAgentChannelSetupPoll(w http.ResponseWriter, r *http.Requ
 	_ = json.NewEncoder(w).Encode(resp)
 }
 
+func (s *Server) handleAgentWorkerChannelSetupPoll(w http.ResponseWriter, r *http.Request) {
+	scope, provider, ok := s.parseAgentWorkerProvider(w, r)
+	if !ok {
+		return
+	}
+	var req channelSetupPollRequest
+	if err := s.readJSON(w, r, &req); err != nil {
+		s.jsonError(w, http.StatusBadRequest, "invalid JSON body")
+		return
+	}
+	channelProvider, ok := imbridge.LookupProvider(provider)
+	if !ok {
+		s.jsonError(w, http.StatusBadRequest, "unsupported channel provider")
+		return
+	}
+	ctx, cancel := contextWithRequestTimeout(r, 20*time.Second)
+	defer cancel()
+	poll, err := channelProvider.PollSetup(ctx, req.DeviceCode, req.BaseURL)
+	if err != nil {
+		s.jsonError(w, http.StatusBadGateway, err.Error())
+		return
+	}
+	if poll.Status != "completed" {
+		_ = json.NewEncoder(w).Encode(poll)
+		return
+	}
+	actualProvider := poll.Provider
+	if actualProvider == "" {
+		actualProvider = provider
+	}
+	binding, err := s.saveAgentIMChannel(r, scope.workspaceID, scope.projectID, scope.agentName, actualProvider, poll)
+	if err != nil {
+		s.serverError(w, err)
+		return
+	}
+	resp := map[string]any{
+		"status":  "connected",
+		"baseUrl": poll.BaseURL,
+		"channel": agentChannelToResponse(binding),
+	}
+	_ = json.NewEncoder(w).Encode(resp)
+}
+
 func (s *Server) handleAgentChannelSetupManual(w http.ResponseWriter, r *http.Request) {
 	project, agent, provider, ok := s.parseProjectAgentProvider(w, r)
 	if !ok {
@@ -378,6 +575,44 @@ func (s *Server) handleAgentChannelSetupManual(w http.ResponseWriter, r *http.Re
 		result.Provider = provider
 	}
 	binding, err := s.saveManualAgentIMChannel(r, workspaceID, project, agent, result)
+	if err != nil {
+		s.serverError(w, err)
+		return
+	}
+	resp := agentChannelToResponse(binding)
+	resp.CallbackURL = requestBaseURL(r) + "/api/v1/im/" + binding.Provider + "/events"
+	_ = json.NewEncoder(w).Encode(map[string]any{
+		"status":  "connected",
+		"channel": resp,
+	})
+}
+
+func (s *Server) handleAgentWorkerChannelSetupManual(w http.ResponseWriter, r *http.Request) {
+	scope, provider, ok := s.parseAgentWorkerProvider(w, r)
+	if !ok {
+		return
+	}
+	channelProvider, ok := imbridge.LookupProvider(provider)
+	if !ok {
+		s.jsonError(w, http.StatusBadRequest, "unsupported channel provider")
+		return
+	}
+	var req channelManualSetupRequest
+	if err := s.readJSON(w, r, &req); err != nil {
+		s.jsonError(w, http.StatusBadRequest, "invalid JSON body")
+		return
+	}
+	ctx, cancel := contextWithRequestTimeout(r, 25*time.Second)
+	defer cancel()
+	result, err := channelProvider.ManualSetup(ctx, imbridge.ManualSetupRequest{Values: req.Values})
+	if err != nil {
+		s.jsonError(w, http.StatusBadGateway, err.Error())
+		return
+	}
+	if result.Provider == "" {
+		result.Provider = provider
+	}
+	binding, err := s.saveManualAgentIMChannel(r, scope.workspaceID, scope.projectID, scope.agentName, result)
 	if err != nil {
 		s.serverError(w, err)
 		return
@@ -440,6 +675,49 @@ func (s *Server) handleAgentChannelIdentities(w http.ResponseWriter, r *http.Req
 	})
 }
 
+func (s *Server) handleAgentWorkerChannelIdentities(w http.ResponseWriter, r *http.Request) {
+	scope, provider, ok := s.parseAgentWorkerProvider(w, r)
+	if !ok {
+		return
+	}
+	binding, found, err := s.findAgentWorkerChannelBinding(scope.workspaceID, scope.worker.ID, provider)
+	if err != nil {
+		s.serverError(w, err)
+		return
+	}
+	if !found {
+		s.jsonError(w, http.StatusNotFound, "agent channel not found")
+		return
+	}
+	identities, err := s.controlDB.ListUserChannelIdentities(controldb.UserChannelIdentityFilter{
+		WorkspaceID:      scope.workspaceID,
+		ChannelBindingID: binding.ID,
+		Provider:         provider,
+	})
+	if err != nil {
+		s.serverError(w, err)
+		return
+	}
+	out := make([]agentChannelIdentityResponse, 0, len(identities))
+	for _, identity := range identities {
+		item := agentChannelIdentityResponse{
+			UserID:    identity.UserID,
+			BoundAt:   identity.CreatedAt,
+			UpdatedAt: identity.UpdatedAt,
+		}
+		if user := s.users.GetUser(identity.UserID); user != nil {
+			item.DisplayName = user.DisplayName
+			item.Email = user.Email
+		}
+		out = append(out, item)
+	}
+	_ = json.NewEncoder(w).Encode(map[string]any{
+		"provider":   provider,
+		"channelId":  binding.ID,
+		"identities": out,
+	})
+}
+
 func (s *Server) handleAgentChannelTargets(w http.ResponseWriter, r *http.Request) {
 	project, agent, provider, ok := s.parseProjectAgentProvider(w, r)
 	if !ok {
@@ -463,6 +741,49 @@ func (s *Server) handleAgentChannelTargets(w http.ResponseWriter, r *http.Reques
 	}
 	targets, err := s.controlDB.ListAgentChannelTargets(controldb.AgentChannelTargetFilter{
 		WorkspaceID:      workspaceID,
+		ChannelBindingID: binding.ID,
+		Provider:         provider,
+	})
+	if err != nil {
+		s.serverError(w, err)
+		return
+	}
+	out := make([]agentChannelTargetResponse, 0, len(targets))
+	for _, target := range targets {
+		out = append(out, agentChannelTargetResponse{
+			ID:             target.ID,
+			Type:           target.TargetType,
+			Name:           target.DisplayName,
+			Provider:       target.Provider,
+			ExternalChatID: target.ExternalChatID,
+			CreatedAt:      target.CreatedAt,
+			UpdatedAt:      target.UpdatedAt,
+			LastActivityAt: target.LastActivityAt,
+		})
+	}
+	_ = json.NewEncoder(w).Encode(map[string]any{
+		"provider":  provider,
+		"channelId": binding.ID,
+		"targets":   out,
+	})
+}
+
+func (s *Server) handleAgentWorkerChannelTargets(w http.ResponseWriter, r *http.Request) {
+	scope, provider, ok := s.parseAgentWorkerProvider(w, r)
+	if !ok {
+		return
+	}
+	binding, found, err := s.findAgentWorkerChannelBinding(scope.workspaceID, scope.worker.ID, provider)
+	if err != nil {
+		s.serverError(w, err)
+		return
+	}
+	if !found {
+		s.jsonError(w, http.StatusNotFound, "agent channel not found")
+		return
+	}
+	targets, err := s.controlDB.ListAgentChannelTargets(controldb.AgentChannelTargetFilter{
+		WorkspaceID:      scope.workspaceID,
 		ChannelBindingID: binding.ID,
 		Provider:         provider,
 	})
@@ -590,6 +911,80 @@ func (s *Server) handleAgentChannelBindCode(w http.ResponseWriter, r *http.Reque
 	})
 }
 
+func (s *Server) handleAgentWorkerChannelBindCode(w http.ResponseWriter, r *http.Request) {
+	scope, provider, ok := s.parseAgentWorkerProvider(w, r)
+	if !ok {
+		return
+	}
+	username := currentUsername(s.currentUser(r))
+	if username == "" || username == "system" || username == "apikey" {
+		s.jsonError(w, http.StatusUnauthorized, "login is required to create a bind code")
+		return
+	}
+	var req agentChannelBindCodeRequest
+	if r.Body != nil {
+		if err := json.NewDecoder(r.Body).Decode(&req); err != nil && err != io.EOF {
+			s.jsonError(w, http.StatusBadRequest, "invalid JSON body")
+			return
+		}
+	}
+	target := strings.ToLower(strings.TrimSpace(req.Target))
+	if target == "" {
+		target = "user"
+	}
+	if target != "user" && target != "chat" {
+		s.jsonError(w, http.StatusBadRequest, "unsupported bind target")
+		return
+	}
+	targetName := strings.TrimSpace(req.Name)
+	if target == "chat" && targetName == "" {
+		s.jsonError(w, http.StatusBadRequest, "chat name is required")
+		return
+	}
+	binding, found, err := s.findAgentWorkerChannelBinding(scope.workspaceID, scope.worker.ID, provider)
+	if err != nil {
+		s.serverError(w, err)
+		return
+	}
+	if !found || binding.Status != "connected" {
+		s.jsonError(w, http.StatusNotFound, "agent channel is not connected")
+		return
+	}
+	code, err := newHumanBindCode()
+	if err != nil {
+		s.serverError(w, err)
+		return
+	}
+	now := time.Now().UTC()
+	expiresAt := now.Add(10 * time.Minute).Format(time.RFC3339)
+	if err := s.controlDB.CreateAgentChannelBindCode(controldb.AgentChannelBindCode{
+		Code:             code,
+		WorkspaceID:      scope.workspaceID,
+		ChannelBindingID: binding.ID,
+		UserID:           username,
+		TargetType:       target,
+		TargetName:       targetName,
+		ExpiresAt:        expiresAt,
+		CreatedAt:        now.Format(time.RFC3339),
+	}); err != nil {
+		s.serverError(w, err)
+		return
+	}
+	command := "/bind " + code
+	if target == "chat" {
+		command = "/bind-chat " + code
+	}
+	_ = json.NewEncoder(w).Encode(agentChannelBindCodeResponse{
+		Code:      code,
+		Command:   command,
+		ExpiresAt: expiresAt,
+		Provider:  provider,
+		Agent:     scope.worker.Name,
+		Target:    target,
+		Name:      targetName,
+	})
+}
+
 func (s *Server) saveAgentIMChannel(r *http.Request, workspaceID, project, agent, provider string, poll imbridge.SetupPollResponse) (controldb.AgentChannelBinding, error) {
 	now := time.Now().UTC().Format(time.RFC3339)
 	agentWorkerID := s.agentWorkerIDForProjectAgent(workspaceID, project, agent)
@@ -623,6 +1018,7 @@ func (s *Server) saveAgentIMChannel(r *http.Request, workspaceID, project, agent
 		"accountsUrl": poll.BaseURL,
 		"appId":       poll.AppID,
 		"ownerOpenId": poll.OwnerOpenID,
+		"purpose":     "agent_channel",
 		"usage":       "agent_im_channel",
 	})
 	connection := controldb.Connection{
@@ -762,6 +1158,7 @@ func (s *Server) saveManualAgentIMChannel(r *http.Request, workspaceID, project,
 	profile := map[string]any{
 		"baseUrl": openBaseURL,
 		"appId":   result.AppID,
+		"purpose": "agent_channel",
 		"usage":   "agent_im_channel",
 	}
 	for k, v := range result.Profile {
@@ -892,6 +1289,19 @@ func (s *Server) parseProjectAgentProvider(w http.ResponseWriter, r *http.Reques
 	return project, agent, provider, true
 }
 
+func (s *Server) parseAgentWorkerProvider(w http.ResponseWriter, r *http.Request) (agentWorkerBindingScope, string, bool) {
+	scope, ok := s.agentWorkerToolBindingScope(w, r)
+	if !ok {
+		return agentWorkerBindingScope{}, "", false
+	}
+	channelProvider, ok := imbridge.LookupProvider(r.PathValue("provider"))
+	if !ok {
+		s.jsonError(w, http.StatusBadRequest, "unsupported channel provider")
+		return agentWorkerBindingScope{}, "", false
+	}
+	return scope, channelProvider.Info().ID, true
+}
+
 func (s *Server) currentWorkspaceForRequest(w http.ResponseWriter, r *http.Request) (string, bool) {
 	id, err := s.currentWorkspaceID()
 	if err != nil {
@@ -923,6 +1333,21 @@ func (s *Server) findAgentChannelBinding(workspaceID, project, agent, provider s
 		ProjectID:   project,
 		AgentID:     agent,
 		Provider:    provider,
+	})
+	if err != nil {
+		return controldb.AgentChannelBinding{}, false, err
+	}
+	if len(bindings) == 0 {
+		return controldb.AgentChannelBinding{}, false, nil
+	}
+	return bindings[0], true, nil
+}
+
+func (s *Server) findAgentWorkerChannelBinding(workspaceID, workerID, provider string) (controldb.AgentChannelBinding, bool, error) {
+	bindings, err := s.controlDB.ListAgentChannelBindings(controldb.AgentChannelBindingFilter{
+		WorkspaceID:   workspaceID,
+		AgentWorkerID: workerID,
+		Provider:      provider,
 	})
 	if err != nil {
 		return controldb.AgentChannelBinding{}, false, err

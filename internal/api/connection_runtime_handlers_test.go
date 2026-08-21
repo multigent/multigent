@@ -398,6 +398,58 @@ func TestResolveAgentRuntimeConnectionsUsesExplicitToolBindings(t *testing.T) {
 	}
 }
 
+func TestResolveAgentRuntimeConnectionsSkipsAgentChannelConnections(t *testing.T) {
+	users := newTestUserStore(t)
+	s := &Server{controlDB: users.db, users: users}
+	workspaceID := "ws-one"
+	if err := users.db.UpsertWorkspace(controldb.Workspace{ID: workspaceID, Name: "One", Slug: "one"}); err != nil {
+		t.Fatalf("workspace: %v", err)
+	}
+	github := controldb.Connection{
+		ID:             "conn-github",
+		WorkspaceID:    workspaceID,
+		Provider:       "github",
+		ConnectionName: "default",
+		OwnerType:      ConnectionOwnerWorkspace,
+		OwnerID:        workspaceID,
+		AuthType:       ConnectionAuthAPIKey,
+		Status:         "active",
+		ProfileJSON:    `{}`,
+	}
+	channel := controldb.Connection{
+		ID:             "conn-lark-channel",
+		WorkspaceID:    workspaceID,
+		Provider:       "lark",
+		ConnectionName: "agent-sample-pm",
+		OwnerType:      ConnectionOwnerWorkspace,
+		OwnerID:        workspaceID,
+		AuthType:       "app_secret",
+		Status:         "active",
+		ProfileJSON:    `{"usage":"agent_im_channel","purpose":"agent_channel"}`,
+	}
+	for _, connection := range []controldb.Connection{github, channel} {
+		if err := users.db.UpsertConnection(connection); err != nil {
+			t.Fatalf("connection %s: %v", connection.ID, err)
+		}
+		if err := users.db.CreateConnectionGrant(controldb.ConnectionGrant{
+			ID:           "grant-" + connection.ID,
+			WorkspaceID:  workspaceID,
+			ConnectionID: connection.ID,
+			TargetType:   ConnectionTargetProject,
+			TargetID:     "sample",
+		}); err != nil {
+			t.Fatalf("grant %s: %v", connection.ID, err)
+		}
+	}
+	connections, err := s.resolveAgentRuntimeConnections(workspaceID, "sample", "pm")
+	if err != nil {
+		t.Fatalf("resolve: %v", err)
+	}
+	if len(connections) != 1 || connections[0].ID != github.ID {
+		t.Fatalf("connections=%#v", connections)
+	}
+}
+
 func TestRuntimeConnectionsRequiresConnectionCapability(t *testing.T) {
 	s := &Server{}
 	req := httptest.NewRequest(http.MethodGet, "/api/v1/runtime/connections", nil)

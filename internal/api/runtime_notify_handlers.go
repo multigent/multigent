@@ -7,12 +7,14 @@ import (
 	"encoding/json"
 	"fmt"
 	"net/http"
+	"regexp"
 	"strings"
 	"time"
 
 	controldb "github.com/multigent/multigent/internal/db"
 	"github.com/multigent/multigent/internal/entity"
 	"github.com/multigent/multigent/internal/imbridge"
+	"github.com/multigent/multigent/internal/store"
 )
 
 type runtimeChannelRow struct {
@@ -81,6 +83,8 @@ type runtimeNotifyCardLinkBody struct {
 	URL   string `json:"url"`
 }
 
+var runtimeNotifyDocIDPattern = regexp.MustCompile(`\b(?:doc-\d{8}-[a-zA-Z0-9_-]+|kb-doc-[a-zA-Z0-9_-]+)\b`)
+
 func (s *Server) handleRuntimeChannels(w http.ResponseWriter, r *http.Request) {
 	principal, ok := s.runtimeRequireCapability(w, r, "message.use")
 	if !ok {
@@ -124,6 +128,10 @@ func (s *Server) handleRuntimeNotify(w http.ResponseWriter, r *http.Request) {
 	if text == "" {
 		s.jsonError(w, http.StatusBadRequest, "body is required")
 		return
+	}
+	text = s.enrichRuntimeNotifyDocLinks(r, body.MessageFormat, text)
+	if body.Card != nil && strings.TrimSpace(body.Card.Body) != "" {
+		body.Card.Body = text
 	}
 	recipient, err := s.resolveRuntimeNotifyRecipient(principal, body.To)
 	if err != nil {
@@ -825,6 +833,83 @@ func normalizeRuntimeNotifyMessageFormat(format, text string) string {
 	default:
 		return "text"
 	}
+}
+
+type runtimeNotifyDocLink struct {
+	ID    string
+	Title string
+	URL   string
+}
+
+func (s *Server) enrichRuntimeNotifyDocLinks(r *http.Request, messageFormat, text string) string {
+	text = strings.TrimSpace(text)
+	if text == "" {
+		return text
+	}
+	ids := runtimeNotifyDocIDPattern.FindAllString(text, -1)
+	if len(ids) == 0 {
+		return text
+	}
+	seen := map[string]bool{}
+	links := make([]runtimeNotifyDocLink, 0, len(ids))
+	ds := store.NewDocsStore(s.root)
+	base := strings.TrimRight(workflowWebBaseURL(r), "/")
+	for _, id := range ids {
+		id = strings.TrimSpace(id)
+		if id == "" || seen[id] {
+			continue
+		}
+		seen[id] = true
+		webPath := docsWebPath(id)
+		if strings.Contains(text, webPath) || strings.Contains(text, base+webPath) {
+			continue
+		}
+		doc, err := ds.Get(id)
+		if err != nil || doc == nil {
+			continue
+		}
+		title := strings.TrimSpace(doc.Title)
+		if title == "" {
+			title = id
+		}
+		links = append(links, runtimeNotifyDocLink{ID: id, Title: title, URL: base + webPath})
+	}
+	if len(links) == 0 {
+		return text
+	}
+	if normalizeRuntimeNotifyMessageFormat(messageFormat, text) == "markdown" {
+		var b strings.Builder
+		b.WriteString(text)
+		b.WriteString("\n\n相关文档：")
+		for _, link := range links {
+			b.WriteString("\n- [")
+			b.WriteString(escapeMarkdownLinkText(link.Title))
+			b.WriteString("](")
+			b.WriteString(link.URL)
+			b.WriteString(") (`")
+			b.WriteString(link.ID)
+			b.WriteString("`)")
+		}
+		return b.String()
+	}
+	var b strings.Builder
+	b.WriteString(text)
+	b.WriteString("\n\n相关文档：")
+	for _, link := range links {
+		b.WriteString("\n- ")
+		b.WriteString(link.Title)
+		b.WriteString(": ")
+		b.WriteString(link.URL)
+		b.WriteString(" (")
+		b.WriteString(link.ID)
+		b.WriteString(")")
+	}
+	return b.String()
+}
+
+func escapeMarkdownLinkText(text string) string {
+	replacer := strings.NewReplacer(`\`, `\\`, `[`, `\[`, `]`, `\]`)
+	return replacer.Replace(text)
 }
 
 func prepareRuntimeNotifyExternalMessage(message *imbridge.OutgoingMessage, target imbridge.OutgoingTarget) {

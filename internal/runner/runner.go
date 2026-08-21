@@ -31,6 +31,7 @@ import (
 	"sort"
 	"strings"
 	"time"
+	"unicode/utf8"
 
 	"github.com/multigent/multigent/internal/agentcli"
 	"github.com/multigent/multigent/internal/daemon"
@@ -1236,11 +1237,19 @@ func writeTempPrompt(agentDir, content string) (string, error) {
 		return "", err
 	}
 	defer f.Close()
+	content = sanitizePromptForAgentStdin(content)
 	if _, err := f.WriteString(content); err != nil {
 		os.Remove(f.Name())
 		return "", err
 	}
 	return f.Name(), nil
+}
+
+func sanitizePromptForAgentStdin(content string) string {
+	if utf8.ValidString(content) {
+		return content
+	}
+	return strings.ToValidUTF8(content, "�")
 }
 
 // shellEscape returns a single-quoted string safe for use in a bash command.

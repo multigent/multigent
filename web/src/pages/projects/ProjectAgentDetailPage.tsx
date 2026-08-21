@@ -1164,6 +1164,7 @@ export default function ProjectAgentDetailPage({ projectIdOverride, agentNameOve
                     <AgentChannelPanel
                       project={projectId}
                       agentName={agentName}
+                      agentWorkerId={workspaceAgentId}
                     />
                   )}
                 </div>
@@ -1175,7 +1176,7 @@ export default function ProjectAgentDetailPage({ projectIdOverride, agentNameOve
                     <SectionHeader icon={Cable} title={t('agentDetail.capabilities')} />
                     <p className="mt-1 text-sm text-neutral-500 dark:text-zinc-500">{t('agentDetail.capabilitiesHint')}</p>
                     <div className="mt-3 divide-y divide-neutral-100 rounded-lg border border-neutral-200/80 bg-white dark:divide-zinc-800 dark:border-zinc-700/60 dark:bg-zinc-900/40">
-                      <AgentRuntimeConnectionsPanel project={projectId} agentName={agentName} />
+                      <AgentRuntimeConnectionsPanel project={projectId} agentName={agentName} agentWorkerId={workspaceAgentId} />
                       <AgentSkillsPanel skills={ctx.skills ?? []} skillDetails={ctx.skillDetails} />
                     </div>
                   </section>
@@ -2023,13 +2024,15 @@ type ConnectionOption = {
 }
 type ConnectionsResponse = { connections?: ConnectionOption[] }
 
-function AgentRuntimeConnectionsPanel({ project, agentName }: { project: string; agentName: string }) {
+function AgentRuntimeConnectionsPanel({ project, agentName, agentWorkerId }: { project: string; agentName: string; agentWorkerId?: string }) {
   const { t } = useTranslation()
   const [reloadKey, setReloadKey] = useState(0)
   const [connections, setConnections] = useState<ConnectionOption[]>([])
   const [connectionId, setConnectionId] = useState('')
   const [saving, setSaving] = useState(false)
-  const bindingsPath = `/api/v1/projects/${encodeURIComponent(project)}/agents/${encodeURIComponent(agentName)}/tool-bindings`
+  const bindingsPath = agentWorkerId
+    ? `/api/v1/agents/${encodeURIComponent(agentWorkerId)}/tool-bindings`
+    : `/api/v1/projects/${encodeURIComponent(project)}/agents/${encodeURIComponent(agentName)}/tool-bindings`
   const bindingsState = useApiJson<AgentToolBindingsResponse>(bindingsPath, reloadKey)
 
   useEffect(() => {

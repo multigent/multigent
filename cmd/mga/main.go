@@ -571,7 +571,7 @@ func newNotifyReactionCmd() *cobra.Command {
 	}
 	cmd.Flags().StringVar(&to, "to", "source", "recipient source; reactions currently require source")
 	cmd.Flags().StringVar(&channel, "channel", "auto", "channel provider: auto, feishu, lark")
-	cmd.Flags().StringVar(&emoji, "emoji", "OK", "reaction emoji, e.g. OK, EYES, THUMBSUP")
+	cmd.Flags().StringVar(&emoji, "emoji", "OK", "reaction emoji, e.g. OK, THINKING, THUMBSUP")
 	cmd.Flags().StringVar(&taskID, "task", "", "related task id")
 	cmd.Flags().StringVar(&format, "format", "json", "output format: json or table")
 	return cmd

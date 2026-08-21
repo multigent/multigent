@@ -124,6 +124,9 @@ func (s *Server) handleListConnections(w http.ResponseWriter, r *http.Request) {
 	}
 	out := make([]connectionResponse, 0, len(connections))
 	for _, connection := range connections {
+		if isAgentChannelConnection(connection) && strings.TrimSpace(r.URL.Query().Get("includeInternal")) != "true" {
+			continue
+		}
 		if !s.canReadConnection(r, connection, cur) {
 			continue
 		}
@@ -1818,6 +1821,21 @@ func connectionToResponse(connection controldb.Connection, grants []controldb.Co
 		UpdatedAt:      connection.UpdatedAt,
 		LastUsedAt:     connection.LastUsedAt,
 	}
+}
+
+func isAgentChannelConnection(connection controldb.Connection) bool {
+	profile := connectionProfileMap(connection)
+	return isAgentChannelConnectionProfile(connection.ConnectionName, profile)
+}
+
+func isAgentChannelConnectionProfile(connectionName string, profile map[string]any) bool {
+	usage := strings.TrimSpace(fmt.Sprint(profile["usage"]))
+	purpose := strings.TrimSpace(fmt.Sprint(profile["purpose"]))
+	if usage == "agent_im_channel" || purpose == "agent_channel" {
+		return true
+	}
+	return strings.HasPrefix(strings.TrimSpace(connectionName), "agent-channel/") ||
+		strings.HasPrefix(strings.TrimSpace(connectionName), "channel/")
 }
 
 func grantsToResponse(grants []controldb.ConnectionGrant) []connectionGrantModel {

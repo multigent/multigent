@@ -179,6 +179,9 @@ func (s *Server) resolveAgentRuntimeConnections(workspaceID, project, agent stri
 	enabledBindings := enabledAgentToolBindingsByConnection(bindings)
 	out := make([]agentRuntimeConnectionResponse, 0)
 	for _, connection := range connections {
+		if isAgentChannelConnection(connection) {
+			continue
+		}
 		var binding *controldb.AgentToolBinding
 		if explicitBindings {
 			if b, ok := enabledBindings[connection.ID]; ok {

@@ -13,6 +13,7 @@ import (
 	controldb "github.com/multigent/multigent/internal/db"
 	"github.com/multigent/multigent/internal/entity"
 	"github.com/multigent/multigent/internal/imbridge"
+	"github.com/multigent/multigent/internal/store"
 )
 
 func TestRuntimeChannelsListAgentIMBindings(t *testing.T) {
@@ -517,6 +518,34 @@ func TestFormatRuntimeNotifyMarkdownPreservesAgentBodyWithoutPlatformFooter(t *t
 	}
 	if strings.Contains(msg.Text, "From:") || strings.Contains(msg.Text, "Task:") || strings.Contains(msg.Text, "Urgency:") {
 		t.Fatalf("external message should not include platform footer: %q", msg.Text)
+	}
+}
+
+func TestRuntimeNotifyEnrichesMarkdownDocLinks(t *testing.T) {
+	s, _ := newConnectionGrantPolicyServer(t)
+	t.Setenv("MULTIGENT_WEB_BASE_URL", "https://public.multigent.test")
+	ds := store.NewDocsStore(s.root)
+	if err := ds.AddManagedContent(&store.DocEntry{
+		ID:    "doc-20260822-abcd12",
+		Title: "发布评审说明",
+	}, "# 发布评审说明\n", "review.md"); err != nil {
+		t.Fatalf("add doc: %v", err)
+	}
+	req := httptest.NewRequest(http.MethodPost, "/api/v1/runtime/notify", nil)
+	req.Host = "127.0.0.1:27892"
+
+	got := s.enrichRuntimeNotifyDocLinks(req, "markdown", "请看 doc-20260822-abcd12。")
+	if !strings.Contains(got, "相关文档") || !strings.Contains(got, "[发布评审说明](https://public.multigent.test/docs/doc-20260822-abcd12)") || !strings.Contains(got, "`doc-20260822-abcd12`") {
+		t.Fatalf("doc link was not enriched: %q", got)
+	}
+}
+
+func TestRuntimeNotifyDocLinksIgnoreUnknownIDs(t *testing.T) {
+	s, _ := newConnectionGrantPolicyServer(t)
+	req := httptest.NewRequest(http.MethodPost, "/api/v1/runtime/notify", nil)
+	got := s.enrichRuntimeNotifyDocLinks(req, "markdown", "请看 doc-20260822-missing。")
+	if got != "请看 doc-20260822-missing。" {
+		t.Fatalf("unknown doc ids should not be linked: %q", got)
 	}
 }
 

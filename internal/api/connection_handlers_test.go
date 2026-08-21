@@ -78,6 +78,55 @@ func TestConnectionResponseIncludesSafeProfileSummary(t *testing.T) {
 	}
 }
 
+func TestListConnectionsHidesAgentChannelConnectionsByDefault(t *testing.T) {
+	s, workspaceID := newConnectionGrantPolicyServer(t)
+	regular := controldb.Connection{
+		ID:             "conn-github",
+		WorkspaceID:    workspaceID,
+		Provider:       "github",
+		ConnectionName: "default",
+		OwnerType:      ConnectionOwnerWorkspace,
+		OwnerID:        workspaceID,
+		AuthType:       ConnectionAuthAPIKey,
+		Status:         "active",
+		ProfileJSON:    `{}`,
+		CreatedBy:      "admin",
+	}
+	channel := controldb.Connection{
+		ID:             "conn-lark-channel",
+		WorkspaceID:    workspaceID,
+		Provider:       "lark",
+		ConnectionName: "agent-tapnow-mcp-server-mason",
+		OwnerType:      ConnectionOwnerWorkspace,
+		OwnerID:        workspaceID,
+		AuthType:       "app_secret",
+		Status:         "active",
+		ProfileJSON:    `{"purpose":"agent_channel","usage":"agent_im_channel","appId":"cli_test"}`,
+		CreatedBy:      "admin",
+	}
+	if err := s.controlDB.UpsertConnection(regular); err != nil {
+		t.Fatalf("regular connection: %v", err)
+	}
+	if err := s.controlDB.UpsertConnection(channel); err != nil {
+		t.Fatalf("channel connection: %v", err)
+	}
+
+	rec := httptest.NewRecorder()
+	s.handleListConnections(rec, providerTestRequest(http.MethodGet, "/api/v1/connections", "admin", nil))
+	if rec.Code != http.StatusOK {
+		t.Fatalf("status=%d body=%s", rec.Code, rec.Body.String())
+	}
+	var resp struct {
+		Connections []connectionResponse `json:"connections"`
+	}
+	if err := json.Unmarshal(rec.Body.Bytes(), &resp); err != nil {
+		t.Fatalf("decode response: %v", err)
+	}
+	if len(resp.Connections) != 1 || resp.Connections[0].ID != regular.ID {
+		t.Fatalf("connections=%#v", resp.Connections)
+	}
+}
+
 func TestConnectionAuditPayloadSanitizesProfileSecrets(t *testing.T) {
 	connection := controldb.Connection{
 		ID:             "conn-one",
