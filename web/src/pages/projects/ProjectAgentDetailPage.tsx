@@ -13,7 +13,7 @@ import type { LucideIcon } from 'lucide-react'
 import { cn } from '../../lib/cn'
 import { useFormatDateTime } from '../../lib/format-datetime'
 import { useApiJson } from '../../lib/use-api'
-import { apiDelete, apiFetch, apiPost, apiPut, apiPatch } from '../../lib/api'
+import { apiDelete, apiFetch, apiPost, apiPut, apiPatch, apiTeamPath } from '../../lib/api'
 import { canConfigureAgent, canManageProject, canOperateAgent, isTrustedProxyMode, useAuth } from '../../lib/auth'
 import { useWorkspaceAccess } from '../../lib/workspace-access'
 import { Pagination } from '../../components/ui/Pagination'
@@ -922,9 +922,28 @@ type ProjectAgentDetailPageProps = {
   projectIdOverride?: string
   agentNameOverride?: string
   workspaceAgentId?: string
+  workspaceAgent?: WorkspaceAgentSummary
 }
 
-export default function ProjectAgentDetailPage({ projectIdOverride, agentNameOverride, workspaceAgentId }: ProjectAgentDetailPageProps = {}) {
+type WorkspaceAgentSummary = {
+  id: string
+  name: string
+  displayName?: string
+  description?: string
+  avatar?: string
+  team?: string
+  role?: string
+  status?: string
+  model?: string
+  runtimeModel?: string
+  defaultModelAccountId?: string
+  defaultRuntimeNodeId?: string
+}
+
+type WorkspaceTeamInfo = { path: string; name: string }
+type WorkspaceTeamDetail = { roles?: Array<{ id?: string; name: string; description?: string }> }
+
+export default function ProjectAgentDetailPage({ projectIdOverride, agentNameOverride, workspaceAgentId, workspaceAgent }: ProjectAgentDetailPageProps = {}) {
   const { t } = useTranslation()
   const { user } = useAuth()
   const { canAdmin: canAdminWorkspace } = useWorkspaceAccess()
@@ -933,6 +952,7 @@ export default function ProjectAgentDetailPage({ projectIdOverride, agentNameOve
   const params = useParams<{ projectId: string; agentName: string }>()
   const projectId = projectIdOverride ?? params.projectId
   const agentName = agentNameOverride ?? params.agentName
+  const workspaceOnly = !projectId && Boolean(workspaceAgentId && workspaceAgent)
 
   const ctxPath = projectId && agentName
     ? `/api/v1/projects/${encodeURIComponent(projectId)}/agents/${encodeURIComponent(agentName)}/context?includeMerged=false&includeReadiness=false`
@@ -983,6 +1003,10 @@ export default function ProjectAgentDetailPage({ projectIdOverride, agentNameOve
     () => avatarChoices(projectId ?? '', identityName || agentName || 'agent', avatarNonce),
     [projectId, identityName, agentName, avatarNonce],
   )
+
+  if (workspaceOnly && workspaceAgent) {
+    return <WorkspaceAgentOnlyDetail agent={workspaceAgent} />
+  }
 
   if (!projectId || !agentName) return null
 
@@ -1254,6 +1278,228 @@ function InfoCard({ icon: Icon, label, value, mono }: { icon?: LucideIcon; label
         <p className={cn('mt-0.5 text-sm font-medium text-neutral-800 dark:text-zinc-200', mono && 'font-mono text-xs')} title={value}>{value}</p>
       </div>
     </div>
+  )
+}
+
+function WorkspaceAgentOnlyDetail({ agent }: { agent: WorkspaceAgentSummary }) {
+  const { t } = useTranslation()
+  const { canAdmin: canAdminWorkspace } = useWorkspaceAccess()
+  const [reloadKey, setReloadKey] = useState(0)
+  const agentState = useApiJson<{ agent?: WorkspaceAgentSummary }>(`/api/v1/agents/${encodeURIComponent(agent.id)}`, reloadKey, { keepPreviousDataOnReload: true })
+  const current = agentState.status === 'ok' && agentState.data.agent ? agentState.data.agent : agent
+  const providersState = useApiJson<ProviderOption[]>('/api/v1/providers', 0, { keepPreviousDataOnReload: true })
+  const nodesState = useApiJson<RuntimeNodeListResp>('/api/v1/runtime-nodes', 0, { keepPreviousDataOnReload: true })
+  const [displayName, setDisplayName] = useState(current.displayName || current.name)
+  const [description, setDescription] = useState(current.description || '')
+  const [team, setTeam] = useState(current.team || '')
+  const [role, setRole] = useState(current.role || '')
+  const [status, setStatus] = useState(current.status || 'active')
+  const [model, setModel] = useState(current.model || 'codex')
+  const [runtimeModel, setRuntimeModel] = useState(current.runtimeModel || '')
+  const [modelAccountId, setModelAccountId] = useState(current.defaultModelAccountId || '')
+  const [runtimeNodeId, setRuntimeNodeId] = useState(current.defaultRuntimeNodeId || '')
+  const [teams, setTeams] = useState<WorkspaceTeamInfo[]>([])
+  const [roles, setRoles] = useState<Array<{ id?: string; name: string; description?: string }>>([])
+  const [saving, setSaving] = useState(false)
+
+  useEffect(() => {
+    setDisplayName(current.displayName || current.name)
+    setDescription(current.description || '')
+    setTeam(current.team || '')
+    setRole(current.role || '')
+    setStatus(current.status || 'active')
+    setModel(current.model || 'codex')
+    setRuntimeModel(current.runtimeModel || '')
+    setModelAccountId(current.defaultModelAccountId || '')
+    setRuntimeNodeId(current.defaultRuntimeNodeId || '')
+  }, [current.id, current.displayName, current.name, current.description, current.team, current.role, current.status, current.model, current.runtimeModel, current.defaultModelAccountId, current.defaultRuntimeNodeId])
+
+  useEffect(() => {
+    let cancelled = false
+    apiFetch<WorkspaceTeamInfo[]>('/api/v1/teams').then(rows => {
+      if (!cancelled) setTeams(rows ?? [])
+    }).catch(() => {})
+    return () => { cancelled = true }
+  }, [])
+
+  useEffect(() => {
+    if (!team) {
+      setRoles([])
+      setRole('')
+      return
+    }
+    let cancelled = false
+    apiFetch<WorkspaceTeamDetail>(`/api/v1/teams/${apiTeamPath(team)}`)
+      .then(detail => {
+        if (cancelled) return
+        const next = detail.roles ?? []
+        setRoles(next)
+        setRole(currentRole => next.some(item => (item.id || item.name) === currentRole) ? currentRole : '')
+      })
+      .catch(() => {
+        if (!cancelled) {
+          setRoles([])
+          setRole('')
+        }
+      })
+    return () => { cancelled = true }
+  }, [team])
+
+  const providers = providersState.status === 'ok' ? (providersState.data ?? []) : []
+  const visibleProviders = providers.filter(provider => providerMatchesAgentModel(provider, model))
+  const nodes = nodesState.status === 'ok' ? (nodesState.data.nodes ?? []) : []
+  const avatar = current.avatar || ''
+  const modelCls = MODEL_COLORS[model] ?? ''
+
+  async function save() {
+    setSaving(true)
+    try {
+      await apiPatch(`/api/v1/agents/${encodeURIComponent(current.id)}`, {
+        displayName: displayName.trim(),
+        description: description.trim(),
+        team,
+        role,
+        status,
+        model,
+        runtimeModel: runtimeModel.trim(),
+        defaultModelAccountId: modelAccountId,
+        defaultRuntimeNodeId: runtimeNodeId,
+      })
+      setReloadKey(key => key + 1)
+      showToast(t('common.saved'), 'success')
+    } finally {
+      setSaving(false)
+    }
+  }
+
+  return (
+    <div className="flex h-full flex-col overflow-hidden">
+      <div className="shrink-0 px-6 pt-5 pb-4">
+        <div className="flex items-center gap-4">
+          {avatar ? (
+            <img src={avatar} alt="" className="size-12 shrink-0 rounded-xl bg-neutral-100 object-cover dark:bg-zinc-800" />
+          ) : (
+            <div className="flex size-12 shrink-0 items-center justify-center rounded-xl bg-violet-100 dark:bg-violet-900/30">
+              <Bot className="size-6 text-violet-600 dark:text-violet-400" strokeWidth={1.8} />
+            </div>
+          )}
+          <div className="min-w-0 flex-1">
+            <div className="flex items-center gap-2">
+              <h1 className="truncate text-xl font-semibold text-neutral-900 dark:text-zinc-100">{displayName || current.name}</h1>
+              <span className="rounded-full bg-neutral-100 px-2 py-0.5 font-mono text-[11px] text-neutral-500 dark:bg-zinc-800 dark:text-zinc-400">{current.name}</span>
+            </div>
+            <div className="mt-1 flex flex-wrap items-center gap-3">
+              <span className={cn('inline-flex items-center rounded-md px-2.5 py-0.5 text-xs font-bold tracking-wide', modelCls)}>{model}</span>
+              {team && <span className="text-sm text-neutral-500 dark:text-zinc-500">{team}</span>}
+              {role && <span className="text-sm text-neutral-500 dark:text-zinc-500">/ {role}</span>}
+            </div>
+          </div>
+        </div>
+      </div>
+
+      <div className="flex-1 overflow-y-auto px-6 pb-8">
+        <div className="space-y-8">
+          <section>
+            <SectionHeader icon={Settings2} title={t('agentDetail.identity')} />
+            <p className="mt-1 text-sm text-neutral-500 dark:text-zinc-500">{t('agents.detailSubtitle')}</p>
+            <div className="mt-3 rounded-lg border border-neutral-200/80 bg-white p-4 dark:border-zinc-700/60 dark:bg-zinc-900/40">
+              <div className="grid gap-3 md:grid-cols-2">
+                <WorkspaceField label={t('agents.displayName')}>
+                  <input value={displayName} onChange={e => setDisplayName(e.target.value)} className={workspaceInputCls} />
+                </WorkspaceField>
+                <WorkspaceField label={t('agents.status')}>
+                  <select value={status} onChange={e => setStatus(e.target.value)} className={workspaceInputCls}>
+                    <option value="active">{t('agents.status_active')}</option>
+                    <option value="paused">{t('agents.status_paused')}</option>
+                    <option value="archived">{t('agents.status_archived')}</option>
+                  </select>
+                </WorkspaceField>
+                <WorkspaceField label={t('members.team')}>
+                  <select value={team} onChange={e => { setTeam(e.target.value); setRole('') }} className={workspaceInputCls}>
+                    <option value="">{t('members.selectTeam')}</option>
+                    {teams.map(item => <option key={item.path} value={item.path}>{item.name} ({item.path})</option>)}
+                  </select>
+                </WorkspaceField>
+                <WorkspaceField label={t('members.role')}>
+                  <select value={role} onChange={e => setRole(e.target.value)} className={workspaceInputCls} disabled={!team || roles.length === 0}>
+                    <option value="">{t('members.noRole')}</option>
+                    {roles.map(item => {
+                      const value = item.id || item.name
+                      return <option key={value} value={value}>{item.name}{item.description ? ` - ${item.description}` : ''}</option>
+                    })}
+                  </select>
+                </WorkspaceField>
+                <label className="block md:col-span-2">
+                  <span className="mb-1 block text-xs font-medium text-neutral-600 dark:text-zinc-400">{t('agents.description')}</span>
+                  <textarea value={description} onChange={e => setDescription(e.target.value)} rows={3} className={cn(workspaceInputCls, 'h-auto resize-y')} />
+                </label>
+              </div>
+            </div>
+          </section>
+
+          <section>
+            <SectionHeader icon={Settings2} title={t('agentDetail.modelCredentials')} />
+            <p className="mt-1 text-sm text-neutral-500 dark:text-zinc-500">{t('agentDetail.modelCredentialsHint')}</p>
+            <div className="mt-3 rounded-lg border border-neutral-200/80 bg-white p-4 dark:border-zinc-700/60 dark:bg-zinc-900/40">
+              <div className="grid gap-3 md:grid-cols-2">
+                <WorkspaceField label={t('agentDetail.cliType')}>
+                  <select value={model} onChange={e => { setModel(e.target.value); setModelAccountId('') }} className={workspaceInputCls}>
+                    {AGENT_MODELS.map(item => <option key={item} value={item}>{item}</option>)}
+                  </select>
+                </WorkspaceField>
+                <WorkspaceField label={t('agentDetail.modelAccount')}>
+                  <select value={modelAccountId} onChange={e => setModelAccountId(e.target.value)} className={workspaceInputCls}>
+                    <option value="">{visibleProviders.length > 0 ? t('provider.none') : t('agentDetail.noCredential')}</option>
+                    {visibleProviders.map(provider => <option key={provider.id} value={provider.id}>{provider.name} ({provider.type})</option>)}
+                  </select>
+                </WorkspaceField>
+                <WorkspaceField label={t('agentDetail.runtimeModel')}>
+                  <input value={runtimeModel} onChange={e => setRuntimeModel(e.target.value)} className={workspaceInputCls} placeholder="gpt-5.5" />
+                </WorkspaceField>
+                <WorkspaceField label={t('agentDetail.runtimeNode')}>
+                  <select value={runtimeNodeId} onChange={e => setRuntimeNodeId(e.target.value)} className={workspaceInputCls}>
+                    <option value="">{t('settings.runtimeNodeDefaultLocal')}</option>
+                    {nodes.map(node => <option key={node.id} value={node.id}>{node.name || node.id} · {runtimeNodeStatusLabel(t, node.status)}</option>)}
+                  </select>
+                </WorkspaceField>
+              </div>
+              {visibleProviders.length === 0 && (
+                <Link to="/settings#model-accounts" className={cn(primaryButtonCls, 'mt-3 inline-flex')}>{t('agentDetail.addCredential')}</Link>
+              )}
+            </div>
+          </section>
+
+          {canAdminWorkspace && <WorkspaceAgentSchedulePanel agentId={current.id} />}
+
+          {canAdminWorkspace && (
+            <section>
+              <SectionHeader icon={Activity} title={t('agentDetail.connectAndChat')} />
+              <p className="mt-1 text-sm text-neutral-500 dark:text-zinc-500">{t('agentDetail.connectAndChatHint')}</p>
+              <div className="mt-3">
+                <AgentChannelPanel project="" agentName={current.name} agentWorkerId={current.id} />
+              </div>
+            </section>
+          )}
+
+          <div className="flex justify-end">
+            <button type="button" onClick={() => void save()} disabled={saving} className={primaryButtonCls}>
+              {saving ? t('forms.saving') : t('forms.save')}
+            </button>
+          </div>
+        </div>
+      </div>
+    </div>
+  )
+}
+
+const workspaceInputCls = 'w-full rounded-md border border-neutral-200/80 bg-neutral-50/50 px-3 py-2 text-sm outline-none transition-colors focus:border-sky-400 disabled:opacity-50 dark:border-zinc-700/60 dark:bg-zinc-800/50 dark:text-zinc-200 dark:[color-scheme:dark]'
+
+function WorkspaceField({ label, children }: { label: string; children: ReactNode }) {
+  return (
+    <label className="block">
+      <span className="mb-1 block text-xs font-medium text-neutral-600 dark:text-zinc-400">{label}</span>
+      {children}
+    </label>
   )
 }
 

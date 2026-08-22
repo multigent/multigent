@@ -348,9 +348,6 @@ function AgentCard({ agent, modelAccountName, onOpen, onOpenChat }: { agent: Age
           </button>
         )}
       </div>
-      {agent.description && (
-        <p className="mt-3 line-clamp-3 text-sm leading-6 text-neutral-600 dark:text-zinc-400">{agent.description}</p>
-      )}
       <div className="mt-4 space-y-2 border-t border-neutral-100 pt-3 text-xs dark:border-zinc-800">
         <InfoRow label={t('agents.model')} value={agent.runtimeModel || agent.model || t('agents.defaultModel')} />
         <InfoRow label={t('agents.runtimeNode')} value={agent.defaultRuntimeNodeId || t('agents.defaultRuntime')} />
