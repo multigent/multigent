@@ -184,6 +184,7 @@
     "scheduleSaved": "心跳喚醒已儲存",
     "projectMemberships": "專案歸屬",
     "noMemberships": "還沒有加入任何專案。",
+    "webChatRequiresProject": "Web 對話需要專案上下文。請先把這個智慧體加入一個專案。",
     "filterAllTeams": "全部團隊",
     "filterAllProjects": "全部專案",
     "filterAllRoles": "全部角色",

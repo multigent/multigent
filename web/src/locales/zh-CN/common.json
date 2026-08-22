@@ -184,6 +184,7 @@
     "scheduleSaved": "心跳唤醒已保存",
     "projectMemberships": "项目归属",
     "noMemberships": "还没有加入任何项目。",
+    "webChatRequiresProject": "Web 对话需要项目上下文。请先把这个智能体加入一个项目。",
     "filterAllTeams": "全部团队",
     "filterAllProjects": "全部项目",
     "filterAllRoles": "全部角色",

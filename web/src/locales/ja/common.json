@@ -184,6 +184,7 @@
     "scheduleSaved": "ハートビート wakeup を保存しました",
     "projectMemberships": "プロジェクト参加",
     "noMemberships": "まだどのプロジェクトにも参加していません。",
+    "webChatRequiresProject": "Web チャットにはプロジェクトコンテキストが必要です。先にこのエージェントをプロジェクトへ割り当ててください。",
     "filterAllTeams": "すべてのチーム",
     "filterAllProjects": "すべてのプロジェクト",
     "filterAllRoles": "すべての役割",

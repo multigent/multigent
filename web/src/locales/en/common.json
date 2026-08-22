@@ -184,6 +184,7 @@
     "scheduleSaved": "Heartbeat wakeup saved",
     "projectMemberships": "Project memberships",
     "noMemberships": "This agent has not joined any project yet.",
+    "webChatRequiresProject": "Web chat needs project context. Assign this agent to a project first.",
     "filterAllTeams": "All teams",
     "filterAllProjects": "All projects",
     "filterAllRoles": "All roles",

@@ -940,6 +940,14 @@ type WorkspaceAgentSummary = {
   defaultRuntimeNodeId?: string
 }
 
+type WorkspaceAgentMembership = {
+  id: string
+  projectId: string
+  title?: string
+  role?: string
+  team?: string
+}
+
 type WorkspaceTeamInfo = { path: string; name: string }
 type WorkspaceTeamDetail = { roles?: Array<{ id?: string; name: string; description?: string }> }
 
@@ -1286,8 +1294,10 @@ function WorkspaceAgentOnlyDetail({ agent }: { agent: WorkspaceAgentSummary }) {
   const { canAdmin: canAdminWorkspace } = useWorkspaceAccess()
   const trustedProxyMode = isTrustedProxyMode()
   const [reloadKey, setReloadKey] = useState(0)
-  const agentState = useApiJson<{ agent?: WorkspaceAgentSummary }>(`/api/v1/agents/${encodeURIComponent(agent.id)}`, reloadKey, { keepPreviousDataOnReload: true })
+  const agentState = useApiJson<{ agent?: WorkspaceAgentSummary; memberships?: WorkspaceAgentMembership[] }>(`/api/v1/agents/${encodeURIComponent(agent.id)}`, reloadKey, { keepPreviousDataOnReload: true })
   const current = agentState.status === 'ok' && agentState.data.agent ? agentState.data.agent : agent
+  const memberships = agentState.status === 'ok' ? (agentState.data.memberships ?? []) : []
+  const chatMembership = memberships.find((membership) => membership.projectId) ?? null
   const providersState = useApiJson<ProviderOption[]>('/api/v1/providers', 0, { keepPreviousDataOnReload: true })
   const nodesState = useApiJson<RuntimeNodeListResp>('/api/v1/runtime-nodes', 0, { keepPreviousDataOnReload: true })
   const [ctxReload, setCtxReload] = useState(0)
@@ -1617,7 +1627,20 @@ function WorkspaceAgentOnlyDetail({ agent }: { agent: WorkspaceAgentSummary }) {
             <section>
               <SectionHeader icon={Activity} title={t('agentDetail.connectAndChat')} />
               <p className="mt-1 text-sm text-neutral-500 dark:text-zinc-500">{t('agentDetail.connectAndChatHint')}</p>
-              <div className="mt-3">
+              <div className="mt-3 space-y-4">
+                {chatMembership ? (
+                  <SessionPanel
+                    project={chatMembership.projectId}
+                    agentName={current.name}
+                    canConfigure={canAdminWorkspace}
+                    canRun={canAdminWorkspace}
+                    runBlockedReason={agentModelRequiresModelAccount(ctx?.model) && !ctx?.provider ? t('agentDetail.modelAccountRequiredBeforeRun') : undefined}
+                  />
+                ) : (
+                  <div className="rounded-lg border border-neutral-200/80 bg-neutral-50/50 px-4 py-3 dark:border-zinc-700/60 dark:bg-zinc-900/30">
+                    <p className="text-sm text-neutral-500 dark:text-zinc-500">{t('agents.webChatRequiresProject')}</p>
+                  </div>
+                )}
                 <AgentChannelPanel project="" agentName={current.name} agentWorkerId={current.id} />
               </div>
             </section>
