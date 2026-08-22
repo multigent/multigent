@@ -7,7 +7,7 @@ import remarkGfm from 'remark-gfm'
 import {
   ChevronRight, Bot, BookOpen, Check,
   Settings2, Users, UserCog, Activity, User, Mail, ListTodo, Reply, Send, Container,
-  Cable, Server, Clock3, X,
+  Cable, Server, Clock3, X, GitBranch, RefreshCw,
 } from 'lucide-react'
 import type { LucideIcon } from 'lucide-react'
 import { cn } from '../../lib/cn'
@@ -938,6 +938,9 @@ type WorkspaceAgentSummary = {
   runtimeModel?: string
   defaultModelAccountId?: string
   defaultRuntimeNodeId?: string
+  runtimeConfig?: {
+    maxForkSessions?: number
+  }
 }
 
 type WorkspaceAgentMembership = {
@@ -1646,6 +1649,8 @@ function WorkspaceAgentOnlyDetail({ agent }: { agent: WorkspaceAgentSummary }) {
             </section>
           )}
 
+          <AgentForkSessionsPanel agentWorkerId={current.id} canManage={canAdminWorkspace} />
+
           {canAdminWorkspace && !trustedProxyMode && (
             <details className="group rounded-lg border border-neutral-200/80 bg-white dark:border-zinc-700/60 dark:bg-zinc-900/40">
               <summary className="flex cursor-pointer items-center gap-2 px-4 py-3 text-sm font-medium text-neutral-700 dark:text-zinc-300">
@@ -1655,6 +1660,7 @@ function WorkspaceAgentOnlyDetail({ agent }: { agent: WorkspaceAgentSummary }) {
               </summary>
               <div className="border-t border-neutral-100 p-4 dark:border-zinc-800">
                 <div className="space-y-4">
+                  <RuntimeConcurrencyPanel agent={current} onChanged={() => setReloadKey((k) => k + 1)} />
                   <SandboxEditor
                     project=""
                     agentName={current.name}
@@ -1736,6 +1742,180 @@ function WorkspaceAgentOnlyDetail({ agent }: { agent: WorkspaceAgentSummary }) {
       )}
     </div>
   )
+}
+
+type AgentSessionRow = {
+  id: string
+  title?: string
+  purpose?: string
+  status?: string
+  project?: string
+  taskId?: string
+  workflowRunId?: string
+  lastRunId?: string
+  forkMode?: string
+  runtimeProvider?: string
+  createdAt?: string
+  updatedAt?: string
+  lastActivityAt?: string
+  completedAt?: string
+  resultSummary?: string
+}
+
+type AgentSessionsResponse = {
+  sessions?: AgentSessionRow[]
+}
+
+function AgentForkSessionsPanel({ agentWorkerId, canManage }: { agentWorkerId: string; canManage: boolean }) {
+  const { t } = useTranslation()
+  const formatDateTime = useFormatDateTime()
+  const [status, setStatus] = useState('active')
+  const [reloadKey, setReloadKey] = useState(0)
+  const path = `/api/v1/agent-sessions?agentWorkerId=${encodeURIComponent(agentWorkerId)}&status=${encodeURIComponent(status)}&limit=20`
+  const state = useApiJson<AgentSessionsResponse>(path, reloadKey, { keepPreviousDataOnReload: true })
+  const sessions = state.status === 'ok' ? (state.data.sessions ?? []) : []
+
+  return (
+    <section>
+      <div className="flex flex-wrap items-start justify-between gap-3">
+        <div>
+          <SectionHeader icon={GitBranch} title={t('agentDetail.forkSessions')} />
+          <p className="mt-1 text-sm text-neutral-500 dark:text-zinc-500">{t('agentDetail.forkSessionsHint')}</p>
+        </div>
+        <div className="flex items-center gap-2">
+          <select value={status} onChange={e => setStatus(e.target.value)} className={panelSelectCls}>
+            <option value="active">{t('agentDetail.sessionFilterActive')}</option>
+            <option value="all">{t('agentDetail.sessionFilterAll')}</option>
+            <option value="done">{t('agentDetail.sessionStatus_done')}</option>
+            <option value="failed">{t('agentDetail.sessionStatus_failed')}</option>
+          </select>
+          <button type="button" onClick={() => setReloadKey(key => key + 1)} className={secondaryButtonCls} title={t('common.refresh')}>
+            <RefreshCw className="size-3.5" strokeWidth={1.8} />
+          </button>
+        </div>
+      </div>
+      <div className="mt-3 overflow-hidden rounded-lg border border-neutral-200/80 bg-white dark:border-zinc-700/60 dark:bg-zinc-900/40">
+        {state.status === 'loading' && sessions.length === 0 ? (
+          <div className="px-4 py-6 text-sm text-neutral-500 dark:text-zinc-500">{t('common.loading')}</div>
+        ) : sessions.length === 0 ? (
+          <div className="px-4 py-6 text-sm text-neutral-500 dark:text-zinc-500">{t('agentDetail.noForkSessions')}</div>
+        ) : (
+          <div className="divide-y divide-neutral-100 dark:divide-zinc-800">
+            {sessions.map(session => (
+              <div key={session.id} className="px-4 py-3">
+                <div className="flex flex-wrap items-start justify-between gap-3">
+                  <div className="min-w-0 flex-1">
+                    <div className="flex flex-wrap items-center gap-2">
+                      <span className="truncate text-sm font-medium text-neutral-900 dark:text-zinc-100">{session.title || session.id}</span>
+                      <span className={cn('rounded-full px-2 py-0.5 text-[11px] font-medium', forkSessionStatusClass(session.status))}>
+                        {forkSessionStatusLabel(t, session.status)}
+                      </span>
+                      {session.runtimeProvider && (
+                        <span className="rounded-md bg-neutral-100 px-1.5 py-0.5 font-mono text-[11px] text-neutral-500 dark:bg-zinc-800 dark:text-zinc-400">{session.runtimeProvider}</span>
+                      )}
+                    </div>
+                    {session.purpose && <p className="mt-1 line-clamp-2 text-xs text-neutral-500 dark:text-zinc-500">{session.purpose}</p>}
+                    <div className="mt-2 flex flex-wrap gap-x-4 gap-y-1 text-xs text-neutral-500 dark:text-zinc-500">
+                      {session.project && <span>{t('common.project')}: <span className="font-medium text-neutral-700 dark:text-zinc-300">{session.project}</span></span>}
+                      {session.taskId && (
+                        <span>
+                          {t('agentDetail.task')}: {session.project ? (
+                            <Link className="font-mono text-sky-600 hover:text-sky-800 dark:text-sky-400" to={`/projects/${encodeURIComponent(session.project)}/tasks/${encodeURIComponent(session.taskId)}/follow`}>
+                              {session.taskId}
+                            </Link>
+                          ) : (
+                            <span className="font-mono text-neutral-700 dark:text-zinc-300">{session.taskId}</span>
+                          )}
+                        </span>
+                      )}
+                      {session.lastRunId && <span>{t('agentDetail.lastRun')}: <span className="font-mono text-neutral-700 dark:text-zinc-300">{session.lastRunId}</span></span>}
+                      <span>{t('agentDetail.lastActive')}: {session.lastActivityAt ? formatDateTime(session.lastActivityAt) : t('agentDetail.notConfigured')}</span>
+                    </div>
+                    {session.resultSummary && (
+                      <p className="mt-2 rounded-md bg-neutral-50 px-3 py-2 text-xs text-neutral-600 dark:bg-zinc-800/60 dark:text-zinc-300">{session.resultSummary}</p>
+                    )}
+                  </div>
+                </div>
+              </div>
+            ))}
+          </div>
+        )}
+      </div>
+      {!canManage && <p className="mt-2 text-xs text-neutral-400 dark:text-zinc-500">{t('agentDetail.forkSessionsReadonly')}</p>}
+    </section>
+  )
+}
+
+function RuntimeConcurrencyPanel({ agent, onChanged }: { agent: WorkspaceAgentSummary; onChanged: () => void }) {
+  const { t } = useTranslation()
+  const initialMax = Math.max(1, Number(agent.runtimeConfig?.maxForkSessions ?? 5) || 5)
+  const [maxForkSessions, setMaxForkSessions] = useState(initialMax)
+  const [saving, setSaving] = useState(false)
+
+  useEffect(() => {
+    setMaxForkSessions(Math.max(1, Number(agent.runtimeConfig?.maxForkSessions ?? 5) || 5))
+  }, [agent.id, agent.runtimeConfig?.maxForkSessions])
+
+  async function save() {
+    const next = Math.max(1, Math.min(50, Math.floor(maxForkSessions || 5)))
+    setSaving(true)
+    try {
+      await apiPatch(`/api/v1/agents/${encodeURIComponent(agent.id)}`, {
+        runtimeConfig: { ...(agent.runtimeConfig ?? {}), maxForkSessions: next },
+      })
+      setMaxForkSessions(next)
+      onChanged()
+      showToast(t('common.saved'), 'success')
+    } finally {
+      setSaving(false)
+    }
+  }
+
+  return (
+    <div className="rounded-lg border border-neutral-200/80 bg-neutral-50/40 p-3 dark:border-zinc-700/60 dark:bg-zinc-900/40">
+      <SubsectionHeader
+        title={t('agentDetail.runtimeConcurrency')}
+        description={t('agentDetail.runtimeConcurrencyHint')}
+      />
+      <div className="mt-3 flex flex-wrap items-end gap-3">
+        <WorkspaceField label={t('agentDetail.maxForkSessions')}>
+          <input
+            type="number"
+            min={1}
+            max={50}
+            value={maxForkSessions}
+            onChange={e => setMaxForkSessions(Number(e.target.value))}
+            className={cn(workspaceInputCls, 'w-32')}
+          />
+        </WorkspaceField>
+        <button type="button" onClick={() => void save()} disabled={saving} className={secondaryButtonCls}>
+          {saving ? t('forms.saving') : t('forms.save')}
+        </button>
+      </div>
+    </div>
+  )
+}
+
+function forkSessionStatusLabel(t: (key: string, options?: Record<string, unknown>) => string, status?: string) {
+  const key = (status || 'pending').trim().toLowerCase()
+  return t(`agentDetail.sessionStatus_${key}`, { defaultValue: status || 'pending' })
+}
+
+function forkSessionStatusClass(status?: string) {
+  switch ((status || '').trim().toLowerCase()) {
+    case 'running':
+      return 'bg-emerald-100 text-emerald-700 dark:bg-emerald-900/30 dark:text-emerald-300'
+    case 'waiting':
+    case 'blocked':
+      return 'bg-amber-100 text-amber-700 dark:bg-amber-900/30 dark:text-amber-300'
+    case 'done':
+      return 'bg-sky-100 text-sky-700 dark:bg-sky-900/30 dark:text-sky-300'
+    case 'failed':
+    case 'cancelled':
+      return 'bg-red-100 text-red-700 dark:bg-red-900/30 dark:text-red-300'
+    default:
+      return 'bg-neutral-100 text-neutral-600 dark:bg-zinc-800 dark:text-zinc-300'
+  }
 }
 
 const workspaceInputCls = 'w-full rounded-md border border-neutral-200/80 bg-neutral-50/50 px-3 py-2 text-sm outline-none transition-colors focus:border-sky-400 disabled:opacity-50 dark:border-zinc-700/60 dark:bg-zinc-800/50 dark:text-zinc-200 dark:[color-scheme:dark]'
