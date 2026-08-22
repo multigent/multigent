@@ -292,7 +292,23 @@ function buildScheduleActiveDays(days: string[]) {
   return sorted.join(',')
 }
 
-function PromptEditor({ label, icon: Icon, apiPath, initialContent, canEdit = true }: { label: string; icon: LucideIcon; apiPath: string; initialContent: string; canEdit?: boolean }) {
+function PromptPreview({ content, emptyText, scroll = true }: { content: string; emptyText: string; scroll?: boolean }) {
+  const trimmed = content.trim()
+  if (!trimmed) {
+    return (
+      <div className="p-4 text-sm text-neutral-400 dark:text-zinc-500">
+        {emptyText}
+      </div>
+    )
+  }
+  return (
+    <div className={cn('prose prose-sm prose-neutral dark:prose-invert max-w-none p-4 text-sm leading-relaxed', scroll && 'max-h-[34rem] overflow-auto')}>
+      <Markdown remarkPlugins={[remarkGfm]}>{content}</Markdown>
+    </div>
+  )
+}
+
+function PromptEditor({ label, icon: Icon, apiPath, initialContent, canEdit = true, description, emptyText }: { label: string; icon: LucideIcon; apiPath: string; initialContent: string; canEdit?: boolean; description?: string; emptyText?: string }) {
   const { t } = useTranslation()
   const [value, setValue] = useState(initialContent)
   const [editing, setEditing] = useState(false)
@@ -323,11 +339,16 @@ function PromptEditor({ label, icon: Icon, apiPath, initialContent, canEdit = tr
   return (
     <div className="rounded-lg border border-neutral-200/80 bg-white dark:border-zinc-700/60 dark:bg-zinc-900/40">
       <div className="flex items-center justify-between border-b border-neutral-100 px-4 py-2.5 dark:border-zinc-700/40">
-        <div className="flex items-center gap-2">
+        <div className="flex min-w-0 items-start gap-2">
           <Icon className="size-4 text-neutral-400 dark:text-zinc-500" strokeWidth={1.8} />
-          <span className="text-sm font-medium text-neutral-700 dark:text-zinc-300">{label}</span>
-          {dirty && <span className="text-[10px] text-amber-500">●</span>}
-          {saved && <span className="text-[10px] text-emerald-500">{t('prompt.saved')}</span>}
+          <div className="min-w-0">
+            <div className="flex items-center gap-2">
+              <span className="text-sm font-medium text-neutral-700 dark:text-zinc-300">{label}</span>
+              {dirty && <span className="text-[10px] text-amber-500">●</span>}
+              {saved && <span className="text-[10px] text-emerald-500">{t('prompt.saved')}</span>}
+            </div>
+            {description && <p className="mt-0.5 text-xs leading-relaxed text-neutral-400 dark:text-zinc-500">{description}</p>}
+          </div>
         </div>
         <div className="flex items-center gap-2">
           {editing && (
@@ -353,13 +374,86 @@ function PromptEditor({ label, icon: Icon, apiPath, initialContent, canEdit = tr
         </div>
       </div>
       {!editing || preview ? (
-        <div className={cn('prose prose-sm prose-neutral dark:prose-invert max-w-none p-4 text-sm leading-relaxed', !editing && 'max-h-[34rem] overflow-auto')}>
-          <Markdown remarkPlugins={[remarkGfm]}>{value || '*（空）*'}</Markdown>
-        </div>
+        <PromptPreview content={value} emptyText={emptyText || t('prompt.emptyPrompt')} scroll={!editing} />
       ) : (
         <textarea value={value} readOnly={!canEdit} onChange={(e) => { if (!canEdit) return; setValue(e.target.value); setDirty(true); setSaved(false) }}
           className="block w-full resize-y bg-transparent p-4 font-mono text-[13px] leading-relaxed text-neutral-800 outline-none placeholder:text-neutral-300 dark:text-zinc-200 dark:placeholder:text-zinc-700"
           rows={editorRows} placeholder="Markdown prompt..." />
+      )}
+    </div>
+  )
+}
+
+function ControlledPromptEditor({ label, icon: Icon, value, onChange, onSave, onCancel, canEdit = true, saving = false, description, emptyText, placeholder }: { label: string; icon: LucideIcon; value: string; onChange: (value: string) => void; onSave: () => void | Promise<void>; onCancel: () => void; canEdit?: boolean; saving?: boolean; description?: string; emptyText: string; placeholder: string }) {
+  const { t } = useTranslation()
+  const [editing, setEditing] = useState(false)
+  const [preview, setPreview] = useState(false)
+  const [saved, setSaved] = useState(false)
+  const [dirty, setDirty] = useState(false)
+  const lineCount = value ? value.split('\n').length : 0
+  const editorRows = Math.max(8, Math.min(36, lineCount + 3))
+  function cancelEdit() {
+    setEditing(false)
+    setPreview(false)
+    setDirty(false)
+    onCancel()
+  }
+  async function save() {
+    await onSave()
+    setEditing(false)
+    setPreview(false)
+    setDirty(false)
+    setSaved(true)
+    setTimeout(() => setSaved(false), 2000)
+  }
+  return (
+    <div className="rounded-lg border border-neutral-200/80 bg-white dark:border-zinc-700/60 dark:bg-zinc-900/40">
+      <div className="flex items-center justify-between border-b border-neutral-100 px-4 py-2.5 dark:border-zinc-700/40">
+        <div className="flex min-w-0 items-start gap-2">
+          <Icon className="mt-0.5 size-4 text-neutral-400 dark:text-zinc-500" strokeWidth={1.8} />
+          <div className="min-w-0">
+            <div className="flex items-center gap-2">
+              <span className="text-sm font-medium text-neutral-700 dark:text-zinc-300">{label}</span>
+              {dirty && <span className="text-[10px] text-amber-500">●</span>}
+              {saved && <span className="text-[10px] text-emerald-500">{t('prompt.saved')}</span>}
+            </div>
+            {description && <p className="mt-0.5 text-xs leading-relaxed text-neutral-400 dark:text-zinc-500">{description}</p>}
+          </div>
+        </div>
+        <div className="flex items-center gap-2">
+          {editing && (
+            <button type="button" onClick={() => setPreview((p) => !p)} className={subtleButtonCls}>
+              {preview ? t('prompt.edit') : t('prompt.preview')}
+            </button>
+          )}
+          {canEdit && !editing && (
+            <button type="button" onClick={() => setEditing(true)} className={secondaryButtonCls}>
+              {t('common.edit')}
+            </button>
+          )}
+          {canEdit && editing && (
+            <>
+              <button type="button" onClick={cancelEdit} disabled={saving} className={secondaryButtonCls}>
+                {t('common.cancel')}
+              </button>
+              <button type="button" onClick={() => void save()} disabled={saving || !dirty} className={primaryButtonCls}>
+                {saving ? t('prompt.saving') : t('prompt.save')}
+              </button>
+            </>
+          )}
+        </div>
+      </div>
+      {!editing || preview ? (
+        <PromptPreview content={value} emptyText={emptyText} scroll={!editing} />
+      ) : (
+        <textarea
+          value={value}
+          readOnly={!canEdit}
+          onChange={(e) => { if (!canEdit) return; onChange(e.target.value); setDirty(true); setSaved(false) }}
+          className="block w-full resize-y bg-transparent p-4 font-mono text-[13px] leading-relaxed text-neutral-800 outline-none placeholder:text-neutral-300 dark:text-zinc-200 dark:placeholder:text-zinc-700"
+          rows={editorRows}
+          placeholder={placeholder}
+        />
       )}
     </div>
   )
@@ -930,6 +1024,7 @@ type WorkspaceAgentSummary = {
   name: string
   displayName?: string
   description?: string
+  profilePrompt?: string
   avatar?: string
   team?: string
   role?: string
@@ -1308,6 +1403,7 @@ function WorkspaceAgentOnlyDetail({ agent }: { agent: WorkspaceAgentSummary }) {
   const fullContextPath = `/api/v1/agents/${encodeURIComponent(agent.id)}/context`
   const [displayName, setDisplayName] = useState(current.displayName || current.name)
   const [description, setDescription] = useState(current.description || '')
+  const [profilePrompt, setProfilePrompt] = useState(current.profilePrompt || '')
   const [team, setTeam] = useState(current.team || '')
   const [role, setRole] = useState(current.role || '')
   const [status, setStatus] = useState(current.status || 'active')
@@ -1319,6 +1415,7 @@ function WorkspaceAgentOnlyDetail({ agent }: { agent: WorkspaceAgentSummary }) {
   const [profileAvatar, setProfileAvatar] = useState(current.avatar || '')
   const [profileAvatarNonce, setProfileAvatarNonce] = useState(() => Date.now())
   const [savingProfile, setSavingProfile] = useState(false)
+  const [savingProfilePrompt, setSavingProfilePrompt] = useState(false)
   const [archiveConfirmOpen, setArchiveConfirmOpen] = useState(false)
   const [archiveConfirmName, setArchiveConfirmName] = useState('')
   const [teams, setTeams] = useState<WorkspaceTeamInfo[]>([])
@@ -1328,6 +1425,7 @@ function WorkspaceAgentOnlyDetail({ agent }: { agent: WorkspaceAgentSummary }) {
   useEffect(() => {
     setDisplayName(current.displayName || current.name)
     setDescription(current.description || '')
+    setProfilePrompt(current.profilePrompt || '')
     setTeam(current.team || '')
     setRole(current.role || '')
     setStatus(current.status || 'active')
@@ -1336,7 +1434,7 @@ function WorkspaceAgentOnlyDetail({ agent }: { agent: WorkspaceAgentSummary }) {
     setModelAccountId(current.defaultModelAccountId || '')
     setRuntimeNodeId(current.defaultRuntimeNodeId || '')
     setProfileAvatar(current.avatar || '')
-  }, [current.id, current.displayName, current.name, current.description, current.team, current.role, current.status, current.model, current.runtimeModel, current.defaultModelAccountId, current.defaultRuntimeNodeId, current.avatar])
+  }, [current.id, current.displayName, current.name, current.description, current.profilePrompt, current.team, current.role, current.status, current.model, current.runtimeModel, current.defaultModelAccountId, current.defaultRuntimeNodeId, current.avatar])
 
   useEffect(() => {
     let cancelled = false
@@ -1413,6 +1511,20 @@ function WorkspaceAgentOnlyDetail({ agent }: { agent: WorkspaceAgentSummary }) {
       showToast(t('common.saved'), 'success')
     } finally {
       setSavingProfile(false)
+    }
+  }
+
+  async function saveProfilePrompt() {
+    setSavingProfilePrompt(true)
+    try {
+      await apiPatch(`/api/v1/agents/${encodeURIComponent(current.id)}`, {
+        profilePrompt: profilePrompt.trim(),
+      })
+      setReloadKey(key => key + 1)
+      setCtxReload(key => key + 1)
+      showToast(t('common.saved'), 'success')
+    } finally {
+      setSavingProfilePrompt(false)
     }
   }
 
@@ -1608,12 +1720,25 @@ function WorkspaceAgentOnlyDetail({ agent }: { agent: WorkspaceAgentSummary }) {
             <SectionHeader icon={BookOpen} title={t('agentDetail.promptContext')} />
             <p className="mt-1 text-sm text-neutral-500 dark:text-zinc-500">{t('agentDetail.promptContextHint')}</p>
             <div className="mt-3 space-y-4">
+              <ControlledPromptEditor
+                label={t('agentDetail.profilePrompt')}
+                icon={UserCog}
+                value={profilePrompt}
+                onChange={setProfilePrompt}
+                onSave={saveProfilePrompt}
+                onCancel={() => setProfilePrompt(current.profilePrompt || '')}
+                saving={savingProfilePrompt}
+                canEdit={canAdminWorkspace}
+                emptyText={t('agentDetail.profilePromptEmpty')}
+                placeholder={t('agentDetail.profilePromptPlaceholder')}
+              />
               <PromptEditor
                 label={t('prompt.wakeup')}
                 icon={BookOpen}
                 apiPath={`/api/v1/agents/${encodeURIComponent(current.id)}/wakeup`}
                 initialContent={ctx?.wakeup ?? ''}
                 canEdit={canAdminWorkspace}
+                emptyText={t('prompt.emptyWakeup')}
               />
               <ContextPanel apiPath={fullContextPath} contextFile={ctx?.contextFile} syncedAt={ctx?.syncedAt} />
               <AgentContextBindingsPanel
@@ -2206,13 +2331,16 @@ function SandboxEditor({ project, agentName, agentWorkerId, initial, onChanged }
   )
 }
 
-function SectionHeader({ icon: Icon, title }: { icon: LucideIcon; title: string }) {
+function SectionHeader({ icon: Icon, title, action }: { icon: LucideIcon; title: string; action?: ReactNode }) {
   return (
-    <div className="flex items-center gap-2.5">
-      <div className="flex size-7 items-center justify-center rounded-lg bg-neutral-100 dark:bg-zinc-800">
-        <Icon className="size-3.5 text-neutral-500 dark:text-zinc-400" strokeWidth={1.8} />
+    <div className="flex items-center justify-between gap-3">
+      <div className="flex min-w-0 items-center gap-2.5">
+        <div className="flex size-7 shrink-0 items-center justify-center rounded-lg bg-neutral-100 dark:bg-zinc-800">
+          <Icon className="size-3.5 text-neutral-500 dark:text-zinc-400" strokeWidth={1.8} />
+        </div>
+        <h3 className="truncate text-sm font-semibold text-neutral-800 dark:text-zinc-200">{title}</h3>
       </div>
-      <h3 className="text-sm font-semibold text-neutral-800 dark:text-zinc-200">{title}</h3>
+      {action}
     </div>
   )
 }

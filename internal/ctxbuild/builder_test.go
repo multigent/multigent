@@ -75,8 +75,12 @@ func TestBuildForAgentIncludesAgentWorkerMembershipContext(t *testing.T) {
 		Name:        "nova",
 		DisplayName: "Nova",
 		Description: "Cross-project PM agent",
-		Model:       "codex",
-		SkillsJSON:  `["tapnow-agent-debug"]`,
+		ProfilePrompt: strings.Join([]string{
+			"Glenn is my final escalation owner.",
+			"Treat workflows as milestones that may span multiple wakeups.",
+		}, "\n"),
+		Model:      "codex",
+		SkillsJSON: `["tapnow-agent-debug"]`,
 	}); err != nil {
 		t.Fatalf("worker: %v", err)
 	}
@@ -134,6 +138,9 @@ func TestBuildForAgentIncludesAgentWorkerMembershipContext(t *testing.T) {
 	for _, want := range []string{
 		"## Agent Worker Identity",
 		"Worker ID: aw-nova",
+		"## Agent Long-term Prompt",
+		"Glenn is my final escalation owner.",
+		"Treat workflows as milestones that may span multiple wakeups.",
 		"Project: sample",
 		"Membership ID: pm-sample",
 		"You own sample delivery coordination.",

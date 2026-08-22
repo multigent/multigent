@@ -357,6 +357,11 @@ func (s *dbStore) AgentWorkerContext(projectName, agentName string) (AgentWorker
 	writeContextLine(&b, "Primary session", worker.PrimarySessionID)
 	b.WriteString("\n")
 	b.WriteString("This is your workspace-level identity. Project, task, workflow, and IM channel inputs are contexts for this same Agent Worker; they are not separate agent identities.\n\n")
+	if strings.TrimSpace(worker.ProfilePrompt) != "" {
+		b.WriteString("## Agent Long-term Prompt\n\n")
+		b.WriteString(strings.TrimSpace(worker.ProfilePrompt))
+		b.WriteString("\n\n")
+	}
 
 	b.WriteString("## Current Project Membership\n\n")
 	writeContextLine(&b, "Project", membership.ProjectID)

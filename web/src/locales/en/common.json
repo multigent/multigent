@@ -136,7 +136,7 @@
     "quickView": "Quick view",
     "notFound": "Agent not found",
     "backToAgents": "Back to agents",
-    "noProjectMembershipDetail": "This agent has not joined any project yet. Full configuration depends on project context, so assign it to a project first.",
+    "noProjectMembershipDetail": "This agent has not joined any project yet. You can still configure profile, model, heartbeat, capabilities, and collaboration channels; project context is added after project membership.",
     "noProjectMembershipHint": "This agent has not joined a project yet. You can still configure model account, runtime node, heartbeat, and collaboration channels; project context is added after project membership.",
     "name": "Handle",
     "displayName": "Display name",
@@ -1191,7 +1191,9 @@
     "edit": "Edit",
     "preview": "Preview",
     "roles": "Roles",
-    "saved": "Saved"
+    "saved": "Saved",
+    "emptyPrompt": "No content yet. Click Edit to add one.",
+    "emptyWakeup": "No wakeup routine is configured yet. Once configured, the agent can use it to autonomously check and advance work when there are no pending tasks."
   },
   "skill": {
     "catalogTitle": "Skills Catalog",
@@ -1927,6 +1929,9 @@
     "inheritedSkills": "Inherited Skills",
     "promptContext": "Prompt & Context",
     "promptContextHint": "Tune this agent's behavior prompt and review the complete merged context it actually receives.",
+    "profilePrompt": "Long-term prompt",
+    "profilePromptEmpty": "No long-term prompt is set yet. Describe what this agent should remember, how it should judge situations, when to confirm with whom, and how it should collaborate with people.",
+    "profilePromptPlaceholder": "Example:\n- You are a persistent collaborator, not a passive tool.\n- Remember key collaborators, responsibility boundaries, and trusted information sources.\n- For unclear or high-risk requests, clarify the goal, impact, and constraints before acting.\n- Clear, low-risk, reversible work can be advanced autonomously; architecture, security, cost, external publishing, or irreversible actions require escalation first.\n- Communicate with conclusion first, then evidence and next steps; preserve complex context in documents.",
     "toolsAndSkills": "Capabilities",
     "toolsAndSkillsHint": "Review the external capabilities this agent can use at runtime and the skills inherited from its team and role.",
     "instructions": "Prompt & Context",

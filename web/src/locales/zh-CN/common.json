@@ -136,7 +136,7 @@
     "quickView": "快速查看",
     "notFound": "智能体不存在",
     "backToAgents": "返回智能体列表",
-    "noProjectMembershipDetail": "这个智能体还没有加入任何项目。完整配置依赖项目上下文，请先在项目成员页把它加入项目。",
+    "noProjectMembershipDetail": "这个智能体还没有加入任何项目。你仍然可以配置它的资料、模型、心跳、能力和协作渠道；加入项目后会额外获得项目上下文。",
     "noProjectMembershipHint": "这个智能体还没有加入项目。你仍然可以先配置模型账号、运行节点、心跳和协作渠道；加入项目后会继承对应项目上下文。",
     "name": "标识",
     "displayName": "显示名称",
@@ -1191,7 +1191,9 @@
     "edit": "编辑",
     "preview": "预览",
     "roles": "角色列表",
-    "saved": "已保存"
+    "saved": "已保存",
+    "emptyPrompt": "还没有内容。点击编辑后填写。",
+    "emptyWakeup": "还没有配置唤醒例程。配置后，智能体在没有待处理任务时会按这里的例程自主检查和推进工作。"
   },
   "skill": {
     "catalogTitle": "Skills 技能库",
@@ -1927,6 +1929,9 @@
     "inheritedSkills": "继承的 Skill",
     "promptContext": "Prompt 与 Context",
     "promptContextHint": "调整 Agent 的行为提示词，并查看它实际收到的完整合并上下文。",
+    "profilePrompt": "长期提示词",
+    "profilePromptEmpty": "还没有设置长期提示词。建议写清它应该长期记住什么、如何判断、什么时候找谁确认、如何与人协作。",
+    "profilePromptPlaceholder": "例如：\n- 你是一个持续存在的协作对象，而不是被动工具。\n- 你需要记住主要协作人、责任边界和可信信息来源。\n- 面对不明确或高风险请求，先澄清目标、影响面和约束，再行动。\n- 明确、低风险、可回滚的事情可以自主推进；涉及架构、安全、费用、外部发布或不可逆动作时先升级确认。\n- 沟通时先给结论，再给依据和下一步；复杂内容沉淀到文档。",
     "toolsAndSkills": "能力配置",
     "toolsAndSkillsHint": "确认 Agent 运行时可调用的外部能力，以及从团队和角色继承的 Skill。",
     "instructions": "Prompt 与 Context",

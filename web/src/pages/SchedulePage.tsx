@@ -271,18 +271,18 @@ export default function SchedulePage() {
           </div>
         )}
         {agentsState.status === 'ok' && schedulerState.status === 'ok' && filteredAgents.length > 0 && (
-          <div className="overflow-hidden rounded-lg border border-neutral-200 bg-white dark:border-zinc-800 dark:bg-zinc-900">
-            <table className="w-full min-w-[960px]">
+          <div className="overflow-x-auto rounded-lg border border-neutral-200 bg-white dark:border-zinc-800 dark:bg-zinc-900">
+            <table className="w-full min-w-[1080px]">
               <thead className="border-b border-neutral-200 bg-neutral-50 text-xs font-medium text-neutral-500 dark:border-zinc-800 dark:bg-zinc-900/70 dark:text-zinc-500">
                 <tr>
-                  <th className="px-4 py-3 text-left">{t('schedule.agent')}</th>
-                  <th className="px-4 py-3 text-left">{t('schedule.statusLabel')}</th>
-                  <th className="px-4 py-3 text-left">{t('agents.interval')}</th>
-                  <th className="px-4 py-3 text-left">{t('agents.activeHours')}</th>
-                  <th className="px-4 py-3 text-left">{t('agents.maxTasksPerCycle')}</th>
-                  <th className="px-4 py-3 text-left">{t('agents.wakeupTriggers')}</th>
-                  <th className="px-4 py-3 text-left">{t('agents.runtimeNode')}</th>
-                  {canAdmin && <th className="px-4 py-3 text-right">{t('common.actions')}</th>}
+                  <th className="whitespace-nowrap px-4 py-3 text-left">{t('schedule.agent')}</th>
+                  <th className="whitespace-nowrap px-4 py-3 text-left">{t('schedule.statusLabel')}</th>
+                  <th className="whitespace-nowrap px-4 py-3 text-left">{t('agents.interval')}</th>
+                  <th className="whitespace-nowrap px-4 py-3 text-left">{t('agents.activeHours')}</th>
+                  <th className="whitespace-nowrap px-4 py-3 text-left">{t('agents.maxTasksPerCycle')}</th>
+                  <th className="whitespace-nowrap px-4 py-3 text-left">{t('agents.wakeupTriggers')}</th>
+                  <th className="whitespace-nowrap px-4 py-3 text-left">{t('agents.runtimeNode')}</th>
+                  {canAdmin && <th className="whitespace-nowrap px-4 py-3 text-right">{t('common.actions')}</th>}
                 </tr>
               </thead>
               <tbody className="divide-y divide-neutral-100 dark:divide-zinc-800">
@@ -309,12 +309,12 @@ export default function SchedulePage() {
                           </div>
                         </Link>
                       </td>
-                      <td className="px-4 py-3">
+                      <td className="whitespace-nowrap px-4 py-3">
                         <ScheduleStatus enabled={schedule.enabled} running={Boolean(running)} />
                       </td>
-                      <td className="px-4 py-3 font-mono text-sm text-neutral-700 dark:text-zinc-300">{schedule.enabled ? schedule.interval : '-'}</td>
-                      <td className="px-4 py-3 text-sm text-neutral-600 dark:text-zinc-400">{schedule.activeHours || '-'}</td>
-                      <td className="px-4 py-3 text-sm text-neutral-600 dark:text-zinc-400">{schedule.maxTasksPerCycle || '-'}</td>
+                      <td className="whitespace-nowrap px-4 py-3 font-mono text-sm text-neutral-700 dark:text-zinc-300">{schedule.enabled ? schedule.interval : '-'}</td>
+                      <td className="whitespace-nowrap px-4 py-3 text-sm text-neutral-600 dark:text-zinc-400">{schedule.activeHours || '-'}</td>
+                      <td className="whitespace-nowrap px-4 py-3 text-sm text-neutral-600 dark:text-zinc-400">{schedule.maxTasksPerCycle || '-'}</td>
                       <td className="px-4 py-3">
                         <div className="flex max-w-xs flex-wrap gap-1.5">
                           {schedule.triggers.length === 0 ? (
@@ -327,15 +327,15 @@ export default function SchedulePage() {
                           {schedule.triggers.length > 4 && <span className="px-1 py-0.5 text-xs text-neutral-400">+{schedule.triggers.length - 4}</span>}
                         </div>
                       </td>
-                      <td className="px-4 py-3 text-sm text-neutral-600 dark:text-zinc-400">{agent.defaultRuntimeNodeId || t('agents.defaultRuntime')}</td>
+                      <td className="whitespace-nowrap px-4 py-3 text-sm text-neutral-600 dark:text-zinc-400">{agent.defaultRuntimeNodeId || t('agents.defaultRuntime')}</td>
                       {canAdmin && (
-                        <td className="px-4 py-3">
-                          <div className="flex justify-end gap-2">
+                        <td className="whitespace-nowrap px-4 py-3">
+                          <div className="flex flex-nowrap justify-end gap-2">
                             <button
                               type="button"
                               onClick={() => void toggleHeartbeat(agent)}
                               disabled={togglingId === agent.id || Boolean(running)}
-                              className="rounded-md border border-neutral-200 px-2.5 py-1.5 text-xs font-medium text-neutral-600 transition-colors hover:border-neutral-300 hover:bg-neutral-50 disabled:opacity-50 dark:border-zinc-700 dark:text-zinc-300 dark:hover:border-zinc-600 dark:hover:bg-zinc-800"
+                              className="whitespace-nowrap rounded-md border border-neutral-200 px-2.5 py-1.5 text-xs font-medium text-neutral-600 transition-colors hover:border-neutral-300 hover:bg-neutral-50 disabled:opacity-50 dark:border-zinc-700 dark:text-zinc-300 dark:hover:border-zinc-600 dark:hover:bg-zinc-800"
                               title={running ? t('schedule.running') : undefined}
                             >
                               {schedule.enabled ? t('schedule.disableHb') : t('schedule.enableHb')}
@@ -359,7 +359,7 @@ function ScheduleStatus({ enabled, running }: { enabled: boolean; running: boole
   const { t } = useTranslation()
   if (running) {
     return (
-      <span className="inline-flex items-center gap-1.5 rounded-full bg-emerald-50 px-2.5 py-0.5 text-xs font-medium text-emerald-700 dark:bg-emerald-950/40 dark:text-emerald-300">
+      <span className="inline-flex whitespace-nowrap items-center gap-1.5 rounded-full bg-emerald-50 px-2.5 py-0.5 text-xs font-medium text-emerald-700 dark:bg-emerald-950/40 dark:text-emerald-300">
         <span className="size-1.5 rounded-full bg-emerald-500" />
         {t('schedule.running')}
       </span>
@@ -367,14 +367,14 @@ function ScheduleStatus({ enabled, running }: { enabled: boolean; running: boole
   }
   if (enabled) {
     return (
-      <span className="inline-flex items-center gap-1.5 rounded-full bg-sky-50 px-2.5 py-0.5 text-xs font-medium text-sky-700 dark:bg-sky-950/40 dark:text-sky-300">
+      <span className="inline-flex whitespace-nowrap items-center gap-1.5 rounded-full bg-sky-50 px-2.5 py-0.5 text-xs font-medium text-sky-700 dark:bg-sky-950/40 dark:text-sky-300">
         <Zap className="size-3" strokeWidth={1.8} />
         {t('schedule.hbActive')}
       </span>
     )
   }
   return (
-    <span className={cn('inline-flex items-center gap-1.5 rounded-full bg-neutral-100 px-2.5 py-0.5 text-xs font-medium text-neutral-500 dark:bg-zinc-800 dark:text-zinc-400')}>
+    <span className={cn('inline-flex whitespace-nowrap items-center gap-1.5 rounded-full bg-neutral-100 px-2.5 py-0.5 text-xs font-medium text-neutral-500 dark:bg-zinc-800 dark:text-zinc-400')}>
       <Pause className="size-3" strokeWidth={1.8} />
       {t('schedule.off')}
     </span>

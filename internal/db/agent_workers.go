@@ -32,14 +32,15 @@ func (db *SQLiteStore) UpsertAgentWorker(w AgentWorker) error {
 		w.RuntimeConfigJSON = "{}"
 	}
 	_, err := db.sql.Exec(`INSERT INTO agent_workers (
-		id, workspace_id, name, display_name, description, avatar, team, role, status,
+		id, workspace_id, name, display_name, description, profile_prompt, avatar, team, role, status,
 		model, runtime_model, default_model_account_id, default_runtime_node_id, default_runtime_mode,
 		schedule_json, attention_policy_json, memory_policy_json, skills_json,
 		runtime_config_json, primary_session_id, created_at, updated_at
-	) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+	) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
 	ON CONFLICT(workspace_id, name) DO UPDATE SET
 		display_name = excluded.display_name,
 		description = excluded.description,
+		profile_prompt = excluded.profile_prompt,
 		avatar = excluded.avatar,
 		team = excluded.team,
 		role = excluded.role,
@@ -56,7 +57,7 @@ func (db *SQLiteStore) UpsertAgentWorker(w AgentWorker) error {
 	runtime_config_json = excluded.runtime_config_json,
 	primary_session_id = excluded.primary_session_id,
 		updated_at = excluded.updated_at`,
-		w.ID, w.WorkspaceID, w.Name, w.DisplayName, w.Description, w.Avatar, w.Team, w.Role, w.Status,
+		w.ID, w.WorkspaceID, w.Name, w.DisplayName, w.Description, w.ProfilePrompt, w.Avatar, w.Team, w.Role, w.Status,
 		w.Model, w.RuntimeModel, w.DefaultModelAccountID, w.DefaultRuntimeNodeID, w.DefaultRuntimeMode,
 		w.ScheduleJSON, w.AttentionPolicyJSON, w.MemoryPolicyJSON, w.SkillsJSON,
 		w.RuntimeConfigJSON, w.PrimarySessionID, w.CreatedAt, w.UpdatedAt)
@@ -64,7 +65,7 @@ func (db *SQLiteStore) UpsertAgentWorker(w AgentWorker) error {
 }
 
 func (db *SQLiteStore) AgentWorkerByID(workspaceID, id string) (AgentWorker, bool, error) {
-	row := db.sql.QueryRow(`SELECT id, workspace_id, name, display_name, description, avatar, status,
+	row := db.sql.QueryRow(`SELECT id, workspace_id, name, display_name, description, profile_prompt, avatar, status,
 	team, role,
 	model, runtime_model, default_model_account_id, default_runtime_node_id, default_runtime_mode,
 	schedule_json, attention_policy_json, memory_policy_json, skills_json,
@@ -74,7 +75,7 @@ FROM agent_workers WHERE workspace_id = ? AND id = ?`, strings.TrimSpace(workspa
 }
 
 func (db *SQLiteStore) AgentWorkerByName(workspaceID, name string) (AgentWorker, bool, error) {
-	row := db.sql.QueryRow(`SELECT id, workspace_id, name, display_name, description, avatar, status,
+	row := db.sql.QueryRow(`SELECT id, workspace_id, name, display_name, description, profile_prompt, avatar, status,
 	team, role,
 	model, runtime_model, default_model_account_id, default_runtime_node_id, default_runtime_mode,
 	schedule_json, attention_policy_json, memory_policy_json, skills_json,
@@ -84,7 +85,7 @@ FROM agent_workers WHERE workspace_id = ? AND name = ?`, strings.TrimSpace(works
 }
 
 func (db *SQLiteStore) ListAgentWorkers(workspaceID string) ([]AgentWorker, error) {
-	rows, err := db.sql.Query(`SELECT id, workspace_id, name, display_name, description, avatar, status,
+	rows, err := db.sql.Query(`SELECT id, workspace_id, name, display_name, description, profile_prompt, avatar, status,
 	team, role,
 	model, runtime_model, default_model_account_id, default_runtime_node_id, default_runtime_mode,
 	schedule_json, attention_policy_json, memory_policy_json, skills_json,
@@ -127,7 +128,7 @@ func scanAgentWorkerFound(row agentWorkerScanner) (AgentWorker, bool, error) {
 
 func scanAgentWorker(row agentWorkerScanner) (AgentWorker, error) {
 	var w AgentWorker
-	err := row.Scan(&w.ID, &w.WorkspaceID, &w.Name, &w.DisplayName, &w.Description, &w.Avatar, &w.Status,
+	err := row.Scan(&w.ID, &w.WorkspaceID, &w.Name, &w.DisplayName, &w.Description, &w.ProfilePrompt, &w.Avatar, &w.Status,
 		&w.Team, &w.Role,
 		&w.Model, &w.RuntimeModel, &w.DefaultModelAccountID, &w.DefaultRuntimeNodeID, &w.DefaultRuntimeMode,
 		&w.ScheduleJSON, &w.AttentionPolicyJSON, &w.MemoryPolicyJSON, &w.SkillsJSON,

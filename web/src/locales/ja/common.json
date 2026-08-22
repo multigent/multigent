@@ -136,7 +136,7 @@
     "quickView": "Quick view",
     "notFound": "Agent not found",
     "backToAgents": "Back to agents",
-    "noProjectMembershipDetail": "This agent has not joined any project yet. Full configuration depends on project context, so assign it to a project first.",
+    "noProjectMembershipDetail": "このエージェントはまだプロジェクトに参加していません。プロフィール、モデル、ハートビート、能力、連携チャネルは先に設定できます。プロジェクト参加後にプロジェクトコンテキストが追加されます。",
     "noProjectMembershipHint": "このエージェントはまだプロジェクトに参加していません。モデルアカウント、実行ノード、ハートビート、連携チャネルは先に設定できます。プロジェクト参加後にプロジェクトコンテキストが追加されます。",
     "name": "ハンドル",
     "displayName": "表示名",
@@ -1181,7 +1181,9 @@
     "edit": "編集",
     "preview": "プレビュー",
     "roles": "ロール一覧",
-    "saved": "保存しました"
+    "saved": "保存しました",
+    "emptyPrompt": "まだ内容がありません。編集を押して追加してください。",
+    "emptyWakeup": "起動ルーチンはまだ設定されていません。設定すると、保留中のタスクがないときに Agent がこのルーチンに沿って自律的に確認・作業を進められます。"
   },
   "skill": {
     "catalogTitle": "Skills スキルカタログ",
@@ -1902,6 +1904,9 @@
     "inheritedSkills": "継承 Skill",
     "promptContext": "Prompt と Context",
     "promptContextHint": "エージェントの動作 Prompt を調整し、実際に受け取る完全なマージ済みコンテキストを確認します。",
+    "profilePrompt": "長期プロンプト",
+    "profilePromptEmpty": "長期プロンプトはまだ設定されていません。何を長期的に覚えるべきか、どう判断するか、いつ誰に確認するか、人とどう協力するかを書いてください。",
+    "profilePromptPlaceholder": "例:\n- あなたは継続的に存在する協力相手であり、受動的なツールではありません。\n- 主な協力者、責任境界、信頼できる情報源を覚えてください。\n- 不明確または高リスクな依頼では、行動前に目的、影響範囲、制約を確認してください。\n- 明確で低リスクかつ戻せる作業は自律的に進められます。アーキテクチャ、セキュリティ、費用、外部公開、不可逆操作は先にエスカレーションしてください。\n- コミュニケーションでは結論を先に出し、その後に根拠と次のステップを示してください。複雑な内容はドキュメントに残してください。",
     "toolsAndSkills": "能力設定",
     "toolsAndSkillsHint": "このエージェントが実行時に使える外部能力と、チームやロールから継承した Skill を確認します。",
     "instructions": "Prompt と Context",

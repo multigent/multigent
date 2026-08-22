@@ -16,6 +16,7 @@ type agentWorkerRequest struct {
 	Name                  string         `json:"name"`
 	DisplayName           string         `json:"displayName"`
 	Description           string         `json:"description"`
+	ProfilePrompt         string         `json:"profilePrompt"`
 	Avatar                string         `json:"avatar"`
 	Team                  string         `json:"team"`
 	Role                  string         `json:"role"`
@@ -35,6 +36,7 @@ type agentWorkerRequest struct {
 type patchAgentWorkerRequest struct {
 	DisplayName           *string        `json:"displayName"`
 	Description           *string        `json:"description"`
+	ProfilePrompt         *string        `json:"profilePrompt"`
 	Avatar                *string        `json:"avatar"`
 	Team                  *string        `json:"team"`
 	Role                  *string        `json:"role"`
@@ -137,6 +139,7 @@ func (s *Server) handleCreateAgentWorker(w http.ResponseWriter, r *http.Request)
 		Name:                  name,
 		DisplayName:           strings.TrimSpace(body.DisplayName),
 		Description:           strings.TrimSpace(body.Description),
+		ProfilePrompt:         strings.TrimSpace(body.ProfilePrompt),
 		Avatar:                agentWorkerAvatar(controldb.AgentWorker{WorkspaceID: workspaceID, Name: name, Avatar: strings.TrimSpace(body.Avatar)}),
 		Team:                  strings.TrimSpace(body.Team),
 		Role:                  strings.TrimSpace(body.Role),
@@ -234,6 +237,9 @@ func (s *Server) handlePatchAgentWorker(w http.ResponseWriter, r *http.Request) 
 	}
 	if body.Description != nil {
 		worker.Description = strings.TrimSpace(*body.Description)
+	}
+	if body.ProfilePrompt != nil {
+		worker.ProfilePrompt = strings.TrimSpace(*body.ProfilePrompt)
 	}
 	if body.Avatar != nil {
 		worker.Avatar = strings.TrimSpace(*body.Avatar)
@@ -496,6 +502,7 @@ func agentWorkerResponse(worker controldb.AgentWorker) map[string]any {
 		"name":                  worker.Name,
 		"displayName":           worker.DisplayName,
 		"description":           worker.Description,
+		"profilePrompt":         worker.ProfilePrompt,
 		"avatar":                agentWorkerAvatar(worker),
 		"team":                  worker.Team,
 		"role":                  worker.Role,

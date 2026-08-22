@@ -535,6 +535,10 @@ func agentWorkerIdentityLayer(worker controldb.AgentWorker) string {
 	writeRuntimeContextLine(&b, "Runtime model", worker.RuntimeModel)
 	writeRuntimeContextLine(&b, "Primary session", worker.PrimarySessionID)
 	b.WriteString("\nThis is your workspace-level identity. Project, task, workflow, and IM channel inputs are contexts for this same Agent Worker; they are not separate agent identities.\n")
+	if strings.TrimSpace(worker.ProfilePrompt) != "" {
+		b.WriteString("\n\n## Agent Long-term Prompt\n\n")
+		b.WriteString(strings.TrimSpace(worker.ProfilePrompt))
+	}
 	return strings.TrimSpace(b.String())
 }
 

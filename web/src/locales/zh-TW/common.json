@@ -136,7 +136,7 @@
     "quickView": "快速查看",
     "notFound": "智慧體不存在",
     "backToAgents": "返回智慧體列表",
-    "noProjectMembershipDetail": "這個智慧體還沒有加入任何專案。完整配置依賴專案上下文，請先在專案成員頁把它加入專案。",
+    "noProjectMembershipDetail": "這個智慧體還沒有加入任何專案。你仍然可以配置它的資料、模型、心跳、能力和協作渠道；加入專案後會額外獲得專案上下文。",
     "noProjectMembershipHint": "這個智慧體還沒有加入專案。你仍然可以先配置模型帳號、運行節點、心跳和協作渠道；加入專案後會繼承對應專案上下文。",
     "name": "識別碼",
     "displayName": "顯示名稱",
@@ -1190,7 +1190,9 @@
     "edit": "編輯",
     "preview": "預覽",
     "roles": "角色列表",
-    "saved": "已儲存"
+    "saved": "已儲存",
+    "emptyPrompt": "還沒有內容。點擊編輯後填寫。",
+    "emptyWakeup": "還沒有設定喚醒例程。設定後，智能體在沒有待處理任務時會按這裡的例程自主檢查和推進工作。"
   },
   "skill": {
     "catalogTitle": "Skills 技能庫",
@@ -1912,6 +1914,9 @@
     "inheritedSkills": "繼承的 Skill",
     "promptContext": "Prompt 與 Context",
     "promptContextHint": "調整 Agent 的行為提示詞，並查看它實際收到的完整合併上下文。",
+    "profilePrompt": "長期提示詞",
+    "profilePromptEmpty": "尚未設定長期提示詞。建議寫清它應該長期記住什麼、如何判斷、什麼時候找誰確認、如何與人協作。",
+    "profilePromptPlaceholder": "例如：\n- 你是一個持續存在的協作對象，而不是被動工具。\n- 你需要記住主要協作人、責任邊界和可信資訊來源。\n- 面對不明確或高風險請求，先釐清目標、影響面和約束，再行動。\n- 明確、低風險、可回滾的事情可以自主推進；涉及架構、安全、費用、外部發布或不可逆動作時先升級確認。\n- 溝通時先給結論，再給依據和下一步；複雜內容沉澱到文件。",
     "toolsAndSkills": "能力配置",
     "toolsAndSkillsHint": "確認 Agent 執行時可調用的外部能力，以及從團隊和角色繼承的 Skill。",
     "instructions": "Prompt 與 Context",

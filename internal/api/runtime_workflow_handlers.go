@@ -1572,7 +1572,8 @@ func workflowBranchTaskPrompt(root *entity.Task, step entity.WorkflowStep, branc
 		}
 		b.WriteString("\n")
 	}
-	b.WriteString("When finished, report completion with:\n")
+	b.WriteString("This branch step is a milestone contract, not a one-shot trigger. Long-running work may span multiple wakeups, conversations, external coordination, and human clarification. Keep progress honest; only report completion when the milestone outcome is actually clear.\n\n")
+	b.WriteString("When the current branch step is genuinely finished, report completion with:\n")
 	b.WriteString("mga task step done --id \"$MULTIGENT_TASK_ID\" --summary \"...\"")
 	if len(startStep.OutputFields) > 0 {
 		b.WriteString(" --output-json '{\"field\":\"value\"}'")
@@ -1581,6 +1582,7 @@ func workflowBranchTaskPrompt(root *entity.Task, step entity.WorkflowStep, branc
 	if len(startStep.OutputFields) > 0 {
 		b.WriteString("Prefer --output-json for workflow outputs. Use --output field=value only for simple ASCII field names with no spaces; Chinese field names or field names with spaces must use --output-json.\n")
 	}
+	b.WriteString("If clarification or review is needed before safe completion, contact the right collaborator or request confirmation instead of leaving the branch silently stuck.\n")
 	b.WriteString("Do not complete the root task directly. Multigent will advance the parent workflow after this branch sub-workflow reaches a terminal node.\n")
 	return b.String()
 }

@@ -5,6 +5,7 @@ import (
 	"net/http"
 	"net/http/httptest"
 	"os"
+	"strings"
 	"testing"
 
 	controldb "github.com/multigent/multigent/internal/db"
@@ -18,7 +19,11 @@ func TestAgentWorkerAndProjectMembershipHandlers(t *testing.T) {
 		Name:        "nova",
 		DisplayName: "Nova",
 		Description: "Workspace project manager",
-		Skills:      []string{"github", "lark"},
+		ProfilePrompt: strings.Join([]string{
+			"Glenn is my final escalation owner.",
+			"Small safe changes can be handled autonomously.",
+		}, "\n"),
+		Skills: []string{"github", "lark"},
 		Schedule: map[string]any{
 			"interval": "2h",
 			"triggers": []string{"message", "im_direct_message", "unknown", "message"},
@@ -41,6 +46,9 @@ func TestAgentWorkerAndProjectMembershipHandlers(t *testing.T) {
 	workerID, _ := created.Agent["id"].(string)
 	if workerID == "" {
 		t.Fatalf("missing worker id: %#v", created.Agent)
+	}
+	if got := created.Agent["profilePrompt"]; got == nil || !strings.Contains(got.(string), "Glenn is my final escalation owner") {
+		t.Fatalf("missing profile prompt in create response: %#v", created.Agent)
 	}
 	schedule, _ := created.Agent["schedule"].(map[string]any)
 	triggers, _ := schedule["triggers"].([]any)
