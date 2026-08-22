@@ -14,6 +14,8 @@ export GOTOOLCHAIN := local
 VERSION    ?= $(shell git describe --tags --always --dirty 2>/dev/null || echo "dev")
 COMMIT     ?= $(shell git rev-parse --short HEAD 2>/dev/null || echo "none")
 BUILD_DATE ?= $(shell date -u +%Y-%m-%dT%H:%M:%SZ)
+TEST_GOMAXPROCS ?= 4
+TEST_P ?= 2
 
 LDFLAGS := -s -w \
 	-X main.version=$(VERSION) \
@@ -126,7 +128,7 @@ release: clean-release $(PLATFORMS)
 # ── Dev helpers ────────────────────────────────────────────────────────────────
 
 test:
-	$(GO) test ./...
+	GOMAXPROCS=$(TEST_GOMAXPROCS) $(GO) test -p $(TEST_P) ./...
 
 lint:
 	golangci-lint run ./...
