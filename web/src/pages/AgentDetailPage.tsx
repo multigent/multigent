@@ -1,4 +1,5 @@
-import { Link, useParams } from 'react-router-dom'
+import { useEffect } from 'react'
+import { Link, useNavigate, useParams } from 'react-router-dom'
 import { useTranslation } from 'react-i18next'
 import { useApiJson } from '../lib/use-api'
 import { PlaceholderCard } from '../components/ui/PlaceholderCard'
@@ -25,8 +26,17 @@ type AgentDetailResponse = {
 
 export default function AgentDetailPage() {
   const { t } = useTranslation()
+  const navigate = useNavigate()
   const { agentId } = useParams<{ agentId: string }>()
   const state = useApiJson<AgentDetailResponse>(agentId ? `/api/v1/agents/${encodeURIComponent(agentId)}` : null, 0, { keepPreviousDataOnReload: true })
+
+  useEffect(() => {
+    if (state.status !== 'ok') return
+    const name = state.data.agent?.name
+    if (name && agentId !== name) {
+      navigate(`/agents/${encodeURIComponent(name)}`, { replace: true })
+    }
+  }, [agentId, navigate, state.status, state.status === 'ok' ? state.data.agent?.name : undefined])
 
   if (!agentId) return null
 

@@ -150,8 +150,8 @@ function agentFilterKey(row: Pick<RunRow | AgentSum, 'project' | 'agent' | 'agen
   return row.agentWorkerId || row.agentWorkerName || `${row.project}/${row.agent}`
 }
 
-function agentDetailPath(row: Pick<RunRow | AgentSum, 'agentWorkerId' | 'project' | 'agent'>) {
-  if (row.agentWorkerId) return `/agents/${encodeURIComponent(row.agentWorkerId)}`
+function agentDetailPath(row: Pick<RunRow | AgentSum, 'agentWorkerId' | 'agentWorkerName' | 'project' | 'agent'>) {
+  if (row.agentWorkerId) return `/agents/${encodeURIComponent(row.agentWorkerName || row.agentWorkerId)}`
   return `/projects/${encodeURIComponent(row.project)}/members/${encodeURIComponent(row.agent)}`
 }
 

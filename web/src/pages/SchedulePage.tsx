@@ -293,7 +293,7 @@ export default function SchedulePage() {
                     <tr key={agent.id} className="hover:bg-neutral-50/70 dark:hover:bg-zinc-800/40">
                       <td className="px-4 py-3">
                         <Link
-                          to={`/agents/${encodeURIComponent(agent.id)}`}
+                          to={`/agents/${encodeURIComponent(agent.name || agent.id)}`}
                           className="group flex items-center gap-3 rounded-md -m-1 p-1 transition-colors hover:bg-neutral-100 dark:hover:bg-zinc-800"
                         >
                           {agent.avatar ? (

@@ -263,7 +263,7 @@ export default function AgentsPage() {
                 key={agent.id}
                 agent={agent}
                 modelAccountName={agent.defaultModelAccountId ? providerNames.get(agent.defaultModelAccountId) : undefined}
-                onOpen={() => navigate(`/agents/${encodeURIComponent(agent.id)}`)}
+                onOpen={() => navigate(`/agents/${encodeURIComponent(agent.name || agent.id)}`)}
                 onOpenChat={(projectId) => navigate(`/projects/${encodeURIComponent(projectId)}/members/${encodeURIComponent(agent.name)}/chat`)}
               />
             ))}
@@ -278,7 +278,7 @@ export default function AgentsPage() {
           onCreated={(agent) => {
             setShowCreate(false)
             setReloadKey(k => k + 1)
-            if (agent.id) navigate(`/agents/${encodeURIComponent(agent.id)}`)
+            if (agent.id) navigate(`/agents/${encodeURIComponent(agent.name || agent.id)}`)
           }}
         />
       )}

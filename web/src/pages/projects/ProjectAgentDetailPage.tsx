@@ -987,7 +987,7 @@ export default function ProjectAgentDetailPage({ projectIdOverride, agentNameOve
       )
       setEditingIdentity(false)
       if (res.name && res.name !== agentName) {
-        navigate(workspaceAgentId ? `/agents/${encodeURIComponent(workspaceAgentId)}` : `/projects/${encodeURIComponent(projectId)}/members/${encodeURIComponent(res.name)}`, { replace: true })
+        navigate(workspaceAgentId ? `/agents/${encodeURIComponent(res.name)}` : `/projects/${encodeURIComponent(projectId)}/members/${encodeURIComponent(res.name)}`, { replace: true })
         return
       }
       setIdentityAvatar(res.avatar ?? '')
