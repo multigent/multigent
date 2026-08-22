@@ -1367,6 +1367,24 @@ function WorkspaceAgentOnlyDetail({ agent }: { agent: WorkspaceAgentSummary }) {
     [current.name, profileAvatarNonce],
   )
 
+  function resetProfileDraft() {
+    setDisplayName(current.displayName || current.name)
+    setDescription(current.description || '')
+    setTeam(current.team || '')
+    setRole(current.role || '')
+    setStatus(current.status || 'active')
+    setProfileAvatar(current.avatar || '')
+  }
+
+  function toggleProfileEditing() {
+    if (editingProfile) {
+      resetProfileDraft()
+      setEditingProfile(false)
+      return
+    }
+    setEditingProfile(true)
+  }
+
   async function saveProfile() {
     setSavingProfile(true)
     try {
@@ -1444,8 +1462,8 @@ function WorkspaceAgentOnlyDetail({ agent }: { agent: WorkspaceAgentSummary }) {
               <h1 className="truncate text-xl font-semibold text-neutral-900 dark:text-zinc-100">{current.displayName || current.name}</h1>
               <span className="rounded-full bg-neutral-100 px-2 py-0.5 font-mono text-[11px] text-neutral-500 dark:bg-zinc-800 dark:text-zinc-400">{current.name}</span>
               {canAdminWorkspace && (
-                <button type="button" onClick={() => setEditingProfile(true)} className={subtleButtonCls}>
-                  {t('common.edit')}
+                <button type="button" onClick={toggleProfileEditing} className={subtleButtonCls}>
+                  {editingProfile ? t('forms.cancel') : t('common.edit')}
                 </button>
               )}
             </div>
@@ -1512,7 +1530,7 @@ function WorkspaceAgentOnlyDetail({ agent }: { agent: WorkspaceAgentSummary }) {
               )}
             </div>
             <div className="mt-4 flex justify-end gap-2">
-              <button type="button" onClick={() => setEditingProfile(false)} disabled={savingProfile} className={secondaryButtonCls}>
+              <button type="button" onClick={() => { resetProfileDraft(); setEditingProfile(false) }} disabled={savingProfile} className={secondaryButtonCls}>
                 {t('forms.cancel')}
               </button>
               <button type="button" onClick={() => void saveProfile()} disabled={savingProfile} className={primaryButtonCls}>
