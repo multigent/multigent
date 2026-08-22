@@ -1554,6 +1554,11 @@ function WorkspaceAgentOnlyDetail({ agent }: { agent: WorkspaceAgentSummary }) {
               {visibleProviders.length === 0 && (
                 <Link to="/settings#model-accounts" className={cn(primaryButtonCls, 'mt-3 inline-flex')}>{t('agentDetail.addCredential')}</Link>
               )}
+              <div className="mt-4 flex justify-end">
+                <button type="button" onClick={() => void save()} disabled={saving} className={primaryButtonCls}>
+                  {saving ? t('forms.saving') : t('forms.save')}
+                </button>
+              </div>
             </div>
           </section>
 
@@ -1631,16 +1636,10 @@ function WorkspaceAgentOnlyDetail({ agent }: { agent: WorkspaceAgentSummary }) {
             </details>
           )}
 
-          <div className="flex justify-end">
-            <button type="button" onClick={() => void save()} disabled={saving} className={primaryButtonCls}>
-              {saving ? t('forms.saving') : t('forms.save')}
-            </button>
-          </div>
-
           {canAdminWorkspace && (
-            <section className="rounded-lg border border-red-200/70 bg-red-50/40 p-4 dark:border-red-900/50 dark:bg-red-950/10">
+            <section className="rounded-lg border border-neutral-200/80 bg-white p-4 dark:border-zinc-700/60 dark:bg-zinc-900/40">
               <SectionHeader icon={Settings2} title={t('agents.dangerZone', { defaultValue: '危险操作' })} />
-              <p className="mt-1 text-sm text-red-700/80 dark:text-red-300/80">
+              <p className="mt-1 text-sm text-neutral-500 dark:text-zinc-500">
                 {status === 'archived'
                   ? t('agents.restoreHint', { defaultValue: '这个智能体已归档。恢复后会重新出现在默认智能体列表中。' })
                   : t('agents.archiveHint', { defaultValue: '归档会把这个智能体从默认列表中隐藏，并停止作为日常可用智能体展示。历史记录和配置会保留。' })}
@@ -1651,7 +1650,7 @@ function WorkspaceAgentOnlyDetail({ agent }: { agent: WorkspaceAgentSummary }) {
                     {t('agents.restore', { defaultValue: '恢复智能体' })}
                   </button>
                 ) : (
-                  <button type="button" onClick={() => setArchiveConfirmOpen(true)} disabled={savingProfile} className="inline-flex h-8 items-center justify-center rounded-md border border-red-200 bg-white px-3 text-xs font-medium text-red-600 transition-colors hover:bg-red-50 disabled:cursor-not-allowed disabled:opacity-50 dark:border-red-900/60 dark:bg-zinc-900 dark:text-red-300 dark:hover:bg-red-950/30">
+                  <button type="button" onClick={() => setArchiveConfirmOpen(true)} disabled={savingProfile} className="inline-flex h-8 items-center justify-center rounded-md border border-red-600 bg-red-600 px-3 text-xs font-medium text-white transition-colors hover:bg-red-700 disabled:cursor-not-allowed disabled:opacity-50 dark:border-red-700 dark:bg-red-700 dark:hover:bg-red-600">
                     {t('agents.archive', { defaultValue: '归档' })}
                   </button>
                 )}

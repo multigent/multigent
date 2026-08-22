@@ -194,7 +194,7 @@ export default function AgentsPage() {
                 {roleOptions.map(role => <option key={role} value={role}>{role}</option>)}
               </select>
               <select value={statusFilter} onChange={event => setStatusFilter(event.target.value)} className={filterSelectCls}>
-                <option value="all">{t('agents.filterAllStatuses')}</option>
+                <option value="all">{t('agents.filterAvailableStatuses', { defaultValue: t('agents.filterAllStatuses') })}</option>
                 {['active', 'paused', 'archived'].map(status => (
                   <option key={status} value={status}>{t(`agents.status_${status}`, { defaultValue: status })}</option>
                 ))}
