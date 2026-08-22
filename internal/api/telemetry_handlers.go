@@ -292,12 +292,15 @@ func (s *Server) runtimeRunRowsForTelemetry(project string, limit int, meta tele
 		row := map[string]any{
 			"project":      run.ProjectID,
 			"agent":        run.AgentID,
-			"kind":         "task",
+			"kind":         firstNonEmpty(runtimeRunKind(&run), "task"),
 			"status":       status,
 			"startedAt":    startedAt,
 			"finishedAt":   finishedAt,
 			"taskId":       run.TaskID,
 			"runtimeRunId": run.ID,
+		}
+		if strings.TrimSpace(run.ForkSessionID) != "" {
+			row["forkSessionId"] = strings.TrimSpace(run.ForkSessionID)
 		}
 		if sessionID, _ := result["sessionId"].(string); strings.TrimSpace(sessionID) != "" {
 			row["sessionId"] = strings.TrimSpace(sessionID)

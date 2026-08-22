@@ -96,6 +96,18 @@ Prefer --output-json for workflow outputs. Use --output field=value only for sim
 
 Uploaded workspace files and context attachments are available at $MULTIGENT_FILES_DIR when the variable is set. In Docker sandboxes this is a read-only container path; do not use host absolute paths from knowledge documents directly.
 
+Fork sessions are available when you need to parallelize independent work under your own responsibility:
+  mga session list --status active
+  mga session fork --title "short work title" --project %s --purpose "why this parallel session exists"
+  mga session resume <session_id> --run --prompt "continue this specific work"
+  mga session status <session_id>
+  mga session collect <session_id> --summary "result, outputs, blockers, next step"
+
+For longer work that should be visible as a normal task, create a task bound to the fork session:
+  mga task add --agent %s --fork-session <session_id> --title "..." --prompt "..."
+
+Use fork sessions only for genuinely independent work. You remain responsible for tracking them, collecting results, and closing the parent task or workflow step.
+
 Important: do not use Claude Code built-in Task, TaskCreate, TaskUpdate, TaskOutput, TaskStop, or Todo tools to update Multigent task/workflow state. They are model-local planning tools and do not change Multigent records. Use mga task ... only.
 `
 
@@ -405,7 +417,7 @@ func (r *Runner) RunTaskWithContext(ctx context.Context, project, agentName stri
 	}
 
 	fullPrompt := r.taskPromptWithWorkflowContext(project, agentName, task) + fmt.Sprintf(systemMetaFooter,
-		task.ID, project, agentName, task.ID, task.ID, task.ID, task.ID)
+		task.ID, project, agentName, task.ID, task.ID, task.ID, task.ID, project, agentName)
 
 	// Write prompt to a temp file (avoids shell escaping issues).
 	promptFile, err := writeTempPrompt(agentDir, fullPrompt)
@@ -636,7 +648,7 @@ func (r *Runner) BuildTaskPrompt(project, agentName string, task *entity.Task) s
 		return ""
 	}
 	return r.taskPromptWithWorkflowContext(project, agentName, task) + fmt.Sprintf(systemMetaFooter,
-		task.ID, project, agentName, task.ID, task.ID, task.ID, task.ID)
+		task.ID, project, agentName, task.ID, task.ID, task.ID, task.ID, project, agentName)
 }
 
 func (r *Runner) workflowPromptContext(project, agentName, taskID string) string {
@@ -1401,7 +1413,7 @@ func (r *Runner) runTaskHTTP(project, agentName, agentDir string, meta *entity.A
 	}
 
 	userPrompt := r.taskPromptWithWorkflowContext(project, agentName, task) + fmt.Sprintf(systemMetaFooter,
-		task.ID, project, agentName, task.ID, task.ID, task.ID, task.ID)
+		task.ID, project, agentName, task.ID, task.ID, task.ID, task.ID, project, agentName)
 
 	logDir, err := r.ts.RunLogDir(project, agentName)
 	if err != nil {
@@ -1653,7 +1665,7 @@ func (r *Runner) resolveRuntimeControlEnv(project, agentName, runID string) map[
 		AgentWorkerID:       workerID,
 		ProjectMembershipID: membershipID,
 		RunID:               runID,
-		Capabilities:        []string{"connection.use", "task.use", "message.use", "okr.use", "docs.use", "attention.use"},
+		Capabilities:        []string{"connection.use", "task.use", "message.use", "okr.use", "docs.use", "attention.use", "session.use"},
 	}, 6*time.Hour)
 	return map[string]string{
 		"MULTIGENT_API_URL":      apiURL,

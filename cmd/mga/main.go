@@ -58,6 +58,7 @@ func main() {
 		newContextCmd(),
 		newSkillCmd(),
 		newWorkflowCmd(),
+		newSessionCmd(),
 	)
 	if err := root.Execute(); err != nil {
 		fmt.Fprintln(os.Stderr, "Error:", err)
@@ -78,6 +79,246 @@ or workflow events. Mark a signal handled only after you have actually handled
 it; mark ignored when you intentionally decide not to act.`,
 	}
 	cmd.AddCommand(newAttentionListCmd(), newAttentionMarkCmd())
+	return cmd
+}
+
+func newSessionCmd() *cobra.Command {
+	cmd := &cobra.Command{
+		Use:   "session",
+		Short: "Manage fork sessions for the current runtime agent",
+		Long: `Manage fork sessions for the current runtime agent.
+
+Fork sessions are concurrent work sessions owned by the current Agent Worker.
+They inherit the agent's model, permissions, skills, and tools, but they are not
+new long-lived agents. The parent agent remains responsible for checking,
+resuming, stopping, collecting, and summarizing them.`,
+	}
+	cmd.AddCommand(
+		newSessionForkCmd(),
+		newSessionListCmd(),
+		newSessionStatusCmd(),
+		newSessionResumeCmd(),
+		newSessionStopCmd(),
+		newSessionCollectCmd(),
+	)
+	return cmd
+}
+
+func newSessionForkCmd() *cobra.Command {
+	var title, purpose, project, taskID, workflowID, parentSessionID, prompt, promptFile, runtimeProvider string
+	cmd := &cobra.Command{
+		Use:   "fork",
+		Short: "Create a fork session for parallel work",
+		RunE: func(cmd *cobra.Command, args []string) error {
+			if strings.TrimSpace(title) == "" {
+				return fmt.Errorf("--title is required")
+			}
+			initialPrompt := strings.TrimSpace(prompt)
+			if strings.TrimSpace(promptFile) != "" {
+				text, err := readTextFile(promptFile)
+				if err != nil {
+					return err
+				}
+				initialPrompt = strings.TrimSpace(text)
+			}
+			raw, _ := json.Marshal(map[string]any{
+				"title":              title,
+				"purpose":            purpose,
+				"project":            project,
+				"taskId":             taskID,
+				"workflowInstanceId": workflowID,
+				"parentSessionId":    parentSessionID,
+				"initialPrompt":      initialPrompt,
+				"runtimeProvider":    runtimeProvider,
+				"permissionPolicy":   "inherit",
+				"capabilities":       map[string]any{"mode": "inherit"},
+			})
+			resp, err := requestJSON(http.MethodPost, "/api/v1/runtime/sessions", nil, raw)
+			if err != nil {
+				return err
+			}
+			return writeJSON(resp)
+		},
+	}
+	cmd.Flags().StringVar(&title, "title", "", "fork session title")
+	cmd.Flags().StringVar(&purpose, "purpose", "", "short purpose for this fork session")
+	cmd.Flags().StringVar(&project, "project", "", "project context; defaults to current runtime project")
+	cmd.Flags().StringVar(&taskID, "task", "", "related task id")
+	cmd.Flags().StringVar(&workflowID, "workflow", "", "related workflow instance id")
+	cmd.Flags().StringVar(&parentSessionID, "parent-session", "", "parent runtime session id, if known")
+	cmd.Flags().StringVar(&prompt, "prompt", "", "initial prompt for this fork session")
+	cmd.Flags().StringVar(&promptFile, "prompt-file", "", "read initial prompt from file, or '-' for stdin")
+	cmd.Flags().StringVar(&runtimeProvider, "runtime-provider", "", "runtime provider hint, e.g. codex, claudecode, cursor")
+	return cmd
+}
+
+func newSessionListCmd() *cobra.Command {
+	var kind, status, project, taskID string
+	var limit int
+	cmd := &cobra.Command{
+		Use:   "list",
+		Short: "List fork sessions owned by the current agent",
+		RunE: func(cmd *cobra.Command, args []string) error {
+			q := url.Values{}
+			if strings.TrimSpace(kind) != "" {
+				q.Set("kind", strings.TrimSpace(kind))
+			}
+			if strings.TrimSpace(status) != "" {
+				q.Set("status", strings.TrimSpace(status))
+			}
+			if strings.TrimSpace(project) != "" {
+				q.Set("project", strings.TrimSpace(project))
+			}
+			if strings.TrimSpace(taskID) != "" {
+				q.Set("taskId", strings.TrimSpace(taskID))
+			}
+			if limit > 0 {
+				q.Set("limit", strconv.Itoa(limit))
+			}
+			resp, err := requestJSON(http.MethodGet, "/api/v1/runtime/sessions", q, nil)
+			if err != nil {
+				return err
+			}
+			return writeJSON(resp)
+		},
+	}
+	cmd.Flags().StringVar(&kind, "kind", "fork", "session kind")
+	cmd.Flags().StringVar(&status, "status", "active", "filter status: active, pending, running, waiting, blocked, done, failed, stopped, all")
+	cmd.Flags().StringVar(&project, "project", "", "filter by project")
+	cmd.Flags().StringVar(&taskID, "task", "", "filter by task id")
+	cmd.Flags().IntVar(&limit, "limit", 100, "maximum number of sessions")
+	return cmd
+}
+
+func newSessionStatusCmd() *cobra.Command {
+	cmd := &cobra.Command{
+		Use:   "status <session-id>",
+		Short: "Show one fork session",
+		Args:  cobra.ExactArgs(1),
+		RunE: func(cmd *cobra.Command, args []string) error {
+			resp, err := requestJSON(http.MethodGet, "/api/v1/runtime/sessions/"+url.PathEscape(args[0]), nil, nil)
+			if err != nil {
+				return err
+			}
+			return writeJSON(resp)
+		},
+	}
+	return cmd
+}
+
+func newSessionResumeCmd() *cobra.Command {
+	var prompt, promptFile, runID, runtimeSessionID string
+	var run bool
+	cmd := &cobra.Command{
+		Use:   "resume <session-id>",
+		Short: "Mark a fork session ready to continue",
+		Args:  cobra.ExactArgs(1),
+		RunE: func(cmd *cobra.Command, args []string) error {
+			result := strings.TrimSpace(prompt)
+			if strings.TrimSpace(promptFile) != "" {
+				text, err := readTextFile(promptFile)
+				if err != nil {
+					return err
+				}
+				result = strings.TrimSpace(text)
+			}
+			body := map[string]any{"status": "pending"}
+			if run {
+				body["run"] = true
+			}
+			if result != "" {
+				if run {
+					body["prompt"] = result
+				} else {
+					body["resultSummary"] = result
+				}
+			}
+			if strings.TrimSpace(runID) != "" {
+				body["lastRunId"] = strings.TrimSpace(runID)
+			}
+			if strings.TrimSpace(runtimeSessionID) != "" {
+				body["runtimeSessionId"] = strings.TrimSpace(runtimeSessionID)
+			}
+			raw, _ := json.Marshal(body)
+			resp, err := requestJSON(http.MethodPatch, "/api/v1/runtime/sessions/"+url.PathEscape(args[0]), nil, raw)
+			if err != nil {
+				return err
+			}
+			return writeJSON(resp)
+		},
+	}
+	cmd.Flags().StringVar(&prompt, "prompt", "", "note or prompt for the next resume")
+	cmd.Flags().StringVar(&promptFile, "prompt-file", "", "read note or prompt from file, or '-' for stdin")
+	cmd.Flags().StringVar(&runID, "run-id", "", "last run id associated with this session")
+	cmd.Flags().StringVar(&runtimeSessionID, "runtime-session-id", "", "underlying runtime session or thread id")
+	cmd.Flags().BoolVar(&run, "run", false, "queue a real runtime run for this fork session")
+	return cmd
+}
+
+func newSessionStopCmd() *cobra.Command {
+	var reason string
+	cmd := &cobra.Command{
+		Use:   "stop <session-id>",
+		Short: "Stop a fork session",
+		Args:  cobra.ExactArgs(1),
+		RunE: func(cmd *cobra.Command, args []string) error {
+			body := map[string]any{"status": "stopped"}
+			if strings.TrimSpace(reason) != "" {
+				body["resultSummary"] = strings.TrimSpace(reason)
+			}
+			raw, _ := json.Marshal(body)
+			resp, err := requestJSON(http.MethodPatch, "/api/v1/runtime/sessions/"+url.PathEscape(args[0]), nil, raw)
+			if err != nil {
+				return err
+			}
+			return writeJSON(resp)
+		},
+	}
+	cmd.Flags().StringVar(&reason, "reason", "", "reason for stopping this session")
+	return cmd
+}
+
+func newSessionCollectCmd() *cobra.Command {
+	var summary, summaryFile, status, refsJSON string
+	cmd := &cobra.Command{
+		Use:   "collect <session-id>",
+		Short: "Record fork session results and optionally close it",
+		Args:  cobra.ExactArgs(1),
+		RunE: func(cmd *cobra.Command, args []string) error {
+			text := strings.TrimSpace(summary)
+			if strings.TrimSpace(summaryFile) != "" {
+				fileText, err := readTextFile(summaryFile)
+				if err != nil {
+					return err
+				}
+				text = strings.TrimSpace(fileText)
+			}
+			if strings.TrimSpace(status) == "" {
+				status = "done"
+			}
+			body := map[string]any{"status": status}
+			if text != "" {
+				body["resultSummary"] = text
+			}
+			if strings.TrimSpace(refsJSON) != "" {
+				var refs map[string]any
+				if err := json.Unmarshal([]byte(refsJSON), &refs); err != nil {
+					return fmt.Errorf("--refs-json must be a JSON object: %w", err)
+				}
+				body["resultRefs"] = refs
+			}
+			raw, _ := json.Marshal(body)
+			resp, err := requestJSON(http.MethodPatch, "/api/v1/runtime/sessions/"+url.PathEscape(args[0]), nil, raw)
+			if err != nil {
+				return err
+			}
+			return writeJSON(resp)
+		},
+	}
+	cmd.Flags().StringVar(&summary, "summary", "", "result summary")
+	cmd.Flags().StringVar(&summaryFile, "summary-file", "", "read result summary from file, or '-' for stdin")
+	cmd.Flags().StringVar(&status, "status", "done", "final status: done, failed, stopped, blocked, waiting")
+	cmd.Flags().StringVar(&refsJSON, "refs-json", "", "result references as a JSON object")
 	return cmd
 }
 
@@ -991,7 +1232,7 @@ func newTaskShowCmd() *cobra.Command {
 }
 
 func newTaskAddCmd() *cobra.Command {
-	var agent, title, prompt, typ, description, assignee string
+	var agent, title, prompt, typ, description, assignee, forkSessionID string
 	var priority int
 	cmd := &cobra.Command{
 		Use:   "add",
@@ -1000,10 +1241,14 @@ func newTaskAddCmd() *cobra.Command {
 			if strings.TrimSpace(title) == "" || strings.TrimSpace(prompt) == "" {
 				return fmt.Errorf("title and prompt are required")
 			}
-			body, _ := json.Marshal(map[string]any{
+			payload := map[string]any{
 				"agent": agent, "title": title, "prompt": prompt, "type": typ,
 				"description": description, "priority": priority, "assignee": assignee,
-			})
+			}
+			if strings.TrimSpace(forkSessionID) != "" {
+				payload["vars"] = map[string]string{"MULTIGENT_FORK_SESSION_ID": strings.TrimSpace(forkSessionID)}
+			}
+			body, _ := json.Marshal(payload)
 			resp, err := requestJSON(http.MethodPost, "/api/v1/runtime/tasks", nil, body)
 			if err != nil {
 				return err
@@ -1017,6 +1262,7 @@ func newTaskAddCmd() *cobra.Command {
 	cmd.Flags().StringVar(&typ, "type", "chore", "task type")
 	cmd.Flags().StringVar(&description, "description", "", "human-readable description")
 	cmd.Flags().StringVar(&assignee, "assignee", "", "assignee identity")
+	cmd.Flags().StringVar(&forkSessionID, "fork-session", "", "bind this task to a fork session id")
 	cmd.Flags().IntVar(&priority, "priority", 2, "priority 0-3")
 	return cmd
 }

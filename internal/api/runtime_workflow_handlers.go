@@ -19,17 +19,18 @@ import (
 )
 
 type runtimeTaskBody struct {
-	Agent            string   `json:"agent"`
-	Title            string   `json:"title"`
-	Prompt           string   `json:"prompt"`
-	Description      string   `json:"description"`
-	Type             string   `json:"type"`
-	Priority         int      `json:"priority"`
-	Assignee         string   `json:"assignee"`
-	Labels           []string `json:"labels"`
-	ParentID         string   `json:"parentId"`
-	DueDate          string   `json:"dueDate"`
-	EstimateDuration string   `json:"estimateDuration"`
+	Agent            string            `json:"agent"`
+	Title            string            `json:"title"`
+	Prompt           string            `json:"prompt"`
+	Description      string            `json:"description"`
+	Type             string            `json:"type"`
+	Priority         int               `json:"priority"`
+	Assignee         string            `json:"assignee"`
+	Labels           []string          `json:"labels"`
+	ParentID         string            `json:"parentId"`
+	DueDate          string            `json:"dueDate"`
+	EstimateDuration string            `json:"estimateDuration"`
+	Vars             map[string]string `json:"vars"`
 }
 
 type runtimeTaskUpdateBody struct {
@@ -511,6 +512,7 @@ func (s *Server) handleRuntimePostTask(w http.ResponseWriter, r *http.Request) {
 		Prompt:      prompt,
 		Labels:      body.Labels,
 		ParentID:    strings.TrimSpace(body.ParentID),
+		Vars:        sanitizeTaskVars(body.Vars),
 		CreatedAt:   now,
 		UpdatedAt:   now,
 	}
@@ -673,6 +675,7 @@ func (s *Server) createRuntimeTaskFromBody(w http.ResponseWriter, r *http.Reques
 		Prompt:      prompt,
 		Labels:      body.Labels,
 		ParentID:    strings.TrimSpace(body.ParentID),
+		Vars:        sanitizeTaskVars(body.Vars),
 		CreatedAt:   now,
 		UpdatedAt:   now,
 	}

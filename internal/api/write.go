@@ -34,6 +34,25 @@ func validTaskStatus(s string) bool {
 	return entity.ValidTaskStatus(s)
 }
 
+func sanitizeTaskVars(vars map[string]string) map[string]string {
+	if len(vars) == 0 {
+		return nil
+	}
+	out := map[string]string{}
+	for key, value := range vars {
+		key = strings.TrimSpace(key)
+		value = strings.TrimSpace(value)
+		if key == "" || value == "" {
+			continue
+		}
+		out[key] = value
+	}
+	if len(out) == 0 {
+		return nil
+	}
+	return out
+}
+
 type postTaskBody struct {
 	Agent                 string                                 `json:"agent"`
 	Title                 string                                 `json:"title"`
@@ -49,6 +68,7 @@ type postTaskBody struct {
 	EstimateDuration      string                                 `json:"estimateDuration"` // Go duration, e.g. "30m", "2h"
 	WorkflowDefinitionID  string                                 `json:"workflowDefinitionId"`
 	WorkflowActorBindings map[string]entity.WorkflowActorBinding `json:"workflowActorBindings"`
+	Vars                  map[string]string                      `json:"vars"`
 }
 
 func (s *Server) handlePostProjectTask(w http.ResponseWriter, r *http.Request) {
@@ -138,6 +158,7 @@ func (s *Server) createProjectTaskFromBody(w http.ResponseWriter, r *http.Reques
 		Prompt:      promptText,
 		Labels:      body.Labels,
 		ParentID:    strings.TrimSpace(body.ParentID),
+		Vars:        sanitizeTaskVars(body.Vars),
 		CreatedAt:   now,
 		UpdatedAt:   now,
 	}

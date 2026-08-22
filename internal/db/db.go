@@ -82,6 +82,9 @@ type Store interface {
 	AgentWorkerByName(workspaceID, name string) (AgentWorker, bool, error)
 	ListAgentWorkers(workspaceID string) ([]AgentWorker, error)
 	DeleteAgentWorker(workspaceID, id string) error
+	UpsertAgentSession(session AgentSession) error
+	AgentSessionByID(workspaceID, id string) (AgentSession, bool, error)
+	ListAgentSessions(filter AgentSessionFilter) ([]AgentSession, error)
 	UpsertProjectMembership(membership ProjectMembership) error
 	ProjectMembershipByID(workspaceID, id string) (ProjectMembership, bool, error)
 	ListProjectMemberships(filter ProjectMembershipFilter) ([]ProjectMembership, error)
@@ -364,6 +367,47 @@ type AgentWorker struct {
 	PrimarySessionID      string
 	CreatedAt             string
 	UpdatedAt             string
+}
+
+type AgentSession struct {
+	ID                  string
+	WorkspaceID         string
+	AgentWorkerID       string
+	SessionKind         string
+	ParentSessionID     string
+	ProjectID           string
+	ProjectMembershipID string
+	TaskID              string
+	WorkflowInstanceID  string
+	Title               string
+	Purpose             string
+	InitialPrompt       string
+	Status              string
+	RuntimeProvider     string
+	RuntimeSessionID    string
+	ForkMode            string
+	PermissionPolicy    string
+	CapabilitiesJSON    string
+	ResultSummary       string
+	ResultRefsJSON      string
+	CreatedByRunID      string
+	LastRunID           string
+	CreatedAt           string
+	UpdatedAt           string
+	LastActivityAt      string
+	CompletedAt         string
+}
+
+type AgentSessionFilter struct {
+	WorkspaceID     string
+	AgentWorkerID   string
+	SessionKind     string
+	ParentSessionID string
+	ProjectID       string
+	TaskID          string
+	Status          string
+	Statuses        []string
+	Limit           int
 }
 
 type ProjectMembership struct {
@@ -683,6 +727,7 @@ type RuntimeRun struct {
 	TaskID               string
 	WorkflowInstanceID   string
 	WorkflowStepID       string
+	ForkSessionID        string
 	DesiredRuntimeNodeID string
 	RuntimeNodeID        string
 	Status               string
@@ -707,6 +752,7 @@ type RuntimeRunFilter struct {
 	ProjectID           string
 	AgentID             string
 	TaskID              string
+	ForkSessionID       string
 	Status              string
 	Limit               int
 }

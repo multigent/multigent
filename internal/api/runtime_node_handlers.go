@@ -431,6 +431,39 @@ func (s *Server) enqueueRuntimeExecRun(workspaceID, project, agent, prompt, sess
 	return run, nil
 }
 
+func (s *Server) markForkSessionRunQueued(workspaceID, forkSessionID, workerID, runID string, task *entity.Task, projectID, membershipID string) {
+	if s == nil || s.controlDB == nil || strings.TrimSpace(forkSessionID) == "" {
+		return
+	}
+	session, found, err := s.controlDB.AgentSessionByID(workspaceID, forkSessionID)
+	if err != nil || !found {
+		return
+	}
+	if strings.TrimSpace(workerID) != "" && strings.TrimSpace(session.AgentWorkerID) != strings.TrimSpace(workerID) {
+		return
+	}
+	now := time.Now().UTC().Format(time.RFC3339)
+	session.Status = "running"
+	session.LastRunID = strings.TrimSpace(runID)
+	if task != nil {
+		if strings.TrimSpace(session.TaskID) == "" {
+			session.TaskID = strings.TrimSpace(task.ID)
+		}
+		if strings.TrimSpace(session.WorkflowInstanceID) == "" {
+			session.WorkflowInstanceID = strings.TrimSpace(task.Vars[workflowRunIDVar])
+		}
+	}
+	if strings.TrimSpace(session.ProjectID) == "" {
+		session.ProjectID = strings.TrimSpace(projectID)
+	}
+	if strings.TrimSpace(session.ProjectMembershipID) == "" {
+		session.ProjectMembershipID = strings.TrimSpace(membershipID)
+	}
+	session.UpdatedAt = now
+	session.LastActivityAt = now
+	_ = s.controlDB.UpsertAgentSession(session)
+}
+
 func (s *Server) enqueueRuntimeTaskRun(workspaceID, project, agent string, task *entity.Task, sessionID, serverURL, actor string) (controldb.RuntimeRun, error) {
 	if task == nil {
 		return controldb.RuntimeRun{}, fmt.Errorf("task is required")
@@ -440,6 +473,7 @@ func (s *Server) enqueueRuntimeTaskRun(workspaceID, project, agent string, task 
 		return controldb.RuntimeRun{}, err
 	}
 	workerID, membershipID := s.agentWorkerContextForProjectAgent(workspaceID, project, agent)
+	forkSessionID := runtimeForkSessionIDFromTask(task)
 	runID := newRuntimeID("rtrun")
 	token := s.issueAgentRuntimeToken(runtimeAgentTokenPayload{
 		Type:                "agent_runtime",
@@ -461,6 +495,9 @@ func (s *Server) enqueueRuntimeTaskRun(workspaceID, project, agent string, task 
 		"MULTIGENT_AGENT_WORKER_ID":       workerID,
 		"MULTIGENT_PROJECT_MEMBERSHIP_ID": membershipID,
 	}
+	if forkSessionID != "" {
+		runtimeControlEnv["MULTIGENT_FORK_SESSION_ID"] = forkSessionID
+	}
 	for k, v := range runtimeTaskControlEnv(task.Vars) {
 		runtimeControlEnv[k] = v
 	}
@@ -470,6 +507,7 @@ func (s *Server) enqueueRuntimeTaskRun(workspaceID, project, agent string, task 
 		ProjectID:         project,
 		AgentID:           agent,
 		TaskID:            task.ID,
+		ForkSessionID:     forkSessionID,
 		SessionID:         sessionID,
 		Prompt:            preparedPrompt,
 		Agent:             *meta,
@@ -489,6 +527,7 @@ func (s *Server) enqueueRuntimeTaskRun(workspaceID, project, agent string, task 
 		ProjectID:            project,
 		AgentID:              agent,
 		TaskID:               task.ID,
+		ForkSessionID:        forkSessionID,
 		DesiredRuntimeNodeID: strings.TrimSpace(meta.RuntimeNodeID),
 		Status:               "queued",
 		Priority:             task.Priority,
@@ -500,6 +539,7 @@ func (s *Server) enqueueRuntimeTaskRun(workspaceID, project, agent string, task 
 	if err := s.controlDB.UpsertRuntimeRun(run); err != nil {
 		return controldb.RuntimeRun{}, err
 	}
+	s.markForkSessionRunQueued(workspaceID, forkSessionID, workerID, run.ID, task, project, membershipID)
 	s.auditLog(auditLogInput{
 		WorkspaceID:  workspaceID,
 		Action:       "runtime_run.enqueue",
@@ -510,10 +550,23 @@ func (s *Server) enqueueRuntimeTaskRun(workspaceID, project, agent string, task 
 			"project": project,
 			"agent":   agent,
 			"taskId":  task.ID,
+			"session": forkSessionID,
 			"actor":   actor,
 		},
 	})
 	return run, nil
+}
+
+func runtimeForkSessionIDFromTask(task *entity.Task) string {
+	if task == nil || len(task.Vars) == 0 {
+		return ""
+	}
+	for _, key := range []string{"MULTIGENT_FORK_SESSION_ID", "fork_session_id", "forkSessionId"} {
+		if value := strings.TrimSpace(task.Vars[key]); value != "" {
+			return value
+		}
+	}
+	return ""
 }
 
 func runtimeTaskControlEnv(vars map[string]string) map[string]string {
@@ -536,7 +589,7 @@ func runtimeTaskControlEnv(vars map[string]string) map[string]string {
 
 func isRuntimeTaskControlEnvKey(key string) bool {
 	switch key {
-	case "MULTIGENT_DELEGATION_TOKEN", "MULTIGENT_DELEGATION_EXPIRES_AT", "MULTIGENT_DELEGATION_INTERACTION_ID", "MULTIGENT_DELEGATION_TOKENS_JSON", "MULTIGENT_DELEGATION_EXPIRES_AT_JSON":
+	case "MULTIGENT_DELEGATION_TOKEN", "MULTIGENT_DELEGATION_EXPIRES_AT", "MULTIGENT_DELEGATION_INTERACTION_ID", "MULTIGENT_DELEGATION_TOKENS_JSON", "MULTIGENT_DELEGATION_EXPIRES_AT_JSON", "MULTIGENT_FORK_SESSION_ID":
 		return true
 	default:
 		return false
@@ -1127,7 +1180,16 @@ func (s *Server) finishRuntimeNodeRun(w http.ResponseWriter, r *http.Request, st
 
 func (s *Server) finalizeRuntimeTaskRun(run *controldb.RuntimeRun, body runtimeRunFinishRequest) {
 	if s == nil || s.ts == nil || run == nil || strings.TrimSpace(run.TaskID) == "" {
+		if run != nil && strings.TrimSpace(run.ForkSessionID) != "" {
+			s.finalizeRuntimeForkSessionRun(run, body)
+		}
 		return
+	}
+	if strings.TrimSpace(run.ForkSessionID) != "" {
+		s.finalizeRuntimeForkSessionRun(run, body)
+		if runtimeRunKind(run) == runtimeexec.KindForkSession {
+			return
+		}
 	}
 	now := time.Now().UTC()
 	if hb, err := s.runtimeRunHeartbeat(run); err == nil && hb != nil {
@@ -1190,6 +1252,68 @@ func (s *Server) finalizeRuntimeTaskRun(run *controldb.RuntimeRun, body runtimeR
 	task.UpdatedAt = now
 	entity.ApplyStatusTimestamps(task, prev, now)
 	_ = s.ts.ArchiveTask(run.ProjectID, run.AgentID, task)
+}
+
+func runtimeRunKind(run *controldb.RuntimeRun) string {
+	if run == nil {
+		return ""
+	}
+	var spec struct {
+		Kind string `json:"kind"`
+	}
+	_ = json.Unmarshal([]byte(defaultRawJSON(run.SpecJSON)), &spec)
+	return strings.TrimSpace(spec.Kind)
+}
+
+func (s *Server) finalizeRuntimeForkSessionRun(run *controldb.RuntimeRun, body runtimeRunFinishRequest) {
+	if s == nil || s.controlDB == nil || run == nil || strings.TrimSpace(run.ForkSessionID) == "" {
+		return
+	}
+	session, found, err := s.controlDB.AgentSessionByID(run.WorkspaceID, run.ForkSessionID)
+	if err != nil || !found {
+		return
+	}
+	now := time.Now().UTC().Format(time.RFC3339)
+	before := session
+	switch strings.ToLower(strings.TrimSpace(run.Status)) {
+	case "failed", "cancelled", "canceled":
+		if strings.ToLower(strings.TrimSpace(run.Status)) == "failed" {
+			session.Status = "failed"
+		} else {
+			session.Status = "stopped"
+		}
+	default:
+		session.Status = "done"
+	}
+	if summary, _ := body.Result["summary"].(string); strings.TrimSpace(summary) != "" {
+		session.ResultSummary = strings.TrimSpace(summary)
+	} else if strings.TrimSpace(body.ErrorMessage) != "" {
+		session.ResultSummary = strings.TrimSpace(body.ErrorMessage)
+	} else if strings.TrimSpace(body.ErrorCode) != "" {
+		session.ResultSummary = strings.TrimSpace(body.ErrorCode)
+	}
+	if sid, _ := body.Result["sessionId"].(string); strings.TrimSpace(sid) != "" {
+		session.RuntimeSessionID = strings.TrimSpace(sid)
+	}
+	session.LastRunID = run.ID
+	session.UpdatedAt = now
+	session.LastActivityAt = now
+	session.CompletedAt = now
+	if err := s.controlDB.UpsertAgentSession(session); err != nil {
+		slog.Warn("runtime fork session finalize failed", "session", session.ID, "run", run.ID, "error", err)
+		return
+	}
+	s.auditLog(auditLogInput{
+		WorkspaceID:  run.WorkspaceID,
+		ActorType:    "agent",
+		ActorID:      firstNonEmpty(strings.TrimSpace(run.ProjectID)+"/"+strings.TrimSpace(run.AgentID), strings.TrimSpace(run.AgentWorkerID)),
+		Action:       "agent_session.finish",
+		ResourceType: "agent_session",
+		ResourceID:   session.ID,
+		Summary:      "Fork session runtime run finished",
+		Before:       runtimeSessionResponse(before),
+		After:        runtimeSessionResponse(session),
+	})
 }
 
 func (s *Server) runtimeRunHeartbeat(run *controldb.RuntimeRun) (*entity.HeartbeatConfig, error) {
@@ -1369,6 +1493,7 @@ func runtimeRunResponse(run controldb.RuntimeRun) map[string]any {
 		"taskId":               run.TaskID,
 		"workflowInstanceId":   run.WorkflowInstanceID,
 		"workflowStepId":       run.WorkflowStepID,
+		"forkSessionId":        run.ForkSessionID,
 		"desiredRuntimeNodeId": run.DesiredRuntimeNodeID,
 		"runtimeNodeId":        run.RuntimeNodeID,
 		"status":               run.Status,

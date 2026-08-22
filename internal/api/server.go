@@ -335,6 +335,8 @@ func (s *Server) Handler() http.Handler {
 	mux.HandleFunc("GET /api/v1/agents/{id}", s.handleAgentWorker)
 	mux.HandleFunc("PATCH /api/v1/agents/{id}", s.handlePatchAgentWorker)
 	mux.HandleFunc("DELETE /api/v1/agents/{id}", s.handleDeleteAgentWorker)
+	mux.HandleFunc("GET /api/v1/agent-sessions", s.handleAgentSessions)
+	mux.HandleFunc("GET /api/v1/agent-sessions/{id}", s.handleAgentSession)
 	mux.HandleFunc("GET /api/v1/agents/{id}/context", s.handleGetAgentWorkerContext)
 	mux.HandleFunc("PUT /api/v1/agents/{id}/wakeup", s.handlePutAgentWorkerWakeup)
 	mux.HandleFunc("PUT /api/v1/agents/{id}/sandbox", s.handlePutAgentWorkerSandbox)
@@ -607,6 +609,10 @@ func (s *Server) Handler() http.Handler {
 	runtimeMux.HandleFunc("POST /api/v1/runtime/notify/reaction", s.handleRuntimeNotifyReaction)
 	runtimeMux.HandleFunc("GET /api/v1/runtime/attention", s.handleRuntimeAttentionSignals)
 	runtimeMux.HandleFunc("PATCH /api/v1/runtime/attention/{id}", s.handleRuntimePatchAttentionSignal)
+	runtimeMux.HandleFunc("GET /api/v1/runtime/sessions", s.handleRuntimeSessions)
+	runtimeMux.HandleFunc("POST /api/v1/runtime/sessions", s.handleRuntimeSessions)
+	runtimeMux.HandleFunc("GET /api/v1/runtime/sessions/{id}", s.handleRuntimeSession)
+	runtimeMux.HandleFunc("PATCH /api/v1/runtime/sessions/{id}", s.handleRuntimeSession)
 	runtimeMux.HandleFunc("GET /api/v1/runtime/messages", s.handleRuntimeMessages)
 	runtimeMux.HandleFunc("POST /api/v1/runtime/messages", s.handleRuntimePostMessage)
 	runtimeMux.HandleFunc("POST /api/v1/runtime/messages/{id}/reply", s.handleRuntimeReplyMessage)
@@ -1225,6 +1231,7 @@ type taskRow struct {
 	DueDate          string    `json:"dueDate,omitempty"`
 	EstimateDuration string    `json:"estimateDuration,omitempty"`
 	HasWorkflow      bool      `json:"hasWorkflow,omitempty"`
+	ForkSessionID    string    `json:"forkSessionId,omitempty"`
 }
 
 func taskToRow(t *entity.Task, project, agent string, archived bool) taskRow {
@@ -1244,6 +1251,7 @@ func taskToRow(t *entity.Task, project, agent string, archived bool) taskRow {
 		CreatedBy: t.CreatedBy,
 		CreatedAt: t.CreatedAt.UTC(), UpdatedAt: t.UpdatedAt.UTC(),
 		EstimateDuration: t.EstimateDuration,
+		ForkSessionID:    runtimeForkSessionIDFromTask(t),
 	}
 	if t.StartedAt != nil {
 		r.StartedAt = t.StartedAt.UTC().Format(time.RFC3339Nano)

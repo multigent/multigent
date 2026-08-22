@@ -3,6 +3,7 @@ package api
 import (
 	"encoding/json"
 	"net/http"
+	"strconv"
 	"strings"
 	"time"
 
@@ -27,6 +28,7 @@ type agentWorkerRequest struct {
 	Schedule              map[string]any `json:"schedule"`
 	AttentionPolicy       map[string]any `json:"attentionPolicy"`
 	MemoryPolicy          map[string]any `json:"memoryPolicy"`
+	RuntimeConfig         map[string]any `json:"runtimeConfig"`
 	Skills                []string       `json:"skills"`
 }
 
@@ -45,6 +47,7 @@ type patchAgentWorkerRequest struct {
 	Schedule              map[string]any `json:"schedule"`
 	AttentionPolicy       map[string]any `json:"attentionPolicy"`
 	MemoryPolicy          map[string]any `json:"memoryPolicy"`
+	RuntimeConfig         map[string]any `json:"runtimeConfig"`
 	Skills                []string       `json:"skills"`
 }
 
@@ -146,6 +149,7 @@ func (s *Server) handleCreateAgentWorker(w http.ResponseWriter, r *http.Request)
 		ScheduleJSON:          normalizeAgentWorkerScheduleJSON(body.Schedule),
 		AttentionPolicyJSON:   jsonStringOrDefault(body.AttentionPolicy, "{}"),
 		MemoryPolicyJSON:      jsonStringOrDefault(body.MemoryPolicy, "{}"),
+		RuntimeConfigJSON:     normalizeAgentWorkerRuntimeConfigJSON(body.RuntimeConfig),
 		SkillsJSON:            jsonStringOrDefault(normalizeStringList(body.Skills), "[]"),
 		PrimarySessionID:      "sess_" + randomHex(16),
 		CreatedAt:             now,
@@ -266,6 +270,9 @@ func (s *Server) handlePatchAgentWorker(w http.ResponseWriter, r *http.Request) 
 	}
 	if body.MemoryPolicy != nil {
 		worker.MemoryPolicyJSON = jsonStringOrDefault(body.MemoryPolicy, "{}")
+	}
+	if body.RuntimeConfig != nil {
+		worker.RuntimeConfigJSON = normalizeAgentWorkerRuntimeConfigJSON(body.RuntimeConfig)
 	}
 	if body.Skills != nil {
 		worker.SkillsJSON = jsonStringOrDefault(normalizeStringList(body.Skills), "[]")
@@ -501,6 +508,7 @@ func agentWorkerResponse(worker controldb.AgentWorker) map[string]any {
 		"schedule":              decodeJSONValue(worker.ScheduleJSON, map[string]any{}),
 		"attentionPolicy":       decodeJSONValue(worker.AttentionPolicyJSON, map[string]any{}),
 		"memoryPolicy":          decodeJSONValue(worker.MemoryPolicyJSON, map[string]any{}),
+		"runtimeConfig":         normalizeAgentWorkerRuntimeConfig(decodeJSONValue(worker.RuntimeConfigJSON, map[string]any{})),
 		"skills":                decodeJSONValue(worker.SkillsJSON, []any{}),
 		"primarySessionId":      worker.PrimarySessionID,
 		"createdAt":             worker.CreatedAt,
@@ -700,6 +708,56 @@ func normalizeAgentWorkerScheduleJSON(v map[string]any) string {
 		return "{}"
 	}
 	return string(normalized)
+}
+
+const defaultMaxForkSessions = 5
+
+func normalizeAgentWorkerRuntimeConfigJSON(v map[string]any) string {
+	normalized := normalizeAgentWorkerRuntimeConfig(v)
+	raw, err := json.Marshal(normalized)
+	if err != nil {
+		return `{"maxForkSessions":5}`
+	}
+	return string(raw)
+}
+
+func normalizeAgentWorkerRuntimeConfig(v any) map[string]any {
+	raw, ok := v.(map[string]any)
+	if !ok || raw == nil {
+		raw = map[string]any{}
+	}
+	out := make(map[string]any, len(raw)+1)
+	for key, value := range raw {
+		out[key] = value
+	}
+	max := intFromRuntimeConfigValue(out["maxForkSessions"])
+	if max <= 0 {
+		max = defaultMaxForkSessions
+	}
+	if max > 50 {
+		max = 50
+	}
+	out["maxForkSessions"] = max
+	return out
+}
+
+func intFromRuntimeConfigValue(v any) int {
+	switch value := v.(type) {
+	case int:
+		return value
+	case int64:
+		return int(value)
+	case float64:
+		return int(value)
+	case json.Number:
+		n, _ := value.Int64()
+		return int(n)
+	case string:
+		n, _ := strconv.Atoi(strings.TrimSpace(value))
+		return n
+	default:
+		return 0
+	}
 }
 
 func normalizeHeartbeatTriggers(values []entity.TriggerType) []entity.TriggerType {

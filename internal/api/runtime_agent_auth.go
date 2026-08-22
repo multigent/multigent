@@ -123,12 +123,12 @@ func normalizeRuntimeCapabilities(caps []string) []string {
 }
 
 func defaultRuntimeCapabilities() []string {
-	return []string{"connection.use", "task.use", "message.use", "okr.use", "docs.use", "attention.use"}
+	return []string{"connection.use", "task.use", "message.use", "okr.use", "docs.use", "attention.use", "session.use"}
 }
 
 func runtimeCapabilityAllowed(capability string) bool {
 	switch capability {
-	case "connection.use", "task.use", "message.use", "okr.use", "docs.use", "attention.use":
+	case "connection.use", "task.use", "message.use", "okr.use", "docs.use", "attention.use", "session.use":
 		return true
 	default:
 		return false

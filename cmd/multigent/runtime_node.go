@@ -439,7 +439,7 @@ func runtimeNodeExecuteRun(cfg runtimeNodeConfig, run runtimeNodeRun, workerID i
 		_ = runtimeNodeFailRun(cfg, run.ID, "spec_fetch_failed", err.Error())
 		return err
 	}
-	if spec.Kind != runtimeexec.KindExecPrompt && spec.Kind != runtimeexec.KindTask {
+	if spec.Kind != runtimeexec.KindExecPrompt && spec.Kind != runtimeexec.KindTask && spec.Kind != runtimeexec.KindForkSession {
 		msg := "unsupported runtime run kind: " + spec.Kind
 		_ = runtimeNodeFailRun(cfg, run.ID, "unsupported_run_kind", msg)
 		return fmt.Errorf("%s", msg)

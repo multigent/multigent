@@ -4,6 +4,7 @@ import "github.com/multigent/multigent/internal/entity"
 
 const KindExecPrompt = "exec_prompt"
 const KindTask = "task"
+const KindForkSession = "fork_session"
 
 type Spec struct {
 	Kind              string            `json:"kind"`
@@ -11,6 +12,7 @@ type Spec struct {
 	ProjectID         string            `json:"projectId"`
 	AgentID           string            `json:"agentId"`
 	TaskID            string            `json:"taskId,omitempty"`
+	ForkSessionID     string            `json:"forkSessionId,omitempty"`
 	SessionID         string            `json:"sessionId,omitempty"`
 	Prompt            string            `json:"prompt"`
 	Agent             entity.AgentMeta  `json:"agent"`
