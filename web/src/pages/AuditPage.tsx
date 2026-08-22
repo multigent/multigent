@@ -90,7 +90,7 @@ export default function AuditPage() {
 
       <div className="mb-4 flex flex-wrap items-center justify-between gap-2">
         <div className="flex flex-wrap items-center gap-2">
-          <FilterSelect label={t('audit.allActors')} value={filters.actorId} onChange={actorId => updateFilter('actorId', actorId)} options={facets.actorIds ?? []} />
+          <FilterSelect label={t('audit.allActors')} value={filters.actorId} onChange={actorId => updateFilter('actorId', actorId)} options={facets.actorIds ?? []} formatOption={formatActorOption} />
           <FilterSelect label={t('audit.allActions')} value={filters.action} onChange={action => updateFilter('action', action)} options={facets.actions ?? []} />
           <FilterSelect label={t('audit.allResourceTypes')} value={filters.resourceType} onChange={resourceType => updateFilter('resourceType', resourceType)} options={facets.resourceTypes ?? []} />
           <FilterSelect label={t('audit.allResourceIds')} value={filters.resourceId} onChange={resourceId => updateFilter('resourceId', resourceId)} options={facets.resourceIds ?? []} />
@@ -155,27 +155,54 @@ export default function AuditPage() {
   )
 }
 
-function FilterSelect({ label, value, onChange, options }: { label: string; value: string; onChange: (value: string) => void; options: string[] }) {
+function FilterSelect({ label, value, onChange, options, formatOption }: { label: string; value: string; onChange: (value: string) => void; options: string[]; formatOption?: (value: string) => string }) {
   return (
-    <select value={value} onChange={e => onChange(e.target.value)} className={cn(filterSelectCls, 'max-w-[220px]')}>
+    <select value={value} onChange={e => onChange(e.target.value)} className={cn(filterSelectCls, 'max-w-[260px]')}>
       <option value="">{label}</option>
       {options.map(option => (
-        <option key={option} value={option}>{option}</option>
+        <option key={option} value={option}>{formatOption ? formatOption(option) : option}</option>
       ))}
     </select>
   )
+}
+
+function actorDisplay(actorType: string, actorId: string) {
+  const id = actorId || '-'
+  if (actorType === 'agent') {
+    const parts = id.split('/').filter(Boolean)
+    const name = parts.at(-1) || id
+    return {
+      primary: name,
+      secondary: parts.length > 1 ? id : actorType,
+      full: `${actorType}:${id}`,
+    }
+  }
+  return {
+    primary: id,
+    secondary: actorType || '-',
+    full: `${actorType || '-'}:${id}`,
+  }
+}
+
+function formatActorOption(value: string) {
+  if (!value.includes('/')) return value
+  const parts = value.split('/').filter(Boolean)
+  const name = parts.at(-1) || value
+  return `${name} · ${value}`
 }
 
 function AuditEventRow({ event, onOpen }: { event: AuditEvent; onOpen: () => void }) {
   const fmtDateTime = useFormatDateTime()
   const { t } = useTranslation()
   const created = fmtDateTime(event.createdAt)
+  const actor = actorDisplay(event.actorType, event.actorId)
   return (
     <tr className="text-neutral-700 dark:text-zinc-300">
       <td className="whitespace-nowrap px-4 py-3 text-xs text-neutral-500 dark:text-zinc-500">{created}</td>
       <td className="px-4 py-3">
-        <div className="max-w-[180px] truncate">
-          <span className="text-xs text-neutral-400 dark:text-zinc-500">{event.actorType}:</span>{event.actorId || '-'}
+        <div className="min-w-[160px] max-w-[220px]" title={actor.full}>
+          <div className="truncate font-medium text-neutral-800 dark:text-zinc-200">{actor.primary}</div>
+          <div className="mt-0.5 truncate text-xs text-neutral-400 dark:text-zinc-500">{actor.secondary}</div>
         </div>
       </td>
       <td className="px-4 py-3">
