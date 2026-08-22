@@ -1,5 +1,30 @@
 # Changelog
 
+## [v2.0.2] - 2026-08-22
+
+### Improved
+
+- Polished the workspace-level agent detail page so newly created agents land on the full configuration surface instead of a reduced placeholder view.
+- Restored the full agent capability sections on workspace agent details, including model account, runtime node, heartbeat wakeup, prompt/context, reference bindings, collaboration channels, and advanced runtime settings.
+- Agent detail URLs now prefer stable agent handles such as `/agents/nova`, while existing ID-based URLs remain usable.
+- Audit logs now use localized labels, a table layout with pagination, cleaner filters, fixed detail actions, better actor display, and proxy-aware client IP parsing.
+- Agent list cards now focus on actionable metadata, show clearer team/role information, hide noisy session/provider IDs, and provide a direct chat shortcut.
+- Workspace agent creation now asks for team and role up front and redirects to the new agent detail page after creation.
+
+### Fixed
+
+- Fixed the missing Web chat entry on workspace agent detail pages by reusing the agent's project membership as chat context.
+- Fixed workspace agent profile editing so the edit button toggles into cancel mode and the form no longer leaves awkward empty space.
+- Moved archive controls into a safer danger-zone flow with typed confirmation, and made archived agents behave consistently with status filters.
+- Fixed missing translations for agent status, clear actions, runtime default-node labels, and workspace chat context hints.
+- Fixed run-page agent labels that still displayed legacy `project/agent` names after the 2.x agent-worker migration.
+
+### Tested
+
+- Verified frontend production builds after each UI pass.
+- Verified focused Go regression tests for workspace agent context, runtime metadata, and agent-worker project membership behavior.
+- Deployed and smoke-tested the updated build on the TapNow remote instance at `35.243.103.114`.
+
 ## [v2.0.1] - 2026-08-22
 
 ### Added
