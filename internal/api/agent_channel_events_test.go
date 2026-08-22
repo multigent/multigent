@@ -19,9 +19,10 @@ import (
 )
 
 type testIMProvider struct {
-	id      string
-	label   string
-	replies []string
+	id          string
+	label       string
+	replies     []string
+	cardUpdates []imbridge.OutgoingMessage
 }
 
 func (p *testIMProvider) Info() imbridge.ProviderInfo {
@@ -51,6 +52,10 @@ func (p *testIMProvider) SendText(context.Context, map[string]string, imbridge.O
 	return nil
 }
 func (p *testIMProvider) SendMessage(context.Context, map[string]string, imbridge.OutgoingTarget, imbridge.OutgoingMessage) error {
+	return nil
+}
+func (p *testIMProvider) UpdateInteractionCard(ctx context.Context, secrets map[string]string, callback imbridge.IncomingInteractionCallback, message imbridge.OutgoingMessage) error {
+	p.cardUpdates = append(p.cardUpdates, message)
 	return nil
 }
 
@@ -509,6 +514,130 @@ func TestHandleIMEventRecordsUnknownIdentityDiagnostic(t *testing.T) {
 	}
 }
 
+func TestAcceptIMInteractionCallbackSubmitsRequestAndRecordsAttention(t *testing.T) {
+	s, workspaceID := newConnectionGrantPolicyServer(t)
+	seedSampleAgentsForTest(t, s, workspaceID)
+	now := time.Now().UTC().Format(time.RFC3339)
+	if err := s.controlDB.UpsertConnection(controldb.Connection{
+		ID:             "conn-feishu-card",
+		WorkspaceID:    workspaceID,
+		Provider:       "feishu",
+		ConnectionName: "agent-sample-pm",
+		OwnerType:      ConnectionOwnerWorkspace,
+		OwnerID:        workspaceID,
+		AuthType:       "app_secret",
+		Status:         "active",
+		ProfileJSON:    "{}",
+	}); err != nil {
+		t.Fatalf("connection: %v", err)
+	}
+	secret, err := sealConnectionSecret(map[string]string{"baseUrl": "https://open.feishu.cn", "appId": "cli_card", "appSecret": "secret"})
+	if err != nil {
+		t.Fatalf("seal secret: %v", err)
+	}
+	secret.ConnectionID = "conn-feishu-card"
+	if err := s.controlDB.UpsertConnectionSecret(secret); err != nil {
+		t.Fatalf("secret: %v", err)
+	}
+	if err := s.controlDB.UpsertAgentChannelBinding(controldb.AgentChannelBinding{
+		ID:             "chan-feishu-card",
+		WorkspaceID:    workspaceID,
+		AgentWorkerID:  "aw-pm",
+		ProjectID:      "sample",
+		AgentID:        "pm",
+		Provider:       "feishu",
+		ConnectionID:   "conn-feishu-card",
+		ExternalChatID: "oc_review",
+		Status:         "connected",
+		MetadataJSON:   `{"appId":"cli_card"}`,
+	}); err != nil {
+		t.Fatalf("binding: %v", err)
+	}
+	if err := s.controlDB.UpsertUserChannelIdentity(controldb.UserChannelIdentity{
+		ID:               "uch-owner-card",
+		WorkspaceID:      workspaceID,
+		UserID:           "owner",
+		ChannelBindingID: "chan-feishu-card",
+		Provider:         "feishu",
+		ExternalUserID:   "ou_owner_card",
+		ExternalChatID:   "oc_review",
+		CreatedBy:        "owner",
+		CreatedAt:        now,
+		UpdatedAt:        now,
+	}); err != nil {
+		t.Fatalf("identity: %v", err)
+	}
+	if err := s.controlDB.CreateInteractionRequest(controldb.InteractionRequest{
+		ID:               "ir-card-callback",
+		WorkspaceID:      workspaceID,
+		AgentWorkerID:    "aw-pm",
+		ProjectID:        "sample",
+		AgentID:          "pm",
+		ChannelBindingID: "chan-feishu-card",
+		Provider:         "feishu",
+		Recipient:        "user:owner",
+		TargetType:       "user",
+		TargetUserID:     "owner",
+		Title:            "Review",
+		ContextJSON:      `{"taskId":"task-review"}`,
+		HandlerType:      "agent_event",
+		Status:           "active",
+		CreatedBy:        "sample/pm",
+		CreatedAt:        now,
+		ExpiresAt:        time.Now().UTC().Add(10 * time.Minute).Format(time.RFC3339),
+	}); err != nil {
+		t.Fatalf("interaction request: %v", err)
+	}
+	provider := &testIMProvider{id: "feishu", label: "Feishu"}
+	result, err := s.acceptIMInteractionCallback(provider, "cli_card", "", imbridge.IncomingInteractionCallback{
+		InteractionID: "ir-card-callback",
+		MessageID:     "om_card_callback",
+		ChatID:        "oc_review",
+		SenderOpenID:  "ou_owner_card",
+		ActionID:      "approve",
+		ActionLabel:   "批准",
+		Inputs:        map[string]string{"comments": "ok"},
+	}, "http://127.0.0.1:27893")
+	if err != nil {
+		t.Fatalf("accept callback: %v", err)
+	}
+	if result["status"] != "queued" {
+		t.Fatalf("unexpected result: %#v", result)
+	}
+	for i := 0; i < 20 && len(provider.cardUpdates) == 0; i++ {
+		time.Sleep(10 * time.Millisecond)
+	}
+	if len(provider.cardUpdates) != 1 || provider.cardUpdates[0].Card == nil || !strings.Contains(provider.cardUpdates[0].Card.Title, "已提交") {
+		t.Fatalf("expected accepted card update, got %#v", provider.cardUpdates)
+	}
+	request, found, err := s.controlDB.InteractionRequestByID(workspaceID, "ir-card-callback")
+	if err != nil || !found {
+		t.Fatalf("interaction lookup found=%v err=%v", found, err)
+	}
+	if request.Status != "submitted" || request.SubmittedBy != "owner" || !strings.Contains(request.SubmissionJSON, `"actionId":"approve"`) {
+		t.Fatalf("unexpected submitted request: %#v", request)
+	}
+	signals, err := s.controlDB.ListAttentionSignals(controldb.AttentionSignalFilter{
+		WorkspaceID:   workspaceID,
+		AgentWorkerID: "aw-pm",
+		SourceKind:    "im_card_action",
+		Status:        "pending",
+	})
+	if err != nil {
+		t.Fatalf("list signals: %v", err)
+	}
+	if len(signals) != 1 || signals[0].SourceID != "ir-card-callback" || signals[0].ActorID != "owner" {
+		t.Fatalf("unexpected card attention signals: %#v", signals)
+	}
+	_, _, vars, err := s.pendingAttentionWakeupSectionAndVars(workspaceID, "sample", "pm", signals[0].ID)
+	if err != nil {
+		t.Fatalf("pending attention section: %v", err)
+	}
+	if strings.TrimSpace(vars["MULTIGENT_DELEGATION_TOKEN"]) == "" || vars["MULTIGENT_DELEGATION_INTERACTION_ID"] != "ir-card-callback" {
+		t.Fatalf("expected delegation vars for submitted card action: %#v", vars)
+	}
+}
+
 func TestChannelEventUserPermissionUsesAgentRBAC(t *testing.T) {
 	s, workspaceID := newConnectionGrantPolicyServer(t)
 	grantProjectRoleForTest(t, s, workspaceID, "viewer", ProjectRoleViewer)
@@ -957,6 +1086,23 @@ func TestShouldWakeAgentForAttentionUsesWorkerMessageTrigger(t *testing.T) {
 	}
 	if s.shouldWakeAgentForAttention(binding, "im_mention") {
 		t.Fatalf("agent should not wake when worker schedule has no matching triggers")
+	}
+	worker.AttentionPolicyJSON = `{"im_mention":true}`
+	if err := s.controlDB.UpsertAgentWorker(worker); err != nil {
+		t.Fatalf("save worker attention policy: %v", err)
+	}
+	if !s.shouldWakeAgentForAttention(binding, "im_mention") {
+		t.Fatalf("agent should wake when worker attention policy enables matching reason")
+	}
+	if s.shouldWakeAgentForAttention(binding, "im_direct_message") {
+		t.Fatalf("agent should not wake for unmatched attention policy reason")
+	}
+	worker.AttentionPolicyJSON = `{"attention":true}`
+	if err := s.controlDB.UpsertAgentWorker(worker); err != nil {
+		t.Fatalf("save broad worker attention policy: %v", err)
+	}
+	if !s.shouldWakeAgentForAttention(binding, "im_direct_message") {
+		t.Fatalf("agent should wake when worker attention policy enables broad attention")
 	}
 }
 

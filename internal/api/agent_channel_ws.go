@@ -165,6 +165,12 @@ func (s *Server) runAgentIMBridge(ctx context.Context, key string, cfg imBridgeC
 		}).
 		OnP2MessageReadV1(func(context.Context, *larkim.P2MessageReadV1) error {
 			return nil
+		}).
+		OnP2MessageReactionCreatedV1(func(context.Context, *larkim.P2MessageReactionCreatedV1) error {
+			return nil
+		}).
+		OnP2MessageReactionDeletedV1(func(context.Context, *larkim.P2MessageReactionDeletedV1) error {
+			return nil
 		})
 	opts := []larkws.ClientOption{
 		larkws.WithEventHandler(handler),

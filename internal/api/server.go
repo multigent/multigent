@@ -94,6 +94,7 @@ type Server struct {
 	connectionHealthDone   chan struct{}
 	agentIMMu              sync.Mutex
 	agentIMCancel          map[string]context.CancelFunc
+	attentionRecoveryOnce  sync.Once
 	connectorSetupMu       sync.Mutex
 	connectorSetupSessions map[string]connectorDeviceAuthSession
 	modelAuthMu            sync.Mutex
@@ -242,6 +243,9 @@ func (s *Server) SetDaemonStatus(fn DaemonStatusFunc) { s.daemonStatus = fn }
 // initiated runs that do not have an HTTP request to infer the listen port from.
 func (s *Server) SetLocalRuntimeAPIURL(url string) {
 	s.localRuntimeAPIURL = strings.TrimRight(strings.TrimSpace(url), "/")
+	s.attentionRecoveryOnce.Do(func() {
+		go s.recoverPendingAttentionWakeups()
+	})
 }
 
 func (s *Server) runtimeAPIURLForInternalEvent() string {

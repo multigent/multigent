@@ -2,6 +2,7 @@ package api
 
 import (
 	"encoding/json"
+	"fmt"
 	"strings"
 	"testing"
 	"time"
@@ -89,6 +90,150 @@ func TestRuntimeWakeupTaskIncludesSeenOpenAttentionSignals(t *testing.T) {
 	}
 }
 
+func TestAttentionWakeupTaskCanFocusTriggeredSignal(t *testing.T) {
+	s, workspaceID := newConnectionGrantPolicyServer(t)
+	seedTaskAttentionWorker(t, s, workspaceID, "sample", "pm", true)
+	now := time.Now().UTC().Format(time.RFC3339)
+	if err := s.controlDB.UpsertAttentionSignal(controldb.AttentionSignal{
+		ID:            "sig-old-task",
+		WorkspaceID:   workspaceID,
+		AgentWorkerID: "aw-pm",
+		DedupeKey:     "test:old-task",
+		SourceKind:    "task",
+		SourceID:      "task-old",
+		Reason:        "task_assigned",
+		Priority:      "high",
+		Summary:       "Old task signal that should not distract this IM wakeup",
+		Status:        "pending",
+		CreatedAt:     now,
+	}); err != nil {
+		t.Fatalf("upsert old attention: %v", err)
+	}
+	if err := s.controlDB.UpsertAttentionSignal(controldb.AttentionSignal{
+		ID:            "sig-new-im",
+		WorkspaceID:   workspaceID,
+		AgentWorkerID: "aw-pm",
+		DedupeKey:     "test:new-im",
+		SourceKind:    "im_message",
+		SourceID:      "om_new",
+		Reason:        "im_mention",
+		Priority:      "high",
+		Summary:       "Joey asked a direct question in the group",
+		Status:        "pending",
+		CreatedAt:     now,
+	}); err != nil {
+		t.Fatalf("upsert new attention: %v", err)
+	}
+	if err := s.controlDB.UpsertAttentionSignal(controldb.AttentionSignal{
+		ID:            "sig-new-im-2",
+		WorkspaceID:   workspaceID,
+		AgentWorkerID: "aw-pm",
+		DedupeKey:     "test:new-im-2",
+		SourceKind:    "im_message",
+		SourceID:      "om_new_2",
+		Reason:        "im_mention",
+		Priority:      "high",
+		Summary:       "Glenn asked a second question in the group",
+		Status:        "pending",
+		CreatedAt:     now,
+	}); err != nil {
+		t.Fatalf("upsert second im attention: %v", err)
+	}
+	if err := s.controlDB.UpsertAttentionSignal(controldb.AttentionSignal{
+		ID:            "sig-seen-im",
+		WorkspaceID:   workspaceID,
+		AgentWorkerID: "aw-pm",
+		DedupeKey:     "test:seen-im",
+		SourceKind:    "im_message",
+		SourceID:      "om_seen",
+		Reason:        "im_mention",
+		Priority:      "high",
+		Summary:       "Already seen IM should not be pulled into a fresh focused wakeup",
+		Status:        "seen",
+		CreatedAt:     now,
+	}); err != nil {
+		t.Fatalf("upsert seen im attention: %v", err)
+	}
+
+	task, ids, err := s.ensurePendingAttentionWakeupTask(workspaceID, "sample", "pm", "sig-new-im")
+	if err != nil {
+		t.Fatalf("ensure attention task: %v", err)
+	}
+	if task == nil {
+		t.Fatal("expected attention task")
+	}
+	if len(ids) != 2 || ids[0] != "sig-new-im" || ids[1] != "sig-new-im-2" {
+		t.Fatalf("unexpected focused ids with open im aggregation: %+v", ids)
+	}
+	if !strings.Contains(task.Prompt, "sig-new-im") || !strings.Contains(task.Prompt, "Joey asked") {
+		t.Fatalf("focused prompt missing new signal:\n%s", task.Prompt)
+	}
+	if !strings.Contains(task.Prompt, "sig-new-im-2") || !strings.Contains(task.Prompt, "Glenn asked") {
+		t.Fatalf("focused prompt missing second open im signal:\n%s", task.Prompt)
+	}
+	if strings.Contains(task.Prompt, "sig-old-task") || strings.Contains(task.Prompt, "Old task signal") {
+		t.Fatalf("focused prompt should not include unrelated old signal:\n%s", task.Prompt)
+	}
+	if strings.Contains(task.Prompt, "sig-seen-im") || strings.Contains(task.Prompt, "Already seen IM") {
+		t.Fatalf("focused prompt should not include already seen im signal:\n%s", task.Prompt)
+	}
+}
+
+func TestAttentionWakeupTaskFocusFindsNewSignalBehindOldBacklog(t *testing.T) {
+	s, workspaceID := newConnectionGrantPolicyServer(t)
+	seedTaskAttentionWorker(t, s, workspaceID, "sample", "pm", true)
+	base := time.Date(2026, 8, 22, 9, 0, 0, 0, time.UTC)
+	for i := 0; i < 25; i++ {
+		if err := s.controlDB.UpsertAttentionSignal(controldb.AttentionSignal{
+			ID:            fmt.Sprintf("sig-old-task-%02d", i),
+			WorkspaceID:   workspaceID,
+			AgentWorkerID: "aw-pm",
+			DedupeKey:     fmt.Sprintf("test:old-task:%02d", i),
+			SourceKind:    "task",
+			SourceID:      fmt.Sprintf("task-old-%02d", i),
+			Reason:        "task_assigned",
+			Priority:      "normal",
+			Summary:       "Old task backlog",
+			Status:        "pending",
+			CreatedAt:     base.Add(time.Duration(i) * time.Minute).Format(time.RFC3339),
+		}); err != nil {
+			t.Fatalf("upsert old attention %d: %v", i, err)
+		}
+	}
+	if err := s.controlDB.UpsertAttentionSignal(controldb.AttentionSignal{
+		ID:            "sig-new-im-behind-backlog",
+		WorkspaceID:   workspaceID,
+		AgentWorkerID: "aw-pm",
+		DedupeKey:     "test:new-im-behind-backlog",
+		SourceKind:    "im_message",
+		SourceID:      "om_new_behind_backlog",
+		Reason:        "im_mention",
+		Priority:      "high",
+		Summary:       "Fresh IM should be focused even when old backlog is longer than 20 signals.",
+		Status:        "pending",
+		CreatedAt:     base.Add(30 * time.Minute).Format(time.RFC3339),
+	}); err != nil {
+		t.Fatalf("upsert new attention: %v", err)
+	}
+
+	task, ids, err := s.ensurePendingAttentionWakeupTask(workspaceID, "sample", "pm", "sig-new-im-behind-backlog")
+	if err != nil {
+		t.Fatalf("ensure attention task: %v", err)
+	}
+	if task == nil {
+		t.Fatal("expected focused attention task")
+	}
+	if len(ids) != 1 || ids[0] != "sig-new-im-behind-backlog" {
+		t.Fatalf("unexpected focused ids: %+v", ids)
+	}
+	if !strings.Contains(task.Prompt, "sig-new-im-behind-backlog") {
+		t.Fatalf("focused prompt missed new IM behind backlog:\n%s", task.Prompt)
+	}
+	if strings.Contains(task.Prompt, "sig-old-task-00") {
+		t.Fatalf("focused prompt should not include unrelated old task backlog:\n%s", task.Prompt)
+	}
+}
+
 func TestAttentionWakeupTaskTakesPriorityOverNormalPendingTask(t *testing.T) {
 	s, workspaceID := newConnectionGrantPolicyServer(t)
 	seedTaskAttentionWorker(t, s, workspaceID, "sample", "pm", true)
@@ -139,6 +284,92 @@ func TestAttentionWakeupTaskTakesPriorityOverNormalPendingTask(t *testing.T) {
 	}
 	if !strings.Contains(task.Prompt, "Attention Signals") || !strings.Contains(task.Prompt, "sig-should-not-inject") || !strings.Contains(task.Prompt, "mga attention list") || !strings.Contains(task.Prompt, "mga notify send --to source") {
 		t.Fatalf("attention task prompt should include attention guidance:\n%s", task.Prompt)
+	}
+}
+
+func TestRecoverablePendingAttentionWakeupTargetsGroupsPendingIMSignals(t *testing.T) {
+	s, workspaceID := newConnectionGrantPolicyServer(t)
+	seedTaskAttentionWorker(t, s, workspaceID, "sample", "pm", true)
+	now := time.Now().UTC().Format(time.RFC3339)
+	refs := `{"project":"sample","agent":"pm","chatType":"group"}`
+	cases := []controldb.AttentionSignal{
+		{
+			ID:            "sig-recover-im-1",
+			WorkspaceID:   workspaceID,
+			AgentWorkerID: "aw-pm",
+			DedupeKey:     "recover:im:1",
+			SourceKind:    "im_message",
+			SourceID:      "om_recover_1",
+			Reason:        "im_mention",
+			Status:        "pending",
+			RefsJSON:      refs,
+			CreatedAt:     now,
+		},
+		{
+			ID:            "sig-recover-card",
+			WorkspaceID:   workspaceID,
+			AgentWorkerID: "aw-pm",
+			DedupeKey:     "recover:card",
+			SourceKind:    "im_card_action",
+			SourceID:      "ir_recover",
+			Reason:        "card_action",
+			Status:        "pending",
+			RefsJSON:      refs,
+			CreatedAt:     now,
+		},
+		{
+			ID:            "sig-recover-task",
+			WorkspaceID:   workspaceID,
+			AgentWorkerID: "aw-pm",
+			DedupeKey:     "recover:task",
+			SourceKind:    "task",
+			Reason:        "task_assigned",
+			Status:        "pending",
+			RefsJSON:      refs,
+			CreatedAt:     now,
+		},
+		{
+			ID:            "sig-recover-seen",
+			WorkspaceID:   workspaceID,
+			AgentWorkerID: "aw-pm",
+			DedupeKey:     "recover:seen",
+			SourceKind:    "im_message",
+			Reason:        "im_mention",
+			Status:        "seen",
+			RefsJSON:      refs,
+			CreatedAt:     now,
+		},
+		{
+			ID:            "sig-recover-no-refs",
+			WorkspaceID:   workspaceID,
+			AgentWorkerID: "aw-pm",
+			DedupeKey:     "recover:no-refs",
+			SourceKind:    "im_message",
+			Reason:        "im_mention",
+			Status:        "pending",
+			RefsJSON:      `{}`,
+			CreatedAt:     now,
+		},
+	}
+	for _, signal := range cases {
+		if err := s.controlDB.UpsertAttentionSignal(signal); err != nil {
+			t.Fatalf("upsert %s: %v", signal.ID, err)
+		}
+	}
+
+	targets, err := s.recoverablePendingAttentionWakeupTargets(100)
+	if err != nil {
+		t.Fatalf("recoverable targets: %v", err)
+	}
+	if len(targets) != 1 {
+		t.Fatalf("expected one grouped target, got %+v", targets)
+	}
+	target := targets[0]
+	if target.WorkspaceID != workspaceID || target.ProjectID != "sample" || target.AgentID != "pm" || target.AgentWorkerID != "aw-pm" {
+		t.Fatalf("unexpected target: %+v", target)
+	}
+	if strings.Join(target.AttentionIDs, ",") != "sig-recover-im-1,sig-recover-card" {
+		t.Fatalf("unexpected recovered ids: %+v", target.AttentionIDs)
 	}
 }
 
@@ -196,6 +427,50 @@ func TestEnsurePendingAttentionWakeupTaskDedupesExistingTask(t *testing.T) {
 	}
 	if count != 1 {
 		t.Fatalf("expected exactly one attention task, got %d", count)
+	}
+}
+
+func TestEnsurePendingAttentionWakeupTaskDoesNotReuseInProgressTask(t *testing.T) {
+	s, workspaceID := newConnectionGrantPolicyServer(t)
+	seedTaskAttentionWorker(t, s, workspaceID, "sample", "pm", true)
+	now := time.Now().UTC()
+	stale := &entity.Task{
+		ID:        "attention-in-progress",
+		Title:     attentionWakeupTaskTitle,
+		Type:      "wakeup",
+		Status:    entity.TaskStatusInProgress,
+		Priority:  0,
+		Prompt:    "stale running attention prompt",
+		CreatedBy: attentionWakeupTaskCreatedBy,
+		CreatedAt: now.Add(-time.Hour),
+		UpdatedAt: now.Add(-time.Hour),
+	}
+	if err := s.ts.AddTask("sample", "pm", stale); err != nil {
+		t.Fatalf("add in-progress attention task: %v", err)
+	}
+	if err := s.controlDB.UpsertAttentionSignal(controldb.AttentionSignal{
+		ID:            "sig-new-after-stale",
+		WorkspaceID:   workspaceID,
+		AgentWorkerID: "aw-pm",
+		DedupeKey:     "test:new-after-stale",
+		SourceKind:    "im_message",
+		Reason:        "im_mention",
+		Summary:       "New message should create a runnable attention task.",
+		Status:        "pending",
+		CreatedAt:     now.Format(time.RFC3339),
+	}); err != nil {
+		t.Fatalf("upsert attention: %v", err)
+	}
+
+	task, ids, err := s.ensurePendingAttentionWakeupTask(workspaceID, "sample", "pm", "sig-new-after-stale")
+	if err != nil {
+		t.Fatalf("ensure attention task: %v", err)
+	}
+	if task == nil || task.ID == stale.ID || task.Status != entity.TaskStatusPending {
+		t.Fatalf("expected new pending attention task, got %+v", task)
+	}
+	if len(ids) != 1 || ids[0] != "sig-new-after-stale" {
+		t.Fatalf("unexpected ids: %+v", ids)
 	}
 }
 

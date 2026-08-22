@@ -359,6 +359,93 @@ func TestRuntimeNotifyTargetUsesAttentionSourceChat(t *testing.T) {
 	}
 }
 
+func TestRuntimeNotifyCreateSourceInteractionLocksToSourceUser(t *testing.T) {
+	s, workspaceID := newConnectionGrantPolicyServer(t)
+	binding := controldb.AgentChannelBinding{
+		ID:           "chan-feishu",
+		WorkspaceID:  workspaceID,
+		ProjectID:    "sample",
+		AgentID:      "pm",
+		Provider:     "feishu",
+		ConnectionID: "conn-feishu",
+		Status:       "connected",
+	}
+	if err := s.controlDB.UpsertConnection(controldb.Connection{
+		ID:             "conn-feishu",
+		WorkspaceID:    workspaceID,
+		Provider:       "feishu",
+		ConnectionName: "default",
+		OwnerType:      ConnectionOwnerWorkspace,
+		OwnerID:        workspaceID,
+		AuthType:       ConnectionAuthAPIKey,
+		Status:         "active",
+	}); err != nil {
+		t.Fatalf("upsert connection: %v", err)
+	}
+	if err := s.controlDB.UpsertAgentChannelBinding(binding); err != nil {
+		t.Fatalf("upsert channel: %v", err)
+	}
+	if err := s.controlDB.UpsertUserChannelIdentity(controldb.UserChannelIdentity{
+		ID:               "uch-admin",
+		WorkspaceID:      workspaceID,
+		UserID:           "admin",
+		ChannelBindingID: binding.ID,
+		Provider:         binding.Provider,
+		ExternalUserID:   "ou_sender",
+		ExternalChatID:   "oc_admin",
+	}); err != nil {
+		t.Fatalf("upsert identity: %v", err)
+	}
+	task := &entity.Task{
+		ID:     "t-source-card",
+		Title:  "source card",
+		Status: entity.TaskStatusInProgress,
+		Prompt: "## Attention Signals\n\n" +
+			"Source: `im_message` / `im:feishu:group:oc_source:user:admin`\n" +
+			"Reason: `im_mention`\n" +
+			"Refs: `{\"chatId\":\"oc_source\",\"chatType\":\"group\",\"messageId\":\"om_one\"}`\n" +
+			"Payload: `{\"senderOpenId\":\"ou_sender\"}`\n",
+	}
+	if err := s.ts.AddTask("sample", "pm", task); err != nil {
+		t.Fatalf("persist task: %v", err)
+	}
+	if err := s.controlDB.UpsertRuntimeRun(controldb.RuntimeRun{
+		ID:          "run-source-card",
+		WorkspaceID: workspaceID,
+		ProjectID:   "sample",
+		AgentID:     "pm",
+		TaskID:      task.ID,
+		Status:      "running",
+		CreatedAt:   time.Now().UTC().Format(time.RFC3339),
+	}); err != nil {
+		t.Fatalf("create run: %v", err)
+	}
+
+	_, interactionID, err := s.runtimeNotifyCreateInteractionRequest(runtimeAgentPrincipal{
+		WorkspaceID: workspaceID,
+		Project:     "sample",
+		Agent:       "pm",
+		RunID:       "run-source-card",
+	}, binding, "source", runtimeNotifyBody{
+		Subject: "Decision",
+		Body:    "Choose one",
+		TaskID:  "t-source-card",
+		Card: &runtimeNotifyCardBody{
+			Actions: []runtimeNotifyCardActionBody{{ID: "approve", Label: "通过", Style: "primary"}},
+		},
+	}, "Choose one")
+	if err != nil {
+		t.Fatalf("create card request: %v", err)
+	}
+	req, ok, err := s.controlDB.InteractionRequestByID(workspaceID, interactionID)
+	if err != nil || !ok {
+		t.Fatalf("lookup interaction ok=%v err=%v", ok, err)
+	}
+	if req.Recipient != "source" || req.TargetUserID != "admin" {
+		t.Fatalf("source interaction should lock to source user, got %#v", req)
+	}
+}
+
 func TestRuntimeNotifyTargetUsesLocalRunnerTaskIDAsSource(t *testing.T) {
 	s, workspaceID := newConnectionGrantPolicyServer(t)
 	binding := controldb.AgentChannelBinding{
@@ -436,6 +523,22 @@ func TestRuntimeNotifySourceFromPromptCombinesRefsAndPayload(t *testing.T) {
 		t.Fatalf("source should resolve")
 	}
 	if source.ChatID != "oc_one" || source.ChatType != "group" || source.MessageID != "om_one" || source.SenderOpenID != "ou_sender" {
+		t.Fatalf("unexpected source: %#v", source)
+	}
+	if source.ActorUserID != "admin" {
+		t.Fatalf("expected actor user from source line, got %#v", source)
+	}
+}
+
+func TestRuntimeNotifySourceFromPromptUsesSourceActorWhenPayloadMissing(t *testing.T) {
+	prompt := "Source: `im:feishu:group:oc_one:user:admin`\n" +
+		"Reason: `im_mention`\n" +
+		"Refs: `{\"chatId\":\"oc_one\",\"chatType\":\"group\",\"messageId\":\"om_one\"}`\n"
+	source, ok := runtimeNotifySourceFromPrompt(prompt, "feishu")
+	if !ok {
+		t.Fatalf("source should resolve")
+	}
+	if source.ChatID != "oc_one" || source.ActorUserID != "admin" || source.SenderOpenID != "" {
 		t.Fatalf("unexpected source: %#v", source)
 	}
 }

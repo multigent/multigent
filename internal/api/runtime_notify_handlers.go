@@ -670,6 +670,9 @@ func (s *Server) runtimeNotifyCreateInteractionRequest(principal runtimeAgentPri
 	if recipient == "human" {
 		targetUserID = ""
 	}
+	if recipient == "source" {
+		targetUserID = s.runtimeNotifySourceUserID(principal, binding)
+	}
 	if strings.HasPrefix(recipient, "chat:") {
 		targetType = "chat"
 		targetUserID = ""
@@ -710,6 +713,26 @@ func (s *Server) runtimeNotifyCreateInteractionRequest(principal runtimeAgentPri
 		Links:         links,
 		Context:       contextMap,
 	}, interactionID, nil
+}
+
+func (s *Server) runtimeNotifySourceUserID(principal runtimeAgentPrincipal, binding controldb.AgentChannelBinding) string {
+	source, ok := s.runtimeNotifySourceInfoForPrincipal(principal, binding.Provider)
+	if !ok {
+		return ""
+	}
+	if strings.TrimSpace(source.SenderOpenID) == "" {
+		return strings.TrimSpace(source.ActorUserID)
+	}
+	identities, err := s.controlDB.ListUserChannelIdentities(controldb.UserChannelIdentityFilter{
+		WorkspaceID:      principal.WorkspaceID,
+		ChannelBindingID: binding.ID,
+		Provider:         binding.Provider,
+		ExternalUserID:   strings.TrimSpace(source.SenderOpenID),
+	})
+	if err != nil || len(identities) == 0 {
+		return strings.TrimSpace(source.ActorUserID)
+	}
+	return strings.TrimSpace(identities[0].UserID)
 }
 
 func newRuntimeInteractionRequestID() string {
@@ -980,31 +1003,7 @@ func (s *Server) runtimeNotifyTargetForRecipient(principal runtimeAgentPrincipal
 }
 
 func (s *Server) runtimeNotifySourceTarget(principal runtimeAgentPrincipal, binding controldb.AgentChannelBinding) (imbridge.OutgoingTarget, bool, error) {
-	runID := strings.TrimSpace(principal.RunID)
-	if runID == "" {
-		return imbridge.OutgoingTarget{}, false, nil
-	}
-	taskID := ""
-	if s.controlDB != nil {
-		run, found, err := s.controlDB.RuntimeRunByID(principal.WorkspaceID, runID)
-		if err != nil {
-			return imbridge.OutgoingTarget{}, false, err
-		}
-		if found {
-			taskID = strings.TrimSpace(run.TaskID)
-		}
-	}
-	if taskID == "" {
-		// Local scheduler/runner tokens use the task id itself as RunID and do not
-		// create a runtime_runs row. Fall back to that id so --to source works in
-		// both local and remote runtime execution modes.
-		taskID = runID
-	}
-	task, err := s.ts.GetTask(principal.Project, principal.Agent, taskID)
-	if err != nil || task == nil {
-		return imbridge.OutgoingTarget{}, false, err
-	}
-	source, ok := runtimeNotifySourceFromPrompt(task.Prompt, binding.Provider)
+	source, ok := s.runtimeNotifySourceInfoForPrincipal(principal, binding.Provider)
 	if !ok {
 		return imbridge.OutgoingTarget{}, false, nil
 	}
@@ -1018,6 +1017,34 @@ func (s *Server) runtimeNotifySourceTarget(principal runtimeAgentPrincipal, bind
 	}, true, nil
 }
 
+func (s *Server) runtimeNotifySourceInfoForPrincipal(principal runtimeAgentPrincipal, provider string) (runtimeNotifySourceInfo, bool) {
+	runID := strings.TrimSpace(principal.RunID)
+	if runID == "" {
+		return runtimeNotifySourceInfo{}, false
+	}
+	taskID := ""
+	if s.controlDB != nil {
+		run, found, err := s.controlDB.RuntimeRunByID(principal.WorkspaceID, runID)
+		if err != nil {
+			return runtimeNotifySourceInfo{}, false
+		}
+		if found {
+			taskID = strings.TrimSpace(run.TaskID)
+		}
+	}
+	if taskID == "" {
+		// Local scheduler/runner tokens use the task id itself as RunID and do not
+		// create a runtime_runs row. Fall back to that id so --to source works in
+		// both local and remote runtime execution modes.
+		taskID = runID
+	}
+	task, err := s.ts.GetTask(principal.Project, principal.Agent, taskID)
+	if err != nil || task == nil {
+		return runtimeNotifySourceInfo{}, false
+	}
+	return runtimeNotifySourceFromPrompt(task.Prompt, provider)
+}
+
 func runtimeNotifySourceChatID(prompt, provider string) (string, bool) {
 	source, ok := runtimeNotifySourceFromPrompt(prompt, provider)
 	return source.ChatID, ok
@@ -1028,6 +1055,7 @@ type runtimeNotifySourceInfo struct {
 	ChatType     string
 	MessageID    string
 	SenderOpenID string
+	ActorUserID  string
 }
 
 func runtimeNotifySourceFromPrompt(prompt, provider string) (runtimeNotifySourceInfo, bool) {
@@ -1041,7 +1069,7 @@ func runtimeNotifySourceFromPrompt(prompt, provider string) (runtimeNotifySource
 		if !strings.HasPrefix(line, "Source:") || !strings.Contains(line, "im:"+provider+":") {
 			continue
 		}
-		info := runtimeNotifySourceInfo{}
+		info := runtimeNotifySourceInfo{ActorUserID: runtimeNotifySourceActorUserID(line, provider)}
 		for j := i + 1; j < len(lines) && j <= i+12; j++ {
 			refLine := strings.TrimSpace(lines[j])
 			if !strings.HasPrefix(refLine, "Refs:") && !strings.HasPrefix(refLine, "Payload:") {
@@ -1081,6 +1109,24 @@ func runtimeNotifySourceFromPrompt(prompt, provider string) (runtimeNotifySource
 		}
 	}
 	return runtimeNotifySourceInfo{}, false
+}
+
+func runtimeNotifySourceActorUserID(sourceLine, provider string) string {
+	sourceLine = strings.TrimSpace(sourceLine)
+	sourceLine = strings.TrimPrefix(sourceLine, "Source:")
+	sourceLine = strings.TrimSpace(strings.Trim(sourceLine, "`"))
+	marker := "im:" + strings.TrimSpace(strings.ToLower(provider)) + ":"
+	idx := strings.Index(strings.ToLower(sourceLine), marker)
+	if idx < 0 {
+		return ""
+	}
+	parts := strings.Split(sourceLine[idx:], ":")
+	for i := 0; i+1 < len(parts); i++ {
+		if strings.EqualFold(strings.TrimSpace(parts[i]), "user") {
+			return strings.TrimSpace(strings.Trim(parts[i+1], "`"))
+		}
+	}
+	return ""
 }
 
 func formatRuntimeNotifyMessage(principal runtimeAgentPrincipal, body runtimeNotifyBody, subject, text string) imbridge.OutgoingMessage {

@@ -107,7 +107,11 @@ func (m *SchedulerManager) StartManagedCommand(key, project, agent, mode string,
 			return 0, fmt.Errorf("scheduler already running for %q", key)
 		}
 	}
+	logFile := m.attachManagedCommandLog(key, cmd)
 	if err := cmd.Start(); err != nil {
+		if logFile != nil {
+			_ = logFile.Close()
+		}
 		return 0, fmt.Errorf("start managed command: %w", err)
 	}
 
@@ -122,6 +126,9 @@ func (m *SchedulerManager) StartManagedCommand(key, project, agent, mode string,
 
 	go func() {
 		err := cmd.Wait()
+		if logFile != nil {
+			_ = logFile.Close()
+		}
 		proc.mu.Lock()
 		proc.exitErr = err
 		proc.stopped = true
@@ -135,6 +142,33 @@ func (m *SchedulerManager) StartManagedCommand(key, project, agent, mode string,
 		pid = cmd.Process.Pid
 	}
 	return pid, nil
+}
+
+func (m *SchedulerManager) attachManagedCommandLog(key string, cmd *exec.Cmd) *os.File {
+	if cmd == nil {
+		return nil
+	}
+	cmd.Stdin = nil
+	dir := filepath.Join(m.root, ".multigent", "logs")
+	if err := os.MkdirAll(dir, 0o755); err != nil {
+		log.Printf("warning: failed to create managed command log dir: %v", err)
+		return nil
+	}
+	name := strings.TrimSpace(key)
+	if name == "" {
+		name = "command"
+	}
+	name = strings.NewReplacer("/", "-", "\\", "-", ":", "-", " ", "-").Replace(name)
+	path := filepath.Join(dir, "managed-"+name+".log")
+	f, err := os.OpenFile(path, os.O_CREATE|os.O_WRONLY|os.O_APPEND, 0o644)
+	if err != nil {
+		log.Printf("warning: failed to open managed command log %s: %v", path, err)
+		return nil
+	}
+	fmt.Fprintf(f, "\n--- %s start %s %s ---\n", time.Now().UTC().Format(time.RFC3339), cmd.Path, strings.Join(cmd.Args[1:], " "))
+	cmd.Stdout = f
+	cmd.Stderr = f
+	return f
 }
 
 func (m *SchedulerManager) StartLoop(project, agent, mode string, loop func(context.Context)) error {

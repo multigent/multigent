@@ -111,9 +111,15 @@ Authorization: Bearer <key>.`,
 				_ = httpSrv.Shutdown(context.Background())
 			}()
 
-			if err := httpSrv.ListenAndServe(); err != nil && err != http.ErrServerClosed {
-				return fmt.Errorf("http server: %w", err)
+			if err := httpSrv.ListenAndServe(); err != nil {
+				if err != http.ErrServerClosed {
+					log.Printf("multigent api stopped with error: %v", err)
+					return fmt.Errorf("http server: %w", err)
+				}
+				log.Printf("multigent api stopped")
+				return nil
 			}
+			log.Printf("multigent api stopped")
 			return nil
 		},
 	}

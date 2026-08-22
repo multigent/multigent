@@ -48,7 +48,37 @@ func (s *Server) shouldWakeAgentForAttention(binding controldb.AgentChannelBindi
 		worker, ok, err := s.controlDB.AgentWorkerByID(binding.WorkspaceID, binding.AgentWorkerID)
 		if err == nil && ok {
 			if hb, configured := agentWorkerScheduleHeartbeat(worker); configured {
-				return hb.HasAttentionTrigger(reason)
+				if hb.HasAttentionTrigger(reason) {
+					return true
+				}
+			}
+			return agentWorkerAttentionPolicyAllows(worker, reason)
+		}
+	}
+	return false
+}
+
+func agentWorkerAttentionPolicyAllows(worker controldb.AgentWorker, reason string) bool {
+	raw := strings.TrimSpace(worker.AttentionPolicyJSON)
+	if raw == "" || raw == "{}" {
+		return false
+	}
+	var policy map[string]any
+	if err := json.Unmarshal([]byte(raw), &policy); err != nil {
+		return false
+	}
+	for _, key := range []string{strings.TrimSpace(reason), "attention"} {
+		if key == "" {
+			continue
+		}
+		switch v := policy[key].(type) {
+		case bool:
+			if v {
+				return true
+			}
+		case string:
+			if strings.EqualFold(strings.TrimSpace(v), "true") || strings.EqualFold(strings.TrimSpace(v), "enabled") {
+				return true
 			}
 		}
 	}
@@ -72,7 +102,7 @@ func (s *Server) requestAgentAttentionWakeup(binding controldb.AgentChannelBindi
 		log.Printf("[attention] load heartbeat failed for %s/%s: %v", binding.ProjectID, binding.AgentID, err)
 		return
 	}
-	attentionTask, _, err := s.ensurePendingAttentionWakeupTask(binding.WorkspaceID, binding.ProjectID, binding.AgentID)
+	attentionTask, _, err := s.ensurePendingAttentionWakeupTask(binding.WorkspaceID, binding.ProjectID, binding.AgentID, attentionID)
 	if err != nil {
 		log.Printf("[attention] ensure attention wakeup task failed for %s/%s: %v", binding.ProjectID, binding.AgentID, err)
 		return
@@ -144,18 +174,17 @@ func (s *Server) requestAgentAttentionWakeup(binding controldb.AgentChannelBindi
 	}
 	args := []string{"--dir", s.sched.root, "scheduler", "wakeup", "--project", binding.ProjectID, "--agent", binding.AgentID}
 	cmd := exec.Command(s.sched.binPath, args...)
-	cmd.Stdout = os.Stdout
-	cmd.Stderr = os.Stderr
 	setProcGroup(cmd)
-	if err := cmd.Start(); err != nil {
+	procKey := fmt.Sprintf("attention-wakeup/%s/%s/%s/%d", binding.ProjectID, binding.AgentID, strings.TrimSpace(attentionID), time.Now().UnixNano())
+	pid, err := s.sched.StartManagedCommand(procKey, binding.ProjectID, binding.AgentID, schedulerModeWakeup, cmd)
+	if err != nil {
 		log.Printf("[attention] start wakeup failed for %s/%s: %v", binding.ProjectID, binding.AgentID, err)
 		return
 	}
-	if cmd.Process != nil {
-		providerContext["pid"] = cmd.Process.Pid
-	}
+	providerContext["pid"] = pid
+	providerContext["processKey"] = procKey
 	go func() {
-		if err := cmd.Wait(); err != nil {
+		if err := s.sched.WaitKey(procKey); err != nil {
 			log.Printf("[attention] wakeup %s/%s exited with error: %v", binding.ProjectID, binding.AgentID, err)
 		}
 	}()
