@@ -149,11 +149,20 @@ func (s *Server) handleAuditEvents(w http.ResponseWriter, r *http.Request) {
 			limit = n
 		}
 	}
+	if limit > 100 {
+		limit = 100
+	}
+	offset := 0
+	if raw := strings.TrimSpace(r.URL.Query().Get("offset")); raw != "" {
+		if n, err := strconv.Atoi(raw); err == nil && n > 0 {
+			offset = n
+		}
+	}
 	createdAfter := ""
 	if days := s.currentEntitlements(r).AuditRetentionDays; days > 0 {
 		createdAfter = time.Now().UTC().Add(-time.Duration(days) * 24 * time.Hour).Format(time.RFC3339)
 	}
-	events, err := s.controlDB.ListAuditEvents(controldb.AuditEventFilter{
+	filter := controldb.AuditEventFilter{
 		WorkspaceID:  workspaceID,
 		ActorID:      strings.TrimSpace(r.URL.Query().Get("actorId")),
 		Action:       strings.TrimSpace(r.URL.Query().Get("action")),
@@ -161,7 +170,14 @@ func (s *Server) handleAuditEvents(w http.ResponseWriter, r *http.Request) {
 		ResourceID:   strings.TrimSpace(r.URL.Query().Get("resourceId")),
 		CreatedAfter: createdAfter,
 		Limit:        limit,
-	})
+		Offset:       offset,
+	}
+	events, err := s.controlDB.ListAuditEvents(filter)
+	if err != nil {
+		s.serverError(w, err)
+		return
+	}
+	total, err := s.controlDB.CountAuditEvents(filter)
 	if err != nil {
 		s.serverError(w, err)
 		return
@@ -170,7 +186,12 @@ func (s *Server) handleAuditEvents(w http.ResponseWriter, r *http.Request) {
 	for _, event := range events {
 		out = append(out, auditEventToResponse(event))
 	}
-	_ = json.NewEncoder(w).Encode(map[string]any{"events": out})
+	_ = json.NewEncoder(w).Encode(map[string]any{
+		"events": out,
+		"total":  total,
+		"limit":  limit,
+		"offset": offset,
+	})
 }
 
 func auditEventToResponse(event controldb.AuditEvent) auditEventResponse {

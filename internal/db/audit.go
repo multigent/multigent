@@ -23,8 +23,45 @@ func (db *SQLiteStore) ListAuditEvents(filter AuditEventFilter) ([]AuditEvent, e
 	if limit <= 0 || limit > 500 {
 		limit = 100
 	}
+	offset := filter.Offset
+	if offset < 0 {
+		offset = 0
+	}
+	where, args := auditEventWhere(filter)
 	query := `SELECT id, workspace_id, actor_type, actor_id, action, resource_type, resource_id,
-summary, before_json, after_json, ip, user_agent, created_at FROM audit_events WHERE 1=1`
+summary, before_json, after_json, ip, user_agent, created_at FROM audit_events ` + where + ` ORDER BY created_at DESC, id DESC LIMIT ? OFFSET ?`
+	args = append(args, limit, offset)
+
+	rows, err := db.sql.Query(query, args...)
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+
+	out := make([]AuditEvent, 0)
+	for rows.Next() {
+		var e AuditEvent
+		if err := rows.Scan(&e.ID, &e.WorkspaceID, &e.ActorType, &e.ActorID, &e.Action,
+			&e.ResourceType, &e.ResourceID, &e.Summary, &e.BeforeJSON, &e.AfterJSON,
+			&e.IP, &e.UserAgent, &e.CreatedAt); err != nil {
+			return nil, err
+		}
+		out = append(out, e)
+	}
+	return out, rows.Err()
+}
+
+func (db *SQLiteStore) CountAuditEvents(filter AuditEventFilter) (int, error) {
+	where, args := auditEventWhere(filter)
+	var count int
+	if err := db.sql.QueryRow(`SELECT COUNT(*) FROM audit_events `+where, args...).Scan(&count); err != nil {
+		return 0, err
+	}
+	return count, nil
+}
+
+func auditEventWhere(filter AuditEventFilter) (string, []any) {
+	query := `WHERE 1=1`
 	args := make([]any, 0, 6)
 	if strings.TrimSpace(filter.WorkspaceID) != "" {
 		query += ` AND workspace_id = ?`
@@ -50,24 +87,5 @@ summary, before_json, after_json, ip, user_agent, created_at FROM audit_events W
 		query += ` AND created_at >= ?`
 		args = append(args, strings.TrimSpace(filter.CreatedAfter))
 	}
-	query += ` ORDER BY created_at DESC, id DESC LIMIT ?`
-	args = append(args, limit)
-
-	rows, err := db.sql.Query(query, args...)
-	if err != nil {
-		return nil, err
-	}
-	defer rows.Close()
-
-	out := make([]AuditEvent, 0)
-	for rows.Next() {
-		var e AuditEvent
-		if err := rows.Scan(&e.ID, &e.WorkspaceID, &e.ActorType, &e.ActorID, &e.Action,
-			&e.ResourceType, &e.ResourceID, &e.Summary, &e.BeforeJSON, &e.AfterJSON,
-			&e.IP, &e.UserAgent, &e.CreatedAt); err != nil {
-			return nil, err
-		}
-		out = append(out, e)
-	}
-	return out, rows.Err()
+	return query, args
 }

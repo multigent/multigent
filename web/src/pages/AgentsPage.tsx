@@ -35,6 +35,11 @@ type AgentsResponse = {
   agents?: AgentWorker[]
 }
 
+type ProviderRow = {
+  id: string
+  name: string
+}
+
 type AgentDetailResponse = {
   agent?: AgentWorker
   memberships?: ProjectMembership[]
@@ -97,7 +102,17 @@ export default function AgentsPage() {
   const [roleFilter, setRoleFilter] = useState('all')
   const [statusFilter, setStatusFilter] = useState('all')
   const state = useApiJson<AgentsResponse>('/api/v1/agents', reloadKey, { keepPreviousDataOnReload: true })
+  const providersState = useApiJson<ProviderRow[]>('/api/v1/providers', reloadKey, { keepPreviousDataOnReload: true })
   const agents = state.status === 'ok' ? (state.data.agents ?? []) : []
+  const providerNames = useMemo(() => {
+    const names = new Map<string, string>()
+    if (providersState.status === 'ok') {
+      for (const provider of providersState.data ?? []) {
+        if (provider.id) names.set(provider.id, provider.name || provider.id)
+      }
+    }
+    return names
+  }, [providersState])
   const teamOptions = useMemo(() => {
     const values = new Set<string>()
     agents.forEach(agent => (agent.memberships ?? []).forEach(member => {
@@ -234,7 +249,9 @@ export default function AgentsPage() {
               <AgentCard
                 key={agent.id}
                 agent={agent}
+                modelAccountName={agent.defaultModelAccountId ? providerNames.get(agent.defaultModelAccountId) : undefined}
                 onOpen={() => navigate(`/agents/${encodeURIComponent(agent.id)}`)}
+                onOpenChat={(projectId) => navigate(`/projects/${encodeURIComponent(projectId)}/members/${encodeURIComponent(agent.name)}/chat`)}
               />
             ))}
           </div>
@@ -255,12 +272,13 @@ export default function AgentsPage() {
   )
 }
 
-function AgentCard({ agent, onOpen }: { agent: AgentWorker; onOpen: () => void }) {
+function AgentCard({ agent, modelAccountName, onOpen, onOpenChat }: { agent: AgentWorker; modelAccountName?: string; onOpen: () => void; onOpenChat: (projectId: string) => void }) {
   const { t } = useTranslation()
   const status = agent.status ?? 'active'
   const displayName = agent.displayName || agent.name
   const skills = Array.isArray(agent.skills) ? agent.skills : []
   const memberships = agent.memberships ?? []
+  const firstProjectId = memberships.find(member => member.projectId)?.projectId
   const membershipLabels = memberships
     .map(member => [member.team, member.role].filter(Boolean).join(' / '))
     .filter(Boolean)
@@ -303,15 +321,27 @@ function AgentCard({ agent, onOpen }: { agent: AgentWorker; onOpen: () => void }
             <p className="mt-0.5 truncate text-xs text-neutral-400 dark:text-zinc-500">{primaryMembershipLabel}</p>
           )}
         </div>
+        {firstProjectId && (
+          <button
+            type="button"
+            onClick={(event) => {
+              event.stopPropagation()
+              onOpenChat(firstProjectId)
+            }}
+            className="inline-flex size-8 shrink-0 items-center justify-center rounded-lg text-neutral-400 transition-colors hover:bg-neutral-100 hover:text-neutral-800 dark:text-zinc-500 dark:hover:bg-zinc-800 dark:hover:text-zinc-200"
+            title={t('agents.openChat')}
+          >
+            <MessageCircle className="size-4" strokeWidth={1.8} />
+          </button>
+        )}
       </div>
       {agent.description && (
         <p className="mt-3 line-clamp-3 text-sm leading-6 text-neutral-600 dark:text-zinc-400">{agent.description}</p>
       )}
       <div className="mt-4 space-y-2 border-t border-neutral-100 pt-3 text-xs dark:border-zinc-800">
-        <InfoRow label={t('agents.primarySession')} value={agent.primarySessionId || '-'} mono />
-        <InfoRow label={t('agents.model')} value={agent.model || t('agents.defaultModel')} />
+        <InfoRow label={t('agents.model')} value={agent.runtimeModel || agent.model || t('agents.defaultModel')} />
         <InfoRow label={t('agents.runtimeNode')} value={agent.defaultRuntimeNodeId || t('agents.defaultRuntime')} />
-        <InfoRow label={t('agents.modelAccount')} value={agent.defaultModelAccountId || t('agents.defaultModel')} />
+        <InfoRow label={t('agents.modelAccount')} value={modelAccountName || (agent.defaultModelAccountId ? t('agents.configuredModelAccount') : t('agents.defaultModel'))} />
       </div>
       {skills.length > 0 && (
         <div className="mt-3 flex flex-wrap gap-1.5">
