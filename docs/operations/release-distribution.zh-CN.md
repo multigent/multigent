@@ -86,8 +86,23 @@ ghcr.io/multigent/multigent/runtime-base:latest
    ```
 
 5. 等待 `.github/workflows/release.yml` 完成。
-6. 使用维护者 npm token 在本地发布 npm。
-7. 确认 GitHub Release 产物、GHCR 镜像、npm 包状态。
+6. 使用维护者 npm token 在本地发布 npm。不要直接依赖 `/root/.npmrc`，它可能是旧 token 或只覆盖部分 package scope。当前推荐用 `shrike` 注入发布 token：
+
+   ```bash
+   shrike exec --with=NPM_TOKEN -- sh -lc \
+     'cd /root/code/spaceship/multigent/npm && npm publish --access public --//registry.npmjs.org/:_authToken="$NPM_TOKEN"'
+   ```
+
+   如果 npm 返回 `Your package is being processed and may take a few minutes to become available.`，说明版本已进入 staging；短时间内 `npm view @multigent/multigent@X.Y.Z` 可能仍是 404。此时不要立刻判断失败，先等 1-3 分钟再查。如果重试出现 `Cannot publish over previously staged version "X.Y.Z"`，也说明第一次 publish 已被接收，继续等待 registry 收敛即可。
+
+7. 确认 GitHub Release 产物、GHCR 镜像、npm 包状态：
+
+   ```bash
+   gh release view vX.Y.Z --repo multigent/multigent --json tagName,isDraft,isPrerelease,url,assets
+   npm view @multigent/multigent version dist-tags.latest --json
+   npm view @multigent/multigent@X.Y.Z version dist.tarball --json
+   ```
+
 8. 验证公开 quickstart：
 
    ```bash

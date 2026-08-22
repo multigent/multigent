@@ -86,8 +86,23 @@ It must remain public before announcing a release; otherwise new users will fail
    ```
 
 5. Wait for `.github/workflows/release.yml`.
-6. Publish npm locally with the maintainer npm token.
-7. Confirm GitHub Release assets, GHCR packages, and npm package.
+6. Publish npm locally with the maintainer npm token. Do not rely on `/root/.npmrc`; it may contain an older token or a token that only covers some package scopes. The recommended path is to inject the publishing token through `shrike`:
+
+   ```bash
+   shrike exec --with=NPM_TOKEN -- sh -lc \
+     'cd /root/code/spaceship/multigent/npm && npm publish --access public --//registry.npmjs.org/:_authToken="$NPM_TOKEN"'
+   ```
+
+   If npm prints `Your package is being processed and may take a few minutes to become available.`, the version has been staged. `npm view @multigent/multigent@X.Y.Z` may still return 404 briefly. Wait 1-3 minutes before treating it as a failure. If a retry returns `Cannot publish over previously staged version "X.Y.Z"`, the first publish was accepted; keep waiting for registry convergence.
+
+7. Confirm GitHub Release assets, GHCR packages, and npm package:
+
+   ```bash
+   gh release view vX.Y.Z --repo multigent/multigent --json tagName,isDraft,isPrerelease,url,assets
+   npm view @multigent/multigent version dist-tags.latest --json
+   npm view @multigent/multigent@X.Y.Z version dist.tarball --json
+   ```
+
 8. Confirm the public quickstart:
 
    ```bash
