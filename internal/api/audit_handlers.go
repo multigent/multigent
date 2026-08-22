@@ -101,21 +101,61 @@ func requestIP(r *http.Request) string {
 	if r == nil {
 		return ""
 	}
-	for _, header := range []string{"X-Forwarded-For", "X-Real-IP"} {
+	for _, header := range []string{"CF-Connecting-IP", "Fly-Client-IP", "True-Client-IP", "X-Real-IP"} {
 		value := strings.TrimSpace(r.Header.Get(header))
-		if value == "" {
-			continue
+		if ip := cleanClientIP(value); ip != "" {
+			return ip
 		}
-		first := strings.TrimSpace(strings.Split(value, ",")[0])
-		if first != "" {
-			return first
+	}
+	if value := strings.TrimSpace(r.Header.Get("X-Forwarded-For")); value != "" {
+		for _, part := range strings.Split(value, ",") {
+			if ip := cleanClientIP(part); ip != "" {
+				return ip
+			}
+		}
+	}
+	if value := strings.TrimSpace(r.Header.Get("Forwarded")); value != "" {
+		for _, entry := range strings.Split(value, ",") {
+			for _, part := range strings.Split(entry, ";") {
+				key, value, ok := strings.Cut(strings.TrimSpace(part), "=")
+				if !ok || !strings.EqualFold(strings.TrimSpace(key), "for") {
+					continue
+				}
+				if ip := cleanClientIP(value); ip != "" {
+					return ip
+				}
+			}
 		}
 	}
 	host, _, err := net.SplitHostPort(r.RemoteAddr)
 	if err == nil {
-		return host
+		return cleanClientIP(host)
 	}
-	return r.RemoteAddr
+	return cleanClientIP(r.RemoteAddr)
+}
+
+func cleanClientIP(raw string) string {
+	value := strings.TrimSpace(raw)
+	if value == "" {
+		return ""
+	}
+	value = strings.Trim(value, `"`)
+	if strings.EqualFold(value, "unknown") {
+		return ""
+	}
+	if strings.HasPrefix(value, "[") {
+		if host, _, err := net.SplitHostPort(value); err == nil {
+			value = host
+		} else {
+			value = strings.Trim(value, "[]")
+		}
+	} else if host, _, err := net.SplitHostPort(value); err == nil {
+		value = host
+	}
+	if parsed := net.ParseIP(value); parsed != nil {
+		return parsed.String()
+	}
+	return value
 }
 
 type auditEventResponse struct {

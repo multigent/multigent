@@ -113,7 +113,7 @@ export default function AuditPage() {
                   <th className="px-4 py-3">{t('audit.resource')}</th>
                   <th className="px-4 py-3">{t('audit.summary')}</th>
                   <th className="px-4 py-3">{t('audit.ip')}</th>
-                  <th className="px-4 py-3 text-right">{t('audit.details')}</th>
+                  <th className="sticky right-0 bg-neutral-50 px-4 py-3 text-right shadow-[-8px_0_12px_-12px_rgba(0,0,0,0.3)] dark:bg-zinc-900">{t('audit.details')}</th>
                 </tr>
               </thead>
               <tbody className="divide-y divide-neutral-100 dark:divide-zinc-800">
@@ -167,7 +167,7 @@ function AuditEventRow({ event, onOpen }: { event: AuditEvent; onOpen: () => voi
         <div className="max-w-sm truncate">{event.summary || event.action}</div>
       </td>
       <td className="whitespace-nowrap px-4 py-3 text-xs text-neutral-500 dark:text-zinc-500">{event.ip || '-'}</td>
-      <td className="px-4 py-3 text-right">
+      <td className="sticky right-0 bg-white px-4 py-3 text-right shadow-[-8px_0_12px_-12px_rgba(0,0,0,0.25)] dark:bg-zinc-900">
         <button type="button" onClick={onOpen} className="inline-flex items-center gap-1 rounded-md px-2 py-1 text-xs font-medium text-neutral-500 transition-colors hover:bg-neutral-100 hover:text-neutral-900 dark:text-zinc-400 dark:hover:bg-zinc-800 dark:hover:text-zinc-100">
           <Eye className="size-3.5" strokeWidth={1.8} />
           {t('audit.view')}
