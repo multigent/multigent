@@ -146,7 +146,9 @@ export default function AgentsPage() {
     return Array.from(values).sort((a, b) => a.localeCompare(b))
   }, [agents])
   const filteredAgents = useMemo(() => agents.filter(agent => {
-    if (statusFilter !== 'all' && (agent.status ?? 'active') !== statusFilter) return false
+    const status = agent.status ?? 'active'
+    if (statusFilter === 'all' && status === 'archived') return false
+    if (statusFilter !== 'all' && status !== statusFilter) return false
     if (teamFilter !== 'all' && agent.team !== teamFilter && !(agent.memberships ?? []).some(member => member.team === teamFilter)) return false
     if (projectFilter !== 'all' && !(agent.memberships ?? []).some(member => member.projectId === projectFilter)) return false
     if (roleFilter !== 'all' && agent.role !== roleFilter && !(agent.memberships ?? []).some(member => member.role === roleFilter)) return false

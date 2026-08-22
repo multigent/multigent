@@ -1302,6 +1302,10 @@ function WorkspaceAgentOnlyDetail({ agent }: { agent: WorkspaceAgentSummary }) {
   const [runtimeModel, setRuntimeModel] = useState(current.runtimeModel || '')
   const [modelAccountId, setModelAccountId] = useState(current.defaultModelAccountId || '')
   const [runtimeNodeId, setRuntimeNodeId] = useState(current.defaultRuntimeNodeId || '')
+  const [editingProfile, setEditingProfile] = useState(false)
+  const [profileAvatar, setProfileAvatar] = useState(current.avatar || '')
+  const [profileAvatarNonce, setProfileAvatarNonce] = useState(() => Date.now())
+  const [savingProfile, setSavingProfile] = useState(false)
   const [teams, setTeams] = useState<WorkspaceTeamInfo[]>([])
   const [roles, setRoles] = useState<Array<{ id?: string; name: string; description?: string }>>([])
   const [saving, setSaving] = useState(false)
@@ -1316,7 +1320,8 @@ function WorkspaceAgentOnlyDetail({ agent }: { agent: WorkspaceAgentSummary }) {
     setRuntimeModel(current.runtimeModel || '')
     setModelAccountId(current.defaultModelAccountId || '')
     setRuntimeNodeId(current.defaultRuntimeNodeId || '')
-  }, [current.id, current.displayName, current.name, current.description, current.team, current.role, current.status, current.model, current.runtimeModel, current.defaultModelAccountId, current.defaultRuntimeNodeId])
+    setProfileAvatar(current.avatar || '')
+  }, [current.id, current.displayName, current.name, current.description, current.team, current.role, current.status, current.model, current.runtimeModel, current.defaultModelAccountId, current.defaultRuntimeNodeId, current.avatar])
 
   useEffect(() => {
     let cancelled = false
@@ -1355,16 +1360,47 @@ function WorkspaceAgentOnlyDetail({ agent }: { agent: WorkspaceAgentSummary }) {
   const ctx = ctxState.status === 'ok' ? ctxState.data : null
   const avatar = current.avatar || ''
   const modelCls = MODEL_COLORS[model] ?? ''
+  const profileAvatarChoices = useMemo(
+    () => avatarChoices('', current.name || 'agent', profileAvatarNonce),
+    [current.name, profileAvatarNonce],
+  )
+
+  async function saveProfile() {
+    setSavingProfile(true)
+    try {
+      await apiPatch(`/api/v1/agents/${encodeURIComponent(current.id)}`, {
+        displayName: displayName.trim(),
+        description: description.trim(),
+        avatar: profileAvatar.trim(),
+        team,
+        role,
+        status,
+      })
+      setEditingProfile(false)
+      setReloadKey(key => key + 1)
+      showToast(t('common.saved'), 'success')
+    } finally {
+      setSavingProfile(false)
+    }
+  }
+
+  async function archiveAgent() {
+    if (!window.confirm(t('agents.archiveConfirm', { defaultValue: '确定要归档这个智能体吗？归档后默认不会出现在智能体列表中。' }))) return
+    setSavingProfile(true)
+    try {
+      await apiPatch(`/api/v1/agents/${encodeURIComponent(current.id)}`, { status: 'archived' })
+      setStatus('archived')
+      setReloadKey(key => key + 1)
+      showToast(t('agents.archived', { defaultValue: '智能体已归档' }), 'success')
+    } finally {
+      setSavingProfile(false)
+    }
+  }
 
   async function save() {
     setSaving(true)
     try {
       await apiPatch(`/api/v1/agents/${encodeURIComponent(current.id)}`, {
-        displayName: displayName.trim(),
-        description: description.trim(),
-        team,
-        role,
-        status,
         model,
         runtimeModel: runtimeModel.trim(),
         defaultModelAccountId: modelAccountId,
@@ -1389,9 +1425,14 @@ function WorkspaceAgentOnlyDetail({ agent }: { agent: WorkspaceAgentSummary }) {
             </div>
           )}
           <div className="min-w-0 flex-1">
-            <div className="flex items-center gap-2">
-              <h1 className="truncate text-xl font-semibold text-neutral-900 dark:text-zinc-100">{displayName || current.name}</h1>
+            <div className="flex flex-wrap items-center gap-2">
+              <h1 className="truncate text-xl font-semibold text-neutral-900 dark:text-zinc-100">{current.displayName || current.name}</h1>
               <span className="rounded-full bg-neutral-100 px-2 py-0.5 font-mono text-[11px] text-neutral-500 dark:bg-zinc-800 dark:text-zinc-400">{current.name}</span>
+              {canAdminWorkspace && (
+                <button type="button" onClick={() => setEditingProfile(true)} className={subtleButtonCls}>
+                  {t('common.edit')}
+                </button>
+              )}
             </div>
             <div className="mt-1 flex flex-wrap items-center gap-3">
               <span className={cn('inline-flex items-center rounded-md px-2.5 py-0.5 text-xs font-bold tracking-wide', modelCls)}>{model}</span>
@@ -1399,49 +1440,93 @@ function WorkspaceAgentOnlyDetail({ agent }: { agent: WorkspaceAgentSummary }) {
               {role && <span className="text-sm text-neutral-500 dark:text-zinc-500">/ {role}</span>}
             </div>
           </div>
+          {canAdminWorkspace && (
+            <button
+              type="button"
+              onClick={() => void archiveAgent()}
+              disabled={savingProfile || current.status === 'archived'}
+              className={cn(subtleButtonCls, 'shrink-0 text-neutral-400 hover:text-red-600 dark:hover:text-red-400')}
+            >
+              {current.status === 'archived' ? t('agents.status_archived') : t('agents.archive', { defaultValue: '归档' })}
+            </button>
+          )}
         </div>
+        {editingProfile && (
+          <div className="mt-4 max-w-4xl rounded-lg border border-neutral-200/80 bg-white p-4 dark:border-zinc-700/60 dark:bg-zinc-900/40">
+            <div className="grid gap-3 md:grid-cols-2">
+              <WorkspaceField label={t('agents.displayName')}>
+                <input value={displayName} onChange={e => setDisplayName(e.target.value)} className={workspaceInputCls} />
+              </WorkspaceField>
+              <WorkspaceField label={t('agents.status')}>
+                <select value={status} onChange={e => setStatus(e.target.value)} className={workspaceInputCls}>
+                  <option value="active">{t('agents.status_active')}</option>
+                  <option value="paused">{t('agents.status_paused')}</option>
+                  <option value="archived">{t('agents.status_archived')}</option>
+                </select>
+              </WorkspaceField>
+              <WorkspaceField label={t('members.team')}>
+                <select value={team} onChange={e => { setTeam(e.target.value); setRole('') }} className={workspaceInputCls}>
+                  <option value="">{t('members.selectTeam')}</option>
+                  {teams.map(item => <option key={item.path} value={item.path}>{item.name} ({item.path})</option>)}
+                </select>
+              </WorkspaceField>
+              <WorkspaceField label={t('members.role')}>
+                <select value={role} onChange={e => setRole(e.target.value)} className={workspaceInputCls} disabled={!team || roles.length === 0}>
+                  <option value="">{t('members.noRole')}</option>
+                  {roles.map(item => {
+                    const value = item.id || item.name
+                    return <option key={value} value={value}>{item.name}{item.description ? ` - ${item.description}` : ''}</option>
+                  })}
+                </select>
+              </WorkspaceField>
+              <WorkspaceField label={t('agentIdentity.avatarPlaceholder')}>
+                <input value={profileAvatar} onChange={e => setProfileAvatar(e.target.value)} className={workspaceInputCls} placeholder="https://..." />
+              </WorkspaceField>
+              <label className="block md:col-span-2">
+                <span className="mb-1 block text-xs font-medium text-neutral-600 dark:text-zinc-400">{t('agents.description')}</span>
+                <textarea value={description} onChange={e => setDescription(e.target.value)} rows={3} className={cn(workspaceInputCls, 'h-auto resize-y')} />
+              </label>
+            </div>
+            <div className="mt-3 flex flex-wrap items-center gap-2">
+              {profileAvatarChoices.map((url) => (
+                <button
+                  key={url}
+                  type="button"
+                  onClick={() => setProfileAvatar(url)}
+                  className={cn(
+                    'rounded-lg border p-0.5 transition-colors',
+                    profileAvatar === url
+                      ? 'border-sky-500 bg-sky-50 dark:border-sky-400 dark:bg-sky-900/20'
+                      : 'border-neutral-200 hover:border-neutral-300 dark:border-zinc-700 dark:hover:border-zinc-600',
+                  )}
+                  title={t('agentIdentity.chooseAvatar')}
+                >
+                  <img src={url} alt="" className="size-8 rounded-md bg-neutral-100 object-cover dark:bg-zinc-800" />
+                </button>
+              ))}
+              <button type="button" onClick={() => setProfileAvatarNonce(Date.now())} className={secondaryButtonCls}>
+                {t('agentIdentity.randomAvatars')}
+              </button>
+              {profileAvatar && (
+                <button type="button" onClick={() => setProfileAvatar('')} className={secondaryButtonCls}>
+                  {t('agentIdentity.clearAvatar')}
+                </button>
+              )}
+            </div>
+            <div className="mt-4 flex justify-end gap-2">
+              <button type="button" onClick={() => setEditingProfile(false)} disabled={savingProfile} className={secondaryButtonCls}>
+                {t('forms.cancel')}
+              </button>
+              <button type="button" onClick={() => void saveProfile()} disabled={savingProfile} className={primaryButtonCls}>
+                {savingProfile ? t('forms.saving') : t('forms.save')}
+              </button>
+            </div>
+          </div>
+        )}
       </div>
 
       <div className="flex-1 overflow-y-auto px-6 pb-8">
         <div className="space-y-8">
-          <section>
-            <SectionHeader icon={Settings2} title={t('agents.profileSettings', { defaultValue: '智能体资料' })} />
-            <p className="mt-1 text-sm text-neutral-500 dark:text-zinc-500">{t('agents.detailSubtitle')}</p>
-            <div className="mt-3 rounded-lg border border-neutral-200/80 bg-white p-4 dark:border-zinc-700/60 dark:bg-zinc-900/40">
-              <div className="grid gap-3 md:grid-cols-2">
-                <WorkspaceField label={t('agents.displayName')}>
-                  <input value={displayName} onChange={e => setDisplayName(e.target.value)} className={workspaceInputCls} />
-                </WorkspaceField>
-                <WorkspaceField label={t('agents.status')}>
-                  <select value={status} onChange={e => setStatus(e.target.value)} className={workspaceInputCls}>
-                    <option value="active">{t('agents.status_active')}</option>
-                    <option value="paused">{t('agents.status_paused')}</option>
-                    <option value="archived">{t('agents.status_archived')}</option>
-                  </select>
-                </WorkspaceField>
-                <WorkspaceField label={t('members.team')}>
-                  <select value={team} onChange={e => { setTeam(e.target.value); setRole('') }} className={workspaceInputCls}>
-                    <option value="">{t('members.selectTeam')}</option>
-                    {teams.map(item => <option key={item.path} value={item.path}>{item.name} ({item.path})</option>)}
-                  </select>
-                </WorkspaceField>
-                <WorkspaceField label={t('members.role')}>
-                  <select value={role} onChange={e => setRole(e.target.value)} className={workspaceInputCls} disabled={!team || roles.length === 0}>
-                    <option value="">{t('members.noRole')}</option>
-                    {roles.map(item => {
-                      const value = item.id || item.name
-                      return <option key={value} value={value}>{item.name}{item.description ? ` - ${item.description}` : ''}</option>
-                    })}
-                  </select>
-                </WorkspaceField>
-                <label className="block md:col-span-2">
-                  <span className="mb-1 block text-xs font-medium text-neutral-600 dark:text-zinc-400">{t('agents.description')}</span>
-                  <textarea value={description} onChange={e => setDescription(e.target.value)} rows={3} className={cn(workspaceInputCls, 'h-auto resize-y')} />
-                </label>
-              </div>
-            </div>
-          </section>
-
           <section>
             <SectionHeader icon={Settings2} title={t('agentDetail.modelCredentials')} />
             <p className="mt-1 text-sm text-neutral-500 dark:text-zinc-500">{t('agentDetail.modelCredentialsHint')}</p>

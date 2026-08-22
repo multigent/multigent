@@ -19,15 +19,8 @@ type AgentWorker = {
   defaultRuntimeNodeId?: string
 }
 
-type ProjectMembership = {
-  id: string
-  projectId: string
-  memberType?: string
-}
-
 type AgentDetailResponse = {
   agent?: AgentWorker
-  memberships?: ProjectMembership[]
 }
 
 export default function AgentDetailPage() {
@@ -57,8 +50,6 @@ export default function AgentDetailPage() {
   }
 
   const agent = state.data.agent
-  const membership = (state.data.memberships ?? []).find(item => item.memberType === 'agent_worker') ?? state.data.memberships?.[0]
-
   if (!agent) {
     return (
       <div className="p-6">
@@ -71,7 +62,7 @@ export default function AgentDetailPage() {
 
   return (
     <ProjectAgentDetailPage
-      projectIdOverride={membership?.projectId || ''}
+      projectIdOverride=""
       agentNameOverride={agent.name}
       workspaceAgentId={agent.id}
       workspaceAgent={agent}
