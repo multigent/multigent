@@ -222,6 +222,11 @@ func (s *Server) handleAuditEvents(w http.ResponseWriter, r *http.Request) {
 		s.serverError(w, err)
 		return
 	}
+	facets, err := s.controlDB.ListAuditEventFacets(filter)
+	if err != nil {
+		s.serverError(w, err)
+		return
+	}
 	out := make([]auditEventResponse, 0, len(events))
 	for _, event := range events {
 		out = append(out, auditEventToResponse(event))
@@ -231,6 +236,12 @@ func (s *Server) handleAuditEvents(w http.ResponseWriter, r *http.Request) {
 		"total":  total,
 		"limit":  limit,
 		"offset": offset,
+		"facets": map[string]any{
+			"actorIds":      facets.ActorIDs,
+			"actions":       facets.Actions,
+			"resourceTypes": facets.ResourceTypes,
+			"resourceIds":   facets.ResourceIDs,
+		},
 	})
 }
 

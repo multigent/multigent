@@ -2083,6 +2083,11 @@
     "userAgent": "User Agent",
     "before": "変更前",
     "after": "変更後",
+    "allActors": "すべての操作ユーザー",
+    "allActions": "すべての操作",
+    "allResourceTypes": "すべてのリソース種別",
+    "allResourceIds": "すべてのリソース ID",
+    "filteredCount": "{{total}} 件中 {{count}} 件を表示",
     "emptyFiltered": "条件に一致する監査イベントはありません",
     "emptyHint": "機密性の高い操作が発生するとここに表示されます。"
   },

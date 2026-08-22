@@ -2117,6 +2117,11 @@
     "userAgent": "User Agent",
     "before": "变更前",
     "after": "变更后",
+    "allActors": "全部操作者",
+    "allActions": "全部操作",
+    "allResourceTypes": "全部资源类型",
+    "allResourceIds": "全部资源 ID",
+    "filteredCount": "显示 {{count}} / {{total}} 条审计日志",
     "emptyFiltered": "没有匹配筛选条件的审计事件",
     "emptyHint": "敏感操作发生后会显示在这里。"
   },

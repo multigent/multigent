@@ -46,6 +46,7 @@ type Store interface {
 	CreateAuditEvent(event AuditEvent) error
 	ListAuditEvents(filter AuditEventFilter) ([]AuditEvent, error)
 	CountAuditEvents(filter AuditEventFilter) (int, error)
+	ListAuditEventFacets(filter AuditEventFilter) (AuditEventFacets, error)
 
 	UpsertConnectorProvider(provider ConnectorProvider) error
 	ConnectorProviderByID(provider string) (ConnectorProvider, bool, error)
@@ -224,6 +225,13 @@ type AuditEventFilter struct {
 	CreatedAfter string
 	Limit        int
 	Offset       int
+}
+
+type AuditEventFacets struct {
+	ActorIDs      []string
+	Actions       []string
+	ResourceTypes []string
+	ResourceIDs   []string
 }
 
 type Connection struct {

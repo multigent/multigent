@@ -60,6 +60,65 @@ func (db *SQLiteStore) CountAuditEvents(filter AuditEventFilter) (int, error) {
 	return count, nil
 }
 
+func (db *SQLiteStore) ListAuditEventFacets(filter AuditEventFilter) (AuditEventFacets, error) {
+	base := AuditEventFilter{
+		WorkspaceID:  filter.WorkspaceID,
+		CreatedAfter: filter.CreatedAfter,
+	}
+	actorIDs, err := db.distinctAuditValues(base, "actor_id", 100)
+	if err != nil {
+		return AuditEventFacets{}, err
+	}
+	actions, err := db.distinctAuditValues(base, "action", 120)
+	if err != nil {
+		return AuditEventFacets{}, err
+	}
+	resourceTypes, err := db.distinctAuditValues(base, "resource_type", 80)
+	if err != nil {
+		return AuditEventFacets{}, err
+	}
+	resourceIDs, err := db.distinctAuditValues(base, "resource_id", 200)
+	if err != nil {
+		return AuditEventFacets{}, err
+	}
+	return AuditEventFacets{
+		ActorIDs:      actorIDs,
+		Actions:       actions,
+		ResourceTypes: resourceTypes,
+		ResourceIDs:   resourceIDs,
+	}, nil
+}
+
+func (db *SQLiteStore) distinctAuditValues(filter AuditEventFilter, column string, limit int) ([]string, error) {
+	if limit <= 0 || limit > 500 {
+		limit = 100
+	}
+	switch column {
+	case "actor_id", "action", "resource_type", "resource_id":
+	default:
+		return nil, nil
+	}
+	where, args := auditEventWhere(filter)
+	query := `SELECT DISTINCT ` + column + ` FROM audit_events ` + where + ` AND ` + column + ` != '' ORDER BY ` + column + ` ASC LIMIT ?`
+	args = append(args, limit)
+	rows, err := db.sql.Query(query, args...)
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+	out := []string{}
+	for rows.Next() {
+		var value string
+		if err := rows.Scan(&value); err != nil {
+			return nil, err
+		}
+		if trimmed := strings.TrimSpace(value); trimmed != "" {
+			out = append(out, trimmed)
+		}
+	}
+	return out, rows.Err()
+}
+
 func auditEventWhere(filter AuditEventFilter) (string, []any) {
 	query := `WHERE 1=1`
 	args := make([]any, 0, 6)

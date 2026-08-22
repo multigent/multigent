@@ -2117,6 +2117,11 @@
     "userAgent": "User Agent",
     "before": "Before",
     "after": "After",
+    "allActors": "All actors",
+    "allActions": "All actions",
+    "allResourceTypes": "All resource types",
+    "allResourceIds": "All resource IDs",
+    "filteredCount": "Showing {{count}} / {{total}} audit events",
     "emptyFiltered": "No audit events match these filters",
     "emptyHint": "Sensitive operations will appear here as they happen."
   },

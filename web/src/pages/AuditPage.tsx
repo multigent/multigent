@@ -1,6 +1,6 @@
 import { useCallback, useEffect, useState } from 'react'
 import { useTranslation } from 'react-i18next'
-import { Eye, Filter, RefreshCw, ShieldCheck, X } from 'lucide-react'
+import { Eye, RefreshCw, ShieldCheck, X } from 'lucide-react'
 import { apiFetch } from '../lib/api'
 import { cn } from '../lib/cn'
 import { useFormatDateTime } from '../lib/format-datetime'
@@ -22,12 +22,21 @@ type AuditEvent = {
   createdAt: string
 }
 
-const inputCls = 'w-full rounded-lg border border-neutral-200 bg-white px-3 py-2 text-sm outline-none focus:border-sky-400 dark:border-zinc-700 dark:bg-zinc-950 dark:text-zinc-100'
+type AuditFacets = {
+  actorIds?: string[]
+  actions?: string[]
+  resourceTypes?: string[]
+  resourceIds?: string[]
+}
+
+const filterSelectCls =
+  'h-9 rounded-lg border border-neutral-200 bg-white px-3 text-sm text-neutral-600 outline-none transition-colors hover:border-neutral-300 focus:border-sky-400 dark:border-zinc-700 dark:bg-zinc-900 dark:text-zinc-300 dark:[color-scheme:dark]'
 const pageSize = 20
 
 export default function AuditPage() {
   const { t } = useTranslation()
   const [events, setEvents] = useState<AuditEvent[]>([])
+  const [facets, setFacets] = useState<AuditFacets>({})
   const [total, setTotal] = useState(0)
   const [page, setPage] = useState(1)
   const [loading, setLoading] = useState(true)
@@ -49,9 +58,10 @@ export default function AuditPage() {
         if (value.trim()) params.set(key, value.trim())
       }
       const suffix = params.toString() ? `?${params.toString()}` : ''
-      const data = await apiFetch<{ events: AuditEvent[]; total?: number }>(`/api/v1/audit/events${suffix}`)
+      const data = await apiFetch<{ events: AuditEvent[]; total?: number; facets?: AuditFacets }>(`/api/v1/audit/events${suffix}`)
       setEvents(data.events ?? [])
       setTotal(data.total ?? data.events?.length ?? 0)
+      setFacets(data.facets ?? {})
     } finally {
       setLoading(false)
     }
@@ -63,6 +73,7 @@ export default function AuditPage() {
     setPage(1)
     setFilters(v => ({ ...v, [key]: value }))
   }
+  const hasFilters = Boolean(filters.actorId || filters.action || filters.resourceType || filters.resourceId)
 
   return (
     <div className="animate-fade-in px-8 py-6">
@@ -77,18 +88,29 @@ export default function AuditPage() {
         </button>
       </div>
 
-      <section className="mb-5 rounded-xl border border-neutral-200/80 bg-white p-4 dark:border-zinc-700/60 dark:bg-zinc-900/40">
-        <div className="mb-3 flex items-center gap-2 text-sm font-semibold text-neutral-800 dark:text-zinc-100">
-          <Filter className="size-4 text-neutral-400" strokeWidth={1.8} />
-          {t('audit.filters')}
+      <div className="mb-4 flex flex-wrap items-center justify-between gap-2">
+        <div className="flex flex-wrap items-center gap-2">
+          <FilterSelect label={t('audit.allActors')} value={filters.actorId} onChange={actorId => updateFilter('actorId', actorId)} options={facets.actorIds ?? []} />
+          <FilterSelect label={t('audit.allActions')} value={filters.action} onChange={action => updateFilter('action', action)} options={facets.actions ?? []} />
+          <FilterSelect label={t('audit.allResourceTypes')} value={filters.resourceType} onChange={resourceType => updateFilter('resourceType', resourceType)} options={facets.resourceTypes ?? []} />
+          <FilterSelect label={t('audit.allResourceIds')} value={filters.resourceId} onChange={resourceId => updateFilter('resourceId', resourceId)} options={facets.resourceIds ?? []} />
+          {hasFilters && (
+            <button
+              type="button"
+              onClick={() => {
+                setPage(1)
+                setFilters({ actorId: '', action: '', resourceType: '', resourceId: '' })
+              }}
+              className="rounded-lg px-2.5 py-2 text-sm font-medium text-neutral-500 transition-colors hover:bg-neutral-100 hover:text-neutral-800 dark:text-zinc-400 dark:hover:bg-zinc-800 dark:hover:text-zinc-200"
+            >
+              {t('common.clear')}
+            </button>
+          )}
+          <span className="text-xs text-neutral-400 dark:text-zinc-500">
+            {t('audit.filteredCount', { count: events.length, total })}
+          </span>
         </div>
-        <div className="grid gap-3 md:grid-cols-4">
-          <FilterField label={t('audit.actor')} value={filters.actorId} onChange={actorId => updateFilter('actorId', actorId)} placeholder="admin" />
-          <FilterField label={t('audit.action')} value={filters.action} onChange={action => updateFilter('action', action)} placeholder="connection.use" />
-          <FilterField label={t('audit.resourceType')} value={filters.resourceType} onChange={resourceType => updateFilter('resourceType', resourceType)} placeholder="connection" />
-          <FilterField label={t('audit.resourceId')} value={filters.resourceId} onChange={resourceId => updateFilter('resourceId', resourceId)} placeholder="conn-..." />
-        </div>
-      </section>
+      </div>
 
       {loading ? (
         <div className="flex items-center justify-center gap-2 py-16 text-sm text-neutral-500">
@@ -113,7 +135,7 @@ export default function AuditPage() {
                   <th className="px-4 py-3">{t('audit.resource')}</th>
                   <th className="px-4 py-3">{t('audit.summary')}</th>
                   <th className="px-4 py-3">{t('audit.ip')}</th>
-                  <th className="sticky right-0 bg-neutral-50 px-4 py-3 text-right shadow-[-8px_0_12px_-12px_rgba(0,0,0,0.3)] dark:bg-zinc-900">{t('audit.details')}</th>
+                  <th className="sticky right-0 w-28 min-w-28 bg-neutral-50 px-4 py-3 text-right shadow-[-8px_0_12px_-12px_rgba(0,0,0,0.3)] dark:bg-zinc-900">{t('audit.details')}</th>
                 </tr>
               </thead>
               <tbody className="divide-y divide-neutral-100 dark:divide-zinc-800">
@@ -133,12 +155,14 @@ export default function AuditPage() {
   )
 }
 
-function FilterField({ label, value, onChange, placeholder }: { label: string; value: string; onChange: (value: string) => void; placeholder?: string }) {
+function FilterSelect({ label, value, onChange, options }: { label: string; value: string; onChange: (value: string) => void; options: string[] }) {
   return (
-    <label className="block">
-      <span className="mb-1 block text-xs font-medium text-neutral-500 dark:text-zinc-400">{label}</span>
-      <input className={inputCls} value={value} onChange={e => onChange(e.target.value)} placeholder={placeholder} />
-    </label>
+    <select value={value} onChange={e => onChange(e.target.value)} className={cn(filterSelectCls, 'max-w-[220px]')}>
+      <option value="">{label}</option>
+      {options.map(option => (
+        <option key={option} value={option}>{option}</option>
+      ))}
+    </select>
   )
 }
 
@@ -167,8 +191,8 @@ function AuditEventRow({ event, onOpen }: { event: AuditEvent; onOpen: () => voi
         <div className="max-w-sm truncate">{event.summary || event.action}</div>
       </td>
       <td className="whitespace-nowrap px-4 py-3 text-xs text-neutral-500 dark:text-zinc-500">{event.ip || '-'}</td>
-      <td className="sticky right-0 bg-white px-4 py-3 text-right shadow-[-8px_0_12px_-12px_rgba(0,0,0,0.25)] dark:bg-zinc-900">
-        <button type="button" onClick={onOpen} className="inline-flex items-center gap-1 rounded-md px-2 py-1 text-xs font-medium text-neutral-500 transition-colors hover:bg-neutral-100 hover:text-neutral-900 dark:text-zinc-400 dark:hover:bg-zinc-800 dark:hover:text-zinc-100">
+      <td className="sticky right-0 w-28 min-w-28 bg-white px-4 py-3 text-right shadow-[-8px_0_12px_-12px_rgba(0,0,0,0.25)] dark:bg-zinc-900">
+        <button type="button" onClick={onOpen} className="inline-flex items-center gap-1 whitespace-nowrap rounded-md px-2 py-1 text-xs font-medium text-neutral-500 transition-colors hover:bg-neutral-100 hover:text-neutral-900 dark:text-zinc-400 dark:hover:bg-zinc-800 dark:hover:text-zinc-100">
           <Eye className="size-3.5" strokeWidth={1.8} />
           {t('audit.view')}
         </button>
