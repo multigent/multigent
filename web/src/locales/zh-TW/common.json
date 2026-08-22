@@ -137,6 +137,7 @@
     "notFound": "智慧體不存在",
     "backToAgents": "返回智慧體列表",
     "noProjectMembershipDetail": "這個智慧體還沒有加入任何專案。完整配置依賴專案上下文，請先在專案成員頁把它加入專案。",
+    "noProjectMembershipHint": "這個智慧體還沒有加入專案。你仍然可以先配置模型帳號、運行節點、心跳和協作渠道；加入專案後會繼承對應專案上下文。",
     "name": "識別碼",
     "displayName": "顯示名稱",
     "description": "說明",
@@ -1886,6 +1887,7 @@
     "applyToAgentsResult": "已同步到 {{count}} 個 Agent。"
   },
   "agentDetail": {
+    "identity": "基礎設定",
     "modelCredentials": "模型與憑證",
     "modelCredentialsHint": "選擇 Agent 使用的 CLI 類型、執行模型和模型帳號。模型列表會隨憑證來源變化。",
     "connectAndChat": "連接與對話",

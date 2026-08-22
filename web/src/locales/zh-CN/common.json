@@ -137,6 +137,7 @@
     "notFound": "智能体不存在",
     "backToAgents": "返回智能体列表",
     "noProjectMembershipDetail": "这个智能体还没有加入任何项目。完整配置依赖项目上下文，请先在项目成员页把它加入项目。",
+    "noProjectMembershipHint": "这个智能体还没有加入项目。你仍然可以先配置模型账号、运行节点、心跳和协作渠道；加入项目后会继承对应项目上下文。",
     "name": "标识",
     "displayName": "显示名称",
     "description": "说明",
@@ -1901,6 +1902,7 @@
     "applyToAgentsResult": "已同步到 {{count}} 个 Agent。"
   },
   "agentDetail": {
+    "identity": "基础设置",
     "modelCredentials": "模型与凭证",
     "modelCredentialsHint": "选择 Agent 使用的 CLI 类型、运行模型和模型账号。模型列表会随凭证来源变化。",
     "connectAndChat": "连接与对话",

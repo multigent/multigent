@@ -262,9 +262,10 @@ export default function AgentsPage() {
         <CreateAgentDialog
           existingNames={agents.map(agent => agent.name)}
           onClose={() => setShowCreate(false)}
-          onCreated={() => {
+          onCreated={(agent) => {
             setShowCreate(false)
             setReloadKey(k => k + 1)
+            if (agent.id) navigate(`/agents/${encodeURIComponent(agent.id)}`)
           }}
         />
       )}
@@ -367,7 +368,7 @@ function InfoRow({ label, value, mono }: { label: string; value: string; mono?: 
 function CreateAgentDialog({ existingNames, onClose, onCreated }: {
   existingNames: string[]
   onClose: () => void
-  onCreated: () => void
+  onCreated: (agent: AgentWorker) => void
 }) {
   const { t } = useTranslation()
   const [name, setName] = useState('')
@@ -382,12 +383,12 @@ function CreateAgentDialog({ existingNames, onClose, onCreated }: {
     if (!normalizedName || duplicate || invalid) return
     setSaving(true)
     try {
-      await apiPost('/api/v1/agents', {
+      const res = await apiPost<{ agent?: AgentWorker }>('/api/v1/agents', {
         name: normalizedName,
         displayName: displayName.trim(),
         description: description.trim(),
       })
-      onCreated()
+      onCreated(res.agent ?? { id: '', name: normalizedName, displayName: displayName.trim(), description: description.trim() })
     } finally {
       setSaving(false)
     }
@@ -422,9 +423,9 @@ function CreateAgentDialog({ existingNames, onClose, onCreated }: {
           </label>
         </div>
         <div className="flex justify-end gap-2 border-t border-neutral-100 px-5 py-4 dark:border-zinc-800">
-          <button type="button" onClick={onClose} className="rounded-lg border border-neutral-200 px-3 py-2 text-sm text-neutral-600 hover:bg-neutral-50 dark:border-zinc-700 dark:text-zinc-300 dark:hover:bg-zinc-800">{t('common.cancel')}</button>
-          <button type="button" onClick={save} disabled={saving || !normalizedName || duplicate || invalid} className="rounded-lg bg-neutral-900 px-3 py-2 text-sm font-medium text-white disabled:opacity-50 dark:bg-zinc-100 dark:text-zinc-900">
-            {saving ? t('common.saving') : t('common.save')}
+          <button type="button" onClick={onClose} className="rounded-lg px-3 py-2 text-sm font-medium text-neutral-600 hover:bg-neutral-100 dark:text-zinc-400 dark:hover:bg-zinc-800">{t('common.cancel')}</button>
+          <button type="button" onClick={save} disabled={saving || !normalizedName || duplicate || invalid} className="rounded-lg bg-sky-600 px-3 py-2 text-sm font-medium text-white hover:bg-sky-700 disabled:opacity-50">
+            {saving ? t('common.creating') : t('agents.create')}
           </button>
         </div>
       </div>

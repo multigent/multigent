@@ -137,6 +137,7 @@
     "notFound": "Agent not found",
     "backToAgents": "Back to agents",
     "noProjectMembershipDetail": "This agent has not joined any project yet. Full configuration depends on project context, so assign it to a project first.",
+    "noProjectMembershipHint": "This agent has not joined a project yet. You can still configure model account, runtime node, heartbeat, and collaboration channels; project context is added after project membership.",
     "name": "Handle",
     "displayName": "Display name",
     "description": "Description",
@@ -1901,6 +1902,7 @@
     "applyToAgentsResult": "Applied to {{count}} agent(s)."
   },
   "agentDetail": {
+    "identity": "Basic settings",
     "modelCredentials": "Model & Credentials",
     "modelCredentialsHint": "Choose the agent CLI, runtime model, and model account. Available models depend on the selected credential.",
     "connectAndChat": "Connect & Chat",

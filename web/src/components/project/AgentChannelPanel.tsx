@@ -131,7 +131,9 @@ export function AgentChannelPanel({ project, agentName, agentWorkerId }: { proje
   const basePath = agentWorkerId
     ? `/api/v1/agents/${encodeURIComponent(agentWorkerId)}/channels`
     : `/api/v1/projects/${encodeURIComponent(project)}/agents/${encodeURIComponent(agentName)}/channels`
-  const interactionPath = `/api/v1/projects/${encodeURIComponent(project)}/agents/${encodeURIComponent(agentName)}/interactions/active`
+  const interactionPath = project && agentName
+    ? `/api/v1/projects/${encodeURIComponent(project)}/agents/${encodeURIComponent(agentName)}/interactions/active`
+    : ''
 
   const load = useCallback(async () => {
     setLoading(true)
@@ -139,8 +141,12 @@ export function AgentChannelPanel({ project, agentName, agentWorkerId }: { proje
       const res = await apiFetch<ChannelsResponse>(basePath)
       setChannels(res.channels ?? [])
       if (res.providers?.length) setProviders(res.providers)
-      const active = await apiFetch<InteractionStatus>(interactionPath)
-      setInteraction(active)
+      if (interactionPath) {
+        const active = await apiFetch<InteractionStatus>(interactionPath)
+        setInteraction(active)
+      } else {
+        setInteraction(null)
+      }
     } finally {
       setLoading(false)
     }
