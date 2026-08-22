@@ -131,16 +131,19 @@ func (b *Builder) Build(projectName, teamPath, roleName string) (*MergedContext,
 		}
 	}
 
-	// 4. Project layer
-	projectPrompt, err := b.store.ProjectPrompt(projectName)
-	if err != nil {
-		return nil, fmt.Errorf("ctxbuild: project prompt %q: %w", projectName, err)
-	}
-	if strings.TrimSpace(projectPrompt) != "" {
-		mc.Layers = append(mc.Layers, ContextLayer{
-			Source:  "project:" + projectName,
-			Content: projectPrompt,
-		})
+	// 4. Project layer. Workspace-level agents can be configured before they
+	// join any project, so an empty project name intentionally skips this layer.
+	if strings.TrimSpace(projectName) != "" {
+		projectPrompt, err := b.store.ProjectPrompt(projectName)
+		if err != nil {
+			return nil, fmt.Errorf("ctxbuild: project prompt %q: %w", projectName, err)
+		}
+		if strings.TrimSpace(projectPrompt) != "" {
+			mc.Layers = append(mc.Layers, ContextLayer{
+				Source:  "project:" + projectName,
+				Content: projectPrompt,
+			})
+		}
 	}
 
 	return mc, nil
@@ -170,7 +173,13 @@ func (b *Builder) BuildForAgent(projectName, agentName, teamPath, roleName strin
 			}
 		}
 	}
-	layer, err := contextpack.BuildAgentContextLayer(b.store.Root(), projectName, agentName)
+	workerID := ""
+	if provider, ok := b.store.(store.AgentWorkerContextProvider); ok {
+		if workerContext, err := provider.AgentWorkerContext(projectName, agentName); err == nil {
+			workerID = workerContext.WorkerID
+		}
+	}
+	layer, err := contextpack.BuildAgentContextLayerForWorker(b.store.Root(), projectName, agentName, workerID)
 	if err != nil {
 		return nil, fmt.Errorf("ctxbuild: context bindings: %w", err)
 	}

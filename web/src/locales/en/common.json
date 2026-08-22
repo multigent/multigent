@@ -156,6 +156,7 @@
     "status_paused": "Paused",
     "status_archived": "Archived",
     "detailSubtitle": "This is the workspace-level agent worker. Projects, tasks, workflows, and IM are its working contexts.",
+    "profileSettings": "Agent profile",
     "schedule": "Heartbeat wakeup",
     "scheduleEnabled": "Enable heartbeat wakeup",
     "scheduleEnabledHint": "When enabled, the agent checks attention, tasks, and project status on a configured cadence.",

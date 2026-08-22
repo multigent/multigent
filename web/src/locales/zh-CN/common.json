@@ -156,6 +156,7 @@
     "status_paused": "暂停",
     "status_archived": "归档",
     "detailSubtitle": "这是工作区级智能体主体。项目、任务、流程和 IM 都是它的工作上下文。",
+    "profileSettings": "智能体资料",
     "schedule": "心跳唤醒",
     "scheduleEnabled": "启用心跳唤醒",
     "scheduleEnabledHint": "开启后，智能体会按设定周期检查注意力、任务和项目状态。",

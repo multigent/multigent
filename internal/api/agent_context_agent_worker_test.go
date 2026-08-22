@@ -8,6 +8,7 @@ import (
 	"testing"
 	"time"
 
+	"github.com/multigent/multigent/internal/contextpack"
 	controldb "github.com/multigent/multigent/internal/db"
 	"github.com/multigent/multigent/internal/store"
 )
@@ -149,5 +150,76 @@ func TestPutAgentWakeupUsesAgentWorkerSchedule(t *testing.T) {
 	}
 	if body.Wakeup != "Check attention, tasks, and project risks." {
 		t.Fatalf("context wakeup=%q", body.Wakeup)
+	}
+}
+
+func TestWorkspaceAgentContextAndWakeupDoNotRequireProjectMembership(t *testing.T) {
+	s, workspaceID := newConnectionGrantPolicyServer(t)
+	s.okrStore = store.NewOKRStore(s.root)
+	s.msStore = store.NewMilestoneStore(s.root)
+	now := time.Now().UTC().Format(time.RFC3339)
+	if err := s.controlDB.UpsertAgentWorker(controldb.AgentWorker{
+		ID:           "aw-workspace-only",
+		WorkspaceID:  workspaceID,
+		Name:         "workspace-only",
+		DisplayName:  "Workspace Only",
+		Description:  "Can operate before joining a project.",
+		Model:        "codex",
+		Status:       "active",
+		ScheduleJSON: `{"enabled":true,"interval":"2h"}`,
+		CreatedAt:    now,
+		UpdatedAt:    now,
+	}); err != nil {
+		t.Fatalf("worker: %v", err)
+	}
+	res, err := contextpack.NewStore(s.root).ImportManual(contextpack.ImportManualInput{
+		Title:       "Workspace agent brief",
+		Content:     "Read this before work.",
+		SourceName:  "brief.md",
+		BindScope:   contextpack.ScopeAgent,
+		BindScopeID: contextpack.AgentWorkerScopeID("aw-workspace-only"),
+		Required:    true,
+	})
+	if err != nil || res.Binding == nil {
+		t.Fatalf("import binding err=%v res=%#v", err, res)
+	}
+
+	req := providerTestRequest(http.MethodGet, "/api/v1/agents/aw-workspace-only/context?includeReadiness=false", "admin", nil)
+	req.SetPathValue("id", "aw-workspace-only")
+	rec := httptest.NewRecorder()
+	s.handleGetAgentWorkerContext(rec, req)
+	if rec.Code != http.StatusOK {
+		t.Fatalf("context status=%d body=%s", rec.Code, rec.Body.String())
+	}
+	var body struct {
+		Context string   `json:"context"`
+		Skills  []string `json:"skills"`
+		Model   string   `json:"model"`
+	}
+	if err := json.Unmarshal(rec.Body.Bytes(), &body); err != nil {
+		t.Fatalf("decode: %v", err)
+	}
+	if body.Model != "codex" {
+		t.Fatalf("model=%q", body.Model)
+	}
+	if !strings.Contains(body.Context, "Can operate before joining a project.") || !strings.Contains(body.Context, "Workspace agent brief") {
+		t.Fatalf("workspace context missing worker or binding material:\n%s", body.Context)
+	}
+
+	putReq := providerTestRequest(http.MethodPut, "/api/v1/agents/aw-workspace-only/wakeup", "admin", promptSaveBody{
+		Content: "Check workspace attention and decide what to do next.",
+	})
+	putReq.SetPathValue("id", "aw-workspace-only")
+	putRec := httptest.NewRecorder()
+	s.handlePutAgentWorkerWakeup(putRec, putReq)
+	if putRec.Code != http.StatusOK {
+		t.Fatalf("put wakeup status=%d body=%s", putRec.Code, putRec.Body.String())
+	}
+	worker, ok, err := s.controlDB.AgentWorkerByID(workspaceID, "aw-workspace-only")
+	if err != nil || !ok {
+		t.Fatalf("reload worker ok=%v err=%v", ok, err)
+	}
+	if !strings.Contains(worker.ScheduleJSON, "Check workspace attention") {
+		t.Fatalf("wakeup prompt not saved: %s", worker.ScheduleJSON)
 	}
 }

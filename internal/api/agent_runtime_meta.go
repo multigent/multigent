@@ -93,6 +93,51 @@ func (s *Server) agentMetaForProjectMember(workspaceID, project, agent string) (
 	return meta, nil
 }
 
+func agentMetaForWorker(worker controldb.AgentWorker) *entity.AgentMeta {
+	name := strings.TrimSpace(worker.DisplayName)
+	if name == "" {
+		name = strings.TrimSpace(worker.Name)
+	}
+	model := entity.AgentModel(strings.TrimSpace(worker.Model))
+	if model == "" {
+		model = entity.ModelHuman
+	}
+	createdAt := time.Now().UTC()
+	if ts, parseErr := time.Parse(time.RFC3339, worker.CreatedAt); parseErr == nil {
+		createdAt = ts
+	}
+	meta := &entity.AgentMeta{
+		Name:          name,
+		Project:       "",
+		Team:          strings.TrimSpace(worker.Team),
+		Role:          strings.TrimSpace(worker.Role),
+		Model:         model,
+		RuntimeModel:  strings.TrimSpace(worker.RuntimeModel),
+		RuntimeMode:   strings.TrimSpace(worker.DefaultRuntimeMode),
+		RuntimeNodeID: strings.TrimSpace(worker.DefaultRuntimeNodeID),
+		Provider:      strings.TrimSpace(worker.DefaultModelAccountID),
+		Avatar:        strings.TrimSpace(worker.Avatar),
+		HiredAt:       createdAt,
+	}
+	runtimeConfig := decodeAgentWorkerRuntimeConfig(worker)
+	if runtimeConfig.Env != nil {
+		meta.Env = runtimeConfig.Env
+	}
+	if runtimeConfig.Sandbox != nil {
+		meta.Sandbox = runtimeConfig.Sandbox
+	}
+	if runtimeConfig.AddDirs != nil {
+		meta.AddDirs = runtimeConfig.AddDirs
+	}
+	if strings.TrimSpace(runtimeConfig.RunCommand) != "" {
+		meta.RunCommand = strings.TrimSpace(runtimeConfig.RunCommand)
+	}
+	if runtimeConfig.HTTPAgent != nil {
+		meta.HTTPAgent = runtimeConfig.HTTPAgent
+	}
+	return meta
+}
+
 func (s *Server) projectAgentNames(workspaceID, project string) ([]string, error) {
 	agents, err := s.projectScheduleAgents(workspaceID, project)
 	if err != nil {

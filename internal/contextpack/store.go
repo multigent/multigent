@@ -687,11 +687,32 @@ type ScopeRef struct {
 func AgentScopes(project, agent string) []ScopeRef {
 	project = strings.TrimSpace(project)
 	agent = strings.TrimSpace(agent)
-	return []ScopeRef{
-		{Type: ScopeWorkspace},
-		{Type: ScopeProject, ID: project},
-		{Type: ScopeAgent, ID: project + "/" + agent},
+	return AgentScopesForWorker(project, agent, "")
+}
+
+func AgentWorkerScopeID(workerID string) string {
+	workerID = strings.TrimSpace(workerID)
+	if workerID == "" {
+		return ""
 	}
+	return "worker:" + workerID
+}
+
+func AgentScopesForWorker(project, agent, workerID string) []ScopeRef {
+	project = strings.TrimSpace(project)
+	agent = strings.TrimSpace(agent)
+	workerScope := AgentWorkerScopeID(workerID)
+	scopes := []ScopeRef{{Type: ScopeWorkspace}}
+	if project != "" {
+		scopes = append(scopes, ScopeRef{Type: ScopeProject, ID: project})
+	}
+	if project != "" && agent != "" {
+		scopes = append(scopes, ScopeRef{Type: ScopeAgent, ID: project + "/" + agent})
+	}
+	if workerScope != "" {
+		scopes = append(scopes, ScopeRef{Type: ScopeAgent, ID: workerScope})
+	}
+	return scopes
 }
 
 func BuildAgentContextLayer(root, project, agent string) (string, error) {
@@ -699,6 +720,18 @@ func BuildAgentContextLayer(root, project, agent string) (string, error) {
 	if err != nil {
 		return "", err
 	}
+	return buildAgentContextLayerFromViews(views)
+}
+
+func BuildAgentContextLayerForWorker(root, project, agent, workerID string) (string, error) {
+	views, err := NewStore(root).ListBindingViews(AgentScopesForWorker(project, agent, workerID))
+	if err != nil {
+		return "", err
+	}
+	return buildAgentContextLayerFromViews(views)
+}
+
+func buildAgentContextLayerFromViews(views []BindingView) (string, error) {
 	if len(views) == 0 {
 		return "", nil
 	}

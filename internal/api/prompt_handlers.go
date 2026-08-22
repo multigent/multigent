@@ -2,6 +2,7 @@ package api
 
 import (
 	"encoding/json"
+	"fmt"
 	"log/slog"
 	"net/http"
 	"os"
@@ -11,6 +12,7 @@ import (
 	"time"
 
 	"github.com/multigent/multigent/internal/agentcli"
+	"github.com/multigent/multigent/internal/contextpack"
 	"github.com/multigent/multigent/internal/ctxbuild"
 	controldb "github.com/multigent/multigent/internal/db"
 	"github.com/multigent/multigent/internal/entity"
@@ -325,6 +327,225 @@ func (s *Server) handleGetAgentContext(w http.ResponseWriter, r *http.Request) {
 	_ = json.NewEncoder(w).Encode(resp)
 }
 
+func (s *Server) handleGetAgentWorkerContext(w http.ResponseWriter, r *http.Request) {
+	workspaceID, ok := s.currentWorkspaceForRequest(w, r)
+	if !ok {
+		return
+	}
+	worker, found, err := s.agentDirectory.Worker(workspaceID, r.PathValue("id"))
+	if err != nil {
+		s.serverError(w, err)
+		return
+	}
+	if !found {
+		s.jsonErrorCode(w, http.StatusNotFound, ErrCodeAgentNotFound, "agent not found")
+		return
+	}
+	if !s.canAdminWorkspace(r, workspaceID) && !s.currentUserCanOperateAgentWorker(r, workspaceID, worker.ID) {
+		s.jsonErrorCode(w, http.StatusForbidden, ErrCodeAgentAccessRequired, "agent access required")
+		return
+	}
+
+	meta := agentMetaForWorker(worker)
+	contextFile := contextFileName(string(meta.Model))
+	includeMerged := true
+	switch strings.ToLower(strings.TrimSpace(r.URL.Query().Get("includeMerged"))) {
+	case "0", "false", "no":
+		includeMerged = false
+	}
+	includeReadiness := true
+	switch strings.ToLower(strings.TrimSpace(r.URL.Query().Get("includeReadiness"))) {
+	case "0", "false", "no":
+		includeReadiness = false
+	}
+	var merged []byte
+	var mergedContext *ctxbuild.MergedContext
+	if includeMerged {
+		if content, mc, err := s.renderAgentWorkerContext(worker, meta, contextFile); err == nil {
+			merged = content
+			mergedContext = mc
+		}
+	}
+
+	wakeup := s.readAgentWorkerWakeupPrompt(workspaceID, worker.ID)
+	skills, skillDetails := s.agentWorkerSkillDetails(worker, meta, mergedContext)
+	addDirs := meta.AddDirs
+	if addDirs == nil {
+		addDirs = []string{}
+	}
+	resp := map[string]any{
+		"contextFile":   contextFile,
+		"context":       string(merged),
+		"wakeup":        string(wakeup),
+		"model":         string(meta.Model),
+		"runtimeModel":  meta.RuntimeModel,
+		"runtimeNodeId": meta.RuntimeNodeID,
+		"team":          meta.Team,
+		"role":          meta.Role,
+		"avatar":        meta.Avatar,
+		"syncedAt":      nil,
+		"skills":        skills,
+		"skillDetails":  skillDetails,
+		"workDir":       "",
+		"addDirs":       addDirs,
+	}
+	if meta.HTTPAgent != nil {
+		resp["httpAgent"] = meta.HTTPAgent
+	}
+	if len(meta.Env) > 0 {
+		resp["env"] = meta.Env
+	}
+	if meta.Provider != "" {
+		resp["provider"] = meta.Provider
+	}
+	if meta.Sandbox != nil {
+		sandboxCfg := *meta.Sandbox
+		if sandboxCfg.AgentCLI == nil {
+			sandboxCfg.AgentCLI = agentcli.DefaultForModel(meta.Model)
+		} else {
+			sandboxCfg.AgentCLI = agentcli.Normalize(sandboxCfg.AgentCLI)
+		}
+		resp["sandbox"] = &sandboxCfg
+	}
+
+	readiness := buildRuntimeReadinessLight(meta)
+	if includeReadiness {
+		readiness = s.runtimeReadinessForRuntimeNode(workspaceID, meta, runtimeReadinessOptions{
+			ProbeRuntime:   true,
+			CheckContainer: true,
+			AgentDir:       "",
+		})
+	}
+	resp["setupChecks"] = readiness.Checks
+	resp["runtimeReadiness"] = readiness
+	_ = json.NewEncoder(w).Encode(resp)
+}
+
+func (s *Server) agentWorkerSkillDetails(worker controldb.AgentWorker, meta *entity.AgentMeta, mergedContext *ctxbuild.MergedContext) ([]string, []map[string]string) {
+	var skills []string
+	var workerSkills []string
+	_ = json.Unmarshal([]byte(firstNonEmpty(worker.SkillsJSON, "[]")), &workerSkills)
+	seen := map[string]bool{}
+	addSkillName := func(name string) {
+		name = strings.TrimSpace(name)
+		if name == "" || seen[name] {
+			return
+		}
+		seen[name] = true
+		skills = append(skills, name)
+	}
+	if mergedContext != nil {
+		for _, sk := range mergedContext.Skills {
+			addSkillName(sk.Name)
+		}
+	} else {
+		for _, sk := range ctxbuild.DefaultSkillNames() {
+			addSkillName(sk)
+		}
+		if meta != nil && strings.TrimSpace(meta.Team) != "" {
+			if t, err := s.st.Team(meta.Team); err == nil && t != nil {
+				for _, sk := range t.Skills {
+					addSkillName(sk)
+				}
+			}
+			if strings.TrimSpace(meta.Role) != "" {
+				if rl, err := s.st.Role(meta.Team, meta.Role); err == nil && rl != nil {
+					for _, sk := range rl.Skills {
+						addSkillName(sk)
+					}
+				}
+			}
+		}
+	}
+	for _, sk := range workerSkills {
+		addSkillName(sk)
+	}
+	if skills == nil {
+		skills = []string{}
+	}
+	details := make([]map[string]string, 0, len(skills))
+	for _, skillName := range skills {
+		detail := map[string]string{"name": skillName}
+		if sk, err := s.st.Skill(skillName); err == nil && sk != nil {
+			if strings.TrimSpace(sk.DisplayName) != "" {
+				detail["displayName"] = strings.TrimSpace(sk.DisplayName)
+			}
+			if strings.TrimSpace(sk.Description) != "" {
+				detail["description"] = strings.TrimSpace(sk.Description)
+			}
+		}
+		details = append(details, detail)
+	}
+	return skills, details
+}
+
+func (s *Server) renderAgentWorkerContext(worker controldb.AgentWorker, meta *entity.AgentMeta, contextFile string) ([]byte, *ctxbuild.MergedContext, error) {
+	if meta == nil {
+		return nil, nil, os.ErrInvalid
+	}
+	mc, err := ctxbuild.NewBuilder(s.st).Build("", strings.TrimSpace(meta.Team), strings.TrimSpace(meta.Role))
+	if err != nil {
+		return nil, nil, err
+	}
+	if layer := agentWorkerIdentityLayer(worker); strings.TrimSpace(layer) != "" {
+		mc.Layers = append(mc.Layers, ctxbuild.ContextLayer{
+			Source:  "agent-worker:" + strings.TrimSpace(worker.ID),
+			Content: layer,
+		})
+	}
+	layer, err := contextpack.BuildAgentContextLayerForWorker(s.root, "", "", worker.ID)
+	if err != nil {
+		return nil, nil, err
+	}
+	if strings.TrimSpace(layer) != "" {
+		mc.Layers = append(mc.Layers, ctxbuild.ContextLayer{
+			Source:  "context-bindings:" + strings.TrimSpace(worker.ID),
+			Content: layer,
+		})
+	}
+	f, err := formatter.New(meta.Model)
+	if err != nil {
+		return nil, nil, err
+	}
+	dir, err := os.MkdirTemp("", "multigent-agent-worker-context-*")
+	if err != nil {
+		return nil, nil, err
+	}
+	defer os.RemoveAll(dir)
+	if err := f.Format(mc, dir); err != nil {
+		return nil, nil, err
+	}
+	content, err := os.ReadFile(filepath.Join(dir, contextFile))
+	if err != nil {
+		return nil, nil, err
+	}
+	return content, mc, nil
+}
+
+func agentWorkerIdentityLayer(worker controldb.AgentWorker) string {
+	var b strings.Builder
+	b.WriteString("## Agent Worker Identity\n\n")
+	writeRuntimeContextLine(&b, "Worker ID", worker.ID)
+	writeRuntimeContextLine(&b, "Name", worker.Name)
+	writeRuntimeContextLine(&b, "Display name", firstNonEmpty(worker.DisplayName, worker.Name))
+	writeRuntimeContextLine(&b, "Description", worker.Description)
+	writeRuntimeContextLine(&b, "Team", worker.Team)
+	writeRuntimeContextLine(&b, "Role", worker.Role)
+	writeRuntimeContextLine(&b, "Default model", worker.Model)
+	writeRuntimeContextLine(&b, "Runtime model", worker.RuntimeModel)
+	writeRuntimeContextLine(&b, "Primary session", worker.PrimarySessionID)
+	b.WriteString("\nThis is your workspace-level identity. Project, task, workflow, and IM channel inputs are contexts for this same Agent Worker; they are not separate agent identities.\n")
+	return strings.TrimSpace(b.String())
+}
+
+func writeRuntimeContextLine(b *strings.Builder, key, value string) {
+	value = strings.TrimSpace(value)
+	if value == "" {
+		return
+	}
+	fmt.Fprintf(b, "- %s: %s\n", key, value)
+}
+
 func (s *Server) renderCurrentAgentContext(project, agent string, meta *entity.AgentMeta, contextFile string) ([]byte, *ctxbuild.MergedContext, error) {
 	if meta == nil {
 		return nil, nil, os.ErrInvalid
@@ -360,6 +581,18 @@ func (s *Server) renderCurrentAgentContext(project, agent string, meta *entity.A
 func (s *Server) readAgentWakeupPrompt(project, agent string) string {
 	workspaceID, _ := s.currentWorkspaceID()
 	target := s.runtimeSchedulerTargetForProjectAgent(workspaceID, project, agent)
+	hb, err := s.loadSchedulerTargetHeartbeat(workspaceID, target)
+	if err == nil && hb != nil {
+		raw := strings.TrimSpace(hb.WakeupPrompt)
+		if raw != "" && !strings.HasPrefix(raw, "@") {
+			return hb.WakeupPrompt
+		}
+	}
+	return ""
+}
+
+func (s *Server) readAgentWorkerWakeupPrompt(workspaceID, workerID string) string {
+	target := runtimeSchedulerAgentTarget{workerID: strings.TrimSpace(workerID)}
 	hb, err := s.loadSchedulerTargetHeartbeat(workspaceID, target)
 	if err == nil && hb != nil {
 		raw := strings.TrimSpace(hb.WakeupPrompt)
@@ -439,6 +672,37 @@ func (s *Server) handlePutAgentWakeup(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
+	_ = json.NewEncoder(w).Encode(map[string]bool{"ok": true})
+}
+
+func (s *Server) handlePutAgentWorkerWakeup(w http.ResponseWriter, r *http.Request) {
+	if !s.checkCurrentWorkspaceAdmin(w, r) {
+		return
+	}
+	var body promptSaveBody
+	if err := s.readJSON(w, r, &body); err != nil {
+		s.jsonError(w, http.StatusBadRequest, "invalid JSON body")
+		return
+	}
+	workspaceID, ok := s.currentWorkspaceForRequest(w, r)
+	if !ok {
+		return
+	}
+	workerID := strings.TrimSpace(r.PathValue("id"))
+	if !s.agentWorkerExists(workspaceID, workerID) {
+		s.jsonErrorCode(w, http.StatusNotFound, ErrCodeAgentNotFound, "agent not found")
+		return
+	}
+	target := runtimeSchedulerAgentTarget{workerID: workerID}
+	hb, _ := s.loadSchedulerTargetHeartbeat(workspaceID, target)
+	if hb == nil {
+		hb = &entity.HeartbeatConfig{}
+	}
+	hb.WakeupPrompt = body.Content
+	if err := s.saveSchedulerTargetHeartbeat(workspaceID, target, hb); err != nil {
+		s.serverError(w, err)
+		return
+	}
 	_ = json.NewEncoder(w).Encode(map[string]bool{"ok": true})
 }
 
@@ -637,6 +901,112 @@ func (s *Server) handlePutAgentSandbox(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	s.jsonErrorCode(w, http.StatusNotFound, ErrCodeAgentNotFound, "agent worker membership not found")
+}
+
+func (s *Server) handlePutAgentWorkerSandbox(w http.ResponseWriter, r *http.Request) {
+	if !s.checkCurrentWorkspaceAdmin(w, r) {
+		return
+	}
+	workspaceID, ok := s.currentWorkspaceForRequest(w, r)
+	if !ok {
+		return
+	}
+	worker, found, err := s.agentDirectory.Worker(workspaceID, r.PathValue("id"))
+	if err != nil {
+		s.serverError(w, err)
+		return
+	}
+	if !found {
+		s.jsonErrorCode(w, http.StatusNotFound, ErrCodeAgentNotFound, "agent not found")
+		return
+	}
+	meta := agentMetaForWorker(worker)
+	var body struct {
+		Provider   string                 `json:"provider"`
+		Image      string                 `json:"image"`
+		Template   string                 `json:"template"`
+		Network    string                 `json:"network"`
+		MemoryMB   int                    `json:"memoryMb"`
+		CPUs       float64                `json:"cpus"`
+		TimeoutSec int                    `json:"timeoutSec"`
+		AgentCLI   *entity.AgentCLIConfig `json:"agentCli"`
+		AddDirs    []string               `json:"addDirs"`
+	}
+	if err := s.readJSON(w, r, &body); err != nil {
+		s.jsonError(w, http.StatusBadRequest, "invalid JSON body")
+		return
+	}
+	provider := normalizeSandboxProvider(body.Provider)
+	if provider == entity.SandboxNone {
+		if strings.TrimSpace(meta.RuntimeNodeID) == "" && !directHostExecutionEnabled() {
+			s.jsonErrorCode(w, http.StatusBadRequest, ErrCodeValidationFailed, "direct host execution is disabled by server configuration")
+			return
+		}
+		meta.Sandbox = &entity.SandboxConfig{
+			Provider: entity.SandboxNone,
+			AgentCLI: body.AgentCLI,
+			Resources: entity.RuntimeResourceLimits{
+				MemoryMB:   body.MemoryMB,
+				CPUs:       body.CPUs,
+				TimeoutSec: body.TimeoutSec,
+			},
+		}
+		if meta.Sandbox.AgentCLI == nil {
+			meta.Sandbox.AgentCLI = agentcli.DefaultForModel(meta.Model)
+		} else {
+			meta.Sandbox.AgentCLI = agentcli.Normalize(meta.Sandbox.AgentCLI)
+		}
+	} else {
+		meta.Sandbox = &entity.SandboxConfig{
+			Provider:    provider,
+			Image:       body.Image,
+			NetworkMode: body.Network,
+			AgentCLI:    body.AgentCLI,
+			Resources: entity.RuntimeResourceLimits{
+				MemoryMB:   body.MemoryMB,
+				CPUs:       body.CPUs,
+				TimeoutSec: body.TimeoutSec,
+			},
+		}
+		if meta.Sandbox.AgentCLI == nil {
+			meta.Sandbox.AgentCLI = agentcli.DefaultForModel(meta.Model)
+		} else {
+			meta.Sandbox.AgentCLI = agentcli.Normalize(meta.Sandbox.AgentCLI)
+		}
+		if provider == entity.SandboxDocker {
+			meta.Sandbox.Docker = &entity.DockerSandboxConfig{
+				Image:       body.Image,
+				NetworkMode: body.Network,
+				MemoryMB:    body.MemoryMB,
+				CPUs:        body.CPUs,
+			}
+		} else if provider == entity.SandboxE2B {
+			caps := sandbox.DetectCapabilities()
+			if !caps.E2B.Available {
+				s.jsonErrorCode(w, http.StatusBadRequest, ErrCodeValidationFailed, "e2b runtime unavailable: "+caps.E2B.Reason)
+				return
+			}
+			meta.Sandbox.E2B = &entity.E2BSandboxConfig{
+				Template:   body.Template,
+				TimeoutSec: body.TimeoutSec,
+			}
+		} else {
+			s.jsonErrorCode(w, http.StatusBadRequest, ErrCodeValidationFailed, "unsupported sandbox provider")
+			return
+		}
+	}
+	cfg := decodeAgentWorkerRuntimeConfig(worker)
+	cfg.Sandbox = meta.Sandbox
+	if body.AddDirs != nil {
+		cfg.AddDirs = body.AddDirs
+	}
+	worker.RuntimeConfigJSON = encodeAgentWorkerRuntimeConfig(cfg)
+	worker.UpdatedAt = time.Now().UTC().Format(time.RFC3339)
+	if err := s.controlDB.UpsertAgentWorker(worker); err != nil {
+		s.serverError(w, err)
+		return
+	}
+	_ = json.NewEncoder(w).Encode(map[string]any{"ok": true})
 }
 
 func normalizeSandboxProvider(provider string) entity.SandboxProvider {

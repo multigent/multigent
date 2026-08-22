@@ -156,6 +156,7 @@
     "status_paused": "一時停止",
     "status_archived": "アーカイブ",
     "detailSubtitle": "これはワークスペース単位のエージェント主体です。プロジェクト、タスク、ワークフロー、IM はこのエージェントの作業コンテキストです。",
+    "profileSettings": "エージェント情報",
     "schedule": "ハートビート wakeup",
     "scheduleEnabled": "ハートビート wakeup を有効化",
     "scheduleEnabledHint": "有効にすると、エージェントは設定された周期で attention、タスク、プロジェクト状態を確認します。",

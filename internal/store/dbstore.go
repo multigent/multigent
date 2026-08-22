@@ -390,7 +390,7 @@ func (s *dbStore) AgentWorkerContext(projectName, agentName string) (AgentWorker
 		}
 		b.WriteString("\nWhen you work on a concrete task, use the project context and permissions for that task's project. Do not read or mutate a project unless you are a member of it.\n")
 	}
-	return AgentWorkerContext{Layer: strings.TrimSpace(b.String()), SkillNames: skills}, nil
+	return AgentWorkerContext{WorkerID: worker.ID, Layer: strings.TrimSpace(b.String()), SkillNames: skills}, nil
 }
 
 func (s *dbStore) resolveAgentWorkerMembership(projectName, agentName string) (controldb.AgentWorker, controldb.ProjectMembership, bool, error) {

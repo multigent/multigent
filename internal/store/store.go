@@ -114,6 +114,7 @@ type Store interface {
 }
 
 type AgentWorkerContext struct {
+	WorkerID   string
 	Layer      string
 	SkillNames []string
 }

@@ -1284,11 +1284,15 @@ function InfoCard({ icon: Icon, label, value, mono }: { icon?: LucideIcon; label
 function WorkspaceAgentOnlyDetail({ agent }: { agent: WorkspaceAgentSummary }) {
   const { t } = useTranslation()
   const { canAdmin: canAdminWorkspace } = useWorkspaceAccess()
+  const trustedProxyMode = isTrustedProxyMode()
   const [reloadKey, setReloadKey] = useState(0)
   const agentState = useApiJson<{ agent?: WorkspaceAgentSummary }>(`/api/v1/agents/${encodeURIComponent(agent.id)}`, reloadKey, { keepPreviousDataOnReload: true })
   const current = agentState.status === 'ok' && agentState.data.agent ? agentState.data.agent : agent
   const providersState = useApiJson<ProviderOption[]>('/api/v1/providers', 0, { keepPreviousDataOnReload: true })
   const nodesState = useApiJson<RuntimeNodeListResp>('/api/v1/runtime-nodes', 0, { keepPreviousDataOnReload: true })
+  const [ctxReload, setCtxReload] = useState(0)
+  const ctxState = useApiJson<AgentContext>(`/api/v1/agents/${encodeURIComponent(agent.id)}/context?includeMerged=false&includeReadiness=false`, ctxReload, { keepPreviousDataOnReload: true })
+  const fullContextPath = `/api/v1/agents/${encodeURIComponent(agent.id)}/context`
   const [displayName, setDisplayName] = useState(current.displayName || current.name)
   const [description, setDescription] = useState(current.description || '')
   const [team, setTeam] = useState(current.team || '')
@@ -1348,6 +1352,7 @@ function WorkspaceAgentOnlyDetail({ agent }: { agent: WorkspaceAgentSummary }) {
   const providers = providersState.status === 'ok' ? (providersState.data ?? []) : []
   const visibleProviders = providers.filter(provider => providerMatchesAgentModel(provider, model))
   const nodes = nodesState.status === 'ok' ? (nodesState.data.nodes ?? []) : []
+  const ctx = ctxState.status === 'ok' ? ctxState.data : null
   const avatar = current.avatar || ''
   const modelCls = MODEL_COLORS[model] ?? ''
 
@@ -1400,7 +1405,7 @@ function WorkspaceAgentOnlyDetail({ agent }: { agent: WorkspaceAgentSummary }) {
       <div className="flex-1 overflow-y-auto px-6 pb-8">
         <div className="space-y-8">
           <section>
-            <SectionHeader icon={Settings2} title={t('agentDetail.identity')} />
+            <SectionHeader icon={Settings2} title={t('agents.profileSettings', { defaultValue: '智能体资料' })} />
             <p className="mt-1 text-sm text-neutral-500 dark:text-zinc-500">{t('agents.detailSubtitle')}</p>
             <div className="mt-3 rounded-lg border border-neutral-200/80 bg-white p-4 dark:border-zinc-700/60 dark:bg-zinc-900/40">
               <div className="grid gap-3 md:grid-cols-2">
@@ -1469,7 +1474,38 @@ function WorkspaceAgentOnlyDetail({ agent }: { agent: WorkspaceAgentSummary }) {
             </div>
           </section>
 
+          <section>
+            <SectionHeader icon={Cable} title={t('agentDetail.capabilities')} />
+            <p className="mt-1 text-sm text-neutral-500 dark:text-zinc-500">{t('agentDetail.capabilitiesHint')}</p>
+            <div className="mt-3 divide-y divide-neutral-100 rounded-lg border border-neutral-200/80 bg-white dark:divide-zinc-800 dark:border-zinc-700/60 dark:bg-zinc-900/40">
+              <AgentRuntimeConnectionsPanel project="" agentName={current.name} agentWorkerId={current.id} />
+              <AgentSkillsPanel skills={ctx?.skills ?? []} skillDetails={ctx?.skillDetails} />
+            </div>
+          </section>
+
           {canAdminWorkspace && <WorkspaceAgentSchedulePanel agentId={current.id} />}
+
+          <section data-tour-agent-wakeup-prompt>
+            <SectionHeader icon={BookOpen} title={t('agentDetail.promptContext')} />
+            <p className="mt-1 text-sm text-neutral-500 dark:text-zinc-500">{t('agentDetail.promptContextHint')}</p>
+            <div className="mt-3 space-y-4">
+              <PromptEditor
+                label={t('prompt.wakeup')}
+                icon={BookOpen}
+                apiPath={`/api/v1/agents/${encodeURIComponent(current.id)}/wakeup`}
+                initialContent={ctx?.wakeup ?? ''}
+                canEdit={canAdminWorkspace}
+              />
+              <ContextPanel apiPath={fullContextPath} contextFile={ctx?.contextFile} syncedAt={ctx?.syncedAt} />
+              <AgentContextBindingsPanel
+                project=""
+                agentName={current.name}
+                agentWorkerId={current.id}
+                canEdit={canAdminWorkspace}
+                onChanged={() => setCtxReload((k) => k + 1)}
+              />
+            </div>
+          </section>
 
           {canAdminWorkspace && (
             <section>
@@ -1479,6 +1515,37 @@ function WorkspaceAgentOnlyDetail({ agent }: { agent: WorkspaceAgentSummary }) {
                 <AgentChannelPanel project="" agentName={current.name} agentWorkerId={current.id} />
               </div>
             </section>
+          )}
+
+          {canAdminWorkspace && !trustedProxyMode && (
+            <details className="group rounded-lg border border-neutral-200/80 bg-white dark:border-zinc-700/60 dark:bg-zinc-900/40">
+              <summary className="flex cursor-pointer items-center gap-2 px-4 py-3 text-sm font-medium text-neutral-700 dark:text-zinc-300">
+                <ChevronRight className="size-4 transition-transform group-open:rotate-90" strokeWidth={2} />
+                <Container className="size-4 text-neutral-400 dark:text-zinc-500" strokeWidth={1.8} />
+                {t('agentDetail.advancedRuntime')}
+              </summary>
+              <div className="border-t border-neutral-100 p-4 dark:border-zinc-800">
+                <div className="space-y-4">
+                  <SandboxEditor
+                    project=""
+                    agentName={current.name}
+                    agentWorkerId={current.id}
+                    initial={ctx?.sandbox}
+                    onChanged={() => setCtxReload((k) => k + 1)}
+                  />
+                  <RuntimeNodeBindingPanel
+                    project=""
+                    agentName={current.name}
+                    agentWorkerId={current.id}
+                    runtimeNodeId={ctx?.runtimeNodeId ?? current.defaultRuntimeNodeId}
+                    onChanged={() => {
+                      setCtxReload((k) => k + 1)
+                      setReloadKey((k) => k + 1)
+                    }}
+                  />
+                </div>
+              </div>
+            </details>
           )}
 
           <div className="flex justify-end">
@@ -1558,8 +1625,8 @@ function completeAgentCli(input: { vendor: string; version: string }): AgentCLIC
   }
 }
 
-function SandboxEditor({ project, agentName, initial, onChanged }: {
-  project: string; agentName: string; initial?: SandboxConfig; onChanged: () => void
+function SandboxEditor({ project, agentName, agentWorkerId, initial, onChanged }: {
+  project: string; agentName: string; agentWorkerId?: string; initial?: SandboxConfig; onChanged: () => void
 }) {
   const { t } = useTranslation()
   const capsState = useApiJson<SandboxCapabilities>('/api/v1/sandbox/capabilities', 0)
@@ -1601,7 +1668,10 @@ function SandboxEditor({ project, agentName, initial, onChanged }: {
     const agentCli = completeAgentCli({ vendor: cliVendor, version: cliVersion })
     setSaving(true)
     try {
-      await apiPut(`/api/v1/projects/${encodeURIComponent(project)}/agents/${encodeURIComponent(agentName)}/sandbox`, {
+      const path = agentWorkerId
+        ? `/api/v1/agents/${encodeURIComponent(agentWorkerId)}/sandbox`
+        : `/api/v1/projects/${encodeURIComponent(project)}/agents/${encodeURIComponent(agentName)}/sandbox`
+      await apiPut(path, {
         provider: provider || 'none',
         image,
         template,
@@ -1836,8 +1906,8 @@ function runtimeNodeStatusLabel(t: (key: string, options?: Record<string, unknow
   return t(`settings.runtimeNodeStatus_${status || 'pending'}`, { defaultValue: status || 'pending' })
 }
 
-function RuntimeNodeBindingPanel({ project, agentName, runtimeNodeId, onChanged }: {
-  project: string; agentName: string; runtimeNodeId?: string; onChanged: () => void
+function RuntimeNodeBindingPanel({ project, agentName, agentWorkerId, runtimeNodeId, onChanged }: {
+  project: string; agentName: string; agentWorkerId?: string; runtimeNodeId?: string; onChanged: () => void
 }) {
   const { t } = useTranslation()
   const [editing, setEditing] = useState(false)
@@ -1880,9 +1950,15 @@ function RuntimeNodeBindingPanel({ project, agentName, runtimeNodeId, onChanged 
     setSaving(true)
     setErr('')
     try {
-      await apiPatch(`/api/v1/projects/${encodeURIComponent(project)}/agents/${encodeURIComponent(agentName)}`, {
-        runtimeNodeId: selected,
-      })
+      if (agentWorkerId) {
+        await apiPatch(`/api/v1/agents/${encodeURIComponent(agentWorkerId)}`, {
+          defaultRuntimeNodeId: selected,
+        })
+      } else {
+        await apiPatch(`/api/v1/projects/${encodeURIComponent(project)}/agents/${encodeURIComponent(agentName)}`, {
+          runtimeNodeId: selected,
+        })
+      }
       setEditing(false)
       onChanged()
     } catch (e) {
@@ -2105,9 +2181,10 @@ function ContextPanel({ apiPath, contextFile, syncedAt }: { apiPath: string | nu
   )
 }
 
-function AgentContextBindingsPanel({ project, agentName, canEdit, onChanged }: {
+function AgentContextBindingsPanel({ project, agentName, agentWorkerId, canEdit, onChanged }: {
   project: string
   agentName: string
+  agentWorkerId?: string
   canEdit: boolean
   onChanged: () => void
 }) {
@@ -2117,7 +2194,10 @@ function AgentContextBindingsPanel({ project, agentName, canEdit, onChanged }: {
   const [docId, setDocId] = useState('')
   const [required, setRequired] = useState(true)
   const [saving, setSaving] = useState(false)
-  const path = `/api/v1/projects/${encodeURIComponent(project)}/agents/${encodeURIComponent(agentName)}/context-bindings`
+  const agentScopeId = agentWorkerId ? `worker:${agentWorkerId}` : `${project}/${agentName}`
+  const path = agentWorkerId
+    ? `/api/v1/agents/${encodeURIComponent(agentWorkerId)}/context-bindings`
+    : `/api/v1/projects/${encodeURIComponent(project)}/agents/${encodeURIComponent(agentName)}/context-bindings`
   const state = useApiJson<ContextBindingsResponse>(path, reloadKey, { keepPreviousDataOnReload: true })
 
   useEffect(() => {
@@ -2134,7 +2214,7 @@ function AgentContextBindingsPanel({ project, agentName, canEdit, onChanged }: {
       await apiPost('/api/v1/context/bindings', {
         docId: docId.trim(),
         scopeType: 'agent',
-        scopeId: `${project}/${agentName}`,
+        scopeId: agentScopeId,
         required,
       })
       setDocId('')
@@ -2154,7 +2234,7 @@ function AgentContextBindingsPanel({ project, agentName, canEdit, onChanged }: {
   const bindings: ContextBindingView[] = state.status === 'ok' ? (state.data.bindings ?? []) : []
   const directlyBoundDocIds = new Set(
     bindings
-      .filter((item) => item.binding.scopeType === 'agent' && item.binding.scopeId === `${project}/${agentName}`)
+      .filter((item) => item.binding.scopeType === 'agent' && item.binding.scopeId === agentScopeId)
       .map((item) => item.artifact.docId || item.binding.docId || item.doc?.id)
       .filter(Boolean) as string[],
   )
@@ -2215,7 +2295,7 @@ function AgentContextBindingsPanel({ project, agentName, canEdit, onChanged }: {
                   </p>
                 )}
               </div>
-              {canEdit && item.binding.scopeType === 'agent' && item.binding.scopeId === `${project}/${agentName}` && (
+              {canEdit && item.binding.scopeType === 'agent' && item.binding.scopeId === agentScopeId && (
                 <button type="button" onClick={() => void removeBinding(item.binding.id)} className="shrink-0 text-xs font-medium text-neutral-400 hover:text-red-500">
                   {t('common.delete')}
                 </button>

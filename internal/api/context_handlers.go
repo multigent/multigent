@@ -303,6 +303,23 @@ func (s *Server) checkContextWriteAccess(w http.ResponseWriter, r *http.Request,
 		}
 		return true
 	case contextpack.ScopeAgent:
+		if strings.HasPrefix(scopeID, "worker:") {
+			workerID := strings.TrimSpace(strings.TrimPrefix(scopeID, "worker:"))
+			workspaceID, err := s.currentWorkspaceID()
+			if err != nil {
+				s.serverError(w, err)
+				return false
+			}
+			if workerID == "" || !s.agentWorkerExists(workspaceID, workerID) {
+				s.jsonErrorCode(w, http.StatusNotFound, ErrCodeAgentNotFound, "agent not found")
+				return false
+			}
+			if !s.canAdminCurrentWorkspace(r) && !s.currentUserCanOperateAgentWorker(r, workspaceID, workerID) {
+				s.jsonErrorCode(w, http.StatusForbidden, ErrCodeAgentOperatorRequired, "agent operator access required")
+				return false
+			}
+			return true
+		}
 		p, a, ok := strings.Cut(scopeID, "/")
 		if !ok || strings.TrimSpace(p) == "" || strings.TrimSpace(a) == "" {
 			s.jsonErrorCode(w, http.StatusBadRequest, ErrCodeValidationFailed, "agent scope must use project/agent")
@@ -353,6 +370,28 @@ func (s *Server) handleAgentContextBindings(w http.ResponseWriter, r *http.Reque
 		return
 	}
 	views, err := contextpack.NewStore(s.root).ListBindingViews(contextpack.AgentScopes(project, agent))
+	if err != nil {
+		s.serverError(w, err)
+		return
+	}
+	_ = json.NewEncoder(w).Encode(map[string]any{"bindings": views})
+}
+
+func (s *Server) handleAgentWorkerContextBindings(w http.ResponseWriter, r *http.Request) {
+	workspaceID, ok := s.currentWorkspaceForRequest(w, r)
+	if !ok {
+		return
+	}
+	workerID := strings.TrimSpace(r.PathValue("id"))
+	if !s.agentWorkerExists(workspaceID, workerID) {
+		s.jsonErrorCode(w, http.StatusNotFound, ErrCodeAgentNotFound, "agent not found")
+		return
+	}
+	if !s.canAdminCurrentWorkspace(r) && !s.currentUserCanOperateAgentWorker(r, workspaceID, workerID) {
+		s.jsonErrorCode(w, http.StatusForbidden, ErrCodeAgentAccessRequired, "agent access required")
+		return
+	}
+	views, err := contextpack.NewStore(s.root).ListBindingViews(contextpack.AgentScopesForWorker("", "", workerID))
 	if err != nil {
 		s.serverError(w, err)
 		return

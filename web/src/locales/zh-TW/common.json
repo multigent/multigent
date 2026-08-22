@@ -156,6 +156,7 @@
     "status_paused": "暫停",
     "status_archived": "封存",
     "detailSubtitle": "這是工作區級智慧體主體。專案、任務、流程和 IM 都是它的工作上下文。",
+    "profileSettings": "智慧體資料",
     "schedule": "心跳喚醒",
     "scheduleEnabled": "啟用心跳喚醒",
     "scheduleEnabledHint": "開啟後，智慧體會按設定週期檢查注意力、任務和專案狀態。",
