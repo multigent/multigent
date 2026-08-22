@@ -3,7 +3,7 @@ import type { ReactNode } from 'react'
 import { useNavigate } from 'react-router-dom'
 import { useTranslation } from 'react-i18next'
 import { Bot, BriefcaseBusiness, Clock3, MessageCircle, RefreshCw, Save, X } from 'lucide-react'
-import { apiPatch, apiPost } from '../lib/api'
+import { apiFetch, apiPatch, apiPost, apiTeamPath } from '../lib/api'
 import { useApiJson } from '../lib/use-api'
 import { PlaceholderCard } from '../components/ui/PlaceholderCard'
 import { cn } from '../lib/cn'
@@ -17,6 +17,8 @@ type AgentWorker = {
   displayName?: string
   description?: string
   avatar?: string
+  team?: string
+  role?: string
   status?: string
   model?: string
   runtimeModel?: string
@@ -39,6 +41,9 @@ type ProviderRow = {
   id: string
   name: string
 }
+
+type TeamInfo = { path: string; name: string }
+type TeamDetail = { roles?: Array<{ id?: string; name: string; description?: string }> }
 
 type AgentDetailResponse = {
   agent?: AgentWorker
@@ -115,6 +120,9 @@ export default function AgentsPage() {
   }, [providersState])
   const teamOptions = useMemo(() => {
     const values = new Set<string>()
+    agents.forEach(agent => {
+      if (agent.team) values.add(agent.team)
+    })
     agents.forEach(agent => (agent.memberships ?? []).forEach(member => {
       if (member.team) values.add(member.team)
     }))
@@ -129,6 +137,9 @@ export default function AgentsPage() {
   }, [agents])
   const roleOptions = useMemo(() => {
     const values = new Set<string>()
+    agents.forEach(agent => {
+      if (agent.role) values.add(agent.role)
+    })
     agents.forEach(agent => (agent.memberships ?? []).forEach(member => {
       if (member.role) values.add(member.role)
     }))
@@ -136,9 +147,9 @@ export default function AgentsPage() {
   }, [agents])
   const filteredAgents = useMemo(() => agents.filter(agent => {
     if (statusFilter !== 'all' && (agent.status ?? 'active') !== statusFilter) return false
-    if (teamFilter !== 'all' && !(agent.memberships ?? []).some(member => member.team === teamFilter)) return false
+    if (teamFilter !== 'all' && agent.team !== teamFilter && !(agent.memberships ?? []).some(member => member.team === teamFilter)) return false
     if (projectFilter !== 'all' && !(agent.memberships ?? []).some(member => member.projectId === projectFilter)) return false
-    if (roleFilter !== 'all' && !(agent.memberships ?? []).some(member => member.role === roleFilter)) return false
+    if (roleFilter !== 'all' && agent.role !== roleFilter && !(agent.memberships ?? []).some(member => member.role === roleFilter)) return false
     return true
   }), [agents, projectFilter, roleFilter, statusFilter, teamFilter])
   const hasFilters = teamFilter !== 'all' || projectFilter !== 'all' || roleFilter !== 'all' || statusFilter !== 'all'
@@ -283,7 +294,8 @@ function AgentCard({ agent, modelAccountName, onOpen, onOpenChat }: { agent: Age
   const membershipLabels = memberships
     .map(member => [member.team, member.role].filter(Boolean).join(' / '))
     .filter(Boolean)
-  const primaryMembershipLabel = membershipLabels.slice(0, 2).join(' · ') || t('agents.unassignedRole')
+  const defaultRoleLabel = [agent.team, agent.role].filter(Boolean).join(' / ')
+  const primaryMembershipLabel = [defaultRoleLabel, ...membershipLabels].filter(Boolean).slice(0, 2).join(' · ') || t('agents.unassignedRole')
   return (
     <div
       role="button"
@@ -374,10 +386,50 @@ function CreateAgentDialog({ existingNames, onClose, onCreated }: {
   const [name, setName] = useState('')
   const [displayName, setDisplayName] = useState('')
   const [description, setDescription] = useState('')
+  const [team, setTeam] = useState('')
+  const [role, setRole] = useState('')
+  const [teams, setTeams] = useState<TeamInfo[]>([])
+  const [roles, setRoles] = useState<Array<{ id?: string; name: string; description?: string }>>([])
   const [saving, setSaving] = useState(false)
   const normalizedName = name.trim()
   const duplicate = existingNames.includes(normalizedName)
   const invalid = normalizedName !== '' && !/^[A-Za-z0-9_-]+$/.test(normalizedName)
+
+  useEffect(() => {
+    let cancelled = false
+    apiFetch<TeamInfo[]>('/api/v1/teams')
+      .then(rows => {
+        if (cancelled) return
+        const next = rows ?? []
+        setTeams(next)
+        if (!team && next[0]?.path) setTeam(next[0].path)
+      })
+      .catch(() => {})
+    return () => { cancelled = true }
+  }, [team])
+
+  useEffect(() => {
+    if (!team) {
+      setRoles([])
+      setRole('')
+      return
+    }
+    let cancelled = false
+    apiFetch<TeamDetail>(`/api/v1/teams/${apiTeamPath(team)}`)
+      .then(detail => {
+        if (cancelled) return
+        const next = detail.roles ?? []
+        setRoles(next)
+        setRole(current => current || next[0]?.id || next[0]?.name || '')
+      })
+      .catch(() => {
+        if (!cancelled) {
+          setRoles([])
+          setRole('')
+        }
+      })
+    return () => { cancelled = true }
+  }, [team])
 
   async function save() {
     if (!normalizedName || duplicate || invalid) return
@@ -387,8 +439,10 @@ function CreateAgentDialog({ existingNames, onClose, onCreated }: {
         name: normalizedName,
         displayName: displayName.trim(),
         description: description.trim(),
+        team,
+        role,
       })
-      onCreated(res.agent ?? { id: '', name: normalizedName, displayName: displayName.trim(), description: description.trim() })
+      onCreated(res.agent ?? { id: '', name: normalizedName, displayName: displayName.trim(), description: description.trim(), team, role })
     } finally {
       setSaving(false)
     }
@@ -417,6 +471,29 @@ function CreateAgentDialog({ existingNames, onClose, onCreated }: {
             <span className="text-neutral-600 dark:text-zinc-400">{t('agents.displayName')}</span>
             <input className={cn(fieldCls, 'mt-1.5')} value={displayName} onChange={e => setDisplayName(e.target.value)} placeholder="Nova" />
           </label>
+          {teams.length > 0 && (
+            <label className="block text-sm">
+              <span className="text-neutral-600 dark:text-zinc-400">{t('members.team')}</span>
+              <select className={cn(fieldCls, 'mt-1.5')} value={team} onChange={e => { setTeam(e.target.value); setRole('') }}>
+                <option value="">{t('members.selectTeam')}</option>
+                {teams.map(item => (
+                  <option key={item.path} value={item.path}>{item.name} ({item.path})</option>
+                ))}
+              </select>
+            </label>
+          )}
+          {roles.length > 0 && (
+            <label className="block text-sm">
+              <span className="text-neutral-600 dark:text-zinc-400">{t('members.role')}</span>
+              <select className={cn(fieldCls, 'mt-1.5')} value={role} onChange={e => setRole(e.target.value)}>
+                <option value="">{t('members.noRole')}</option>
+                {roles.map(item => {
+                  const value = item.id || item.name
+                  return <option key={value} value={value}>{item.name}{item.description ? ` - ${item.description}` : ''}</option>
+                })}
+              </select>
+            </label>
+          )}
           <label className="block text-sm">
             <span className="text-neutral-600 dark:text-zinc-400">{t('agents.description')}</span>
             <textarea className={cn(fieldCls, 'mt-1.5 min-h-24 resize-none')} value={description} onChange={e => setDescription(e.target.value)} placeholder={t('agents.descriptionPlaceholder')} />

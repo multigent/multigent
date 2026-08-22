@@ -16,6 +16,8 @@ type agentWorkerRequest struct {
 	DisplayName           string         `json:"displayName"`
 	Description           string         `json:"description"`
 	Avatar                string         `json:"avatar"`
+	Team                  string         `json:"team"`
+	Role                  string         `json:"role"`
 	Status                string         `json:"status"`
 	Model                 string         `json:"model"`
 	RuntimeModel          string         `json:"runtimeModel"`
@@ -32,6 +34,8 @@ type patchAgentWorkerRequest struct {
 	DisplayName           *string        `json:"displayName"`
 	Description           *string        `json:"description"`
 	Avatar                *string        `json:"avatar"`
+	Team                  *string        `json:"team"`
+	Role                  *string        `json:"role"`
 	Status                *string        `json:"status"`
 	Model                 *string        `json:"model"`
 	RuntimeModel          *string        `json:"runtimeModel"`
@@ -131,6 +135,8 @@ func (s *Server) handleCreateAgentWorker(w http.ResponseWriter, r *http.Request)
 		DisplayName:           strings.TrimSpace(body.DisplayName),
 		Description:           strings.TrimSpace(body.Description),
 		Avatar:                agentWorkerAvatar(controldb.AgentWorker{WorkspaceID: workspaceID, Name: name, Avatar: strings.TrimSpace(body.Avatar)}),
+		Team:                  strings.TrimSpace(body.Team),
+		Role:                  strings.TrimSpace(body.Role),
 		Status:                normalizeAgentWorkerStatus(body.Status),
 		Model:                 strings.TrimSpace(body.Model),
 		RuntimeModel:          strings.TrimSpace(body.RuntimeModel),
@@ -227,6 +233,12 @@ func (s *Server) handlePatchAgentWorker(w http.ResponseWriter, r *http.Request) 
 	}
 	if body.Avatar != nil {
 		worker.Avatar = strings.TrimSpace(*body.Avatar)
+	}
+	if body.Team != nil {
+		worker.Team = strings.TrimSpace(*body.Team)
+	}
+	if body.Role != nil {
+		worker.Role = strings.TrimSpace(*body.Role)
 	}
 	if body.Status != nil {
 		worker.Status = normalizeAgentWorkerStatus(*body.Status)
@@ -478,6 +490,8 @@ func agentWorkerResponse(worker controldb.AgentWorker) map[string]any {
 		"displayName":           worker.DisplayName,
 		"description":           worker.Description,
 		"avatar":                agentWorkerAvatar(worker),
+		"team":                  worker.Team,
+		"role":                  worker.Role,
 		"status":                worker.Status,
 		"model":                 worker.Model,
 		"runtimeModel":          worker.RuntimeModel,

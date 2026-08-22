@@ -348,6 +348,8 @@ type AgentWorker struct {
 	DisplayName           string
 	Description           string
 	Avatar                string
+	Team                  string
+	Role                  string
 	Status                string
 	Model                 string
 	RuntimeModel          string

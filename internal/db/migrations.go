@@ -175,6 +175,8 @@ func (db *SQLiteStore) migrate() error {
 	display_name TEXT NOT NULL DEFAULT '',
 	description TEXT NOT NULL DEFAULT '',
 		avatar TEXT NOT NULL DEFAULT '',
+		team TEXT NOT NULL DEFAULT '',
+		role TEXT NOT NULL DEFAULT '',
 		status TEXT NOT NULL DEFAULT 'active',
 		model TEXT NOT NULL DEFAULT '',
 		runtime_model TEXT NOT NULL DEFAULT '',
@@ -194,6 +196,8 @@ func (db *SQLiteStore) migrate() error {
 		`ALTER TABLE agent_workers ADD COLUMN model TEXT NOT NULL DEFAULT ''`,
 		`ALTER TABLE agent_workers ADD COLUMN runtime_model TEXT NOT NULL DEFAULT ''`,
 		`ALTER TABLE agent_workers ADD COLUMN runtime_config_json TEXT NOT NULL DEFAULT '{}'`,
+		`ALTER TABLE agent_workers ADD COLUMN team TEXT NOT NULL DEFAULT ''`,
+		`ALTER TABLE agent_workers ADD COLUMN role TEXT NOT NULL DEFAULT ''`,
 		`CREATE INDEX IF NOT EXISTS idx_agent_workers_workspace_status ON agent_workers(workspace_id, status, name)`,
 		`CREATE TABLE IF NOT EXISTS project_memberships (
 	id TEXT PRIMARY KEY,
