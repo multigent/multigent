@@ -1306,6 +1306,8 @@ function WorkspaceAgentOnlyDetail({ agent }: { agent: WorkspaceAgentSummary }) {
   const [profileAvatar, setProfileAvatar] = useState(current.avatar || '')
   const [profileAvatarNonce, setProfileAvatarNonce] = useState(() => Date.now())
   const [savingProfile, setSavingProfile] = useState(false)
+  const [archiveConfirmOpen, setArchiveConfirmOpen] = useState(false)
+  const [archiveConfirmName, setArchiveConfirmName] = useState('')
   const [teams, setTeams] = useState<WorkspaceTeamInfo[]>([])
   const [roles, setRoles] = useState<Array<{ id?: string; name: string; description?: string }>>([])
   const [saving, setSaving] = useState(false)
@@ -1374,7 +1376,6 @@ function WorkspaceAgentOnlyDetail({ agent }: { agent: WorkspaceAgentSummary }) {
         avatar: profileAvatar.trim(),
         team,
         role,
-        status,
       })
       setEditingProfile(false)
       setReloadKey(key => key + 1)
@@ -1385,13 +1386,27 @@ function WorkspaceAgentOnlyDetail({ agent }: { agent: WorkspaceAgentSummary }) {
   }
 
   async function archiveAgent() {
-    if (!window.confirm(t('agents.archiveConfirm', { defaultValue: '确定要归档这个智能体吗？归档后默认不会出现在智能体列表中。' }))) return
+    if (archiveConfirmName.trim() !== current.name) return
     setSavingProfile(true)
     try {
       await apiPatch(`/api/v1/agents/${encodeURIComponent(current.id)}`, { status: 'archived' })
       setStatus('archived')
+      setArchiveConfirmOpen(false)
+      setArchiveConfirmName('')
       setReloadKey(key => key + 1)
       showToast(t('agents.archived', { defaultValue: '智能体已归档' }), 'success')
+    } finally {
+      setSavingProfile(false)
+    }
+  }
+
+  async function restoreAgent() {
+    setSavingProfile(true)
+    try {
+      await apiPatch(`/api/v1/agents/${encodeURIComponent(current.id)}`, { status: 'active' })
+      setStatus('active')
+      setReloadKey(key => key + 1)
+      showToast(t('agents.restored', { defaultValue: '智能体已恢复' }), 'success')
     } finally {
       setSavingProfile(false)
     }
@@ -1440,29 +1455,12 @@ function WorkspaceAgentOnlyDetail({ agent }: { agent: WorkspaceAgentSummary }) {
               {role && <span className="text-sm text-neutral-500 dark:text-zinc-500">/ {role}</span>}
             </div>
           </div>
-          {canAdminWorkspace && (
-            <button
-              type="button"
-              onClick={() => void archiveAgent()}
-              disabled={savingProfile || current.status === 'archived'}
-              className={cn(subtleButtonCls, 'shrink-0 text-neutral-400 hover:text-red-600 dark:hover:text-red-400')}
-            >
-              {current.status === 'archived' ? t('agents.status_archived') : t('agents.archive', { defaultValue: '归档' })}
-            </button>
-          )}
         </div>
         {editingProfile && (
-          <div className="mt-4 max-w-4xl rounded-lg border border-neutral-200/80 bg-white p-4 dark:border-zinc-700/60 dark:bg-zinc-900/40">
+          <div className="mt-4 rounded-lg border border-neutral-200/80 bg-white p-4 dark:border-zinc-700/60 dark:bg-zinc-900/40">
             <div className="grid gap-3 md:grid-cols-2">
               <WorkspaceField label={t('agents.displayName')}>
                 <input value={displayName} onChange={e => setDisplayName(e.target.value)} className={workspaceInputCls} />
-              </WorkspaceField>
-              <WorkspaceField label={t('agents.status')}>
-                <select value={status} onChange={e => setStatus(e.target.value)} className={workspaceInputCls}>
-                  <option value="active">{t('agents.status_active')}</option>
-                  <option value="paused">{t('agents.status_paused')}</option>
-                  <option value="archived">{t('agents.status_archived')}</option>
-                </select>
               </WorkspaceField>
               <WorkspaceField label={t('members.team')}>
                 <select value={team} onChange={e => { setTeam(e.target.value); setRole('') }} className={workspaceInputCls}>
@@ -1638,8 +1636,64 @@ function WorkspaceAgentOnlyDetail({ agent }: { agent: WorkspaceAgentSummary }) {
               {saving ? t('forms.saving') : t('forms.save')}
             </button>
           </div>
+
+          {canAdminWorkspace && (
+            <section className="rounded-lg border border-red-200/70 bg-red-50/40 p-4 dark:border-red-900/50 dark:bg-red-950/10">
+              <SectionHeader icon={Settings2} title={t('agents.dangerZone', { defaultValue: '危险操作' })} />
+              <p className="mt-1 text-sm text-red-700/80 dark:text-red-300/80">
+                {status === 'archived'
+                  ? t('agents.restoreHint', { defaultValue: '这个智能体已归档。恢复后会重新出现在默认智能体列表中。' })
+                  : t('agents.archiveHint', { defaultValue: '归档会把这个智能体从默认列表中隐藏，并停止作为日常可用智能体展示。历史记录和配置会保留。' })}
+              </p>
+              <div className="mt-3 flex justify-end">
+                {status === 'archived' ? (
+                  <button type="button" onClick={() => void restoreAgent()} disabled={savingProfile} className={secondaryButtonCls}>
+                    {t('agents.restore', { defaultValue: '恢复智能体' })}
+                  </button>
+                ) : (
+                  <button type="button" onClick={() => setArchiveConfirmOpen(true)} disabled={savingProfile} className="inline-flex h-8 items-center justify-center rounded-md border border-red-200 bg-white px-3 text-xs font-medium text-red-600 transition-colors hover:bg-red-50 disabled:cursor-not-allowed disabled:opacity-50 dark:border-red-900/60 dark:bg-zinc-900 dark:text-red-300 dark:hover:bg-red-950/30">
+                    {t('agents.archive', { defaultValue: '归档' })}
+                  </button>
+                )}
+              </div>
+            </section>
+          )}
         </div>
       </div>
+      {archiveConfirmOpen && (
+        <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/35 p-4 backdrop-blur-sm">
+          <div className="w-full max-w-md rounded-xl border border-neutral-200 bg-white shadow-xl dark:border-zinc-800 dark:bg-zinc-950">
+            <div className="border-b border-neutral-100 px-5 py-4 dark:border-zinc-800">
+              <h2 className="text-base font-semibold text-neutral-900 dark:text-zinc-100">{t('agents.archiveConfirmTitle', { defaultValue: '归档智能体' })}</h2>
+              <p className="mt-1 text-sm text-neutral-500 dark:text-zinc-500">
+                {t('agents.archiveConfirm', { name: current.name, defaultValue: `请输入 ${current.name} 确认归档。` })}
+              </p>
+            </div>
+            <div className="px-5 py-4">
+              <input
+                value={archiveConfirmName}
+                onChange={e => setArchiveConfirmName(e.target.value)}
+                className={workspaceInputCls}
+                autoFocus
+                placeholder={current.name}
+              />
+            </div>
+            <div className="flex justify-end gap-2 border-t border-neutral-100 px-5 py-4 dark:border-zinc-800">
+              <button type="button" onClick={() => { setArchiveConfirmOpen(false); setArchiveConfirmName('') }} disabled={savingProfile} className={secondaryButtonCls}>
+                {t('forms.cancel')}
+              </button>
+              <button
+                type="button"
+                onClick={() => void archiveAgent()}
+                disabled={savingProfile || archiveConfirmName.trim() !== current.name}
+                className="inline-flex h-8 items-center justify-center rounded-md border border-red-200 bg-red-600 px-3 text-xs font-medium text-white transition-colors hover:bg-red-700 disabled:cursor-not-allowed disabled:opacity-50 dark:border-red-900/60 dark:bg-red-700 dark:hover:bg-red-600"
+              >
+                {savingProfile ? t('forms.saving') : t('agents.archive', { defaultValue: '归档' })}
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
     </div>
   )
 }
