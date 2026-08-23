@@ -166,6 +166,27 @@ type connectorProviderSetupBeginResponse struct {
 	Stage      string `json:"stage,omitempty"`
 }
 
+type connectorSetupDraft struct {
+	Provider       string `json:"provider"`
+	OwnerType      string `json:"ownerType"`
+	OwnerID        string `json:"ownerId"`
+	ConnectionName string `json:"connectionName"`
+	Status         string `json:"status"`
+	Stage          string `json:"stage"`
+	DeviceCode     string `json:"deviceCode,omitempty"`
+	QRURL          string `json:"qrUrl,omitempty"`
+	UserCode       string `json:"userCode,omitempty"`
+	Interval       int    `json:"interval,omitempty"`
+	ExpiresIn      int    `json:"expiresIn,omitempty"`
+	BaseURL        string `json:"baseUrl,omitempty"`
+	AppID          string `json:"appId,omitempty"`
+	OwnerOpenID    string `json:"ownerOpenId,omitempty"`
+	ConnectionID   string `json:"connectionId,omitempty"`
+	CreatedBy      string `json:"createdBy,omitempty"`
+	CreatedAt      string `json:"createdAt,omitempty"`
+	UpdatedAt      string `json:"updatedAt,omitempty"`
+}
+
 func (s *Server) handleCreateConnection(w http.ResponseWriter, r *http.Request) {
 	workspaceID, ok := s.connectionWorkspace(w, r)
 	if !ok {
@@ -355,12 +376,39 @@ func (s *Server) handleConnectorProviderSetupBegin(w http.ResponseWriter, r *htt
 		s.jsonErrorCode(w, http.StatusBadRequest, ErrCodeUnsupportedProvider, "quick authorization is not supported for this provider")
 		return
 	}
+	if resp, ok, err := s.connectorSetupBeginFromDraft(r, workspaceID, provider); err != nil {
+		s.serverError(w, err)
+		return
+	} else if ok {
+		_ = json.NewEncoder(w).Encode(resp)
+		return
+	}
 	ctx, cancel := contextWithRequestTimeout(r, 20*time.Second)
 	defer cancel()
 	resp, err := setupProvider.BeginSetup(ctx)
 	if err != nil {
 		s.jsonErrorCode(w, http.StatusBadGateway, ErrCodeUpstreamError, err.Error())
 		return
+	}
+	if connectorSetupCanResume(provider.Provider) {
+		if err := s.upsertConnectorSetupDraft(workspaceID, connectorSetupDraft{
+			Provider:       provider.Provider,
+			OwnerType:      ConnectionOwnerWorkspace,
+			OwnerID:        workspaceID,
+			ConnectionName: "default",
+			Status:         "pending",
+			Stage:          firstNonEmpty(resp.Stage, "create_app"),
+			DeviceCode:     resp.DeviceCode,
+			QRURL:          resp.QRURL,
+			UserCode:       resp.UserCode,
+			Interval:       resp.Interval,
+			ExpiresIn:      resp.ExpiresIn,
+			BaseURL:        resp.BaseURL,
+			CreatedBy:      requestUsername(r),
+		}); err != nil {
+			s.serverError(w, err)
+			return
+		}
 	}
 	s.auditLog(auditLogInput{
 		WorkspaceID:  workspaceID,
@@ -450,6 +498,12 @@ func (s *Server) handleConnectorProviderSetupPoll(w http.ResponseWriter, r *http
 	if actualProvider == "" {
 		actualProvider = provider.Provider
 	}
+	if connectorSetupCanResume(actualProvider) {
+		if _, err := s.saveConnectorAuthorizationDraft(r, workspaceID, actualProvider, poll); err != nil {
+			s.serverError(w, err)
+			return
+		}
+	}
 	authBegin, err := s.beginConnectorAuthorization(r, actualProvider, poll)
 	if err != nil {
 		s.serverError(w, err)
@@ -522,6 +576,7 @@ func (s *Server) pollConnectorAuthorizationSetup(w http.ResponseWriter, r *http.
 		s.serverError(w, err)
 		return nil, false
 	}
+	s.deleteConnectorSetupDraft(workspaceID, session.Provider)
 	return map[string]any{
 		"status":     "connected",
 		"baseUrl":    poll.BaseURL,
@@ -536,10 +591,189 @@ func larkRegistrationClient() larkbridge.RegistrationClient {
 func defaultConnectorScopes(provider string) []string {
 	switch provider {
 	case "feishu", "lark":
-		return []string{}
+		return []string{
+			"contact:contact.base:readonly",
+			"contact:user.base:readonly",
+			"contact:user.email:readonly",
+			"contact:user.employee_id:readonly",
+		}
 	default:
 		return nil
 	}
+}
+
+const connectorSetupDraftTable = "connector_setup_drafts"
+
+func connectorSetupCanResume(provider string) bool {
+	switch strings.TrimSpace(provider) {
+	case "feishu", "lark":
+		return true
+	default:
+		return false
+	}
+}
+
+func connectorSetupDraftKey(provider string) []string {
+	return []string{strings.TrimSpace(provider), ConnectionOwnerWorkspace, "default"}
+}
+
+func (s *Server) connectorSetupDraft(workspaceID, provider string) (connectorSetupDraft, bool, error) {
+	if s == nil || s.controlDB == nil || !connectorSetupCanResume(provider) {
+		return connectorSetupDraft{}, false, nil
+	}
+	raw, ok, err := s.controlDB.GetRecord(connectorSetupDraftTable, workspaceID, connectorSetupDraftKey(provider))
+	if err != nil || !ok {
+		return connectorSetupDraft{}, ok, err
+	}
+	var draft connectorSetupDraft
+	if err := json.Unmarshal([]byte(raw), &draft); err != nil {
+		return connectorSetupDraft{}, false, err
+	}
+	return draft, true, nil
+}
+
+func (s *Server) upsertConnectorSetupDraft(workspaceID string, draft connectorSetupDraft) error {
+	if s == nil || s.controlDB == nil || !connectorSetupCanResume(draft.Provider) {
+		return nil
+	}
+	now := time.Now().UTC().Format(time.RFC3339)
+	if strings.TrimSpace(draft.CreatedAt) == "" {
+		draft.CreatedAt = now
+	}
+	draft.UpdatedAt = now
+	raw, err := json.Marshal(draft)
+	if err != nil {
+		return err
+	}
+	return s.controlDB.UpsertRecord(connectorSetupDraftTable, workspaceID, connectorSetupDraftKey(draft.Provider), string(raw))
+}
+
+func (s *Server) deleteConnectorSetupDraft(workspaceID, provider string) {
+	if s == nil || s.controlDB == nil || !connectorSetupCanResume(provider) {
+		return
+	}
+	_ = s.controlDB.DeleteRecord(connectorSetupDraftTable, workspaceID, connectorSetupDraftKey(provider))
+}
+
+func (s *Server) connectorSetupBeginFromDraft(r *http.Request, workspaceID string, provider connector.Provider) (connectorProviderSetupBeginResponse, bool, error) {
+	draft, ok, err := s.connectorSetupDraft(workspaceID, provider.Provider)
+	if err != nil || !ok {
+		return connectorProviderSetupBeginResponse{}, false, err
+	}
+	switch draft.Stage {
+	case "authorize":
+		connection, exists := s.existingConnection(workspaceID, provider.Provider, ConnectionOwnerWorkspace, workspaceID, "default")
+		if !exists || connection.Status != "authorization_pending" {
+			s.deleteConnectorSetupDraft(workspaceID, provider.Provider)
+			return connectorProviderSetupBeginResponse{}, false, nil
+		}
+		secret, hasSecret, err := s.controlDB.ConnectionSecret(connection.ID)
+		if err != nil {
+			return connectorProviderSetupBeginResponse{}, false, err
+		}
+		if !hasSecret {
+			s.deleteConnectorSetupDraft(workspaceID, provider.Provider)
+			return connectorProviderSetupBeginResponse{}, false, nil
+		}
+		values, err := openConnectionSecret(secret)
+		if err != nil {
+			return connectorProviderSetupBeginResponse{}, false, err
+		}
+		poll := imbridge.SetupPollResponse{
+			Provider:    provider.Provider,
+			BaseURL:     firstNonEmpty(draft.BaseURL, stringValue(connectionProfileMap(connection)["accountsUrl"])),
+			AppID:       firstNonEmpty(draft.AppID, values["appId"]),
+			AppSecret:   values["appSecret"],
+			OwnerOpenID: draft.OwnerOpenID,
+		}
+		resp, err := s.beginConnectorAuthorization(r, provider.Provider, poll)
+		return resp, true, err
+	case "create_app":
+		if strings.TrimSpace(draft.DeviceCode) == "" || strings.TrimSpace(draft.QRURL) == "" {
+			s.deleteConnectorSetupDraft(workspaceID, provider.Provider)
+			return connectorProviderSetupBeginResponse{}, false, nil
+		}
+		return connectorProviderSetupBeginResponse{
+			Status:     firstNonEmpty(draft.Status, "pending"),
+			DeviceCode: draft.DeviceCode,
+			QRURL:      draft.QRURL,
+			UserCode:   draft.UserCode,
+			Interval:   draft.Interval,
+			ExpiresIn:  draft.ExpiresIn,
+			BaseURL:    draft.BaseURL,
+			Stage:      "create_app",
+		}, true, nil
+	default:
+		return connectorProviderSetupBeginResponse{}, false, nil
+	}
+}
+
+func (s *Server) saveConnectorAuthorizationDraft(r *http.Request, workspaceID, providerID string, poll imbridge.SetupPollResponse) (controldb.Connection, error) {
+	openBaseURL, err := imbridge.MustOpenBaseURL(providerID)
+	if err != nil {
+		return controldb.Connection{}, err
+	}
+	now := time.Now().UTC().Format(time.RFC3339)
+	connectionID := newConnectionID("conn")
+	createdBy := requestUsername(r)
+	createdAt := now
+	if existing, ok := s.existingConnection(workspaceID, providerID, ConnectionOwnerWorkspace, workspaceID, "default"); ok {
+		connectionID = existing.ID
+		createdBy = existing.CreatedBy
+		createdAt = existing.CreatedAt
+	}
+	profileRaw, _ := json.Marshal(map[string]any{
+		"provider":                providerID,
+		"connectionName":          "default",
+		"baseUrl":                 openBaseURL,
+		"accountsUrl":             poll.BaseURL,
+		"appId":                   poll.AppID,
+		"ownerOpenId":             poll.OwnerOpenID,
+		"createdByQuickAuthorize": true,
+		"setupStage":              "authorize",
+	})
+	connection := controldb.Connection{
+		ID:             connectionID,
+		WorkspaceID:    workspaceID,
+		Provider:       providerID,
+		ConnectionName: "default",
+		OwnerType:      ConnectionOwnerWorkspace,
+		OwnerID:        workspaceID,
+		AuthType:       ConnectionAuthCustomCredential,
+		Status:         "authorization_pending",
+		ProfileJSON:    string(profileRaw),
+		CreatedBy:      createdBy,
+		CreatedAt:      createdAt,
+		UpdatedAt:      now,
+	}
+	if err := s.controlDB.UpsertConnection(connection); err != nil {
+		return controldb.Connection{}, err
+	}
+	secret, err := sealConnectionSecret(map[string]string{
+		"baseUrl":   openBaseURL,
+		"appId":     poll.AppID,
+		"appSecret": poll.AppSecret,
+	})
+	if err != nil {
+		return controldb.Connection{}, err
+	}
+	secret.ConnectionID = connectionID
+	if err := s.controlDB.UpsertConnectionSecret(secret); err != nil {
+		return controldb.Connection{}, err
+	}
+	return connection, s.upsertConnectorSetupDraft(workspaceID, connectorSetupDraft{
+		Provider:       providerID,
+		OwnerType:      ConnectionOwnerWorkspace,
+		OwnerID:        workspaceID,
+		ConnectionName: "default",
+		Status:         "authorization_pending",
+		Stage:          "authorize",
+		BaseURL:        poll.BaseURL,
+		AppID:          poll.AppID,
+		OwnerOpenID:    poll.OwnerOpenID,
+		ConnectionID:   connectionID,
+		CreatedBy:      requestUsername(r),
+	})
 }
 
 func (s *Server) putConnectorSetupSession(deviceCode string, session connectorDeviceAuthSession) {

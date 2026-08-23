@@ -914,6 +914,7 @@ function connectionDisplayName(connection: Connection, t: TFn): string {
 function connectionStatusLabel(status: string, t: TFn): string {
   if (status === 'active') return t('connections.connected')
   if (status === 'disabled') return t('connections.disabled')
+  if (status === 'authorization_pending') return t('connections.authorizationPending')
   return status || t('connections.notConfigured')
 }
 
@@ -1283,12 +1284,17 @@ function ConnectionDialog({
                   <QRCodeSVG value={deviceSetup.qrUrl} size={104} />
                 </div>
                 <div className="min-w-0 flex-1">
-                  <p className="text-sm font-medium text-neutral-900 dark:text-zinc-100">{t('connections.waitingAuthorization')}</p>
+                  <p className="text-sm font-medium text-neutral-900 dark:text-zinc-100">
+                    {deviceSetup.stage === 'authorize' ? t('connections.waitingAuthorizationAuthorize') : t('connections.waitingAuthorization')}
+                  </p>
+                  {deviceSetup.stage === 'authorize' && (
+                    <p className="mt-1 text-xs leading-5 text-neutral-500 dark:text-zinc-400">{t('connections.deviceAuthAuthorizeHint')}</p>
+                  )}
                   {'userCode' in deviceSetup && deviceSetup.userCode ? (
                     <p className="mt-1 text-lg font-semibold tracking-wide text-neutral-900 dark:text-zinc-100">{deviceSetup.userCode}</p>
                   ) : null}
-                  <a href={deviceSetup.qrUrl} target="_blank" rel="noreferrer" className="mt-1 block truncate text-xs font-medium text-sky-700 hover:underline dark:text-sky-300">
-                    {deviceSetup.qrUrl}
+                  <a href={deviceSetup.qrUrl} target="_blank" rel="noreferrer" className="mt-2 inline-flex max-w-full items-center rounded-md border border-sky-200 px-2.5 py-1.5 text-xs font-medium text-sky-700 hover:bg-sky-50 dark:border-sky-900/70 dark:text-sky-300 dark:hover:bg-sky-950/30">
+                    <span className="truncate">{deviceSetup.stage === 'authorize' ? t('connections.continueAuthorization') : deviceSetup.qrUrl}</span>
                   </a>
                   {deviceSetup.stage === 'verification_code' && (
                     <div className="mt-3 space-y-2">

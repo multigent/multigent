@@ -89,6 +89,13 @@ type runtimeNotifyCardLinkBody struct {
 }
 
 var runtimeNotifyDocIDPattern = regexp.MustCompile(`\b(?:doc-\d{8}-[a-zA-Z0-9_-]+|kb-doc-[a-zA-Z0-9_-]+)\b`)
+var (
+	runtimeNotifyMarkdownHeadingPattern    = regexp.MustCompile(`(?m)^\s{0,3}#{1,6}\s+\S`)
+	runtimeNotifyMarkdownListPattern       = regexp.MustCompile(`(?m)^\s{0,3}(?:[-*+]\s+|\d+[.)]\s+)\S`)
+	runtimeNotifyMarkdownBlockquotePattern = regexp.MustCompile(`(?m)^\s{0,3}>\s+\S`)
+	runtimeNotifyMarkdownFencePattern      = regexp.MustCompile("(?m)^\\s{0,3}```")
+	runtimeNotifyMarkdownLinkPattern       = regexp.MustCompile(`\[[^\]\n]{1,120}\]\([^) \n]+(?:\s+"[^"\n]*")?\)`)
+)
 
 func (s *Server) handleRuntimeChannels(w http.ResponseWriter, r *http.Request) {
 	principal, ok := s.runtimeRequireCapability(w, r, "message.use")
@@ -174,9 +181,12 @@ func (s *Server) handleRuntimeNotify(w http.ResponseWriter, r *http.Request) {
 		"externalError": "",
 		"messageFormat": normalizeRuntimeNotifyMessageFormat(body.MessageFormat, text),
 	}
+	if runtimeNotifyLooksLikeMarkdown(text) && normalizeRuntimeNotifyMessageFormat(body.MessageFormat, text) == "text" && strings.EqualFold(strings.TrimSpace(body.MessageFormat), "text") {
+		result["formatHint"] = "body looks like markdown; use --message-format markdown or leave --message-format as auto for rendered IM output"
+	}
 	if !found {
 		result["externalError"] = "no connected human collaboration channel for this agent"
-		s.auditRuntimeNotify(r, principal, msg.ID, "", subject, false, result["externalError"].(string))
+		s.auditRuntimeNotify(r, principal, msg.ID, "", subject, false, result["externalError"].(string), runtimeNotifyAuditExtra(result))
 		_ = json.NewEncoder(w).Encode(result)
 		return
 	}
@@ -193,14 +203,14 @@ func (s *Server) handleRuntimeNotify(w http.ResponseWriter, r *http.Request) {
 		} else {
 			result["externalError"] = fmt.Sprintf("recipient %q has not bound a %s collaboration account for this agent channel", recipient, binding.Provider)
 		}
-		s.auditRuntimeNotify(r, principal, msg.ID, binding.Provider, subject, false, result["externalError"].(string))
+		s.auditRuntimeNotify(r, principal, msg.ID, binding.Provider, subject, false, result["externalError"].(string), runtimeNotifyAuditExtra(result))
 		_ = json.NewEncoder(w).Encode(result)
 		return
 	}
 	channelProvider, ok := imbridge.LookupProvider(binding.Provider)
 	if !ok {
 		result["externalError"] = "unsupported IM provider: " + binding.Provider
-		s.auditRuntimeNotify(r, principal, msg.ID, binding.Provider, subject, false, result["externalError"].(string))
+		s.auditRuntimeNotify(r, principal, msg.ID, binding.Provider, subject, false, result["externalError"].(string), runtimeNotifyAuditExtra(result))
 		_ = json.NewEncoder(w).Encode(result)
 		return
 	}
@@ -211,7 +221,7 @@ func (s *Server) handleRuntimeNotify(w http.ResponseWriter, r *http.Request) {
 	}
 	if !ok {
 		result["externalError"] = "channel connection secret not found"
-		s.auditRuntimeNotify(r, principal, msg.ID, binding.Provider, subject, false, result["externalError"].(string))
+		s.auditRuntimeNotify(r, principal, msg.ID, binding.Provider, subject, false, result["externalError"].(string), runtimeNotifyAuditExtra(result))
 		_ = json.NewEncoder(w).Encode(result)
 		return
 	}
@@ -222,13 +232,6 @@ func (s *Server) handleRuntimeNotify(w http.ResponseWriter, r *http.Request) {
 	}
 	ctx, cancel := context.WithTimeout(r.Context(), 20*time.Second)
 	defer cancel()
-	if body.Card == nil && strings.TrimSpace(target.ReplyToMessageID) != "" {
-		switch strings.ToLower(strings.TrimSpace(body.MessageFormat)) {
-		case "", "auto":
-			body.MessageFormat = "text"
-			result["messageFormat"] = "text"
-		}
-	}
 	notifyMessage := formatRuntimeNotifyMessage(principal, body, subject, text)
 	if body.Card != nil {
 		card, interactionID, err := s.runtimeNotifyCreateInteractionRequest(principal, binding, recipient, body, text)
@@ -260,7 +263,7 @@ func (s *Server) handleRuntimeNotify(w http.ResponseWriter, r *http.Request) {
 				result["channelId"] = binding.ID
 				result["externalSent"] = true
 				result["externalReply"] = true
-				s.auditRuntimeNotify(r, principal, msg.ID, binding.Provider, subject, true, "")
+				s.auditRuntimeNotify(r, principal, msg.ID, binding.Provider, subject, true, "", runtimeNotifyAuditExtra(result))
 				_ = json.NewEncoder(w).Encode(result)
 				return
 			}
@@ -271,7 +274,7 @@ func (s *Server) handleRuntimeNotify(w http.ResponseWriter, r *http.Request) {
 		result["provider"] = binding.Provider
 		result["channelId"] = binding.ID
 		result["externalError"] = err.Error()
-		s.auditRuntimeNotify(r, principal, msg.ID, binding.Provider, subject, false, err.Error())
+		s.auditRuntimeNotify(r, principal, msg.ID, binding.Provider, subject, false, err.Error(), runtimeNotifyAuditExtra(result))
 		_ = json.NewEncoder(w).Encode(result)
 		return
 	}
@@ -282,7 +285,7 @@ func (s *Server) handleRuntimeNotify(w http.ResponseWriter, r *http.Request) {
 	result["provider"] = binding.Provider
 	result["channelId"] = binding.ID
 	result["externalSent"] = true
-	s.auditRuntimeNotify(r, principal, msg.ID, binding.Provider, subject, true, "")
+	s.auditRuntimeNotify(r, principal, msg.ID, binding.Provider, subject, true, "", runtimeNotifyAuditExtra(result))
 	_ = json.NewEncoder(w).Encode(result)
 }
 
@@ -1134,9 +1137,7 @@ func runtimeNotifySourceActorUserID(sourceLine, provider string) string {
 }
 
 func formatRuntimeNotifyMessage(principal runtimeAgentPrincipal, body runtimeNotifyBody, subject, text string) imbridge.OutgoingMessage {
-	if strings.TrimSpace(subject) == "" {
-		subject = runtimeNotifyDefaultSubject(principal)
-	}
+	subject = strings.TrimSpace(subject)
 	format := normalizeRuntimeNotifyMessageFormat(body.MessageFormat, text)
 	if format == "markdown" {
 		return imbridge.OutgoingMessage{
@@ -1166,11 +1167,45 @@ func normalizeRuntimeNotifyMessageFormat(format, text string) string {
 	switch strings.ToLower(strings.TrimSpace(format)) {
 	case "markdown", "md":
 		return "markdown"
-	case "", "auto":
+	case "text", "plain":
+		if runtimeNotifyLooksLikeMarkdown(text) {
+			return "markdown"
+		}
 		return "text"
-	default:
+	case "", "auto":
+		if runtimeNotifyLooksLikeMarkdown(text) {
+			return "markdown"
+		}
 		return "text"
 	}
+	return "text"
+}
+
+func runtimeNotifyLooksLikeMarkdown(text string) bool {
+	text = strings.TrimSpace(text)
+	if text == "" {
+		return false
+	}
+	if runtimeNotifyMarkdownHeadingPattern.MatchString(text) ||
+		runtimeNotifyMarkdownFencePattern.MatchString(text) ||
+		runtimeNotifyMarkdownLinkPattern.MatchString(text) ||
+		runtimeNotifyMarkdownBlockquotePattern.MatchString(text) {
+		return true
+	}
+	score := 0
+	if runtimeNotifyMarkdownListPattern.MatchString(text) {
+		score++
+	}
+	if strings.Contains(text, "**") || strings.Contains(text, "__") {
+		score++
+	}
+	if strings.Contains(text, "`") {
+		score++
+	}
+	if strings.Count(text, "\n") >= 2 {
+		score++
+	}
+	return score >= 2
 }
 
 type runtimeNotifyDocLink struct {
@@ -1276,7 +1311,31 @@ func prepareRuntimeNotifyExternalMessage(message *imbridge.OutgoingMessage, targ
 	}
 }
 
-func (s *Server) auditRuntimeNotify(r *http.Request, principal runtimeAgentPrincipal, messageID, provider, subject string, externalSent bool, externalError string) {
+func runtimeNotifyAuditExtra(result map[string]any) map[string]any {
+	extra := map[string]any{}
+	for _, key := range []string{"messageFormat", "formatHint", "channelId", "interactionId", "externalReply"} {
+		if value, ok := result[key]; ok {
+			extra[key] = value
+		}
+	}
+	return extra
+}
+
+func (s *Server) auditRuntimeNotify(r *http.Request, principal runtimeAgentPrincipal, messageID, provider, subject string, externalSent bool, externalError string, extra ...map[string]any) {
+	after := map[string]any{
+		"project":       principal.Project,
+		"agent":         principal.Agent,
+		"runId":         principal.RunID,
+		"provider":      provider,
+		"subject":       subject,
+		"externalSent":  externalSent,
+		"externalError": externalError,
+	}
+	for _, values := range extra {
+		for key, value := range values {
+			after[key] = value
+		}
+	}
 	s.auditLog(auditLogInput{
 		WorkspaceID:  principal.WorkspaceID,
 		ActorType:    "agent",
@@ -1285,15 +1344,7 @@ func (s *Server) auditRuntimeNotify(r *http.Request, principal runtimeAgentPrinc
 		ResourceType: "message",
 		ResourceID:   messageID,
 		Summary:      fmt.Sprintf("Runtime agent notified human via %s", firstNonEmpty(provider, "internal")),
-		After: map[string]any{
-			"project":       principal.Project,
-			"agent":         principal.Agent,
-			"runId":         principal.RunID,
-			"provider":      provider,
-			"subject":       subject,
-			"externalSent":  externalSent,
-			"externalError": externalError,
-		},
-		Request: r,
+		After:        after,
+		Request:      r,
 	})
 }

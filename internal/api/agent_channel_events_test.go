@@ -443,8 +443,268 @@ func TestChannelEventBindingRecordsUnknownIdentityOnMatchedChannel(t *testing.T)
 	}
 }
 
+func TestAcceptIMMessageAutoBindsIdentityByEmail(t *testing.T) {
+	s, workspaceID := newConnectionGrantPolicyServer(t)
+	if err := s.users.CreateUser("glenn", "pass123", RoleMember, "Glenn", "glenn@example.com", "", "", ""); err != nil {
+		t.Fatalf("create glenn: %v", err)
+	}
+	if err := s.controlDB.UpsertWorkspaceMember(workspaceID, "glenn", WorkspaceRoleAdmin); err != nil {
+		t.Fatalf("workspace member: %v", err)
+	}
+	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		switch r.URL.Path {
+		case "/open-apis/auth/v3/tenant_access_token/internal":
+			_ = json.NewEncoder(w).Encode(map[string]any{"code": 0, "tenant_access_token": "tenant-token"})
+		case "/open-apis/contact/v3/users/ou_glenn":
+			_ = json.NewEncoder(w).Encode(map[string]any{
+				"code": 0,
+				"data": map[string]any{"user": map[string]any{
+					"open_id": "ou_glenn",
+					"name":    "Glenn",
+					"email":   "glenn@example.com",
+				}},
+			})
+		case "/open-apis/im/v1/messages/om_auto/reactions":
+			_ = json.NewEncoder(w).Encode(map[string]any{
+				"code": 0,
+				"data": map[string]any{"reaction_id": "reaction-one"},
+			})
+		default:
+			t.Fatalf("unexpected path: %s", r.URL.String())
+		}
+	}))
+	defer server.Close()
+	if err := s.controlDB.UpsertConnection(controldb.Connection{
+		ID:             "conn-feishu-auto",
+		WorkspaceID:    workspaceID,
+		Provider:       "feishu",
+		ConnectionName: "agent-sample-pm",
+		OwnerType:      ConnectionOwnerWorkspace,
+		OwnerID:        workspaceID,
+		AuthType:       "app_secret",
+		Status:         "active",
+		ProfileJSON:    "{}",
+	}); err != nil {
+		t.Fatalf("connection: %v", err)
+	}
+	secret, err := sealConnectionSecret(map[string]string{"baseUrl": server.URL, "appId": "cli_app", "appSecret": "secret"})
+	if err != nil {
+		t.Fatalf("seal secret: %v", err)
+	}
+	secret.ConnectionID = "conn-feishu-auto"
+	if err := s.controlDB.UpsertConnectionSecret(secret); err != nil {
+		t.Fatalf("secret: %v", err)
+	}
+	if err := s.controlDB.UpsertAgentChannelBinding(controldb.AgentChannelBinding{
+		ID:           "chan-feishu-auto",
+		WorkspaceID:  workspaceID,
+		ProjectID:    "sample",
+		AgentID:      "pm",
+		Provider:     "feishu",
+		ConnectionID: "conn-feishu-auto",
+		Status:       "connected",
+		MetadataJSON: `{"appId":"cli_app"}`,
+	}); err != nil {
+		t.Fatalf("binding: %v", err)
+	}
+	provider, ok := imbridge.LookupProvider("feishu")
+	if !ok {
+		t.Fatalf("feishu provider missing")
+	}
+	result, err := s.acceptIMMessage(provider, "cli_app", "", imbridge.IncomingMessage{
+		MessageID:    "om_auto",
+		ChatID:       "oc_p2p",
+		ChatType:     "p2p",
+		SenderOpenID: "ou_glenn",
+		Text:         "hello",
+	}, "")
+	if err != nil {
+		t.Fatalf("accept message: %v", err)
+	}
+	if result["queued"] != true {
+		t.Fatalf("message should be queued after auto bind: %#v", result)
+	}
+	identities, err := s.controlDB.ListUserChannelIdentities(controldb.UserChannelIdentityFilter{
+		WorkspaceID:      workspaceID,
+		ChannelBindingID: "chan-feishu-auto",
+		ExternalUserID:   "ou_glenn",
+	})
+	if err != nil {
+		t.Fatalf("list identities: %v", err)
+	}
+	if len(identities) != 1 || identities[0].UserID != "glenn" || identities[0].CreatedBy != "auto" {
+		t.Fatalf("unexpected identities: %#v", identities)
+	}
+}
+
+func TestAcceptIMMessageAutoBindsIdentityByWorkspaceConnectionUnionID(t *testing.T) {
+	s, workspaceID := newConnectionGrantPolicyServer(t)
+	if err := s.users.CreateUser("joey", "pass123", RoleMember, "Joey", "joey@example.com", "", "", ""); err != nil {
+		t.Fatalf("create joey: %v", err)
+	}
+	if err := s.controlDB.UpsertWorkspaceMember(workspaceID, "joey", WorkspaceRoleAdmin); err != nil {
+		t.Fatalf("workspace member: %v", err)
+	}
+	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		switch r.URL.Path {
+		case "/open-apis/auth/v3/tenant_access_token/internal":
+			var body map[string]string
+			_ = json.NewDecoder(r.Body).Decode(&body)
+			token := "tenant-agent"
+			if body["app_id"] == "cli_workspace" {
+				token = "tenant-workspace"
+			}
+			_ = json.NewEncoder(w).Encode(map[string]any{"code": 0, "tenant_access_token": token})
+		case "/open-apis/contact/v3/users/ou_joey":
+			if r.URL.Query().Get("user_id_type") != "open_id" {
+				t.Fatalf("expected open_id lookup, got %s", r.URL.RawQuery)
+			}
+			if auth := r.Header.Get("Authorization"); auth != "Bearer tenant-agent" {
+				t.Fatalf("unexpected auth header: %s", auth)
+			}
+			_ = json.NewEncoder(w).Encode(map[string]any{
+				"code": 0,
+				"data": map[string]any{"user": map[string]any{
+					"open_id":  "ou_joey",
+					"union_id": "on_joey",
+					"name":     "Joey without email",
+				}},
+			})
+		case "/open-apis/contact/v3/users/on_joey":
+			if r.URL.Query().Get("user_id_type") != "union_id" {
+				t.Fatalf("expected union_id lookup, got %s", r.URL.RawQuery)
+			}
+			if auth := r.Header.Get("Authorization"); auth != "Bearer tenant-workspace" {
+				t.Fatalf("unexpected auth header: %s", auth)
+			}
+			_ = json.NewEncoder(w).Encode(map[string]any{
+				"code": 0,
+				"data": map[string]any{"user": map[string]any{
+					"open_id":  "ou_workspace_joey",
+					"union_id": "on_joey",
+					"name":     "Joey",
+					"email":    "joey@example.com",
+				}},
+			})
+		case "/open-apis/im/v1/messages/om_auto_union/reactions":
+			_ = json.NewEncoder(w).Encode(map[string]any{
+				"code": 0,
+				"data": map[string]any{"reaction_id": "reaction-one"},
+			})
+		default:
+			t.Fatalf("unexpected path: %s", r.URL.String())
+		}
+	}))
+	defer server.Close()
+	if err := s.controlDB.UpsertConnection(controldb.Connection{
+		ID:             "conn-feishu-agent",
+		WorkspaceID:    workspaceID,
+		Provider:       "feishu",
+		ConnectionName: "agent-sample-pm",
+		OwnerType:      ConnectionOwnerWorkspace,
+		OwnerID:        workspaceID,
+		AuthType:       "app_secret",
+		Status:         "active",
+		ProfileJSON:    `{"purpose":"agent_channel","usage":"agent_im_channel"}`,
+	}); err != nil {
+		t.Fatalf("agent connection: %v", err)
+	}
+	agentSecret, err := sealConnectionSecret(map[string]string{"baseUrl": server.URL, "appId": "cli_agent", "appSecret": "agent-secret"})
+	if err != nil {
+		t.Fatalf("seal agent secret: %v", err)
+	}
+	agentSecret.ConnectionID = "conn-feishu-agent"
+	if err := s.controlDB.UpsertConnectionSecret(agentSecret); err != nil {
+		t.Fatalf("agent secret: %v", err)
+	}
+	if err := s.controlDB.UpsertConnection(controldb.Connection{
+		ID:             "conn-feishu-workspace",
+		WorkspaceID:    workspaceID,
+		Provider:       "feishu",
+		ConnectionName: "default",
+		OwnerType:      ConnectionOwnerWorkspace,
+		OwnerID:        workspaceID,
+		AuthType:       "app_secret",
+		Status:         "active",
+		ProfileJSON:    `{"displayName":"Feishu Directory"}`,
+	}); err != nil {
+		t.Fatalf("workspace connection: %v", err)
+	}
+	workspaceSecret, err := sealConnectionSecret(map[string]string{"baseUrl": server.URL, "appId": "cli_workspace", "appSecret": "workspace-secret"})
+	if err != nil {
+		t.Fatalf("seal workspace secret: %v", err)
+	}
+	workspaceSecret.ConnectionID = "conn-feishu-workspace"
+	if err := s.controlDB.UpsertConnectionSecret(workspaceSecret); err != nil {
+		t.Fatalf("workspace secret: %v", err)
+	}
+	if err := s.controlDB.UpsertAgentChannelBinding(controldb.AgentChannelBinding{
+		ID:           "chan-feishu-auto-union",
+		WorkspaceID:  workspaceID,
+		ProjectID:    "sample",
+		AgentID:      "pm",
+		Provider:     "feishu",
+		ConnectionID: "conn-feishu-agent",
+		Status:       "connected",
+		MetadataJSON: `{"appId":"cli_agent"}`,
+	}); err != nil {
+		t.Fatalf("binding: %v", err)
+	}
+	provider, ok := imbridge.LookupProvider("feishu")
+	if !ok {
+		t.Fatalf("feishu provider missing")
+	}
+	result, err := s.acceptIMMessage(provider, "cli_agent", "", imbridge.IncomingMessage{
+		MessageID:    "om_auto_union",
+		ChatID:       "oc_p2p",
+		ChatType:     "p2p",
+		SenderOpenID: "ou_joey",
+		Text:         "hello",
+	}, "")
+	if err != nil {
+		t.Fatalf("accept message: %v", err)
+	}
+	if result["queued"] != true {
+		t.Fatalf("message should be queued after auto bind: %#v", result)
+	}
+	identities, err := s.controlDB.ListUserChannelIdentities(controldb.UserChannelIdentityFilter{
+		WorkspaceID:      workspaceID,
+		ChannelBindingID: "chan-feishu-auto-union",
+		ExternalUserID:   "ou_joey",
+	})
+	if err != nil {
+		t.Fatalf("list identities: %v", err)
+	}
+	if len(identities) != 1 || identities[0].UserID != "joey" || identities[0].CreatedBy != "auto" || !strings.Contains(identities[0].MetadataJSON, "workspace_connection_union_id") {
+		t.Fatalf("unexpected identities: %#v", identities)
+	}
+}
+
 func TestHandleIMEventRecordsUnknownIdentityDiagnostic(t *testing.T) {
 	s, workspaceID := newConnectionGrantPolicyServer(t)
+	var replyBody map[string]any
+	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		switch r.URL.Path {
+		case "/open-apis/auth/v3/tenant_access_token/internal":
+			_ = json.NewEncoder(w).Encode(map[string]any{"code": 0, "tenant_access_token": "tenant-token"})
+		case "/open-apis/contact/v3/users/ou_unknown":
+			_ = json.NewEncoder(w).Encode(map[string]any{
+				"code": 0,
+				"data": map[string]any{"user": map[string]any{
+					"open_id": "ou_unknown",
+					"name":    "Unknown",
+				}},
+			})
+		case "/open-apis/im/v1/messages/om_unknown/reply":
+			if err := json.NewDecoder(r.Body).Decode(&replyBody); err != nil {
+				t.Fatalf("decode reply body: %v", err)
+			}
+			_ = json.NewEncoder(w).Encode(map[string]any{"code": 0})
+		default:
+			t.Fatalf("unexpected path: %s", r.URL.String())
+		}
+	}))
+	defer server.Close()
 	if err := s.controlDB.UpsertConnection(controldb.Connection{
 		ID:             "conn-feishu",
 		WorkspaceID:    workspaceID,
@@ -458,7 +718,7 @@ func TestHandleIMEventRecordsUnknownIdentityDiagnostic(t *testing.T) {
 	}); err != nil {
 		t.Fatalf("connection: %v", err)
 	}
-	secret, err := sealConnectionSecret(map[string]string{"baseUrl": "https://open.feishu.cn", "appId": "cli_app", "appSecret": "secret"})
+	secret, err := sealConnectionSecret(map[string]string{"baseUrl": server.URL, "appId": "cli_app", "appSecret": "secret"})
 	if err != nil {
 		t.Fatalf("seal secret: %v", err)
 	}
@@ -511,6 +771,90 @@ func TestHandleIMEventRecordsUnknownIdentityDiagnostic(t *testing.T) {
 	resp := agentChannelToResponse(updated)
 	if resp.Callback.Status != "rejected" || resp.Callback.Reason != "unknown_identity" || resp.Callback.MessageID != "om_unknown" {
 		t.Fatalf("callback metadata not recorded: %#v", resp.Callback)
+	}
+	content, _ := replyBody["content"].(string)
+	if replyBody["msg_type"] != "text" || !strings.Contains(content, "/bind MG-") {
+		t.Fatalf("single-chat unknown identity should receive bind hint, body=%#v content=%s", replyBody, content)
+	}
+}
+
+func TestHandleIMEventDoesNotPromptBindInGroupChat(t *testing.T) {
+	s, workspaceID := newConnectionGrantPolicyServer(t)
+	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		switch r.URL.Path {
+		case "/open-apis/auth/v3/tenant_access_token/internal":
+			_ = json.NewEncoder(w).Encode(map[string]any{"code": 0, "tenant_access_token": "tenant-token"})
+		case "/open-apis/contact/v3/users/ou_unknown":
+			_ = json.NewEncoder(w).Encode(map[string]any{
+				"code": 0,
+				"data": map[string]any{"user": map[string]any{
+					"open_id": "ou_unknown",
+					"name":    "Unknown",
+				}},
+			})
+		default:
+			t.Fatalf("unexpected path: %s", r.URL.String())
+		}
+	}))
+	defer server.Close()
+	if err := s.controlDB.UpsertConnection(controldb.Connection{
+		ID:             "conn-feishu-group",
+		WorkspaceID:    workspaceID,
+		Provider:       "feishu",
+		ConnectionName: "agent-sample-pm",
+		OwnerType:      ConnectionOwnerWorkspace,
+		OwnerID:        workspaceID,
+		AuthType:       "app_secret",
+		Status:         "active",
+		ProfileJSON:    "{}",
+	}); err != nil {
+		t.Fatalf("connection: %v", err)
+	}
+	secret, err := sealConnectionSecret(map[string]string{"baseUrl": server.URL, "appId": "cli_group", "appSecret": "secret"})
+	if err != nil {
+		t.Fatalf("seal secret: %v", err)
+	}
+	secret.ConnectionID = "conn-feishu-group"
+	if err := s.controlDB.UpsertConnectionSecret(secret); err != nil {
+		t.Fatalf("secret: %v", err)
+	}
+	if err := s.controlDB.UpsertAgentChannelBinding(controldb.AgentChannelBinding{
+		ID:           "chan-feishu-group",
+		WorkspaceID:  workspaceID,
+		ProjectID:    "sample",
+		AgentID:      "pm",
+		Provider:     "feishu",
+		ConnectionID: "conn-feishu-group",
+		Status:       "connected",
+		MetadataJSON: `{"appId":"cli_group"}`,
+	}); err != nil {
+		t.Fatalf("binding: %v", err)
+	}
+
+	body := `{
+		"schema":"2.0",
+		"header":{"event_type":"im.message.receive_v1","app_id":"cli_group"},
+		"event":{
+			"sender":{"sender_id":{"open_id":"ou_unknown"}},
+			"message":{"message_id":"om_group","chat_id":"oc_group","chat_type":"group","message_type":"text","content":"{\"text\":\"@pm hello\"}"}
+		}
+	}`
+	req := httptest.NewRequest(http.MethodPost, "/api/v1/im/feishu/events", strings.NewReader(body))
+	req.SetPathValue("provider", "feishu")
+	rec := httptest.NewRecorder()
+	s.handleIMEvent(rec, req)
+	if rec.Code != http.StatusOK {
+		t.Fatalf("status=%d body=%s", rec.Code, rec.Body.String())
+	}
+	var got struct {
+		Ignored bool   `json:"ignored"`
+		Reason  string `json:"reason"`
+	}
+	if err := json.Unmarshal(rec.Body.Bytes(), &got); err != nil {
+		t.Fatalf("response JSON: %v body=%s", err, rec.Body.String())
+	}
+	if !got.Ignored || got.Reason != "unknown_identity" {
+		t.Fatalf("unexpected response: %#v", got)
 	}
 }
 

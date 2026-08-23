@@ -132,6 +132,99 @@ func TestReplyMarkdownUsesPostReplyAPI(t *testing.T) {
 	}
 }
 
+func TestMarkdownPostBodyOmitsEmptyTitle(t *testing.T) {
+	content := buildMarkdownPostBody("", "## 结论\n\n- 已处理")
+	var post map[string]any
+	if err := json.Unmarshal([]byte(content), &post); err != nil {
+		t.Fatalf("content is not post JSON: %v", err)
+	}
+	zh, _ := post["zh_cn"].(map[string]any)
+	if zh == nil {
+		t.Fatalf("missing zh_cn post body: %#v", post)
+	}
+	if _, ok := zh["title"]; ok {
+		t.Fatalf("empty title should be omitted: %#v", zh["title"])
+	}
+}
+
+func TestGetUserReturnsEmailFields(t *testing.T) {
+	var gotPath string
+	var authHeader string
+	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		switch r.URL.Path {
+		case "/open-apis/auth/v3/tenant_access_token/internal":
+			_ = json.NewEncoder(w).Encode(map[string]any{"code": 0, "tenant_access_token": "tenant-token"})
+		case "/open-apis/contact/v3/users/ou_one":
+			gotPath = r.URL.RawQuery
+			authHeader = r.Header.Get("Authorization")
+			_ = json.NewEncoder(w).Encode(map[string]any{
+				"code": 0,
+				"data": map[string]any{"user": map[string]any{
+					"open_id":          "ou_one",
+					"user_id":          "u_one",
+					"union_id":         "on_one",
+					"name":             "Glenn",
+					"email":            "glenn@example.com",
+					"enterprise_email": "glenn@company.com",
+				}},
+			})
+		default:
+			t.Fatalf("unexpected path: %s", r.URL.String())
+		}
+	}))
+	defer server.Close()
+
+	client := OpenAPIClient{BaseURL: server.URL, AppID: "cli_app", AppSecret: "secret", HTTPClient: server.Client()}
+	profile, err := client.GetUser(context.Background(), "ou_one", "open_id")
+	if err != nil {
+		t.Fatalf("get user: %v", err)
+	}
+	if gotPath != "user_id_type=open_id" {
+		t.Fatalf("unexpected query: %s", gotPath)
+	}
+	if profile.Email != "glenn@example.com" || profile.EnterpriseEmail != "glenn@company.com" || profile.OpenID != "ou_one" {
+		t.Fatalf("unexpected profile: %#v", profile)
+	}
+	if authHeader != "Bearer tenant-token" {
+		t.Fatalf("unexpected auth header: %s", authHeader)
+	}
+}
+
+func TestGetUserUsesOAuthAccessTokenWhenPresent(t *testing.T) {
+	var authHeader string
+	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		switch r.URL.Path {
+		case "/open-apis/auth/v3/tenant_access_token/internal":
+			t.Fatalf("tenant token endpoint should not be called when access token is present")
+		case "/open-apis/contact/v3/users/on_one":
+			authHeader = r.Header.Get("Authorization")
+			_ = json.NewEncoder(w).Encode(map[string]any{
+				"code": 0,
+				"data": map[string]any{"user": map[string]any{
+					"open_id": "ou_one",
+					"name":    "Glenn",
+					"email":   "glenn@example.com",
+				}},
+			})
+		default:
+			t.Fatalf("unexpected path: %s", r.URL.String())
+		}
+	}))
+	defer server.Close()
+
+	client := OpenAPIClient{BaseURL: server.URL, AppID: "cli_app", AppSecret: "secret", AccessToken: "user-access-token", HTTPClient: server.Client()}
+	profile, err := client.GetUser(context.Background(), "on_one", "union_id")
+	if err != nil {
+		t.Fatalf("get user: %v", err)
+	}
+	if profile.Email != "glenn@example.com" || profile.OpenID != "ou_one" {
+		t.Fatalf("unexpected profile: %#v", profile)
+	}
+	if authHeader != "Bearer user-access-token" {
+		t.Fatalf("unexpected auth header: %s", authHeader)
+	}
+}
+
 func TestProgressCardCollapsesReasoningWhenCompleted(t *testing.T) {
 	card := buildProgressCardBody(ProgressCard{
 		Title: "Multigent · nova",

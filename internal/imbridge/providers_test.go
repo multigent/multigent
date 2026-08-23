@@ -49,7 +49,7 @@ func TestProviderParsesIMMessageEvent(t *testing.T) {
 		"token":"verify-one",
 		"header":{"event_type":"im.message.receive_v1","app_id":"cli_app"},
 		"event":{
-			"sender":{"sender_id":{"open_id":"ou_one"}},
+			"sender":{"sender_id":{"open_id":"ou_one","user_id":"u_one","union_id":"on_one"}},
 			"message":{
 				"message_id":"om_one",
 				"chat_id":"oc_one",
@@ -67,7 +67,7 @@ func TestProviderParsesIMMessageEvent(t *testing.T) {
 	if !parsed.IsMessage || parsed.AppID != "cli_app" || parsed.VerificationToken != "verify-one" {
 		t.Fatalf("unexpected parsed event: %#v", parsed)
 	}
-	if parsed.Message.MessageID != "om_one" || parsed.Message.SenderOpenID != "ou_one" || parsed.Message.Text != "@bot hello" {
+	if parsed.Message.MessageID != "om_one" || parsed.Message.SenderOpenID != "ou_one" || parsed.Message.SenderUserID != "u_one" || parsed.Message.SenderUnionID != "on_one" || parsed.Message.Text != "@bot hello" {
 		t.Fatalf("unexpected message: %#v", parsed.Message)
 	}
 	if len(parsed.Message.Mentions) != 1 {

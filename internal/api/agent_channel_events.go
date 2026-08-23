@@ -35,6 +35,7 @@ type channelEventResolution struct {
 	Found        bool
 	Candidate    controldb.AgentChannelBinding
 	HasCandidate bool
+	AutoBound    bool
 }
 
 const imSystemAckReaction = "THINKING"
@@ -464,27 +465,41 @@ func (s *Server) acceptIMMessage(channelProvider imbridge.Provider, appID, verif
 		return nil, err
 	}
 	if !resolution.Found {
-		reason := "binding_not_found"
 		if resolution.HasCandidate {
-			reason = "unknown_identity"
-			s.recordAgentChannelCallback(resolution.Candidate, "rejected", reason, message, "")
-			s.auditLog(auditLogInput{
-				WorkspaceID:  resolution.Candidate.WorkspaceID,
-				Action:       "agent_channel.identity_missing",
-				ResourceType: "agent_channel",
-				ResourceID:   resolution.Candidate.ID,
-				Summary:      fmt.Sprintf("Ignored %s message for %s/%s because the sender is not linked to a Multigent user", provider, resolution.Candidate.ProjectID, resolution.Candidate.AgentID),
-				After: map[string]any{
-					"provider":       provider,
-					"externalUserId": message.SenderOpenID,
-					"messageId":      message.MessageID,
-					"chatId":         message.ChatID,
-				},
-			})
-		} else {
-			log.Printf("[im:%s] binding not found app=%s chat=%s sender=%s message=%s", provider, appID, message.ChatID, message.SenderOpenID, message.MessageID)
+			resolved, ok, err := s.tryAutoBindChannelIdentityByEmail(provider, message, resolution.Candidate)
+			if err != nil {
+				return nil, err
+			}
+			if ok {
+				resolution.Resolved = resolved
+				resolution.Found = true
+				resolution.AutoBound = true
+			}
 		}
-		return map[string]any{"ok": true, "ignored": true, "reason": reason}, nil
+		if !resolution.Found {
+			reason := "binding_not_found"
+			if resolution.HasCandidate {
+				reason = "unknown_identity"
+				s.recordAgentChannelCallback(resolution.Candidate, "rejected", reason, message, "")
+				s.replyChannelIdentityBindingRequired(channelProvider, resolution.Candidate, message)
+				s.auditLog(auditLogInput{
+					WorkspaceID:  resolution.Candidate.WorkspaceID,
+					Action:       "agent_channel.identity_missing",
+					ResourceType: "agent_channel",
+					ResourceID:   resolution.Candidate.ID,
+					Summary:      fmt.Sprintf("Ignored %s message for %s/%s because the sender is not linked to a Multigent user", provider, resolution.Candidate.ProjectID, resolution.Candidate.AgentID),
+					After: map[string]any{
+						"provider":       provider,
+						"externalUserId": shortSensitiveHash(message.SenderOpenID),
+						"messageId":      message.MessageID,
+						"chatId":         message.ChatID,
+					},
+				})
+			} else {
+				log.Printf("[im:%s] binding not found app=%s chat=%s sender=%s message=%s", provider, appID, message.ChatID, message.SenderOpenID, message.MessageID)
+			}
+			return map[string]any{"ok": true, "ignored": true, "reason": reason}, nil
+		}
 	}
 	resolved := resolution.Resolved
 	if !channelProvider.ShouldHandleMessage(resolved.Binding.ExternalChatID, message) {
@@ -807,6 +822,29 @@ func (s *Server) replyBindCommandFailure(channelProvider imbridge.Provider, bind
 	return map[string]any{"ok": true, "ignored": true, "reason": reason}, nil
 }
 
+func (s *Server) replyChannelIdentityBindingRequired(channelProvider imbridge.Provider, binding controldb.AgentChannelBinding, message imbridge.IncomingMessage) {
+	if !strings.EqualFold(strings.TrimSpace(message.ChatType), "p2p") {
+		return
+	}
+	if s == nil || s.controlDB == nil {
+		return
+	}
+	secret, ok, err := s.controlDB.ConnectionSecret(binding.ConnectionID)
+	if err != nil || !ok {
+		return
+	}
+	values, err := openConnectionSecret(secret)
+	if err != nil {
+		return
+	}
+	agentLabel := s.agentChannelDisplayName(binding)
+	reply := fmt.Sprintf("我还不能确认你对应的 Multigent 用户身份。请在 Multigent 的「%s」协作渠道里生成绑定码，然后在这里发送 `/bind MG-...` 完成绑定。", agentLabel)
+	resolved := resolvedChannelEventBinding{Binding: binding, SecretValues: values, Identity: controldb.ExternalIdentity{WorkspaceID: binding.WorkspaceID, Provider: channelProvider.Info().ID, ExternalUserID: message.SenderOpenID}}
+	if err := s.replyToIMEvent(context.Background(), channelProvider, resolved, message, reply); err != nil {
+		s.recordAgentChannelCallback(binding, "reply_failed", "identity_bind_required", message, err.Error())
+	}
+}
+
 func parseAgentChannelBindCommand(text string) (string, string, bool) {
 	fields := strings.Fields(strings.TrimSpace(text))
 	if len(fields) < 2 {
@@ -937,6 +975,219 @@ func (s *Server) resolveChannelEventBindingDetailed(provider, appID, chatID, ext
 		}, nil
 	}
 	return channelEventResolution{Candidate: bindings[0], HasCandidate: true}, nil
+}
+
+func (s *Server) tryAutoBindChannelIdentityByEmail(provider string, message imbridge.IncomingMessage, binding controldb.AgentChannelBinding) (resolvedChannelEventBinding, bool, error) {
+	if s == nil || s.controlDB == nil || s.users == nil {
+		return resolvedChannelEventBinding{}, false, nil
+	}
+	externalUserID := strings.TrimSpace(message.SenderOpenID)
+	if externalUserID == "" {
+		return resolvedChannelEventBinding{}, false, nil
+	}
+	channelProvider, ok := imbridge.LookupProvider(provider)
+	if !ok {
+		return resolvedChannelEventBinding{}, false, nil
+	}
+	resolver, ok := channelProvider.(imbridge.ExternalUserProfileResolver)
+	if !ok {
+		return resolvedChannelEventBinding{}, false, nil
+	}
+	secret, ok, err := s.controlDB.ConnectionSecret(binding.ConnectionID)
+	if err != nil {
+		return resolvedChannelEventBinding{}, false, err
+	}
+	if !ok {
+		return resolvedChannelEventBinding{}, false, nil
+	}
+	values, err := openConnectionSecret(secret)
+	if err != nil {
+		return resolvedChannelEventBinding{}, false, err
+	}
+	ctx, cancel := context.WithTimeout(context.Background(), 12*time.Second)
+	defer cancel()
+	profile, source, errText := s.resolveChannelIdentityProfileByEmail(ctx, provider, resolver, values, binding, message)
+	if strings.TrimSpace(errText) != "" && strings.TrimSpace(profile.Email) == "" && strings.TrimSpace(profile.EnterpriseEmail) == "" {
+		s.auditAgentChannelAutoBind(binding, provider, externalUserID, "", "", source, errText)
+		return resolvedChannelEventBinding{}, false, nil
+	}
+	email := normalizeEmail(firstNonEmpty(profile.EnterpriseEmail, profile.Email))
+	if email == "" {
+		s.auditAgentChannelAutoBind(binding, provider, externalUserID, "", "", firstNonEmpty(source, "email_missing"), "")
+		return resolvedChannelEventBinding{}, false, nil
+	}
+	user := s.users.UserByEmail(email)
+	if user == nil || strings.TrimSpace(user.Username) == "" {
+		s.auditAgentChannelAutoBind(binding, provider, externalUserID, "", email, firstNonEmpty(source, "user_not_found"), "")
+		return resolvedChannelEventBinding{}, false, nil
+	}
+	if _, ok, err := s.controlDB.WorkspaceMember(binding.WorkspaceID, user.Username); err != nil {
+		return resolvedChannelEventBinding{}, false, err
+	} else if !ok {
+		s.auditAgentChannelAutoBind(binding, provider, externalUserID, user.Username, email, firstNonEmpty(source, "workspace_member_not_found"), "")
+		return resolvedChannelEventBinding{}, false, nil
+	}
+	now := time.Now().UTC().Format(time.RFC3339)
+	meta := map[string]any{
+		"source":        "auto_email_match",
+		"profileSource": strings.TrimSpace(source),
+		"name":          strings.TrimSpace(profile.Name),
+		"emailHash":     shortSensitiveHash(email),
+	}
+	rawMeta, _ := json.Marshal(meta)
+	if err := s.controlDB.UpsertUserChannelIdentity(controldb.UserChannelIdentity{
+		ID:               newChannelID("uch"),
+		WorkspaceID:      binding.WorkspaceID,
+		UserID:           user.Username,
+		ChannelBindingID: binding.ID,
+		Provider:         provider,
+		ExternalUserID:   externalUserID,
+		MetadataJSON:     string(rawMeta),
+		CreatedBy:        "auto",
+		CreatedAt:        now,
+		UpdatedAt:        now,
+	}); err != nil {
+		return resolvedChannelEventBinding{}, false, err
+	}
+	s.auditAgentChannelAutoBind(binding, provider, externalUserID, user.Username, email, firstNonEmpty(source, "bound"), "")
+	return resolvedChannelEventBinding{
+		Binding:      binding,
+		SecretValues: values,
+		Identity: controldb.ExternalIdentity{
+			WorkspaceID:    binding.WorkspaceID,
+			Provider:       provider,
+			ExternalUserID: externalUserID,
+			UserID:         user.Username,
+		},
+	}, true, nil
+}
+
+func (s *Server) resolveChannelIdentityProfileByEmail(ctx context.Context, provider string, resolver imbridge.ExternalUserProfileResolver, channelSecrets map[string]string, binding controldb.AgentChannelBinding, message imbridge.IncomingMessage) (imbridge.ExternalUserProfile, string, string) {
+	externalUserID := strings.TrimSpace(message.SenderOpenID)
+	if externalUserID != "" {
+		profile, err := resolver.ResolveExternalUserProfile(ctx, channelSecrets, externalUserID, "open_id")
+		if err == nil {
+			if normalizeEmail(firstNonEmpty(profile.EnterpriseEmail, profile.Email)) != "" {
+				return profile, "agent_channel_open_id", ""
+			}
+			fallbackMessage := message
+			if strings.TrimSpace(fallbackMessage.SenderUnionID) == "" {
+				fallbackMessage.SenderUnionID = strings.TrimSpace(profile.UnionID)
+			}
+			if strings.TrimSpace(fallbackMessage.SenderUserID) == "" {
+				fallbackMessage.SenderUserID = strings.TrimSpace(profile.UserID)
+			}
+			if fallbackProfile, source, errText := s.resolveChannelIdentityProfileWithWorkspaceConnection(ctx, provider, resolver, binding, fallbackMessage); normalizeEmail(firstNonEmpty(fallbackProfile.EnterpriseEmail, fallbackProfile.Email)) != "" || errText != "" {
+				return fallbackProfile, source, errText
+			}
+			return profile, "agent_channel_email_missing", ""
+		}
+		if profile, source, errText := s.resolveChannelIdentityProfileWithWorkspaceConnection(ctx, provider, resolver, binding, message); normalizeEmail(firstNonEmpty(profile.EnterpriseEmail, profile.Email)) != "" || errText != "" {
+			return profile, source, errText
+		}
+		return imbridge.ExternalUserProfile{}, "profile_lookup_failed", err.Error()
+	}
+	return s.resolveChannelIdentityProfileWithWorkspaceConnection(ctx, provider, resolver, binding, message)
+}
+
+func (s *Server) resolveChannelIdentityProfileWithWorkspaceConnection(ctx context.Context, provider string, resolver imbridge.ExternalUserProfileResolver, binding controldb.AgentChannelBinding, message imbridge.IncomingMessage) (imbridge.ExternalUserProfile, string, string) {
+	if strings.TrimSpace(message.SenderUnionID) == "" && strings.TrimSpace(message.SenderUserID) == "" {
+		return imbridge.ExternalUserProfile{}, "", ""
+	}
+	connections, err := s.controlDB.ListConnections(controldb.ConnectionFilter{
+		WorkspaceID: binding.WorkspaceID,
+		Provider:    provider,
+		Status:      "active",
+	})
+	if err != nil {
+		return imbridge.ExternalUserProfile{}, "workspace_connection_lookup_failed", err.Error()
+	}
+	var lastErr string
+	for _, conn := range connections {
+		if conn.ID == binding.ConnectionID || connectionLooksLikeAgentChannel(conn) {
+			continue
+		}
+		secret, ok, err := s.controlDB.ConnectionSecret(conn.ID)
+		if err != nil {
+			lastErr = err.Error()
+			continue
+		}
+		if !ok {
+			continue
+		}
+		values, err := openConnectionSecret(secret)
+		if err != nil {
+			lastErr = err.Error()
+			continue
+		}
+		for _, candidate := range []struct {
+			idType string
+			id     string
+		}{
+			{idType: "union_id", id: strings.TrimSpace(message.SenderUnionID)},
+			{idType: "user_id", id: strings.TrimSpace(message.SenderUserID)},
+		} {
+			if candidate.id == "" {
+				continue
+			}
+			profile, err := resolver.ResolveExternalUserProfile(ctx, values, candidate.id, candidate.idType)
+			source := "workspace_connection_" + candidate.idType
+			if err == nil {
+				return profile, source, ""
+			}
+			lastErr = err.Error()
+		}
+	}
+	if lastErr != "" {
+		return imbridge.ExternalUserProfile{}, "workspace_connection_profile_lookup_failed", lastErr
+	}
+	return imbridge.ExternalUserProfile{}, "", ""
+}
+
+func connectionLooksLikeAgentChannel(conn controldb.Connection) bool {
+	profile := strings.ToLower(strings.TrimSpace(conn.ProfileJSON))
+	return strings.Contains(profile, `"purpose":"agent_channel"`) ||
+		strings.Contains(profile, `"usage":"agent_im_channel"`) ||
+		strings.HasPrefix(strings.TrimSpace(conn.ConnectionName), "agent-")
+}
+
+func (s *Server) auditAgentChannelAutoBind(binding controldb.AgentChannelBinding, provider, externalUserID, userID, email, status, errText string) {
+	if s == nil {
+		return
+	}
+	after := map[string]any{
+		"provider":       provider,
+		"externalUserId": shortSensitiveHash(externalUserID),
+		"status":         status,
+	}
+	if strings.TrimSpace(userID) != "" {
+		after["user"] = strings.TrimSpace(userID)
+	}
+	if strings.TrimSpace(email) != "" {
+		after["emailHash"] = shortSensitiveHash(email)
+	}
+	if strings.TrimSpace(errText) != "" {
+		after["error"] = errText
+	}
+	s.auditLog(auditLogInput{
+		WorkspaceID:  binding.WorkspaceID,
+		ActorType:    "system",
+		ActorID:      "im-auto-bind",
+		Action:       "agent_channel.identity_auto_bind",
+		ResourceType: "agent_channel",
+		ResourceID:   binding.ID,
+		Summary:      fmt.Sprintf("Auto-bound %s channel identity by email: %s", provider, status),
+		After:        after,
+	})
+}
+
+func shortSensitiveHash(value string) string {
+	value = strings.TrimSpace(value)
+	if value == "" {
+		return ""
+	}
+	sum := sha256.Sum256([]byte(value))
+	return fmt.Sprintf("%x", sum[:])[:16]
 }
 
 func (s *Server) matchChannelEventBindings(provider, appID, chatID string) ([]controldb.AgentChannelBinding, error) {

@@ -13,10 +13,11 @@ import (
 )
 
 type OpenAPIClient struct {
-	BaseURL    string
-	AppID      string
-	AppSecret  string
-	HTTPClient *http.Client
+	BaseURL     string
+	AppID       string
+	AppSecret   string
+	AccessToken string
+	HTTPClient  *http.Client
 }
 
 type InteractiveCard struct {
@@ -65,6 +66,15 @@ type OutgoingAttachment struct {
 	FileName string
 	MIME     string
 	Data     []byte
+}
+
+type UserProfile struct {
+	OpenID          string
+	UserID          string
+	UnionID         string
+	Name            string
+	Email           string
+	EnterpriseEmail string
 }
 
 func (c OpenAPIClient) ReplyText(ctx context.Context, messageID, text string) error {
@@ -202,9 +212,6 @@ func (c OpenAPIClient) ReplyMarkdown(ctx context.Context, messageID, title, mark
 	markdown = strings.TrimSpace(markdown)
 	if messageID == "" {
 		return fmt.Errorf("message id is required")
-	}
-	if title == "" {
-		title = "Agent"
 	}
 	if markdown == "" {
 		markdown = "(empty message)"
@@ -567,9 +574,6 @@ func (c OpenAPIClient) SendMarkdown(ctx context.Context, receiveIDType, receiveI
 	if receiveID == "" {
 		return fmt.Errorf("receive id is required")
 	}
-	if title == "" {
-		title = "Agent"
-	}
 	if markdown == "" {
 		markdown = "(empty message)"
 	}
@@ -606,6 +610,69 @@ func (c OpenAPIClient) SendMarkdown(ctx context.Context, receiveIDType, receiveI
 		return fmt.Errorf("send markdown message failed: code=%d msg=%s", parsed.Code, parsed.Msg)
 	}
 	return nil
+}
+
+func (c OpenAPIClient) GetUser(ctx context.Context, userID, userIDType string) (UserProfile, error) {
+	userID = strings.TrimSpace(userID)
+	userIDType = strings.TrimSpace(userIDType)
+	if userID == "" {
+		return UserProfile{}, fmt.Errorf("user id is required")
+	}
+	if userIDType == "" {
+		userIDType = "open_id"
+	}
+	token := strings.TrimSpace(c.AccessToken)
+	if token == "" {
+		var err error
+		token, err = c.tenantAccessToken(ctx)
+		if err != nil {
+			return UserProfile{}, err
+		}
+	}
+	u := strings.TrimRight(c.openBaseURL(), "/") + "/open-apis/contact/v3/users/" + userID + "?user_id_type=" + userIDType
+	req, err := http.NewRequestWithContext(ctx, http.MethodGet, u, nil)
+	if err != nil {
+		return UserProfile{}, err
+	}
+	req.Header.Set("Authorization", "Bearer "+token)
+	resp, err := c.httpClient().Do(req)
+	if err != nil {
+		return UserProfile{}, err
+	}
+	defer resp.Body.Close()
+	raw, _ := io.ReadAll(io.LimitReader(resp.Body, 1<<20))
+	if resp.StatusCode < 200 || resp.StatusCode >= 300 {
+		return UserProfile{}, fmt.Errorf("get user http %d: %s", resp.StatusCode, string(raw))
+	}
+	var parsed struct {
+		Code int    `json:"code"`
+		Msg  string `json:"msg"`
+		Data struct {
+			User struct {
+				OpenID          string `json:"open_id"`
+				UserID          string `json:"user_id"`
+				UnionID         string `json:"union_id"`
+				Name            string `json:"name"`
+				Email           string `json:"email"`
+				EnterpriseEmail string `json:"enterprise_email"`
+			} `json:"user"`
+		} `json:"data"`
+	}
+	if err := json.Unmarshal(raw, &parsed); err != nil {
+		return UserProfile{}, err
+	}
+	if parsed.Code != 0 {
+		return UserProfile{}, fmt.Errorf("get user failed: code=%d msg=%s", parsed.Code, parsed.Msg)
+	}
+	user := parsed.Data.User
+	return UserProfile{
+		OpenID:          user.OpenID,
+		UserID:          user.UserID,
+		UnionID:         user.UnionID,
+		Name:            user.Name,
+		Email:           user.Email,
+		EnterpriseEmail: user.EnterpriseEmail,
+	}, nil
 }
 
 func buildMarkdownCardBody(title, markdown string) map[string]any {

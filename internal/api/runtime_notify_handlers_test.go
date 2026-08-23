@@ -625,6 +625,53 @@ func TestFormatRuntimeNotifyMarkdownPreservesAgentBodyWithoutPlatformFooter(t *t
 	}
 }
 
+func TestFormatRuntimeNotifyAutoDetectsMarkdownBody(t *testing.T) {
+	body := "现在需要你关注的(按优先级):\n\n## P0\n1. **#1655 i18n** — 等待 owner 决策\n\n## P1\n- PR #1720 已就绪"
+	msg := formatRuntimeNotifyMessage(runtimeAgentPrincipal{
+		Project: "sample",
+		Agent:   "pm",
+	}, runtimeNotifyBody{
+		MessageFormat: "auto",
+	}, "", body)
+	if msg.Format != "markdown" {
+		t.Fatalf("auto should detect markdown, got %#v", msg)
+	}
+	if msg.Subject != "" {
+		t.Fatalf("auto markdown without explicit subject should not add agent title, got %q", msg.Subject)
+	}
+	if msg.Text != body {
+		t.Fatalf("markdown body should be preserved: %q", msg.Text)
+	}
+}
+
+func TestFormatRuntimeNotifyAutoKeepsPlainText(t *testing.T) {
+	msg := formatRuntimeNotifyMessage(runtimeAgentPrincipal{
+		Project: "sample",
+		Agent:   "pm",
+	}, runtimeNotifyBody{
+		MessageFormat: "auto",
+	}, "", "我先看下，稍后回复你。")
+	if msg.Format != "text" {
+		t.Fatalf("plain auto message should stay text, got %#v", msg)
+	}
+}
+
+func TestFormatRuntimeNotifyPromotesExplicitTextThatLooksLikeMarkdown(t *testing.T) {
+	body := "## 结论\n\n- 需要 owner 关注\n- PR 已就绪"
+	if !runtimeNotifyLooksLikeMarkdown(body) {
+		t.Fatalf("test body should look like markdown")
+	}
+	msg := formatRuntimeNotifyMessage(runtimeAgentPrincipal{
+		Project: "sample",
+		Agent:   "pm",
+	}, runtimeNotifyBody{
+		MessageFormat: "text",
+	}, "", body)
+	if msg.Format != "markdown" {
+		t.Fatalf("markdown-like text should be promoted, got %#v", msg)
+	}
+}
+
 func TestRuntimeNotifyEnrichesMarkdownDocLinks(t *testing.T) {
 	s, _ := newConnectionGrantPolicyServer(t)
 	t.Setenv("MULTIGENT_WEB_BASE_URL", "https://public.multigent.test")

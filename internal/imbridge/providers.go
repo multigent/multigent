@@ -51,17 +51,19 @@ type ManualSetupResult struct {
 }
 
 type IncomingMessage struct {
-	MessageID    string
-	ChatID       string
-	ChatType     string
-	RootID       string
-	ParentID     string
-	SenderOpenID string
-	MessageType  string
-	Text         string
-	RawContent   string
-	Mentions     []json.RawMessage
-	Attachments  []IncomingAttachment
+	MessageID     string
+	ChatID        string
+	ChatType      string
+	RootID        string
+	ParentID      string
+	SenderOpenID  string
+	SenderUserID  string
+	SenderUnionID string
+	MessageType   string
+	Text          string
+	RawContent    string
+	Mentions      []json.RawMessage
+	Attachments   []IncomingAttachment
 }
 
 type IncomingAttachment struct {
@@ -73,6 +75,15 @@ type IncomingAttachment struct {
 	Size    int64          `json:"size,omitempty"`
 	Preview string         `json:"preview,omitempty"`
 	Raw     map[string]any `json:"raw,omitempty"`
+}
+
+type ExternalUserProfile struct {
+	OpenID          string
+	UserID          string
+	UnionID         string
+	Name            string
+	Email           string
+	EnterpriseEmail string
 }
 
 type OutgoingTarget struct {
@@ -203,6 +214,10 @@ type InteractionCardUpdater interface {
 	UpdateInteractionCard(ctx context.Context, secrets map[string]string, callback IncomingInteractionCallback, message OutgoingMessage) error
 }
 
+type ExternalUserProfileResolver interface {
+	ResolveExternalUserProfile(ctx context.Context, secrets map[string]string, externalUserID, userIDType string) (ExternalUserProfile, error)
+}
+
 var registry = []Provider{
 	larkFamilyProvider{id: larkbridge.ProviderFeishu, label: "Feishu"},
 	larkFamilyProvider{id: larkbridge.ProviderLark, label: "Lark"},
@@ -300,16 +315,18 @@ func (p larkFamilyProvider) ParseEvent(raw []byte) (ParsedEvent, error) {
 	}
 	out.IsMessage = true
 	out.Message = IncomingMessage{
-		MessageID:    event.Message.MessageID,
-		ChatID:       event.Message.ChatID,
-		ChatType:     event.Message.ChatType,
-		RootID:       event.Message.RootID,
-		ParentID:     event.Message.ParentID,
-		SenderOpenID: event.Sender.SenderID.OpenID,
-		MessageType:  event.Message.MessageType,
-		Text:         larkbridge.ExtractText(event.Message),
-		RawContent:   event.Message.Content,
-		Mentions:     event.Message.Mentions,
+		MessageID:     event.Message.MessageID,
+		ChatID:        event.Message.ChatID,
+		ChatType:      event.Message.ChatType,
+		RootID:        event.Message.RootID,
+		ParentID:      event.Message.ParentID,
+		SenderOpenID:  event.Sender.SenderID.OpenID,
+		SenderUserID:  event.Sender.SenderID.UserID,
+		SenderUnionID: event.Sender.SenderID.UnionID,
+		MessageType:   event.Message.MessageType,
+		Text:          larkbridge.ExtractText(event.Message),
+		RawContent:    event.Message.Content,
+		Mentions:      event.Message.Mentions,
 	}
 	for _, attachment := range larkbridge.ExtractAttachments(event.Message) {
 		out.Message.Attachments = append(out.Message.Attachments, IncomingAttachment{
@@ -355,9 +372,10 @@ func (p larkFamilyProvider) ReplyText(ctx context.Context, secrets map[string]st
 
 func (p larkFamilyProvider) ReplyMessage(ctx context.Context, secrets map[string]string, message IncomingMessage, reply OutgoingMessage) error {
 	client := larkbridge.OpenAPIClient{
-		BaseURL:   secrets["baseUrl"],
-		AppID:     secrets["appId"],
-		AppSecret: secrets["appSecret"],
+		BaseURL:     secrets["baseUrl"],
+		AppID:       secrets["appId"],
+		AppSecret:   secrets["appSecret"],
+		AccessToken: secrets["accessToken"],
 	}
 	reply.MentionOpenID = firstNonEmpty(reply.MentionOpenID, message.SenderOpenID)
 	if reply.Card != nil {
@@ -458,6 +476,27 @@ func (p larkFamilyProvider) SendMessage(ctx context.Context, secrets map[string]
 		return client.SendMarkdown(ctx, receiveIDType, receiveID, message.Subject, message.Text)
 	}
 	return client.SendText(ctx, receiveIDType, receiveID, message.Text)
+}
+
+func (p larkFamilyProvider) ResolveExternalUserProfile(ctx context.Context, secrets map[string]string, externalUserID, userIDType string) (ExternalUserProfile, error) {
+	client := larkbridge.OpenAPIClient{
+		BaseURL:     secrets["baseUrl"],
+		AppID:       secrets["appId"],
+		AppSecret:   secrets["appSecret"],
+		AccessToken: secrets["accessToken"],
+	}
+	profile, err := client.GetUser(ctx, externalUserID, userIDType)
+	if err != nil {
+		return ExternalUserProfile{}, err
+	}
+	return ExternalUserProfile{
+		OpenID:          profile.OpenID,
+		UserID:          profile.UserID,
+		UnionID:         profile.UnionID,
+		Name:            profile.Name,
+		Email:           profile.Email,
+		EnterpriseEmail: profile.EnterpriseEmail,
+	}, nil
 }
 
 func (p larkFamilyProvider) SendAttachment(ctx context.Context, secrets map[string]string, target OutgoingTarget, attachment OutgoingAttachment) error {
