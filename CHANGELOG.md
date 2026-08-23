@@ -1,5 +1,36 @@
 # Changelog
 
+## [v2.0.3] - 2026-08-23
+
+### Added
+
+- Added Agent fork sessions so a workspace Agent can split longer work into trackable child sessions with inherited runtime context, permissions, tools, and task bindings.
+- Added a long-term Agent prompt field for stable memory, behavior rules, relationship context, autonomy boundaries, and escalation preferences.
+- Added runtime attention wakeups for task assignment, task creation, reassignment, runtime messages, replies, and IM collaboration signals.
+- Added safer follow-up wakeup handling so newly created attention signals during a run are grouped and processed after the current run finishes.
+- Added local E2E documentation for realistic multi-user, multi-agent IM collaboration testing.
+
+### Improved
+
+- Refined Feishu/Lark card callbacks so card interactions preserve the original source context and wake the right Agent cleanly.
+- Runtime prompts now guide Agents to prefer collaboration-channel notifications over internal inbox messages when communicating with humans.
+- Scheduler attention handling is less trigger-like and more aligned with Agent autonomy: signals are queued, seen, drained, and grouped before wakeup.
+- Runtime node daemon startup is safer for background use, with child stdin detached and docs recommending `multigent runtime start --daemon`.
+- Agent detail pages now show active fork sessions and make session fan-out easier to inspect.
+
+### Fixed
+
+- Fixed interactive card callback source routing for Feishu/Lark channels.
+- Fixed runtime attention signals that could stay pending after the triggering run had already handled them.
+- Fixed recoverable pending attention wakeups so grouped signals target the intended Agent.
+- Fixed runtime message/reply paths so messages to Agent recipients create attention signals, while user-recipient messages do not.
+
+### Tested
+
+- Verified focused Go regression tests for runtime attention wakeups, grouped signals, task assignment, runtime message signals, card callback routing, and runtime finish behavior.
+- Verified local runtime daemon startup and connection behavior.
+- Deployed and smoke-tested the latest attention wakeup build on the TapNow remote instance at `35.243.103.114`.
+
 ## [v2.0.2] - 2026-08-22
 
 ### Improved
