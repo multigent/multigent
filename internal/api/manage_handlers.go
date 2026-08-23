@@ -771,6 +771,9 @@ func (s *Server) currentUserCanOperateAgentWorker(r *http.Request, workspaceID, 
 	if s == nil || s.controlDB == nil {
 		return false
 	}
+	if role, ok := currentUserWorkerRole(s.currentUser(r), workerID); ok {
+		return rbac.RolePower(rbac.ResourceWorker, rbac.Role(role)) >= rbac.RolePower(rbac.ResourceWorker, rbac.WorkerRoleOperator)
+	}
 	memberships, err := s.controlDB.ListProjectMemberships(controldb.ProjectMembershipFilter{
 		WorkspaceID: strings.TrimSpace(workspaceID),
 		MemberType:  "agent_worker",

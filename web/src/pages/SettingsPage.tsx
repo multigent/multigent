@@ -17,12 +17,15 @@ type UserRow = {
   username: string; role: string; displayName?: string
   email?: string; avatar?: string; phone?: string; bio?: string
   projects?: { project: string; role: string }[]
+  workerGrants?: { workerId: string; role: string }[]
   linkedAgents?: string[]; disabled?: boolean; createdAt?: string
 }
 
 type ProjectItem = { name: string }
+type AgentWorkerItem = { id: string; name: string; displayName?: string; team?: string; role?: string }
 
 const PROJECT_ROLES = ['viewer', 'operator', 'manager'] as const
+const WORKER_ROLES = ['viewer', 'operator', 'admin'] as const
 const USER_ROLES = ['admin', 'member'] as const
 
 type RBACModel = {
@@ -1271,13 +1274,14 @@ export function UsersSection() {
   const { t } = useTranslation()
   const [users, setUsers] = useState<UserRow[]>([])
   const [projects, setProjects] = useState<ProjectItem[]>([])
+  const [agents, setAgents] = useState<AgentWorkerItem[]>([])
   const [loading, setLoading] = useState(true)
   const [editing, setEditing] = useState<{
     isNew: boolean; username: string; displayName: string; role: string
     email: string; avatar: string; phone: string; bio: string
     password: string; disabled: boolean
     projects: { project: string; role: string }[]
-    linkedAgents: string[]
+    workerGrants: { workerId: string; role: string }[]
   } | null>(null)
   const [saving, setSaving] = useState(false)
   const [err, setErr] = useState<string | null>(null)
@@ -1291,6 +1295,8 @@ export function UsersSection() {
       ])
       setUsers(u ?? [])
       setProjects(p ?? [])
+      const agentResp = await apiFetch<{ agents: AgentWorkerItem[] }>('/api/v1/agents').catch(() => ({ agents: [] }))
+      setAgents(agentResp.agents ?? [])
     } catch { /* ignore */ }
     finally { setLoading(false) }
   }, [])
@@ -1298,7 +1304,7 @@ export function UsersSection() {
   useEffect(() => { void refresh() }, [refresh])
 
   function openNew() {
-    setEditing({ isNew: true, username: '', displayName: '', role: 'member', email: '', avatar: '', phone: '', bio: '', password: '', disabled: false, projects: [], linkedAgents: [] })
+    setEditing({ isNew: true, username: '', displayName: '', role: 'member', email: '', avatar: '', phone: '', bio: '', password: '', disabled: false, projects: [], workerGrants: [] })
     setShowPwd(false); setErr(null)
   }
 
@@ -1307,7 +1313,7 @@ export function UsersSection() {
       isNew: false, username: u.username, displayName: u.displayName ?? '',
       email: u.email ?? '', avatar: u.avatar ?? '', phone: u.phone ?? '', bio: u.bio ?? '',
       role: u.role, password: '', disabled: u.disabled ?? false,
-      projects: u.projects ?? [], linkedAgents: u.linkedAgents ?? [],
+      projects: u.projects ?? [], workerGrants: u.workerGrants ?? [],
     })
     setShowPwd(false); setErr(null)
   }
@@ -1325,9 +1331,9 @@ export function UsersSection() {
           role: editing.role, displayName: editing.displayName,
           email: editing.email, avatar: editing.avatar, phone: editing.phone, bio: editing.bio,
         })
-        if (editing.projects.length || editing.linkedAgents.length) {
+        if (editing.projects.length || editing.workerGrants.length) {
           await apiPut(`/api/v1/users/${encodeURIComponent(editing.username.trim())}`, {
-            projects: editing.projects, linkedAgents: editing.linkedAgents,
+            projects: editing.projects, agentGrants: [], workerGrants: editing.workerGrants,
           })
         }
       } else {
@@ -1335,7 +1341,8 @@ export function UsersSection() {
           role: editing.role, displayName: editing.displayName,
           email: editing.email, avatar: editing.avatar, phone: editing.phone, bio: editing.bio,
           disabled: editing.disabled, projects: editing.projects,
-          linkedAgents: editing.linkedAgents,
+          agentGrants: [],
+          workerGrants: editing.workerGrants,
         }
         if (editing.password) body.password = editing.password
         await apiPut(`/api/v1/users/${encodeURIComponent(editing.username)}`, body)
@@ -1370,14 +1377,16 @@ export function UsersSection() {
     setEditing({ ...editing, projects: editing.projects.filter((_, i) => i !== idx) })
   }
 
-  function addLinkedAgent() {
+  function addWorkerGrant() {
     if (!editing) return
-    setEditing({ ...editing, linkedAgents: [...editing.linkedAgents, ''] })
+    const first = agents.find(agent => !editing.workerGrants.some(grant => grant.workerId === agent.id))
+    if (!first) return
+    setEditing({ ...editing, workerGrants: [...editing.workerGrants, { workerId: first.id, role: 'operator' }] })
   }
 
-  function removeLinkedAgent(idx: number) {
+  function removeWorkerGrant(idx: number) {
     if (!editing) return
-    setEditing({ ...editing, linkedAgents: editing.linkedAgents.filter((_, i) => i !== idx) })
+    setEditing({ ...editing, workerGrants: editing.workerGrants.filter((_, i) => i !== idx) })
   }
 
   const fieldCls = 'w-full rounded-md border border-neutral-200/80 bg-neutral-50/50 px-3 py-2 text-sm outline-none transition-colors focus:border-sky-400 dark:border-zinc-700/60 dark:bg-zinc-800/50 dark:text-zinc-200 dark:[color-scheme:dark]'
@@ -1423,7 +1432,7 @@ export function UsersSection() {
                   <span className="text-xs text-neutral-400 dark:text-zinc-500">
                     {u.role}
                     {u.projects && u.projects.length > 0 && ` · ${u.projects.length} ${t('users.projectCount')}`}
-                    {u.linkedAgents && u.linkedAgents.length > 0 && ` · ${u.linkedAgents.join(', ')}`}
+                    {u.workerGrants && u.workerGrants.length > 0 && ` · ${u.workerGrants.length} ${t('users.agentCount')}`}
                   </span>
                 </div>
               </div>
@@ -1563,27 +1572,39 @@ export function UsersSection() {
                 </div>
               )}
 
-              {/* Linked Agents */}
+              {/* Workspace Agent Access */}
               <div className="rounded-lg border border-neutral-200/80 p-3 dark:border-zinc-700/60">
                 <div className="flex items-center justify-between pb-2">
-                  <span className="text-sm font-medium text-neutral-700 dark:text-zinc-300">{t('users.linkedAgents')}</span>
-                  <button type="button" onClick={addLinkedAgent}
+                  <span className="text-sm font-medium text-neutral-700 dark:text-zinc-300">{t('users.agentAccess')}</span>
+                  <button type="button" onClick={addWorkerGrant} disabled={agents.length === 0}
                     className="flex items-center gap-1 rounded bg-neutral-100 px-2 py-1 text-xs text-neutral-600 hover:bg-neutral-200 dark:bg-zinc-800 dark:text-zinc-400 dark:hover:bg-zinc-700">
                     <Plus className="size-3" /> {t('users.addAgent')}
                   </button>
                 </div>
-                <p className="mb-2 text-[11px] text-neutral-400 dark:text-zinc-500">{t('users.linkedAgentsHint')}</p>
-                {editing.linkedAgents.length === 0 ? (
-                  <p className="py-1 text-center text-xs text-neutral-400 dark:text-zinc-500">{t('users.noLinkedAgents')}</p>
+                <p className="mb-2 text-[11px] text-neutral-400 dark:text-zinc-500">{t('users.agentAccessHint')}</p>
+                {editing.workerGrants.length === 0 ? (
+                  <p className="py-1 text-center text-xs text-neutral-400 dark:text-zinc-500">{t('users.noAgentAccess')}</p>
                 ) : (
                   <div className="space-y-1.5">
-                    {editing.linkedAgents.map((agent, idx) => (
+                    {editing.workerGrants.map((grant, idx) => (
                       <div key={idx} className="flex items-center gap-2">
-                        <input value={agent} onChange={e => {
-                          const na = [...editing.linkedAgents]; na[idx] = e.target.value
-                          setEditing({ ...editing, linkedAgents: na })
-                        }} className={cn(fieldCls, 'flex-1 font-mono text-xs')} placeholder="project/agent-name" />
-                        <button type="button" onClick={() => removeLinkedAgent(idx)} className="rounded p-1 text-neutral-400 hover:text-red-500">
+                        <select value={grant.workerId} onChange={e => {
+                          const next = [...editing.workerGrants]; next[idx] = { ...next[idx], workerId: e.target.value }
+                          setEditing({ ...editing, workerGrants: next })
+                        }} className={cn(fieldCls, 'flex-1 text-xs')}>
+                          {agents.length === 0 ? <option value="">{t('users.noWorkspaceAgents')}</option> : agents.map(agent => (
+                            <option key={agent.id} value={agent.id}>
+                              {agent.displayName || agent.name}{agent.team || agent.role ? ` · ${[agent.team, agent.role].filter(Boolean).join(' / ')}` : ''}
+                            </option>
+                          ))}
+                        </select>
+                        <select value={grant.role} onChange={e => {
+                          const next = [...editing.workerGrants]; next[idx] = { ...next[idx], role: e.target.value }
+                          setEditing({ ...editing, workerGrants: next })
+                        }} className={cn(fieldCls, 'w-28 text-xs')}>
+                          {WORKER_ROLES.map(r => <option key={r} value={r}>{t(`users.workerRole_${r}`)}</option>)}
+                        </select>
+                        <button type="button" onClick={() => removeWorkerGrant(idx)} className="rounded p-1 text-neutral-400 hover:text-red-500">
                           <X className="size-3.5" />
                         </button>
                       </div>

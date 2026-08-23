@@ -30,11 +30,12 @@ func TestUserStorePrincipalMapsProjectAndAgentRoles(t *testing.T) {
 	role := RoleMember
 	projects := []projectAccess{{Project: "sample", Role: ProjectRoleViewer}}
 	agentGrants := []agentAccess{{Project: "sample", Agent: "connector-dev", Role: string(rbac.AgentRoleOperator)}}
+	workerGrants := []workerAccess{{WorkerID: "aw-connector-dev", Role: string(rbac.WorkerRoleOperator)}}
 
 	if err := users.CreateUser("dev", "pass", role, "", "", "", "", ""); err != nil {
 		t.Fatalf("create user: %v", err)
 	}
-	if err := users.UpdateUser("dev", nil, nil, nil, nil, nil, nil, nil, projects, agentGrants, nil); err != nil {
+	if err := users.UpdateUser("dev", nil, nil, nil, nil, nil, nil, nil, projects, agentGrants, nil, workerGrants); err != nil {
 		t.Fatalf("update user: %v", err)
 	}
 
@@ -50,6 +51,9 @@ func TestUserStorePrincipalMapsProjectAndAgentRoles(t *testing.T) {
 	}
 	if got := p.AgentRoles[rbac.AgentKey("sample", "connector-dev")]; got != rbac.AgentRoleOperator {
 		t.Fatalf("agent role=%q", got)
+	}
+	if got := p.WorkerRoles["aw-connector-dev"]; got != rbac.WorkerRoleOperator {
+		t.Fatalf("worker role=%q", got)
 	}
 }
 
@@ -473,6 +477,7 @@ func TestListUsersReturnsWorkspaceRole(t *testing.T) {
 
 func TestWorkspaceAdminCanUpdateMemberScopedAccess(t *testing.T) {
 	s, workspaceID := newConnectionGrantPolicyServer(t)
+	seedAgentWorkerWithIDForTest(t, s, workspaceID, "sample", "pm", "aw-pm", "pm-sample-pm")
 	if err := s.users.CreateUser("member2", "pass123", RoleMember, "Member 2", "member2@example.com", "", "", ""); err != nil {
 		t.Fatalf("create member: %v", err)
 	}
@@ -488,6 +493,10 @@ func TestWorkspaceAdminCanUpdateMemberScopedAccess(t *testing.T) {
 			"agent":   "pm",
 			"role":    string(rbac.AgentRoleOwner),
 		}},
+		"workerGrants": []map[string]string{{
+			"workerId": "aw-pm",
+			"role":     string(rbac.WorkerRoleOperator),
+		}},
 	})
 	req.SetPathValue("username", "member2")
 	s.handleUpdateUser(rec, req)
@@ -500,6 +509,9 @@ func TestWorkspaceAdminCanUpdateMemberScopedAccess(t *testing.T) {
 	}
 	if len(u.AgentGrants) != 1 || u.AgentGrants[0].Role != string(rbac.AgentRoleOwner) {
 		t.Fatalf("agent grants not updated: %#v", u.AgentGrants)
+	}
+	if len(u.WorkerGrants) != 1 || u.WorkerGrants[0].WorkerID != "aw-pm" || u.WorkerGrants[0].Role != string(rbac.WorkerRoleOperator) {
+		t.Fatalf("worker grants not updated: %#v", u.WorkerGrants)
 	}
 }
 
@@ -524,12 +536,8 @@ func TestWorkspaceGuestCannotReceiveOperatorOrAgentScopedAccess(t *testing.T) {
 
 	rec = httptest.NewRecorder()
 	req = providerTestRequest(http.MethodPut, "/api/v1/users/guest1", "admin", map[string]any{
-		"projects": []map[string]string{{"project": "sample", "role": ProjectRoleViewer}},
-		"agentGrants": []map[string]string{{
-			"project": "sample",
-			"agent":   "pm",
-			"role":    string(rbac.AgentRoleViewer),
-		}},
+		"projects":     []map[string]string{{"project": "sample", "role": ProjectRoleViewer}},
+		"workerGrants": []map[string]string{{"workerId": "aw-pm", "role": string(rbac.WorkerRoleViewer)}},
 	})
 	req.SetPathValue("username", "guest1")
 	s.handleUpdateUser(rec, req)

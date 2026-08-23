@@ -26,10 +26,12 @@ func (db *SQLiteStore) migrate() error {
 	disabled INTEGER NOT NULL DEFAULT 0,
 	created_at TEXT NOT NULL,
 	projects_json TEXT NOT NULL DEFAULT '[]',
-	linked_agents_json TEXT NOT NULL DEFAULT '[]'
+	linked_agents_json TEXT NOT NULL DEFAULT '[]',
+	worker_grants_json TEXT NOT NULL DEFAULT '[]'
 )`,
 		`ALTER TABLE users ADD COLUMN projects_json TEXT NOT NULL DEFAULT '[]'`,
 		`ALTER TABLE users ADD COLUMN linked_agents_json TEXT NOT NULL DEFAULT '[]'`,
+		`ALTER TABLE users ADD COLUMN worker_grants_json TEXT NOT NULL DEFAULT '[]'`,
 		`CREATE TABLE IF NOT EXISTS workspace_members (
 	workspace_id TEXT NOT NULL REFERENCES workspaces(id) ON DELETE CASCADE,
 	username TEXT NOT NULL REFERENCES users(username) ON DELETE CASCADE,

@@ -527,6 +527,11 @@ func (s *Server) visibleAgentWorkersForRequest(r *http.Request, workers []contro
 	filteredWorkers := make([]controldb.AgentWorker, 0, len(workers))
 	filteredMemberships := make(map[string][]controldb.ProjectMembership, len(workers))
 	for _, worker := range workers {
+		if _, ok := currentUserWorkerRole(s.currentUser(r), worker.ID); ok {
+			filteredWorkers = append(filteredWorkers, worker)
+			filteredMemberships[worker.ID] = membershipsByWorker[worker.ID]
+			continue
+		}
 		visibleMemberships := s.visibleAgentWorkerMembershipsForRequest(r, worker, membershipsByWorker[worker.ID])
 		if len(visibleMemberships) == 0 {
 			continue
@@ -570,6 +575,9 @@ func (s *Server) canViewAgentWorkerMembership(r *http.Request, worker controldb.
 
 func (s *Server) canAccessAgentWorkerForRequest(r *http.Request, workspaceID string, worker controldb.AgentWorker) (bool, error) {
 	if s.canAdminWorkspace(r, workspaceID) {
+		return true, nil
+	}
+	if _, ok := currentUserWorkerRole(s.currentUser(r), worker.ID); ok {
 		return true, nil
 	}
 	memberships, err := s.controlDB.ListProjectMemberships(controldb.ProjectMembershipFilter{

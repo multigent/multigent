@@ -1827,6 +1827,19 @@ func currentUserAgentRole(cur *userRecord, project, agent string) (string, bool)
 	return "", false
 }
 
+func currentUserWorkerRole(cur *userRecord, workerID string) (string, bool) {
+	if cur == nil {
+		return "", false
+	}
+	workerID = strings.TrimSpace(workerID)
+	for _, grant := range cur.WorkerGrants {
+		if grant.WorkerID == workerID {
+			return grant.Role, true
+		}
+	}
+	return "", false
+}
+
 func (s *Server) canAdminCurrentWorkspace(r *http.Request) bool {
 	workspaceID, err := s.currentWorkspaceID()
 	if err != nil {

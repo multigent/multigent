@@ -16,6 +16,11 @@ export type AgentAccess = {
   role: string // viewer | operator | owner
 }
 
+export type WorkerAccess = {
+  workerId: string
+  role: string // viewer | operator | admin
+}
+
 export type AuthUser = {
   username: string
   role: string // admin | member
@@ -26,6 +31,7 @@ export type AuthUser = {
   avatar?: string
   projects?: ProjectAccess[]
   agentGrants?: AgentAccess[]
+  workerGrants?: WorkerAccess[]
   linkedAgents?: string[]
 }
 

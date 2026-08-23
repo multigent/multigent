@@ -169,18 +169,19 @@ type WorkspaceMember struct {
 }
 
 type User struct {
-	Username     string
-	Email        string
-	DisplayName  string
-	Role         string
-	Avatar       string
-	Phone        string
-	Bio          string
-	PasswordHash string
-	Disabled     bool
-	CreatedAt    string
-	ProjectsJSON string
-	LinkedJSON   string
+	Username         string
+	Email            string
+	DisplayName      string
+	Role             string
+	Avatar           string
+	Phone            string
+	Bio              string
+	PasswordHash     string
+	Disabled         bool
+	CreatedAt        string
+	ProjectsJSON     string
+	LinkedJSON       string
+	WorkerGrantsJSON string
 }
 
 type Invitation struct {

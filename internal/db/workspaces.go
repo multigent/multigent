@@ -77,8 +77,8 @@ func (db *SQLiteStore) UpsertUser(u User) error {
 		disabled = 1
 	}
 	_, err := db.sql.Exec(`INSERT INTO users (
-	username, email, display_name, role, avatar, phone, bio, password_hash, disabled, created_at, projects_json, linked_agents_json
-) VALUES (?, NULLIF(?, ''), ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+	username, email, display_name, role, avatar, phone, bio, password_hash, disabled, created_at, projects_json, linked_agents_json, worker_grants_json
+) VALUES (?, NULLIF(?, ''), ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
 ON CONFLICT(username) DO UPDATE SET
 	email = NULLIF(excluded.email, ''),
 	display_name = excluded.display_name,
@@ -89,13 +89,14 @@ ON CONFLICT(username) DO UPDATE SET
 	password_hash = excluded.password_hash,
 	disabled = excluded.disabled,
 	projects_json = excluded.projects_json,
-	linked_agents_json = excluded.linked_agents_json`,
-		u.Username, u.Email, u.DisplayName, u.Role, u.Avatar, u.Phone, u.Bio, u.PasswordHash, disabled, u.CreatedAt, defaultJSON(u.ProjectsJSON), defaultJSON(u.LinkedJSON))
+	linked_agents_json = excluded.linked_agents_json,
+	worker_grants_json = excluded.worker_grants_json`,
+		u.Username, u.Email, u.DisplayName, u.Role, u.Avatar, u.Phone, u.Bio, u.PasswordHash, disabled, u.CreatedAt, defaultJSON(u.ProjectsJSON), defaultJSON(u.LinkedJSON), defaultJSON(u.WorkerGrantsJSON))
 	return err
 }
 
 func (db *SQLiteStore) ListUsers() ([]User, error) {
-	rows, err := db.sql.Query(`SELECT username, COALESCE(email, ''), display_name, role, avatar, phone, bio, password_hash, disabled, created_at, projects_json, linked_agents_json FROM users ORDER BY username ASC`)
+	rows, err := db.sql.Query(`SELECT username, COALESCE(email, ''), display_name, role, avatar, phone, bio, password_hash, disabled, created_at, projects_json, linked_agents_json, worker_grants_json FROM users ORDER BY username ASC`)
 	if err != nil {
 		return nil, err
 	}
@@ -112,7 +113,7 @@ func (db *SQLiteStore) ListUsers() ([]User, error) {
 }
 
 func (db *SQLiteStore) UserByUsername(username string) (User, bool, error) {
-	row := db.sql.QueryRow(`SELECT username, COALESCE(email, ''), display_name, role, avatar, phone, bio, password_hash, disabled, created_at, projects_json, linked_agents_json FROM users WHERE username = ?`, username)
+	row := db.sql.QueryRow(`SELECT username, COALESCE(email, ''), display_name, role, avatar, phone, bio, password_hash, disabled, created_at, projects_json, linked_agents_json, worker_grants_json FROM users WHERE username = ?`, username)
 	u, err := scanUser(row)
 	if errors.Is(err, sql.ErrNoRows) {
 		return User{}, false, nil
@@ -124,7 +125,7 @@ func (db *SQLiteStore) UserByUsername(username string) (User, bool, error) {
 }
 
 func (db *SQLiteStore) UserByLogin(login string) (User, bool, error) {
-	row := db.sql.QueryRow(`SELECT username, COALESCE(email, ''), display_name, role, avatar, phone, bio, password_hash, disabled, created_at, projects_json, linked_agents_json FROM users WHERE lower(username) = lower(?) OR lower(email) = lower(?)`, login, login)
+	row := db.sql.QueryRow(`SELECT username, COALESCE(email, ''), display_name, role, avatar, phone, bio, password_hash, disabled, created_at, projects_json, linked_agents_json, worker_grants_json FROM users WHERE lower(username) = lower(?) OR lower(email) = lower(?)`, login, login)
 	u, err := scanUser(row)
 	if errors.Is(err, sql.ErrNoRows) {
 		return User{}, false, nil
@@ -263,7 +264,7 @@ type userScanner interface {
 func scanUser(row userScanner) (User, error) {
 	var u User
 	var disabled int
-	err := row.Scan(&u.Username, &u.Email, &u.DisplayName, &u.Role, &u.Avatar, &u.Phone, &u.Bio, &u.PasswordHash, &disabled, &u.CreatedAt, &u.ProjectsJSON, &u.LinkedJSON)
+	err := row.Scan(&u.Username, &u.Email, &u.DisplayName, &u.Role, &u.Avatar, &u.Phone, &u.Bio, &u.PasswordHash, &disabled, &u.CreatedAt, &u.ProjectsJSON, &u.LinkedJSON, &u.WorkerGrantsJSON)
 	u.Disabled = disabled != 0
 	return u, err
 }

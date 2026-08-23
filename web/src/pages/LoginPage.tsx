@@ -15,6 +15,7 @@ type LoginResponse = {
   avatar?: string
   projects?: { project: string; role: string }[]
   agentGrants?: { project: string; agent: string; role: string }[]
+  workerGrants?: { workerId: string; role: string }[]
   linkedAgents?: string[]
 }
 
@@ -77,6 +78,7 @@ export default function LoginPage() {
       avatar: res.avatar,
       projects: res.projects,
       agentGrants: res.agentGrants,
+      workerGrants: res.workerGrants,
       linkedAgents: res.linkedAgents,
     }
     let hydrated = user

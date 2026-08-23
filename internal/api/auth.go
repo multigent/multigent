@@ -43,6 +43,11 @@ type agentAccess struct {
 	Role    string `json:"role"` // viewer | operator | owner
 }
 
+type workerAccess struct {
+	WorkerID string `json:"workerId"`
+	Role     string `json:"role"` // viewer | operator | admin
+}
+
 type invitationRecord struct {
 	Token       string          `json:"token"`
 	WorkspaceID string          `json:"workspaceId,omitempty"`
@@ -69,6 +74,7 @@ type userRecord struct {
 	Bio          string          `json:"bio,omitempty"`
 	Projects     []projectAccess `json:"projects,omitempty"`
 	AgentGrants  []agentAccess   `json:"agentGrants,omitempty"`
+	WorkerGrants []workerAccess  `json:"workerGrants,omitempty"`
 	LinkedAgents []string        `json:"linkedAgents,omitempty"`
 	Disabled     bool            `json:"disabled,omitempty"`
 	CreatedAt    string          `json:"createdAt,omitempty"`
@@ -416,7 +422,7 @@ func (s *UserStore) AcceptInvitation(token, password, displayName string) (*user
 	return &u, nil
 }
 
-func (s *UserStore) UpdateUser(username string, role, displayName, email, avatar, phone, bio *string, disabled *bool, projects []projectAccess, agentGrants []agentAccess, newPassword *string) error {
+func (s *UserStore) UpdateUser(username string, role, displayName, email, avatar, phone, bio *string, disabled *bool, projects []projectAccess, agentGrants []agentAccess, newPassword *string, workerGrants ...[]workerAccess) error {
 	dbUser, ok, err := s.db.UserByUsername(username)
 	if err != nil {
 		return err
@@ -451,6 +457,9 @@ func (s *UserStore) UpdateUser(username string, role, displayName, email, avatar
 	}
 	if agentGrants != nil {
 		u.AgentGrants = normalizeAgentGrants(agentGrants)
+	}
+	if len(workerGrants) > 0 && workerGrants[0] != nil {
+		u.WorkerGrants = normalizeWorkerGrants(workerGrants[0])
 	}
 	if newPassword != nil && *newPassword != "" {
 		hash, err := bcrypt.GenerateFromPassword([]byte(*newPassword), bcrypt.DefaultCost)
@@ -509,6 +518,11 @@ func (s *UserStore) Principal(username string) (rbac.Principal, bool) {
 			p.AgentRoles[rbac.AgentKey(grant.Project, grant.Agent)] = rbac.Role(grant.Role)
 		}
 	}
+	for _, grant := range u.WorkerGrants {
+		if grant.WorkerID != "" {
+			p.WorkerRoles[grant.WorkerID] = rbac.Role(grant.Role)
+		}
+	}
 	return p, true
 }
 
@@ -545,6 +559,29 @@ func normalizeAgentGrants(in []agentAccess) []agentAccess {
 	return out
 }
 
+func normalizeWorkerGrants(in []workerAccess) []workerAccess {
+	out := make([]workerAccess, 0, len(in))
+	seen := map[string]bool{}
+	for _, grant := range in {
+		workerID := strings.TrimSpace(grant.WorkerID)
+		role := strings.TrimSpace(grant.Role)
+		if workerID == "" {
+			continue
+		}
+		switch role {
+		case string(rbac.WorkerRoleViewer), string(rbac.WorkerRoleOperator), string(rbac.WorkerRoleAdmin):
+		default:
+			role = string(rbac.WorkerRoleViewer)
+		}
+		if seen[workerID] {
+			continue
+		}
+		seen[workerID] = true
+		out = append(out, workerAccess{WorkerID: workerID, Role: role})
+	}
+	return out
+}
+
 func normalizeProjectGrants(in []projectAccess) []projectAccess {
 	out := make([]projectAccess, 0, len(in))
 	seen := map[string]bool{}
@@ -568,7 +605,7 @@ func normalizeProjectGrants(in []projectAccess) []projectAccess {
 	return out
 }
 
-func validateScopedAccessForWorkspaceRole(workspaceRole string, projects []projectAccess, agentGrants []agentAccess) error {
+func validateScopedAccessForWorkspaceRole(workspaceRole string, projects []projectAccess, agentGrants []agentAccess, workerGrants ...[]workerAccess) error {
 	if workspaceRole != WorkspaceRoleGuest {
 		return nil
 	}
@@ -578,6 +615,9 @@ func validateScopedAccessForWorkspaceRole(workspaceRole string, projects []proje
 		}
 	}
 	if len(normalizeAgentGrants(agentGrants)) > 0 {
+		return fmt.Errorf("workspace guest cannot receive agent access")
+	}
+	if len(workerGrants) > 0 && len(normalizeWorkerGrants(workerGrants[0])) > 0 {
 		return fmt.Errorf("workspace guest cannot receive agent access")
 	}
 	return nil
@@ -602,8 +642,10 @@ func linkedAgentRefs(grants []agentAccess) []string {
 func dbUserToRecord(u controldb.User) userRecord {
 	var projects []projectAccess
 	var grants []agentAccess
+	var workerGrants []workerAccess
 	_ = json.Unmarshal([]byte(u.ProjectsJSON), &projects)
 	_ = json.Unmarshal([]byte(u.LinkedJSON), &grants)
+	_ = json.Unmarshal([]byte(u.WorkerGrantsJSON), &workerGrants)
 	return userRecord{
 		Username:     u.Username,
 		Hash:         u.PasswordHash,
@@ -615,6 +657,7 @@ func dbUserToRecord(u controldb.User) userRecord {
 		Bio:          u.Bio,
 		Projects:     normalizeProjectGrants(projects),
 		AgentGrants:  normalizeAgentGrants(grants),
+		WorkerGrants: normalizeWorkerGrants(workerGrants),
 		LinkedAgents: linkedAgentRefs(grants),
 		Disabled:     u.Disabled,
 		CreatedAt:    u.CreatedAt,
@@ -625,19 +668,21 @@ func recordToDBUser(u userRecord) controldb.User {
 	projects, _ := json.Marshal(normalizeProjectGrants(u.Projects))
 	grants := normalizeAgentGrants(u.AgentGrants)
 	linked, _ := json.Marshal(grants)
+	workerGrants, _ := json.Marshal(normalizeWorkerGrants(u.WorkerGrants))
 	return controldb.User{
-		Username:     u.Username,
-		Email:        normalizeEmail(u.Email),
-		DisplayName:  u.DisplayName,
-		Role:         u.Role,
-		Avatar:       u.Avatar,
-		Phone:        u.Phone,
-		Bio:          u.Bio,
-		PasswordHash: u.Hash,
-		Disabled:     u.Disabled,
-		CreatedAt:    u.CreatedAt,
-		ProjectsJSON: string(projects),
-		LinkedJSON:   string(linked),
+		Username:         u.Username,
+		Email:            normalizeEmail(u.Email),
+		DisplayName:      u.DisplayName,
+		Role:             u.Role,
+		Avatar:           u.Avatar,
+		Phone:            u.Phone,
+		Bio:              u.Bio,
+		PasswordHash:     u.Hash,
+		Disabled:         u.Disabled,
+		CreatedAt:        u.CreatedAt,
+		ProjectsJSON:     string(projects),
+		LinkedJSON:       string(linked),
+		WorkerGrantsJSON: string(workerGrants),
 	}
 }
 
@@ -867,6 +912,7 @@ func (s *Server) issueLoginResponse(w http.ResponseWriter, user *userRecord) {
 		"avatar":       user.Avatar,
 		"projects":     user.Projects,
 		"agentGrants":  user.AgentGrants,
+		"workerGrants": user.WorkerGrants,
 		"linkedAgents": user.LinkedAgents,
 	})
 }
@@ -1012,6 +1058,7 @@ func (s *Server) currentAuthUserPayload(w http.ResponseWriter, r *http.Request) 
 		"avatar":              user.Avatar,
 		"projects":            user.Projects,
 		"agentGrants":         user.AgentGrants,
+		"workerGrants":        user.WorkerGrants,
 		"linkedAgents":        user.LinkedAgents,
 	}, true
 }
@@ -1162,6 +1209,7 @@ func (s *Server) handleListUsers(w http.ResponseWriter, r *http.Request) {
 		Bio          string          `json:"bio,omitempty"`
 		Projects     []projectAccess `json:"projects,omitempty"`
 		AgentGrants  []agentAccess   `json:"agentGrants,omitempty"`
+		WorkerGrants []workerAccess  `json:"workerGrants,omitempty"`
 		LinkedAgents []string        `json:"linkedAgents,omitempty"`
 		Disabled     bool            `json:"disabled,omitempty"`
 		CreatedAt    string          `json:"createdAt,omitempty"`
@@ -1186,6 +1234,7 @@ func (s *Server) handleListUsers(w http.ResponseWriter, r *http.Request) {
 			row.Bio = u.Bio
 			row.Projects = u.Projects
 			row.AgentGrants = u.AgentGrants
+			row.WorkerGrants = u.WorkerGrants
 			row.LinkedAgents = u.LinkedAgents
 			row.Disabled = u.Disabled
 		}
@@ -1658,6 +1707,7 @@ func (s *Server) handleGetUser(w http.ResponseWriter, r *http.Request) {
 		"bio":          u.Bio,
 		"projects":     u.Projects,
 		"agentGrants":  u.AgentGrants,
+		"workerGrants": u.WorkerGrants,
 		"linkedAgents": u.LinkedAgents,
 		"disabled":     u.Disabled,
 		"createdAt":    u.CreatedAt,
@@ -1698,16 +1748,17 @@ func (s *Server) handleUpdateUser(w http.ResponseWriter, r *http.Request) {
 		}
 	}
 	var body struct {
-		Role        *string         `json:"role"`
-		DisplayName *string         `json:"displayName"`
-		Email       *string         `json:"email"`
-		Avatar      *string         `json:"avatar"`
-		Phone       *string         `json:"phone"`
-		Bio         *string         `json:"bio"`
-		Disabled    *bool           `json:"disabled"`
-		Password    *string         `json:"password"`
-		Projects    []projectAccess `json:"projects"`
-		AgentGrants []agentAccess   `json:"agentGrants"`
+		Role         *string         `json:"role"`
+		DisplayName  *string         `json:"displayName"`
+		Email        *string         `json:"email"`
+		Avatar       *string         `json:"avatar"`
+		Phone        *string         `json:"phone"`
+		Bio          *string         `json:"bio"`
+		Disabled     *bool           `json:"disabled"`
+		Password     *string         `json:"password"`
+		Projects     []projectAccess `json:"projects"`
+		AgentGrants  []agentAccess   `json:"agentGrants"`
+		WorkerGrants []workerAccess  `json:"workerGrants"`
 	}
 	if err := s.readJSON(w, r, &body); err != nil {
 		s.jsonErrorCode(w, http.StatusBadRequest, ErrCodeInvalidRequestBody, "invalid request body")
@@ -1728,6 +1779,7 @@ func (s *Server) handleUpdateUser(w http.ResponseWriter, r *http.Request) {
 	if !isSystemAdmin && !isWorkspaceAdmin {
 		body.Projects = nil
 		body.AgentGrants = nil
+		body.WorkerGrants = nil
 	}
 	targetWorkspaceRole := WorkspaceRoleMember
 	if targetUser.Role == RoleAdmin {
@@ -1746,11 +1798,14 @@ func (s *Server) handleUpdateUser(w http.ResponseWriter, r *http.Request) {
 	if body.AgentGrants != nil {
 		body.AgentGrants = normalizeAgentGrants(body.AgentGrants)
 	}
-	if err := validateScopedAccessForWorkspaceRole(targetWorkspaceRole, body.Projects, body.AgentGrants); err != nil {
+	if body.WorkerGrants != nil {
+		body.WorkerGrants = normalizeWorkerGrants(body.WorkerGrants)
+	}
+	if err := validateScopedAccessForWorkspaceRole(targetWorkspaceRole, body.Projects, body.AgentGrants, body.WorkerGrants); err != nil {
 		s.jsonErrorCode(w, http.StatusBadRequest, ErrCodeValidationFailed, err.Error())
 		return
 	}
-	if err := s.users.UpdateUser(target, body.Role, body.DisplayName, body.Email, body.Avatar, body.Phone, body.Bio, body.Disabled, body.Projects, body.AgentGrants, body.Password); err != nil {
+	if err := s.users.UpdateUser(target, body.Role, body.DisplayName, body.Email, body.Avatar, body.Phone, body.Bio, body.Disabled, body.Projects, body.AgentGrants, body.Password, body.WorkerGrants); err != nil {
 		if strings.Contains(err.Error(), "not found") {
 			s.jsonErrorCode(w, http.StatusNotFound, ErrCodeUserNotFound, err.Error())
 			return
@@ -1768,6 +1823,7 @@ func (s *Server) handleUpdateUser(w http.ResponseWriter, r *http.Request) {
 		"avatar":       u.Avatar,
 		"projects":     u.Projects,
 		"agentGrants":  u.AgentGrants,
+		"workerGrants": u.WorkerGrants,
 		"linkedAgents": u.LinkedAgents,
 	})
 }
@@ -1840,7 +1896,7 @@ func (s *Server) handleUpdateWorkspaceMemberRole(w http.ResponseWriter, r *http.
 	if nextRole == WorkspaceRoleGuest {
 		if targetUser := s.users.GetUser(target); targetUser != nil {
 			projects := downgradeScopedAccessForWorkspaceGuest(targetUser.Projects)
-			if err := s.users.UpdateUser(target, nil, nil, nil, nil, nil, nil, nil, projects, []agentAccess{}, nil); err != nil {
+			if err := s.users.UpdateUser(target, nil, nil, nil, nil, nil, nil, nil, projects, []agentAccess{}, nil, []workerAccess{}); err != nil {
 				s.serverError(w, err)
 				return
 			}
