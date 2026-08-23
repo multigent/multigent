@@ -1,5 +1,25 @@
 # Changelog
 
+## [v2.0.5] - 2026-08-23
+
+### Improved
+
+- Feishu/Lark authorization and channel binding now preserve pending app setup state more reliably, so delayed tenant approval does not force users to restart the setup flow.
+- Wakeup prompts now include explicit time context, including the current wakeup timestamp and relative ages for attention signals and unread messages.
+- Attention signals now show when they were observed, helping Agents judge whether IM messages, callbacks, or other signals are fresh, stale, or lower priority.
+
+### Fixed
+
+- Fixed runtime notification document enrichment so bare `doc-...` IDs in Agent-sent Feishu/Lark messages become clickable document links.
+- Fixed notification link normalization so local `127.0.0.1` document URLs are rewritten to the configured web base URL before they are sent externally.
+- Fixed Lark/Feishu auth and binding edge cases around channel setup, user binding, and callback handling.
+
+### Tested
+
+- Verified focused Go regression tests for runtime notification doc links and scheduler attention time context.
+- Rebuilt local `multigent` and `mga` binaries and restarted the local development API service.
+- Deployed and smoke-tested the updated build on the TapNow remote instance at `35.243.103.114`.
+
 ## [v2.0.4] - 2026-08-23
 
 ### Fixed
