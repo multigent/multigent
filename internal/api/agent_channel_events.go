@@ -703,7 +703,8 @@ func (s *Server) acceptAgentChannelBindCommand(channelProvider imbridge.Provider
 			"chatId":         message.ChatID,
 		},
 	})
-	reply := fmt.Sprintf("绑定成功。之后 %s/%s 可以通过 %s 通知你。", binding.ProjectID, binding.AgentID, channelProvider.Info().Label)
+	agentLabel := s.agentChannelDisplayName(*binding)
+	reply := fmt.Sprintf("绑定成功。之后 %s 可以通过 %s 通知你。", agentLabel, channelProvider.Info().Label)
 	if err := s.replyToIMEvent(context.Background(), channelProvider, resolved, message, reply); err != nil {
 		s.recordAgentChannelCallback(*binding, "reply_failed", "identity_bound", message, err.Error())
 	}
@@ -769,11 +770,29 @@ func (s *Server) acceptAgentChannelChatBindCommand(channelProvider imbridge.Prov
 		},
 	})
 	resolved := resolvedChannelEventBinding{Binding: binding, SecretValues: values, Identity: controldb.ExternalIdentity{WorkspaceID: binding.WorkspaceID, Provider: provider, ExternalUserID: message.SenderOpenID, UserID: codeRow.UserID}}
-	reply := fmt.Sprintf("群聊绑定成功。之后 %s/%s 可以通过 %s 通知群聊「%s」。", binding.ProjectID, binding.AgentID, channelProvider.Info().Label, chatName)
+	agentLabel := s.agentChannelDisplayName(binding)
+	reply := fmt.Sprintf("群聊绑定成功。之后 %s 可以通过 %s 通知群聊「%s」。", agentLabel, channelProvider.Info().Label, chatName)
 	if err := s.replyToIMEvent(context.Background(), channelProvider, resolved, message, reply); err != nil {
 		s.recordAgentChannelCallback(binding, "reply_failed", "chat_bound", message, err.Error())
 	}
 	return map[string]any{"ok": true, "bound": true, "target": "chat", "name": chatName, "channelId": binding.ID}, nil
+}
+
+func (s *Server) agentChannelDisplayName(binding controldb.AgentChannelBinding) string {
+	if s != nil && s.controlDB != nil && strings.TrimSpace(binding.AgentWorkerID) != "" {
+		if worker, ok, err := s.controlDB.AgentWorkerByID(binding.WorkspaceID, binding.AgentWorkerID); err == nil && ok {
+			if name := strings.TrimSpace(firstNonEmpty(worker.DisplayName, worker.Name)); name != "" {
+				return name
+			}
+		}
+	}
+	if strings.TrimSpace(binding.AgentID) != "" {
+		return strings.TrimSpace(binding.AgentID)
+	}
+	if strings.TrimSpace(binding.ProjectID) != "" {
+		return strings.TrimSpace(binding.ProjectID)
+	}
+	return "该智能体"
 }
 
 func (s *Server) replyBindCommandFailure(channelProvider imbridge.Provider, binding *controldb.AgentChannelBinding, values map[string]string, message imbridge.IncomingMessage, reply, reason string) (map[string]any, error) {

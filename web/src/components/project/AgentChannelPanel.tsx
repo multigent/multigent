@@ -205,8 +205,11 @@ export function AgentChannelPanel({ project, agentName, agentWorkerId }: { proje
         { values: setup.values },
       )
       if (res.status === 'connected') {
-        setSetup({ step: 'connected', provider: setup.provider })
+        setSetup({ step: 'idle' })
         await load()
+        if (res.channel) {
+          await openDetail(setup.provider, res.channel)
+        }
       }
     } catch (e) {
       setSetup({ step: 'error', provider: setup.provider, message: e instanceof Error ? e.message : String(e) })
@@ -225,8 +228,9 @@ export function AgentChannelPanel({ project, agentName, agentWorkerId }: { proje
         if (res.slowDown) interval += 5
         if (res.status === 'connected' && res.channel) {
           stopPoll()
-          setSetup({ step: 'connected', provider: state.provider })
+          setSetup({ step: 'idle' })
           await load()
+          await openDetail(state.provider, res.channel)
         } else if (res.status === 'denied' || res.status === 'expired' || res.status === 'error') {
           stopPoll()
           setSetup({ step: 'error', provider: state.provider, message: res.error || t(`agentChannels.${res.status}`) })
@@ -268,7 +272,7 @@ export function AgentChannelPanel({ project, agentName, agentWorkerId }: { proje
     setBindCode(null)
     setCopiedBind(false)
     setChatBindName('')
-    await Promise.all([loadChannelIdentities(channel), loadChannelTargets(channel)])
+    await Promise.all([loadChannelIdentities(channel), loadChannelTargets(channel), createBindCode(channel)])
   }
 
   async function loadChannelIdentities(channel: AgentChannel) {

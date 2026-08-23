@@ -134,7 +134,11 @@ func (s *Server) handleRuntimeNotify(w http.ResponseWriter, r *http.Request) {
 		s.jsonError(w, http.StatusBadRequest, "body is required")
 		return
 	}
-	text = s.enrichRuntimeNotifyDocLinks(r, body.MessageFormat, text)
+	docMessageFormat := body.MessageFormat
+	if body.Card != nil {
+		docMessageFormat = "markdown"
+	}
+	text = s.enrichRuntimeNotifyDocLinks(r, docMessageFormat, text)
 	if body.Card != nil && strings.TrimSpace(body.Card.Body) != "" {
 		body.Card.Body = text
 	}
@@ -1195,7 +1199,7 @@ func (s *Server) enrichRuntimeNotifyDocLinks(r *http.Request, messageFormat, tex
 		}
 		seen[id] = true
 		webPath := docsWebPath(id)
-		if strings.Contains(text, webPath) || strings.Contains(text, base+webPath) {
+		if strings.Contains(text, base+webPath) {
 			continue
 		}
 		doc, err := ds.Get(id)
@@ -1208,6 +1212,7 @@ func (s *Server) enrichRuntimeNotifyDocLinks(r *http.Request, messageFormat, tex
 		}
 		links = append(links, runtimeNotifyDocLink{ID: id, Title: title, URL: base + webPath})
 	}
+	text = normalizeRuntimeNotifyDocURLs(text, links)
 	if len(links) == 0 {
 		return text
 	}
@@ -1239,6 +1244,17 @@ func (s *Server) enrichRuntimeNotifyDocLinks(r *http.Request, messageFormat, tex
 		b.WriteString(")")
 	}
 	return b.String()
+}
+
+func normalizeRuntimeNotifyDocURLs(text string, links []runtimeNotifyDocLink) string {
+	for _, link := range links {
+		if strings.TrimSpace(link.ID) == "" || strings.TrimSpace(link.URL) == "" {
+			continue
+		}
+		pattern := regexp.MustCompile(`https?://[^\s<>"')\]]*/docs/` + regexp.QuoteMeta(link.ID))
+		text = pattern.ReplaceAllString(text, link.URL)
+	}
+	return text
 }
 
 func escapeMarkdownLinkText(text string) string {

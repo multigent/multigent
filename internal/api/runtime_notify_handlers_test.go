@@ -644,6 +644,27 @@ func TestRuntimeNotifyEnrichesMarkdownDocLinks(t *testing.T) {
 	}
 }
 
+func TestRuntimeNotifyEnrichesCardDocLinksAsMarkdownAndNormalizesLocalURLs(t *testing.T) {
+	s, _ := newConnectionGrantPolicyServer(t)
+	t.Setenv("MULTIGENT_WEB_BASE_URL", "https://public.multigent.test")
+	ds := store.NewDocsStore(s.root)
+	if err := ds.AddManagedContent(&store.DocEntry{
+		ID:    "doc-20260822-card01",
+		Title: "卡片评审说明",
+	}, "# 卡片评审说明\n", "review.md"); err != nil {
+		t.Fatalf("add doc: %v", err)
+	}
+	req := httptest.NewRequest(http.MethodPost, "/api/v1/runtime/notify", nil)
+
+	got := s.enrichRuntimeNotifyDocLinks(req, "markdown", "文档: http://127.0.0.1:27894/docs/doc-20260822-card01")
+	if strings.Contains(got, "127.0.0.1") {
+		t.Fatalf("local doc URL should be normalized: %q", got)
+	}
+	if !strings.Contains(got, "https://public.multigent.test/docs/doc-20260822-card01") || !strings.Contains(got, "[卡片评审说明]") {
+		t.Fatalf("card doc link was not markdown-enriched: %q", got)
+	}
+}
+
 func TestRuntimeNotifyDocLinksIgnoreUnknownIDs(t *testing.T) {
 	s, _ := newConnectionGrantPolicyServer(t)
 	req := httptest.NewRequest(http.MethodPost, "/api/v1/runtime/notify", nil)

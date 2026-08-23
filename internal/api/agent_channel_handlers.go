@@ -1055,7 +1055,7 @@ func (s *Server) saveAgentIMChannel(r *http.Request, workspaceID, project, agent
 		WorkspaceID:  workspaceID,
 		ConnectionID: connectionID,
 		TargetType:   ConnectionTargetAgent,
-		TargetID:     project + "/" + agent,
+		TargetID:     agentChannelGrantTarget(project, agent, agentWorkerID),
 		CreatedBy:    requestUsername(r),
 		CreatedAt:    now,
 	})
@@ -1203,7 +1203,7 @@ func (s *Server) saveManualAgentIMChannel(r *http.Request, workspaceID, project,
 		WorkspaceID:  workspaceID,
 		ConnectionID: connectionID,
 		TargetType:   ConnectionTargetAgent,
-		TargetID:     project + "/" + agent,
+		TargetID:     agentChannelGrantTarget(project, agent, agentWorkerID),
 		CreatedBy:    requestUsername(r),
 		CreatedAt:    now,
 	})
@@ -1270,6 +1270,13 @@ func (s *Server) saveManualAgentIMChannel(r *http.Request, workspaceID, project,
 		Request:      r,
 	})
 	return binding, nil
+}
+
+func agentChannelGrantTarget(project, agent, agentWorkerID string) string {
+	if strings.TrimSpace(agentWorkerID) != "" {
+		return connectionAgentWorkerTargetID(agentWorkerID)
+	}
+	return strings.TrimSpace(project) + "/" + strings.TrimSpace(agent)
 }
 
 func (s *Server) parseProjectAgentProvider(w http.ResponseWriter, r *http.Request) (string, string, string, bool) {

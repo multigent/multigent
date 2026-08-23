@@ -53,6 +53,32 @@ func TestUpdateInteractiveCardUsesDelayedUpdateAPI(t *testing.T) {
 	}
 }
 
+func TestInteractiveCardBodyUsesSchema2MarkdownElements(t *testing.T) {
+	card := buildInteractiveCardBody(InteractiveCard{
+		Title: "评审",
+		Body:  "## 结论\n\n- 可合并\n\n[文档](https://example.com/docs/doc-1)",
+		Fields: []InteractiveCardField{
+			{Label: "风险", Value: "低"},
+		},
+		Actions: []InteractiveCardAction{{ID: "approve", Label: "通过", Style: "primary"}},
+	}, nil)
+	if card["schema"] != "2.0" {
+		t.Fatalf("interactive card should use schema 2.0, got %#v", card["schema"])
+	}
+	body, _ := card["body"].(map[string]any)
+	elements, _ := body["elements"].([]map[string]any)
+	if len(elements) == 0 {
+		t.Fatalf("missing body elements: %#v", card)
+	}
+	first := elements[0]
+	if first["tag"] != "markdown" {
+		t.Fatalf("body should render markdown directly, got %#v", first)
+	}
+	if content, _ := first["content"].(string); !strings.Contains(content, "## 结论") || !strings.Contains(content, "[文档]") {
+		t.Fatalf("markdown content not preserved: %#v", first)
+	}
+}
+
 func TestReplyMarkdownUsesPostReplyAPI(t *testing.T) {
 	var replyBody map[string]any
 	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {

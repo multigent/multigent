@@ -823,6 +823,9 @@ func applyAgentWorkerMigrationPlan(db controldb.Store, ts taskstore.Store, plan 
 		if err := migrateWorkerChannelBindings(db, plan.WorkspaceID, item); err != nil {
 			return err
 		}
+		if err := migrateWorkerToolBindings(db, plan.WorkspaceID, item); err != nil {
+			return err
+		}
 		if err := migrateWorkerInteractionSessions(db, plan.WorkspaceID, item); err != nil {
 			return err
 		}
@@ -835,6 +838,38 @@ func applyAgentWorkerMigrationPlan(db controldb.Store, ts taskstore.Store, plan 
 	}
 	if err := migrateWorkflowRuns(db, plan.WorkspaceID); err != nil {
 		return err
+	}
+	return nil
+}
+
+func migrateWorkerToolBindings(db controldb.Store, workspaceID string, item agentWorkerMigrationWorker) error {
+	bindings, err := db.ListAgentToolBindings(controldb.AgentToolBindingFilter{
+		WorkspaceID: workspaceID,
+		ProjectID:   item.Project,
+		AgentID:     item.LegacyAgent,
+	})
+	if err != nil {
+		return fmt.Errorf("list tool bindings for %s/%s: %w", item.Project, item.LegacyAgent, err)
+	}
+	for _, binding := range bindings {
+		binding.AgentWorkerID = item.ID
+		if err := db.UpsertAgentToolBinding(binding); err != nil {
+			return fmt.Errorf("migrate tool binding %s: %w", binding.ID, err)
+		}
+		if strings.TrimSpace(binding.ConnectionID) == "" {
+			continue
+		}
+		if err := db.CreateConnectionGrant(controldb.ConnectionGrant{
+			ID:           stableMigrationID("grant", workspaceID, item.ID, binding.ConnectionID),
+			WorkspaceID:  workspaceID,
+			ConnectionID: binding.ConnectionID,
+			TargetType:   "agent",
+			TargetID:     "agent_worker:" + item.ID,
+			CreatedBy:    binding.CreatedBy,
+			CreatedAt:    firstNonEmpty(binding.CreatedAt, time.Now().UTC().Format(time.RFC3339)),
+		}); err != nil {
+			return fmt.Errorf("migrate connection grant for tool binding %s: %w", binding.ID, err)
+		}
 	}
 	return nil
 }
@@ -852,6 +887,20 @@ func migrateWorkerChannelBindings(db controldb.Store, workspaceID string, item a
 		binding.AgentWorkerID = item.ID
 		if err := db.UpsertAgentChannelBinding(binding); err != nil {
 			return fmt.Errorf("migrate channel binding %s: %w", binding.ID, err)
+		}
+		if strings.TrimSpace(binding.ConnectionID) == "" {
+			continue
+		}
+		if err := db.CreateConnectionGrant(controldb.ConnectionGrant{
+			ID:           stableMigrationID("grant", workspaceID, item.ID, binding.ConnectionID),
+			WorkspaceID:  workspaceID,
+			ConnectionID: binding.ConnectionID,
+			TargetType:   "agent",
+			TargetID:     "agent_worker:" + item.ID,
+			CreatedBy:    binding.CreatedBy,
+			CreatedAt:    firstNonEmpty(binding.CreatedAt, time.Now().UTC().Format(time.RFC3339)),
+		}); err != nil {
+			return fmt.Errorf("migrate connection grant for channel binding %s: %w", binding.ID, err)
 		}
 	}
 	return nil

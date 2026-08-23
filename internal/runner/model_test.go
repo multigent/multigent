@@ -38,6 +38,15 @@ func TestClaudeInvokerUsesPermissionModeBypass(t *testing.T) {
 	t.Fatalf("claude args missing --permission-mode bypassPermissions: %#v", args)
 }
 
+func TestResumeSessionIDForCLIDropsMultigentLogicalSession(t *testing.T) {
+	if got := ResumeSessionIDForCLI("sess_8bbb9f0a8f71b5a1"); got != "" {
+		t.Fatalf("expected Multigent logical session to be dropped, got %q", got)
+	}
+	if got := ResumeSessionIDForCLI(" fb643778-f20d-45c3-8dce-7937cd5d9099 "); got != "fb643778-f20d-45c3-8dce-7937cd5d9099" {
+		t.Fatalf("expected provider-native session to be preserved, got %q", got)
+	}
+}
+
 func TestValidateDirectHostExecutionBlocksClaudeBypassWhenRoot(t *testing.T) {
 	if os.Geteuid() != 0 {
 		t.Skip("root-specific Claude Code behavior")

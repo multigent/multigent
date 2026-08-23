@@ -25,6 +25,22 @@ type ModelInvoker interface {
 	ParseSessionID(output string) string
 }
 
+// ResumeSessionIDForCLI returns the provider-native session/thread ID that is
+// safe to pass to the underlying agent CLI.
+//
+// Multigent 2.x has its own stable logical session IDs such as "sess_...".
+// Those IDs are useful for workspace-level tracking, but provider CLIs like
+// Claude Code, Codex, and Cursor expect their own native runtime session IDs
+// when resuming. Passing a Multigent logical ID makes the CLI fail before the
+// prompt is processed.
+func ResumeSessionIDForCLI(sessionID string) string {
+	sessionID = strings.TrimSpace(sessionID)
+	if strings.HasPrefix(sessionID, "sess_") {
+		return ""
+	}
+	return sessionID
+}
+
 // InvokerFor returns the ModelInvoker for the given model.
 // If the model has a custom runCommand (from AgentMeta), it takes precedence.
 // addDirs lists additional directories to expose to the agent (model-specific flags).

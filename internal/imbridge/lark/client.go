@@ -814,7 +814,7 @@ func buildInteractiveCardBody(card InteractiveCard, openIDs []string) map[string
 	body := strings.TrimSpace(card.Body)
 	if body != "" {
 		for _, chunk := range splitCardMarkdown(body, 900) {
-			elements = append(elements, map[string]any{"tag": "div", "text": map[string]string{"tag": "lark_md", "content": chunk}})
+			elements = append(elements, map[string]any{"tag": "markdown", "content": chunk})
 		}
 	}
 	if len(card.Fields) > 0 {
@@ -827,14 +827,14 @@ func buildInteractiveCardBody(card InteractiveCard, openIDs []string) map[string
 			continue
 		}
 		if label == "" {
-			elements = append(elements, map[string]any{"tag": "div", "text": map[string]string{"tag": "lark_md", "content": value}})
+			elements = append(elements, map[string]any{"tag": "markdown", "content": value})
 			continue
 		}
 		content := "**" + label + "**"
 		if value != "" {
 			content += "\n" + value
 		}
-		elements = append(elements, map[string]any{"tag": "div", "text": map[string]string{"tag": "lark_md", "content": content}})
+		elements = append(elements, map[string]any{"tag": "markdown", "content": content})
 	}
 	for _, link := range card.Links {
 		if strings.TrimSpace(link.Label) == "" || strings.TrimSpace(link.URL) == "" {
@@ -887,12 +887,13 @@ func buildInteractiveCardBody(card InteractiveCard, openIDs []string) map[string
 		elements = append(elements, map[string]any{"tag": "action", "actions": actions})
 	}
 	cardBody := map[string]any{
+		"schema": "2.0",
 		"config": map[string]any{"wide_screen_mode": true},
 		"header": map[string]any{
 			"template": cardHeaderTemplate(card.Title),
 			"title":    map[string]string{"tag": "plain_text", "content": strings.TrimSpace(card.Title)},
 		},
-		"elements": elements,
+		"body": map[string]any{"elements": elements},
 	}
 	if len(openIDs) > 0 {
 		cardBody["open_ids"] = openIDs

@@ -220,7 +220,8 @@ func (r *Runner) ExecPromptWithRuntimeControlEnvContext(ctx context.Context, pro
 	effectiveEnv = mergeEnv(effectiveEnv, runtimeEnv)
 	apiModel, apiBaseURL := resolveAPIModelFromEnv(model, effectiveEnv)
 	invoker := InvokerFor(model, meta.RunCommand, meta.AddDirs)
-	innerArgs := invoker.Args(promptFile, sessionID)
+	resumeSessionID := ResumeSessionIDForCLI(sessionID)
+	innerArgs := invoker.Args(promptFile, resumeSessionID)
 
 	var (
 		executable string
@@ -351,7 +352,7 @@ func (r *Runner) ExecPromptWithRuntimeControlEnvContext(ctx context.Context, pro
 
 	ec := exitCodeOrZero(cmd)
 	if runErr != nil {
-		if sessionID != "" && isResumeSessionMissingError(output) {
+		if resumeSessionID != "" && isResumeSessionMissingError(output) {
 			fmt.Fprintf(logFile, "\n=== saved session is missing — clearing heartbeat session + retrying fresh ===\n")
 			r.recordAgentRun(telemetry.KindExec, project, agentName, "", "", string(model), sandboxLabel,
 				apiModel, apiBaseURL,
@@ -361,7 +362,7 @@ func (r *Runner) ExecPromptWithRuntimeControlEnvContext(ctx context.Context, pro
 			r.clearHeartbeatSession(project, agentName)
 			return r.ExecPromptWithRuntimeControlEnvContext(ctx, project, agentName, prompt, "", runtimeControlEnv)
 		}
-		if sessionID != "" && isThinkingSignatureError(output) {
+		if resumeSessionID != "" && isThinkingSignatureError(output) {
 			fmt.Fprintf(logFile, "\n=== thinking block signature invalid — clearing heartbeat session + retrying fresh ===\n")
 			r.recordAgentRun(telemetry.KindExec, project, agentName, "", "", string(model), sandboxLabel,
 				apiModel, apiBaseURL,
@@ -439,9 +440,10 @@ func (r *Runner) RunTaskWithContext(ctx context.Context, project, agentName stri
 	effectiveEnv = mergeEnv(effectiveEnv, runtimeEnv)
 	apiModel, apiBaseURL := resolveAPIModelFromEnv(model, effectiveEnv)
 	invoker := InvokerFor(model, meta.RunCommand, meta.AddDirs)
+	resumeSessionID := ResumeSessionIDForCLI(sessionID)
 
 	// Build the inner agent CLI arguments.
-	innerArgs := invoker.Args(promptFile, sessionID)
+	innerArgs := invoker.Args(promptFile, resumeSessionID)
 
 	// Determine the actual executable and final argument list.
 	// When a Docker sandbox is configured the inner args become the command
@@ -592,7 +594,7 @@ func (r *Runner) RunTaskWithContext(ctx context.Context, project, agentName stri
 	}
 
 	if runErr != nil {
-		if sessionID != "" && isResumeSessionMissingError(output) {
+		if resumeSessionID != "" && isResumeSessionMissingError(output) {
 			fmt.Fprintf(logFile, "\n=== saved session is missing — clearing heartbeat session + retrying fresh ===\n")
 			r.recordAgentRun(telemetry.KindTask, project, agentName, task.ID, task.Title, string(model), sandboxLabel,
 				apiModel, apiBaseURL,
@@ -602,7 +604,7 @@ func (r *Runner) RunTaskWithContext(ctx context.Context, project, agentName stri
 			r.clearHeartbeatSession(project, agentName)
 			return r.RunTaskWithContext(ctx, project, agentName, task, "")
 		}
-		if sessionID != "" && isThinkingSignatureError(output) {
+		if resumeSessionID != "" && isThinkingSignatureError(output) {
 			fmt.Fprintf(logFile, "\n=== thinking block signature invalid — clearing heartbeat session + retrying fresh ===\n")
 			r.recordAgentRun(telemetry.KindTask, project, agentName, task.ID, task.Title, string(model), sandboxLabel,
 				apiModel, apiBaseURL,

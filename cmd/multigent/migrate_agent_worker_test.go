@@ -87,6 +87,70 @@ func TestAgentWorkerMigrationReadsLegacyAgentsAndMigratesTasks(t *testing.T) {
 	}); err != nil {
 		t.Fatalf("seed interaction request: %v", err)
 	}
+	now := time.Now().UTC().Format(time.RFC3339)
+	if err := db.UpsertConnection(controldb.Connection{
+		ID:             "conn-github",
+		WorkspaceID:    workspaceID,
+		Provider:       "github",
+		ConnectionName: "default",
+		OwnerType:      "workspace",
+		OwnerID:        workspaceID,
+		AuthType:       "token",
+		Status:         "active",
+		ProfileJSON:    "{}",
+		CreatedBy:      "admin",
+		CreatedAt:      now,
+		UpdatedAt:      now,
+	}); err != nil {
+		t.Fatalf("seed connection: %v", err)
+	}
+	if err := db.UpsertConnection(controldb.Connection{
+		ID:             "conn-feishu-channel",
+		WorkspaceID:    workspaceID,
+		Provider:       "feishu",
+		ConnectionName: "agent-sample-pm",
+		OwnerType:      "workspace",
+		OwnerID:        workspaceID,
+		AuthType:       "app_secret",
+		Status:         "active",
+		ProfileJSON:    `{"purpose":"agent_channel","usage":"agent_im_channel"}`,
+		CreatedBy:      "admin",
+		CreatedAt:      now,
+		UpdatedAt:      now,
+	}); err != nil {
+		t.Fatalf("seed channel connection: %v", err)
+	}
+	if err := db.UpsertAgentToolBinding(controldb.AgentToolBinding{
+		ID:           "bind-github",
+		WorkspaceID:  workspaceID,
+		ProjectID:    "sample",
+		AgentID:      "pm",
+		ConnectionID: "conn-github",
+		Provider:     "github",
+		AdapterType:  "github",
+		Status:       "enabled",
+		ConfigJSON:   "{}",
+		CreatedBy:    "admin",
+		CreatedAt:    now,
+		UpdatedAt:    now,
+	}); err != nil {
+		t.Fatalf("seed tool binding: %v", err)
+	}
+	if err := db.UpsertAgentChannelBinding(controldb.AgentChannelBinding{
+		ID:           "chan-feishu",
+		WorkspaceID:  workspaceID,
+		ProjectID:    "sample",
+		AgentID:      "pm",
+		Provider:     "feishu",
+		ConnectionID: "conn-feishu-channel",
+		Status:       "connected",
+		MetadataJSON: "{}",
+		CreatedBy:    "admin",
+		CreatedAt:    now,
+		UpdatedAt:    now,
+	}); err != nil {
+		t.Fatalf("seed channel binding: %v", err)
+	}
 	if err := applyAgentWorkerMigrationPlan(db, taskstore.New(root), plan); err != nil {
 		t.Fatalf("apply plan: %v", err)
 	}
@@ -144,6 +208,42 @@ func TestAgentWorkerMigrationReadsLegacyAgentsAndMigratesTasks(t *testing.T) {
 	}
 	if len(requests) != 1 || requests[0].ID != "ir-one" {
 		t.Fatalf("unexpected migrated interaction requests: %+v", requests)
+	}
+	toolBindings, err := db.ListAgentToolBindings(controldb.AgentToolBindingFilter{
+		WorkspaceID:   workspaceID,
+		AgentWorkerID: workers[0].ID,
+		ConnectionID:  "conn-github",
+	})
+	if err != nil {
+		t.Fatalf("list migrated tool bindings: %v", err)
+	}
+	if len(toolBindings) != 1 || toolBindings[0].ID != "bind-github" {
+		t.Fatalf("tool binding was not attached to worker: %+v", toolBindings)
+	}
+	grants, err := db.ListConnectionGrants("conn-github")
+	if err != nil {
+		t.Fatalf("list connection grants: %v", err)
+	}
+	if len(grants) != 1 || grants[0].TargetType != "agent" || grants[0].TargetID != "agent_worker:"+workers[0].ID {
+		t.Fatalf("legacy tool binding did not create worker grant: %+v", grants)
+	}
+	channelBindings, err := db.ListAgentChannelBindings(controldb.AgentChannelBindingFilter{
+		WorkspaceID:   workspaceID,
+		AgentWorkerID: workers[0].ID,
+		ConnectionID:  "conn-feishu-channel",
+	})
+	if err != nil {
+		t.Fatalf("list migrated channel bindings: %v", err)
+	}
+	if len(channelBindings) != 1 || channelBindings[0].ID != "chan-feishu" {
+		t.Fatalf("channel binding was not attached to worker: %+v", channelBindings)
+	}
+	channelGrants, err := db.ListConnectionGrants("conn-feishu-channel")
+	if err != nil {
+		t.Fatalf("list channel connection grants: %v", err)
+	}
+	if len(channelGrants) != 1 || channelGrants[0].TargetType != "agent" || channelGrants[0].TargetID != "agent_worker:"+workers[0].ID {
+		t.Fatalf("legacy channel binding did not create worker grant: %+v", channelGrants)
 	}
 }
 
