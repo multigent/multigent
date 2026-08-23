@@ -69,6 +69,23 @@ func TestRuntimeNodeCompleteMarksNonWorkflowTaskDone(t *testing.T) {
 	if err := s.controlDB.UpsertRuntimeRun(run); err != nil {
 		t.Fatalf("runtime run: %v", err)
 	}
+	if err := s.controlDB.UpsertAttentionSignal(controldb.AttentionSignal{
+		ID:            "asig-runtime-success-task",
+		WorkspaceID:   workspaceID,
+		AgentWorkerID: "aw-pm",
+		DedupeKey:     "task:sample:" + task.ID + ":pm:task_assigned",
+		SourceKind:    "task",
+		SourceID:      task.ID,
+		SourceChannel: "project:sample",
+		Reason:        "task_assigned",
+		Priority:      "normal",
+		ActorType:     "system",
+		Summary:       task.Title,
+		Status:        "pending",
+		CreatedAt:     nowText,
+	}); err != nil {
+		t.Fatalf("attention signal: %v", err)
+	}
 
 	body, _ := json.Marshal(runtimeRunFinishRequest{Result: map[string]any{
 		"summary":   "runtime completed successfully",
@@ -120,6 +137,13 @@ func TestRuntimeNodeCompleteMarksNonWorkflowTaskDone(t *testing.T) {
 	hb := agentWorkerScheduleForTest(t, worker)
 	if hb == nil || hb.SessionID != "session-runtime-success" || hb.LastWakeupStatus != "done" {
 		t.Fatalf("heartbeat was not updated: %#v", hb)
+	}
+	signal, found, err := s.controlDB.AttentionSignalByID(workspaceID, "asig-runtime-success-task")
+	if err != nil || !found {
+		t.Fatalf("load attention signal found=%v err=%v", found, err)
+	}
+	if signal.Status != "handled" || signal.HandledAt == "" {
+		t.Fatalf("attention signal was not handled after runtime completion: %#v", signal)
 	}
 }
 

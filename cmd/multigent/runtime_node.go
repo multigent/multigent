@@ -342,6 +342,7 @@ func startRuntimeNodeDaemon(logFile string) error {
 	defer file.Close()
 	cmd := exec.Command(exe, args...)
 	cmd.Env = append(os.Environ(), "MULTIGENT_RUNTIME_NODE_DAEMON_CHILD=1", "MULTIGENT_LOG_STDERR=false")
+	cmd.Stdin = nil
 	cmd.Stdout = file
 	cmd.Stderr = file
 	setBackgroundProcessGroup(cmd)

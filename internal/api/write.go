@@ -264,7 +264,12 @@ func (s *Server) createProjectTaskFromBody(w http.ResponseWriter, r *http.Reques
 		}
 	}
 	if strings.Contains(assignee, "/") {
-		s.recordTaskAttentionSignal(workspaceID, name, agentName, t, "task_assigned")
+		reason := "task_assigned"
+		if workflowID != "" {
+			reason = string(entity.TriggerOnWorkflowStepAssigned)
+		}
+		signalID := s.recordTaskAttentionSignal(workspaceID, name, agentName, t, reason)
+		s.requestTaskAttentionWakeup(workspaceID, name, agentName, t, reason, signalID)
 	}
 
 	w.WriteHeader(http.StatusCreated)
@@ -572,8 +577,8 @@ func (s *Server) handlePutUpdateTask(w http.ResponseWriter, r *http.Request) {
 	}
 	if body.Assignee != nil && strings.TrimSpace(t.Assignee) != oldAssignee {
 		if _, targetAgent, ok := splitAgentMailbox(t.Assignee); ok && !t.Status.IsTerminal() {
-			s.recordTaskAttentionSignal(workspaceID, project, targetAgent, t, "task_assigned")
-			s.triggers.Fire(project, targetAgent, entity.TriggerOnTask, "task reassigned "+t.ID)
+			signalID := s.recordTaskAttentionSignal(workspaceID, project, targetAgent, t, "task_assigned")
+			s.requestTaskAttentionWakeup(workspaceID, project, targetAgent, t, "task_assigned", signalID)
 		} else if strings.TrimSpace(t.Assignee) != "" && !strings.Contains(t.Assignee, "/") {
 			if err := s.ts.AddToInbox(&entity.InboxItem{
 				TaskID:  t.ID,

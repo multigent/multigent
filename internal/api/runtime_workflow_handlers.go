@@ -717,8 +717,12 @@ func (s *Server) createRuntimeTaskFromBody(w http.ResponseWriter, r *http.Reques
 		}
 	}
 	if strings.Contains(assignee, "/") {
-		s.recordTaskAttentionSignal(principal.WorkspaceID, principal.Project, agent, t, "task_assigned")
-		s.triggers.Fire(principal.Project, agent, entity.TriggerOnTask, "task "+t.ID)
+		reason := "task_assigned"
+		if workflowID != "" {
+			reason = string(entity.TriggerOnWorkflowStepAssigned)
+		}
+		signalID := s.recordTaskAttentionSignal(principal.WorkspaceID, principal.Project, agent, t, reason)
+		s.requestTaskAttentionWakeup(principal.WorkspaceID, principal.Project, agent, t, reason, signalID)
 	}
 	s.auditLog(auditLogInput{
 		WorkspaceID:  principal.WorkspaceID,
@@ -1338,7 +1342,7 @@ func (s *Server) fireTaskTriggerOrQueueRuntime(workspaceID, project, agent strin
 	if s == nil || task == nil {
 		return nil
 	}
-	s.recordTaskAttentionSignal(workspaceID, project, agent, task, reason)
+	signalID := s.recordTaskAttentionSignal(workspaceID, project, agent, task, reason)
 	target := s.runtimeSchedulerTargetForProjectAgent(workspaceID, project, agent)
 	hb, err := s.loadSchedulerTargetHeartbeat(workspaceID, target)
 	if err != nil || hb == nil || hb.Paused || !hb.HasTrigger(entity.TriggerOnTask) {
@@ -1372,6 +1376,9 @@ func (s *Server) fireTaskTriggerOrQueueRuntime(workspaceID, project, agent strin
 		task.UpdatedAt = now
 		_ = s.ts.UpdateTask(project, agent, task)
 		return err
+	}
+	if signalID != "" {
+		_ = s.controlDB.MarkAttentionSignalStatus(workspaceID, signalID, "handling")
 	}
 	hb.LastWakeup = &now
 	hb.LastWakeupStatus = "running"
@@ -1794,6 +1801,8 @@ func (s *Server) handleRuntimePostMessage(w http.ResponseWriter, r *http.Request
 			return
 		}
 		ids = append(ids, msg.ID)
+		signalID := s.recordMessageAttentionSignal(principal.WorkspaceID, msg)
+		s.requestMessageAttentionWakeup(principal.WorkspaceID, msg, signalID)
 		if parts := strings.SplitN(rec, "/", 2); len(parts) == 2 {
 			s.triggers.Fire(parts[0], parts[1], entity.TriggerOnMessage, "from "+from)
 		}
@@ -1886,6 +1895,8 @@ func (s *Server) handleRuntimeReplyMessage(w http.ResponseWriter, r *http.Reques
 		s.serverError(w, err)
 		return
 	}
+	signalID := s.recordMessageAttentionSignal(principal.WorkspaceID, msg)
+	s.requestMessageAttentionWakeup(principal.WorkspaceID, msg, signalID)
 	if parts := strings.SplitN(msg.To, "/", 2); len(parts) == 2 {
 		s.triggers.Fire(parts[0], parts[1], entity.TriggerOnMessage, "from "+mailbox)
 	}

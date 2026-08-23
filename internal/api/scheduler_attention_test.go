@@ -46,7 +46,14 @@ func TestRuntimeWakeupTaskIncludesPendingAttentionSignals(t *testing.T) {
 	if task.CreatedBy != attentionWakeupTaskCreatedBy || task.Priority != 0 {
 		t.Fatalf("expected high-priority attention wakeup task, got %+v", task)
 	}
-	if !strings.Contains(task.Prompt, "Attention Signals") || !strings.Contains(task.Prompt, "sig-runtime-wakeup") || !strings.Contains(task.Prompt, "mga attention list") || !strings.Contains(task.Prompt, "mga notify send --to source") {
+	if !strings.Contains(task.Prompt, "Attention Signals") ||
+		!strings.Contains(task.Prompt, "sig-runtime-wakeup") ||
+		!strings.Contains(task.Prompt, "mga attention list") ||
+		!strings.Contains(task.Prompt, "mga notify send --to source") ||
+		!strings.Contains(task.Prompt, "mga contacts list") ||
+		!strings.Contains(task.Prompt, "mga runtime channels") ||
+		!strings.Contains(task.Prompt, "mga notify send --to chat") ||
+		!strings.Contains(task.Prompt, "mga inbox send") {
 		t.Fatalf("wakeup prompt did not include attention guidance:\n%s", task.Prompt)
 	}
 	if got, err := s.ts.GetTask("sample", "pm", task.ID); err != nil || got == nil {
@@ -282,12 +289,19 @@ func TestAttentionWakeupTaskTakesPriorityOverNormalPendingTask(t *testing.T) {
 	if len(ids) != 1 || ids[0] != "sig-should-not-inject" {
 		t.Fatalf("unexpected attention ids: %+v", ids)
 	}
-	if !strings.Contains(task.Prompt, "Attention Signals") || !strings.Contains(task.Prompt, "sig-should-not-inject") || !strings.Contains(task.Prompt, "mga attention list") || !strings.Contains(task.Prompt, "mga notify send --to source") {
+	if !strings.Contains(task.Prompt, "Attention Signals") ||
+		!strings.Contains(task.Prompt, "sig-should-not-inject") ||
+		!strings.Contains(task.Prompt, "mga attention list") ||
+		!strings.Contains(task.Prompt, "mga notify send --to source") ||
+		!strings.Contains(task.Prompt, "mga contacts list") ||
+		!strings.Contains(task.Prompt, "mga runtime channels") ||
+		!strings.Contains(task.Prompt, "mga notify send --to chat") ||
+		!strings.Contains(task.Prompt, "mga inbox send") {
 		t.Fatalf("attention task prompt should include attention guidance:\n%s", task.Prompt)
 	}
 }
 
-func TestRecoverablePendingAttentionWakeupTargetsGroupsPendingIMSignals(t *testing.T) {
+func TestRecoverablePendingAttentionWakeupTargetsGroupsPendingSignals(t *testing.T) {
 	s, workspaceID := newConnectionGrantPolicyServer(t)
 	seedTaskAttentionWorker(t, s, workspaceID, "sample", "pm", true)
 	now := time.Now().UTC().Format(time.RFC3339)
@@ -313,6 +327,18 @@ func TestRecoverablePendingAttentionWakeupTargetsGroupsPendingIMSignals(t *testi
 			SourceKind:    "im_card_action",
 			SourceID:      "ir_recover",
 			Reason:        "card_action",
+			Status:        "pending",
+			RefsJSON:      refs,
+			CreatedAt:     now,
+		},
+		{
+			ID:            "sig-recover-message",
+			WorkspaceID:   workspaceID,
+			AgentWorkerID: "aw-pm",
+			DedupeKey:     "recover:message",
+			SourceKind:    "message",
+			SourceID:      "msg-recover",
+			Reason:        "inbox_message",
 			Status:        "pending",
 			RefsJSON:      refs,
 			CreatedAt:     now,
@@ -368,7 +394,7 @@ func TestRecoverablePendingAttentionWakeupTargetsGroupsPendingIMSignals(t *testi
 	if target.WorkspaceID != workspaceID || target.ProjectID != "sample" || target.AgentID != "pm" || target.AgentWorkerID != "aw-pm" {
 		t.Fatalf("unexpected target: %+v", target)
 	}
-	if strings.Join(target.AttentionIDs, ",") != "sig-recover-im-1,sig-recover-card" {
+	if strings.Join(target.AttentionIDs, ",") != "sig-recover-im-1,sig-recover-card,sig-recover-message,sig-recover-task" {
 		t.Fatalf("unexpected recovered ids: %+v", target.AttentionIDs)
 	}
 }

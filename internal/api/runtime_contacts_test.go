@@ -8,7 +8,9 @@ import (
 	"net/http/httptest"
 	"strings"
 	"testing"
+	"time"
 
+	controldb "github.com/multigent/multigent/internal/db"
 	"github.com/multigent/multigent/internal/entity"
 )
 
@@ -216,4 +218,177 @@ func TestRuntimePostMessageRejectsCrossProjectAgentContact(t *testing.T) {
 	if rec.Code != http.StatusBadRequest {
 		t.Fatalf("status=%d body=%s", rec.Code, rec.Body.String())
 	}
+}
+
+func TestRuntimePostMessageCreatesAttentionForAgentRecipient(t *testing.T) {
+	s, workspaceID := newConnectionGrantPolicyServer(t)
+	seedSampleAgentsForTest(t, s, workspaceID)
+	now := "2026-08-21T00:00:00Z"
+	upsertRuntimeAttentionWorker(t, s, workspaceID, "aw-worker-only", "sample", "worker-only", now)
+	saveRuntimeAttentionHeartbeat(t, s, workspaceID, "sample", "worker-only")
+
+	raw, _ := json.Marshal(runtimeMessageBody{
+		To:      "sample/worker-only",
+		Subject: "needs PM decision",
+		Body:    "Please review this rule ambiguity.",
+	})
+	req := httptest.NewRequest(http.MethodPost, "/api/v1/runtime/messages", bytes.NewReader(raw))
+	req = req.WithContext(context.WithValue(req.Context(), ctxRuntimeAgentKey, runtimeAgentPrincipal{
+		WorkspaceID:  workspaceID,
+		Project:      "sample",
+		Agent:        "pm",
+		Capabilities: []string{"message.use"},
+	}))
+	rec := httptest.NewRecorder()
+	s.handleRuntimePostMessage(rec, req)
+	if rec.Code != http.StatusCreated {
+		t.Fatalf("status=%d body=%s", rec.Code, rec.Body.String())
+	}
+	msgs, err := s.ts.ListMessages("sample/worker-only")
+	if err != nil {
+		t.Fatalf("list messages: %v", err)
+	}
+	if len(msgs) != 1 {
+		t.Fatalf("messages=%d", len(msgs))
+	}
+	resolved, ok, err := s.agentDirectory.ResolveProjectMailbox(workspaceID, "sample/worker-only")
+	if err != nil || !ok {
+		t.Fatalf("resolve backend ok=%v err=%v", ok, err)
+	}
+	signals, err := s.controlDB.ListAttentionSignals(controldb.AttentionSignalFilter{
+		WorkspaceID:   workspaceID,
+		AgentWorkerID: resolved.Worker.ID,
+		SourceKind:    "message",
+		Reason:        "inbox_message",
+	})
+	if err != nil {
+		t.Fatalf("list attention: %v", err)
+	}
+	if len(signals) != 1 {
+		t.Fatalf("signals=%d %#v", len(signals), signals)
+	}
+	signal := signals[0]
+	if signal.Status != "pending" || signal.SourceID != msgs[0].ID || signal.ActorID != "sample/pm" || !strings.Contains(signal.Summary, "needs PM decision") {
+		t.Fatalf("bad signal: %#v message=%#v", signal, msgs[0])
+	}
+	assertAttentionWakeupTaskForSignal(t, s, "sample", "worker-only", signal.ID)
+}
+
+func TestRuntimePostMessageDoesNotCreateAttentionForUserRecipient(t *testing.T) {
+	s, workspaceID := newConnectionGrantPolicyServer(t)
+	seedSampleAgentsForTest(t, s, workspaceID)
+	if err := s.users.CreateUser("cg33", "pass123", RoleMember, "Glenn Chen", "glenn@example.com", "", "", ""); err != nil {
+		t.Fatalf("create user: %v", err)
+	}
+	if err := s.controlDB.UpsertWorkspaceMember(workspaceID, "cg33", WorkspaceRoleMember); err != nil {
+		t.Fatalf("member: %v", err)
+	}
+
+	raw, _ := json.Marshal(runtimeMessageBody{
+		To:      "cg33",
+		Subject: "human note",
+		Body:    "FYI",
+	})
+	req := httptest.NewRequest(http.MethodPost, "/api/v1/runtime/messages", bytes.NewReader(raw))
+	req = req.WithContext(context.WithValue(req.Context(), ctxRuntimeAgentKey, runtimeAgentPrincipal{
+		WorkspaceID:  workspaceID,
+		Project:      "sample",
+		Agent:        "pm",
+		Capabilities: []string{"message.use"},
+	}))
+	rec := httptest.NewRecorder()
+	s.handleRuntimePostMessage(rec, req)
+	if rec.Code != http.StatusCreated {
+		t.Fatalf("status=%d body=%s", rec.Code, rec.Body.String())
+	}
+	signals, err := s.controlDB.ListAttentionSignals(controldb.AttentionSignalFilter{WorkspaceID: workspaceID})
+	if err != nil {
+		t.Fatalf("list attention: %v", err)
+	}
+	if len(signals) != 0 {
+		t.Fatalf("unexpected signals: %#v", signals)
+	}
+}
+
+func TestRuntimeReplyMessageCreatesAttentionForAgentRecipient(t *testing.T) {
+	s, workspaceID := newConnectionGrantPolicyServer(t)
+	seedSampleAgentsForTest(t, s, workspaceID)
+	now := "2026-08-21T00:00:00Z"
+	upsertRuntimeAttentionWorker(t, s, workspaceID, "aw-worker-only", "sample", "worker-only", now)
+	saveRuntimeAttentionHeartbeat(t, s, workspaceID, "sample", "worker-only")
+	original := &entity.Message{
+		ID:      "msg-original",
+		From:    "sample/worker-only",
+		To:      "sample/pm",
+		Subject: "needs decision",
+		Body:    "Please decide.",
+		SentAt:  time.Now().UTC(),
+	}
+	if err := s.ts.SendMessage(original); err != nil {
+		t.Fatalf("send original: %v", err)
+	}
+
+	raw, _ := json.Marshal(runtimeReplyMessageBody{
+		Body: "Decision: needs-info.",
+	})
+	req := httptest.NewRequest(http.MethodPost, "/api/v1/runtime/messages/msg-original/reply", bytes.NewReader(raw))
+	req.SetPathValue("id", "msg-original")
+	req = req.WithContext(context.WithValue(req.Context(), ctxRuntimeAgentKey, runtimeAgentPrincipal{
+		WorkspaceID:  workspaceID,
+		Project:      "sample",
+		Agent:        "pm",
+		Capabilities: []string{"message.use"},
+	}))
+	rec := httptest.NewRecorder()
+	s.handleRuntimeReplyMessage(rec, req)
+	if rec.Code != http.StatusCreated {
+		t.Fatalf("status=%d body=%s", rec.Code, rec.Body.String())
+	}
+	resolved, ok, err := s.agentDirectory.ResolveProjectMailbox(workspaceID, "sample/worker-only")
+	if err != nil || !ok {
+		t.Fatalf("resolve worker ok=%v err=%v", ok, err)
+	}
+	signals, err := s.controlDB.ListAttentionSignals(controldb.AttentionSignalFilter{
+		WorkspaceID:   workspaceID,
+		AgentWorkerID: resolved.Worker.ID,
+		SourceKind:    "message",
+		Reason:        "inbox_message",
+	})
+	if err != nil {
+		t.Fatalf("list attention: %v", err)
+	}
+	if len(signals) != 1 {
+		t.Fatalf("signals=%d %#v", len(signals), signals)
+	}
+	signal := signals[0]
+	if signal.Status != "pending" || signal.ActorID != "sample/pm" || !strings.Contains(signal.Summary, "needs decision") {
+		t.Fatalf("bad signal: %#v", signal)
+	}
+	assertAttentionWakeupTaskForSignal(t, s, "sample", "worker-only", signal.ID)
+}
+
+func saveRuntimeAttentionHeartbeat(t *testing.T, s *Server, workspaceID, project, agent string) {
+	t.Helper()
+	target := s.runtimeSchedulerTargetForProjectAgent(workspaceID, project, agent)
+	hb := &entity.HeartbeatConfig{
+		Enabled:      true,
+		WakeupPrompt: "Check pending attention and decide what to do.",
+	}
+	if err := s.saveSchedulerTargetHeartbeat(workspaceID, target, hb); err != nil {
+		t.Fatalf("save heartbeat: %v", err)
+	}
+}
+
+func assertAttentionWakeupTaskForSignal(t *testing.T, s *Server, project, agent, signalID string) {
+	t.Helper()
+	tasks, err := s.ts.ListTasks(project, agent, entity.TaskStatusPending)
+	if err != nil {
+		t.Fatalf("list pending tasks: %v", err)
+	}
+	for _, task := range tasks {
+		if task != nil && task.CreatedBy == attentionWakeupTaskCreatedBy && strings.Contains(task.Prompt, signalID) {
+			return
+		}
+	}
+	t.Fatalf("attention wakeup task for signal %s not found in %#v", signalID, tasks)
 }
