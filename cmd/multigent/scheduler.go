@@ -5,6 +5,7 @@ import (
 	"context"
 	"encoding/json"
 	"fmt"
+	"math"
 	"math/rand"
 	"os"
 	"os/exec"
@@ -932,13 +933,15 @@ func runAllPendingTasks(ctx context.Context, root, project, agentName string,
 					var msgSection strings.Builder
 					msgSection.WriteString(i18n.InboxHeader)
 					msgSection.WriteString(i18n.InboxIntro)
+					nowForInbox := time.Now()
 					for _, m := range unread {
 						msgSection.WriteString(fmt.Sprintf("---\n**[%s] From: %s**",
 							m.SentAt.Local().Format("01-02 15:04"), m.From))
 						if m.Subject != "" {
 							msgSection.WriteString(fmt.Sprintf("  Subject: %s", m.Subject))
 						}
-						msgSection.WriteString(fmt.Sprintf("\nID: `%s`\n\n%s\n\n", m.ID, m.Body))
+						msgSection.WriteString(fmt.Sprintf("\nID: `%s`\n", m.ID))
+						msgSection.WriteString(fmt.Sprintf("Sent: %s\n\n%s\n\n", schedulerTimeWithAge(m.SentAt, nowForInbox, i18n), m.Body))
 					}
 					msgSection.WriteString("---\n\n")
 					msgSection.WriteString(i18n.InboxReplyHint)
@@ -954,6 +957,7 @@ func runAllPendingTasks(ctx context.Context, root, project, agentName string,
 				if len(attentionIDs) > 0 {
 					markAttentionSignalsSeen(root, attentionIDs)
 				}
+				prompt = schedulerWakeupTimeSection(time.Now(), i18n) + prompt
 
 				now := time.Now().UTC()
 				wakeupTask := &entity.Task{
@@ -1313,6 +1317,9 @@ func agentDir(root, project, agentName string) string {
 
 // wakeupI18n holds the auto-generated strings injected around the wakeup prompt.
 type wakeupI18n struct {
+	TimeHeader        string // section heading for wakeup time context
+	TimeNowLabel      string // label for the wakeup timestamp
+	TimeHint          string // hint for temporal judgement
 	InboxHeader       string // section heading for unread-message block
 	InboxIntro        string // sentence before the message list
 	InboxReplyHint    string // hint line showing how to reply
@@ -1329,6 +1336,9 @@ func wakeupStrings(lang string) wakeupI18n {
 	switch lang {
 	case "zh":
 		return wakeupI18n{
+			TimeHeader:        "## ⏱ 时间上下文\n\n",
+			TimeNowLabel:      "本次唤醒时间",
+			TimeHint:          "判断信号和消息优先级时，请结合发生时间与距今多久；旧消息可能已过期，刚发生的消息通常更需要及时响应。\n\n",
 			InboxHeader:       "## 📬 未读消息\n\n",
 			InboxIntro:        "你收到了以下消息，请在本次唤醒中处理：\n\n",
 			InboxReplyHint:    "如需回复某条消息：\n  multigent --dir $AGENCY_DIR inbox reply <msg-id> --body \"...\"\n\n",
@@ -1340,6 +1350,9 @@ func wakeupStrings(lang string) wakeupI18n {
 		}
 	default: // "en"
 		return wakeupI18n{
+			TimeHeader:        "## ⏱ Time Context\n\n",
+			TimeNowLabel:      "This wakeup time",
+			TimeHint:          "When judging signal and message priority, consider both the absolute timestamp and how long ago it happened. Older messages may be stale; fresh messages usually deserve faster response.\n\n",
 			InboxHeader:       "## 📬 Unread Messages\n\n",
 			InboxIntro:        "You have the following unread messages. Please handle them in this wakeup cycle:\n\n",
 			InboxReplyHint:    "To reply to a message:\n  multigent --dir $AGENCY_DIR inbox reply <msg-id> --body \"...\"\n\n",
@@ -1362,6 +1375,23 @@ func agencyLang(s store.Store) string {
 		return "en"
 	}
 	return a.Lang
+}
+
+func schedulerWakeupTimeSection(now time.Time, i18n wakeupI18n) string {
+	if now.IsZero() {
+		now = time.Now()
+	}
+	local := now.Local()
+	utc := now.UTC()
+	var b strings.Builder
+	b.WriteString(i18n.TimeHeader)
+	b.WriteString(fmt.Sprintf("- %s: `%s` (UTC `%s`)\n", i18n.TimeNowLabel, local.Format("2006-01-02 15:04:05 MST"), utc.Format(time.RFC3339)))
+	if strings.TrimSpace(i18n.TimeHint) != "" {
+		b.WriteString("- ")
+		b.WriteString(strings.TrimSpace(i18n.TimeHint))
+		b.WriteString("\n\n")
+	}
+	return b.String()
 }
 
 func pendingAttentionSection(root, project, agentName string, i18n wakeupI18n) (string, []string, error) {
@@ -1390,11 +1420,17 @@ func pendingAttentionSection(root, project, agentName string, i18n wakeupI18n) (
 	var b strings.Builder
 	b.WriteString(i18n.AttentionHeader)
 	b.WriteString(i18n.AttentionIntro)
+	now := time.Now()
 	ids := make([]string, 0, len(signals))
 	for _, signal := range signals {
 		ids = append(ids, signal.ID)
 		b.WriteString("---\n")
 		b.WriteString(fmt.Sprintf("ID: `%s`\n", signal.ID))
+		if ts, ok := parseSchedulerTime(signal.CreatedAt); ok {
+			b.WriteString(fmt.Sprintf("Observed: %s\n", schedulerTimeWithAge(ts, now, i18n)))
+		} else if strings.TrimSpace(signal.CreatedAt) != "" {
+			b.WriteString(fmt.Sprintf("Observed: `%s`\n", strings.TrimSpace(signal.CreatedAt)))
+		}
 		b.WriteString(fmt.Sprintf("Source: `%s`", signal.SourceKind))
 		if signal.SourceChannel != "" {
 			b.WriteString(fmt.Sprintf(" / `%s`", signal.SourceChannel))
@@ -1446,6 +1482,79 @@ func pendingAttentionSection(root, project, agentName string, i18n wakeupI18n) (
 	b.WriteString("---\n\n")
 	b.WriteString(i18n.AttentionHint)
 	return b.String(), ids, nil
+}
+
+func parseSchedulerTime(value string) (time.Time, bool) {
+	value = strings.TrimSpace(value)
+	if value == "" {
+		return time.Time{}, false
+	}
+	for _, layout := range []string{time.RFC3339Nano, time.RFC3339} {
+		if ts, err := time.Parse(layout, value); err == nil {
+			return ts, true
+		}
+	}
+	return time.Time{}, false
+}
+
+func schedulerTimeWithAge(ts, now time.Time, i18n wakeupI18n) string {
+	if ts.IsZero() {
+		return ""
+	}
+	if now.IsZero() {
+		now = time.Now()
+	}
+	age := now.Sub(ts)
+	future := false
+	if age < 0 {
+		future = true
+		age = -age
+	}
+	label := schedulerDurationHuman(age, strings.Contains(i18n.TimeNowLabel, "唤醒"))
+	if future {
+		if strings.Contains(i18n.TimeNowLabel, "唤醒") {
+			label = "约 " + label + "后"
+		} else {
+			label = "in about " + label
+		}
+	} else if strings.Contains(i18n.TimeNowLabel, "唤醒") {
+		label = "约 " + label + "前"
+	} else {
+		label = "about " + label + " ago"
+	}
+	return fmt.Sprintf("`%s` (UTC `%s`, %s)", ts.Local().Format("2006-01-02 15:04:05 MST"), ts.UTC().Format(time.RFC3339), label)
+}
+
+func schedulerDurationHuman(d time.Duration, zh bool) string {
+	if d < time.Minute {
+		secs := int(math.Round(d.Seconds()))
+		if secs < 1 {
+			secs = 1
+		}
+		if zh {
+			return fmt.Sprintf("%d 秒", secs)
+		}
+		return fmt.Sprintf("%d seconds", secs)
+	}
+	if d < time.Hour {
+		mins := int(math.Round(d.Minutes()))
+		if zh {
+			return fmt.Sprintf("%d 分钟", mins)
+		}
+		return fmt.Sprintf("%d minutes", mins)
+	}
+	if d < 48*time.Hour {
+		hours := int(math.Round(d.Hours()))
+		if zh {
+			return fmt.Sprintf("%d 小时", hours)
+		}
+		return fmt.Sprintf("%d hours", hours)
+	}
+	days := int(math.Round(d.Hours() / 24))
+	if zh {
+		return fmt.Sprintf("%d 天", days)
+	}
+	return fmt.Sprintf("%d days", days)
 }
 
 func schedulerAttentionTrust(signal controldb.AttentionSignal) map[string]any {

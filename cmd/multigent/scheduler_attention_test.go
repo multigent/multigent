@@ -25,7 +25,8 @@ func TestPendingAttentionSectionAndSeenMark(t *testing.T) {
 		t.Fatal(err)
 	}
 	defer db.Close()
-	now := time.Now().UTC().Format(time.RFC3339)
+	nowTime := time.Now().UTC().Add(-2 * time.Hour)
+	now := nowTime.Format(time.RFC3339)
 	if err := db.UpsertWorkspace(controldb.Workspace{ID: "ws", Name: "Test", Slug: "test", Root: root, UpdatedAt: now}); err != nil {
 		t.Fatal(err)
 	}
@@ -89,7 +90,7 @@ func TestPendingAttentionSectionAndSeenMark(t *testing.T) {
 	if len(ids) != 2 || ids[0] != "sig-one" || ids[1] != "sig-two" {
 		t.Fatalf("unexpected ids: %#v", ids)
 	}
-	for _, want := range []string{"注意力信号", "sig-one", "sig-two", "im_direct_message", "请看一下当前流程", "这条已经 seen 但还没处理"} {
+	for _, want := range []string{"注意力信号", "sig-one", "sig-two", "Observed:", "约 2 小时前", "im_direct_message", "请看一下当前流程", "这条已经 seen 但还没处理"} {
 		if !strings.Contains(section, want) {
 			t.Fatalf("section missing %q:\n%s", want, section)
 		}
@@ -101,5 +102,15 @@ func TestPendingAttentionSectionAndSeenMark(t *testing.T) {
 	}
 	if signal.Status != "seen" || signal.SeenAt == "" {
 		t.Fatalf("signal was not marked seen: %#v", signal)
+	}
+}
+
+func TestSchedulerWakeupTimeSection(t *testing.T) {
+	now := time.Date(2026, 8, 23, 10, 30, 0, 0, time.UTC)
+	section := schedulerWakeupTimeSection(now, wakeupStrings("zh"))
+	for _, want := range []string{"时间上下文", "本次唤醒时间", "2026-08-23T10:30:00Z", "发生时间与距今多久"} {
+		if !strings.Contains(section, want) {
+			t.Fatalf("time section missing %q:\n%s", want, section)
+		}
 	}
 }
