@@ -88,7 +88,11 @@ type runtimeNotifyCardLinkBody struct {
 	URL   string `json:"url"`
 }
 
-var runtimeNotifyDocIDPattern = regexp.MustCompile(`\b(?:doc-\d{8}-[a-zA-Z0-9_-]+|kb-doc-[a-zA-Z0-9_-]+)\b`)
+var (
+	runtimeNotifyDocIDPattern            = regexp.MustCompile(`\b(?:doc-\d{8}-[a-zA-Z0-9_-]+|kb-doc-[a-zA-Z0-9_-]+)\b`)
+	runtimeNotifyDocURLTailPattern       = regexp.MustCompile(`https?://[^\s<>"')\]]*/docs/$`)
+	runtimeNotifyMarkdownLinkTailPattern = regexp.MustCompile(`\]\([^)\n]*$`)
+)
 var (
 	runtimeNotifyMarkdownHeadingPattern    = regexp.MustCompile(`(?m)^\s{0,3}#{1,6}\s+\S`)
 	runtimeNotifyMarkdownListPattern       = regexp.MustCompile(`(?m)^\s{0,3}(?:[-*+]\s+|\d+[.)]\s+)\S`)
@@ -1234,9 +1238,6 @@ func (s *Server) enrichRuntimeNotifyDocLinks(r *http.Request, messageFormat, tex
 		}
 		seen[id] = true
 		webPath := docsWebPath(id)
-		if strings.Contains(text, base+webPath) {
-			continue
-		}
 		doc, err := ds.Get(id)
 		if err != nil || doc == nil {
 			continue
@@ -1251,7 +1252,8 @@ func (s *Server) enrichRuntimeNotifyDocLinks(r *http.Request, messageFormat, tex
 	if len(links) == 0 {
 		return text
 	}
-	if normalizeRuntimeNotifyMessageFormat(messageFormat, text) == "markdown" {
+	if runtimeNotifyDocLinksShouldRenderMarkdown(messageFormat, text) {
+		text = linkRuntimeNotifyBareDocIDs(text, links)
 		var b strings.Builder
 		b.WriteString(text)
 		b.WriteString("\n\n相关文档：")
@@ -1281,6 +1283,17 @@ func (s *Server) enrichRuntimeNotifyDocLinks(r *http.Request, messageFormat, tex
 	return b.String()
 }
 
+func runtimeNotifyDocLinksShouldRenderMarkdown(messageFormat, text string) bool {
+	switch strings.ToLower(strings.TrimSpace(messageFormat)) {
+	case "", "auto", "markdown", "md":
+		return true
+	case "text", "plain":
+		return runtimeNotifyLooksLikeMarkdown(text)
+	default:
+		return runtimeNotifyLooksLikeMarkdown(text)
+	}
+}
+
 func normalizeRuntimeNotifyDocURLs(text string, links []runtimeNotifyDocLink) string {
 	for _, link := range links {
 		if strings.TrimSpace(link.ID) == "" || strings.TrimSpace(link.URL) == "" {
@@ -1290,6 +1303,67 @@ func normalizeRuntimeNotifyDocURLs(text string, links []runtimeNotifyDocLink) st
 		text = pattern.ReplaceAllString(text, link.URL)
 	}
 	return text
+}
+
+func linkRuntimeNotifyBareDocIDs(text string, links []runtimeNotifyDocLink) string {
+	if strings.TrimSpace(text) == "" || len(links) == 0 {
+		return text
+	}
+	byID := make(map[string]runtimeNotifyDocLink, len(links))
+	for _, link := range links {
+		if strings.TrimSpace(link.ID) != "" && strings.TrimSpace(link.URL) != "" {
+			byID[link.ID] = link
+		}
+	}
+	matches := runtimeNotifyDocIDPattern.FindAllStringIndex(text, -1)
+	if len(matches) == 0 {
+		return text
+	}
+	var b strings.Builder
+	last := 0
+	for _, match := range matches {
+		start, end := match[0], match[1]
+		if start < last || end > len(text) {
+			continue
+		}
+		id := text[start:end]
+		b.WriteString(text[last:start])
+		link, ok := byID[id]
+		if !ok || runtimeNotifyDocIDLooksLinkedAt(text, start, end) {
+			b.WriteString(id)
+		} else {
+			b.WriteString("[")
+			b.WriteString(id)
+			b.WriteString("](")
+			b.WriteString(link.URL)
+			b.WriteString(")")
+		}
+		last = end
+	}
+	b.WriteString(text[last:])
+	return b.String()
+}
+
+func runtimeNotifyDocIDLooksLinkedAt(text string, start, end int) bool {
+	if start < 0 || end > len(text) || start >= end {
+		return false
+	}
+	before := text[:start]
+	after := text[end:]
+	tail := before
+	if len(tail) > 160 {
+		tail = tail[len(tail)-160:]
+	}
+	if runtimeNotifyDocURLTailPattern.MatchString(tail) {
+		return true
+	}
+	if runtimeNotifyMarkdownLinkTailPattern.MatchString(tail) {
+		return true
+	}
+	if strings.HasSuffix(tail, "`") && strings.HasPrefix(after, "`") {
+		return true
+	}
+	return false
 }
 
 func escapeMarkdownLinkText(text string) string {

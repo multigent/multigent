@@ -689,6 +689,9 @@ func TestRuntimeNotifyEnrichesMarkdownDocLinks(t *testing.T) {
 	if !strings.Contains(got, "相关文档") || !strings.Contains(got, "[发布评审说明](https://public.multigent.test/docs/doc-20260822-abcd12)") || !strings.Contains(got, "`doc-20260822-abcd12`") {
 		t.Fatalf("doc link was not enriched: %q", got)
 	}
+	if !strings.Contains(got, "[doc-20260822-abcd12](https://public.multigent.test/docs/doc-20260822-abcd12)") {
+		t.Fatalf("bare doc id was not linked inline: %q", got)
+	}
 }
 
 func TestRuntimeNotifyEnrichesCardDocLinksAsMarkdownAndNormalizesLocalURLs(t *testing.T) {
@@ -709,6 +712,30 @@ func TestRuntimeNotifyEnrichesCardDocLinksAsMarkdownAndNormalizesLocalURLs(t *te
 	}
 	if !strings.Contains(got, "https://public.multigent.test/docs/doc-20260822-card01") || !strings.Contains(got, "[卡片评审说明]") {
 		t.Fatalf("card doc link was not markdown-enriched: %q", got)
+	}
+}
+
+func TestRuntimeNotifyLinksBareDocIDAndNormalizesExistingLocalDocURL(t *testing.T) {
+	s, _ := newConnectionGrantPolicyServer(t)
+	t.Setenv("MULTIGENT_WEB_BASE_URL", "https://public.multigent.test")
+	ds := store.NewDocsStore(s.root)
+	if err := ds.AddManagedContent(&store.DocEntry{
+		ID:    "doc-20260823-xg473v",
+		Title: "待合并 PR 决策简报",
+	}, "# 待合并 PR 决策简报\n", "review.md"); err != nil {
+		t.Fatalf("add doc: %v", err)
+	}
+	req := httptest.NewRequest(http.MethodPost, "/api/v1/runtime/notify", nil)
+
+	got := s.enrichRuntimeNotifyDocLinks(req, "auto", "知识库文档 docID 是 doc-20260823-xg473v。\n\n相关文档：\n待合并 PR 决策简报: http://127.0.0.1:27894/docs/doc-20260823-xg473v (doc-20260823-xg473v)")
+	if strings.Contains(got, "127.0.0.1") {
+		t.Fatalf("local doc URL should be normalized: %q", got)
+	}
+	if !strings.Contains(got, "[doc-20260823-xg473v](https://public.multigent.test/docs/doc-20260823-xg473v)") {
+		t.Fatalf("bare doc id should be linked inline: %q", got)
+	}
+	if !strings.Contains(got, "https://public.multigent.test/docs/doc-20260823-xg473v") {
+		t.Fatalf("public doc URL missing: %q", got)
 	}
 }
 
