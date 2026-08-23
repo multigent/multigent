@@ -1,5 +1,15 @@
 # Changelog
 
+## [v2.0.4] - 2026-08-23
+
+### Fixed
+
+- Fixed the release verification regression where the project-task assignee metadata test did not account for the new system-generated attention wakeup task.
+
+### Tested
+
+- Verified the focused project-task assignee regression test locally.
+
 ## [v2.0.3] - 2026-08-23
 
 ### Added

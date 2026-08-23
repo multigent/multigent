@@ -434,10 +434,16 @@ func TestCreateProjectTaskAnnotatesAgentWorkerAssignee(t *testing.T) {
 	if err != nil {
 		t.Fatalf("list tasks: %v", err)
 	}
-	if len(rows) != 1 {
-		t.Fatalf("tasks=%d", len(rows))
+	var task *entity.Task
+	for _, row := range rows {
+		if row.Title == "Plan work" {
+			task = row
+			break
+		}
 	}
-	task := rows[0]
+	if task == nil {
+		t.Fatalf("created task not found in rows: %#v", rows)
+	}
 	if task.AssigneeType != "agent_worker" || task.AssigneeID != worker.ID || task.AssigneeMembershipID != "pm-pm-task" {
 		t.Fatalf("missing worker assignee fields: %#v", task)
 	}
