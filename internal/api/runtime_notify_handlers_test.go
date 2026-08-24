@@ -644,6 +644,37 @@ func TestFormatRuntimeNotifyAutoDetectsMarkdownBody(t *testing.T) {
 	}
 }
 
+func TestRuntimeNotifyNormalizesEscapedNewlinesBeforeMarkdownDetection(t *testing.T) {
+	body := `## 结论\n\n- 证据 A\n- 证据 B\n\n` + "```yaml" + `\nmcp_server:\n  enabled: true\n` + "```"
+	normalized := normalizeRuntimeNotifyTextEscapes(body)
+	if strings.Contains(normalized, `\n`) {
+		t.Fatalf("escaped newlines should be normalized: %q", normalized)
+	}
+	if !strings.Contains(normalized, "## 结论\n\n- 证据 A") {
+		t.Fatalf("real newlines missing: %q", normalized)
+	}
+	if !runtimeNotifyLooksLikeMarkdown(normalized) {
+		t.Fatalf("normalized body should be detected as markdown: %q", normalized)
+	}
+	msg := formatRuntimeNotifyMessage(runtimeAgentPrincipal{
+		Project: "sample",
+		Agent:   "pm",
+	}, runtimeNotifyBody{
+		MessageFormat: "auto",
+	}, "", normalized)
+	if msg.Format != "markdown" {
+		t.Fatalf("normalized markdown should be sent as markdown, got %#v", msg)
+	}
+}
+
+func TestRuntimeNotifyNormalizesCardEscapedNewlines(t *testing.T) {
+	card := &runtimeNotifyCardBody{Body: `第一行\n\n第二行`}
+	card.Body = normalizeRuntimeNotifyTextEscapes(card.Body)
+	if card.Body != "第一行\n\n第二行" {
+		t.Fatalf("card body should normalize escaped newlines: %q", card.Body)
+	}
+}
+
 func TestFormatRuntimeNotifyAutoKeepsPlainText(t *testing.T) {
 	msg := formatRuntimeNotifyMessage(runtimeAgentPrincipal{
 		Project: "sample",

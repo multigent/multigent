@@ -137,6 +137,10 @@ func (s *Server) handleRuntimeNotify(w http.ResponseWriter, r *http.Request) {
 		s.jsonErrorCode(w, http.StatusBadRequest, ErrCodeInvalidJSON, "invalid JSON body")
 		return
 	}
+	body.Body = normalizeRuntimeNotifyTextEscapes(body.Body)
+	if body.Card != nil {
+		body.Card.Body = normalizeRuntimeNotifyTextEscapes(body.Card.Body)
+	}
 	text := strings.TrimSpace(body.Body)
 	if body.Card != nil && text == "" {
 		text = strings.TrimSpace(body.Card.Body)
@@ -1210,6 +1214,23 @@ func runtimeNotifyLooksLikeMarkdown(text string) bool {
 		score++
 	}
 	return score >= 2
+}
+
+func normalizeRuntimeNotifyTextEscapes(text string) string {
+	text = strings.TrimSpace(text)
+	if text == "" {
+		return text
+	}
+	if !strings.Contains(text, `\n`) && !strings.Contains(text, `\r`) && !strings.Contains(text, `\t`) {
+		return text
+	}
+	replacer := strings.NewReplacer(
+		`\r\n`, "\n",
+		`\n`, "\n",
+		`\r`, "\n",
+		`\t`, "\t",
+	)
+	return strings.TrimSpace(replacer.Replace(text))
 }
 
 type runtimeNotifyDocLink struct {
