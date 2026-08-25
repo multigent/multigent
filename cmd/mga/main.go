@@ -1760,7 +1760,7 @@ func newContextCmd() *cobra.Command {
 These are workspace, project, or agent-level context bindings configured in Multigent.
 Use this before working on tasks that depend on imported sessions, external docs, or project background.`,
 	}
-	cmd.AddCommand(newContextListCmd(), newContextReadCmd())
+	cmd.AddCommand(newContextListCmd(), newContextReadCmd(), newContextItemsCmd(), newContextSearchCmd(), newContextReadItemCmd())
 	return cmd
 }
 
@@ -1786,6 +1786,105 @@ func newContextReadCmd() *cobra.Command {
 		Args:  cobra.ExactArgs(1),
 		RunE: func(cmd *cobra.Command, args []string) error {
 			body, err := requestJSON(http.MethodGet, "/api/v1/runtime/context/"+url.PathEscape(args[0]), nil, nil)
+			if err != nil {
+				return err
+			}
+			return writeJSON(body)
+		},
+	}
+	return cmd
+}
+
+func newContextItemsCmd() *cobra.Command {
+	var sourceType, sourceID, project, agentWorkerID, status, since string
+	var limit int
+	cmd := &cobra.Command{
+		Use:   "items",
+		Short: "List context center items visible to the current agent",
+		RunE: func(cmd *cobra.Command, args []string) error {
+			q := url.Values{}
+			if strings.TrimSpace(sourceType) != "" {
+				q.Set("sourceType", strings.TrimSpace(sourceType))
+			}
+			if strings.TrimSpace(sourceID) != "" {
+				q.Set("sourceId", strings.TrimSpace(sourceID))
+			}
+			if strings.TrimSpace(project) != "" {
+				q.Set("project", strings.TrimSpace(project))
+			}
+			if strings.TrimSpace(agentWorkerID) != "" {
+				q.Set("agentWorkerId", strings.TrimSpace(agentWorkerID))
+			}
+			if strings.TrimSpace(status) != "" {
+				q.Set("status", strings.TrimSpace(status))
+			}
+			if strings.TrimSpace(since) != "" {
+				q.Set("since", strings.TrimSpace(since))
+			}
+			if limit > 0 {
+				q.Set("limit", strconv.Itoa(limit))
+			}
+			body, err := requestJSON(http.MethodGet, "/api/v1/runtime/context-items", q, nil)
+			if err != nil {
+				return err
+			}
+			return writeJSON(body)
+		},
+	}
+	cmd.Flags().StringVar(&sourceType, "source-type", "", "filter by source type, e.g. lark_im, lark_doc, github, web")
+	cmd.Flags().StringVar(&sourceID, "source", "", "filter by source id")
+	cmd.Flags().StringVar(&project, "project", "", "filter by project context")
+	cmd.Flags().StringVar(&agentWorkerID, "agent-worker", "", "filter by agent worker id")
+	cmd.Flags().StringVar(&status, "status", "active", "filter by status")
+	cmd.Flags().StringVar(&since, "since", "", "filter items collected or occurred since RFC3339 time")
+	cmd.Flags().IntVar(&limit, "limit", 100, "maximum number of items")
+	return cmd
+}
+
+func newContextSearchCmd() *cobra.Command {
+	var sourceType, project string
+	var content bool
+	var limit int
+	cmd := &cobra.Command{
+		Use:   "search <query>",
+		Short: "Search context center items visible to the current agent",
+		Args:  cobra.ExactArgs(1),
+		RunE: func(cmd *cobra.Command, args []string) error {
+			q := url.Values{}
+			q.Set("q", strings.TrimSpace(args[0]))
+			if strings.TrimSpace(sourceType) != "" {
+				q.Set("sourceType", strings.TrimSpace(sourceType))
+			}
+			if strings.TrimSpace(project) != "" {
+				q.Set("project", strings.TrimSpace(project))
+			}
+			if content {
+				q.Set("content", "1")
+			}
+			if limit > 0 {
+				q.Set("limit", strconv.Itoa(limit))
+			}
+			body, err := requestJSON(http.MethodGet, "/api/v1/runtime/context-items", q, nil)
+			if err != nil {
+				return err
+			}
+			return writeJSON(body)
+		},
+	}
+	cmd.Flags().StringVar(&sourceType, "source-type", "", "filter by source type")
+	cmd.Flags().StringVar(&project, "project", "", "filter by project context")
+	cmd.Flags().BoolVar(&content, "content", false, "request full content when the server permits it")
+	cmd.Flags().IntVar(&limit, "limit", 20, "maximum number of items")
+	return cmd
+}
+
+func newContextReadItemCmd() *cobra.Command {
+	cmd := &cobra.Command{
+		Use:   "read-item <context-item-id>",
+		Short: "Read one context center item with content",
+		Args:  cobra.ExactArgs(1),
+		RunE: func(cmd *cobra.Command, args []string) error {
+			body, err := requestJSON(http.MethodGet, "/api/v1/runtime/context-items/"+url.PathEscape(args[0]), nil, nil)
 			if err != nil {
 				return err
 			}

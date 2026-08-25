@@ -97,6 +97,16 @@ type Store interface {
 	AttentionCursorBySource(workspaceID, agentWorkerID, sourceKind, sourceChannel string) (AttentionCursor, bool, error)
 	ListAttentionCursors(filter AttentionCursorFilter) ([]AttentionCursor, error)
 
+	UpsertContextSource(source ContextSource) error
+	ContextSourceByID(workspaceID, id string) (ContextSource, bool, error)
+	ListContextSources(filter ContextSourceFilter) ([]ContextSource, error)
+	UpsertContextItem(item ContextItem) error
+	ContextItemByID(workspaceID, id string) (ContextItem, bool, error)
+	ListContextItems(filter ContextItemFilter) ([]ContextItem, error)
+	UpsertContextSubscription(subscription ContextSubscription) error
+	ContextSubscriptionByID(workspaceID, id string) (ContextSubscription, bool, error)
+	ListContextSubscriptions(filter ContextSubscriptionFilter) ([]ContextSubscription, error)
+
 	UpsertAgentChannelBinding(binding AgentChannelBinding) error
 	AgentChannelBindingByID(id string) (AgentChannelBinding, bool, error)
 	ListAgentChannelBindings(filter AgentChannelBindingFilter) ([]AgentChannelBinding, error)
@@ -487,6 +497,95 @@ type AttentionCursorFilter struct {
 	SourceKind    string
 	SourceChannel string
 	Limit         int
+}
+
+type ContextSource struct {
+	ID            string
+	WorkspaceID   string
+	Type          string
+	Name          string
+	Description   string
+	ConnectionRef string
+	Status        string
+	ConfigJSON    string
+	MetadataJSON  string
+	CreatedBy     string
+	CreatedAt     string
+	UpdatedAt     string
+}
+
+type ContextSourceFilter struct {
+	WorkspaceID string
+	Type        string
+	Status      string
+	Limit       int
+}
+
+type ContextItem struct {
+	ID            string
+	WorkspaceID   string
+	SourceID      string
+	SourceType    string
+	SourceItemID  string
+	SourceURL     string
+	ProjectID     string
+	AgentWorkerID string
+	AuthorType    string
+	AuthorID      string
+	OccurredAt    string
+	CollectedAt   string
+	Title         string
+	Summary       string
+	ContentText   string
+	ContentRef    string
+	PayloadJSON   string
+	LabelsJSON    string
+	Sensitivity   string
+	Status        string
+	DedupeKey     string
+	ACLPolicyID   string
+	Retention     string
+	ExpiresAt     string
+	LastUsedAt    string
+	UsageCount    int
+	CreatedAt     string
+	UpdatedAt     string
+}
+
+type ContextItemFilter struct {
+	WorkspaceID   string
+	SourceID      string
+	SourceType    string
+	ProjectID     string
+	AgentWorkerID string
+	Status        string
+	Query         string
+	Since         string
+	Limit         int
+}
+
+type ContextSubscription struct {
+	ID              string
+	WorkspaceID     string
+	SubscriberType  string
+	SubscriberID    string
+	SourceIDsJSON   string
+	LabelFilterJSON string
+	MaxSensitivity  string
+	DeliveryMode    string
+	SignalRuleJSON  string
+	Status          string
+	CreatedBy       string
+	CreatedAt       string
+	UpdatedAt       string
+}
+
+type ContextSubscriptionFilter struct {
+	WorkspaceID    string
+	SubscriberType string
+	SubscriberID   string
+	Status         string
+	Limit          int
 }
 
 type AgentChannelBinding struct {
