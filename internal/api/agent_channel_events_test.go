@@ -23,6 +23,7 @@ type testIMProvider struct {
 	id          string
 	label       string
 	replies     []string
+	messages    []imbridge.OutgoingMessage
 	cardUpdates []imbridge.OutgoingMessage
 }
 
@@ -53,6 +54,10 @@ func (p *testIMProvider) SendText(context.Context, map[string]string, imbridge.O
 	return nil
 }
 func (p *testIMProvider) SendMessage(context.Context, map[string]string, imbridge.OutgoingTarget, imbridge.OutgoingMessage) error {
+	return nil
+}
+func (p *testIMProvider) ReplyMessage(ctx context.Context, secrets map[string]string, message imbridge.IncomingMessage, reply imbridge.OutgoingMessage) error {
+	p.messages = append(p.messages, reply)
 	return nil
 }
 func (p *testIMProvider) UpdateInteractionCard(ctx context.Context, secrets map[string]string, callback imbridge.IncomingInteractionCallback, message imbridge.OutgoingMessage) error {
@@ -187,10 +192,13 @@ func TestAgentChannelStatusCommandRepliesWithoutWakeup(t *testing.T) {
 	if result["command"] != "status" {
 		t.Fatalf("unexpected result: %#v", result)
 	}
-	if len(provider.replies) != 1 {
-		t.Fatalf("expected one status reply, got %#v", provider.replies)
+	if len(provider.messages) != 1 {
+		t.Fatalf("expected one rich status reply, got messages=%#v replies=%#v", provider.messages, provider.replies)
 	}
-	reply := provider.replies[0]
+	if provider.messages[0].Format != "markdown" {
+		t.Fatalf("status reply should use markdown, got %#v", provider.messages[0])
+	}
+	reply := provider.messages[0].Text
 	for _, want := range []string{
 		"PM 状态",
 		"标识: `pm`",
