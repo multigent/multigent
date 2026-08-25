@@ -20,6 +20,7 @@ import (
 	"time"
 
 	controldb "github.com/multigent/multigent/internal/db"
+	"github.com/multigent/multigent/internal/entity"
 	"github.com/multigent/multigent/internal/imbridge"
 	"github.com/multigent/multigent/internal/interaction"
 )
@@ -555,6 +556,9 @@ func (s *Server) acceptIMMessage(channelProvider imbridge.Provider, appID, verif
 		})
 		return map[string]any{"ok": true, "ignored": true, "reason": "permission_denied"}, nil
 	}
+	if cmd, ok := parseAgentChannelControlCommand(text); ok {
+		return s.acceptAgentChannelControlCommand(channelProvider, resolved, message, cmd)
+	}
 	reason := imAttentionReason(message)
 	attentionID := s.recordIMAttentionSignal(resolved, provider, message, text)
 	if !s.shouldWakeAgentForAttention(resolved.Binding, reason) {
@@ -593,6 +597,229 @@ func (s *Server) acceptIMMessage(channelProvider imbridge.Provider, appID, verif
 	s.acknowledgeIMAccepted(channelProvider, resolved, message)
 	go s.requestAgentAttentionWakeupAfterDebounce(resolved.Binding, reason, runtimeAPIURL, resolved.Identity.UserID, attentionID)
 	return map[string]any{"ok": true}, nil
+}
+
+func parseAgentChannelControlCommand(text string) (string, bool) {
+	fields := strings.Fields(strings.TrimSpace(text))
+	if len(fields) == 0 {
+		return "", false
+	}
+	cmd := strings.ToLower(strings.TrimPrefix(strings.TrimSpace(fields[0]), "/"))
+	switch cmd {
+	case "status":
+		return cmd, true
+	default:
+		return "", false
+	}
+}
+
+func (s *Server) acceptAgentChannelControlCommand(channelProvider imbridge.Provider, resolved resolvedChannelEventBinding, message imbridge.IncomingMessage, cmd string) (map[string]any, error) {
+	switch cmd {
+	case "status":
+		reply := s.formatAgentChannelStatus(resolved.Binding)
+		if err := s.replyToIMEvent(context.Background(), channelProvider, resolved, message, reply); err != nil {
+			s.recordAgentChannelCallback(resolved.Binding, "reply_failed", "status_command", message, err.Error())
+			return nil, err
+		}
+		s.recordAgentChannelCallback(resolved.Binding, "accepted", "status_command", message, "")
+		s.auditLog(auditLogInput{
+			WorkspaceID:  resolved.Binding.WorkspaceID,
+			ActorType:    "user",
+			ActorID:      resolved.Identity.UserID,
+			Action:       "agent_channel.command_status",
+			ResourceType: "agent_channel",
+			ResourceID:   resolved.Binding.ID,
+			Summary:      fmt.Sprintf("Returned IM status for %s/%s", resolved.Binding.ProjectID, resolved.Binding.AgentID),
+			After: map[string]any{
+				"provider":  channelProvider.Info().ID,
+				"messageId": message.MessageID,
+			},
+		})
+		return map[string]any{"ok": true, "command": "status"}, nil
+	default:
+		return map[string]any{"ok": true, "ignored": true, "reason": "unknown_command"}, nil
+	}
+}
+
+func (s *Server) formatAgentChannelStatus(binding controldb.AgentChannelBinding) string {
+	worker, workerOK := s.agentWorkerForChannelBinding(binding)
+	var hb *entity.HeartbeatConfig
+	if workerOK {
+		hb = parseAgentWorkerSchedule(worker)
+	} else if target := s.runtimeSchedulerTargetForProjectAgent(binding.WorkspaceID, binding.ProjectID, binding.AgentID); strings.TrimSpace(target.workerID) != "" {
+		if loaded, err := s.loadSchedulerTargetHeartbeat(binding.WorkspaceID, target); err == nil {
+			hb = loaded
+		}
+	}
+	label := s.agentChannelDisplayName(binding)
+	handle := strings.TrimSpace(binding.AgentID)
+	if workerOK && strings.TrimSpace(worker.Name) != "" {
+		handle = strings.TrimSpace(worker.Name)
+	}
+	status := ""
+	teamRole := ""
+	model := ""
+	runtimeModel := ""
+	modelAccount := ""
+	runtimeNode := ""
+	runtimeMode := ""
+	primarySession := ""
+	if workerOK {
+		status = firstNonEmpty(strings.TrimSpace(worker.Status), "active")
+		if strings.TrimSpace(worker.Team) != "" || strings.TrimSpace(worker.Role) != "" {
+			teamRole = firstNonEmpty(strings.TrimSpace(worker.Team), "-") + " / " + firstNonEmpty(strings.TrimSpace(worker.Role), "-")
+		}
+		model = strings.TrimSpace(worker.Model)
+		runtimeModel = strings.TrimSpace(worker.RuntimeModel)
+		modelAccount = s.modelAccountLabel(binding.WorkspaceID, worker.DefaultModelAccountID)
+		runtimeNode = strings.TrimSpace(worker.DefaultRuntimeNodeID)
+		runtimeMode = strings.TrimSpace(worker.DefaultRuntimeMode)
+		primarySession = strings.TrimSpace(worker.PrimarySessionID)
+	}
+	if model == "" {
+		if meta, err := s.agentMetaForProjectMember(binding.WorkspaceID, binding.ProjectID, binding.AgentID); err == nil && meta != nil {
+			model = string(meta.Model)
+			runtimeModel = strings.TrimSpace(meta.RuntimeModel)
+			modelAccount = strings.TrimSpace(meta.Provider)
+			runtimeMode = string(meta.Sandbox.Provider)
+		}
+	}
+
+	lines := []string{
+		fmt.Sprintf("**%s 状态**", firstNonEmpty(label, handle, "智能体")),
+		fmt.Sprintf("- 标识: `%s`", firstNonEmpty(handle, binding.AgentID, binding.AgentWorkerID, "-")),
+		fmt.Sprintf("- 状态: %s", firstNonEmpty(status, "-")),
+	}
+	if teamRole != "" {
+		lines = append(lines, fmt.Sprintf("- 团队/角色: %s", teamRole))
+	}
+	lines = append(lines,
+		fmt.Sprintf("- 运行时: %s", firstNonEmpty(model, "-")),
+		fmt.Sprintf("- 模型: %s", firstNonEmpty(runtimeModel, "-")),
+		fmt.Sprintf("- 模型账号: %s", firstNonEmpty(modelAccount, "-")),
+		fmt.Sprintf("- 运行节点: %s", firstNonEmpty(runtimeNode, "-")),
+		fmt.Sprintf("- 运行模式: %s", firstNonEmpty(runtimeMode, "-")),
+	)
+	if primarySession != "" {
+		lines = append(lines, fmt.Sprintf("- 主会话: `%s`", primarySession))
+	}
+	lines = append(lines, "", "**心跳唤醒**")
+	lines = append(lines, formatAgentChannelHeartbeatStatus(hb)...)
+	return strings.Join(lines, "\n")
+}
+
+func (s *Server) agentWorkerForChannelBinding(binding controldb.AgentChannelBinding) (controldb.AgentWorker, bool) {
+	if s == nil || s.controlDB == nil {
+		return controldb.AgentWorker{}, false
+	}
+	if workerID := strings.TrimSpace(binding.AgentWorkerID); workerID != "" {
+		if worker, ok, err := s.controlDB.AgentWorkerByID(binding.WorkspaceID, workerID); err == nil && ok {
+			return worker, true
+		}
+	}
+	if s.agentDirectory != nil && strings.TrimSpace(binding.ProjectID) != "" && strings.TrimSpace(binding.AgentID) != "" {
+		if resolved, ok, err := s.agentDirectory.ResolveProjectMailbox(binding.WorkspaceID, binding.ProjectID+"/"+binding.AgentID); err == nil && ok {
+			return resolved.Worker, true
+		}
+	}
+	return controldb.AgentWorker{}, false
+}
+
+func parseAgentWorkerSchedule(worker controldb.AgentWorker) *entity.HeartbeatConfig {
+	hb := &entity.HeartbeatConfig{}
+	if raw := strings.TrimSpace(worker.ScheduleJSON); raw != "" && raw != "{}" {
+		_ = json.Unmarshal([]byte(raw), hb)
+	}
+	return hb
+}
+
+func (s *Server) modelAccountLabel(workspaceID, providerID string) string {
+	providerID = strings.TrimSpace(providerID)
+	if providerID == "" {
+		return ""
+	}
+	if s != nil && s.controlDB != nil {
+		if provider, ok, err := s.controlDB.ModelProviderByID(workspaceID, providerID); err == nil && ok {
+			name := strings.TrimSpace(provider.Name)
+			model := strings.TrimSpace(provider.Model)
+			switch {
+			case name != "" && model != "":
+				return name + " (" + model + ")"
+			case name != "":
+				return name
+			case model != "":
+				return providerID + " (" + model + ")"
+			}
+		}
+	}
+	return providerID
+}
+
+func formatAgentChannelHeartbeatStatus(hb *entity.HeartbeatConfig) []string {
+	if hb == nil {
+		return []string{"- 启用: 否"}
+	}
+	lines := []string{
+		fmt.Sprintf("- 启用: %s", yesNo(hb.Enabled)),
+	}
+	if hb.Paused {
+		lines = append(lines, "- 暂停: 是")
+	}
+	lines = append(lines,
+		fmt.Sprintf("- 间隔: %s", firstNonEmpty(strings.TrimSpace(hb.Interval), "-")),
+		fmt.Sprintf("- 活跃时间: %s", firstNonEmpty(strings.TrimSpace(hb.ActiveHours), "全天")),
+		fmt.Sprintf("- 活跃日期: %s", firstNonEmpty(strings.TrimSpace(hb.ActiveDays), "每天")),
+		fmt.Sprintf("- 触发器: %s", formatTriggerTypes(hb.Triggers)),
+		fmt.Sprintf("- 防抖: %s", firstNonEmpty(strings.TrimSpace(hb.TriggerDebounce), "-")),
+		fmt.Sprintf("- 抖动: %s", firstNonEmpty(strings.TrimSpace(hb.Jitter), "-")),
+		fmt.Sprintf("- 上次唤醒: %s", formatOptionalTime(hb.LastWakeup)),
+		fmt.Sprintf("- 上次状态: %s", firstNonEmpty(strings.TrimSpace(hb.LastWakeupStatus), "-")),
+		fmt.Sprintf("- 下次唤醒: %s", formatOptionalTime(hb.NextWakeupAt)),
+	)
+	if hb.PID > 0 {
+		state := "已退出"
+		if processAlive(hb.PID) {
+			state = "运行中"
+		}
+		lines = append(lines, fmt.Sprintf("- 当前进程: %d (%s)", hb.PID, state))
+	}
+	if strings.TrimSpace(hb.LastCycleDuration) != "" {
+		lines = append(lines, fmt.Sprintf("- 上次耗时: %s", hb.LastCycleDuration))
+	}
+	if hb.WakeupCount > 0 || hb.WakeupCountToday > 0 {
+		lines = append(lines, fmt.Sprintf("- 唤醒次数: 总计 %d / 今日 %d", hb.WakeupCount, hb.WakeupCountToday))
+	}
+	return lines
+}
+
+func yesNo(v bool) string {
+	if v {
+		return "是"
+	}
+	return "否"
+}
+
+func formatTriggerTypes(triggers []entity.TriggerType) string {
+	if len(triggers) == 0 {
+		return "-"
+	}
+	out := make([]string, 0, len(triggers))
+	for _, trigger := range triggers {
+		if strings.TrimSpace(string(trigger)) != "" {
+			out = append(out, string(trigger))
+		}
+	}
+	if len(out) == 0 {
+		return "-"
+	}
+	return strings.Join(out, ", ")
+}
+
+func formatOptionalTime(t *time.Time) string {
+	if t == nil || t.IsZero() {
+		return "-"
+	}
+	return t.UTC().Format(time.RFC3339)
 }
 
 func (s *Server) acceptAgentChannelBindCommand(channelProvider imbridge.Provider, appID, verificationToken string, message imbridge.IncomingMessage, bindCmd, code string) (map[string]any, error) {

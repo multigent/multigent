@@ -14,6 +14,7 @@ import (
 	"time"
 
 	controldb "github.com/multigent/multigent/internal/db"
+	"github.com/multigent/multigent/internal/entity"
 	"github.com/multigent/multigent/internal/imbridge"
 	"github.com/multigent/multigent/internal/interaction"
 )
@@ -57,6 +58,136 @@ func (p *testIMProvider) SendMessage(context.Context, map[string]string, imbridg
 func (p *testIMProvider) UpdateInteractionCard(ctx context.Context, secrets map[string]string, callback imbridge.IncomingInteractionCallback, message imbridge.OutgoingMessage) error {
 	p.cardUpdates = append(p.cardUpdates, message)
 	return nil
+}
+
+func TestAgentChannelStatusCommandRepliesWithoutWakeup(t *testing.T) {
+	s, workspaceID := newConnectionGrantPolicyServer(t)
+	now := time.Now().UTC()
+	next := now.Add(30 * time.Minute)
+	scheduleRaw, _ := json.Marshal(entity.HeartbeatConfig{
+		Enabled:          true,
+		Interval:         "30m",
+		ActiveHours:      "09:00-18:00",
+		ActiveDays:       "weekdays",
+		Triggers:         []entity.TriggerType{entity.TriggerOnAttention},
+		TriggerDebounce:  "45s",
+		Jitter:           "2m",
+		LastWakeup:       &now,
+		LastWakeupStatus: "done",
+		NextWakeupAt:     &next,
+		WakeupCount:      12,
+		WakeupCountToday: 2,
+	})
+	if err := s.controlDB.UpsertModelProvider(workspaceID, controldb.ModelProvider{
+		ID:          "prov-codex",
+		WorkspaceID: workspaceID,
+		Name:        "Codex Official",
+		Model:       "gpt-5.5",
+	}); err != nil {
+		t.Fatalf("model provider: %v", err)
+	}
+	if err := s.controlDB.UpsertAgentWorker(controldb.AgentWorker{
+		ID:                    "aw-pm",
+		WorkspaceID:           workspaceID,
+		Name:                  "pm",
+		DisplayName:           "PM",
+		Team:                  "product",
+		Role:                  "pm",
+		Status:                "active",
+		Model:                 "codex",
+		RuntimeModel:          "gpt-5.5",
+		DefaultModelAccountID: "prov-codex",
+		DefaultRuntimeNodeID:  "node-local",
+		DefaultRuntimeMode:    "runtime_node",
+		ScheduleJSON:          string(scheduleRaw),
+		PrimarySessionID:      "sess-primary",
+	}); err != nil {
+		t.Fatalf("worker: %v", err)
+	}
+	if err := s.controlDB.UpsertConnection(controldb.Connection{
+		ID:             "conn-feishu",
+		WorkspaceID:    workspaceID,
+		Provider:       "feishu",
+		ConnectionName: "agent-pm",
+		OwnerType:      ConnectionOwnerWorkspace,
+		OwnerID:        workspaceID,
+		AuthType:       "app_secret",
+		Status:         "active",
+		ProfileJSON:    "{}",
+	}); err != nil {
+		t.Fatalf("connection: %v", err)
+	}
+	secret, err := sealConnectionSecret(map[string]string{"baseUrl": "https://open.feishu.cn", "appId": "cli_app", "appSecret": "secret"})
+	if err != nil {
+		t.Fatalf("seal secret: %v", err)
+	}
+	secret.ConnectionID = "conn-feishu"
+	if err := s.controlDB.UpsertConnectionSecret(secret); err != nil {
+		t.Fatalf("secret: %v", err)
+	}
+	if err := s.controlDB.UpsertAgentChannelBinding(controldb.AgentChannelBinding{
+		ID:            "chan-feishu",
+		WorkspaceID:   workspaceID,
+		AgentWorkerID: "aw-pm",
+		ProjectID:     "sample",
+		AgentID:       "pm",
+		Provider:      "feishu",
+		ConnectionID:  "conn-feishu",
+		Status:        "connected",
+		MetadataJSON:  `{"appId":"cli_app"}`,
+	}); err != nil {
+		t.Fatalf("binding: %v", err)
+	}
+	if err := s.controlDB.UpsertExternalIdentity(controldb.ExternalIdentity{
+		ID:             "ext-owner",
+		WorkspaceID:    workspaceID,
+		Provider:       "feishu",
+		ExternalUserID: "ou_owner",
+		UserID:         "owner",
+	}); err != nil {
+		t.Fatalf("identity: %v", err)
+	}
+
+	provider := &testIMProvider{id: "feishu", label: "Feishu"}
+	result, err := s.acceptIMMessage(provider, "cli_app", "", imbridge.IncomingMessage{
+		MessageID:    "om_status",
+		ChatID:       "oc_p2p",
+		ChatType:     "p2p",
+		SenderOpenID: "ou_owner",
+		Text:         "/status",
+	}, "")
+	if err != nil {
+		t.Fatalf("accept status: %v", err)
+	}
+	if result["command"] != "status" {
+		t.Fatalf("unexpected result: %#v", result)
+	}
+	if len(provider.replies) != 1 {
+		t.Fatalf("expected one status reply, got %#v", provider.replies)
+	}
+	reply := provider.replies[0]
+	for _, want := range []string{
+		"PM 状态",
+		"标识: `pm`",
+		"运行时: codex",
+		"模型: gpt-5.5",
+		"模型账号: Codex Official (gpt-5.5)",
+		"运行节点: node-local",
+		"间隔: 30m",
+		"触发器: attention",
+		"唤醒次数: 总计 12 / 今日 2",
+	} {
+		if !strings.Contains(reply, want) {
+			t.Fatalf("status reply missing %q:\n%s", want, reply)
+		}
+	}
+	signals, err := s.controlDB.ListAttentionSignals(controldb.AttentionSignalFilter{WorkspaceID: workspaceID, AgentWorkerID: "aw-pm"})
+	if err != nil {
+		t.Fatalf("list signals: %v", err)
+	}
+	if len(signals) != 0 {
+		t.Fatalf("status command should not create attention signals: %#v", signals)
+	}
 }
 
 func TestChannelEventBindingRequiresExternalIdentity(t *testing.T) {
