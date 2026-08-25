@@ -20,6 +20,7 @@ import SettingsPage from './pages/SettingsPage'
 import AccountPage from './pages/AccountPage'
 import SkillsPage from './pages/SkillsPage'
 import ConnectionsPage from './pages/ConnectionsPage'
+import ContextCenterPage from './pages/ContextCenterPage'
 import AuditPage from './pages/AuditPage'
 import { ProjectBranch } from './pages/projects/ProjectBranch'
 import ProjectAgentDetailPage from './pages/projects/ProjectAgentDetailPage'
@@ -170,6 +171,7 @@ function AuthenticatedRoutes() {
         {canAdmin && <Route path="people" element={<PeoplePage />} />}
         <Route path="workbench" element={<WorkbenchPage />} />
         <Route path="connections" element={<ConnectionsPage />} />
+        {canAdmin && <Route path="context" element={<ContextCenterPage />} />}
         {canAdmin && <Route path="audit" element={<AuditPage />} />}
         <Route path="skills" element={<SkillsPage />} />
         <Route path="docs/*" element={<DocsPage />} />

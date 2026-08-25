@@ -19,7 +19,7 @@ Multigent 已经有 Agent Worker、任务、流程、IM 协作、Attention Signa
 - `/root/code/spaceship/3rd/opencontext`
 - `/root/code/spaceship/3rd/TencentDB-Agent-Memory`
 
-这两个项目的共同启发是：上下文系统应当独立于 agent runtime，不直接调度 agent，而是提供信息接入、存储、过滤、订阅、检索、沉淀和权限边界。
+这两个项目的共同启发是：上下文系统应当独立于 agent runtime，不直接调度 agent，也不直接决定 agent 应该关注什么，而是提供信息接入、存储、过滤、订阅、检索、沉淀和权限边界。
 
 ## 核心判断
 
@@ -33,19 +33,19 @@ Information Source
   -> Context Item
   -> Context Store
   -> Cleaning / Distillation
-  -> Subscription / Permission / Relevance
-  -> Attention Signal
-  -> Agent pulls context
+  -> Subscription / Permission / Relevance Index
+  -> Agent / Heartbeat evaluates what to pay attention to
+  -> Attention Signal or direct context pull
   -> Knowledge / Memory
 ```
 
 模块边界：
 
-- Context Center 负责“信息从哪里来、怎么存、怎么查、怎么过滤、怎么订阅”。
+- Context Center 负责“信息从哪里来、怎么存、怎么查、怎么过滤、谁声明关注什么”。
 - Attention Signal 负责“哪些变化值得 agent 注意”。
 - Knowledge Base 负责“哪些信息已经被沉淀成可复用知识”。
 - Permission 负责“谁能看什么、谁能订阅什么、谁能沉淀/分享什么”。
-- Agent 负责“自主判断是否读取、处理、忽略、记住或沉淀”。
+- Agent 负责“自主判断是否关注、读取、处理、忽略、记住或沉淀”。
 
 ## 产品概念
 
@@ -63,7 +63,6 @@ Information Source
 - `ContextCollector`
 - `ContextItem`
 - `ContextSubscription`
-- `ContextSignalRule`
 - `ContextDistillationJob`
 - `ContextACL`
 
@@ -172,13 +171,20 @@ updated_at
 
 ### ContextSubscription
 
-订阅关系。定义 agent 或用户关注哪些 ContextItem。
+订阅关系。定义 agent 或用户声明自己关注哪些信息范围。
 
 它不是直接把内容注入给 agent，而是决定：
 
 - 哪些 context item 对某个 agent 可见。
-- 哪些 context item 会生成 attention signal。
-- agent 可按什么过滤器主动拉取。
+- agent 在心跳或主动检索时，可以按什么过滤器看到候选信息。
+- Attention/Heartbeat 层可以基于这些订阅，为 agent 提供候选 signal 或轻量索引。
+
+关键边界：
+
+- ContextSubscription 是“关注范围声明”，不是触发器。
+- Context Center 不因为订阅存在就主动唤醒 agent。
+- Context Center 不直接决定某条 ContextItem 一定要变成 Attention Signal。
+- 是否生成 signal、何时生成 signal、是否消费 signal，是 agent 的 attention policy、heartbeat 配置和运行时策略共同决定的。
 
 建议字段：
 
@@ -190,34 +196,41 @@ subscriber_id
 source_ids
 label_selectors
 max_sensitivity
-delivery_mode         # signal_only | searchable | digest | direct
-signal_rule_id?
+delivery_mode         # searchable | digest_candidate | attention_candidate
 enabled
 created_by
 created_at
 updated_at
 ```
 
-### ContextSignalRule
+### Attention Evaluation Policy
 
-把 ContextItem 转成 Attention Signal 的规则。
+Attention 层对 ContextItem 进行评估的策略。它不属于 Context Center 的核心写入路径，而是 agent/heartbeat/runtime 在读取 Context Center 后使用的消费策略。
+
+它回答的问题是：
+
+- 当前 agent 声明关注哪些 source、label、project、user、thread。
+- 当前 agent 的 heartbeat 是否允许因为某类信息被提前唤醒。
+- 这条 ContextItem 对当前 agent 是必须关注、可选关注，还是仅可搜索。
+- 是否需要产生 Attention Signal，还是只保留在 Context Center 中等待 agent 主动搜索。
 
 示例：
 
-- IM 私聊 agent：生成高优先级 direct message signal。
-- 群聊 @agent：生成 mention signal。
-- 群聊普通消息：默认只入 context，不生成 signal；agent 可以自己拉群聊摘要。
-- Sentry P0 报警：生成高优先级 incident signal。
-- GitHub issue 新评论：如果关联项目和 agent 订阅匹配，生成 issue update signal。
-- 新知识库文档：生成 context updated signal。
+- IM 私聊 agent：通常可进入高优先级候选 signal，但仍由 agent heartbeat 策略决定是否即时唤醒。
+- 群聊 @agent：通常可进入 mention 候选 signal。
+- 群聊普通消息：默认只入 context，不生成 signal；agent 想看时可拉群聊摘要。
+- Sentry P0 报警：可进入 incident 候选 signal。
+- GitHub issue 新评论：如果关联项目和 agent 订阅匹配，可进入 issue update 候选 signal。
+- 新知识库文档：可作为 context updated 候选 signal。
 
 建议字段：
 
 ```text
 id
 workspace_id
-source_type
-match_expression
+agent_worker_id
+source_selectors
+label_selectors
 priority
 signal_type
 summary_template
@@ -225,7 +238,7 @@ include_context_refs
 enabled
 ```
 
-Signal 中只携带摘要和引用：
+真正生成的 Signal 中只携带摘要和引用：
 
 ```json
 {
@@ -304,7 +317,7 @@ GET  /api/v1/context/sources
 }
 ```
 
-Collector 不应该直接写 Signal，也不应该直接写 Knowledge。它最多写 ContextItem，并由 Context Center 根据规则生成 signal 或触发 distillation。
+Collector 不应该直接写 Signal，也不应该直接写 Knowledge。它最多写 ContextItem。后续是否被提炼、是否作为候选 signal 暴露给某个 agent，由独立的 distillation / attention evaluation 流程决定。
 
 ## Agent 访问方式
 
@@ -344,8 +357,8 @@ Context Center：
 - 存信息。
 - 过滤信息。
 - 提供查询。
-- 管理订阅。
-- 根据规则“建议”生成 signal。
+- 管理关注范围声明。
+- 提供可供 Attention 层评估的候选 ContextItem。
 
 Attention Signal：
 
@@ -353,12 +366,14 @@ Attention Signal：
 - 持有 `context_refs`。
 - 被 heartbeat / wakeup 系统消费。
 - 不保存大量正文。
+- 由 agent 的 attention policy、heartbeat 配置和 runtime 策略决定是否生成。
 
 这意味着同一个 ContextItem 可以：
 
 - 只存档，不产生 signal。
-- 产生一个 signal。
-- 被多个 agent 的不同订阅规则生成多个 signal。
+- 被某个 agent 在主动搜索时读取。
+- 被某个 agent 的 attention policy 评估后产生一个 signal。
+- 被多个 agent 的不同关注策略评估后产生多个 signal。
 - 后续被提炼成知识库文档。
 
 ## 与知识库的关系
@@ -457,7 +472,7 @@ distilled_to
 ### Backend
 
 - 新增 `internal/contextcenter` 模块。
-- 新增 ContextSource / ContextItem / ContextSubscription / ContextSignalRule 实体。
+- 新增 ContextSource / ContextItem / ContextSubscription 实体。
 - 提供 Context API。
 - 提供 collector PAT 或 service token 写入认证。
 - 实现基础 ACL 校验接口，先接现有 workspace / project / agent 权限。
@@ -528,7 +543,7 @@ distilled_to
 1. Context Center 独立落地。
 2. IM / GitHub / Session collector 写入 Context Center。
 3. `mga context` 让 agent 可按权限读取。
-4. Subscription 生成 Attention Signal。
+4. Agent / Heartbeat 根据 subscription 和 attention policy 评估候选 ContextItem。
 5. Knowledge Base 支持从 ContextItem 创建文档。
 6. 权限系统细化到 source/item/subscription。
 7. 前端把复杂配置收敛到信息源、关注范围、关联资料。
@@ -545,4 +560,4 @@ distilled_to
 
 ## 一句话总结
 
-OpenContext Center 是 Multigent 的信息底座：它让分散在内外部系统里的信息被安全采集、按权限存储、按需订阅、轻量提醒、主动检索，并最终沉淀成知识和记忆。Agent 不再靠一次性 prompt 背下世界，而是像人一样拥有可关注、可查阅、可遗忘、可沉淀的信息环境。
+OpenContext Center 是 Multigent 的信息底座：它让分散在内外部系统里的信息被安全采集、按权限存储、声明关注范围、主动检索，并最终沉淀成知识和记忆。它不替 agent 决定什么必须关注；agent 通过 attention policy、heartbeat 和 `mga context` 自主判断要看什么、处理什么、忽略什么。Agent 不再靠一次性 prompt 背下世界，而是像人一样拥有可关注、可查阅、可遗忘、可沉淀的信息环境。

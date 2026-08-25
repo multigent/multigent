@@ -23,6 +23,7 @@ const appRouteSegments = new Set([
   'account',
   'audit',
   'connections',
+  'context',
   'docs',
   'files',
   'goals',
