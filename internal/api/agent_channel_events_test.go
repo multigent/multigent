@@ -198,6 +198,9 @@ func TestAgentChannelStatusCommandRepliesWithoutWakeup(t *testing.T) {
 	if provider.messages[0].Format != "markdown" {
 		t.Fatalf("status reply should use markdown, got %#v", provider.messages[0])
 	}
+	if provider.messages[0].Subject != "智能体状态" {
+		t.Fatalf("status reply subject=%q, want 智能体状态", provider.messages[0].Subject)
+	}
 	reply := provider.messages[0].Text
 	for _, want := range []string{
 		"PM 状态",

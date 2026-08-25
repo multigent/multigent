@@ -629,7 +629,7 @@ func (s *Server) acceptAgentChannelControlCommand(channelProvider imbridge.Provi
 		reply := s.formatAgentChannelStatus(resolved.Binding)
 		if err := s.replyMessageToIMEvent(context.Background(), channelProvider, resolved, message, imbridge.OutgoingMessage{
 			Format:  "markdown",
-			Subject: agentChannelReplySubject(resolved.Binding.AgentID),
+			Subject: "智能体状态",
 			Text:    reply,
 		}); err != nil {
 			s.recordAgentChannelCallback(resolved.Binding, "reply_failed", "status_command", message, err.Error())
