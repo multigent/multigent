@@ -604,7 +604,17 @@ func parseAgentChannelControlCommand(text string) (string, bool) {
 	if len(fields) == 0 {
 		return "", false
 	}
-	cmd := strings.ToLower(strings.TrimPrefix(strings.TrimSpace(fields[0]), "/"))
+	idx := 0
+	for idx < len(fields) && strings.HasPrefix(strings.TrimSpace(fields[idx]), "@") {
+		idx++
+	}
+	if idx >= len(fields) {
+		return "", false
+	}
+	cmd := strings.ToLower(strings.TrimPrefix(strings.TrimSpace(fields[idx]), "/"))
+	if !strings.HasPrefix(strings.TrimSpace(fields[idx]), "/") {
+		return "", false
+	}
 	switch cmd {
 	case "status":
 		return cmd, true

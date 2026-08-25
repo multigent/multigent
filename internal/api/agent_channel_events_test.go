@@ -60,6 +60,31 @@ func (p *testIMProvider) UpdateInteractionCard(ctx context.Context, secrets map[
 	return nil
 }
 
+func TestParseAgentChannelControlCommandAllowsLeadingMentions(t *testing.T) {
+	tests := []struct {
+		name string
+		text string
+		ok   bool
+	}{
+		{name: "plain", text: "/status", ok: true},
+		{name: "leading mention", text: "@bot /status", ok: true},
+		{name: "lark mention token", text: "@_user_1 /status", ok: true},
+		{name: "normal sentence", text: "please run /status", ok: false},
+		{name: "unknown", text: "/help", ok: false},
+	}
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			cmd, ok := parseAgentChannelControlCommand(tt.text)
+			if ok != tt.ok {
+				t.Fatalf("ok=%v, want %v, cmd=%q", ok, tt.ok, cmd)
+			}
+			if ok && cmd != "status" {
+				t.Fatalf("cmd=%q, want status", cmd)
+			}
+		})
+	}
+}
+
 func TestAgentChannelStatusCommandRepliesWithoutWakeup(t *testing.T) {
 	s, workspaceID := newConnectionGrantPolicyServer(t)
 	now := time.Now().UTC()
