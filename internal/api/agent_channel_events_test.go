@@ -224,6 +224,17 @@ func TestAgentChannelStatusCommandRepliesWithoutWakeup(t *testing.T) {
 	if len(signals) != 0 {
 		t.Fatalf("status command should not create attention signals: %#v", signals)
 	}
+	identities, err := s.controlDB.ListUserChannelIdentities(controldb.UserChannelIdentityFilter{
+		WorkspaceID:      workspaceID,
+		ChannelBindingID: "chan-feishu",
+		Provider:         "feishu",
+	})
+	if err != nil {
+		t.Fatalf("list channel identities: %v", err)
+	}
+	if len(identities) != 1 || identities[0].UserID != "owner" || identities[0].CreatedBy != "auto" {
+		t.Fatalf("expected status command to backfill channel identity, got %#v", identities)
+	}
 }
 
 func TestChannelEventBindingRequiresExternalIdentity(t *testing.T) {
@@ -1385,6 +1396,17 @@ func TestAgentChannelBindingUsesAgentWorkerIdentity(t *testing.T) {
 	}
 	if len(bindings) != 1 || bindings[0].ID != binding.ID {
 		t.Fatalf("unexpected worker bindings: %+v", bindings)
+	}
+	identities, err := s.controlDB.ListUserChannelIdentities(controldb.UserChannelIdentityFilter{
+		WorkspaceID:      workspaceID,
+		ChannelBindingID: binding.ID,
+		Provider:         "feishu",
+	})
+	if err != nil {
+		t.Fatalf("list identities: %v", err)
+	}
+	if len(identities) != 1 || identities[0].UserID != "owner" || identities[0].ExternalUserID != "ou_owner" {
+		t.Fatalf("manual setup should bind owner to channel, got %#v", identities)
 	}
 }
 

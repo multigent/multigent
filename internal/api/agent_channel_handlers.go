@@ -1110,6 +1110,9 @@ func (s *Server) saveAgentIMChannel(r *http.Request, workspaceID, project, agent
 		}); err != nil {
 			return controldb.AgentChannelBinding{}, err
 		}
+		if err := s.upsertAgentChannelUserIdentity(binding, provider, poll.OwnerOpenID, "", requestUsername(r), string(metadataRaw), requestUsername(r), now); err != nil {
+			return controldb.AgentChannelBinding{}, err
+		}
 	}
 	s.auditLog(auditLogInput{
 		WorkspaceID:  workspaceID,
@@ -1245,17 +1248,27 @@ func (s *Server) saveManualAgentIMChannel(r *http.Request, workspaceID, project,
 		return controldb.AgentChannelBinding{}, err
 	}
 	if strings.TrimSpace(result.ExternalOwnerID) != "" {
+		metadataRaw, _ := json.Marshal(map[string]any{
+			"source":      "agent_channel_manual_setup",
+			"project":     project,
+			"agent":       agent,
+			"provider":    provider,
+			"connectedAt": now,
+		})
 		if err := s.controlDB.UpsertExternalIdentity(controldb.ExternalIdentity{
 			ID:             newChannelID("ext"),
 			WorkspaceID:    workspaceID,
 			Provider:       provider,
 			ExternalUserID: result.ExternalOwnerID,
 			UserID:         requestUsername(r),
-			MetadataJSON:   `{"source":"agent_channel_manual_setup"}`,
+			MetadataJSON:   string(metadataRaw),
 			CreatedBy:      requestUsername(r),
 			CreatedAt:      now,
 			UpdatedAt:      now,
 		}); err != nil {
+			return controldb.AgentChannelBinding{}, err
+		}
+		if err := s.upsertAgentChannelUserIdentity(binding, provider, result.ExternalOwnerID, result.ExternalChatID, requestUsername(r), string(metadataRaw), requestUsername(r), now); err != nil {
 			return controldb.AgentChannelBinding{}, err
 		}
 	}
@@ -1270,6 +1283,27 @@ func (s *Server) saveManualAgentIMChannel(r *http.Request, workspaceID, project,
 		Request:      r,
 	})
 	return binding, nil
+}
+
+func (s *Server) upsertAgentChannelUserIdentity(binding controldb.AgentChannelBinding, provider, externalUserID, externalChatID, userID, metadataJSON, createdBy, now string) error {
+	externalUserID = strings.TrimSpace(externalUserID)
+	userID = strings.TrimSpace(userID)
+	if externalUserID == "" || userID == "" {
+		return nil
+	}
+	return s.controlDB.UpsertUserChannelIdentity(controldb.UserChannelIdentity{
+		ID:               newChannelID("uch"),
+		WorkspaceID:      binding.WorkspaceID,
+		UserID:           userID,
+		ChannelBindingID: binding.ID,
+		Provider:         provider,
+		ExternalUserID:   externalUserID,
+		ExternalChatID:   strings.TrimSpace(externalChatID),
+		MetadataJSON:     firstNonEmpty(strings.TrimSpace(metadataJSON), "{}"),
+		CreatedBy:        strings.TrimSpace(createdBy),
+		CreatedAt:        now,
+		UpdatedAt:        now,
+	})
 }
 
 func agentChannelGrantTarget(project, agent, agentWorkerID string) string {

@@ -1210,12 +1210,32 @@ func (s *Server) resolveChannelEventBindingDetailed(provider, appID, chatID, ext
 		if err != nil {
 			return channelEventResolution{}, err
 		}
+		s.backfillUserChannelIdentityFromExternal(binding, identity, provider, chatID)
 		return channelEventResolution{
 			Resolved: resolvedChannelEventBinding{Binding: binding, SecretValues: values, Identity: identity},
 			Found:    true,
 		}, nil
 	}
 	return channelEventResolution{Candidate: bindings[0], HasCandidate: true}, nil
+}
+
+func (s *Server) backfillUserChannelIdentityFromExternal(binding controldb.AgentChannelBinding, identity controldb.ExternalIdentity, provider, chatID string) {
+	if s == nil || s.controlDB == nil || strings.TrimSpace(identity.UserID) == "" || strings.TrimSpace(identity.ExternalUserID) == "" {
+		return
+	}
+	now := time.Now().UTC().Format(time.RFC3339)
+	meta := map[string]any{
+		"source":             "external_identity_backfill",
+		"externalIdentityId": strings.TrimSpace(identity.ID),
+		"project":            binding.ProjectID,
+		"agent":              binding.AgentID,
+		"provider":           provider,
+		"backfilledAt":       now,
+	}
+	rawMeta, _ := json.Marshal(meta)
+	if err := s.upsertAgentChannelUserIdentity(binding, provider, identity.ExternalUserID, chatID, identity.UserID, string(rawMeta), "auto", now); err != nil {
+		log.Printf("[im:%s] backfill channel identity failed for %s/%s: %v", provider, binding.ProjectID, binding.AgentID, err)
+	}
 }
 
 func (s *Server) tryAutoBindChannelIdentityByEmail(provider string, message imbridge.IncomingMessage, binding controldb.AgentChannelBinding) (resolvedChannelEventBinding, bool, error) {
