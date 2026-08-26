@@ -1,5 +1,24 @@
 # Changelog
 
+## [v2.0.6] - 2026-08-26
+
+### Added
+
+- Added runtime support for downloading incoming Feishu/Lark attention-signal attachments so Agents can inspect images and files sent over IM.
+- Added raw Feishu/Lark Card 2.0 JSON sending for rich display cards, including reusable template placeholders through `mga notify card send --card-json-file ... --value key=value`.
+- Added `mga notify card guide` so Agents can learn how to author Card 2.0 JSON without relying on hard-coded business templates.
+
+### Improved
+
+- Hid the experimental Context Center from the main navigation while the first version is still being refined.
+- Improved runtime collaboration guidance around source-specific replies, attachments, markdown/file/image notifications, and rich card usage.
+- Improved run telemetry queries for workspace-level run pages.
+
+### Tested
+
+- Verified focused Go regression tests for runtime notifications, attention attachments, Lark OpenAPI client behavior, formatter guidance, and run telemetry.
+- Rebuilt local `multigent` and `mga` binaries and restarted the local development API service.
+
 ## [v2.0.5] - 2026-08-23
 
 ### Improved

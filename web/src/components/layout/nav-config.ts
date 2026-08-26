@@ -20,7 +20,6 @@ import {
   Target,
   User,
   Users,
-  Database,
 } from 'lucide-react'
 import type { LucideIcon } from 'lucide-react'
 
@@ -84,7 +83,6 @@ export const workspaceNav: NavItem[] = [
   { to: '/people', navKey: 'people', icon: User, activePrefix: '/people', adminOnly: true },
   { to: '/teams', navKey: 'teams', icon: Users, activePrefix: '/teams', adminOnly: true },
   { to: '/connections', navKey: 'connections', icon: Cable, activePrefix: '/connections' },
-  { to: '/context', navKey: 'contextCenter', icon: Database, activePrefix: '/context', adminOnly: true },
   { to: '/skills', navKey: 'skills', icon: Puzzle, activePrefix: '/skills' },
   { to: '/docs', navKey: 'docs', icon: BookOpen, activePrefix: '/docs' },
   { to: '/files', navKey: 'files', icon: FolderOpen, activePrefix: '/files' },
