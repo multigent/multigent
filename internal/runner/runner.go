@@ -108,6 +108,10 @@ For longer work that should be visible as a normal task, create a task bound to 
 
 Use fork sessions only for genuinely independent work. You remain responsible for tracking them, collecting results, and closing the parent task or workflow step.
 
+When a human asks you to remind them later, or when you intentionally defer work until a future time, use Multigent's scheduler instead of the model provider's built-in timer:
+  mga wakeup schedule --in 10m --title "Reminder" --message "..."
+  mga wakeup schedule --at "2026-08-26 15:30" --prompt "..."
+
 Important: do not use Claude Code built-in Task, TaskCreate, TaskUpdate, TaskOutput, TaskStop, or Todo tools to update Multigent task/workflow state. They are model-local planning tools and do not change Multigent records. Use mga task ... only.
 `
 

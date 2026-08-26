@@ -61,6 +61,7 @@ func newTaskAddCmd() *cobra.Command {
 		labels         []string
 		parentID       string
 		dueDate        string
+		notBefore      string
 		estimateDur    string
 		idempotencyKey string
 		templateID     string
@@ -223,6 +224,13 @@ func newTaskAddCmd() *cobra.Command {
 					return fmt.Errorf("invalid --due-date format, use YYYY-MM-DD")
 				}
 			}
+			if strings.TrimSpace(notBefore) != "" {
+				nb, err := entity.ParseTaskNotBefore(notBefore, now)
+				if err != nil {
+					return err
+				}
+				t.NotBefore = nb
+			}
 			if est, err := entity.NormalizeEstimateDuration(estimateDur); err != nil {
 				return err
 			} else {
@@ -310,6 +318,7 @@ func newTaskAddCmd() *cobra.Command {
 	cmd.Flags().StringArrayVar(&labels, "label", nil, "labels/tags for the task (repeatable)")
 	cmd.Flags().StringVar(&parentID, "parent", "", "parent task ID for sub-task")
 	cmd.Flags().StringVar(&dueDate, "due-date", "", "due date (YYYY-MM-DD)")
+	cmd.Flags().StringVar(&notBefore, "not-before", "", "do not execute before this time; RFC3339, 'YYYY-MM-DD HH:MM', or duration like 10m")
 	cmd.Flags().StringVar(&estimateDur, "estimate-duration", "", "expected effort (Go duration, e.g. 30m, 2h)")
 	cmd.Flags().StringVar(&templateID, "template", "", "task template id")
 	cmd.Flags().StringArrayVar(&templateVars, "var", nil, "template variable as key=value (repeatable)")
@@ -771,6 +780,7 @@ func newTaskSetCmd() *cobra.Command {
 		labels      []string
 		parentID    string
 		dueDate     string
+		notBefore   string
 		estimateDur string
 		position    float64
 		assignee    string
@@ -854,6 +864,9 @@ Clear optional fields with an empty value:
 			if cmd.Flags().Changed("due-date") {
 				patch.DueDate = &dueDate
 			}
+			if cmd.Flags().Changed("not-before") {
+				patch.NotBefore = &notBefore
+			}
 			if cmd.Flags().Changed("estimate-duration") {
 				patch.EstimateDuration = &estimateDur
 			}
@@ -903,6 +916,7 @@ Clear optional fields with an empty value:
 	cmd.Flags().StringArrayVar(&labels, "label", nil, "replace labels (repeatable)")
 	cmd.Flags().StringVar(&parentID, "parent", "", "parent task ID (empty to clear)")
 	cmd.Flags().StringVar(&dueDate, "due-date", "", "due date YYYY-MM-DD (empty to clear)")
+	cmd.Flags().StringVar(&notBefore, "not-before", "", "execution gate: RFC3339, 'YYYY-MM-DD HH:MM', duration like 10m, or empty to clear")
 	cmd.Flags().StringVar(&estimateDur, "estimate-duration", "", "expected effort e.g. 30m, 2h (empty to clear)")
 	cmd.Flags().Float64Var(&position, "position", 0, "kanban sort position")
 	cmd.Flags().StringVar(&assignee, "assignee", "", "assignee (project/agent or human)")
@@ -915,7 +929,7 @@ Clear optional fields with an empty value:
 func taskSetAnyChanged(cmd *cobra.Command) bool {
 	for _, name := range []string{
 		"title", "description", "status", "priority", "type", "summary", "label",
-		"parent", "due-date", "estimate-duration", "position", "assignee", "prompt", "prompt-file",
+		"parent", "due-date", "not-before", "estimate-duration", "position", "assignee", "prompt", "prompt-file",
 	} {
 		if cmd.Flags().Changed(name) {
 			return true

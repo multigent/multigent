@@ -1243,6 +1243,7 @@ type taskRow struct {
 	StartedAt        string    `json:"startedAt,omitempty"`
 	FinishedAt       string    `json:"finishedAt,omitempty"`
 	DueDate          string    `json:"dueDate,omitempty"`
+	NotBefore        string    `json:"notBefore,omitempty"`
 	EstimateDuration string    `json:"estimateDuration,omitempty"`
 	HasWorkflow      bool      `json:"hasWorkflow,omitempty"`
 	ForkSessionID    string    `json:"forkSessionId,omitempty"`
@@ -1275,6 +1276,9 @@ func taskToRow(t *entity.Task, project, agent string, archived bool) taskRow {
 	}
 	if t.DueDate != nil {
 		r.DueDate = t.DueDate.UTC().Format("2006-01-02")
+	}
+	if t.NotBefore != nil {
+		r.NotBefore = t.NotBefore.UTC().Format(time.RFC3339Nano)
 	}
 	return r
 }

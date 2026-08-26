@@ -29,6 +29,7 @@ type runtimeTaskBody struct {
 	Labels           []string          `json:"labels"`
 	ParentID         string            `json:"parentId"`
 	DueDate          string            `json:"dueDate"`
+	NotBefore        string            `json:"notBefore"`
 	EstimateDuration string            `json:"estimateDuration"`
 	Vars             map[string]string `json:"vars"`
 }
@@ -45,6 +46,7 @@ type runtimeTaskUpdateBody struct {
 	Labels           *[]string `json:"labels,omitempty"`
 	ParentID         *string   `json:"parentId,omitempty"`
 	DueDate          *string   `json:"dueDate,omitempty"`
+	NotBefore        *string   `json:"notBefore,omitempty"`
 	EstimateDuration *string   `json:"estimateDuration,omitempty"`
 	Position         *float64  `json:"position,omitempty"`
 	Assignee         *string   `json:"assignee,omitempty"`
@@ -530,6 +532,14 @@ func (s *Server) handleRuntimePostTask(w http.ResponseWriter, r *http.Request) {
 		}
 		t.DueDate = &dd
 	}
+	if body.NotBefore != "" {
+		nb, err := entity.ParseTaskNotBefore(body.NotBefore, now)
+		if err != nil {
+			s.jsonError(w, http.StatusBadRequest, err.Error())
+			return
+		}
+		t.NotBefore = nb
+	}
 	s.annotateTaskAssignee(principal.WorkspaceID, principal.Project, t)
 	if err := s.ts.AddTask(principal.Project, agent, t); err != nil {
 		s.serverError(w, err)
@@ -693,6 +703,14 @@ func (s *Server) createRuntimeTaskFromBody(w http.ResponseWriter, r *http.Reques
 		}
 		t.DueDate = &dd
 	}
+	if body.NotBefore != "" {
+		nb, err := entity.ParseTaskNotBefore(body.NotBefore, now)
+		if err != nil {
+			s.jsonError(w, http.StatusBadRequest, err.Error())
+			return
+		}
+		t.NotBefore = nb
+	}
 	s.annotateTaskAssignee(principal.WorkspaceID, principal.Project, t)
 	if err := s.ts.AddTask(principal.Project, agent, t); err != nil {
 		s.serverError(w, err)
@@ -797,14 +815,14 @@ func (s *Server) handleRuntimePutTask(w http.ResponseWriter, r *http.Request) {
 func runtimeTaskPatchHasFields(body runtimeTaskUpdateBody) bool {
 	return body.Title != nil || body.Description != nil || body.Status != nil || body.Priority != nil ||
 		body.Type != nil || body.Summary != nil || body.Labels != nil || body.ParentID != nil ||
-		body.DueDate != nil || body.EstimateDuration != nil || body.Position != nil || body.Assignee != nil ||
+		body.DueDate != nil || body.NotBefore != nil || body.EstimateDuration != nil || body.Position != nil || body.Assignee != nil ||
 		body.Prompt != nil
 }
 
 func runtimeTaskPatch(body runtimeTaskUpdateBody) (taskstore.TaskPatch, error) {
 	patch := taskstore.TaskPatch{
 		Title: body.Title, Description: body.Description, Summary: body.Summary,
-		Labels: body.Labels, ParentID: body.ParentID, DueDate: body.DueDate,
+		Labels: body.Labels, ParentID: body.ParentID, DueDate: body.DueDate, NotBefore: body.NotBefore,
 		EstimateDuration: body.EstimateDuration, Position: body.Position,
 		Assignee: body.Assignee, Prompt: body.Prompt,
 	}

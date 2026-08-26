@@ -627,6 +627,10 @@ type Task struct {
 	FinishedAt *time.Time `yaml:"finished_at,omitempty"`
 	ArchivedAt *time.Time `yaml:"archived_at,omitempty"` // nil = visible in active task lists
 	DueDate    *time.Time `yaml:"due_date,omitempty"`
+	// NotBefore gates execution. Pending tasks with a future NotBefore remain
+	// visible but are skipped by the scheduler and "next pending" selection
+	// until the timestamp is reached.
+	NotBefore *time.Time `yaml:"not_before,omitempty" json:"notBefore,omitempty"`
 	// EstimateDuration is expected wall-clock effort (Go duration string, e.g. "30m", "2h").
 	EstimateDuration string `yaml:"estimate_duration,omitempty"`
 

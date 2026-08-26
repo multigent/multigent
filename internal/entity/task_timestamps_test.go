@@ -53,3 +53,28 @@ func TestNormalizeEstimateDuration(t *testing.T) {
 		t.Fatal("expected error")
 	}
 }
+
+func TestParseTaskNotBefore(t *testing.T) {
+	now := time.Date(2026, 8, 26, 10, 0, 0, 0, time.UTC)
+	got, err := ParseTaskNotBefore("15m", now)
+	if err != nil {
+		t.Fatal(err)
+	}
+	want := now.Add(15 * time.Minute)
+	if got == nil || !got.Equal(want) {
+		t.Fatalf("duration got %v, want %v", got, want)
+	}
+
+	got, err = ParseTaskNotBefore("2026-08-26T15:30:00+08:00", now)
+	if err != nil {
+		t.Fatal(err)
+	}
+	want = time.Date(2026, 8, 26, 7, 30, 0, 0, time.UTC)
+	if got == nil || !got.Equal(want) {
+		t.Fatalf("rfc3339 got %v, want %v", got, want)
+	}
+
+	if _, err := ParseTaskNotBefore("-1m", now); err == nil {
+		t.Fatal("expected negative duration error")
+	}
+}

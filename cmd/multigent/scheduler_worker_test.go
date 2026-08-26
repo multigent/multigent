@@ -87,3 +87,69 @@ func TestSchedulerTargetsDeduplicateAgentWorkerMemberships(t *testing.T) {
 		t.Fatalf("expected beta/nova to run first, got %#v", selected)
 	}
 }
+
+func TestSchedulerSelectionSkipsFutureTasks(t *testing.T) {
+	root := t.TempDir()
+	ts := taskstore.New(root)
+	now := time.Now().UTC()
+	future := now.Add(30 * time.Minute)
+	if err := ts.AddTask("alpha", "nova", &entity.Task{
+		ID:        "future",
+		Title:     "Future",
+		Priority:  0,
+		Status:    entity.TaskStatusPending,
+		NotBefore: &future,
+		CreatedAt: now.Add(-time.Hour),
+		UpdatedAt: now,
+	}); err != nil {
+		t.Fatal(err)
+	}
+	if err := ts.AddTask("alpha", "nova", &entity.Task{
+		ID:        "ready",
+		Title:     "Ready",
+		Priority:  3,
+		Status:    entity.TaskStatusPending,
+		CreatedAt: now,
+		UpdatedAt: now,
+	}); err != nil {
+		t.Fatal(err)
+	}
+
+	selected, err := nextPendingTask(ts, "alpha", "nova")
+	if err != nil {
+		t.Fatal(err)
+	}
+	if selected == nil || selected.ID != "ready" {
+		t.Fatalf("selected %v, want ready", selected)
+	}
+
+	next, err := nextScheduledPendingTaskAt(ts, "alpha", "nova", now)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if next == nil || !next.Equal(future) {
+		t.Fatalf("next scheduled %v, want %v", next, future)
+	}
+}
+
+func TestCapWaitForScheduledTasks(t *testing.T) {
+	root := t.TempDir()
+	ts := taskstore.New(root)
+	now := time.Now().UTC()
+	future := now.Add(5 * time.Minute)
+	if err := ts.AddTask("alpha", "nova", &entity.Task{
+		ID:        "future",
+		Title:     "Future",
+		Priority:  1,
+		Status:    entity.TaskStatusPending,
+		NotBefore: &future,
+		CreatedAt: now,
+		UpdatedAt: now,
+	}); err != nil {
+		t.Fatal(err)
+	}
+	got := capWaitForScheduledTasks(ts, []schedulerAgentKey{{project: "alpha", agent: "nova"}}, time.Hour, now)
+	if got < 4*time.Minute || got > 6*time.Minute {
+		t.Fatalf("wait = %s, want about 5m", got)
+	}
+}

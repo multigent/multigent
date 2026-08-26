@@ -34,6 +34,13 @@ mga task show <task-id>
 # Create a task for yourself or another agent in the same project.
 mga task add --agent <agent> --title "Title" --prompt "Detailed instructions" --priority 2 --type chore
 
+# Defer a task until a future time.
+mga task add --title "Check deployment" --prompt "Check the deployment status and report back." --not-before 30m
+
+# Schedule a one-shot future wakeup/reminder for yourself.
+mga wakeup schedule --in 10m --title "Reminder" --message "Remind Glenn to review the PR"
+mga wakeup schedule --at "2026-08-26 15:30" --prompt "Follow up on the human request and reply in the original channel if needed."
+
 # Prefer task templates for standard workflow tasks. Templates bind the workflow,
 # actor routing, labels, priority, and prompt shape so agents do not pick the
 # wrong workflow or assignee.
@@ -68,6 +75,11 @@ mga task confirm-request --id <task-id> --summary "Decision needed" --action-ite
 # Cancel a task.
 mga task cancel <task-id> --reason "No longer needed"
 ```
+
+Use `mga wakeup schedule` instead of a model provider's built-in timer when a
+human asks you to remind them later or when you intentionally defer work. The
+scheduled wakeup is tracked by Multigent, visible in the task queue, and respects
+the agent's heartbeat window.
 
 ## Message Commands
 

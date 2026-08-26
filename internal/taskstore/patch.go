@@ -19,6 +19,7 @@ type TaskPatch struct {
 	Labels           *[]string
 	ParentID         *string
 	DueDate          *string // YYYY-MM-DD; empty string clears
+	NotBefore        *string // RFC3339/local datetime/duration; empty string clears
 	EstimateDuration *string // Go duration; empty string clears
 	Position         *float64
 	Assignee         *string
@@ -28,7 +29,7 @@ type TaskPatch struct {
 func (p TaskPatch) empty() bool {
 	return p.Title == nil && p.Description == nil && p.Status == nil && p.Priority == nil &&
 		p.Type == nil && p.Summary == nil && p.Labels == nil && p.ParentID == nil &&
-		p.DueDate == nil && p.EstimateDuration == nil && p.Position == nil &&
+		p.DueDate == nil && p.NotBefore == nil && p.EstimateDuration == nil && p.Position == nil &&
 		p.Assignee == nil && p.Prompt == nil
 }
 
@@ -90,6 +91,13 @@ func ApplyTaskPatch(t *entity.Task, patch TaskPatch, now time.Time) (entity.Task
 		} else {
 			t.DueDate = &parsed
 		}
+	}
+	if patch.NotBefore != nil {
+		nb, err := entity.ParseTaskNotBefore(*patch.NotBefore, now)
+		if err != nil {
+			return prev, err
+		}
+		t.NotBefore = nb
 	}
 	if patch.EstimateDuration != nil {
 		est, err := entity.NormalizeEstimateDuration(*patch.EstimateDuration)

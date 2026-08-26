@@ -939,8 +939,12 @@ func (s *Server) nextRuntimePendingTask(project, agent string) (*entity.Task, er
 		return nil, err
 	}
 	var selected *entity.Task
+	now := time.Now().UTC()
 	for _, task := range tasks {
 		if task == nil {
+			continue
+		}
+		if !entity.TaskReady(task, now) {
 			continue
 		}
 		if selected == nil ||

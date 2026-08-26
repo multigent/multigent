@@ -526,6 +526,36 @@ func selectSchedulerExecutionTarget(ts taskstore.Store, memberships []schedulerA
 	return best
 }
 
+func nextScheduledPendingTaskAtForMemberships(ts taskstore.Store, memberships []schedulerAgentKey, now time.Time) *time.Time {
+	var next *time.Time
+	for _, membership := range memberships {
+		t, err := nextScheduledPendingTaskAt(ts, membership.project, membership.agent, now)
+		if err != nil || t == nil {
+			continue
+		}
+		if next == nil || t.Before(*next) {
+			candidate := t.UTC()
+			next = &candidate
+		}
+	}
+	return next
+}
+
+func capWaitForScheduledTasks(ts taskstore.Store, memberships []schedulerAgentKey, waitDur time.Duration, now time.Time) time.Duration {
+	if waitDur <= 0 {
+		return waitDur
+	}
+	next := nextScheduledPendingTaskAtForMemberships(ts, memberships, now)
+	if next == nil || !next.After(now) {
+		return waitDur
+	}
+	until := next.Sub(now)
+	if until > 0 && until < waitDur {
+		return until
+	}
+	return waitDur
+}
+
 // runHeartbeatLoop runs the blocking heartbeat loop for a single agent.
 // It respects the non-overlapping constraint: the interval starts after
 // each run completes, not at fixed wall-clock intervals.
@@ -613,6 +643,7 @@ func runHeartbeatLoop(ctx context.Context, root, project, agentName string,
 			waitDur += time.Duration(rand.Float64() * float64(jitterMax))
 		}
 		firstCycle = false
+		waitDur = capWaitForScheduledTasks(ts, memberships, waitDur, time.Now().UTC())
 
 		if waitDur > 0 {
 			projectedNext := time.Now().Add(waitDur)
@@ -753,17 +784,18 @@ func runHeartbeatLoop(ctx context.Context, root, project, agentName string,
 			}
 
 			if !conditionMet {
-				nextCheckUTC := time.Now().Add(interval).UTC()
+				conditionWait := capWaitForScheduledTasks(ts, memberships, interval, time.Now().UTC())
+				nextCheckUTC := time.Now().Add(conditionWait).UTC()
 				hb.NextWakeupAt = &nextCheckUTC
 				_ = saveSchedulerHeartbeat(root, project, agentName, ts, hb)
 				if len(reasons) > 0 {
 					agentLog("%s wakeup conditions not met (%s) — skipping cycle, next check in %s",
-						colorYellow+"⏸", strings.Join(reasons, "; "), interval.Round(time.Second))
+						colorYellow+"⏸", strings.Join(reasons, "; "), conditionWait.Round(time.Second))
 				} else {
 					agentLog("%s wakeup conditions not met — skipping cycle, next check in %s",
-						colorYellow+"⏸", interval.Round(time.Second))
+						colorYellow+"⏸", conditionWait.Round(time.Second))
 				}
-				sleepWithCronCheck(ctx, interval, root, project, agentName, ts, s, agentLog)
+				sleepWithCronCheck(ctx, conditionWait, root, project, agentName, ts, s, agentLog)
 				if ctx.Err() != nil {
 					return
 				}
@@ -2806,8 +2838,9 @@ func checkWakeupPreset(preset string, ts taskstore.Store, project, agentName str
 
 	tasks, err := ts.ListTasks(project, agentName)
 	if err == nil {
+		now := time.Now().UTC()
 		for _, t := range tasks {
-			if t.Status == entity.TaskStatusPending {
+			if t.Status == entity.TaskStatusPending && entity.TaskReady(t, now) {
 				hasTasks = true
 				break
 			}

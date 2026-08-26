@@ -294,12 +294,38 @@ func nextPendingTask(ts taskstore.Store, project, agentName string) (*entity.Tas
 	if len(tasks) == 0 {
 		return nil, nil
 	}
-	best := tasks[0]
-	for _, t := range tasks[1:] {
+	now := time.Now().UTC()
+	var best *entity.Task
+	for _, t := range tasks {
+		if !entity.TaskReady(t, now) {
+			continue
+		}
+		if best == nil {
+			best = t
+			continue
+		}
 		if t.Priority < best.Priority ||
 			(t.Priority == best.Priority && t.CreatedAt.Before(best.CreatedAt)) {
 			best = t
 		}
 	}
 	return best, nil
+}
+
+func nextScheduledPendingTaskAt(ts taskstore.Store, project, agentName string, now time.Time) (*time.Time, error) {
+	tasks, err := ts.ListTasks(project, agentName, entity.TaskStatusPending)
+	if err != nil {
+		return nil, err
+	}
+	var next *time.Time
+	for _, t := range tasks {
+		if t == nil || t.NotBefore == nil || !t.NotBefore.After(now) {
+			continue
+		}
+		candidate := t.NotBefore.UTC()
+		if next == nil || candidate.Before(*next) {
+			next = &candidate
+		}
+	}
+	return next, nil
 }

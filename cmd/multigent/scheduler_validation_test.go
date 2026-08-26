@@ -284,6 +284,31 @@ func TestCheckWakeupPresetRequireTasksOnlyCountsPending(t *testing.T) {
 	}
 }
 
+func TestCheckWakeupPresetRequireTasksIgnoresFuturePendingTasks(t *testing.T) {
+	root := t.TempDir()
+	ts := taskstore.New(root)
+	now := time.Now().UTC()
+	future := now.Add(30 * time.Minute)
+	if err := ts.AddTask("project", "qa", &entity.Task{
+		ID:        "pending-future",
+		Title:     "Pending future",
+		Status:    entity.TaskStatusPending,
+		NotBefore: &future,
+		CreatedAt: now,
+		UpdatedAt: now,
+	}); err != nil {
+		t.Fatalf("add future task: %v", err)
+	}
+
+	met, reason := checkWakeupPreset("require_tasks", ts, "project", "qa")
+	if met {
+		t.Fatalf("require_tasks should ignore future pending tasks")
+	}
+	if reason != "no pending tasks" {
+		t.Fatalf("unexpected reason: %q", reason)
+	}
+}
+
 func TestShouldRunIdleWakeupOnlyWhenCycleDidNoTaskWork(t *testing.T) {
 	if !shouldRunIdleWakeup(0) {
 		t.Fatalf("idle wakeup should run when the cycle did not process any task")

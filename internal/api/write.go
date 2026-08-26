@@ -65,6 +65,7 @@ type postTaskBody struct {
 	Labels                []string                               `json:"labels"`
 	ParentID              string                                 `json:"parentId"`
 	DueDate               string                                 `json:"dueDate"`          // YYYY-MM-DD
+	NotBefore             string                                 `json:"notBefore"`        // RFC3339/local datetime/duration
 	EstimateDuration      string                                 `json:"estimateDuration"` // Go duration, e.g. "30m", "2h"
 	WorkflowDefinitionID  string                                 `json:"workflowDefinitionId"`
 	WorkflowActorBindings map[string]entity.WorkflowActorBinding `json:"workflowActorBindings"`
@@ -172,6 +173,14 @@ func (s *Server) createProjectTaskFromBody(w http.ResponseWriter, r *http.Reques
 		if dd, err := time.Parse("2006-01-02", body.DueDate); err == nil {
 			t.DueDate = &dd
 		}
+	}
+	if body.NotBefore != "" {
+		nb, err := entity.ParseTaskNotBefore(body.NotBefore, now)
+		if err != nil {
+			s.jsonError(w, http.StatusBadRequest, err.Error())
+			return
+		}
+		t.NotBefore = nb
 	}
 
 	var workflowStore interface {
@@ -422,6 +431,7 @@ type updateTaskBody struct {
 	Labels           *[]string `json:"labels,omitempty"`
 	ParentID         *string   `json:"parentId,omitempty"`
 	DueDate          *string   `json:"dueDate,omitempty"`          // YYYY-MM-DD or "" to clear
+	NotBefore        *string   `json:"notBefore,omitempty"`        // RFC3339/local datetime/duration or "" to clear
 	EstimateDuration *string   `json:"estimateDuration,omitempty"` // Go duration or "" to clear
 	Position         *float64  `json:"position,omitempty"`
 	Assignee         *string   `json:"assignee,omitempty"`
@@ -455,7 +465,7 @@ func (s *Server) handlePutUpdateTask(w http.ResponseWriter, r *http.Request) {
 	}
 	hasUpdate := body.Status != nil || body.Priority != nil || body.Type != nil || body.Summary != nil ||
 		body.Title != nil || body.Description != nil || body.Labels != nil || body.ParentID != nil ||
-		body.DueDate != nil || body.EstimateDuration != nil || body.Position != nil || body.Assignee != nil || body.Prompt != nil
+		body.DueDate != nil || body.NotBefore != nil || body.EstimateDuration != nil || body.Position != nil || body.Assignee != nil || body.Prompt != nil
 	if !hasUpdate {
 		s.jsonError(w, http.StatusBadRequest, "at least one field to update is required")
 		return
@@ -475,7 +485,7 @@ func (s *Server) handlePutUpdateTask(w http.ResponseWriter, r *http.Request) {
 
 	patch := taskstore.TaskPatch{
 		Title: body.Title, Description: body.Description, Summary: body.Summary,
-		Labels: body.Labels, ParentID: body.ParentID, DueDate: body.DueDate,
+		Labels: body.Labels, ParentID: body.ParentID, DueDate: body.DueDate, NotBefore: body.NotBefore,
 		EstimateDuration: body.EstimateDuration, Position: body.Position,
 		Assignee: body.Assignee, Prompt: body.Prompt,
 	}

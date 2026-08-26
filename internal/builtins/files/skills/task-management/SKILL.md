@@ -34,9 +34,24 @@ mga task add \
   --prompt "Detailed instructions and acceptance criteria" \
   --priority 2 \
   --type chore
+
+# Defer execution until a future time.
+mga task add \
+  --title "Check rollout" \
+  --prompt "Check the rollout and report the result." \
+  --not-before 30m
+
+# One-shot self wakeup/reminder.
+mga wakeup schedule --in 10m --title "Reminder" --message "Remind Glenn to review the PR"
+mga wakeup schedule --at "2026-08-26 15:30" --prompt "Follow up with the human in the original channel."
 ```
 
 If `--agent` is omitted, the task is assigned to the current agent. Agents may create tasks for other agents in the same project.
+
+Use `mga wakeup schedule` instead of the model provider's built-in timer when a
+human asks you to remind them later or when you decide to defer work. Multigent
+stores the reminder as a visible scheduled task and wakes the agent after the
+task's `notBefore` time.
 
 For standard workflow tasks, prefer task templates instead of manually choosing a workflow and assignees:
 

@@ -18,6 +18,7 @@ import (
 	"text/tabwriter"
 	"time"
 
+	"github.com/multigent/multigent/internal/entity"
 	"github.com/multigent/multigent/internal/runtimeguide"
 	"github.com/spf13/cobra"
 )
@@ -59,11 +60,86 @@ func main() {
 		newSkillCmd(),
 		newWorkflowCmd(),
 		newSessionCmd(),
+		newWakeupCmd(),
 	)
 	if err := root.Execute(); err != nil {
 		fmt.Fprintln(os.Stderr, "Error:", err)
 		os.Exit(1)
 	}
+}
+
+func newWakeupCmd() *cobra.Command {
+	cmd := &cobra.Command{
+		Use:   "wakeup",
+		Short: "Schedule future wakeups for this agent",
+		Long: `Schedule future wakeups for this agent.
+
+Use this when a human asks you to remind them later or when you intentionally
+defer work until a specific time. This creates a normal pending Multigent task
+with an execution gate; the scheduler will not run it before the requested
+time.`,
+	}
+	cmd.AddCommand(newWakeupScheduleCmd())
+	return cmd
+}
+
+func newWakeupScheduleCmd() *cobra.Command {
+	var agent, title, prompt, message, at, in, description string
+	var priority int
+	cmd := &cobra.Command{
+		Use:   "schedule",
+		Short: "Create a one-shot scheduled wakeup task",
+		RunE: func(cmd *cobra.Command, args []string) error {
+			if strings.TrimSpace(at) == "" && strings.TrimSpace(in) == "" {
+				return fmt.Errorf("one of --at or --in is required")
+			}
+			if strings.TrimSpace(at) != "" && strings.TrimSpace(in) != "" {
+				return fmt.Errorf("use only one of --at or --in")
+			}
+			notBeforeRaw := strings.TrimSpace(at)
+			if notBeforeRaw == "" {
+				notBeforeRaw = strings.TrimSpace(in)
+			}
+			notBefore, err := entity.ParseTaskNotBefore(notBeforeRaw, time.Now())
+			if err != nil {
+				return err
+			}
+			bodyText := strings.TrimSpace(prompt)
+			if bodyText == "" {
+				bodyText = strings.TrimSpace(message)
+			}
+			if bodyText == "" {
+				return fmt.Errorf("--prompt or --message is required")
+			}
+			if strings.TrimSpace(title) == "" {
+				title = "Scheduled wakeup"
+			}
+			payload := map[string]any{
+				"agent":       agent,
+				"title":       title,
+				"prompt":      bodyText,
+				"type":        "wakeup",
+				"description": description,
+				"priority":    priority,
+				"notBefore":   notBefore.UTC().Format(time.RFC3339Nano),
+			}
+			raw, _ := json.Marshal(payload)
+			resp, err := requestJSON(http.MethodPost, "/api/v1/runtime/tasks", nil, raw)
+			if err != nil {
+				return err
+			}
+			return writeJSON(resp)
+		},
+	}
+	cmd.Flags().StringVar(&agent, "agent", "", "target agent, defaults to current agent")
+	cmd.Flags().StringVar(&title, "title", "", "task title")
+	cmd.Flags().StringVar(&prompt, "prompt", "", "full wakeup prompt")
+	cmd.Flags().StringVar(&message, "message", "", "short reminder/request text")
+	cmd.Flags().StringVar(&at, "at", "", "absolute time: RFC3339 or local 'YYYY-MM-DD HH:MM'")
+	cmd.Flags().StringVar(&in, "in", "", "relative delay, e.g. 10m, 2h")
+	cmd.Flags().StringVar(&description, "description", "", "human-readable description")
+	cmd.Flags().IntVar(&priority, "priority", 1, "priority 0-3")
+	return cmd
 }
 
 func newAttentionCmd() *cobra.Command {
@@ -1232,7 +1308,7 @@ func newTaskShowCmd() *cobra.Command {
 }
 
 func newTaskAddCmd() *cobra.Command {
-	var agent, title, prompt, typ, description, assignee, forkSessionID string
+	var agent, title, prompt, typ, description, assignee, forkSessionID, notBefore string
 	var priority int
 	cmd := &cobra.Command{
 		Use:   "add",
@@ -1244,6 +1320,13 @@ func newTaskAddCmd() *cobra.Command {
 			payload := map[string]any{
 				"agent": agent, "title": title, "prompt": prompt, "type": typ,
 				"description": description, "priority": priority, "assignee": assignee,
+			}
+			if strings.TrimSpace(notBefore) != "" {
+				nb, err := entity.ParseTaskNotBefore(notBefore, time.Now())
+				if err != nil {
+					return err
+				}
+				payload["notBefore"] = nb.UTC().Format(time.RFC3339Nano)
 			}
 			if strings.TrimSpace(forkSessionID) != "" {
 				payload["vars"] = map[string]string{"MULTIGENT_FORK_SESSION_ID": strings.TrimSpace(forkSessionID)}
@@ -1263,6 +1346,7 @@ func newTaskAddCmd() *cobra.Command {
 	cmd.Flags().StringVar(&description, "description", "", "human-readable description")
 	cmd.Flags().StringVar(&assignee, "assignee", "", "assignee identity")
 	cmd.Flags().StringVar(&forkSessionID, "fork-session", "", "bind this task to a fork session id")
+	cmd.Flags().StringVar(&notBefore, "not-before", "", "do not execute before this time; RFC3339, 'YYYY-MM-DD HH:MM', or duration like 10m")
 	cmd.Flags().IntVar(&priority, "priority", 2, "priority 0-3")
 	return cmd
 }
@@ -1349,7 +1433,7 @@ func newTaskCreateFromTemplateCmd() *cobra.Command {
 }
 
 func newTaskSetCmd() *cobra.Command {
-	var agent, status, summary, errText, title, prompt string
+	var agent, status, summary, errText, title, prompt, notBefore string
 	var priority int
 	var setPriority bool
 	cmd := &cobra.Command{
@@ -1374,6 +1458,17 @@ func newTaskSetCmd() *cobra.Command {
 			if prompt != "" {
 				body["prompt"] = prompt
 			}
+			if cmd.Flags().Changed("not-before") {
+				if strings.TrimSpace(notBefore) == "" {
+					body["notBefore"] = ""
+				} else {
+					nb, err := entity.ParseTaskNotBefore(notBefore, time.Now())
+					if err != nil {
+						return err
+					}
+					body["notBefore"] = nb.UTC().Format(time.RFC3339Nano)
+				}
+			}
 			if setPriority {
 				body["priority"] = priority
 			}
@@ -1391,6 +1486,7 @@ func newTaskSetCmd() *cobra.Command {
 	cmd.Flags().StringVar(&errText, "error", "", "task error")
 	cmd.Flags().StringVar(&title, "title", "", "new title")
 	cmd.Flags().StringVar(&prompt, "prompt", "", "new prompt")
+	cmd.Flags().StringVar(&notBefore, "not-before", "", "execution gate: RFC3339, 'YYYY-MM-DD HH:MM', duration like 10m, or empty to clear")
 	cmd.Flags().IntVar(&priority, "priority", 2, "priority 0-3")
 	cmd.PreRun = func(cmd *cobra.Command, args []string) {
 		setPriority = cmd.Flags().Changed("priority")
