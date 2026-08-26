@@ -1,4 +1,5 @@
 import { useCallback, useMemo, useState } from 'react'
+import type { ChangeEvent } from 'react'
 import { useTranslation } from 'react-i18next'
 import Markdown from 'react-markdown'
 import remarkGfm from 'remark-gfm'
@@ -7,12 +8,14 @@ import {
   RefreshCw,
   Search,
   ServerCog,
+  Upload,
   X,
 } from 'lucide-react'
-import { apiFetch } from '../lib/api'
+import { apiFetch, apiPost } from '../lib/api'
 import { cn } from '../lib/cn'
 import { useApiJson } from '../lib/use-api'
 import { useFormatDateTime } from '../lib/format-datetime'
+import { showToast } from '../components/ui/Toast'
 
 type TabKey = 'collectors' | 'items'
 
@@ -55,6 +58,18 @@ type ContextItem = {
   updatedAt?: string
 }
 
+type CollectorSpec = {
+  type: string
+  name: string
+  description?: string
+}
+
+type CollectorCardModel = CollectorSpec & {
+  mode: 'manual' | 'file' | 'planned'
+  badge?: string
+  help?: string
+}
+
 const pagePad = 'animate-fade-in px-8 py-6'
 const cardCls = 'rounded-xl border border-neutral-200 bg-white shadow-sm dark:border-zinc-800 dark:bg-zinc-900/40'
 const inputCls = 'h-9 rounded-lg border border-neutral-200 bg-white px-3 text-sm text-neutral-700 outline-none transition-colors focus:border-sky-400 dark:border-zinc-700 dark:bg-zinc-950 dark:text-zinc-200'
@@ -86,7 +101,7 @@ export default function ContextCenterPage() {
         <TabButton active={tab === 'items'} onClick={() => setTab('items')} icon={Database} label={t('contextCenter.items', { defaultValue: '上下文库' })} />
       </div>
 
-      {tab === 'collectors' && <CollectorsPanel reloadKey={reloadKey} />}
+      {tab === 'collectors' && <CollectorsPanel reloadKey={reloadKey} onImported={() => { setTab('items'); setReloadKey(k => k + 1) }} />}
       {tab === 'items' && <ItemsPanel reloadKey={reloadKey} />}
     </div>
   )
@@ -110,10 +125,13 @@ function TabButton({ active, onClick, icon: Icon, label }: { active: boolean; on
   )
 }
 
-function CollectorsPanel({ reloadKey }: { reloadKey: number }) {
+function CollectorsPanel({ reloadKey, onImported }: { reloadKey: number; onImported: () => void }) {
   const { t } = useTranslation()
+  const collectorState = useApiJson<{ collectors?: CollectorSpec[] }>('/api/v1/context/collectors', reloadKey, { keepPreviousDataOnReload: true })
   const state = useApiJson<{ sources?: ContextSource[] }>('/api/v1/context/sources?limit=200', reloadKey, { keepPreviousDataOnReload: true })
+  const [activeCollector, setActiveCollector] = useState<CollectorCardModel | null>(null)
   const sources = state.status === 'ok' ? (state.data.sources ?? []) : []
+  const collectors = useMemo(() => collectorCards(collectorState.status === 'ok' ? collectorState.data.collectors ?? [] : []), [collectorState])
   const command = `curl -X POST "$MULTIGENT_API_URL/api/v1/context/items/batch" \\
   -H "Authorization: Bearer $MULTIGENT_CLIENT_TOKEN" \\
   -H "Content-Type: application/json" \\
@@ -129,21 +147,13 @@ function CollectorsPanel({ reloadKey }: { reloadKey: number }) {
           </p>
         </div>
         <div className="grid gap-4 p-5 lg:grid-cols-3">
-          <CollectorCard
-            title="Lark / Feishu Collector"
-            type="lark_im"
-            body={t('contextCenter.collectorLarkBody', { defaultValue: '同步群聊、单聊、云文档、会议纪要。需要 Lark/Feishu 外部工具连接。' })}
-          />
-          <CollectorCard
-            title="GitHub Collector"
-            type="github"
-            body={t('contextCenter.collectorGitHubBody', { defaultValue: '同步 issue、PR、review、CI 和 release 事件。需要 GitHub 外部工具连接。' })}
-          />
-          <CollectorCard
-            title="Local Session Collector"
-            type="agent_session"
-            body={t('contextCenter.collectorSessionBody', { defaultValue: '上传 Codex、Claude Code、Cursor 的历史 session 和本地文件。使用 CLI access token。' })}
-          />
+          {collectors.map(collector => (
+            <CollectorCard
+              key={collector.type}
+              collector={collector}
+              onOpen={() => setActiveCollector(collector)}
+            />
+          ))}
         </div>
         <div className="grid gap-4 border-t border-neutral-100 p-5 dark:border-zinc-800 lg:grid-cols-3">
           <CollectorStep index="1" title={t('contextCenter.collectorStepConnection', { defaultValue: '选择外部工具连接' })} body={t('contextCenter.collectorStepConnectionBody', { defaultValue: '抓取器复用外部工具里的凭证和权限，不在上下文模块里单独管理密钥。' })} />
@@ -177,21 +187,210 @@ function CollectorsPanel({ reloadKey }: { reloadKey: number }) {
           ))}
         </div>
       </div>
+      {activeCollector && <CollectorImportModal collector={activeCollector} onClose={() => setActiveCollector(null)} onImported={() => { setActiveCollector(null); onImported() }} />}
     </div>
   )
 }
 
-function CollectorCard({ title, type, body }: { title: string; type: string; body: string }) {
+function collectorCards(specs: CollectorSpec[]): CollectorCardModel[] {
+  const official = specs.map(spec => ({
+    ...spec,
+    name: collectorDisplayName(spec),
+    description: collectorDescription(spec),
+    mode: collectorMode(spec.type),
+    badge: '官方',
+  } satisfies CollectorCardModel))
+  const known = new Set(official.map(spec => spec.type))
+  const planned: CollectorCardModel[] = [
+    {
+      type: 'lark_im',
+      name: 'Lark / Feishu Collector',
+      description: '同步群聊、单聊、云文档、会议纪要。需要 Lark/Feishu 外部工具连接。',
+      mode: 'planned' as const,
+      badge: '规划中',
+      help: '当前可先通过外部 daemon 或 API 写入 ContextItem。',
+    },
+    {
+      type: 'github',
+      name: 'GitHub Collector',
+      description: '同步 issue、PR、review、CI 和 release 事件。需要 GitHub 外部工具连接。',
+      mode: 'planned' as const,
+      badge: '规划中',
+      help: '当前可先通过 GitHub Action、脚本或 API 写入 ContextItem。',
+    },
+  ].filter(spec => !known.has(spec.type))
+  return [...official, ...planned]
+}
+
+function collectorMode(type: string): CollectorCardModel['mode'] {
+  switch (type) {
+    case 'manual-upload':
+      return 'manual'
+    case 'local-agent-session':
+    case 'local-file':
+      return 'file'
+    default:
+      return 'planned'
+  }
+}
+
+function collectorDisplayName(spec: CollectorSpec) {
+  switch (spec.type) {
+    case 'manual-upload':
+      return 'Manual Context Collector'
+    case 'local-agent-session':
+      return 'Local Agent Session Collector'
+    case 'local-file':
+      return 'Local File Collector'
+    default:
+      return spec.name || spec.type
+  }
+}
+
+function collectorDescription(spec: CollectorSpec) {
+  switch (spec.type) {
+    case 'manual-upload':
+      return '粘贴文本、调研记录、会议纪要或临时资料，直接写入上下文库。'
+    case 'local-agent-session':
+      return '上传 Codex、Claude Code、Cursor 的历史 session JSONL/日志文件，作为可检索上下文。'
+    case 'local-file':
+      return '上传 Markdown、文本、日志等本地文件，沉淀为 Agent 可读取的上下文。'
+    default:
+      return spec.description || ''
+  }
+}
+
+function CollectorCard({ collector, onOpen }: { collector: CollectorCardModel; onOpen: () => void }) {
+  const { t } = useTranslation()
+  const disabled = collector.mode === 'planned'
   return (
     <div className="rounded-lg border border-neutral-200 bg-neutral-50 p-4 dark:border-zinc-800 dark:bg-zinc-950/40">
       <div className="mb-3 flex size-8 items-center justify-center rounded-md bg-white text-neutral-500 shadow-sm dark:bg-zinc-900 dark:text-zinc-400">
         <ServerCog className="size-4" strokeWidth={1.8} />
       </div>
       <div className="flex items-center gap-2">
-        <p className="text-sm font-medium text-neutral-900 dark:text-zinc-100">{title}</p>
-        <Badge>{type}</Badge>
+        <p className="min-w-0 flex-1 truncate text-sm font-medium text-neutral-900 dark:text-zinc-100">{collector.name}</p>
+        <Badge>{collector.badge || collector.type}</Badge>
       </div>
-      <p className="mt-2 text-xs leading-relaxed text-neutral-500 dark:text-zinc-500">{body}</p>
+      <p className="mt-2 min-h-12 text-xs leading-relaxed text-neutral-500 dark:text-zinc-500">{collector.description}</p>
+      {collector.help && <p className="mt-2 text-xs leading-relaxed text-neutral-400 dark:text-zinc-600">{collector.help}</p>}
+      <button
+        type="button"
+        onClick={onOpen}
+        disabled={disabled}
+        className={cn(
+          'mt-4 inline-flex h-8 items-center gap-2 rounded-lg px-3 text-xs font-medium transition-colors disabled:cursor-not-allowed disabled:opacity-50',
+          disabled
+            ? 'border border-neutral-200 bg-white text-neutral-400 dark:border-zinc-800 dark:bg-zinc-900 dark:text-zinc-600'
+            : 'bg-neutral-900 text-white hover:bg-neutral-800 dark:bg-zinc-100 dark:text-zinc-950 dark:hover:bg-white',
+        )}
+      >
+        <Upload className="size-3.5" strokeWidth={1.8} />
+        {collector.mode === 'manual'
+          ? t('contextCenter.pasteImport', { defaultValue: '粘贴导入' })
+          : collector.mode === 'file'
+            ? t('contextCenter.uploadAndImport', { defaultValue: '上传抓取' })
+            : t('contextCenter.comingSoon', { defaultValue: '即将支持' })}
+      </button>
+    </div>
+  )
+}
+
+function CollectorImportModal({ collector, onClose, onImported }: { collector: CollectorCardModel; onClose: () => void; onImported: () => void }) {
+  const { t } = useTranslation()
+  const [title, setTitle] = useState('')
+  const [content, setContent] = useState('')
+  const [fileName, setFileName] = useState('')
+  const [project, setProject] = useState('')
+  const [tags, setTags] = useState('')
+  const [saving, setSaving] = useState(false)
+
+  async function onFile(e: ChangeEvent<HTMLInputElement>) {
+    const file = e.target.files?.[0]
+    if (!file) return
+    const text = await file.text()
+    setFileName(file.name)
+    setContent(text)
+    if (!title.trim()) setTitle(file.name)
+  }
+
+  async function submit() {
+    const trimmedContent = content.trim()
+    if (!trimmedContent) {
+      showToast(t('contextCenter.contentRequired', { defaultValue: '请先输入或选择要导入的内容。' }), 'error')
+      return
+    }
+    setSaving(true)
+    try {
+      await apiPost('/api/v1/context/items', {
+        sourceType: collector.type,
+        sourceItemId: fileName || undefined,
+        title: title.trim() || fileName || collector.name,
+        summary: collector.name,
+        content: trimmedContent,
+        projectId: project.trim() || undefined,
+        authorType: 'user',
+        sensitivity: 'L2',
+        labels: {
+          collector: collector.type,
+          file_name: fileName || undefined,
+          tags: tags.split(',').map(s => s.trim()).filter(Boolean),
+        },
+        dedupeKey: fileName ? `${collector.type}:${fileName}:${trimmedContent.length}` : undefined,
+      })
+      showToast(t('contextCenter.imported', { defaultValue: '已写入上下文库' }), 'success')
+      onImported()
+    } finally {
+      setSaving(false)
+    }
+  }
+
+  return (
+    <div className="fixed inset-0 z-50 flex items-start justify-center px-4 pt-[8vh]">
+      <div className="absolute inset-0 bg-black/30 backdrop-blur-[2px] dark:bg-black/50" onClick={onClose} />
+      <div className="relative flex max-h-[84vh] w-full max-w-2xl flex-col overflow-hidden rounded-xl border border-neutral-200 bg-white shadow-2xl dark:border-zinc-700 dark:bg-zinc-900">
+        <div className="flex items-start justify-between gap-4 border-b border-neutral-100 px-5 py-4 dark:border-zinc-800">
+          <div>
+            <h2 className="text-base font-semibold text-neutral-900 dark:text-zinc-100">{collector.name}</h2>
+            <p className="mt-1 text-xs text-neutral-400 dark:text-zinc-500">{collector.description}</p>
+          </div>
+          <button type="button" onClick={onClose} className="rounded-md p-2 text-neutral-400 hover:bg-neutral-100 hover:text-neutral-700 dark:hover:bg-zinc-800 dark:hover:text-zinc-200">
+            <X className="size-4" strokeWidth={1.8} />
+          </button>
+        </div>
+        <div className="min-h-0 flex-1 space-y-4 overflow-y-auto p-5">
+          {collector.mode === 'file' && (
+            <label className="block rounded-lg border border-dashed border-neutral-300 bg-neutral-50 p-4 text-sm text-neutral-600 dark:border-zinc-700 dark:bg-zinc-950/40 dark:text-zinc-300">
+              <span className="mb-2 block text-xs font-medium text-neutral-500 dark:text-zinc-400">{t('contextCenter.chooseFile', { defaultValue: '选择本地文件' })}</span>
+              <input type="file" onChange={e => void onFile(e)} className="block w-full text-sm file:mr-3 file:rounded-md file:border-0 file:bg-neutral-900 file:px-3 file:py-1.5 file:text-xs file:font-medium file:text-white dark:file:bg-zinc-100 dark:file:text-zinc-950" />
+            </label>
+          )}
+          <div className="grid gap-3 sm:grid-cols-2">
+            <label className="block">
+              <span className="mb-1 block text-xs font-medium text-neutral-500 dark:text-zinc-400">{t('contextCenter.contextTitle', { defaultValue: '标题' })}</span>
+              <input value={title} onChange={e => setTitle(e.target.value)} className={cn(inputCls, 'w-full')} placeholder={fileName || t('contextCenter.titlePlaceholder', { defaultValue: '上下文标题' })} />
+            </label>
+            <label className="block">
+              <span className="mb-1 block text-xs font-medium text-neutral-500 dark:text-zinc-400">{t('contextCenter.projectOptional', { defaultValue: '项目（可选）' })}</span>
+              <input value={project} onChange={e => setProject(e.target.value)} className={cn(inputCls, 'w-full')} placeholder="project-id" />
+            </label>
+          </div>
+          <label className="block">
+            <span className="mb-1 block text-xs font-medium text-neutral-500 dark:text-zinc-400">{t('contextCenter.tagsOptional', { defaultValue: '标签（可选，逗号分隔）' })}</span>
+            <input value={tags} onChange={e => setTags(e.target.value)} className={cn(inputCls, 'w-full')} placeholder="meeting, research, handoff" />
+          </label>
+          <label className="block">
+            <span className="mb-1 block text-xs font-medium text-neutral-500 dark:text-zinc-400">{t('contextCenter.content', { defaultValue: '内容' })}</span>
+            <textarea value={content} onChange={e => setContent(e.target.value)} className="min-h-64 w-full rounded-lg border border-neutral-200 bg-white px-3 py-2 font-mono text-sm leading-relaxed text-neutral-700 outline-none transition-colors focus:border-sky-400 dark:border-zinc-700 dark:bg-zinc-950 dark:text-zinc-200" placeholder={t('contextCenter.contentPlaceholder', { defaultValue: '粘贴文本，或选择文件后自动填入。' })} />
+          </label>
+        </div>
+        <div className="flex justify-end gap-2 border-t border-neutral-100 px-5 py-4 dark:border-zinc-800">
+          <button type="button" onClick={onClose} className={secondaryButtonCls}>{t('common.cancel', { defaultValue: '取消' })}</button>
+          <button type="button" onClick={() => void submit()} disabled={saving || !content.trim()} className="inline-flex h-9 items-center gap-2 rounded-lg bg-neutral-900 px-3 text-sm font-medium text-white transition-colors hover:bg-neutral-800 disabled:opacity-50 dark:bg-zinc-100 dark:text-zinc-950 dark:hover:bg-white">
+            {saving ? t('common.saving', { defaultValue: '保存中…' }) : t('contextCenter.importNow', { defaultValue: '写入上下文库' })}
+          </button>
+        </div>
+      </div>
     </div>
   )
 }

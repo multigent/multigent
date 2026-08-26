@@ -533,6 +533,11 @@ distilled_to
 第一版尽量不暴露复杂概念：
 
 - 抓取器列表/市场：展示可用 collector、需要的外部工具连接、抓取范围和运行状态。
+- 官方可用 collector 必须有明确入口，不能只展示概念卡片：
+  - `manual-upload`：粘贴文本写入上下文库。
+  - `local-file`：浏览器选择本地文件并写入上下文库。
+  - `local-agent-session`：浏览器选择本地 session 文件并写入上下文库。
+  - Lark/GitHub 等远程同步 collector 未实现前，只展示“规划中”或 API/daemon 接入说明，不能让用户误以为已经可一键抓取。
 - 上下文库列表：展示 ContextItem，支持搜索、筛选、详情查看。
 - Agent 详情页：关注范围、关联资料。
 - Context item 详情页。
