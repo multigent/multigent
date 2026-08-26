@@ -1,7 +1,7 @@
 # OpenContext Center 设计草案
 
 > 状态：草案
-> 日期：2026-08-25
+> 日期：2026-08-26
 > 目标：设计一套独立的 Context Center 模块，让 Multigent 能接入、管理、清洗、订阅和检索来自内外部的信息，并逐步与 Attention Signal、知识库和权限系统解耦集成。
 
 ## 背景
@@ -28,8 +28,9 @@ Context Center 不是知识库，也不是 Attention Signal。
 它是一个独立的信息中枢：
 
 ```text
-Information Source
+External System / Local Files / Runtime Sessions
   -> Collector
+  -> Internal Source Metadata
   -> Context Item
   -> Context Store
   -> Cleaning / Distillation
@@ -41,7 +42,7 @@ Information Source
 
 模块边界：
 
-- Context Center 负责“信息从哪里来、怎么存、怎么查、怎么过滤、谁声明关注什么”。
+- Context Center 负责“信息由哪个抓取器写入、怎么存、怎么查、怎么过滤、谁声明关注什么”。
 - Attention Signal 负责“哪些变化值得 agent 注意”。
 - Knowledge Base 负责“哪些信息已经被沉淀成可复用知识”。
 - Permission 负责“谁能看什么、谁能订阅什么、谁能沉淀/分享什么”。
@@ -49,13 +50,15 @@ Information Source
 
 ## 产品概念
 
-对用户不要暴露太多新概念。产品界面可以收敛成：
+对用户不要暴露太多新概念。产品界面收敛成：
 
-- 信息源：连接飞书、GitHub、Sentry、网页订阅等。
-- 资料库/知识库：用户能看到的资料、文档、导入内容。
-- 智能体关注范围：agent 关注哪些项目、群聊、文档、Issue、报警。
-- 关联资料：agent 能访问哪些上下文。
-- 信号：agent 最近有哪些值得注意的变化。
+- 抓取器：安装、启用和查看不同 collector，例如飞书/Lark、GitHub、本地 Session、RSS/Web。
+- 上下文库：查看、搜索和读取已经被抓取器写入的标准上下文条目。
+- 智能体关注范围：在 Agent 详情页配置它关注哪些项目、群聊、文档、Issue、报警或上下文标签。
+- 关联资料：在 Agent 详情页把上下文、知识库文档、本地文件等授权给某个 agent 使用。
+- 信号：agent 最近有哪些值得注意的变化，仍由 Attention 系统展示和消费。
+
+不把“信息源”作为用户可见产品概念。用户只需要理解“我安装了哪个抓取器，它从哪里抓，抓到了哪些上下文”。
 
 底层可以有更清晰的工程概念：
 
@@ -70,7 +73,7 @@ Information Source
 
 ### ContextSource
 
-信息源。表示某类信息来自哪里。
+内部来源元数据。它不是用户可见概念，只用于记录 ContextItem 是由哪个 collector、哪个连接、哪个外部对象写入的，方便去重、审计、权限和后续迁移。
 
 示例：
 
@@ -86,6 +89,8 @@ Information Source
 - Agent Session
 - Local File
 - Code Repository
+
+第一版 API 中仍保留 `ContextSource`，原因是后端已经需要稳定的来源 ID 来关联 item；但前端和产品文案不直接暴露“创建信息源”。后续可以演进为 `CollectorInstallation` / `CollectorRun` / `ContextSourceRef` 等更清晰的内部结构。
 
 建议字段：
 
@@ -105,15 +110,23 @@ metadata
 
 ### ContextCollector
 
-采集器。可以独立进程运行，也可以是 server 内置 adapter。
+抓取器。可以是独立进程、客户侧 daemon、SaaS 托管 worker、CLI uploader，也可以是 server 内置 adapter。
 
 职责：
 
-- 从信息源拉取或接收信息。
+- 使用外部工具连接或本地 CLI 凭证，从外部系统、本地文件或 runtime session 拉取/接收信息。
 - 标准化成 ContextItem。
 - 做最小必要的去重、脱敏和敏感度标记。
 - 不负责判断这是不是“知识”。
 - 不直接唤醒 agent。
+
+Collector 与 External Tool 的关系：
+
+- External Tool 管凭证、OAuth、PAT、API Key、连接权限和工具能力。
+- Collector 复用某个 External Tool Connection 来抓取数据。
+- 同一个 External Tool Connection 可以被 agent 作为实时工具使用，也可以被 collector 用来异步抓取。
+- Collector 不应该重复保存密钥；它只保存抓取范围、同步策略、游标、状态和写入统计。
+- 本地 Session / 本地文件 Collector 可以使用 CLI access token 认证，它不依赖运行节点。
 
 Collector 可以有多种形态：
 
@@ -209,7 +222,7 @@ Attention 层对 ContextItem 进行评估的策略。它不属于 Context Center
 
 它回答的问题是：
 
-- 当前 agent 声明关注哪些 source、label、project、user、thread。
+- 当前 agent 声明关注哪些 collector、label、project、user、thread。
 - 当前 agent 的 heartbeat 是否允许因为某类信息被提前唤醒。
 - 这条 ContextItem 对当前 agent 是必须关注、可选关注，还是仅可搜索。
 - 是否需要产生 Attention Signal，还是只保留在 Context Center 中等待 agent 主动搜索。
@@ -292,6 +305,8 @@ POST /api/v1/context/sources
 GET  /api/v1/context/sources
 ```
 
+说明：`/context/sources` 是当前后端内部来源元数据接口，不是面向用户的“信息源管理”产品 API。Collector 写入时可以自动创建或复用 source metadata；前端第一版只展示“抓取器”和“上下文库”。
+
 写入请求：
 
 ```json
@@ -319,6 +334,23 @@ GET  /api/v1/context/sources
 
 Collector 不应该直接写 Signal，也不应该直接写 Knowledge。它最多写 ContextItem。后续是否被提炼、是否作为候选 signal 暴露给某个 agent，由独立的 distillation / attention evaluation 流程决定。
 
+## 为什么不是让 Agent 每次自己用工具拉
+
+Agent 拥有工具仍然很重要。实时工具适合回答“现在这个 PR 状态是什么”“帮我查一下这个群聊最近有没有人提到 OAuth”这类即时问题。但仅靠 agent 每次自己拉，不能替代 Context Center：
+
+- 异步性：很多信息在 agent 没被唤醒时发生，需要先被接住，而不是等 agent 想起来才查。
+- 去重与缓存：GitHub、飞书、会议纪要、网页等外部信息会重复变化，统一写入后才能做游标、去重、增量和缓存。
+- 共享上下文：多个 agent 需要看到同一份事实，不应该每个 agent 都重复拉一遍、各自形成不一致的局部认知。
+- 权限治理：外部工具凭证能做“拉取”，但谁能读到哪条信息、能否跨项目分享、能否沉淀为知识，需要统一 ACL。
+- 历史快照：外部系统会改、删、过期。ContextItem 能保留当时的消息、PR 状态、会议结论和审计链。
+- 统一检索：agent 不应该知道每个系统的检索语法；`mga context search/read` 提供统一入口。
+- Attention 候选池：不是所有信息都应生成 signal，但所有可能相关的信息都可以先进入候选池，由 agent 的关注策略决定要不要看。
+
+所以 Context Center 和 agent tools 是互补关系：
+
+- agent tools：即时操作、实时查询、执行动作。
+- Context Center：异步接入、标准化存储、跨 agent 共享、权限检索、长期沉淀。
+
 ## Agent 访问方式
 
 Agent 通过 `mga context` 主动访问。
@@ -326,7 +358,7 @@ Agent 通过 `mga context` 主动访问。
 建议命令：
 
 ```bash
-mga context sources
+mga context collectors
 mga context list --source lark_im --project tapnow-mcp-server --since 24h
 mga context search "OAuth token 校验失败" --project tapnow-mcp-server
 mga context read ctx_123
@@ -390,7 +422,7 @@ Attention Signal：
 | Memory | 某人的偏好、某 agent 的边界、项目事实 | 长期事实，影响后续行为 |
 | Skill | 可复用操作流程 | 可执行经验 |
 
-知识库可以作为 ContextSource，知识库更新也可以产生 ContextItem 和 Signal。
+知识库可以作为 ContextItem 的一种来源引用，知识库更新也可以产生 ContextItem，并在 Attention 层被评估为候选 Signal。
 
 但 ContextItem 不应该默认变成知识库文档。只有被人工或 agent 确认有价值的信息，才沉淀为知识。
 
@@ -400,9 +432,9 @@ Attention Signal：
 
 需要校验的动作：
 
-- 创建 source。
+- 创建 collector 安装或内部 source metadata。
 - collector 写入 item。
-- agent 订阅 source。
+- agent 声明关注 collector、label、project、thread 等上下文范围。
 - agent 读取 item。
 - agent 搜索 context。
 - agent 把 context 提炼成知识。
@@ -472,7 +504,7 @@ distilled_to
 ### Backend
 
 - 新增 `internal/contextcenter` 模块。
-- 新增 ContextSource / ContextItem / ContextSubscription 实体。
+- 新增 ContextSource / ContextItem / ContextSubscription 实体，其中 ContextSource 仅作为内部来源元数据。
 - 提供 Context API。
 - 提供 collector PAT 或 service token 写入认证。
 - 实现基础 ACL 校验接口，先接现有 workspace / project / agent 权限。
@@ -485,7 +517,7 @@ distilled_to
 - `mga context search`
 - `mga context read`
 - `mga context mark-read`
-- `mga context sources`
+- `mga context collectors`
 
 ### Collector
 
@@ -500,8 +532,8 @@ distilled_to
 
 第一版尽量不暴露复杂概念：
 
-- 信息源列表。
-- 资料/上下文列表。
+- 抓取器列表/市场：展示可用 collector、需要的外部工具连接、抓取范围和运行状态。
+- 上下文库列表：展示 ContextItem，支持搜索、筛选、详情查看。
 - Agent 详情页：关注范围、关联资料。
 - Context item 详情页。
 - Subscription 简化配置。
@@ -535,7 +567,7 @@ distilled_to
 
 - Web/RSS/Twitter/Newsletter collectors。
 - 竞品动态、行业新闻、用户声音自动进入 Context Store。
-- Agent 自主订阅外部信息源。
+- Agent 自主声明关注外部信息范围。
 - 与营销、产品、战略 agent 结合。
 
 ## 与现有系统的集成顺序
@@ -545,8 +577,8 @@ distilled_to
 3. `mga context` 让 agent 可按权限读取。
 4. Agent / Heartbeat 根据 subscription 和 attention policy 评估候选 ContextItem。
 5. Knowledge Base 支持从 ContextItem 创建文档。
-6. 权限系统细化到 source/item/subscription。
-7. 前端把复杂配置收敛到信息源、关注范围、关联资料。
+6. 权限系统细化到 collector/item/subscription。
+7. 前端把复杂配置收敛到抓取器、上下文库、关注范围、关联资料。
 
 ## 设计原则
 

@@ -4,19 +4,17 @@ import Markdown from 'react-markdown'
 import remarkGfm from 'remark-gfm'
 import {
   Database,
-  Plus,
   RefreshCw,
-  Rss,
   Search,
   ServerCog,
   X,
 } from 'lucide-react'
-import { apiFetch, apiPost } from '../lib/api'
+import { apiFetch } from '../lib/api'
 import { cn } from '../lib/cn'
 import { useApiJson } from '../lib/use-api'
 import { useFormatDateTime } from '../lib/format-datetime'
 
-type TabKey = 'sources' | 'collectors' | 'items'
+type TabKey = 'collectors' | 'items'
 
 type ContextSource = {
   id: string
@@ -62,11 +60,10 @@ const cardCls = 'rounded-xl border border-neutral-200 bg-white shadow-sm dark:bo
 const inputCls = 'h-9 rounded-lg border border-neutral-200 bg-white px-3 text-sm text-neutral-700 outline-none transition-colors focus:border-sky-400 dark:border-zinc-700 dark:bg-zinc-950 dark:text-zinc-200'
 const selectCls = `${inputCls} dark:[color-scheme:dark]`
 const secondaryButtonCls = 'inline-flex h-9 items-center gap-2 rounded-lg border border-neutral-200 bg-white px-3 text-sm font-medium text-neutral-600 transition-colors hover:bg-neutral-50 disabled:opacity-50 dark:border-zinc-700 dark:bg-zinc-900 dark:text-zinc-300 dark:hover:bg-zinc-800'
-const primaryButtonCls = 'inline-flex h-9 items-center gap-2 rounded-lg bg-neutral-900 px-3 text-sm font-medium text-white transition-colors hover:bg-neutral-800 disabled:opacity-50 dark:bg-zinc-100 dark:text-zinc-950 dark:hover:bg-white'
 
 export default function ContextCenterPage() {
   const { t } = useTranslation()
-  const [tab, setTab] = useState<TabKey>('sources')
+  const [tab, setTab] = useState<TabKey>('collectors')
   const [reloadKey, setReloadKey] = useState(0)
 
   return (
@@ -75,7 +72,7 @@ export default function ContextCenterPage() {
         <div>
           <h1 className="text-xl font-semibold text-neutral-900 dark:text-zinc-100">{t('contextCenter.title', { defaultValue: '上下文' })}</h1>
           <p className="mt-0.5 text-sm text-neutral-500 dark:text-zinc-500">
-            {t('contextCenter.subtitle', { defaultValue: '接入群聊、文档、代码仓库和本地会话，让 Agent 按权限主动检索背景信息。' })}
+            {t('contextCenter.subtitle', { defaultValue: '安装抓取器，把群聊、文档、代码仓库和本地会话沉淀为 Agent 可按权限检索的上下文。' })}
           </p>
         </div>
         <button type="button" onClick={() => setReloadKey(k => k + 1)} className={secondaryButtonCls}>
@@ -85,12 +82,10 @@ export default function ContextCenterPage() {
       </div>
 
       <div className="mb-5 flex w-fit rounded-lg border border-neutral-200 bg-neutral-50 p-1 dark:border-zinc-800 dark:bg-zinc-900">
-        <TabButton active={tab === 'sources'} onClick={() => setTab('sources')} icon={Rss} label={t('contextCenter.sources', { defaultValue: '信息源' })} />
         <TabButton active={tab === 'collectors'} onClick={() => setTab('collectors')} icon={ServerCog} label={t('contextCenter.collectors', { defaultValue: '抓取器' })} />
         <TabButton active={tab === 'items'} onClick={() => setTab('items')} icon={Database} label={t('contextCenter.items', { defaultValue: '上下文库' })} />
       </div>
 
-      {tab === 'sources' && <SourcesPanel reloadKey={reloadKey} onChanged={() => setReloadKey(k => k + 1)} />}
       {tab === 'collectors' && <CollectorsPanel reloadKey={reloadKey} />}
       {tab === 'items' && <ItemsPanel reloadKey={reloadKey} />}
     </div>
@@ -115,125 +110,6 @@ function TabButton({ active, onClick, icon: Icon, label }: { active: boolean; on
   )
 }
 
-function SourcesPanel({ reloadKey, onChanged }: { reloadKey: number; onChanged: () => void }) {
-  const { t } = useTranslation()
-  const state = useApiJson<{ sources?: ContextSource[] }>('/api/v1/context/sources?limit=200', reloadKey, { keepPreviousDataOnReload: true })
-  const [creating, setCreating] = useState(false)
-  const sources = state.status === 'ok' ? (state.data.sources ?? []) : []
-
-  return (
-    <div className="grid gap-5 xl:grid-cols-[minmax(0,1fr)_22rem]">
-      <div className={cardCls}>
-        <div className="border-b border-neutral-100 px-5 py-4 dark:border-zinc-800">
-          <h2 className="text-sm font-semibold text-neutral-900 dark:text-zinc-100">{t('contextCenter.sourceList', { defaultValue: '信息源' })}</h2>
-          <p className="mt-1 text-xs text-neutral-400 dark:text-zinc-500">{t('contextCenter.sourceListHint', { defaultValue: '信息源只描述数据从哪里来；实际抓取由外部 Collector 负责。' })}</p>
-        </div>
-        {state.status === 'loading' ? (
-          <LoadingState />
-        ) : sources.length === 0 ? (
-          <EmptyState icon={Rss} title={t('contextCenter.noSources', { defaultValue: '还没有信息源' })} body={t('contextCenter.noSourcesHint', { defaultValue: '先创建一个 Lark、GitHub、本地 Session 或 RSS 信息源，再让 Collector 写入标准 ContextItem。' })} />
-        ) : (
-          <div className="divide-y divide-neutral-100 dark:divide-zinc-800">
-            {sources.map(source => <SourceRow key={source.id} source={source} />)}
-          </div>
-        )}
-      </div>
-      <div className={cardCls}>
-        <div className="border-b border-neutral-100 px-5 py-4 dark:border-zinc-800">
-          <h2 className="text-sm font-semibold text-neutral-900 dark:text-zinc-100">{t('contextCenter.createSource', { defaultValue: '添加信息源' })}</h2>
-          <p className="mt-1 text-xs text-neutral-400 dark:text-zinc-500">{t('contextCenter.createSourceHint', { defaultValue: '这里只登记来源和范围，不保存平台密钥。密钥仍通过外部工具或 Collector 自己管理。' })}</p>
-        </div>
-        <CreateSourceForm creating={creating} setCreating={setCreating} onCreated={onChanged} />
-      </div>
-    </div>
-  )
-}
-
-function SourceRow({ source }: { source: ContextSource }) {
-  const fmtDateTime = useFormatDateTime()
-  return (
-    <div className="flex items-start gap-4 px-5 py-4">
-      <div className="mt-0.5 flex size-9 shrink-0 items-center justify-center rounded-lg bg-neutral-100 text-neutral-500 dark:bg-zinc-800 dark:text-zinc-400">
-        <Rss className="size-4" strokeWidth={1.8} />
-      </div>
-      <div className="min-w-0 flex-1">
-        <div className="flex flex-wrap items-center gap-2">
-          <p className="truncate text-sm font-medium text-neutral-900 dark:text-zinc-100">{source.name}</p>
-          <Badge>{source.type}</Badge>
-          <StatusBadge status={source.status || 'active'} />
-        </div>
-        {source.description && <p className="mt-1 text-sm text-neutral-500 dark:text-zinc-400">{source.description}</p>}
-        <div className="mt-2 flex flex-wrap gap-x-4 gap-y-1 text-xs text-neutral-400 dark:text-zinc-500">
-          <span>ID <code className="font-mono">{source.id}</code></span>
-          {source.connectionRef && <span>connection <code className="font-mono">{source.connectionRef}</code></span>}
-          <span>{fmtDateTime(source.updatedAt || source.createdAt)}</span>
-        </div>
-      </div>
-    </div>
-  )
-}
-
-function CreateSourceForm({ creating, setCreating, onCreated }: { creating: boolean; setCreating: (value: boolean) => void; onCreated: () => void }) {
-  const { t } = useTranslation()
-  const [type, setType] = useState('lark_im')
-  const [name, setName] = useState('')
-  const [description, setDescription] = useState('')
-  const [connectionRef, setConnectionRef] = useState('')
-
-  async function submit() {
-    const sourceName = name.trim()
-    if (!sourceName) return
-    setCreating(true)
-    try {
-      await apiPost('/api/v1/context/sources', {
-        type,
-        name: sourceName,
-        description: description.trim(),
-        connectionRef: connectionRef.trim(),
-      })
-      setName('')
-      setDescription('')
-      setConnectionRef('')
-      onCreated()
-    } finally {
-      setCreating(false)
-    }
-  }
-
-  return (
-    <div className="space-y-3 p-5">
-      <label className="block">
-        <span className="mb-1 block text-xs font-medium text-neutral-500 dark:text-zinc-400">{t('contextCenter.sourceType', { defaultValue: '类型' })}</span>
-        <select value={type} onChange={e => setType(e.target.value)} className={selectCls}>
-          <option value="lark_im">Lark / Feishu IM</option>
-          <option value="lark_doc">Lark / Feishu Doc</option>
-          <option value="github">GitHub</option>
-          <option value="agent_session">Agent Session</option>
-          <option value="local_file">Local File</option>
-          <option value="rss">RSS / Web</option>
-          <option value="manual">Manual</option>
-        </select>
-      </label>
-      <label className="block">
-        <span className="mb-1 block text-xs font-medium text-neutral-500 dark:text-zinc-400">{t('common.name')}</span>
-        <input value={name} onChange={e => setName(e.target.value)} className={inputCls} placeholder={t('contextCenter.sourceNamePlaceholder', { defaultValue: 'MCP 联调群' })} />
-      </label>
-      <label className="block">
-        <span className="mb-1 block text-xs font-medium text-neutral-500 dark:text-zinc-400">{t('common.description')}</span>
-        <textarea value={description} onChange={e => setDescription(e.target.value)} className="min-h-20 w-full rounded-lg border border-neutral-200 bg-white px-3 py-2 text-sm text-neutral-700 outline-none transition-colors focus:border-sky-400 dark:border-zinc-700 dark:bg-zinc-950 dark:text-zinc-200" />
-      </label>
-      <label className="block">
-        <span className="mb-1 block text-xs font-medium text-neutral-500 dark:text-zinc-400">{t('contextCenter.connectionRef', { defaultValue: '关联外部工具连接' })}</span>
-        <input value={connectionRef} onChange={e => setConnectionRef(e.target.value)} className={inputCls} placeholder="conn-..." />
-      </label>
-      <button type="button" onClick={() => void submit()} disabled={creating || !name.trim()} className={primaryButtonCls}>
-        <Plus className="size-4" strokeWidth={1.8} />
-        {t('contextCenter.createSource', { defaultValue: '添加信息源' })}
-      </button>
-    </div>
-  )
-}
-
 function CollectorsPanel({ reloadKey }: { reloadKey: number }) {
   const { t } = useTranslation()
   const state = useApiJson<{ sources?: ContextSource[] }>('/api/v1/context/sources?limit=200', reloadKey, { keepPreviousDataOnReload: true })
@@ -247,15 +123,32 @@ function CollectorsPanel({ reloadKey }: { reloadKey: number }) {
     <div className="grid gap-5 xl:grid-cols-[minmax(0,1fr)_24rem]">
       <div className={cardCls}>
         <div className="border-b border-neutral-100 px-5 py-4 dark:border-zinc-800">
-          <h2 className="text-sm font-semibold text-neutral-900 dark:text-zinc-100">{t('contextCenter.collectorRuntime', { defaultValue: '外部 Collector' })}</h2>
+          <h2 className="text-sm font-semibold text-neutral-900 dark:text-zinc-100">{t('contextCenter.collectorRuntime', { defaultValue: '抓取器市场' })}</h2>
           <p className="mt-1 text-xs text-neutral-400 dark:text-zinc-500">
-            {t('contextCenter.collectorRuntimeHint', { defaultValue: 'Collector 是独立进程：它从飞书、GitHub、RSS 或本地文件抓取数据，然后通过标准 API 写入 Context Center。' })}
+            {t('contextCenter.collectorRuntimeHint', { defaultValue: '抓取器是独立进程或外部应用。它使用外部工具连接读取数据，再把标准 ContextItem 写入上下文库。' })}
           </p>
         </div>
         <div className="grid gap-4 p-5 lg:grid-cols-3">
-          <CollectorStep index="1" title={t('contextCenter.collectorStepSource', { defaultValue: '登记信息源' })} body={t('contextCenter.collectorStepSourceBody', { defaultValue: '先创建 source，明确数据从哪里来，以及大致归属范围。' })} />
-          <CollectorStep index="2" title={t('contextCenter.collectorStepToken', { defaultValue: '生成写入凭证' })} body={t('contextCenter.collectorStepTokenBody', { defaultValue: '在账户页生成 context.write token，交给本地或客户侧 collector。' })} />
-          <CollectorStep index="3" title={t('contextCenter.collectorStepPush', { defaultValue: '批量写入 ContextItem' })} body={t('contextCenter.collectorStepPushBody', { defaultValue: 'Collector 做去重、脱敏和敏感度标记后，调用 batch API 写入。' })} />
+          <CollectorCard
+            title="Lark / Feishu Collector"
+            type="lark_im"
+            body={t('contextCenter.collectorLarkBody', { defaultValue: '同步群聊、单聊、云文档、会议纪要。需要 Lark/Feishu 外部工具连接。' })}
+          />
+          <CollectorCard
+            title="GitHub Collector"
+            type="github"
+            body={t('contextCenter.collectorGitHubBody', { defaultValue: '同步 issue、PR、review、CI 和 release 事件。需要 GitHub 外部工具连接。' })}
+          />
+          <CollectorCard
+            title="Local Session Collector"
+            type="agent_session"
+            body={t('contextCenter.collectorSessionBody', { defaultValue: '上传 Codex、Claude Code、Cursor 的历史 session 和本地文件。使用 CLI access token。' })}
+          />
+        </div>
+        <div className="grid gap-4 border-t border-neutral-100 p-5 dark:border-zinc-800 lg:grid-cols-3">
+          <CollectorStep index="1" title={t('contextCenter.collectorStepConnection', { defaultValue: '选择外部工具连接' })} body={t('contextCenter.collectorStepConnectionBody', { defaultValue: '抓取器复用外部工具里的凭证和权限，不在上下文模块里单独管理密钥。' })} />
+          <CollectorStep index="2" title={t('contextCenter.collectorStepScope', { defaultValue: '设置抓取范围与策略' })} body={t('contextCenter.collectorStepScopeBody', { defaultValue: '配置群聊、仓库、目录、同步频率、全量或增量。' })} />
+          <CollectorStep index="3" title={t('contextCenter.collectorStepPush', { defaultValue: '写入上下文库' })} body={t('contextCenter.collectorStepPushBody', { defaultValue: '抓取器做去重、脱敏和敏感度标记后，批量写入 ContextItem。' })} />
         </div>
         <div className="border-t border-neutral-100 p-5 dark:border-zinc-800">
           <p className="mb-2 text-xs font-medium text-neutral-500 dark:text-zinc-400">{t('contextCenter.writeApiExample', { defaultValue: '标准写入示例' })}</p>
@@ -265,18 +158,18 @@ function CollectorsPanel({ reloadKey }: { reloadKey: number }) {
 
       <div className={cardCls}>
         <div className="border-b border-neutral-100 px-5 py-4 dark:border-zinc-800">
-          <h2 className="text-sm font-semibold text-neutral-900 dark:text-zinc-100">{t('contextCenter.collectorStatus', { defaultValue: '抓取状态' })}</h2>
-          <p className="mt-1 text-xs text-neutral-400 dark:text-zinc-500">{t('contextCenter.collectorStatusHint', { defaultValue: '第一版先用信息源和写入记录表达状态；后续会加入 collector 注册、心跳、任务和日志。' })}</p>
+          <h2 className="text-sm font-semibold text-neutral-900 dark:text-zinc-100">{t('contextCenter.collectorStatus', { defaultValue: '已接入抓取器' })}</h2>
+          <p className="mt-1 text-xs text-neutral-400 dark:text-zinc-500">{t('contextCenter.collectorStatusHint', { defaultValue: '第一版后端仍用 source 记录表达写入来源；后续会升级为抓取器注册、心跳、任务和日志。' })}</p>
         </div>
         <div className="divide-y divide-neutral-100 dark:divide-zinc-800">
           {sources.length === 0 ? (
-            <EmptyState icon={ServerCog} title={t('contextCenter.noCollectorSources', { defaultValue: '暂无可抓取来源' })} body={t('contextCenter.noCollectorSourcesHint', { defaultValue: '创建信息源后，可以启动外部 collector 写入数据。' })} compact />
+            <EmptyState icon={ServerCog} title={t('contextCenter.noCollectorSources', { defaultValue: '还没有抓取器写入数据' })} body={t('contextCenter.noCollectorSourcesHint', { defaultValue: '安装或启动抓取器后，它会通过标准 API 写入上下文库。' })} compact />
           ) : sources.map(source => (
             <div key={source.id} className="px-5 py-4">
               <div className="flex items-center justify-between gap-3">
                 <div className="min-w-0">
-                  <p className="truncate text-sm font-medium text-neutral-900 dark:text-zinc-100">{source.name}</p>
-                  <p className="mt-1 text-xs text-neutral-400 dark:text-zinc-500">{source.type} · {source.id}</p>
+                  <p className="truncate text-sm font-medium text-neutral-900 dark:text-zinc-100">{collectorName(source)}</p>
+                  <p className="mt-1 text-xs text-neutral-400 dark:text-zinc-500">{source.name} · {source.type}</p>
                 </div>
                 <StatusBadge status={source.status || 'active'} />
               </div>
@@ -286,6 +179,38 @@ function CollectorsPanel({ reloadKey }: { reloadKey: number }) {
       </div>
     </div>
   )
+}
+
+function CollectorCard({ title, type, body }: { title: string; type: string; body: string }) {
+  return (
+    <div className="rounded-lg border border-neutral-200 bg-neutral-50 p-4 dark:border-zinc-800 dark:bg-zinc-950/40">
+      <div className="mb-3 flex size-8 items-center justify-center rounded-md bg-white text-neutral-500 shadow-sm dark:bg-zinc-900 dark:text-zinc-400">
+        <ServerCog className="size-4" strokeWidth={1.8} />
+      </div>
+      <div className="flex items-center gap-2">
+        <p className="text-sm font-medium text-neutral-900 dark:text-zinc-100">{title}</p>
+        <Badge>{type}</Badge>
+      </div>
+      <p className="mt-2 text-xs leading-relaxed text-neutral-500 dark:text-zinc-500">{body}</p>
+    </div>
+  )
+}
+
+function collectorName(source: ContextSource) {
+  switch (source.type) {
+    case 'lark_im':
+    case 'lark_doc':
+      return 'Lark / Feishu Collector'
+    case 'github':
+      return 'GitHub Collector'
+    case 'agent_session':
+    case 'local_file':
+      return 'Local Context Collector'
+    case 'rss':
+      return 'RSS / Web Collector'
+    default:
+      return 'Custom Collector'
+  }
 }
 
 function CollectorStep({ index, title, body }: { index: string; title: string; body: string }) {
