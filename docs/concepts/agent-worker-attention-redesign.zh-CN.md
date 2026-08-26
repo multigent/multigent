@@ -97,7 +97,7 @@ Task / Workflow = 这个 agent 在该项目里推进哪件具体工作
 
 ```text
 run agent_worker=nova
-project=tapnow-mcp-server
+project=customer-mcp-server
 membership=project-manager
 task=t-xxx
 ```
@@ -270,8 +270,8 @@ Project Membership 不是运行时临时拼出来的一段说明，而应该在 
 id: agent_worker_id
 name: Nova
 profile:
-  title: TapNow Agent 项目管理者
-  description: 负责理解 tapnow-agent 相关项目进展、分配任务、跟进风险。
+  title: CustomerCo Agent 项目管理者
+  description: 负责理解 customer-agent 相关项目进展、分配任务、跟进风险。
 default_model:
   provider: codex
   model: gpt-5.5
@@ -280,7 +280,7 @@ default_runtime:
 skills:
   - github
   - lark
-  - tapnow-agent-debug
+  - customer-agent-debug
 channels:
   - provider: lark
     connection_id: lark-main
@@ -299,14 +299,14 @@ Agent Worker 可以同时加入多个项目：
 ```text
 Agent Worker: Nova
 Project memberships:
-- tapnow-cli / 项目管理者
-- tapnow-mcp-server / 项目管理者
-- tapnow-connectors / 项目管理者
+- customer-cli / 项目管理者
+- customer-mcp-server / 项目管理者
+- customer-connectors / 项目管理者
 ```
 
 这样 Nova 不是三个项目里复制出来的三个 agent，而是一个跨项目工作的 agent。
 
-但 Nova 每次处理具体任务时，仍然在某一个项目上下文里运行。例如处理 `tapnow-mcp-server` 的任务时，它默认读取的是该项目的 prompt、知识库、任务、流程、成员和授权，而不是把所有项目上下文混在一起。
+但 Nova 每次处理具体任务时，仍然在某一个项目上下文里运行。例如处理 `customer-mcp-server` 的任务时，它默认读取的是该项目的 prompt、知识库、任务、流程、成员和授权，而不是把所有项目上下文混在一起。
 
 Agent Worker 也应该拥有自己的工作节奏，而不是每个项目复制一套心跳：
 
@@ -333,7 +333,7 @@ Project Membership 是执行时的关键边界。一个 agent worker 可以长�
 建议字段：
 
 ```yaml
-project_id: tapnow-mcp-server
+project_id: customer-mcp-server
 member_type: agent_worker
 worker_id: nova
 role: project-manager
@@ -343,7 +343,7 @@ permissions:
   - workflow.read
   - inbox.send
 project_prompt: |
-  在 tapnow-mcp-server 项目中，你负责跟进 MCP Server 的需求、开发、测试和上线风险。
+  在 customer-mcp-server 项目中，你负责跟进 MCP Server 的需求、开发、测试和上线风险。
 auto_pick_tasks: true
 attention_enabled: true
 priority_weight: 1.0
@@ -413,9 +413,9 @@ actor:
   user_id: glenn
 reason: mention
 priority: normal
-summary: Glenn 在 TapNow 项目群里 @Nova，询问 MCP Server 联调状态。
+summary: Glenn 在 CustomerCo 项目群里 @Nova，询问 MCP Server 联调状态。
 refs:
-  project_id: tapnow-mcp-server
+  project_id: customer-mcp-server
   task_id: t_xxx
 status: pending
 created_at: ...
@@ -524,7 +524,7 @@ Attention Signal 负责告诉 agent 哪些事情值得关注。
 Interaction metadata 负责记录消息来自哪里、将来应该回复到哪里。
 ```
 
-因此，同一个 agent 可以在一个 primary session 里先处理 `tapnow-mcp-server` 的任务，再回复 Lark 群里关于 `tapnow-cli` 的问题。它每次访问项目资源时必须带 project context，但不因为项目不同就默认切 session。
+因此，同一个 agent 可以在一个 primary session 里先处理 `customer-mcp-server` 的任务，再回复 Lark 群里关于 `customer-cli` 的问题。它每次访问项目资源时必须带 project context，但不因为项目不同就默认切 session。
 
 ### Child Session
 
@@ -728,21 +728,21 @@ schedule:
   interval: 2h
 scope:
   projects:
-    tapnow-cli:
+    customer-cli:
       auto_pick_tasks: true
       attention_enabled: true
       priority_weight: 1.0
-    tapnow-mcp-server:
+    customer-mcp-server:
       auto_pick_tasks: true
       attention_enabled: true
       priority_weight: 1.5
-    tapnow-connectors:
+    customer-connectors:
       auto_pick_tasks: false
       attention_enabled: true
       priority_weight: 0.8
 ```
 
-这里 Nova 会定时醒来查看三个项目，但只会自动接 `tapnow-cli` 和 `tapnow-mcp-server` 的任务；`tapnow-connectors` 的信息可以提醒它，但不会自动接活。
+这里 Nova 会定时醒来查看三个项目，但只会自动接 `customer-cli` 和 `customer-mcp-server` 的任务；`customer-connectors` 的信息可以提醒它，但不会自动接活。
 
 ### 并发用 Child Session 隔离
 
@@ -762,8 +762,8 @@ scope:
 ```text
 worker=nova
 primary-session=s-main
-child-run-1: project=tapnow-mcp-server task=t-001 purpose=开发联调
-child-run-2: project=tapnow-connectors task=t-002 purpose=插件调研
+child-run-1: project=customer-mcp-server task=t-001 purpose=开发联调
+child-run-2: project=customer-connectors task=t-002 purpose=插件调研
 ```
 
 这样可以保留 agent 的主体性，同时让并发成为 agent 可自主使用的能力，而不是系统把它默认拆成多个上下文人格。
@@ -773,7 +773,7 @@ child-run-2: project=tapnow-connectors task=t-002 purpose=插件调研
 旧配置：
 
 ```text
-project=tapnow-cli
+project=customer-cli
 agent=nova
 heartbeat=2h
 ```
@@ -783,8 +783,8 @@ heartbeat=2h
 ```text
 worker=nova
 schedule.interval=2h
-membership[tapnow-cli].auto_pick_tasks=true
-membership[tapnow-cli].attention_enabled=true
+membership[customer-cli].auto_pick_tasks=true
+membership[customer-cli].attention_enabled=true
 ```
 
 如果同一个旧 agent 在多个项目里都有 heartbeat：
@@ -809,12 +809,12 @@ agent wakeup 时，不应该把所有外部事件塞进 prompt。
 
 ```text
 你有 3 个强 attention:
-1. Glenn 在 TapNow 项目群 @你询问 MCP Server 状态。
+1. Glenn 在 CustomerCo 项目群 @你询问 MCP Server 状态。
 2. task t-123 当前分配给你，处于开发联调阶段。
 3. workflow t-456 到达你负责的技术方案节点。
 
 你也可以按需查询:
-- 最近 24h TapNow 项目群消息
+- 最近 24h CustomerCo 项目群消息
 - GitHub PR/Issue 更新
 - Linear/Sentry 状态
 ```
@@ -1024,7 +1024,7 @@ cp -a /root/code/spaceship/spaceship /root/code/spaceship/spaceship-agent-worker
 - 原 Spaceship workspace 不受影响。
 - 迁移副本能启动 Web。
 - 迁移后原有项目、任务、流程、成员、模型账号、外部工具连接仍然可见。
-- 至少选择 `cc-connect`、`multigent`、`tapnow` 这类真实项目跑 smoke test。
+- 至少选择 `cc-connect`、`multigent`、`customer` 这类真实项目跑 smoke test。
 
 迁移脚本必须支持：
 
@@ -1322,7 +1322,7 @@ projects/<project>/members/<membership>.yaml
 4. 后续提供手动合并工具：
 
 ```bash
-multigent agent-worker merge --from tapnow-cli/nova --into nova
+multigent agent-worker merge --from customer-cli/nova --into nova
 ```
 
 这样避免一开始误合并导致上下文污染。
@@ -1372,8 +1372,8 @@ projects/<project>/members/<membership>.yaml:
 你是 <Agent Worker>。
 
 你参与的项目:
-- tapnow-cli: 项目管理者, auto_pick_tasks=true
-- tapnow-mcp-server: 项目管理者, auto_pick_tasks=true
+- customer-cli: 项目管理者, auto_pick_tasks=true
+- customer-mcp-server: 项目管理者, auto_pick_tasks=true
 
 强 attention:
 1. Lark 群 @你: ...
@@ -1381,8 +1381,8 @@ projects/<project>/members/<membership>.yaml:
 3. workflow t-yyy 到达你的节点: ...
 
 可选择处理的项目任务:
-1. tapnow-mcp-server / t-001 / P1
-2. tapnow-cli / t-002 / P2
+1. customer-mcp-server / t-001 / P1
+2. customer-cli / t-002 / P2
 
 你可以:
 - 回复 IM。
@@ -1737,7 +1737,7 @@ Runs 页面需要从 project-only 改成支持 worker 维度。
    - IM 卡片委托。
    - workflow review。
 
-4. `tapnow-*`
+4. `customer-*`
    - 同一个管理 agent 加入多个项目。
    - wakeup 后能看到多个项目 attention。
    - 实际执行时能进入正确项目上下文。

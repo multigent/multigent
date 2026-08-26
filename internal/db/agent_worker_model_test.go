@@ -49,7 +49,7 @@ func TestAgentWorkerMembershipAndAttentionSignal(t *testing.T) {
 	membership := ProjectMembership{
 		ID:               "pm-nova-mcp",
 		WorkspaceID:      workspaceID,
-		ProjectID:        "tapnow-mcp-server",
+		ProjectID:        "customer-mcp-server",
 		MemberType:       "agent_worker",
 		MemberID:         worker.ID,
 		Role:             "project-manager",
@@ -64,7 +64,7 @@ func TestAgentWorkerMembershipAndAttentionSignal(t *testing.T) {
 	}
 	memberships, err := db.ListProjectMemberships(ProjectMembershipFilter{
 		WorkspaceID: workspaceID,
-		ProjectID:   "tapnow-mcp-server",
+		ProjectID:   "customer-mcp-server",
 		MemberType:  "agent_worker",
 	})
 	if err != nil {

@@ -101,7 +101,7 @@ func TestRuntimeReadinessUsesAgentScopedCursorAuth(t *testing.T) {
 
 	meta := &entity.AgentMeta{
 		Name:     "linus",
-		Project:  "tapnow-connectors",
+		Project:  "customer-connectors",
 		Model:    entity.ModelCursor,
 		Provider: "cursor-official",
 		Sandbox: &entity.SandboxConfig{
@@ -135,7 +135,7 @@ func TestRuntimeReadinessSkipsLocalCursorLoginWhenProviderBound(t *testing.T) {
 
 	meta := &entity.AgentMeta{
 		Name:     "linus",
-		Project:  "tapnow-connectors",
+		Project:  "customer-connectors",
 		Model:    entity.ModelCursor,
 		Provider: "cursor-api-key",
 		Sandbox: &entity.SandboxConfig{

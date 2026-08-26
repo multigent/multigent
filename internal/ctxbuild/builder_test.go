@@ -80,7 +80,7 @@ func TestBuildForAgentIncludesAgentWorkerMembershipContext(t *testing.T) {
 			"Treat workflows as milestones that may span multiple wakeups.",
 		}, "\n"),
 		Model:      "codex",
-		SkillsJSON: `["tapnow-agent-debug"]`,
+		SkillsJSON: `["customer-agent-debug"]`,
 	}); err != nil {
 		t.Fatalf("worker: %v", err)
 	}

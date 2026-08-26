@@ -8,6 +8,7 @@ import (
 	"fmt"
 	"io"
 	"io/fs"
+	"mime"
 	"mime/multipart"
 	"net/http"
 	"net/url"
@@ -154,7 +155,7 @@ made visible to you: IM mentions, direct messages, card actions, assigned tasks,
 or workflow events. Mark a signal handled only after you have actually handled
 it; mark ignored when you intentionally decide not to act.`,
 	}
-	cmd.AddCommand(newAttentionListCmd(), newAttentionMarkCmd())
+	cmd.AddCommand(newAttentionListCmd(), newAttentionMarkCmd(), newAttentionAttachmentCmd())
 	return cmd
 }
 
@@ -452,6 +453,56 @@ func newAttentionMarkCmd() *cobra.Command {
 		},
 	}
 	cmd.Flags().StringVar(&status, "status", "handled", "new status: seen, handling, handled, ignored, or expired")
+	return cmd
+}
+
+func newAttentionAttachmentCmd() *cobra.Command {
+	cmd := &cobra.Command{
+		Use:   "attachment",
+		Short: "Download attachments from attention signals",
+	}
+	cmd.AddCommand(newAttentionAttachmentDownloadCmd())
+	return cmd
+}
+
+func newAttentionAttachmentDownloadCmd() *cobra.Command {
+	var output string
+	var index int
+	cmd := &cobra.Command{
+		Use:   "download <signal-id>",
+		Short: "Download one attachment from an attention signal",
+		Args:  cobra.ExactArgs(1),
+		RunE: func(cmd *cobra.Command, args []string) error {
+			if index <= 0 {
+				return fmt.Errorf("--index must be a positive integer")
+			}
+			path := "/api/v1/runtime/attention/" + url.PathEscape(args[0]) + "/attachments/" + strconv.Itoa(index)
+			data, header, err := requestBinary(http.MethodGet, path, nil, nil)
+			if err != nil {
+				return err
+			}
+			fileName := strings.TrimSpace(output)
+			if fileName == "" {
+				fileName = attachmentFileNameFromHeader(header, index)
+			}
+			fileName = safeLocalOutputPath(fileName)
+			if err := os.WriteFile(fileName, data, 0o600); err != nil {
+				return err
+			}
+			raw, _ := json.Marshal(map[string]any{
+				"path":     fileName,
+				"size":     len(data),
+				"mime":     header.Get("Content-Type"),
+				"type":     header.Get("X-Multigent-Attachment-Type"),
+				"id":       header.Get("X-Multigent-Attachment-ID"),
+				"signalId": args[0],
+				"index":    index,
+			})
+			return writeJSON(raw)
+		},
+	}
+	cmd.Flags().IntVar(&index, "index", 1, "1-based attachment index")
+	cmd.Flags().StringVarP(&output, "output", "o", "", "output file path; defaults to the attachment filename")
 	return cmd
 }
 
@@ -838,6 +889,7 @@ func newNotifyCmd() *cobra.Command {
 	cmd.AddCommand(imageCmd)
 	cardCmd := &cobra.Command{Use: "card", Short: "Send interactive cards through collaboration channels"}
 	cardCmd.AddCommand(newNotifyCardSendCmd())
+	cardCmd.AddCommand(newNotifyCardGuideCmd())
 	cmd.AddCommand(cardCmd)
 	return cmd
 }
@@ -973,8 +1025,8 @@ func newNotifyFileSendCmd(defaultKind string) *cobra.Command {
 }
 
 func newNotifyCardSendCmd() *cobra.Command {
-	var to, channel, title, body, taskID, handlerType, contextJSON, format string
-	var actions, fields, links []string
+	var to, channel, title, body, taskID, handlerType, contextJSON, format, cardJSON, cardJSONFile string
+	var actions, fields, links, values []string
 	var expiresIn int
 	cmd := &cobra.Command{
 		Use:   "send",
@@ -983,8 +1035,25 @@ func newNotifyCardSendCmd() *cobra.Command {
 			if strings.TrimSpace(to) == "" {
 				to = "human"
 			}
-			if strings.TrimSpace(body) == "" {
-				return fmt.Errorf("--body is required")
+			rawCard, err := readNotifyCardRawJSON(cardJSON, cardJSONFile)
+			if err != nil {
+				return err
+			}
+			valueMap, err := parseStringMapFlags(values, "--value")
+			if err != nil {
+				return err
+			}
+			if len(rawCard) > 0 && len(valueMap) > 0 {
+				rawCard, err = applyCardTemplateValues(rawCard, valueMap)
+				if err != nil {
+					return err
+				}
+			}
+			if len(rawCard) == 0 && len(valueMap) > 0 {
+				return fmt.Errorf("--value requires --card-json or --card-json-file")
+			}
+			if strings.TrimSpace(body) == "" && len(rawCard) == 0 {
+				return fmt.Errorf("--body, --card-json, or --card-json-file is required")
 			}
 			cardActions, err := parseCardActions(actions)
 			if err != nil {
@@ -1002,13 +1071,17 @@ func newNotifyCardSendCmd() *cobra.Command {
 			if err != nil {
 				return err
 			}
+			cardMap := map[string]any{
+				"title": title, "body": body, "actions": cardActions, "fields": cardFields,
+				"links": cardLinks, "handlerType": handlerType, "context": contextMap,
+			}
+			if len(rawCard) > 0 {
+				cardMap["rawJson"] = json.RawMessage(rawCard)
+			}
 			raw, _ := json.Marshal(map[string]any{
 				"to": to, "channel": channel, "subject": title, "body": body, "taskId": taskID,
 				"messageFormat": "card", "expiresInSec": expiresIn, "context": contextMap,
-				"card": map[string]any{
-					"title": title, "body": body, "actions": cardActions, "fields": cardFields,
-					"links": cardLinks, "handlerType": handlerType, "context": contextMap,
-				},
+				"card": cardMap,
 			})
 			resp, err := requestJSON(http.MethodPost, "/api/v1/runtime/notify", nil, raw)
 			if err != nil {
@@ -1024,6 +1097,9 @@ func newNotifyCardSendCmd() *cobra.Command {
 	cmd.Flags().StringVar(&channel, "channel", "auto", "channel provider: auto, feishu, lark, slack, telegram, discord")
 	cmd.Flags().StringVar(&title, "title", "", "card title")
 	cmd.Flags().StringVar(&body, "body", "", "card markdown/body text")
+	cmd.Flags().StringVar(&cardJSON, "card-json", "", "full Feishu/Lark Card 2.0 JSON")
+	cmd.Flags().StringVar(&cardJSONFile, "card-json-file", "", "read full Feishu/Lark Card 2.0 JSON or template JSON from file, or '-' for stdin")
+	cmd.Flags().StringArrayVar(&values, "value", nil, "replace {{key}} placeholders in card JSON, repeatable")
 	cmd.Flags().StringArrayVar(&actions, "action", nil, "card action as id=Label, id=Label:style, or id=Label:style:input, repeatable")
 	cmd.Flags().StringArrayVar(&fields, "field", nil, "card field as label=value, repeatable")
 	cmd.Flags().StringArrayVar(&links, "link", nil, "card link as label=url, repeatable")
@@ -1033,6 +1109,149 @@ func newNotifyCardSendCmd() *cobra.Command {
 	cmd.Flags().IntVar(&expiresIn, "expires-in", 3600, "interaction expiration in seconds")
 	cmd.Flags().StringVar(&format, "format", "json", "output format: json or table")
 	return cmd
+}
+
+func newNotifyCardGuideCmd() *cobra.Command {
+	return &cobra.Command{
+		Use:   "guide",
+		Short: "Show Feishu/Lark Card 2.0 authoring guidance",
+		Long: `Show a concise Card 2.0 authoring guide for Feishu/Lark collaboration
+channels.
+
+Use this before creating a rich display card with --card-json-file. Multigent
+does not impose business-specific templates: create the Card 2.0 JSON yourself,
+store reusable template JSON in your own notes or project files, and pass values
+with --value key=value.`,
+		RunE: func(cmd *cobra.Command, args []string) error {
+			_, err := cmd.OutOrStdout().Write([]byte(notifyCardGuideText()))
+			return err
+		},
+	}
+}
+
+func notifyCardGuideText() string {
+	return strings.TrimSpace(`
+# Feishu/Lark Card 2.0 Guide
+
+Use `+"`mga notify card send --card-json-file ./card.json`"+` for rich display cards.
+Use the simpler `+"`--action`"+` flags when you need callback buttons that should
+return to the agent as structured card-action events.
+
+## Minimal Card 2.0 JSON
+
+`+"```json"+`
+{
+  "schema": "2.0",
+  "config": {
+    "wide_screen_mode": true
+  },
+  "header": {
+    "template": "green",
+    "title": {
+      "tag": "plain_text",
+      "content": "Status update"
+    }
+  },
+  "body": {
+    "elements": [
+      {
+        "tag": "markdown",
+        "content": "**Conclusion:** ready for review\n\n- Risk: low\n- Owner: PM"
+      }
+    ]
+  }
+}
+`+"```"+`
+
+## Useful Elements
+
+Markdown block:
+
+`+"```json"+`
+{ "tag": "markdown", "content": "## Summary\n\n- Item A\n- Item B" }
+`+"```"+`
+
+Two-column facts:
+
+`+"```json"+`
+{
+  "tag": "column_set",
+  "flex_mode": "none",
+  "background_style": "default",
+  "columns": [
+    {
+      "tag": "column",
+      "width": "weighted",
+      "weight": 1,
+      "elements": [
+        { "tag": "markdown", "content": "**Status**\nPASS" }
+      ]
+    },
+    {
+      "tag": "column",
+      "width": "weighted",
+      "weight": 1,
+      "elements": [
+        { "tag": "markdown", "content": "**Risk**\nLow" }
+      ]
+    }
+  ]
+}
+`+"```"+`
+
+Link button:
+
+`+"```json"+`
+{
+  "tag": "button",
+  "text": { "tag": "plain_text", "content": "Open document" },
+  "type": "primary",
+  "url": "https://example.com"
+}
+`+"```"+`
+
+## Template Placeholders
+
+Reusable JSON files can contain `+"`{{placeholder}}`"+` values:
+
+`+"```json"+`
+{
+  "schema": "2.0",
+  "header": {
+    "template": "{{header_color}}",
+    "title": { "tag": "plain_text", "content": "{{title}}" }
+  },
+  "body": {
+    "elements": [
+      { "tag": "markdown", "content": "{{summary}}" }
+    ]
+  }
+}
+`+"```"+`
+
+Send it with:
+
+`+"```bash"+`
+mga notify card send --to source \
+  --card-json-file ./status-card.template.json \
+  --value "header_color=green" \
+  --value "title=Review ready" \
+  --value "summary=**Conclusion:** approve\n\n- CI: green\n- Risk: low"
+`+"```"+`
+
+## Interaction Rules
+
+- For display-only cards, raw Card 2.0 JSON is enough.
+- For decisions, approvals, or user input callbacks, prefer:
+  `+"`mga notify card send --action approve=\"Approve:primary\" --action request_changes=\"Request changes:danger:input\" ...`"+`
+  because Multigent will create the interaction id, validate identity, and route
+  the callback back to your session.
+- Do not put secrets, bearer tokens, private keys, or raw customer credentials in
+  cards.
+- Keep cards concise. Put long details in a knowledge document or attached file,
+  then link to it from the card.
+- Do not add manual signatures. Multigent tracks sender metadata internally.
+`) + "\n"
 }
 
 func newRuntimeActionCmd() *cobra.Command {
@@ -1701,6 +1920,71 @@ func parseJSONMapFlag(raw, flagName string) (map[string]any, error) {
 	return out, nil
 }
 
+func parseStringMapFlags(values []string, flagName string) (map[string]string, error) {
+	out := map[string]string{}
+	for _, value := range values {
+		key, val, ok := strings.Cut(value, "=")
+		if !ok || strings.TrimSpace(key) == "" {
+			return nil, fmt.Errorf("%s must use key=value", flagName)
+		}
+		out[strings.TrimSpace(key)] = strings.TrimSpace(val)
+	}
+	return out, nil
+}
+
+func readNotifyCardRawJSON(raw, file string) ([]byte, error) {
+	raw = strings.TrimSpace(raw)
+	file = strings.TrimSpace(file)
+	if raw != "" && file != "" {
+		return nil, fmt.Errorf("--card-json and --card-json-file cannot be used together")
+	}
+	var body []byte
+	var err error
+	switch {
+	case raw != "":
+		body = []byte(raw)
+	case file != "":
+		if file == "-" {
+			body, err = io.ReadAll(io.LimitReader(os.Stdin, maxJSONBody+1))
+		} else {
+			body, err = os.ReadFile(file)
+		}
+		if err != nil {
+			return nil, err
+		}
+	default:
+		return nil, nil
+	}
+	body = bytes.TrimSpace(body)
+	if len(body) > maxJSONBody {
+		return nil, fmt.Errorf("card JSON is too large")
+	}
+	if !json.Valid(body) {
+		return nil, fmt.Errorf("card JSON must be valid JSON")
+	}
+	var parsed map[string]any
+	if err := json.Unmarshal(body, &parsed); err != nil || parsed == nil {
+		return nil, fmt.Errorf("card JSON must be a JSON object")
+	}
+	return body, nil
+}
+
+func applyCardTemplateValues(raw []byte, values map[string]string) ([]byte, error) {
+	rendered := string(raw)
+	for key, value := range values {
+		key = strings.TrimSpace(key)
+		if key == "" {
+			continue
+		}
+		rendered = strings.ReplaceAll(rendered, "{{"+key+"}}", value)
+	}
+	body := []byte(rendered)
+	if !json.Valid(body) {
+		return nil, fmt.Errorf("card JSON is invalid after --value substitution")
+	}
+	return body, nil
+}
+
 func parseCardActions(values []string) ([]map[string]any, error) {
 	out := make([]map[string]any, 0, len(values))
 	for _, value := range values {
@@ -1730,9 +2014,6 @@ func parseCardActions(values []string) ([]map[string]any, error) {
 			return nil, fmt.Errorf("--action label is required")
 		}
 		out = append(out, map[string]any{"id": id, "label": label, "style": style, "requiresText": requiresText})
-	}
-	if len(out) == 0 {
-		return nil, fmt.Errorf("at least one --action is required")
 	}
 	return out, nil
 }
@@ -2186,6 +2467,42 @@ func requestJSON(method, path string, query url.Values, body []byte) ([]byte, er
 	return resp, nil
 }
 
+func requestBinary(method, path string, query url.Values, body []byte) ([]byte, http.Header, error) {
+	apiURL := strings.TrimRight(strings.TrimSpace(os.Getenv(envAPIURL)), "/")
+	token := strings.TrimSpace(os.Getenv(envAgentToken))
+	if apiURL == "" || token == "" {
+		return nil, nil, fmt.Errorf("%s and %s are required", envAPIURL, envAgentToken)
+	}
+	u, err := url.Parse(apiURL + path)
+	if err != nil {
+		return nil, nil, err
+	}
+	if len(query) > 0 {
+		u.RawQuery = query.Encode()
+	}
+	req, err := http.NewRequest(method, u.String(), bytes.NewReader(body))
+	if err != nil {
+		return nil, nil, err
+	}
+	req.Header.Set("Authorization", "Bearer "+token)
+	resp, err := (&http.Client{Timeout: 60 * time.Second}).Do(req)
+	if err != nil {
+		return nil, nil, err
+	}
+	defer resp.Body.Close()
+	data, err := io.ReadAll(io.LimitReader(resp.Body, 50<<20+1))
+	if err != nil {
+		return nil, resp.Header, err
+	}
+	if resp.StatusCode < 200 || resp.StatusCode >= 300 {
+		return nil, resp.Header, fmt.Errorf("runtime API returned HTTP %d: %s", resp.StatusCode, strings.TrimSpace(string(data)))
+	}
+	if len(data) > 50<<20 {
+		return nil, resp.Header, fmt.Errorf("runtime response too large")
+	}
+	return data, resp.Header, nil
+}
+
 func requestMultipart(path string, fields map[string]string, fileField, fileName string, data []byte) ([]byte, error) {
 	base := strings.TrimRight(os.Getenv(envAPIURL), "/")
 	if base == "" {
@@ -2277,6 +2594,34 @@ func requestJSONWithStatus(method, path string, query url.Values, body []byte) (
 		return nil, resp.StatusCode, fmt.Errorf("runtime response too large")
 	}
 	return respBody, resp.StatusCode, nil
+}
+
+func attachmentFileNameFromHeader(header http.Header, index int) string {
+	if raw := strings.TrimSpace(header.Get("X-Multigent-Attachment-Name")); raw != "" {
+		if decoded, err := url.QueryUnescape(raw); err == nil && strings.TrimSpace(decoded) != "" {
+			return decoded
+		}
+	}
+	disposition := strings.TrimSpace(header.Get("Content-Disposition"))
+	if disposition != "" {
+		if _, params, err := mime.ParseMediaType(disposition); err == nil {
+			if candidate := strings.TrimSpace(params["filename"]); candidate != "" {
+				return candidate
+			}
+		}
+	}
+	return fmt.Sprintf("attachment-%d", index)
+}
+
+func safeLocalOutputPath(path string) string {
+	path = strings.TrimSpace(strings.ReplaceAll(path, "\x00", ""))
+	if path == "" {
+		return "attachment"
+	}
+	if strings.Contains(path, "..") {
+		return filepath.Base(path)
+	}
+	return path
 }
 
 func readRequestBody(data, file string) ([]byte, error) {

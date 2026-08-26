@@ -96,7 +96,7 @@ func TestListConnectionsHidesAgentChannelConnectionsByDefault(t *testing.T) {
 		ID:             "conn-lark-channel",
 		WorkspaceID:    workspaceID,
 		Provider:       "lark",
-		ConnectionName: "agent-tapnow-mcp-server-mason",
+		ConnectionName: "agent-customer-mcp-server-mason",
 		OwnerType:      ConnectionOwnerWorkspace,
 		OwnerID:        workspaceID,
 		AuthType:       "app_secret",

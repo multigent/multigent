@@ -100,6 +100,16 @@ func OpenReadOnly(root string) (*sql.DB, error) {
 
 // ReadRuns returns all runs in the window (filter on started_at). Nil from/to means unbounded on that side.
 func ReadRuns(db *sql.DB, from, to *time.Time, project string) ([]RunRow, error) {
+	return readRuns(db, from, to, project, 0, false)
+}
+
+// ReadRunsPage returns the newest runs in the window. It is intended for list
+// views that do not need to scan the full telemetry history before trimming.
+func ReadRunsPage(db *sql.DB, from, to *time.Time, project string, limit int) ([]RunRow, error) {
+	return readRuns(db, from, to, project, limit, true)
+}
+
+func readRuns(db *sql.DB, from, to *time.Time, project string, limit int, newestFirst bool) ([]RunRow, error) {
 	q := `SELECT project, agent, kind, status,
 		input_tokens, output_tokens, cache_read_tokens, total_cost_usd, has_cost,
 		started_at, finished_at,
@@ -119,7 +129,15 @@ func ReadRuns(db *sql.DB, from, to *time.Time, project string) ([]RunRow, error)
 		q += ` AND project = ?`
 		args = append(args, project)
 	}
-	q += ` ORDER BY started_at ASC`
+	if newestFirst {
+		q += ` ORDER BY started_at DESC`
+	} else {
+		q += ` ORDER BY started_at ASC`
+	}
+	if limit > 0 {
+		q += ` LIMIT ?`
+		args = append(args, limit)
+	}
 
 	rows, err := db.Query(q, args...)
 	if err != nil {

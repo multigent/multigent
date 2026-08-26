@@ -18,7 +18,7 @@
 
 - Verified focused Go regression tests for runtime notification doc links and scheduler attention time context.
 - Rebuilt local `multigent` and `mga` binaries and restarted the local development API service.
-- Deployed and smoke-tested the updated build on the TapNow remote instance at `35.243.103.114`.
+- Deployed and smoke-tested the updated build in a customer staging environment.
 
 ## [v2.0.4] - 2026-08-23
 
@@ -59,7 +59,7 @@
 
 - Verified focused Go regression tests for runtime attention wakeups, grouped signals, task assignment, runtime message signals, card callback routing, and runtime finish behavior.
 - Verified local runtime daemon startup and connection behavior.
-- Deployed and smoke-tested the latest attention wakeup build on the TapNow remote instance at `35.243.103.114`.
+- Deployed and smoke-tested the latest attention wakeup build in a customer staging environment.
 
 ## [v2.0.2] - 2026-08-22
 
@@ -84,7 +84,7 @@
 
 - Verified frontend production builds after each UI pass.
 - Verified focused Go regression tests for workspace agent context, runtime metadata, and agent-worker project membership behavior.
-- Deployed and smoke-tested the updated build on the TapNow remote instance at `35.243.103.114`.
+- Deployed and smoke-tested the updated build in a customer staging environment.
 
 ## [v2.0.1] - 2026-08-22
 
@@ -116,7 +116,7 @@
 ### Tested
 
 - Verified local GitHub sandbox IM collaboration flows, delegated card decision handling, workspace-level agent runs, and telemetry display.
-- Verified TapNow remote deployment on `35.243.103.114` with updated binaries and active systemd service.
+- Verified customer staging deployment with updated binaries and active service.
 - Added regression coverage for delegated workflow decisions, attention wakeup env injection, runtime CLI path selection, and telemetry agent metadata enrichment.
 
 ## [v0.1.33] - 2026-08-20

@@ -41,7 +41,7 @@ func TestDirectoryResolvesProjectWorkers(t *testing.T) {
 	membership := controldb.ProjectMembership{
 		ID:               "pm-nova-cli",
 		WorkspaceID:      workspaceID,
-		ProjectID:        "tapnow-cli",
+		ProjectID:        "customer-cli",
 		MemberType:       MemberTypeAgentWorker,
 		MemberID:         worker.ID,
 		Role:             "project-manager",
@@ -65,7 +65,7 @@ func TestDirectoryResolvesProjectWorkers(t *testing.T) {
 		t.Fatalf("unexpected worker: ok=%v worker=%+v", ok, gotWorker)
 	}
 
-	projectWorker, ok, err := dir.ProjectWorker(workspaceID, "tapnow-cli", "aw-nova")
+	projectWorker, ok, err := dir.ProjectWorker(workspaceID, "customer-cli", "aw-nova")
 	if err != nil {
 		t.Fatalf("resolve project worker: %v", err)
 	}
@@ -81,7 +81,7 @@ func TestDirectoryResolvesProjectWorkers(t *testing.T) {
 		t.Fatalf("unexpected membership worker: ok=%v value=%+v", ok, byMembership)
 	}
 
-	resolved, ok, err := dir.ResolveProjectMailbox(workspaceID, "tapnow-cli/pm")
+	resolved, ok, err := dir.ResolveProjectMailbox(workspaceID, "customer-cli/pm")
 	if err != nil {
 		t.Fatalf("resolve project mailbox: %v", err)
 	}

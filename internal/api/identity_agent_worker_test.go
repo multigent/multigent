@@ -44,7 +44,7 @@ func TestValidateIdentityResolvesAgentWorkerMembership(t *testing.T) {
 	if err := db.UpsertProjectMembership(controldb.ProjectMembership{
 		ID:               "pm-nova",
 		WorkspaceID:      workspaceID,
-		ProjectID:        "tapnow-cli",
+		ProjectID:        "customer-cli",
 		MemberType:       agentdir.MemberTypeAgentWorker,
 		MemberID:         worker.ID,
 		Role:             "pm",
@@ -65,13 +65,13 @@ func TestValidateIdentityResolvesAgentWorkerMembership(t *testing.T) {
 		users:          newUserStore(db),
 		agentDirectory: agentdir.New(db),
 	}
-	if err := s.validateIdentity("tapnow-cli/pm", "assignee"); err != nil {
+	if err := s.validateIdentity("customer-cli/pm", "assignee"); err != nil {
 		t.Fatalf("validate identity: %v", err)
 	}
-	if !s.agentExistsInProject("tapnow-cli", "pm") {
+	if !s.agentExistsInProject("customer-cli", "pm") {
 		t.Fatalf("membership-backed agent should exist")
 	}
-	if s.agentExistsInProject("tapnow-cli", "missing") {
+	if s.agentExistsInProject("customer-cli", "missing") {
 		t.Fatalf("missing membership should not exist")
 	}
 }

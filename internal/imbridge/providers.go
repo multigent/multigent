@@ -115,6 +115,7 @@ type InteractiveCard struct {
 	InteractionID string
 	Title         string
 	Body          string
+	RawJSON       json.RawMessage
 	Fields        []InteractiveCardField
 	Actions       []InteractiveCardAction
 	Links         []InteractiveCardLink
@@ -203,6 +204,16 @@ type ReactionProvider interface {
 type AttachmentSender interface {
 	SendAttachment(ctx context.Context, secrets map[string]string, target OutgoingTarget, attachment OutgoingAttachment) error
 	ReplyAttachment(ctx context.Context, secrets map[string]string, message IncomingMessage, attachment OutgoingAttachment) error
+}
+
+type IncomingAttachmentDownload struct {
+	FileName string
+	MIME     string
+	Data     []byte
+}
+
+type AttachmentDownloader interface {
+	DownloadAttachment(ctx context.Context, secrets map[string]string, message IncomingMessage, attachment IncomingAttachment) (IncomingAttachmentDownload, error)
 }
 
 type ProgressCardReplyProvider interface {
@@ -383,6 +394,7 @@ func (p larkFamilyProvider) ReplyMessage(ctx context.Context, secrets map[string
 			InteractionID: reply.Card.InteractionID,
 			Title:         reply.Card.Title,
 			Body:          reply.Card.Body,
+			RawJSON:       reply.Card.RawJSON,
 			Fields:        larkCardFields(reply.Card.Fields),
 			Actions:       larkCardActions(reply.Card.Actions),
 			Links:         larkCardLinks(reply.Card.Links),
@@ -411,6 +423,28 @@ func (p larkFamilyProvider) RemoveReaction(ctx context.Context, secrets map[stri
 		AppSecret: secrets["appSecret"],
 	}
 	return client.RemoveReaction(ctx, message.MessageID, reactionID)
+}
+
+func (p larkFamilyProvider) DownloadAttachment(ctx context.Context, secrets map[string]string, message IncomingMessage, attachment IncomingAttachment) (IncomingAttachmentDownload, error) {
+	client := larkbridge.OpenAPIClient{
+		BaseURL:   secrets["baseUrl"],
+		AppID:     secrets["appId"],
+		AppSecret: secrets["appSecret"],
+	}
+	resourceType := "file"
+	if strings.EqualFold(strings.TrimSpace(attachment.Type), "image") {
+		resourceType = "image"
+	}
+	download, err := client.DownloadMessageResource(ctx, message.MessageID, attachment.ID, resourceType)
+	if err != nil {
+		return IncomingAttachmentDownload{}, err
+	}
+	fileName := firstNonEmpty(attachment.Name, download.FileName, attachment.ID)
+	return IncomingAttachmentDownload{
+		FileName: fileName,
+		MIME:     firstNonEmpty(attachment.MIME, download.MIME),
+		Data:     download.Data,
+	}, nil
 }
 
 func (p larkFamilyProvider) StartProgressCardReply(ctx context.Context, secrets map[string]string, message IncomingMessage, card ProgressCard) (any, error) {
@@ -466,6 +500,7 @@ func (p larkFamilyProvider) SendMessage(ctx context.Context, secrets map[string]
 			InteractionID: message.Card.InteractionID,
 			Title:         message.Card.Title,
 			Body:          message.Card.Body,
+			RawJSON:       message.Card.RawJSON,
 			Fields:        larkCardFields(message.Card.Fields),
 			Actions:       larkCardActions(message.Card.Actions),
 			Links:         larkCardLinks(message.Card.Links),

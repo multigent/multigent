@@ -6,8 +6,10 @@ import (
 	"encoding/json"
 	"fmt"
 	"io"
+	"mime"
 	"mime/multipart"
 	"net/http"
+	"net/url"
 	"strings"
 	"time"
 )
@@ -24,6 +26,7 @@ type InteractiveCard struct {
 	InteractionID string
 	Title         string
 	Body          string
+	RawJSON       json.RawMessage
 	Fields        []InteractiveCardField
 	Actions       []InteractiveCardAction
 	Links         []InteractiveCardLink
@@ -63,6 +66,12 @@ type ProgressCard struct {
 
 type OutgoingAttachment struct {
 	Kind     string
+	FileName string
+	MIME     string
+	Data     []byte
+}
+
+type DownloadedResource struct {
 	FileName string
 	MIME     string
 	Data     []byte
@@ -243,10 +252,10 @@ func (c OpenAPIClient) ReplyInteractiveCard(ctx context.Context, messageID strin
 	if strings.TrimSpace(card.Title) == "" {
 		card.Title = "Agent"
 	}
-	if strings.TrimSpace(card.Body) == "" {
+	if len(bytes.TrimSpace(card.RawJSON)) == 0 && strings.TrimSpace(card.Body) == "" {
 		card.Body = "请选择一个操作。"
 	}
-	if strings.TrimSpace(card.InteractionID) == "" {
+	if len(bytes.TrimSpace(card.RawJSON)) == 0 && strings.TrimSpace(card.InteractionID) == "" {
 		return fmt.Errorf("interaction id is required")
 	}
 	return c.replyRaw(ctx, messageID, "interactive", mustJSON(buildInteractiveCardBody(card, nil)), "reply interactive card")
@@ -473,6 +482,64 @@ func (c OpenAPIClient) uploadFile(ctx context.Context, fileType, fileName string
 		return "", fmt.Errorf("upload file: no file_key returned")
 	}
 	return parsed.Data.FileKey, nil
+}
+
+func (c OpenAPIClient) DownloadMessageResource(ctx context.Context, messageID, fileKey, resourceType string) (DownloadedResource, error) {
+	messageID = strings.TrimSpace(messageID)
+	fileKey = strings.TrimSpace(fileKey)
+	resourceType = strings.ToLower(strings.TrimSpace(resourceType))
+	if messageID == "" {
+		return DownloadedResource{}, fmt.Errorf("message id is required")
+	}
+	if fileKey == "" {
+		return DownloadedResource{}, fmt.Errorf("file key is required")
+	}
+	if resourceType == "" {
+		resourceType = "file"
+	}
+	if resourceType != "image" {
+		resourceType = "file"
+	}
+	token, err := c.tenantAccessToken(ctx)
+	if err != nil {
+		return DownloadedResource{}, err
+	}
+	u := strings.TrimRight(c.openBaseURL(), "/") + "/open-apis/im/v1/messages/" + url.PathEscape(messageID) + "/resources/" + url.PathEscape(fileKey) + "?type=" + url.QueryEscape(resourceType)
+	req, err := http.NewRequestWithContext(ctx, http.MethodGet, u, nil)
+	if err != nil {
+		return DownloadedResource{}, err
+	}
+	req.Header.Set("Authorization", "Bearer "+token)
+	resp, err := c.httpClient().Do(req)
+	if err != nil {
+		return DownloadedResource{}, err
+	}
+	defer resp.Body.Close()
+	if resp.StatusCode < 200 || resp.StatusCode >= 300 {
+		raw, _ := io.ReadAll(io.LimitReader(resp.Body, 1<<20))
+		return DownloadedResource{}, fmt.Errorf("download message resource http %d: %s", resp.StatusCode, string(raw))
+	}
+	const maxDownloadBytes = 50 << 20
+	data, err := io.ReadAll(io.LimitReader(resp.Body, maxDownloadBytes+1))
+	if err != nil {
+		return DownloadedResource{}, err
+	}
+	if len(data) > maxDownloadBytes {
+		return DownloadedResource{}, fmt.Errorf("download message resource too large")
+	}
+	fileName := fileKey
+	if disposition := strings.TrimSpace(resp.Header.Get("Content-Disposition")); disposition != "" {
+		if _, params, err := mime.ParseMediaType(disposition); err == nil {
+			if candidate := strings.TrimSpace(params["filename"]); candidate != "" {
+				fileName = candidate
+			}
+		}
+	}
+	return DownloadedResource{
+		FileName: fileName,
+		MIME:     strings.TrimSpace(resp.Header.Get("Content-Type")),
+		Data:     data,
+	}, nil
 }
 
 func (c OpenAPIClient) postMultipart(ctx context.Context, path string, fields map[string]string, fileField, fileName string, data []byte) ([]byte, error) {
@@ -776,10 +843,10 @@ func (c OpenAPIClient) SendInteractiveCard(ctx context.Context, receiveIDType, r
 	if strings.TrimSpace(card.Title) == "" {
 		card.Title = "Agent"
 	}
-	if strings.TrimSpace(card.Body) == "" {
+	if len(bytes.TrimSpace(card.RawJSON)) == 0 && strings.TrimSpace(card.Body) == "" {
 		card.Body = "请选择一个操作。"
 	}
-	if strings.TrimSpace(card.InteractionID) == "" {
+	if len(bytes.TrimSpace(card.RawJSON)) == 0 && strings.TrimSpace(card.InteractionID) == "" {
 		return fmt.Errorf("interaction id is required")
 	}
 	token, err := c.tenantAccessToken(ctx)
@@ -868,6 +935,15 @@ func (c OpenAPIClient) UpdateInteractiveCard(ctx context.Context, updateToken, o
 }
 
 func buildInteractiveCardBody(card InteractiveCard, openIDs []string) map[string]any {
+	if len(bytes.TrimSpace(card.RawJSON)) > 0 {
+		var raw map[string]any
+		if err := json.Unmarshal(card.RawJSON, &raw); err == nil && raw != nil {
+			if len(openIDs) > 0 {
+				raw["open_ids"] = openIDs
+			}
+			return raw
+		}
+	}
 	elements := make([]map[string]any, 0, 4+len(card.Fields)+len(card.Links))
 	appendHR := func() {
 		if len(elements) == 0 {

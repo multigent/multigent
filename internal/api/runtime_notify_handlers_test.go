@@ -501,6 +501,86 @@ func TestRuntimeNotifyTargetUsesLocalRunnerTaskIDAsSource(t *testing.T) {
 	}
 }
 
+func TestRuntimeNotifyTargetUsesAttentionSignalIDAsSource(t *testing.T) {
+	s, workspaceID := newConnectionGrantPolicyServer(t)
+	now := time.Now().UTC().Format(time.RFC3339)
+	binding := controldb.AgentChannelBinding{
+		ID:            "chan-feishu",
+		WorkspaceID:   workspaceID,
+		ProjectID:     "sample",
+		AgentID:       "pm",
+		AgentWorkerID: "aw-pm",
+		Provider:      "feishu",
+		ConnectionID:  "conn-feishu",
+		Status:        "connected",
+	}
+	if err := s.controlDB.UpsertConnection(controldb.Connection{
+		ID:             "conn-feishu",
+		WorkspaceID:    workspaceID,
+		Provider:       "feishu",
+		ConnectionName: "default",
+		OwnerType:      ConnectionOwnerWorkspace,
+		OwnerID:        workspaceID,
+		AuthType:       ConnectionAuthAPIKey,
+		Status:         "active",
+		CreatedAt:      now,
+		UpdatedAt:      now,
+	}); err != nil {
+		t.Fatalf("upsert connection: %v", err)
+	}
+	if err := s.controlDB.UpsertAgentWorker(controldb.AgentWorker{
+		ID:          "aw-pm",
+		WorkspaceID: workspaceID,
+		Name:        "pm",
+		Status:      "active",
+		CreatedAt:   now,
+		UpdatedAt:   now,
+	}); err != nil {
+		t.Fatalf("worker: %v", err)
+	}
+	if err := s.controlDB.UpsertAgentChannelBinding(binding); err != nil {
+		t.Fatalf("upsert channel: %v", err)
+	}
+	if err := s.controlDB.UpsertAttentionSignal(controldb.AttentionSignal{
+		ID:            "asig-source",
+		WorkspaceID:   workspaceID,
+		AgentWorkerID: "aw-pm",
+		DedupeKey:     "im:feishu:om_source",
+		SourceKind:    "im_message",
+		SourceID:      "om_source",
+		SourceChannel: "im:feishu:group:oc_source:user:admin",
+		Reason:        "im_mention",
+		Priority:      "high",
+		ActorType:     "user",
+		ActorID:       "admin",
+		Summary:       "hello",
+		RefsJSON:      `{"bindingId":"chan-feishu","chatId":"oc_source","chatType":"group","messageId":"om_source"}`,
+		PayloadJSON:   `{"senderOpenId":"ou_sender","multigentUser":"admin"}`,
+		Status:        "seen",
+		CreatedAt:     now,
+		ExpiresAt:     now,
+	}); err != nil {
+		t.Fatalf("signal: %v", err)
+	}
+	principal := runtimeAgentPrincipal{
+		WorkspaceID:   workspaceID,
+		Project:       "sample",
+		Agent:         "pm",
+		AgentWorkerID: "aw-pm",
+	}
+	recipient, err := s.resolveRuntimeNotifyRecipient(principal, "source:asig-source")
+	if err != nil || recipient != "source:asig-source" {
+		t.Fatalf("recipient=%q err=%v", recipient, err)
+	}
+	target, ok, err := s.runtimeNotifyTargetForRecipient(principal, binding, recipient)
+	if err != nil || !ok {
+		t.Fatalf("target ok=%v err=%v", ok, err)
+	}
+	if target.ReceiveID != "oc_source" || target.ReceiveIDType != "chat_id" || target.ChatID != "oc_source" || target.ChatType != "group" || target.ReplyToMessageID != "om_source" || target.MentionOpenID != "ou_sender" {
+		t.Fatalf("unexpected target: %#v", target)
+	}
+}
+
 func TestRuntimeNotifySourceChatID(t *testing.T) {
 	prompt := "Source: `im_message` / `im:lark:group:oc_lark:user:admin`\n" +
 		"Payload: `{\"externalChatId\":\"oc_lark\"}`\n"
@@ -602,6 +682,24 @@ func TestRuntimeNotifyCreateInteractionRequestHumanDoesNotLockToLiteralHuman(t *
 	}
 	if req.TargetUserID != "" {
 		t.Fatalf("human recipient should not lock to literal user, got %#v", req)
+	}
+}
+
+func TestRuntimeNotifyDisplayCardAllowsRawJSONWithoutActions(t *testing.T) {
+	card := runtimeNotifyDisplayCard(runtimeNotifyBody{
+		Subject: "预生产回归完成",
+		Card: &runtimeNotifyCardBody{
+			RawJSON: json.RawMessage(`{"schema":"2.0","header":{"template":"green","title":{"tag":"plain_text","content":"PASS"}},"body":{"elements":[{"tag":"markdown","content":"ok"}]}}`),
+		},
+	}, "")
+	if card == nil || len(card.RawJSON) == 0 {
+		t.Fatalf("raw display card missing: %#v", card)
+	}
+	if runtimeNotifyCardRequiresInteraction(&runtimeNotifyCardBody{}) {
+		t.Fatalf("display card without actions should not require interaction")
+	}
+	if !runtimeNotifyCardRequiresInteraction(&runtimeNotifyCardBody{Actions: []runtimeNotifyCardActionBody{{ID: "approve", Label: "通过"}}}) {
+		t.Fatalf("card with actions should require interaction")
 	}
 }
 

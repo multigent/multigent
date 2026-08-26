@@ -156,14 +156,14 @@ func TestInjectRuntimeControlEnvIntoRuntimeEmbedsMaterializedToolEnv(t *testing.
 	cfg := &entity.SandboxConfig{}
 	injectRuntimeControlEnvIntoRuntime(cfg, map[string]string{
 		"MULTIGENT_AGENT_TOKEN": "secret-token",
-		"TAPNOW_INTERNAL_TOKEN": "runtime-secret",
+		"CUSTOMER_INTERNAL_TOKEN": "runtime-secret",
 	})
 	if len(cfg.Env) != 2 {
 		t.Fatalf("env=%#v", cfg.Env)
 	}
 	var found bool
 	for _, env := range cfg.Env {
-		if env.Name != "TAPNOW_INTERNAL_TOKEN" {
+		if env.Name != "CUSTOMER_INTERNAL_TOKEN" {
 			continue
 		}
 		found = true
@@ -1059,7 +1059,7 @@ func TestWriteRuntimeToolsFileInjectsRuntimeSecretEnv(t *testing.T) {
 			"displayName":"Runtime Secret",
 			"connectionId":"conn_secret",
 			"connectionAlias":"runtime-secret",
-			"connectionName":"tapnow-internal-token",
+			"connectionName":"customer-internal-token",
 			"recommendedAdapter":"skill_only",
 			"adapters":[{
 				"type":"skill_only",
@@ -1074,14 +1074,14 @@ func TestWriteRuntimeToolsFileInjectsRuntimeSecretEnv(t *testing.T) {
 			t.Fatalf("connectionID=%q", connectionID)
 		}
 		return map[string]string{
-			"envName":  "TAPNOW_INTERNAL_TOKEN",
+			"envName":  "CUSTOMER_INTERNAL_TOKEN",
 			"envValue": "secret-token",
 		}, true, nil
 	})
 	if err != nil {
 		t.Fatalf("write tools file: %v", err)
 	}
-	if env["TAPNOW_INTERNAL_TOKEN"] != "secret-token" {
+	if env["CUSTOMER_INTERNAL_TOKEN"] != "secret-token" {
 		t.Fatalf("runtime secret env not injected: %#v", env)
 	}
 	toolsBody, err := os.ReadFile(toolsPath)

@@ -68,6 +68,12 @@ type connectorDeviceAuthSession struct {
 	CreatedAt   time.Time
 }
 
+type telemetryUsageCacheEntry struct {
+	Size    int64
+	ModTime time.Time
+	Usage   telemetry.StreamUsage
+}
+
 // Server serves JSON for one workspace root.
 type Server struct {
 	workspaceMu            sync.Mutex
@@ -99,6 +105,8 @@ type Server struct {
 	connectorSetupSessions map[string]connectorDeviceAuthSession
 	modelAuthMu            sync.Mutex
 	modelAuthSessions      map[string]*modelAuthSession
+	telemetryUsageMu       sync.Mutex
+	telemetryUsageCache    map[string]telemetryUsageCacheEntry
 }
 
 // NewServer builds an API server for the given workspace root.
@@ -135,6 +143,7 @@ func NewServer(root, apiKey string) *Server {
 		agentIMCancel:          make(map[string]context.CancelFunc),
 		connectorSetupSessions: make(map[string]connectorDeviceAuthSession),
 		modelAuthSessions:      make(map[string]*modelAuthSession),
+		telemetryUsageCache:    make(map[string]telemetryUsageCacheEntry),
 	}
 	go s.restoreDesiredSchedulers()
 	s.startConnectionHealthChecker()
@@ -621,6 +630,7 @@ func (s *Server) Handler() http.Handler {
 	runtimeMux.HandleFunc("POST /api/v1/runtime/notify/reaction", s.handleRuntimeNotifyReaction)
 	runtimeMux.HandleFunc("GET /api/v1/runtime/attention", s.handleRuntimeAttentionSignals)
 	runtimeMux.HandleFunc("PATCH /api/v1/runtime/attention/{id}", s.handleRuntimePatchAttentionSignal)
+	runtimeMux.HandleFunc("GET /api/v1/runtime/attention/{id}/attachments/{index}", s.handleRuntimeAttentionAttachmentDownload)
 	runtimeMux.HandleFunc("GET /api/v1/runtime/sessions", s.handleRuntimeSessions)
 	runtimeMux.HandleFunc("POST /api/v1/runtime/sessions", s.handleRuntimeSessions)
 	runtimeMux.HandleFunc("GET /api/v1/runtime/sessions/{id}", s.handleRuntimeSession)

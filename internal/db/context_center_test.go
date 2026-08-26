@@ -27,9 +27,9 @@ func TestContextCenterSourceItemSubscription(t *testing.T) {
 		ID:           "ctxsrc-lark",
 		WorkspaceID:  workspaceID,
 		Type:         "lark_im",
-		Name:         "TapNow Lark",
+		Name:         "CustomerCo Lark",
 		ConfigJSON:   `{"chat":"general"}`,
-		MetadataJSON: `{"tenant":"tapnow"}`,
+		MetadataJSON: `{"tenant":"customer"}`,
 		CreatedBy:    "admin",
 	}
 	if err := store.UpsertContextSource(source); err != nil {
@@ -48,7 +48,7 @@ func TestContextCenterSourceItemSubscription(t *testing.T) {
 		WorkspaceID: workspaceID,
 		SourceID:    source.ID,
 		SourceType:  "lark_im",
-		ProjectID:   "tapnow-mcp-server",
+		ProjectID:   "customer-mcp-server",
 		Title:       "OAuth 联调讨论",
 		Summary:     "Joey 反馈 JWKS 配置需要确认。",
 		ContentText: "群聊原始消息内容",

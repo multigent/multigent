@@ -1,6 +1,7 @@
 package api
 
 import (
+	"bytes"
 	"context"
 	"crypto/rand"
 	"encoding/hex"
@@ -64,6 +65,7 @@ const maxRuntimeNotifyAttachmentBytes = 50 << 20
 type runtimeNotifyCardBody struct {
 	Title       string                        `json:"title"`
 	Body        string                        `json:"body"`
+	RawJSON     json.RawMessage               `json:"rawJson,omitempty"`
 	Fields      []runtimeNotifyCardFieldBody  `json:"fields,omitempty"`
 	Actions     []runtimeNotifyCardActionBody `json:"actions,omitempty"`
 	Links       []runtimeNotifyCardLinkBody   `json:"links,omitempty"`
@@ -144,6 +146,9 @@ func (s *Server) handleRuntimeNotify(w http.ResponseWriter, r *http.Request) {
 	text := strings.TrimSpace(body.Body)
 	if body.Card != nil && text == "" {
 		text = strings.TrimSpace(body.Card.Body)
+	}
+	if body.Card != nil && text == "" && len(bytes.TrimSpace(body.Card.RawJSON)) > 0 {
+		text = "[interactive card]"
 	}
 	if text == "" {
 		s.jsonError(w, http.StatusBadRequest, "body is required")
@@ -242,13 +247,17 @@ func (s *Server) handleRuntimeNotify(w http.ResponseWriter, r *http.Request) {
 	defer cancel()
 	notifyMessage := formatRuntimeNotifyMessage(principal, body, subject, text)
 	if body.Card != nil {
-		card, interactionID, err := s.runtimeNotifyCreateInteractionRequest(principal, binding, recipient, body, text)
-		if err != nil {
-			s.jsonError(w, http.StatusBadRequest, err.Error())
-			return
+		if runtimeNotifyCardRequiresInteraction(body.Card) {
+			card, interactionID, err := s.runtimeNotifyCreateInteractionRequest(principal, binding, recipient, body, text)
+			if err != nil {
+				s.jsonError(w, http.StatusBadRequest, err.Error())
+				return
+			}
+			notifyMessage.Card = card
+			result["interactionId"] = interactionID
+		} else {
+			notifyMessage.Card = runtimeNotifyDisplayCard(body, text)
 		}
-		notifyMessage.Card = card
-		result["interactionId"] = interactionID
 		result["messageFormat"] = "card"
 	}
 	notifyMessage.MentionOpenID = target.MentionOpenID
@@ -730,6 +739,54 @@ func (s *Server) runtimeNotifyCreateInteractionRequest(principal runtimeAgentPri
 	}, interactionID, nil
 }
 
+func runtimeNotifyCardRequiresInteraction(card *runtimeNotifyCardBody) bool {
+	return card != nil && len(card.Actions) > 0
+}
+
+func runtimeNotifyDisplayCard(body runtimeNotifyBody, fallbackText string) *imbridge.InteractiveCard {
+	cardBody := body.Card
+	if cardBody == nil {
+		return nil
+	}
+	contextMap := map[string]any{}
+	for k, v := range body.Context {
+		contextMap[k] = v
+	}
+	for k, v := range cardBody.Context {
+		contextMap[k] = v
+	}
+	return &imbridge.InteractiveCard{
+		Title:   firstNonEmpty(strings.TrimSpace(cardBody.Title), strings.TrimSpace(body.Subject), "Agent"),
+		Body:    firstNonEmpty(strings.TrimSpace(cardBody.Body), fallbackText),
+		RawJSON: append(json.RawMessage(nil), bytes.TrimSpace(cardBody.RawJSON)...),
+		Fields:  runtimeNotifyCardFields(cardBody.Fields),
+		Links:   runtimeNotifyCardLinks(cardBody.Links),
+		Context: contextMap,
+	}
+}
+
+func runtimeNotifyCardFields(fields []runtimeNotifyCardFieldBody) []imbridge.InteractiveCardField {
+	out := make([]imbridge.InteractiveCardField, 0, len(fields))
+	for _, field := range fields {
+		if strings.TrimSpace(field.Label) == "" && strings.TrimSpace(field.Value) == "" {
+			continue
+		}
+		out = append(out, imbridge.InteractiveCardField{Label: strings.TrimSpace(field.Label), Value: strings.TrimSpace(field.Value)})
+	}
+	return out
+}
+
+func runtimeNotifyCardLinks(links []runtimeNotifyCardLinkBody) []imbridge.InteractiveCardLink {
+	out := make([]imbridge.InteractiveCardLink, 0, len(links))
+	for _, link := range links {
+		if strings.TrimSpace(link.Label) == "" || strings.TrimSpace(link.URL) == "" {
+			continue
+		}
+		out = append(out, imbridge.InteractiveCardLink{Label: strings.TrimSpace(link.Label), URL: strings.TrimSpace(link.URL)})
+	}
+	return out
+}
+
 func (s *Server) runtimeNotifySourceUserID(principal runtimeAgentPrincipal, binding controldb.AgentChannelBinding) string {
 	source, ok := s.runtimeNotifySourceInfoForPrincipal(principal, binding.Provider)
 	if !ok {
@@ -941,6 +998,13 @@ func (s *Server) resolveRuntimeNotifyRecipient(principal runtimeAgentPrincipal, 
 	if strings.EqualFold(raw, "source") {
 		return "source", nil
 	}
+	if strings.HasPrefix(strings.ToLower(raw), "source:") {
+		_, value, _ := strings.Cut(raw, ":")
+		if value == "" {
+			return "", fmt.Errorf("source recipient requires an attention signal id")
+		}
+		return "source:" + strings.TrimSpace(value), nil
+	}
 	if strings.HasPrefix(strings.ToLower(raw), "chat:") || strings.HasPrefix(strings.ToLower(raw), "group:") {
 		prefix, value, _ := strings.Cut(raw, ":")
 		value = strings.TrimSpace(value)
@@ -963,6 +1027,9 @@ func (s *Server) resolveRuntimeNotifyRecipient(principal runtimeAgentPrincipal, 
 func (s *Server) runtimeNotifyTargetForRecipient(principal runtimeAgentPrincipal, binding controldb.AgentChannelBinding, recipient string) (imbridge.OutgoingTarget, bool, error) {
 	if recipient == "source" {
 		return s.runtimeNotifySourceTarget(principal, binding)
+	}
+	if signalID, ok := strings.CutPrefix(recipient, "source:"); ok {
+		return s.runtimeNotifyAttentionSignalTarget(principal, binding, signalID)
 	}
 	if recipient == "human" {
 		if owner := strings.TrimSpace(binding.ExternalOwnerID); owner != "" {
@@ -1015,6 +1082,48 @@ func (s *Server) runtimeNotifyTargetForRecipient(principal runtimeAgentPrincipal
 		return imbridge.OutgoingTarget{ReceiveID: chatID, ReceiveIDType: "chat_id", ChatID: chatID}, true, nil
 	}
 	return imbridge.OutgoingTarget{}, false, nil
+}
+
+func (s *Server) runtimeNotifyAttentionSignalTarget(principal runtimeAgentPrincipal, binding controldb.AgentChannelBinding, signalID string) (imbridge.OutgoingTarget, bool, error) {
+	signalID = strings.TrimSpace(signalID)
+	if signalID == "" || s == nil || s.controlDB == nil {
+		return imbridge.OutgoingTarget{}, false, nil
+	}
+	signal, found, err := s.controlDB.AttentionSignalByID(principal.WorkspaceID, signalID)
+	if err != nil || !found {
+		return imbridge.OutgoingTarget{}, false, err
+	}
+	workerID := strings.TrimSpace(principal.AgentWorkerID)
+	if workerID == "" {
+		workerID = s.agentWorkerIDForProjectAgent(principal.WorkspaceID, principal.Project, principal.Agent)
+	}
+	if strings.TrimSpace(signal.AgentWorkerID) != "" && workerID != "" && strings.TrimSpace(signal.AgentWorkerID) != workerID {
+		return imbridge.OutgoingTarget{}, false, nil
+	}
+	if signal.SourceKind != "im_message" && signal.SourceKind != "im_card_action" {
+		return imbridge.OutgoingTarget{}, false, nil
+	}
+	refs := rawJSONToMap(signal.RefsJSON)
+	payload := rawJSONToMap(signal.PayloadJSON)
+	if bindingID, _ := refs["bindingId"].(string); strings.TrimSpace(bindingID) != "" && strings.TrimSpace(bindingID) != strings.TrimSpace(binding.ID) {
+		return imbridge.OutgoingTarget{}, false, nil
+	}
+	chatID := firstNonEmpty(
+		stringFromAny(refs["chatId"]),
+		stringFromAny(refs["externalChatId"]),
+		stringFromAny(payload["externalChatId"]),
+	)
+	if strings.TrimSpace(chatID) == "" {
+		return imbridge.OutgoingTarget{}, false, nil
+	}
+	return imbridge.OutgoingTarget{
+		ReceiveID:        strings.TrimSpace(chatID),
+		ReceiveIDType:    "chat_id",
+		ChatID:           strings.TrimSpace(chatID),
+		ChatType:         strings.TrimSpace(stringFromAny(refs["chatType"])),
+		ReplyToMessageID: strings.TrimSpace(stringFromAny(refs["messageId"])),
+		MentionOpenID:    strings.TrimSpace(stringFromAny(payload["senderOpenId"])),
+	}, true, nil
 }
 
 func (s *Server) runtimeNotifySourceTarget(principal runtimeAgentPrincipal, binding controldb.AgentChannelBinding) (imbridge.OutgoingTarget, bool, error) {

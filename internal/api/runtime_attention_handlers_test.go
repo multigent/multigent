@@ -138,6 +138,113 @@ func TestRuntimeAttentionCannotMarkAnotherWorkerSignal(t *testing.T) {
 	}
 }
 
+func TestRuntimeAttentionDownloadAttachment(t *testing.T) {
+	s, workspaceID := newConnectionGrantPolicyServer(t)
+	now := time.Now().UTC().Format(time.RFC3339)
+	upsertRuntimeAttentionWorker(t, s, workspaceID, "aw-pm", "sample", "pm", now)
+	resourceBody := []byte("image-bytes")
+	openapi := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		switch r.URL.Path {
+		case "/open-apis/auth/v3/tenant_access_token/internal":
+			_ = json.NewEncoder(w).Encode(map[string]any{"code": 0, "tenant_access_token": "tenant-token"})
+		case "/open-apis/im/v1/messages/om_image/resources/img_one":
+			if got := r.Header.Get("Authorization"); got != "Bearer tenant-token" {
+				t.Fatalf("unexpected auth header: %s", got)
+			}
+			if got := r.URL.Query().Get("type"); got != "image" {
+				t.Fatalf("unexpected resource type: %s", got)
+			}
+			w.Header().Set("Content-Type", "image/png")
+			w.Header().Set("Content-Disposition", `attachment; filename="logo.png"`)
+			_, _ = w.Write(resourceBody)
+		default:
+			t.Fatalf("unexpected path: %s", r.URL.Path)
+		}
+	}))
+	defer openapi.Close()
+	if err := s.controlDB.UpsertConnection(controldb.Connection{
+		ID:             "conn-feishu",
+		WorkspaceID:    workspaceID,
+		Provider:       "feishu",
+		ConnectionName: "agent-pm",
+		OwnerType:      ConnectionOwnerWorkspace,
+		OwnerID:        workspaceID,
+		AuthType:       "app_secret",
+		Status:         "active",
+		ProfileJSON:    "{}",
+	}); err != nil {
+		t.Fatalf("connection: %v", err)
+	}
+	secret, err := sealConnectionSecret(map[string]string{"baseUrl": openapi.URL, "appId": "cli_app", "appSecret": "secret"})
+	if err != nil {
+		t.Fatalf("seal secret: %v", err)
+	}
+	secret.ConnectionID = "conn-feishu"
+	if err := s.controlDB.UpsertConnectionSecret(secret); err != nil {
+		t.Fatalf("secret: %v", err)
+	}
+	if err := s.controlDB.UpsertAgentChannelBinding(controldb.AgentChannelBinding{
+		ID:            "chan-feishu",
+		WorkspaceID:   workspaceID,
+		AgentWorkerID: "aw-pm",
+		ProjectID:     "sample",
+		AgentID:       "pm",
+		Provider:      "feishu",
+		ConnectionID:  "conn-feishu",
+		Status:        "connected",
+		MetadataJSON:  `{"appId":"cli_app"}`,
+	}); err != nil {
+		t.Fatalf("binding: %v", err)
+	}
+	payload, _ := json.Marshal(map[string]any{
+		"senderOpenId": "ou_sender",
+		"attachments": []map[string]any{{
+			"id":   "img_one",
+			"type": "image",
+			"name": "logo.png",
+		}},
+	})
+	refs, _ := json.Marshal(map[string]any{
+		"bindingId":   "chan-feishu",
+		"chatId":      "oc_chat",
+		"chatType":    "p2p",
+		"messageId":   "om_image",
+		"messageType": "image",
+	})
+	if err := s.controlDB.UpsertAttentionSignal(controldb.AttentionSignal{
+		ID:            "sig-image",
+		WorkspaceID:   workspaceID,
+		AgentWorkerID: "aw-pm",
+		DedupeKey:     "im:feishu:om_image",
+		SourceKind:    "im_message",
+		SourceID:      "om_image",
+		SourceChannel: "feishu:p2p",
+		Reason:        "direct_message",
+		Priority:      "normal",
+		Summary:       "image message",
+		Status:        "pending",
+		PayloadJSON:   string(payload),
+		RefsJSON:      string(refs),
+		CreatedAt:     now,
+	}); err != nil {
+		t.Fatalf("signal: %v", err)
+	}
+	req := runtimeAttentionRequest(workspaceID, "sample", "pm", http.MethodGet, "/api/v1/runtime/attention/sig-image/attachments/1", nil)
+	req.SetPathValue("id", "sig-image")
+	req.SetPathValue("index", "1")
+	rec := httptest.NewRecorder()
+	s.handleRuntimeAttentionAttachmentDownload(rec, req)
+	if rec.Code != http.StatusOK {
+		t.Fatalf("download status=%d body=%s", rec.Code, rec.Body.String())
+	}
+	if got := rec.Body.String(); got != string(resourceBody) {
+		t.Fatalf("unexpected body: %q", got)
+	}
+	if got := rec.Header().Get("Content-Type"); got != "image/png" {
+		t.Fatalf("unexpected content type: %s", got)
+	}
+}
+
 func TestRuntimeAttentionRequiresCapability(t *testing.T) {
 	s, workspaceID := newConnectionGrantPolicyServer(t)
 	req := httptest.NewRequest(http.MethodGet, "/api/v1/runtime/attention", nil)

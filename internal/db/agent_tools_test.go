@@ -39,7 +39,7 @@ func TestUpsertAgentToolBindingBackfillsLegacyProjectBinding(t *testing.T) {
 	legacy := AgentToolBinding{
 		ID:           "toolbind-legacy",
 		WorkspaceID:  workspaceID,
-		ProjectID:    "tapnow-mcp-server",
+		ProjectID:    "customer-mcp-server",
 		AgentID:      "mason",
 		ConnectionID: "conn-github",
 		Provider:     "github",
@@ -60,7 +60,7 @@ func TestUpsertAgentToolBindingBackfillsLegacyProjectBinding(t *testing.T) {
 		t.Fatalf("upsert worker binding should backfill legacy row: %v", err)
 	}
 
-	bindings, err := db.ListAgentToolBindings(AgentToolBindingFilter{WorkspaceID: workspaceID, ProjectID: "tapnow-mcp-server", AgentID: "mason"})
+	bindings, err := db.ListAgentToolBindings(AgentToolBindingFilter{WorkspaceID: workspaceID, ProjectID: "customer-mcp-server", AgentID: "mason"})
 	if err != nil {
 		t.Fatalf("list project bindings: %v", err)
 	}

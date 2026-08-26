@@ -923,7 +923,7 @@ Joey 在群里补充：
 
 ## 通过标准
 
-本地 `github-sandbox` 可认为达到可继续推广到 TapNow 远程环境的标准，当且仅当：
+本地 `github-sandbox` 可认为达到可继续推广到 CustomerCo 远程环境的标准，当且仅当：
 
 - 单聊和群聊都能稳定生成正确 AttentionSignal。
 - Agent 能识别 sender、chat、绑定用户和权限。

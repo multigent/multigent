@@ -125,7 +125,7 @@ HTTP fork session        -> adapter 自定义
 当 Agent Worker wakeup 后发现自己有多件可并发工作时，它可以主动调用系统能力创建工作会话：
 
 ```bash
-mga session fork --title "接入 Monday 插件" --task <task_id> --project tapnow-connectors
+mga session fork --title "接入 Monday 插件" --task <task_id> --project customer-connectors
 ```
 
 这不是平台替 Agent 自动拆任务，也不是用户手工创建多个 Agent，而是 Agent 根据自己的判断使用工具。
@@ -175,7 +175,7 @@ Fork Session 默认继承 parent Agent Worker 的权限：
 mga session fork \
   --title "接入 Monday 插件" \
   --task <task_id> \
-  --allow-connection github:tapnow \
+  --allow-connection github:customer \
   --allow-connection gcloud:test-readonly
 ```
 
@@ -188,7 +188,7 @@ actor: plugin-dev
 fork_session: fs_monday_plugin
 runtime_session: <runtime_session_id>
 delegated_by: plugin-dev primary session
-project: tapnow-connectors
+project: customer-connectors
 task: <task_id>
 ```
 
@@ -239,7 +239,7 @@ Fork Session 只负责产出局部结果。
 # 创建工作会话
 mga session fork \
   --title "接入 Monday 插件" \
-  --project tapnow-connectors \
+  --project customer-connectors \
   --task <task_id> \
   --prompt-file ./fork-session-prompt.md
 
@@ -366,11 +366,11 @@ run_id=<run>
 ```text
 Agent: plugin-dev
 Session: Monday 插件接入
-Project: tapnow-connectors
+Project: customer-connectors
 Run: run_xxx
 ```
 
-避免显示成 `tapnow-connectors/plugin-dev-1`。
+避免显示成 `customer-connectors/plugin-dev-1`。
 
 ## MVP 落地顺序
 

@@ -1,6 +1,7 @@
 import { useCallback, useMemo, useState } from 'react'
 import type { ChangeEvent } from 'react'
 import { useTranslation } from 'react-i18next'
+import type { TFunction } from 'i18next'
 import Markdown from 'react-markdown'
 import remarkGfm from 'remark-gfm'
 import {
@@ -131,7 +132,7 @@ function CollectorsPanel({ reloadKey, onImported }: { reloadKey: number; onImpor
   const state = useApiJson<{ sources?: ContextSource[] }>('/api/v1/context/sources?limit=200', reloadKey, { keepPreviousDataOnReload: true })
   const [activeCollector, setActiveCollector] = useState<CollectorCardModel | null>(null)
   const sources = state.status === 'ok' ? (state.data.sources ?? []) : []
-  const collectors = useMemo(() => collectorCards(collectorState.status === 'ok' ? collectorState.data.collectors ?? [] : []), [collectorState])
+  const collectors = useMemo(() => collectorCards(collectorState.status === 'ok' ? collectorState.data.collectors ?? [] : [], t), [collectorState, t])
   const command = `curl -X POST "$MULTIGENT_API_URL/api/v1/context/items/batch" \\
   -H "Authorization: Bearer $MULTIGENT_CLIENT_TOKEN" \\
   -H "Content-Type: application/json" \\
@@ -192,31 +193,31 @@ function CollectorsPanel({ reloadKey, onImported }: { reloadKey: number; onImpor
   )
 }
 
-function collectorCards(specs: CollectorSpec[]): CollectorCardModel[] {
+function collectorCards(specs: CollectorSpec[], t: TFunction): CollectorCardModel[] {
   const official = specs.map(spec => ({
     ...spec,
-    name: collectorDisplayName(spec),
-    description: collectorDescription(spec),
+    name: collectorDisplayName(spec, t),
+    description: collectorDescription(spec, t),
     mode: collectorMode(spec.type),
-    badge: '官方',
+    badge: t('contextCenter.officialBadge'),
   } satisfies CollectorCardModel))
   const known = new Set(official.map(spec => spec.type))
   const planned: CollectorCardModel[] = [
     {
       type: 'lark_im',
       name: 'Lark / Feishu Collector',
-      description: '同步群聊、单聊、云文档、会议纪要。需要 Lark/Feishu 外部工具连接。',
+      description: t('contextCenter.larkCollectorDescription'),
       mode: 'planned' as const,
-      badge: '规划中',
-      help: '当前可先通过外部 daemon 或 API 写入 ContextItem。',
+      badge: t('contextCenter.plannedBadge'),
+      help: t('contextCenter.plannedCollectorHelp'),
     },
     {
       type: 'github',
       name: 'GitHub Collector',
-      description: '同步 issue、PR、review、CI 和 release 事件。需要 GitHub 外部工具连接。',
+      description: t('contextCenter.githubCollectorDescription'),
       mode: 'planned' as const,
-      badge: '规划中',
-      help: '当前可先通过 GitHub Action、脚本或 API 写入 ContextItem。',
+      badge: t('contextCenter.plannedBadge'),
+      help: t('contextCenter.plannedCollectorHelp'),
     },
   ].filter(spec => !known.has(spec.type))
   return [...official, ...planned]
@@ -234,27 +235,27 @@ function collectorMode(type: string): CollectorCardModel['mode'] {
   }
 }
 
-function collectorDisplayName(spec: CollectorSpec) {
+function collectorDisplayName(spec: CollectorSpec, t: TFunction) {
   switch (spec.type) {
     case 'manual-upload':
-      return 'Manual Context Collector'
+      return t('contextCenter.manualCollectorName')
     case 'local-agent-session':
-      return 'Local Agent Session Collector'
+      return t('contextCenter.localAgentSessionCollectorName')
     case 'local-file':
-      return 'Local File Collector'
+      return t('contextCenter.localFileCollectorName')
     default:
       return spec.name || spec.type
   }
 }
 
-function collectorDescription(spec: CollectorSpec) {
+function collectorDescription(spec: CollectorSpec, t: TFunction) {
   switch (spec.type) {
     case 'manual-upload':
-      return '粘贴文本、调研记录、会议纪要或临时资料，直接写入上下文库。'
+      return t('contextCenter.manualCollectorDescription')
     case 'local-agent-session':
-      return '上传 Codex、Claude Code、Cursor 的历史 session JSONL/日志文件，作为可检索上下文。'
+      return t('contextCenter.localAgentSessionCollectorDescription')
     case 'local-file':
-      return '上传 Markdown、文本、日志等本地文件，沉淀为 Agent 可读取的上下文。'
+      return t('contextCenter.localFileCollectorDescription')
     default:
       return spec.description || ''
   }
@@ -516,6 +517,7 @@ function ItemsPanel({ reloadKey }: { reloadKey: number }) {
 }
 
 function ContextItemRow({ item, onOpen }: { item: ContextItem; onOpen: () => void }) {
+  const { t } = useTranslation()
   const fmtDateTime = useFormatDateTime()
   return (
     <tr className="text-neutral-700 dark:text-zinc-300">
@@ -534,7 +536,7 @@ function ContextItemRow({ item, onOpen }: { item: ContextItem; onOpen: () => voi
       <td className="whitespace-nowrap px-4 py-3 text-xs text-neutral-500 dark:text-zinc-400">{fmtDateTime(item.collectedAt || item.createdAt)}</td>
       <td className="sticky right-0 bg-white px-4 py-3 text-right dark:bg-zinc-900">
         <button type="button" onClick={onOpen} className="rounded-md px-2.5 py-1.5 text-xs font-medium text-neutral-600 hover:bg-neutral-100 dark:text-zinc-300 dark:hover:bg-zinc-800">
-          查看
+          {t('contextCenter.view')}
         </button>
       </td>
     </tr>

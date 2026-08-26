@@ -79,6 +79,16 @@ func TestInteractiveCardBodyUsesSchema2MarkdownElements(t *testing.T) {
 	}
 }
 
+func TestInteractiveCardBodyCanUseRawCardJSON(t *testing.T) {
+	raw := json.RawMessage(`{"schema":"2.0","config":{"wide_screen_mode":true},"header":{"template":"green","title":{"tag":"plain_text","content":"PASS"}},"body":{"elements":[{"tag":"markdown","content":"**OK**"}]}}`)
+	card := buildInteractiveCardBody(InteractiveCard{RawJSON: raw}, nil)
+	header, _ := card["header"].(map[string]any)
+	title, _ := header["title"].(map[string]any)
+	if card["schema"] != "2.0" || header["template"] != "green" || title["content"] != "PASS" {
+		t.Fatalf("raw card was not preserved: %#v", card)
+	}
+}
+
 func TestReplyMarkdownUsesPostReplyAPI(t *testing.T) {
 	var replyBody map[string]any
 	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
@@ -129,6 +139,38 @@ func TestReplyMarkdownUsesPostReplyAPI(t *testing.T) {
 	element, _ := row[0].(map[string]any)
 	if element["tag"] != "md" || !strings.Contains(element["text"].(string), "## 结论") {
 		t.Fatalf("final reply should render markdown as post md, got %#v", element)
+	}
+}
+
+func TestDownloadMessageResourceUsesMessageResourceAPI(t *testing.T) {
+	resourceBody := []byte("png-bytes")
+	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		switch r.URL.Path {
+		case "/open-apis/auth/v3/tenant_access_token/internal":
+			_ = json.NewEncoder(w).Encode(map[string]any{"code": 0, "tenant_access_token": "tenant-token"})
+		case "/open-apis/im/v1/messages/om_one/resources/img_one":
+			if got := r.Header.Get("Authorization"); got != "Bearer tenant-token" {
+				t.Fatalf("unexpected auth header: %s", got)
+			}
+			if got := r.URL.Query().Get("type"); got != "image" {
+				t.Fatalf("unexpected type query: %s", got)
+			}
+			w.Header().Set("Content-Type", "image/png")
+			w.Header().Set("Content-Disposition", `attachment; filename="logo.png"`)
+			_, _ = w.Write(resourceBody)
+		default:
+			t.Fatalf("unexpected path: %s", r.URL.Path)
+		}
+	}))
+	defer server.Close()
+
+	client := OpenAPIClient{BaseURL: server.URL, AppID: "cli_app", AppSecret: "secret", HTTPClient: server.Client()}
+	got, err := client.DownloadMessageResource(context.Background(), "om_one", "img_one", "image")
+	if err != nil {
+		t.Fatalf("download resource: %v", err)
+	}
+	if got.FileName != "logo.png" || got.MIME != "image/png" || string(got.Data) != string(resourceBody) {
+		t.Fatalf("unexpected download: %#v data=%q", got, string(got.Data))
 	}
 }
 

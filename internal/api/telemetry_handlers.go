@@ -194,7 +194,8 @@ func (s *Server) handleTelemetryRuns(w http.ResponseWriter, r *http.Request) {
 	}
 	defer db.Close()
 
-	rows, err := telemetry.ReadRuns(db, from, to, project)
+	fetchLimit := telemetryRunsFetchLimit(limit)
+	rows, err := telemetry.ReadRunsPage(db, from, to, project, fetchLimit)
 	if err != nil {
 		s.serverError(w, err)
 		return
@@ -202,10 +203,6 @@ func (s *Server) handleTelemetryRuns(w http.ResponseWriter, r *http.Request) {
 	rows = s.filterTelemetryRunsForRequest(r, rows)
 	rows = s.enrichTelemetryUsageFromLogs(rows)
 	agentMeta := s.telemetryAgentMetadata()
-	// Newest first
-	for i, j := 0, len(rows)-1; i < j; i, j = i+1, j-1 {
-		rows[i], rows[j] = rows[j], rows[i]
-	}
 
 	runOut := make([]map[string]any, 0, len(rows))
 	for _, row := range rows {
@@ -304,9 +301,6 @@ func (s *Server) runtimeRunRowsForTelemetry(project string, limit int, meta tele
 		}
 		if sessionID, _ := result["sessionId"].(string); strings.TrimSpace(sessionID) != "" {
 			row["sessionId"] = strings.TrimSpace(sessionID)
-		}
-		if logText, _ := result["logText"].(string); strings.TrimSpace(logText) != "" {
-			row["logText"] = logText
 		}
 		if summary, _ := result["summary"].(string); strings.TrimSpace(summary) != "" {
 			row["summary"] = strings.TrimSpace(summary)
@@ -417,6 +411,20 @@ func (s *Server) applyTelemetryAgentMetadata(row map[string]any, meta telemetryA
 	if resolved.Team != "" {
 		row["team"] = resolved.Team
 	}
+}
+
+func telemetryRunsFetchLimit(limit int) int {
+	if limit <= 0 {
+		return 200
+	}
+	n := limit * 3
+	if n < limit {
+		n = limit
+	}
+	if n > 2000 {
+		n = 2000
+	}
+	return n
 }
 
 func telemetryProjectAgentKey(project, agent string) string {
@@ -542,12 +550,8 @@ func (s *Server) enrichTelemetryUsageFromLogs(rows []telemetry.RunRow) []telemet
 		if strings.TrimSpace(row.LogPath) == "" {
 			continue
 		}
-		data, err := os.ReadFile(telemetryLogReadPath(s.root, row.LogPath))
-		if err != nil {
-			continue
-		}
-		usage := telemetry.ParseStreamJSONUsage(data)
-		if !usage.SawResult {
+		usage, ok := s.cachedTelemetryUsage(row.LogPath)
+		if !ok || !usage.SawResult {
 			continue
 		}
 		row.InputTokens = sql.NullInt64{Int64: usage.InputTokens, Valid: true}
@@ -559,4 +563,38 @@ func (s *Server) enrichTelemetryUsageFromLogs(rows []telemetry.RunRow) []telemet
 		}
 	}
 	return rows
+}
+
+func (s *Server) cachedTelemetryUsage(logPath string) (telemetry.StreamUsage, bool) {
+	readPath := telemetryLogReadPath(s.root, logPath)
+	stat, err := os.Stat(readPath)
+	if err != nil || stat.IsDir() {
+		return telemetry.StreamUsage{}, false
+	}
+	key := filepath.Clean(readPath)
+	s.telemetryUsageMu.Lock()
+	if cached, ok := s.telemetryUsageCache[key]; ok && cached.Size == stat.Size() && cached.ModTime.Equal(stat.ModTime()) {
+		s.telemetryUsageMu.Unlock()
+		return cached.Usage, true
+	}
+	s.telemetryUsageMu.Unlock()
+
+	data, err := os.ReadFile(readPath)
+	if err != nil {
+		return telemetry.StreamUsage{}, false
+	}
+	usage := telemetry.ParseStreamJSONUsage(data)
+
+	s.telemetryUsageMu.Lock()
+	if len(s.telemetryUsageCache) > 4096 {
+		s.telemetryUsageCache = make(map[string]telemetryUsageCacheEntry)
+	}
+	s.telemetryUsageCache[key] = telemetryUsageCacheEntry{
+		Size:    stat.Size(),
+		ModTime: stat.ModTime(),
+		Usage:   usage,
+	}
+	s.telemetryUsageMu.Unlock()
+
+	return usage, true
 }
