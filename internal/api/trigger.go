@@ -52,7 +52,8 @@ func newTriggerManager(root, binPath string, ts taskstore.Store, db controldb.St
 }
 
 // StartPoller launches a background goroutine that periodically checks for
-// agents with message/task triggers that have unread messages or pending tasks.
+// agents with message triggers that have unread messages, plus due scheduled
+// wakeup tasks created with task.notBefore.
 // This catches messages sent via CLI (which bypass the API trigger path).
 func (tm *triggerManager) StartPoller() {
 	ctx, cancel := context.WithCancel(context.Background())
@@ -81,6 +82,7 @@ func (tm *triggerManager) pollLoop(ctx context.Context) {
 			return
 		case <-ticker.C:
 			tm.checkMessageTriggers()
+			tm.checkDueScheduledTaskWakeups()
 		}
 	}
 }
@@ -166,6 +168,73 @@ func (tm *triggerManager) checkMessageTriggers() {
 	}
 }
 
+// checkDueScheduledTaskWakeups wakes agents that have at least one due
+// notBefore-gated pending task. This is intentionally independent from the
+// generic "task" trigger: when an agent schedules a reminder for itself, the
+// due time is the trigger.
+func (tm *triggerManager) checkDueScheduledTaskWakeups() {
+	projects, err := tm.ts.ListProjects()
+	if err != nil {
+		return
+	}
+	now := time.Now().UTC()
+	workspaceID := tm.workspaceID()
+	for _, project := range projects {
+		if tm.db == nil || workspaceID == "" {
+			continue
+		}
+		memberships, err := tm.db.ListProjectMemberships(controldb.ProjectMembershipFilter{
+			WorkspaceID: workspaceID,
+			ProjectID:   project,
+			MemberType:  "agent_worker",
+		})
+		if err != nil {
+			continue
+		}
+		for _, membership := range memberships {
+			agent := strings.TrimSpace(membership.Title)
+			if agent == "" {
+				worker, ok, err := tm.db.AgentWorkerByID(workspaceID, membership.MemberID)
+				if err == nil && ok {
+					agent = strings.TrimSpace(worker.Name)
+				}
+			}
+			if agent == "" {
+				continue
+			}
+			hb, configured := tm.heartbeatForTrigger(project, agent)
+			if !configured || hb == nil || hb.Paused {
+				continue
+			}
+			task, ok := tm.nextDueScheduledTask(project, agent, now)
+			if !ok {
+				continue
+			}
+			tm.fireWakeup(project, agent, hb, entity.TriggerOnTask, "scheduled task due: "+task.ID)
+		}
+	}
+}
+
+func (tm *triggerManager) nextDueScheduledTask(project, agent string, now time.Time) (*entity.Task, bool) {
+	tasks, err := tm.ts.ListTasks(project, agent, entity.TaskStatusPending)
+	if err != nil {
+		return nil, false
+	}
+	var best *entity.Task
+	for _, task := range tasks {
+		if task == nil || task.NotBefore == nil || task.NotBefore.After(now) {
+			continue
+		}
+		if best == nil ||
+			task.NotBefore.Before(*best.NotBefore) ||
+			(task.NotBefore.Equal(*best.NotBefore) && (task.Priority < best.Priority ||
+				(task.Priority == best.Priority && task.CreatedAt.Before(best.CreatedAt)))) {
+			best = task
+		}
+	}
+	return best, best != nil
+}
+
 // Fire checks whether the agent has the given trigger configured and, if so,
 // launches an asynchronous wakeup. It is safe to call from any goroutine.
 // reason is a human-readable label for logging (e.g. "message from pm").
@@ -184,6 +253,10 @@ func (tm *triggerManager) Fire(project, agent string, triggerType entity.Trigger
 		return
 	}
 
+	tm.fireWakeup(project, agent, hb, triggerType, reason)
+}
+
+func (tm *triggerManager) fireWakeup(project, agent string, hb *entity.HeartbeatConfig, triggerType entity.TriggerType, reason string) {
 	key := project + "/" + agent
 
 	tm.mu.Lock()

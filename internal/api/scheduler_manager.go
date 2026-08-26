@@ -887,6 +887,11 @@ func (s *Server) enqueueRuntimeWakeupRunFromRequest(workspaceID, project, agent 
 }
 
 func (s *Server) nextRuntimeWakeupTask(workspaceID, project, agent string, hb *entity.HeartbeatConfig) (*entity.Task, []string, error) {
+	if due, err := s.nextRuntimeDueScheduledTask(project, agent); err != nil {
+		return nil, nil, err
+	} else if due != nil {
+		return due, nil, nil
+	}
 	if task, ids, err := s.ensurePendingAttentionWakeupTask(workspaceID, project, agent); err != nil {
 		return nil, nil, err
 	} else if task != nil {
@@ -916,6 +921,27 @@ func (s *Server) nextRuntimeWakeupTask(workspaceID, project, agent string, hb *e
 		return nil, nil, err
 	}
 	return task, attentionIDs, nil
+}
+
+func (s *Server) nextRuntimeDueScheduledTask(project, agent string) (*entity.Task, error) {
+	tasks, err := s.ts.ListTasks(project, agent, entity.TaskStatusPending)
+	if err != nil {
+		return nil, err
+	}
+	now := time.Now().UTC()
+	var selected *entity.Task
+	for _, task := range tasks {
+		if task == nil || task.NotBefore == nil || task.NotBefore.After(now) {
+			continue
+		}
+		if selected == nil ||
+			task.NotBefore.Before(*selected.NotBefore) ||
+			(task.NotBefore.Equal(*selected.NotBefore) && (task.Priority < selected.Priority ||
+				(task.Priority == selected.Priority && task.CreatedAt.Before(selected.CreatedAt)))) {
+			selected = task
+		}
+	}
+	return selected, nil
 }
 
 func (s *Server) createRuntimeWakeupTask(project, agent, prompt string) *entity.Task {

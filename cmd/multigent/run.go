@@ -295,6 +295,9 @@ func nextPendingTask(ts taskstore.Store, project, agentName string) (*entity.Tas
 		return nil, nil
 	}
 	now := time.Now().UTC()
+	if due := selectDueScheduledTask(tasks, now); due != nil {
+		return due, nil
+	}
 	var best *entity.Task
 	for _, t := range tasks {
 		if !entity.TaskReady(t, now) {
@@ -310,6 +313,22 @@ func nextPendingTask(ts taskstore.Store, project, agentName string) (*entity.Tas
 		}
 	}
 	return best, nil
+}
+
+func selectDueScheduledTask(tasks []*entity.Task, now time.Time) *entity.Task {
+	var best *entity.Task
+	for _, t := range tasks {
+		if t == nil || t.NotBefore == nil || t.NotBefore.After(now) {
+			continue
+		}
+		if best == nil ||
+			t.NotBefore.Before(*best.NotBefore) ||
+			(t.NotBefore.Equal(*best.NotBefore) && (t.Priority < best.Priority ||
+				(t.Priority == best.Priority && t.CreatedAt.Before(best.CreatedAt)))) {
+			best = t
+		}
+	}
+	return best
 }
 
 func nextScheduledPendingTaskAt(ts taskstore.Store, project, agentName string, now time.Time) (*time.Time, error) {
