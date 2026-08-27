@@ -155,7 +155,7 @@ func TestInjectRuntimeControlEnvIntoRuntimeUsesInheritedEnv(t *testing.T) {
 func TestInjectRuntimeControlEnvIntoRuntimeEmbedsMaterializedToolEnv(t *testing.T) {
 	cfg := &entity.SandboxConfig{}
 	injectRuntimeControlEnvIntoRuntime(cfg, map[string]string{
-		"MULTIGENT_AGENT_TOKEN": "secret-token",
+		"MULTIGENT_AGENT_TOKEN":   "secret-token",
 		"CUSTOMER_INTERNAL_TOKEN": "runtime-secret",
 	})
 	if len(cfg.Env) != 2 {
@@ -601,6 +601,48 @@ func TestWriteRuntimeMCPClientConfigsMergesExistingConfig(t *testing.T) {
 	for _, want := range []string{"trust_level", "BEGIN MULTIGENT MCP", "[mcp_servers.multigent]", "env_vars"} {
 		if !strings.Contains(codexText, want) {
 			t.Fatalf("codex config missing %q: %s", want, codexText)
+		}
+	}
+}
+
+func TestMaterializeCodexProviderConfigWritesCustomProvider(t *testing.T) {
+	agentDir := t.TempDir()
+	codexPath := filepath.Join(agentDir, ".multigent", "runtime-home", string(entity.ModelCodex), ".codex", "config.toml")
+	if err := os.MkdirAll(filepath.Dir(codexPath), 0o700); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.WriteFile(codexPath, []byte("[projects.\"/workspace\"]\ntrust_level = \"trusted\"\n\n# BEGIN MULTIGENT MCP\n[mcp_servers.multigent]\ncommand = \"mga\"\n# END MULTIGENT MCP\n"), 0o600); err != nil {
+		t.Fatal(err)
+	}
+	err := materializeCodexProviderConfig(agentDir, entity.ModelCodex, []string{
+		"OPENAI_API_KEY=secret",
+		"OPENAI_BASE_URL=https://proxy.example.test/openai/v1/",
+		"CODEX_MODEL=gpt-5.5",
+	})
+	if err != nil {
+		t.Fatalf("materialize codex provider: %v", err)
+	}
+	body, err := os.ReadFile(codexPath)
+	if err != nil {
+		t.Fatal(err)
+	}
+	text := string(body)
+	if !strings.HasPrefix(text, "# BEGIN MULTIGENT CODEX MODEL PROVIDER\n") {
+		t.Fatalf("codex provider config must stay in root scope before TOML tables:\n%s", text)
+	}
+	for _, want := range []string{
+		`model_provider = "multigent_openai"`,
+		`model = "gpt-5.5"`,
+		`[model_providers.multigent_openai]`,
+		`base_url = "https://proxy.example.test/openai/v1"`,
+		`env_key = "OPENAI_API_KEY"`,
+		`wire_api = "responses"`,
+		"supports_websockets = false",
+		"BEGIN MULTIGENT MCP",
+		`trust_level = "trusted"`,
+	} {
+		if !strings.Contains(text, want) {
+			t.Fatalf("codex config missing %q:\n%s", want, text)
 		}
 	}
 }

@@ -222,6 +222,9 @@ func (r *Runner) ExecPromptWithRuntimeControlEnvContext(ctx context.Context, pro
 	}
 	effectiveEnv := mergeEnv(os.Environ(), agentEnv)
 	effectiveEnv = mergeEnv(effectiveEnv, runtimeEnv)
+	if err := materializeCodexProviderConfig(agentDir, model, effectiveEnv); err != nil {
+		return nil, fmt.Errorf("materialize codex provider config: %w", err)
+	}
 	apiModel, apiBaseURL := resolveAPIModelFromEnv(model, effectiveEnv)
 	invoker := InvokerFor(model, meta.RunCommand, meta.AddDirs)
 	resumeSessionID := ResumeSessionIDForCLI(sessionID)
@@ -442,6 +445,9 @@ func (r *Runner) RunTaskWithContext(ctx context.Context, project, agentName stri
 	}
 	effectiveEnv := mergeEnv(os.Environ(), agentEnv)
 	effectiveEnv = mergeEnv(effectiveEnv, runtimeEnv)
+	if err := materializeCodexProviderConfig(agentDir, model, effectiveEnv); err != nil {
+		return nil, fmt.Errorf("materialize codex provider config: %w", err)
+	}
 	apiModel, apiBaseURL := resolveAPIModelFromEnv(model, effectiveEnv)
 	invoker := InvokerFor(model, meta.RunCommand, meta.AddDirs)
 	resumeSessionID := ResumeSessionIDForCLI(sessionID)
@@ -2007,6 +2013,70 @@ func writeRuntimeMCPClientConfigs(agentDir string) error {
 	return nil
 }
 
+func materializeCodexProviderConfig(agentDir string, model entity.AgentModel, env []string) error {
+	model = entity.NormaliseModel(model)
+	if model != entity.ModelCodex && model != entity.ModelQoder {
+		return nil
+	}
+	apiKey := envLookup(env, "OPENAI_API_KEY", "CODEX_API_KEY")
+	baseURL := envLookup(env, "OPENAI_BASE_URL", "OPENAI_API_BASE")
+	modelName := envLookup(env, "CODEX_MODEL", "OPENAI_MODEL")
+	path := filepath.Join(agentDir, ".multigent", "runtime-home", string(model), ".codex", "config.toml")
+	body, err := os.ReadFile(path)
+	if err != nil && !os.IsNotExist(err) {
+		return err
+	}
+	if strings.TrimSpace(apiKey) == "" || strings.TrimSpace(baseURL) == "" {
+		if os.IsNotExist(err) {
+			return nil
+		}
+		updated := removeManagedBlock(string(body), "# BEGIN MULTIGENT CODEX MODEL PROVIDER", "# END MULTIGENT CODEX MODEL PROVIDER")
+		if updated == string(body) {
+			return nil
+		}
+		return os.WriteFile(path, []byte(updated), 0o600)
+	}
+	if err := os.MkdirAll(filepath.Dir(path), 0o700); err != nil {
+		return err
+	}
+	updated := replaceManagedBlockAtTop(string(body), "# BEGIN MULTIGENT CODEX MODEL PROVIDER", "# END MULTIGENT CODEX MODEL PROVIDER", codexProviderConfigBlock(baseURL, modelName))
+	return os.WriteFile(path, []byte(updated), 0o600)
+}
+
+func codexProviderConfigBlock(baseURL, modelName string) string {
+	providerID := "multigent_openai"
+	lines := []string{
+		"# BEGIN MULTIGENT CODEX MODEL PROVIDER",
+		fmt.Sprintf("model_provider = %q", providerID),
+	}
+	if strings.TrimSpace(modelName) != "" {
+		lines = append(lines, fmt.Sprintf("model = %q", strings.TrimSpace(modelName)))
+	}
+	lines = append(lines,
+		fmt.Sprintf("[model_providers.%s]", providerID),
+		`name = "Multigent OpenAI Compatible"`,
+		fmt.Sprintf("base_url = %q", strings.TrimRight(strings.TrimSpace(baseURL), "/")),
+		`env_key = "OPENAI_API_KEY"`,
+		`wire_api = "responses"`,
+		"supports_websockets = false",
+		"# END MULTIGENT CODEX MODEL PROVIDER",
+		"",
+	)
+	return strings.Join(lines, "\n")
+}
+
+func envLookup(env []string, keys ...string) string {
+	for i := len(env) - 1; i >= 0; i-- {
+		k, v, _ := strings.Cut(env[i], "=")
+		for _, want := range keys {
+			if k == want && v != "" {
+				return v
+			}
+		}
+	}
+	return ""
+}
+
 func mergeMCPJSONConfig(path string) error {
 	if err := os.MkdirAll(filepath.Dir(path), 0o700); err != nil {
 		return err
@@ -2080,6 +2150,38 @@ func replaceManagedBlock(content, begin, end, block string) string {
 		return strings.TrimRight(block, "\n") + "\n"
 	}
 	return content + "\n\n" + strings.TrimRight(block, "\n") + "\n"
+}
+
+func replaceManagedBlockAtTop(content, begin, end, block string) string {
+	without := strings.TrimRight(removeManagedBlock(content, begin, end), "\n")
+	block = strings.TrimRight(block, "\n")
+	if strings.TrimSpace(without) == "" {
+		return block + "\n"
+	}
+	return block + "\n\n" + strings.TrimLeft(without, "\n") + "\n"
+}
+
+func removeManagedBlock(content, begin, end string) string {
+	without := strings.TrimRight(content, "\n")
+	if start := strings.Index(without, begin); start >= 0 {
+		if stopRel := strings.Index(without[start:], end); stopRel >= 0 {
+			stop := start + stopRel + len(end)
+			prefix := strings.TrimRight(without[:start], "\n")
+			suffix := strings.TrimLeft(without[stop:], "\n")
+			parts := []string{}
+			if prefix != "" {
+				parts = append(parts, prefix)
+			}
+			if suffix != "" {
+				parts = append(parts, suffix)
+			}
+			without = strings.Join(parts, "\n\n")
+		}
+	}
+	if strings.TrimSpace(without) == "" {
+		return ""
+	}
+	return strings.TrimLeft(without, "\n") + "\n"
 }
 
 type runtimeToolsPlan struct {
