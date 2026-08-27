@@ -149,11 +149,28 @@ type WorkerSchedule = {
   triggers?: string[]
 }
 
+type AttentionPolicyRule = {
+  id?: string
+  signalType?: string
+  reasons?: string[]
+  fromUsers?: string[]
+  channels?: string[]
+  includeKeywords?: string[]
+  excludeKeywords?: string[]
+  wake?: boolean
+}
+
+type AttentionPolicy = {
+  rules?: AttentionPolicyRule[]
+  default?: { wake?: boolean }
+}
+
 type AgentWorkerDetail = {
   id: string
   name: string
   displayName?: string
   schedule?: WorkerSchedule
+  attentionPolicy?: AttentionPolicy
 }
 
 type KnowledgeDoc = {
@@ -253,6 +270,60 @@ function normalizeWorkerSchedule(schedule?: WorkerSchedule) {
     sessionScope: schedule?.sessionScope || schedule?.SessionScope || 'cycle',
     sessionId: schedule?.sessionId || schedule?.SessionID || '',
     triggers: Array.isArray(schedule?.triggers) ? schedule.triggers : [],
+  }
+}
+
+function emptyAttentionRule(): Required<Pick<AttentionPolicyRule, 'fromUsers' | 'channels' | 'includeKeywords' | 'excludeKeywords'>> {
+  return { fromUsers: [], channels: [], includeKeywords: [], excludeKeywords: [] }
+}
+
+function normalizeAttentionPolicy(policy?: AttentionPolicy) {
+  const rules = Array.isArray(policy?.rules) ? policy.rules : []
+  return {
+    rules: rules.map(rule => ({
+      ...emptyAttentionRule(),
+      ...rule,
+      fromUsers: Array.isArray(rule.fromUsers) ? rule.fromUsers : [],
+      channels: Array.isArray(rule.channels) ? rule.channels : [],
+      includeKeywords: Array.isArray(rule.includeKeywords) ? rule.includeKeywords : [],
+      excludeKeywords: Array.isArray(rule.excludeKeywords) ? rule.excludeKeywords : [],
+    })),
+  }
+}
+
+function textToList(value: string): string[] {
+  return value
+    .split(/[,，\n]/)
+    .map(item => item.trim())
+    .filter(Boolean)
+}
+
+function listToText(values?: string[]): string {
+  return Array.isArray(values) ? values.filter(Boolean).join(', ') : ''
+}
+
+function buildAttentionPolicy(input: {
+  triggers: string[]
+  fromUsers: string[]
+  channels: string[]
+  includeKeywords: string[]
+  excludeKeywords: string[]
+}): AttentionPolicy {
+  const reasons = input.triggers.filter(trigger => trigger.startsWith('im_'))
+  if (reasons.length === 0) {
+    reasons.push('im_direct_message', 'im_mention')
+  }
+  return {
+    rules: [{
+      id: 'im-custom-wake',
+      signalType: 'im.message',
+      reasons,
+      fromUsers: input.fromUsers,
+      channels: input.channels,
+      includeKeywords: input.includeKeywords,
+      excludeKeywords: input.excludeKeywords,
+      wake: true,
+    }],
   }
 }
 
@@ -467,6 +538,7 @@ function WorkspaceAgentSchedulePanel({ agentId }: { agentId: string }) {
   const state = useApiJson<{ agent?: AgentWorkerDetail }>(`/api/v1/agents/${encodeURIComponent(agentId)}`, reloadKey, { keepPreviousDataOnReload: true })
   const agent = state.status === 'ok' ? state.data.agent : undefined
   const schedule = normalizeWorkerSchedule(agent?.schedule)
+  const attentionPolicy = normalizeAttentionPolicy(agent?.attentionPolicy)
 
   async function toggleEnabled() {
     if (state.status !== 'ok') return
@@ -531,6 +603,7 @@ function WorkspaceAgentSchedulePanel({ agentId }: { agentId: string }) {
             <ScheduleSummaryItem label={t('agents.activeDays')} value={schedule.activeDays || '-'} />
             <ScheduleSummaryItem label={t('agents.maxTasksPerCycle')} value={String(schedule.maxTasksPerCycle || '-')} />
             <ScheduleSummaryItem label={t('agents.maxCycleDuration')} value={schedule.maxCycleDuration || '-'} />
+            <ScheduleSummaryItem label={t('schedule.customWakeRules', { defaultValue: '自定义条件' })} value={attentionPolicy.rules.length > 0 ? String(attentionPolicy.rules.length) : '-'} />
             <div className="col-span-2">
               <p className="text-neutral-400 dark:text-zinc-500">{t('agents.wakeupTriggers')}</p>
               <div className="mt-1 flex flex-wrap gap-1.5">
@@ -551,6 +624,7 @@ function WorkspaceAgentSchedulePanel({ agentId }: { agentId: string }) {
           agentId={agentId}
           agentName={agent?.displayName || agent?.name || agentId}
           schedule={schedule}
+          attentionPolicy={attentionPolicy}
           onClose={() => setEditing(false)}
           onSaved={() => {
             setEditing(false)
@@ -583,10 +657,11 @@ function ScheduleSummaryItem({ label, value, mono }: { label: string; value: str
   )
 }
 
-function WorkspaceAgentScheduleDialog({ agentId, agentName, schedule, onClose, onSaved }: {
+function WorkspaceAgentScheduleDialog({ agentId, agentName, schedule, attentionPolicy, onClose, onSaved }: {
   agentId: string
   agentName: string
   schedule: ReturnType<typeof normalizeWorkerSchedule>
+  attentionPolicy: ReturnType<typeof normalizeAttentionPolicy>
   onClose: () => void
   onSaved: () => void
 }) {
@@ -611,6 +686,12 @@ function WorkspaceAgentScheduleDialog({ agentId, agentName, schedule, onClose, o
   const [useScriptCondition, setUseScriptCondition] = useState(Boolean(schedule.wakeupCondition))
   const [sessionScope, setSessionScope] = useState(schedule.sessionScope || 'cycle')
   const [sessionId, setSessionId] = useState(schedule.sessionId)
+  const firstRule = attentionPolicy.rules[0] ?? emptyAttentionRule()
+  const [useCustomWakeRules, setUseCustomWakeRules] = useState(attentionPolicy.rules.length > 0)
+  const [wakeFromUsers, setWakeFromUsers] = useState(listToText(firstRule.fromUsers))
+  const [wakeChannels, setWakeChannels] = useState(listToText(firstRule.channels))
+  const [wakeIncludeKeywords, setWakeIncludeKeywords] = useState(listToText(firstRule.includeKeywords))
+  const [wakeExcludeKeywords, setWakeExcludeKeywords] = useState(listToText(firstRule.excludeKeywords))
   const [saving, setSaving] = useState(false)
   const [err, setErr] = useState<string | null>(null)
 
@@ -666,6 +747,13 @@ function WorkspaceAgentScheduleDialog({ agentId, agentName, schedule, onClose, o
           SessionID: sessionId,
           triggers,
         },
+        attentionPolicy: useCustomWakeRules ? buildAttentionPolicy({
+          triggers,
+          fromUsers: textToList(wakeFromUsers),
+          channels: textToList(wakeChannels),
+          includeKeywords: textToList(wakeIncludeKeywords),
+          excludeKeywords: textToList(wakeExcludeKeywords),
+        }) : {},
       })
       showToast(t('agents.scheduleSaved'), 'success')
       onSaved()
@@ -763,6 +851,32 @@ function WorkspaceAgentScheduleDialog({ agentId, agentName, schedule, onClose, o
             </div>
             <p className="mt-1 text-xs text-neutral-400 dark:text-zinc-500">{t('schedule.triggersHint')}</p>
           </ScheduleDialogField>
+
+          <div className="rounded-lg border border-neutral-200 bg-neutral-50/50 px-4 py-3 dark:border-zinc-700/60 dark:bg-zinc-800/30">
+            <label className="flex items-start gap-2">
+              <input type="checkbox" checked={useCustomWakeRules} onChange={event => setUseCustomWakeRules(event.target.checked)} className="mt-0.5 size-4 accent-sky-600" />
+              <span>
+                <span className="block text-xs font-medium text-neutral-600 dark:text-zinc-300">{t('schedule.customWakeRules', { defaultValue: '自定义唤醒条件' })}</span>
+                <span className="mt-0.5 block text-xs text-neutral-400 dark:text-zinc-500">{t('schedule.customWakeRulesHint', { defaultValue: '未命中时仍会记录为待处理信号，只是不立即唤醒。' })}</span>
+              </span>
+            </label>
+            {useCustomWakeRules && (
+              <div className="mt-3 grid grid-cols-1 gap-3">
+                <ScheduleDialogField label={t('schedule.wakeFromUsers', { defaultValue: '只唤醒这些发送人' })}>
+                  <input value={wakeFromUsers} onChange={event => setWakeFromUsers(event.target.value)} className={panelInputCls} placeholder={t('schedule.wakeFromUsersPlaceholder', { defaultValue: '用户ID、邮箱或 open_id，逗号分隔' })} />
+                </ScheduleDialogField>
+                <ScheduleDialogField label={t('schedule.wakeChannels', { defaultValue: '只唤醒这些会话/群聊' })}>
+                  <input value={wakeChannels} onChange={event => setWakeChannels(event.target.value)} className={panelInputCls} placeholder={t('schedule.wakeChannelsPlaceholder', { defaultValue: '群聊 ID 或会话 ID，逗号分隔' })} />
+                </ScheduleDialogField>
+                <ScheduleDialogField label={t('schedule.wakeIncludeKeywords', { defaultValue: '内容包含关键词' })}>
+                  <input value={wakeIncludeKeywords} onChange={event => setWakeIncludeKeywords(event.target.value)} className={panelInputCls} placeholder={t('schedule.keywordPlaceholder', { defaultValue: '紧急, 需要确认, PR ready' })} />
+                </ScheduleDialogField>
+                <ScheduleDialogField label={t('schedule.wakeExcludeKeywords', { defaultValue: '内容排除关键词' })}>
+                  <input value={wakeExcludeKeywords} onChange={event => setWakeExcludeKeywords(event.target.value)} className={panelInputCls} placeholder={t('schedule.excludeKeywordPlaceholder', { defaultValue: 'FYI, 不用回复, 闲聊' })} />
+                </ScheduleDialogField>
+              </div>
+            )}
+          </div>
 
           <div className="rounded-lg border border-neutral-200 bg-neutral-50/50 px-4 py-3 dark:border-zinc-700/60 dark:bg-zinc-800/30">
             <p className="mb-2.5 text-xs font-semibold uppercase tracking-wider text-neutral-500 dark:text-zinc-400">{t('session.sessionLabel')}</p>

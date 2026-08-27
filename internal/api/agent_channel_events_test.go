@@ -1659,6 +1659,61 @@ func TestShouldWakeAgentForAttentionUsesWorkerMessageTrigger(t *testing.T) {
 	}
 }
 
+func TestShouldWakeAgentForAttentionUsesRuleFilters(t *testing.T) {
+	s, workspaceID := newConnectionGrantPolicyServer(t)
+	now := time.Now().UTC().Format(time.RFC3339)
+	worker := controldb.AgentWorker{
+		ID:                  "aw-pm",
+		WorkspaceID:         workspaceID,
+		Name:                "pm-worker",
+		Status:              "active",
+		ScheduleJSON:        `{"triggers":["im_direct_message"]}`,
+		AttentionPolicyJSON: `{"rules":[{"signalType":"im.message","reasons":["im_direct_message"],"fromUsers":["owner"],"includeKeywords":["紧急"],"excludeKeywords":["FYI"],"wake":true}]}`,
+		CreatedAt:           now,
+		UpdatedAt:           now,
+	}
+	if err := s.controlDB.UpsertAgentWorker(worker); err != nil {
+		t.Fatalf("worker: %v", err)
+	}
+	binding := controldb.AgentChannelBinding{WorkspaceID: workspaceID, ProjectID: "sample", AgentID: "pm", AgentWorkerID: worker.ID}
+	if s.shouldWakeAgentForAttentionEvent(binding, attentionWakeInput{
+		Reason:     "im_direct_message",
+		SignalType: "im.message",
+		UserID:     "other",
+		Text:       "紧急 帮我看下",
+		ChannelID:  "oc_one",
+	}) {
+		t.Fatalf("agent should not wake for non-matching user")
+	}
+	if s.shouldWakeAgentForAttentionEvent(binding, attentionWakeInput{
+		Reason:     "im_direct_message",
+		SignalType: "im.message",
+		UserID:     "owner",
+		Text:       "FYI 紧急 但不用处理",
+		ChannelID:  "oc_one",
+	}) {
+		t.Fatalf("agent should not wake when excluded keyword matches")
+	}
+	if !s.shouldWakeAgentForAttentionEvent(binding, attentionWakeInput{
+		Reason:     "im_direct_message",
+		SignalType: "im.message",
+		UserID:     "owner",
+		Text:       "紧急 帮我看下",
+		ChannelID:  "oc_one",
+	}) {
+		t.Fatalf("agent should wake when rule filters match")
+	}
+	if s.shouldWakeAgentForAttentionEvent(binding, attentionWakeInput{
+		Reason:     "im_mention",
+		SignalType: "im.message",
+		UserID:     "owner",
+		Text:       "紧急 帮我看下",
+		ChannelID:  "oc_one",
+	}) {
+		t.Fatalf("agent should not wake for a reason constrained by trigger mismatch")
+	}
+}
+
 func TestAgentChannelResponseIncludesPublicMetadata(t *testing.T) {
 	resp := agentChannelToResponse(controldb.AgentChannelBinding{
 		ID:             "chan-one",

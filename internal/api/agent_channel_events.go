@@ -42,25 +42,171 @@ type channelEventResolution struct {
 const imSystemAckReaction = "THINKING"
 
 func (s *Server) shouldWakeAgentForAttention(binding controldb.AgentChannelBinding, reason string) bool {
+	return s.shouldWakeAgentForAttentionEvent(binding, attentionWakeInput{Reason: reason})
+}
+
+type attentionWakeInput struct {
+	Reason      string
+	SignalType  string
+	Text        string
+	UserID      string
+	ExternalIDs []string
+	ChannelID   string
+	ChannelType string
+	MessageID   string
+	Provider    string
+}
+
+type attentionPolicyConfig struct {
+	Rules   []attentionPolicyRule      `json:"rules"`
+	Default attentionPolicyDefaultRule `json:"default"`
+}
+
+type attentionPolicyDefaultRule struct {
+	Wake *bool `json:"wake,omitempty"`
+}
+
+type attentionPolicyRule struct {
+	ID              string   `json:"id,omitempty"`
+	SignalType      string   `json:"signalType,omitempty"`
+	Reasons         []string `json:"reasons,omitempty"`
+	FromUsers       []string `json:"fromUsers,omitempty"`
+	Channels        []string `json:"channels,omitempty"`
+	IncludeKeywords []string `json:"includeKeywords,omitempty"`
+	ExcludeKeywords []string `json:"excludeKeywords,omitempty"`
+	Wake            *bool    `json:"wake,omitempty"`
+}
+
+func (s *Server) shouldWakeAgentForAttentionEvent(binding controldb.AgentChannelBinding, input attentionWakeInput) bool {
 	if s == nil {
 		return false
 	}
-	reason = strings.TrimSpace(reason)
+	input.Reason = strings.TrimSpace(input.Reason)
 	if strings.TrimSpace(binding.AgentWorkerID) != "" && s.controlDB != nil {
 		worker, ok, err := s.controlDB.AgentWorkerByID(binding.WorkspaceID, binding.AgentWorkerID)
 		if err == nil && ok {
+			if decision, decided := agentWorkerAttentionPolicyDecision(worker, input); decided {
+				return decision
+			}
 			if hb, configured := agentWorkerScheduleHeartbeat(worker); configured {
-				if hb.HasAttentionTrigger(reason) {
+				if hb.HasAttentionTrigger(input.Reason) {
 					return true
 				}
 			}
-			return agentWorkerAttentionPolicyAllows(worker, reason)
+			return agentWorkerLegacyAttentionPolicyAllows(worker, input.Reason)
 		}
 	}
 	return false
 }
 
-func agentWorkerAttentionPolicyAllows(worker controldb.AgentWorker, reason string) bool {
+func agentWorkerAttentionPolicyDecision(worker controldb.AgentWorker, input attentionWakeInput) (bool, bool) {
+	raw := strings.TrimSpace(worker.AttentionPolicyJSON)
+	if raw == "" || raw == "{}" {
+		return false, false
+	}
+	var cfg attentionPolicyConfig
+	if err := json.Unmarshal([]byte(raw), &cfg); err != nil {
+		return false, false
+	}
+	if len(cfg.Rules) == 0 && cfg.Default.Wake == nil {
+		return false, false
+	}
+	hasRuleForReason := false
+	for _, rule := range cfg.Rules {
+		if attentionPolicyRuleAppliesToReason(rule, input.Reason) {
+			hasRuleForReason = true
+		}
+		if !attentionPolicyRuleMatches(rule, input) {
+			continue
+		}
+		if rule.Wake == nil {
+			return true, true
+		}
+		return *rule.Wake, true
+	}
+	if cfg.Default.Wake != nil {
+		return *cfg.Default.Wake, true
+	}
+	if hasRuleForReason {
+		return false, true
+	}
+	return false, false
+}
+
+func attentionPolicyRuleMatches(rule attentionPolicyRule, input attentionWakeInput) bool {
+	if strings.TrimSpace(rule.SignalType) != "" && strings.TrimSpace(input.SignalType) != "" && !strings.EqualFold(strings.TrimSpace(rule.SignalType), strings.TrimSpace(input.SignalType)) {
+		return false
+	}
+	if !attentionPolicyRuleAppliesToReason(rule, input.Reason) {
+		return false
+	}
+	if len(rule.FromUsers) > 0 {
+		candidates := []string{input.UserID}
+		candidates = append(candidates, input.ExternalIDs...)
+		if !containsAnyFold(rule.FromUsers, candidates...) {
+			return false
+		}
+	}
+	if len(rule.Channels) > 0 && !containsAnyFold(rule.Channels, input.ChannelID, input.ChannelType) {
+		return false
+	}
+	text := strings.ToLower(input.Text)
+	for _, keyword := range rule.ExcludeKeywords {
+		keyword = strings.ToLower(strings.TrimSpace(keyword))
+		if keyword != "" && strings.Contains(text, keyword) {
+			return false
+		}
+	}
+	if len(nonEmptyStrings(rule.IncludeKeywords)) > 0 {
+		matched := false
+		for _, keyword := range rule.IncludeKeywords {
+			keyword = strings.ToLower(strings.TrimSpace(keyword))
+			if keyword != "" && strings.Contains(text, keyword) {
+				matched = true
+				break
+			}
+		}
+		if !matched {
+			return false
+		}
+	}
+	return true
+}
+
+func attentionPolicyRuleAppliesToReason(rule attentionPolicyRule, reason string) bool {
+	reasons := nonEmptyStrings(rule.Reasons)
+	if len(reasons) == 0 {
+		return true
+	}
+	return containsAnyFold(reasons, reason, "attention")
+}
+
+func containsAnyFold(values []string, candidates ...string) bool {
+	for _, value := range values {
+		value = strings.TrimSpace(value)
+		if value == "" {
+			continue
+		}
+		for _, candidate := range candidates {
+			if strings.EqualFold(value, strings.TrimSpace(candidate)) {
+				return true
+			}
+		}
+	}
+	return false
+}
+
+func nonEmptyStrings(values []string) []string {
+	out := make([]string, 0, len(values))
+	for _, value := range values {
+		if strings.TrimSpace(value) != "" {
+			out = append(out, strings.TrimSpace(value))
+		}
+	}
+	return out
+}
+
+func agentWorkerLegacyAttentionPolicyAllows(worker controldb.AgentWorker, reason string) bool {
 	raw := strings.TrimSpace(worker.AttentionPolicyJSON)
 	if raw == "" || raw == "{}" {
 		return false
@@ -561,7 +707,17 @@ func (s *Server) acceptIMMessage(channelProvider imbridge.Provider, appID, verif
 	}
 	reason := imAttentionReason(message)
 	attentionID := s.recordIMAttentionSignal(resolved, provider, message, text)
-	if !s.shouldWakeAgentForAttention(resolved.Binding, reason) {
+	if !s.shouldWakeAgentForAttentionEvent(resolved.Binding, attentionWakeInput{
+		Reason:      reason,
+		SignalType:  "im.message",
+		Text:        text,
+		UserID:      resolved.Identity.UserID,
+		ExternalIDs: []string{resolved.Identity.ExternalUserID, message.SenderOpenID, message.SenderUserID, message.SenderUnionID},
+		ChannelID:   message.ChatID,
+		ChannelType: message.ChatType,
+		MessageID:   message.MessageID,
+		Provider:    provider,
+	}) {
 		s.acknowledgeIMAccepted(channelProvider, resolved, message)
 		s.recordAgentChannelCallback(resolved.Binding, "queued", "attention_pending", message, "")
 		return map[string]any{"ok": true, "queued": true, "attentionId": attentionID}, nil
