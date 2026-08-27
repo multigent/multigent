@@ -718,7 +718,7 @@ func (s *Server) formatAgentChannelStatus(binding controldb.AgentChannelBinding)
 		lines = append(lines, fmt.Sprintf("- 主会话: `%s`", primarySession))
 	}
 	lines = append(lines, "", "**心跳唤醒**")
-	lines = append(lines, formatAgentChannelHeartbeatStatus(hb)...)
+	lines = append(lines, formatAgentChannelHeartbeatStatus(hb, statusTimeLocation())...)
 	return strings.Join(lines, "\n")
 }
 
@@ -769,7 +769,7 @@ func (s *Server) modelAccountLabel(workspaceID, providerID string) string {
 	return providerID
 }
 
-func formatAgentChannelHeartbeatStatus(hb *entity.HeartbeatConfig) []string {
+func formatAgentChannelHeartbeatStatus(hb *entity.HeartbeatConfig, loc *time.Location) []string {
 	if hb == nil {
 		return []string{"- 启用: 否"}
 	}
@@ -786,9 +786,9 @@ func formatAgentChannelHeartbeatStatus(hb *entity.HeartbeatConfig) []string {
 		fmt.Sprintf("- 触发器: %s", formatTriggerTypes(hb.Triggers)),
 		fmt.Sprintf("- 防抖: %s", firstNonEmpty(strings.TrimSpace(hb.TriggerDebounce), "-")),
 		fmt.Sprintf("- 抖动: %s", firstNonEmpty(strings.TrimSpace(hb.Jitter), "-")),
-		fmt.Sprintf("- 上次唤醒: %s", formatOptionalTime(hb.LastWakeup)),
+		fmt.Sprintf("- 上次唤醒: %s", formatOptionalTimeInLocation(hb.LastWakeup, loc)),
 		fmt.Sprintf("- 上次状态: %s", firstNonEmpty(strings.TrimSpace(hb.LastWakeupStatus), "-")),
-		fmt.Sprintf("- 下次唤醒: %s", formatOptionalTime(hb.NextWakeupAt)),
+		fmt.Sprintf("- 下次唤醒: %s", formatOptionalTimeInLocation(hb.NextWakeupAt, loc)),
 	)
 	if hb.PID > 0 {
 		state := "已退出"
@@ -829,11 +829,28 @@ func formatTriggerTypes(triggers []entity.TriggerType) string {
 	return strings.Join(out, ", ")
 }
 
-func formatOptionalTime(t *time.Time) string {
+func statusTimeLocation() *time.Location {
+	for _, key := range []string{"MULTIGENT_TIMEZONE", "TZ"} {
+		if value := strings.TrimSpace(os.Getenv(key)); value != "" {
+			if loc, err := time.LoadLocation(value); err == nil {
+				return loc
+			}
+		}
+	}
+	if time.Local != nil {
+		return time.Local
+	}
+	return time.UTC
+}
+
+func formatOptionalTimeInLocation(t *time.Time, loc *time.Location) string {
 	if t == nil || t.IsZero() {
 		return "-"
 	}
-	return t.UTC().Format(time.RFC3339)
+	if loc == nil {
+		loc = time.Local
+	}
+	return t.In(loc).Format("2006-01-02 15:04:05 MST")
 }
 
 func (s *Server) acceptAgentChannelBindCommand(channelProvider imbridge.Provider, appID, verificationToken string, message imbridge.IncomingMessage, bindCmd, code string) (map[string]any, error) {

@@ -237,6 +237,26 @@ func TestAgentChannelStatusCommandRepliesWithoutWakeup(t *testing.T) {
 	}
 }
 
+func TestFormatAgentChannelHeartbeatStatusUsesLocation(t *testing.T) {
+	last := time.Date(2026, 8, 27, 5, 51, 16, 0, time.UTC)
+	next := last.Add(2 * time.Hour)
+	loc := time.FixedZone("CST", 8*60*60)
+	lines := formatAgentChannelHeartbeatStatus(&entity.HeartbeatConfig{
+		Enabled:      true,
+		LastWakeup:   &last,
+		NextWakeupAt: &next,
+	}, loc)
+	text := strings.Join(lines, "\n")
+	for _, want := range []string{
+		"上次唤醒: 2026-08-27 13:51:16 CST",
+		"下次唤醒: 2026-08-27 15:51:16 CST",
+	} {
+		if !strings.Contains(text, want) {
+			t.Fatalf("status time missing %q:\n%s", want, text)
+		}
+	}
+}
+
 func TestChannelEventBindingRequiresExternalIdentity(t *testing.T) {
 	s, workspaceID := newConnectionGrantPolicyServer(t)
 	if err := s.controlDB.UpsertConnection(controldb.Connection{
