@@ -863,16 +863,16 @@ function WorkspaceAgentScheduleDialog({ agentId, agentName, schedule, attentionP
             {useCustomWakeRules && (
               <div className="mt-3 grid grid-cols-1 gap-3">
                 <ScheduleDialogField label={t('schedule.wakeFromUsers', { defaultValue: '只唤醒这些发送人' })}>
-                  <input value={wakeFromUsers} onChange={event => setWakeFromUsers(event.target.value)} className={panelInputCls} placeholder={t('schedule.wakeFromUsersPlaceholder', { defaultValue: '用户ID、邮箱或 open_id，逗号分隔' })} />
+                  <input value={wakeFromUsers} onChange={event => setWakeFromUsers(event.target.value)} className={cn(panelInputCls, 'text-xs')} placeholder={t('schedule.wakeFromUsersPlaceholder', { defaultValue: '用户ID、邮箱或 open_id，逗号分隔' })} />
                 </ScheduleDialogField>
                 <ScheduleDialogField label={t('schedule.wakeChannels', { defaultValue: '只唤醒这些会话/群聊' })}>
-                  <input value={wakeChannels} onChange={event => setWakeChannels(event.target.value)} className={panelInputCls} placeholder={t('schedule.wakeChannelsPlaceholder', { defaultValue: '群聊 ID 或会话 ID，逗号分隔' })} />
+                  <input value={wakeChannels} onChange={event => setWakeChannels(event.target.value)} className={cn(panelInputCls, 'text-xs')} placeholder={t('schedule.wakeChannelsPlaceholder', { defaultValue: '群聊 ID 或会话 ID，逗号分隔' })} />
                 </ScheduleDialogField>
                 <ScheduleDialogField label={t('schedule.wakeIncludeKeywords', { defaultValue: '内容包含关键词' })}>
-                  <input value={wakeIncludeKeywords} onChange={event => setWakeIncludeKeywords(event.target.value)} className={panelInputCls} placeholder={t('schedule.keywordPlaceholder', { defaultValue: '紧急, 需要确认, PR ready' })} />
+                  <input value={wakeIncludeKeywords} onChange={event => setWakeIncludeKeywords(event.target.value)} className={cn(panelInputCls, 'text-xs')} placeholder={t('schedule.keywordPlaceholder', { defaultValue: '紧急, 需要确认, PR ready' })} />
                 </ScheduleDialogField>
                 <ScheduleDialogField label={t('schedule.wakeExcludeKeywords', { defaultValue: '内容排除关键词' })}>
-                  <input value={wakeExcludeKeywords} onChange={event => setWakeExcludeKeywords(event.target.value)} className={panelInputCls} placeholder={t('schedule.excludeKeywordPlaceholder', { defaultValue: 'FYI, 不用回复, 闲聊' })} />
+                  <input value={wakeExcludeKeywords} onChange={event => setWakeExcludeKeywords(event.target.value)} className={cn(panelInputCls, 'text-xs')} placeholder={t('schedule.excludeKeywordPlaceholder', { defaultValue: 'FYI, 不用回复, 闲聊' })} />
                 </ScheduleDialogField>
               </div>
             )}
