@@ -500,6 +500,42 @@ func (s *Server) handleSchedulerStatus(w http.ResponseWriter, r *http.Request) {
 	})
 }
 
+// ensureAgentSchedulerRunning keeps scheduler lifecycle behind agent settings.
+// The web UI should configure an agent, not manage a process-wide switch.
+func (s *Server) ensureAgentSchedulerRunning(r *http.Request, workspaceID, project, agent string) {
+	project = strings.TrimSpace(project)
+	agent = strings.TrimSpace(agent)
+	if project == "" || agent == "" {
+		return
+	}
+	for _, status := range s.sched.Status() {
+		if status.Running && (status.Key == "all" || status.Key == schedKey(project, agent)) {
+			return
+		}
+	}
+	mode := schedulerModeLocal
+	key := schedKey(project, agent)
+	useRuntimeNode := false
+	if meta, err := s.agentMetaForProjectMember(workspaceID, project, agent); err == nil && meta != nil {
+		useRuntimeNode = s.usesAssignedRuntimeNode(workspaceID, meta)
+	}
+	if useRuntimeNode {
+		serverURL := externalServerURL(r)
+		key = s.schedulerProcessKeyForProjectAgent(workspaceID, project, agent, schedulerModeRuntimeNode)
+		mode = schedulerModeRuntimeNode
+		if err := s.sched.StartLoopWithKey(key, project, agent, mode, func(ctx context.Context) {
+			s.runtimeSchedulerLoop(ctx, workspaceID, project, agent, serverURL, requestUsername(r))
+		}); err != nil {
+			log.Printf("scheduler auto-start %s: %v", key, err)
+			return
+		}
+	} else if err := s.sched.Start(project, agent); err != nil {
+		log.Printf("scheduler auto-start %s: %v", schedKey(project, agent), err)
+		return
+	}
+	s.setSchedulerDesiredKey(key, project, agent, mode, true)
+}
+
 type schedActionBody struct {
 	Project string `json:"project"`
 	Agent   string `json:"agent"`

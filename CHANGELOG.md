@@ -924,3 +924,9 @@ First public release of multigent.
 **Dashboard**
 - `multigent overview` (aliases: `status`, `stat`) — ANSI TUI showing agents, heartbeat status, teams, skills, inbox summary
 - Correct East Asian wide-character column width handling
+## 2.0.7 - 2026-08-29
+
+- Improve scheduled task configuration with jitter support and clearer weekly scheduling.
+- Preserve Agent Worker team and role metadata when provisioning agents.
+- Resolve team and role context consistently at runtime and in CLI agent details.
+- Improve schedule and heartbeat configuration UI.

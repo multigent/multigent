@@ -65,7 +65,8 @@ func (s *Server) agentMetaForProjectMember(workspaceID, project, agent string) (
 	meta := &entity.AgentMeta{
 		Name:          name,
 		Project:       project,
-		Role:          strings.TrimSpace(membership.Role),
+		Team:          strings.TrimSpace(worker.Team),
+		Role:          strings.TrimSpace(worker.Role),
 		Model:         model,
 		RuntimeModel:  strings.TrimSpace(worker.RuntimeModel),
 		RuntimeMode:   strings.TrimSpace(worker.DefaultRuntimeMode),
@@ -73,6 +74,12 @@ func (s *Server) agentMetaForProjectMember(workspaceID, project, agent string) (
 		Provider:      strings.TrimSpace(worker.DefaultModelAccountID),
 		Avatar:        strings.TrimSpace(worker.Avatar),
 		HiredAt:       createdAt,
+	}
+	if meta.Role == "" {
+		meta.Role = strings.TrimSpace(membership.Role)
+	}
+	if meta.Team == "" {
+		meta.Team = s.projectMembershipTeam(membership, worker, s.projectMembershipRoleTeams())
 	}
 	runtimeConfig := decodeAgentWorkerRuntimeConfig(worker)
 	if runtimeConfig.Env != nil {

@@ -508,6 +508,9 @@ func (s *Server) handlePatchHeartbeat(w http.ResponseWriter, r *http.Request) {
 		s.serverError(w, err)
 		return
 	}
+	if hb.Enabled {
+		s.ensureAgentSchedulerRunning(r, workspaceID, name, agent)
+	}
 	_ = json.NewEncoder(w).Encode(heartbeatToJSON(hb))
 	// Auto-restart scheduler so config changes take effect immediately.
 	go func() {
@@ -778,6 +781,11 @@ func (s *Server) handlePostCron(w http.ResponseWriter, r *http.Request) {
 	if err := s.ts.SaveCrons(name, agent, crons); err != nil {
 		s.serverError(w, err)
 		return
+	}
+	if c.Enabled {
+		if workspaceID, ok := s.currentWorkspaceForRequest(w, r); ok {
+			s.ensureAgentSchedulerRunning(r, workspaceID, name, agent)
+		}
 	}
 	w.WriteHeader(http.StatusCreated)
 	_ = json.NewEncoder(w).Encode(cronToJSON(c))

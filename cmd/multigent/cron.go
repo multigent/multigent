@@ -60,6 +60,7 @@ func newCronAddCmd() *cobra.Command {
 		title     string
 		schedule  string
 		prompt    string
+		jitter    string
 		disabled  bool
 	)
 
@@ -91,6 +92,11 @@ func newCronAddCmd() *cobra.Command {
 			if err := validateCronSchedule(schedule); err != nil {
 				return err
 			}
+			if jitter != "" {
+				if d, err := time.ParseDuration(jitter); err != nil || d <= 0 {
+					return fmt.Errorf("--jitter must be a positive duration such as 30m or 1h")
+				}
+			}
 
 			ts := mustTaskStore(root)
 			crons, err := ts.ListCrons(project, agentName)
@@ -105,6 +111,7 @@ func newCronAddCmd() *cobra.Command {
 				Schedule: schedule,
 				Enabled:  !disabled,
 				Prompt:   prompt,
+				Jitter:   jitter,
 			}
 			crons = append(crons, c)
 			if err := ts.SaveCrons(project, agentName, crons); err != nil {
@@ -131,6 +138,7 @@ func newCronAddCmd() *cobra.Command {
 	cmd.Flags().StringVar(&title, "title", "", "short description of what this job does")
 	cmd.Flags().StringVar(&schedule, "schedule", "", "crontab expression (5 fields)")
 	cmd.Flags().StringVar(&prompt, "prompt", "", "prompt text that will be enqueued as a task")
+	cmd.Flags().StringVar(&jitter, "jitter", "", "maximum random delay after the scheduled time (e.g. 30m or 1h)")
 	cmd.Flags().BoolVar(&disabled, "disabled", false, "create the cron in disabled state")
 	return cmd
 }

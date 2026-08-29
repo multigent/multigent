@@ -210,8 +210,8 @@ func newShowAgentCmd() *cobra.Command {
 				Name:    agentName,
 				Project: project,
 				Model:   entity.AgentModel(worker.Model),
-				Team:    membershipRole,
-				Role:    membershipRole,
+				Team:    worker.Team,
+				Role:    firstNonEmpty(worker.Role, membershipRole),
 				HiredAt: hiredAt,
 			}
 

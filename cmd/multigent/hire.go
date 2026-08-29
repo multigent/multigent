@@ -200,6 +200,8 @@ To switch an existing agent to another runtime (e.g. claudecode → codex), use
 				WorkspaceID:         workspaceID,
 				Name:                agentName,
 				DisplayName:         agentName,
+				Team:                team,
+				Role:                role,
 				Avatar:              avatar.RandomURL(project, agentName),
 				Status:              "available",
 				Model:               string(agentModel),

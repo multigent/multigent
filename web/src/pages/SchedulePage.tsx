@@ -1,10 +1,10 @@
-import { useMemo, useState } from 'react'
+import { useEffect, useMemo, useState } from 'react'
 import { Link } from 'react-router-dom'
 import { useTranslation } from 'react-i18next'
 import { Bot, Clock3, Pause, RefreshCw, Zap } from 'lucide-react'
 import { useApiJson } from '../lib/use-api'
 import { cn } from '../lib/cn'
-import { apiPatch } from '../lib/api'
+import { apiFetch, apiPatch } from '../lib/api'
 import { showToast } from '../components/ui/Toast'
 import { useWorkspaceAccess } from '../lib/workspace-access'
 
@@ -72,6 +72,8 @@ type SchedulerStatusResponse = {
   schedulers?: SchedulerInstance[]
 }
 
+type CronSummary = { project: string; agent: string; count: number; enabled: number }
+
 type NormalizedSchedule = {
   enabled: boolean
   interval: string
@@ -116,6 +118,7 @@ export default function SchedulePage() {
   const [roleFilter, setRoleFilter] = useState('all')
   const [statusFilter, setStatusFilter] = useState('all')
   const [togglingId, setTogglingId] = useState<string | null>(null)
+  const [cronSummaries, setCronSummaries] = useState<CronSummary[]>([])
   const agentsState = useApiJson<AgentsResponse>('/api/v1/agents', reloadKey, { keepPreviousDataOnReload: true })
   const schedulerState = useApiJson<SchedulerStatusResponse>('/api/v1/scheduler/status', reloadKey, { keepPreviousDataOnReload: true })
   const agents = agentsState.status === 'ok' ? (agentsState.data.agents ?? []) : []
@@ -153,6 +156,27 @@ export default function SchedulePage() {
     return true
   }), [agents, projectFilter, roleFilter, runningByKey, statusFilter, teamFilter])
   const hasFilters = teamFilter !== 'all' || projectFilter !== 'all' || roleFilter !== 'all' || statusFilter !== 'all'
+
+  useEffect(() => {
+    let cancelled = false
+    async function loadCronSummaries() {
+      if (projectOptions.length === 0) { setCronSummaries([]); return }
+      try {
+        const responses = await Promise.all(projectOptions.map(project => apiFetch<{ project: string; agents?: Array<{ name: string; crons?: Array<{ enabled: boolean }> }> }>(`/api/v1/projects/${encodeURIComponent(project)}/schedule`)))
+        if (cancelled) return
+        const next: CronSummary[] = []
+        responses.forEach(response => (response.agents ?? []).forEach(agent => {
+          const crons = agent.crons ?? []
+          if (crons.length > 0) next.push({ project: response.project, agent: agent.name, count: crons.length, enabled: crons.filter(cron => cron.enabled).length })
+        }))
+        setCronSummaries(next)
+      } catch {
+        if (!cancelled) setCronSummaries([])
+      }
+    }
+    void loadCronSummaries()
+    return () => { cancelled = true }
+  }, [projectOptions, reloadKey])
 
   async function toggleHeartbeat(agent: AgentWorker) {
     const schedule = normalizeSchedule(agent.schedule)
@@ -282,6 +306,7 @@ export default function SchedulePage() {
                   <th className="whitespace-nowrap px-4 py-3 text-left">{t('agents.maxTasksPerCycle')}</th>
                   <th className="whitespace-nowrap px-4 py-3 text-left">{t('agents.wakeupTriggers')}</th>
                   <th className="whitespace-nowrap px-4 py-3 text-left">{t('agents.runtimeNode')}</th>
+                  <th className="whitespace-nowrap px-4 py-3 text-left">{t('schedule.cronJobs', { defaultValue: '定时任务' })}</th>
                   {canAdmin && <th className="whitespace-nowrap px-4 py-3 text-right">{t('common.actions')}</th>}
                 </tr>
               </thead>
@@ -328,6 +353,9 @@ export default function SchedulePage() {
                         </div>
                       </td>
                       <td className="whitespace-nowrap px-4 py-3 text-sm text-neutral-600 dark:text-zinc-400">{agent.defaultRuntimeNodeId || t('agents.defaultRuntime')}</td>
+                      <td className="whitespace-nowrap px-4 py-3 text-sm text-neutral-600 dark:text-zinc-400">
+                        {cronSummaries.filter(item => item.agent === agent.name).reduce((total, item) => total + item.count, 0) || '-'}
+                      </td>
                       {canAdmin && (
                         <td className="whitespace-nowrap px-4 py-3">
                           <div className="flex flex-nowrap justify-end gap-2">
