@@ -702,7 +702,7 @@ func npmRegistryProvider() Provider {
 		Category:    "Developer Tools",
 		AuthTypes:   []string{AuthCustomCredential},
 		Fields: []ProviderField{
-			{Key: "registryUrl", Label: "Registry URL", InputType: "url", Required: true},
+			{Key: "registryUrl", Label: "Registry URL", InputType: "url"},
 			{Key: "scope", Label: "Package scope", InputType: "text"},
 			{Key: "authToken", Label: "Auth token", InputType: "password", Required: true, Secret: true},
 			{Key: "alwaysAuth", Label: "Always auth", InputType: "text"},
@@ -722,7 +722,7 @@ func dockerRegistryProvider() Provider {
 		Category:    "Developer Tools",
 		AuthTypes:   []string{AuthCustomCredential},
 		Fields: []ProviderField{
-			{Key: "registryUrl", Label: "Registry URL", InputType: "text", Required: true},
+			{Key: "registryUrl", Label: "Registry URL", InputType: "text"},
 			{Key: "username", Label: "Username", InputType: "text"},
 			{Key: "password", Label: "Password or token", InputType: "password", Required: true, Secret: true},
 		},

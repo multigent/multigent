@@ -2,6 +2,7 @@ package runner
 
 import (
 	"os"
+	"path/filepath"
 	"slices"
 	"testing"
 
@@ -67,6 +68,24 @@ func TestDirectHostRuntimeEnvMarksClaudeAsSandboxed(t *testing.T) {
 	}
 	if got := directHostRuntimeEnv(entity.ModelCodex); len(got) != 0 {
 		t.Fatalf("expected Codex direct host env to be empty, got %#v", got)
+	}
+}
+
+func TestEnsureDirectHostCLIPathResolvesUserLocalAgent(t *testing.T) {
+	home := t.TempDir()
+	binDir := filepath.Join(home, ".local", "bin")
+	if err := os.MkdirAll(binDir, 0o755); err != nil {
+		t.Fatalf("mkdir bin: %v", err)
+	}
+	agentPath := filepath.Join(binDir, "agent")
+	if err := os.WriteFile(agentPath, []byte("#!/bin/sh\nexit 0\n"), 0o755); err != nil {
+		t.Fatalf("write agent: %v", err)
+	}
+	t.Setenv("HOME", home)
+
+	env := ensureDirectHostCLIPath([]string{"PATH=/usr/bin:/bin"})
+	if got := resolveExecutableFromEnv("agent", env); got != agentPath {
+		t.Fatalf("resolveExecutableFromEnv(agent) = %q, want %q; env=%v", got, agentPath, envLookup(env, "PATH"))
 	}
 }
 

@@ -41,7 +41,7 @@ func newContextCollectorsCmd() *cobra.Command {
 		Use:   "collectors",
 		Short: "List available context collectors",
 		RunE: func(cmd *cobra.Command, args []string) error {
-			return printJSON(map[string]any{"collectors": contextpack.NewRegistry().Specs()})
+			return printJSON(map[string]any{"collectors": contextpack.NewRegistry().PublicSpecs()})
 		},
 	}
 }

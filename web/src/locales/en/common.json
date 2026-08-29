@@ -123,7 +123,8 @@
     "skills": "Skills",
     "docs": "Knowledge Base",
     "files": "Files",
-    "settings": "Settings"
+    "settings": "Settings",
+    "knowledgeBase": "Knowledge Base"
   },
   "agents": {
     "title": "Agents",
@@ -2776,5 +2777,25 @@
     "noAgentActors": "No agents in this project",
     "required": "Required",
     "variableRequired": "Fill template variable: {{name}}"
+  },
+  "knowledgeBase": {
+    "title": "Knowledge Base",
+    "subtitle": "Unify documents, files, sessions, collected data, and signals into a knowledge base agents can retrieve by permission.",
+    "collectors": "Collectors",
+    "assets": "Assets",
+    "views": "Views",
+    "signals": "Signals",
+    "assetList": "Assets",
+    "assetListHint": "This view shows files, docs, sessions, collected data, and structured knowledge together. Agents retrieve them through mga context with permission checks instead of receiving everything at once.",
+    "noAssets": "No assets yet",
+    "noAssetsHint": "After a collector or API writes data, standardized assets appear here.",
+    "viewsHint": "Views are only organization modes and do not change the underlying assets. More views such as folders, tags, projects, agents, and sources will come later.",
+    "viewAssets": "Total assets",
+    "viewCollectors": "Connected collectors",
+    "viewSignals": "Pending signals",
+    "viewsComingSoon": "Folder, tag, project, agent, and relationship views will be added gradually.",
+    "signalsHint": "Signals remind agents to pay attention to changes; they do not replace asset content. Source, priority, read state, and handling state will come later.",
+    "noSignals": "No signals yet",
+    "noSignalsHint": "IM, docs, tasks, and external systems will show up here as attention signals later."
   }
 }

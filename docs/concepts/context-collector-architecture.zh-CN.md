@@ -181,7 +181,7 @@ Agent 运行时不应默认塞入全文，而是注入一个上下文清单和�
 - `GET /api/v1/client-tokens`：列出当前用户在当前工作区的 client tokens，不返回 hash 或明文。
 - `POST /api/v1/client-tokens`：创建 token，body 示例 `{"name":"MacBook context uploader","scopes":["context.write"]}`，响应里的 `rawToken` 只显示一次。
 - `DELETE /api/v1/client-tokens/{id}`：撤销 token。
-- `POST /api/v1/context/import`：CLI 上传内容到知识库并可同时绑定到 workspace/project/agent。
+- `POST /api/v1/knowledge-base/import`：CLI 上传内容到知识库并可同时绑定到 workspace/project/agent。
 
 导入大小边界：
 

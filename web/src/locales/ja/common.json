@@ -123,7 +123,8 @@
     "skills": "スキル",
     "docs": "ナレッジベース",
     "files": "ファイル",
-    "settings": "設定"
+    "settings": "設定",
+    "knowledgeBase": "ナレッジベース"
   },
   "agents": {
     "title": "エージェント",
@@ -1823,7 +1824,7 @@
   "contextCenter": {
     "title": "コンテキスト",
     "subtitle": "コレクターをインストールし、チャット、ドキュメント、リポジトリ、ローカルセッションを権限付きで Agent が検索できるコンテキストにします。",
-    "collectors": "コレクター",
+    "collectors": "自動同期",
     "items": "コンテキストライブラリ",
     "collectorRuntime": "コレクターマーケット",
     "collectorRuntimeHint": "コレクターは独立したプロセスまたは外部アプリです。外部ツール接続からデータを読み取り、標準 ContextItem としてコンテキストライブラリに書き込みます。",
@@ -2703,5 +2704,25 @@
     "noAgentActors": "この project には Agent がいません",
     "required": "必須",
     "variableRequired": "テンプレート変数を入力してください: {{name}}"
+  },
+  "knowledgeBase": {
+    "title": "ナレッジベース",
+    "subtitle": "ファイル、ドキュメント、会話、収集結果、シグナルを統合し、権限付きで Agent が検索できる知識基盤にします。",
+    "collectors": "自動同期",
+    "assets": "資産",
+    "views": "ビュー",
+    "signals": "シグナル",
+    "assetList": "資産",
+    "assetListHint": "ここではファイル、ドキュメント、会話、収集結果、構造化知識をまとめて表示します。Agent は mga context で権限チェック付きで取得し、一括注入はしません。",
+    "noAssets": "まだ資産がありません",
+    "noAssetsHint": "Collector または API がデータを書き込むと、標準化された資産がここに表示されます。",
+    "viewsHint": "ビューは整理方法であり、基盤となる資産は変わりません。今後、フォルダ、タグ、プロジェクト、Agent、ソースなどのビューを追加します。",
+    "viewAssets": "総資産数",
+    "viewCollectors": "接続済みコレクター",
+    "viewSignals": "保留シグナル",
+    "viewsComingSoon": "フォルダ、タグ、プロジェクト、Agent、関係ビューを順次追加します。",
+    "signalsHint": "シグナルは Agent に変化への注意を促すためのものです。資産本文の代替ではありません。後でソース、優先度、既読、処理状態を追加します。",
+    "noSignals": "まだシグナルはありません",
+    "noSignalsHint": "IM、ドキュメント、タスク、外部システム由来の注意シグナルが今後ここに表示されます。"
   }
 }

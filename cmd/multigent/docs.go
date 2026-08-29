@@ -457,19 +457,27 @@ func newDocsQueryCmd() *cobra.Command {
 		maxResults  int
 		withContent bool
 		asJSON      bool
+		full        bool
+		index       string
+		tag         string
+		createdBy   string
+		since       string
+		until       string
 	)
 	cmd := &cobra.Command{
 		Use:   "query <question>",
-		Short: "Find relevant documents and print their content for an agent to read",
-		Long: `Scores all documents against the question by matching keywords in titles,
-descriptions, tags, index paths, and (with --content) file contents.
-Prints the most relevant documents' full content so the agent can synthesize
-an answer without having to navigate the knowledge base manually.
+		Short: "Find relevant documents and print ranked summaries for an agent to read",
+		Long: `Scores all documents against the question using titles, descriptions,
+tags, index paths, content, and simple freshness heuristics. It returns a ranked
+shortlist with snippets so the agent can quickly decide whether to open the source.
+
+Use --full if you want the entire source content printed after the summary.
 
 Agents can save valuable synthesised answers back as documents:
   multigent docs add --path ./notes/auth-answer.md --title "..." --created-by project/agent`,
 		Example: `  multigent docs query "authentication strategy"
   multigent docs query "JWT refresh token" --content    # also search inside files
+  multigent docs query "CEO 会议" --since 2026-08-01 --until 2026-08-31
   multigent docs query "deployment" --max 3 --json`,
 		Args: cobra.MinimumNArgs(1),
 		RunE: func(cmd *cobra.Command, args []string) error {
@@ -480,7 +488,21 @@ Agents can save valuable synthesised answers back as documents:
 			question := strings.Join(args, " ")
 			ds := store.NewDocsStore(root)
 
-			results, err := ds.QueryDocs(question, withContent, maxResults)
+			opts := store.QueryOptions{
+				WithContent: withContent,
+				MaxResults:  maxResults,
+				IndexPrefix: index,
+				Tag:         tag,
+				CreatedBy:   createdBy,
+			}
+			if t := parseQueryTime(since); t != nil {
+				opts.Since = t
+			}
+			if t := parseQueryTime(until); t != nil {
+				opts.Until = t
+			}
+
+			results, err := ds.QueryDocs(question, opts)
 			if err != nil {
 				return err
 			}
@@ -500,16 +522,28 @@ Agents can save valuable synthesised answers back as documents:
 			for i, r := range results {
 				fmt.Printf("---\n\n")
 				fmt.Printf("## [%d] %s\n", i+1, r.Title)
-				fmt.Printf("**ID:** %s  **Path:** %s  **Index:** %s\n", r.ID, r.FilePath, r.Index)
+				fmt.Printf("**ID:** %s  **Index:** %s  **Path:** %s\n", r.ID, r.Index, r.FilePath)
+				fmt.Printf("**Score:** %d\n", r.Score)
+				if len(r.MatchedFields) > 0 {
+					fmt.Printf("**Matched:** %s\n", strings.Join(r.MatchedFields, ", "))
+				}
 				if r.Description != "" {
 					fmt.Printf("**Description:** %s\n", r.Description)
 				}
+				if r.Snippet != "" {
+					fmt.Printf("**Snippet:** %s\n", r.Snippet)
+				}
+				if webURL := docsWebURL(root, r.ID); webURL != "" {
+					fmt.Printf("**URL:** %s\n", webURL)
+				}
 				fmt.Println()
-				content, err := ds.ReadContent(r.FilePath)
-				if err != nil {
-					fmt.Printf("*(could not read file: %v)*\n", err)
-				} else {
-					fmt.Println(content)
+				if full {
+					content, err := ds.ReadContent(r.FilePath)
+					if err != nil {
+						fmt.Printf("*(could not read file: %v)*\n", err)
+					} else {
+						fmt.Println(content)
+					}
 				}
 				fmt.Println()
 			}
@@ -519,7 +553,28 @@ Agents can save valuable synthesised answers back as documents:
 	cmd.Flags().IntVar(&maxResults, "max", 5, "maximum number of documents to return")
 	cmd.Flags().BoolVar(&withContent, "content", false, "also search inside file contents")
 	cmd.Flags().BoolVar(&asJSON, "json", false, "output metadata only as JSON (no file content)")
+	cmd.Flags().BoolVar(&full, "full", false, "print full source content after the summary")
+	cmd.Flags().StringVar(&index, "index", "", "filter by index prefix")
+	cmd.Flags().StringVar(&tag, "tag", "", "filter by tag")
+	cmd.Flags().StringVar(&createdBy, "created-by", "", "filter by creator")
+	cmd.Flags().StringVar(&since, "since", "", "filter docs created on/after this date (RFC3339, YYYY-MM-DD, YYYY-MM)")
+	cmd.Flags().StringVar(&until, "until", "", "filter docs created on/before this date (RFC3339, YYYY-MM-DD, YYYY-MM)")
 	return cmd
+}
+
+func parseQueryTime(v string) *time.Time {
+	v = strings.TrimSpace(v)
+	if v == "" {
+		return nil
+	}
+	layouts := []string{time.RFC3339, "2006-01-02", "2006/01/02", "2006-01", "2006/01"}
+	for _, layout := range layouts {
+		if t, err := time.Parse(layout, v); err == nil {
+			u := t.UTC()
+			return &u
+		}
+	}
+	return nil
 }
 
 // ── docs lint ─────────────────────────────────────────────────────────────────

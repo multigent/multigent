@@ -261,8 +261,8 @@ export default function ProductTour({ workspaceId, example = false, open, onClos
       {
         title: t('productTour.steps.docs.title'),
         body: t('productTour.steps.docs.body'),
-        path: '/docs',
-        selector: '[data-tour-nav="docs"]',
+        path: '/kb',
+        selector: '[data-tour-kb-docs]',
         placement: 'right',
       },
       {

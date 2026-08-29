@@ -81,7 +81,7 @@ func (s *Server) handleContextCollectors(w http.ResponseWriter, r *http.Request)
 	if !s.checkCurrentWorkspaceAccess(w, r) {
 		return
 	}
-	_ = json.NewEncoder(w).Encode(map[string]any{"collectors": contextpack.NewRegistry().Specs()})
+	_ = json.NewEncoder(w).Encode(map[string]any{"collectors": contextpack.NewRegistry().PublicSpecs()})
 }
 
 func (s *Server) handleContextImportManual(w http.ResponseWriter, r *http.Request) {

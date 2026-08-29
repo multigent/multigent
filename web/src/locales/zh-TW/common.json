@@ -123,7 +123,8 @@
     "skills": "技能",
     "docs": "知識庫",
     "files": "檔案",
-    "settings": "設定"
+    "settings": "設定",
+    "knowledgeBase": "知識庫"
   },
   "agents": {
     "title": "智慧體",
@@ -1833,7 +1834,7 @@
   "contextCenter": {
     "title": "上下文",
     "subtitle": "安裝抓取器，把群聊、文件、程式碼倉庫和本機會話沉澱為 Agent 可按權限檢索的上下文。",
-    "collectors": "抓取器",
+    "collectors": "自動同步",
     "items": "上下文庫",
     "collectorRuntime": "抓取器市場",
     "collectorRuntimeHint": "抓取器是獨立進程或外部應用。它使用外部工具連線讀取資料，再把標準 ContextItem 寫入上下文庫。",
@@ -2741,5 +2742,25 @@
     "noAgentActors": "本專案暫無 Agent",
     "required": "必填",
     "variableRequired": "請填寫模板參數：{{name}}"
+  },
+  "knowledgeBase": {
+    "title": "知識庫",
+    "subtitle": "統一管理文件、檔案、會話、抓取結果和信號，作為 Agent 可按權限檢索的知識底座。",
+    "collectors": "自動同步",
+    "assets": "資產",
+    "views": "視圖",
+    "signals": "信號",
+    "assetList": "資產",
+    "assetListHint": "這裡統一顯示檔案、文件、會話、抓取結果和結構化知識。Agent 透過 mga context 按權限檢索，而不是一次性注入所有內容。",
+    "noAssets": "還沒有資產",
+    "noAssetsHint": "啟動 Collector 或用 API 寫入資料後，這裡會顯示標準化後的資產。",
+    "viewsHint": "視圖只是不同的組織方式，不改變底層資產。後續會支援目錄、標籤、專案、Agent 和來源等多種視圖。",
+    "viewAssets": "資產總數",
+    "viewCollectors": "接入抓取器",
+    "viewSignals": "待處理信號",
+    "viewsComingSoon": "目錄視圖、標籤視圖、專案視圖、Agent 視圖和關係圖譜會逐步補上。",
+    "signalsHint": "信號用於提醒 Agent 關注變化，不直接取代資產內容。後續會支援來源、優先級、已讀與處理狀態。",
+    "noSignals": "還沒有信號",
+    "noSignalsHint": "後續這裡會展示 IM、文件、任務和外部系統產生的注意力信號。"
   }
 }

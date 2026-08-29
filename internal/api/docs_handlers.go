@@ -7,7 +7,9 @@ import (
 	"net/url"
 	"os"
 	"path/filepath"
+	"strconv"
 	"strings"
+	"time"
 
 	"github.com/multigent/multigent/internal/store"
 )
@@ -41,12 +43,23 @@ func (s *Server) handleDocsList(w http.ResponseWriter, r *http.Request) {
 	q := r.URL.Query().Get("q")
 
 	if q != "" {
-		results, err := ds.Search(q)
+		results, err := ds.QueryDocs(q, store.QueryOptions{
+			WithContent: r.URL.Query().Get("content") == "true",
+			MaxResults:  parseIntDefault(r.URL.Query().Get("limit"), 0),
+			IndexPrefix: index,
+			Tag:         tag,
+		})
 		if err != nil {
 			s.serverError(w, err)
 			return
 		}
-		_ = json.NewEncoder(w).Encode(results)
+		docs := make([]*store.DocEntry, 0, len(results))
+		for _, result := range results {
+			if result != nil && result.DocEntry != nil {
+				docs = append(docs, result.DocEntry)
+			}
+		}
+		_ = json.NewEncoder(w).Encode(docs)
 		return
 	}
 
@@ -404,8 +417,21 @@ func (s *Server) handleDocsQuery(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	withContent := r.URL.Query().Get("content") == "true"
+	opts := store.QueryOptions{
+		WithContent: withContent,
+		MaxResults:  parseIntDefault(r.URL.Query().Get("limit"), 10),
+		IndexPrefix: r.URL.Query().Get("index"),
+		Tag:         r.URL.Query().Get("tag"),
+		CreatedBy:   r.URL.Query().Get("createdBy"),
+	}
+	if since := parseTimeQuery(r.URL.Query().Get("since")); since != nil {
+		opts.Since = since
+	}
+	if until := parseTimeQuery(r.URL.Query().Get("until")); until != nil {
+		opts.Until = until
+	}
 	ds := store.NewDocsStore(s.root)
-	results, err := ds.QueryDocs(question, withContent, 10)
+	results, err := ds.QueryDocs(question, opts)
 	if err != nil {
 		s.serverError(w, err)
 		return
@@ -433,7 +459,20 @@ func (s *Server) handleRuntimeDocsList(w http.ResponseWriter, r *http.Request) {
 	ds := store.NewDocsStore(s.root)
 	q := strings.TrimSpace(r.URL.Query().Get("q"))
 	if q != "" {
-		results, err := ds.QueryDocs(q, r.URL.Query().Get("content") == "true", 10)
+		opts := store.QueryOptions{
+			WithContent: r.URL.Query().Get("content") == "true",
+			MaxResults:  parseIntDefault(r.URL.Query().Get("limit"), 10),
+			IndexPrefix: r.URL.Query().Get("index"),
+			Tag:         r.URL.Query().Get("tag"),
+			CreatedBy:   r.URL.Query().Get("createdBy"),
+		}
+		if since := parseTimeQuery(r.URL.Query().Get("since")); since != nil {
+			opts.Since = since
+		}
+		if until := parseTimeQuery(r.URL.Query().Get("until")); until != nil {
+			opts.Until = until
+		}
+		results, err := ds.QueryDocs(q, opts)
 		if err != nil {
 			s.serverError(w, err)
 			return
@@ -450,6 +489,32 @@ func (s *Server) handleRuntimeDocsList(w http.ResponseWriter, r *http.Request) {
 		docs = []*store.DocEntry{}
 	}
 	_ = json.NewEncoder(w).Encode(docs)
+}
+
+func parseIntDefault(v string, def int) int {
+	if v == "" {
+		return def
+	}
+	n, err := strconv.Atoi(v)
+	if err != nil || n < 0 {
+		return def
+	}
+	return n
+}
+
+func parseTimeQuery(v string) *time.Time {
+	v = strings.TrimSpace(v)
+	if v == "" {
+		return nil
+	}
+	layouts := []string{time.RFC3339, "2006-01-02", "2006/01/02", "2006-01", "2006/01"}
+	for _, layout := range layouts {
+		if t, err := time.Parse(layout, v); err == nil {
+			u := t.UTC()
+			return &u
+		}
+	}
+	return nil
 }
 
 func (s *Server) handleRuntimeDocsGet(w http.ResponseWriter, r *http.Request) {

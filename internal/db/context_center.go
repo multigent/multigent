@@ -22,7 +22,7 @@ func (db *SQLiteStore) UpsertContextSource(source ContextSource) error {
 	if source.MetadataJSON == "" {
 		source.MetadataJSON = "{}"
 	}
-	_, err := db.sql.Exec(`INSERT INTO context_sources (
+	_, err := db.sql.Exec(`INSERT INTO knowledge_base_sources (
 id, workspace_id, type, name, description, connection_ref, status, config_json, metadata_json, created_by, created_at, updated_at
 ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
 ON CONFLICT(id) DO UPDATE SET
@@ -40,7 +40,7 @@ ON CONFLICT(id) DO UPDATE SET
 }
 
 func (db *SQLiteStore) ContextSourceByID(workspaceID, id string) (ContextSource, bool, error) {
-	row := db.sql.QueryRow(contextSourceSelectSQL()+` WHERE workspace_id = ? AND id = ?`, strings.TrimSpace(workspaceID), strings.TrimSpace(id))
+	row := db.sql.QueryRow(knowledgeBaseSourceSelectSQL()+` WHERE workspace_id = ? AND id = ?`, strings.TrimSpace(workspaceID), strings.TrimSpace(id))
 	source, err := scanContextSource(row)
 	if errors.Is(err, sql.ErrNoRows) {
 		return ContextSource{}, false, nil
@@ -56,7 +56,7 @@ func (db *SQLiteStore) ListContextSources(filter ContextSourceFilter) ([]Context
 	if limit <= 0 || limit > 500 {
 		limit = 100
 	}
-	query := contextSourceSelectSQL() + ` WHERE workspace_id = ?`
+	query := knowledgeBaseSourceSelectSQL() + ` WHERE workspace_id = ?`
 	args := []any{strings.TrimSpace(filter.WorkspaceID)}
 	if strings.TrimSpace(filter.Type) != "" {
 		query += ` AND type = ?`
@@ -106,7 +106,7 @@ func (db *SQLiteStore) UpsertContextItem(item ContextItem) error {
 	if item.LabelsJSON == "" {
 		item.LabelsJSON = "{}"
 	}
-	query := `INSERT INTO context_items (
+	query := `INSERT INTO knowledge_base_items (
 id, workspace_id, source_id, source_type, source_item_id, source_url, project_id, agent_worker_id,
 author_type, author_id, occurred_at, collected_at, title, summary, content_text, content_ref,
 payload_json, labels_json, sensitivity, status, dedupe_key, acl_policy_id, retention, expires_at,
@@ -171,7 +171,7 @@ ON CONFLICT(workspace_id, dedupe_key) WHERE dedupe_key != '' DO UPDATE SET
 }
 
 func (db *SQLiteStore) ContextItemByID(workspaceID, id string) (ContextItem, bool, error) {
-	row := db.sql.QueryRow(contextItemSelectSQL()+` WHERE workspace_id = ? AND id = ?`, strings.TrimSpace(workspaceID), strings.TrimSpace(id))
+	row := db.sql.QueryRow(knowledgeBaseItemSelectSQL()+` WHERE workspace_id = ? AND id = ?`, strings.TrimSpace(workspaceID), strings.TrimSpace(id))
 	item, err := scanContextItem(row)
 	if errors.Is(err, sql.ErrNoRows) {
 		return ContextItem{}, false, nil
@@ -179,7 +179,7 @@ func (db *SQLiteStore) ContextItemByID(workspaceID, id string) (ContextItem, boo
 	if err != nil {
 		return ContextItem{}, false, err
 	}
-	if _, err := db.sql.Exec(`UPDATE context_items SET last_used_at = ?, usage_count = usage_count + 1 WHERE workspace_id = ? AND id = ?`,
+	if _, err := db.sql.Exec(`UPDATE knowledge_base_items SET last_used_at = ?, usage_count = usage_count + 1 WHERE workspace_id = ? AND id = ?`,
 		nowUTC(), strings.TrimSpace(workspaceID), strings.TrimSpace(id)); err != nil {
 		return ContextItem{}, false, err
 	}
@@ -191,7 +191,7 @@ func (db *SQLiteStore) ListContextItems(filter ContextItemFilter) ([]ContextItem
 	if limit <= 0 || limit > 500 {
 		limit = 100
 	}
-	query := contextItemSelectSQL() + ` WHERE workspace_id = ?`
+	query := knowledgeBaseItemSelectSQL() + ` WHERE workspace_id = ?`
 	args := []any{strings.TrimSpace(filter.WorkspaceID)}
 	if strings.TrimSpace(filter.SourceID) != "" {
 		query += ` AND source_id = ?`
@@ -265,7 +265,7 @@ func (db *SQLiteStore) UpsertContextSubscription(sub ContextSubscription) error 
 	if sub.SignalRuleJSON == "" {
 		sub.SignalRuleJSON = "{}"
 	}
-	_, err := db.sql.Exec(`INSERT INTO context_subscriptions (
+	_, err := db.sql.Exec(`INSERT INTO knowledge_base_subscriptions (
 id, workspace_id, subscriber_type, subscriber_id, source_ids_json, label_filter_json,
 max_sensitivity, delivery_mode, signal_rule_json, status, created_by, created_at, updated_at
 ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
@@ -285,7 +285,7 @@ ON CONFLICT(id) DO UPDATE SET
 }
 
 func (db *SQLiteStore) ContextSubscriptionByID(workspaceID, id string) (ContextSubscription, bool, error) {
-	row := db.sql.QueryRow(contextSubscriptionSelectSQL()+` WHERE workspace_id = ? AND id = ?`, strings.TrimSpace(workspaceID), strings.TrimSpace(id))
+	row := db.sql.QueryRow(knowledgeBaseSubscriptionSelectSQL()+` WHERE workspace_id = ? AND id = ?`, strings.TrimSpace(workspaceID), strings.TrimSpace(id))
 	sub, err := scanContextSubscription(row)
 	if errors.Is(err, sql.ErrNoRows) {
 		return ContextSubscription{}, false, nil
@@ -301,7 +301,7 @@ func (db *SQLiteStore) ListContextSubscriptions(filter ContextSubscriptionFilter
 	if limit <= 0 || limit > 500 {
 		limit = 100
 	}
-	query := contextSubscriptionSelectSQL() + ` WHERE workspace_id = ?`
+	query := knowledgeBaseSubscriptionSelectSQL() + ` WHERE workspace_id = ?`
 	args := []any{strings.TrimSpace(filter.WorkspaceID)}
 	if strings.TrimSpace(filter.SubscriberType) != "" {
 		query += ` AND subscriber_type = ?`
@@ -333,20 +333,20 @@ func (db *SQLiteStore) ListContextSubscriptions(filter ContextSubscriptionFilter
 	return out, rows.Err()
 }
 
-func contextSourceSelectSQL() string {
-	return `SELECT id, workspace_id, type, name, description, connection_ref, status, config_json, metadata_json, created_by, created_at, updated_at FROM context_sources`
+func knowledgeBaseSourceSelectSQL() string {
+	return `SELECT id, workspace_id, type, name, description, connection_ref, status, config_json, metadata_json, created_by, created_at, updated_at FROM knowledge_base_sources`
 }
 
-func contextItemSelectSQL() string {
+func knowledgeBaseItemSelectSQL() string {
 	return `SELECT id, workspace_id, source_id, source_type, source_item_id, source_url, project_id, agent_worker_id,
 author_type, author_id, occurred_at, collected_at, title, summary, content_text, content_ref,
 payload_json, labels_json, sensitivity, status, dedupe_key, acl_policy_id, retention, expires_at,
-last_used_at, usage_count, created_at, updated_at FROM context_items`
+last_used_at, usage_count, created_at, updated_at FROM knowledge_base_items`
 }
 
-func contextSubscriptionSelectSQL() string {
+func knowledgeBaseSubscriptionSelectSQL() string {
 	return `SELECT id, workspace_id, subscriber_type, subscriber_id, source_ids_json, label_filter_json,
-max_sensitivity, delivery_mode, signal_rule_json, status, created_by, created_at, updated_at FROM context_subscriptions`
+max_sensitivity, delivery_mode, signal_rule_json, status, created_by, created_at, updated_at FROM knowledge_base_subscriptions`
 }
 
 type contextSourceScanner interface{ Scan(dest ...any) error }

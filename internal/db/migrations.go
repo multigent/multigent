@@ -1,5 +1,10 @@
 package db
 
+import (
+	"database/sql"
+	"errors"
+)
+
 func (db *SQLiteStore) migrate() error {
 	stmts := []string{
 		`CREATE TABLE IF NOT EXISTS workspaces (
@@ -292,7 +297,7 @@ func (db *SQLiteStore) migrate() error {
 	UNIQUE(workspace_id, agent_worker_id, source_kind, source_channel)
 )`,
 		`CREATE INDEX IF NOT EXISTS idx_attention_cursors_agent_source ON attention_cursors(workspace_id, agent_worker_id, source_kind)`,
-		`CREATE TABLE IF NOT EXISTS context_sources (
+		`CREATE TABLE IF NOT EXISTS knowledge_base_sources (
 	id TEXT PRIMARY KEY,
 	workspace_id TEXT NOT NULL REFERENCES workspaces(id) ON DELETE CASCADE,
 	type TEXT NOT NULL,
@@ -306,8 +311,8 @@ func (db *SQLiteStore) migrate() error {
 	created_at TEXT NOT NULL,
 	updated_at TEXT NOT NULL DEFAULT ''
 )`,
-		`CREATE INDEX IF NOT EXISTS idx_context_sources_workspace_type ON context_sources(workspace_id, type, status)`,
-		`CREATE TABLE IF NOT EXISTS context_items (
+		`CREATE INDEX IF NOT EXISTS idx_knowledge_base_sources_workspace_type ON knowledge_base_sources(workspace_id, type, status)`,
+		`CREATE TABLE IF NOT EXISTS knowledge_base_items (
 	id TEXT PRIMARY KEY,
 	workspace_id TEXT NOT NULL REFERENCES workspaces(id) ON DELETE CASCADE,
 	source_id TEXT NOT NULL DEFAULT '',
@@ -337,12 +342,12 @@ func (db *SQLiteStore) migrate() error {
 	created_at TEXT NOT NULL,
 	updated_at TEXT NOT NULL DEFAULT ''
 )`,
-		`CREATE INDEX IF NOT EXISTS idx_context_items_workspace_time ON context_items(workspace_id, collected_at DESC)`,
-		`CREATE INDEX IF NOT EXISTS idx_context_items_source ON context_items(workspace_id, source_type, source_id, collected_at DESC)`,
-		`CREATE INDEX IF NOT EXISTS idx_context_items_project ON context_items(workspace_id, project_id, collected_at DESC)`,
-		`CREATE INDEX IF NOT EXISTS idx_context_items_agent ON context_items(workspace_id, agent_worker_id, collected_at DESC)`,
-		`CREATE UNIQUE INDEX IF NOT EXISTS idx_context_items_dedupe ON context_items(workspace_id, dedupe_key) WHERE dedupe_key != ''`,
-		`CREATE TABLE IF NOT EXISTS context_subscriptions (
+		`CREATE INDEX IF NOT EXISTS idx_knowledge_base_items_workspace_time ON knowledge_base_items(workspace_id, collected_at DESC)`,
+		`CREATE INDEX IF NOT EXISTS idx_knowledge_base_items_source ON knowledge_base_items(workspace_id, source_type, source_id, collected_at DESC)`,
+		`CREATE INDEX IF NOT EXISTS idx_knowledge_base_items_project ON knowledge_base_items(workspace_id, project_id, collected_at DESC)`,
+		`CREATE INDEX IF NOT EXISTS idx_knowledge_base_items_agent ON knowledge_base_items(workspace_id, agent_worker_id, collected_at DESC)`,
+		`CREATE UNIQUE INDEX IF NOT EXISTS idx_knowledge_base_items_dedupe ON knowledge_base_items(workspace_id, dedupe_key) WHERE dedupe_key != ''`,
+		`CREATE TABLE IF NOT EXISTS knowledge_base_subscriptions (
 	id TEXT PRIMARY KEY,
 	workspace_id TEXT NOT NULL REFERENCES workspaces(id) ON DELETE CASCADE,
 	subscriber_type TEXT NOT NULL,
@@ -357,7 +362,7 @@ func (db *SQLiteStore) migrate() error {
 	created_at TEXT NOT NULL,
 	updated_at TEXT NOT NULL DEFAULT ''
 )`,
-		`CREATE INDEX IF NOT EXISTS idx_context_subscriptions_subscriber ON context_subscriptions(workspace_id, subscriber_type, subscriber_id, status)`,
+		`CREATE INDEX IF NOT EXISTS idx_knowledge_base_subscriptions_subscriber ON knowledge_base_subscriptions(workspace_id, subscriber_type, subscriber_id, status)`,
 		`CREATE TABLE IF NOT EXISTS agent_channel_bindings (
 	id TEXT PRIMARY KEY,
 	workspace_id TEXT NOT NULL REFERENCES workspaces(id) ON DELETE CASCADE,
@@ -621,5 +626,58 @@ func (db *SQLiteStore) migrate() error {
 			return err
 		}
 	}
+	if err := db.migrateLegacyContextKnowledgeBaseData(); err != nil {
+		return err
+	}
 	return nil
+}
+
+func (db *SQLiteStore) migrateLegacyContextKnowledgeBaseData() error {
+	mappings := []struct {
+		oldTable string
+		newTable string
+		columns  string
+	}{
+		{
+			oldTable: "context_sources",
+			newTable: "knowledge_base_sources",
+			columns:  "id, workspace_id, type, name, description, connection_ref, status, config_json, metadata_json, created_by, created_at, updated_at",
+		},
+		{
+			oldTable: "context_items",
+			newTable: "knowledge_base_items",
+			columns:  "id, workspace_id, source_id, source_type, source_item_id, source_url, project_id, agent_worker_id, author_type, author_id, occurred_at, collected_at, title, summary, content_text, content_ref, payload_json, labels_json, sensitivity, status, dedupe_key, acl_policy_id, retention, expires_at, last_used_at, usage_count, created_at, updated_at",
+		},
+		{
+			oldTable: "context_subscriptions",
+			newTable: "knowledge_base_subscriptions",
+			columns:  "id, workspace_id, subscriber_type, subscriber_id, source_ids_json, label_filter_json, max_sensitivity, delivery_mode, signal_rule_json, status, created_by, created_at, updated_at",
+		},
+	}
+	for _, mapping := range mappings {
+		exists, err := db.tableExists(mapping.oldTable)
+		if err != nil {
+			return err
+		}
+		if !exists {
+			continue
+		}
+		stmt := `INSERT OR IGNORE INTO ` + mapping.newTable + ` (` + mapping.columns + `) SELECT ` + mapping.columns + ` FROM ` + mapping.oldTable
+		if _, err := db.sql.Exec(stmt); err != nil {
+			return err
+		}
+	}
+	return nil
+}
+
+func (db *SQLiteStore) tableExists(name string) (bool, error) {
+	var got string
+	err := db.sql.QueryRow(`SELECT name FROM sqlite_master WHERE type IN ('table', 'view') AND name = ? LIMIT 1`, name).Scan(&got)
+	if err == nil {
+		return true, nil
+	}
+	if errors.Is(err, sql.ErrNoRows) {
+		return false, nil
+	}
+	return false, err
 }

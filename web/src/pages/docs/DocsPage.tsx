@@ -484,7 +484,7 @@ function TreeItem({ node, depth, parentPath, selectedIndex, onSelect }: {
   node: TreeNode; depth: number; parentPath: string; selectedIndex: string | null
   onSelect: (idx: string) => void
 }) {
-  const [open, setOpen] = useState(true)
+  const [open, setOpen] = useState(false)
   const hasChildren = (node.children?.length ?? 0) > 0
   const fullPath = parentPath ? `${parentPath}/${node.name}` : node.name
   const isActive = selectedIndex === fullPath

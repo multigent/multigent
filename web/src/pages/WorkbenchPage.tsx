@@ -538,9 +538,9 @@ function TasksPanel({ projectsAgents, onMutated }: { projectsAgents: ProjectAgen
   useEffect(() => { setWbTaskPage(1) }, [statusFilters, projectFilter, priorityFilter, taskSort, view])
 
   const projects = useMemo(() => {
-    const s = new Set(tasks.map((t) => t.project))
+    const s = new Set(projectsAgents.map((p) => p.projectId).filter(Boolean))
     return Array.from(s).sort()
-  }, [tasks])
+  }, [projectsAgents])
 
   const reload = useCallback(() => { setReloadKey((k) => k + 1); setChecked(new Set()); onMutated?.() }, [onMutated])
 

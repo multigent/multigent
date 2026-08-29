@@ -375,16 +375,10 @@ func (s *Server) testStaticRuntimeCredentialConnection(connection controldb.Conn
 			return testConnectionResult{}, fmt.Errorf("privateKey is required")
 		}
 	case "npm_registry":
-		if strings.TrimSpace(values["registryUrl"]) == "" {
-			return testConnectionResult{}, fmt.Errorf("registryUrl is required")
-		}
 		if strings.TrimSpace(firstNonEmpty(values["authToken"], values["apiKey"], values["token"])) == "" {
 			return testConnectionResult{}, fmt.Errorf("authToken is required")
 		}
 	case "docker_registry":
-		if strings.TrimSpace(values["registryUrl"]) == "" {
-			return testConnectionResult{}, fmt.Errorf("registryUrl is required")
-		}
 		if strings.TrimSpace(firstNonEmpty(values["password"], values["authToken"], values["apiKey"], values["token"])) == "" {
 			return testConnectionResult{}, fmt.Errorf("password is required")
 		}

@@ -1,7 +1,7 @@
 import { Link, NavLink, useLocation, useNavigate } from 'react-router-dom'
 import { useTranslation } from 'react-i18next'
 import { useEffect, useRef, useState } from 'react'
-import { Check, ChevronDown, ChevronRight, Loader2, PanelLeftClose, PanelLeft, Plus, Settings } from 'lucide-react'
+import { BookOpen, Check, ChevronDown, ChevronRight, Database, FolderOpen, Loader2, PanelLeftClose, PanelLeft, Plus, Settings } from 'lucide-react'
 import {
   projectIdFromPath,
   projectSubNav,
@@ -52,6 +52,7 @@ export function Sidebar({ collapsed, onToggle }: { collapsed: boolean; onToggle:
   const navigate = useNavigate()
   const { canAdmin } = useWorkspaceAccess()
   const projectId = projectIdFromPath(pathname)
+  const [knowledgeBaseOpen, setKnowledgeBaseOpen] = useState(pathname.startsWith('/docs') || pathname.startsWith('/files'))
   const [workspace, setWorkspace] = useState<WorkspaceSummary | null>(null)
   const [workspaces, setWorkspaces] = useState<WorkspaceRef[]>([])
   const [workspaceMenuOpen, setWorkspaceMenuOpen] = useState(false)
@@ -77,6 +78,10 @@ export function Sidebar({ collapsed, onToggle }: { collapsed: boolean; onToggle:
 
   useEffect(() => {
     setWorkspaceMenuOpen(false)
+  }, [pathname])
+
+  useEffect(() => {
+    if (pathname.startsWith('/docs') || pathname.startsWith('/files')) setKnowledgeBaseOpen(true)
   }, [pathname])
 
   useEffect(() => {
@@ -249,6 +254,18 @@ export function Sidebar({ collapsed, onToggle }: { collapsed: boolean; onToggle:
         aria-label={t('aria.mainNavigation')}
       >
         {workspaceNav.filter(item => !item.adminOnly || canAdmin).map(({ to, navKey, icon: Icon, activePrefix }) => {
+          if (navKey === 'knowledgeBase') {
+            return (
+              <KnowledgeBaseNavGroup
+                key="knowledgeBase"
+                collapsed={collapsed}
+                canAdmin={canAdmin}
+                pathname={pathname}
+                open={knowledgeBaseOpen}
+                onToggle={() => setKnowledgeBaseOpen(v => !v)}
+              />
+            )
+          }
           const end = to === '/'
           let active = isNavActive(pathname, to, end, activePrefix)
           if (navKey === 'projects' && projectId) {
@@ -349,5 +366,84 @@ export function Sidebar({ collapsed, onToggle }: { collapsed: boolean; onToggle:
         </button>
       </div>
     </aside>
+  )
+}
+
+function KnowledgeBaseNavGroup({
+  collapsed,
+  canAdmin,
+  pathname,
+  open,
+  onToggle,
+}: {
+  collapsed: boolean
+  canAdmin: boolean
+  pathname: string
+  open: boolean
+  onToggle: () => void
+}) {
+  const { t } = useTranslation()
+  const active = pathname.startsWith('/docs') || pathname.startsWith('/files')
+  const items = [
+    { to: '/docs', icon: BookOpen, label: t('knowledgeBase.docsEntry', { defaultValue: '文档' }) },
+    { to: '/files', icon: FolderOpen, label: t('knowledgeBase.filesEntry', { defaultValue: '文件' }) },
+  ]
+
+  if (!canAdmin) return null
+
+  if (collapsed) {
+    return (
+      <NavLink
+        to="/docs"
+        data-tour-nav="knowledgeBase"
+        className={cn(
+          linkCollapsed,
+          active
+            ? 'bg-neutral-100 text-neutral-900 dark:bg-zinc-800/70 dark:text-zinc-100'
+            : 'text-neutral-500 hover:bg-neutral-100 hover:text-neutral-900 dark:text-zinc-500 dark:hover:bg-zinc-800/70 dark:hover:text-zinc-100',
+        )}
+        title={t('nav.knowledgeBase')}
+      >
+        <Database className="size-4.5 shrink-0" strokeWidth={1.8} />
+      </NavLink>
+    )
+  }
+
+  return (
+    <div className="pb-0.5">
+      <button
+        type="button"
+        onClick={onToggle}
+        data-tour-nav="knowledgeBase"
+        className={cn(linkBase, 'w-full text-left', active ? linkActive : linkIdle)}
+      >
+        <Database className="size-4 shrink-0 opacity-80" strokeWidth={1.8} />
+        <span className="flex-1">{t('nav.knowledgeBase')}</span>
+        <ChevronRight className={cn('ml-auto size-3 shrink-0 opacity-40 transition-transform duration-150', open && 'rotate-90')} strokeWidth={2} />
+      </button>
+
+      {open && (
+        <div className="mt-0.5 ml-[18px] border-l border-neutral-200/70 pl-2.5 dark:border-zinc-700/60 animate-fade-in">
+          <div className="space-y-px">
+            {items.map(({ to, icon: SubIcon, label }) => {
+              const activeState = pathname === to || pathname.startsWith(`${to}/`)
+              return (
+                <NavLink
+                  key={to}
+                  to={to}
+                  className={cn(
+                    subLinkBase,
+                    activeState ? subActive : subLinkIdle,
+                  )}
+                >
+                  <SubIcon className="size-3.5 shrink-0 opacity-75" strokeWidth={1.8} />
+                  <span>{label}</span>
+                </NavLink>
+              )
+            })}
+          </div>
+        </div>
+      )}
+    </div>
   )
 }

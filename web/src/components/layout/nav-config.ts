@@ -1,13 +1,12 @@
 import {
   BarChart3,
-  BookOpen,
   Bot,
   Briefcase,
   Cable,
   ClipboardList,
   Clock3,
+  Database,
   FolderKanban,
-  FolderOpen,
   GitBranch,
   LibraryBig,
   LayoutDashboard,
@@ -37,12 +36,10 @@ export type NavKey =
   | 'people'
   | 'workbench'
   | 'connections'
-  | 'contextCenter'
+  | 'knowledgeBase'
   | 'audit'
   | 'goals'
   | 'skills'
-  | 'docs'
-  | 'files'
   | 'settings'
 
 /** 项目内执行面：`projectNav.*` */
@@ -82,10 +79,9 @@ export const workspaceNav: NavItem[] = [
   { to: '/goals', navKey: 'goals', icon: Target, activePrefix: '/goals' },
   { to: '/people', navKey: 'people', icon: User, activePrefix: '/people', adminOnly: true },
   { to: '/teams', navKey: 'teams', icon: Users, activePrefix: '/teams', adminOnly: true },
+  { to: '/docs', navKey: 'knowledgeBase', icon: Database, activePrefix: '/docs', adminOnly: true },
   { to: '/connections', navKey: 'connections', icon: Cable, activePrefix: '/connections' },
   { to: '/skills', navKey: 'skills', icon: Puzzle, activePrefix: '/skills' },
-  { to: '/docs', navKey: 'docs', icon: BookOpen, activePrefix: '/docs' },
-  { to: '/files', navKey: 'files', icon: FolderOpen, activePrefix: '/files' },
   { to: '/audit', navKey: 'audit', icon: ShieldCheck, activePrefix: '/audit', adminOnly: true },
   { to: '/settings', navKey: 'settings', icon: Settings, activePrefix: '/settings', adminOnly: true },
 ]
@@ -117,11 +113,9 @@ export function navKeyFromPath(pathname: string): NavKey {
     goals: 'goals',
     workbench: 'workbench',
     connections: 'connections',
-    context: 'contextCenter',
+    kb: 'knowledgeBase',
     audit: 'audit',
     skills: 'skills',
-    docs: 'docs',
-    files: 'files',
     settings: 'settings',
   }
   return map[seg ?? ''] ?? 'overview'

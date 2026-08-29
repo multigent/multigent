@@ -138,9 +138,12 @@ func renderAdapter(sb *strings.Builder, alias, provider string, adapter Adapter)
 		sb.WriteString("- Use the audited HTTP action proxy through Multigent.\n")
 		if alias != "" {
 			sb.WriteString("- Example: `mga runtime action --connection " + shellArg(alias) + " --data '{\"method\":\"GET\",\"endpoint\":\"/path\"}'`.\n")
+			sb.WriteString("- File upload example: `mga runtime action --connection " + shellArg(alias) + " --data '{\"method\":\"POST\",\"endpoint\":\"/repos/<owner>/<repo>/releases/<release-id>/attach_files\"}' --upload file=dist/app.tar.gz`.\n")
 		} else {
 			sb.WriteString("- Example: `mga runtime action --data '{\"method\":\"GET\",\"endpoint\":\"/path\"}'`.\n")
+			sb.WriteString("- File upload example: `mga runtime action --data '{\"method\":\"POST\",\"endpoint\":\"/upload\"}' --upload file=dist/app.tar.gz`.\n")
 		}
+		sb.WriteString("- Add `--form key=value` for multipart text fields. Do not build multipart bodies inside JSON.\n")
 	case "skill_only":
 		sb.WriteString("- No executable runtime is configured. Follow the listed skills and report if a tool call is required.\n")
 	default:

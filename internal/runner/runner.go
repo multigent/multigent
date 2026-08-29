@@ -276,12 +276,13 @@ func (r *Runner) ExecPromptWithRuntimeControlEnvContext(ctx context.Context, pro
 	} else {
 		effectiveEnv = mergeEnv(effectiveEnv, directHostRuntimeEnv(model))
 		effectiveEnv = mergeEnv(effectiveEnv, directHostRuntimeHomeEnv(agentDir, model))
+		effectiveEnv = ensureDirectHostCLIPath(effectiveEnv)
 		effectiveEnv = mergeEnv(effectiveEnv, r.workspaceFilesEnv(filepath.Join(r.root, ".multigent", "files")))
 		innerArgs = adaptDirectHostArgs(model, innerArgs)
 		if err := validateDirectHostExecution(model, innerArgs, effectiveEnv); err != nil {
 			return nil, err
 		}
-		executable = innerArgs[0]
+		executable = resolveExecutableFromEnv(innerArgs[0], effectiveEnv)
 		args = innerArgs[1:]
 		execDir = agentDir
 	}
@@ -513,12 +514,13 @@ func (r *Runner) RunTaskWithContext(ctx context.Context, project, agentName stri
 		// Direct host execution.
 		effectiveEnv = mergeEnv(effectiveEnv, directHostRuntimeEnv(model))
 		effectiveEnv = mergeEnv(effectiveEnv, directHostRuntimeHomeEnv(agentDir, model))
+		effectiveEnv = ensureDirectHostCLIPath(effectiveEnv)
 		effectiveEnv = mergeEnv(effectiveEnv, r.workspaceFilesEnv(filepath.Join(r.root, ".multigent", "files")))
 		innerArgs = adaptDirectHostArgs(model, innerArgs)
 		if err := validateDirectHostExecution(model, innerArgs, effectiveEnv); err != nil {
 			return nil, err
 		}
-		executable = innerArgs[0]
+		executable = resolveExecutableFromEnv(innerArgs[0], effectiveEnv)
 		args = innerArgs[1:]
 		execDir = agentDir
 	}
@@ -952,6 +954,58 @@ func directHostRuntimeEnv(model entity.AgentModel) map[string]string {
 	default:
 		return nil
 	}
+}
+
+func ensureDirectHostCLIPath(env []string) []string {
+	path := envLookup(env, "PATH")
+	extras := []string{
+		filepath.Join(os.Getenv("HOME"), ".local", "bin"),
+		filepath.Join(os.Getenv("HOME"), ".bun", "bin"),
+		filepath.Join(os.Getenv("HOME"), ".volta", "bin"),
+		"/usr/local/bin",
+		"/opt/homebrew/bin",
+	}
+	parts := []string{}
+	seen := map[string]bool{}
+	for _, part := range filepath.SplitList(path) {
+		part = strings.TrimSpace(part)
+		if part == "" || seen[part] {
+			continue
+		}
+		seen[part] = true
+		parts = append(parts, part)
+	}
+	for _, part := range extras {
+		part = strings.TrimSpace(part)
+		if part == "" || seen[part] {
+			continue
+		}
+		seen[part] = true
+		parts = append(parts, part)
+	}
+	if len(parts) == 0 {
+		return env
+	}
+	return mergeEnv(env, map[string]string{"PATH": strings.Join(parts, string(os.PathListSeparator))})
+}
+
+func resolveExecutableFromEnv(name string, env []string) string {
+	name = strings.TrimSpace(name)
+	if name == "" || strings.ContainsRune(name, os.PathSeparator) {
+		return name
+	}
+	path := envLookup(env, "PATH")
+	for _, dir := range filepath.SplitList(path) {
+		dir = strings.TrimSpace(dir)
+		if dir == "" {
+			continue
+		}
+		candidate := filepath.Join(dir, name)
+		if st, err := os.Stat(candidate); err == nil && !st.IsDir() && st.Mode()&0o111 != 0 {
+			return candidate
+		}
+	}
+	return name
 }
 
 func directHostRuntimeHomeEnv(agentDir string, model entity.AgentModel) map[string]string {

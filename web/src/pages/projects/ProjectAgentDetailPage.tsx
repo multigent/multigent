@@ -2812,7 +2812,7 @@ function AgentContextBindingsPanel({ project, agentName, agentWorkerId, canEdit,
     if (!docId.trim()) return
     setSaving(true)
     try {
-      await apiPost('/api/v1/context/bindings', {
+      await apiPost('/api/v1/knowledge-base/bindings', {
         docId: docId.trim(),
         scopeType: 'agent',
         scopeId: agentScopeId,
@@ -2827,7 +2827,7 @@ function AgentContextBindingsPanel({ project, agentName, agentWorkerId, canEdit,
   }
 
   async function removeBinding(id: string) {
-    await apiDelete(`/api/v1/context/bindings/${encodeURIComponent(id)}`)
+    await apiDelete(`/api/v1/knowledge-base/bindings/${encodeURIComponent(id)}`)
     setReloadKey((k) => k + 1)
     onChanged()
   }

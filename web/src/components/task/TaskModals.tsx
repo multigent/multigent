@@ -1548,7 +1548,7 @@ function DocIDLink({ docID }: { docID: string }) {
   return (
     <>
       <a
-        href={`/docs/${encodeURIComponent(docID)}`}
+                href={`/docs/${encodeURIComponent(docID)}`}
         className="font-medium text-sky-700 underline decoration-sky-300 underline-offset-2 hover:text-sky-800 dark:text-sky-400 dark:decoration-sky-700 dark:hover:text-sky-300"
         title={title ? docID : undefined}
         onClick={openPreview}

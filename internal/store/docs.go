@@ -11,6 +11,7 @@ import (
 	"sort"
 	"strings"
 	"time"
+	"unicode"
 
 	"gopkg.in/yaml.v3"
 )
@@ -250,43 +251,24 @@ func (ds *DocsStore) Search(query string) ([]*DocEntry, error) {
 }
 
 // SearchOpts searches documents. When withContent is true, file contents are
-// also scanned for the query string.
+// also scanned for the query string. It preserves the lightweight DocEntry
+// return type for callers that do not need ranking metadata, while sharing the
+// same retrieval behavior as QueryDocs.
 func (ds *DocsStore) SearchOpts(query string, withContent bool) ([]*DocEntry, error) {
-	docs, err := ds.load()
+	results, err := ds.QueryDocs(query, QueryOptions{
+		WithContent: withContent,
+		MaxResults:  0,
+	})
 	if err != nil {
 		return nil, err
 	}
-	q := strings.ToLower(query)
-	seen := map[string]bool{}
-	var results []*DocEntry
-	addOnce := func(d *DocEntry) {
-		if !seen[d.ID] {
-			seen[d.ID] = true
-			results = append(results, d)
+	docs := make([]*DocEntry, 0, len(results))
+	for _, result := range results {
+		if result != nil && result.DocEntry != nil {
+			docs = append(docs, result.DocEntry)
 		}
 	}
-	for _, d := range docs {
-		if strings.Contains(strings.ToLower(d.Title), q) ||
-			strings.Contains(strings.ToLower(d.Description), q) ||
-			strings.Contains(strings.ToLower(d.Index), q) ||
-			strings.Contains(strings.ToLower(d.FilePath), q) {
-			addOnce(d)
-			continue
-		}
-		for _, tag := range d.Tags {
-			if strings.Contains(strings.ToLower(tag), q) {
-				addOnce(d)
-				break
-			}
-		}
-		if withContent && !seen[d.ID] {
-			content, err := ds.ReadContent(d.FilePath)
-			if err == nil && strings.Contains(strings.ToLower(content), q) {
-				addOnce(d)
-			}
-		}
-	}
-	return results, nil
+	return docs, nil
 }
 
 type TreeNode struct {
@@ -428,55 +410,86 @@ func (ds *DocsStore) GetBackrefs(docID string) ([]*DocEntry, error) {
 // QueryResult is one document match returned by QueryDocs.
 type QueryResult struct {
 	*DocEntry
-	Score   int    `json:"score"`
-	Snippet string `json:"snippet,omitempty"` // first matching excerpt
+	Score         int      `json:"score"`
+	Snippet       string   `json:"snippet,omitempty"` // first matching excerpt
+	MatchedFields []string `json:"matchedFields,omitempty"`
+	MatchTokens   []string `json:"matchTokens,omitempty"`
+}
+
+type QueryOptions struct {
+	WithContent bool
+	MaxResults  int
+	IndexPrefix string
+	Tag         string
+	CreatedBy   string
+	Since       *time.Time
+	Until       *time.Time
 }
 
 // QueryDocs finds documents relevant to a natural-language question by scoring
-// keyword overlap across title, description, tags, index path, and (optionally)
-// file contents. Returns results sorted by score descending.
-func (ds *DocsStore) QueryDocs(question string, withContent bool, maxResults int) ([]*QueryResult, error) {
+// keyword overlap across title, description, tags, index path, and optionally
+// file contents. Results are sorted by score descending and include a snippet
+// plus the matched field set to help agents decide whether to open the source.
+func (ds *DocsStore) QueryDocs(question string, opts QueryOptions) ([]*QueryResult, error) {
 	docs, err := ds.load()
 	if err != nil {
 		return nil, err
 	}
 
-	words := tokenise(question)
+	words := tokeniseRich(question)
+	normalizedQuestion := normalizeText(question)
 	var results []*QueryResult
 	for _, d := range docs {
-		score := 0
-		haystack := strings.ToLower(d.Title + " " + d.Description + " " + d.Index)
-		for _, t := range d.Tags {
-			haystack += " " + strings.ToLower(t)
+		if opts.IndexPrefix != "" && !strings.HasPrefix(d.Index, opts.IndexPrefix) {
+			continue
 		}
-		snippet := ""
-		for _, w := range words {
-			if strings.Contains(haystack, w) {
-				score += 2 // metadata match is worth more
-			}
-		}
-		if withContent || score == 0 {
-			content, err := ds.ReadContent(d.FilePath)
-			if err == nil {
-				lower := strings.ToLower(content)
-				for _, w := range words {
-					if strings.Contains(lower, w) {
-						score++
-						if snippet == "" {
-							snippet = extractSnippet(content, w, 160)
-						}
-					}
+		if opts.Tag != "" {
+			has := false
+			for _, tag := range d.Tags {
+				if strings.EqualFold(tag, opts.Tag) {
+					has = true
+					break
 				}
 			}
+			if !has {
+				continue
+			}
 		}
-		if score > 0 {
-			results = append(results, &QueryResult{DocEntry: d, Score: score, Snippet: snippet})
+		if opts.CreatedBy != "" && !strings.EqualFold(d.CreatedBy, opts.CreatedBy) {
+			continue
 		}
+		if opts.Since != nil && d.CreatedAt.Before(opts.Since.UTC()) {
+			continue
+		}
+		if opts.Until != nil && d.CreatedAt.After(opts.Until.UTC()) {
+			continue
+		}
+
+		score, matchedFields, snippet := scoreDoc(d, words, normalizedQuestion, opts.WithContent, ds)
+		if score == 0 {
+			continue
+		}
+
+		results = append(results, &QueryResult{
+			DocEntry:      d,
+			Score:         score,
+			Snippet:       snippet,
+			MatchedFields: matchedFields,
+			MatchTokens:   words,
+		})
 	}
-	// Sort by score descending
-	sort.Slice(results, func(i, j int) bool { return results[i].Score > results[j].Score })
-	if maxResults > 0 && len(results) > maxResults {
-		results = results[:maxResults]
+
+	sort.Slice(results, func(i, j int) bool {
+		if results[i].Score != results[j].Score {
+			return results[i].Score > results[j].Score
+		}
+		if !results[i].UpdatedAt.Equal(results[j].UpdatedAt) {
+			return results[i].UpdatedAt.After(results[j].UpdatedAt)
+		}
+		return results[i].Title < results[j].Title
+	})
+	if opts.MaxResults > 0 && len(results) > opts.MaxResults {
+		results = results[:opts.MaxResults]
 	}
 	return results, nil
 }
@@ -505,6 +518,10 @@ func (ds *DocsStore) Lint() (*LintResult, error) {
 // tokenise splits a query into lowercase words longer than 2 characters,
 // ignoring common stop words.
 func tokenise(query string) []string {
+	return tokeniseRich(query)
+}
+
+func tokeniseRich(query string) []string {
 	stop := map[string]bool{
 		"the": true, "and": true, "for": true, "are": true, "was": true,
 		"what": true, "how": true, "why": true, "who": true, "when": true,
@@ -512,22 +529,286 @@ func tokenise(query string) []string {
 	}
 	var words []string
 	seen := map[string]bool{}
-	for _, f := range strings.Fields(strings.ToLower(query)) {
-		// strip punctuation
-		f = strings.Trim(f, ".,?!;:\"'()[]")
-		if len(f) > 2 && !stop[f] && !seen[f] {
-			seen[f] = true
-			words = append(words, f)
+	for _, part := range splitQueryTokens(normalizeText(query)) {
+		if len(part) == 0 || stop[part] {
+			continue
+		}
+		if !seen[part] {
+			seen[part] = true
+			words = append(words, part)
+		}
+		if normalized := normalizeNumericToken(part); normalized != "" && normalized != part && !seen[normalized] {
+			seen[normalized] = true
+			words = append(words, normalized)
+		}
+		for _, gram := range ngramsForToken(part) {
+			if !seen[gram] {
+				seen[gram] = true
+				words = append(words, gram)
+			}
 		}
 	}
 	return words
 }
 
+func normalizeText(s string) string {
+	s = strings.ToLower(s)
+	replacer := strings.NewReplacer(
+		"\r", " ",
+		"\n", " ",
+		"\t", " ",
+		"。", " ",
+		"，", " ",
+		"、", " ",
+		"：", " ",
+		"；", " ",
+		"（", " ",
+		"）", " ",
+		"【", " ",
+		"】", " ",
+		"[", " ",
+		"]", " ",
+		"(", " ",
+		")", " ",
+		"\"", " ",
+		"'", " ",
+		",", " ",
+		".", " ",
+		"?", " ",
+		"!", " ",
+		"年", " ",
+		"月", " ",
+		"日", " ",
+		"/", " ",
+		"\\", " ",
+		"_", " ",
+		"-", " ",
+	)
+	s = replacer.Replace(s)
+	return strings.Join(strings.Fields(s), " ")
+}
+
+func splitQueryTokens(s string) []string {
+	var tokens []string
+	var buf []rune
+	var current runeKind
+	flush := func() {
+		if len(buf) == 0 {
+			return
+		}
+		token := strings.TrimSpace(string(buf))
+		token = strings.Trim(token, ".,?!;:\"'()[]{}<>")
+		if token != "" {
+			tokens = append(tokens, token)
+		}
+		buf = buf[:0]
+	}
+	for _, r := range s {
+		kind := classifyRune(r)
+		if kind != kindOther {
+			if current != kindOther && kind != current {
+				flush()
+			}
+			buf = append(buf, r)
+			current = kind
+			continue
+		}
+		flush()
+		current = kindOther
+	}
+	flush()
+	return tokens
+}
+
+type runeKind int
+
+const (
+	kindOther runeKind = iota
+	kindASCII
+	kindCJK
+)
+
+func classifyRune(r rune) runeKind {
+	switch {
+	case unicode.IsDigit(r):
+		return kindASCII
+	case unicode.IsLetter(r) && r <= unicode.MaxASCII:
+		return kindASCII
+	case isCJK(r):
+		return kindCJK
+	default:
+		return kindOther
+	}
+}
+
+func normalizeNumericToken(token string) string {
+	if token == "" {
+		return ""
+	}
+	allDigits := true
+	for _, r := range token {
+		if !unicode.IsDigit(r) {
+			allDigits = false
+			break
+		}
+	}
+	if !allDigits {
+		return ""
+	}
+	trimmed := strings.TrimLeft(token, "0")
+	if trimmed == "" {
+		return "0"
+	}
+	return trimmed
+}
+
+func isCJK(r rune) bool {
+	return unicode.In(r, unicode.Han, unicode.Hiragana, unicode.Katakana, unicode.Hangul)
+}
+
+func ngramsForToken(token string) []string {
+	runes := []rune(token)
+	if len(runes) <= 1 {
+		return nil
+	}
+	// N-grams are useful for contiguous CJK queries, where users often omit
+	// spaces. Applying them to ASCII words makes long documents win simply by
+	// matching fragments such as "auth" inside unrelated terms.
+	hasCJK := false
+	for _, r := range runes {
+		if isCJK(r) {
+			hasCJK = true
+			break
+		}
+	}
+	if !hasCJK {
+		return nil
+	}
+	var out []string
+	if len(runes) <= 3 {
+		out = append(out, string(runes))
+		return out
+	}
+	for i := 0; i+1 < len(runes); i++ {
+		out = append(out, string(runes[i:i+2]))
+	}
+	if len(runes) >= 4 {
+		for i := 0; i+2 < len(runes); i++ {
+			out = append(out, string(runes[i:i+3]))
+		}
+	}
+	return out
+}
+
+func scoreDoc(d *DocEntry, words []string, normalizedQuestion string, withContent bool, ds *DocsStore) (int, []string, string) {
+	score := 0
+	matchedFields := map[string]bool{}
+	snippet := ""
+	title := normalizeText(d.Title)
+	desc := normalizeText(d.Description)
+	index := normalizeText(d.Index)
+	filePath := normalizeText(d.FilePath)
+	tags := make([]string, 0, len(d.Tags))
+	for _, tag := range d.Tags {
+		tags = append(tags, normalizeText(tag))
+	}
+	joinedTags := strings.Join(tags, " ")
+	body := strings.Join([]string{title, desc, index, filePath, joinedTags}, " ")
+
+	if normalizedQuestion != "" && strings.Contains(body, normalizedQuestion) {
+		score += 8
+		matchedFields["phrase"] = true
+	}
+
+	for _, w := range words {
+		if w == "" {
+			continue
+		}
+		switch {
+		case strings.Contains(title, w):
+			score += 8
+			matchedFields["title"] = true
+			if snippet == "" {
+				snippet = d.Title
+			}
+		case strings.Contains(desc, w):
+			score += 5
+			matchedFields["description"] = true
+			if snippet == "" {
+				snippet = d.Description
+			}
+		case strings.Contains(joinedTags, w):
+			score += 6
+			matchedFields["tags"] = true
+		case strings.Contains(index, w):
+			score += 4
+			matchedFields["index"] = true
+		case strings.Contains(filePath, w):
+			score += 2
+			matchedFields["path"] = true
+		}
+	}
+
+	if withContent || score == 0 {
+		content, err := ds.ReadContent(d.FilePath)
+		if err == nil {
+			lower := normalizeText(content)
+			for _, w := range words {
+				if w == "" {
+					continue
+				}
+				if strings.Contains(lower, w) {
+					score++
+					matchedFields["content"] = true
+					if snippet == "" {
+						snippet = extractSnippet(content, w, 180)
+					}
+				}
+			}
+		}
+	}
+
+	if score == 0 {
+		return 0, nil, ""
+	}
+
+	if snippet == "" {
+		if desc != "" {
+			snippet = d.Description
+		} else if title != "" {
+			snippet = d.Title
+		}
+	}
+
+	if d.CreatedAt.After(time.Now().Add(-14 * 24 * time.Hour)) {
+		score++
+		matchedFields["fresh"] = true
+	}
+
+	fields := make([]string, 0, len(matchedFields))
+	for k := range matchedFields {
+		fields = append(fields, k)
+	}
+	sort.Strings(fields)
+	return score, fields, snippet
+}
+
 // extractSnippet returns a short excerpt of content around the first occurrence
 // of word, up to maxLen characters.
 func extractSnippet(content, word string, maxLen int) string {
-	lower := strings.ToLower(content)
-	idx := strings.Index(lower, word)
+	runes := []rune(content)
+	lowerRunes := []rune(strings.ToLower(content))
+	wordRunes := []rune(strings.ToLower(word))
+	if len(wordRunes) == 0 || len(lowerRunes) < len(wordRunes) {
+		return ""
+	}
+	idx := -1
+	for i := 0; i+len(wordRunes) <= len(lowerRunes); i++ {
+		if string(lowerRunes[i:i+len(wordRunes)]) == string(wordRunes) {
+			idx = i
+			break
+		}
+	}
 	if idx < 0 {
 		return ""
 	}
@@ -536,17 +817,17 @@ func extractSnippet(content, word string, maxLen int) string {
 		start = 0
 	}
 	end := idx + maxLen
-	if end > len(content) {
-		end = len(content)
+	if end > len(runes) {
+		end = len(runes)
 	}
-	snippet := strings.TrimSpace(content[start:end])
+	snippet := strings.TrimSpace(string(runes[start:end]))
 	// trim to line boundaries where possible
 	if nl := strings.Index(snippet, "\n"); nl > 0 && nl < 40 {
 		snippet = snippet[nl+1:]
 	}
 	snippet = strings.ReplaceAll(snippet, "\n", " ")
-	if len(snippet) > maxLen {
-		snippet = snippet[:maxLen-3] + "..."
+	if len([]rune(snippet)) > maxLen {
+		snippet = string([]rune(snippet)[:maxLen-3]) + "..."
 	}
 	return snippet
 }

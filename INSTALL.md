@@ -79,6 +79,19 @@ Before the first agent run:
 docker info
 ```
 
+For local web/API debugging, use the built-in stack check:
+
+```bash
+scripts/check-local-stack.sh check
+```
+
+If the frontend or backend was restarted separately and API routes still return
+404, rebuild and restart both sides together:
+
+```bash
+scripts/check-local-stack.sh restart
+```
+
 If this fails:
 
 - Windows/macOS: install and start Docker Desktop, then wait until it reports

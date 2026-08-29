@@ -123,7 +123,8 @@
     "skills": "技能",
     "docs": "知识库",
     "files": "文件",
-    "settings": "设置"
+    "settings": "设置",
+    "knowledgeBase": "知识库"
   },
   "agents": {
     "title": "智能体",
@@ -1848,7 +1849,7 @@
   "contextCenter": {
     "title": "上下文",
     "subtitle": "安装抓取器，把群聊、文档、代码仓库和本地会话沉淀为 Agent 可按权限检索的上下文。",
-    "collectors": "抓取器",
+    "collectors": "自动同步",
     "items": "上下文库",
     "collectorRuntime": "抓取器市场",
     "collectorRuntimeHint": "抓取器是独立进程或外部应用。它使用外部工具连接读取数据，再把标准 ContextItem 写入上下文库。",
@@ -2775,5 +2776,25 @@
     "noAgentActors": "本项目暂无 Agent",
     "required": "必填",
     "variableRequired": "请填写模板参数：{{name}}"
+  },
+  "knowledgeBase": {
+    "title": "知识库",
+    "subtitle": "统一管理文档、文件、会话、抓取结果和信号，作为 Agent 可按权限检索的知识底座。",
+    "collectors": "自动同步",
+    "assets": "资产",
+    "views": "视图",
+    "signals": "信号",
+    "assetList": "资产",
+    "assetListHint": "这里统一显示文件、文档、会话、抓取结果和结构化知识。Agent 通过 mga context 按权限检索，而不是一次性注入所有内容。",
+    "noAssets": "还没有资产",
+    "noAssetsHint": "启动 Collector 或用 API 写入数据后，这里会显示标准化后的资产。",
+    "viewsHint": "视图只是不同的组织方式，不改变底层资产。后续会支持目录、标签、项目、Agent 和来源等多种视图。",
+    "viewAssets": "资产总数",
+    "viewCollectors": "接入抓取器",
+    "viewSignals": "待处理信号",
+    "viewsComingSoon": "目录视图、标签视图、项目视图、Agent 视图和关系图谱会逐步补上。",
+    "signalsHint": "信号用于提醒 Agent 关注变化，不直接替代资产内容。后续会支持来源、优先级、已读与处理状态。",
+    "noSignals": "还没有信号",
+    "noSignalsHint": "后续这里会展示 IM、文档、任务和外部系统产生的注意力信号。"
   }
 }

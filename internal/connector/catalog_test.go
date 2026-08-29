@@ -102,3 +102,29 @@ func TestFigmaProviderIncludesOptionalMCPServerURLField(t *testing.T) {
 		t.Fatalf("figma mcpServerUrl field missing: %#v", figma.Fields)
 	}
 }
+
+func TestRegistryProvidersUseDefaultRegistryURL(t *testing.T) {
+	providers := map[string]Provider{}
+	for _, provider := range Defaults() {
+		providers[provider.Provider] = provider
+	}
+	for _, providerID := range []string{"npm_registry", "docker_registry"} {
+		provider, ok := providers[providerID]
+		if !ok {
+			t.Fatalf("provider %q missing", providerID)
+		}
+		found := false
+		for _, field := range provider.Fields {
+			if field.Key != "registryUrl" {
+				continue
+			}
+			found = true
+			if field.Required {
+				t.Fatalf("%s registryUrl should be optional because runtime has a default registry", providerID)
+			}
+		}
+		if !found {
+			t.Fatalf("%s registryUrl field missing", providerID)
+		}
+	}
+}

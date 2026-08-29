@@ -48,6 +48,7 @@ mga notify card send --to source --card-json-file ./card.json
 mga notify card send --to chat:<group-name> --card-json-file ./release-card.template.json --value "title=✅ Release check complete" --value "status=PASS" --value "summary=No blocker found"
 mga workflow decision submit --interaction <interaction-id-from-callback> --task <task-id> --decision approve --comments "Approved from collaboration channel"
 mga runtime action --connection <alias> --data '{"method":"GET","endpoint":"/path"}'
+mga runtime action --connection <alias> --data '{"method":"POST","endpoint":"/repos/<owner>/<repo>/releases/<release-id>/attach_files"}' --upload file=dist/app.tar.gz
 `+"```"+`
 
 Rules:
@@ -56,6 +57,7 @@ Rules:
 - Use `+"`mga runtime tools --format table`"+` to see each tool's `+"`recommendedAdapter`"+`, skills, actions, and connection alias.
 - If a tool recommends a platform CLI, use that CLI and its bundled skill, for example `+"`gh`"+` for GitHub or `+"`lark-cli`"+` for Feishu/Lark.
 - If a tool recommends HTTP actions, call it with `+"`mga runtime action --connection <alias>`"+` so Multigent can enforce authorization and audit usage.
+- For HTTP file uploads, use `+"`mga runtime action --connection <alias> --data '<request-json>' --upload <field>=<path>`"+`; add `+"`--form key=value`"+` for multipart text fields. Do not build multipart bodies inside JSON.
 - MCP Gateway tools are server-side external tools. Use the runtime skill guide to list or call them only when they are granted to you and relevant to the task.
 - Use `+"`mga runtime channels --format table`"+` to see human collaboration channels bound to you, including named group chat targets. When a task is blocked, needs review, or needs a time-sensitive human action, use `+"`mga notify send`"+`. Send to `+"`human`"+`, `+"`user:<username-or-email>`"+`, or `+"`chat:<group-name>`"+` when a named group target is listed. When handling an IM mention, reply with `+"`--to source`"+` if you want to answer in the same conversation where the signal came from; use `+"`--to source:<signal-id>`"+` when multiple source signals are present and you need to target one precisely; Multigent will preserve the source conversation and mention/reply context when the provider supports it. Prefer `+"`--message-format markdown`"+` for structured summaries, checklists, links, and review requests. Do not add manual signatures like project/agent names at the bottom; Multigent already keeps internal source metadata. Multigent sends the external message server-side and keeps an internal inbox copy.
 - Use `+"`mga notify file send`"+` or `+"`mga notify image send`"+` when the human needs an actual attachment such as a Markdown/HTML report, screenshot, diagram, spreadsheet, or generated artifact. Prefer `+"`--doc <docID>`"+` for knowledge documents and `+"`--path <file>`"+` for files you can read in this runtime. Do not send credentials, raw secrets, huge logs, or unrelated workspace archives.

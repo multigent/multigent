@@ -1255,7 +1255,56 @@ mga notify card send --to source \
 }
 
 func newRuntimeActionCmd() *cobra.Command {
-	return newProxyCmd("action", "Send an HTTP action proxy request through a granted connection", "/api/v1/runtime/actions")
+	var connection string
+	var data string
+	var file string
+	var formFields []string
+	var uploads []string
+	cmd := &cobra.Command{
+		Use:   "action",
+		Short: "Send an HTTP action proxy request through a granted connection",
+		RunE: func(cmd *cobra.Command, args []string) error {
+			body, err := readRequestBody(data, file)
+			if err != nil {
+				return err
+			}
+			q := url.Values{}
+			if strings.TrimSpace(connection) != "" {
+				q.Set("alias", strings.TrimSpace(connection))
+			}
+			if len(formFields) > 0 || len(uploads) > 0 {
+				resp, status, err := requestRuntimeActionMultipart(q, body, formFields, uploads)
+				if err != nil {
+					return err
+				}
+				if err := writeJSON(resp); err != nil {
+					return err
+				}
+				if status < 200 || status >= 300 {
+					return fmt.Errorf("runtime proxy returned HTTP %d", status)
+				}
+				return nil
+			}
+			resp, status, err := requestJSONWithStatus(http.MethodPost, "/api/v1/runtime/actions", q, body)
+			if err != nil {
+				return err
+			}
+			if err := writeJSON(resp); err != nil {
+				return err
+			}
+			if status < 200 || status >= 300 {
+				return fmt.Errorf("runtime proxy returned HTTP %d", status)
+			}
+			return nil
+		},
+	}
+	cmd.Flags().StringVar(&connection, "connection", "", "connection id or runtime alias")
+	cmd.Flags().StringVar(&data, "data", "", "JSON request body")
+	cmd.Flags().StringVar(&file, "file", "", "read JSON request body from file, or '-' for stdin")
+	cmd.Flags().StringArrayVar(&formFields, "form", nil, "multipart form field as key=value; requires --data or --file for request metadata")
+	cmd.Flags().StringArrayVar(&uploads, "upload", nil, "multipart file upload as field=path; repeat for multiple files")
+	_ = cmd.MarkFlagRequired("connection")
+	return cmd
 }
 
 func newRuntimeToolsCmd() *cobra.Command {
@@ -2557,6 +2606,83 @@ func requestMultipart(path string, fields map[string]string, fileField, fileName
 		return []byte("{}"), nil
 	}
 	return raw, nil
+}
+
+func requestRuntimeActionMultipart(query url.Values, requestBody []byte, formFields, uploads []string) ([]byte, int, error) {
+	apiURL := strings.TrimRight(strings.TrimSpace(os.Getenv(envAPIURL)), "/")
+	token := strings.TrimSpace(os.Getenv(envAgentToken))
+	if apiURL == "" || token == "" {
+		return nil, 0, fmt.Errorf("%s and %s are required", envAPIURL, envAgentToken)
+	}
+	u, err := url.Parse(apiURL + "/api/v1/runtime/actions")
+	if err != nil {
+		return nil, 0, err
+	}
+	if len(query) > 0 {
+		u.RawQuery = query.Encode()
+	}
+	var buf bytes.Buffer
+	writer := multipart.NewWriter(&buf)
+	if err := writer.WriteField("request", string(bytes.TrimSpace(requestBody))); err != nil {
+		return nil, 0, err
+	}
+	for _, raw := range formFields {
+		key, value, ok := strings.Cut(raw, "=")
+		key = strings.TrimSpace(key)
+		if !ok || key == "" {
+			return nil, 0, fmt.Errorf("--form must use key=value")
+		}
+		if err := writer.WriteField(key, value); err != nil {
+			return nil, 0, err
+		}
+	}
+	for _, raw := range uploads {
+		field, path, ok := strings.Cut(raw, "=")
+		field = strings.TrimSpace(field)
+		path = strings.TrimSpace(path)
+		if !ok || field == "" || path == "" {
+			return nil, 0, fmt.Errorf("--upload must use field=path")
+		}
+		file, err := os.Open(path)
+		if err != nil {
+			return nil, 0, err
+		}
+		part, err := writer.CreateFormFile(field, filepath.Base(path))
+		if err != nil {
+			_ = file.Close()
+			return nil, 0, err
+		}
+		if _, err := io.Copy(part, file); err != nil {
+			_ = file.Close()
+			return nil, 0, err
+		}
+		if err := file.Close(); err != nil {
+			return nil, 0, err
+		}
+	}
+	if err := writer.Close(); err != nil {
+		return nil, 0, err
+	}
+	req, err := http.NewRequest(http.MethodPost, u.String(), &buf)
+	if err != nil {
+		return nil, 0, err
+	}
+	req.Header.Set("Authorization", "Bearer "+token)
+	req.Header.Set("Accept", "application/json")
+	req.Header.Set("Content-Type", writer.FormDataContentType())
+	resp, err := (&http.Client{Timeout: 10 * time.Minute}).Do(req)
+	if err != nil {
+		return nil, 0, err
+	}
+	defer resp.Body.Close()
+	respBody, err := io.ReadAll(io.LimitReader(resp.Body, maxJSONBody+1))
+	if err != nil {
+		return nil, resp.StatusCode, err
+	}
+	if len(respBody) > maxJSONBody {
+		return nil, resp.StatusCode, fmt.Errorf("runtime response too large")
+	}
+	return respBody, resp.StatusCode, nil
 }
 
 func requestJSONWithStatus(method, path string, query url.Values, body []byte) ([]byte, int, error) {

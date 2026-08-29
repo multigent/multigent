@@ -114,6 +114,7 @@ mga runtime tools --format table
 mga runtime skill-guide
 mga runtime connections --format table
 mga runtime action --connection <alias> --data '{"method":"GET","endpoint":"/path"}'
+mga runtime action --connection <alias> --data '{"method":"POST","endpoint":"/repos/<owner>/<repo>/releases/<release-id>/attach_files"}' --upload file=dist/app.tar.gz
 mga runtime version --check
 ```
 
@@ -126,6 +127,7 @@ Rules:
   - `mcp_gateway`: Use `mga runtime gateway list-tools` and `mga runtime gateway call-tool` when the task needs an external MCP tool granted to this Agent.
   - `skill_only`: follow the bundled skill; no executable tool is configured.
 - Use connection aliases from `mga runtime connections` when calling runtime proxies.
+- For HTTP file uploads, use `mga runtime action --connection <alias> --data '<request-json>' --upload <field>=<path>`; add `--form key=value` for multipart text fields. Do not build multipart bodies inside JSON.
 - Never ask humans to paste provider secrets into chat.
 - Runtime writes are audited by the Multigent Server.
 - Platform CLI adapters write best-effort low-sensitive command metadata to `MULTIGENT_TOOL_CLI_AUDIT_FILE`; do not write provider secrets or full sensitive arguments there.

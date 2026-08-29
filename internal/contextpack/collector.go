@@ -78,6 +78,21 @@ func (r *Registry) Specs() []CollectorSpec {
 	return specs
 }
 
+func (r *Registry) PublicSpecs() []CollectorSpec {
+	specs := make([]CollectorSpec, 0, len(r.collectors))
+	for _, collector := range r.collectors {
+		spec := collector.Spec()
+		switch spec.Type {
+		case CollectorManualUpload, CollectorLocalAgentSession, CollectorLocalFile:
+			continue
+		default:
+			specs = append(specs, spec)
+		}
+	}
+	sort.Slice(specs, func(i, j int) bool { return specs[i].Type < specs[j].Type })
+	return specs
+}
+
 func (r *Registry) Collect(ctx context.Context, collectorType string, input CollectInput) ([]CollectedItem, error) {
 	collector, ok := r.collectors[strings.TrimSpace(collectorType)]
 	if !ok {

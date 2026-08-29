@@ -11,6 +11,7 @@ import (
 	"fmt"
 	"io"
 	"mime"
+	"mime/multipart"
 	"net/http"
 	"net/url"
 	"strings"
@@ -19,7 +20,10 @@ import (
 	controldb "github.com/multigent/multigent/internal/db"
 )
 
-const oauthTokenRefreshSkew = 5 * time.Minute
+const (
+	oauthTokenRefreshSkew              = 5 * time.Minute
+	maxRuntimeActionMultipartBodyBytes = 200 << 20
+)
 
 func (s *Server) handleRuntimeMCPProxy(w http.ResponseWriter, r *http.Request) {
 	principal, connection, ok := s.runtimeConnectionForRequest(w, r)
@@ -242,6 +246,7 @@ type runtimeActionProxyRequest struct {
 	Method   string            `json:"method"`
 	Query    map[string]string `json:"query,omitempty"`
 	Headers  map[string]string `json:"headers,omitempty"`
+	Fields   map[string]string `json:"fields,omitempty"`
 	Body     json.RawMessage   `json:"body,omitempty"`
 }
 
@@ -254,6 +259,9 @@ func (e runtimeActionInputError) Error() string {
 }
 
 func (s *Server) proxyRuntimeAction(w http.ResponseWriter, r *http.Request, principal runtimeAgentPrincipal, connection controldb.Connection) error {
+	if strings.HasPrefix(strings.ToLower(strings.TrimSpace(r.Header.Get("Content-Type"))), "multipart/form-data") {
+		return s.proxyRuntimeActionMultipart(w, r, principal, connection)
+	}
 	var reqBody runtimeActionProxyRequest
 	if err := json.NewDecoder(io.LimitReader(r.Body, maxJSONBody)).Decode(&reqBody); err != nil {
 		return runtimeActionInputError{message: "action proxy request body must be valid JSON"}
@@ -312,6 +320,131 @@ func (s *Server) proxyRuntimeAction(w http.ResponseWriter, r *http.Request, prin
 		upstreamReq.Header.Set(key, strings.TrimSpace(value))
 	}
 	applyRuntimeActionAuth(upstreamReq, cfg)
+	return s.writeRuntimeActionProxyResponse(w, r, principal, connection, upstreamReq, cfg)
+}
+
+func (s *Server) proxyRuntimeActionMultipart(w http.ResponseWriter, r *http.Request, principal runtimeAgentPrincipal, connection controldb.Connection) error {
+	r.Body = http.MaxBytesReader(w, r.Body, maxRuntimeActionMultipartBodyBytes)
+	if err := r.ParseMultipartForm(maxRuntimeActionMultipartBodyBytes); err != nil {
+		return runtimeActionInputError{message: "parse multipart action proxy request: " + err.Error()}
+	}
+	defer r.Body.Close()
+	rawRequest := strings.TrimSpace(r.FormValue("request"))
+	if rawRequest == "" {
+		return runtimeActionInputError{message: "multipart action proxy request must include a request JSON field"}
+	}
+	var reqBody runtimeActionProxyRequest
+	if err := json.Unmarshal([]byte(rawRequest), &reqBody); err != nil {
+		return runtimeActionInputError{message: "multipart action proxy request field must be valid JSON"}
+	}
+	reqBody.Method = strings.ToUpper(strings.TrimSpace(reqBody.Method))
+	if reqBody.Method == "" {
+		reqBody.Method = http.MethodPost
+	}
+	if !runtimeActionMethodAllowed(reqBody.Method) || reqBody.Method == http.MethodGet || reqBody.Method == http.MethodHead {
+		return runtimeActionInputError{message: "multipart action proxy method must be one of DELETE, PATCH, POST, or PUT"}
+	}
+	if len(reqBody.Body) > 0 {
+		return runtimeActionInputError{message: "multipart action proxy request must not include a JSON body"}
+	}
+	if err := validateRuntimeRelativeEndpoint(reqBody.Endpoint); err != nil {
+		return err
+	}
+	cfg, err := s.runtimeHTTPActionConfig(connection)
+	if err != nil {
+		return err
+	}
+	endpoint := reqBody.Endpoint
+	query := reqBody.Query
+	if cfg.EndpointRewrite != nil {
+		endpoint, query, err = cfg.EndpointRewrite(endpoint, query)
+		if err != nil {
+			return err
+		}
+	}
+	if err := enforceRuntimeActionPolicy(connection, reqBody.Method, endpoint); err != nil {
+		return err
+	}
+	target, err := buildRuntimeActionURL(cfg.BaseURL, endpoint, query)
+	if err != nil {
+		return err
+	}
+	var body bytes.Buffer
+	writer := multipart.NewWriter(&body)
+	for key, value := range reqBody.Fields {
+		key = strings.TrimSpace(key)
+		if key == "" {
+			continue
+		}
+		if err := writer.WriteField(key, value); err != nil {
+			return fmt.Errorf("write multipart field: %w", err)
+		}
+	}
+	if r.MultipartForm != nil {
+		for key, values := range r.MultipartForm.Value {
+			key = strings.TrimSpace(key)
+			if key == "" || key == "request" {
+				continue
+			}
+			for _, value := range values {
+				if err := writer.WriteField(key, value); err != nil {
+					return fmt.Errorf("write multipart field: %w", err)
+				}
+			}
+		}
+		for field, files := range r.MultipartForm.File {
+			field = strings.TrimSpace(field)
+			if field == "" {
+				continue
+			}
+			for _, fileHeader := range files {
+				if err := copyRuntimeActionMultipartFile(writer, field, fileHeader); err != nil {
+					return err
+				}
+			}
+		}
+	}
+	if err := writer.Close(); err != nil {
+		return fmt.Errorf("close multipart action body: %w", err)
+	}
+	upstreamReq, err := http.NewRequestWithContext(r.Context(), reqBody.Method, target, &body)
+	if err != nil {
+		return fmt.Errorf("build action proxy request: %w", err)
+	}
+	upstreamReq.Header.Set("Accept", "application/json")
+	upstreamReq.Header.Set("Content-Type", writer.FormDataContentType())
+	applyRuntimeDefaultHeaders(upstreamReq, cfg)
+	for key, value := range reqBody.Headers {
+		key = strings.TrimSpace(key)
+		if key == "" || runtimeActionBlockedHeader(key) || strings.EqualFold(key, "Content-Type") {
+			continue
+		}
+		upstreamReq.Header.Set(key, strings.TrimSpace(value))
+	}
+	applyRuntimeActionAuth(upstreamReq, cfg)
+	return s.writeRuntimeActionProxyResponse(w, r, principal, connection, upstreamReq, cfg)
+}
+
+func copyRuntimeActionMultipartFile(writer *multipart.Writer, field string, fileHeader *multipart.FileHeader) error {
+	if fileHeader == nil {
+		return nil
+	}
+	file, err := fileHeader.Open()
+	if err != nil {
+		return fmt.Errorf("open multipart file %q: %w", fileHeader.Filename, err)
+	}
+	defer file.Close()
+	part, err := writer.CreateFormFile(field, fileHeader.Filename)
+	if err != nil {
+		return fmt.Errorf("create multipart file %q: %w", fileHeader.Filename, err)
+	}
+	if _, err := io.Copy(part, file); err != nil {
+		return fmt.Errorf("copy multipart file %q: %w", fileHeader.Filename, err)
+	}
+	return nil
+}
+
+func (s *Server) writeRuntimeActionProxyResponse(w http.ResponseWriter, r *http.Request, principal runtimeAgentPrincipal, connection controldb.Connection, upstreamReq *http.Request, cfg runtimeHTTPActionConfig) error {
 	client := &http.Client{Timeout: 60 * time.Second}
 	upstreamResp, err := client.Do(upstreamReq)
 	if err != nil {

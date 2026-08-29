@@ -3,6 +3,8 @@ package api
 import (
 	"context"
 	"encoding/json"
+	"io"
+	"mime/multipart"
 	"net/http"
 	"net/http/httptest"
 	"strings"
@@ -775,6 +777,123 @@ func TestRuntimeActionProxyForwardsCustomHTTPWithServerSideCredential(t *testing
 	}
 	if !strings.Contains(body, "Bearer [redacted]") {
 		t.Fatalf("redacted auth marker missing: %s", body)
+	}
+}
+
+func TestRuntimeActionProxyForwardsMultipartUpload(t *testing.T) {
+	users := newTestUserStore(t)
+	s := &Server{controlDB: users.db, users: users}
+	workspaceID := "ws-one"
+	var upstreamAuth string
+	var upstreamFileName string
+	var upstreamFileBody string
+	var upstreamDescription string
+	upstream := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		upstreamAuth = r.Header.Get("Authorization")
+		if err := r.ParseMultipartForm(1 << 20); err != nil {
+			t.Fatalf("parse upstream multipart: %v", err)
+		}
+		upstreamDescription = r.FormValue("description")
+		file, header, err := r.FormFile("file")
+		if err != nil {
+			t.Fatalf("upstream file missing: %v", err)
+		}
+		defer file.Close()
+		upstreamFileName = header.Filename
+		raw, err := io.ReadAll(file)
+		if err != nil {
+			t.Fatalf("read upstream file: %v", err)
+		}
+		upstreamFileBody = string(raw)
+		w.Header().Set("Content-Type", "application/json")
+		_ = json.NewEncoder(w).Encode(map[string]string{"auth": upstreamAuth})
+	}))
+	defer upstream.Close()
+
+	connection := controldb.Connection{
+		ID:             "conn-http",
+		WorkspaceID:    workspaceID,
+		Provider:       "custom-http",
+		ConnectionName: "api",
+		OwnerType:      ConnectionOwnerWorkspace,
+		OwnerID:        workspaceID,
+		AuthType:       ConnectionAuthCustomCredential,
+		Status:         "active",
+		ProfileJSON:    "{}",
+		CreatedBy:      "admin",
+	}
+	if err := users.db.UpsertWorkspace(controldb.Workspace{ID: workspaceID, Name: "One", Slug: "one"}); err != nil {
+		t.Fatalf("workspace: %v", err)
+	}
+	if err := users.db.UpsertConnection(connection); err != nil {
+		t.Fatalf("connection: %v", err)
+	}
+	secret, err := sealConnectionSecret(map[string]string{"baseUrl": upstream.URL, "apiKey": "http-token"})
+	if err != nil {
+		t.Fatalf("seal secret: %v", err)
+	}
+	secret.ConnectionID = connection.ID
+	if err := users.db.UpsertConnectionSecret(secret); err != nil {
+		t.Fatalf("secret: %v", err)
+	}
+	if err := users.db.CreateConnectionGrant(controldb.ConnectionGrant{
+		ID:           "grant-http",
+		WorkspaceID:  workspaceID,
+		ConnectionID: connection.ID,
+		TargetType:   ConnectionTargetAgent,
+		TargetID:     "agent_worker:aw-pm",
+	}); err != nil {
+		t.Fatalf("grant: %v", err)
+	}
+
+	var reqBody strings.Builder
+	writer := multipart.NewWriter(&reqBody)
+	if err := writer.WriteField("request", `{"method":"POST","endpoint":"/upload","headers":{"Authorization":"Bearer attacker"}}`); err != nil {
+		t.Fatalf("write request field: %v", err)
+	}
+	if err := writer.WriteField("description", "release asset"); err != nil {
+		t.Fatalf("write description field: %v", err)
+	}
+	part, err := writer.CreateFormFile("file", "asset.txt")
+	if err != nil {
+		t.Fatalf("create file field: %v", err)
+	}
+	if _, err := part.Write([]byte("asset-body")); err != nil {
+		t.Fatalf("write file field: %v", err)
+	}
+	if err := writer.Close(); err != nil {
+		t.Fatalf("close multipart writer: %v", err)
+	}
+	principal := runtimeAgentPrincipal{
+		WorkspaceID:   workspaceID,
+		Project:       "sample",
+		Agent:         "pm",
+		AgentWorkerID: "aw-pm",
+		RunID:         "run-one",
+		Capabilities:  []string{"connection.use"},
+	}
+	req := httptest.NewRequest(http.MethodPost, "/api/v1/runtime/actions", strings.NewReader(reqBody.String()))
+	req.Header.Set("Content-Type", writer.FormDataContentType())
+	req.Header.Set(agentConnectionManifest().ConnectionIDHeader, connection.ID)
+	req = req.WithContext(context.WithValue(req.Context(), ctxRuntimeAgentKey, principal))
+	rec := httptest.NewRecorder()
+
+	s.handleRuntimeActionProxy(rec, req)
+
+	if rec.Code != http.StatusOK {
+		t.Fatalf("status=%d body=%s", rec.Code, rec.Body.String())
+	}
+	if upstreamAuth != "Bearer http-token" {
+		t.Fatalf("upstream auth=%q", upstreamAuth)
+	}
+	if upstreamFileName != "asset.txt" || upstreamFileBody != "asset-body" {
+		t.Fatalf("upstream file name=%q body=%q", upstreamFileName, upstreamFileBody)
+	}
+	if upstreamDescription != "release asset" {
+		t.Fatalf("upstream description=%q", upstreamDescription)
+	}
+	if containsAny(rec.Body.String(), []string{"http-token"}) {
+		t.Fatalf("action response leaked sensitive data: %s", rec.Body.String())
 	}
 }
 
