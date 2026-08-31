@@ -38,6 +38,28 @@ func TestBuildArgsBinPATHKeepsToolchainPaths(t *testing.T) {
 	}
 }
 
+func TestFindCursorAgentBinaryFallsBackFromServicePATH(t *testing.T) {
+	home := t.TempDir()
+	binDir := filepath.Join(home, ".local", "bin")
+	if err := os.MkdirAll(binDir, 0o755); err != nil {
+		t.Fatal(err)
+	}
+	launcher := filepath.Join(binDir, "agent")
+	if err := os.WriteFile(launcher, []byte("#!/bin/sh\n"), 0o755); err != nil {
+		t.Fatal(err)
+	}
+	t.Setenv("HOME", home)
+	t.Setenv("PATH", "/usr/bin:/bin")
+
+	got, err := findCursorAgentBinary()
+	if err != nil {
+		t.Fatalf("findCursorAgentBinary: %v", err)
+	}
+	if got != launcher {
+		t.Fatalf("binary = %q, want %q", got, launcher)
+	}
+}
+
 func TestBuildArgsDoesNotMountSystemBinForNonWorkspaceTempDir(t *testing.T) {
 	agentDir := t.TempDir()
 	args, err := BuildArgs(agentDir, entity.ModelClaudeCode, nil, []string{"claude", "-p"})

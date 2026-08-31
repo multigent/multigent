@@ -168,7 +168,7 @@ func BuildArgs(agentDir string, model entity.AgentModel, cfg *entity.DockerSandb
 	// directory at a fixed container path and rewrite innerArgs to use the
 	// full path so SCRIPT_DIR resolves correctly.
 	if entity.NormaliseModel(model) == entity.ModelCursor {
-		if agentBin, err := exec.LookPath("agent"); err == nil {
+		if agentBin, err := findCursorAgentBinary(); err == nil {
 			if realBin, err := filepath.EvalSymlinks(agentBin); err == nil {
 				realDir := filepath.Dir(realBin)
 				const containerCursorDir = "/opt/cursor-agent"
@@ -224,6 +224,30 @@ func BuildArgs(agentDir string, model entity.AgentModel, cfg *entity.DockerSandb
 	args = append(args, innerArgs...)
 
 	return args, nil
+}
+
+// findCursorAgentBinary must work for API/service processes as well as an
+// interactive shell. Service managers commonly provide a minimal PATH that
+// omits the user's ~/.local/bin, where Cursor installs its launcher.
+func findCursorAgentBinary() (string, error) {
+	if bin, err := exec.LookPath("agent"); err == nil {
+		return bin, nil
+	}
+	home, err := os.UserHomeDir()
+	if err != nil {
+		return "", err
+	}
+	candidates := []string{
+		filepath.Join(home, ".local", "bin", "agent"),
+		filepath.Join(home, ".local", "bin", "cursor-agent"),
+		filepath.Join(home, ".local", "share", "cursor-agent", "current", "cursor-agent"),
+	}
+	for _, candidate := range candidates {
+		if info, statErr := os.Stat(candidate); statErr == nil && !info.IsDir() {
+			return candidate, nil
+		}
+	}
+	return "", fmt.Errorf("cursor agent launcher not found in PATH or standard user locations")
 }
 
 // RunArgs is a convenience wrapper: returns ("docker", BuildArgs(...)).
