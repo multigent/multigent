@@ -82,12 +82,11 @@ Cron: fires at exact calendar times (crontab syntax).
   When a cron fires it enqueues a Task; the heartbeat loop picks it up.
   If no heartbeat is enabled, the scheduler executes the cron task directly.
 
-Start the scheduler in the foreground (all projects with heartbeat/cron enabled):
+Start the scheduler in the foreground for the whole workspace:
   multigent scheduler start
 
-Limit to one project or one agent:
-  multigent scheduler start --project my-api
-  multigent scheduler start --project my-api --agent dev`,
+Optionally limit to one agent (agent names are workspace-scoped):
+  multigent scheduler start --agent dev`,
 	}
 	cmd.AddCommand(
 		newSchedulerStartCmd(),
@@ -160,10 +159,9 @@ func newSchedulerStartCmd() *cobra.Command {
 		Use:   "start",
 		Short: "Start the scheduler (blocks until SIGINT/SIGTERM)",
 		RunE: func(cmd *cobra.Command, args []string) error {
-			if strings.TrimSpace(startAgent) != "" && strings.TrimSpace(startProject) == "" {
-				return fmt.Errorf("--agent requires --project")
+			if strings.TrimSpace(startProject) != "" {
+				fmt.Fprintln(cmd.OutOrStdout(), "Warning: --project is ignored; scheduler always covers the whole workspace.")
 			}
-
 			root, err := resolveRoot()
 			if err != nil {
 				return err
@@ -177,35 +175,25 @@ func newSchedulerStartCmd() *cobra.Command {
 				return err
 			}
 
-			if p := strings.TrimSpace(startProject); p != "" {
-				found := false
-				for _, x := range projects {
-					if x == p {
-						found = true
-						break
-					}
-				}
-				if !found {
-					return fmt.Errorf("unknown project %q", p)
-				}
-				projects = []string{p}
-			}
-
 			if a := strings.TrimSpace(startAgent); a != "" {
-				p := strings.TrimSpace(startProject)
-				names, err := listCLIProjectAgentNames(root, p)
-				if err != nil {
-					return fmt.Errorf("list agents: %w", err)
-				}
 				found := false
-				for _, n := range names {
-					if n == a {
-						found = true
+				for _, p := range projects {
+					names, listErr := listCLIProjectAgentNames(root, p)
+					if listErr != nil {
+						return fmt.Errorf("list agents: %w", listErr)
+					}
+					for _, n := range names {
+						if n == a {
+							found = true
+							break
+						}
+					}
+					if found {
 						break
 					}
 				}
 				if !found {
-					return fmt.Errorf("agent %q not found in project %q", a, p)
+					return fmt.Errorf("agent %q not found in workspace", a)
 				}
 			}
 
@@ -217,7 +205,9 @@ func newSchedulerStartCmd() *cobra.Command {
 				fmt.Println("  Cron     : multigent cron add --project P --agent A --schedule \"0 9 * * *\" --title T --prompt P")
 				return nil
 			}
-			lock, err := acquireSchedulerStartLock(root, startProject, startAgent)
+			// Scheduler ownership is workspace-scoped. Project memberships are
+			// execution context, not a boundary for periodic agent activity.
+			lock, err := acquireSchedulerStartLock(root, "", startAgent)
 			if err != nil {
 				return err
 			}
@@ -236,12 +226,8 @@ func newSchedulerStartCmd() *cobra.Command {
 			}
 			hbN, crN := len(heartbeatAgents), len(cronAgents)
 			rightLabel := fmt.Sprintf("scheduler · %d heartbeat · %d cron", hbN, crN)
-			if fp := strings.TrimSpace(startProject); fp != "" {
-				if fa := strings.TrimSpace(startAgent); fa != "" {
-					rightLabel = fmt.Sprintf("%s · %s/%s", rightLabel, fp, fa)
-				} else {
-					rightLabel = fmt.Sprintf("%s · project=%s", rightLabel, fp)
-				}
+			if fa := strings.TrimSpace(startAgent); fa != "" {
+				rightLabel = fmt.Sprintf("%s · agent=%s", rightLabel, fa)
 			}
 
 			maxIntvLen := 0
@@ -360,8 +346,8 @@ func newSchedulerStartCmd() *cobra.Command {
 			return nil
 		},
 	}
-	cmd.Flags().StringVar(&startProject, "project", "", "only run schedulers for agents under this project (default: all projects)")
-	cmd.Flags().StringVar(&startAgent, "agent", "", "only run the scheduler for this agent (requires --project)")
+	cmd.Flags().StringVar(&startProject, "project", "", "deprecated: scheduler always covers the whole workspace")
+	cmd.Flags().StringVar(&startAgent, "agent", "", "only run the scheduler for this workspace agent")
 	return cmd
 }
 
@@ -423,6 +409,7 @@ func collectAgentWorkerSchedulerTargets(root string, projects []string, startAge
 	for _, project := range projects {
 		projectSet[strings.TrimSpace(project)] = true
 	}
+	filterProjects := len(projectSet) > 0
 	memberships, err := db.ListProjectMemberships(controldb.ProjectMembershipFilter{
 		WorkspaceID: workspaceID,
 		MemberType:  agentdir.MemberTypeAgentWorker,
@@ -434,7 +421,7 @@ func collectAgentWorkerSchedulerTargets(root string, projects []string, startAge
 	order := make([]string, 0)
 	for _, membership := range memberships {
 		project := strings.TrimSpace(membership.ProjectID)
-		if project == "" || !projectSet[project] {
+		if project == "" || (filterProjects && !projectSet[project]) {
 			continue
 		}
 		worker, ok, err := db.AgentWorkerByID(workspaceID, membership.MemberID)
