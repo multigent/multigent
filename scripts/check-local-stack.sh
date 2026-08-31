@@ -31,7 +31,8 @@ What it verifies:
   - /api/v1/knowledge-base/sources returns 401 or 200, not 404
 
 What restart does:
-  - kills the current web/api listeners on 27894/27893
+  - restarts Supervisor-managed multigent-api/multigent-web when available
+  - otherwise kills the current web/api listeners on 27894/27893
   - rebuilds multigent if needed
   - restarts web and api with the expected commands
 EOF
@@ -92,6 +93,19 @@ check_endpoint() {
 
 restart_stack() {
   local wpid apid
+
+  if command -v supervisorctl >/dev/null 2>&1 && supervisorctl status multigent-api >/dev/null 2>&1; then
+    echo "[restart] rebuilding backend binary"
+    (
+      cd "$ROOT_DIR"
+      make build-go
+    )
+    echo "[restart] restarting Supervisor programs"
+    supervisorctl restart multigent-api multigent-web
+    sleep 2
+    return
+  fi
+
   wpid="$(web_pid)"
   apid="$(api_pid)"
 
@@ -156,6 +170,7 @@ check_stack() {
   check_endpoint "27894 /api/v1/knowledge-base/sources" "http://127.0.0.1:${WEB_PORT}/api/v1/knowledge-base/sources?limit=1" || fail=1
   check_endpoint "27893 /api/v1/knowledge-base/items" "http://127.0.0.1:${API_PORT}/api/v1/knowledge-base/items?limit=1" || fail=1
   check_endpoint "27893 /api/v1/knowledge-base/sources" "http://127.0.0.1:${API_PORT}/api/v1/knowledge-base/sources?limit=1" || fail=1
+  check_endpoint "27893 /api/v1/context/ingest auth" "http://127.0.0.1:${API_PORT}/api/v1/context/ingest" || fail=1
 
   echo
   if [[ "$fail" -eq 0 ]]; then

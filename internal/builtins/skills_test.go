@@ -12,7 +12,7 @@ func TestEnsureSkillsWritesManagedBuiltins(t *testing.T) {
 	if err := EnsureSkills(root); err != nil {
 		t.Fatalf("EnsureSkills: %v", err)
 	}
-	for _, name := range []string{"multigent-usage", "multigent-setup-assistant", "multigent-admin-ops", "task-management", "agency-messaging", "content-distribution-timing"} {
+	for _, name := range []string{"multigent-usage", "multigent-setup-assistant", "multigent-admin-ops", "task-management", "agency-messaging", "content-distribution-timing", "xiaohongshu-image-publishing"} {
 		path := filepath.Join(root, "skills", name, "SKILL.md")
 		data, err := os.ReadFile(path)
 		if err != nil {

@@ -317,9 +317,10 @@ func agentMetaFromWorkerMembership(project string, worker controldb.AgentWorker,
 	if parsed, err := time.Parse(time.RFC3339, worker.CreatedAt); err == nil {
 		createdAt = parsed
 	}
-	return &entity.AgentMeta{
+	meta := &entity.AgentMeta{
 		Name:          name,
 		Project:       strings.TrimSpace(project),
+		Team:          strings.TrimSpace(worker.Team),
 		Role:          strings.TrimSpace(membership.Role),
 		Model:         model,
 		RuntimeModel:  strings.TrimSpace(worker.RuntimeModel),
@@ -329,6 +330,18 @@ func agentMetaFromWorkerMembership(project string, worker controldb.AgentWorker,
 		Avatar:        strings.TrimSpace(worker.Avatar),
 		HiredAt:       createdAt,
 	}
+	// AgentWorker runtime settings live in the control-plane database in 2.x.
+	// Preserve the execution sandbox when adapting them to the runner-facing
+	// AgentMeta; dropping it silently falls back to host execution.
+	var runtimeConfig struct {
+		Sandbox *entity.SandboxConfig `json:"sandbox,omitempty"`
+	}
+	if raw := strings.TrimSpace(worker.RuntimeConfigJSON); raw != "" {
+		if err := json.Unmarshal([]byte(raw), &runtimeConfig); err == nil {
+			meta.Sandbox = runtimeConfig.Sandbox
+		}
+	}
+	return meta
 }
 
 func (s *dbStore) AgentWorkerContext(projectName, agentName string) (AgentWorkerContext, error) {

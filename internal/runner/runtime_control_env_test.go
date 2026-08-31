@@ -674,7 +674,7 @@ func TestWriteRuntimeToolsFileMaterializesGitHubCLIConfig(t *testing.T) {
 		if connectionID != "conn_gh" {
 			t.Fatalf("connectionID=%q", connectionID)
 		}
-		return map[string]string{"apiKey": "ghp_test_token"}, true, nil
+		return map[string]string{"apiKey": "ghp_test_token", "accountName": "test-account"}, true, nil
 	})
 	if err != nil {
 		t.Fatalf("write tools file: %v", err)
@@ -691,7 +691,7 @@ func TestWriteRuntimeToolsFileMaterializesGitHubCLIConfig(t *testing.T) {
 	if err != nil {
 		t.Fatalf("read hosts.yml: %v", err)
 	}
-	if !strings.Contains(string(hostsBody), "ghp_test_token") || !strings.Contains(string(hostsBody), "git_protocol: https") {
+	if !strings.Contains(string(hostsBody), `user: "test-account"`) || !strings.Contains(string(hostsBody), "ghp_test_token") || !strings.Contains(string(hostsBody), "git_protocol: https") {
 		t.Fatalf("unexpected hosts.yml: %s", string(hostsBody))
 	}
 	toolsBody, err := os.ReadFile(toolsPath)
@@ -819,7 +819,7 @@ func TestWriteRuntimeToolsFileMaterializesLarkCLIConfig(t *testing.T) {
 		t.Fatalf("read wrapper: %v", err)
 	}
 	wrapperText := string(wrapperBody)
-	if !strings.Contains(wrapperText, "'lark-cli' \"$@\"") || !strings.Contains(wrapperText, larkHome) || !strings.Contains(wrapperText, "MULTIGENT_TOOL_CLI_AUDIT_FILE") {
+	if !strings.Contains(wrapperText, "'lark-cli' \"$@\"") || !strings.Contains(wrapperText, larkHome) || !strings.Contains(wrapperText, "XDG_DATA_HOME='/root/.local/share'") || !strings.Contains(wrapperText, "MULTIGENT_TOOL_CLI_AUDIT_FILE") {
 		t.Fatalf("unexpected wrapper: %s", string(wrapperBody))
 	}
 	if env[runtimeToolCLIAuditEnv] == "" || !strings.Contains(env[runtimeToolCLIAuditEnv], toolDir) {

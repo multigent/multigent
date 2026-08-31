@@ -2,6 +2,7 @@ package api
 
 import (
 	"crypto/rand"
+	"crypto/sha256"
 	"encoding/hex"
 	"encoding/json"
 	"net/http"
@@ -50,6 +51,14 @@ type contextItemBody struct {
 
 type contextItemsBatchBody struct {
 	Items []contextItemBody `json:"items"`
+}
+
+// contextIngestBody is the stable boundary for external collectors. The API
+// accepts normalized records only; source-specific fetching and parsing stay
+// outside the multigent process.
+type contextIngestBody struct {
+	Source contextSourceBody `json:"source"`
+	Items  []contextItemBody `json:"items"`
 }
 
 type contextSubscriptionBody struct {
@@ -226,6 +235,94 @@ func (s *Server) handleContextCenterItemsBatch(w http.ResponseWriter, r *http.Re
 	}
 	w.WriteHeader(http.StatusCreated)
 	_ = json.NewEncoder(w).Encode(map[string]any{"items": created, "accepted": len(created)})
+}
+
+func (s *Server) handleContextIngest(w http.ResponseWriter, r *http.Request) {
+	workspaceID, ok := s.currentWorkspaceForRequest(w, r)
+	if !ok {
+		return
+	}
+	if !s.checkCurrentWorkspaceAccess(w, r) || !s.requireClientScope(w, r, clientScopeContextRW) {
+		return
+	}
+	var body contextIngestBody
+	if err := s.readJSONMax(w, r, &body, contextImportMaxJSONBody); err != nil {
+		s.jsonErrorCode(w, http.StatusBadRequest, ErrCodeInvalidJSON, "invalid JSON body")
+		return
+	}
+	sourceType := strings.TrimSpace(body.Source.Type)
+	sourceName := strings.TrimSpace(body.Source.Name)
+	if sourceType == "" || sourceName == "" {
+		s.jsonErrorCode(w, http.StatusBadRequest, ErrCodeValidationFailed, "source.type and source.name are required")
+		return
+	}
+	if len(body.Items) == 0 {
+		s.jsonErrorCode(w, http.StatusBadRequest, ErrCodeValidationFailed, "items are required")
+		return
+	}
+	if len(body.Items) > 500 {
+		s.jsonErrorCode(w, http.StatusBadRequest, ErrCodeValidationFailed, "too many items")
+		return
+	}
+	now := time.Now().UTC().Format(time.RFC3339)
+	source := controldb.ContextSource{
+		ID:            firstNonEmpty(strings.TrimSpace(body.Source.ID), newContextID("ctxsrc")),
+		WorkspaceID:   workspaceID,
+		Type:          sourceType,
+		Name:          sourceName,
+		Description:   strings.TrimSpace(body.Source.Description),
+		ConnectionRef: strings.TrimSpace(body.Source.ConnectionRef),
+		Status:        firstNonEmpty(strings.TrimSpace(body.Source.Status), "active"),
+		ConfigJSON:    marshalJSONObject(body.Source.Config),
+		MetadataJSON:  marshalJSONObject(body.Source.Metadata),
+		CreatedBy:     currentRequestUsername(s, r),
+		CreatedAt:     now,
+		UpdatedAt:     now,
+	}
+	if err := s.controlDB.UpsertContextSource(source); err != nil {
+		s.serverError(w, err)
+		return
+	}
+	created := 0
+	deduplicated := 0
+	items := make([]map[string]any, 0, len(body.Items))
+	for _, raw := range body.Items {
+		raw.SourceID = source.ID
+		raw.SourceType = source.Type
+		if strings.TrimSpace(raw.DedupeKey) == "" && strings.TrimSpace(raw.SourceItemID) != "" {
+			raw.DedupeKey = stableContextHash(source.ID + "\x00" + strings.TrimSpace(raw.SourceItemID))
+		}
+		item, ok := s.contextItemFromBody(w, r, workspaceID, raw)
+		if !ok {
+			return
+		}
+		if strings.TrimSpace(raw.ID) == "" && item.DedupeKey != "" {
+			item.ID = "ctx-" + item.DedupeKey
+		}
+		existing, found, err := s.controlDB.ContextItemByID(workspaceID, item.ID)
+		if err != nil {
+			s.serverError(w, err)
+			return
+		}
+		if found && existing.DedupeKey == item.DedupeKey {
+			deduplicated++
+		} else {
+			created++
+		}
+		if err := s.controlDB.UpsertContextItem(item); err != nil {
+			s.serverError(w, err)
+			return
+		}
+		items = append(items, contextItemResponse(item, false))
+	}
+	w.WriteHeader(http.StatusCreated)
+	_ = json.NewEncoder(w).Encode(map[string]any{
+		"source":       contextSourceResponse(source),
+		"items":        items,
+		"fetched":      len(body.Items),
+		"created":      created,
+		"deduplicated": deduplicated,
+	})
 }
 
 func (s *Server) handleContextCenterItemGet(w http.ResponseWriter, r *http.Request) {
@@ -643,4 +740,9 @@ func newContextID(prefix string) string {
 		return prefix + "-" + strconv.FormatInt(time.Now().UnixNano(), 36)
 	}
 	return prefix + "-" + hex.EncodeToString(b[:])
+}
+
+func stableContextHash(value string) string {
+	sum := sha256.Sum256([]byte(value))
+	return hex.EncodeToString(sum[:])[:32]
 }

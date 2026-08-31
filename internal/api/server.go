@@ -662,9 +662,56 @@ func (s *Server) Handler() http.Handler {
 	runtimeNodeMux.HandleFunc("POST /api/v1/runtime-node/runs/{runId}/complete", s.handleRuntimeNodeRunComplete)
 	runtimeNodeMux.HandleFunc("POST /api/v1/runtime-node/runs/{runId}/fail", s.handleRuntimeNodeRunFail)
 	publicMux.Handle("/api/v1/runtime-node/", s.withRuntimeNodeAuth(runtimeNodeMux))
+	// External collectors use a deliberately narrow machine-token boundary.
+	// Keep this outside the general Web/API auth mux so user sessions and
+	// trusted-proxy identities cannot accidentally access the ingest endpoint.
+	publicMux.Handle("/api/v1/context/ingest", s.withContextIngestAuth(http.HandlerFunc(s.handleContextIngest)))
 	publicMux.Handle("/", s.withTokenAuth(mux))
 
 	return withCORS(withJSONHeaders(publicMux))
+}
+
+func (s *Server) withContextIngestAuth(next http.Handler) http.Handler {
+	return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		if !strings.HasPrefix(r.Header.Get("Authorization"), "Bearer ") {
+			s.jsonErrorCode(w, http.StatusUnauthorized, ErrCodeUnauthorized, "bearer client token required")
+			return
+		}
+		identity, ok := s.authenticateRequest(r)
+		if !ok || identity.Source != identitySourceClientToken {
+			s.jsonErrorCode(w, http.StatusUnauthorized, ErrCodeUnauthorized, "client token required")
+			return
+		}
+		if identity.Err != nil {
+			if errors.Is(identity.Err, errIdentityForbidden) {
+				s.jsonErrorCode(w, http.StatusForbidden, ErrCodeForbidden, identity.Err.Error())
+			} else {
+				s.jsonErrorCode(w, http.StatusUnauthorized, ErrCodeUnauthorized, identity.Err.Error())
+			}
+			return
+		}
+		if !containsString(identity.Scopes, clientScopeContextRW) {
+			s.jsonErrorCode(w, http.StatusForbidden, ErrCodeForbidden, "client token scope required: "+clientScopeContextRW)
+			return
+		}
+		ctx := context.WithValue(r.Context(), ctxUserKey, identity.Username)
+		ctx = context.WithValue(ctx, ctxAuthSourceKey, identity.Source)
+		ctx = context.WithValue(ctx, ctxAuthScopesKey, identity.Scopes)
+		req := r.WithContext(ctx)
+		if !s.applyRequestedWorkspace(w, req) {
+			return
+		}
+		next.ServeHTTP(w, req)
+	})
+}
+
+func containsString(values []string, wanted string) bool {
+	for _, value := range values {
+		if value == wanted {
+			return true
+		}
+	}
+	return false
 }
 
 func withCORS(next http.Handler) http.Handler {

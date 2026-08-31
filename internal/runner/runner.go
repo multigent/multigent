@@ -2653,7 +2653,14 @@ func materializeGitHubCLIConfig(adapter runtimeAdapterRef, cfg runtimeConfigFile
 	if token == "" || cfg.MaterializedPath == "" {
 		return nil, nil
 	}
-	body := "github.com:\n  oauth_token: " + yamlQuote(token) + "\n  git_protocol: https\n"
+	// gh performs a network-backed legacy config migration when the account
+	// name is absent. Persist the known account name so a transient GitHub API
+	// failure cannot prevent the runtime from starting.
+	body := "github.com:\n"
+	if accountName := strings.TrimSpace(secretValues["accountName"]); accountName != "" {
+		body += "  user: " + yamlQuote(accountName) + "\n"
+	}
+	body += "  oauth_token: " + yamlQuote(token) + "\n  git_protocol: https\n"
 	if err := os.WriteFile(cfg.MaterializedPath, []byte(body), 0o600); err != nil {
 		return nil, err
 	}
@@ -2977,7 +2984,12 @@ func materializeLarkCLIConfig(tool runtimeToolRef, adapter runtimeAdapterRef, cf
 		return nil, err
 	}
 	wrapperPath := filepath.Join(binDir, "lark-cli")
-	if err := os.WriteFile(wrapperPath, []byte(runtimeCLIWrapperScript("lark-cli", "lark-cli", tool, map[string]string{"HOME": larkHome})), 0o700); err != nil {
+	if err := os.WriteFile(wrapperPath, []byte(runtimeCLIWrapperScript("lark-cli", "lark-cli", tool, map[string]string{
+		"HOME": larkHome,
+		// Keep user-mode auth in an explicitly mounted, agent-scoped directory.
+		// The generated config still lives under the connection's isolated HOME.
+		"XDG_DATA_HOME": "/root/.local/share",
+	})), 0o700); err != nil {
 		return nil, err
 	}
 	return map[string]string{"MULTIGENT_LARK_HOME": larkHome}, nil
