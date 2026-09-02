@@ -27,6 +27,7 @@ func TestAgentWorkerMembershipAndAttentionSignal(t *testing.T) {
 		WorkspaceID:           workspaceID,
 		Name:                  "nova",
 		DisplayName:           "Nova",
+		ProfilePrompt:         `line one\nline two`,
 		DefaultModelAccountID: "codex-official",
 		ScheduleJSON:          `{"interval":"2h"}`,
 		AttentionPolicyJSON:   `{"im_mention":true}`,
@@ -42,7 +43,7 @@ func TestAgentWorkerMembershipAndAttentionSignal(t *testing.T) {
 	if !ok {
 		t.Fatal("worker not found")
 	}
-	if got.ID != worker.ID || got.PrimarySessionID != "sess-primary" {
+	if got.ID != worker.ID || got.PrimarySessionID != "sess-primary" || got.ProfilePrompt != "line one\nline two" {
 		t.Fatalf("unexpected worker: %+v", got)
 	}
 

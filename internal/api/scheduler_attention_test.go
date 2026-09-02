@@ -64,6 +64,79 @@ func TestRuntimeWakeupTaskIncludesPendingAttentionSignals(t *testing.T) {
 	}
 }
 
+func TestAttentionWakeupAddsDispatcherContractFromWorkerPolicy(t *testing.T) {
+	s, workspaceID := newConnectionGrantPolicyServer(t)
+	seedTaskAttentionWorker(t, s, workspaceID, "sample", "pm", true)
+	worker, ok, err := s.controlDB.AgentWorkerByName(workspaceID, "pm")
+	if err != nil || !ok {
+		t.Fatalf("attention worker lookup ok=%v err=%v", ok, err)
+	}
+	worker.AttentionPolicyJSON = `{"dispatchOnly":true,"dispatchKinds":["pr_review"]}`
+	if err := s.controlDB.UpsertAgentWorker(worker); err != nil {
+		t.Fatalf("update worker attention policy: %v", err)
+	}
+	if err := s.controlDB.UpsertAttentionSignal(controldb.AttentionSignal{
+		ID:            "sig-dispatch-pr",
+		WorkspaceID:   workspaceID,
+		AgentWorkerID: worker.ID,
+		DedupeKey:     "test:dispatch-pr",
+		SourceKind:    "im_message",
+		SourceID:      "msg-dispatch-pr",
+		Reason:        "im_direct_message",
+		Summary:       "Please review https://github.com/example/project/pull/42",
+		Status:        "pending",
+		CreatedAt:     time.Now().UTC().Format(time.RFC3339),
+	}); err != nil {
+		t.Fatalf("upsert dispatch signal: %v", err)
+	}
+	task, _, err := s.nextRuntimeWakeupTask(workspaceID, "sample", "pm", &entity.HeartbeatConfig{})
+	if err != nil {
+		t.Fatalf("next wakeup task: %v", err)
+	}
+	if task == nil || !strings.Contains(task.Prompt, "Active Operating Contract") {
+		t.Fatalf("expected dispatcher contract in wakeup prompt: %+v", task)
+	}
+	for _, required := range []string{
+		"not a reviewer",
+		"create or continue the configured PR Review workflow",
+		"Do not perform the review yourself",
+		"do not bypass the workflow",
+	} {
+		if !strings.Contains(task.Prompt, required) {
+			t.Fatalf("dispatcher contract missing %q:\n%s", required, task.Prompt)
+		}
+	}
+}
+
+func TestAttentionWakeupDoesNotAddDispatcherContractByDefault(t *testing.T) {
+	s, workspaceID := newConnectionGrantPolicyServer(t)
+	seedTaskAttentionWorker(t, s, workspaceID, "sample", "pm", true)
+	if err := s.controlDB.UpsertAttentionSignal(controldb.AttentionSignal{
+		ID:            "sig-normal-attention",
+		WorkspaceID:   workspaceID,
+		AgentWorkerID: "aw-pm",
+		DedupeKey:     "test:normal-attention",
+		SourceKind:    "task",
+		SourceID:      "task-normal-attention",
+		Reason:        "task_assigned",
+		Summary:       "Continue the assigned task",
+		Status:        "pending",
+		CreatedAt:     time.Now().UTC().Format(time.RFC3339),
+	}); err != nil {
+		t.Fatalf("upsert normal signal: %v", err)
+	}
+	task, _, err := s.nextRuntimeWakeupTask(workspaceID, "sample", "pm", &entity.HeartbeatConfig{})
+	if err != nil {
+		t.Fatalf("next wakeup task: %v", err)
+	}
+	if task == nil {
+		t.Fatal("expected wakeup task")
+	}
+	if strings.Contains(task.Prompt, "Active Operating Contract") {
+		t.Fatalf("default worker should not receive dispatcher contract:\n%s", task.Prompt)
+	}
+}
+
 func TestRuntimeWakeupTaskDoesNotReincludeSeenAttentionSignals(t *testing.T) {
 	s, workspaceID := newConnectionGrantPolicyServer(t)
 	seedTaskAttentionWorker(t, s, workspaceID, "sample", "pm", true)

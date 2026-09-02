@@ -154,6 +154,9 @@ func (s *Server) pendingAttentionWakeupSectionAndVars(workspaceID, project, agen
 	i18n := s.apiWakeupStrings()
 	var b strings.Builder
 	b.WriteString(i18n.AttentionHeader)
+	if contract := attentionDispatcherContract(resolved.Worker); contract != "" {
+		b.WriteString(contract)
+	}
 	b.WriteString(i18n.AttentionIntro)
 	ids := make([]string, 0, len(signals))
 	for _, signal := range signals {
@@ -215,6 +218,26 @@ func (s *Server) pendingAttentionWakeupSectionAndVars(workspaceID, project, agen
 	b.WriteString(i18n.AttentionHint)
 	b.WriteString("\nIf an IM signal payload contains `attachments`, download the binary before analyzing it: `mga attention attachment download <signal-id> --index 1`. Use the returned local path in your analysis; do not ask the user to re-upload unless the download fails.\n")
 	return b.String(), ids, vars, nil
+}
+
+// attentionDispatcherContract makes an agent's operating boundary explicit in
+// every attention wakeup. Long-term profile prompts describe identity and
+// preferences, but an attention task must also carry the active delegation
+// contract because it is the prompt that is closest to the incoming signal.
+// The policy is intentionally data-driven so other dispatcher roles can reuse
+// this without coupling the scheduler to a particular worker or project.
+func attentionDispatcherContract(worker controldb.AgentWorker) string {
+	var policy struct {
+		DispatchOnly  bool     `json:"dispatchOnly"`
+		DispatchKinds []string `json:"dispatchKinds"`
+	}
+	if err := json.Unmarshal([]byte(strings.TrimSpace(worker.AttentionPolicyJSON)), &policy); err != nil || !policy.DispatchOnly {
+		return ""
+	}
+	if len(policy.DispatchKinds) > 0 && !containsAnyFold(policy.DispatchKinds, "pr_review") {
+		return ""
+	}
+	return "## Active Operating Contract\n\nThis worker is a dispatcher for PR review requests, not a reviewer. A PR URL in an attention signal is an intake request only; it does not authorize you to review the diff. Extract the repository, PR number, URL, requester, source channel, and context; include the head SHA when read access is available, otherwise leave it for the reviewer workflow to resolve. Then create or continue the configured PR Review workflow for the routed project. Verify that the task is assigned to the project reviewer before handing it off. Do not perform the review yourself, post a review/comment, approve the PR, modify code, or claim that review is complete. Only after the reviewer produces a result may you read and summarize that result back to the original channel. If required intake data or routing is missing, ask for it or report the block; do not guess and do not bypass the workflow.\n\n"
 }
 
 func (s *Server) attentionWakeupTaskVars(workspaceID string, signals []controldb.AttentionSignal) map[string]string {

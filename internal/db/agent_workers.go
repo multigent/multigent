@@ -7,6 +7,7 @@ import (
 )
 
 func (db *SQLiteStore) UpsertAgentWorker(w AgentWorker) error {
+	w.ProfilePrompt = normalizeAgentWorkerPrompt(w.ProfilePrompt)
 	if w.CreatedAt == "" {
 		w.CreatedAt = nowUTC()
 	}
@@ -133,5 +134,15 @@ func scanAgentWorker(row agentWorkerScanner) (AgentWorker, error) {
 		&w.Model, &w.RuntimeModel, &w.DefaultModelAccountID, &w.DefaultRuntimeNodeID, &w.DefaultRuntimeMode,
 		&w.ScheduleJSON, &w.AttentionPolicyJSON, &w.MemoryPolicyJSON, &w.SkillsJSON,
 		&w.RuntimeConfigJSON, &w.PrimarySessionID, &w.CreatedAt, &w.UpdatedAt)
+	if err == nil {
+		w.ProfilePrompt = normalizeAgentWorkerPrompt(w.ProfilePrompt)
+	}
 	return w, err
+}
+
+// normalizeAgentWorkerPrompt repairs prompts written with escaped newlines by
+// older clients. Agent profile prompts are Markdown-like instructions, so a
+// literal "\\n" is never useful presentation and can hide important rules.
+func normalizeAgentWorkerPrompt(prompt string) string {
+	return strings.ReplaceAll(prompt, `\n`, "\n")
 }
