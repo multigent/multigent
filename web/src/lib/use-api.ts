@@ -16,6 +16,7 @@ export function useApiJson<T>(path: string | null, reloadKey = 0, options?: UseA
   const prevPath = useRef(path)
   const prevReloadKey = useRef(reloadKey)
   const silentStatuses = options?.silentStatuses
+  const silentStatusesKey = silentStatuses?.join(',') || ''
   const keepPreviousDataOnReload = options?.keepPreviousDataOnReload ?? false
 
   useEffect(() => {
@@ -48,7 +49,7 @@ export function useApiJson<T>(path: string | null, reloadKey = 0, options?: UseA
     return () => {
       cancelled = true
     }
-  }, [path, reloadKey, silentStatuses, keepPreviousDataOnReload])
+  }, [path, reloadKey, silentStatusesKey, keepPreviousDataOnReload])
 
   if (path == null) {
     return { status: 'error', error: new Error('no path') }
