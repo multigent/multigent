@@ -94,6 +94,9 @@ remote server. For local development with hot-reload, use
 			srv.SetUpdateChecker(GetCachedUpdateInfo)
 			srv.SetDaemonStatus(daemonStatusJSON)
 			srv.SetLocalRuntimeAPIURL(os.Getenv("MULTIGENT_API_URL"))
+			if err := srv.StartWorkspaceScheduler(); err != nil {
+				return fmt.Errorf("start workspace scheduler: %w", err)
+			}
 
 			handler := newSPAHandler(srv.Handler())
 

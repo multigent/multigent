@@ -346,7 +346,7 @@ hire the agents and wire up their schedules.`,
 				fmt.Printf("\nNext steps:\n")
 				fmt.Printf("  1. Review the config :  multigent project show --project %s\n", name)
 				fmt.Printf("  2. Apply (hire+setup):  multigent project apply --project %s\n", name)
-				fmt.Printf("  3. Start scheduler   :  multigent scheduler start\n")
+				fmt.Printf("  3. Start the service :  multigent start\n")
 			} else {
 				fmt.Printf("  Edit the prompt : vim projects/%s/prompt.md\n", name)
 				fmt.Printf("  Edit the config : vim projects/%s/project.yaml\n", name)

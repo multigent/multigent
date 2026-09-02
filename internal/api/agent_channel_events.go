@@ -814,11 +814,21 @@ func (s *Server) acceptAgentChannelControlCommand(channelProvider imbridge.Provi
 func (s *Server) formatAgentChannelStatus(binding controldb.AgentChannelBinding) string {
 	worker, workerOK := s.agentWorkerForChannelBinding(binding)
 	var hb *entity.HeartbeatConfig
+	var wakeupRunning bool
 	if workerOK {
 		hb = parseAgentWorkerSchedule(worker)
 	} else if target := s.runtimeSchedulerTargetForProjectAgent(binding.WorkspaceID, binding.ProjectID, binding.AgentID); strings.TrimSpace(target.workerID) != "" {
 		if loaded, err := s.loadSchedulerTargetHeartbeat(binding.WorkspaceID, target); err == nil {
 			hb = loaded
+		}
+	}
+	if hb != nil && strings.EqualFold(strings.TrimSpace(hb.LastWakeupStatus), "running") {
+		// A heartbeat record can outlive its child process (or be persisted by a
+		// runtime node), so use a live process or active runtime run as proof.
+		wakeupRunning = hb.PID > 0 && processAlive(hb.PID)
+		if !wakeupRunning {
+			target := s.runtimeSchedulerTargetForProjectAgent(binding.WorkspaceID, binding.ProjectID, binding.AgentID)
+			wakeupRunning = s.hasActiveRuntimeRunForTarget(binding.WorkspaceID, target, "")
 		}
 	}
 	label := s.agentChannelDisplayName(binding)
@@ -869,6 +879,7 @@ func (s *Server) formatAgentChannelStatus(binding controldb.AgentChannelBinding)
 		fmt.Sprintf("- 模型账号: %s", firstNonEmpty(modelAccount, "-")),
 		fmt.Sprintf("- 运行节点: %s", firstNonEmpty(runtimeNode, "-")),
 		fmt.Sprintf("- 运行模式: %s", firstNonEmpty(runtimeMode, "-")),
+		fmt.Sprintf("- 当前唤醒运行中: %s", yesNo(wakeupRunning)),
 	)
 	if primarySession != "" {
 		lines = append(lines, fmt.Sprintf("- 主会话: `%s`", primarySession))

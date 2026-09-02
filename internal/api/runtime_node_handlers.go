@@ -1175,7 +1175,10 @@ func (s *Server) finishRuntimeNodeRun(w http.ResponseWriter, r *http.Request, st
 		s.serverError(w, err)
 		return
 	}
-	s.markTaskAttentionSignalsForRun(run, "handled")
+	if isSuccessfulRuntimeStatus(run.Status) {
+		s.markTaskAttentionSignalsForRun(run, "handled")
+		s.markAttentionSignalsForWakeupRun(run)
+	}
 	s.requestPendingAttentionWakeupAfterRun(run)
 	_ = json.NewEncoder(w).Encode(map[string]any{"run": runtimeRunResponse(run)})
 }

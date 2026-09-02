@@ -209,6 +209,7 @@ func TestAgentChannelStatusCommandRepliesWithoutWakeup(t *testing.T) {
 		"模型: gpt-5.5",
 		"模型账号: Codex Official (gpt-5.5)",
 		"运行节点: node-local",
+		"当前唤醒运行中: 否",
 		"间隔: 30m",
 		"触发器: attention",
 		"唤醒次数: 总计 12 / 今日 2",
@@ -1394,7 +1395,7 @@ func TestAgentChannelBindingUsesAgentWorkerIdentity(t *testing.T) {
 
 	req := httptest.NewRequest(http.MethodPost, "/", nil)
 	req = req.WithContext(context.WithValue(req.Context(), ctxUserKey, "owner"))
-	binding, err := s.saveManualAgentIMChannel(req, workspaceID, "sample", "pm", imbridge.ManualSetupResult{
+	binding, err := s.saveManualAgentIMChannel(req, workspaceID, "sample", "pm", "aw-pm", imbridge.ManualSetupResult{
 		Provider:        "feishu",
 		AppID:           "cli_app",
 		ExternalOwnerID: "ou_owner",

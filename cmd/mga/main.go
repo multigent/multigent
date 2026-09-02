@@ -1199,6 +1199,96 @@ Two-column facts:
 }
 `+"```"+`
 
+Rich scorecard with colored columns:
+
+Use `+"`background_style`"+` on the `+"`column_set`"+` or an individual
+`+"`column`"+` to visually group information. Use `+"`text_size`"+` for
+important numbers and the supported Markdown `+"`<font color=...>`"+` tag for
+small status accents. Keep the color meaning consistent: green = good,
+yellow = needs attention, red = blocking/high risk.
+
+`+"`default`"+` means no tinted background. Do not use it when the user asked
+for colored sections. Prefer shade levels such as `+"`green-50`"+`/`+"`green-100`"+`
+for light green, `+"`green-700`"+`/`+"`green-800`"+`/`+"`green-900`"+` for deep
+green, `+"`red-50`"+`/`+"`red-100`"+` for light red, and
+`+"`red-700`"+`/`+"`red-800`"+`/`+"`red-900`"+` for deep red. Similar shade
+levels exist for other color families. For text accents, prefer named Markdown
+colors such as `+"`green`"+`, `+"`orange`"+`, `+"`red`"+`, or `+"`grey`"+`.
+
+For a light card, use `+"`green-50`"+`, `+"`yellow-50`"+`, or `+"`red-50`"+`
+instead of the base `+"`green`"+`, `+"`yellow`"+`, or `+"`red`"+` colors.
+For a specific theme-aware custom color, `+"`background_style`"+` also accepts
+an RGBA value such as `+"`rgba(234,247,238,1)`"+`; prefer RGBA over an
+untested hex value.
+
+`+"```json"+`
+{
+  "tag": "column_set",
+  "flex_mode": "stretch",
+  "horizontal_spacing": "8px",
+  "columns": [
+    {
+      "tag": "column",
+      "width": "weighted",
+      "weight": 1,
+      "background_style": "green-100",
+      "elements": [
+        {
+          "tag": "markdown",
+          "text_size": "heading-2",
+          "content": "<font color='green'>总分</font>\n\n# 94"
+        },
+        {
+          "tag": "markdown",
+          "text_size": "small",
+          "content": "质量门禁：通过"
+        }
+      ]
+    },
+    {
+      "tag": "column",
+      "width": "weighted",
+      "weight": 1,
+      "background_style": "yellow-100",
+      "elements": [
+        {
+          "tag": "markdown",
+          "text_size": "heading-2",
+          "content": "<font color='orange'>中风险</font>\n\n# 2"
+        },
+        {
+          "tag": "markdown",
+          "text_size": "small",
+          "content": "需要关注的事项"
+        }
+      ]
+    },
+    {
+      "tag": "column",
+      "width": "weighted",
+      "weight": 1,
+      "background_style": "red-100",
+      "elements": [
+        {
+          "tag": "markdown",
+          "text_size": "heading-2",
+          "content": "<font color='red'>高风险</font>\n\n# 0"
+        },
+        {
+          "tag": "markdown",
+          "text_size": "small",
+          "content": "阻塞项"
+        }
+      ]
+    }
+  ]
+}
+`+"```"+`
+
+The example is a layout pattern, not a fixed business template. Choose the
+number of columns, labels, colors, links, and sections according to the
+actual message. Avoid putting a button on a display-only report.
+
 Link button:
 
 `+"```json"+`
@@ -1241,6 +1331,11 @@ mga notify card send --to source \
 
 ## Interaction Rules
 
+- For review reports, scorecards, progress updates, and other display-only
+  notifications, do not add an acknowledgement button. Use a raw Card 2.0
+  JSON card instead, with a colored header (green, yellow, or red),
+  column_set sections for key facts, markdown elements for details, and
+  direct URL buttons only when a useful link exists.
 - For display-only cards, raw Card 2.0 JSON is enough.
 - For decisions, approvals, or user input callbacks, prefer:
   `+"`mga notify card send --action approve=\"Approve:primary\" --action request_changes=\"Request changes:danger:input\" ...`"+`

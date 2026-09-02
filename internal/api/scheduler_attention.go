@@ -93,8 +93,10 @@ func (s *Server) pendingAttentionWakeupSectionAndVars(workspaceID, project, agen
 	signals, err := s.controlDB.ListAttentionSignals(controldb.AttentionSignalFilter{
 		WorkspaceID:   workspaceID,
 		AgentWorkerID: resolved.Worker.ID,
-		Statuses:      []string{"pending", "seen", "handling"},
-		Limit:         limit,
+		// A signal is eligible for injection exactly once. `seen` means it was
+		// already delivered to a wakeup; `handling` is owned by an active run.
+		Statuses: []string{"pending"},
+		Limit:    limit,
 	})
 	if err != nil || len(signals) == 0 {
 		return "", nil, nil, err
@@ -136,6 +138,19 @@ func (s *Server) pendingAttentionWakeupSectionAndVars(workspaceID, project, agen
 		signals = focused
 	}
 	vars := s.attentionWakeupTaskVars(workspaceID, signals)
+	if len(signals) > 0 {
+		ids := make([]string, 0, len(signals))
+		for _, signal := range signals {
+			if id := strings.TrimSpace(signal.ID); id != "" {
+				ids = append(ids, id)
+			}
+		}
+		rawIDs, _ := json.Marshal(ids)
+		if vars == nil {
+			vars = map[string]string{}
+		}
+		vars["MULTIGENT_ATTENTION_SIGNAL_IDS_JSON"] = string(rawIDs)
+	}
 	i18n := s.apiWakeupStrings()
 	var b strings.Builder
 	b.WriteString(i18n.AttentionHeader)
@@ -282,6 +297,12 @@ func (s *Server) recoverablePendingAttentionWakeupTargets(limit int) ([]attentio
 	groups := map[key][]string{}
 	order := make([]key, 0)
 	for _, signal := range signals {
+		// IM is an attention source, not durable work. Replaying an old chat
+		// message merely because the service restarted creates surprising replies.
+		// New IM events and the normal heartbeat path still handle it.
+		if isIMAttentionSignal(signal) {
+			continue
+		}
 		var refs struct {
 			Project string `json:"project"`
 			Agent   string `json:"agent"`
@@ -359,7 +380,7 @@ func (s *Server) requestPendingAttentionWakeupAfterRun(run controldb.RuntimeRun)
 	signals, err := s.controlDB.ListAttentionSignals(controldb.AttentionSignalFilter{
 		WorkspaceID:   workspaceID,
 		AgentWorkerID: workerID,
-		Statuses:      []string{"pending", "seen"},
+		Statuses:      []string{"pending"},
 		Limit:         50,
 	})
 	if err != nil {
@@ -427,6 +448,44 @@ func (s *Server) markAttentionSignalsSeen(workspaceID string, ids []string) {
 	}
 	for _, id := range ids {
 		_ = s.controlDB.MarkAttentionSignalStatus(workspaceID, id, "seen")
+	}
+}
+
+// markAttentionSignalsForWakeupRun closes only the signals that were actually
+// attached to this wakeup task. This keeps unrelated pending signals for a
+// later cycle and makes the run-to-signal relationship auditable.
+func (s *Server) markAttentionSignalsForWakeupRun(run controldb.RuntimeRun) {
+	if s == nil || s.controlDB == nil || s.ts == nil || strings.TrimSpace(run.TaskID) == "" {
+		return
+	}
+	task, err := s.ts.GetTask(run.ProjectID, run.AgentID, run.TaskID)
+	if err != nil || task == nil || len(task.Vars) == 0 {
+		return
+	}
+	var ids []string
+	if err := json.Unmarshal([]byte(task.Vars["MULTIGENT_ATTENTION_SIGNAL_IDS_JSON"]), &ids); err != nil {
+		return
+	}
+	if !isSuccessfulRuntimeStatus(run.Status) {
+		return
+	}
+	for _, id := range ids {
+		id = strings.TrimSpace(id)
+		if id == "" {
+			continue
+		}
+		if err := s.controlDB.MarkAttentionSignalStatusWithResult(run.WorkspaceID, id, "handled", "run:"+strings.TrimSpace(run.ID)); err != nil {
+			log.Printf("[attention] mark wakeup signal handled failed signal=%s run=%s: %v", id, run.ID, err)
+		}
+	}
+}
+
+func isSuccessfulRuntimeStatus(status string) bool {
+	switch strings.ToLower(strings.TrimSpace(status)) {
+	case "done_success", "succeeded", "success", "completed":
+		return true
+	default:
+		return false
 	}
 }
 

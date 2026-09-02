@@ -29,8 +29,9 @@ func newRunCmd() *cobra.Command {
 The agent's configured CLI is invoked inside the agent's working directory.
 Task state is updated automatically based on the exit code and output.
 
-This is a one-shot manual trigger. For recurring automated runs, use
-'multigent scheduler start' to activate the heartbeat scheduler.`,
+This is a one-shot manual trigger. The web/API service owns recurring
+workspace scheduling automatically. The standalone 'multigent scheduler start'
+command is intended for development diagnostics.`,
 		Example: `  # Run the next pending task
   multigent run --project web-app --agent qa
 

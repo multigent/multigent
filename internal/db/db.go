@@ -93,6 +93,7 @@ type Store interface {
 	AttentionSignalByID(workspaceID, id string) (AttentionSignal, bool, error)
 	ListAttentionSignals(filter AttentionSignalFilter) ([]AttentionSignal, error)
 	MarkAttentionSignalStatus(workspaceID, id, status string) error
+	MarkAttentionSignalStatusWithResult(workspaceID, id, status, resultRef string) error
 	UpsertAttentionCursor(cursor AttentionCursor) error
 	AttentionCursorBySource(workspaceID, agentWorkerID, sourceKind, sourceChannel string) (AttentionCursor, bool, error)
 	ListAttentionCursors(filter AttentionCursorFilter) ([]AttentionCursor, error)

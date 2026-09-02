@@ -650,9 +650,8 @@ func (s *Server) runtimeNotifyCreateInteractionRequest(principal runtimeAgentPri
 		}
 		actions = append(actions, imbridge.InteractiveCardAction{ID: id, Label: label, Style: action.Style, RequiresText: action.RequiresText})
 	}
-	if len(actions) == 0 {
-		return nil, "", fmt.Errorf("card.actions must include at least one action")
-	}
+	// A card may be display-only. Interactive cards need actions, but review
+	// summaries and progress reports should not invent a meaningless button.
 	fields := make([]imbridge.InteractiveCardField, 0, len(cardBody.Fields))
 	for _, field := range cardBody.Fields {
 		if strings.TrimSpace(field.Label) == "" && strings.TrimSpace(field.Value) == "" {

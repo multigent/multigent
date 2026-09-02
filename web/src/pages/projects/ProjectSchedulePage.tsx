@@ -17,9 +17,6 @@ import { useWorkspaceAccess } from '../../lib/workspace-access'
 
 /* ─── types ─── */
 
-type SchedInstance = { key: string; running: boolean; pid?: number; startedAt?: string; error?: string }
-type SchedStatusResp = { schedulers: SchedInstance[] }
-
 type HeartbeatRow = {
   enabled: boolean; interval: string; paused: boolean
   activeHours?: string; activeDays?: string; jitter?: string
@@ -91,9 +88,6 @@ export default function ProjectSchedulePage() {
             <h1 className="text-xl font-semibold text-neutral-900 dark:text-zinc-100">{t('projectNav.schedule')}</h1>
             <p className="mt-0.5 text-sm text-neutral-500 dark:text-zinc-500">{t('schedule.subtitle')}</p>
           </div>
-          <div data-tour-scheduler-control>
-            {projectId && canManage && <SchedulerControl projectId={projectId} onAction={reload} />}
-          </div>
         </div>
       </div>
 
@@ -128,71 +122,6 @@ function Spinner({ label }: { label: string }) {
     <div className="flex items-center gap-2 py-16 justify-center">
       <div className="size-5 animate-spin rounded-full border-2 border-neutral-300 border-t-sky-600 dark:border-zinc-600 dark:border-t-sky-400" />
       <span className="text-sm text-neutral-500">{label}</span>
-    </div>
-  )
-}
-
-/* ═══════════════════════════════════════════════════════════════
-   Scheduler control (top-right start/stop)
-   ═══════════════════════════════════════════════════════════════ */
-
-function SchedulerControl({ projectId, onAction }: { projectId: string; onAction?: () => void }) {
-  const { t } = useTranslation()
-  const [status, setStatus] = useState<SchedStatusResp | null>(null)
-  const [busy, setBusy] = useState(false)
-  const mountedRef = useRef(true)
-
-  const fetchStatus = useCallback(async () => {
-    try {
-      const data = await apiFetch<SchedStatusResp>('/api/v1/scheduler/status')
-      if (mountedRef.current) setStatus(data)
-    } catch { /* swallow poll errors */ }
-  }, [])
-
-  useEffect(() => {
-    mountedRef.current = true
-    void fetchStatus()
-    const iv = setInterval(fetchStatus, 5000)
-    return () => { mountedRef.current = false; clearInterval(iv) }
-  }, [fetchStatus])
-
-  const instances = status?.schedulers ?? []
-  const inst = instances.find((s) => s.running && (s.key === projectId || s.key === 'all'))
-  const isRunning = Boolean(inst)
-
-  async function toggle() {
-    setBusy(true)
-    try {
-      if (isRunning) {
-        const body: Record<string, string> = {}
-        const key = inst?.key ?? projectId
-        if (key !== 'all') { const p = key.split('/'); body.project = p[0]; if (p[1]) body.agent = p[1] }
-        await apiPost('/api/v1/scheduler/stop', body)
-      } else {
-        await apiPost('/api/v1/scheduler/start', { project: projectId })
-      }
-      await fetchStatus()
-      onAction?.()
-    } catch { /* toast handled by apiFetch */ }
-    finally { setBusy(false) }
-  }
-
-  return (
-    <div className="flex items-center gap-2.5">
-      {isRunning && (
-        <span className="flex items-center gap-1.5 rounded-full bg-emerald-100 px-2.5 py-0.5 text-[11px] font-semibold text-emerald-700 dark:bg-emerald-900/30 dark:text-emerald-400">
-          <span className="size-1.5 rounded-full bg-emerald-500 animate-pulse" />
-          {t('schedule.schedulerRunning')}
-        </span>
-      )}
-      <button type="button" disabled={busy} onClick={() => void toggle()} className={cn(
-        'cursor-pointer rounded-lg border px-3 py-2 text-sm font-medium transition-colors disabled:opacity-40',
-        isRunning
-          ? 'border-red-300 bg-white text-red-600 hover:bg-red-50 dark:border-red-700 dark:bg-zinc-900 dark:text-red-400 dark:hover:bg-zinc-800'
-          : 'border-sky-600 bg-white text-sky-700 hover:bg-sky-50 dark:border-sky-500 dark:bg-zinc-900 dark:text-sky-400 dark:hover:bg-zinc-800',
-      )}>
-        {isRunning ? t('schedule.schedulerStop') : t('schedule.schedulerStart')}
-      </button>
     </div>
   )
 }

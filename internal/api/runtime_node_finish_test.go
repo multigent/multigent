@@ -145,6 +145,9 @@ func TestRuntimeNodeCompleteMarksNonWorkflowTaskDone(t *testing.T) {
 	if signal.Status != "handled" || signal.HandledAt == "" {
 		t.Fatalf("attention signal was not handled after runtime completion: %#v", signal)
 	}
+	if signal.ResultRef != "run:rtrun-success" {
+		t.Fatalf("attention signal should reference the consuming run: %#v", signal)
+	}
 }
 
 func TestRuntimeNodeClaimSkipsExpiredRunWhenTaskAlreadyTerminal(t *testing.T) {

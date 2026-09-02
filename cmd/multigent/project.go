@@ -40,8 +40,8 @@ Typical flow after creating an agency from a template:
        multigent workflow run feature-dev --project my-service \
          --input feature="User login"
 
-  5. Start the scheduler to process tasks automatically:
-       multigent scheduler start`,
+  5. Start the service to process tasks automatically:
+       multigent start`,
 	}
 	cmd.AddCommand(
 		newProjectShowCmd(),
@@ -110,8 +110,8 @@ func newProjectApplyCmd() *cobra.Command {
   • Writes heartbeat.yaml for agents that define a heartbeat schedule
   • Writes crons.yaml for agents that define cron jobs
 
-After apply, start the scheduler to let agents work autonomously:
-  multigent scheduler start`,
+After apply, start the service to let agents work autonomously:
+  multigent start`,
 		Example: `  multigent project apply --project my-service
   multigent project apply --project my-service --dry-run
   multigent project apply --project my-service --force   # re-hire all agents`,
@@ -148,8 +148,8 @@ After apply, start the scheduler to let agents work autonomously:
 			fmt.Println()
 			fmt.Printf("✓ project apply done for %q\n", project)
 			if !dryRun {
-				fmt.Printf("\nStart the scheduler to let agents run autonomously:\n")
-				fmt.Printf("  multigent scheduler start\n")
+				fmt.Printf("\nStart the service to let agents run autonomously:\n")
+				fmt.Printf("  multigent start\n")
 			}
 			return nil
 		},

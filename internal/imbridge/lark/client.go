@@ -984,12 +984,12 @@ func buildInteractiveCardBody(card InteractiveCard, openIDs []string) map[string
 			continue
 		}
 		elements = append(elements, map[string]any{
-			"tag": "action",
-			"actions": []map[string]any{{
-				"tag":  "button",
-				"text": map[string]string{"tag": "plain_text", "content": strings.TrimSpace(link.Label)},
-				"url":  strings.TrimSpace(link.URL),
-				"type": "default",
+			"tag":  "button",
+			"text": map[string]string{"tag": "plain_text", "content": strings.TrimSpace(link.Label)},
+			"type": "default",
+			"behaviors": []map[string]any{{
+				"type":        "open_url",
+				"default_url": map[string]string{"url": strings.TrimSpace(link.URL)},
 			}},
 		})
 	}
@@ -1009,11 +1009,14 @@ func buildInteractiveCardBody(card InteractiveCard, openIDs []string) map[string
 			"tag":  "button",
 			"text": map[string]string{"tag": "plain_text", "content": label},
 			"type": style,
-			"value": map[string]string{
-				"interaction_id": strings.TrimSpace(card.InteractionID),
-				"action_id":      id,
-				"action_label":   label,
-			},
+			"behaviors": []map[string]any{{
+				"type": "callback",
+				"value": map[string]string{
+					"interaction_id": strings.TrimSpace(card.InteractionID),
+					"action_id":      id,
+					"action_label":   label,
+				},
+			}},
 		})
 	}
 	if needsText || len(actions) > 0 {
@@ -1027,7 +1030,7 @@ func buildInteractiveCardBody(card InteractiveCard, openIDs []string) map[string
 		})
 	}
 	if len(actions) > 0 {
-		elements = append(elements, map[string]any{"tag": "action", "actions": actions})
+		elements = append(elements, actions...)
 	}
 	cardBody := map[string]any{
 		"schema": "2.0",

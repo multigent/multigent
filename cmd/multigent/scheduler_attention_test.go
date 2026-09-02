@@ -87,13 +87,16 @@ func TestPendingAttentionSectionAndSeenMark(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	if len(ids) != 2 || ids[0] != "sig-one" || ids[1] != "sig-two" {
+	if len(ids) != 1 || ids[0] != "sig-one" {
 		t.Fatalf("unexpected ids: %#v", ids)
 	}
-	for _, want := range []string{"注意力信号", "sig-one", "sig-two", "Observed:", "约 2 小时前", "im_direct_message", "请看一下当前流程", "这条已经 seen 但还没处理"} {
+	for _, want := range []string{"注意力信号", "sig-one", "Observed:", "约 2 小时前", "im_direct_message", "请看一下当前流程"} {
 		if !strings.Contains(section, want) {
 			t.Fatalf("section missing %q:\n%s", want, section)
 		}
+	}
+	if strings.Contains(section, "sig-two") || strings.Contains(section, "这条已经 seen 但还没处理") {
+		t.Fatalf("seen signal was re-injected:\n%s", section)
 	}
 	markAttentionSignalsSeen(root, ids)
 	signal, ok, err := db.AttentionSignalByID("ws", "sig-one")

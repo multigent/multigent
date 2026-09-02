@@ -145,7 +145,6 @@ func NewServer(root, apiKey string) *Server {
 		modelAuthSessions:      make(map[string]*modelAuthSession),
 		telemetryUsageCache:    make(map[string]telemetryUsageCacheEntry),
 	}
-	go s.restoreDesiredSchedulers()
 	s.startConnectionHealthChecker()
 	s.failStaleInteractionSessionsOnStartup()
 	go s.refreshAgentIMBridges()
@@ -529,8 +528,6 @@ func (s *Server) Handler() http.Handler {
 	mux.HandleFunc("GET /api/v1/workbench/tasks", s.handleWorkbenchTasks)
 	mux.HandleFunc("GET /api/v1/workbench/overview", s.handleWorkbenchOverview)
 	mux.HandleFunc("GET /api/v1/scheduler/status", s.handleSchedulerStatus)
-	mux.HandleFunc("POST /api/v1/scheduler/start", s.handleSchedulerStart)
-	mux.HandleFunc("POST /api/v1/scheduler/stop", s.handleSchedulerStop)
 	mux.HandleFunc("POST /api/v1/scheduler/wakeup", s.handleSchedulerWakeup)
 	mux.HandleFunc("POST /api/v1/scheduler/abort", s.handleSchedulerAbort)
 	mux.HandleFunc("GET /api/v1/inbox", s.handleInbox)

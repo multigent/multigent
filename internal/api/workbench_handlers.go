@@ -253,7 +253,6 @@ type projectOverview struct {
 	AgentCount       int    `json:"agentCount"`
 	HeartbeatEnabled int    `json:"heartbeatEnabled"`
 	RunningAgents    int    `json:"runningAgents"`
-	SchedulerRunning bool   `json:"schedulerRunning"`
 	PendingTasks     int    `json:"pendingTasks"`
 	RunningTasks     int    `json:"runningTasks"`
 	CompletedTasks   int    `json:"completedTasks"`
@@ -267,14 +266,6 @@ func (s *Server) handleWorkbenchOverview(w http.ResponseWriter, r *http.Request)
 	if err != nil {
 		s.serverError(w, err)
 		return
-	}
-
-	schedStatuses := s.sched.Status()
-	schedRunning := map[string]bool{}
-	for _, ss := range schedStatuses {
-		if ss.Running {
-			schedRunning[ss.Key] = true
-		}
 	}
 
 	rows := make([]projectOverview, 0, len(projects))
@@ -303,17 +294,6 @@ func (s *Server) handleWorkbenchOverview(w http.ResponseWriter, r *http.Request)
 				}
 				if hb.LastWakeupStatus == "running" && hb.PID > 0 {
 					ov.RunningAgents++
-				}
-			}
-		}
-
-		if schedRunning["all"] || schedRunning[proj] {
-			ov.SchedulerRunning = true
-		} else {
-			for _, ag := range agentNames {
-				if schedRunning[proj+"/"+ag] {
-					ov.SchedulerRunning = true
-					break
 				}
 			}
 		}

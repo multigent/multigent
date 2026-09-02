@@ -317,8 +317,8 @@ multigent scheduler heartbeat --project P --agent A \
 multigent scheduler heartbeat --project P --agent A \
   --wakeup-prompt-file /path/to/wakeup.md
 
-# Start scheduler (all enabled agents)
-multigent scheduler start         # alias: sched, s
+# Start the service (it owns the workspace scheduler)
+multigent start
 multigent scheduler stop
 multigent scheduler status
 ```

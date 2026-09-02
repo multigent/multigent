@@ -485,7 +485,7 @@ func (s *Server) handleAgentChannelSetupPoll(w http.ResponseWriter, r *http.Requ
 	if actualProvider == "" {
 		actualProvider = provider
 	}
-	binding, err := s.saveAgentIMChannel(r, workspaceID, project, agent, actualProvider, poll)
+	binding, err := s.saveAgentIMChannel(r, workspaceID, project, agent, s.agentWorkerIDForProjectAgent(workspaceID, project, agent), actualProvider, poll)
 	if err != nil {
 		s.serverError(w, err)
 		return
@@ -528,7 +528,7 @@ func (s *Server) handleAgentWorkerChannelSetupPoll(w http.ResponseWriter, r *htt
 	if actualProvider == "" {
 		actualProvider = provider
 	}
-	binding, err := s.saveAgentIMChannel(r, scope.workspaceID, scope.projectID, scope.agentName, actualProvider, poll)
+	binding, err := s.saveAgentIMChannel(r, scope.workspaceID, scope.projectID, scope.agentName, scope.worker.ID, actualProvider, poll)
 	if err != nil {
 		s.serverError(w, err)
 		return
@@ -574,7 +574,7 @@ func (s *Server) handleAgentChannelSetupManual(w http.ResponseWriter, r *http.Re
 	if result.Provider == "" {
 		result.Provider = provider
 	}
-	binding, err := s.saveManualAgentIMChannel(r, workspaceID, project, agent, result)
+	binding, err := s.saveManualAgentIMChannel(r, workspaceID, project, agent, s.agentWorkerIDForProjectAgent(workspaceID, project, agent), result)
 	if err != nil {
 		s.serverError(w, err)
 		return
@@ -612,7 +612,7 @@ func (s *Server) handleAgentWorkerChannelSetupManual(w http.ResponseWriter, r *h
 	if result.Provider == "" {
 		result.Provider = provider
 	}
-	binding, err := s.saveManualAgentIMChannel(r, scope.workspaceID, scope.projectID, scope.agentName, result)
+	binding, err := s.saveManualAgentIMChannel(r, scope.workspaceID, scope.projectID, scope.agentName, scope.worker.ID, result)
 	if err != nil {
 		s.serverError(w, err)
 		return
@@ -985,9 +985,8 @@ func (s *Server) handleAgentWorkerChannelBindCode(w http.ResponseWriter, r *http
 	})
 }
 
-func (s *Server) saveAgentIMChannel(r *http.Request, workspaceID, project, agent, provider string, poll imbridge.SetupPollResponse) (controldb.AgentChannelBinding, error) {
+func (s *Server) saveAgentIMChannel(r *http.Request, workspaceID, project, agent, agentWorkerID, provider string, poll imbridge.SetupPollResponse) (controldb.AgentChannelBinding, error) {
 	now := time.Now().UTC().Format(time.RFC3339)
-	agentWorkerID := s.agentWorkerIDForProjectAgent(workspaceID, project, agent)
 	openBaseURL, err := imbridge.MustOpenBaseURL(provider)
 	if err != nil {
 		return controldb.AgentChannelBinding{}, err
@@ -1080,7 +1079,14 @@ func (s *Server) saveAgentIMChannel(r *http.Request, workspaceID, project, agent
 		UpdatedAt:       now,
 		LastActivityAt:  now,
 	}
-	if existing, found, err := s.findAgentChannelBinding(workspaceID, project, agent, provider); err != nil {
+	var existing controldb.AgentChannelBinding
+	var found bool
+	if strings.TrimSpace(agentWorkerID) != "" {
+		existing, found, err = s.findAgentWorkerChannelBinding(workspaceID, agentWorkerID, provider)
+	} else {
+		existing, found, err = s.findAgentChannelBinding(workspaceID, project, agent, provider)
+	}
+	if err != nil {
 		return controldb.AgentChannelBinding{}, err
 	} else if found {
 		binding.ID = existing.ID
@@ -1126,9 +1132,8 @@ func (s *Server) saveAgentIMChannel(r *http.Request, workspaceID, project, agent
 	return binding, nil
 }
 
-func (s *Server) saveManualAgentIMChannel(r *http.Request, workspaceID, project, agent string, result imbridge.ManualSetupResult) (controldb.AgentChannelBinding, error) {
+func (s *Server) saveManualAgentIMChannel(r *http.Request, workspaceID, project, agent, agentWorkerID string, result imbridge.ManualSetupResult) (controldb.AgentChannelBinding, error) {
 	now := time.Now().UTC().Format(time.RFC3339)
-	agentWorkerID := s.agentWorkerIDForProjectAgent(workspaceID, project, agent)
 	provider := result.Provider
 	openBaseURL := strings.TrimSpace(result.BaseURL)
 	if openBaseURL == "" {
@@ -1232,7 +1237,14 @@ func (s *Server) saveManualAgentIMChannel(r *http.Request, workspaceID, project,
 		UpdatedAt:       now,
 		LastActivityAt:  now,
 	}
-	if existing, found, err := s.findAgentChannelBinding(workspaceID, project, agent, provider); err != nil {
+	var existing controldb.AgentChannelBinding
+	var found bool
+	if strings.TrimSpace(agentWorkerID) != "" {
+		existing, found, err = s.findAgentWorkerChannelBinding(workspaceID, agentWorkerID, provider)
+	} else {
+		existing, found, err = s.findAgentChannelBinding(workspaceID, project, agent, provider)
+	}
+	if err != nil {
 		return controldb.AgentChannelBinding{}, err
 	} else if found {
 		binding.ID = existing.ID

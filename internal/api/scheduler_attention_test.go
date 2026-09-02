@@ -59,9 +59,12 @@ func TestRuntimeWakeupTaskIncludesPendingAttentionSignals(t *testing.T) {
 	if got, err := s.ts.GetTask("sample", "pm", task.ID); err != nil || got == nil {
 		t.Fatalf("wakeup task should be persisted before enqueue, task=%+v err=%v", got, err)
 	}
+	if task.Vars["MULTIGENT_ATTENTION_SIGNAL_IDS_JSON"] != `["sig-runtime-wakeup"]` {
+		t.Fatalf("wakeup task should retain its signal ids, vars=%v", task.Vars)
+	}
 }
 
-func TestRuntimeWakeupTaskIncludesSeenOpenAttentionSignals(t *testing.T) {
+func TestRuntimeWakeupTaskDoesNotReincludeSeenAttentionSignals(t *testing.T) {
 	s, workspaceID := newConnectionGrantPolicyServer(t)
 	seedTaskAttentionWorker(t, s, workspaceID, "sample", "pm", true)
 	if err := s.controlDB.UpsertAttentionSignal(controldb.AttentionSignal{
@@ -86,14 +89,11 @@ func TestRuntimeWakeupTaskIncludesSeenOpenAttentionSignals(t *testing.T) {
 	if err != nil {
 		t.Fatalf("next wakeup task: %v", err)
 	}
-	if task == nil {
-		t.Fatal("expected wakeup task")
+	if len(ids) != 0 {
+		t.Fatalf("seen signal should not be selected: task=%+v ids=%+v", task, ids)
 	}
-	if len(ids) != 1 || ids[0] != "sig-seen-but-open" {
-		t.Fatalf("unexpected attention ids: %+v", ids)
-	}
-	if !strings.Contains(task.Prompt, "sig-seen-but-open") || !strings.Contains(task.Prompt, "mga attention list") {
-		t.Fatalf("wakeup prompt did not include seen open signal:\n%s", task.Prompt)
+	if task != nil && strings.Contains(task.Prompt, "sig-seen-but-open") {
+		t.Fatalf("seen signal should not be injected into wakeup prompt:\n%s", task.Prompt)
 	}
 }
 
@@ -394,7 +394,7 @@ func TestRecoverablePendingAttentionWakeupTargetsGroupsPendingSignals(t *testing
 	if target.WorkspaceID != workspaceID || target.ProjectID != "sample" || target.AgentID != "pm" || target.AgentWorkerID != "aw-pm" {
 		t.Fatalf("unexpected target: %+v", target)
 	}
-	if strings.Join(target.AttentionIDs, ",") != "sig-recover-im-1,sig-recover-card,sig-recover-message,sig-recover-task" {
+	if strings.Join(target.AttentionIDs, ",") != "sig-recover-message,sig-recover-task" {
 		t.Fatalf("unexpected recovered ids: %+v", target.AttentionIDs)
 	}
 }

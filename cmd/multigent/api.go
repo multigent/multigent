@@ -86,6 +86,9 @@ Authorization: Bearer <key>.`,
 			srv.SetUpdateChecker(GetCachedUpdateInfo)
 			srv.SetDaemonStatus(daemonStatusJSON)
 			srv.SetLocalRuntimeAPIURL(os.Getenv("MULTIGENT_API_URL"))
+			if err := srv.StartWorkspaceScheduler(); err != nil {
+				return fmt.Errorf("start workspace scheduler: %w", err)
+			}
 			log.Printf("multigent api listening on http://%s (workspace %s)", addr, root)
 			if err := daemon.SaveWebRuntimeMeta(&daemon.WebRuntimeMeta{
 				WorkDir:   root,

@@ -252,7 +252,13 @@ func (s *Server) markTaskAttentionSignalsForRun(run controldb.RuntimeRun, status
 		if reason != "task_assigned" && reason != string(entity.TriggerOnWorkflowStepAssigned) {
 			continue
 		}
-		if err := s.controlDB.MarkAttentionSignalStatus(workspaceID, signal.ID, status); err != nil {
+		markErr := error(nil)
+		if strings.EqualFold(strings.TrimSpace(status), "handled") {
+			markErr = s.controlDB.MarkAttentionSignalStatusWithResult(workspaceID, signal.ID, status, "run:"+strings.TrimSpace(run.ID))
+		} else {
+			markErr = s.controlDB.MarkAttentionSignalStatus(workspaceID, signal.ID, status)
+		}
+		if err := markErr; err != nil {
 			log.Printf("[attention] mark runtime task signal failed signal=%s run=%s task=%s status=%s: %v", signal.ID, run.ID, taskID, status, err)
 		}
 	}

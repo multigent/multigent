@@ -990,6 +990,10 @@ func runAllPendingTasks(ctx context.Context, root, project, agentName string,
 					CreatedAt: now,
 					UpdatedAt: now,
 				}
+				if len(attentionIDs) > 0 {
+					rawIDs, _ := json.Marshal(attentionIDs)
+					wakeupTask.Vars = map[string]string{"MULTIGENT_ATTENTION_SIGNAL_IDS_JSON": string(rawIDs)}
+				}
 				// Persist before running so `task confirm-request --id $TASK_ID` works.
 				if addErr := ts.AddTask(project, agentName, wakeupTask); addErr != nil {
 					taskLog("%s failed to persist wakeup task: %v", colorRed+"✗", addErr)
@@ -1029,6 +1033,7 @@ func runAllPendingTasks(ctx context.Context, root, project, agentName string,
 					_ = ts.ArchiveTask(project, agentName, wakeupTask)
 					return fmt.Errorf("[heartbeat %s/%s] wakeup failed: %w", project, agentName, rErr)
 				} else {
+					markAttentionSignalsHandled(root, attentionIDs, wakeupTask.ID)
 					if interactionLease != nil {
 						_ = interactionLease.event("agent", project+"/"+agentName, sourceChannel, "run_completed", "", map[string]any{
 							"taskId":           wakeupTask.ID,
@@ -1430,7 +1435,7 @@ func pendingAttentionSection(root, project, agentName string, i18n wakeupI18n) (
 	signals, err := db.ListAttentionSignals(controldb.AttentionSignalFilter{
 		WorkspaceID:   workspaceID,
 		AgentWorkerID: resolved.Worker.ID,
-		Statuses:      []string{"pending", "seen", "handling"},
+		Statuses:      []string{"pending"},
 		Limit:         20,
 	})
 	if err != nil || len(signals) == 0 {
@@ -1618,6 +1623,24 @@ func markAttentionSignalsSeen(root string, ids []string) {
 	}
 	for _, id := range ids {
 		_ = db.MarkAttentionSignalStatus(workspaceID, id, "seen")
+	}
+}
+
+func markAttentionSignalsHandled(root string, ids []string, runID string) {
+	if len(ids) == 0 {
+		return
+	}
+	db, err := openControlDBForRoot(root)
+	if err != nil {
+		return
+	}
+	defer db.Close()
+	workspaceID, err := schedulerWorkspaceID(root, db)
+	if err != nil || strings.TrimSpace(workspaceID) == "" {
+		return
+	}
+	for _, id := range ids {
+		_ = db.MarkAttentionSignalStatusWithResult(workspaceID, id, "handled", "run:"+strings.TrimSpace(runID))
 	}
 }
 

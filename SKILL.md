@@ -300,7 +300,7 @@ multigent scheduler heartbeat --project P --agent A \
 multigent scheduler heartbeat --project P --agent A \
   --wakeup-prompt-file /path/to/wakeup.md
 
-# Start scheduler (aliases: sched, s)
+# Standalone scheduler diagnostics (the web/API service starts this automatically)
 multigent scheduler start
 multigent scheduler stop
 multigent scheduler status

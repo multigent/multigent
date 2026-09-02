@@ -12,12 +12,9 @@ import {
   Mail,
   MessageSquare,
   Pencil,
-  Play,
-  Power,
   RefreshCw,
   Reply,
   Send,
-  Square,
   Star,
   Trash2,
   X,
@@ -890,7 +887,6 @@ type ProjectOverview = {
   agentCount: number
   heartbeatEnabled: number
   runningAgents: number
-  schedulerRunning: boolean
   pendingTasks: number
   runningTasks: number
   completedTasks: number
@@ -903,41 +899,10 @@ function OverviewPanel() {
   const { t } = useTranslation()
   const navigate = useNavigate()
   const [reloadKey, setReloadKey] = useState(0)
-  const [busy, setBusy] = useState<string | null>(null)
   const state = useApiJson<ProjectOverview[]>('/api/v1/workbench/overview', reloadKey)
   const projects = state.status === 'ok' ? (state.data ?? []) : []
 
   const reload = useCallback(() => setReloadKey(k => k + 1), [])
-
-  const allRunning = projects.length > 0 && projects.every(p => p.schedulerRunning)
-  const someRunning = projects.some(p => p.schedulerRunning)
-
-  async function toggleProject(project: string, running: boolean) {
-    setBusy(project)
-    try {
-      const url = running ? '/api/v1/scheduler/stop' : '/api/v1/scheduler/start'
-      await apiPost(url, { project })
-      reload()
-    } catch { /* toast handled by apiPost */ }
-    finally { setBusy(null) }
-  }
-
-  async function toggleAll(start: boolean) {
-    setBusy('__all')
-    try {
-      if (start) {
-        for (const p of projects) {
-          if (!p.schedulerRunning) await apiPost('/api/v1/scheduler/start', { project: p.project })
-        }
-      } else {
-        for (const p of projects) {
-          if (p.schedulerRunning) await apiPost('/api/v1/scheduler/stop', { project: p.project })
-        }
-      }
-      reload()
-    } catch { /* ignore */ }
-    finally { setBusy(null) }
-  }
 
   return (
     <div className="flex flex-1 flex-col overflow-hidden">
@@ -947,26 +912,6 @@ function OverviewPanel() {
             <RefreshCw className="size-3" strokeWidth={2} />
             {t('api.refresh')}
           </button>
-          {projects.length > 0 && (
-            <div className="ml-auto flex items-center gap-2">
-              {!allRunning && (
-                <button type="button" disabled={busy === '__all'}
-                  onClick={() => void toggleAll(true)}
-                  className="flex items-center gap-1.5 rounded-lg border border-sky-200 bg-white px-3 py-1.5 text-sm font-medium text-sky-700 transition-colors hover:bg-sky-50 disabled:opacity-50 dark:border-sky-800 dark:bg-zinc-900 dark:text-sky-400 dark:hover:bg-sky-900/20">
-                  <Play className="size-3.5" strokeWidth={2} />
-                  {t('workbench.startAll')}
-                </button>
-              )}
-              {someRunning && (
-                <button type="button" disabled={busy === '__all'}
-                  onClick={() => void toggleAll(false)}
-                  className="flex items-center gap-1.5 rounded-lg border border-neutral-200 bg-white px-3 py-1.5 text-sm font-medium text-neutral-600 transition-colors hover:bg-neutral-50 disabled:opacity-50 dark:border-zinc-700 dark:bg-zinc-900 dark:text-zinc-400 dark:hover:bg-zinc-800">
-                  <Square className="size-3" strokeWidth={2} />
-                  {t('workbench.stopAll')}
-                </button>
-              )}
-            </div>
-          )}
         </div>
       </div>
       <div className="flex-1 overflow-y-auto px-8 pb-8">
@@ -988,7 +933,6 @@ function OverviewPanel() {
         {state.status === 'ok' && projects.length > 0 && (
           <div className="grid gap-4 sm:grid-cols-2 lg:grid-cols-3">
             {projects.map(p => {
-              const isBusy = busy === p.project
               return (
                 <div
                   key={p.project}
@@ -997,26 +941,6 @@ function OverviewPanel() {
                 >
                   <div className="flex items-center justify-between">
                     <h3 className="text-sm font-semibold text-neutral-900 dark:text-zinc-100">{p.project}</h3>
-                    <button
-                      type="button"
-                      disabled={isBusy}
-                      onClick={e => { e.stopPropagation(); void toggleProject(p.project, p.schedulerRunning) }}
-                      className={cn(
-                        'inline-flex items-center gap-1.5 rounded-full px-2.5 py-1 text-[11px] font-semibold transition-colors disabled:opacity-50',
-                        p.schedulerRunning
-                          ? 'bg-sky-50 text-sky-700 hover:bg-sky-100 dark:bg-sky-900/20 dark:text-sky-400 dark:hover:bg-sky-900/40'
-                          : 'bg-neutral-100 text-neutral-500 hover:bg-neutral-200 dark:bg-zinc-800 dark:text-zinc-500 dark:hover:bg-zinc-700'
-                      )}
-                    >
-                      {isBusy ? (
-                        <div className="size-3 animate-spin rounded-full border-2 border-current border-t-transparent" />
-                      ) : p.schedulerRunning ? (
-                        <Power className="size-3" strokeWidth={2.5} />
-                      ) : (
-                        <Play className="size-3" strokeWidth={2.5} />
-                      )}
-                      {p.schedulerRunning ? t('workbench.schedulerOn') : t('workbench.schedulerOff')}
-                    </button>
                   </div>
 
                   <div className="mt-4 grid grid-cols-2 gap-3">

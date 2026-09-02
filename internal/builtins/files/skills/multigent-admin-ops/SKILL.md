@@ -356,7 +356,7 @@ multigent scheduler heartbeat \
   --interval 2h \
   --active-hours "09:00-23:00"
 
-multigent scheduler start
+multigent start  # the service owns the workspace scheduler
 multigent scheduler status
 ```
 

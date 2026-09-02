@@ -86,6 +86,12 @@ func (m *SchedulerManager) Start(project, agent string) error {
 	return err
 }
 
+// StartWorkspace starts the single scheduler owned by the API service. The
+// scheduler scans the whole workspace; projects are execution context only.
+func (m *SchedulerManager) StartWorkspace() error {
+	return m.Start("", "")
+}
+
 func (m *SchedulerManager) StartManagedCommand(key, project, agent, mode string, cmd *exec.Cmd) (int, error) {
 	if cmd == nil {
 		return 0, fmt.Errorf("command is nil")
@@ -406,6 +412,15 @@ func (s *Server) restoreDesiredSchedulers() {
 	}
 }
 
+// StartWorkspaceScheduler makes periodic activity part of the server
+// lifecycle. Callers should not need to start a project scheduler manually.
+func (s *Server) StartWorkspaceScheduler() error {
+	if s == nil || s.sched == nil {
+		return fmt.Errorf("scheduler manager is unavailable")
+	}
+	return s.sched.StartWorkspace()
+}
+
 func (m *SchedulerManager) Cleanup() {
 	m.mu.Lock()
 	keys := make([]string, 0, len(m.procs))
@@ -529,8 +544,12 @@ func (s *Server) ensureAgentSchedulerRunning(r *http.Request, workspaceID, proje
 			log.Printf("scheduler auto-start %s: %v", key, err)
 			return
 		}
-	} else if err := s.sched.Start(project, agent); err != nil {
-		log.Printf("scheduler auto-start %s: %v", schedKey(project, agent), err)
+	} else {
+		// Local heartbeat/cron execution is owned by the one workspace scheduler
+		// started with the API service. Agent settings only wake it when needed.
+		if err := s.sched.StartWorkspace(); err != nil && !strings.Contains(err.Error(), "already running") {
+			log.Printf("workspace scheduler auto-start: %v", err)
+		}
 		return
 	}
 	s.setSchedulerDesiredKey(key, project, agent, mode, true)

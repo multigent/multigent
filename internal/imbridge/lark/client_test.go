@@ -77,6 +77,23 @@ func TestInteractiveCardBodyUsesSchema2MarkdownElements(t *testing.T) {
 	if content, _ := first["content"].(string); !strings.Contains(content, "## 结论") || !strings.Contains(content, "[文档]") {
 		t.Fatalf("markdown content not preserved: %#v", first)
 	}
+	for _, element := range elements {
+		if element["tag"] == "action" {
+			t.Fatalf("schema 2.0 card must not use legacy action container: %#v", element)
+		}
+	}
+}
+
+func TestInteractiveCardBodySupportsDisplayOnlyCards(t *testing.T) {
+	card := buildInteractiveCardBody(InteractiveCard{
+		Title: "PR 2012 Review",
+		Body:  "Overall: **70/100**",
+	}, nil)
+	body, _ := card["body"].(map[string]any)
+	elements, _ := body["elements"].([]map[string]any)
+	if len(elements) != 1 || elements[0]["tag"] != "markdown" {
+		t.Fatalf("display-only card should contain only markdown: %#v", card)
+	}
 }
 
 func TestInteractiveCardBodyCanUseRawCardJSON(t *testing.T) {
