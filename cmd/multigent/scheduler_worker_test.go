@@ -196,3 +196,54 @@ func TestCapWaitForScheduledTasks(t *testing.T) {
 		t.Fatalf("wait = %s, want about 5m", got)
 	}
 }
+
+func TestDueCronSlotRecoversMissedDailySlot(t *testing.T) {
+	sched, err := schedulerCronParser.Parse("30 21 * * 2,4,6")
+	if err != nil {
+		t.Fatal(err)
+	}
+	lastRun := time.Date(2026, 8, 31, 21, 30, 0, 0, time.Local)
+	now := time.Date(2026, 9, 2, 8, 49, 0, 0, time.Local)
+	got := dueCronSlot(sched, &lastRun, now)
+	want := time.Date(2026, 9, 1, 21, 30, 0, 0, time.Local)
+	if !got.Equal(want) {
+		t.Fatalf("dueCronSlot() = %v, want %v", got, want)
+	}
+}
+
+func TestDueCronSlotDoesNotReplayConsumedSlot(t *testing.T) {
+	sched, err := schedulerCronParser.Parse("30 21 * * 2,4,6")
+	if err != nil {
+		t.Fatal(err)
+	}
+	lastRun := time.Date(2026, 9, 1, 21, 30, 0, 0, time.Local)
+	now := time.Date(2026, 9, 2, 8, 49, 0, 0, time.Local)
+	if got := dueCronSlot(sched, &lastRun, now); !got.IsZero() {
+		t.Fatalf("dueCronSlot() = %v, want no due slot", got)
+	}
+}
+
+func TestDueCronSlotDoesNotFireBeforeNextWeekdaySlot(t *testing.T) {
+	sched, err := schedulerCronParser.Parse("30 21 * * 0,1,3,5")
+	if err != nil {
+		t.Fatal(err)
+	}
+	lastRun := time.Date(2026, 8, 31, 21, 30, 0, 0, time.Local)
+	now := time.Date(2026, 9, 2, 9, 49, 0, 0, time.Local)
+	if got := dueCronSlot(sched, &lastRun, now); !got.IsZero() {
+		t.Fatalf("dueCronSlot() = %v, want no due slot before 21:30", got)
+	}
+}
+
+func TestDueCronSlotRecoversFirstRunAfterDowntime(t *testing.T) {
+	sched, err := schedulerCronParser.Parse("0 8 * * *")
+	if err != nil {
+		t.Fatal(err)
+	}
+	now := time.Date(2026, 9, 2, 12, 0, 0, 0, time.Local)
+	got := dueCronSlot(sched, nil, now)
+	want := time.Date(2026, 9, 2, 8, 0, 0, 0, time.Local)
+	if !got.Equal(want) {
+		t.Fatalf("dueCronSlot() = %v, want %v", got, want)
+	}
+}
