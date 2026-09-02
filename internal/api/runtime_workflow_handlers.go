@@ -592,7 +592,7 @@ func (s *Server) handleRuntimePostTaskFromTemplate(w http.ResponseWriter, r *htt
 		return
 	}
 	if taskBody.Agent == "" {
-		taskBody.Agent = firstTemplateAgentBinding(taskBody.WorkflowActorBindings)
+		taskBody.Agent = s.initialWorkflowAgent(principal.WorkspaceID, template, taskBody.WorkflowActorBindings)
 	}
 	s.createRuntimeTaskFromBody(w, r, principal, taskBody)
 }

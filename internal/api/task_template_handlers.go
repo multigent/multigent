@@ -5,10 +5,12 @@ import (
 	"fmt"
 	"net/http"
 	"regexp"
+	"sort"
 	"strings"
 
 	"github.com/multigent/multigent/internal/entity"
 	"github.com/multigent/multigent/internal/tasktemplate"
+	workflowstore "github.com/multigent/multigent/internal/workflow"
 )
 
 var taskTemplateVarPattern = regexp.MustCompile(`\{\{\s*([A-Za-z0-9_.-]+)\s*\}\}`)
@@ -355,13 +357,33 @@ func (s *Server) handlePostProjectTaskFromTemplate(w http.ResponseWriter, r *htt
 		return
 	}
 	if taskBody.Agent == "" {
-		taskBody.Agent = firstTemplateAgentBinding(taskBody.WorkflowActorBindings)
+		workspaceID, err := s.currentWorkspaceID()
+		if err == nil {
+			taskBody.Agent = s.initialWorkflowAgent(workspaceID, template, taskBody.WorkflowActorBindings)
+		}
 	}
 	s.createProjectTaskFromBody(w, r, project, taskBody)
 }
 
+func (s *Server) initialWorkflowAgent(workspaceID string, template entity.TaskTemplate, bindings map[string]entity.WorkflowActorBinding) string {
+	if workflowID := strings.TrimSpace(template.WorkflowDefinitionID); workflowID != "" && s != nil && s.controlDB != nil {
+		if def, found, err := workflowstore.NewStore(s.controlDB, workspaceID).Definition(workflowID); err == nil && found {
+			if _, inst, ok := workflowStartActor(def, bindings); ok && inst.ActorType == "agent" && strings.TrimSpace(inst.ActorID) != "" {
+				return strings.TrimSpace(inst.ActorID)
+			}
+		}
+	}
+	return firstTemplateAgentBinding(bindings)
+}
+
 func firstTemplateAgentBinding(bindings map[string]entity.WorkflowActorBinding) string {
-	for _, binding := range bindings {
+	keys := make([]string, 0, len(bindings))
+	for key := range bindings {
+		keys = append(keys, key)
+	}
+	sort.Strings(keys)
+	for _, key := range keys {
+		binding := bindings[key]
 		if binding.Type == "agent" && strings.TrimSpace(binding.ID) != "" {
 			return strings.TrimSpace(binding.ID)
 		}
