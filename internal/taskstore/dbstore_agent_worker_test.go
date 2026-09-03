@@ -85,3 +85,71 @@ func TestDBStoreHeartbeatUsesAgentWorkerSchedule(t *testing.T) {
 		t.Fatalf("legacy heartbeat record should not be written, ok=%v err=%v", ok, err)
 	}
 }
+
+func TestDBStoreTaskQueueResolvesWorkerIDAndName(t *testing.T) {
+	root := t.TempDir()
+	if err := os.MkdirAll(filepath.Join(root, ".multigent"), 0o755); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.WriteFile(filepath.Join(root, ".multigent", "agency.yaml"), []byte("name: Test\n"), 0o644); err != nil {
+		t.Fatal(err)
+	}
+	db, err := controldb.Open(filepath.Join(root, ".multigent", "multigent.db"))
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer db.Close()
+	now := time.Now().UTC().Format(time.RFC3339)
+	if err := db.UpsertWorkspace(controldb.Workspace{ID: "ws", Name: "Test", Slug: "test", Root: root, UpdatedAt: now}); err != nil {
+		t.Fatal(err)
+	}
+	if err := db.UpsertAgentWorker(controldb.AgentWorker{
+		ID:          "aw-reviewer",
+		WorkspaceID: "ws",
+		Name:        "project-reviewer",
+		DisplayName: "Project Reviewer",
+		CreatedAt:   now,
+		UpdatedAt:   now,
+	}); err != nil {
+		t.Fatal(err)
+	}
+	if err := db.UpsertProjectMembership(controldb.ProjectMembership{
+		ID:          "pm-reviewer",
+		WorkspaceID: "ws",
+		ProjectID:   "sample",
+		MemberType:  "agent_worker",
+		MemberID:    "aw-reviewer",
+		Title:       "Reviewer",
+		CreatedAt:   now,
+		UpdatedAt:   now,
+	}); err != nil {
+		t.Fatal(err)
+	}
+
+	st := NewDB(root, db)
+	task := &entity.Task{ID: "task-1", Title: "Review PR", Status: entity.TaskStatusPending}
+	// Workflow assignment commonly persists the worker ID, while the
+	// scheduler and project UI address the same queue by worker name.
+	if err := st.AddTask("sample", "aw-reviewer", task); err != nil {
+		t.Fatal(err)
+	}
+	got, err := st.ListTasks("sample", "project-reviewer")
+	if err != nil {
+		t.Fatal(err)
+	}
+	if len(got) != 1 || got[0].ID != task.ID {
+		t.Fatalf("worker name did not resolve ID-backed task queue: %#v", got)
+	}
+
+	task.Status = entity.TaskStatusInProgress
+	if err := st.UpdateTask("sample", "project-reviewer", task); err != nil {
+		t.Fatal(err)
+	}
+	got, err = st.ListTasks("sample", "aw-reviewer")
+	if err != nil {
+		t.Fatal(err)
+	}
+	if len(got) != 1 || got[0].Status != entity.TaskStatusInProgress {
+		t.Fatalf("worker ID did not resolve updated task queue: %#v", got)
+	}
+}

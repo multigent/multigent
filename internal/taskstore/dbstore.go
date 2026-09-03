@@ -45,13 +45,22 @@ func (s *DBStore) AddTask(project, agent string, t *entity.Task) error {
 }
 
 func (s *DBStore) GetTask(project, agent, id string) (*entity.Task, error) {
-	var t entity.Task
-	if ok, err := s.getJSON("tasks", []string{project, agent, id}, &t); err != nil {
+	keys, err := s.taskAgentKeys(project, agent)
+	if err != nil {
 		return nil, err
-	} else if !ok {
-		return s.files.GetTask(project, agent, id)
 	}
-	return &t, nil
+	for _, key := range keys {
+		var t entity.Task
+		if ok, err := s.getJSON("tasks", []string{project, key, id}, &t); err != nil {
+			return nil, err
+		} else if ok {
+			return &t, nil
+		}
+		if t, err := s.files.GetTask(project, key, id); err == nil {
+			return t, nil
+		}
+	}
+	return nil, errs.NotFound("task", id)
 }
 
 func (s *DBStore) UpdateTask(project, agent string, t *entity.Task) error {
@@ -59,14 +68,22 @@ func (s *DBStore) UpdateTask(project, agent string, t *entity.Task) error {
 		return err
 	}
 	t.UpdatedAt = time.Now().UTC()
-	return s.putJSON("tasks", []string{project, agent, t.ID}, t)
+	key, err := s.taskStorageAgent(project, agent, t.ID)
+	if err != nil {
+		return err
+	}
+	return s.putJSON("tasks", []string{project, key, t.ID}, t)
 }
 
 func (s *DBStore) PersistTask(project, agent string, t *entity.Task) error {
 	if _, err := s.GetTask(project, agent, t.ID); err != nil {
 		return err
 	}
-	return s.putJSON("tasks", []string{project, agent, t.ID}, t)
+	key, err := s.taskStorageAgent(project, agent, t.ID)
+	if err != nil {
+		return err
+	}
+	return s.putJSON("tasks", []string{project, key, t.ID}, t)
 }
 
 func (s *DBStore) ListTasks(project, agent string, filter ...entity.TaskStatus) ([]*entity.Task, error) {
@@ -96,7 +113,11 @@ func (s *DBStore) ArchiveTask(project, agent string, t *entity.Task) error {
 	now := time.Now().UTC()
 	t.ArchivedAt = &now
 	t.UpdatedAt = now
-	return s.putJSON("tasks", []string{project, agent, t.ID}, t)
+	key, err := s.taskStorageAgent(project, agent, t.ID)
+	if err != nil {
+		return err
+	}
+	return s.putJSON("tasks", []string{project, key, t.ID}, t)
 }
 
 func (s *DBStore) ListArchivedTasks(project, agent string) ([]*entity.Task, error) {
@@ -120,12 +141,20 @@ func (s *DBStore) OverwriteArchive(project, agent string, tasks []*entity.Task) 
 		return err
 	}
 	for _, t := range archived {
-		if err := s.db.DeleteRecord("tasks", s.workspaceID, []string{project, agent, t.ID}); err != nil {
+		key, err := s.taskStorageAgent(project, agent, t.ID)
+		if err != nil {
+			return err
+		}
+		if err := s.db.DeleteRecord("tasks", s.workspaceID, []string{project, key, t.ID}); err != nil {
 			return err
 		}
 	}
 	for _, t := range tasks {
-		if err := s.putJSON("tasks", []string{project, agent, t.ID}, t); err != nil {
+		key, err := s.taskStorageAgent(project, agent, t.ID)
+		if err != nil {
+			return err
+		}
+		if err := s.putJSON("tasks", []string{project, key, t.ID}, t); err != nil {
 			return err
 		}
 	}
@@ -133,7 +162,17 @@ func (s *DBStore) OverwriteArchive(project, agent string, tasks []*entity.Task) 
 }
 
 func (s *DBStore) DeleteTask(project, agent, taskID string) error {
-	return s.db.DeleteRecord("tasks", s.workspaceID, []string{project, agent, taskID})
+	keys, err := s.taskAgentKeys(project, agent)
+	if err != nil {
+		return err
+	}
+	for _, key := range keys {
+		if err := s.db.DeleteRecord("tasks", s.workspaceID, []string{project, key, taskID}); err != nil {
+			return err
+		}
+		_ = s.files.DeleteTask(project, key, taskID)
+	}
+	return nil
 }
 
 func (s *DBStore) ClearTasks(project, agent string) error {
@@ -494,44 +533,98 @@ func (s *DBStore) ListProjectBlueprints() ([]string, error) {
 }
 
 func (s *DBStore) listTasks(project, agent string) ([]*entity.Task, error) {
-	recs, err := s.db.ListRecords("tasks", s.workspaceID, []string{project, agent})
+	keys, err := s.taskAgentKeys(project, agent)
 	if err != nil {
 		return nil, err
 	}
 	seen := map[string]bool{}
-	out := make([]*entity.Task, 0, len(recs))
-	for _, rec := range recs {
-		var t entity.Task
-		if json.Unmarshal([]byte(rec.Payload), &t) == nil {
-			if t.ID != "" {
-				seen[t.ID] = true
+	out := make([]*entity.Task, 0)
+	for _, key := range keys {
+		recs, err := s.db.ListRecords("tasks", s.workspaceID, []string{project, key})
+		if err != nil {
+			return nil, err
+		}
+		for _, rec := range recs {
+			var t entity.Task
+			if json.Unmarshal([]byte(rec.Payload), &t) == nil {
+				if t.ID != "" {
+					seen[t.ID] = true
+				}
+				out = append(out, &t)
 			}
-			out = append(out, &t)
 		}
-	}
-	fileActive, activeErr := s.files.ListTasks(project, agent)
-	if activeErr != nil && len(out) == 0 {
-		return nil, activeErr
-	}
-	for _, t := range fileActive {
-		if t == nil || t.ID == "" || seen[t.ID] {
-			continue
+		fileActive, activeErr := s.files.ListTasks(project, key)
+		if activeErr != nil && len(out) == 0 {
+			return nil, activeErr
 		}
-		seen[t.ID] = true
-		out = append(out, t)
-	}
-	fileArchived, archivedErr := s.files.ListArchivedTasks(project, agent)
-	if archivedErr != nil && len(out) == 0 {
-		return nil, archivedErr
-	}
-	for _, t := range fileArchived {
-		if t == nil || t.ID == "" || seen[t.ID] {
-			continue
+		for _, t := range fileActive {
+			if t == nil || t.ID == "" || seen[t.ID] {
+				continue
+			}
+			seen[t.ID] = true
+			out = append(out, t)
 		}
-		seen[t.ID] = true
-		out = append(out, t)
+		fileArchived, archivedErr := s.files.ListArchivedTasks(project, key)
+		if archivedErr != nil && len(out) == 0 {
+			return nil, archivedErr
+		}
+		for _, t := range fileArchived {
+			if t == nil || t.ID == "" || seen[t.ID] {
+				continue
+			}
+			seen[t.ID] = true
+			out = append(out, t)
+		}
 	}
 	return out, nil
+}
+
+// taskAgentKeys keeps task queues addressable by every stable worker identity.
+// Workflow code may receive a worker ID while project pages and the scheduler
+// use the worker name; both must resolve to the same queue.
+func (s *DBStore) taskAgentKeys(project, agent string) ([]string, error) {
+	keys := make([]string, 0, 4)
+	add := func(value string) {
+		value = strings.TrimSpace(value)
+		if value == "" {
+			return
+		}
+		for _, existing := range keys {
+			if sameIdentity(existing, value) {
+				return
+			}
+		}
+		keys = append(keys, value)
+	}
+	add(agent)
+	worker, ok, err := s.resolveAgentWorker(project, agent)
+	if err != nil {
+		return nil, err
+	}
+	if ok {
+		add(worker.ID)
+		add(worker.Name)
+		add(worker.DisplayName)
+	}
+	return keys, nil
+}
+
+func (s *DBStore) taskStorageAgent(project, agent, taskID string) (string, error) {
+	keys, err := s.taskAgentKeys(project, agent)
+	if err != nil {
+		return "", err
+	}
+	for _, key := range keys {
+		if _, ok, err := s.db.GetRecord("tasks", s.workspaceID, []string{project, key, taskID}); err != nil {
+			return "", err
+		} else if ok {
+			return key, nil
+		}
+	}
+	if len(keys) == 0 {
+		return "", errs.NotFound("task", taskID)
+	}
+	return keys[0], nil
 }
 
 func (s *DBStore) setCronEnabled(project, agent, cronID string, enabled bool) error {
@@ -659,7 +752,7 @@ func (s *DBStore) resolveAgentWorker(project, agent string) (controldb.AgentWork
 		if !ok {
 			continue
 		}
-		if sameIdentity(membership.Title, agent) || sameIdentity(worker.Name, agent) || sameIdentity(worker.DisplayName, agent) {
+		if sameIdentity(membership.MemberID, agent) || sameIdentity(membership.Title, agent) || sameIdentity(worker.ID, agent) || sameIdentity(worker.Name, agent) || sameIdentity(worker.DisplayName, agent) {
 			return worker, true, nil
 		}
 	}
