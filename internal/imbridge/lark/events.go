@@ -135,12 +135,17 @@ func ParseCardActionEvent(env EventEnvelope) (CardActionCallback, bool, error) {
 }
 
 func ExtractText(message EventMessage) string {
-	if message.MessageType != "text" && message.MessageType != "post" {
-		return ""
-	}
 	var body map[string]any
 	if json.Unmarshal([]byte(message.Content), &body) != nil {
 		return strings.TrimSpace(message.Content)
+	}
+	messageType := strings.ToLower(strings.TrimSpace(message.MessageType))
+	if messageType != "text" && messageType != "post" {
+		// Interactive cards and forwarded messages use nested Card 2.0 JSON
+		// instead of the text/post envelope. Extract only user-facing fields so
+		// the message remains useful to the agent without exposing every
+		// implementation field as prose.
+		return extractStructuredMessageText(body)
 	}
 	if text, _ := body["text"].(string); text != "" {
 		return strings.TrimSpace(text)
@@ -183,6 +188,19 @@ func ExtractAttachments(message EventMessage) []MessageAttachment {
 		for _, link := range extractLinksFromMessageBody(body) {
 			out = append(out, link)
 		}
+	case "interactive", "merge_forward", "share_chat", "share_user":
+		if body != nil {
+			name := firstMapString(body, "title", "name")
+			if name == "" {
+				name = messageType
+			}
+			out = append(out, MessageAttachment{
+				Type: messageType,
+				Name: name,
+				ID:   firstMapString(body, "message_id", "messageId", "chat_id", "chatId"),
+				Raw:  body,
+			})
+		}
 	default:
 		if urlValue := firstMapString(body, "url", "href"); urlValue != "" {
 			out = append(out, MessageAttachment{
@@ -194,6 +212,56 @@ func ExtractAttachments(message EventMessage) []MessageAttachment {
 		}
 	}
 	return dedupeAttachments(out)
+}
+
+var structuredMessageTextKeys = map[string]bool{
+	"text":        true,
+	"content":     true,
+	"markdown":    true,
+	"plain_text":  true,
+	"title":       true,
+	"description": true,
+	"label":       true,
+}
+
+func extractStructuredMessageText(body map[string]any) string {
+	if body == nil {
+		return ""
+	}
+	parts := make([]string, 0, 8)
+	seen := map[string]bool{}
+	var walk func(string, any)
+	add := func(value string) {
+		value = strings.TrimSpace(value)
+		if value == "" || seen[value] {
+			return
+		}
+		seen[value] = true
+		parts = append(parts, value)
+	}
+	walk = func(key string, value any) {
+		switch v := value.(type) {
+		case string:
+			if structuredMessageTextKeys[strings.ToLower(strings.TrimSpace(key))] {
+				var nested map[string]any
+				if strings.HasPrefix(strings.TrimSpace(v), "{") && json.Unmarshal([]byte(v), &nested) == nil {
+					walk(key, nested)
+					return
+				}
+				add(v)
+			}
+		case []any:
+			for _, item := range v {
+				walk(key, item)
+			}
+		case map[string]any:
+			for childKey, child := range v {
+				walk(childKey, child)
+			}
+		}
+	}
+	walk("", body)
+	return strings.Join(parts, "\n")
 }
 
 var markdownURLPattern = regexp.MustCompile(`https?://[^\s<>"')\]]+`)

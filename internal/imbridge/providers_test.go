@@ -5,6 +5,7 @@ import (
 	"encoding/json"
 	"net/http"
 	"net/http/httptest"
+	"strconv"
 	"strings"
 	"testing"
 )
@@ -110,6 +111,52 @@ func TestProviderParsesLarkImageAttachment(t *testing.T) {
 	}
 	if len(parsed.Message.Attachments) != 1 || parsed.Message.Attachments[0].Type != "image" || parsed.Message.Attachments[0].ID != "img_v3_abc" {
 		t.Fatalf("unexpected attachments: %#v", parsed.Message.Attachments)
+	}
+}
+
+func TestProviderParsesLarkInteractiveAndForwardedMessages(t *testing.T) {
+	provider, ok := LookupProvider("lark")
+	if !ok {
+		t.Fatalf("lark provider not found")
+	}
+	cases := []struct {
+		name        string
+		messageType string
+		content     string
+		wantText    []string
+		wantType    string
+	}{
+		{
+			name:        "interactive card",
+			messageType: "interactive",
+			content:     `{"header":{"title":{"tag":"plain_text","content":"Review 请求"}},"body":{"elements":[{"tag":"markdown","content":"**结论**\n\n请查看高风险问题"}]}}`,
+			wantText:    []string{"Review 请求", "**结论**", "请查看高风险问题"},
+			wantType:    "interactive",
+		},
+		{
+			name:        "forwarded message",
+			messageType: "merge_forward",
+			content:     `{"message_id":"om_forwarded","title":"原始讨论"}`,
+			wantText:    []string{"原始讨论"},
+			wantType:    "merge_forward",
+		},
+	}
+	for _, tc := range cases {
+		t.Run(tc.name, func(t *testing.T) {
+			raw := []byte(`{"schema":"2.0","header":{"event_type":"im.message.receive_v1","app_id":"cli_app"},"event":{"sender":{"sender_id":{"open_id":"ou_one"}},"message":{"message_id":"om_card","chat_id":"oc_one","chat_type":"p2p","message_type":"` + tc.messageType + `","content":` + strconv.Quote(tc.content) + `}}}`)
+			parsed, err := provider.ParseEvent(raw)
+			if err != nil {
+				t.Fatalf("parse: %v", err)
+			}
+			for _, want := range tc.wantText {
+				if !strings.Contains(parsed.Message.Text, want) {
+					t.Fatalf("text %q missing %q", parsed.Message.Text, want)
+				}
+			}
+			if len(parsed.Message.Attachments) != 1 || parsed.Message.Attachments[0].Type != tc.wantType {
+				t.Fatalf("unexpected attachments: %#v", parsed.Message.Attachments)
+			}
+		})
 	}
 }
 

@@ -976,6 +976,14 @@ func (s *Server) runtimeChannelToRow(principal runtimeAgentPrincipal, binding co
 		})
 	}
 	row.CanNotify = runtimeChannelCanNotify(binding) || len(row.Targets) > 0
+	// A source target is resolved from the current attention signal rather than
+	// from a static owner/chat binding. It is still a valid notification route
+	// for the current run and must be visible to the agent as usable.
+	if !row.CanNotify {
+		if _, sourceAvailable := s.runtimeNotifySourceInfoForPrincipal(principal, binding.Provider); sourceAvailable {
+			row.CanNotify = true
+		}
+	}
 	if t, err := time.Parse(time.RFC3339, strings.TrimSpace(binding.LastActivityAt)); err == nil {
 		row.LastActivityAt = &t
 	}
