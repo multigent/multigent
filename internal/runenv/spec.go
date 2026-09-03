@@ -79,6 +79,9 @@ func (DockerProvider) Command(spec ProcessSpec) (string, []string, error) {
 	if runtimeBootstrap := runtimecli.BootstrapScript(os.Getenv(runtimecli.ServerVersionEnv)); runtimeBootstrap != "" {
 		command = wrapInlineScript(command, runtimeBootstrap)
 	}
+	// Apply the per-run bootstrap last so it becomes the outer wrapper and runs
+	// before the generic version check. It may provide mga itself, for example
+	// from a mounted host binary, when the runtime image is minimal.
 	if bootstrap := runtimeEnvValue(spec.Runtime, "MULTIGENT_TOOL_BOOTSTRAP_FILE"); bootstrap != "" {
 		command = wrapBootstrapScript(command, dockerWorkspacePath(spec.AgentDir, bootstrap))
 	}

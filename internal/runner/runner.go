@@ -423,8 +423,7 @@ func (r *Runner) RunTaskWithContext(ctx context.Context, project, agentName stri
 		return r.runTaskHTTP(project, agentName, agentDir, meta, task)
 	}
 
-	fullPrompt := r.taskPromptWithWorkflowContext(project, agentName, task) + fmt.Sprintf(systemMetaFooter,
-		task.ID, project, agentName, task.ID, task.ID, task.ID, task.ID, project, agentName)
+	fullPrompt := r.BuildTaskPrompt(project, agentName, task)
 
 	// Write prompt to a temp file (avoids shell escaping issues).
 	promptFile, err := writeTempPrompt(agentDir, fullPrompt)
@@ -1496,8 +1495,7 @@ func (r *Runner) runTaskHTTP(project, agentName, agentDir string, meta *entity.A
 		return nil, fmt.Errorf("http-agent: no http_agent config in .multigent-agent.yaml (re-hire with --http-url)")
 	}
 
-	userPrompt := r.taskPromptWithWorkflowContext(project, agentName, task) + fmt.Sprintf(systemMetaFooter,
-		task.ID, project, agentName, task.ID, task.ID, task.ID, task.ID, project, agentName)
+	userPrompt := r.BuildTaskPrompt(project, agentName, task)
 
 	logDir, err := r.ts.RunLogDir(project, agentName)
 	if err != nil {
@@ -1862,6 +1860,11 @@ func runtimeCLIBinaryCandidates(root string) []string {
 	}
 	if exe, err := os.Executable(); err == nil && exe != "" {
 		candidates = append(candidates, filepath.Join(filepath.Dir(exe), runtimecli.BinaryName))
+		// Self-hosted deployments commonly keep the server release under
+		// /opt/multigent/current while the shared runtime CLI is installed at
+		// /opt/multigent/mga/bin/mga. Discover that standard sibling location
+		// so Docker runs can mount the matching Linux CLI into the container.
+		candidates = append(candidates, filepath.Join(filepath.Dir(filepath.Dir(exe)), "mga", "bin", runtimecli.BinaryName))
 	}
 	if cwd, err := os.Getwd(); err == nil && cwd != "" {
 		candidates = append(candidates, filepath.Join(cwd, "dist", runtimecli.BinaryName))

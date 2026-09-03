@@ -115,6 +115,7 @@ func TestDockerProviderPrependsRuntimeToolBin(t *testing.T) {
 
 func TestDockerProviderRunsRuntimeToolBootstrap(t *testing.T) {
 	dir := t.TempDir()
+	t.Setenv(runtimecli.ServerVersionEnv, "dev")
 	runtime := &entity.SandboxConfig{
 		Provider: entity.SandboxDocker,
 		Image:    sandbox.BaseImage,
@@ -140,6 +141,11 @@ func TestDockerProviderRunsRuntimeToolBootstrap(t *testing.T) {
 	}
 	if !strings.Contains(joined, "exec \"$@\"") {
 		t.Fatalf("docker args missing command handoff:\n%s", joined)
+	}
+	bootstrapIndex := strings.Index(joined, "/workspace/.multigent/runtime-tools/run/bootstrap-tools.sh")
+	checkIndex := strings.Index(joined, "command -v 'mga'")
+	if bootstrapIndex < 0 || checkIndex < 0 || bootstrapIndex > checkIndex {
+		t.Fatalf("per-run bootstrap must run before the generic mga check:\n%s", joined)
 	}
 }
 
