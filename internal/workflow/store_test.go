@@ -307,6 +307,19 @@ func TestCompleteAndAdvanceErrorsWhenOutgoingEdgesDoNotMatch(t *testing.T) {
 	if run.Status != "active" || run.ActiveStepID != "qa" {
 		t.Fatalf("expected run to stay on qa, got status=%q active=%q", run.Status, run.ActiveStepID)
 	}
+
+	if _, _, err := store.StartRun("project", "task-failed", def.ID, map[string]entity.WorkflowActorBinding{
+		"qa": {Type: "agent", ID: "qa-agent"},
+	}); err != nil {
+		t.Fatalf("start failed run: %v", err)
+	}
+	failed, err := store.CompleteAndAdvance("project", "task-failed", "review failed", "", nil, "failed")
+	if err != nil {
+		t.Fatalf("complete failed step: %v", err)
+	}
+	if !failed.Done || failed.Next != nil || failed.Run.Status != "failed" || failed.Run.ActiveStepID != "" {
+		t.Fatalf("failed step must terminate without advancing: %#v", failed)
+	}
 }
 
 func TestWorkflowRunUsesDefinitionSnapshotAfterDefinitionChanges(t *testing.T) {

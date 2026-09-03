@@ -74,4 +74,10 @@ func TestValidateIdentityResolvesAgentWorkerMembership(t *testing.T) {
 	if s.agentExistsInProject("customer-cli", "missing") {
 		t.Fatalf("missing membership should not exist")
 	}
+	if got := s.identityLabel("aw-manager-agent"); got != "manager-agent" {
+		t.Fatalf("worker ID should resolve to display name, got %q", got)
+	}
+	if got := s.identityLabel("customer-cli/pm"); got != "manager-agent" {
+		t.Fatalf("project worker mailbox should resolve to display name, got %q", got)
+	}
 }

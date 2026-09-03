@@ -1581,10 +1581,6 @@ func (s *Store) CompleteAndAdvance(project, taskID, summary, output string, outp
 	if strings.TrimSpace(summary) == "" {
 		summary = workflowSummaryFromValues(values)
 	}
-	edge, hasNext := chooseNextEdge(def.Edges, currentStep.ID, values, output)
-	if !hasNext && workflowHasOutgoingEdges(def.Edges, currentStep.ID) {
-		return result, fmt.Errorf("workflow step %q output did not match any outgoing route", currentStep.Title)
-	}
 	for i := range instances {
 		if instances[i].StepID != run.ActiveStepID {
 			continue
@@ -1618,6 +1614,28 @@ func (s *Store) CompleteAndAdvance(project, taskID, summary, output string, outp
 		})
 		result.Current = instances[i]
 		break
+	}
+	// A failed step is a terminal workflow outcome. It must not follow a
+	// success edge with empty outputs, otherwise downstream actors can mistake
+	// a failed step for a valid result.
+	if strings.TrimSpace(status) == "failed" {
+		run.Status = "failed"
+		run.ActiveStepID = ""
+		run.CurrentAssigneeType = ""
+		run.CurrentAssigneeID = ""
+		run.CurrentAssigneeMembershipID = ""
+		run.UpdatedAt = now
+		run.FinishedAt = now
+		if err := s.SaveRun(&run); err != nil {
+			return result, err
+		}
+		result.Run = run
+		result.Done = true
+		return result, nil
+	}
+	edge, hasNext := chooseNextEdge(def.Edges, currentStep.ID, values, output)
+	if !hasNext && workflowHasOutgoingEdges(def.Edges, currentStep.ID) {
+		return result, fmt.Errorf("workflow step %q output did not match any outgoing route", currentStep.Title)
 	}
 	if !hasNext {
 		run.Status = "completed"

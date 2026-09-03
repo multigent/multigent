@@ -1369,9 +1369,6 @@ func (s *Server) identityLabel(identity string) string {
 	if identity == "" {
 		return ""
 	}
-	if strings.Contains(identity, "/") {
-		return identity
-	}
 	if identity == "human" {
 		return "Human"
 	}
@@ -1385,7 +1382,33 @@ func (s *Server) identityLabel(identity string) string {
 			}
 		}
 	}
+	// Agent task records may carry either the workspace worker ID or a
+	// project/worker mailbox. Resolve both to a readable worker label while
+	// retaining the stable identity in the raw field for auditing and updates.
+	if s != nil && s.agentDirectory != nil {
+		workspaceID, err := s.currentWorkspaceID()
+		if err == nil && strings.TrimSpace(workspaceID) != "" {
+			if project, agent, ok := agentdir.SplitProjectMailbox(identity); ok {
+				if resolved, found, err := s.agentDirectory.ProjectWorker(workspaceID, project, agent); err == nil && found {
+					if label := agentWorkerIdentityLabel(resolved.Worker); label != "" {
+						return label
+					}
+				}
+			} else if worker, found, err := s.agentDirectory.Worker(workspaceID, identity); err == nil && found {
+				if label := agentWorkerIdentityLabel(worker); label != "" {
+					return label
+				}
+			}
+		}
+	}
 	return identity
+}
+
+func agentWorkerIdentityLabel(worker controldb.AgentWorker) string {
+	if label := strings.TrimSpace(worker.DisplayName); label != "" {
+		return label
+	}
+	return strings.TrimSpace(worker.Name)
 }
 
 func userVisibleTaskPrompt(prompt string) string {
