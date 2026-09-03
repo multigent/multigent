@@ -2078,7 +2078,7 @@ func formatIMAgentPromptWithSender(providerID string, binding controldb.AgentCha
 			}
 			b.WriteString("\n")
 		}
-		b.WriteString("Download attachments with `mga attention attachment download <signal-id> --index <n>` before analyzing image/file content. Do not assume you cannot access the attachment.\n")
+		b.WriteString("For image/file/media/audio attachments with a non-empty ID, download the binary with `mga attention attachment download <signal-id> --index <n>` before analyzing it. For `link` or `document` entries, use the displayed URL or the appropriate document/network tool; do not call the binary attachment download command for a link. Do not assume you cannot access an attachment.\n")
 		b.WriteString("\n")
 	}
 	b.WriteString("\nReply contract:\n")

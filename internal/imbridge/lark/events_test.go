@@ -125,3 +125,14 @@ func TestExtractAttachmentsDecodesInteractiveCardJSONString(t *testing.T) {
 		t.Fatalf("unexpected nested card attachments: %#v", attachments)
 	}
 }
+
+func TestExtractAttachmentsExtractsInteractiveCardLinks(t *testing.T) {
+	message := EventMessage{
+		MessageType: "interactive",
+		Content:     `{"elements":[{"tag":"div","text":{"tag":"lark_md","content":"[报告](https://storage.example.com/report.xlsx)"}}]}`,
+	}
+	attachments := ExtractAttachments(message)
+	if len(attachments) != 1 || attachments[0].Type != "link" || attachments[0].URL != "https://storage.example.com/report.xlsx" {
+		t.Fatalf("unexpected interactive card links: %#v", attachments)
+	}
+}

@@ -69,6 +69,10 @@ func (s *Server) handleRuntimeAttentionAttachmentDownload(w http.ResponseWriter,
 		return
 	}
 	attachment := payload.Attachments[index-1]
+	if strings.TrimSpace(attachment.ID) == "" && strings.TrimSpace(attachment.URL) != "" {
+		s.jsonErrorCode(w, http.StatusBadRequest, ErrCodeValidationFailed, "this attention entry is a link, not a binary attachment; use its URL")
+		return
+	}
 	bindingID := strings.TrimSpace(stringFromAny(refs["bindingId"]))
 	if bindingID == "" {
 		s.jsonErrorCode(w, http.StatusBadRequest, ErrCodeValidationFailed, "attention signal has no channel binding")

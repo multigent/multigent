@@ -195,6 +195,9 @@ func ExtractAttachments(message EventMessage) []MessageAttachment {
 			// expose the concrete resources so the runtime can download them.
 			if nested := extractNestedResourceAttachments(body); len(nested) > 0 {
 				out = append(out, nested...)
+			}
+			out = append(out, extractLinksFromMessageBody(body)...)
+			if len(out) > 0 {
 				break
 			}
 			name := firstMapString(body, "title", "name")
@@ -294,11 +297,26 @@ func extractLinksFromMessageBody(body map[string]any) []MessageAttachment {
 		addURL(href, firstMapString(body, "text", "title"))
 	}
 	collectPostLinks(body["content"], addURL)
+	collectPostLinks(body["elements"], addURL)
+	for _, key := range []string{"user_dsl", "card", "data"} {
+		if encoded, _ := body[key].(string); strings.TrimSpace(encoded) == "" {
+			continue
+		} else if len(encoded) <= 1<<20 {
+			var decoded any
+			if json.Unmarshal([]byte(encoded), &decoded) == nil {
+				collectPostLinks(decoded, addURL)
+			}
+		}
+	}
 	return out
 }
 
 func collectPostLinks(value any, addURL func(string, string)) {
 	switch v := value.(type) {
+	case string:
+		for _, match := range markdownURLPattern.FindAllString(v, -1) {
+			addURL(match, "")
+		}
 	case []any:
 		for _, item := range v {
 			collectPostLinks(item, addURL)
@@ -312,7 +330,7 @@ func collectPostLinks(value any, addURL func(string, string)) {
 				addURL(match, "")
 			}
 		}
-		for _, key := range []string{"content", "elements"} {
+		for _, key := range []string{"content", "elements", "text"} {
 			if child, ok := v[key]; ok {
 				collectPostLinks(child, addURL)
 			}

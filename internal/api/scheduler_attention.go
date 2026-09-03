@@ -214,7 +214,7 @@ func (s *Server) pendingAttentionWakeupSectionAndVars(workspaceID, project, agen
 	}
 	b.WriteString("---\n\n")
 	b.WriteString(i18n.AttentionHint)
-	b.WriteString("\nIf an IM signal payload contains `attachments`, download the binary before analyzing it: `mga attention attachment download <signal-id> --index 1`. Use the returned local path in your analysis; do not ask the user to re-upload unless the download fails.\n")
+	b.WriteString("\nIf an IM signal payload contains an image/file/media/audio attachment with a non-empty ID, download the binary before analyzing it: `mga attention attachment download <signal-id> --index <n>`. For `link` or `document` entries, use the displayed URL or the appropriate document/network tool instead of binary attachment download. Use the returned local path in your analysis; do not ask the user to re-upload unless a real binary download fails.\n")
 	return b.String(), ids, vars, nil
 }
 
