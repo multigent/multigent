@@ -334,10 +334,10 @@ func (r *Runner) ExecPromptWithRuntimeControlEnvContext(ctx context.Context, pro
 		cmd.Stdin = pf
 	}
 
-	var outBuf bytes.Buffer
-	var multiOut io.Writer = io.MultiWriter(&outBuf, logFile, os.Stdout)
+	outBuf := newBoundedOutput(maxCapturedOutputBytes)
+	var multiOut io.Writer = io.MultiWriter(outBuf, logFile, os.Stdout)
 	if r.SuppressStdout {
-		multiOut = io.MultiWriter(&outBuf, logFile)
+		multiOut = io.MultiWriter(outBuf, logFile)
 	}
 	cmd.Stdout = multiOut
 	cmd.Stderr = multiOut
@@ -345,6 +345,9 @@ func (r *Runner) ExecPromptWithRuntimeControlEnvContext(ctx context.Context, pro
 	runStarted := time.Now()
 	runErr := runCommandContext(ctx, cmd)
 	runFinished := time.Now()
+	if outBuf.Truncated() {
+		fmt.Fprintf(logFile, "\n=== in-memory output capture truncated at %d bytes; full output remains in this log ===\n", maxCapturedOutputBytes)
+	}
 
 	fmt.Fprintf(logFile, "\n=== exit code: %v  finished: %s ===\n",
 		cmd.ProcessState.ExitCode(), time.Now().UTC().Format(time.RFC3339))
@@ -362,11 +365,6 @@ func (r *Runner) ExecPromptWithRuntimeControlEnvContext(ctx context.Context, pro
 	if runErr != nil {
 		if resumeSessionID != "" && isResumeSessionMissingError(output) {
 			fmt.Fprintf(logFile, "\n=== saved session is missing — clearing heartbeat session + retrying fresh ===\n")
-			r.recordAgentRun(telemetry.KindExec, project, agentName, "", "", string(model), sandboxLabel,
-				apiModel, apiBaseURL,
-				runStarted, runFinished, entity.TaskStatusDoneFailed, &ec, result.SessionID,
-				"saved session missing, retrying fresh",
-				logPath, telemetry.FormatExecCommand(executable, args), prompt, outBuf.Bytes())
 			r.clearHeartbeatSession(project, agentName)
 			return r.ExecPromptWithRuntimeControlEnvContext(ctx, project, agentName, prompt, "", runtimeControlEnv)
 		}
@@ -568,8 +566,8 @@ func (r *Runner) RunTaskWithContext(ctx context.Context, project, agentName stri
 		cmd.Stdin = pf
 	}
 
-	var outBuf bytes.Buffer
-	multiOut := io.MultiWriter(&outBuf, logFile)
+	outBuf := newBoundedOutput(maxCapturedOutputBytes)
+	multiOut := io.MultiWriter(outBuf, logFile)
 	cmd.Stdout = multiOut
 	cmd.Stderr = multiOut
 
@@ -608,11 +606,6 @@ func (r *Runner) RunTaskWithContext(ctx context.Context, project, agentName stri
 	if runErr != nil {
 		if resumeSessionID != "" && isResumeSessionMissingError(output) {
 			fmt.Fprintf(logFile, "\n=== saved session is missing — clearing heartbeat session + retrying fresh ===\n")
-			r.recordAgentRun(telemetry.KindTask, project, agentName, task.ID, task.Title, string(model), sandboxLabel,
-				apiModel, apiBaseURL,
-				runStarted, runFinished, entity.TaskStatusDoneFailed, &ec, result.SessionID,
-				"saved session missing, retrying fresh",
-				logPath, cmdSummary, fullPrompt, outBuf.Bytes())
 			r.clearHeartbeatSession(project, agentName)
 			return r.RunTaskWithContext(ctx, project, agentName, task, "")
 		}
@@ -2439,16 +2432,27 @@ func validRuntimeSecretEnvName(name string) bool {
 
 func runtimeMGAInstallerScript() []string {
 	return []string{
-		"export MULTIGENT_TOOLCHAIN_HOME=" + shellQuote(agentcli.ToolchainHome),
-		"mkdir -p \"$MULTIGENT_TOOLCHAIN_HOME/mga/bin\"",
-		"for mga_src in /opt/multigent/mga/bin/mga /opt/multigent/current/mga; do",
-		"  if [ -x \"$mga_src\" ]; then",
-		"    cp \"$mga_src\" \"$MULTIGENT_TOOLCHAIN_HOME/mga/bin/mga\"",
-		"    chmod 0755 \"$MULTIGENT_TOOLCHAIN_HOME/mga/bin/mga\"",
-		"    break",
-		"  fi",
-		"done",
-		"export PATH=\"$MULTIGENT_TOOLCHAIN_HOME/mga/bin:$PATH\"",
+		// Prefer the managed binary, but do not assume the runtime user can
+		// write the shared toolchain directory. The image/current locations are
+		// read-only fallbacks for non-root host and customer runtime nodes.
+		"if [ -x " + shellQuote(agentcli.ToolchainHome+"/mga/bin/mga") + " ]; then",
+		"  export PATH=" + shellQuote(agentcli.ToolchainHome+"/mga/bin") + ":$PATH",
+		"elif [ -x /opt/multigent/mga/bin/mga ]; then",
+		"  export PATH=/opt/multigent/mga/bin:$PATH",
+		"elif [ -x /opt/multigent/current/mga ]; then",
+		"  export PATH=/opt/multigent/current:$PATH",
+		"else",
+		"  export MULTIGENT_TOOLCHAIN_HOME=" + shellQuote(agentcli.ToolchainHome),
+		"  mkdir -p \"$MULTIGENT_TOOLCHAIN_HOME/mga/bin\"",
+		"  for mga_src in /opt/multigent/mga/bin/mga /opt/multigent/current/mga; do",
+		"    if [ -x \"$mga_src\" ]; then",
+		"      cp \"$mga_src\" \"$MULTIGENT_TOOLCHAIN_HOME/mga/bin/mga\"",
+		"      chmod 0755 \"$MULTIGENT_TOOLCHAIN_HOME/mga/bin/mga\"",
+		"      break",
+		"    fi",
+		"  done",
+		"  export PATH=\"$MULTIGENT_TOOLCHAIN_HOME/mga/bin:$PATH\"",
+		"fi",
 		"command -v mga >/dev/null 2>&1",
 	}
 }

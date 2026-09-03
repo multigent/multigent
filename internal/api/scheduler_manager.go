@@ -915,6 +915,14 @@ func (s *Server) enqueueSpecificRuntimeTaskRunFromRequest(workspaceID, project, 
 }
 
 func (s *Server) enqueueRuntimeWakeupRunFromRequest(workspaceID, project, agent string, hb *entity.HeartbeatConfig, serverURL, actor string) (controldb.RuntimeRun, *entity.Task, error) {
+	// Bind every scheduler-created task and run to the canonical project
+	// membership title. Channel bindings and old installations may still use
+	// the worker name, but mixing those identities creates tasks that the
+	// running agent cannot complete through mga.
+	if target := s.runtimeSchedulerTargetForProjectAgent(workspaceID, project, agent); target.agent != "" {
+		project = target.project
+		agent = target.agent
+	}
 	task, attentionIDs, err := s.nextRuntimeWakeupTask(workspaceID, project, agent, hb)
 	if err != nil {
 		return controldb.RuntimeRun{}, nil, err

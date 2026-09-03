@@ -50,15 +50,20 @@ func BootstrapScript(version string) string {
 	version = strings.TrimSpace(version)
 	if version == "" || version == "dev" {
 		return strings.Join([]string{
-			"export PATH=" + shellQuote(ManagedBinDir) + ":$PATH",
+			"if [ -x " + shellQuote(ManagedBinaryPath) + " ]; then export PATH=" + shellQuote(ManagedBinDir) + ":$PATH; elif [ -x " + shellQuote(BinaryPath) + " ]; then export PATH=" + shellQuote(BinDir) + ":$PATH; fi",
 			"command -v " + shellQuote(BinaryName) + " >/dev/null 2>&1",
 		}, "\n")
 	}
 	lines := []string{
-		"export MULTIGENT_TOOLCHAIN_HOME=/opt/multigent/toolchains",
+		"export MULTIGENT_TOOLCHAIN_HOME=${MULTIGENT_TOOLCHAIN_HOME:-/opt/multigent/toolchains}",
 		"export MULTIGENT_RUNTIME_CLI_HOME=\"$MULTIGENT_TOOLCHAIN_HOME/mga\"",
 		"export PATH=" + shellQuote(ManagedBinDir) + ":$PATH",
-		"mkdir -p \"$MULTIGENT_RUNTIME_CLI_HOME/bin\" \"$MULTIGENT_RUNTIME_CLI_HOME/releases\" \"$MULTIGENT_TOOLCHAIN_HOME/markers\"",
+		"if ! mkdir -p \"$MULTIGENT_RUNTIME_CLI_HOME/bin\" \"$MULTIGENT_RUNTIME_CLI_HOME/releases\" \"$MULTIGENT_TOOLCHAIN_HOME/markers\" 2>/dev/null; then",
+		"  export MULTIGENT_TOOLCHAIN_HOME=\"${TMPDIR:-/tmp}/multigent-toolchains\"",
+		"  export MULTIGENT_RUNTIME_CLI_HOME=\"$MULTIGENT_TOOLCHAIN_HOME/mga\"",
+		"  export PATH=\"$MULTIGENT_RUNTIME_CLI_HOME/bin:$MULTIGENT_RUNTIME_CLI_HOME/releases:" + BinDir + ":$PATH\"",
+		"  mkdir -p \"$MULTIGENT_RUNTIME_CLI_HOME/bin\" \"$MULTIGENT_RUNTIME_CLI_HOME/releases\" \"$MULTIGENT_TOOLCHAIN_HOME/markers\"",
+		"fi",
 	}
 	if downloadableReleaseVersion(version) {
 		lines = append(lines,

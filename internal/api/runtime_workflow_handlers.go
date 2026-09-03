@@ -19,6 +19,7 @@ import (
 )
 
 type runtimeTaskBody struct {
+	Project          string            `json:"project"`
 	Agent            string            `json:"agent"`
 	Title            string            `json:"title"`
 	Prompt           string            `json:"prompt"`
@@ -150,15 +151,42 @@ func runtimeAgentAddress(principal runtimeAgentPrincipal) string {
 }
 
 func (s *Server) runtimeTargetAgent(w http.ResponseWriter, principal runtimeAgentPrincipal, requested string) (string, bool) {
+	return s.runtimeTargetAgentInProject(w, principal, principal.Project, requested)
+}
+
+func (s *Server) runtimeTargetAgentInProject(w http.ResponseWriter, principal runtimeAgentPrincipal, project, requested string) (string, bool) {
 	agent := strings.TrimSpace(requested)
 	if agent == "" {
 		agent = principal.Agent
 	}
-	if !s.agentExistsInProject(principal.Project, agent) {
-		s.jsonErrorCode(w, http.StatusNotFound, ErrCodeAgentNotFound, "agent not found in runtime project")
+	if !s.agentExistsInWorkspaceProject(principal.WorkspaceID, project, agent) {
+		s.jsonErrorCode(w, http.StatusNotFound, ErrCodeAgentNotFound, "agent not found in target project")
 		return "", false
 	}
 	return agent, true
+}
+
+// runtimeProjectForAgent permits an agent to dispatch work into another project
+// only when the same workspace agent worker has a membership there. Project
+// membership is the existing runtime access boundary; no global project access
+// is inferred from the source runtime token.
+func (s *Server) runtimeProjectForAgent(w http.ResponseWriter, principal runtimeAgentPrincipal, requested string) (string, bool) {
+	project := strings.TrimSpace(requested)
+	if project == "" {
+		project = principal.Project
+	}
+	if project == principal.Project {
+		return project, true
+	}
+	if _, err := s.st.Project(project); err != nil {
+		s.jsonErrorCode(w, http.StatusNotFound, ErrCodeProjectNotFound, "target project not found")
+		return "", false
+	}
+	if !s.agentExistsInWorkspaceProject(principal.WorkspaceID, project, principal.Agent) {
+		s.jsonErrorCode(w, http.StatusForbidden, ErrCodeAgentOperatorRequired, "runtime agent is not a member of target project")
+		return "", false
+	}
+	return project, true
 }
 
 func (s *Server) runtimeFindTask(principal runtimeAgentPrincipal, id, requestedAgent string) (*entity.Task, string, bool, error) {
@@ -166,14 +194,7 @@ func (s *Server) runtimeFindTask(principal runtimeAgentPrincipal, id, requestedA
 	if id == "" {
 		return nil, "", false, fmt.Errorf("task id is required")
 	}
-	if agent := strings.TrimSpace(requestedAgent); agent != "" {
-		t, err := s.ts.GetTask(principal.Project, agent, id)
-		return t, agent, false, err
-	}
-	agents, err := s.projectAgentNames(principal.WorkspaceID, principal.Project)
-	if err != nil {
-		return nil, "", false, err
-	}
+	agents := s.runtimeTaskAgentAliases(principal, requestedAgent)
 	for _, agent := range agents {
 		t, err := s.ts.GetTask(principal.Project, agent, id)
 		if err == nil {
@@ -182,6 +203,47 @@ func (s *Server) runtimeFindTask(principal runtimeAgentPrincipal, id, requestedA
 		}
 	}
 	return nil, "", false, fmt.Errorf("task not found")
+}
+
+// runtimeTaskAgentAliases handles the identity transition from worker names
+// to project membership titles. New tasks use the canonical membership title;
+// aliases keep an already queued task operable after a membership was renamed
+// or after an older scheduler stored the worker name.
+func (s *Server) runtimeTaskAgentAliases(principal runtimeAgentPrincipal, requested string) []string {
+	values := []string{strings.TrimSpace(principal.Agent)}
+	if s != nil && s.agentDirectory != nil {
+		if resolved, ok, err := s.agentDirectory.ProjectWorker(principal.WorkspaceID, principal.Project, principal.Agent); err == nil && ok {
+			values = append(values,
+				resolved.Membership.Title,
+				resolved.Membership.MemberID,
+				resolved.Worker.Name,
+				resolved.Worker.DisplayName,
+			)
+		}
+	}
+	// An explicit --agent is only an alias selector for this same worker, not
+	// a way for a runtime token to reach another agent's task queue.
+	requested = strings.TrimSpace(requested)
+	if requested != "" {
+		for _, value := range values {
+			if strings.EqualFold(strings.TrimSpace(value), requested) {
+				values = append(values, requested)
+				break
+			}
+		}
+	}
+	out := make([]string, 0, len(values))
+	seen := map[string]bool{}
+	for _, value := range values {
+		value = strings.TrimSpace(value)
+		key := strings.ToLower(value)
+		if value == "" || seen[key] {
+			continue
+		}
+		seen[key] = true
+		out = append(out, value)
+	}
+	return out
 }
 
 func (s *Server) handleRuntimeTasks(w http.ResponseWriter, r *http.Request) {
@@ -451,13 +513,17 @@ func (s *Server) handleRuntimeTaskTemplates(w http.ResponseWriter, r *http.Reque
 		s.serverError(w, err)
 		return
 	}
+	project, ok := s.runtimeProjectForAgent(w, principal, r.URL.Query().Get("project"))
+	if !ok {
+		return
+	}
 	filtered := make([]entity.TaskTemplate, 0, len(templates))
 	for _, template := range templates {
-		if template.Project == principal.Project {
+		if template.Project == project {
 			filtered = append(filtered, template)
 		}
 	}
-	_ = json.NewEncoder(w).Encode(map[string]any{"templates": filtered})
+	_ = json.NewEncoder(w).Encode(map[string]any{"project": project, "templates": filtered})
 }
 
 func (s *Server) handleRuntimePostTask(w http.ResponseWriter, r *http.Request) {
@@ -470,7 +536,11 @@ func (s *Server) handleRuntimePostTask(w http.ResponseWriter, r *http.Request) {
 		s.jsonErrorCode(w, http.StatusBadRequest, ErrCodeInvalidJSON, "invalid JSON body")
 		return
 	}
-	agent, ok := s.runtimeTargetAgent(w, principal, body.Agent)
+	project, ok := s.runtimeProjectForAgent(w, principal, body.Project)
+	if !ok {
+		return
+	}
+	agent, ok := s.runtimeTargetAgentInProject(w, principal, project, body.Agent)
 	if !ok {
 		return
 	}
@@ -495,7 +565,7 @@ func (s *Server) handleRuntimePostTask(w http.ResponseWriter, r *http.Request) {
 	}
 	assignee := strings.TrimSpace(body.Assignee)
 	if assignee == "" {
-		assignee = principal.Project + "/" + agent
+		assignee = project + "/" + agent
 	}
 	if err := s.validateIdentity(assignee, "assignee"); err != nil {
 		s.jsonError(w, http.StatusBadRequest, err.Error())
@@ -540,26 +610,26 @@ func (s *Server) handleRuntimePostTask(w http.ResponseWriter, r *http.Request) {
 		}
 		t.NotBefore = nb
 	}
-	s.annotateTaskAssignee(principal.WorkspaceID, principal.Project, t)
-	if err := s.ts.AddTask(principal.Project, agent, t); err != nil {
+	s.annotateTaskAssignee(principal.WorkspaceID, project, t)
+	if err := s.ts.AddTask(project, agent, t); err != nil {
 		s.serverError(w, err)
 		return
 	}
-	s.recordTaskAttentionSignal(principal.WorkspaceID, principal.Project, agent, t, "task_assigned")
-	s.triggers.Fire(principal.Project, agent, entity.TriggerOnTask, "task "+t.ID)
+	s.recordTaskAttentionSignal(principal.WorkspaceID, project, agent, t, "task_assigned")
+	s.triggers.Fire(project, agent, entity.TriggerOnTask, "task "+t.ID)
 	s.auditLog(auditLogInput{
 		WorkspaceID:  principal.WorkspaceID,
 		ActorType:    "agent",
 		ActorID:      runtimeAgentAddress(principal),
 		Action:       "runtime.task.create",
 		ResourceType: "task",
-		ResourceID:   principal.Project + "/" + agent + "/" + t.ID,
+		ResourceID:   project + "/" + agent + "/" + t.ID,
 		Summary:      "Runtime agent created task",
-		After:        taskToRow(t, principal.Project, agent, false),
+		After:        taskToRow(t, project, agent, false),
 		Request:      r,
 	})
 	w.WriteHeader(http.StatusCreated)
-	_ = json.NewEncoder(w).Encode(taskToRow(t, principal.Project, agent, false))
+	_ = json.NewEncoder(w).Encode(taskToRow(t, project, agent, false))
 }
 
 func (s *Server) handleRuntimePostTaskFromTemplate(w http.ResponseWriter, r *http.Request) {
@@ -582,8 +652,17 @@ func (s *Server) handleRuntimePostTaskFromTemplate(w http.ResponseWriter, r *htt
 		s.jsonError(w, http.StatusNotFound, "task template not found")
 		return
 	}
-	if template.Project != "" && template.Project != principal.Project {
-		s.jsonError(w, http.StatusBadRequest, "task template is not available for this project")
+	requestedProject := strings.TrimSpace(body.Project)
+	if template.Project != "" && requestedProject != "" && template.Project != requestedProject {
+		s.jsonError(w, http.StatusBadRequest, "task template does not belong to target project")
+		return
+	}
+	targetProject := requestedProject
+	if targetProject == "" {
+		targetProject = template.Project
+	}
+	targetProject, ok = s.runtimeProjectForAgent(w, principal, targetProject)
+	if !ok {
 		return
 	}
 	taskBody, err := instantiateTaskTemplate(template, body)
@@ -594,11 +673,11 @@ func (s *Server) handleRuntimePostTaskFromTemplate(w http.ResponseWriter, r *htt
 	if taskBody.Agent == "" {
 		taskBody.Agent = s.initialWorkflowAgent(principal.WorkspaceID, template, taskBody.WorkflowActorBindings)
 	}
-	s.createRuntimeTaskFromBody(w, r, principal, taskBody)
+	s.createRuntimeTaskFromBody(w, r, principal, targetProject, taskBody)
 }
 
-func (s *Server) createRuntimeTaskFromBody(w http.ResponseWriter, r *http.Request, principal runtimeAgentPrincipal, body postTaskBody) {
-	agent, ok := s.runtimeTargetAgent(w, principal, body.Agent)
+func (s *Server) createRuntimeTaskFromBody(w http.ResponseWriter, r *http.Request, principal runtimeAgentPrincipal, project string, body postTaskBody) {
+	agent, ok := s.runtimeTargetAgentInProject(w, principal, project, body.Agent)
 	if !ok {
 		return
 	}
@@ -623,7 +702,7 @@ func (s *Server) createRuntimeTaskFromBody(w http.ResponseWriter, r *http.Reques
 	}
 	assignee := strings.TrimSpace(body.Assignee)
 	if assignee == "" {
-		assignee = principal.Project + "/" + agent
+		assignee = project + "/" + agent
 	}
 	workflowID := strings.TrimSpace(body.WorkflowDefinitionID)
 	var workflowStore interface {
@@ -648,12 +727,12 @@ func (s *Server) createRuntimeTaskFromBody(w http.ResponseWriter, r *http.Reques
 			switch inst.ActorType {
 			case "agent":
 				startAgent := strings.TrimSpace(inst.ActorID)
-				if startAgent == "" || !s.agentExistsInProject(principal.Project, startAgent) {
-					s.jsonError(w, http.StatusBadRequest, "workflow start agent not found in this project")
+				if startAgent == "" || !s.agentExistsInWorkspaceProject(principal.WorkspaceID, project, startAgent) {
+					s.jsonError(w, http.StatusBadRequest, "workflow start agent not found in target project")
 					return
 				}
 				agent = startAgent
-				assignee = principal.Project + "/" + startAgent
+				assignee = project + "/" + startAgent
 			case "human":
 				reviewer := strings.TrimSpace(inst.ActorID)
 				if reviewer == "" {
@@ -711,13 +790,13 @@ func (s *Server) createRuntimeTaskFromBody(w http.ResponseWriter, r *http.Reques
 		}
 		t.NotBefore = nb
 	}
-	s.annotateTaskAssignee(principal.WorkspaceID, principal.Project, t)
-	if err := s.ts.AddTask(principal.Project, agent, t); err != nil {
+	s.annotateTaskAssignee(principal.WorkspaceID, project, t)
+	if err := s.ts.AddTask(project, agent, t); err != nil {
 		s.serverError(w, err)
 		return
 	}
 	if !strings.Contains(assignee, "/") {
-		item := &entity.InboxItem{TaskID: t.ID, Project: principal.Project, Agent: agent, To: assignee, Title: t.Title, Summary: prompt}
+		item := &entity.InboxItem{TaskID: t.ID, Project: project, Agent: agent, To: assignee, Title: t.Title, Summary: prompt}
 		if err := s.ts.AddToInbox(item); err != nil {
 			s.serverError(w, err)
 			return
@@ -729,7 +808,7 @@ func (s *Server) createRuntimeTaskFromBody(w http.ResponseWriter, r *http.Reques
 			return
 		}
 		initialInputs := workflowInitialInputsFromPrompt(workflowDef, prompt)
-		if _, _, err := workflowStore.StartRunWithInput(principal.Project, t.ID, workflowID, body.WorkflowActorBindings, initialInputs); err != nil {
+		if _, _, err := workflowStore.StartRunWithInput(project, t.ID, workflowID, body.WorkflowActorBindings, initialInputs); err != nil {
 			s.serverError(w, err)
 			return
 		}
@@ -739,8 +818,8 @@ func (s *Server) createRuntimeTaskFromBody(w http.ResponseWriter, r *http.Reques
 		if workflowID != "" {
 			reason = string(entity.TriggerOnWorkflowStepAssigned)
 		}
-		signalID := s.recordTaskAttentionSignal(principal.WorkspaceID, principal.Project, agent, t, reason)
-		s.requestTaskAttentionWakeup(principal.WorkspaceID, principal.Project, agent, t, reason, signalID)
+		signalID := s.recordTaskAttentionSignal(principal.WorkspaceID, project, agent, t, reason)
+		s.requestTaskAttentionWakeup(principal.WorkspaceID, project, agent, t, reason, signalID)
 	}
 	s.auditLog(auditLogInput{
 		WorkspaceID:  principal.WorkspaceID,
@@ -748,13 +827,13 @@ func (s *Server) createRuntimeTaskFromBody(w http.ResponseWriter, r *http.Reques
 		ActorID:      runtimeAgentAddress(principal),
 		Action:       "runtime.task.create_from_template",
 		ResourceType: "task",
-		ResourceID:   principal.Project + "/" + agent + "/" + t.ID,
+		ResourceID:   project + "/" + agent + "/" + t.ID,
 		Summary:      "Runtime agent created task from template",
-		After:        taskToRow(t, principal.Project, agent, false),
+		After:        taskToRow(t, project, agent, false),
 		Request:      r,
 	})
 	w.WriteHeader(http.StatusCreated)
-	_ = json.NewEncoder(w).Encode(taskToRow(t, principal.Project, agent, false))
+	_ = json.NewEncoder(w).Encode(taskToRow(t, project, agent, false))
 }
 
 func (s *Server) handleRuntimePutTask(w http.ResponseWriter, r *http.Request) {

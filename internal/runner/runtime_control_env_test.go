@@ -11,6 +11,7 @@ import (
 	"strings"
 	"testing"
 
+	"github.com/multigent/multigent/internal/agentcli"
 	"github.com/multigent/multigent/internal/daemon"
 	controldb "github.com/multigent/multigent/internal/db"
 	"github.com/multigent/multigent/internal/entity"
@@ -700,6 +701,24 @@ func TestWriteRuntimeToolsFileMaterializesGitHubCLIConfig(t *testing.T) {
 	}
 	if strings.Contains(string(toolsBody), "ghp_test_token") {
 		t.Fatalf("tools file leaked token: %s", string(toolsBody))
+	}
+}
+
+func TestRuntimeMGAInstallerScriptFallsBackToReadonlyRuntimeBinary(t *testing.T) {
+	script := strings.Join(runtimeMGAInstallerScript(), "\n")
+	managed := agentcli.ToolchainHome + "/mga/bin/mga"
+	if !strings.Contains(script, "-x "+shellQuote(managed)) {
+		t.Fatalf("managed mga path missing from bootstrap: %s", script)
+	}
+	if !strings.Contains(script, "export PATH=/opt/multigent/mga/bin:$PATH") {
+		t.Fatalf("readonly image fallback missing from bootstrap: %s", script)
+	}
+	if !strings.Contains(script, "export PATH=/opt/multigent/current:$PATH") {
+		t.Fatalf("current-release fallback missing from bootstrap: %s", script)
+	}
+	managedCheck := "if [ -x " + shellQuote(managed) + " ]; then"
+	if strings.Index(script, "mkdir -p \"$MULTIGENT_TOOLCHAIN_HOME/mga/bin\"") < strings.Index(script, managedCheck) {
+		t.Fatal("bootstrap must not write the shared toolchain before trying readonly fallbacks")
 	}
 }
 

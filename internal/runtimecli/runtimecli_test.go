@@ -103,3 +103,16 @@ func TestBootstrapScriptDoesNotDownloadDevVersion(t *testing.T) {
 		}
 	}
 }
+
+func TestBootstrapScriptUsesImageFallbackWhenToolchainIsNotWritable(t *testing.T) {
+	script := BootstrapScript("v0.1.3")
+	for _, want := range []string{
+		"if ! mkdir -p",
+		"${TMPDIR:-/tmp}/multigent-toolchains",
+		BinDir,
+	} {
+		if !strings.Contains(script, want) {
+			t.Fatalf("bootstrap script missing non-root fallback %q:\n%s", want, script)
+		}
+	}
+}
