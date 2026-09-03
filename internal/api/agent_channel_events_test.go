@@ -25,6 +25,7 @@ type testIMProvider struct {
 	replies     []string
 	messages    []imbridge.OutgoingMessage
 	cardUpdates []imbridge.OutgoingMessage
+	reactions   []string
 }
 
 func (p *testIMProvider) Info() imbridge.ProviderInfo {
@@ -62,6 +63,13 @@ func (p *testIMProvider) ReplyMessage(ctx context.Context, secrets map[string]st
 }
 func (p *testIMProvider) UpdateInteractionCard(ctx context.Context, secrets map[string]string, callback imbridge.IncomingInteractionCallback, message imbridge.OutgoingMessage) error {
 	p.cardUpdates = append(p.cardUpdates, message)
+	return nil
+}
+func (p *testIMProvider) AddReaction(context.Context, map[string]string, imbridge.IncomingMessage, string) (string, error) {
+	p.reactions = append(p.reactions, imSystemAckReaction)
+	return "reaction-one", nil
+}
+func (p *testIMProvider) RemoveReaction(context.Context, map[string]string, imbridge.IncomingMessage, string) error {
 	return nil
 }
 
@@ -733,6 +741,81 @@ func TestAcceptIMMessageAutoBindsIdentityByEmail(t *testing.T) {
 	}
 	if len(identities) != 1 || identities[0].UserID != "glenn" || identities[0].CreatedBy != "auto" {
 		t.Fatalf("unexpected identities: %#v", identities)
+	}
+}
+
+func TestAcceptIMMessageAcknowledgesBeforeRuntimeReadiness(t *testing.T) {
+	s, workspaceID := newConnectionGrantPolicyServer(t)
+	seedAgentWorkerWithIDForTest(t, s, workspaceID, "sample", "pm", "aw-runtime-not-ready", "pm-runtime-not-ready")
+	worker, ok, err := s.controlDB.AgentWorkerByID(workspaceID, "aw-runtime-not-ready")
+	if err != nil || !ok {
+		t.Fatalf("load worker ok=%v err=%v", ok, err)
+	}
+	worker.ScheduleJSON = `{"enabled":true,"triggers":["im_direct_message"]}`
+	worker.RuntimeConfigJSON = `{"sandbox":{"provider":"e2b"}}`
+	if err := s.controlDB.UpsertAgentWorker(worker); err != nil {
+		t.Fatalf("update worker: %v", err)
+	}
+	if err := s.controlDB.UpsertConnection(controldb.Connection{
+		ID:             "conn-runtime-not-ready",
+		WorkspaceID:    workspaceID,
+		Provider:       "feishu",
+		ConnectionName: "agent-sample-pm",
+		OwnerType:      ConnectionOwnerWorkspace,
+		OwnerID:        workspaceID,
+		AuthType:       "app_secret",
+		Status:         "active",
+		ProfileJSON:    "{}",
+	}); err != nil {
+		t.Fatalf("connection: %v", err)
+	}
+	secret, err := sealConnectionSecret(map[string]string{"baseUrl": "https://open.feishu.cn", "appId": "cli_app", "appSecret": "secret"})
+	if err != nil {
+		t.Fatalf("seal secret: %v", err)
+	}
+	secret.ConnectionID = "conn-runtime-not-ready"
+	if err := s.controlDB.UpsertConnectionSecret(secret); err != nil {
+		t.Fatalf("secret: %v", err)
+	}
+	if err := s.controlDB.UpsertAgentChannelBinding(controldb.AgentChannelBinding{
+		ID:            "chan-runtime-not-ready",
+		WorkspaceID:   workspaceID,
+		AgentWorkerID: "aw-runtime-not-ready",
+		ProjectID:     "sample",
+		AgentID:       "pm",
+		Provider:      "feishu",
+		ConnectionID:  "conn-runtime-not-ready",
+		Status:        "connected",
+		MetadataJSON:  `{"appId":"cli_app"}`,
+	}); err != nil {
+		t.Fatalf("binding: %v", err)
+	}
+	if err := s.controlDB.UpsertExternalIdentity(controldb.ExternalIdentity{
+		ID:             "ext-runtime-not-ready",
+		WorkspaceID:    workspaceID,
+		Provider:       "feishu",
+		ExternalUserID: "ou_owner",
+		UserID:         "owner",
+	}); err != nil {
+		t.Fatalf("identity: %v", err)
+	}
+
+	provider := &testIMProvider{id: "feishu", label: "Feishu"}
+	result, err := s.acceptIMMessage(provider, "cli_app", "", imbridge.IncomingMessage{
+		MessageID:    "om_runtime_not_ready",
+		ChatID:       "oc_p2p",
+		ChatType:     "p2p",
+		SenderOpenID: "ou_owner",
+		Text:         "please review this",
+	}, "")
+	if err != nil {
+		t.Fatalf("accept message: %v", err)
+	}
+	if result["reason"] != "runtime_not_ready" {
+		t.Fatalf("expected runtime_not_ready result, got %#v", result)
+	}
+	if len(provider.reactions) != 1 || provider.reactions[0] != imSystemAckReaction {
+		t.Fatalf("expected accepted reaction before readiness rejection, got %#v", provider.reactions)
 	}
 }
 

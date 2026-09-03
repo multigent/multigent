@@ -368,10 +368,12 @@ func collectSchedulerStartTargets(root string, projects []string, startAgent str
 func loadSchedulerHeartbeat(root, project, agent string, ts taskstore.Store) (*entity.HeartbeatConfig, error) {
 	_ = ts
 	worker, ok, db, _, err := resolveCLIProjectWorker(root, project, agent)
+	if db != nil {
+		defer db.Close()
+	}
 	if err != nil {
 		return nil, err
 	}
-	_ = db
 	if !ok {
 		return nil, fmt.Errorf("agent worker membership %s/%s not found", project, agent)
 	}
@@ -388,6 +390,9 @@ func saveSchedulerHeartbeat(root, project, agent string, ts taskstore.Store, hb 
 		return fmt.Errorf("heartbeat config is nil")
 	}
 	worker, ok, db, _, err := resolveCLIProjectWorker(root, project, agent)
+	if db != nil {
+		defer db.Close()
+	}
 	if err != nil {
 		return err
 	}

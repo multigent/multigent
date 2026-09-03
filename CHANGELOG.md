@@ -1,5 +1,16 @@
 # Changelog
 
+## [v2.0.11] - 2026-09-03
+
+### Fixed
+
+- Fixed a scheduler SQLite connection leak that could accumulate file descriptors and memory during long-running heartbeat scheduling.
+- Acknowledge accepted IM messages before runtime readiness checks, so channel feedback is not lost during a temporary runtime outage.
+
+### Tested
+
+- Verified scheduler and IM regression tests, including the runtime-not-ready acknowledgement path.
+
 ## [v2.0.6] - 2026-08-26
 
 ### Added

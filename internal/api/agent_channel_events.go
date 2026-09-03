@@ -722,6 +722,10 @@ func (s *Server) acceptIMMessage(channelProvider imbridge.Provider, appID, verif
 		s.recordAgentChannelCallback(resolved.Binding, "queued", "attention_pending", message, "")
 		return map[string]any{"ok": true, "queued": true, "attentionId": attentionID}, nil
 	}
+	// A message is acknowledged as soon as it passes identity and permission
+	// checks. Runtime readiness is a separate concern: a temporary runtime
+	// outage must not make the channel look unresponsive.
+	s.acknowledgeIMAccepted(channelProvider, resolved, message)
 	meta, err := s.agentMetaForProjectMember(resolved.Binding.WorkspaceID, resolved.Binding.ProjectID, resolved.Binding.AgentID)
 	if err != nil {
 		return nil, err
@@ -750,7 +754,6 @@ func (s *Server) acceptIMMessage(channelProvider imbridge.Provider, appID, verif
 		return map[string]any{"ok": true, "ignored": true, "reason": "runtime_not_ready"}, nil
 	}
 	s.recordAgentChannelCallback(resolved.Binding, "accepted", "", message, "")
-	s.acknowledgeIMAccepted(channelProvider, resolved, message)
 	go s.requestAgentAttentionWakeupAfterDebounce(resolved.Binding, reason, runtimeAPIURL, resolved.Identity.UserID, attentionID)
 	return map[string]any{"ok": true}, nil
 }
