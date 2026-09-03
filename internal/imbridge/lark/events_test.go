@@ -97,3 +97,31 @@ func TestExpandMergeForwardItemsExtractsCardEmbeddedImage(t *testing.T) {
 		t.Fatalf("unexpected card attachments: err=%v attachments=%#v", err, attachments)
 	}
 }
+
+func TestExtractAttachmentsExtractsInteractiveCardResources(t *testing.T) {
+	message := EventMessage{
+		MessageType: "interactive",
+		Content:     `{"title":"日报","body":{"elements":[{"tag":"img","img_key":"img_direct"},{"tag":"file","file_token":"file_direct","file_name":"report.md"}]}}`,
+	}
+	attachments := ExtractAttachments(message)
+	if len(attachments) != 2 {
+		t.Fatalf("expected two interactive card resources, got %#v", attachments)
+	}
+	if attachments[0].ID != "img_direct" || attachments[0].Type != "image" {
+		t.Fatalf("unexpected image attachment: %#v", attachments[0])
+	}
+	if attachments[1].ID != "file_direct" || attachments[1].Type != "file" || attachments[1].Name != "report.md" {
+		t.Fatalf("unexpected file attachment: %#v", attachments[1])
+	}
+}
+
+func TestExtractAttachmentsDecodesInteractiveCardJSONString(t *testing.T) {
+	message := EventMessage{
+		MessageType: "interactive",
+		Content:     `{"user_dsl":"{\"elements\":[{\"tag\":\"img\",\"image_key\":\"img_nested\"}]}"}`,
+	}
+	attachments := ExtractAttachments(message)
+	if len(attachments) != 1 || attachments[0].ID != "img_nested" || attachments[0].Type != "image" {
+		t.Fatalf("unexpected nested card attachments: %#v", attachments)
+	}
+}

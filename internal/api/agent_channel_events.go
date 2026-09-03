@@ -604,6 +604,10 @@ func (s *Server) acceptIMMessage(channelProvider imbridge.Provider, appID, verif
 	log.Printf("[im:%s] received message type=%s chat_type=%s message=%s content_bytes=%d text_bytes=%d attachments=%d", provider,
 		strings.TrimSpace(message.MessageType), strings.TrimSpace(message.ChatType), shortSensitiveHash(message.MessageID),
 		len(message.RawContent), len(text), len(message.Attachments))
+	if len(message.Attachments) > 0 {
+		log.Printf("[im:%s] incoming attachment metadata message=%s attachments=%s",
+			provider, shortSensitiveHash(message.MessageID), incomingAttachmentDebugSummary(message.Attachments))
+	}
 	if text == "" && len(message.Attachments) == 0 {
 		log.Printf("[im:%s] ignored message type=%s message=%s reason=empty_content", provider, strings.TrimSpace(message.MessageType), shortSensitiveHash(message.MessageID))
 		return map[string]any{"ok": true, "ignored": true}, nil
@@ -722,7 +726,7 @@ func (s *Server) acceptIMMessage(channelProvider imbridge.Provider, appID, verif
 			if text == "" {
 				text = incomingMessageFallbackText(message)
 			}
-			log.Printf("[im:%s] message enriched type=%s message=%s text_bytes=%d attachments=%d", provider, strings.TrimSpace(message.MessageType), shortSensitiveHash(message.MessageID), len(text), len(message.Attachments))
+			log.Printf("[im:%s] message enriched type=%s message=%s text_bytes=%d attachments=%d metadata=%s", provider, strings.TrimSpace(message.MessageType), shortSensitiveHash(message.MessageID), len(text), len(message.Attachments), incomingAttachmentDebugSummary(message.Attachments))
 		}
 	}
 	if cmd, ok := parseAgentChannelControlCommand(text); ok {
@@ -2152,6 +2156,25 @@ func incomingMessageFallbackText(message imbridge.IncomingMessage) string {
 		parts = append(parts, "["+label+"]")
 	}
 	return strings.Join(parts, " ")
+}
+
+func incomingAttachmentDebugSummary(attachments []imbridge.IncomingAttachment) string {
+	parts := make([]string, 0, len(attachments))
+	for _, attachment := range attachments {
+		kind := strings.TrimSpace(attachment.Type)
+		if kind == "" {
+			kind = "unknown"
+		}
+		id := shortSensitiveHash(attachment.ID)
+		if id == "" {
+			id = "none"
+		}
+		parts = append(parts, kind+":"+id)
+	}
+	if len(parts) == 0 {
+		return "-"
+	}
+	return strings.Join(parts, ",")
 }
 
 func agentChannelReplySubject(agentID string) string {

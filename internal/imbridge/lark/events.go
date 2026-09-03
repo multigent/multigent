@@ -190,6 +190,13 @@ func ExtractAttachments(message EventMessage) []MessageAttachment {
 		}
 	case "interactive", "merge_forward", "share_chat", "share_user":
 		if body != nil {
+			// Interactive cards can contain real image/file elements. Keep the
+			// card marker only when no downloadable resource was found; otherwise
+			// expose the concrete resources so the runtime can download them.
+			if nested := extractNestedResourceAttachments(body); len(nested) > 0 {
+				out = append(out, nested...)
+				break
+			}
 			name := firstMapString(body, "title", "name")
 			if name == "" {
 				name = messageType
@@ -391,6 +398,17 @@ func extractNestedResourceAttachments(value any) []MessageAttachment {
 	var walk func(any, map[string]any)
 	walk = func(current any, parent map[string]any) {
 		switch node := current.(type) {
+		case string:
+			// Card payloads such as user_dsl and nested content are commonly
+			// JSON-encoded strings rather than objects in the event envelope.
+			// Decode only JSON-shaped strings so ordinary card text is untouched.
+			trimmed := strings.TrimSpace(node)
+			if len(trimmed) > 0 && len(trimmed) <= 1<<20 && (strings.HasPrefix(trimmed, "{") || strings.HasPrefix(trimmed, "[")) {
+				var decoded any
+				if json.Unmarshal([]byte(trimmed), &decoded) == nil {
+					walk(decoded, parent)
+				}
+			}
 		case []any:
 			for _, child := range node {
 				walk(child, parent)
@@ -409,7 +427,10 @@ func extractNestedResourceAttachments(value any) []MessageAttachment {
 			if imageKey := firstMapString(node, "image_key", "imageKey", "img_key", "imgKey"); imageKey != "" {
 				out = append(out, MessageAttachment{ID: imageKey, Type: "image", Name: firstMapString(node, "file_name", "fileName", "name"), Raw: parent})
 			}
-			if fileKey := firstMapString(node, "file_key", "fileKey"); fileKey != "" {
+			if imageToken := firstMapString(node, "image_token", "imageToken"); imageToken != "" {
+				out = append(out, MessageAttachment{ID: imageToken, Type: "image", Name: firstMapString(node, "file_name", "fileName", "name"), Raw: parent})
+			}
+			if fileKey := firstMapString(node, "file_key", "fileKey", "file_token", "fileToken"); fileKey != "" {
 				out = append(out, MessageAttachment{ID: fileKey, Type: "file", Name: firstMapString(node, "file_name", "fileName", "name"), MIME: firstMapString(node, "mime_type", "mimeType"), Size: firstMapInt64(node, "file_size", "fileSize", "size"), Raw: parent})
 			}
 			for _, child := range node {

@@ -3,9 +3,11 @@ package imbridge
 import (
 	"bytes"
 	"context"
+	"crypto/sha256"
 	"encoding/json"
 	"fmt"
 	"io"
+	"log"
 	"net/http"
 	"net/url"
 	"strconv"
@@ -14,6 +16,15 @@ import (
 
 	larkbridge "github.com/multigent/multigent/internal/imbridge/lark"
 )
+
+func shortSensitiveHash(value string) string {
+	value = strings.TrimSpace(value)
+	if value == "" {
+		return ""
+	}
+	sum := sha256.Sum256([]byte(value))
+	return fmt.Sprintf("%x", sum[:])[:16]
+}
 
 type ProviderInfo struct {
 	ID        string             `json:"id"`
@@ -444,6 +455,8 @@ func (p larkFamilyProvider) DownloadAttachment(ctx context.Context, secrets map[
 	if strings.EqualFold(strings.TrimSpace(attachment.Type), "image") {
 		resourceType = "image"
 	}
+	log.Printf("[im:%s] downloading message resource message=%s attachment=%s type=%s resource_type=%s",
+		p.Info().ID, shortSensitiveHash(message.MessageID), shortSensitiveHash(attachment.ID), strings.TrimSpace(attachment.Type), resourceType)
 	download, err := client.DownloadMessageResource(ctx, message.MessageID, attachment.ID, resourceType)
 	if err != nil {
 		return IncomingAttachmentDownload{}, err
@@ -469,6 +482,8 @@ func (p larkFamilyProvider) EnrichIncomingMessage(ctx context.Context, secrets m
 	if err != nil {
 		return message, err
 	}
+	log.Printf("[im:%s] expanded forwarded message message=%s text_bytes=%d attachments=%d",
+		p.Info().ID, shortSensitiveHash(message.MessageID), len(text), len(attachments))
 	if strings.TrimSpace(text) != "" {
 		message.Text = strings.TrimSpace(text)
 	}

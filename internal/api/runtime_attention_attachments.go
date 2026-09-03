@@ -3,6 +3,7 @@ package api
 import (
 	"encoding/json"
 	"fmt"
+	"log"
 	"mime"
 	"net/http"
 	"net/url"
@@ -82,11 +83,21 @@ func (s *Server) handleRuntimeAttentionAttachmentDownload(w http.ResponseWriter,
 		s.jsonErrorCode(w, http.StatusForbidden, ErrCodeRuntimeCapabilityRequired, "attention channel binding belongs to another agent")
 		return
 	}
+	log.Printf("[attention-attachment] download requested signal=%s worker=%s provider=%s index=%d type=%s attachment=%s message=%s",
+		shortSensitiveHash(signalID), shortSensitiveHash(workerID), strings.TrimSpace(binding.Provider), index,
+		strings.TrimSpace(attachment.Type), shortSensitiveHash(attachment.ID), shortSensitiveHash(stringFromAny(refs["messageId"])))
 	download, err := s.downloadRuntimeAttentionAttachment(r, binding, refs, payload, attachment)
 	if err != nil {
+		log.Printf("[attention-attachment] download failed signal=%s worker=%s provider=%s index=%d type=%s attachment=%s: %v",
+			shortSensitiveHash(signalID), shortSensitiveHash(workerID), strings.TrimSpace(binding.Provider), index,
+			strings.TrimSpace(attachment.Type), shortSensitiveHash(attachment.ID), err)
 		s.serverError(w, err)
 		return
 	}
+	log.Printf("[attention-attachment] download succeeded signal=%s worker=%s provider=%s index=%d type=%s attachment=%s bytes=%d mime=%s filename=%q",
+		shortSensitiveHash(signalID), shortSensitiveHash(workerID), strings.TrimSpace(binding.Provider), index,
+		strings.TrimSpace(attachment.Type), shortSensitiveHash(attachment.ID), len(download.Data), strings.TrimSpace(download.MIME),
+		safeAttachmentDownloadName(firstNonEmpty(download.FileName, attachment.Name)))
 	fileName := safeAttachmentDownloadName(firstNonEmpty(download.FileName, attachment.Name, attachment.ID, fmt.Sprintf("attachment-%d", index)))
 	contentType := strings.TrimSpace(firstNonEmpty(download.MIME, attachment.MIME, http.DetectContentType(download.Data)))
 	if contentType == "" {
