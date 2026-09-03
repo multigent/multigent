@@ -616,7 +616,7 @@ pending_confirmation
 {
   "intent": "current_task_feedback",
   "confidence": 0.86,
-  "suggestedProject": "tapnow-mcp-server",
+  "suggestedProject": "example-mcp-server",
   "suggestedWorkflow": "general-engineering",
   "suggestedStartNode": "development",
   "refs": {
@@ -628,7 +628,7 @@ pending_confirmation
   },
   "actor": {
     "userId": "u_xxx",
-    "displayName": "Glenn",
+    "displayName": "owner-a",
     "roles": ["workspace_admin", "project_owner"]
   },
   "auth": {

@@ -42,7 +42,7 @@ mga task add \
   --not-before 30m
 
 # One-shot self wakeup/reminder.
-mga wakeup schedule --in 10m --title "Reminder" --message "Remind Glenn to review the PR"
+mga wakeup schedule --in 10m --title "Reminder" --message "Remind owner-a to review the PR"
 mga wakeup schedule --at "2026-08-26 15:30" --prompt "Follow up with the human in the original channel."
 ```
 
@@ -57,9 +57,13 @@ For standard workflow tasks, prefer task templates instead of manually choosing 
 
 ```bash
 mga task templates --format table
+# A dispatcher may inspect a template in another project only when it is a
+# member of that project.
+mga task templates --project <target-project> --format table
 mga task create-from-template <template-id> \
-  --input repo=owner/repo \
-  --input issue_number=123
+	--project <target-project> \
+	--input repo=owner/repo \
+	--input issue_number=123
 ```
 
 Templates are maintained by the workspace and include the workflow definition, actor bindings, labels, priority, and prompt shape.

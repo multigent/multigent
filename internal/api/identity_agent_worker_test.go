@@ -30,10 +30,10 @@ func TestValidateIdentityResolvesAgentWorkerMembership(t *testing.T) {
 		t.Fatalf("upsert workspace: %v", err)
 	}
 	worker := controldb.AgentWorker{
-		ID:          "aw-nova",
+		ID:          "aw-manager-agent",
 		WorkspaceID: workspaceID,
-		Name:        "nova",
-		DisplayName: "Nova",
+		Name:        "manager-agent",
+		DisplayName: "manager-agent",
 		Status:      "active",
 		CreatedAt:   now,
 		UpdatedAt:   now,
@@ -42,7 +42,7 @@ func TestValidateIdentityResolvesAgentWorkerMembership(t *testing.T) {
 		t.Fatalf("upsert worker: %v", err)
 	}
 	if err := db.UpsertProjectMembership(controldb.ProjectMembership{
-		ID:               "pm-nova",
+		ID:               "pm-manager-agent",
 		WorkspaceID:      workspaceID,
 		ProjectID:        "customer-cli",
 		MemberType:       agentdir.MemberTypeAgentWorker,

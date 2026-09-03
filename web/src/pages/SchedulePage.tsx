@@ -7,6 +7,7 @@ import { cn } from '../lib/cn'
 import { apiFetch, apiPatch } from '../lib/api'
 import { showToast } from '../components/ui/Toast'
 import { useWorkspaceAccess } from '../lib/workspace-access'
+import { useFormatDateTime } from '../lib/format-datetime'
 
 type WorkerSchedule = {
   Enabled?: boolean
@@ -72,7 +73,19 @@ type SchedulerStatusResponse = {
   schedulers?: SchedulerInstance[]
 }
 
-type CronSummary = { project: string; agent: string; count: number; enabled: number }
+type CronSummary = { project: string; agent: string; agentWorkerId?: string; count: number; enabled: number; nextRun?: string }
+
+function summariesForAgent(summaries: CronSummary[], agent: AgentWorker): CronSummary[] {
+  return summaries
+    .filter(item => (item.agentWorkerId === agent.id || item.agent === agent.name))
+}
+
+function earliestNextRun(summaries: CronSummary[], agent: AgentWorker): string | undefined {
+  return summariesForAgent(summaries, agent)
+    .filter(item => item.nextRun)
+    .map(item => item.nextRun as string)
+    .sort((a, b) => new Date(a).getTime() - new Date(b).getTime())[0]
+}
 
 type NormalizedSchedule = {
   enabled: boolean
@@ -112,6 +125,7 @@ function normalizeSchedule(schedule?: WorkerSchedule): NormalizedSchedule {
 export default function SchedulePage() {
   const { t } = useTranslation()
   const { canAdmin } = useWorkspaceAccess()
+  const fmt = useFormatDateTime()
   const [reloadKey, setReloadKey] = useState(0)
   const [teamFilter, setTeamFilter] = useState('all')
   const [projectFilter, setProjectFilter] = useState('all')
@@ -162,12 +176,18 @@ export default function SchedulePage() {
     async function loadCronSummaries() {
       if (projectOptions.length === 0) { setCronSummaries([]); return }
       try {
-        const responses = await Promise.all(projectOptions.map(project => apiFetch<{ project: string; agents?: Array<{ name: string; crons?: Array<{ enabled: boolean }> }> }>(`/api/v1/projects/${encodeURIComponent(project)}/schedule`)))
+        const responses = await Promise.all(projectOptions.map(project => apiFetch<{ project: string; agents?: Array<{ name: string; agentWorkerId?: string; heartbeat?: { enabled?: boolean; nextWakeupAt?: string }; crons?: Array<{ enabled: boolean; nextRun?: string }> }> }>(`/api/v1/projects/${encodeURIComponent(project)}/schedule`)))
         if (cancelled) return
         const next: CronSummary[] = []
         responses.forEach(response => (response.agents ?? []).forEach(agent => {
           const crons = agent.crons ?? []
-          if (crons.length > 0) next.push({ project: response.project, agent: agent.name, count: crons.length, enabled: crons.filter(cron => cron.enabled).length })
+          const enabledCrons = crons.filter(cron => cron.enabled)
+          const nextRunCandidates = enabledCrons
+            .map(cron => cron.nextRun)
+            .filter((value): value is string => Boolean(value))
+          if (agent.heartbeat?.enabled && agent.heartbeat.nextWakeupAt) nextRunCandidates.push(agent.heartbeat.nextWakeupAt)
+          const nextRun = nextRunCandidates.sort((a, b) => new Date(a).getTime() - new Date(b).getTime())[0]
+          if (crons.length > 0 || nextRun) next.push({ project: response.project, agent: agent.name, agentWorkerId: agent.agentWorkerId, count: crons.length, enabled: enabledCrons.length, nextRun })
         }))
         setCronSummaries(next)
       } catch {
@@ -307,6 +327,7 @@ export default function SchedulePage() {
                   <th className="whitespace-nowrap px-4 py-3 text-left">{t('agents.wakeupTriggers')}</th>
                   <th className="whitespace-nowrap px-4 py-3 text-left">{t('agents.runtimeNode')}</th>
                   <th className="whitespace-nowrap px-4 py-3 text-left">{t('schedule.cronJobs', { defaultValue: '定时任务' })}</th>
+                  <th className="whitespace-nowrap px-4 py-3 text-left">{t('schedule.nextRun')}</th>
                   {canAdmin && <th className="whitespace-nowrap px-4 py-3 text-right">{t('common.actions')}</th>}
                 </tr>
               </thead>
@@ -314,6 +335,7 @@ export default function SchedulePage() {
                 {filteredAgents.map(agent => {
                   const schedule = normalizeSchedule(agent.schedule)
                   const running = runningByKey.get(`worker/${agent.id}`)
+                  const nextRun = earliestNextRun(cronSummaries, agent)
                   return (
                     <tr key={agent.id} className="hover:bg-neutral-50/70 dark:hover:bg-zinc-800/40">
                       <td className="px-4 py-3">
@@ -354,7 +376,10 @@ export default function SchedulePage() {
                       </td>
                       <td className="whitespace-nowrap px-4 py-3 text-sm text-neutral-600 dark:text-zinc-400">{agent.defaultRuntimeNodeId || t('agents.defaultRuntime')}</td>
                       <td className="whitespace-nowrap px-4 py-3 text-sm text-neutral-600 dark:text-zinc-400">
-                        {cronSummaries.filter(item => item.agent === agent.name).reduce((total, item) => total + item.count, 0) || '-'}
+                        {summariesForAgent(cronSummaries, agent).reduce((total, item) => total + item.count, 0) || '-'}
+                      </td>
+                      <td className="whitespace-nowrap px-4 py-3 font-mono text-sm text-sky-700 dark:text-sky-400">
+                        {nextRun ? fmt(nextRun) : '-'}
                       </td>
                       {canAdmin && (
                         <td className="whitespace-nowrap px-4 py-3">

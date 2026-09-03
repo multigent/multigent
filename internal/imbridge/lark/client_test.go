@@ -127,7 +127,7 @@ func TestReplyMarkdownUsesPostReplyAPI(t *testing.T) {
 	defer server.Close()
 
 	client := OpenAPIClient{BaseURL: server.URL, AppID: "cli_app", AppSecret: "secret", HTTPClient: server.Client()}
-	if err := client.ReplyMarkdown(context.Background(), "om_one", "Nova", "## 结论\n\n- 已处理"); err != nil {
+	if err := client.ReplyMarkdown(context.Background(), "om_one", "manager-agent", "## 结论\n\n- 已处理"); err != nil {
 		t.Fatalf("reply markdown: %v", err)
 	}
 	if replyBody["msg_type"] != "post" {
@@ -142,7 +142,7 @@ func TestReplyMarkdownUsesPostReplyAPI(t *testing.T) {
 	if zh == nil {
 		t.Fatalf("missing zh_cn post body: %#v", post)
 	}
-	if zh["title"] != "Nova" {
+	if zh["title"] != "manager-agent" {
 		t.Fatalf("unexpected post title: %#v", zh["title"])
 	}
 	contentRows, _ := zh["content"].([]any)
@@ -191,6 +191,34 @@ func TestDownloadMessageResourceUsesMessageResourceAPI(t *testing.T) {
 	}
 }
 
+func TestExpandMergeForwardMessageFetchesOuterContainer(t *testing.T) {
+	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		switch r.URL.Path {
+		case "/open-apis/auth/v3/tenant_access_token/internal":
+			_ = json.NewEncoder(w).Encode(map[string]any{"code": 0, "tenant_access_token": "tenant-token"})
+		case "/open-apis/im/v1/messages/om_outer":
+			if got := r.URL.Query().Get("card_msg_content_type"); got != "raw_card_content" {
+				t.Fatalf("unexpected card content type: %s", got)
+			}
+			_ = json.NewEncoder(w).Encode(map[string]any{"code": 0, "data": map[string]any{"items": []any{
+				map[string]any{"message_id": "child", "msg_type": "file", "body": map[string]any{"content": `{"file_key":"file_1","file_name":"report.md"}`}},
+			}}})
+		default:
+			t.Fatalf("unexpected path: %s", r.URL.Path)
+		}
+	}))
+	defer server.Close()
+
+	client := OpenAPIClient{BaseURL: server.URL, AppID: "cli_app", AppSecret: "secret", HTTPClient: server.Client()}
+	text, attachments, err := client.ExpandMergeForwardMessage(context.Background(), "om_outer")
+	if err != nil {
+		t.Fatalf("expand forwarded message: %v", err)
+	}
+	if text != "" || len(attachments) != 1 || attachments[0].ID != "file_1" {
+		t.Fatalf("unexpected expanded result: text=%q attachments=%#v", text, attachments)
+	}
+}
+
 func TestMarkdownPostBodyOmitsEmptyTitle(t *testing.T) {
 	content := buildMarkdownPostBody("", "## 结论\n\n- 已处理")
 	var post map[string]any
@@ -222,9 +250,9 @@ func TestGetUserReturnsEmailFields(t *testing.T) {
 					"open_id":          "ou_one",
 					"user_id":          "u_one",
 					"union_id":         "on_one",
-					"name":             "Glenn",
-					"email":            "glenn@example.com",
-					"enterprise_email": "glenn@company.com",
+					"name":             "owner-a",
+					"email":            "owner-a@example.com",
+					"enterprise_email": "owner-a@company.com",
 				}},
 			})
 		default:
@@ -241,7 +269,7 @@ func TestGetUserReturnsEmailFields(t *testing.T) {
 	if gotPath != "user_id_type=open_id" {
 		t.Fatalf("unexpected query: %s", gotPath)
 	}
-	if profile.Email != "glenn@example.com" || profile.EnterpriseEmail != "glenn@company.com" || profile.OpenID != "ou_one" {
+	if profile.Email != "owner-a@example.com" || profile.EnterpriseEmail != "owner-a@company.com" || profile.OpenID != "ou_one" {
 		t.Fatalf("unexpected profile: %#v", profile)
 	}
 	if authHeader != "Bearer tenant-token" {
@@ -261,8 +289,8 @@ func TestGetUserUsesOAuthAccessTokenWhenPresent(t *testing.T) {
 				"code": 0,
 				"data": map[string]any{"user": map[string]any{
 					"open_id": "ou_one",
-					"name":    "Glenn",
-					"email":   "glenn@example.com",
+					"name":    "owner-a",
+					"email":   "owner-a@example.com",
 				}},
 			})
 		default:
@@ -276,7 +304,7 @@ func TestGetUserUsesOAuthAccessTokenWhenPresent(t *testing.T) {
 	if err != nil {
 		t.Fatalf("get user: %v", err)
 	}
-	if profile.Email != "glenn@example.com" || profile.OpenID != "ou_one" {
+	if profile.Email != "owner-a@example.com" || profile.OpenID != "ou_one" {
 		t.Fatalf("unexpected profile: %#v", profile)
 	}
 	if authHeader != "Bearer user-access-token" {
@@ -286,7 +314,7 @@ func TestGetUserUsesOAuthAccessTokenWhenPresent(t *testing.T) {
 
 func TestProgressCardCollapsesReasoningWhenCompleted(t *testing.T) {
 	card := buildProgressCardBody(ProgressCard{
-		Title: "Multigent · nova",
+		Title: "Multigent · manager-agent",
 		State: "completed",
 		Reasoning: []ProgressCardEntry{
 			{Kind: "thinking", Title: "Reasoning", Content: "long internal reasoning"},
@@ -318,7 +346,7 @@ func TestProgressCardCollapsesLongRunningReasoning(t *testing.T) {
 		long += "会"
 	}
 	card := buildProgressCardBody(ProgressCard{
-		Title: "Multigent · nova",
+		Title: "Multigent · manager-agent",
 		State: "running",
 		Reasoning: []ProgressCardEntry{
 			{Kind: "thinking", Title: "Reasoning", Content: long},

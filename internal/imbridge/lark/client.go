@@ -542,6 +542,55 @@ func (c OpenAPIClient) DownloadMessageResource(ctx context.Context, messageID, f
 	}, nil
 }
 
+// ExpandMergeForwardMessage resolves a forwarded message into its child
+// messages. Lark emits merge_forward as a container; the downloadable
+// resources belong to the outer container message, while the file/image keys
+// are present only in the fetched child messages.
+func (c OpenAPIClient) ExpandMergeForwardMessage(ctx context.Context, messageID string) (string, []MessageAttachment, error) {
+	messageID = strings.TrimSpace(messageID)
+	if messageID == "" {
+		return "", nil, fmt.Errorf("message id is required")
+	}
+	token, err := c.tenantAccessToken(ctx)
+	if err != nil {
+		return "", nil, err
+	}
+	u := strings.TrimRight(c.openBaseURL(), "/") + "/open-apis/im/v1/messages/" + url.PathEscape(messageID) + "?user_id_type=open_id&card_msg_content_type=raw_card_content&with_sender_name=true"
+	req, err := http.NewRequestWithContext(ctx, http.MethodGet, u, nil)
+	if err != nil {
+		return "", nil, err
+	}
+	req.Header.Set("Authorization", "Bearer "+token)
+	resp, err := c.httpClient().Do(req)
+	if err != nil {
+		return "", nil, err
+	}
+	defer resp.Body.Close()
+	raw, _ := io.ReadAll(io.LimitReader(resp.Body, 4<<20))
+	if resp.StatusCode < 200 || resp.StatusCode >= 300 {
+		return "", nil, fmt.Errorf("get forwarded message http %d: %s", resp.StatusCode, string(raw))
+	}
+	var envelope struct {
+		Code int            `json:"code"`
+		Msg  string         `json:"msg"`
+		Data map[string]any `json:"data"`
+	}
+	if err := json.Unmarshal(raw, &envelope); err != nil {
+		return "", nil, fmt.Errorf("decode forwarded message response: %w", err)
+	}
+	if envelope.Code != 0 {
+		return "", nil, fmt.Errorf("get forwarded message failed: code=%d msg=%s", envelope.Code, envelope.Msg)
+	}
+	itemsRaw, _ := envelope.Data["items"].([]any)
+	items := make([]map[string]any, 0, len(itemsRaw))
+	for _, item := range itemsRaw {
+		if parsed, ok := item.(map[string]any); ok {
+			items = append(items, parsed)
+		}
+	}
+	return ExpandMergeForwardItems(items, messageID)
+}
+
 func (c OpenAPIClient) postMultipart(ctx context.Context, path string, fields map[string]string, fileField, fileName string, data []byte) ([]byte, error) {
 	token, err := c.tenantAccessToken(ctx)
 	if err != nil {

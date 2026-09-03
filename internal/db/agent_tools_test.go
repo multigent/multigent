@@ -40,7 +40,7 @@ func TestUpsertAgentToolBindingBackfillsLegacyProjectBinding(t *testing.T) {
 		ID:           "toolbind-legacy",
 		WorkspaceID:  workspaceID,
 		ProjectID:    "customer-mcp-server",
-		AgentID:      "mason",
+		AgentID:      "developer-a",
 		ConnectionID: "conn-github",
 		Provider:     "github",
 		Status:       "enabled",
@@ -54,24 +54,24 @@ func TestUpsertAgentToolBindingBackfillsLegacyProjectBinding(t *testing.T) {
 
 	next := legacy
 	next.ID = "toolbind-worker"
-	next.AgentWorkerID = "aw-mason"
+	next.AgentWorkerID = "aw-developer-a"
 	next.AdapterType = "http_action"
 	if err := db.UpsertAgentToolBinding(next); err != nil {
 		t.Fatalf("upsert worker binding should backfill legacy row: %v", err)
 	}
 
-	bindings, err := db.ListAgentToolBindings(AgentToolBindingFilter{WorkspaceID: workspaceID, ProjectID: "customer-mcp-server", AgentID: "mason"})
+	bindings, err := db.ListAgentToolBindings(AgentToolBindingFilter{WorkspaceID: workspaceID, ProjectID: "customer-mcp-server", AgentID: "developer-a"})
 	if err != nil {
 		t.Fatalf("list project bindings: %v", err)
 	}
 	if len(bindings) != 1 {
 		t.Fatalf("expected one updated binding, got %+v", bindings)
 	}
-	if bindings[0].ID != legacy.ID || bindings[0].AgentWorkerID != "aw-mason" || bindings[0].AdapterType != "http_action" {
+	if bindings[0].ID != legacy.ID || bindings[0].AgentWorkerID != "aw-developer-a" || bindings[0].AdapterType != "http_action" {
 		t.Fatalf("legacy binding was not backfilled: %+v", bindings[0])
 	}
 
-	workerBindings, err := db.ListAgentToolBindings(AgentToolBindingFilter{WorkspaceID: workspaceID, AgentWorkerID: "aw-mason"})
+	workerBindings, err := db.ListAgentToolBindings(AgentToolBindingFilter{WorkspaceID: workspaceID, AgentWorkerID: "aw-developer-a"})
 	if err != nil {
 		t.Fatalf("list worker bindings: %v", err)
 	}

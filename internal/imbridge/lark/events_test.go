@@ -50,3 +50,50 @@ func TestParseCardActionEvent(t *testing.T) {
 		t.Fatalf("unexpected callback: %#v", callback)
 	}
 }
+
+func TestExpandMergeForwardItemsExtractsChildResources(t *testing.T) {
+	text, attachments, err := ExpandMergeForwardItems([]map[string]any{
+		{
+			"message_id": "child-text",
+			"msg_type":   "text",
+			"body":       map[string]any{"content": `{"text":"日报详情"}`},
+		},
+		{
+			"message_id": "child-file",
+			"msg_type":   "file",
+			"body":       map[string]any{"content": `{"file_key":"file_1","file_name":"report.md","file_size":42}`},
+		},
+	}, "om_outer")
+	if err != nil {
+		t.Fatalf("expand: %v", err)
+	}
+	if text != "日报详情" {
+		t.Fatalf("unexpected text: %q", text)
+	}
+	if len(attachments) != 1 || attachments[0].ID != "file_1" || attachments[0].Type != "file" || attachments[0].Name != "report.md" || attachments[0].Size != 42 {
+		t.Fatalf("unexpected attachments: %#v", attachments)
+	}
+}
+
+func TestExpandMergeForwardItemsExtractsCardEmbeddedImage(t *testing.T) {
+	_, attachments, err := ExpandMergeForwardItems([]map[string]any{{
+		"message_id": "child-card",
+		"msg_type":   "interactive",
+		"body":       map[string]any{"content": `{"body":{"elements":[{"tag":"img","img_key":"img_1"},{"tag":"markdown","content":"日报"}]}}`},
+	}}, "om_outer")
+	if err != nil {
+		t.Fatalf("expand: %v", err)
+	}
+	if len(attachments) != 1 || attachments[0].ID != "img_1" || attachments[0].Type != "image" {
+		t.Fatalf("unexpected card attachments: %#v", attachments)
+	}
+
+	_, attachments, err = ExpandMergeForwardItems([]map[string]any{{
+		"message_id": "child-card",
+		"msg_type":   "interactive",
+		"body":       map[string]any{"content": `{"body":{"elements":[{"tag":"img","image_key":"img_2"}]}}`},
+	}}, "om_outer")
+	if err != nil || len(attachments) != 1 || attachments[0].ID != "img_2" || attachments[0].Type != "image" {
+		t.Fatalf("unexpected card attachments: err=%v attachments=%#v", err, attachments)
+	}
+}

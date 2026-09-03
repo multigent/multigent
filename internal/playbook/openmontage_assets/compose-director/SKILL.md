@@ -64,7 +64,7 @@ Before rendering, present the user with audio options and get their preferences.
 > **Narration:** I can generate TTS narration using OpenAI TTS (`gpt-4o-mini-tts` — $0.015/min, 6 voices, voice direction). Which voice and tone would you like? I'll propose a voice based on the video topic, or you can choose:
 > - `onyx` — deep, authoritative (documentaries, tech)
 > - `echo` — resonant, futuristic (product ads, sci-fi)
-> - `nova` — bright, energetic (upbeat, explainers)
+> - `manager-agent` — bright, energetic (upbeat, explainers)
 > - `fable` — warm, storytelling (narratives, education)
 > - `shimmer` — expressive, warm (organic, lifestyle)
 > - `alloy` — neutral, balanced (general purpose)

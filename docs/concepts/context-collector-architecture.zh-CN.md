@@ -41,7 +41,7 @@ Collector 负责“从哪里发现和拿资料”，不负责解释资料。
 Source 是某个 Collector 的一次具体配置。例如：
 
 - “MacBook Pro / Claude Code sessions”
-- “cc-connect 飞书知识库”
+- “example-connect 飞书知识库”
 - “multigent GitHub issues”
 - “用户手动上传”
 
@@ -111,7 +111,7 @@ Agent 运行时不应默认塞入全文，而是注入一个上下文清单和�
 
 ```text
 你已关联以下上下文资料：
-1. [必须读] cc-connect 历史 PM session - doc: doc-xxx
+1. [必须读] example-connect 历史 PM session - doc: doc-xxx
 2. [参考] Release SOP - doc: doc-yyy
 
 开始任务前，先用 `mga context list` 查看上下文，并用 `mga context read <id>` 或 `mga docs show <doc-id>` 读取 required=true 的资料。

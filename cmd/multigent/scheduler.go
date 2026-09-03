@@ -18,6 +18,7 @@ import (
 	"time"
 
 	"github.com/multigent/multigent/internal/agentdir"
+	"github.com/multigent/multigent/internal/attention"
 	controldb "github.com/multigent/multigent/internal/db"
 	"github.com/multigent/multigent/internal/entity"
 	"github.com/multigent/multigent/internal/runner"
@@ -698,6 +699,19 @@ func runHeartbeatLoop(ctx context.Context, root, project, agentName string,
 					agentLog("%s next wakeup deferred — waiting for active window at %s",
 						colorDim+"○", hb.ActiveHours)
 				}
+				// nextWindowStart returns 0 while the current window is open. A
+				// plain continue here would busy-spin when a scheduled task is due
+				// within the next second. Always yield before recalculating.
+				sleepDur := schedulerRecheckDelay(nextOpen)
+				timer := time.NewTimer(sleepDur)
+				select {
+				case <-ctx.Done():
+					if !timer.Stop() {
+						<-timer.C
+					}
+					return
+				case <-timer.C:
+				}
 				continue
 			}
 
@@ -927,6 +941,16 @@ func runAllPendingTasks(ctx context.Context, root, project, agentName string,
 			return fmt.Errorf("invalid max_cycle_duration %q: %w", hb.MaxCycleDuration, err)
 		}
 	}
+	// A zero value must remain safe. Without defaults, a pathological task
+	// producer can keep one wakeup cycle alive indefinitely.
+	maxTasks := hb.MaxTasksPerCycle
+	if maxTasks <= 0 {
+		maxTasks = 10
+	}
+	if maxDuration <= 0 {
+		maxDuration = 30 * time.Minute
+	}
+	seenTaskIDs := make(map[string]struct{})
 
 	for {
 		if ctx.Err() != nil {
@@ -1064,7 +1088,7 @@ func runAllPendingTasks(ctx context.Context, root, project, agentName string,
 					_ = ts.ArchiveTask(project, agentName, wakeupTask)
 					return fmt.Errorf("[heartbeat %s/%s] wakeup failed: %w", project, agentName, rErr)
 				} else {
-					markAttentionSignalsHandled(root, attentionIDs, wakeupTask.ID)
+					markAttentionSignalsHandled(root, wakeupTask, wakeupTask.ID)
 					if interactionLease != nil {
 						_ = interactionLease.event("agent", project+"/"+agentName, sourceChannel, "run_completed", "", map[string]any{
 							"taskId":           wakeupTask.ID,
@@ -1095,13 +1119,17 @@ func runAllPendingTasks(ctx context.Context, root, project, agentName string,
 		}
 
 		// Check max tasks per cycle limit before processing this task.
-		if hb.MaxTasksPerCycle > 0 && tasksProcessed >= hb.MaxTasksPerCycle {
+		if tasksProcessed >= maxTasks {
 			taskLog("%s ▶ cycle limit reached (%d task(s), %s elapsed)",
 				colorYellow+"⚠", tasksProcessed, time.Since(cycleStart).Round(time.Second))
 			return nil
 		}
 
 		taskLog("%s task %s  %s", colorCyan+"▶", task.ID, task.Title)
+		if _, seen := seenTaskIDs[task.ID]; seen {
+			return fmt.Errorf("task %s was returned repeatedly in one scheduler cycle; stopping to prevent a processing loop", task.ID)
+		}
+		seenTaskIDs[task.ID] = struct{}{}
 		if interactionLease != nil {
 			_ = interactionLease.event("system", "scheduler", sourceChannel, "message", task.Prompt, map[string]any{
 				"taskId": task.ID,
@@ -1657,8 +1685,8 @@ func markAttentionSignalsSeen(root string, ids []string) {
 	}
 }
 
-func markAttentionSignalsHandled(root string, ids []string, runID string) {
-	if len(ids) == 0 {
+func markAttentionSignalsHandled(root string, task *entity.Task, runID string) {
+	if len(attention.SignalIDsForTask(task)) == 0 {
 		return
 	}
 	db, err := openControlDBForRoot(root)
@@ -1670,8 +1698,8 @@ func markAttentionSignalsHandled(root string, ids []string, runID string) {
 	if err != nil || strings.TrimSpace(workspaceID) == "" {
 		return
 	}
-	for _, id := range ids {
-		_ = db.MarkAttentionSignalStatusWithResult(workspaceID, id, "handled", "run:"+strings.TrimSpace(runID))
+	if err := attention.CloseTaskSignals(db, workspaceID, task, "task:"+strings.TrimSpace(runID)); err != nil {
+		fmt.Fprintf(os.Stderr, "warning: failed to close attention signal(s) for task %s: %v\n", task.ID, err)
 	}
 }
 
@@ -2038,6 +2066,15 @@ func isInActiveWindowAt(t time.Time, hb *entity.HeartbeatConfig) bool {
 		return ok
 	}
 	return true
+}
+
+// schedulerRecheckDelay prevents a heartbeat from repeatedly recalculating
+// state without yielding when the next calculated wake is within one second.
+func schedulerRecheckDelay(nextWindow time.Duration) time.Duration {
+	if nextWindow < time.Second {
+		return time.Second
+	}
+	return nextWindow
 }
 
 // nextWindowStart returns how long to sleep until the active window opens.

@@ -32,7 +32,7 @@ func TestAgentEnvCLIUsesAgentWorkerRuntimeConfig(t *testing.T) {
 	if err := db.UpsertAgentWorker(controldb.AgentWorker{
 		ID:                "aw-cli-env",
 		WorkspaceID:       "ws",
-		Name:              "nova",
+		Name:              "manager-agent",
 		Model:             "codex",
 		RuntimeConfigJSON: `{"env":{"EXISTING":"1"}}`,
 		CreatedAt:         now,
@@ -46,34 +46,34 @@ func TestAgentEnvCLIUsesAgentWorkerRuntimeConfig(t *testing.T) {
 		ProjectID:   "alpha",
 		MemberType:  "agent_worker",
 		MemberID:    "aw-cli-env",
-		Title:       "nova",
+		Title:       "manager-agent",
 		CreatedAt:   now,
 		UpdatedAt:   now,
 	}); err != nil {
 		t.Fatal(err)
 	}
 
-	updated, err := updateWorkerAgentEnv(root, "alpha", "nova", func(env map[string]string) (map[string]string, error) {
+	updated, err := updateWorkerAgentEnv(root, "alpha", "manager-agent", func(env map[string]string) (map[string]string, error) {
 		env["RUNTIME_FLAG"] = "enabled"
 		return env, nil
 	})
 	if err != nil || !updated {
 		t.Fatalf("update worker env updated=%v err=%v", updated, err)
 	}
-	env, ok, err := workerAgentEnv(root, "alpha", "nova")
+	env, ok, err := workerAgentEnv(root, "alpha", "manager-agent")
 	if err != nil || !ok {
 		t.Fatalf("worker env ok=%v err=%v", ok, err)
 	}
 	if env["EXISTING"] != "1" || env["RUNTIME_FLAG"] != "enabled" {
 		t.Fatalf("unexpected worker env: %#v", env)
 	}
-	if updated, err := updateWorkerAgentEnv(root, "alpha", "nova", func(env map[string]string) (map[string]string, error) {
+	if updated, err := updateWorkerAgentEnv(root, "alpha", "manager-agent", func(env map[string]string) (map[string]string, error) {
 		delete(env, "RUNTIME_FLAG")
 		return env, nil
 	}); err != nil || !updated {
 		t.Fatalf("unset worker env updated=%v err=%v", updated, err)
 	}
-	env, ok, err = workerAgentEnv(root, "alpha", "nova")
+	env, ok, err = workerAgentEnv(root, "alpha", "manager-agent")
 	if err != nil || !ok {
 		t.Fatalf("worker env after unset ok=%v err=%v", ok, err)
 	}

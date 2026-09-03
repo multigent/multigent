@@ -202,9 +202,9 @@ Step Instance 可以对应一个子 Task，也可以只是一个人工 review �
 
 子 Task 1：PM Agent 输出产品 Spec
 子 Task 2：Human PM 审核产品 Spec
-子 Task 3：Developer Agent 输出开发方案 Spec
+子 Task 3：developer-agent 输出开发方案 Spec
 子 Task 4：Human Tech Lead 审核开发方案
-子 Task 5：Developer Agent 实现并提交 PR
+子 Task 5：developer-agent 实现并提交 PR
 子 Task 6：QA Agent 输出测试用例和测试报告
 ```
 
@@ -425,7 +425,7 @@ open_questions:
 
 执行者：
 
-- Developer Agent。
+- developer-agent。
 - Architect Agent。
 
 流转：
@@ -456,7 +456,7 @@ approval_by:
 执行者：
 
 - Human Tech Lead。
-- Senior Developer Agent。
+- Senior developer-agent。
 - Reviewer Agent。
 
 流转：
@@ -491,7 +491,7 @@ pull_request:
 
 执行者：
 
-- Developer Agent。
+- developer-agent。
 
 流转：
 
@@ -625,7 +625,7 @@ tests_run:
 
 执行者：
 
-- Developer Agent。
+- developer-agent。
 
 流转：
 

@@ -961,7 +961,7 @@ behavior, not preferences. Apply them before, during, and after every design dec
 ### Billboard Design for Interfaces
 
 - **Use conventions.** Logo top-left, nav top/left, search = magnifying glass.
-  Don't innovate on navigation to be clever. Innovate when you KNOW you have a
+  Don't inmanager-agentte on navigation to be clever. Inmanager-agentte when you KNOW you have a
   better idea, otherwise use conventions. Even across languages and cultures,
   web conventions let people identify the logo, nav, search, and main content.
 - **Visual hierarchy is everything.** Related things are visually grouped. Nested

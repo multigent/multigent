@@ -140,7 +140,7 @@ func TestExtractAgentChatError(t *testing.T) {
 
 func TestExtractAgentChatReplyPrefersFinalResult(t *testing.T) {
 	output := strings.Join([]string{
-		"▶  exec cc-connect/pm",
+		"▶  exec example-project/pm",
 		"multigent: preparing runtime tool github",
 		`{"type":"system","subtype":"init","session_id":"sess-one"}`,
 		`{"type":"assistant","message":{"content":[{"type":"text","text":"draft reply"}]}}`,
@@ -164,9 +164,9 @@ func TestExtractAgentChatReplyFallsBackToAssistantText(t *testing.T) {
 func TestExtractAgentChatReplyFromCodexAgentMessage(t *testing.T) {
 	output := strings.Join([]string{
 		`{"type":"item.started","item":{"type":"command_execution","command":"pwd","status":"in_progress"}}`,
-		`{"type":"item.completed","item":{"type":"agent_message","text":"结论：nova 可以正常响应。"}}`,
+		`{"type":"item.completed","item":{"type":"agent_message","text":"结论：manager-agent 可以正常响应。"}}`,
 	}, "\n")
-	if got := extractAgentChatReply(output); got != "结论：nova 可以正常响应。" {
+	if got := extractAgentChatReply(output); got != "结论：manager-agent 可以正常响应。" {
 		t.Fatalf("extractAgentChatReply() = %q", got)
 	}
 }
@@ -195,10 +195,10 @@ func TestAgentChatSessionsIncludeWorkerBackedRuntimeRuns(t *testing.T) {
 	s, workspaceID := newConnectionGrantPolicyServer(t)
 	now := time.Now().UTC().Format(time.RFC3339)
 	if err := s.controlDB.UpsertAgentWorker(controldb.AgentWorker{
-		ID:          "aw-nova",
+		ID:          "aw-manager-agent",
 		WorkspaceID: workspaceID,
-		Name:        "nova",
-		DisplayName: "Nova",
+		Name:        "manager-agent",
+		DisplayName: "manager-agent",
 		Status:      "active",
 		CreatedAt:   now,
 		UpdatedAt:   now,
@@ -206,11 +206,11 @@ func TestAgentChatSessionsIncludeWorkerBackedRuntimeRuns(t *testing.T) {
 		t.Fatalf("worker: %v", err)
 	}
 	if err := s.controlDB.UpsertProjectMembership(controldb.ProjectMembership{
-		ID:               "pm-sample-nova",
+		ID:               "pm-sample-manager-agent",
 		WorkspaceID:      workspaceID,
 		ProjectID:        "sample",
 		MemberType:       agentdir.MemberTypeAgentWorker,
-		MemberID:         "aw-nova",
+		MemberID:         "aw-manager-agent",
 		Role:             "pm",
 		Title:            "pm",
 		AutoPickTasks:    true,
@@ -227,8 +227,8 @@ func TestAgentChatSessionsIncludeWorkerBackedRuntimeRuns(t *testing.T) {
 	if err := s.controlDB.UpsertRuntimeRun(controldb.RuntimeRun{
 		ID:                  "run-worker-only",
 		WorkspaceID:         workspaceID,
-		AgentWorkerID:       "aw-nova",
-		ProjectMembershipID: "pm-sample-nova",
+		AgentWorkerID:       "aw-manager-agent",
+		ProjectMembershipID: "pm-sample-manager-agent",
 		ProjectID:           "sample",
 		Status:              "succeeded",
 		SpecJSON:            `{}`,

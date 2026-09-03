@@ -16,11 +16,11 @@ func TestAgentWorkerAndProjectMembershipHandlers(t *testing.T) {
 	s, _ := newConnectionGrantPolicyServer(t)
 
 	createReq := providerTestRequest(http.MethodPost, "/api/v1/agents", "admin", agentWorkerRequest{
-		Name:        "nova",
-		DisplayName: "Nova",
+		Name:        "manager-agent",
+		DisplayName: "manager-agent",
 		Description: "Workspace project manager",
 		ProfilePrompt: strings.Join([]string{
-			"Glenn is my final escalation owner.",
+			"owner-a is my final escalation owner.",
 			"Small safe changes can be handled autonomously.",
 		}, "\n"),
 		Skills: []string{"github", "lark"},
@@ -47,7 +47,7 @@ func TestAgentWorkerAndProjectMembershipHandlers(t *testing.T) {
 	if workerID == "" {
 		t.Fatalf("missing worker id: %#v", created.Agent)
 	}
-	if got := created.Agent["profilePrompt"]; got == nil || !strings.Contains(got.(string), "Glenn is my final escalation owner") {
+	if got := created.Agent["profilePrompt"]; got == nil || !strings.Contains(got.(string), "owner-a is my final escalation owner") {
 		t.Fatalf("missing profile prompt in create response: %#v", created.Agent)
 	}
 	schedule, _ := created.Agent["schedule"].(map[string]any)
@@ -68,7 +68,7 @@ func TestAgentWorkerAndProjectMembershipHandlers(t *testing.T) {
 	if err := json.Unmarshal(listRec.Body.Bytes(), &listed); err != nil {
 		t.Fatalf("decode list: %v", err)
 	}
-	if len(listed.Agents) != 1 || listed.Agents[0]["name"] != "nova" {
+	if len(listed.Agents) != 1 || listed.Agents[0]["name"] != "manager-agent" {
 		t.Fatalf("unexpected workers: %#v", listed.Agents)
 	}
 	if err := s.st.SaveTeam("product", &entity.Team{Name: "product"}); err != nil {
@@ -138,7 +138,7 @@ func TestProjectAgentsEndpointReadsAgentWorkerMemberships(t *testing.T) {
 	worker := controldb.AgentWorker{
 		ID:          "aw-dev-codex",
 		WorkspaceID: workspaceID,
-		Name:        "cc-connect-dev-codex",
+		Name:        "example-dev-codex",
 		DisplayName: "Dev Codex",
 		Model:       "codex",
 		Avatar:      "avatar.png",
@@ -176,7 +176,7 @@ func TestProjectAgentsEndpointReadsAgentWorkerMemberships(t *testing.T) {
 	if len(rows) != 1 {
 		t.Fatalf("expected only membership-backed agent, got %#v", rows)
 	}
-	if rows[0]["name"] != "dev-codex" || rows[0]["agentWorkerName"] != "cc-connect-dev-codex" || rows[0]["projectMembershipId"] != "pm-dev-codex" {
+	if rows[0]["name"] != "dev-codex" || rows[0]["agentWorkerName"] != "example-dev-codex" || rows[0]["projectMembershipId"] != "pm-dev-codex" {
 		t.Fatalf("unexpected agent row: %#v", rows[0])
 	}
 }

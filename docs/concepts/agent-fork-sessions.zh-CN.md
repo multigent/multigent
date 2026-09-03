@@ -39,7 +39,7 @@
 
 ### Agent Worker
 
-长期存在的智能体主体，例如 `plugin-dev`、`nova`、`mason`。
+长期存在的智能体主体，例如 `plugin-dev`、`manager-agent`、`developer-a`。
 
 它拥有：
 

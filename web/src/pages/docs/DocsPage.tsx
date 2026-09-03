@@ -911,6 +911,7 @@ function DocViewer({ doc, content, onBack, onRemove, onUpdated, onOpenDoc, prevD
   const [editDesc, setEditDesc] = useState(doc.description ?? '')
   const [editIndex, setEditIndex] = useState(doc.index)
   const [editTags, setEditTags] = useState((doc.tags ?? []).join(', '))
+  const [editContent, setEditContent] = useState(content)
   const [refs, setRefs] = useState<DocRefs | null>(null)
   const [addingRef, setAddingRef] = useState(false)
   const [refInput, setRefInput] = useState('')
@@ -922,6 +923,18 @@ function DocViewer({ doc, content, onBack, onRemove, onUpdated, onOpenDoc, prevD
   useEffect(() => {
     scrollRef.current?.scrollTo({ top: 0 })
   }, [doc.id])
+
+  useEffect(() => {
+    setEditTitle(doc.title)
+    setEditDesc(doc.description ?? '')
+    setEditIndex(doc.index)
+    setEditTags((doc.tags ?? []).join(', '))
+    setEditing(false)
+  }, [doc.id])
+
+  useEffect(() => {
+    if (!editing) setEditContent(content)
+  }, [content, editing])
 
   const loadRefs = useCallback(async () => {
     const data = await apiFetch<DocRefs>(`/api/v1/docs/${doc.id}/refs`)
@@ -987,6 +1000,7 @@ function DocViewer({ doc, content, onBack, onRemove, onUpdated, onOpenDoc, prevD
         description: editDesc,
         index: editIndex,
         tags: editTags.split(',').map(s => s.trim()).filter(Boolean),
+        content: editContent,
       }),
     })
     setEditing(false)
@@ -1008,7 +1022,14 @@ function DocViewer({ doc, content, onBack, onRemove, onUpdated, onOpenDoc, prevD
         <div className="flex-1 overflow-y-auto" ref={scrollRef}>
           <div className="flex justify-center">
             <article className={htmlDoc ? 'w-full px-6 py-6' : 'w-full max-w-4xl px-10 py-10'}>
-              {htmlDoc ? (
+              {editing ? (
+                <textarea
+                  value={editContent}
+                  onChange={e => setEditContent(e.target.value)}
+                  className="min-h-[calc(100vh-160px)] w-full resize-y rounded-xl border border-neutral-200 bg-neutral-50 px-4 py-3 font-mono text-sm leading-6 text-neutral-800 outline-none focus:border-sky-400 focus:ring-2 focus:ring-sky-100 dark:border-zinc-700 dark:bg-zinc-900 dark:text-zinc-200 dark:focus:border-sky-600 dark:focus:ring-sky-950"
+                  aria-label={t('docs.content')}
+                />
+              ) : htmlDoc ? (
                 <HTMLDocFrame title={doc.title} content={content} fullscreen />
               ) : (
                 <ReactMarkdown
@@ -1125,7 +1146,14 @@ function DocViewer({ doc, content, onBack, onRemove, onUpdated, onOpenDoc, prevD
       <div className="flex-1 overflow-y-auto" ref={scrollRef}>
         <div className="flex justify-center">
           <article className={htmlDoc ? 'w-full px-6 py-6' : 'w-full max-w-5xl px-8 py-8'}>
-            {htmlDoc ? (
+            {editing ? (
+              <textarea
+                value={editContent}
+                onChange={e => setEditContent(e.target.value)}
+                className="min-h-[72vh] w-full resize-y rounded-xl border border-neutral-200 bg-neutral-50 px-4 py-3 font-mono text-sm leading-6 text-neutral-800 outline-none focus:border-sky-400 focus:ring-2 focus:ring-sky-100 dark:border-zinc-700 dark:bg-zinc-900 dark:text-zinc-200 dark:focus:border-sky-600 dark:focus:ring-sky-950"
+                aria-label={t('docs.content')}
+              />
+            ) : htmlDoc ? (
               <HTMLDocFrame title={doc.title} content={content} />
             ) : (
               <ReactMarkdown

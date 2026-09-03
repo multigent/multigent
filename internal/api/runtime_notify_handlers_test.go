@@ -1030,3 +1030,13 @@ func TestPrepareRuntimeNotifyDirectSendKeepsExternalSubject(t *testing.T) {
 		t.Fatalf("direct notification should keep subject, got %q", msg.Subject)
 	}
 }
+
+func TestPrepareRuntimeNotifyDirectSendHidesReplySubjectPrefix(t *testing.T) {
+	msg := formatRuntimeNotifyMessage(runtimeAgentPrincipal{Project: "sample", Agent: "pm"}, runtimeNotifyBody{
+		MessageFormat: "markdown",
+	}, "Re: 卡片附件", "## 已收到")
+	prepareRuntimeNotifyExternalMessage(&msg, imbridge.OutgoingTarget{ReceiveID: "ou_owner", ReceiveIDType: "open_id"})
+	if msg.Subject != "" {
+		t.Fatalf("reply prefix should never be sent as an external subject, got %q", msg.Subject)
+	}
+}

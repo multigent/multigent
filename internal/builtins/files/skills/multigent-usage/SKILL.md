@@ -38,7 +38,7 @@ mga task add --agent <agent> --title "Title" --prompt "Detailed instructions" --
 mga task add --title "Check deployment" --prompt "Check the deployment status and report back." --not-before 30m
 
 # Schedule a one-shot future wakeup/reminder for yourself.
-mga wakeup schedule --in 10m --title "Reminder" --message "Remind Glenn to review the PR"
+mga wakeup schedule --in 10m --title "Reminder" --message "Remind owner-a to review the PR"
 mga wakeup schedule --at "2026-08-26 15:30" --prompt "Follow up on the human request and reply in the original channel if needed."
 
 # Prefer task templates for standard workflow tasks. Templates bind the workflow,
@@ -46,8 +46,15 @@ mga wakeup schedule --at "2026-08-26 15:30" --prompt "Follow up on the human req
 # wrong workflow or assignee.
 mga task templates --format table
 mga task create-from-template <template-id> \
-  --input repo=owner/repo \
-  --input issue_number=123
+	--input repo=owner/repo \
+	--input issue_number=123
+
+# Dispatch a standard task into another project when the current agent is a
+# member of that project. The target project is explicit and is permission
+# checked by Multigent.
+mga task templates --project <target-project> --format table
+mga task create-from-template <template-id> --project <target-project> \
+	--input repo=owner/repo
 
 # Update task state or metadata.
 mga task set <task-id> --status in_progress

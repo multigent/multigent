@@ -16,7 +16,7 @@ func TestAgentMetaFromWorkerMembershipPreservesRuntimeSandbox(t *testing.T) {
 	}
 	membership := controldb.ProjectMembership{Role: "qa"}
 
-	meta := agentMetaFromWorkerMembership("cc-connect", worker, membership)
+	meta := agentMetaFromWorkerMembership("example-project", worker, membership)
 	if meta.Sandbox == nil {
 		t.Fatal("expected sandbox config to be preserved")
 	}

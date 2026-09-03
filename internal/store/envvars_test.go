@@ -28,12 +28,12 @@ func TestResolveEnvForAgentTargetsIncludesAgentWorker(t *testing.T) {
 		Key:    "LEGACY_TOKEN",
 		Value:  "legacy",
 		Scope:  entity.EnvVarScopeAgents,
-		Agents: []string{"alpha/nova"},
+		Agents: []string{"alpha/manager-agent"},
 	}); err != nil {
 		t.Fatalf("add legacy scoped: %v", err)
 	}
 
-	env, err := es.ResolveEnvForAgentTargets("beta", "nova", []string{"agent_worker:aw-one"})
+	env, err := es.ResolveEnvForAgentTargets("beta", "manager-agent", []string{"agent_worker:aw-one"})
 	if err != nil {
 		t.Fatalf("resolve: %v", err)
 	}

@@ -201,12 +201,20 @@ func formatRuntimeContactSuggestion(contact runtimeContactRow) string {
 }
 
 func (s *Server) agentExistsInProject(project, agentName string) bool {
-	if s != nil && s.agentDirectory != nil {
-		if workspaceID, err := s.currentWorkspaceID(); err == nil && strings.TrimSpace(workspaceID) != "" {
-			if _, ok, err := s.agentDirectory.ProjectWorker(workspaceID, project, agentName); err == nil && ok {
-				return true
-			}
-		}
+	if s == nil {
+		return false
 	}
-	return false
+	workspaceID, err := s.currentWorkspaceID()
+	if err != nil {
+		return false
+	}
+	return s.agentExistsInWorkspaceProject(workspaceID, project, agentName)
+}
+
+func (s *Server) agentExistsInWorkspaceProject(workspaceID, project, agentName string) bool {
+	if s == nil || s.agentDirectory == nil || strings.TrimSpace(workspaceID) == "" {
+		return false
+	}
+	_, ok, err := s.agentDirectory.ProjectWorker(strings.TrimSpace(workspaceID), strings.TrimSpace(project), strings.TrimSpace(agentName))
+	return err == nil && ok
 }

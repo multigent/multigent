@@ -462,13 +462,13 @@ function CreateAgentDialog({ existingNames, onClose, onCreated }: {
         <div className="space-y-4 px-5 py-4">
           <label className="block text-sm">
             <span className="text-neutral-600 dark:text-zinc-400">{t('agents.name')} *</span>
-            <input className={cn(fieldCls, 'mt-1.5', (duplicate || invalid) && 'border-red-300 focus:border-red-400')} value={name} onChange={e => setName(e.target.value)} placeholder="nova" autoFocus />
+            <input className={cn(fieldCls, 'mt-1.5', (duplicate || invalid) && 'border-red-300 focus:border-red-400')} value={name} onChange={e => setName(e.target.value)} placeholder="manager-agent" autoFocus />
             {duplicate && <p className="mt-1 text-xs text-red-600 dark:text-red-400">{t('agents.duplicateName')}</p>}
             {invalid && <p className="mt-1 text-xs text-red-600 dark:text-red-400">{t('agents.invalidName')}</p>}
           </label>
           <label className="block text-sm">
             <span className="text-neutral-600 dark:text-zinc-400">{t('agents.displayName')}</span>
-            <input className={cn(fieldCls, 'mt-1.5')} value={displayName} onChange={e => setDisplayName(e.target.value)} placeholder="Nova" />
+            <input className={cn(fieldCls, 'mt-1.5')} value={displayName} onChange={e => setDisplayName(e.target.value)} placeholder="manager-agent" />
           </label>
           {teams.length > 0 && (
             <label className="block text-sm">

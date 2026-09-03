@@ -706,6 +706,25 @@ func (s *Server) acceptIMMessage(channelProvider imbridge.Provider, appID, verif
 		})
 		return map[string]any{"ok": true, "ignored": true, "reason": "permission_denied"}, nil
 	}
+	if enricher, ok := channelProvider.(imbridge.IncomingMessageEnricher); ok {
+		// Forwarded messages are lightweight envelope events. Resolve their
+		// child content only after identity and permission checks, so an
+		// untrusted sender cannot use the enrichment path to probe the channel
+		// API. A failed enrichment must not discard the original signal.
+		enrichCtx, cancel := context.WithTimeout(context.Background(), 10*time.Second)
+		enriched, enrichErr := enricher.EnrichIncomingMessage(enrichCtx, resolved.SecretValues, message)
+		cancel()
+		if enrichErr != nil {
+			log.Printf("[im:%s] message enrichment failed type=%s message=%s: %v", provider, strings.TrimSpace(message.MessageType), shortSensitiveHash(message.MessageID), enrichErr)
+		} else {
+			message = enriched
+			text = strings.TrimSpace(message.Text)
+			if text == "" {
+				text = incomingMessageFallbackText(message)
+			}
+			log.Printf("[im:%s] message enriched type=%s message=%s text_bytes=%d attachments=%d", provider, strings.TrimSpace(message.MessageType), shortSensitiveHash(message.MessageID), len(text), len(message.Attachments))
+		}
+	}
 	if cmd, ok := parseAgentChannelControlCommand(text); ok {
 		return s.acceptAgentChannelControlCommand(channelProvider, resolved, message, cmd)
 	}
@@ -2062,6 +2081,8 @@ func formatIMAgentPromptWithSender(providerID string, binding controldb.AgentCha
 	b.WriteString("- Always finish with a concise, human-facing final reply. Do not end silently after tool calls.\n")
 	b.WriteString("- Reply in the same language as the user's message unless the user asks otherwise.\n")
 	b.WriteString("- Prefer short Markdown: one conclusion first, then bullets for details or next steps.\n")
+	b.WriteString("- To reply to this exact inbound message in the same chat or thread, use `mga notify send --to source --message-format markdown --body \"...\"`. The `source` target carries the platform reply relation and keeps the conversation threaded.\n")
+	b.WriteString("- `--to user:<id>` and `--to chat:<id>` intentionally create a new message; do not use them when replying to the message above. Do not put `Re:` in the subject.\n")
 	b.WriteString("- For chat-like conversations, behave like a responsive coworker: you may first acknowledge with `mga notify react --to source --emoji THINKING` or send a short `mga notify send --to source --body \"我先看下\"`, then continue working.\n")
 	b.WriteString("- You may send several short source replies when that feels more natural than one long final block. Avoid spam; each message should move the conversation forward.\n")
 	b.WriteString("- If you cannot complete the request, explain the blocker and the exact next action needed.\n")

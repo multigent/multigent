@@ -33,8 +33,8 @@ func TestDBStoreHeartbeatUsesAgentWorkerSchedule(t *testing.T) {
 	if err := db.UpsertAgentWorker(controldb.AgentWorker{
 		ID:               "aw-pm",
 		WorkspaceID:      "ws",
-		Name:             "nova",
-		DisplayName:      "Nova",
+		Name:             "manager-agent",
+		DisplayName:      "manager-agent",
 		Model:            string(entity.ModelClaudeCode),
 		ScheduleJSON:     string(initialRaw),
 		PrimarySessionID: "session-primary",

@@ -104,8 +104,8 @@ func TestRuntimeSchedulerTargetsGroupAgentWorkerMemberships(t *testing.T) {
 	worker := controldb.AgentWorker{
 		ID:          "aw-cross-project",
 		WorkspaceID: workspaceID,
-		Name:        "nova",
-		DisplayName: "Nova",
+		Name:        "manager-agent",
+		DisplayName: "manager-agent",
 		Status:      "active",
 		CreatedAt:   now,
 		UpdatedAt:   now,
@@ -121,7 +121,7 @@ func TestRuntimeSchedulerTargetsGroupAgentWorkerMemberships(t *testing.T) {
 			MemberType:       "agent_worker",
 			MemberID:         worker.ID,
 			Role:             "manager",
-			Title:            "nova",
+			Title:            "manager-agent",
 			AutoPickTasks:    true,
 			AttentionEnabled: true,
 			PriorityWeight:   1,
@@ -154,8 +154,8 @@ func TestRuntimeSchedulerSelectsHighestPriorityMembershipTask(t *testing.T) {
 	worker := controldb.AgentWorker{
 		ID:          "aw-priority",
 		WorkspaceID: workspaceID,
-		Name:        "nova",
-		DisplayName: "Nova",
+		Name:        "manager-agent",
+		DisplayName: "manager-agent",
 		Status:      "active",
 		CreatedAt:   nowText,
 		UpdatedAt:   nowText,
@@ -171,7 +171,7 @@ func TestRuntimeSchedulerSelectsHighestPriorityMembershipTask(t *testing.T) {
 			MemberType:       "agent_worker",
 			MemberID:         worker.ID,
 			Role:             "manager",
-			Title:            "nova",
+			Title:            "manager-agent",
 			AutoPickTasks:    true,
 			AttentionEnabled: true,
 			PriorityWeight:   1,
@@ -181,7 +181,7 @@ func TestRuntimeSchedulerSelectsHighestPriorityMembershipTask(t *testing.T) {
 			t.Fatalf("membership %s: %v", project, err)
 		}
 	}
-	if err := s.ts.AddTask("alpha", "nova", &entity.Task{
+	if err := s.ts.AddTask("alpha", "manager-agent", &entity.Task{
 		ID:        "t-alpha",
 		Title:     "Alpha low priority",
 		Status:    entity.TaskStatusPending,
@@ -191,7 +191,7 @@ func TestRuntimeSchedulerSelectsHighestPriorityMembershipTask(t *testing.T) {
 	}); err != nil {
 		t.Fatalf("alpha task: %v", err)
 	}
-	if err := s.ts.AddTask("beta", "nova", &entity.Task{
+	if err := s.ts.AddTask("beta", "manager-agent", &entity.Task{
 		ID:        "t-beta",
 		Title:     "Beta high priority",
 		Status:    entity.TaskStatusPending,
@@ -202,10 +202,10 @@ func TestRuntimeSchedulerSelectsHighestPriorityMembershipTask(t *testing.T) {
 		t.Fatalf("beta task: %v", err)
 	}
 
-	target := s.runtimeSchedulerTargetGroupForProjectAgent(workspaceID, "alpha", "nova")
+	target := s.runtimeSchedulerTargetGroupForProjectAgent(workspaceID, "alpha", "manager-agent")
 	selected := s.selectRuntimeSchedulerExecutionTarget(target)
-	if selected.project != "beta" || selected.agent != "nova" {
-		t.Fatalf("expected beta/nova, got %#v", selected)
+	if selected.project != "beta" || selected.agent != "manager-agent" {
+		t.Fatalf("expected beta/manager-agent, got %#v", selected)
 	}
 }
 
@@ -215,8 +215,8 @@ func TestSchedulerProcessKeyUsesAgentWorkerForRuntimeNode(t *testing.T) {
 	worker := controldb.AgentWorker{
 		ID:          "aw-scheduler-key",
 		WorkspaceID: workspaceID,
-		Name:        "nova",
-		DisplayName: "Nova",
+		Name:        "manager-agent",
+		DisplayName: "manager-agent",
 		Status:      "active",
 		CreatedAt:   now,
 		UpdatedAt:   now,
@@ -231,7 +231,7 @@ func TestSchedulerProcessKeyUsesAgentWorkerForRuntimeNode(t *testing.T) {
 		MemberType:       "agent_worker",
 		MemberID:         worker.ID,
 		Role:             "manager",
-		Title:            "nova",
+		Title:            "manager-agent",
 		AutoPickTasks:    true,
 		AttentionEnabled: true,
 		PriorityWeight:   1,
@@ -241,13 +241,13 @@ func TestSchedulerProcessKeyUsesAgentWorkerForRuntimeNode(t *testing.T) {
 		t.Fatalf("membership: %v", err)
 	}
 
-	if key := s.schedulerProcessKeyForProjectAgent(workspaceID, "alpha", "nova", schedulerModeRuntimeNode); key != "worker/"+worker.ID {
+	if key := s.schedulerProcessKeyForProjectAgent(workspaceID, "alpha", "manager-agent", schedulerModeRuntimeNode); key != "worker/"+worker.ID {
 		t.Fatalf("expected worker scheduler key, got %q", key)
 	}
 	if key := s.schedulerProcessKeyForProjectAgent(workspaceID, "alpha", "legacy", schedulerModeRuntimeNode); key != "alpha/legacy" {
 		t.Fatalf("expected unresolved scheduler key, got %q", key)
 	}
-	if key := s.schedulerProcessKeyForProjectAgent(workspaceID, "alpha", "nova", schedulerModeLocal); key != "alpha/nova" {
+	if key := s.schedulerProcessKeyForProjectAgent(workspaceID, "alpha", "manager-agent", schedulerModeLocal); key != "alpha/manager-agent" {
 		t.Fatalf("expected local scheduler key to use project route, got %q", key)
 	}
 }
@@ -259,10 +259,10 @@ func TestSchedulerManagerStartLoopWithKeyDeduplicatesWorker(t *testing.T) {
 	loop := func(ctx context.Context) {
 		<-ctx.Done()
 	}
-	if err := m.StartLoopWithKey("worker/aw-one", "alpha", "nova", schedulerModeRuntimeNode, loop); err != nil {
+	if err := m.StartLoopWithKey("worker/aw-one", "alpha", "manager-agent", schedulerModeRuntimeNode, loop); err != nil {
 		t.Fatalf("start first loop: %v", err)
 	}
-	if err := m.StartLoopWithKey("worker/aw-one", "beta", "nova", schedulerModeRuntimeNode, loop); err == nil {
+	if err := m.StartLoopWithKey("worker/aw-one", "beta", "manager-agent", schedulerModeRuntimeNode, loop); err == nil {
 		t.Fatalf("expected duplicate worker scheduler key to conflict")
 	}
 	if err := m.StopKey("worker/aw-one"); err != nil {

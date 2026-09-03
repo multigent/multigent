@@ -22,7 +22,7 @@ func TestExternalIdentitiesAreWorkspaceAndProviderScoped(t *testing.T) {
 	}
 	for _, u := range []User{
 		{Username: "ella", CreatedAt: nowUTC()},
-		{Username: "glenn", CreatedAt: nowUTC()},
+		{Username: "owner-a", CreatedAt: nowUTC()},
 	} {
 		if err := db.UpsertUser(u); err != nil {
 			t.Fatalf("user: %v", err)
@@ -43,7 +43,7 @@ func TestExternalIdentitiesAreWorkspaceAndProviderScoped(t *testing.T) {
 		WorkspaceID:    "ws-two",
 		Provider:       "feishu",
 		ExternalUserID: "ou_same",
-		UserID:         "glenn",
+		UserID:         "owner-a",
 	}); err != nil {
 		t.Fatalf("upsert two: %v", err)
 	}
@@ -52,7 +52,7 @@ func TestExternalIdentitiesAreWorkspaceAndProviderScoped(t *testing.T) {
 		WorkspaceID:    "ws-one",
 		Provider:       "lark",
 		ExternalUserID: "ou_same",
-		UserID:         "glenn",
+		UserID:         "owner-a",
 	}); err != nil {
 		t.Fatalf("upsert three: %v", err)
 	}
@@ -69,7 +69,7 @@ func TestExternalIdentitiesAreWorkspaceAndProviderScoped(t *testing.T) {
 	if err != nil || !ok {
 		t.Fatalf("lookup three ok=%v err=%v", ok, err)
 	}
-	if one.UserID != "ella" || two.UserID != "glenn" || three.UserID != "glenn" {
+	if one.UserID != "ella" || two.UserID != "owner-a" || three.UserID != "owner-a" {
 		t.Fatalf("scope mismatch: one=%#v two=%#v three=%#v", one, two, three)
 	}
 }

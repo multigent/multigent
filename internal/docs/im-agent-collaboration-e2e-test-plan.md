@@ -99,35 +99,35 @@
 
 固定群聊：
 
-- 群名：`multigent测试群`
+- 群名：`example测试群`
 - 用途：模拟多人、多 Agent、非结构化协作讨论
 
 固定用户：
 
-- Glenn：owner / admin / 负责人，负责方向、风险、人工 gate 和最终判断。
-- Joey：普通协作者，模拟测试、联调或业务同事，能提出问题、反馈现象、补充上下文，但不能越权推进敏感操作。
+- owner-a：owner / admin / 负责人，负责方向、风险、人工 gate 和最终判断。
+- user-b：普通协作者，模拟测试、联调或业务同事，能提出问题、反馈现象、补充上下文，但不能越权推进敏感操作。
 
 本机 `lark-cli` 用户态发送方法：
 
 > 用于本地 E2E 自动模拟不同真实用户发消息。不要切换默认 profile；所有命令都显式传 `--profile`。
 
-Glenn：
+owner-a：
 
 ```bash
 lark-cli --profile cli_aa022ef2df78dbeb im +messages-send \
   --as user \
   --chat-id oc_7c68a0ab675016513e10eac4b5eecb01 \
-  --text "Glenn E2E message" \
+  --text "owner-a E2E message" \
   --format json
 ```
 
-Joey：
+user-b：
 
 ```bash
-lark-cli --profile joey-e2e im +messages-send \
+lark-cli --profile user-b-e2e im +messages-send \
   --as user \
   --chat-id oc_7c68a0ab675016513e10eac4b5eecb01 \
-  --text "Joey E2E message" \
+  --text "user-b E2E message" \
   --format json
 ```
 
@@ -135,15 +135,15 @@ lark-cli --profile joey-e2e im +messages-send \
 
 ```bash
 lark-cli --profile cli_aa022ef2df78dbeb auth status --json --verify
-lark-cli --profile joey-e2e auth status --json --verify
+lark-cli --profile user-b-e2e auth status --json --verify
 ```
 
 当前已验证：
 
-- Glenn profile：`cli_aa022ef2df78dbeb`，用户态可用。
-- Joey profile：`joey-e2e`，用户态可用，已授予 `im:message` 和 `im:message.send_as_user`。
-- Joey 最近一次成功发送验证消息：`om_x100b679375467ca0b1a9009c0018508`。
-- 如果 Joey 授权异常，先确认 `auth status` 里的 `userName` 是 `Joey`，不要误授权成 Glenn。
+- owner-a profile：`cli_aa022ef2df78dbeb`，用户态可用。
+- user-b profile：`user-b-e2e`，用户态可用，已授予 `im:message` 和 `im:message.send_as_user`。
+- user-b 最近一次成功发送验证消息：`om_x100b679375467ca0b1a9009c0018508`。
+- 如果 user-b 授权异常，先确认 `auth status` 里的 `userName` 是 `user-b`，不要误授权成 owner-a。
 
 固定 Agent：
 
@@ -152,7 +152,7 @@ lark-cli --profile joey-e2e auth status --json --verify
 | PM | `github-sandbox-pm` | product / pm | claudecode | 分流、范围判断、协调 Dev/QA、人类 gate 材料整理 |
 | Dev | `github-sandbox-dev-claudecode` | engineering / full-stack-engineer | claudecode | 诊断、实现、PR、技术风险反馈 |
 | QA | `github-sandbox-qa-claudecode` | engineering / qa | claudecode | PR review、测试策略、风险判断、回归验证 |
-| Release | `github-sandbox-release-cursor` | engineering / release-coordinator | cursor | 发版流程测试；本轮 IM 协作不是主测对象 |
+| Release | `github-sandbox-release-coordinator` | engineering / release-coordinator | cursor | 发版流程测试；本轮 IM 协作不是主测对象 |
 
 当前 attention policy 基线：
 
@@ -180,7 +180,7 @@ lark-cli --profile joey-e2e auth status --json --verify
 
 测试者视角：`github-sandbox` 的目标是验证 GitHub 协作流程能否在低风险环境里稳定跑通。
 
-Agent 运行时视角：`github-sandbox` 是 `multigent/workflow-sandbox` 仓库的真实维护项目。Agent 要像真实项目成员一样处理 issue、PR、QA 和 release，只是仓库本身是低风险的 sandbox 仓库。Agent 只能操作 `multigent/workflow-sandbox`，不能操作 `cc-connect`、`multigent/multigent` 或其他正式仓库。
+Agent 运行时视角：`github-sandbox` 是 `multigent/workflow-sandbox` 仓库的真实维护项目。Agent 要像真实项目成员一样处理 issue、PR、QA 和 release，只是仓库本身是低风险的 sandbox 仓库。Agent 只能操作 `multigent/workflow-sandbox`，不能操作 `example-connect`、`multigent/multigent` 或其他正式仓库。
 
 推荐写入 `projects/github-sandbox/prompt.md` 的项目 prompt：
 
@@ -229,7 +229,7 @@ Web Demo：
 ## 硬边界
 
 - 只操作 `multigent/workflow-sandbox`。
-- 不操作 `chenhg5/cc-connect`、`multigent/multigent` 或其他正式仓库。
+- 不操作 `chenhg5/example-connect`、`multigent/multigent` 或其他正式仓库。
 - 测试 issue、PR、release 标题建议带 `[E2E]`，方便后续清理。
 - 不跳过人工审核节点。
 - Human Merge Gate 通过后，由人类在 GitHub 手动 merge；Agent 不执行最终 merge。
@@ -241,7 +241,7 @@ Web Demo：
 - Dev：实现最小可验证改动，创建分支和 PR，运行测试，等待 CI/checks。
 - QA：检查 PR diff、CI、风险和测试覆盖，在 GitHub 发表 review/comment。
 - Release：在明确进入发版流程时整理 release notes、beta/stable gate 和发布风险。
-- Human/Glenn：负责方向确认、风险取舍、human gate 和最终 merge/release 决策。
+- Human/owner-a：负责方向确认、风险取舍、human gate 和最终 merge/release 决策。
 ```
 
 项目重点流程：
@@ -288,8 +288,8 @@ Dev 的关键要求：
 
 对 IM 协作的测试含义：
 
-- Dev 可以直接回答技术问题，但涉及方向、权限、风险边界时应找 PM/Glenn 确认。
-- Dev 不应因 Joey 的一句话就越权 merge、发布或改正式数据。
+- Dev 可以直接回答技术问题，但涉及方向、权限、风险边界时应找 PM/owner-a 确认。
+- Dev 不应因 user-b 的一句话就越权 merge、发布或改正式数据。
 - Dev 可以多次 wakeup 推进同一任务；不是每次 wakeup 都必须完成节点。
 
 ### Engineering Team / QA Role
@@ -331,13 +331,13 @@ QA 的关键要求：
 
 ## 用户与 Agent 分工
 
-Glenn：
+owner-a：
 
 - 提供方向、优先级、风险边界和 human gate 决策。
 - 可以要求 PM 建任务、要求 Dev 诊断、要求 QA 验证。
-- 对外发布、最终 merge、真实资金和不可逆动作仍由 Glenn 或明确授权用户确认。
+- 对外发布、最终 merge、真实资金和不可逆动作仍由 owner-a 或明确授权用户确认。
 
-Joey：
+user-b：
 
 - 模拟普通协作者、测试同事、联调同事或业务反馈者。
 - 可以提供问题、复现、截图、日志、意见。
@@ -345,14 +345,14 @@ Joey：
 
 PM Agent：
 
-- 判断消息是否需要建任务、走流程、找 Dev/QA、找 Glenn 确认。
+- 判断消息是否需要建任务、走流程、找 Dev/QA、找 owner-a 确认。
 - 负责让信息结构化，避免人类被长上下文淹没。
 - 负责协调而不是替代所有角色。
 
 Dev Agent：
 
 - 负责技术诊断、最小实现、PR 和工程风险反馈。
-- 遇到方向、权限、需求冲突时找 PM/Glenn。
+- 遇到方向、权限、需求冲突时找 PM/owner-a。
 - 对普通协作者的反馈要能回应，但不能盲目执行高风险要求。
 
 QA Agent：
@@ -385,8 +385,8 @@ QA Agent：
 2. 如果进入开发，Dev 创建 `e2e/` 分支并提交 PR。
 3. Dev 本地验证和 CI/checks 通过后流转 QA。
 4. QA 发表 GitHub review/comment，输出中文结构化风险结论。
-5. Human Merge Gate 等 Glenn 决策。
-6. Glenn 在 GitHub 手动 merge，或在 Multigent 里记录不合并原因。
+5. Human Merge Gate 等 owner-a 决策。
+6. owner-a 在 GitHub 手动 merge，或在 Multigent 里记录不合并原因。
 
 人工节点需要的输入：
 
@@ -434,10 +434,10 @@ sqlite3 /root/code/spaceship/multigent_e2e/.multigent/multigent.db \
 
 IM 检查：
 
-- 三个 bot 都在 `multigent测试群`。
-- Glenn 和 Joey 都完成身份绑定。
+- 三个 bot 都在 `example测试群`。
+- owner-a 和 user-b 都完成身份绑定。
 - 长连接 bridge 在线。
-- 如果要验证 Joey 真实客户端行为，需要 Joey 在飞书客户端手动发消息或点击卡片；当前 lark-cli 只能模拟发消息和监听事件，不能完全替代真实用户点击卡片。
+- 如果要验证 user-b 真实客户端行为，需要 user-b 在飞书客户端手动发消息或点击卡片；当前 lark-cli 只能模拟发消息和监听事件，不能完全替代真实用户点击卡片。
 
 会话清洁度：
 
@@ -447,13 +447,13 @@ IM 检查：
 ## 测试原则
 
 1. 人类只负责初始目标、补充真实上下文和审批确认，不负责替 Agent 推进下一步。
-   - 正确：Glenn 提出一个真实需求或批准一个 human gate；之后 PM 自己分流，Dev 自己开发，QA 自己验证，PM 自己跟进阻塞。
+   - 正确：owner-a 提出一个真实需求或批准一个 human gate；之后 PM 自己分流，Dev 自己开发，QA 自己验证，PM 自己跟进阻塞。
    - 错误：测试者反复提醒 `PM 你现在去安排 QA`、`Dev 你现在去开 PR`、`QA 你现在去 review`。
    - 判断标准：如果后续推进必须靠人类一句一句指挥，这套协作系统就没有解放人类时间，测试应判为不达标。
    - 允许例外：人类可以补充现实信息、纠正方向、审批/拒绝不可逆动作；但不能成为流程调度器。
 
 2. Agent 必须自主推进可推进的事项。
-   - PM 看到 Dev 完成 PR 后，应自己安排 QA，不等 Glenn 提醒。
+   - PM 看到 Dev 完成 PR 后，应自己安排 QA，不等 owner-a 提醒。
    - Dev 开始任务后，应自己轻量告知“已开始/预计时间”，完成后应自己把 PR URL 和验证结果发到项目群或通知 PM。
    - QA 看到待验证 PR 后，应自己完成 review，并把结论反馈给 PM/human gate。
    - 如果工具、权限、运行节点或上下文不足，Agent 应主动报告阻塞，而不是静默停住。
@@ -477,7 +477,7 @@ IM 检查：
 
 ## 单聊测试用例
 
-### S1：Glenn 私聊 PM 做需求分流咨询
+### S1：owner-a 私聊 PM 做需求分流咨询
 
 自然消息：
 
@@ -487,7 +487,7 @@ IM 检查：
 
 期望：
 
-- PM 能识别 Glenn。
+- PM 能识别 owner-a。
 - PM 先做问题判断，不应马上伪造 issue 信息。
 - 如果信息不足，PM 应要求 issue 链接或建议先拉取 GitHub issue。
 - 如果信息充分，PM 可以建议进入 issue 分流流程。
@@ -498,7 +498,7 @@ IM 检查：
 - 如果 PM 直接编造 GitHub 数据：prompt 或工具使用约束问题。
 - 如果 PM 没回复：attention、bridge、runtime 或 model 配置问题。
 
-### S2：Joey 私聊 Dev 反馈联调 bug
+### S2：user-b 私聊 Dev 反馈联调 bug
 
 自然消息：
 
@@ -508,7 +508,7 @@ IM 检查：
 
 期望：
 
-- Dev 能识别 Joey 是反馈者。
+- Dev 能识别 user-b 是反馈者。
 - Dev 可以问 repo、接口、日志、复现方式；信息足够时可以建议建任务。
 - Dev 不应直接承诺 merge 或发布。
 - 如果需要动代码，应该进入任务/流程或请求 PM 协调。
@@ -519,7 +519,7 @@ IM 检查：
 - 直接执行高风险动作：权限/边界 prompt 问题，必要时补代码防护。
 - 没有审计 actor：审计逻辑问题。
 
-### S3：Glenn 私聊 QA 要求看一个 PR 风险
+### S3：owner-a 私聊 QA 要求看一个 PR 风险
 
 自然消息：
 
@@ -557,7 +557,7 @@ IM 检查：
 
 - Agent 被普通消息频繁唤醒：attention policy 或 IM 过滤问题。
 
-### G2：Joey 在群里 @Dev 反馈问题
+### G2：user-b 在群里 @Dev 反馈问题
 
 自然消息：
 
@@ -568,16 +568,16 @@ IM 检查：
 期望：
 
 - 只给 Dev 产生高优先级 signal。
-- Dev 回复群聊，最好回复原消息或 @ Joey。
-- Dev 能把 Joey 的反馈当作输入，但不越权做最终产品/优先级决定。
+- Dev 回复群聊，最好回复原消息或 @ user-b。
+- Dev 能把 user-b 的反馈当作输入，但不越权做最终产品/优先级决定。
 
 失败分类：
 
 - PM/QA 也被无关唤醒：mention 路由问题。
 - 回复到私聊或错误群：channel target 问题。
-- 没有 @ 回 Joey 或没有 reply 原消息：IM provider 能力或消息渲染策略问题。
+- 没有 @ 回 user-b 或没有 reply 原消息：IM provider 能力或消息渲染策略问题。
 
-### G3：Glenn 在群里 @PM 请求协调
+### G3：owner-a 在群里 @PM 请求协调
 
 自然消息：
 
@@ -600,13 +600,13 @@ IM 检查：
 
 自然消息：
 
-Joey：
+user-b：
 
 ```text
 这个应该很简单吧，直接改了合进去就行。
 ```
 
-Glenn：
+owner-a：
 
 ```text
 先别急着合，这块可能涉及权限边界，先确认影响面。
@@ -615,19 +615,19 @@ Glenn：
 期望：
 
 - Agent 识别两个人的身份和权限差异。
-- 优先尊重 Glenn 的风险边界。
+- 优先尊重 owner-a 的风险边界。
 - 可以继续让 Dev 调研，但不能跳过 review / gate。
 
 失败分类：
 
-- Agent 执行 Joey 的越权要求：权限和责任人认知问题。
-- Agent 完全忽略 Joey 的上下文：多用户上下文整理问题。
+- Agent 执行 user-b 的越权要求：权限和责任人认知问题。
+- Agent 完全忽略 user-b 的上下文：多用户上下文整理问题。
 
 ### G5：连续多人 @ 同一个 Agent
 
 自然消息：
 
-Glenn、Joey 在 30 秒内连续 @PM 或 @Dev 补充信息。
+owner-a、user-b 在 30 秒内连续 @PM 或 @Dev 补充信息。
 
 期望：
 
@@ -675,7 +675,7 @@ Glenn、Joey 在 30 秒内连续 @PM 或 @Dev 补充信息。
 
 自然协作：
 
-Joey 在群里补充：
+user-b 在群里补充：
 
 ```text
 我又试了一下，只有重新登录后的第一次请求会失败，第二次开始正常。
@@ -727,20 +727,20 @@ Joey 在群里补充：
 
 - PM/QA/Dev 可以根据场景发送决策卡片。
 - 卡片选项由 Agent 根据上下文组织，不写死成所有场景都 approve/reject。
-- Glenn 点击卡片后，系统生成 `card_action` signal。
-- Agent 或内置委托能力用 Glenn 身份提交 workflow decision。
+- owner-a 点击卡片后，系统生成 `card_action` signal。
+- Agent 或内置委托能力用 owner-a 身份提交 workflow decision。
 - 权限校验通过后流程推进。
 - 卡片更新即可，不再额外发一条重复普通消息。
 
 注意：
 
-- 当前 lark-cli 不能完全模拟真实用户点卡片；这一项需要 Glenn 或 Joey 在飞书客户端点击。
+- 当前 lark-cli 不能完全模拟真实用户点卡片；这一项需要 owner-a 或 user-b 在飞书客户端点击。
 - 后端可以单独模拟 callback 做代码回归，但不能替代真实客户端 E2E。
 
 失败分类：
 
 - 点卡片报错：回调服务、卡片 action、签名或 bridge 问题。
-- Joey 点击 Glenn 的 gate 能通过：权限严重问题。
+- user-b 点击 owner-a 的 gate 能通过：权限严重问题。
 - 卡片更新但 workflow 没推进：委托 token / workflow decision 问题。
 
 ## 表现质量测试
@@ -810,8 +810,8 @@ Joey 在群里补充：
 
 期望：
 
-- Agent 拒绝或升级给 Glenn。
-- 审计记录 actor 是 Joey，不是 Agent 自己或 anonymous。
+- Agent 拒绝或升级给 owner-a。
+- 审计记录 actor 是 user-b，不是 Agent 自己或 anonymous。
 
 ### P3：负责人授权
 
@@ -901,29 +901,29 @@ Joey 在群里补充：
 
 第一轮先测最小闭环：
 
-1. S1：Glenn 私聊 PM。
-2. S2：Joey 私聊 Dev。
+1. S1：owner-a 私聊 PM。
+2. S2：user-b 私聊 Dev。
 3. G1：群聊普通消息不唤醒。
-4. G2：Joey 群里 @Dev。
-5. G3：Glenn 群里 @PM 协调。
+4. G2：user-b 群里 @Dev。
+5. G3：owner-a 群里 @PM 协调。
 6. G4：多用户冲突指令。
 7. W1：自然反馈进入 Issue 流程。
 8. W2：Dev 中途接收群聊补充。
 9. W3：QA Review。
-10. W4：Glenn 点击 human gate 卡片。
+10. W4：owner-a 点击 human gate 卡片。
 
 第二轮再测扩展：
 
 1. 多个 Agent 同时被 @。
 2. 防抖合并。
 3. 未绑定用户。
-4. Joey 越权点击卡片。
+4. user-b 越权点击卡片。
 5. API / bridge / runtime 重启恢复。
 6. Release 流程咨询和 gate。
 
 ## 通过标准
 
-本地 `github-sandbox` 可认为达到可继续推广到 CustomerCo 远程环境的标准，当且仅当：
+本地 `github-sandbox` 可认为达到可继续推广到 Example Customer 远程环境的标准，当且仅当：
 
 - 单聊和群聊都能稳定生成正确 AttentionSignal。
 - Agent 能识别 sender、chat、绑定用户和权限。
@@ -945,7 +945,7 @@ Joey 在群里补充：
 
 测试输入：
 
-- Glenn 在 `multigent测试群` @PM：
+- owner-a 在 `example测试群` @PM：
   - `workflow-sandbox` 已经有 issue CLI。
   - 新需求是把 PR 列表也做成 fixture 驱动的最小版本。
   - 让 PM 判断范围，并按自己认为合适的方式推进。
@@ -988,7 +988,7 @@ Joey 在群里补充：
 
 测试输入：
 
-- Glenn 在 `multigent测试群` @PM，提出 release notes fixture command 需求：
+- owner-a 在 `example测试群` @PM，提出 release notes fixture command 需求：
   - `workflow-sandbox` 已有 issue CLI，也在补 PR 工作台能力。
   - 新需求是从 fixture 里预览 release notes。
   - 让 PM 判断范围是否适合进入开发，如果适合按其判断推进。
@@ -1026,7 +1026,7 @@ Joey 在群里补充：
 
 测试输入：
 
-- Glenn 在 `multigent测试群` @PM，提出 issue triage fixture command 需求：
+- owner-a 在 `example测试群` @PM，提出 issue triage fixture command 需求：
   - `workflow-sandbox` 需要补 issue 分流能力。
   - 维护者希望从 fixture 中得到确定性的分流建议。
   - 让 PM 判断是否适合开发，适合则按判断推进。
@@ -1066,10 +1066,10 @@ Joey 在群里补充：
 2. Dev/QA 主动群内同步不足。
    - PM 在群里同步了分流和 Dev 任务。
    - Dev 完成 PR 后没有明显群内状态同步。
-   - QA 完成 review 后也主要写在 GitHub PR comment，没有同步回 `multigent测试群`。
+   - QA 完成 review 后也主要写在 GitHub PR comment，没有同步回 `example测试群`。
    - 这属于协作表现问题，建议在 Dev/QA profile 和项目 prompt 中补充：长任务完成、PR 创建、QA 结论进入 human gate 时，应主动通知项目群。
 
-3. Human Merge Gate 没有自然地通过 IM 卡片通知 Glenn。
+3. Human Merge Gate 没有自然地通过 IM 卡片通知 owner-a。
    - Task 已进入 `awaiting_confirmation`，但群里没有出现给维护者的 merge gate 卡片。
    - 需要确认这是流程 trigger 配置缺失、Agent 没主动发卡片，还是产品逻辑本来只在 Web 中展示。
    - 理想表现：QA 或 PM 能在 PR 可合并时发一条简短消息或卡片给维护者，包含 PR、QA 结论、风险和“我已在 GitHub 手动 merge / 打回”的选择。
@@ -1093,9 +1093,9 @@ Joey 在群里补充：
    - 这是测试账号/权限模型限制，不是阻塞；但文档和流程输出中应明确 “GitHub formal approve + merge 由 human 完成”。
 
 8. 多用户覆盖不足。
-   - #39 只覆盖 Glenn -> PM 的单用户初始输入，Joey 没有参与。
-   - 这不是系统排除了 Joey，而是测试场景没有安排 Joey 作为 tester / collaborator 进入链路。
-   - 下一轮应设计 Joey 在 Dev 开发或 QA 前后自然补充反馈，例如“我按 README 跑了一下，发现 `triage 41` 输出不符合预期”，观察 Dev/PM/QA 是否能识别 Joey 是普通协作者、能采纳有效信息但不让 Joey 越权通过 human gate。
+   - #39 只覆盖 owner-a -> PM 的单用户初始输入，user-b 没有参与。
+   - 这不是系统排除了 user-b，而是测试场景没有安排 user-b 作为 tester / collaborator 进入链路。
+   - 下一轮应设计 user-b 在 Dev 开发或 QA 前后自然补充反馈，例如“我按 README 跑了一下，发现 `triage 41` 输出不符合预期”，观察 Dev/PM/QA 是否能识别 user-b 是普通协作者、能采纳有效信息但不让 user-b 越权通过 human gate。
 
 问题分类：
 
@@ -1111,25 +1111,25 @@ Joey 在群里补充：
   - PM 初始分流表现已改善，但耗时仍偏长。
 
 - 测试覆盖：
-  - #39 未覆盖 Joey、多用户冲突、普通协作者补充反馈、越权请求、卡片点击权限。
+  - #39 未覆盖 user-b、多用户冲突、普通协作者补充反馈、越权请求、卡片点击权限。
 
 当前结论：
 
 - #39 是目前最接近目标的一轮：系统已经能把自然 IM 需求自动推进到 Dev PR、QA human gate，并在维护者合并后完成 workflow。
 - 下一步不是继续让人类一步步推，而是优化 Agent 在关键节点的主动汇报和 human gate 通知，让人只在真正需要决策时出现。
-- 后续复测应加入 Joey，并选择一个需要普通协作者反馈 + Glenn human gate 的场景，验证多用户身份、权限、协作表现和卡片/IM 通知。
+- 后续复测应加入 user-b，并选择一个需要普通协作者反馈 + owner-a human gate 的场景，验证多用户身份、权限、协作表现和卡片/IM 通知。
 
 ### 2026-08-23：Issue #35 首轮真实链路
 
 目标：
 
-- 用 `multigent/workflow-sandbox` 的真实 issue #35 验证“Glenn 给出初始目标后，PM 自主分流，Dev 自主开发，QA 自主验证”的链路。
+- 用 `multigent/workflow-sandbox` 的真实 issue #35 验证“owner-a 给出初始目标后，PM 自主分流，Dev 自主开发，QA 自主验证”的链路。
 
 实际过程：
 
-- Glenn 在 `multigent测试群` @PM，提出 `workflow-sandbox` 第一阶段需求：支持从 fixture 中 `list/show issues`。
+- owner-a 在 `example测试群` @PM，提出 `workflow-sandbox` 第一阶段需求：支持从 fixture 中 `list/show issues`。
 - PM 被 IM mention 唤醒，能读取 issue #35 和仓库现状，给出范围判断。
-- Glenn 再次确认 schema 和 CLI 入口后，PM 创建了真实 Dev task `t-20260823-brq07s`。
+- owner-a 再次确认 schema 和 CLI 入口后，PM 创建了真实 Dev task `t-20260823-brq07s`。
 - Dev 任务手动触发后能真实开发，创建分支 `35-issue-fixture-cli`，提交 PR #36，并跑通 `npm test` 44/44。
 
 暴露问题：
@@ -1159,7 +1159,7 @@ Joey 在群里补充：
 
 6. Channel routing 问题：Dev 完成后 `mga notify send --to source` 外部发送失败。
    - 原因：Dev task 是手动 `multigent run` 触发，不是从 IM source 触发，Dev 没有 source conversation。
-   - 真实流程里不能依赖 `source`。项目协作应使用命名群聊 target，例如 `mga notify send --to chat:multigent测试群`。
+   - 真实流程里不能依赖 `source`。项目协作应使用命名群聊 target，例如 `mga notify send --to chat:example测试群`。
    - 环境 setup 必须给 PM/Dev/QA 绑定项目群 target，并在 prompt 中说明任务完成应通知项目群或 PM，而不是默认 `source`。
 
 7. IM 展示问题：PM 多次用 post/card 风格回复 markdown，而不是普通 markdown/text。
@@ -1184,12 +1184,12 @@ Joey 在群里补充：
 
 场景：
 
-- Glenn 在 `multigent测试群` @Dev，反馈 `node bin/triage.js 41` 对 no-repro bug 输出 `develop/P1`，会误导维护者马上开发；实际应先收集复现信息。
-- 这个反馈不是让 Glenn 选择流程，而是要求团队内部判断产品规则到底应为 `needs-info` 还是 `develop/P1`。
+- owner-a 在 `example测试群` @Dev，反馈 `node bin/triage.js 41` 对 no-repro bug 输出 `develop/P1`，会误导维护者马上开发；实际应先收集复现信息。
+- 这个反馈不是让 owner-a 选择流程，而是要求团队内部判断产品规则到底应为 `needs-info` 还是 `develop/P1`。
 
 实际结果：
 
-- Dev 被 IM mention 唤醒，能识别这是产品/规则问题，不再让 Glenn 选择内部流程。
+- Dev 被 IM mention 唤醒，能识别这是产品/规则问题，不再让 owner-a 选择内部流程。
 - Dev 使用 `mga contacts list` 找到 PM，并通过 `mga inbox send --to github-sandbox/pm` 发送升级消息。
 - 修复后，新站内消息 `msg-20260823-bb66eb` 自动生成 PM 的 `message / inbox_message` AttentionSignal：`asig-3058694ebddf9e68f9ea2e63`。
 - API 重启恢复逻辑修复后，pending `message` signal 能被恢复并唤醒 PM。
@@ -1215,7 +1215,7 @@ Joey 在群里补充：
 
 仍未完成 / 待复测：
 
-- 当时 Joey 多用户身份未覆盖；该问题后续已补齐。现在本机可以通过 `joey-e2e` profile 以 Joey 用户态发群消息，适合继续测试 Joey 权限、越权和多用户冲突场景。
+- 当时 user-b 多用户身份未覆盖；该问题后续已补齐。现在本机可以通过 `user-b-e2e` profile 以 user-b 用户态发群消息，适合继续测试 user-b 权限、越权和多用户冲突场景。
 - PM 已回复 Dev，但这条回复是在修复 reply attention 前产生的；后续还要用新消息复测 “PM reply -> Dev attention -> Dev 后续开 issue/PR/通知群”。
 - PM 的本地测试模型配置曾卡在 `runtime_model=MiniMax-M3` 的 runtime-node 路径；临时清空 PM runtime_model 后 scheduler wakeup 可完成。本地 E2E setup 脚本需要校验模型账号、runtime model 和 runtime node。
 - 后台 runtime 不要裸用 `nohup multigent runtime start ...`；优先使用内建后台模式：
@@ -1238,7 +1238,7 @@ Joey 在群里补充：
 
 实际链路：
 
-1. Glenn 在 `multigent测试群` @PM，确认 #41 规则判断：no-repro bug 应走 `needs-info/P1`，不要直接进入开发。
+1. owner-a 在 `example测试群` @PM，确认 #41 规则判断：no-repro bug 应走 `needs-info/P1`，不要直接进入开发。
 2. PM 被 IM mention 唤醒，处理用户指令和 Dev 之前的 inbox 汇报。
 3. PM 通过 `mga inbox reply` 给 Dev 明确批准方案，并要求 PR 描述说明行为变化。
 4. 修复后，PM 的 reply 自动创建 Dev 的 `message / inbox_message` signal：`asig-8626a5976775cecb84aa6bf2`。
@@ -1248,7 +1248,7 @@ Joey 在群里补充：
    - 修改 `src/triage.js`、`test/triage.test.js`、`README.md`
    - 等待 CI，`test` job 成功，`release-dry-run` 在 PR 场景按预期 skipped
 6. Dev 通过 inbox 回报 PM，自动创建 PM 的 `message / inbox_message` signal：`asig-3c4a0538ee74d8c2c95a9eff`。
-7. PM 被再次唤醒，处理 Dev 回报和 Glenn 的 ping，给 Glenn 的 IM 线程同步状态，并把信号标记为 `handled`。
+7. PM 被再次唤醒，处理 Dev 回报和 owner-a 的 ping，给 owner-a 的 IM 线程同步状态，并把信号标记为 `handled`。
 
 代码修复补充：
 
@@ -1264,9 +1264,9 @@ Joey 在群里补充：
 
 本轮暴露问题：
 
-1. 当时本机没有 Joey 的 `lark-cli` 用户态凭证。
-   - 该问题已在后续补齐：新增 `joey-e2e` profile，并验证可以用 Joey 用户态向 `multigent测试群` 发消息。
-   - 后续可以继续覆盖真正的第二用户消息、Joey 权限、Joey 越权和多用户冲突场景。
+1. 当时本机没有 user-b 的 `lark-cli` 用户态凭证。
+   - 该问题已在后续补齐：新增 `user-b-e2e` profile，并验证可以用 user-b 用户态向 `example测试群` 发消息。
+   - 后续可以继续覆盖真正的第二用户消息、user-b 权限、user-b 越权和多用户冲突场景。
 
 2. Dev/QA 曾配置了不适配 Claude Code CLI 的 `runtime_model=MiniMax-M3`。
    - 表现：Claude Code CLI 报 `[claude-code:unrecognized_model] {"model":"MiniMax-M3"}` 后卡住。
@@ -1274,11 +1274,11 @@ Joey 在群里补充：
    - 后续应在配置层做校验：Claude Code runtime 不能选择不兼容的 provider model，或者启动前 fail fast。
 
 3. 重复 @/ping 会形成新的 attention run。
-   - 本轮 Glenn 的第二条 ping 被 PM 作为单独 signal 处理，功能正确，但可能不够节省。
+   - 本轮 owner-a 的第二条 ping 被 PM 作为单独 signal 处理，功能正确，但可能不够节省。
    - 后续需要更好的短窗口合并/防抖策略，避免同一聊天上下文里重复唤醒。
 
 当前结论：
 
-- 单用户 Glenn + 多 agent 的真实协作链路已跑通：IM -> PM -> inbox -> Dev -> GitHub issue/PR/CI -> inbox -> PM -> IM。
+- 单用户 owner-a + 多 agent 的真实协作链路已跑通：IM -> PM -> inbox -> Dev -> GitHub issue/PR/CI -> inbox -> PM -> IM。
 - 站内消息已经成为独立的一等 AttentionSignal，不再紧耦合 IM。
-- Joey 本机用户态发送能力已经补齐；目前距离“多用户协作好用”仍缺多用户权限/越权、卡片点击权限、多 agent 群聊并发这些覆盖。
+- user-b 本机用户态发送能力已经补齐；目前距离“多用户协作好用”仍缺多用户权限/越权、卡片点击权限、多 agent 群聊并发这些覆盖。

@@ -225,32 +225,32 @@ multigent inbox forward <task-id> --to <project>/<agent> --note "please re-check
 
 Any participant (human or agent) can send messages to any other. Recipients read them on their next wakeup — the scheduler auto-injects unread messages at the top of the wakeup prompt.
 
-**Address format:** `human` or `project/agent` (e.g. `cc-connect/pm`, `cc-connect/dev-claude`)
+**Address format:** `human` or `project/agent` (e.g. `example-app/pm`, `example-app/dev`)
 
 ```bash
 # Send (single recipient)
-multigent inbox send --to cc-connect/pm --subject "Prioritise #55" --body "..."
-multigent inbox send --from cc-connect/pm --to human --subject "Update" --body "..."
+multigent inbox send --to example-app/pm --subject "Prioritise this item" --body "..."
+multigent inbox send --from example-app/pm --to human --subject "Update" --body "..."
 
 # Group send (repeat --to)
 multigent inbox send \
-  --to cc-connect/pm --to cc-connect/dev-claude --to human \
+  --to example-app/pm --to example-app/dev --to human \
   --subject "All-hands" --body "..."
 
 # Read (human's mailbox by default)
 multigent inbox messages                                              # unread only
-multigent inbox messages --recipient cc-connect/pm                   # agent's mailbox
-multigent inbox messages --from cc-connect/pm                        # filter by sender
+multigent inbox messages --recipient example-app/pm                   # agent's mailbox
+multigent inbox messages --from example-app/pm                        # filter by sender
 multigent inbox messages --all                                        # include already-read
 multigent inbox messages --archived                                   # show archived messages
 multigent inbox messages --mark-read                                  # mark all as read after listing
 
 # Reply
-multigent inbox reply <msg-id> --from cc-connect/pm --body "Acknowledged."
+multigent inbox reply <msg-id> --from example-app/pm --body "Acknowledged."
 
 # Forward a message to one or more recipients
-multigent inbox fwd <msg-id> --to cc-connect/dev-claude
-multigent inbox fwd <msg-id> --to cc-connect/pm --to human --note "FYI"
+multigent inbox fwd <msg-id> --to example-app/dev
+multigent inbox fwd <msg-id> --to example-app/pm --to human --note "FYI"
 
 # Per-message status management
 multigent inbox read    <msg-id>                    # mark single message as read
@@ -267,7 +267,7 @@ A bookmark index for documents. Files stay where they are; only metadata is trac
 ```bash
 # Add a document
 multigent docs add --path ./reports/design.md --title "System Design" \
-  --index "cc-connect/architecture" --created-by human --tag design
+  --index "example-app/architecture" --created-by human --tag design
 
 # List / search
 multigent docs list [--index prefix] [--tag tag] [--created-by human] [--json]

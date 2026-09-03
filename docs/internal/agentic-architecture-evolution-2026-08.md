@@ -85,8 +85,8 @@ Agent Worker 拥有长期身份：
 
 项目 membership 只表达它在项目中的职责：
 
-- 在 `tapnow-mcp-server` 项目里，Mason 是 MCP Server 开发者。
-- 在 `tapnow-agent-platform` 项目里，Nova 是项目管理者。
+- 在 `example-mcp-server` 项目里，Developer A 是 MCP Server 开发者。
+- 在 `example-agent-platform` 项目里，Manager Agent 是项目管理者。
 - 同一个 Agent 可以加入多个项目，但仍然是同一个长期主体。
 
 收益：

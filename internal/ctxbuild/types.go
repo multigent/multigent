@@ -21,7 +21,7 @@ type ContextLayer struct {
 	//   "agency"
 	//   "team:engineering"
 	//   "role:<team>/<role>"
-	//   "project:cc-connect"
+	//   "project:example-app"
 	Source string
 
 	// Content is the raw Markdown text of the prompt.md for this layer.

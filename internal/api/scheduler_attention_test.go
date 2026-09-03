@@ -64,51 +64,7 @@ func TestRuntimeWakeupTaskIncludesPendingAttentionSignals(t *testing.T) {
 	}
 }
 
-func TestAttentionWakeupAddsDispatcherContractFromWorkerPolicy(t *testing.T) {
-	s, workspaceID := newConnectionGrantPolicyServer(t)
-	seedTaskAttentionWorker(t, s, workspaceID, "sample", "pm", true)
-	worker, ok, err := s.controlDB.AgentWorkerByName(workspaceID, "pm")
-	if err != nil || !ok {
-		t.Fatalf("attention worker lookup ok=%v err=%v", ok, err)
-	}
-	worker.AttentionPolicyJSON = `{"dispatchOnly":true,"dispatchKinds":["pr_review"]}`
-	if err := s.controlDB.UpsertAgentWorker(worker); err != nil {
-		t.Fatalf("update worker attention policy: %v", err)
-	}
-	if err := s.controlDB.UpsertAttentionSignal(controldb.AttentionSignal{
-		ID:            "sig-dispatch-pr",
-		WorkspaceID:   workspaceID,
-		AgentWorkerID: worker.ID,
-		DedupeKey:     "test:dispatch-pr",
-		SourceKind:    "im_message",
-		SourceID:      "msg-dispatch-pr",
-		Reason:        "im_direct_message",
-		Summary:       "Please review https://github.com/example/project/pull/42",
-		Status:        "pending",
-		CreatedAt:     time.Now().UTC().Format(time.RFC3339),
-	}); err != nil {
-		t.Fatalf("upsert dispatch signal: %v", err)
-	}
-	task, _, err := s.nextRuntimeWakeupTask(workspaceID, "sample", "pm", &entity.HeartbeatConfig{})
-	if err != nil {
-		t.Fatalf("next wakeup task: %v", err)
-	}
-	if task == nil || !strings.Contains(task.Prompt, "Active Operating Contract") {
-		t.Fatalf("expected dispatcher contract in wakeup prompt: %+v", task)
-	}
-	for _, required := range []string{
-		"not a reviewer",
-		"create or continue the configured PR Review workflow",
-		"Do not perform the review yourself",
-		"do not bypass the workflow",
-	} {
-		if !strings.Contains(task.Prompt, required) {
-			t.Fatalf("dispatcher contract missing %q:\n%s", required, task.Prompt)
-		}
-	}
-}
-
-func TestAttentionWakeupDoesNotAddDispatcherContractByDefault(t *testing.T) {
+func TestAttentionWakeupDoesNotInjectDomainSpecificContract(t *testing.T) {
 	s, workspaceID := newConnectionGrantPolicyServer(t)
 	seedTaskAttentionWorker(t, s, workspaceID, "sample", "pm", true)
 	if err := s.controlDB.UpsertAttentionSignal(controldb.AttentionSignal{
@@ -132,8 +88,10 @@ func TestAttentionWakeupDoesNotAddDispatcherContractByDefault(t *testing.T) {
 	if task == nil {
 		t.Fatal("expected wakeup task")
 	}
-	if strings.Contains(task.Prompt, "Active Operating Contract") {
-		t.Fatalf("default worker should not receive dispatcher contract:\n%s", task.Prompt)
+	for _, forbidden := range []string{"Active Operating Contract", "PR Review workflow", "not a reviewer"} {
+		if strings.Contains(task.Prompt, forbidden) {
+			t.Fatalf("attention wakeup should not inject domain contract %q:\n%s", forbidden, task.Prompt)
+		}
 	}
 }
 
@@ -198,7 +156,7 @@ func TestAttentionWakeupTaskCanFocusTriggeredSignal(t *testing.T) {
 		SourceID:      "om_new",
 		Reason:        "im_mention",
 		Priority:      "high",
-		Summary:       "Joey asked a direct question in the group",
+		Summary:       "user-b asked a direct question in the group",
 		Status:        "pending",
 		CreatedAt:     now,
 	}); err != nil {
@@ -213,7 +171,7 @@ func TestAttentionWakeupTaskCanFocusTriggeredSignal(t *testing.T) {
 		SourceID:      "om_new_2",
 		Reason:        "im_mention",
 		Priority:      "high",
-		Summary:       "Glenn asked a second question in the group",
+		Summary:       "owner-a asked a second question in the group",
 		Status:        "pending",
 		CreatedAt:     now,
 	}); err != nil {
@@ -245,10 +203,10 @@ func TestAttentionWakeupTaskCanFocusTriggeredSignal(t *testing.T) {
 	if len(ids) != 2 || ids[0] != "sig-new-im" || ids[1] != "sig-new-im-2" {
 		t.Fatalf("unexpected focused ids with open im aggregation: %+v", ids)
 	}
-	if !strings.Contains(task.Prompt, "sig-new-im") || !strings.Contains(task.Prompt, "Joey asked") {
+	if !strings.Contains(task.Prompt, "sig-new-im") || !strings.Contains(task.Prompt, "user-b asked") {
 		t.Fatalf("focused prompt missing new signal:\n%s", task.Prompt)
 	}
-	if !strings.Contains(task.Prompt, "sig-new-im-2") || !strings.Contains(task.Prompt, "Glenn asked") {
+	if !strings.Contains(task.Prompt, "sig-new-im-2") || !strings.Contains(task.Prompt, "owner-a asked") {
 		t.Fatalf("focused prompt missing second open im signal:\n%s", task.Prompt)
 	}
 	if strings.Contains(task.Prompt, "sig-old-task") || strings.Contains(task.Prompt, "Old task signal") {

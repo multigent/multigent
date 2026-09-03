@@ -70,13 +70,13 @@ func TestBuildForAgentIncludesAgentWorkerMembershipContext(t *testing.T) {
 	}
 	workspaceID := workspaces[0].ID
 	if err := db.UpsertAgentWorker(controldb.AgentWorker{
-		ID:          "aw-nova",
+		ID:          "aw-manager-agent",
 		WorkspaceID: workspaceID,
-		Name:        "nova",
-		DisplayName: "Nova",
+		Name:        "manager-agent",
+		DisplayName: "manager-agent",
 		Description: "Cross-project PM agent",
 		ProfilePrompt: strings.Join([]string{
-			"Glenn is my final escalation owner.",
+			"owner-a is my final escalation owner.",
 			"Treat workflows as milestones that may span multiple wakeups.",
 		}, "\n"),
 		Model:      "codex",
@@ -90,9 +90,9 @@ func TestBuildForAgentIncludesAgentWorkerMembershipContext(t *testing.T) {
 			WorkspaceID:      workspaceID,
 			ProjectID:        "sample",
 			MemberType:       "agent_worker",
-			MemberID:         "aw-nova",
+			MemberID:         "aw-manager-agent",
 			Role:             "project-manager",
-			Title:            "Nova",
+			Title:            "manager-agent",
 			Prompt:           "You own sample delivery coordination.",
 			PermissionsJSON:  `["task.read","workflow.write"]`,
 			AutoPickTasks:    true,
@@ -103,9 +103,9 @@ func TestBuildForAgentIncludesAgentWorkerMembershipContext(t *testing.T) {
 			WorkspaceID:      workspaceID,
 			ProjectID:        "other",
 			MemberType:       "agent_worker",
-			MemberID:         "aw-nova",
+			MemberID:         "aw-manager-agent",
 			Role:             "reviewer",
-			Title:            "Nova",
+			Title:            "manager-agent",
 			AutoPickTasks:    false,
 			AttentionEnabled: true,
 		},
@@ -116,11 +116,11 @@ func TestBuildForAgentIncludesAgentWorkerMembershipContext(t *testing.T) {
 	}
 	imported, err := contextpack.NewStore(tmp).ImportManual(contextpack.ImportManualInput{
 		Title:       "Imported project handoff",
-		Content:     "Critical handoff notes for Nova.",
+		Content:     "Critical handoff notes for manager-agent.",
 		SourceName:  "handoff.md",
 		Project:     "sample",
 		BindScope:   contextpack.ScopeAgent,
-		BindScopeID: "sample/Nova",
+		BindScopeID: "sample/manager-agent",
 		Required:    true,
 	})
 	if err != nil {
@@ -130,16 +130,16 @@ func TestBuildForAgentIncludesAgentWorkerMembershipContext(t *testing.T) {
 		t.Fatalf("expected binding")
 	}
 
-	mc, err := NewBuilder(st).BuildForAgent("sample", "Nova", "", "")
+	mc, err := NewBuilder(st).BuildForAgent("sample", "manager-agent", "", "")
 	if err != nil {
 		t.Fatalf("build: %v", err)
 	}
 	text := strings.Join(layerContents(mc.Layers), "\n")
 	for _, want := range []string{
 		"## Agent Worker Identity",
-		"Worker ID: aw-nova",
+		"Worker ID: aw-manager-agent",
 		"## Agent Long-term Prompt",
-		"Glenn is my final escalation owner.",
+		"owner-a is my final escalation owner.",
 		"Treat workflows as milestones that may span multiple wakeups.",
 		"Project: sample",
 		"Membership ID: pm-sample",
@@ -149,7 +149,7 @@ func TestBuildForAgentIncludesAgentWorkerMembershipContext(t *testing.T) {
 		"# Linked Reference Material",
 		"Imported project handoff",
 		"Context ID: `",
-		"Scope: `agent:sample/Nova`",
+		"Scope: `agent:sample/manager-agent`",
 	} {
 		if !strings.Contains(text, want) {
 			t.Fatalf("context missing %q:\n%s", want, text)

@@ -220,7 +220,7 @@ func TestImportLargeLocalAgentSessionAsManagedFile(t *testing.T) {
 		CreatedBy:     "admin",
 		Project:       "demo",
 		BindScope:     ScopeAgent,
-		BindScopeID:   "demo/Mason",
+		BindScopeID:   "demo/developer-a",
 		Required:      true,
 		Metadata:      map[string]string{"cli": "codex"},
 	})

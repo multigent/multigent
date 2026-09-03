@@ -652,23 +652,23 @@ func TestChannelEventBindingRecordsUnknownIdentityOnMatchedChannel(t *testing.T)
 
 func TestAcceptIMMessageAutoBindsIdentityByEmail(t *testing.T) {
 	s, workspaceID := newConnectionGrantPolicyServer(t)
-	if err := s.users.CreateUser("glenn", "pass123", RoleMember, "Glenn", "glenn@example.com", "", "", ""); err != nil {
-		t.Fatalf("create glenn: %v", err)
+	if err := s.users.CreateUser("owner-a", "pass123", RoleMember, "owner-a", "owner-a@example.com", "", "", ""); err != nil {
+		t.Fatalf("create owner-a: %v", err)
 	}
-	if err := s.controlDB.UpsertWorkspaceMember(workspaceID, "glenn", WorkspaceRoleAdmin); err != nil {
+	if err := s.controlDB.UpsertWorkspaceMember(workspaceID, "owner-a", WorkspaceRoleAdmin); err != nil {
 		t.Fatalf("workspace member: %v", err)
 	}
 	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		switch r.URL.Path {
 		case "/open-apis/auth/v3/tenant_access_token/internal":
 			_ = json.NewEncoder(w).Encode(map[string]any{"code": 0, "tenant_access_token": "tenant-token"})
-		case "/open-apis/contact/v3/users/ou_glenn":
+		case "/open-apis/contact/v3/users/ou_owner-a":
 			_ = json.NewEncoder(w).Encode(map[string]any{
 				"code": 0,
 				"data": map[string]any{"user": map[string]any{
-					"open_id": "ou_glenn",
-					"name":    "Glenn",
-					"email":   "glenn@example.com",
+					"open_id": "ou_owner-a",
+					"name":    "owner-a",
+					"email":   "owner-a@example.com",
 				}},
 			})
 		case "/open-apis/im/v1/messages/om_auto/reactions":
@@ -722,7 +722,7 @@ func TestAcceptIMMessageAutoBindsIdentityByEmail(t *testing.T) {
 		MessageID:    "om_auto",
 		ChatID:       "oc_p2p",
 		ChatType:     "p2p",
-		SenderOpenID: "ou_glenn",
+		SenderOpenID: "ou_owner-a",
 		Text:         "hello",
 	}, "")
 	if err != nil {
@@ -734,12 +734,12 @@ func TestAcceptIMMessageAutoBindsIdentityByEmail(t *testing.T) {
 	identities, err := s.controlDB.ListUserChannelIdentities(controldb.UserChannelIdentityFilter{
 		WorkspaceID:      workspaceID,
 		ChannelBindingID: "chan-feishu-auto",
-		ExternalUserID:   "ou_glenn",
+		ExternalUserID:   "ou_owner-a",
 	})
 	if err != nil {
 		t.Fatalf("list identities: %v", err)
 	}
-	if len(identities) != 1 || identities[0].UserID != "glenn" || identities[0].CreatedBy != "auto" {
+	if len(identities) != 1 || identities[0].UserID != "owner-a" || identities[0].CreatedBy != "auto" {
 		t.Fatalf("unexpected identities: %#v", identities)
 	}
 }
@@ -821,10 +821,10 @@ func TestAcceptIMMessageAcknowledgesBeforeRuntimeReadiness(t *testing.T) {
 
 func TestAcceptIMMessageAutoBindsIdentityByWorkspaceConnectionUnionID(t *testing.T) {
 	s, workspaceID := newConnectionGrantPolicyServer(t)
-	if err := s.users.CreateUser("joey", "pass123", RoleMember, "Joey", "joey@example.com", "", "", ""); err != nil {
-		t.Fatalf("create joey: %v", err)
+	if err := s.users.CreateUser("user-b", "pass123", RoleMember, "user-b", "user-b@example.com", "", "", ""); err != nil {
+		t.Fatalf("create user-b: %v", err)
 	}
-	if err := s.controlDB.UpsertWorkspaceMember(workspaceID, "joey", WorkspaceRoleAdmin); err != nil {
+	if err := s.controlDB.UpsertWorkspaceMember(workspaceID, "user-b", WorkspaceRoleAdmin); err != nil {
 		t.Fatalf("workspace member: %v", err)
 	}
 	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
@@ -837,7 +837,7 @@ func TestAcceptIMMessageAutoBindsIdentityByWorkspaceConnectionUnionID(t *testing
 				token = "tenant-workspace"
 			}
 			_ = json.NewEncoder(w).Encode(map[string]any{"code": 0, "tenant_access_token": token})
-		case "/open-apis/contact/v3/users/ou_joey":
+		case "/open-apis/contact/v3/users/ou_user-b":
 			if r.URL.Query().Get("user_id_type") != "open_id" {
 				t.Fatalf("expected open_id lookup, got %s", r.URL.RawQuery)
 			}
@@ -847,12 +847,12 @@ func TestAcceptIMMessageAutoBindsIdentityByWorkspaceConnectionUnionID(t *testing
 			_ = json.NewEncoder(w).Encode(map[string]any{
 				"code": 0,
 				"data": map[string]any{"user": map[string]any{
-					"open_id":  "ou_joey",
-					"union_id": "on_joey",
-					"name":     "Joey without email",
+					"open_id":  "ou_user-b",
+					"union_id": "on_user-b",
+					"name":     "user-b without email",
 				}},
 			})
-		case "/open-apis/contact/v3/users/on_joey":
+		case "/open-apis/contact/v3/users/on_user-b":
 			if r.URL.Query().Get("user_id_type") != "union_id" {
 				t.Fatalf("expected union_id lookup, got %s", r.URL.RawQuery)
 			}
@@ -862,10 +862,10 @@ func TestAcceptIMMessageAutoBindsIdentityByWorkspaceConnectionUnionID(t *testing
 			_ = json.NewEncoder(w).Encode(map[string]any{
 				"code": 0,
 				"data": map[string]any{"user": map[string]any{
-					"open_id":  "ou_workspace_joey",
-					"union_id": "on_joey",
-					"name":     "Joey",
-					"email":    "joey@example.com",
+					"open_id":  "ou_workspace_user-b",
+					"union_id": "on_user-b",
+					"name":     "user-b",
+					"email":    "user-b@example.com",
 				}},
 			})
 		case "/open-apis/im/v1/messages/om_auto_union/reactions":
@@ -940,7 +940,7 @@ func TestAcceptIMMessageAutoBindsIdentityByWorkspaceConnectionUnionID(t *testing
 		MessageID:    "om_auto_union",
 		ChatID:       "oc_p2p",
 		ChatType:     "p2p",
-		SenderOpenID: "ou_joey",
+		SenderOpenID: "ou_user-b",
 		Text:         "hello",
 	}, "")
 	if err != nil {
@@ -952,12 +952,12 @@ func TestAcceptIMMessageAutoBindsIdentityByWorkspaceConnectionUnionID(t *testing
 	identities, err := s.controlDB.ListUserChannelIdentities(controldb.UserChannelIdentityFilter{
 		WorkspaceID:      workspaceID,
 		ChannelBindingID: "chan-feishu-auto-union",
-		ExternalUserID:   "ou_joey",
+		ExternalUserID:   "ou_user-b",
 	})
 	if err != nil {
 		t.Fatalf("list identities: %v", err)
 	}
-	if len(identities) != 1 || identities[0].UserID != "joey" || identities[0].CreatedBy != "auto" || !strings.Contains(identities[0].MetadataJSON, "workspace_connection_union_id") {
+	if len(identities) != 1 || identities[0].UserID != "user-b" || identities[0].CreatedBy != "auto" || !strings.Contains(identities[0].MetadataJSON, "workspace_connection_union_id") {
 		t.Fatalf("unexpected identities: %#v", identities)
 	}
 }
@@ -1957,13 +1957,15 @@ func TestAPIInteractionLeaseAllowsDifferentConversationSources(t *testing.T) {
 func TestFormatIMAgentPromptRequiresHumanFacingReply(t *testing.T) {
 	prompt := formatIMAgentPromptWithSender("lark", controldb.AgentChannelBinding{
 		ProjectID: "customer-agent-platform",
-		AgentID:   "nova",
-	}, controldb.ExternalIdentity{UserID: "admin"}, "Glenn Chen (admin) <glenn@example.com>", imbridge.IncomingMessage{ChatID: "oc_one"}, "帮我看一下当前任务")
+		AgentID:   "manager-agent",
+	}, controldb.ExternalIdentity{UserID: "admin"}, "owner-a (admin) <owner-a@example.com>", imbridge.IncomingMessage{ChatID: "oc_one"}, "帮我看一下当前任务")
 	for _, want := range []string{
 		"Always finish with a concise, human-facing final reply",
 		"Reply in the same language as the user's message",
-		"customer-agent-platform/nova",
-		"Glenn Chen (admin) <glenn@example.com>",
+		"use `mga notify send --to source --message-format markdown",
+		"`--to user:<id>` and `--to chat:<id>` intentionally create a new message",
+		"customer-agent-platform/manager-agent",
+		"owner-a (admin) <owner-a@example.com>",
 		"帮我看一下当前任务",
 	} {
 		if !strings.Contains(prompt, want) {

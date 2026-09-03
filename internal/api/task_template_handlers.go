@@ -34,6 +34,7 @@ type taskTemplateCreateBody struct {
 
 type taskFromTemplateBody struct {
 	TemplateID            string                                 `json:"templateId"`
+	Project               string                                 `json:"project"`
 	Inputs                map[string]string                      `json:"inputs"`
 	Agent                 string                                 `json:"agent"`
 	Assignee              string                                 `json:"assignee"`

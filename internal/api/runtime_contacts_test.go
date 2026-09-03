@@ -17,7 +17,7 @@ import (
 func TestRuntimeContactsListUsersAndCurrentProjectAgents(t *testing.T) {
 	s, workspaceID := newConnectionGrantPolicyServer(t)
 	seedSampleAgentsForTest(t, s, workspaceID)
-	if err := s.users.CreateUser("cg33", "pass123", RoleMember, "Glenn Chen", "glenn@example.com", "", "", ""); err != nil {
+	if err := s.users.CreateUser("cg33", "pass123", RoleMember, "owner-a", "owner-a@example.com", "", "", ""); err != nil {
 		t.Fatalf("create user: %v", err)
 	}
 	if err := s.controlDB.UpsertWorkspaceMember(workspaceID, "cg33", WorkspaceRoleMember); err != nil {
@@ -43,7 +43,7 @@ func TestRuntimeContactsListUsersAndCurrentProjectAgents(t *testing.T) {
 	seenUser := false
 	seenAgent := false
 	for _, contact := range contacts {
-		if contact.Type == "user" && contact.Identity == "cg33" && contact.DisplayName == "Glenn Chen" && contact.Email == "glenn@example.com" {
+		if contact.Type == "user" && contact.Identity == "cg33" && contact.DisplayName == "owner-a" && contact.Email == "owner-a@example.com" {
 			seenUser = true
 		}
 		if contact.Type == "agent" && contact.Identity == "sample/backend" {
@@ -91,7 +91,7 @@ func TestRuntimeContactsListProjectMembershipAgents(t *testing.T) {
 func TestRuntimePostMessageResolvesDisplayNameUsernameForm(t *testing.T) {
 	s, workspaceID := newConnectionGrantPolicyServer(t)
 	seedSampleAgentsForTest(t, s, workspaceID)
-	if err := s.users.CreateUser("cg33", "pass123", RoleMember, "Glenn Chen", "glenn@example.com", "", "", ""); err != nil {
+	if err := s.users.CreateUser("cg33", "pass123", RoleMember, "owner-a", "owner-a@example.com", "", "", ""); err != nil {
 		t.Fatalf("create user: %v", err)
 	}
 	if err := s.controlDB.UpsertWorkspaceMember(workspaceID, "cg33", WorkspaceRoleMember); err != nil {
@@ -99,7 +99,7 @@ func TestRuntimePostMessageResolvesDisplayNameUsernameForm(t *testing.T) {
 	}
 
 	raw, _ := json.Marshal(runtimeMessageBody{
-		To:      "Glenn Chen (cg33)",
+		To:      "owner-a (cg33)",
 		Subject: "hello",
 		Body:    "test message",
 	})
@@ -130,7 +130,7 @@ func TestRuntimePostMessageResolvesDisplayNameUsernameForm(t *testing.T) {
 func TestRuntimePostMessageResolvesEmailRecipient(t *testing.T) {
 	s, workspaceID := newConnectionGrantPolicyServer(t)
 	seedSampleAgentsForTest(t, s, workspaceID)
-	if err := s.users.CreateUser("cg33", "pass123", RoleMember, "Glenn Chen", "glenn@example.com", "", "", ""); err != nil {
+	if err := s.users.CreateUser("cg33", "pass123", RoleMember, "owner-a", "owner-a@example.com", "", "", ""); err != nil {
 		t.Fatalf("create user: %v", err)
 	}
 	if err := s.controlDB.UpsertWorkspaceMember(workspaceID, "cg33", WorkspaceRoleMember); err != nil {
@@ -138,7 +138,7 @@ func TestRuntimePostMessageResolvesEmailRecipient(t *testing.T) {
 	}
 
 	raw, _ := json.Marshal(runtimeMessageBody{
-		To:      "glenn@example.com",
+		To:      "owner-a@example.com",
 		Subject: "email recipient",
 		Body:    "test message",
 	})
@@ -166,7 +166,7 @@ func TestRuntimePostMessageResolvesEmailRecipient(t *testing.T) {
 func TestRuntimePostMessageSuggestsFuzzyContacts(t *testing.T) {
 	s, workspaceID := newConnectionGrantPolicyServer(t)
 	seedSampleAgentsForTest(t, s, workspaceID)
-	if err := s.users.CreateUser("cg33", "pass123", RoleMember, "Glenn Chen", "glenn@example.com", "", "", ""); err != nil {
+	if err := s.users.CreateUser("cg33", "pass123", RoleMember, "owner-a", "owner-a@example.com", "", "", ""); err != nil {
 		t.Fatalf("create user: %v", err)
 	}
 	if err := s.controlDB.UpsertWorkspaceMember(workspaceID, "cg33", WorkspaceRoleMember); err != nil {
@@ -174,7 +174,7 @@ func TestRuntimePostMessageSuggestsFuzzyContacts(t *testing.T) {
 	}
 
 	raw, _ := json.Marshal(runtimeMessageBody{
-		To:   "glenn",
+		To:   "owner-a@example",
 		Body: "test message",
 	})
 	req := httptest.NewRequest(http.MethodPost, "/api/v1/runtime/messages", bytes.NewReader(raw))
@@ -190,7 +190,7 @@ func TestRuntimePostMessageSuggestsFuzzyContacts(t *testing.T) {
 		t.Fatalf("status=%d body=%s", rec.Code, rec.Body.String())
 	}
 	body := rec.Body.String()
-	for _, want := range []string{"did you mean", "cg33", "Glenn Chen", "glenn@example.com"} {
+	for _, want := range []string{"did you mean", "cg33", "owner-a", "owner-a@example.com"} {
 		if !strings.Contains(body, want) {
 			t.Fatalf("expected %q in body=%s", want, body)
 		}
@@ -277,7 +277,7 @@ func TestRuntimePostMessageCreatesAttentionForAgentRecipient(t *testing.T) {
 func TestRuntimePostMessageDoesNotCreateAttentionForUserRecipient(t *testing.T) {
 	s, workspaceID := newConnectionGrantPolicyServer(t)
 	seedSampleAgentsForTest(t, s, workspaceID)
-	if err := s.users.CreateUser("cg33", "pass123", RoleMember, "Glenn Chen", "glenn@example.com", "", "", ""); err != nil {
+	if err := s.users.CreateUser("cg33", "pass123", RoleMember, "owner-a", "owner-a@example.com", "", "", ""); err != nil {
 		t.Fatalf("create user: %v", err)
 	}
 	if err := s.controlDB.UpsertWorkspaceMember(workspaceID, "cg33", WorkspaceRoleMember); err != nil {

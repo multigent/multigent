@@ -141,23 +141,28 @@ func httpExec(
 	defer resp.Body.Close()
 
 	if resp.StatusCode >= 400 {
-		raw, _ := io.ReadAll(resp.Body)
+		raw, _ := io.ReadAll(io.LimitReader(resp.Body, maxCapturedOutputBytes+1))
+		if len(raw) > maxCapturedOutputBytes {
+			raw = append(raw[:maxCapturedOutputBytes], []byte("\n[response truncated]")...)
+		}
 		return "", fmt.Errorf("http-agent: server returned HTTP %d: %s", resp.StatusCode, strings.TrimSpace(string(raw)))
 	}
 
-	var full strings.Builder
+	full := newBoundedOutput(maxCapturedOutputBytes)
 
 	if cfg.Stream {
-		full, err = readSSEStream(resp.Body, logWriter, toStdout)
+		var output string
+		output, err = readSSEStream(resp.Body, logWriter, toStdout)
 		if err != nil {
-			return full.String(), err
+			return output, err
 		}
 		if toStdout {
 			fmt.Fprintln(os.Stdout) // trailing newline after streamed output
 		}
 	} else {
 		var chatResp chatResponse
-		if err2 := json.NewDecoder(resp.Body).Decode(&chatResp); err2 != nil {
+		limitedBody := io.LimitReader(resp.Body, maxCapturedOutputBytes+1)
+		if err2 := json.NewDecoder(limitedBody).Decode(&chatResp); err2 != nil {
 			return "", fmt.Errorf("http-agent: decode response: %w", err2)
 		}
 		if chatResp.Error != nil {
@@ -165,7 +170,7 @@ func httpExec(
 		}
 		if len(chatResp.Choices) > 0 {
 			text := chatResp.Choices[0].Message.Content
-			full.WriteString(text)
+			_, _ = full.Write([]byte(text))
 			if logWriter != nil {
 				fmt.Fprint(logWriter, text)
 			}
@@ -180,8 +185,8 @@ func httpExec(
 
 // readSSEStream reads a server-sent events body and accumulates the text delta.
 // Each "data: <json>" line is decoded as a streamChunk.
-func readSSEStream(body io.Reader, logWriter io.Writer, toStdout bool) (strings.Builder, error) {
-	var full strings.Builder
+func readSSEStream(body io.Reader, logWriter io.Writer, toStdout bool) (string, error) {
+	full := newBoundedOutput(maxCapturedOutputBytes)
 	scanner := bufio.NewScanner(body)
 	// Increase buffer for very long lines (some proxies send large chunks).
 	scanner.Buffer(make([]byte, 64*1024), 1024*1024)
@@ -201,14 +206,14 @@ func readSSEStream(body io.Reader, logWriter io.Writer, toStdout bool) (strings.
 			continue
 		}
 		if chunk.Error != nil {
-			return full, fmt.Errorf("http-agent: stream error (%s): %s", chunk.Error.Type, chunk.Error.Message)
+			return full.String(), fmt.Errorf("http-agent: stream error (%s): %s", chunk.Error.Type, chunk.Error.Message)
 		}
 		for _, choice := range chunk.Choices {
 			text := choice.Delta.Content
 			if text == "" {
 				continue
 			}
-			full.WriteString(text)
+			_, _ = full.Write([]byte(text))
 			if logWriter != nil {
 				fmt.Fprint(logWriter, text)
 			}
@@ -217,5 +222,5 @@ func readSSEStream(body io.Reader, logWriter io.Writer, toStdout bool) (strings.
 			}
 		}
 	}
-	return full, scanner.Err()
+	return full.String(), scanner.Err()
 }

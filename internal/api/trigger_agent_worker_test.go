@@ -12,10 +12,10 @@ func TestTriggerManagerUsesAgentWorkerSchedule(t *testing.T) {
 	s, workspaceID := newConnectionGrantPolicyServer(t)
 	now := time.Now().UTC().Format(time.RFC3339)
 	worker := controldb.AgentWorker{
-		ID:           "aw-nova-trigger",
+		ID:           "aw-manager-agent-trigger",
 		WorkspaceID:  workspaceID,
-		Name:         "nova",
-		DisplayName:  "Nova",
+		Name:         "manager-agent",
+		DisplayName:  "manager-agent",
 		Status:       "active",
 		ScheduleJSON: `{"triggers":["task"],"triggerDebounce":"1s"}`,
 		CreatedAt:    now,
@@ -25,7 +25,7 @@ func TestTriggerManagerUsesAgentWorkerSchedule(t *testing.T) {
 		t.Fatalf("worker: %v", err)
 	}
 	if err := s.controlDB.UpsertProjectMembership(controldb.ProjectMembership{
-		ID:          "pm-nova-trigger",
+		ID:          "pm-manager-agent-trigger",
 		WorkspaceID: workspaceID,
 		ProjectID:   "sample",
 		MemberType:  "agent_worker",
@@ -62,10 +62,10 @@ func TestTriggerManagerFindsDueScheduledTaskWithoutTaskTrigger(t *testing.T) {
 	s, workspaceID := newConnectionGrantPolicyServer(t)
 	now := time.Now().UTC()
 	worker := controldb.AgentWorker{
-		ID:           "aw-nova-scheduled",
+		ID:           "aw-manager-agent-scheduled",
 		WorkspaceID:  workspaceID,
-		Name:         "nova",
-		DisplayName:  "Nova",
+		Name:         "manager-agent",
+		DisplayName:  "manager-agent",
 		Status:       "active",
 		ScheduleJSON: `{"triggers":["im_direct_message"],"triggerDebounce":"1s"}`,
 		CreatedAt:    now.Format(time.RFC3339),
@@ -75,7 +75,7 @@ func TestTriggerManagerFindsDueScheduledTaskWithoutTaskTrigger(t *testing.T) {
 		t.Fatalf("worker: %v", err)
 	}
 	if err := s.controlDB.UpsertProjectMembership(controldb.ProjectMembership{
-		ID:          "pm-nova-scheduled",
+		ID:          "pm-manager-agent-scheduled",
 		WorkspaceID: workspaceID,
 		ProjectID:   "sample",
 		MemberType:  "agent_worker",

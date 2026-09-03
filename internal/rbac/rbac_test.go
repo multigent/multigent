@@ -58,7 +58,7 @@ func TestProjectRolesInheritToTaskAndAgent(t *testing.T) {
 func TestAgentOwnerCanCoachAgentWithoutProjectManager(t *testing.T) {
 	a := NewAuthorizer()
 	p := Principal{
-		ID:         "glenn",
+		ID:         "owner-a",
 		OrgRole:    OrgRoleMember,
 		AgentRoles: map[string]Role{AgentKey("sample", "connector-dev"): AgentRoleOwner},
 	}

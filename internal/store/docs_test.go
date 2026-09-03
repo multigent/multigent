@@ -125,6 +125,37 @@ func TestQueryDocsFiltersByScopeAndDate(t *testing.T) {
 	}
 }
 
+func TestWriteContentUpdatesManagedDocument(t *testing.T) {
+	root := t.TempDir()
+	ds := NewDocsStore(root)
+	entry := &DocEntry{Title: "可编辑文章", Index: "drafts", CreatedBy: "human"}
+	if err := ds.AddManagedContent(entry, "第一版\n", "article.md"); err != nil {
+		t.Fatal(err)
+	}
+
+	if err := ds.WriteContent(entry.ID, "第二版\n\n包含更多内容"); err != nil {
+		t.Fatal(err)
+	}
+	got, err := ds.ReadContent(entry.FilePath)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if got != "第二版\n\n包含更多内容" {
+		t.Fatalf("content = %q, want updated content", got)
+	}
+
+	if err := ds.WriteContent(entry.ID, ""); err != nil {
+		t.Fatal(err)
+	}
+	got, err = ds.ReadContent(entry.FilePath)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if got != "" {
+		t.Fatalf("content = %q, want empty content", got)
+	}
+}
+
 func contains(items []string, want string) bool {
 	for _, item := range items {
 		if item == want {

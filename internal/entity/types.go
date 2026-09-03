@@ -11,7 +11,6 @@ import (
 )
 
 // AgentModel identifies which AI agent runtime an employee uses.
-// Names match the identifiers used by cc-connect for interoperability.
 type AgentModel string
 
 const (
@@ -692,7 +691,7 @@ func NewCommentID() string {
 // Recipient/sender format:
 //
 //	"human"               → the agency owner's global inbox
-//	"project/agent"       → e.g. "cc-connect/pm"
+//	"project/agent"       → e.g. "example-app/pm"
 //
 // Storage:
 //
@@ -740,7 +739,7 @@ type InboxItem struct {
 	Project string `yaml:"project"`
 	Agent   string `yaml:"agent"`
 	// To is the intended recipient of this confirmation request.
-	// "human" (default when empty) or "project/agent" (e.g. "cc-connect/pm").
+	// "human" (default when empty) or "project/agent" (e.g. "example-app/pm").
 	To          string   `yaml:"to,omitempty"`
 	Title       string   `yaml:"title"`
 	Summary     string   `yaml:"summary"`
@@ -856,14 +855,15 @@ type HeartbeatConfig struct {
 	WakeupPreset string `yaml:"wakeup_preset,omitempty"`
 
 	// MaxTasksPerCycle limits how many tasks are processed in a single wakeup
-	// cycle before the cycle ends. 0 (default) means unlimited.
+	// cycle before the cycle ends. 0 uses the runtime safety default (10).
 	// Use this to prevent a single wakeup from monopolising the agent on a large queue.
 	MaxTasksPerCycle int `yaml:"max_tasks_per_cycle,omitempty"`
 
 	// MaxCycleDuration limits how long a wakeup cycle runs before it stops.
-	// The value is a Go duration string (e.g. "15m", "1h"). 0 (default) means unlimited.
+	// The value is a Go duration string (e.g. "15m", "1h"). Empty uses the runtime safety default.
 	// The elapsed time is checked between tasks; a running task will complete even
-	// if it pushes the total over the limit.
+	// if it pushes the total over the limit. Empty uses the runtime safety default
+	// (30m).
 	MaxCycleDuration string `yaml:"max_cycle_duration,omitempty"`
 
 	// Triggers lists event types that trigger an immediate wakeup.

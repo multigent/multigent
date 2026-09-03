@@ -90,7 +90,7 @@ content planning, provide a small curated list of sources with:
 - why the source matters
 - preferred topics or tags
 - maximum acceptable frequency
-- whether it may produce signals for `content-publisher`
+- whether it may produce signals for `content-curator`
 - sensitivity and publication restrictions
 
 Credentials for private Lark, X, Reddit, or internal sources can be added later

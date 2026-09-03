@@ -110,7 +110,7 @@ Workspace admins should inspect binding status from the Users page, because this
 ```text
 Users
 Dashell   Admin    Feishu bound
-Glenn     Member   Feishu not bound
+owner-a     Member   Feishu not bound
 Nicole    Member   Lark bound
 ```
 

@@ -27,10 +27,10 @@ func TestDirectoryResolvesProjectWorkers(t *testing.T) {
 		t.Fatalf("upsert workspace: %v", err)
 	}
 	worker := controldb.AgentWorker{
-		ID:          "aw-nova",
+		ID:          "aw-manager-agent",
 		WorkspaceID: workspaceID,
-		Name:        "nova",
-		DisplayName: "Nova",
+		Name:        "manager-agent",
+		DisplayName: "manager-agent",
 		Status:      "active",
 		CreatedAt:   now,
 		UpdatedAt:   now,
@@ -39,7 +39,7 @@ func TestDirectoryResolvesProjectWorkers(t *testing.T) {
 		t.Fatalf("upsert worker: %v", err)
 	}
 	membership := controldb.ProjectMembership{
-		ID:               "pm-nova-cli",
+		ID:               "pm-manager-agent-cli",
 		WorkspaceID:      workspaceID,
 		ProjectID:        "customer-cli",
 		MemberType:       MemberTypeAgentWorker,
@@ -57,7 +57,7 @@ func TestDirectoryResolvesProjectWorkers(t *testing.T) {
 	}
 
 	dir := New(db)
-	gotWorker, ok, err := dir.Worker(workspaceID, "nova")
+	gotWorker, ok, err := dir.Worker(workspaceID, "manager-agent")
 	if err != nil {
 		t.Fatalf("resolve worker: %v", err)
 	}
@@ -65,7 +65,7 @@ func TestDirectoryResolvesProjectWorkers(t *testing.T) {
 		t.Fatalf("unexpected worker: ok=%v worker=%+v", ok, gotWorker)
 	}
 
-	projectWorker, ok, err := dir.ProjectWorker(workspaceID, "customer-cli", "aw-nova")
+	projectWorker, ok, err := dir.ProjectWorker(workspaceID, "customer-cli", "aw-manager-agent")
 	if err != nil {
 		t.Fatalf("resolve project worker: %v", err)
 	}
@@ -118,12 +118,12 @@ func TestProjectWorkerPrefersProjectMembershipTitleOverGlobalWorkerName(t *testi
 		UpdatedAt:   now,
 	}
 	projectWorker := controldb.AgentWorker{
-		ID:                   "aw-cc-connect-dev-codex",
+		ID:                   "aw-example-dev-codex",
 		WorkspaceID:          workspaceID,
-		Name:                 "cc-connect-dev-codex",
+		Name:                 "example-dev-codex",
 		DisplayName:          "dev-codex",
 		Status:               "active",
-		DefaultRuntimeNodeID: "rnode-cc-connect",
+		DefaultRuntimeNodeID: "rnode-example",
 		CreatedAt:            now,
 		UpdatedAt:            now,
 	}
@@ -134,9 +134,9 @@ func TestProjectWorkerPrefersProjectMembershipTitleOverGlobalWorkerName(t *testi
 		t.Fatalf("upsert project worker: %v", err)
 	}
 	membership := controldb.ProjectMembership{
-		ID:               "pm-cc-connect-dev-codex",
+		ID:               "pm-example-dev-codex",
 		WorkspaceID:      workspaceID,
-		ProjectID:        "cc-connect",
+		ProjectID:        "example-project",
 		MemberType:       MemberTypeAgentWorker,
 		MemberID:         projectWorker.ID,
 		Role:             "developer",
@@ -151,14 +151,14 @@ func TestProjectWorkerPrefersProjectMembershipTitleOverGlobalWorkerName(t *testi
 		t.Fatalf("upsert membership: %v", err)
 	}
 
-	resolved, ok, err := New(db).ProjectWorker(workspaceID, "cc-connect", "dev-codex")
+	resolved, ok, err := New(db).ProjectWorker(workspaceID, "example-project", "dev-codex")
 	if err != nil {
 		t.Fatalf("resolve project worker: %v", err)
 	}
 	if !ok || resolved.Worker.ID != projectWorker.ID || resolved.Membership.ID != membership.ID {
 		t.Fatalf("resolved wrong worker: ok=%v value=%+v", ok, resolved)
 	}
-	if resolved.Worker.DefaultRuntimeNodeID != "rnode-cc-connect" {
+	if resolved.Worker.DefaultRuntimeNodeID != "rnode-example" {
 		t.Fatalf("runtime node lost: %+v", resolved.Worker)
 	}
 }

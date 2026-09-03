@@ -27,7 +27,7 @@ func TestContextCenterSourceItemSubscription(t *testing.T) {
 		ID:           "ctxsrc-lark",
 		WorkspaceID:  workspaceID,
 		Type:         "lark_im",
-		Name:         "CustomerCo Lark",
+		Name:         "Example Customer Lark",
 		ConfigJSON:   `{"chat":"general"}`,
 		MetadataJSON: `{"tenant":"customer"}`,
 		CreatedBy:    "admin",
@@ -50,7 +50,7 @@ func TestContextCenterSourceItemSubscription(t *testing.T) {
 		SourceType:  "lark_im",
 		ProjectID:   "customer-mcp-server",
 		Title:       "OAuth 联调讨论",
-		Summary:     "Joey 反馈 JWKS 配置需要确认。",
+		Summary:     "user-b 反馈 JWKS 配置需要确认。",
 		ContentText: "群聊原始消息内容",
 		DedupeKey:   "lark:msg-1",
 		LabelsJSON:  `{"topic":"oauth"}`,
@@ -86,10 +86,10 @@ func TestContextCenterSourceItemSubscription(t *testing.T) {
 	}
 
 	sub := ContextSubscription{
-		ID:             "ctxsub-mason",
+		ID:             "ctxsub-developer-a",
 		WorkspaceID:    workspaceID,
 		SubscriberType: "agent_worker",
-		SubscriberID:   "aw-mason",
+		SubscriberID:   "aw-developer-a",
 		SourceIDsJSON:  `["ctxsrc-lark"]`,
 		SignalRuleJSON: `{"mention":true}`,
 	}
@@ -100,7 +100,7 @@ func TestContextCenterSourceItemSubscription(t *testing.T) {
 	if err != nil {
 		t.Fatalf("list subscriptions: %v", err)
 	}
-	if len(subs) != 1 || subs[0].SubscriberID != "aw-mason" || subs[0].DeliveryMode != "searchable" {
+	if len(subs) != 1 || subs[0].SubscriberID != "aw-developer-a" || subs[0].DeliveryMode != "searchable" {
 		t.Fatalf("unexpected subscriptions: %+v", subs)
 	}
 }

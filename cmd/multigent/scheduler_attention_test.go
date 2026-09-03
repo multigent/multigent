@@ -30,7 +30,7 @@ func TestPendingAttentionSectionAndSeenMark(t *testing.T) {
 	if err := db.UpsertWorkspace(controldb.Workspace{ID: "ws", Name: "Test", Slug: "test", Root: root, UpdatedAt: now}); err != nil {
 		t.Fatal(err)
 	}
-	if err := db.UpsertAgentWorker(controldb.AgentWorker{ID: "aw-pm", WorkspaceID: "ws", Name: "nova", DisplayName: "Nova", CreatedAt: now, UpdatedAt: now}); err != nil {
+	if err := db.UpsertAgentWorker(controldb.AgentWorker{ID: "aw-pm", WorkspaceID: "ws", Name: "manager-agent", DisplayName: "manager-agent", CreatedAt: now, UpdatedAt: now}); err != nil {
 		t.Fatal(err)
 	}
 	if err := db.UpsertProjectMembership(controldb.ProjectMembership{
@@ -53,11 +53,11 @@ func TestPendingAttentionSectionAndSeenMark(t *testing.T) {
 		DedupeKey:     "im:lark:om_one",
 		SourceKind:    "im_message",
 		SourceID:      "om_one",
-		SourceChannel: "im:lark:p2p:oc_one:user:glenn",
+		SourceChannel: "im:lark:p2p:oc_one:user:owner-a",
 		Reason:        "im_direct_message",
 		Priority:      "normal",
 		ActorType:     "user",
-		ActorID:       "glenn",
+		ActorID:       "owner-a",
 		Summary:       "请看一下当前流程",
 		Status:        "pending",
 		CreatedAt:     now,
@@ -71,11 +71,11 @@ func TestPendingAttentionSectionAndSeenMark(t *testing.T) {
 		DedupeKey:     "im:lark:om_two",
 		SourceKind:    "im_message",
 		SourceID:      "om_two",
-		SourceChannel: "im:lark:p2p:oc_two:user:glenn",
+		SourceChannel: "im:lark:p2p:oc_two:user:owner-a",
 		Reason:        "im_direct_message",
 		Priority:      "normal",
 		ActorType:     "user",
-		ActorID:       "glenn",
+		ActorID:       "owner-a",
 		Summary:       "这条已经 seen 但还没处理",
 		Status:        "seen",
 		CreatedAt:     now,

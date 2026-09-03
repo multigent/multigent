@@ -9,6 +9,17 @@ import (
 	"github.com/multigent/multigent/internal/taskstore"
 )
 
+func TestSchedulerRecheckDelayAlwaysYields(t *testing.T) {
+	for _, input := range []time.Duration{0, -time.Second, 100 * time.Millisecond, 999 * time.Millisecond} {
+		if got := schedulerRecheckDelay(input); got < time.Second {
+			t.Fatalf("schedulerRecheckDelay(%s) = %s, want at least 1s", input, got)
+		}
+	}
+	if got := schedulerRecheckDelay(3 * time.Second); got != 3*time.Second {
+		t.Fatalf("schedulerRecheckDelay(3s) = %s, want 3s", got)
+	}
+}
+
 func TestValidateWakeupCondition(t *testing.T) {
 	tests := []struct {
 		name        string

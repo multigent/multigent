@@ -23,10 +23,10 @@ func TestAgentWorkerMembershipAndAttentionSignal(t *testing.T) {
 	}
 
 	worker := AgentWorker{
-		ID:                    "aw-nova",
+		ID:                    "aw-manager-agent",
 		WorkspaceID:           workspaceID,
-		Name:                  "nova",
-		DisplayName:           "Nova",
+		Name:                  "manager-agent",
+		DisplayName:           "manager-agent",
 		ProfilePrompt:         `line one\nline two`,
 		DefaultModelAccountID: "codex-official",
 		ScheduleJSON:          `{"interval":"2h"}`,
@@ -36,7 +36,7 @@ func TestAgentWorkerMembershipAndAttentionSignal(t *testing.T) {
 	if err := db.UpsertAgentWorker(worker); err != nil {
 		t.Fatalf("upsert worker: %v", err)
 	}
-	got, ok, err := db.AgentWorkerByName(workspaceID, "nova")
+	got, ok, err := db.AgentWorkerByName(workspaceID, "manager-agent")
 	if err != nil {
 		t.Fatalf("get worker by name: %v", err)
 	}
@@ -48,7 +48,7 @@ func TestAgentWorkerMembershipAndAttentionSignal(t *testing.T) {
 	}
 
 	membership := ProjectMembership{
-		ID:               "pm-nova-mcp",
+		ID:               "pm-manager-agent-mcp",
 		WorkspaceID:      workspaceID,
 		ProjectID:        "customer-mcp-server",
 		MemberType:       "agent_worker",
@@ -83,7 +83,7 @@ func TestAgentWorkerMembershipAndAttentionSignal(t *testing.T) {
 		SourceKind:    "lark_message",
 		SourceID:      "msg-1",
 		Reason:        "mention",
-		Summary:       "Glenn 在群里 @Nova。",
+		Summary:       "owner-a 在群里 @manager-agent。",
 	}
 	if err := db.UpsertAttentionSignal(signal); err != nil {
 		t.Fatalf("upsert signal: %v", err)

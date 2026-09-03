@@ -96,7 +96,7 @@ Task / Workflow = 这个 agent 在该项目里推进哪件具体工作
 每次实际运行都应绑定一个项目上下文：
 
 ```text
-run agent_worker=nova
+run agent_worker=manager-agent
 project=customer-mcp-server
 membership=project-manager
 task=t-xxx
@@ -268,9 +268,9 @@ Project Membership 不是运行时临时拼出来的一段说明，而应该在 
 
 ```yaml
 id: agent_worker_id
-name: Nova
+name: manager-agent
 profile:
-  title: CustomerCo Agent 项目管理者
+  title: Example Customer Agent 项目管理者
   description: 负责理解 customer-agent 相关项目进展、分配任务、跟进风险。
 default_model:
   provider: codex
@@ -297,16 +297,16 @@ attention_policy:
 Agent Worker 可以同时加入多个项目：
 
 ```text
-Agent Worker: Nova
+Agent Worker: manager-agent
 Project memberships:
 - customer-cli / 项目管理者
 - customer-mcp-server / 项目管理者
 - customer-connectors / 项目管理者
 ```
 
-这样 Nova 不是三个项目里复制出来的三个 agent，而是一个跨项目工作的 agent。
+这样 manager-agent 不是三个项目里复制出来的三个 agent，而是一个跨项目工作的 agent。
 
-但 Nova 每次处理具体任务时，仍然在某一个项目上下文里运行。例如处理 `customer-mcp-server` 的任务时，它默认读取的是该项目的 prompt、知识库、任务、流程、成员和授权，而不是把所有项目上下文混在一起。
+但 manager-agent 每次处理具体任务时，仍然在某一个项目上下文里运行。例如处理 `customer-mcp-server` 的任务时，它默认读取的是该项目的 prompt、知识库、任务、流程、成员和授权，而不是把所有项目上下文混在一起。
 
 Agent Worker 也应该拥有自己的工作节奏，而不是每个项目复制一套心跳：
 
@@ -320,7 +320,7 @@ schedule:
   max_concurrent_runs: 1
 ```
 
-这表示“Nova 这个同事什么时候醒来工作”，不表示“Nova 固定只处理某一个项目”。
+这表示“manager-agent 这个同事什么时候醒来工作”，不表示“manager-agent 固定只处理某一个项目”。
 
 ### Project Membership
 
@@ -335,7 +335,7 @@ Project Membership 是执行时的关键边界。一个 agent worker 可以长�
 ```yaml
 project_id: customer-mcp-server
 member_type: agent_worker
-worker_id: nova
+worker_id: manager-agent
 role: project-manager
 permissions:
   - task.read
@@ -401,7 +401,7 @@ Project Membership 可以控制该 agent 在项目里的自动化程度：
 ```yaml
 id: sig_xxx
 workspace_id: ws_xxx
-agent_worker_id: nova
+agent_worker_id: manager-agent
 source:
   kind: lark_message
   channel_binding_id: lark-main
@@ -410,10 +410,10 @@ source:
   message_id: om_xxx
 actor:
   type: user
-  user_id: glenn
+  user_id: owner-a
 reason: mention
 priority: normal
-summary: Glenn 在 CustomerCo 项目群里 @Nova，询问 MCP Server 联调状态。
+summary: owner-a 在 Example Customer 项目群里 @manager-agent，询问 MCP Server 联调状态。
 refs:
   project_id: customer-mcp-server
   task_id: t_xxx
@@ -461,24 +461,24 @@ project_id + agent_id + channel_binding
 
 #### 用户私聊 agent
 
-用户私聊 Nova：
+用户私聊 manager-agent：
 
 1. IM connector 收到消息。
-2. 解析到 channel 绑定的是 `agent_worker_id=nova`。
+2. 解析到 channel 绑定的是 `agent_worker_id=manager-agent`。
 3. 创建 `AttentionSignal(reason=direct_message)`。
-4. 如果策略允许即时响应，可以唤醒 Nova；否则等待下一次 wakeup。
-5. 消息进入 Nova 的 primary work session，来源和回复目标作为 interaction metadata 保存。
+4. 如果策略允许即时响应，可以唤醒 manager-agent；否则等待下一次 wakeup。
+5. 消息进入 manager-agent 的 primary work session，来源和回复目标作为 interaction metadata 保存。
 
 #### 群聊 @agent
 
-群里 @Nova：
+群里 @manager-agent：
 
 1. IM connector 收到群消息。
-2. 判断消息显式 mention 了 Nova。
+2. 判断消息显式 mention 了 manager-agent。
 3. 创建 `AttentionSignal(reason=mention, source.chat_id=...)`。
-4. Nova 可以选择回复群，也可以私聊某个人，也可以创建 task。
+4. manager-agent 可以选择回复群，也可以私聊某个人，也可以创建 task。
 
-未 @Nova 的普通群消息：
+未 @manager-agent 的普通群消息：
 
 - 默认只作为 channel history，可被查询。
 - 不创建强 attention。
@@ -723,7 +723,7 @@ Agent Worker 的 schedule 是全局工作节奏，但项目 membership 决定这
 示例：
 
 ```yaml
-worker: nova
+worker: manager-agent
 schedule:
   interval: 2h
 scope:
@@ -742,7 +742,7 @@ scope:
       priority_weight: 0.8
 ```
 
-这里 Nova 会定时醒来查看三个项目，但只会自动接 `customer-cli` 和 `customer-mcp-server` 的任务；`customer-connectors` 的信息可以提醒它，但不会自动接活。
+这里 manager-agent 会定时醒来查看三个项目，但只会自动接 `customer-cli` 和 `customer-mcp-server` 的任务；`customer-connectors` 的信息可以提醒它，但不会自动接活。
 
 ### 并发用 Child Session 隔离
 
@@ -760,7 +760,7 @@ scope:
 示例：
 
 ```text
-worker=nova
+worker=manager-agent
 primary-session=s-main
 child-run-1: project=customer-mcp-server task=t-001 purpose=开发联调
 child-run-2: project=customer-connectors task=t-002 purpose=插件调研
@@ -774,14 +774,14 @@ child-run-2: project=customer-connectors task=t-002 purpose=插件调研
 
 ```text
 project=customer-cli
-agent=nova
+agent=manager-agent
 heartbeat=2h
 ```
 
 迁移后：
 
 ```text
-worker=nova
+worker=manager-agent
 schedule.interval=2h
 membership[customer-cli].auto_pick_tasks=true
 membership[customer-cli].attention_enabled=true
@@ -809,12 +809,12 @@ agent wakeup 时，不应该把所有外部事件塞进 prompt。
 
 ```text
 你有 3 个强 attention:
-1. Glenn 在 CustomerCo 项目群 @你询问 MCP Server 状态。
+1. owner-a 在 Example Customer 项目群 @你询问 MCP Server 状态。
 2. task t-123 当前分配给你，处于开发联调阶段。
 3. workflow t-456 到达你负责的技术方案节点。
 
 你也可以按需查询:
-- 最近 24h CustomerCo 项目群消息
+- 最近 24h Example Customer 项目群消息
 - GitHub PR/Issue 更新
 - Linear/Sentry 状态
 ```
@@ -1024,7 +1024,7 @@ cp -a /root/code/spaceship/spaceship /root/code/spaceship/spaceship-agent-worker
 - 原 Spaceship workspace 不受影响。
 - 迁移副本能启动 Web。
 - 迁移后原有项目、任务、流程、成员、模型账号、外部工具连接仍然可见。
-- 至少选择 `cc-connect`、`multigent`、`customer` 这类真实项目跑 smoke test。
+- 至少选择 `example-connect`、`multigent`、`customer` 这类真实项目跑 smoke test。
 
 迁移脚本必须支持：
 
@@ -1072,8 +1072,8 @@ CREATE TABLE agent_workers (
 
 说明：
 
-- `name` 是稳定机器名，例如 `nova`。
-- `display_name` 是用户看到的名字，例如 `Nova`。
+- `name` 是稳定机器名，例如 `manager-agent`。
+- `display_name` 是用户看到的名字，例如 `manager-agent`。
 - schedule 先放 JSON，避免第一版表结构过细。
 
 #### project_memberships
@@ -1322,7 +1322,7 @@ projects/<project>/members/<membership>.yaml
 4. 后续提供手动合并工具：
 
 ```bash
-multigent agent-worker merge --from customer-cli/nova --into nova
+multigent agent-worker merge --from customer-cli/manager-agent --into manager-agent
 ```
 
 这样避免一开始误合并导致上下文污染。
@@ -1620,10 +1620,10 @@ Create new agent first
 用户看到的应该始终是：
 
 ```text
-和 Nova 聊天
+和 manager-agent 聊天
 ```
 
-底层默认进入 Nova 的 primary session。
+底层默认进入 manager-agent 的 primary session。
 
 页面可以显示和切换“当前项目上下文”，但这不是 session 边界。
 
@@ -1648,7 +1648,7 @@ Create new agent first
 如果没有项目上下文，页面应提示：
 
 ```text
-这是和 Nova 的主工作会话。需要它处理项目任务时，请选择项目上下文。
+这是和 manager-agent 的主工作会话。需要它处理项目任务时，请选择项目上下文。
 ```
 
 任务执行和 IM 消息也默认进入同一个 primary session。只有 agent 主动创建 child session 时，页面才展示“子会话 / 并发任务”的关系。
@@ -1723,7 +1723,7 @@ Runs 页面需要从 project-only 改成支持 worker 维度。
 
 测试项目建议：
 
-1. `cc-connect`
+1. `example-connect`
    - PM / QA / release agent 的 schedule 是否迁移。
    - GitHub issue / PR 流程是否还能跑。
    - 增量同步和任务创建是否正常。
@@ -2070,17 +2070,17 @@ Runtime principal 也已开始携带 2.x 身份：
 
 本地页面和 API smoke：
 
-- `/agents`、`/schedule`、`/projects/cc-connect/members`、`/projects/cc-connect/schedule`、`/projects/cc-connect/tasks`、`/workbench` 均返回 200。
+- `/agents`、`/schedule`、`/projects/example-connect/members`、`/projects/example-connect/schedule`、`/projects/example-connect/tasks`、`/workbench` 均返回 200。
 - 工作区级 Agents 页面返回 88 个 Agent Workers。
-- `cc-connect` 项目成员页返回 15 条 memberships。
+- `example-connect` 项目成员页返回 15 条 memberships。
 - 重新构建并用最新 `dist/multigent` 重启本地 E2E API 后，核心 API smoke 仍然通过：
   - `/api/v1/workspace` 返回 200。
   - `/api/v1/agents` 返回 88 个 Agent Workers。
-  - `/api/v1/projects/cc-connect/memberships` 返回 15 条 memberships。
-  - `/api/v1/projects/cc-connect/agents` 返回 membership-backed agent rows，并带 `agentWorkerId / projectMembershipId`。
-  - `/api/v1/projects/cc-connect/schedule` 返回 membership-backed schedule rows；抽查 `dev-codex` 已带 `agentWorkerId=aw_530990e713c940fb`、`projectMembershipId=pm_530990e713c940fb` 和 worker primary session。
-  - `/api/v1/projects/cc-connect/agents/dev-codex/chat/sessions` 返回 200。
-  - `/api/v1/projects/cc-connect/agents/dev-codex/runtime/readiness` 返回 200。
+  - `/api/v1/projects/example-connect/memberships` 返回 15 条 memberships。
+  - `/api/v1/projects/example-connect/agents` 返回 membership-backed agent rows，并带 `agentWorkerId / projectMembershipId`。
+  - `/api/v1/projects/example-connect/schedule` 返回 membership-backed schedule rows；抽查 `dev-codex` 已带 `agentWorkerId=aw_530990e713c940fb`、`projectMembershipId=pm_530990e713c940fb` 和 worker primary session。
+  - `/api/v1/projects/example-connect/agents/dev-codex/chat/sessions` 返回 200。
+  - `/api/v1/projects/example-connect/agents/dev-codex/runtime/readiness` 返回 200。
   - `/api/v1/workbench/tasks` 返回 200。
 
 本轮补充的回归测试：
@@ -2105,39 +2105,39 @@ Runtime principal 也已开始携带 2.x 身份：
 - `TestRuntimeNodeCompleteMarksNonWorkflowTaskDone`：约束 runtime node 调 `/complete` 后，非 workflow 任务会归档为 `done_success`，run 标记为 `succeeded`，summary 和 runtime session 写回 heartbeat。
 - `TestAcquireSchedulerStartLockRejectsLiveProcess`：约束同一个 workspace root / project / agent scope 不能同时启动两个 scheduler 进程。
 - `TestAcquireSchedulerStartLockReplacesStaleLock`：约束 scheduler lock 中记录的 PID 已不存在时，可以清理 stale lock 并重新启动。
-  - `/api/v1/projects/cc-connect/schedule` 返回 15 条 schedule rows。
-  - `/api/v1/projects/cc-connect/tasks?scope=all` 返回 22 条 task rows。
+  - `/api/v1/projects/example-connect/schedule` 返回 15 条 schedule rows。
+  - `/api/v1/projects/example-connect/tasks?scope=all` 返回 22 条 task rows。
   - `/api/v1/workbench/tasks` 返回 18 条 workbench task rows。
-  - Web 路由 `/agents`、`/schedule`、`/projects/cc-connect/members`、`/projects/cc-connect/schedule`、`/projects/cc-connect/tasks`、`/workbench` 均返回 HTML。
+  - Web 路由 `/agents`、`/schedule`、`/projects/example-connect/members`、`/projects/example-connect/schedule`、`/projects/example-connect/tasks`、`/workbench` 均返回 HTML。
 - 2026-08-21 再次执行 `make build` 后重启 E2E API，核心 API smoke 仍然通过；当前本地 E2E 进程包括：
   - API：`/root/code/spaceship/multigent/dist/multigent --dir /root/code/spaceship/multigent_e2e api serve --addr 0.0.0.0:27893`
   - runtime node：`/root/code/spaceship/multigent/dist/multigent --dir /root/code/spaceship/multigent_e2e runtime start --concurrency 2 ...`
-  - cc-connect scheduler：`/root/code/spaceship/multigent/dist/multigent --dir /root/code/spaceship/multigent_e2e/6bbcd4cb-f08b-4268-8f93-926e5939eb59 scheduler start --project cc-connect`
+  - example-connect scheduler：`/root/code/spaceship/multigent/dist/multigent --dir /root/code/spaceship/multigent_e2e/6bbcd4cb-f08b-4268-8f93-926e5939eb59 scheduler start --project example-connect`
 - 2026-08-21 补充执行 `go test ./...`、`go test ./internal/api -run 'TestGetAgentContextRendersAgentWorkerMembershipContext|TestRuntimeTasksListUsesProjectMemberships'`、`npm run build`（在 `web/` 下）以及 `go build -o dist/multigent ./cmd/multigent && go build -o dist/mga ./cmd/mga`，均通过。随后重启本地 E2E API，并使用最新二进制对迁移后 workspace 做核心 API smoke：
   - `/api/v1/workspace` 返回 200。
   - `/api/v1/stats` 返回 200。
   - `/api/v1/billing/entitlements` 返回 200，usage 中 `agents=88`，与 workspace Agent Workers 数一致。
   - `/api/v1/agents` 返回 200。
-  - `/api/v1/projects/cc-connect/memberships` 返回 200。
-  - `/api/v1/projects/cc-connect/agents` 返回 200。
-  - `/api/v1/projects/cc-connect/schedule` 返回 200。
-  - `/api/v1/projects/cc-connect/tasks?scope=all` 返回 200。
-  - `/api/v1/projects/cc-connect/messages?archived=all` 返回 200。
-  - `/api/v1/projects/cc-connect/agents/dev-codex/chat/sessions` 返回 200。
-  - `/api/v1/projects/cc-connect/agents/dev-codex/runtime/readiness` 返回 200。
-  - `/api/v1/projects/cc-connect/agents/dev-codex/context?includeReadiness=false` 返回 200，`model=codex`，合成 context 长度约 35k。
+  - `/api/v1/projects/example-connect/memberships` 返回 200。
+  - `/api/v1/projects/example-connect/agents` 返回 200。
+  - `/api/v1/projects/example-connect/schedule` 返回 200。
+  - `/api/v1/projects/example-connect/tasks?scope=all` 返回 200。
+  - `/api/v1/projects/example-connect/messages?archived=all` 返回 200。
+  - `/api/v1/projects/example-connect/agents/dev-codex/chat/sessions` 返回 200。
+  - `/api/v1/projects/example-connect/agents/dev-codex/runtime/readiness` 返回 200。
+  - `/api/v1/projects/example-connect/agents/dev-codex/context?includeReadiness=false` 返回 200，`model=codex`，合成 context 长度约 35k。
   - `/api/v1/workbench/tasks` 返回 200。
-  - 抽查 `cc-connect/dev-codex` schedule row 仍带 `agentWorkerId=aw_530990e713c940fb`、`projectMembershipId=pm_530990e713c940fb`。
+  - 抽查 `example-connect/dev-codex` schedule row 仍带 `agentWorkerId=aw_530990e713c940fb`、`projectMembershipId=pm_530990e713c940fb`。
 
 任务到 attention 的闭环 smoke：
 
-- 使用 `cc-connect/dev-codex` 创建临时任务 `t-20260820-x7h5vh`。
+- 使用 `example-connect/dev-codex` 创建临时任务 `t-20260820-x7h5vh`。
 - 任务写入后自动标注：
   - `assigneeType=agent_worker`
   - `assigneeId=aw_530990e713c940fb`
   - `assigneeMembershipId=pm_530990e713c940fb`
 - 创建任务后写入 `AttentionSignal asig-25713ad572456077db854cdc`，reason 为 `task_assigned`，初始状态为 `pending`。
-- 为 `cc-connect/dev-codex` 签发 runtime token 后，token response 正确返回 `agentWorkerId` 和 `membershipId`。
+- 为 `example-connect/dev-codex` 签发 runtime token 后，token response 正确返回 `agentWorkerId` 和 `membershipId`。
 - runtime `GET /api/v1/runtime/attention?status=pending` 能读到该 signal，并自动把状态推进到 `seen`。
 - runtime `PATCH /api/v1/runtime/attention/{id}` 能把 signal 标记为 `handled`。
 - Web attention API 能读到 handled 状态。
@@ -2145,7 +2145,7 @@ Runtime principal 也已开始携带 2.x 身份：
 
 `mga` CLI 路径也已验证：
 
-- 使用 `cc-connect/dev-codex` 再创建临时任务 `t-20260820-9cofna`。
+- 使用 `example-connect/dev-codex` 再创建临时任务 `t-20260820-9cofna`。
 - 用该 agent 的 runtime token 设置 `MULTIGENT_API_URL` 和 `MULTIGENT_AGENT_TOKEN`。
 - `mga attention list --status pending` 能读到 `asig-5d2a894af1dfa5ece378f58c`，并由 runtime API 自动推进为 `seen`。
 - `mga attention mark asig-5d2a894af1dfa5ece378f58c --status handled` 能把 signal 标记为 `handled`。
@@ -2156,7 +2156,7 @@ workflow 节点流转路径也已验证：
 - 创建临时两节点 workflow `wf-qpepcai5`：`dev-codex` 节点完成后流转到 `qa-codex`。
 - 创建临时 workflow task `t-20260820-a01ww9`。
 - 用 `dev-codex` 的 runtime token 执行 `mga task step done t-20260820-a01ww9 --agent dev-codex ...`。
-- 任务成功从 `cc-connect/dev-codex` 流转到 `cc-connect/qa-codex`，并保持 `status=pending`，没有被真实模型自动抢跑。
+- 任务成功从 `example-connect/dev-codex` 流转到 `example-connect/qa-codex`，并保持 `status=pending`，没有被真实模型自动抢跑。
 - workflow run 的 2.x 当前负责人正确变成：
   - `currentAssigneeType=agent_worker`
   - `currentAssigneeId=aw_0a7feb395db21623`
@@ -2168,7 +2168,7 @@ workflow 节点流转路径也已验证：
 runtime-node 手动 wakeup 路径已做真实验证：
 
 - 复用本地 E2E runtime node `rtn_b352f3c23711b294`，重新签发 join token 并执行 `multigent runtime join --server http://127.0.0.1:27893 --skip-prepare`，节点恢复在线。
-- 绑定 `cc-connect/dev-codex` 的 Agent Worker `aw_530990e713c940fb` 到该 runtime node，并插入临时 `im_mention` AttentionSignal。
+- 绑定 `example-connect/dev-codex` 的 Agent Worker `aw_530990e713c940fb` 到该 runtime node，并插入临时 `im_mention` AttentionSignal。
 - 离线节点边界已验证：如果绑定的 runtime node 不在线，`POST /api/v1/scheduler/wakeup` 返回 409 `runtime_not_ready`，不会静默回退到本机 Docker 执行。
 - 在线节点路径已验证：`POST /api/v1/scheduler/wakeup` 返回 `queued`，创建 `RuntimeRun rtrun_a858e71c15a2cbc4` 和 wakeup task `t-20260820-b79a7b`；run 正确携带：
   - `desiredRuntimeNodeId=rtn_b352f3c23711b294`
@@ -2230,14 +2230,14 @@ runtime-node 手动 wakeup 路径已做真实验证：
 - `cd web && npm exec -- tsc -b` 通过。
 - `cd web && npm exec -- vite build` 通过。
 - `make build` 通过，生成 `dist/multigent` 和 `dist/mga`。
-- 最新一次 `make build` 后已重启本地 E2E API，并重新确认 `/api/v1/workspace`、`/api/v1/agents`、`/api/v1/projects/cc-connect/memberships`、`/api/v1/projects/cc-connect/schedule`、`/api/v1/projects/cc-connect/tasks?scope=all`、`/api/v1/workbench/tasks` 均返回 200。
-- 2026-08-21 最新 smoke：重启 E2E API 后重新登录获取本地 JWT，以上 6 个核心 API 均返回 200；Vite 27894 下 `/agents`、`/schedule`、`/projects/cc-connect/members`、`/projects/cc-connect/schedule`、`/projects/cc-connect/tasks`、`/workbench` 均返回 200。
-- 2026-08-21 再次重启验证时发现 `cc-connect` 存在一个 API 子进程 scheduler 和一个孤儿 scheduler 并存的问题；清理旧进程并用 scheduler 启动锁版本重启后，进程收敛为 1 个 API + 1 个 `cc-connect` scheduler。手动再次执行同 scope `scheduler start --project cc-connect` 会快速失败并返回 `scheduler already running for project cc-connect`。
-- 2026-08-21 追加 smoke：重启后重新登录获取 JWT，`/api/v1/workspace`、`/api/v1/agents`、`/api/v1/projects/cc-connect/memberships`、`/api/v1/projects/cc-connect/schedule`、`/api/v1/projects/cc-connect/agents/dev-codex/context?includeReadiness=false` 均返回 200。
+- 最新一次 `make build` 后已重启本地 E2E API，并重新确认 `/api/v1/workspace`、`/api/v1/agents`、`/api/v1/projects/example-connect/memberships`、`/api/v1/projects/example-connect/schedule`、`/api/v1/projects/example-connect/tasks?scope=all`、`/api/v1/workbench/tasks` 均返回 200。
+- 2026-08-21 最新 smoke：重启 E2E API 后重新登录获取本地 JWT，以上 6 个核心 API 均返回 200；Vite 27894 下 `/agents`、`/schedule`、`/projects/example-connect/members`、`/projects/example-connect/schedule`、`/projects/example-connect/tasks`、`/workbench` 均返回 200。
+- 2026-08-21 再次重启验证时发现 `example-connect` 存在一个 API 子进程 scheduler 和一个孤儿 scheduler 并存的问题；清理旧进程并用 scheduler 启动锁版本重启后，进程收敛为 1 个 API + 1 个 `example-connect` scheduler。手动再次执行同 scope `scheduler start --project example-connect` 会快速失败并返回 `scheduler already running for project example-connect`。
+- 2026-08-21 追加 smoke：重启后重新登录获取 JWT，`/api/v1/workspace`、`/api/v1/agents`、`/api/v1/projects/example-connect/memberships`、`/api/v1/projects/example-connect/schedule`、`/api/v1/projects/example-connect/agents/dev-codex/context?includeReadiness=false` 均返回 200。
 - 2026-08-21 追加真实 runtime-node 尝试：
   - 启动本机 runtime node daemon 后，`rtn_b352f3c23711b294` 从 offline 恢复为 online。
-  - 临时把 `cc-connect/dev-codex` 对应 Agent Worker `aw_530990e713c940fb` 绑定到该 runtime node。
-  - 创建临时任务 `t-20260820-xbmy67`，通过 Web/API `POST /api/v1/projects/cc-connect/tasks/t-20260820-xbmy67/start` 启动。
+  - 临时把 `example-connect/dev-codex` 对应 Agent Worker `aw_530990e713c940fb` 绑定到该 runtime node。
+  - 创建临时任务 `t-20260820-xbmy67`，通过 Web/API `POST /api/v1/projects/example-connect/tasks/t-20260820-xbmy67/start` 启动。
   - API 返回 `status=queued`、`runtimeRunId=rtrun_18944495b304718d`，确认这次不是本地 Docker pid 路径，而是 runtime-node queue 路径。
   - runtime node 日志显示成功 claim 并启动 run：`runtime run claimed` / `runtime run started`。
   - Docker 容器成功进入 Codex CLI，但真实模型调用卡在网络传输层：先出现 `Falling back from WebSockets to HTTPS transport. request timed out`，随后 `Reconnecting... waiting for network (Connection failed: error sending request)`。

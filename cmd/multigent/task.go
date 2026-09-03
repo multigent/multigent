@@ -10,6 +10,7 @@ import (
 	"text/tabwriter"
 	"time"
 
+	"github.com/multigent/multigent/internal/attention"
 	"github.com/multigent/multigent/internal/entity"
 	"github.com/multigent/multigent/internal/errs"
 	"github.com/multigent/multigent/internal/store"
@@ -1000,6 +1001,27 @@ func newTaskCompleteCmd() *cobra.Command {
 
 			if err := ts.ArchiveTask(project, agentName, t); err != nil {
 				return err
+			}
+			// Attention wakeups may be completed through the CLI from inside the
+			// agent runtime. Close their explicitly attached signals here as well
+			// as in the runtime-node API path, so a restart cannot replay them.
+			if len(attention.SignalIDsForTask(t)) > 0 {
+				db, dbErr := openControlDBForRoot(root)
+				if dbErr != nil {
+					fmt.Fprintf(os.Stderr, "warning: attention signals were not closed: %v\n", dbErr)
+				} else {
+					workspaceID, workspaceErr := schedulerWorkspaceID(root, db)
+					if workspaceErr != nil || strings.TrimSpace(workspaceID) == "" {
+						if workspaceErr != nil {
+							fmt.Fprintf(os.Stderr, "warning: attention signals were not closed: %v\n", workspaceErr)
+						} else {
+							fmt.Fprintln(os.Stderr, "warning: attention signals were not closed: workspace not found")
+						}
+					} else if closeErr := attention.CloseTaskSignals(db, workspaceID, t, "task:"+strings.TrimSpace(t.ID)); closeErr != nil {
+						fmt.Fprintf(os.Stderr, "warning: attention signals were not fully closed: %v\n", closeErr)
+					}
+					_ = db.Close()
+				}
 			}
 
 			// Fire on_success triggers if applicable.

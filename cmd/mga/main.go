@@ -1594,12 +1594,16 @@ func newTaskCmd() *cobra.Command {
 }
 
 func newTaskTemplatesCmd() *cobra.Command {
-	var format string
+	var format, project string
 	cmd := &cobra.Command{
 		Use:   "templates",
-		Short: "List task templates available to this runtime project",
+		Short: "List task templates available to a runtime project",
 		RunE: func(cmd *cobra.Command, args []string) error {
-			body, err := requestJSON(http.MethodGet, "/api/v1/runtime/task-templates", nil, nil)
+			q := url.Values{}
+			if strings.TrimSpace(project) != "" {
+				q.Set("project", strings.TrimSpace(project))
+			}
+			body, err := requestJSON(http.MethodGet, "/api/v1/runtime/task-templates", q, nil)
 			if err != nil {
 				return err
 			}
@@ -1610,6 +1614,7 @@ func newTaskTemplatesCmd() *cobra.Command {
 		},
 	}
 	cmd.Flags().StringVar(&format, "format", "json", "output format: json or table")
+	cmd.Flags().StringVar(&project, "project", "", "target project; required when dispatching across projects")
 	cmd.Flags().Bool("json", false, "print JSON output")
 	return cmd
 }
@@ -1671,17 +1676,17 @@ func newTaskShowCmd() *cobra.Command {
 }
 
 func newTaskAddCmd() *cobra.Command {
-	var agent, title, prompt, typ, description, assignee, forkSessionID, notBefore string
+	var project, agent, title, prompt, typ, description, assignee, forkSessionID, notBefore string
 	var priority int
 	cmd := &cobra.Command{
 		Use:   "add",
-		Short: "Create a task in the current runtime project",
+		Short: "Create a task in a runtime project",
 		RunE: func(cmd *cobra.Command, args []string) error {
 			if strings.TrimSpace(title) == "" || strings.TrimSpace(prompt) == "" {
 				return fmt.Errorf("title and prompt are required")
 			}
 			payload := map[string]any{
-				"agent": agent, "title": title, "prompt": prompt, "type": typ,
+				"project": project, "agent": agent, "title": title, "prompt": prompt, "type": typ,
 				"description": description, "priority": priority, "assignee": assignee,
 			}
 			if strings.TrimSpace(notBefore) != "" {
@@ -1702,6 +1707,7 @@ func newTaskAddCmd() *cobra.Command {
 			return writeJSON(resp)
 		},
 	}
+	cmd.Flags().StringVar(&project, "project", "", "target project; current project by default")
 	cmd.Flags().StringVar(&agent, "agent", "", "target agent, defaults to current agent")
 	cmd.Flags().StringVar(&title, "title", "", "task title")
 	cmd.Flags().StringVar(&prompt, "prompt", "", "task prompt")
@@ -1715,7 +1721,7 @@ func newTaskAddCmd() *cobra.Command {
 }
 
 func newTaskCreateFromTemplateCmd() *cobra.Command {
-	var templateID, agent, assignee, dueDate, estimateDuration, parentID, outputFormat string
+	var templateID, project, agent, assignee, dueDate, estimateDuration, parentID, outputFormat string
 	var priority int
 	var setPriority bool
 	var inputs, labels, actorPairs []string
@@ -1742,6 +1748,9 @@ func newTaskCreateFromTemplateCmd() *cobra.Command {
 			body := map[string]any{
 				"templateId": strings.TrimSpace(templateID),
 				"inputs":     inputMap,
+			}
+			if project != "" {
+				body["project"] = strings.TrimSpace(project)
 			}
 			if agent != "" {
 				body["agent"] = agent
@@ -1779,6 +1788,7 @@ func newTaskCreateFromTemplateCmd() *cobra.Command {
 		},
 	}
 	cmd.Flags().StringVar(&templateID, "template", "", "task template id")
+	cmd.Flags().StringVar(&project, "project", "", "target project; template project by default")
 	cmd.Flags().StringArrayVar(&inputs, "input", nil, "template variable as key=value, repeatable")
 	cmd.Flags().StringArrayVar(&actorPairs, "actor", nil, "workflow actor binding as role=agent:<name> or role=human:<username>, repeatable")
 	cmd.Flags().StringVar(&agent, "agent", "", "fallback target agent, defaults to template workflow start actor")

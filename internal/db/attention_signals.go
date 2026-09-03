@@ -141,6 +141,9 @@ func (db *SQLiteStore) markAttentionSignalStatus(workspaceID, id, status, result
 		guard = " AND status NOT IN ('handled', 'ignored', 'expired')"
 	case "handled", "ignored", "expired":
 		field = "handled_at"
+		// Terminal signals are immutable. Replaying a wakeup or an explicit
+		// close must not reopen the signal or overwrite its audit reference.
+		guard = " AND status NOT IN ('handled', 'ignored', 'expired')"
 	case "seen":
 		guard = " AND status = 'pending'"
 	}

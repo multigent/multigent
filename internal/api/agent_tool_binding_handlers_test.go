@@ -71,8 +71,8 @@ func TestAgentToolBindingUsesAgentWorkerAcrossProjectMemberships(t *testing.T) {
 	worker := controldb.AgentWorker{
 		ID:          "aw-tooling",
 		WorkspaceID: workspaceID,
-		Name:        "nova",
-		DisplayName: "Nova",
+		Name:        "manager-agent",
+		DisplayName: "manager-agent",
 		Status:      "active",
 		Model:       string(entity.ModelClaudeCode),
 		CreatedAt:   now,
@@ -92,7 +92,7 @@ func TestAgentToolBindingUsesAgentWorkerAcrossProjectMemberships(t *testing.T) {
 			MemberType:       "agent_worker",
 			MemberID:         worker.ID,
 			Role:             "manager",
-			Title:            "nova",
+			Title:            "manager-agent",
 			AutoPickTasks:    true,
 			AttentionEnabled: true,
 			PriorityWeight:   1,
@@ -118,7 +118,7 @@ func TestAgentToolBindingUsesAgentWorkerAcrossProjectMemberships(t *testing.T) {
 		t.Fatalf("connection: %v", err)
 	}
 
-	req := agentToolBindingRequest("admin", "sample", "nova", upsertAgentToolBindingRequest{
+	req := agentToolBindingRequest("admin", "sample", "manager-agent", upsertAgentToolBindingRequest{
 		ConnectionID: connection.ID,
 		AdapterType:  "http_action",
 	})
@@ -135,7 +135,7 @@ func TestAgentToolBindingUsesAgentWorkerAcrossProjectMemberships(t *testing.T) {
 		t.Fatalf("expected worker binding, got %#v", body)
 	}
 
-	connections, err := s.resolveAgentRuntimeConnections(workspaceID, "other", "nova")
+	connections, err := s.resolveAgentRuntimeConnections(workspaceID, "other", "manager-agent")
 	if err != nil {
 		t.Fatalf("resolve from other project: %v", err)
 	}

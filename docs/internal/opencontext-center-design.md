@@ -176,7 +176,7 @@ updated_at
 
 - `payload` 保存结构化原始信息。
 - `content_ref` 指向大文本、附件、截图、原文 JSON、Markdown 等对象。
-- `labels` 用于筛选，例如 `project=tapnow-mcp-server`、`repo=cc-connect`、`chat_id=xxx`。
+- `labels` 用于筛选，例如 `project=example-mcp-server`、`repo=example-connect`、`chat_id=xxx`。
 - `sensitivity` 类似 OpenContext 的 L1/L2/L3：
   - L1：元信息，低敏。
   - L2：工作内容，需授权。
@@ -256,7 +256,7 @@ enabled
 ```json
 {
   "type": "im_mention",
-  "summary": "Joey 在 MCP 联调群 @mason 反馈 OAuth token 校验失败",
+  "summary": "User B 在 MCP 联调群 @Developer A 反馈 OAuth token 校验失败",
   "context_refs": ["ctx_123", "thread_456"],
   "priority": "high"
 }
@@ -315,18 +315,18 @@ GET  /api/v1/context/sources
   "sourceType": "lark_im",
   "sourceItemId": "message_abc",
   "occurredAt": "2026-08-25T10:00:00Z",
-  "title": "Joey 反馈 OAuth token 校验失败",
-  "summary": "Joey 在 MCP 联调群反馈 OAuth token 校验失败，@mason 需要确认。",
+  "title": "User B 反馈 OAuth token 校验失败",
+  "summary": "User B 在 MCP 联调群反馈 OAuth token 校验失败，@Developer A 需要确认。",
   "labels": {
-    "project": "tapnow-mcp-server",
+    "project": "example-mcp-server",
     "chat_id": "oc_xxx",
     "message_type": "mention"
   },
   "sensitivity": "L2",
   "payload": {
-    "sender": "joey",
+    "sender": "User B",
     "message_type": "text",
-    "mentioned_agents": ["mason"]
+    "mentioned_agents": ["Developer A"]
   },
   "content": "原始消息正文或对象引用"
 }
@@ -359,8 +359,8 @@ Agent 通过 `mga context` 主动访问。
 
 ```bash
 mga context collectors
-mga context list --source lark_im --project tapnow-mcp-server --since 24h
-mga context search "OAuth token 校验失败" --project tapnow-mcp-server
+mga context list --source lark_im --project example-mcp-server --since 24h
+mga context search "OAuth token 校验失败" --project example-mcp-server
 mga context read ctx_123
 mga context thread ctx_123
 mga context mark-read ctx_123
@@ -371,7 +371,7 @@ mga context summarize --source lark_im --since 7d
 
 ```text
 你有 3 条新的 attention signals：
-1. Joey 在 MCP 联调群 @你反馈 OAuth token 校验失败。context_ref=ctx_123
+1. User B 在 MCP 联调群 @你反馈 OAuth token 校验失败。context_ref=ctx_123
 2. GitHub PR #1852 有新评论。context_ref=ctx_456
 3. Sentry 出现 P1 错误。context_ref=ctx_789
 

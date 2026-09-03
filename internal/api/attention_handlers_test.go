@@ -16,8 +16,8 @@ func TestAgentAttentionSignalsListAndPatchStatus(t *testing.T) {
 	worker := controldb.AgentWorker{
 		ID:          "aw-attention",
 		WorkspaceID: workspaceID,
-		Name:        "nova",
-		DisplayName: "Nova",
+		Name:        "manager-agent",
+		DisplayName: "manager-agent",
 		Status:      "active",
 		CreatedAt:   now,
 		UpdatedAt:   now,
@@ -37,23 +37,23 @@ func TestAgentAttentionSignalsListAndPatchStatus(t *testing.T) {
 		Priority:      "normal",
 		ActorType:     "user",
 		ActorID:       "admin",
-		Summary:       "用户 @ 了 Nova",
+		Summary:       "用户 @ 了 manager-agent",
 		Status:        "pending",
 		CreatedAt:     now,
 	}); err != nil {
 		t.Fatalf("signal: %v", err)
 	}
 
-	ownerReq := providerTestRequest(http.MethodGet, "/api/v1/agents/nova/attention?status=pending", "owner", nil)
-	ownerReq.SetPathValue("id", "nova")
+	ownerReq := providerTestRequest(http.MethodGet, "/api/v1/agents/manager-agent/attention?status=pending", "owner", nil)
+	ownerReq.SetPathValue("id", "manager-agent")
 	ownerRec := httptest.NewRecorder()
 	s.handleAgentAttentionSignals(ownerRec, ownerReq)
 	if ownerRec.Code != http.StatusForbidden {
 		t.Fatalf("owner list status=%d body=%s", ownerRec.Code, ownerRec.Body.String())
 	}
 
-	req := providerTestRequest(http.MethodGet, "/api/v1/agents/nova/attention?status=pending", "admin", nil)
-	req.SetPathValue("id", "nova")
+	req := providerTestRequest(http.MethodGet, "/api/v1/agents/manager-agent/attention?status=pending", "admin", nil)
+	req.SetPathValue("id", "manager-agent")
 	rec := httptest.NewRecorder()
 	s.handleAgentAttentionSignals(rec, req)
 	if rec.Code != http.StatusOK {

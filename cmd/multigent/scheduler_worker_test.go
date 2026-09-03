@@ -35,10 +35,10 @@ func TestSchedulerTargetsDeduplicateAgentWorkerMemberships(t *testing.T) {
 	}
 	scheduleRaw, _ := json.Marshal(entity.HeartbeatConfig{Enabled: true, Interval: "30m"})
 	if err := db.UpsertAgentWorker(controldb.AgentWorker{
-		ID:           "aw-nova",
+		ID:           "aw-manager-agent",
 		WorkspaceID:  "ws",
-		Name:         "nova",
-		DisplayName:  "Nova",
+		Name:         "manager-agent",
+		DisplayName:  "manager-agent",
 		ScheduleJSON: string(scheduleRaw),
 		CreatedAt:    nowText,
 		UpdatedAt:    nowText,
@@ -51,9 +51,9 @@ func TestSchedulerTargetsDeduplicateAgentWorkerMemberships(t *testing.T) {
 			WorkspaceID:      "ws",
 			ProjectID:        project,
 			MemberType:       "agent_worker",
-			MemberID:         "aw-nova",
+			MemberID:         "aw-manager-agent",
 			Role:             "manager",
-			Title:            "nova",
+			Title:            "manager-agent",
 			AutoPickTasks:    true,
 			AttentionEnabled: true,
 			CreatedAt:        nowText,
@@ -64,10 +64,10 @@ func TestSchedulerTargetsDeduplicateAgentWorkerMemberships(t *testing.T) {
 	}
 
 	ts := taskstore.NewDB(root, db)
-	if err := ts.AddTask("alpha", "nova", &entity.Task{ID: "t-alpha", Title: "Alpha", Priority: 3, Status: entity.TaskStatusPending, CreatedAt: now.Add(-time.Hour), UpdatedAt: now}); err != nil {
+	if err := ts.AddTask("alpha", "manager-agent", &entity.Task{ID: "t-alpha", Title: "Alpha", Priority: 3, Status: entity.TaskStatusPending, CreatedAt: now.Add(-time.Hour), UpdatedAt: now}); err != nil {
 		t.Fatal(err)
 	}
-	if err := ts.AddTask("beta", "nova", &entity.Task{ID: "t-beta", Title: "Beta", Priority: 1, Status: entity.TaskStatusPending, CreatedAt: now, UpdatedAt: now}); err != nil {
+	if err := ts.AddTask("beta", "manager-agent", &entity.Task{ID: "t-beta", Title: "Beta", Priority: 1, Status: entity.TaskStatusPending, CreatedAt: now, UpdatedAt: now}); err != nil {
 		t.Fatal(err)
 	}
 
@@ -83,8 +83,8 @@ func TestSchedulerTargetsDeduplicateAgentWorkerMemberships(t *testing.T) {
 	}
 
 	selected := selectSchedulerExecutionTarget(ts, heartbeatTargets[0].memberships)
-	if selected.project != "beta" || selected.agent != "nova" {
-		t.Fatalf("expected beta/nova to run first, got %#v", selected)
+	if selected.project != "beta" || selected.agent != "manager-agent" {
+		t.Fatalf("expected beta/manager-agent to run first, got %#v", selected)
 	}
 }
 
@@ -110,14 +110,14 @@ func TestSchedulerTargetsUseWholeWorkspaceWhenProjectFilterIsEmpty(t *testing.T)
 	}
 	scheduleRaw, _ := json.Marshal(entity.HeartbeatConfig{Enabled: true, Interval: "30m"})
 	if err := db.UpsertAgentWorker(controldb.AgentWorker{
-		ID: "aw-nova", WorkspaceID: "ws", Name: "nova", ScheduleJSON: string(scheduleRaw), CreatedAt: nowText, UpdatedAt: nowText,
+		ID: "aw-manager-agent", WorkspaceID: "ws", Name: "manager-agent", ScheduleJSON: string(scheduleRaw), CreatedAt: nowText, UpdatedAt: nowText,
 	}); err != nil {
 		t.Fatal(err)
 	}
 	for _, project := range []string{"alpha", "beta"} {
 		if err := db.UpsertProjectMembership(controldb.ProjectMembership{
 			ID: "pm-" + project, WorkspaceID: "ws", ProjectID: project,
-			MemberType: "agent_worker", MemberID: "aw-nova", Title: "nova",
+			MemberType: "agent_worker", MemberID: "aw-manager-agent", Title: "manager-agent",
 			AutoPickTasks: true, AttentionEnabled: true, CreatedAt: nowText, UpdatedAt: nowText,
 		}); err != nil {
 			t.Fatal(err)
@@ -136,7 +136,7 @@ func TestSchedulerSelectionSkipsFutureTasks(t *testing.T) {
 	ts := taskstore.New(root)
 	now := time.Now().UTC()
 	future := now.Add(30 * time.Minute)
-	if err := ts.AddTask("alpha", "nova", &entity.Task{
+	if err := ts.AddTask("alpha", "manager-agent", &entity.Task{
 		ID:        "future",
 		Title:     "Future",
 		Priority:  0,
@@ -147,7 +147,7 @@ func TestSchedulerSelectionSkipsFutureTasks(t *testing.T) {
 	}); err != nil {
 		t.Fatal(err)
 	}
-	if err := ts.AddTask("alpha", "nova", &entity.Task{
+	if err := ts.AddTask("alpha", "manager-agent", &entity.Task{
 		ID:        "ready",
 		Title:     "Ready",
 		Priority:  3,
@@ -158,7 +158,7 @@ func TestSchedulerSelectionSkipsFutureTasks(t *testing.T) {
 		t.Fatal(err)
 	}
 
-	selected, err := nextPendingTask(ts, "alpha", "nova")
+	selected, err := nextPendingTask(ts, "alpha", "manager-agent")
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -166,7 +166,7 @@ func TestSchedulerSelectionSkipsFutureTasks(t *testing.T) {
 		t.Fatalf("selected %v, want ready", selected)
 	}
 
-	next, err := nextScheduledPendingTaskAt(ts, "alpha", "nova", now)
+	next, err := nextScheduledPendingTaskAt(ts, "alpha", "manager-agent", now)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -180,7 +180,7 @@ func TestCapWaitForScheduledTasks(t *testing.T) {
 	ts := taskstore.New(root)
 	now := time.Now().UTC()
 	future := now.Add(5 * time.Minute)
-	if err := ts.AddTask("alpha", "nova", &entity.Task{
+	if err := ts.AddTask("alpha", "manager-agent", &entity.Task{
 		ID:        "future",
 		Title:     "Future",
 		Priority:  1,
@@ -191,7 +191,7 @@ func TestCapWaitForScheduledTasks(t *testing.T) {
 	}); err != nil {
 		t.Fatal(err)
 	}
-	got := capWaitForScheduledTasks(ts, []schedulerAgentKey{{project: "alpha", agent: "nova"}}, time.Hour, now)
+	got := capWaitForScheduledTasks(ts, []schedulerAgentKey{{project: "alpha", agent: "manager-agent"}}, time.Hour, now)
 	if got < 4*time.Minute || got > 6*time.Minute {
 		t.Fatalf("wait = %s, want about 5m", got)
 	}

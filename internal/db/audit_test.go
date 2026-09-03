@@ -15,7 +15,7 @@ func TestListAuditEventFacets(t *testing.T) {
 
 	events := []AuditEvent{
 		{ID: "aud-1", WorkspaceID: "ws-1", ActorType: "user", ActorID: "admin", Action: "connection.use", ResourceType: "connection", ResourceID: "conn-a", CreatedAt: "2026-08-22T00:00:00Z"},
-		{ID: "aud-2", WorkspaceID: "ws-1", ActorType: "user", ActorID: "glenn", Action: "agent.update", ResourceType: "agent", ResourceID: "aw-a", CreatedAt: "2026-08-22T00:01:00Z"},
+		{ID: "aud-2", WorkspaceID: "ws-1", ActorType: "user", ActorID: "owner-a", Action: "agent.update", ResourceType: "agent", ResourceID: "aw-a", CreatedAt: "2026-08-22T00:01:00Z"},
 		{ID: "aud-3", WorkspaceID: "ws-1", ActorType: "user", ActorID: "admin", Action: "connection.use", ResourceType: "connection", ResourceID: "conn-b", CreatedAt: "2026-08-22T00:02:00Z"},
 		{ID: "aud-4", WorkspaceID: "ws-2", ActorType: "user", ActorID: "other", Action: "user.create", ResourceType: "user", ResourceID: "u-a", CreatedAt: "2026-08-22T00:03:00Z"},
 	}
@@ -29,7 +29,7 @@ func TestListAuditEventFacets(t *testing.T) {
 	if err != nil {
 		t.Fatalf("list facets: %v", err)
 	}
-	if want := []string{"admin", "glenn"}; !reflect.DeepEqual(facets.ActorIDs, want) {
+	if want := []string{"admin", "owner-a"}; !reflect.DeepEqual(facets.ActorIDs, want) {
 		t.Fatalf("actor facets = %#v, want %#v", facets.ActorIDs, want)
 	}
 	if want := []string{"agent.update", "connection.use"}; !reflect.DeepEqual(facets.Actions, want) {
