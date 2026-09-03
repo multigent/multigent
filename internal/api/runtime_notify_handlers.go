@@ -976,6 +976,20 @@ func (s *Server) runtimeChannelToRow(principal runtimeAgentPrincipal, binding co
 		})
 	}
 	row.CanNotify = runtimeChannelCanNotify(binding) || len(row.Targets) > 0
+	// A user identity is a valid notification route even when the channel does
+	// not have a static owner/chat target. This is the normal binding model for
+	// per-user IM accounts.
+	if !row.CanNotify {
+		identities, identityErr := s.controlDB.ListUserChannelIdentities(controldb.UserChannelIdentityFilter{
+			WorkspaceID:      principal.WorkspaceID,
+			ChannelBindingID: binding.ID,
+			Provider:         binding.Provider,
+		})
+		if identityErr != nil {
+			return runtimeChannelRow{}, identityErr
+		}
+		row.CanNotify = len(identities) > 0
+	}
 	// A source target is resolved from the current attention signal rather than
 	// from a static owner/chat binding. It is still a valid notification route
 	// for the current run and must be visible to the agent as usable.

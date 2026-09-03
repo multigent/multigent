@@ -601,7 +601,11 @@ func (s *Server) acceptIMMessage(channelProvider imbridge.Provider, appID, verif
 	if text == "" {
 		text = incomingMessageFallbackText(message)
 	}
+	log.Printf("[im:%s] received message type=%s chat_type=%s message=%s content_bytes=%d text_bytes=%d attachments=%d", provider,
+		strings.TrimSpace(message.MessageType), strings.TrimSpace(message.ChatType), shortSensitiveHash(message.MessageID),
+		len(message.RawContent), len(text), len(message.Attachments))
 	if text == "" && len(message.Attachments) == 0 {
+		log.Printf("[im:%s] ignored message type=%s message=%s reason=empty_content", provider, strings.TrimSpace(message.MessageType), shortSensitiveHash(message.MessageID))
 		return map[string]any{"ok": true, "ignored": true}, nil
 	}
 	if bindCmd, code, ok := parseAgentChannelBindCommand(text); ok {
@@ -718,10 +722,12 @@ func (s *Server) acceptIMMessage(channelProvider imbridge.Provider, appID, verif
 		MessageID:   message.MessageID,
 		Provider:    provider,
 	}) {
+		log.Printf("[im:%s] accepted message type=%s message=%s signal=%s wake=queued", provider, strings.TrimSpace(message.MessageType), shortSensitiveHash(message.MessageID), shortSensitiveHash(attentionID))
 		s.acknowledgeIMAccepted(channelProvider, resolved, message)
 		s.recordAgentChannelCallback(resolved.Binding, "queued", "attention_pending", message, "")
 		return map[string]any{"ok": true, "queued": true, "attentionId": attentionID}, nil
 	}
+	log.Printf("[im:%s] accepted message type=%s message=%s signal=%s wake=scheduled", provider, strings.TrimSpace(message.MessageType), shortSensitiveHash(message.MessageID), shortSensitiveHash(attentionID))
 	// A message is acknowledged as soon as it passes identity and permission
 	// checks. Runtime readiness is a separate concern: a temporary runtime
 	// outage must not make the channel look unresponsive.

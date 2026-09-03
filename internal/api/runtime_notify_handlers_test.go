@@ -77,6 +77,59 @@ func TestRuntimeChannelsListAgentIMBindings(t *testing.T) {
 	}
 }
 
+func TestRuntimeChannelsListUserIdentityEnablesNotify(t *testing.T) {
+	s, workspaceID := newConnectionGrantPolicyServer(t)
+	if err := s.controlDB.UpsertConnection(controldb.Connection{
+		ID:             "conn-lark",
+		WorkspaceID:    workspaceID,
+		Provider:       "lark",
+		ConnectionName: "default",
+		OwnerType:      ConnectionOwnerWorkspace,
+		OwnerID:        workspaceID,
+		AuthType:       ConnectionAuthAPIKey,
+		Status:         "active",
+	}); err != nil {
+		t.Fatalf("upsert connection: %v", err)
+	}
+	if err := s.controlDB.UpsertAgentChannelBinding(controldb.AgentChannelBinding{
+		ID:           "chan-lark",
+		WorkspaceID:  workspaceID,
+		ProjectID:    "sample",
+		AgentID:      "pm",
+		Provider:     "lark",
+		ConnectionID: "conn-lark",
+		Status:       "connected",
+	}); err != nil {
+		t.Fatalf("upsert channel: %v", err)
+	}
+	if err := s.controlDB.UpsertUserChannelIdentity(controldb.UserChannelIdentity{
+		ID:               "identity-admin",
+		WorkspaceID:      workspaceID,
+		UserID:           "admin",
+		ChannelBindingID: "chan-lark",
+		Provider:         "lark",
+		ExternalUserID:   "ou_admin",
+		ExternalChatID:   "oc_admin",
+	}); err != nil {
+		t.Fatalf("upsert identity: %v", err)
+	}
+	bindings, err := s.runtimeAgentChannelBindings(runtimeAgentPrincipal{
+		WorkspaceID: workspaceID,
+		Project:     "sample",
+		Agent:       "pm",
+	})
+	if err != nil || len(bindings) != 1 {
+		t.Fatalf("bindings=%+v err=%v", bindings, err)
+	}
+	row, err := s.runtimeChannelToRow(runtimeAgentPrincipal{WorkspaceID: workspaceID, Project: "sample", Agent: "pm"}, bindings[0])
+	if err != nil {
+		t.Fatalf("channel row: %v", err)
+	}
+	if !row.CanNotify || row.OwnerBound || row.ChatBound {
+		t.Fatalf("expected user identity to enable notify without static owner/chat: %+v", row)
+	}
+}
+
 func TestRuntimeAgentChannelBindingsUseAgentWorker(t *testing.T) {
 	s, workspaceID := newConnectionGrantPolicyServer(t)
 	now := time.Now().UTC().Format(time.RFC3339)
