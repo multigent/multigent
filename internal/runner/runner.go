@@ -650,11 +650,34 @@ func (r *Runner) taskPromptWithWorkflowContext(project, agentName string, task *
 	return ctx + "\n\n---\n## Task Prompt\n\n" + task.Prompt
 }
 
+// taskPromptWithAgentContext makes the workspace-level agent contract part of
+// every task invocation. Runtime nodes cannot assume that a generated
+// AGENTS.md/CLAUDE.md file is present in the mounted working directory, so
+// relying on that file alone can silently drop profile prompts and role
+// boundaries. The context file remains useful for the full inherited prompt;
+// this small identity layer is the execution-time safety net.
+func (r *Runner) taskPromptWithAgentContext(project, agentName, prompt string) string {
+	if r == nil || r.agentStore == nil || strings.TrimSpace(prompt) == "" {
+		return prompt
+	}
+	provider, ok := r.agentStore.(store.AgentWorkerContextProvider)
+	if !ok {
+		return prompt
+	}
+	workerContext, err := provider.AgentWorkerContext(project, agentName)
+	if err != nil || strings.TrimSpace(workerContext.Layer) == "" {
+		return prompt
+	}
+	return strings.TrimSpace(workerContext.Layer) + "\n\n---\n## Current Task\n\n" + prompt
+}
+
 func (r *Runner) BuildTaskPrompt(project, agentName string, task *entity.Task) string {
 	if task == nil {
 		return ""
 	}
-	return r.taskPromptWithWorkflowContext(project, agentName, task) + fmt.Sprintf(systemMetaFooter,
+	prompt := r.taskPromptWithWorkflowContext(project, agentName, task)
+	prompt = r.taskPromptWithAgentContext(project, agentName, prompt)
+	return prompt + fmt.Sprintf(systemMetaFooter,
 		task.ID, project, agentName, task.ID, task.ID, task.ID, task.ID, project, agentName)
 }
 
