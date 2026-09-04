@@ -357,12 +357,14 @@ mga runtime tools --format table
 
 ### agent_tool_bindings
 
-表示某个 agent 启用了某个工具连接，以及使用哪种 runtime adapter。
+表示某个 workspace agent worker 启用了某个工具连接，以及使用哪种 runtime
+adapter。连接账号本身和绑定关系是两个层次：`connections` 保存工作区账号，
+`connection_grants` 保存访问授权，`agent_tool_bindings` 保存该 agent 是否启用
+以及如何进入 runtime。
 
 - `id`
 - `workspace_id`
-- `project_id`
-- `agent_id`
+- `agent_worker_id`（唯一的 agent 绑定身份）
 - `connection_id`
 - `provider`
 - `adapter_type`
@@ -371,7 +373,9 @@ mga runtime tools --format table
 - `created_at`
 - `updated_at`
 
-初期可以不单独建表，先从 active workspace connection 推导；但长期需要 agent 级绑定，否则“工具配置给谁用”会不清晰。
+项目页面仍可以作为选择 agent 的入口，但不会把项目写入工具绑定。一个 agent
+加入多个项目时，使用的仍是同一份 worker 绑定和同一份工作区连接。旧版本的
+项目字段只在一次性迁移时读取，迁移完成后不再参与身份判断。
 
 ## 首批三类闭环
 

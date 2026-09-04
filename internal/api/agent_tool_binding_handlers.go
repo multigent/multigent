@@ -115,6 +115,10 @@ func (s *Server) upsertAgentToolBinding(w http.ResponseWriter, r *http.Request, 
 		s.jsonErrorCode(w, http.StatusForbidden, ErrCodeConnectionAccessRequired, "connection access required")
 		return
 	}
+	if strings.TrimSpace(target.workerID) == "" {
+		s.jsonErrorCode(w, http.StatusBadRequest, ErrCodeValidationFailed, "agent worker is required")
+		return
+	}
 	allowed, err := s.connectionAvailableToRuntimeWorker(connection, target.workspaceID, target.workerID)
 	if err != nil {
 		s.serverError(w, err)
@@ -158,16 +162,18 @@ func (s *Server) upsertAgentToolBinding(w http.ResponseWriter, r *http.Request, 
 		ID:            newConnectionID("toolbind"),
 		WorkspaceID:   target.workspaceID,
 		AgentWorkerID: target.workerID,
-		ProjectID:     target.project,
-		AgentID:       target.agent,
-		ConnectionID:  connection.ID,
-		Provider:      connection.Provider,
-		AdapterType:   body.AdapterType,
-		Status:        body.Status,
-		ConfigJSON:    configJSON,
-		CreatedBy:     cur.Username,
-		CreatedAt:     now,
-		UpdatedAt:     now,
+		// A tool binding belongs to the workspace agent worker. Project and
+		// mailbox values are request context, not part of its identity.
+		ProjectID:    "",
+		AgentID:      "",
+		ConnectionID: connection.ID,
+		Provider:     connection.Provider,
+		AdapterType:  body.AdapterType,
+		Status:       body.Status,
+		ConfigJSON:   configJSON,
+		CreatedBy:    cur.Username,
+		CreatedAt:    now,
+		UpdatedAt:    now,
 	}
 	if err := s.controlDB.UpsertAgentToolBinding(binding); err != nil {
 		s.serverError(w, err)
@@ -311,18 +317,6 @@ func (s *Server) handleInstallProjectToolBindings(w http.ResponseWriter, r *http
 		}
 		configJSON = string(raw)
 	}
-	if err := s.controlDB.CreateConnectionGrant(controldb.ConnectionGrant{
-		ID:           newConnectionID("grant"),
-		WorkspaceID:  workspaceID,
-		ConnectionID: connection.ID,
-		TargetType:   ConnectionTargetProject,
-		TargetID:     project,
-		CreatedBy:    cur.Username,
-		CreatedAt:    time.Now().UTC().Format(time.RFC3339),
-	}); err != nil {
-		s.serverError(w, err)
-		return
-	}
 	now := time.Now().UTC().Format(time.RFC3339)
 	type installTarget struct {
 		AgentName string
@@ -366,7 +360,7 @@ func (s *Server) handleInstallProjectToolBindings(w http.ResponseWriter, r *http
 	bindings := make([]agentToolBindingModel, 0, len(targets))
 	skipped := 0
 	for _, target := range targets {
-		if strings.TrimSpace(target.AgentName) == "" {
+		if strings.TrimSpace(target.AgentName) == "" || strings.TrimSpace(target.WorkerID) == "" {
 			skipped++
 			continue
 		}
@@ -374,20 +368,45 @@ func (s *Server) handleInstallProjectToolBindings(w http.ResponseWriter, r *http
 			skipped++
 			continue
 		}
+		allowed, err := s.connectionAvailableToRuntimeWorker(connection, workspaceID, target.WorkerID)
+		if err != nil {
+			s.serverError(w, err)
+			return
+		}
+		if !allowed {
+			if !s.canManageConnection(r, connection, cur) {
+				s.jsonErrorCode(w, http.StatusBadRequest, ErrCodeValidationFailed, "connection must be granted to each agent before it can be installed")
+				return
+			}
+			if err := s.controlDB.CreateConnectionGrant(controldb.ConnectionGrant{
+				ID:           newConnectionID("grant"),
+				WorkspaceID:  workspaceID,
+				ConnectionID: connection.ID,
+				TargetType:   ConnectionTargetAgent,
+				TargetID:     connectionAgentWorkerTargetID(target.WorkerID),
+				CreatedBy:    cur.Username,
+				CreatedAt:    now,
+			}); err != nil {
+				s.serverError(w, err)
+				return
+			}
+		}
 		binding := controldb.AgentToolBinding{
 			ID:            newConnectionID("toolbind"),
 			WorkspaceID:   workspaceID,
 			AgentWorkerID: target.WorkerID,
-			ProjectID:     project,
-			AgentID:       target.AgentName,
-			ConnectionID:  connection.ID,
-			Provider:      connection.Provider,
-			AdapterType:   body.AdapterType,
-			Status:        "enabled",
-			ConfigJSON:    configJSON,
-			CreatedBy:     cur.Username,
-			CreatedAt:     now,
-			UpdatedAt:     now,
+			// Installing from a project page is only a convenience for selecting
+			// workers. The resulting permission is still agent-scoped.
+			ProjectID:    "",
+			AgentID:      "",
+			ConnectionID: connection.ID,
+			Provider:     connection.Provider,
+			AdapterType:  body.AdapterType,
+			Status:       "enabled",
+			ConfigJSON:   configJSON,
+			CreatedBy:    cur.Username,
+			CreatedAt:    now,
+			UpdatedAt:    now,
 		}
 		if err := s.controlDB.UpsertAgentToolBinding(binding); err != nil {
 			s.serverError(w, err)

@@ -3,6 +3,8 @@ package db
 import (
 	"database/sql"
 	"errors"
+	"fmt"
+	"strings"
 )
 
 func (db *SQLiteStore) migrate() error {
@@ -158,8 +160,8 @@ func (db *SQLiteStore) migrate() error {
 	id TEXT PRIMARY KEY,
 	workspace_id TEXT NOT NULL REFERENCES workspaces(id) ON DELETE CASCADE,
 	agent_worker_id TEXT NOT NULL DEFAULT '',
-	project_id TEXT NOT NULL,
-	agent_id TEXT NOT NULL,
+	project_id TEXT NOT NULL DEFAULT '',
+	agent_id TEXT NOT NULL DEFAULT '',
 	connection_id TEXT NOT NULL REFERENCES connections(id) ON DELETE CASCADE,
 	provider TEXT NOT NULL,
 	adapter_type TEXT NOT NULL DEFAULT '',
@@ -167,13 +169,11 @@ func (db *SQLiteStore) migrate() error {
 	config_json TEXT NOT NULL DEFAULT '{}',
 	created_by TEXT NOT NULL DEFAULT '',
 	created_at TEXT NOT NULL,
-	updated_at TEXT NOT NULL DEFAULT '',
-	UNIQUE(workspace_id, project_id, agent_id, connection_id)
+	updated_at TEXT NOT NULL DEFAULT ''
 )`,
 		`ALTER TABLE agent_tool_bindings ADD COLUMN agent_worker_id TEXT NOT NULL DEFAULT ''`,
 		`CREATE INDEX IF NOT EXISTS idx_agent_tool_bindings_agent ON agent_tool_bindings(workspace_id, project_id, agent_id, status)`,
 		`CREATE INDEX IF NOT EXISTS idx_agent_tool_bindings_worker ON agent_tool_bindings(workspace_id, agent_worker_id, status)`,
-		`CREATE UNIQUE INDEX IF NOT EXISTS idx_agent_tool_bindings_worker_connection ON agent_tool_bindings(workspace_id, agent_worker_id, connection_id) WHERE agent_worker_id != ''`,
 		`CREATE INDEX IF NOT EXISTS idx_agent_tool_bindings_connection ON agent_tool_bindings(connection_id)`,
 		`CREATE TABLE IF NOT EXISTS agent_workers (
 	id TEXT PRIMARY KEY,
@@ -626,7 +626,145 @@ func (db *SQLiteStore) migrate() error {
 			return err
 		}
 	}
+	if err := db.migrateAgentToolBindingsSchema(); err != nil {
+		return err
+	}
 	if err := db.migrateLegacyContextKnowledgeBaseData(); err != nil {
+		return err
+	}
+	return nil
+}
+
+// migrateAgentToolBindingsSchema removes the former project/agent identity
+// constraint and canonicalizes existing rows to the workspace agent worker.
+// Project pages may still be used to select workers, but they must not create
+// a project-scoped credential binding.
+func (db *SQLiteStore) migrateAgentToolBindingsSchema() error {
+	var tableSQL string
+	err := db.sql.QueryRow(`SELECT sql FROM sqlite_master WHERE type = 'table' AND name = 'agent_tool_bindings'`).Scan(&tableSQL)
+	if errors.Is(err, sql.ErrNoRows) {
+		return nil
+	}
+	if err != nil {
+		return err
+	}
+	normalized := strings.Join(strings.Fields(strings.ToLower(tableSQL)), "")
+	legacyConstraint := "unique(workspace_id,project_id,agent_id,connection_id)"
+	if !strings.Contains(normalized, legacyConstraint) {
+		_, err := db.sql.Exec(`CREATE UNIQUE INDEX IF NOT EXISTS idx_agent_tool_bindings_worker_connection
+			ON agent_tool_bindings(workspace_id, agent_worker_id, connection_id)
+			WHERE agent_worker_id != ''`)
+		return err
+	}
+
+	tx, err := db.sql.Begin()
+	if err != nil {
+		return err
+	}
+	rollback := func() {
+		_ = tx.Rollback()
+	}
+	defer rollback()
+
+	if _, err := tx.Exec(`CREATE TABLE agent_tool_bindings_v2 (
+		id TEXT PRIMARY KEY,
+		workspace_id TEXT NOT NULL REFERENCES workspaces(id) ON DELETE CASCADE,
+		agent_worker_id TEXT NOT NULL DEFAULT '',
+		project_id TEXT NOT NULL DEFAULT '',
+		agent_id TEXT NOT NULL DEFAULT '',
+		connection_id TEXT NOT NULL REFERENCES connections(id) ON DELETE CASCADE,
+		provider TEXT NOT NULL,
+		adapter_type TEXT NOT NULL DEFAULT '',
+		status TEXT NOT NULL DEFAULT 'enabled',
+		config_json TEXT NOT NULL DEFAULT '{}',
+		created_by TEXT NOT NULL DEFAULT '',
+		created_at TEXT NOT NULL,
+		updated_at TEXT NOT NULL DEFAULT ''
+	)`); err != nil {
+		return err
+	}
+	if _, err := tx.Exec(`INSERT INTO agent_tool_bindings_v2 (
+		id, workspace_id, agent_worker_id, project_id, agent_id, connection_id, provider, adapter_type,
+		status, config_json, created_by, created_at, updated_at
+	)
+	SELECT b.id,
+		b.workspace_id,
+		CASE
+			WHEN trim(b.agent_worker_id) != '' THEN trim(b.agent_worker_id)
+			ELSE COALESCE(
+				(SELECT aw.id FROM agent_workers aw
+				 WHERE aw.workspace_id = b.workspace_id
+				   AND (aw.id = b.agent_id OR aw.name = b.agent_id)
+				 ORDER BY aw.updated_at DESC, aw.id ASC LIMIT 1),
+				(SELECT pm.member_id FROM project_memberships pm
+				 WHERE pm.workspace_id = b.workspace_id
+				   AND pm.project_id = b.project_id
+				   AND pm.member_type = 'agent_worker'
+				   AND (pm.member_id = b.agent_id OR pm.title = b.agent_id)
+				 ORDER BY pm.updated_at DESC, pm.id ASC LIMIT 1),
+				''
+			)
+		END,
+		'',
+		'',
+		b.connection_id,
+		b.provider,
+		b.adapter_type,
+		b.status,
+		b.config_json,
+		b.created_by,
+		b.created_at,
+		b.updated_at
+	FROM agent_tool_bindings b`); err != nil {
+		return err
+	}
+	var unresolved int
+	if err := tx.QueryRow(`SELECT COUNT(*) FROM agent_tool_bindings_v2 WHERE trim(agent_worker_id) = ''`).Scan(&unresolved); err != nil {
+		return err
+	}
+	if unresolved > 0 {
+		return fmt.Errorf("agent tool binding migration: %d rows could not be resolved to an agent worker", unresolved)
+	}
+	if _, err := tx.Exec(`DELETE FROM agent_tool_bindings_v2 AS b
+	WHERE EXISTS (
+		SELECT 1 FROM agent_tool_bindings_v2 newer
+		WHERE newer.workspace_id = b.workspace_id
+		  AND newer.agent_worker_id = b.agent_worker_id
+		  AND newer.connection_id = b.connection_id
+		  AND (
+			newer.updated_at > b.updated_at
+			OR (newer.updated_at = b.updated_at AND newer.id > b.id)
+		  )
+	)`); err != nil {
+		return err
+	}
+	for _, index := range []string{
+		"idx_agent_tool_bindings_agent",
+		"idx_agent_tool_bindings_worker",
+		"idx_agent_tool_bindings_connection",
+		"idx_agent_tool_bindings_worker_connection",
+	} {
+		if _, err := tx.Exec(`DROP INDEX IF EXISTS ` + index); err != nil {
+			return err
+		}
+	}
+	if _, err := tx.Exec(`DROP TABLE agent_tool_bindings`); err != nil {
+		return err
+	}
+	if _, err := tx.Exec(`ALTER TABLE agent_tool_bindings_v2 RENAME TO agent_tool_bindings`); err != nil {
+		return err
+	}
+	for _, stmt := range []string{
+		`CREATE INDEX idx_agent_tool_bindings_agent ON agent_tool_bindings(workspace_id, project_id, agent_id, status)`,
+		`CREATE INDEX idx_agent_tool_bindings_worker ON agent_tool_bindings(workspace_id, agent_worker_id, status)`,
+		`CREATE UNIQUE INDEX idx_agent_tool_bindings_worker_connection ON agent_tool_bindings(workspace_id, agent_worker_id, connection_id) WHERE agent_worker_id != ''`,
+		`CREATE INDEX idx_agent_tool_bindings_connection ON agent_tool_bindings(connection_id)`,
+	} {
+		if _, err := tx.Exec(stmt); err != nil {
+			return err
+		}
+	}
+	if err := tx.Commit(); err != nil {
 		return err
 	}
 	return nil

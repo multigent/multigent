@@ -19,36 +19,81 @@ func (db *SQLiteStore) UpsertAgentToolBinding(b AgentToolBinding) error {
 	if b.ConfigJSON == "" {
 		b.ConfigJSON = "{}"
 	}
-	conflict := `ON CONFLICT(workspace_id, project_id, agent_id, connection_id) DO UPDATE SET`
 	if strings.TrimSpace(b.AgentWorkerID) != "" {
 		res, err := db.sql.Exec(`UPDATE agent_tool_bindings SET
-	agent_worker_id = ?,
+	project_id = '',
+	agent_id = '',
 	provider = ?,
 	adapter_type = ?,
 	status = ?,
 	config_json = ?,
 	updated_at = ?
-WHERE workspace_id = ? AND project_id = ? AND agent_id = ? AND connection_id = ?`,
-			b.AgentWorkerID, b.Provider, b.AdapterType, b.Status, b.ConfigJSON, b.UpdatedAt,
-			b.WorkspaceID, b.ProjectID, b.AgentID, b.ConnectionID)
+WHERE workspace_id = ? AND agent_worker_id = ? AND connection_id = ?`,
+			b.Provider, b.AdapterType, b.Status, b.ConfigJSON, b.UpdatedAt,
+			b.WorkspaceID, b.AgentWorkerID, b.ConnectionID)
 		if err != nil {
 			return err
 		}
 		if n, err := res.RowsAffected(); err == nil && n > 0 {
 			return nil
 		}
-		conflict = `ON CONFLICT(workspace_id, agent_worker_id, connection_id) WHERE agent_worker_id != '' DO UPDATE SET`
+		// The one-way migration may have already loaded this row under its
+		// project identity. Reuse it instead of inserting a second row.
+		if strings.TrimSpace(b.ProjectID) != "" && strings.TrimSpace(b.AgentID) != "" {
+			res, err = db.sql.Exec(`UPDATE agent_tool_bindings SET
+			agent_worker_id = ?,
+			project_id = '',
+			agent_id = '',
+			provider = ?,
+			adapter_type = ?,
+			status = ?,
+			config_json = ?,
+			updated_at = ?
+		WHERE workspace_id = ? AND project_id = ? AND agent_id = ? AND connection_id = ? AND agent_worker_id = ''`,
+				b.AgentWorkerID, b.Provider, b.AdapterType, b.Status, b.ConfigJSON, b.UpdatedAt,
+				b.WorkspaceID, b.ProjectID, b.AgentID, b.ConnectionID)
+			if err != nil {
+				return err
+			}
+			if n, err := res.RowsAffected(); err == nil && n > 0 {
+				return nil
+			}
+		}
+		_, err = db.sql.Exec(`INSERT INTO agent_tool_bindings (
+		id, workspace_id, agent_worker_id, project_id, agent_id, connection_id, provider, adapter_type,
+		status, config_json, created_by, created_at, updated_at
+	) VALUES (?, ?, ?, '', '', ?, ?, ?, ?, ?, ?, ?, ?)
+	`,
+			b.ID, b.WorkspaceID, b.AgentWorkerID, b.ConnectionID, b.Provider, b.AdapterType,
+			b.Status, b.ConfigJSON, b.CreatedBy, b.CreatedAt, b.UpdatedAt)
+		return err
 	}
-	_, err := db.sql.Exec(`INSERT INTO agent_tool_bindings (
+	// This branch is only used by the one-way 1.x migration. Runtime/API
+	// callers must provide AgentWorkerID; project and agent fields are not a
+	// supported binding identity anymore.
+	if strings.TrimSpace(b.ProjectID) == "" || strings.TrimSpace(b.AgentID) == "" {
+		return errors.New("agent worker is required for tool binding")
+	}
+	res, err := db.sql.Exec(`UPDATE agent_tool_bindings SET
+	provider = ?,
+	adapter_type = ?,
+	status = ?,
+	config_json = ?,
+	updated_at = ?
+WHERE workspace_id = ? AND project_id = ? AND agent_id = ? AND connection_id = ? AND agent_worker_id = ''`,
+		b.Provider, b.AdapterType, b.Status, b.ConfigJSON, b.UpdatedAt,
+		b.WorkspaceID, b.ProjectID, b.AgentID, b.ConnectionID)
+	if err != nil {
+		return err
+	}
+	if n, err := res.RowsAffected(); err == nil && n > 0 {
+		return nil
+	}
+	_, err = db.sql.Exec(`INSERT INTO agent_tool_bindings (
 	id, workspace_id, agent_worker_id, project_id, agent_id, connection_id, provider, adapter_type,
 	status, config_json, created_by, created_at, updated_at
-) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
-`+conflict+`
-	provider = excluded.provider,
-	adapter_type = excluded.adapter_type,
-	status = excluded.status,
-	config_json = excluded.config_json,
-	updated_at = excluded.updated_at`,
+	) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+	`,
 		b.ID, b.WorkspaceID, b.AgentWorkerID, b.ProjectID, b.AgentID, b.ConnectionID, b.Provider, b.AdapterType,
 		b.Status, b.ConfigJSON, b.CreatedBy, b.CreatedAt, b.UpdatedAt)
 	return err

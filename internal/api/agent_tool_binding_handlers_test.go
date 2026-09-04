@@ -134,6 +134,17 @@ func TestAgentToolBindingUsesAgentWorkerAcrossProjectMemberships(t *testing.T) {
 	if body.AgentWorkerID != worker.ID {
 		t.Fatalf("expected worker binding, got %#v", body)
 	}
+	bindings, err := s.controlDB.ListAgentToolBindings(controldb.AgentToolBindingFilter{
+		WorkspaceID:   workspaceID,
+		AgentWorkerID: worker.ID,
+		ConnectionID:  connection.ID,
+	})
+	if err != nil || len(bindings) != 1 {
+		t.Fatalf("worker binding lookup: bindings=%+v err=%v", bindings, err)
+	}
+	if bindings[0].ProjectID != "" || bindings[0].AgentID != "" {
+		t.Fatalf("worker binding must not retain project identity: %+v", bindings[0])
+	}
 
 	connections, err := s.resolveAgentRuntimeConnections(workspaceID, "other", "manager-agent")
 	if err != nil {
@@ -188,7 +199,6 @@ func TestInstallProjectToolBindingsInstallsWorkspaceConnectionForAllAgents(t *te
 	}
 	bindings, err := s.controlDB.ListAgentToolBindings(controldb.AgentToolBindingFilter{
 		WorkspaceID:  workspaceID,
-		ProjectID:    "sample",
 		ConnectionID: connection.ID,
 		Status:       "enabled",
 	})
@@ -202,8 +212,13 @@ func TestInstallProjectToolBindingsInstallsWorkspaceConnectionForAllAgents(t *te
 	if err != nil {
 		t.Fatalf("grants: %v", err)
 	}
-	if len(s.matchingAgentConnectionGrants(grants, workspaceID, "sample", "pm")) == 0 {
-		t.Fatalf("expected project grant to match sample/pm")
+	if len(matchingAgentConnectionGrantsForTargets(grants, workspaceID, "", "", "aw-pm")) == 0 {
+		t.Fatalf("expected agent grant to match aw-pm")
+	}
+	for _, grant := range grants {
+		if grant.TargetType == ConnectionTargetProject && grant.TargetID == "sample" {
+			t.Fatalf("project grant must not be created: %#v", grants)
+		}
 	}
 }
 
@@ -272,7 +287,7 @@ func TestInstallProjectToolBindingsUsesAgentWorkerMemberships(t *testing.T) {
 	if err != nil {
 		t.Fatalf("bindings: %v", err)
 	}
-	if len(bindings) != 1 || bindings[0].AgentID != "builder" {
+	if len(bindings) != 1 || bindings[0].ProjectID != "" || bindings[0].AgentID != "" {
 		t.Fatalf("membership-backed binding missing: %+v", bindings)
 	}
 }
