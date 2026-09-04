@@ -1,5 +1,18 @@
 # Changelog
 
+## [v2.0.12] - 2026-09-04
+
+### Fixed
+
+- Fixed 1.x to 2.x Agent Worker migration leaving legacy project-scoped tool grants behind.
+- Automatic database migration and the explicit `migrate agent-worker --apply` path now clear legacy project and agent grants while preserving workspace, user, and Agent Worker grants.
+- Migration reports now include migrated tool binding and removed legacy grant counts.
+
+### Tested
+
+- Added regression coverage for first-run migration, repeated startup migration, legacy identity cleanup, and grant canonicalization.
+- Verified `go test ./...`.
+
 ## [v2.0.11] - 2026-09-03
 
 ### Fixed
