@@ -1921,6 +1921,8 @@ IM channel 已经补了 `agent_worker_id`，但表结构和部分代码仍保留
 - 同一个 Agent Worker 在另一个项目 membership 下运行时，也能看到同一份 tool binding。
 - connection grant 匹配只接受 `agent_worker:<id>` 目标，不再接受旧 `project/agent` 目标。
 
+迁移器在完成旧绑定转换后，还会对这些实际被 Agent Worker 使用的连接做一次授权收口：删除旧项目级 grant 和旧格式的 agent grant，只保留 `agent_worker:<id>` grant。这样 1.x 的残留授权不会继续让凭据看起来属于某个项目，也不会在 2.x 运行时造成权限误判。迁移报告会记录转换的 tool binding 数量和删除的旧 grant 数量。
+
 仍需继续收口：
 
 - 外部工具授权 UI 仍主要在项目成员详情页，不在一级 Agent Worker 详情页。

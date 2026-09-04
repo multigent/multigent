@@ -651,10 +651,12 @@ func (db *SQLiteStore) migrateAgentToolBindingsSchema() error {
 	normalized := strings.Join(strings.Fields(strings.ToLower(tableSQL)), "")
 	legacyConstraint := "unique(workspace_id,project_id,agent_id,connection_id)"
 	if !strings.Contains(normalized, legacyConstraint) {
-		_, err := db.sql.Exec(`CREATE UNIQUE INDEX IF NOT EXISTS idx_agent_tool_bindings_worker_connection
+		if _, err := db.sql.Exec(`CREATE UNIQUE INDEX IF NOT EXISTS idx_agent_tool_bindings_worker_connection
 			ON agent_tool_bindings(workspace_id, agent_worker_id, connection_id)
-			WHERE agent_worker_id != ''`)
-		return err
+			WHERE agent_worker_id != ''`); err != nil {
+			return err
+		}
+		return cleanupLegacyToolConnectionGrants(db.sql)
 	}
 
 	tx, err := db.sql.Begin()
@@ -764,10 +766,34 @@ func (db *SQLiteStore) migrateAgentToolBindingsSchema() error {
 			return err
 		}
 	}
+	if err := cleanupLegacyToolConnectionGrants(tx); err != nil {
+		return err
+	}
 	if err := tx.Commit(); err != nil {
 		return err
 	}
 	return nil
+}
+
+type migrationSQLExecer interface {
+	Exec(query string, args ...any) (sql.Result, error)
+}
+
+// cleanupLegacyToolConnectionGrants removes grants created for the former
+// project-scoped tool binding model. It intentionally keeps workspace, user,
+// and agent-worker grants intact.
+func cleanupLegacyToolConnectionGrants(exec migrationSQLExecer) error {
+	_, err := exec.Exec(`DELETE FROM connection_grants
+WHERE (target_type = 'project'
+   OR (target_type = 'agent' AND target_id NOT LIKE 'agent_worker:%'))
+  AND EXISTS (
+		SELECT 1
+		FROM agent_tool_bindings b
+		WHERE b.workspace_id = connection_grants.workspace_id
+		  AND b.connection_id = connection_grants.connection_id
+		  AND trim(b.agent_worker_id) != ''
+	)`)
+	return err
 }
 
 func (db *SQLiteStore) migrateLegacyContextKnowledgeBaseData() error {

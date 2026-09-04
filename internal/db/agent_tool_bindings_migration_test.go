@@ -61,6 +61,15 @@ func TestMigrateAgentToolBindingsToWorkerIdentity(t *testing.T) {
 	}); err != nil {
 		t.Fatalf("connection: %v", err)
 	}
+	for _, grant := range []ConnectionGrant{
+		{ID: "grant-project", WorkspaceID: workspaceID, ConnectionID: "conn-github", TargetType: "project", TargetID: "project-a"},
+		{ID: "grant-legacy-agent", WorkspaceID: workspaceID, ConnectionID: "conn-github", TargetType: "agent", TargetID: "project-a/pm"},
+		{ID: "grant-worker", WorkspaceID: workspaceID, ConnectionID: "conn-github", TargetType: "agent", TargetID: "agent_worker:aw-pm"},
+	} {
+		if err := store.CreateConnectionGrant(grant); err != nil {
+			t.Fatalf("grant %s: %v", grant.ID, err)
+		}
+	}
 
 	if _, err := store.sql.Exec(`DROP TABLE agent_tool_bindings`); err != nil {
 		t.Fatalf("drop current table: %v", err)
@@ -113,6 +122,22 @@ func TestMigrateAgentToolBindingsToWorkerIdentity(t *testing.T) {
 	if bindings[0].ID != "binding-old-b" || bindings[0].AgentWorkerID != "aw-pm" || bindings[0].ProjectID != "" || bindings[0].AgentID != "" {
 		t.Fatalf("unexpected migrated binding: %+v", bindings[0])
 	}
+	grants, err := store.ListConnectionGrants("conn-github")
+	if err != nil {
+		t.Fatalf("list migrated grants: %v", err)
+	}
+	if len(grants) != 1 || grants[0].TargetType != "agent" || grants[0].TargetID != "agent_worker:aw-pm" {
+		t.Fatalf("legacy grants were not removed: %+v", grants)
+	}
+	if err := store.CreateConnectionGrant(ConnectionGrant{
+		ID:           "grant-late-project",
+		WorkspaceID:  workspaceID,
+		ConnectionID: "conn-github",
+		TargetType:   "project",
+		TargetID:     "project-b",
+	}); err != nil {
+		t.Fatalf("seed late legacy grant: %v", err)
+	}
 
 	if err := store.migrateAgentToolBindingsSchema(); err != nil {
 		t.Fatalf("repeat migration: %v", err)
@@ -120,5 +145,9 @@ func TestMigrateAgentToolBindingsToWorkerIdentity(t *testing.T) {
 	bindings, err = store.ListAgentToolBindings(AgentToolBindingFilter{WorkspaceID: workspaceID})
 	if err != nil || len(bindings) != 1 {
 		t.Fatalf("repeat migration changed bindings: bindings=%+v err=%v", bindings, err)
+	}
+	grants, err = store.ListConnectionGrants("conn-github")
+	if err != nil || len(grants) != 1 || grants[0].TargetID != "agent_worker:aw-pm" {
+		t.Fatalf("repeat migration did not clean legacy grants: grants=%+v err=%v", grants, err)
 	}
 }

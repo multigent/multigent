@@ -136,6 +136,28 @@ func TestAgentWorkerMigrationReadsLegacyAgentsAndMigratesTasks(t *testing.T) {
 	}); err != nil {
 		t.Fatalf("seed tool binding: %v", err)
 	}
+	if err := db.CreateConnectionGrant(controldb.ConnectionGrant{
+		ID:           "grant-legacy-project",
+		WorkspaceID:  workspaceID,
+		ConnectionID: "conn-github",
+		TargetType:   "project",
+		TargetID:     "sample",
+		CreatedBy:    "admin",
+		CreatedAt:    now,
+	}); err != nil {
+		t.Fatalf("seed legacy project grant: %v", err)
+	}
+	if err := db.CreateConnectionGrant(controldb.ConnectionGrant{
+		ID:           "grant-legacy-agent",
+		WorkspaceID:  workspaceID,
+		ConnectionID: "conn-github",
+		TargetType:   "agent",
+		TargetID:     "sample/pm",
+		CreatedBy:    "admin",
+		CreatedAt:    now,
+	}); err != nil {
+		t.Fatalf("seed legacy agent grant: %v", err)
+	}
 	if err := db.UpsertAgentChannelBinding(controldb.AgentChannelBinding{
 		ID:           "chan-feishu",
 		WorkspaceID:  workspaceID,
@@ -151,8 +173,11 @@ func TestAgentWorkerMigrationReadsLegacyAgentsAndMigratesTasks(t *testing.T) {
 	}); err != nil {
 		t.Fatalf("seed channel binding: %v", err)
 	}
-	if err := applyAgentWorkerMigrationPlan(db, taskstore.New(root), plan); err != nil {
+	if err := applyAgentWorkerMigrationPlan(db, taskstore.New(root), &plan); err != nil {
 		t.Fatalf("apply plan: %v", err)
+	}
+	if plan.Summary.ToolBindingsMigrated != 1 || plan.Summary.LegacyGrantsRemoved != 2 {
+		t.Fatalf("migration report did not record tool grant cleanup: %+v", plan.Summary)
 	}
 	workers, err := db.ListAgentWorkers(workspaceID)
 	if err != nil {
@@ -220,12 +245,15 @@ func TestAgentWorkerMigrationReadsLegacyAgentsAndMigratesTasks(t *testing.T) {
 	if len(toolBindings) != 1 || toolBindings[0].ID != "bind-github" {
 		t.Fatalf("tool binding was not attached to worker: %+v", toolBindings)
 	}
+	if toolBindings[0].ProjectID != "" || toolBindings[0].AgentID != "" {
+		t.Fatalf("tool binding retained legacy project identity: %+v", toolBindings[0])
+	}
 	grants, err := db.ListConnectionGrants("conn-github")
 	if err != nil {
 		t.Fatalf("list connection grants: %v", err)
 	}
 	if len(grants) != 1 || grants[0].TargetType != "agent" || grants[0].TargetID != "agent_worker:"+workers[0].ID {
-		t.Fatalf("legacy tool binding did not create worker grant: %+v", grants)
+		t.Fatalf("legacy tool grants were not canonicalized: %+v", grants)
 	}
 	channelBindings, err := db.ListAgentChannelBindings(controldb.AgentChannelBindingFilter{
 		WorkspaceID:   workspaceID,
@@ -335,7 +363,7 @@ func TestAgentWorkerMigrationReadsLegacyDBAgentProviders(t *testing.T) {
 	if worker.Provider != "prov-codex" || worker.RuntimeModel != "gpt-5.5" || worker.Membership.Role != "developer" {
 		t.Fatalf("legacy DB metadata was not preserved: %+v", worker)
 	}
-	if err := applyAgentWorkerMigrationPlan(db, taskstore.NewDB(root, db), plan); err != nil {
+	if err := applyAgentWorkerMigrationPlan(db, taskstore.NewDB(root, db), &plan); err != nil {
 		t.Fatalf("apply plan: %v", err)
 	}
 	created, ok, err := db.AgentWorkerByName(workspaceID, "dev")
@@ -449,7 +477,7 @@ func TestAgentWorkerMigrationKeepsHumanMembersOutOfWorkers(t *testing.T) {
 	if plan.Summary.WorkersPlanned != 0 || plan.Summary.HumanMemberships != 1 {
 		t.Fatalf("unexpected summary: %+v", plan.Summary)
 	}
-	if err := applyAgentWorkerMigrationPlan(db, taskstore.New(root), plan); err != nil {
+	if err := applyAgentWorkerMigrationPlan(db, taskstore.New(root), &plan); err != nil {
 		t.Fatalf("apply plan: %v", err)
 	}
 	if workers, err := db.ListAgentWorkers(workspaceID); err != nil {

@@ -50,6 +50,8 @@ type agentWorkerMigrationPlanSummary struct {
 	WorkersPlanned         int `json:"workersPlanned"`
 	Memberships            int `json:"memberships"`
 	HumanMemberships       int `json:"humanMemberships"`
+	ToolBindingsMigrated   int `json:"toolBindingsMigrated"`
+	LegacyGrantsRemoved    int `json:"legacyGrantsRemoved"`
 	ActiveTasksScanned     int `json:"activeTasksScanned"`
 	ArchivedTasksScanned   int `json:"archivedTasksScanned"`
 	TaskAssigneesToRewrite int `json:"taskAssigneesToRewrite"`
@@ -178,7 +180,7 @@ func newMigrateAgentWorkerCmd() *cobra.Command {
 					}
 					plan.BackupPath = path
 				}
-				if err := applyAgentWorkerMigrationPlan(db, ts, plan); err != nil {
+				if err := applyAgentWorkerMigrationPlan(db, ts, &plan); err != nil {
 					return err
 				}
 				if reportPath != "" {
@@ -742,7 +744,10 @@ func fileExists(path string) bool {
 	return err == nil && !info.IsDir()
 }
 
-func applyAgentWorkerMigrationPlan(db controldb.Store, ts taskstore.Store, plan agentWorkerMigrationPlan) error {
+func applyAgentWorkerMigrationPlan(db controldb.Store, ts taskstore.Store, plan *agentWorkerMigrationPlan) error {
+	if plan == nil {
+		return errors.New("agent worker migration plan is required")
+	}
 	now := time.Now().UTC().Format(time.RFC3339)
 	for _, human := range plan.Humans {
 		staleWorkerID := stableMigrationID("aw", plan.WorkspaceID, human.ProjectID, human.LegacyAgent)
@@ -823,9 +828,11 @@ func applyAgentWorkerMigrationPlan(db controldb.Store, ts taskstore.Store, plan 
 		if err := migrateWorkerChannelBindings(db, plan.WorkspaceID, item); err != nil {
 			return err
 		}
-		if err := migrateWorkerToolBindings(db, plan.WorkspaceID, item); err != nil {
+		migrated, err := migrateWorkerToolBindings(db, plan.WorkspaceID, item)
+		if err != nil {
 			return err
 		}
+		plan.Summary.ToolBindingsMigrated += migrated
 		if err := migrateWorkerInteractionSessions(db, plan.WorkspaceID, item); err != nil {
 			return err
 		}
@@ -839,22 +846,27 @@ func applyAgentWorkerMigrationPlan(db controldb.Store, ts taskstore.Store, plan 
 	if err := migrateWorkflowRuns(db, plan.WorkspaceID); err != nil {
 		return err
 	}
+	removed, err := cleanupLegacyToolConnectionGrants(db, plan.WorkspaceID)
+	if err != nil {
+		return err
+	}
+	plan.Summary.LegacyGrantsRemoved = removed
 	return nil
 }
 
-func migrateWorkerToolBindings(db controldb.Store, workspaceID string, item agentWorkerMigrationWorker) error {
+func migrateWorkerToolBindings(db controldb.Store, workspaceID string, item agentWorkerMigrationWorker) (int, error) {
 	bindings, err := db.ListAgentToolBindings(controldb.AgentToolBindingFilter{
 		WorkspaceID: workspaceID,
 		ProjectID:   item.Project,
 		AgentID:     item.LegacyAgent,
 	})
 	if err != nil {
-		return fmt.Errorf("list tool bindings for %s/%s: %w", item.Project, item.LegacyAgent, err)
+		return 0, fmt.Errorf("list tool bindings for %s/%s: %w", item.Project, item.LegacyAgent, err)
 	}
 	for _, binding := range bindings {
 		binding.AgentWorkerID = item.ID
 		if err := db.UpsertAgentToolBinding(binding); err != nil {
-			return fmt.Errorf("migrate tool binding %s: %w", binding.ID, err)
+			return 0, fmt.Errorf("migrate tool binding %s: %w", binding.ID, err)
 		}
 		if strings.TrimSpace(binding.ConnectionID) == "" {
 			continue
@@ -868,10 +880,47 @@ func migrateWorkerToolBindings(db controldb.Store, workspaceID string, item agen
 			CreatedBy:    binding.CreatedBy,
 			CreatedAt:    firstNonEmpty(binding.CreatedAt, time.Now().UTC().Format(time.RFC3339)),
 		}); err != nil {
-			return fmt.Errorf("migrate connection grant for tool binding %s: %w", binding.ID, err)
+			return 0, fmt.Errorf("migrate connection grant for tool binding %s: %w", binding.ID, err)
 		}
 	}
-	return nil
+	return len(bindings), nil
+}
+
+// cleanupLegacyToolConnectionGrants removes authorization records that only
+// made sense when agent tools were project-scoped. Workspace connections are
+// still reusable, but an agent's access must be granted to its worker identity.
+func cleanupLegacyToolConnectionGrants(db controldb.Store, workspaceID string) (int, error) {
+	bindings, err := db.ListAgentToolBindings(controldb.AgentToolBindingFilter{WorkspaceID: workspaceID})
+	if err != nil {
+		return 0, fmt.Errorf("list migrated tool bindings for grant cleanup: %w", err)
+	}
+	connectionIDs := make(map[string]struct{})
+	for _, binding := range bindings {
+		if strings.TrimSpace(binding.AgentWorkerID) == "" || strings.TrimSpace(binding.ConnectionID) == "" {
+			continue
+		}
+		connectionIDs[binding.ConnectionID] = struct{}{}
+	}
+	removed := 0
+	for connectionID := range connectionIDs {
+		grants, err := db.ListConnectionGrants(connectionID)
+		if err != nil {
+			return removed, fmt.Errorf("list grants for migrated tool connection %s: %w", connectionID, err)
+		}
+		for _, grant := range grants {
+			legacyProjectGrant := strings.TrimSpace(grant.TargetType) == "project"
+			legacyAgentGrant := strings.TrimSpace(grant.TargetType) == "agent" &&
+				!strings.HasPrefix(strings.TrimSpace(grant.TargetID), "agent_worker:")
+			if !legacyProjectGrant && !legacyAgentGrant {
+				continue
+			}
+			if err := db.DeleteConnectionGrant(grant.ID); err != nil {
+				return removed, fmt.Errorf("delete legacy grant %s: %w", grant.ID, err)
+			}
+			removed++
+		}
+	}
+	return removed, nil
 }
 
 func migrateWorkerChannelBindings(db controldb.Store, workspaceID string, item agentWorkerMigrationWorker) error {
