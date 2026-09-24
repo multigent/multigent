@@ -1,10 +1,12 @@
 package store
 
 import (
+	"encoding/json"
 	"testing"
 
 	controldb "github.com/multigent/multigent/internal/db"
 	"github.com/multigent/multigent/internal/entity"
+	"github.com/multigent/multigent/internal/secretbox"
 )
 
 func TestAgentMetaFromWorkerMembershipPreservesRuntimeConfig(t *testing.T) {
@@ -37,5 +39,22 @@ func TestAgentMetaFromWorkerMembershipPreservesRuntimeConfig(t *testing.T) {
 	}
 	if meta.HTTPAgent == nil || meta.HTTPAgent.URL != "http://model.test/v1/chat/completions" || meta.HTTPAgent.Model != "test-model" {
 		t.Fatalf("http agent config was not preserved: %#v", meta.HTTPAgent)
+	}
+}
+
+func TestAgentMetaFromWorkerMembershipOpensSealedRuntimeEnv(t *testing.T) {
+	t.Setenv("MULTIGENT_CONNECTION_ENCRYPTION_KEY", "agent-meta-test-key")
+	sealed, err := secretbox.SealString("present")
+	if err != nil {
+		t.Fatal(err)
+	}
+	raw, err := json.Marshal(map[string]any{"env": map[string]string{"RUNTIME_SECRET": sealed}})
+	if err != nil {
+		t.Fatal(err)
+	}
+	worker := controldb.AgentWorker{Name: "qa", Model: string(entity.ModelCodex), RuntimeConfigJSON: string(raw)}
+	meta := agentMetaFromWorkerMembership("example-project", worker, controldb.ProjectMembership{Role: "qa"})
+	if meta.Env["RUNTIME_SECRET"] != "present" {
+		t.Fatalf("runtime env was not opened: %#v", meta.Env)
 	}
 }

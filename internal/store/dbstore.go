@@ -10,6 +10,7 @@ import (
 	"strings"
 	"time"
 
+	"github.com/multigent/multigent/internal/agentenv"
 	controldb "github.com/multigent/multigent/internal/db"
 	"github.com/multigent/multigent/internal/entity"
 	"github.com/multigent/multigent/internal/errs"
@@ -343,7 +344,9 @@ func agentMetaFromWorkerMembership(project string, worker controldb.AgentWorker,
 	}
 	if raw := strings.TrimSpace(worker.RuntimeConfigJSON); raw != "" {
 		if err := json.Unmarshal([]byte(raw), &runtimeConfig); err == nil {
-			meta.Env = runtimeConfig.Env
+			if opened, openErr := agentenv.Open(runtimeConfig.Env); openErr == nil {
+				meta.Env = opened
+			}
 			meta.Sandbox = runtimeConfig.Sandbox
 			meta.AddDirs = runtimeConfig.AddDirs
 			meta.RunCommand = strings.TrimSpace(runtimeConfig.RunCommand)
