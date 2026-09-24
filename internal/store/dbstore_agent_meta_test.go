@@ -7,12 +7,12 @@ import (
 	"github.com/multigent/multigent/internal/entity"
 )
 
-func TestAgentMetaFromWorkerMembershipPreservesRuntimeSandbox(t *testing.T) {
+func TestAgentMetaFromWorkerMembershipPreservesRuntimeConfig(t *testing.T) {
 	worker := controldb.AgentWorker{
 		ID:                "aw-test",
 		Name:              "qa-cursor",
 		Model:             string(entity.ModelCursor),
-		RuntimeConfigJSON: `{"sandbox":{"provider":"docker","image":"runtime:test","networkMode":"bridge"}}`,
+		RuntimeConfigJSON: `{"env":{"RUNTIME_SECRET":"present"},"sandbox":{"provider":"docker","image":"runtime:test","networkMode":"bridge"},"addDirs":["/workspace/shared"],"runCommand":"codex exec","httpAgent":{"url":"http://model.test/v1/chat/completions","model":"test-model"}}`,
 	}
 	membership := controldb.ProjectMembership{Role: "qa"}
 
@@ -25,5 +25,17 @@ func TestAgentMetaFromWorkerMembershipPreservesRuntimeSandbox(t *testing.T) {
 	}
 	if meta.Sandbox.Image != "runtime:test" {
 		t.Fatalf("sandbox image = %q, want runtime:test", meta.Sandbox.Image)
+	}
+	if meta.Env["RUNTIME_SECRET"] != "present" {
+		t.Fatalf("runtime env was not preserved: %#v", meta.Env)
+	}
+	if len(meta.AddDirs) != 1 || meta.AddDirs[0] != "/workspace/shared" {
+		t.Fatalf("add dirs were not preserved: %#v", meta.AddDirs)
+	}
+	if meta.RunCommand != "codex exec" {
+		t.Fatalf("run command = %q, want codex exec", meta.RunCommand)
+	}
+	if meta.HTTPAgent == nil || meta.HTTPAgent.URL != "http://model.test/v1/chat/completions" || meta.HTTPAgent.Model != "test-model" {
+		t.Fatalf("http agent config was not preserved: %#v", meta.HTTPAgent)
 	}
 }
