@@ -291,8 +291,12 @@ func TestAgentEnvCRUDUsesAgentWorkerRuntimeConfig(t *testing.T) {
 		t.Fatalf("worker ok=%v err=%v", ok, err)
 	}
 	cfg := decodeAgentWorkerRuntimeConfig(worker)
-	if cfg.Env["EXISTING"] != "1" || cfg.Env["RUNTIME_FLAG"] != "enabled" {
-		t.Fatalf("env not saved in runtime config: %#v", cfg.Env)
+	if cfg.Env["EXISTING"] != "1" || !secretbox.IsSealed(cfg.Env["RUNTIME_FLAG"]) {
+		t.Fatalf("env not sealed in runtime config: %#v", cfg.Env)
+	}
+	opened, err := secretbox.OpenString(cfg.Env["RUNTIME_FLAG"])
+	if err != nil || opened != "enabled" {
+		t.Fatalf("stored env did not open correctly: value=%q err=%v", opened, err)
 	}
 
 	getReq := agentEnvPolicyRequest(http.MethodGet, "/api/v1/projects/sample/agents/worker-env/env", "admin", "sample", "worker-env", nil)

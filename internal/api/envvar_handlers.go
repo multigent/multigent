@@ -6,6 +6,7 @@ import (
 	"strings"
 	"time"
 
+	"github.com/multigent/multigent/internal/agentenv"
 	"github.com/multigent/multigent/internal/entity"
 	"github.com/multigent/multigent/internal/store"
 )
@@ -165,7 +166,11 @@ func (s *Server) handleGetAgentEnv(w http.ResponseWriter, r *http.Request) {
 		s.jsonErrorCode(w, http.StatusNotFound, ErrCodeAgentNotFound, "agent worker membership not found")
 		return
 	}
-	env := decodeAgentWorkerRuntimeConfig(resolved.Worker).Env
+	env, err := agentenv.Open(decodeAgentWorkerRuntimeConfig(resolved.Worker).Env)
+	if err != nil {
+		s.serverError(w, err)
+		return
+	}
 	if env == nil {
 		env = make(map[string]string)
 	}
@@ -225,7 +230,12 @@ func (s *Server) handleSetAgentEnv(w http.ResponseWriter, r *http.Request) {
 	if cfg.Env == nil {
 		cfg.Env = make(map[string]string)
 	}
-	cfg.Env[req.Key] = req.Value
+	sealed, err := agentenv.Seal(map[string]string{req.Key: req.Value})
+	if err != nil {
+		s.serverError(w, err)
+		return
+	}
+	cfg.Env[req.Key] = sealed[req.Key]
 	worker := resolved.Worker
 	worker.RuntimeConfigJSON = encodeAgentWorkerRuntimeConfig(cfg)
 	worker.UpdatedAt = time.Now().UTC().Format(time.RFC3339)

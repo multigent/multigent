@@ -227,7 +227,8 @@ func (r *Runner) ExecPromptWithRuntimeControlEnvContext(ctx context.Context, pro
 		return nil, fmt.Errorf("materialize codex provider config: %w", err)
 	}
 	apiModel, apiBaseURL := resolveAPIModelFromEnv(model, effectiveEnv)
-	invoker := InvokerFor(model, meta.RunCommand, meta.AddDirs)
+	invokerAddDirs, addDirMounts := runtimeAddDirs(meta.AddDirs, meta.Sandbox)
+	invoker := InvokerFor(model, meta.RunCommand, invokerAddDirs)
 	resumeSessionID := ResumeSessionIDForCLI(sessionID)
 	innerArgs := invoker.Args(promptFile, resumeSessionID)
 
@@ -252,6 +253,7 @@ func (r *Runner) ExecPromptWithRuntimeControlEnvContext(ctx context.Context, pro
 		injectProviderEnvIntoRuntime(runtimeCfg, agentEnv)
 		injectRuntimeControlEnvIntoRuntime(runtimeCfg, processRuntimeEnv)
 		mounts := append([]entity.RuntimeMount(nil), runtimeCfg.Mounts...)
+		mounts = append(mounts, addDirMounts...)
 		mounts = r.appendWorkspaceFilesMount(mounts, meta.Sandbox.Provider, runtimeCfg)
 		r.addRuntimeDockerSystemMounts(runtimeCfg)
 		containerPromptFile := "/workspace/" + filepath.Base(promptFile)
@@ -448,7 +450,8 @@ func (r *Runner) RunTaskWithContext(ctx context.Context, project, agentName stri
 		return nil, fmt.Errorf("materialize codex provider config: %w", err)
 	}
 	apiModel, apiBaseURL := resolveAPIModelFromEnv(model, effectiveEnv)
-	invoker := InvokerFor(model, meta.RunCommand, meta.AddDirs)
+	invokerAddDirs, addDirMounts := runtimeAddDirs(meta.AddDirs, meta.Sandbox)
+	invoker := InvokerFor(model, meta.RunCommand, invokerAddDirs)
 	resumeSessionID := ResumeSessionIDForCLI(sessionID)
 
 	// Build the inner agent CLI arguments.
@@ -479,6 +482,7 @@ func (r *Runner) RunTaskWithContext(ctx context.Context, project, agentName stri
 		injectProviderEnvIntoRuntime(runtimeCfg, agentEnv)
 		injectRuntimeControlEnvIntoRuntime(runtimeCfg, processRuntimeEnv)
 		mounts := append([]entity.RuntimeMount(nil), runtimeCfg.Mounts...)
+		mounts = append(mounts, addDirMounts...)
 		mounts = r.appendWorkspaceFilesMount(mounts, meta.Sandbox.Provider, runtimeCfg)
 
 		r.addRuntimeDockerSystemMounts(runtimeCfg)
@@ -1621,6 +1625,35 @@ func (r *Runner) execPromptHTTP(agentDir string, meta *entity.AgentMeta, prompt 
 // remapPromptFile replaces occurrences of hostPath with containerPath in args.
 // This is needed when the prompt file is written to the host working directory
 // but the container sees it at the /workspace mount point.
+
+func runtimeAddDirs(addDirs []string, runtimeCfg *entity.SandboxConfig) ([]string, []entity.RuntimeMount) {
+	resolved := append([]string(nil), addDirs...)
+	if runtimeCfg == nil || runtimeCfg.Provider != entity.SandboxDocker {
+		return resolved, nil
+	}
+	resolved = make([]string, 0, len(addDirs))
+	mounts := make([]entity.RuntimeMount, 0, len(addDirs))
+	for index, dir := range addDirs {
+		dir = strings.TrimSpace(dir)
+		if dir == "" {
+			continue
+		}
+		abs, err := filepath.Abs(dir)
+		if err != nil {
+			continue
+		}
+		target := fmt.Sprintf("/mnt/multigent/adddirs/%d", index)
+		resolved = append(resolved, target)
+		mounts = append(mounts, entity.RuntimeMount{
+			Source: abs,
+			Target: target,
+			Mode:   runenv.MountModeReadWrite,
+			Kind:   "workspace",
+		})
+	}
+	return resolved, mounts
+}
+
 func remapPromptFile(args []string, hostPath, containerPath string) []string {
 	out := make([]string, len(args))
 	for i, a := range args {
