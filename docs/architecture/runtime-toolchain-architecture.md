@@ -23,9 +23,17 @@ runtime:
     package_manager: npm
     package: "@openai/codex"
     binary: codex
+    runtime_args: []
 ```
 
 This lets us update or pin CLI versions without rebuilding the base image.
+
+`runtime_args` is an optional argument vector appended directly to the selected
+agent CLI without shell parsing. It is useful for role-scoped runtime profiles,
+for example Claude Code `--bare`, `--disable-slash-commands`, or a small
+`--tools` allowlist. Prompt delivery remains on stdin and normal session handling
+remains active. Runtime args are applied to Claude Code only until other CLI
+argument positions have an explicit contract.
 
 ## Base Image Responsibilities
 

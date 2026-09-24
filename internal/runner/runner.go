@@ -231,6 +231,7 @@ func (r *Runner) ExecPromptWithRuntimeControlEnvContext(ctx context.Context, pro
 	invoker := InvokerFor(model, meta.RunCommand, invokerAddDirs)
 	resumeSessionID := ResumeSessionIDForCLI(sessionID)
 	innerArgs := invoker.Args(promptFile, resumeSessionID)
+	innerArgs = appendConfiguredRuntimeArgs(model, innerArgs, meta.Sandbox)
 
 	var (
 		executable string
@@ -456,6 +457,7 @@ func (r *Runner) RunTaskWithContext(ctx context.Context, project, agentName stri
 
 	// Build the inner agent CLI arguments.
 	innerArgs := invoker.Args(promptFile, resumeSessionID)
+	innerArgs = appendConfiguredRuntimeArgs(model, innerArgs, meta.Sandbox)
 
 	// Determine the actual executable and final argument list.
 	// When a Docker sandbox is configured the inner args become the command
@@ -1071,6 +1073,14 @@ func ensureCodexBypassSandboxArg(args []string) []string {
 	out = append(out, args[0], args[1], bypassArg)
 	out = append(out, args[2:]...)
 	return out
+}
+
+func appendConfiguredRuntimeArgs(model entity.AgentModel, args []string, sandbox *entity.SandboxConfig) []string {
+	if entity.NormaliseModel(model) != entity.ModelClaudeCode || sandbox == nil || sandbox.AgentCLI == nil || len(sandbox.AgentCLI.RuntimeArgs) == 0 {
+		return args
+	}
+	out := append([]string(nil), args...)
+	return append(out, sandbox.AgentCLI.RuntimeArgs...)
 }
 
 func adaptSandboxArgs(model entity.AgentModel, args []string) []string {

@@ -382,6 +382,11 @@ type AgentCLIConfig struct {
 	Package        string   `yaml:"package,omitempty" json:"package,omitempty"`
 	Install        []string `yaml:"install,omitempty" json:"install,omitempty"`
 	Check          []string `yaml:"check,omitempty" json:"check,omitempty"`
+	// RuntimeArgs are appended to the model CLI invocation without shell parsing.
+	// They allow a role to select a lean runtime profile such as Claude Code
+	// --bare or a small built-in tool set while preserving stdin prompts and
+	// provider-native session handling.
+	RuntimeArgs []string `yaml:"runtime_args,omitempty" json:"runtimeArgs,omitempty"`
 }
 
 // E2BSandboxConfig holds E2B-specific runtime options.
