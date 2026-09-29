@@ -34,7 +34,11 @@ func (s *DBStore) AddTask(project, agent string, t *entity.Task) error {
 		if err != nil {
 			return err
 		}
-		for _, existing := range active {
+		archived, err := s.ListArchivedTasks(project, agent)
+		if err != nil {
+			return err
+		}
+		for _, existing := range append(active, archived...) {
 			if existing.IdempotencyKey == t.IdempotencyKey {
 				t.ID = existing.ID
 				return errs.Conflict("task", t.IdempotencyKey)
