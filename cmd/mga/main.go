@@ -1721,7 +1721,7 @@ func newTaskAddCmd() *cobra.Command {
 }
 
 func newTaskCreateFromTemplateCmd() *cobra.Command {
-	var templateID, project, agent, assignee, dueDate, estimateDuration, parentID, outputFormat string
+	var templateID, project, agent, assignee, dueDate, estimateDuration, parentID, idempotencyKey, outputFormat string
 	var priority int
 	var setPriority bool
 	var inputs, labels, actorPairs []string
@@ -1770,6 +1770,9 @@ func newTaskCreateFromTemplateCmd() *cobra.Command {
 			if parentID != "" {
 				body["parentId"] = parentID
 			}
+			if idempotencyKey != "" {
+				body["idempotencyKey"] = strings.TrimSpace(idempotencyKey)
+			}
 			if len(labels) > 0 {
 				body["labels"] = labels
 			}
@@ -1798,6 +1801,7 @@ func newTaskCreateFromTemplateCmd() *cobra.Command {
 	cmd.Flags().StringVar(&dueDate, "due-date", "", "due date YYYY-MM-DD")
 	cmd.Flags().StringVar(&estimateDuration, "estimate-duration", "", "estimated duration, e.g. 30m")
 	cmd.Flags().StringVar(&parentID, "parent", "", "parent task id")
+	cmd.Flags().StringVar(&idempotencyKey, "idempotency-key", "", "return the existing task when the same key is retried")
 	cmd.Flags().StringVar(&outputFormat, "format", "json", "output format: json or table")
 	cmd.PreRun = func(cmd *cobra.Command, args []string) {
 		setPriority = cmd.Flags().Changed("priority")

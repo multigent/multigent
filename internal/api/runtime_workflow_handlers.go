@@ -753,20 +753,21 @@ func (s *Server) createRuntimeTaskFromBody(w http.ResponseWriter, r *http.Reques
 	}
 	now := time.Now().UTC()
 	t := &entity.Task{
-		ID:          entity.NewTaskID(),
-		Title:       title,
-		Description: strings.TrimSpace(body.Description),
-		Type:        entity.TaskType(taskType),
-		Priority:    priority,
-		Assignee:    assignee,
-		CreatedBy:   runtimeAgentAddress(principal),
-		Status:      entity.TaskStatusPending,
-		Prompt:      prompt,
-		Labels:      body.Labels,
-		ParentID:    strings.TrimSpace(body.ParentID),
-		Vars:        sanitizeTaskVars(body.Vars),
-		CreatedAt:   now,
-		UpdatedAt:   now,
+		ID:             entity.NewTaskID(),
+		Title:          title,
+		Description:    strings.TrimSpace(body.Description),
+		Type:           entity.TaskType(taskType),
+		Priority:       priority,
+		Assignee:       assignee,
+		CreatedBy:      runtimeAgentAddress(principal),
+		Status:         entity.TaskStatusPending,
+		Prompt:         prompt,
+		Labels:         body.Labels,
+		ParentID:       strings.TrimSpace(body.ParentID),
+		Vars:           sanitizeTaskVars(body.Vars),
+		IdempotencyKey: strings.TrimSpace(body.IdempotencyKey),
+		CreatedAt:      now,
+		UpdatedAt:      now,
 	}
 	if est, err := entity.NormalizeEstimateDuration(body.EstimateDuration); err != nil {
 		s.jsonError(w, http.StatusBadRequest, err.Error())
@@ -792,6 +793,18 @@ func (s *Server) createRuntimeTaskFromBody(w http.ResponseWriter, r *http.Reques
 	}
 	s.annotateTaskAssignee(principal.WorkspaceID, project, t)
 	if err := s.ts.AddTask(project, agent, t); err != nil {
+		var conflict *errs.ConflictError
+		if t.IdempotencyKey != "" && errors.As(err, &conflict) {
+			existing, getErr := s.ts.GetTask(project, agent, t.ID)
+			if getErr != nil {
+				s.serverError(w, getErr)
+				return
+			}
+			row := taskToRow(existing, project, agent, existing.Status.IsTerminal())
+			w.Header().Set("Content-Type", "application/json")
+			_ = json.NewEncoder(w).Encode(map[string]any{"task": row, "idempotentReplay": true})
+			return
+		}
 		s.serverError(w, err)
 		return
 	}
