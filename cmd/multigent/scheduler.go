@@ -915,7 +915,14 @@ func runAllPendingTasks(ctx context.Context, root, project, agentName string,
 			}
 		}
 	}
-	sessionID := hb.SessionID
+	sessionID := taskRunSessionID(hb.SessionScope, hb.SessionID)
+	if hb.SessionScope == entity.SessionScopeTask && hb.SessionID != "" {
+		hb.SessionID = ""
+		hb.SessionStartedAt = nil
+		if err := saveSchedulerHeartbeat(root, project, agentName, ts, hb); err != nil {
+			return err
+		}
+	}
 	i18n := wakeupStrings(agencyLang(s))
 	sourceChannel := "scheduler"
 	interactionLease, busy, err := acquireCLIInteraction(root, project, agentName, "scheduler", sourceChannel, "scheduler", "running_task")
@@ -1207,7 +1214,7 @@ func runAllPendingTasks(ctx context.Context, root, project, agentName string,
 		enforceWorkflowStepCompletion(root, project, task, result)
 
 		// Update session ID for the cycle (per-cycle scope by default).
-		if result.SessionID != "" {
+		if hb.SessionScope != entity.SessionScopeTask && result.SessionID != "" {
 			sessionID = result.SessionID
 			latestHB, _ := loadSchedulerHeartbeat(root, project, agentName, ts)
 			latestHB.SessionID = sessionID
@@ -1274,9 +1281,14 @@ func runAllPendingTasks(ctx context.Context, root, project, agentName string,
 
 		tasksProcessed++
 
-		// Per-task session scope: reset sessionID so next task starts independently.
+		// Per-task session scope: do not carry provider memory into another problem.
 		if hb.SessionScope == entity.SessionScopeTask {
-			sessionID = hb.SessionID
+			sessionID = ""
+			if latestHB, err := loadSchedulerHeartbeat(root, project, agentName, ts); err == nil && latestHB != nil {
+				latestHB.SessionID = ""
+				latestHB.SessionStartedAt = nil
+				_ = saveSchedulerHeartbeat(root, project, agentName, ts, latestHB)
+			}
 		}
 	}
 	return nil
