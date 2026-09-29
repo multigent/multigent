@@ -6,6 +6,7 @@ import (
 	"strings"
 	"time"
 
+	"github.com/multigent/multigent/internal/agentenv"
 	controldb "github.com/multigent/multigent/internal/db"
 	"github.com/multigent/multigent/internal/entity"
 )
@@ -83,7 +84,11 @@ func (s *Server) agentMetaForProjectMember(workspaceID, project, agent string) (
 	}
 	runtimeConfig := decodeAgentWorkerRuntimeConfig(worker)
 	if runtimeConfig.Env != nil {
-		meta.Env = runtimeConfig.Env
+		opened, err := agentenv.Open(runtimeConfig.Env)
+		if err != nil {
+			return nil, err
+		}
+		meta.Env = opened
 	}
 	if runtimeConfig.Sandbox != nil {
 		meta.Sandbox = runtimeConfig.Sandbox
@@ -128,7 +133,9 @@ func agentMetaForWorker(worker controldb.AgentWorker) *entity.AgentMeta {
 	}
 	runtimeConfig := decodeAgentWorkerRuntimeConfig(worker)
 	if runtimeConfig.Env != nil {
-		meta.Env = runtimeConfig.Env
+		if opened, err := agentenv.Open(runtimeConfig.Env); err == nil {
+			meta.Env = opened
+		}
 	}
 	if runtimeConfig.Sandbox != nil {
 		meta.Sandbox = runtimeConfig.Sandbox

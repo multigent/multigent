@@ -10,6 +10,7 @@ import (
 	"strings"
 	"time"
 
+	"github.com/multigent/multigent/internal/agentenv"
 	controldb "github.com/multigent/multigent/internal/db"
 	"github.com/multigent/multigent/internal/entity"
 	"github.com/multigent/multigent/internal/errs"
@@ -331,14 +332,25 @@ func agentMetaFromWorkerMembership(project string, worker controldb.AgentWorker,
 		HiredAt:       createdAt,
 	}
 	// AgentWorker runtime settings live in the control-plane database in 2.x.
-	// Preserve the execution sandbox when adapting them to the runner-facing
-	// AgentMeta; dropping it silently falls back to host execution.
+	// Preserve the complete runtime config when adapting it to the runner-facing
+	// AgentMeta. Dropping any of these fields changes execution semantics: env
+	// secrets disappear, repositories are not mounted, or sandboxing falls back.
 	var runtimeConfig struct {
-		Sandbox *entity.SandboxConfig `json:"sandbox,omitempty"`
+		Env        map[string]string       `json:"env,omitempty"`
+		Sandbox    *entity.SandboxConfig   `json:"sandbox,omitempty"`
+		AddDirs    []string                `json:"addDirs,omitempty"`
+		RunCommand string                  `json:"runCommand,omitempty"`
+		HTTPAgent  *entity.HTTPAgentConfig `json:"httpAgent,omitempty"`
 	}
 	if raw := strings.TrimSpace(worker.RuntimeConfigJSON); raw != "" {
 		if err := json.Unmarshal([]byte(raw), &runtimeConfig); err == nil {
+			if opened, openErr := agentenv.Open(runtimeConfig.Env); openErr == nil {
+				meta.Env = opened
+			}
 			meta.Sandbox = runtimeConfig.Sandbox
+			meta.AddDirs = runtimeConfig.AddDirs
+			meta.RunCommand = strings.TrimSpace(runtimeConfig.RunCommand)
+			meta.HTTPAgent = runtimeConfig.HTTPAgent
 		}
 	}
 	return meta

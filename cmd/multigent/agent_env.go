@@ -7,6 +7,7 @@ import (
 	"time"
 
 	"github.com/multigent/multigent/internal/agentdir"
+	"github.com/multigent/multigent/internal/agentenv"
 	controldb "github.com/multigent/multigent/internal/db"
 	"github.com/multigent/multigent/internal/entity"
 	"github.com/spf13/cobra"
@@ -148,12 +149,16 @@ func workerAgentEnv(root, project, agentName string) (map[string]string, bool, e
 		return nil, ok, err
 	}
 	cfg := decodeCLIWorkerRuntimeConfig(worker.RuntimeConfigJSON)
-	if cfg.Env == nil {
-		cfg.Env = map[string]string{}
+	env, err := agentenv.Open(cfg.Env)
+	if err != nil {
+		return nil, true, err
+	}
+	if env == nil {
+		env = map[string]string{}
 	}
 	_ = db
 	_ = workspaceID
-	return cfg.Env, true, nil
+	return env, true, nil
 }
 
 func updateWorkerAgentEnv(root, project, agentName string, update func(map[string]string) (map[string]string, error)) (bool, error) {
@@ -162,14 +167,21 @@ func updateWorkerAgentEnv(root, project, agentName string, update func(map[strin
 		return ok, err
 	}
 	cfg := decodeCLIWorkerRuntimeConfig(worker.RuntimeConfigJSON)
-	if cfg.Env == nil {
-		cfg.Env = map[string]string{}
-	}
-	next, err := update(cfg.Env)
+	plain, err := agentenv.Open(cfg.Env)
 	if err != nil {
 		return true, err
 	}
-	cfg.Env = next
+	if plain == nil {
+		plain = map[string]string{}
+	}
+	next, err := update(plain)
+	if err != nil {
+		return true, err
+	}
+	cfg.Env, err = agentenv.Seal(next)
+	if err != nil {
+		return true, err
+	}
 	worker.RuntimeConfigJSON = encodeCLIWorkerRuntimeConfig(cfg)
 	worker.UpdatedAt = time.Now().UTC().Format(time.RFC3339)
 	if err := db.UpsertAgentWorker(worker); err != nil {

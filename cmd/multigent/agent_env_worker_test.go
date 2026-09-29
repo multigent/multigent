@@ -7,6 +7,7 @@ import (
 	"time"
 
 	controldb "github.com/multigent/multigent/internal/db"
+	"github.com/multigent/multigent/internal/secretbox"
 )
 
 func TestAgentEnvCLIUsesAgentWorkerRuntimeConfig(t *testing.T) {
@@ -66,6 +67,14 @@ func TestAgentEnvCLIUsesAgentWorkerRuntimeConfig(t *testing.T) {
 	}
 	if env["EXISTING"] != "1" || env["RUNTIME_FLAG"] != "enabled" {
 		t.Fatalf("unexpected worker env: %#v", env)
+	}
+	stored, found, err := db.AgentWorkerByID("ws", "aw-cli-env")
+	if err != nil || !found {
+		t.Fatalf("stored worker found=%v err=%v", found, err)
+	}
+	storedCfg := decodeCLIWorkerRuntimeConfig(stored.RuntimeConfigJSON)
+	if !secretbox.IsSealed(storedCfg.Env["EXISTING"]) || !secretbox.IsSealed(storedCfg.Env["RUNTIME_FLAG"]) {
+		t.Fatalf("worker env was not sealed at rest: %#v", storedCfg.Env)
 	}
 	if updated, err := updateWorkerAgentEnv(root, "alpha", "manager-agent", func(env map[string]string) (map[string]string, error) {
 		delete(env, "RUNTIME_FLAG")
