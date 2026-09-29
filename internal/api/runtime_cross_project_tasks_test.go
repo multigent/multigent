@@ -50,11 +50,15 @@ func TestRuntimeTaskFromTemplateCanDispatchToAuthorizedProject(t *testing.T) {
 		Agent:        "dispatcher",
 		Capabilities: []string{"task.use"},
 	}
-	body := `{"templateId":"tt-target-review","project":"target","inputs":{"repo":"example-org/example-repo","pr":"42","url":"https://github.com/example-org/example-repo/pull/42"}}`
-	req := httptest.NewRequest(http.MethodPost, "/api/v1/runtime/tasks/from-template", strings.NewReader(body))
-	req = runtimePrincipalContext(req, principal)
-	rec := httptest.NewRecorder()
-	s.handleRuntimePostTaskFromTemplate(rec, req)
+	body := `{"templateId":"tt-target-review","project":"target","idempotencyKey":"review-example-42","inputs":{"repo":"example-org/example-repo","pr":"42","url":"https://github.com/example-org/example-repo/pull/42"}}`
+	create := func() *httptest.ResponseRecorder {
+		req := httptest.NewRequest(http.MethodPost, "/api/v1/runtime/tasks/from-template", strings.NewReader(body))
+		req = runtimePrincipalContext(req, principal)
+		rec := httptest.NewRecorder()
+		s.handleRuntimePostTaskFromTemplate(rec, req)
+		return rec
+	}
+	rec := create()
 	if rec.Code != http.StatusCreated {
 		t.Fatalf("status=%d body=%s", rec.Code, rec.Body.String())
 	}
@@ -70,6 +74,28 @@ func TestRuntimeTaskFromTemplateCanDispatchToAuthorizedProject(t *testing.T) {
 	}
 	if _, err := s.ts.GetTask("sample", "dispatcher", row["id"].(string)); err == nil {
 		t.Fatal("cross-project task was incorrectly stored in source project")
+	}
+
+	replayRec := create()
+	if replayRec.Code != http.StatusOK {
+		t.Fatalf("replay status=%d body=%s", replayRec.Code, replayRec.Body.String())
+	}
+	var replay struct {
+		Task             map[string]any `json:"task"`
+		IdempotentReplay bool           `json:"idempotentReplay"`
+	}
+	if err := json.Unmarshal(replayRec.Body.Bytes(), &replay); err != nil {
+		t.Fatalf("decode replay: %v", err)
+	}
+	if !replay.IdempotentReplay || replay.Task["id"] != row["id"] {
+		t.Fatalf("unexpected replay: %#v", replay)
+	}
+	tasks, err := s.ts.ListTasks("target", "reviewer")
+	if err != nil {
+		t.Fatalf("list target tasks: %v", err)
+	}
+	if len(tasks) != 1 {
+		t.Fatalf("idempotent retry created %d tasks", len(tasks))
 	}
 }
 
