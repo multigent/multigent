@@ -91,6 +91,14 @@ command is intended for development diagnostics.`,
 			if err != nil {
 				return err
 			}
+			taskSessionID := taskRunSessionID(hb.SessionScope, hb.SessionID)
+			if hb.SessionScope == entity.SessionScopeTask && hb.SessionID != "" {
+				hb.SessionID = ""
+				hb.SessionStartedAt = nil
+				if err := saveSchedulerHeartbeat(root, project, agentName, ts, hb); err != nil {
+					return err
+				}
+			}
 			interactionLease, busy, err := acquireCLIInteraction(root, project, agentName, "manual_run", "cli", "cli", "running_task")
 			if err != nil {
 				return err
@@ -130,12 +138,12 @@ command is intended for development diagnostics.`,
 			if interactionLease != nil {
 				_ = interactionLease.event("system", "cli", "cli", "run_started", "", map[string]any{
 					"taskId":    task.ID,
-					"sessionId": hb.SessionID,
+					"sessionId": taskSessionID,
 				})
 			}
 			runCtx, stopSignals := signal.NotifyContext(context.Background(), syscall.SIGINT, syscall.SIGTERM)
 			defer stopSignals()
-			result, err := r.RunTaskWithContext(runCtx, project, agentName, task, hb.SessionID)
+			result, err := r.RunTaskWithContext(runCtx, project, agentName, task, taskSessionID)
 			if err != nil {
 				if handled, handleErr := taskHandledDuringRun(root, ts, project, agentName, task.ID, runResultLogPath(result)); handleErr != nil {
 					return handleErr
@@ -178,7 +186,7 @@ command is intended for development diagnostics.`,
 			}
 
 			// Persist new session ID if captured.
-			if result.SessionID != "" && result.SessionID != hb.SessionID {
+			if hb.SessionScope != entity.SessionScopeTask && result.SessionID != "" && result.SessionID != hb.SessionID {
 				hb.SessionID = result.SessionID
 				now := time.Now().UTC()
 				hb.SessionStartedAt = &now

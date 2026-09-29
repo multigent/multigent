@@ -4,8 +4,16 @@ import (
 	"fmt"
 	"time"
 
+	"github.com/multigent/multigent/internal/entity"
 	"github.com/spf13/cobra"
 )
+
+func taskRunSessionID(scope entity.SessionScope, stored string) string {
+	if scope == entity.SessionScopeTask {
+		return ""
+	}
+	return stored
+}
 
 func newSessionCmd() *cobra.Command {
 	cmd := &cobra.Command{
