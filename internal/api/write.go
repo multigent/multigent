@@ -70,6 +70,7 @@ type postTaskBody struct {
 	WorkflowDefinitionID  string                                 `json:"workflowDefinitionId"`
 	WorkflowActorBindings map[string]entity.WorkflowActorBinding `json:"workflowActorBindings"`
 	Vars                  map[string]string                      `json:"vars"`
+	IdempotencyKey        string                                 `json:"idempotencyKey"`
 }
 
 func (s *Server) handlePostProjectTask(w http.ResponseWriter, r *http.Request) {

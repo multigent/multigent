@@ -44,6 +44,7 @@ type taskFromTemplateBody struct {
 	ParentID              string                                 `json:"parentId"`
 	Labels                []string                               `json:"labels"`
 	WorkflowActorBindings map[string]entity.WorkflowActorBinding `json:"workflowActorBindings"`
+	IdempotencyKey        string                                 `json:"idempotencyKey"`
 }
 
 func (s *Server) taskTemplateStoreForRequest(w http.ResponseWriter, r *http.Request) (*tasktemplate.Store, bool) {
@@ -325,6 +326,7 @@ func instantiateTaskTemplate(template entity.TaskTemplate, body taskFromTemplate
 		EstimateDuration:      strings.TrimSpace(body.EstimateDuration),
 		WorkflowDefinitionID:  template.WorkflowDefinitionID,
 		WorkflowActorBindings: actorBindings,
+		IdempotencyKey:        strings.TrimSpace(body.IdempotencyKey),
 	}, nil
 }
 
