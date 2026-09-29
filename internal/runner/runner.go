@@ -3091,7 +3091,7 @@ func materializeLarkCLIConfig(tool runtimeToolRef, adapter runtimeAdapterRef, cf
 		"HOME": larkHome,
 		// Keep user-mode auth in an explicitly mounted, agent-scoped directory.
 		// The generated config still lives under the connection's isolated HOME.
-		"XDG_DATA_HOME": "/root/.local/share",
+		"XDG_DATA_HOME": "/root/.claude/lark-data",
 	})), 0o700); err != nil {
 		return nil, err
 	}
