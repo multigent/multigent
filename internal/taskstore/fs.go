@@ -77,11 +77,14 @@ func (s *FSStore) AddTask(project, agent string, t *entity.Task) error {
 	if err != nil {
 		return err
 	}
-	// Idempotency: if the caller supplied a key and an active task with that
-	// key already exists, set t.ID to the existing task's ID and return nil
-	// so the caller can surface it without creating a duplicate.
+	// Idempotency spans active and archived tasks so a delayed retry cannot
+	// recreate a task that already finished.
 	if t.IdempotencyKey != "" {
-		for _, existing := range tasks {
+		archived, err := s.ListArchivedTasks(project, agent)
+		if err != nil {
+			return err
+		}
+		for _, existing := range append(tasks, archived...) {
 			if existing.IdempotencyKey == t.IdempotencyKey {
 				t.ID = existing.ID
 				return errs.Conflict("task", t.IdempotencyKey)

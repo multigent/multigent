@@ -76,6 +76,15 @@ func TestRuntimeTaskFromTemplateCanDispatchToAuthorizedProject(t *testing.T) {
 		t.Fatal("cross-project task was incorrectly stored in source project")
 	}
 
+	created, err := s.ts.GetTask("target", "reviewer", row["id"].(string))
+	if err != nil {
+		t.Fatalf("get created task: %v", err)
+	}
+	created.Status = entity.TaskStatusDoneSuccess
+	if err := s.ts.ArchiveTask("target", "reviewer", created); err != nil {
+		t.Fatalf("archive created task: %v", err)
+	}
+
 	replayRec := create()
 	if replayRec.Code != http.StatusOK {
 		t.Fatalf("replay status=%d body=%s", replayRec.Code, replayRec.Body.String())
@@ -90,12 +99,16 @@ func TestRuntimeTaskFromTemplateCanDispatchToAuthorizedProject(t *testing.T) {
 	if !replay.IdempotentReplay || replay.Task["id"] != row["id"] {
 		t.Fatalf("unexpected replay: %#v", replay)
 	}
-	tasks, err := s.ts.ListTasks("target", "reviewer")
+	active, err := s.ts.ListTasks("target", "reviewer")
 	if err != nil {
-		t.Fatalf("list target tasks: %v", err)
+		t.Fatalf("list active target tasks: %v", err)
 	}
-	if len(tasks) != 1 {
-		t.Fatalf("idempotent retry created %d tasks", len(tasks))
+	archived, err := s.ts.ListArchivedTasks("target", "reviewer")
+	if err != nil {
+		t.Fatalf("list archived target tasks: %v", err)
+	}
+	if len(active) != 0 || len(archived) != 1 {
+		t.Fatalf("idempotent retry left active=%d archived=%d tasks", len(active), len(archived))
 	}
 }
 
