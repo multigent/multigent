@@ -149,3 +149,19 @@ func TestDiscardSessionIDOnFailure(t *testing.T) {
 		t.Fatal("did not expect claude failed sessions to be discarded")
 	}
 }
+
+func TestAppendConfiguredRuntimeArgsClaudeOnly(t *testing.T) {
+	sandbox := &entity.SandboxConfig{AgentCLI: &entity.AgentCLIConfig{RuntimeArgs: []string{"--bare", "--tools", "Bash,Read"}}}
+	base := []string{"claude", "-p"}
+	got := appendConfiguredRuntimeArgs(entity.ModelClaudeCode, base, sandbox)
+	want := []string{"claude", "-p", "--bare", "--tools", "Bash,Read"}
+	if !slices.Equal(got, want) {
+		t.Fatalf("configured runtime args = %#v, want %#v", got, want)
+	}
+	if !slices.Equal(base, []string{"claude", "-p"}) {
+		t.Fatalf("base args mutated: %#v", base)
+	}
+	if got := appendConfiguredRuntimeArgs(entity.ModelCodex, base, sandbox); !slices.Equal(got, base) {
+		t.Fatalf("non-Claude args changed: %#v", got)
+	}
+}
