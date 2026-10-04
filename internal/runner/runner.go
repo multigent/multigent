@@ -348,6 +348,11 @@ func (r *Runner) RunTask(project, agentName string, task *entity.Task, sessionID
 	}
 	effectiveEnv := mergeEnv(os.Environ(), agentEnv)
 	effectiveEnv = mergeEnv(effectiveEnv, runtimeEnv)
+	// Generic host adapters need the workflow task identity to submit a
+	// structured step receipt. Model runtimes can recover it from the workflow
+	// signal, but a fixed command has no prompt/session protocol. Keep this
+	// value scoped to the child process; it is not a user credential.
+	effectiveEnv = mergeEnv(effectiveEnv, map[string]string{"MULTIGENT_TASK_ID": task.ID})
 	apiModel, apiBaseURL := resolveAPIModelFromEnv(model, effectiveEnv)
 	invoker := InvokerFor(model, meta.RunCommand, meta.AddDirs)
 
