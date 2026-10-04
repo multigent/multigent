@@ -334,12 +334,64 @@ func newTaskCmd() *cobra.Command {
 		newTaskListCmd(),
 		newTaskShowCmd(),
 		newTaskAddCmd(),
+		newTaskCreateFromTemplateCmd(),
 		newTaskSetCmd(),
 		newTaskCompleteCmd(),
 		newTaskStepCmd(),
 		newTaskCancelCmd(),
 		newTaskConfirmRequestCmd(),
 	)
+	return cmd
+}
+
+// newTaskCreateFromTemplateCmd creates a runtime task and attaches a workflow
+// in one request. Runtime agents cannot use the user-only project task API, so
+// this is the workflow-safe counterpart used by deterministic dispatchers.
+func newTaskCreateFromTemplateCmd() *cobra.Command {
+	var agent, project, parent, title, prompt, description, workflowID, bindingsJSON, format string
+	var labels, inputs []string
+	cmd := &cobra.Command{
+		Use:   "create-from-template <template-id>",
+		Short: "Create a workflow task from a dispatcher template",
+		Args:  cobra.ExactArgs(1),
+		RunE: func(cmd *cobra.Command, args []string) error {
+			if strings.TrimSpace(title) == "" || strings.TrimSpace(prompt) == "" {
+				return fmt.Errorf("--title and --prompt are required")
+			}
+			bindings := map[string]any{}
+			if strings.TrimSpace(bindingsJSON) != "" {
+				if err := json.Unmarshal([]byte(bindingsJSON), &bindings); err != nil {
+					return fmt.Errorf("invalid --workflow-actor-bindings: %w", err)
+				}
+			}
+			body := map[string]any{
+				"agent": agent, "title": title, "prompt": prompt,
+				"description": description, "type": "bug", "priority": 1,
+				"parentId": parent, "labels": labels,
+				"workflowDefinitionId":  workflowID,
+				"workflowActorBindings": bindings,
+				"templateId":            args[0], "project": project, "inputs": inputs,
+			}
+			raw, _ := json.Marshal(body)
+			resp, err := requestJSON(http.MethodPost, "/api/v1/runtime/tasks", nil, raw)
+			if err != nil {
+				return err
+			}
+			_ = format // runtime CLI output is already JSON; retain compatibility.
+			return writeJSON(resp)
+		},
+	}
+	cmd.Flags().StringVar(&agent, "agent", "", "target workflow start agent")
+	cmd.Flags().StringVar(&project, "project", "", "logical project name (runtime token scope)")
+	cmd.Flags().StringVar(&parent, "parent", "", "parent task id")
+	cmd.Flags().StringVar(&title, "title", "", "task title")
+	cmd.Flags().StringVar(&prompt, "prompt", "", "task prompt")
+	cmd.Flags().StringVar(&description, "description", "", "task description")
+	cmd.Flags().StringVar(&workflowID, "workflow-definition-id", "", "workflow definition id")
+	cmd.Flags().StringVar(&bindingsJSON, "workflow-actor-bindings", "", "workflow actor bindings JSON")
+	cmd.Flags().StringArrayVar(&labels, "label", nil, "task label, repeatable")
+	cmd.Flags().StringArrayVar(&inputs, "input", nil, "template input, repeatable")
+	cmd.Flags().StringVar(&format, "format", "json", "output format")
 	return cmd
 }
 

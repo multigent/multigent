@@ -14,17 +14,19 @@ import (
 )
 
 type runtimeTaskBody struct {
-	Agent            string   `json:"agent"`
-	Title            string   `json:"title"`
-	Prompt           string   `json:"prompt"`
-	Description      string   `json:"description"`
-	Type             string   `json:"type"`
-	Priority         int      `json:"priority"`
-	Assignee         string   `json:"assignee"`
-	Labels           []string `json:"labels"`
-	ParentID         string   `json:"parentId"`
-	DueDate          string   `json:"dueDate"`
-	EstimateDuration string   `json:"estimateDuration"`
+	Agent                 string                                 `json:"agent"`
+	Title                 string                                 `json:"title"`
+	Prompt                string                                 `json:"prompt"`
+	Description           string                                 `json:"description"`
+	Type                  string                                 `json:"type"`
+	Priority              int                                    `json:"priority"`
+	Assignee              string                                 `json:"assignee"`
+	Labels                []string                               `json:"labels"`
+	ParentID              string                                 `json:"parentId"`
+	DueDate               string                                 `json:"dueDate"`
+	EstimateDuration      string                                 `json:"estimateDuration"`
+	WorkflowDefinitionID  string                                 `json:"workflowDefinitionId"`
+	WorkflowActorBindings map[string]entity.WorkflowActorBinding `json:"workflowActorBindings"`
 }
 
 type runtimeTaskUpdateBody struct {
@@ -235,6 +237,39 @@ func (s *Server) handleRuntimePostTask(w http.ResponseWriter, r *http.Request) {
 	if assignee == "" {
 		assignee = principal.Project + "/" + agent
 	}
+	workflowID := strings.TrimSpace(body.WorkflowDefinitionID)
+	var workflowStore *workflowstore.Store
+	if workflowID != "" {
+		workflowStore = workflowstore.NewStore(s.controlDB, principal.WorkspaceID)
+		def, found, err := workflowStore.Definition(workflowID)
+		if err != nil {
+			s.serverError(w, err)
+			return
+		}
+		if !found {
+			s.jsonError(w, http.StatusNotFound, "workflow definition not found")
+			return
+		}
+		if _, inst, ok := workflowStartActor(def, body.WorkflowActorBindings); ok {
+			switch inst.ActorType {
+			case "agent":
+				startAgent := strings.TrimSpace(inst.ActorID)
+				if startAgent == "" || !s.agentExistsInProject(principal.Project, startAgent) {
+					s.jsonError(w, http.StatusBadRequest, "workflow start agent not found in this project")
+					return
+				}
+				agent = startAgent
+				assignee = principal.Project + "/" + startAgent
+			case "human":
+				reviewer := strings.TrimSpace(inst.ActorID)
+				if reviewer == "" {
+					s.jsonError(w, http.StatusBadRequest, "workflow start reviewer is required")
+					return
+				}
+				assignee = reviewer
+			}
+		}
+	}
 	if err := s.validateIdentity(assignee, "assignee"); err != nil {
 		s.jsonError(w, http.StatusBadRequest, err.Error())
 		return
@@ -272,6 +307,12 @@ func (s *Server) handleRuntimePostTask(w http.ResponseWriter, r *http.Request) {
 	if err := s.ts.AddTask(principal.Project, agent, t); err != nil {
 		s.serverError(w, err)
 		return
+	}
+	if workflowStore != nil {
+		if _, _, err := workflowStore.StartRun(principal.Project, t.ID, workflowID, body.WorkflowActorBindings); err != nil {
+			s.serverError(w, err)
+			return
+		}
 	}
 	s.triggers.Fire(principal.Project, agent, entity.TriggerOnTask, "task "+t.ID)
 	s.auditLog(auditLogInput{
