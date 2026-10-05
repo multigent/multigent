@@ -227,6 +227,11 @@ func (r *Runner) ExecPrompt(project, agentName, prompt, sessionID string) (*RunR
 	fmt.Fprintf(logFile, "=== multigent exec: %s/%s sandbox=%s ===\n", project, agentName, sandboxLabel)
 	fmt.Fprintf(logFile, "Command: %s\n", telemetry.FormatExecCommand(executable, args))
 	fmt.Fprintf(logFile, "Started: %s\n\n", time.Now().UTC().Format(time.RFC3339))
+	fmt.Fprintf(logFile, "Runtime control env: api_url=%t agent_token=%t run_id=%t workspace_id=%t\n\n",
+		strings.TrimSpace(runtimeEnv["MULTIGENT_API_URL"]) != "",
+		strings.TrimSpace(runtimeEnv["MULTIGENT_AGENT_TOKEN"]) != "",
+		strings.TrimSpace(runtimeEnv["MULTIGENT_RUN_ID"]) != "",
+		strings.TrimSpace(runtimeEnv["MULTIGENT_WORKSPACE_ID"]) != "")
 	writePromptMessageToLog(logFile, prompt)
 
 	// Stream output to stdout AND the log file simultaneously.
@@ -459,6 +464,11 @@ func (r *Runner) RunTask(project, agentName string, task *entity.Task, sessionID
 		project, agentName, task.ID, sandboxLabel)
 	fmt.Fprintf(logFile, "Command: %s\n", telemetry.FormatExecCommand(executable, args))
 	fmt.Fprintf(logFile, "Started: %s\n\n", time.Now().UTC().Format(time.RFC3339))
+	fmt.Fprintf(logFile, "Runtime control env: api_url=%t agent_token=%t run_id=%t workspace_id=%t\n\n",
+		strings.TrimSpace(runtimeEnv["MULTIGENT_API_URL"]) != "",
+		strings.TrimSpace(runtimeEnv["MULTIGENT_AGENT_TOKEN"]) != "",
+		strings.TrimSpace(runtimeEnv["MULTIGENT_RUN_ID"]) != "",
+		strings.TrimSpace(runtimeEnv["MULTIGENT_WORKSPACE_ID"]) != "")
 
 	// Run the agent.
 	cmd := exec.Command(executable, args...)
