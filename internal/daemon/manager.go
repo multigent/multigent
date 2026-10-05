@@ -151,7 +151,18 @@ func LoadWebRuntimeMeta(workDir string) (*WebRuntimeMeta, error) {
 // a safe way to discover the daemon address without relying on a workspace
 // specific metadata path.
 func ListWebRuntimeMetas() ([]WebRuntimeMeta, error) {
-	paths, err := filepath.Glob(filepath.Join(DefaultDataDir(), ".multigent", "web-runtimes", "*.json"))
+	return listWebRuntimeMetas(DefaultDataDir())
+}
+
+// ListWebRuntimeMetasAt returns web runtime metadata stored below dataDir.
+// Host runners may be launched with --dir while the web daemon uses a shared
+// data root, so callers must be able to select that root explicitly.
+func ListWebRuntimeMetasAt(dataDir string) ([]WebRuntimeMeta, error) {
+	return listWebRuntimeMetas(dataDir)
+}
+
+func listWebRuntimeMetas(dataDir string) ([]WebRuntimeMeta, error) {
+	paths, err := filepath.Glob(filepath.Join(dataDir, ".multigent", "web-runtimes", "*.json"))
 	if err != nil {
 		return nil, err
 	}

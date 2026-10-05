@@ -581,7 +581,7 @@ func (r *Runner) workflowPromptContext(project, agentName, taskID string) string
 		return ""
 	}
 	defer controlDB.Close()
-	workspaceID := resolveRuntimeWorkspaceID(r.root, controlDB)
+	workspaceID := resolveRuntimeWorkspaceID(r.root, controlDB, runtimeDataDir(r.root))
 	wfStore := workflowstore.NewStore(controlDB, workspaceID)
 	run, ok, err := wfStore.RunForTask(project, taskID)
 	if err != nil || !ok {
@@ -1331,18 +1331,18 @@ func (r *Runner) resolveRuntimeControlEnv(project, agentName, runID string) map[
 	if apiURL == "" {
 		return nil
 	}
-	controlDB, err := controldb.OpenDefault()
+	dataDir := runtimeDataDir(r.root)
+	controlDB, err := controldb.Open(filepath.Join(dataDir, ".multigent", "multigent.db"))
 	if err != nil {
-		// Host runners can start with a different HOME than the web daemon.
-		// Open the daemon data path explicitly before giving up; without this
-		// retry the child process silently loses its scoped runtime token.
-		controlDB, err = controldb.Open(filepath.Join(daemon.DefaultDataDir(), ".multigent", "multigent.db"))
+		// Preserve compatibility for callers whose root is not the shared data
+		// root (for example, isolated test workspaces).
+		controlDB, err = controldb.OpenDefault()
 		if err != nil {
 			return nil
 		}
 	}
 	defer controlDB.Close()
-	workspaceID := resolveRuntimeWorkspaceID(r.root, controlDB)
+	workspaceID := resolveRuntimeWorkspaceID(r.root, controlDB, dataDir)
 	secret := runtimeauth.EnsureSecret(controlDB)
 	token := runtimeauth.Issue(secret, runtimeauth.Payload{
 		WorkspaceID:  workspaceID,
@@ -2156,6 +2156,7 @@ func safeRuntimePathPart(value string) string {
 }
 
 func resolveRuntimeAPIURL(root string) string {
+	dataDir := runtimeDataDir(root)
 	if value := strings.TrimSpace(os.Getenv("MULTIGENT_API_URL")); value != "" {
 		return normalizeRuntimeAPIURL(value)
 	}
@@ -2176,7 +2177,7 @@ func resolveRuntimeAPIURL(root string) string {
 	// entry nor daemon.json exists.  Use a live web-runtime entry as the final
 	// local fallback so generic adapters still receive their scoped runtime
 	// token and can submit workflow receipts.
-	if metas, err := daemon.ListWebRuntimeMetas(); err == nil {
+	if metas, err := daemon.ListWebRuntimeMetasAt(dataDir); err == nil {
 		for _, meta := range metas {
 			if value := normalizeRuntimeAPIURL(meta.Addr); value != "" {
 				return value
@@ -2249,7 +2250,7 @@ func dockerReachableRuntimeAPIURL(raw string) string {
 	return strings.TrimRight(u.String(), "/")
 }
 
-func resolveRuntimeWorkspaceID(root string, controlDB controldb.Store) string {
+func resolveRuntimeWorkspaceID(root string, controlDB controldb.Store, dataDir string) string {
 	absRoot, err := filepath.Abs(root)
 	if err != nil {
 		absRoot = root
@@ -2264,7 +2265,7 @@ func resolveRuntimeWorkspaceID(root string, controlDB controldb.Store) string {
 		// The shared daemon may launch a runner from the data root rather than
 		// the selected workspace root.  Match the live web-runtime metadata to
 		// the control-plane workspace so the issued token has the right scope.
-		if metas, metaErr := daemon.ListWebRuntimeMetas(); metaErr == nil {
+		if metas, metaErr := daemon.ListWebRuntimeMetasAt(dataDir); metaErr == nil {
 			for _, meta := range metas {
 				for _, workspace := range workspaces {
 					if sameRuntimePath(workspace.Root, meta.WorkDir) && workspace.ID != "" {
@@ -2275,6 +2276,18 @@ func resolveRuntimeWorkspaceID(root string, controlDB controldb.Store) string {
 		}
 	}
 	return runtimeWorkspaceID(absRoot)
+}
+
+// runtimeDataDir returns the shared Multigent data root for a runner. The web
+// daemon and a host runner can have different HOME values, but --dir points at
+// the workspace that owns the daemon's .multigent control store.
+func runtimeDataDir(root string) string {
+	if root != "" {
+		if _, err := os.Stat(filepath.Join(root, ".multigent", "multigent.db")); err == nil {
+			return root
+		}
+	}
+	return daemon.DefaultDataDir()
 }
 
 func sameRuntimePath(a, b string) bool {
