@@ -576,12 +576,16 @@ func (r *Runner) taskPromptWithWorkflowContext(project, agentName string, task *
 }
 
 func (r *Runner) workflowPromptContext(project, agentName, taskID string) string {
-	controlDB, err := controldb.OpenDefault()
+	dataDir := runtimeDataDir(r.root)
+	controlDB, err := controldb.Open(filepath.Join(dataDir, ".multigent", "multigent.db"))
+	if err != nil {
+		controlDB, err = controldb.OpenDefault()
+	}
 	if err != nil {
 		return ""
 	}
 	defer controlDB.Close()
-	workspaceID := resolveRuntimeWorkspaceID(r.root, controlDB, runtimeDataDir(r.root))
+	workspaceID := resolveRuntimeWorkspaceID(r.root, controlDB, dataDir)
 	wfStore := workflowstore.NewStore(controlDB, workspaceID)
 	run, ok, err := wfStore.RunForTask(project, taskID)
 	if err != nil || !ok {
@@ -2282,7 +2286,18 @@ func resolveRuntimeWorkspaceID(root string, controlDB controldb.Store, dataDir s
 // daemon and a host runner can have different HOME values, but --dir points at
 // the workspace that owns the daemon's .multigent control store.
 func runtimeDataDir(root string) string {
+	if value := strings.TrimSpace(os.Getenv("MULTIGENT_DATA_DIR")); value != "" {
+		return value
+	}
 	if root != "" {
+		// A web daemon keeps its shared control DB and runtime metadata at a
+		// data-root ancestor of the workspace. Prefer the ancestor that owns
+		// web-runtimes; a workspace-local agent-run DB is not the control DB.
+		for candidate := root; candidate != filepath.Dir(candidate); candidate = filepath.Dir(candidate) {
+			if _, err := os.Stat(filepath.Join(candidate, ".multigent", "web-runtimes")); err == nil {
+				return candidate
+			}
+		}
 		if _, err := os.Stat(filepath.Join(root, ".multigent", "multigent.db")); err == nil {
 			return root
 		}
