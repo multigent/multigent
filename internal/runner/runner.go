@@ -1323,7 +1323,13 @@ func (r *Runner) resolveRuntimeControlEnv(project, agentName, runID string) map[
 	}
 	controlDB, err := controldb.OpenDefault()
 	if err != nil {
-		return nil
+		// Host runners can start with a different HOME than the web daemon.
+		// Open the daemon data path explicitly before giving up; without this
+		// retry the child process silently loses its scoped runtime token.
+		controlDB, err = controldb.Open(filepath.Join(daemon.DefaultDataDir(), ".multigent", "multigent.db"))
+		if err != nil {
+			return nil
+		}
 	}
 	defer controlDB.Close()
 	workspaceID := resolveRuntimeWorkspaceID(r.root, controlDB)
@@ -2243,6 +2249,18 @@ func resolveRuntimeWorkspaceID(root string, controlDB controldb.Store) string {
 		for _, workspace := range workspaces {
 			if sameRuntimePath(workspace.Root, absRoot) && workspace.ID != "" {
 				return workspace.ID
+			}
+		}
+		// The shared daemon may launch a runner from the data root rather than
+		// the selected workspace root.  Match the live web-runtime metadata to
+		// the control-plane workspace so the issued token has the right scope.
+		if metas, metaErr := daemon.ListWebRuntimeMetas(); metaErr == nil {
+			for _, meta := range metas {
+				for _, workspace := range workspaces {
+					if sameRuntimePath(workspace.Root, meta.WorkDir) && workspace.ID != "" {
+						return workspace.ID
+					}
+				}
 			}
 		}
 	}
