@@ -145,6 +145,31 @@ func LoadWebRuntimeMeta(workDir string) (*WebRuntimeMeta, error) {
 	return &m, nil
 }
 
+// ListWebRuntimeMetas returns the web runtime metadata entries written for
+// workspaces served by the shared daemon.  The CLI runner may be started from
+// the data root rather than the workspace that owns the task, so callers need
+// a safe way to discover the daemon address without relying on a workspace
+// specific metadata path.
+func ListWebRuntimeMetas() ([]WebRuntimeMeta, error) {
+	paths, err := filepath.Glob(filepath.Join(DefaultDataDir(), ".multigent", "web-runtimes", "*.json"))
+	if err != nil {
+		return nil, err
+	}
+	metas := make([]WebRuntimeMeta, 0, len(paths))
+	for _, path := range paths {
+		data, err := os.ReadFile(path)
+		if err != nil {
+			continue
+		}
+		var meta WebRuntimeMeta
+		if err := json.Unmarshal(data, &meta); err != nil || strings.TrimSpace(meta.Addr) == "" {
+			continue
+		}
+		metas = append(metas, meta)
+	}
+	return metas, nil
+}
+
 func RemoveWebRuntimeMeta(workDir string) {
 	os.Remove(webRuntimeMetaPath(workDir))
 }

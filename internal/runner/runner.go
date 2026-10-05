@@ -2155,6 +2155,18 @@ func resolveRuntimeAPIURL(root string) string {
 	if err == nil && daemonMeta != nil && strings.TrimSpace(daemonMeta.Addr) != "" {
 		return normalizeRuntimeAPIURL(daemonMeta.Addr)
 	}
+	// The shared web daemon stores one metadata entry per workspace.  A host
+	// runner can be launched from the data root, where neither the workspace
+	// entry nor daemon.json exists.  Use a live web-runtime entry as the final
+	// local fallback so generic adapters still receive their scoped runtime
+	// token and can submit workflow receipts.
+	if metas, err := daemon.ListWebRuntimeMetas(); err == nil {
+		for _, meta := range metas {
+			if value := normalizeRuntimeAPIURL(meta.Addr); value != "" {
+				return value
+			}
+		}
+	}
 	return ""
 }
 
