@@ -438,7 +438,7 @@ func (r *Runner) RunTaskWithContext(ctx context.Context, project, agentName stri
 	if err := r.materializeProviderCredentials(agentDir, meta); err != nil {
 		return nil, fmt.Errorf("materialize provider credentials: %w", err)
 	}
-	runtimeEnv := r.resolveRuntimeControlEnv(project, agentName, task.ID)
+	runtimeEnv := withRuntimeTaskEnv(r.resolveRuntimeControlEnv(project, agentName, task.ID), task.ID)
 	if cleanup := r.materializeRuntimeFiles(agentDir, runtimeEnv); cleanup != nil {
 		defer cleanup()
 	}
@@ -1756,6 +1756,22 @@ func (r *Runner) resolveRuntimeControlEnv(project, agentName, runID string) map[
 		"MULTIGENT_RUN_ID":       runID,
 		"MULTIGENT_WORKSPACE_ID": workspaceID,
 	}
+}
+
+// withRuntimeTaskEnv exposes the task being executed to the agent process.
+// Fixed-command adapters such as generic-cli have no prompt/session protocol
+// to recover the workflow task, but need its ID to submit step receipts.
+func withRuntimeTaskEnv(env map[string]string, taskID string) map[string]string {
+	taskID = strings.TrimSpace(taskID)
+	if taskID == "" {
+		return env
+	}
+	out := make(map[string]string, len(env)+1)
+	for k, v := range env {
+		out[k] = v
+	}
+	out["MULTIGENT_TASK_ID"] = taskID
+	return out
 }
 
 func resolveRuntimeProjectAgentWorker(controlDB controldb.Store, workspaceID, project, agentName string) (string, string) {
