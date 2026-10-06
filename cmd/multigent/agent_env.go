@@ -1,7 +1,6 @@
 package main
 
 import (
-	"encoding/json"
 	"fmt"
 	"strings"
 	"time"
@@ -12,12 +11,9 @@ import (
 	"github.com/spf13/cobra"
 )
 
-type cliAgentRuntimeConfig struct {
-	Env       map[string]string       `json:"env,omitempty"`
-	Sandbox   *entity.SandboxConfig   `json:"sandbox,omitempty"`
-	AddDirs   []string                `json:"addDirs,omitempty"`
-	HTTPAgent *entity.HTTPAgentConfig `json:"httpAgent,omitempty"`
-}
+// cliAgentRuntimeConfig shares the worker runtime schema with the API so a CLI
+// write (set-env, set-model) never drops fields such as runCommand.
+type cliAgentRuntimeConfig = entity.AgentWorkerRuntimeConfig
 
 func newAgentSetEnvCmd() *cobra.Command {
 	var (
@@ -195,19 +191,11 @@ func resolveCLIProjectWorker(root, project, agentName string) (controldb.AgentWo
 }
 
 func decodeCLIWorkerRuntimeConfig(raw string) cliAgentRuntimeConfig {
-	var cfg cliAgentRuntimeConfig
-	if strings.TrimSpace(raw) != "" {
-		_ = json.Unmarshal([]byte(raw), &cfg)
-	}
-	return cfg
+	return entity.DecodeAgentWorkerRuntimeConfig(raw)
 }
 
 func encodeCLIWorkerRuntimeConfig(cfg cliAgentRuntimeConfig) string {
-	raw, err := json.Marshal(cfg)
-	if err != nil {
-		return "{}"
-	}
-	return string(raw)
+	return cfg.Encode()
 }
 
 func maskValue(v string) string {
