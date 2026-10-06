@@ -1,7 +1,6 @@
 package api
 
 import (
-	"encoding/json"
 	"fmt"
 	"strings"
 	"time"
@@ -10,28 +9,14 @@ import (
 	"github.com/multigent/multigent/internal/entity"
 )
 
-type agentWorkerRuntimeConfig struct {
-	Env        map[string]string       `json:"env,omitempty"`
-	Sandbox    *entity.SandboxConfig   `json:"sandbox,omitempty"`
-	AddDirs    []string                `json:"addDirs,omitempty"`
-	RunCommand string                  `json:"runCommand,omitempty"`
-	HTTPAgent  *entity.HTTPAgentConfig `json:"httpAgent,omitempty"`
-}
+type agentWorkerRuntimeConfig = entity.AgentWorkerRuntimeConfig
 
 func decodeAgentWorkerRuntimeConfig(worker controldb.AgentWorker) agentWorkerRuntimeConfig {
-	var cfg agentWorkerRuntimeConfig
-	if raw := strings.TrimSpace(worker.RuntimeConfigJSON); raw != "" {
-		_ = json.Unmarshal([]byte(raw), &cfg)
-	}
-	return cfg
+	return entity.DecodeAgentWorkerRuntimeConfig(worker.RuntimeConfigJSON)
 }
 
 func encodeAgentWorkerRuntimeConfig(cfg agentWorkerRuntimeConfig) string {
-	raw, err := json.Marshal(cfg)
-	if err != nil {
-		return "{}"
-	}
-	return string(raw)
+	return cfg.Encode()
 }
 
 func (s *Server) agentMetaForProjectMember(workspaceID, project, agent string) (*entity.AgentMeta, error) {
@@ -81,22 +66,7 @@ func (s *Server) agentMetaForProjectMember(workspaceID, project, agent string) (
 	if meta.Team == "" {
 		meta.Team = s.projectMembershipTeam(membership, worker, s.projectMembershipRoleTeams())
 	}
-	runtimeConfig := decodeAgentWorkerRuntimeConfig(worker)
-	if runtimeConfig.Env != nil {
-		meta.Env = runtimeConfig.Env
-	}
-	if runtimeConfig.Sandbox != nil {
-		meta.Sandbox = runtimeConfig.Sandbox
-	}
-	if runtimeConfig.AddDirs != nil {
-		meta.AddDirs = runtimeConfig.AddDirs
-	}
-	if strings.TrimSpace(runtimeConfig.RunCommand) != "" {
-		meta.RunCommand = strings.TrimSpace(runtimeConfig.RunCommand)
-	}
-	if runtimeConfig.HTTPAgent != nil {
-		meta.HTTPAgent = runtimeConfig.HTTPAgent
-	}
+	decodeAgentWorkerRuntimeConfig(worker).ApplyTo(meta)
 	return meta, nil
 }
 
@@ -126,22 +96,7 @@ func agentMetaForWorker(worker controldb.AgentWorker) *entity.AgentMeta {
 		Avatar:        strings.TrimSpace(worker.Avatar),
 		HiredAt:       createdAt,
 	}
-	runtimeConfig := decodeAgentWorkerRuntimeConfig(worker)
-	if runtimeConfig.Env != nil {
-		meta.Env = runtimeConfig.Env
-	}
-	if runtimeConfig.Sandbox != nil {
-		meta.Sandbox = runtimeConfig.Sandbox
-	}
-	if runtimeConfig.AddDirs != nil {
-		meta.AddDirs = runtimeConfig.AddDirs
-	}
-	if strings.TrimSpace(runtimeConfig.RunCommand) != "" {
-		meta.RunCommand = strings.TrimSpace(runtimeConfig.RunCommand)
-	}
-	if runtimeConfig.HTTPAgent != nil {
-		meta.HTTPAgent = runtimeConfig.HTTPAgent
-	}
+	decodeAgentWorkerRuntimeConfig(worker).ApplyTo(meta)
 	return meta
 }
 

@@ -331,16 +331,10 @@ func agentMetaFromWorkerMembership(project string, worker controldb.AgentWorker,
 		HiredAt:       createdAt,
 	}
 	// AgentWorker runtime settings live in the control-plane database in 2.x.
-	// Preserve the execution sandbox when adapting them to the runner-facing
-	// AgentMeta; dropping it silently falls back to host execution.
-	var runtimeConfig struct {
-		Sandbox *entity.SandboxConfig `json:"sandbox,omitempty"`
-	}
-	if raw := strings.TrimSpace(worker.RuntimeConfigJSON); raw != "" {
-		if err := json.Unmarshal([]byte(raw), &runtimeConfig); err == nil {
-			meta.Sandbox = runtimeConfig.Sandbox
-		}
-	}
+	// Carry all of them onto the runner-facing AgentMeta: dropping the sandbox
+	// silently falls back to host execution, and dropping the run command makes
+	// a generic-cli worker run its default invocation instead of its adapter.
+	entity.DecodeAgentWorkerRuntimeConfig(worker.RuntimeConfigJSON).ApplyTo(meta)
 	return meta
 }
 
