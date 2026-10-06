@@ -762,3 +762,22 @@ func TestRuntimeWakeupRunInjectsDelegationEnvMapForMultipleCardActions(t *testin
 		t.Fatalf("runtime spec missing per-interaction delegation tokens: %#v", spec.RuntimeControlEnv)
 	}
 }
+
+func TestAttentionRecoveryAllowedRespectsMembershipAttention(t *testing.T) {
+	s, workspaceID := newConnectionGrantPolicyServer(t)
+	seedTaskAttentionWorker(t, s, workspaceID, "sample", "pm", true)
+	seedTaskAttentionWorker(t, s, workspaceID, "sample", "runner", false)
+
+	optedIn := attentionWakeupRecoveryTarget{WorkspaceID: workspaceID, ProjectID: "sample", AgentID: "pm", AgentWorkerID: "aw-pm"}
+	if !s.attentionRecoveryAllowed(optedIn) {
+		t.Fatal("expected recovery for a member with attention enabled")
+	}
+	optedOut := attentionWakeupRecoveryTarget{WorkspaceID: workspaceID, ProjectID: "sample", AgentID: "runner", AgentWorkerID: "aw-runner"}
+	if s.attentionRecoveryAllowed(optedOut) {
+		t.Fatal("expected no recovery wakeup for a member with attention disabled")
+	}
+	unknown := attentionWakeupRecoveryTarget{WorkspaceID: workspaceID, ProjectID: "sample", AgentID: "ghost", AgentWorkerID: "aw-ghost"}
+	if s.attentionRecoveryAllowed(unknown) {
+		t.Fatal("expected no recovery wakeup for an unknown member")
+	}
+}
