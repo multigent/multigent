@@ -1231,3 +1231,20 @@ func TestDockerRuntimeControlEnvUsesHostGateway(t *testing.T) {
 		t.Fatalf("mutated source env: %q", env["MULTIGENT_API_URL"])
 	}
 }
+
+func TestWithRuntimeTaskEnvAddsTaskID(t *testing.T) {
+	base := map[string]string{"MULTIGENT_RUN_ID": "run-1"}
+	got := withRuntimeTaskEnv(base, " t-20261006-abc ")
+	if got["MULTIGENT_TASK_ID"] != "t-20261006-abc" || got["MULTIGENT_RUN_ID"] != "run-1" {
+		t.Fatalf("withRuntimeTaskEnv() = %#v", got)
+	}
+	if _, ok := base["MULTIGENT_TASK_ID"]; ok {
+		t.Fatalf("withRuntimeTaskEnv mutated its input: %#v", base)
+	}
+	if got := withRuntimeTaskEnv(nil, "t-1"); got["MULTIGENT_TASK_ID"] != "t-1" {
+		t.Fatalf("withRuntimeTaskEnv(nil) = %#v", got)
+	}
+	if got := withRuntimeTaskEnv(nil, "  "); got != nil {
+		t.Fatalf("withRuntimeTaskEnv(empty task) = %#v, want nil", got)
+	}
+}
