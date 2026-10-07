@@ -227,7 +227,7 @@ func (r *Runner) ExecPromptWithRuntimeControlEnvContext(ctx context.Context, pro
 		return nil, fmt.Errorf("materialize codex provider config: %w", err)
 	}
 	apiModel, apiBaseURL := resolveAPIModelFromEnv(model, effectiveEnv)
-	invoker := InvokerFor(model, meta.RunCommand, meta.AddDirs)
+	invoker := InvokerFor(model, meta.RunCommand, r.runtimeAddDirs(project, agentName, agentDir, meta))
 	resumeSessionID := ResumeSessionIDForCLI(sessionID)
 	innerArgs := invoker.Args(promptFile, resumeSessionID)
 
@@ -448,7 +448,7 @@ func (r *Runner) RunTaskWithContext(ctx context.Context, project, agentName stri
 		return nil, fmt.Errorf("materialize codex provider config: %w", err)
 	}
 	apiModel, apiBaseURL := resolveAPIModelFromEnv(model, effectiveEnv)
-	invoker := InvokerFor(model, meta.RunCommand, meta.AddDirs)
+	invoker := InvokerFor(model, meta.RunCommand, r.runtimeAddDirs(project, agentName, agentDir, meta))
 	resumeSessionID := ResumeSessionIDForCLI(sessionID)
 
 	// Build the inner agent CLI arguments.
