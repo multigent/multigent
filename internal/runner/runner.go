@@ -453,6 +453,7 @@ func (r *Runner) RunTaskWithContext(ctx context.Context, project, agentName stri
 
 	// Build the inner agent CLI arguments.
 	innerArgs := invoker.Args(promptFile, resumeSessionID)
+	innerArgs = withClaudeRuntimeMCPConfig(model, meta.RunCommand, runtimeEnv, innerArgs)
 
 	// Determine the actual executable and final argument list.
 	// When a Docker sandbox is configured the inner args become the command
@@ -2076,6 +2077,26 @@ func writeRuntimeConnectionsFile(agentDir string, body []byte) (string, error) {
 		return "", err
 	}
 	return f.Name(), nil
+}
+
+// withClaudeRuntimeMCPConfig points Claude Code at the runtime-written
+// project .mcp.json. `claude -p` does not load an unapproved project MCP config
+// on its own, so without this flag the Multigent MCP gateway is never available
+// to Claude Code agents. The path is relative to the agent working directory,
+// which is the process cwd on the host and inside the sandbox.
+func withClaudeRuntimeMCPConfig(model entity.AgentModel, runCommand string, runtimeEnv map[string]string, args []string) []string {
+	if entity.NormaliseModel(model) != entity.ModelClaudeCode || strings.TrimSpace(runCommand) != "" {
+		return args
+	}
+	if runtimeEnv[runtimeMCPConfigEnv] != "1" {
+		return args
+	}
+	for _, arg := range args {
+		if arg == "--mcp-config" || strings.HasPrefix(arg, "--mcp-config=") {
+			return args
+		}
+	}
+	return append(append([]string{}, args...), "--mcp-config", ".mcp.json")
 }
 
 func writeRuntimeMCPClientConfigs(agentDir string) error {

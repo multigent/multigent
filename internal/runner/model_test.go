@@ -4,6 +4,7 @@ import (
 	"os"
 	"path/filepath"
 	"slices"
+	"strings"
 	"testing"
 
 	"github.com/multigent/multigent/internal/entity"
@@ -147,5 +148,30 @@ func TestDiscardSessionIDOnFailure(t *testing.T) {
 	}
 	if discardSessionIDOnFailure(entity.ModelClaudeCode) {
 		t.Fatal("did not expect claude failed sessions to be discarded")
+	}
+}
+
+func TestWithClaudeRuntimeMCPConfig(t *testing.T) {
+	base := []string{"claude", "-p"}
+	written := map[string]string{runtimeMCPConfigEnv: "1"}
+	got := withClaudeRuntimeMCPConfig(entity.ModelClaudeCode, "", written, base)
+	if strings.Join(got, " ") != "claude -p --mcp-config .mcp.json" {
+		t.Fatalf("args = %v", got)
+	}
+	if len(base) != 2 {
+		t.Fatalf("input mutated: %v", base)
+	}
+	if got := withClaudeRuntimeMCPConfig(entity.ModelClaudeCode, "", nil, base); len(got) != 2 {
+		t.Fatalf("no runtime MCP config should not add flag: %v", got)
+	}
+	if got := withClaudeRuntimeMCPConfig(entity.ModelCodex, "", written, base); len(got) != 2 {
+		t.Fatalf("non-claude model should not add flag: %v", got)
+	}
+	if got := withClaudeRuntimeMCPConfig(entity.ModelClaudeCode, "custom {prompt_file}", written, base); len(got) != 2 {
+		t.Fatalf("custom run command should not add flag: %v", got)
+	}
+	preset := []string{"claude", "-p", "--mcp-config", "x.json"}
+	if got := withClaudeRuntimeMCPConfig(entity.ModelClaudeCode, "", written, preset); len(got) != 4 {
+		t.Fatalf("existing --mcp-config should be kept: %v", got)
 	}
 }
