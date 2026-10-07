@@ -4,6 +4,7 @@ import (
 	"bufio"
 	"bytes"
 	"encoding/json"
+	"fmt"
 	"net/http"
 	"net/http/httptest"
 	"strings"
@@ -139,4 +140,38 @@ func TestServeRuntimeMCPStdioIgnoresNotifications(t *testing.T) {
 
 func bufioReader(buf *bytes.Buffer) *bufio.Reader {
 	return bufio.NewReader(buf)
+}
+
+func TestServeRuntimeMCPStdioNewlineDelimited(t *testing.T) {
+	var forwarded []string
+	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		body := new(bytes.Buffer)
+		_, _ = body.ReadFrom(r.Body)
+		forwarded = append(forwarded, body.String())
+		w.Header().Set("Content-Type", "application/json")
+		_, _ = w.Write([]byte("{\n  \"jsonrpc\": \"2.0\",\n  \"id\": " + fmt.Sprint(len(forwarded)) + ",\n  \"result\": {}\n}"))
+	}))
+	defer server.Close()
+	t.Setenv(envAPIURL, server.URL)
+	t.Setenv(envAgentToken, "agent-token")
+
+	in := strings.NewReader(`{"jsonrpc":"2.0","id":1,"method":"initialize","params":{}}` + "\n" +
+		`{"jsonrpc":"2.0","method":"notifications/initialized"}` + "\n" +
+		`{"jsonrpc":"2.0","id":2,"method":"tools/list"}` + "\n")
+	var out bytes.Buffer
+	if err := serveRuntimeMCPStdio(in, &out); err != nil {
+		t.Fatalf("serve MCP stdio: %v", err)
+	}
+	if len(forwarded) != 2 {
+		t.Fatalf("forwarded %d requests, want 2 (notification skipped): %v", len(forwarded), forwarded)
+	}
+	lines := strings.Split(strings.TrimRight(out.String(), "\n"), "\n")
+	if len(lines) != 2 || strings.Contains(out.String(), "Content-Length") {
+		t.Fatalf("expected two newline-delimited responses, got %q", out.String())
+	}
+	for _, line := range lines {
+		if !json.Valid([]byte(line)) {
+			t.Fatalf("response line is not compact JSON: %q", line)
+		}
+	}
 }

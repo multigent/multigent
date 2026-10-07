@@ -2905,21 +2905,32 @@ func callMCPGatewayTool(name string, arguments map[string]any) ([]byte, error) {
 
 func serveRuntimeMCPStdio(in io.Reader, out io.Writer) error {
 	reader := bufio.NewReader(in)
+	// MCP stdio transport is newline-delimited JSON; some clients still use
+	// LSP-style Content-Length headers. Answer each request in the framing it
+	// arrived in.
+	newline := false
+	write := func(body []byte) error {
+		if newline {
+			return writeMCPStdioLine(out, body)
+		}
+		return writeMCPStdioFrame(out, body)
+	}
 	for {
-		body, err := readMCPStdioFrame(reader)
+		body, lineMode, err := readMCPStdioMessage(reader)
 		if err == io.EOF {
 			return nil
 		}
+		if lineMode {
+			newline = true
+		}
 		if err != nil {
-			response := mcpGatewayErrorResponse(nil, -32700, err.Error())
-			if writeErr := writeMCPStdioFrame(out, response); writeErr != nil {
+			if writeErr := write(mcpGatewayErrorResponse(nil, -32700, err.Error())); writeErr != nil {
 				return writeErr
 			}
 			continue
 		}
 		if !json.Valid(body) {
-			response := mcpGatewayErrorResponse(nil, -32700, "invalid JSON-RPC request")
-			if writeErr := writeMCPStdioFrame(out, response); writeErr != nil {
+			if writeErr := write(mcpGatewayErrorResponse(nil, -32700, "invalid JSON-RPC request")); writeErr != nil {
 				return writeErr
 			}
 			continue
@@ -2929,14 +2940,44 @@ func serveRuntimeMCPStdio(in io.Reader, out io.Writer) error {
 		}
 		respBody, err := requestJSON(http.MethodPost, "/api/v1/runtime/mcp/gateway", nil, body)
 		if err != nil {
-			response := mcpGatewayErrorResponse(mcpRequestID(body), -32000, err.Error())
-			if writeErr := writeMCPStdioFrame(out, response); writeErr != nil {
+			if writeErr := write(mcpGatewayErrorResponse(mcpRequestID(body), -32000, err.Error())); writeErr != nil {
 				return writeErr
 			}
 			continue
 		}
-		if err := writeMCPStdioFrame(out, respBody); err != nil {
+		if err := write(respBody); err != nil {
 			return err
+		}
+	}
+}
+
+// readMCPStdioMessage reads one request. A line starting with '{' or '[' is a
+// complete newline-delimited message (the MCP stdio transport); otherwise the
+// line starts a Content-Length header block.
+func readMCPStdioMessage(reader *bufio.Reader) ([]byte, bool, error) {
+	for {
+		peek, err := reader.Peek(1)
+		if err != nil {
+			return nil, false, err
+		}
+		switch peek[0] {
+		case '\r', '\n', ' ', '\t':
+			if _, err := reader.ReadByte(); err != nil {
+				return nil, false, err
+			}
+			continue
+		case '{', '[':
+			line, err := reader.ReadBytes('\n')
+			if err != nil && (err != io.EOF || len(bytes.TrimSpace(line)) == 0) {
+				return nil, true, err
+			}
+			if len(line) > maxJSONBody {
+				return nil, true, fmt.Errorf("MCP message too large")
+			}
+			return bytes.TrimSpace(line), true, nil
+		default:
+			body, err := readMCPStdioFrame(reader)
+			return body, false, err
 		}
 	}
 }
@@ -2985,6 +3026,21 @@ func writeMCPStdioFrame(out io.Writer, body []byte) error {
 		return err
 	}
 	_, err := out.Write(body)
+	return err
+}
+
+func writeMCPStdioLine(out io.Writer, body []byte) error {
+	if len(body) == 0 {
+		body = []byte(`{"jsonrpc":"2.0","id":null,"error":{"code":-32603,"message":"empty MCP gateway response"}}`)
+	}
+	compact := bytes.Buffer{}
+	if err := json.Compact(&compact, body); err == nil {
+		body = compact.Bytes()
+	}
+	if _, err := out.Write(body); err != nil {
+		return err
+	}
+	_, err := out.Write([]byte("\n"))
 	return err
 }
 
