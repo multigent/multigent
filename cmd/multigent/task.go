@@ -1160,42 +1160,8 @@ func newTaskRetryCmd() *cobra.Command {
 				return err
 			}
 
-			ts := mustTaskStore(root)
-			archived, err := ts.ListArchivedTasks(project, agentName)
+			found, err := retryArchivedTask(mustTaskStore(root), project, agentName, taskID, time.Now().UTC())
 			if err != nil {
-				return err
-			}
-
-			var found *entity.Task
-			var remaining []*entity.Task
-			for _, t := range archived {
-				if t.ID == taskID {
-					found = t
-				} else {
-					remaining = append(remaining, t)
-				}
-			}
-			if found == nil {
-				return fmt.Errorf("task %q not found in archive (only failed tasks can be retried)", taskID)
-			}
-			if found.Status != entity.TaskStatusDoneFailed {
-				return fmt.Errorf("task %s has status %s; only done_failed tasks can be retried", taskID, found.Status)
-			}
-
-			now := time.Now().UTC()
-			prev := found.Status
-			found.Status = entity.TaskStatusPending
-			found.RetryCount++
-			found.LastError = ""
-			found.UpdatedAt = now
-			entity.ApplyStatusTimestamps(found, prev, now)
-
-			// Re-add to active queue.
-			if err := ts.AddTask(project, agentName, found); err != nil {
-				return err
-			}
-			// Rewrite archive without the retried task.
-			if err := rewriteArchive(root, project, agentName, remaining); err != nil {
 				return err
 			}
 
@@ -1204,6 +1170,48 @@ func newTaskRetryCmd() *cobra.Command {
 		},
 	}
 	return cmd
+}
+
+// retryArchivedTask moves a done_failed task from the archive back to the
+// pending queue. The archive is rewritten first and the task is written last:
+// in the 2.x DB store active and archived tasks share one record, so rewriting
+// the archive after re-adding the task deleted it.
+func retryArchivedTask(ts taskstore.Store, project, agentName, taskID string, now time.Time) (*entity.Task, error) {
+	archived, err := ts.ListArchivedTasks(project, agentName)
+	if err != nil {
+		return nil, err
+	}
+	var found *entity.Task
+	var remaining []*entity.Task
+	for _, t := range archived {
+		if t.ID == taskID {
+			found = t
+		} else {
+			remaining = append(remaining, t)
+		}
+	}
+	if found == nil {
+		return nil, fmt.Errorf("task %q not found in archive (only failed tasks can be retried)", taskID)
+	}
+	if found.Status != entity.TaskStatusDoneFailed {
+		return nil, fmt.Errorf("task %s has status %s; only done_failed tasks can be retried", taskID, found.Status)
+	}
+	prev := found.Status
+	found.Status = entity.TaskStatusPending
+	found.RetryCount++
+	found.LastError = ""
+	found.ArchivedAt = nil
+	found.FinishedAt = nil
+	found.UpdatedAt = now
+	entity.ApplyStatusTimestamps(found, prev, now)
+
+	if err := ts.OverwriteArchive(project, agentName, remaining); err != nil {
+		return nil, err
+	}
+	if err := ts.AddTask(project, agentName, found); err != nil {
+		return nil, err
+	}
+	return found, nil
 }
 
 // ── task cancel ───────────────────────────────────────────────────────────────
