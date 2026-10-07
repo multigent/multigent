@@ -1077,6 +1077,10 @@ func (s *Server) handleRuntimeWorkflowStepComplete(w http.ResponseWriter, r *htt
 	t.LastError = strings.TrimSpace(body.Error)
 	t.UpdatedAt = now
 	transition, transitioned, err := s.completeRuntimeWorkflowStep(principal.WorkspaceID, principal.Project, t, body.Outputs, stepStatus)
+	if errors.Is(err, errRuntimeHumanStep) {
+		s.jsonErrorCode(w, http.StatusForbidden, ErrCodeForbidden, err.Error())
+		return
+	}
 	if err != nil {
 		s.jsonError(w, http.StatusBadRequest, err.Error())
 		return
@@ -1129,20 +1133,46 @@ func (s *Server) handleRuntimeWorkflowStepComplete(w http.ResponseWriter, r *htt
 	_ = json.NewEncoder(w).Encode(taskToRow(t, principal.Project, agent, archived))
 }
 
+// errRuntimeHumanStep rejects an Agent runtime token completing a step that
+// belongs to a human. Human review decisions go through the web UI or the
+// delegated decision path (mga workflow decision submit with a user
+// delegation token), never through task step completion.
+var errRuntimeHumanStep = errors.New("the active workflow step is assigned to a human; agents cannot complete it")
+
+func runtimeStepAwaitsHuman(store *workflowstore.Store, run entity.WorkflowRun) bool {
+	if strings.EqualFold(strings.TrimSpace(run.CurrentAssigneeType), "user") || strings.EqualFold(strings.TrimSpace(run.CurrentAssigneeType), "human") {
+		return true
+	}
+	def, ok, err := store.Definition(run.DefinitionID)
+	if err != nil || !ok {
+		return false
+	}
+	for _, step := range def.Steps {
+		if step.ID == run.ActiveStepID {
+			return strings.EqualFold(strings.TrimSpace(string(step.Type)), "human_review")
+		}
+	}
+	return false
+}
+
 func (s *Server) completeRuntimeWorkflowStep(workspaceID, project string, t *entity.Task, outputs map[string]string, stepStatus string) (workflowstore.TransitionResult, bool, error) {
 	var result workflowstore.TransitionResult
 	if s == nil || s.controlDB == nil || t == nil || strings.TrimSpace(workspaceID) == "" {
 		return result, false, nil
 	}
 	wfStore := workflowstore.NewStore(s.controlDB, workspaceID)
-	if _, ok, err := wfStore.RunForTask(project, t.ID); err != nil || !ok {
+	run, ok, err := wfStore.RunForTask(project, t.ID)
+	if err != nil || !ok {
 		return result, false, err
+	}
+	if runtimeStepAwaitsHuman(wfStore, run) {
+		return result, false, errRuntimeHumanStep
 	}
 	output := strings.TrimSpace(t.Summary)
 	if output == "" {
 		output = strings.TrimSpace(t.LastError)
 	}
-	result, err := wfStore.CompleteAndAdvance(project, t.ID, t.Summary, output, outputs, stepStatus)
+	result, err = wfStore.CompleteAndAdvance(project, t.ID, t.Summary, output, outputs, stepStatus)
 	if err != nil {
 		return result, false, err
 	}

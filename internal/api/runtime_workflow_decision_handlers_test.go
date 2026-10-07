@@ -352,3 +352,56 @@ func TestRuntimeWorkflowPendingReviewsListsHumanSteps(t *testing.T) {
 		t.Fatalf("document refs=%+v", got.DocumentRefs)
 	}
 }
+
+func TestRuntimeWorkflowStepCompleteRejectsHumanReviewStep(t *testing.T) {
+	s, workspaceID := newConnectionGrantPolicyServer(t)
+	seedSampleAgentsForTest(t, s, workspaceID)
+	taskID := "task-agent-self-approve"
+	now := time.Now().UTC()
+	task := &entity.Task{ID: taskID, Title: "Needs review", Priority: 2, Assignee: "owner",
+		Status: entity.TaskStatusAwaitingConfirmation, Prompt: "review", CreatedAt: now, UpdatedAt: now}
+	if err := s.ts.AddTask("sample", "pm", task); err != nil {
+		t.Fatalf("add task: %v", err)
+	}
+	wfStore := workflowstore.NewStore(s.controlDB, workspaceID)
+	def := &entity.WorkflowDefinition{
+		ID: "wf-runtime-self-approve", Name: "Self approve", Version: 1, Scope: "workspace", StartStepID: "review",
+		Steps: []entity.WorkflowStep{{ID: "review", Type: "human_review", Title: "Review",
+			OutputFields: []entity.WorkflowField{{Name: "decision", Description: "Decision"}}}},
+		CreatedAt: now, UpdatedAt: now,
+	}
+	if err := wfStore.SaveDefinition(def); err != nil {
+		t.Fatalf("save workflow definition: %v", err)
+	}
+	if _, _, err := wfStore.StartRun("sample", taskID, def.ID, map[string]entity.WorkflowActorBinding{
+		"review": {Type: "human", ID: "owner"},
+	}); err != nil {
+		t.Fatalf("start workflow run: %v", err)
+	}
+
+	req := providerTestRequest(http.MethodPost, "/api/v1/runtime/tasks/"+taskID+"/workflow/step/complete", "", map[string]any{
+		"status":  "success",
+		"outputs": map[string]string{"decision": "approve"},
+	})
+	req.SetPathValue("id", taskID)
+	req = req.WithContext(context.WithValue(req.Context(), ctxRuntimeAgentKey, runtimeAgentPrincipal{
+		WorkspaceID: workspaceID, Project: "sample", Agent: "pm", Capabilities: []string{"task.use"},
+	}))
+	rec := httptest.NewRecorder()
+	s.handleRuntimeWorkflowStepComplete(rec, req)
+
+	if rec.Code != http.StatusForbidden {
+		t.Fatalf("status=%d body=%s, want 403", rec.Code, rec.Body.String())
+	}
+	got, err := s.ts.GetTask("sample", "pm", taskID)
+	if err != nil {
+		t.Fatalf("get task: %v", err)
+	}
+	if got.Status != entity.TaskStatusAwaitingConfirmation {
+		t.Fatalf("task status=%s, want unchanged awaiting_confirmation", got.Status)
+	}
+	run, ok, err := wfStore.RunForTask("sample", taskID)
+	if err != nil || !ok || run.ActiveStepID != "review" {
+		t.Fatalf("run active step=%q ok=%v err=%v, want review", run.ActiveStepID, ok, err)
+	}
+}
