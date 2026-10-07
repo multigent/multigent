@@ -154,24 +154,34 @@ func TestDiscardSessionIDOnFailure(t *testing.T) {
 func TestWithClaudeRuntimeMCPConfig(t *testing.T) {
 	base := []string{"claude", "-p"}
 	written := map[string]string{runtimeMCPConfigEnv: "1"}
-	got := withClaudeRuntimeMCPConfig(entity.ModelClaudeCode, "", written, base)
-	if strings.Join(got, " ") != "claude -p --mcp-config .mcp.json" {
+	got := withClaudeRuntimeMCPConfig(entity.ModelClaudeCode, "", written, base, "/agents/a/.mcp.json")
+	if strings.Join(got, " ") != "claude -p --mcp-config /agents/a/.mcp.json" {
 		t.Fatalf("args = %v", got)
 	}
 	if len(base) != 2 {
 		t.Fatalf("input mutated: %v", base)
 	}
-	if got := withClaudeRuntimeMCPConfig(entity.ModelClaudeCode, "", nil, base); len(got) != 2 {
+	if got := withClaudeRuntimeMCPConfig(entity.ModelClaudeCode, "", nil, base, "x"); len(got) != 2 {
 		t.Fatalf("no runtime MCP config should not add flag: %v", got)
 	}
-	if got := withClaudeRuntimeMCPConfig(entity.ModelCodex, "", written, base); len(got) != 2 {
+	if got := withClaudeRuntimeMCPConfig(entity.ModelCodex, "", written, base, "x"); len(got) != 2 {
 		t.Fatalf("non-claude model should not add flag: %v", got)
 	}
-	if got := withClaudeRuntimeMCPConfig(entity.ModelClaudeCode, "custom {prompt_file}", written, base); len(got) != 2 {
+	if got := withClaudeRuntimeMCPConfig(entity.ModelClaudeCode, "custom {prompt_file}", written, base, "x"); len(got) != 2 {
 		t.Fatalf("custom run command should not add flag: %v", got)
 	}
 	preset := []string{"claude", "-p", "--mcp-config", "x.json"}
-	if got := withClaudeRuntimeMCPConfig(entity.ModelClaudeCode, "", written, preset); len(got) != 4 {
+	if got := withClaudeRuntimeMCPConfig(entity.ModelClaudeCode, "", written, preset, "x"); len(got) != 4 {
 		t.Fatalf("existing --mcp-config should be kept: %v", got)
+	}
+}
+
+func TestRuntimeMCPConfigPath(t *testing.T) {
+	if got := runtimeMCPConfigPath("/agents/a", &entity.AgentMeta{}); got != "/agents/a/.mcp.json" {
+		t.Fatalf("host path = %q", got)
+	}
+	sandboxed := &entity.AgentMeta{Sandbox: &entity.SandboxConfig{Provider: entity.SandboxDocker}}
+	if got := runtimeMCPConfigPath("/agents/a", sandboxed); got != ".mcp.json" {
+		t.Fatalf("sandbox path = %q", got)
 	}
 }
