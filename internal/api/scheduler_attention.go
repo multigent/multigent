@@ -353,6 +353,9 @@ func (s *Server) recoverPendingAttentionWakeups() {
 	}
 	runtimeAPIURL := s.runtimeAPIURLForInternalEvent()
 	for _, target := range targets {
+		if !s.attentionRecoveryAllowed(target) {
+			continue
+		}
 		binding := controldb.AgentChannelBinding{
 			WorkspaceID:   target.WorkspaceID,
 			AgentWorkerID: target.AgentWorkerID,
@@ -365,6 +368,21 @@ func (s *Server) recoverPendingAttentionWakeups() {
 		}
 		s.requestAgentAttentionWakeup(binding, "startup_recovery", runtimeAPIURL, "system", focusID)
 	}
+}
+
+// attentionRecoveryAllowed applies the same membership gate as the live task
+// attention path: a member that has opted out of attention is driven by its own
+// task queue, so a restart must not wake it for signals left from earlier runs.
+func (s *Server) attentionRecoveryAllowed(target attentionWakeupRecoveryTarget) bool {
+	if s.agentDirectory == nil {
+		return true
+	}
+	resolved, ok, err := s.agentDirectory.ResolveProjectMailbox(target.WorkspaceID, target.ProjectID+"/"+target.AgentID)
+	if err != nil {
+		log.Printf("[attention] resolve recovery target failed for %s/%s: %v", target.ProjectID, target.AgentID, err)
+		return false
+	}
+	return ok && resolved.Membership.AttentionEnabled
 }
 
 func (s *Server) requestPendingAttentionWakeupAfterRun(run controldb.RuntimeRun) {
