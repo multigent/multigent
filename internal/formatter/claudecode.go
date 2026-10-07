@@ -87,6 +87,12 @@ func (f *claudeCodeFormatter) Format(mc *ctxbuild.MergedContext, outDir string) 
 	return nil
 }
 
+// WriteClaudeCodeSkills writes skills as <outDir>/.claude/skills/<name>/SKILL.md
+// (plus bundled files), replacing whatever the skills directory held before.
+func WriteClaudeCodeSkills(skills []ctxbuild.SkillDef, outDir string) error {
+	return (&claudeCodeFormatter{}).writeSkills(skills, outDir)
+}
+
 func (f *claudeCodeFormatter) writeSkills(skills []ctxbuild.SkillDef, outDir string) error {
 	skillsRoot := filepath.Join(outDir, ".claude", "skills")
 	if err := os.RemoveAll(skillsRoot); err != nil && !os.IsNotExist(err) {
